@@ -24,10 +24,16 @@ trap cleanup EXIT
 HOOK_INPUT=$(cat)
 TOOL_NAME=$(echo "$HOOK_INPUT" | jq -r '.tool_name // empty' 2>/dev/null) || exit 0
 SKILL_NAME=$(echo "$HOOK_INPUT" | jq -r '.tool_input.skill // empty' 2>/dev/null) || true
+BASH_CMD=$(echo "$HOOK_INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null) || true
 
-# Only trigger after commit-push-pr skill
-[[ "$TOOL_NAME" == "Skill" ]] || exit 0
-[[ "$SKILL_NAME" == *"commit-push-pr"* ]] || exit 0
+# Trigger after commit-push-pr skill OR a git push / gh pr create via Bash
+if [[ "$TOOL_NAME" == "Skill" ]]; then
+  [[ "$SKILL_NAME" == *"commit-push-pr"* ]] || exit 0
+elif [[ "$TOOL_NAME" == "Bash" ]]; then
+  [[ "$BASH_CMD" == *"git push"* || "$BASH_CMD" == *"gh pr create"* ]] || exit 0
+else
+  exit 0
+fi
 
 # ---------------------------------------------------------------------------
 # 2. Preflight checks
