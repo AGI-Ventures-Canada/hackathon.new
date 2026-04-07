@@ -67,6 +67,8 @@ jobs:
         env:
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           CLERK_TEST_USER_ID: ${{ secrets.CLERK_TEST_USER_ID }}
+          PREVIEW_URL: ${{ github.event.deployment_status.target_url }}
+          VERCEL_BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
           if [ -z "$CLERK_SECRET_KEY" ] || [ -z "$CLERK_TEST_USER_ID" ]; then
             echo "CLERK_SECRET_KEY or CLERK_TEST_USER_ID not set — authenticated pages will be skipped"
@@ -74,10 +76,19 @@ jobs:
             exit 0
           fi
 
+          # Build the redirect URL so Clerk sets cookies on the preview domain, not production
+          REDIRECT_URL="$PREVIEW_URL"
+          if [ -n "$VERCEL_BYPASS" ]; then
+            REDIRECT_URL="${REDIRECT_URL}?x-vercel-protection-bypass=${VERCEL_BYPASS}&x-vercel-set-bypass-cookie=samesitenone"
+          fi
+
           SIGN_IN_URL=$(curl -sf -X POST "https://api.clerk.com/v1/sign_in_tokens" \
             -H "Authorization: Bearer ${CLERK_SECRET_KEY}" \
             -H "Content-Type: application/json" \
-            -d "{\"user_id\": \"${CLERK_TEST_USER_ID}\"}" \
+            -d "$(jq -n \
+              --arg uid "$CLERK_TEST_USER_ID" \
+              --arg redirect "$REDIRECT_URL" \
+              '{user_id: $uid, redirect_url: $redirect}')" \
             | jq -r '.url // empty')
 
           if [ -z "$SIGN_IN_URL" ]; then
@@ -86,11 +97,20 @@ jobs:
             exit 0
           fi
 
-          # If we reach here, sign-in succeeded — set authenticated=true after browser auth
+          # Visit sign-in URL — Clerk authenticates and redirects to the preview URL,
+          # setting session cookies on the preview domain
           agent-browser --session pr-screenshots open "$SIGN_IN_URL" >/dev/null 2>&1
           agent-browser --session pr-screenshots wait --load networkidle >/dev/null 2>&1 || true
-          agent-browser --session pr-screenshots wait 3000 >/dev/null 2>&1 || true
-          echo "authenticated=true" >> "$GITHUB_OUTPUT"
+          agent-browser --session pr-screenshots wait 5000 >/dev/null 2>&1 || true
+
+          # Verify we landed on the preview URL (not a sign-in redirect)
+          CURRENT_URL=$(agent-browser --session pr-screenshots url 2>/dev/null || true)
+          if echo "$CURRENT_URL" | grep -q "sign-in"; then
+            echo "::warning::Auth redirect landed on sign-in page — authenticated screenshots may fail"
+            echo "authenticated=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "authenticated=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Determine screenshot targets
         id: targets
