@@ -83,7 +83,7 @@ export default async function Image({ params }: Props) {
               marginBottom: 16,
             }}
           >
-            Organized by {hackathon.organizer.name}
+            Hosted by {hackathon.organizer.name}
           </div>
           <div
             style={{
