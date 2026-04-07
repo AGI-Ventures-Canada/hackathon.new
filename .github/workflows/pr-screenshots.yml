@@ -76,40 +76,56 @@ jobs:
             exit 0
           fi
 
-          # Build the redirect URL so Clerk sets cookies on the preview domain, not production
-          REDIRECT_URL="$PREVIEW_URL"
+          # Navigate to the preview URL to set bypass cookie and load Clerk.js
+          BYPASS_QS=""
           if [ -n "$VERCEL_BYPASS" ]; then
-            REDIRECT_URL="${REDIRECT_URL}?x-vercel-protection-bypass=${VERCEL_BYPASS}&x-vercel-set-bypass-cookie=samesitenone"
+            BYPASS_QS="?x-vercel-protection-bypass=${VERCEL_BYPASS}&x-vercel-set-bypass-cookie=samesitenone"
           fi
+          agent-browser --session pr-screenshots open "${PREVIEW_URL}${BYPASS_QS}" >/dev/null 2>&1
+          agent-browser --session pr-screenshots wait --load networkidle >/dev/null 2>&1 || true
+          agent-browser --session pr-screenshots wait 3000 >/dev/null 2>&1 || true
 
-          SIGN_IN_URL=$(curl -sf -X POST "https://api.clerk.com/v1/sign_in_tokens" \
+          # Create a sign-in token via Clerk API
+          TOKEN=$(curl -sf -X POST "https://api.clerk.com/v1/sign_in_tokens" \
             -H "Authorization: Bearer ${CLERK_SECRET_KEY}" \
             -H "Content-Type: application/json" \
-            -d "$(jq -n \
-              --arg uid "$CLERK_TEST_USER_ID" \
-              --arg redirect "$REDIRECT_URL" \
-              '{user_id: $uid, redirect_url: $redirect}')" \
-            | jq -r '.url // empty')
+            -d "$(jq -n --arg uid "$CLERK_TEST_USER_ID" '{user_id: $uid}')" \
+            | jq -r '.token // empty')
 
-          if [ -z "$SIGN_IN_URL" ]; then
+          if [ -z "$TOKEN" ]; then
             echo "Failed to create sign-in token — falling back to unauthenticated only"
             echo "authenticated=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          # Visit sign-in URL — Clerk authenticates and redirects to the preview URL,
-          # setting session cookies on the preview domain
-          agent-browser --session pr-screenshots open "$SIGN_IN_URL" >/dev/null 2>&1
-          agent-browser --session pr-screenshots wait --load networkidle >/dev/null 2>&1 || true
-          agent-browser --session pr-screenshots wait 5000 >/dev/null 2>&1 || true
+          # Sign in using Clerk.js directly on the preview domain.
+          # This sets __session cookie on the preview domain so server-side
+          # middleware recognizes the user on subsequent navigations.
+          SIGN_IN_RESULT=$(agent-browser --session pr-screenshots execute "
+            const waitForClerk = () => new Promise((resolve, reject) => {
+              if (window.Clerk?.client) return resolve();
+              const interval = setInterval(() => {
+                if (window.Clerk?.client) { clearInterval(interval); resolve(); }
+              }, 200);
+              setTimeout(() => { clearInterval(interval); reject(new Error('Clerk did not load')); }, 15000);
+            });
+            try {
+              await waitForClerk();
+              const si = await window.Clerk.client.signIn.create({ strategy: 'ticket', ticket: '${TOKEN}' });
+              await window.Clerk.setActive({ session: si.createdSessionId });
+              return 'ok';
+            } catch (e) {
+              return 'error: ' + e.message;
+            }
+          " 2>&1) || true
 
-          # Verify we landed on the preview URL (not a sign-in redirect)
-          CURRENT_URL=$(agent-browser --session pr-screenshots url 2>/dev/null || true)
-          if echo "$CURRENT_URL" | grep -q "sign-in"; then
-            echo "::warning::Auth redirect landed on sign-in page — authenticated screenshots may fail"
-            echo "authenticated=false" >> "$GITHUB_OUTPUT"
-          else
+          if echo "$SIGN_IN_RESULT" | grep -q "^ok"; then
+            echo "Clerk sign-in succeeded on preview domain"
+            agent-browser --session pr-screenshots wait 3000 >/dev/null 2>&1 || true
             echo "authenticated=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Clerk sign-in failed: ${SIGN_IN_RESULT}"
+            echo "authenticated=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Determine screenshot targets
@@ -180,19 +196,13 @@ jobs:
         env:
           PREVIEW_URL: ${{ github.event.deployment_status.target_url }}
           TARGETS: ${{ steps.targets.outputs.targets }}
-          VERCEL_BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
           DIR="/tmp/pr-screenshots"
           mkdir -p "$DIR"
 
-          BYPASS_QS=""
-          if [ -n "$VERCEL_BYPASS" ]; then
-            BYPASS_QS="?x-vercel-protection-bypass=${VERCEL_BYPASS}&x-vercel-set-bypass-cookie=samesitenone"
-          fi
-
           capture() {
             local url="$1" name="$2"
-            agent-browser --session pr-screenshots open "${url}${BYPASS_QS}" 2>/dev/null || return 1
+            agent-browser --session pr-screenshots open "$url" 2>/dev/null || return 1
             agent-browser --session pr-screenshots wait --load networkidle 2>/dev/null || true
             agent-browser --session pr-screenshots wait 2000 2>/dev/null || true
             agent-browser --session pr-screenshots screenshot --full "$DIR/${name}.png" 2>/dev/null || return 1
