@@ -86,9 +86,9 @@ jobs:
             exit 0
           fi
 
-          agent-browser open "$SIGN_IN_URL" 2>/dev/null
-          agent-browser wait --load networkidle 2>/dev/null || true
-          agent-browser wait 3000 2>/dev/null || true
+          agent-browser open "$SIGN_IN_URL" >/dev/null 2>&1
+          agent-browser wait --load networkidle >/dev/null 2>&1 || true
+          agent-browser wait 3000 >/dev/null 2>&1 || true
           echo "authenticated=true" >> "$GITHUB_OUTPUT"
         id: auth
 
@@ -102,7 +102,9 @@ jobs:
           DIR="/tmp/pr-screenshots"
           mkdir -p "$DIR"
 
-          # Try to discover an event slug from the preview API
+          # Discover an event slug from the preview API (unauthenticated — if the
+          # listing endpoint requires auth, this returns empty and event-scoped
+          # screenshots are silently skipped)
           EVENT_SLUG=$(curl -sf --max-time 10 "${PREVIEW_URL}/api/hackathons" 2>/dev/null \
             | jq -r 'if type == "array" then .[0].slug elif .data then .data[0].slug else empty end // empty' 2>/dev/null) || true
 
@@ -128,16 +130,18 @@ jobs:
             capture "${PREVIEW_URL}/hackathons" "hackathons" || true
           fi
 
-          agent-browser close 2>/dev/null || true
+      - name: Close browser
+        if: always()
+        run: agent-browser close >/dev/null 2>&1 || true
 
       - name: Upload and comment on PR
         if: steps.check.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.check.outputs.pr_number }}
+          DEPLOY_REF: ${{ github.event.deployment.ref }}
         run: |
           REPO="${{ github.repository }}"
-          BRANCH="${{ github.event.deployment.ref }}"
           TAG="pr-${PR_NUMBER}-screenshots"
           DIR="/tmp/pr-screenshots"
 
@@ -159,23 +163,29 @@ jobs:
             done
           fi
 
-          # Upload assets and build comment body
-          BODY="<!-- pr-screenshots -->
+          # Upload assets and build comment via temp file
+          BODY_FILE="$DIR/comment.md"
+          cat > "$BODY_FILE" <<COMMENT_EOF
+          <!-- pr-screenshots -->
           ## Screenshots
 
-          Auto-captured from Vercel preview for \`${BRANCH}\`.
-          "
+          Auto-captured from Vercel preview for \`${DEPLOY_REF}\`.
+          COMMENT_EOF
 
           for img in "${IMAGES[@]}"; do
             filename=$(basename "$img")
             name="${filename%.*}"
             gh release upload "$TAG" "$img" --clobber || continue
             URL="https://github.com/${REPO}/releases/download/${TAG}/${filename}"
-            BODY+="
+            cat >> "$BODY_FILE" <<IMG_EOF
+
           ### ${name}
           ![${name}](${URL})
-          "
+          IMG_EOF
           done
+
+          # Strip leading whitespace from YAML indentation
+          BODY=$(sed 's/^[[:space:]]*//' "$BODY_FILE")
 
           # Post or update PR comment (idempotent via HTML marker)
           MARKER="<!-- pr-screenshots -->"
