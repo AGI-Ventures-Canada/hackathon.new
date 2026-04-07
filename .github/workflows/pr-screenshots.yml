@@ -80,11 +80,12 @@ jobs:
             | jq -r '.url // empty')
 
           if [ -z "$SIGN_IN_URL" ]; then
-            echo "Failed to create sign-in token"
+            echo "Failed to create sign-in token — falling back to unauthenticated only"
             echo "authenticated=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
+          # If we reach here, sign-in succeeded — set authenticated=true after browser auth
           agent-browser open "$SIGN_IN_URL" >/dev/null 2>&1
           agent-browser wait --load networkidle >/dev/null 2>&1 || true
           agent-browser wait 3000 >/dev/null 2>&1 || true
@@ -113,10 +114,15 @@ jobs:
           # skipped. Set PR_SCREENSHOT_SLUG as a repo variable to override.
           EVENT_SLUG="${PR_SCREENSHOT_SLUG:-}"
           if [ -z "$EVENT_SLUG" ]; then
+            BYPASS_HEADER=()
+            if [ -n "$VERCEL_BYPASS" ]; then
+              BYPASS_HEADER=(-H "x-vercel-protection-bypass: ${VERCEL_BYPASS}")
+            fi
             EVENT_SLUG=$(curl -sf --max-time 10 \
-              -H "x-vercel-protection-bypass: ${VERCEL_BYPASS:-none}" \
+              "${BYPASS_HEADER[@]}" \
               "${PREVIEW_URL}/api/hackathons" 2>/dev/null \
-              | jq -r 'if type == "array" then .[0].slug elif .data then .data[0].slug else empty end // empty' 2>/dev/null) || true
+              | jq -r 'if type == "array" then .[0].slug elif .data then .data[0].slug else empty end // empty' 2>/dev/null \
+              | tr -cd 'a-zA-Z0-9_-') || true
           fi
           if [ -z "$EVENT_SLUG" ]; then
             echo "::notice::No event slug found — event page screenshots will be skipped"
