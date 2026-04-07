@@ -55,10 +55,41 @@ jobs:
           npm i -g agent-browser
           agent-browser install
 
+      - name: Authenticate via Clerk sign-in token
+        if: steps.check.outputs.skip != 'true'
+        env:
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          CLERK_TEST_USER_ID: ${{ secrets.CLERK_TEST_USER_ID }}
+        run: |
+          if [ -z "$CLERK_SECRET_KEY" ] || [ -z "$CLERK_TEST_USER_ID" ]; then
+            echo "CLERK_SECRET_KEY or CLERK_TEST_USER_ID not set — authenticated pages will be skipped"
+            echo "authenticated=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          SIGN_IN_URL=$(curl -sf -X POST "https://api.clerk.com/v1/sign_in_tokens" \
+            -H "Authorization: Bearer ${CLERK_SECRET_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{\"user_id\": \"${CLERK_TEST_USER_ID}\"}" \
+            | jq -r '.url // empty')
+
+          if [ -z "$SIGN_IN_URL" ]; then
+            echo "Failed to create sign-in token"
+            echo "authenticated=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          agent-browser open "$SIGN_IN_URL" 2>/dev/null
+          agent-browser wait --load networkidle 2>/dev/null || true
+          agent-browser wait 3000 2>/dev/null || true
+          echo "authenticated=true" >> "$GITHUB_OUTPUT"
+        id: auth
+
       - name: Capture screenshots
         if: steps.check.outputs.skip != 'true'
         env:
           PREVIEW_URL: ${{ github.event.deployment_status.target_url }}
+          AUTHENTICATED: ${{ steps.auth.outputs.authenticated }}
         run: |
           CHANGES='${{ steps.check.outputs.changes }}'
           DIR="/tmp/pr-screenshots"
@@ -82,7 +113,9 @@ jobs:
             capture "${PREVIEW_URL}/e/${EVENT_SLUG}" "e_${EVENT_SLUG}" || true
           fi
 
-          # Manage page requires auth — skipped in CI (no session cookies)
+          if echo "$CHANGES" | grep -q 'app/(public)/e/\[slug\]/manage' && [ -n "$EVENT_SLUG" ] && [ "$AUTHENTICATED" = "true" ]; then
+            capture "${PREVIEW_URL}/e/${EVENT_SLUG}/manage" "e_manage" || true
+          fi
 
           if echo "$CHANGES" | grep -q 'app/(dashboard)/'; then
             capture "${PREVIEW_URL}/hackathons" "hackathons" || true
