@@ -1,0 +1,19 @@
+name: Cleanup PR Screenshots
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Delete screenshot release and tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          TAG="pr-${{ github.event.pull_request.number }}-screenshots"
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
