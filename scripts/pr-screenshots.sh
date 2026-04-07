@@ -4,8 +4,7 @@
 # Designed to run as a Claude Code PostToolUse hook (async).
 #
 # Prerequisites: agent-browser, gh, jq, curl
-# The user's Chrome must be running with --remote-debugging-port=9222
-# and the dev server must be running on localhost:3000.
+# Automatically starts the dev server and connects to Chrome if needed.
 #
 # Configuration (env vars):
 #   PR_SCREENSHOT_SLUG  - Event slug to capture for /e/ page screenshots.
@@ -63,7 +62,34 @@ FRONTEND_CHANGES=$(git diff origin/staging --name-only -- 'app/' 'components/' '
 PR_NUMBER=$(gh pr view "$BRANCH" --json number -q '.number' 2>/dev/null) || exit 0
 [[ -n "$PR_NUMBER" ]] || exit 0
 
-curl -sf -o /dev/null --max-time 3 http://localhost:3000 || exit 0
+# ---------------------------------------------------------------------------
+# 2b. Start dev server if not running
+# ---------------------------------------------------------------------------
+if ! curl -sf -o /dev/null --max-time 3 http://localhost:3000; then
+  bun dev &>/tmp/pr-screenshots-dev-server.log &
+  DEV_PID=$!
+  for _i in {1..30}; do
+    curl -sf -o /dev/null --max-time 2 http://localhost:3000 && break
+    sleep 2
+  done
+  if ! curl -sf -o /dev/null --max-time 3 http://localhost:3000; then
+    kill "$DEV_PID" 2>/dev/null || true
+    exit 0
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# 2c. Determine browser connection strategy
+#   1. Chrome debugging port on 9222 → --auto-connect (user's live session)
+#   2. Fallback → agent-browser's bundled browser with --profile Default
+#      (inherits auth cookies from the user's Chrome profile)
+# ---------------------------------------------------------------------------
+AB_CONN=()
+if curl -sf --max-time 2 http://127.0.0.1:9222/json/version &>/dev/null; then
+  AB_CONN=(--auto-connect)
+else
+  AB_CONN=(--profile Default)
+fi
 
 # ---------------------------------------------------------------------------
 # 3. Resolve event slug (env var → dev API → skip)
@@ -110,7 +136,7 @@ for i in "${!PAGES[@]}"; do
   url="${PAGES[$i]}"
   slug=$(echo "$url" | sed 's|https\?://[^/]*/||;s|/|_|g;s|^$|index|')
 
-  agent-browser --auto-connect --session "$SESSION" open "$url" 2>/dev/null || continue
+  agent-browser "${AB_CONN[@]}" --session "$SESSION" open "$url" 2>/dev/null || continue
   agent-browser --session "$SESSION" wait --load networkidle 2>/dev/null || true
   agent-browser --session "$SESSION" wait 2000 2>/dev/null || true
   agent-browser --session "$SESSION" screenshot --full "$SCREENSHOT_DIR/${slug}.png" 2>/dev/null || continue
