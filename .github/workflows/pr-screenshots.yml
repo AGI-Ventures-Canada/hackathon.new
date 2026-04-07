@@ -1,0 +1,153 @@
+name: PR Screenshots
+
+on:
+  deployment_status:
+
+jobs:
+  screenshots:
+    if: >-
+      github.event.deployment_status.state == 'success' &&
+      github.event.deployment.environment == 'Preview'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      deployments: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.deployment.ref }}
+
+      - name: Find PR and check for frontend changes
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REF="${{ github.event.deployment.ref }}"
+          PR_NUMBER=$(gh pr list --head "$REF" --state open --json number --jq '.[0].number // empty')
+          if [ -z "$PR_NUMBER" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+          CHANGES=$(git diff --name-only origin/staging...HEAD -- 'app/' 'components/' 'emails/' 2>/dev/null || true)
+          if [ -z "$CHANGES" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "changes<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$CHANGES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node.js
+        if: steps.check.outputs.skip != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install agent-browser
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          npm i -g agent-browser
+          agent-browser install
+
+      - name: Capture screenshots
+        if: steps.check.outputs.skip != 'true'
+        env:
+          PREVIEW_URL: ${{ github.event.deployment_status.target_url }}
+        run: |
+          CHANGES='${{ steps.check.outputs.changes }}'
+          DIR="/tmp/pr-screenshots"
+          mkdir -p "$DIR"
+
+          # Try to discover an event slug from the preview API
+          EVENT_SLUG=$(curl -sf --max-time 10 "${PREVIEW_URL}/api/hackathons" 2>/dev/null \
+            | jq -r 'if type == "array" then .[0].slug elif .data then .data[0].slug else empty end // empty' 2>/dev/null) || true
+
+          capture() {
+            local url="$1" name="$2"
+            agent-browser open "$url" 2>/dev/null || return 1
+            agent-browser wait --load networkidle 2>/dev/null || true
+            agent-browser wait 2000 2>/dev/null || true
+            agent-browser screenshot --full "$DIR/${name}.png" 2>/dev/null || return 1
+          }
+
+          capture "$PREVIEW_URL" "index" || true
+
+          if echo "$CHANGES" | grep -q 'app/(public)/e/' && [ -n "$EVENT_SLUG" ]; then
+            capture "${PREVIEW_URL}/e/${EVENT_SLUG}" "e_${EVENT_SLUG}" || true
+          fi
+
+          # Manage page requires auth — skipped in CI (no session cookies)
+
+          if echo "$CHANGES" | grep -q 'app/(dashboard)/'; then
+            capture "${PREVIEW_URL}/hackathons" "hackathons" || true
+          fi
+
+          agent-browser close 2>/dev/null || true
+
+      - name: Upload and comment on PR
+        if: steps.check.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.check.outputs.pr_number }}
+        run: |
+          REPO="${{ github.repository }}"
+          BRANCH="${{ github.event.deployment.ref }}"
+          TAG="pr-${PR_NUMBER}-screenshots"
+          DIR="/tmp/pr-screenshots"
+
+          shopt -s nullglob
+          IMAGES=("$DIR"/*.png "$DIR"/*.jpg)
+          shopt -u nullglob
+          [ ${#IMAGES[@]} -gt 0 ] || exit 0
+
+          # Create or clean the release (--prerelease so asset URLs resolve)
+          if ! gh release view "$TAG" &>/dev/null; then
+            gh release create "$TAG" \
+              --title "PR #${PR_NUMBER} Screenshots" \
+              --notes "Auto-captured screenshots for PR #${PR_NUMBER}" \
+              --prerelease
+          else
+            RELEASE_JSON=$(gh api "repos/${REPO}/releases/tags/${TAG}" 2>/dev/null || echo '{}')
+            echo "$RELEASE_JSON" | jq -r '.assets[]?.id // empty' 2>/dev/null | while read -r aid; do
+              [ -n "$aid" ] && gh api "repos/${REPO}/releases/assets/${aid}" -X DELETE 2>/dev/null || true
+            done
+          fi
+
+          # Upload assets and build comment body
+          BODY="<!-- pr-screenshots -->
+          ## Screenshots
+
+          Auto-captured from Vercel preview for \`${BRANCH}\`.
+          "
+
+          for img in "${IMAGES[@]}"; do
+            filename=$(basename "$img")
+            name="${filename%.*}"
+            gh release upload "$TAG" "$img" --clobber || continue
+            URL="https://github.com/${REPO}/releases/download/${TAG}/${filename}"
+            BODY+="
+          ### ${name}
+          ![${name}](${URL})
+          "
+          done
+
+          # Post or update PR comment (idempotent via HTML marker)
+          MARKER="<!-- pr-screenshots -->"
+          EXISTING_ID=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" \
+            --jq ".[] | select(.body | contains(\"${MARKER}\")) | .id" 2>/dev/null | head -1 || true)
+
+          BODY_JSON=$(jq -n --arg body "$BODY" '{"body": $body}')
+
+          if [ -n "$EXISTING_ID" ]; then
+            echo "$BODY_JSON" | gh api "repos/${REPO}/issues/comments/${EXISTING_ID}" \
+              -X PATCH --input - 2>/dev/null
+          else
+            echo "$BODY_JSON" | gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" \
+              -X POST --input - 2>/dev/null
+          fi
