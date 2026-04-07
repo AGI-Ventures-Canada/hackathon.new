@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "scripts/pr-screenshots.sh",
+            "async": true,
+            "timeout": 120,
+            "statusMessage": "Capturing PR screenshots..."
+          }
+        ]
+      }
+    ]
+  }
+}
