@@ -29,8 +29,9 @@ jobs:
           # Try branch name first, fall back to SHA-based PR lookup
           PR_NUMBER=$(gh pr list --head "$DEPLOY_REF" --state open --json number --jq '.[0].number // empty')
           if [ -z "$PR_NUMBER" ]; then
+            SAFE_SHA=$(echo "$DEPLOY_SHA" | tr -cd 'a-fA-F0-9')
             PR_NUMBER=$(gh pr list --state open --json number,headRefOid \
-              --jq ".[] | select(.headRefOid == \"${DEPLOY_SHA}\") | .number" | head -1)
+              --jq ".[] | select(.headRefOid == \"${SAFE_SHA}\") | .number" | head -1)
           fi
           if [ -z "$PR_NUMBER" ]; then
             echo "::debug::No open PR found for ref=${DEPLOY_REF} sha=${DEPLOY_SHA}"
@@ -86,32 +87,24 @@ jobs:
           fi
 
           # If we reach here, sign-in succeeded — set authenticated=true after browser auth
-          agent-browser open "$SIGN_IN_URL" >/dev/null 2>&1
-          agent-browser wait --load networkidle >/dev/null 2>&1 || true
-          agent-browser wait 3000 >/dev/null 2>&1 || true
+          agent-browser --session pr-screenshots open "$SIGN_IN_URL" >/dev/null 2>&1
+          agent-browser --session pr-screenshots wait --load networkidle >/dev/null 2>&1 || true
+          agent-browser --session pr-screenshots wait 3000 >/dev/null 2>&1 || true
           echo "authenticated=true" >> "$GITHUB_OUTPUT"
 
-      - name: Capture screenshots
+      - name: Determine screenshot targets
+        id: targets
         if: steps.check.outputs.skip != 'true'
         env:
-          PREVIEW_URL: ${{ github.event.deployment_status.target_url }}
-          AUTHENTICATED: ${{ steps.auth.outputs.authenticated }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           CHANGES: ${{ steps.check.outputs.changes }}
+          AUTHENTICATED: ${{ steps.auth.outputs.authenticated }}
+          PREVIEW_URL: ${{ github.event.deployment_status.target_url }}
           VERCEL_BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
-          DIR="/tmp/pr-screenshots"
-          mkdir -p "$DIR"
+          ROUTES=$(find app -name "page.tsx" | sort)
 
-          # Append Vercel Deployment Protection bypass if configured
-          BYPASS_QS=""
-          if [ -n "$VERCEL_BYPASS" ]; then
-            BYPASS_QS="?x-vercel-protection-bypass=${VERCEL_BYPASS}&x-vercel-set-bypass-cookie=samesitenone"
-          fi
-
-          # Discover an event slug from the preview API (unauthenticated).
-          # If this endpoint requires Clerk auth or the response shape changes,
-          # EVENT_SLUG will be empty and event-scoped screenshots are silently
-          # skipped. Set PR_SCREENSHOT_SLUG as a repo variable to override.
+          # Discover an event slug from the preview API so the LLM can use it.
           EVENT_SLUG="${PR_SCREENSHOT_SLUG:-}"
           if [ -z "$EVENT_SLUG" ]; then
             BYPASS_HEADER=()
@@ -124,35 +117,71 @@ jobs:
               | jq -r 'if type == "array" then .[0].slug elif .data then .data[0].slug else empty end // empty' 2>/dev/null \
               | tr -cd 'a-zA-Z0-9_-') || true
           fi
-          if [ -z "$EVENT_SLUG" ]; then
-            echo "::notice::No event slug found — event page screenshots will be skipped"
+
+          PROMPT=$(jq -n \
+            --arg changes "$CHANGES" \
+            --arg routes "$ROUTES" \
+            --arg slug "${EVENT_SLUG:-none}" \
+            --arg auth "$AUTHENTICATED" \
+            '$changes as $c | $routes as $r | $slug as $s | $auth as $a |
+            "You are analyzing a Next.js App Router codebase to decide which pages to screenshot for a PR preview.\n\nChanged files:\n---\n\($c)\n---\n\nAll page routes:\n---\n\($r)\n---\n\nEvent slug available: \($s)\nAuthenticated session available: \($a)\n\nRules:\n- Return a JSON array of objects: [{\"path\": \"/relative/url\", \"name\": \"screenshot_name\"}]\n- Map route files to URL paths: app/(public)/e/[slug]/page.tsx -> /e/EVENT_SLUG, app/(dashboard)/home/page.tsx -> /home, app/page.tsx -> /\n- Route groups like (public), (dashboard), (admin), (auth) are NOT part of the URL\n- Dynamic segments like [slug] should use the event slug value when applicable\n- Consider INDIRECT effects: a change to a shared component (components/*, lib/*) affects all pages that use it. When unsure, include the page.\n- Only include routes that would show a VISIBLE difference from these changes\n- If event slug is \"none\", skip all /e/ routes\n- If authenticated is not \"true\", skip routes that require auth: /home/*, /settings/*, /admin/*, /e/[slug]/manage/*, /e/[slug]/dashboard\n- Keep the list focused — max 6 screenshots\n- Use short snake_case names (e.g., \"event_page\", \"home_dashboard\", \"browse\")\n- Return ONLY the JSON array, no explanation"')
+
+          RESPONSE=$(curl -sf --max-time 30 "https://api.anthropic.com/v1/messages" \
+            -H "x-api-key: ${ANTHROPIC_API_KEY}" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d "$(jq -n --arg prompt "$PROMPT" '{
+              model: "claude-haiku-4-5-20251001",
+              max_tokens: 1024,
+              messages: [{role: "user", content: $prompt}]
+            }')" 2>/dev/null)
+
+          TARGETS=$(echo "$RESPONSE" | jq -r '.content[0].text // empty' 2>/dev/null)
+
+          # Validate it's a JSON array; fall back to just the homepage
+          if ! echo "$TARGETS" | jq -e 'type == "array"' >/dev/null 2>&1; then
+            echo "::warning::LLM did not return valid JSON — falling back to homepage only"
+            TARGETS='[{"path": "/", "name": "index"}]'
+          fi
+
+          echo "targets<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$TARGETS" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          echo "Screenshot targets: $(echo "$TARGETS" | jq -c '.')"
+
+      - name: Capture screenshots
+        if: steps.check.outputs.skip != 'true'
+        env:
+          PREVIEW_URL: ${{ github.event.deployment_status.target_url }}
+          TARGETS: ${{ steps.targets.outputs.targets }}
+          VERCEL_BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          DIR="/tmp/pr-screenshots"
+          mkdir -p "$DIR"
+
+          BYPASS_QS=""
+          if [ -n "$VERCEL_BYPASS" ]; then
+            BYPASS_QS="?x-vercel-protection-bypass=${VERCEL_BYPASS}&x-vercel-set-bypass-cookie=samesitenone"
           fi
 
           capture() {
             local url="$1" name="$2"
-            agent-browser open "${url}${BYPASS_QS}" 2>/dev/null || return 1
-            agent-browser wait --load networkidle 2>/dev/null || true
-            agent-browser wait 2000 2>/dev/null || true
-            agent-browser screenshot --full "$DIR/${name}.png" 2>/dev/null || return 1
+            agent-browser --session pr-screenshots open "${url}${BYPASS_QS}" 2>/dev/null || return 1
+            agent-browser --session pr-screenshots wait --load networkidle 2>/dev/null || true
+            agent-browser --session pr-screenshots wait 2000 2>/dev/null || true
+            agent-browser --session pr-screenshots screenshot --full "$DIR/${name}.png" 2>/dev/null || return 1
           }
 
-          capture "$PREVIEW_URL" "index" || true
-
-          if echo "$CHANGES" | grep -q 'app/(public)/e/' && [ -n "$EVENT_SLUG" ]; then
-            capture "${PREVIEW_URL}/e/${EVENT_SLUG}" "e_${EVENT_SLUG}" || true
-          fi
-
-          if echo "$CHANGES" | grep -q 'app/(public)/e/\[slug\]/manage' && [ -n "$EVENT_SLUG" ] && [ "$AUTHENTICATED" = "true" ]; then
-            capture "${PREVIEW_URL}/e/${EVENT_SLUG}/manage" "e_manage" || true
-          fi
-
-          if echo "$CHANGES" | grep -q 'app/(dashboard)/'; then
-            capture "${PREVIEW_URL}/hackathons" "hackathons" || true
-          fi
+          echo "$TARGETS" | jq -r '.[] | "\(.path)\t\(.name)"' | while IFS=$'\t' read -r path name; do
+            # Sanitize name for use as filename
+            safe_name=$(echo "$name" | tr -cd 'a-zA-Z0-9_-')
+            echo "Capturing ${path} as ${safe_name}..."
+            capture "${PREVIEW_URL}${path}" "$safe_name" || echo "::warning::Failed to capture ${path}"
+          done
 
       - name: Close browser
         if: always()
-        run: agent-browser close >/dev/null 2>&1 || true
+        run: agent-browser --session pr-screenshots close >/dev/null 2>&1 || true
 
       - name: Upload and comment on PR
         if: steps.check.outputs.skip != 'true'
