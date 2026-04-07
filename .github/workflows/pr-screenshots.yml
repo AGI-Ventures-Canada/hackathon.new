@@ -118,29 +118,35 @@ jobs:
               | tr -cd 'a-zA-Z0-9_-') || true
           fi
 
-          PROMPT=$(jq -n \
+          REQUEST_BODY=$(jq -n \
             --arg changes "$CHANGES" \
             --arg routes "$ROUTES" \
             --arg slug "${EVENT_SLUG:-none}" \
             --arg auth "$AUTHENTICATED" \
-            '$changes as $c | $routes as $r | $slug as $s | $auth as $a |
-            "You are analyzing a Next.js App Router codebase to decide which pages to screenshot for a PR preview.\n\nChanged files:\n---\n\($c)\n---\n\nAll page routes:\n---\n\($r)\n---\n\nEvent slug available: \($s)\nAuthenticated session available: \($a)\n\nRules:\n- Return a JSON array of objects: [{\"path\": \"/relative/url\", \"name\": \"screenshot_name\"}]\n- Map route files to URL paths: app/(public)/e/[slug]/page.tsx -> /e/EVENT_SLUG, app/(dashboard)/home/page.tsx -> /home, app/page.tsx -> /\n- Route groups like (public), (dashboard), (admin), (auth) are NOT part of the URL\n- Dynamic segments like [slug] should use the event slug value when applicable\n- Consider INDIRECT effects: a change to a shared component (components/*, lib/*) affects all pages that use it. When unsure, include the page.\n- Only include routes that would show a VISIBLE difference from these changes\n- If event slug is \"none\", skip all /e/ routes\n- If authenticated is not \"true\", skip routes that require auth: /home/*, /settings/*, /admin/*, /e/[slug]/manage/*, /e/[slug]/dashboard\n- Keep the list focused — max 6 screenshots\n- Use short snake_case names (e.g., \"event_page\", \"home_dashboard\", \"browse\")\n- Return ONLY the JSON array, no explanation"')
+            '{
+              model: "claude-haiku-4-5-20251001",
+              max_tokens: 1024,
+              messages: [{
+                role: "user",
+                content: "You are analyzing a Next.js App Router codebase to decide which pages to screenshot for a PR preview.\n\nChanged files:\n---\n\($changes)\n---\n\nAll page routes:\n---\n\($routes)\n---\n\nEvent slug available: \($slug)\nAuthenticated session available: \($auth)\n\nRules:\n- Return a JSON array of objects: [{\"path\": \"/relative/url\", \"name\": \"screenshot_name\"}]\n- Map route files to URL paths: app/(public)/e/[slug]/page.tsx -> /e/EVENT_SLUG, app/(dashboard)/home/page.tsx -> /home, app/page.tsx -> /\n- Route groups like (public), (dashboard), (admin), (auth) are NOT part of the URL\n- Dynamic segments like [slug] should use the event slug value when applicable\n- Consider INDIRECT effects: a change to a shared component (components/*, lib/*) affects all pages that use it. When unsure, include the page.\n- Only include routes that would show a VISIBLE difference from these changes\n- If event slug is \"none\", skip all /e/ routes\n- If authenticated is not \"true\", skip routes that require auth: /home/*, /settings/*, /admin/*, /e/[slug]/manage/*, /e/[slug]/dashboard\n- Keep the list focused — max 6 screenshots\n- Use short snake_case names (e.g., \"event_page\", \"home_dashboard\", \"browse\")\n- Return ONLY the JSON array, no explanation"
+              }]
+            }')
 
           RESPONSE=$(curl -sf --max-time 30 "https://api.anthropic.com/v1/messages" \
             -H "x-api-key: ${ANTHROPIC_API_KEY}" \
             -H "anthropic-version: 2023-06-01" \
             -H "content-type: application/json" \
-            -d "$(jq -n --arg prompt "$PROMPT" '{
-              model: "claude-haiku-4-5-20251001",
-              max_tokens: 1024,
-              messages: [{role: "user", content: $prompt}]
-            }')" 2>/dev/null)
+            -d "$REQUEST_BODY" 2>/dev/null)
 
           TARGETS=$(echo "$RESPONSE" | jq -r '.content[0].text // empty' 2>/dev/null)
+
+          # Strip markdown code fences if the LLM wrapped the JSON
+          TARGETS=$(echo "$TARGETS" | sed '/^```/d')
 
           # Validate it's a JSON array; fall back to just the homepage
           if ! echo "$TARGETS" | jq -e 'type == "array"' >/dev/null 2>&1; then
             echo "::warning::LLM did not return valid JSON — falling back to homepage only"
+            echo "::debug::Raw LLM response: $(echo "$RESPONSE" | jq -c '.' 2>/dev/null || echo "$RESPONSE")"
             TARGETS='[{"path": "/", "name": "index"}]'
           fi
 
