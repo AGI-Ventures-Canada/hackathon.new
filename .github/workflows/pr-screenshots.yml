@@ -50,19 +50,18 @@ jobs:
           echo "$CHANGES" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
 
-      - name: Setup Node.js
+      - name: Setup Bun
         if: steps.check.outputs.skip != 'true'
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
+        uses: oven-sh/setup-bun@v2
 
       - name: Install agent-browser
         if: steps.check.outputs.skip != 'true'
         run: |
-          npm i -g agent-browser
+          bun install -g agent-browser
           agent-browser install
 
       - name: Authenticate via Clerk sign-in token
+        id: auth
         if: steps.check.outputs.skip != 'true'
         env:
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
@@ -90,7 +89,6 @@ jobs:
           agent-browser wait --load networkidle >/dev/null 2>&1 || true
           agent-browser wait 3000 >/dev/null 2>&1 || true
           echo "authenticated=true" >> "$GITHUB_OUTPUT"
-        id: auth
 
       - name: Capture screenshots
         if: steps.check.outputs.skip != 'true'
@@ -109,11 +107,20 @@ jobs:
             BYPASS_QS="?x-vercel-protection-bypass=${VERCEL_BYPASS}&x-vercel-set-bypass-cookie=samesitenone"
           fi
 
-          # Discover an event slug from the preview API
-          EVENT_SLUG=$(curl -sf --max-time 10 \
-            -H "x-vercel-protection-bypass: ${VERCEL_BYPASS:-none}" \
-            "${PREVIEW_URL}/api/hackathons" 2>/dev/null \
-            | jq -r 'if type == "array" then .[0].slug elif .data then .data[0].slug else empty end // empty' 2>/dev/null) || true
+          # Discover an event slug from the preview API (unauthenticated).
+          # If this endpoint requires Clerk auth or the response shape changes,
+          # EVENT_SLUG will be empty and event-scoped screenshots are silently
+          # skipped. Set PR_SCREENSHOT_SLUG as a repo variable to override.
+          EVENT_SLUG="${PR_SCREENSHOT_SLUG:-}"
+          if [ -z "$EVENT_SLUG" ]; then
+            EVENT_SLUG=$(curl -sf --max-time 10 \
+              -H "x-vercel-protection-bypass: ${VERCEL_BYPASS:-none}" \
+              "${PREVIEW_URL}/api/hackathons" 2>/dev/null \
+              | jq -r 'if type == "array" then .[0].slug elif .data then .data[0].slug else empty end // empty' 2>/dev/null) || true
+          fi
+          if [ -z "$EVENT_SLUG" ]; then
+            echo "::notice::No event slug found — event page screenshots will be skipped"
+          fi
 
           capture() {
             local url="$1" name="$2"
