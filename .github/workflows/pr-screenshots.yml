@@ -23,10 +23,17 @@ jobs:
         id: check
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEPLOY_REF: ${{ github.event.deployment.ref }}
+          DEPLOY_SHA: ${{ github.event.deployment.sha }}
         run: |
-          REF="${{ github.event.deployment.ref }}"
-          PR_NUMBER=$(gh pr list --head "$REF" --state open --json number --jq '.[0].number // empty')
+          # Try branch name first, fall back to SHA-based PR lookup
+          PR_NUMBER=$(gh pr list --head "$DEPLOY_REF" --state open --json number --jq '.[0].number // empty')
           if [ -z "$PR_NUMBER" ]; then
+            PR_NUMBER=$(gh pr list --state open --json number,headRefOid \
+              --jq ".[] | select(.headRefOid == \"${DEPLOY_SHA}\") | .number" | head -1)
+          fi
+          if [ -z "$PR_NUMBER" ]; then
+            echo "::debug::No open PR found for ref=${DEPLOY_REF} sha=${DEPLOY_SHA}"
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -90,8 +97,8 @@ jobs:
         env:
           PREVIEW_URL: ${{ github.event.deployment_status.target_url }}
           AUTHENTICATED: ${{ steps.auth.outputs.authenticated }}
+          CHANGES: ${{ steps.check.outputs.changes }}
         run: |
-          CHANGES='${{ steps.check.outputs.changes }}'
           DIR="/tmp/pr-screenshots"
           mkdir -p "$DIR"
 
