@@ -98,19 +98,26 @@ jobs:
           PREVIEW_URL: ${{ github.event.deployment_status.target_url }}
           AUTHENTICATED: ${{ steps.auth.outputs.authenticated }}
           CHANGES: ${{ steps.check.outputs.changes }}
+          VERCEL_BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
           DIR="/tmp/pr-screenshots"
           mkdir -p "$DIR"
 
-          # Discover an event slug from the preview API (unauthenticated — if the
-          # listing endpoint requires auth, this returns empty and event-scoped
-          # screenshots are silently skipped)
-          EVENT_SLUG=$(curl -sf --max-time 10 "${PREVIEW_URL}/api/hackathons" 2>/dev/null \
+          # Append Vercel Deployment Protection bypass if configured
+          BYPASS_QS=""
+          if [ -n "$VERCEL_BYPASS" ]; then
+            BYPASS_QS="?x-vercel-protection-bypass=${VERCEL_BYPASS}&x-vercel-set-bypass-cookie=samesitenone"
+          fi
+
+          # Discover an event slug from the preview API
+          EVENT_SLUG=$(curl -sf --max-time 10 \
+            -H "x-vercel-protection-bypass: ${VERCEL_BYPASS:-none}" \
+            "${PREVIEW_URL}/api/hackathons" 2>/dev/null \
             | jq -r 'if type == "array" then .[0].slug elif .data then .data[0].slug else empty end // empty' 2>/dev/null) || true
 
           capture() {
             local url="$1" name="$2"
-            agent-browser open "$url" 2>/dev/null || return 1
+            agent-browser open "${url}${BYPASS_QS}" 2>/dev/null || return 1
             agent-browser wait --load networkidle 2>/dev/null || true
             agent-browser wait 2000 2>/dev/null || true
             agent-browser screenshot --full "$DIR/${name}.png" 2>/dev/null || return 1
