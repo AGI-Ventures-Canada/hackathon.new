@@ -102,21 +102,23 @@ jobs:
           # This sets __session cookie on the preview domain so server-side
           # middleware recognizes the user on subsequent navigations.
           SIGN_IN_SCRIPT=$(cat <<'CLERKEOF'
-          const waitForClerk = () => new Promise((resolve, reject) => {
-            if (window.Clerk?.client) return resolve();
-            const interval = setInterval(() => {
-              if (window.Clerk?.client) { clearInterval(interval); resolve(); }
-            }, 200);
-            setTimeout(() => { clearInterval(interval); reject(new Error('Clerk did not load')); }, 15000);
-          });
-          try {
-            await waitForClerk();
-            const si = await window.Clerk.client.signIn.create({ strategy: 'ticket', ticket: 'TOKEN_PLACEHOLDER' });
-            await window.Clerk.setActive({ session: si.createdSessionId });
-            'ok';
-          } catch (e) {
-            'error: ' + e.message;
-          }
+          (async () => {
+            const waitForClerk = () => new Promise((resolve, reject) => {
+              if (window.Clerk?.client) return resolve();
+              const interval = setInterval(() => {
+                if (window.Clerk?.client) { clearInterval(interval); resolve(); }
+              }, 200);
+              setTimeout(() => { clearInterval(interval); reject(new Error('Clerk did not load')); }, 15000);
+            });
+            try {
+              await waitForClerk();
+              const si = await window.Clerk.client.signIn.create({ strategy: 'ticket', ticket: 'TOKEN_PLACEHOLDER' });
+              await window.Clerk.setActive({ session: si.createdSessionId });
+              return 'ok';
+            } catch (e) {
+              return 'error: ' + e.message;
+            }
+          })()
           CLERKEOF
           )
           SIGN_IN_SCRIPT="${SIGN_IN_SCRIPT//TOKEN_PLACEHOLDER/$TOKEN}"
