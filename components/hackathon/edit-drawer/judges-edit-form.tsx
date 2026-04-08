@@ -312,6 +312,7 @@ export function JudgesEditForm({
   async function handleFieldBlur(judgeId: string, field: string) {
     const value = localEdits[judgeId]?.[field]
     if (value === undefined) return
+    if (field === "name" && !value?.trim()) return
 
     const original = initialJudges.find((j) => j.id === judgeId)
     if (!original) return
