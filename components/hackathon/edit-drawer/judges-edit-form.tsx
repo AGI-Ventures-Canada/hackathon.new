@@ -89,6 +89,7 @@ function OrgAutocomplete({
   const { query, setQuery, results, loading } = useOrgSearch()
   const [showDropdown, setShowDropdown] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const justSelected = useRef(false)
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const val = e.target.value
@@ -98,6 +99,7 @@ function OrgAutocomplete({
   }
 
   function handleSelect(org: OrgSearchResult) {
+    justSelected.current = true
     onChange(org.name)
     setShowDropdown(false)
     setQuery("")
@@ -113,6 +115,10 @@ function OrgAutocomplete({
         onFocus={() => { if (query.length >= 2) setShowDropdown(true) }}
         onBlur={() => setTimeout(() => {
           setShowDropdown(false)
+          if (justSelected.current) {
+            justSelected.current = false
+            return
+          }
           onBlur?.()
         }, 200)}
         placeholder="Organization"
@@ -205,7 +211,9 @@ export function JudgesEditForm({
                 imageUrl: match.imageUrl ?? null,
               })
             }
-          } catch {}
+          } catch (err) {
+            console.error(`Failed to resolve Clerk user for ${email}:`, err)
+          }
         })
         await Promise.all(lookups)
       }
