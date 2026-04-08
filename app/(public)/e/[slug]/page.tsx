@@ -5,7 +5,7 @@ import { listScheduleItems } from "@/lib/services/schedule-items"
 import { listPublishedAnnouncements } from "@/lib/services/announcements"
 import { HackathonPreviewClient } from "@/components/hackathon/preview/hackathon-preview-client"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Eye } from "lucide-react"
+import { Eye, Clock } from "lucide-react"
 import type { Metadata } from "next"
 
 type PageProps = {
@@ -47,6 +47,21 @@ export default async function EventPage({ params }: PageProps) {
       hackathon = draftHackathon
       isPreview = true
       isOrganizer = true
+    } else if (draftHackathon && userId) {
+      const { getRegistrationInfo } = await import("@/lib/services/hackathons")
+      const regInfo = await getRegistrationInfo(draftHackathon.id, userId)
+      if (regInfo.participantRole === "judge") {
+        return (
+          <div className="flex min-h-[60vh] flex-col items-center justify-center px-4 text-center">
+            <Clock className="size-10 text-muted-foreground mb-4" />
+            <h1 className="text-xl font-semibold mb-2">This event isn&apos;t live yet</h1>
+            <p className="text-muted-foreground max-w-md">
+              You&apos;ve been added as a judge for this hackathon, but it hasn&apos;t been
+              published yet. Check back later — you&apos;ll be notified when it&apos;s ready.
+            </p>
+          </div>
+        )
+      }
     }
   }
 

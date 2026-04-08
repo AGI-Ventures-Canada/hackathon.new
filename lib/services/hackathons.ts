@@ -119,6 +119,7 @@ export async function listJudgingHackathons(
   let hackathons = (data as unknown as ParticipantWithHackathon[])
     .filter((r) => r.hackathons)
     .map((r) => r.hackathons)
+    .filter((h) => h.status !== "draft")
 
   if (options?.search && options.search.length >= 2) {
     const q = options.search.toLowerCase()
