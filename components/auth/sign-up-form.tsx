@@ -57,6 +57,9 @@ export function SignUpForm({ redirectUrl }: { redirectUrl?: string }) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const finalRedirect = redirectUrl || "/onboarding";
+  const onboardingUrl = redirectUrl
+    ? `/onboarding?redirect_url=${encodeURIComponent(redirectUrl)}`
+    : "/onboarding";
 
   useEffect(() => {
     if (!orgSlugEdited) {
@@ -210,7 +213,7 @@ export function SignUpForm({ redirectUrl }: { redirectUrl?: string }) {
       await signUp.authenticateWithRedirect({
         strategy: provider,
         redirectUrl: "/sso-callback",
-        redirectUrlComplete: finalRedirect,
+        redirectUrlComplete: redirectUrl ? finalRedirect : onboardingUrl,
       });
     } catch (err) {
       if (isClerkAPIResponseError(err)) {

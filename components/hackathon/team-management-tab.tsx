@@ -1,10 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { useUser } from "@clerk/nextjs"
 import { TeamInviteDialog } from "./team-invite-dialog"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -14,12 +15,45 @@ import type { ParticipantTeamInfo } from "@/lib/services/hackathons"
 interface TeamManagementTabProps {
   teamInfo: NonNullable<ParticipantTeamInfo>
   hackathonId: string
+  maxTeamSize: number
 }
 
-export function TeamManagementTab({ teamInfo, hackathonId }: TeamManagementTabProps) {
+export function TeamManagementTab({ teamInfo, hackathonId, maxTeamSize }: TeamManagementTabProps) {
   const router = useRouter()
   const { user } = useUser()
   const [cancellingId, setCancellingId] = useState<string | null>(null)
+  const [editingName, setEditingName] = useState(false)
+  const [nameValue, setNameValue] = useState(teamInfo.team.name)
+  const [savingName, setSavingName] = useState(false)
+  const nameInputRef = useRef<HTMLInputElement>(null)
+
+  async function handleSaveName() {
+    const trimmed = nameValue.trim()
+    if (!trimmed || trimmed === teamInfo.team.name) {
+      setNameValue(teamInfo.team.name)
+      setEditingName(false)
+      return
+    }
+    setSavingName(true)
+    try {
+      const res = await fetch(
+        `/api/dashboard/hackathons/${hackathonId}/teams/${teamInfo.team.id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: trimmed }),
+        }
+      )
+      if (!res.ok) throw new Error("Failed to save")
+      setEditingName(false)
+      router.refresh()
+    } catch {
+      setNameValue(teamInfo.team.name)
+      setEditingName(false)
+    } finally {
+      setSavingName(false)
+    }
+  }
 
   async function handleCancelInvitation(invitationId: string) {
     setCancellingId(invitationId)
@@ -62,18 +96,58 @@ export function TeamManagementTab({ teamInfo, hackathonId }: TeamManagementTabPr
             <div>
               <CardTitle className="flex items-center gap-2">
                 <Users className="size-5" />
-                {teamInfo.team.name}
+                {teamInfo.isCaptain && !editingName ? (
+                  <button
+                    type="button"
+                    className="text-left hover:underline underline-offset-2 decoration-muted-foreground/40"
+                    onClick={() => {
+                      setEditingName(true)
+                      setTimeout(() => nameInputRef.current?.select(), 0)
+                    }}
+                  >
+                    {teamInfo.team.name}
+                  </button>
+                ) : editingName ? (
+                  <Input
+                    ref={nameInputRef}
+                    value={nameValue}
+                    onChange={(e) => setNameValue(e.target.value)}
+                    onBlur={handleSaveName}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleSaveName()
+                      if (e.key === "Escape") {
+                        setNameValue(teamInfo.team.name)
+                        setEditingName(false)
+                      }
+                    }}
+                    disabled={savingName}
+                    className="h-7 text-base font-semibold"
+                    maxLength={100}
+                    autoComplete="off"
+                    data-1p-ignore
+                    data-lpignore="true"
+                    data-form-type="other"
+                  />
+                ) : (
+                  teamInfo.team.name
+                )}
               </CardTitle>
               <CardDescription>
                 {teamInfo.members.length} member{teamInfo.members.length !== 1 ? "s" : ""}
                 {teamInfo.team.status === "locked" && " · Team locked"}
               </CardDescription>
+              {teamInfo.isCaptain && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  You&apos;re the team captain &mdash; you can invite members and manage your team.
+                </p>
+              )}
             </div>
             {teamInfo.isCaptain && teamInfo.team.status === "forming" && (
               <TeamInviteDialog
                 teamId={teamInfo.team.id}
                 hackathonId={hackathonId}
                 teamName={teamInfo.team.name}
+                maxTeamSize={maxTeamSize}
               />
             )}
           </div>

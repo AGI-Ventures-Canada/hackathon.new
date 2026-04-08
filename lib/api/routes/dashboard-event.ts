@@ -259,6 +259,37 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     body: t.Object({ assignments: t.Array(t.Object({ teamId: t.String(), roomId: t.String() })) }),
     detail: { summary: "Bulk assign teams to rooms" },
   })
+  .patch("/hackathons/:id/teams/:teamId", async ({ params, body, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if (authErr) return authErr
+
+    const { name } = body as { name: string }
+    if (!name.trim() || name.length > 100) {
+      set.status = 400
+      return { error: "Team name must be 1-100 characters" }
+    }
+
+    const { supabase } = await import("@/lib/db/client")
+    const client = supabase()
+    const { data, error } = await client
+      .from("teams")
+      .update({ name: name.trim(), updated_at: new Date().toISOString() })
+      .eq("id", params.teamId)
+      .eq("hackathon_id", params.id)
+      .select("id, name")
+      .single()
+
+    if (error || !data) {
+      set.status = 404
+      return { error: "Team not found" }
+    }
+
+    return data
+  }, {
+    body: t.Object({ name: t.String() }),
+    detail: { summary: "Update team name" },
+  })
   .get("/hackathons/:id/categories", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
