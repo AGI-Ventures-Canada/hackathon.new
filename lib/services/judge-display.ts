@@ -59,6 +59,15 @@ export async function createJudgeDisplayProfile(
       .eq("clerk_user_id", input.clerkUserId)
       .maybeSingle()
     if (existing) return { status: "duplicate" }
+  } else {
+    const { data: existing } = await client
+      .from("hackathon_judges_display")
+      .select("id")
+      .eq("hackathon_id", hackathonId)
+      .eq("name", input.name)
+      .is("clerk_user_id", null)
+      .maybeSingle()
+    if (existing) return { status: "duplicate" }
   }
 
   const { data, error } = await client
@@ -123,18 +132,13 @@ export async function deleteJudgeDisplayProfile(
 ): Promise<boolean> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { data: profile } = await client
-    .from("hackathon_judges_display")
-    .select("participant_id, clerk_user_id")
-    .eq("id", id)
-    .eq("hackathon_id", hackathonId)
-    .maybeSingle()
-
-  const { error } = await client
+  const { data: profile, error } = await client
     .from("hackathon_judges_display")
     .delete()
     .eq("id", id)
     .eq("hackathon_id", hackathonId)
+    .select("participant_id, clerk_user_id")
+    .maybeSingle()
 
   if (error) {
     console.error("Failed to delete judge display profile:", error)

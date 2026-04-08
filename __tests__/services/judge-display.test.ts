@@ -72,11 +72,14 @@ describe("Judge Display Service", () => {
 
   describe("createJudgeDisplayProfile", () => {
     it("creates judge profile with required fields", async () => {
-      const chain = createChainableMock({
-        data: mockJudge,
-        error: null,
+      let callCount = 0
+      setMockFromImplementation(() => {
+        callCount++
+        if (callCount === 1) {
+          return createChainableMock({ data: null, error: null })
+        }
+        return createChainableMock({ data: mockJudge, error: null })
       })
-      setMockFromImplementation(() => chain)
 
       const result = await createJudgeDisplayProfile("h1", {
         name: "Jane Doe",
@@ -89,11 +92,14 @@ describe("Judge Display Service", () => {
     })
 
     it("creates judge profile with all fields", async () => {
-      const chain = createChainableMock({
-        data: mockJudge,
-        error: null,
+      let callCount = 0
+      setMockFromImplementation(() => {
+        callCount++
+        if (callCount === 1) {
+          return createChainableMock({ data: null, error: null })
+        }
+        return createChainableMock({ data: mockJudge, error: null })
       })
-      setMockFromImplementation(() => chain)
 
       const result = await createJudgeDisplayProfile("h1", {
         name: "Jane Doe",
@@ -249,6 +255,38 @@ describe("Judge Display Service", () => {
       })
 
       expect(result.status).toBe("duplicate")
+    })
+
+    it("returns duplicate when name matches an existing non-Clerk judge", async () => {
+      const chain = createChainableMock({
+        data: { id: "existing-j2" },
+        error: null,
+      })
+      setMockFromImplementation(() => chain)
+
+      const result = await createJudgeDisplayProfile("h1", {
+        name: "jane",
+      })
+
+      expect(result.status).toBe("duplicate")
+    })
+
+    it("creates profile when name matches but has different clerk_user_id", async () => {
+      let callCount = 0
+      setMockFromImplementation(() => {
+        callCount++
+        if (callCount === 1) {
+          return createChainableMock({ data: null, error: null })
+        }
+        return createChainableMock({ data: mockJudge, error: null })
+      })
+
+      const result = await createJudgeDisplayProfile("h1", {
+        name: "Jane Doe",
+        clerkUserId: "clerk_new",
+      })
+
+      expect(result.status).toBe("created")
     })
 
     it("creates profile when clerk_user_id has no existing display profile", async () => {
