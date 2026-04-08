@@ -93,7 +93,7 @@ export function EmailChipsInput({
     if (abortRef.current) abortRef.current.abort()
 
     const trimmed = input.trim()
-    if (trimmed.length >= 2 && trimmed.includes("@") && trimmed.indexOf("@") < trimmed.length - 1) {
+    if (trimmed.length >= 2) {
       const controller = new AbortController()
       abortRef.current = controller
       debounceRef.current = setTimeout(() => searchUsers(trimmed, controller.signal), 100)

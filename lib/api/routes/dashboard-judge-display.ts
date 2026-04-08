@@ -218,11 +218,18 @@ export const dashboardJudgeDisplayRoutes = new Elysia()
     }
 
     const { deleteJudgeDisplayProfile } = await import("@/lib/services/judge-display")
-    const success = await deleteJudgeDisplayProfile(params.judgeId, params.id)
+    const deleteResult = await deleteJudgeDisplayProfile(params.judgeId, params.id)
 
-    if (!success) {
+    if (!deleteResult.deleted) {
       return new Response(JSON.stringify({ error: "Judge profile not found" }), {
         status: 404,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
+
+    if (deleteResult.cascadeError) {
+      return new Response(JSON.stringify({ error: deleteResult.cascadeError }), {
+        status: 500,
         headers: { "Content-Type": "application/json" },
       })
     }

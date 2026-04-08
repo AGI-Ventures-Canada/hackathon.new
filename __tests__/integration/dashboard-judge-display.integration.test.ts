@@ -31,7 +31,7 @@ mock.module("@/lib/services/judge-display", () => ({
   createJudgeDisplayProfile: mockCreateJudgeDisplayProfile,
   listJudgeDisplayProfiles: mock(() => Promise.resolve([])),
   updateJudgeDisplayProfile: mock(() => Promise.resolve(null)),
-  deleteJudgeDisplayProfile: mock(() => Promise.resolve(true)),
+  deleteJudgeDisplayProfile: mock(() => Promise.resolve({ deleted: true })),
   reorderJudgeDisplayProfiles: mock(() => Promise.resolve(true)),
   countJudgeDisplayProfiles: mock(() => Promise.resolve(0)),
 }))

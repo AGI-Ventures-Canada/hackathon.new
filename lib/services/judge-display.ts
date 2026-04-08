@@ -129,7 +129,7 @@ export async function updateJudgeDisplayProfile(
 export async function deleteJudgeDisplayProfile(
   id: string,
   hackathonId: string
-): Promise<boolean> {
+): Promise<{ deleted: boolean; cascadeError?: string }> {
   const client = getSupabase() as unknown as SupabaseClient
 
   const { data: profile, error } = await client
@@ -142,7 +142,7 @@ export async function deleteJudgeDisplayProfile(
 
   if (error) {
     console.error("Failed to delete judge display profile:", error)
-    return false
+    return { deleted: false }
   }
 
   let participantId = profile?.participant_id
@@ -166,6 +166,7 @@ export async function deleteJudgeDisplayProfile(
 
     if (assignmentError) {
       console.error("Failed to cascade-delete judge assignments:", assignmentError)
+      return { deleted: true, cascadeError: "Failed to remove judge assignments" }
     }
 
     const { error: participantError } = await client
@@ -177,10 +178,11 @@ export async function deleteJudgeDisplayProfile(
 
     if (participantError) {
       console.error("Failed to cascade-delete judge participant:", participantError)
+      return { deleted: true, cascadeError: "Failed to remove judge participant record" }
     }
   }
 
-  return true
+  return { deleted: true }
 }
 
 export async function reorderJudgeDisplayProfiles(

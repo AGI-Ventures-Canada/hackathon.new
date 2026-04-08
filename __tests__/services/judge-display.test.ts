@@ -158,7 +158,7 @@ describe("Judge Display Service", () => {
   })
 
   describe("deleteJudgeDisplayProfile", () => {
-    it("returns true on successful deletion", async () => {
+    it("returns deleted true on successful deletion", async () => {
       const chain = createChainableMock({
         data: null,
         error: null,
@@ -167,10 +167,10 @@ describe("Judge Display Service", () => {
 
       const result = await deleteJudgeDisplayProfile("j1", "h1")
 
-      expect(result).toBe(true)
+      expect(result).toEqual({ deleted: true })
     })
 
-    it("returns false when database delete fails", async () => {
+    it("returns deleted false when database delete fails", async () => {
       const chain = createChainableMock({
         data: null,
         error: { message: "DB error" },
@@ -179,7 +179,7 @@ describe("Judge Display Service", () => {
 
       const result = await deleteJudgeDisplayProfile("j1", "h1")
 
-      expect(result).toBe(false)
+      expect(result).toEqual({ deleted: false })
     })
 
     it("cascade-deletes assignments and participant when profile has participant_id", async () => {
@@ -194,7 +194,7 @@ describe("Judge Display Service", () => {
 
       const result = await deleteJudgeDisplayProfile("j1", "h1")
 
-      expect(result).toBe(true)
+      expect(result).toEqual({ deleted: true })
     })
 
     it("looks up participant by clerk_user_id when participant_id is null", async () => {
@@ -209,10 +209,10 @@ describe("Judge Display Service", () => {
 
       const result = await deleteJudgeDisplayProfile("j1", "h1")
 
-      expect(result).toBe(true)
+      expect(result).toEqual({ deleted: true })
     })
 
-    it("returns true even when cascade delete fails", async () => {
+    it("returns cascadeError when cascade delete fails", async () => {
       mockMultiTableQuery({
         hackathon_judges_display: {
           data: { participant_id: "p1", clerk_user_id: null },
@@ -224,7 +224,8 @@ describe("Judge Display Service", () => {
 
       const result = await deleteJudgeDisplayProfile("j1", "h1")
 
-      expect(result).toBe(true)
+      expect(result.deleted).toBe(true)
+      expect(result.cascadeError).toBeDefined()
     })
 
     it("skips cascade when profile has no participant_id or clerk_user_id", async () => {
@@ -237,7 +238,7 @@ describe("Judge Display Service", () => {
 
       const result = await deleteJudgeDisplayProfile("j1", "h1")
 
-      expect(result).toBe(true)
+      expect(result).toEqual({ deleted: true })
     })
   })
 

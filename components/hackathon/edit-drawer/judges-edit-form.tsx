@@ -160,6 +160,7 @@ export function JudgesEditForm({
   const router = useRouter()
   const { closeDrawer } = useEdit()
   const [emailEntries, setEmailEntries] = useState<EmailEntry[]>([])
+  const [submittedEmails, setSubmittedEmails] = useState<string[]>([])
   const [resolving, setResolving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set())
@@ -198,6 +199,7 @@ export function JudgesEditForm({
     if (emailEntries.length === 0) return
     setResolving(true)
     setError(null)
+    setSubmittedEmails(emailEntries.map((e) => e.email))
 
     try {
       const unresolvedEmails = emailEntries
@@ -303,6 +305,7 @@ export function JudgesEditForm({
       setError(err instanceof Error ? err.message : "Failed to add judges")
     } finally {
       setResolving(false)
+      setSubmittedEmails([])
     }
   }
 
@@ -401,6 +404,7 @@ export function JudgesEditForm({
             entries={emailEntries}
             onAdd={(newEntries) => setEmailEntries((prev) => [...prev, ...newEntries])}
             onRemove={(email) => setEmailEntries((prev) => prev.filter((e) => e.email !== email))}
+            existingEmails={submittedEmails}
           />
         </Field>
 
