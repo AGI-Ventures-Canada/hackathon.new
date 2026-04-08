@@ -261,15 +261,29 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   })
   .patch("/hackathons/:id/teams/:teamId", async ({ params, body, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
-    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
 
     if (!isValidUuid(params.teamId)) {
       set.status = 400
       return { error: "Invalid team ID" }
     }
 
-    const { name } = body as { name: string }
+    const organizerErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if (organizerErr) {
+      if (principal.kind !== "user") return organizerErr
+      const { supabase } = await import("@/lib/db/client")
+      const { data: team } = await supabase()
+        .from("teams")
+        .select("captain_clerk_user_id")
+        .eq("id", params.teamId)
+        .eq("hackathon_id", params.id)
+        .single()
+      if (!team || team.captain_clerk_user_id !== principal.userId) {
+        set.status = 403
+        return { error: "Only the team captain or an organizer can rename a team" }
+      }
+    }
+
+    const { name } = body
     if (!name.trim() || name.length > 100) {
       set.status = 400
       return { error: "Team name must be 1-100 characters" }

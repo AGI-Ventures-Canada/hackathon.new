@@ -25,6 +25,7 @@ export function TeamManagementTab({ teamInfo, hackathonId, maxTeamSize }: TeamMa
   const [editingName, setEditingName] = useState(false)
   const [nameValue, setNameValue] = useState(teamInfo.team.name)
   const [savingName, setSavingName] = useState(false)
+  const [nameError, setNameError] = useState<string | null>(null)
   const nameInputRef = useRef<HTMLInputElement>(null)
 
   async function handleSaveName() {
@@ -35,6 +36,7 @@ export function TeamManagementTab({ teamInfo, hackathonId, maxTeamSize }: TeamMa
       return
     }
     setSavingName(true)
+    setNameError(null)
     try {
       const res = await fetch(
         `/api/dashboard/hackathons/${hackathonId}/teams/${teamInfo.team.id}`,
@@ -44,12 +46,16 @@ export function TeamManagementTab({ teamInfo, hackathonId, maxTeamSize }: TeamMa
           body: JSON.stringify({ name: trimmed }),
         }
       )
-      if (!res.ok) throw new Error("Failed to save")
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || "Failed to rename team")
+      }
       setEditingName(false)
       router.refresh()
-    } catch {
+    } catch (err) {
       setNameValue(teamInfo.team.name)
       setEditingName(false)
+      setNameError(err instanceof Error ? err.message : "Failed to rename team")
     } finally {
       setSavingName(false)
     }
@@ -140,6 +146,9 @@ export function TeamManagementTab({ teamInfo, hackathonId, maxTeamSize }: TeamMa
                 <p className="text-xs text-muted-foreground mt-1">
                   You&apos;re the team captain &mdash; you can invite members and manage your team.
                 </p>
+              )}
+              {nameError && (
+                <p className="text-xs text-destructive mt-1">{nameError}</p>
               )}
             </div>
             {teamInfo.isCaptain && teamInfo.team.status === "forming" && (
