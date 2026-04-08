@@ -321,6 +321,10 @@ export function JudgesEditForm({
         const data = await res.json()
         throw new Error(data.error || "Failed to remove judge")
       }
+      const data = await res.json()
+      if (data.warning) {
+        setError("Judge removed, but some linked data could not be cleaned up")
+      }
       router.refresh()
     } catch (err) {
       setHiddenIds((prev) => {

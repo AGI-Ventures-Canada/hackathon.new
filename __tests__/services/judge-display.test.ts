@@ -256,6 +256,9 @@ describe("Judge Display Service", () => {
       })
 
       expect(result.status).toBe("duplicate")
+      if (result.status === "duplicate") {
+        expect(result.matchedBy).toBe("clerk_user")
+      }
     })
 
     it("returns duplicate when name matches an existing non-Clerk judge", async () => {
@@ -270,6 +273,9 @@ describe("Judge Display Service", () => {
       })
 
       expect(result.status).toBe("duplicate")
+      if (result.status === "duplicate") {
+        expect(result.matchedBy).toBe("name")
+      }
     })
 
     it("creates profile when name matches but has different clerk_user_id", async () => {

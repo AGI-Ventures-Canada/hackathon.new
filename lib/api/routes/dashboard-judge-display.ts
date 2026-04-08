@@ -97,7 +97,10 @@ export const dashboardJudgeDisplayRoutes = new Elysia()
       })
 
       if (createResult.status === "duplicate") {
-        return new Response(JSON.stringify({ error: "Judge already exists" }), {
+        const message = createResult.matchedBy === "name"
+          ? "A judge with this name already exists. If this is a different person, add them with a Clerk account to distinguish them."
+          : "This judge has already been added"
+        return new Response(JSON.stringify({ error: message }), {
           status: 409,
           headers: { "Content-Type": "application/json" },
         })
@@ -227,13 +230,6 @@ export const dashboardJudgeDisplayRoutes = new Elysia()
       })
     }
 
-    if (deleteResult.cascadeError) {
-      return new Response(JSON.stringify({ error: deleteResult.cascadeError }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      })
-    }
-
     await logAudit({
       principal,
       action: "judge_display.deleted",
@@ -241,7 +237,11 @@ export const dashboardJudgeDisplayRoutes = new Elysia()
       resourceId: params.judgeId,
     })
 
-    return { success: true }
+    if (deleteResult.cascadeError) {
+      console.error(`Cascade cleanup failed for judge ${params.judgeId}: ${deleteResult.cascadeError}`)
+    }
+
+    return { success: true, warning: deleteResult.cascadeError ?? undefined }
   }, {
     detail: {
       summary: "Delete judge display profile",

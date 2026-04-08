@@ -222,7 +222,7 @@ describe("Dashboard Judge Display Routes", () => {
     })
 
     it("returns 409 when clerk_user_id already has a display profile", async () => {
-      mockCreateJudgeDisplayProfile.mockResolvedValue({ status: "duplicate" })
+      mockCreateJudgeDisplayProfile.mockResolvedValue({ status: "duplicate", matchedBy: "clerk_user" })
 
       const res = await app.handle(
         new Request("http://localhost/api/dashboard/hackathons/h1/judges/display", {
@@ -234,7 +234,23 @@ describe("Dashboard Judge Display Routes", () => {
       const data = await res.json()
 
       expect(res.status).toBe(409)
-      expect(data.error).toBe("Judge already exists")
+      expect(data.error).toBe("This judge has already been added")
+    })
+
+    it("returns 409 with name-match message for email-only duplicate", async () => {
+      mockCreateJudgeDisplayProfile.mockResolvedValue({ status: "duplicate", matchedBy: "name" })
+
+      const res = await app.handle(
+        new Request("http://localhost/api/dashboard/hackathons/h1/judges/display", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "Jane Doe" }),
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(409)
+      expect(data.error).toContain("A judge with this name already exists")
     })
 
     it("returns 500 when service returns error", async () => {

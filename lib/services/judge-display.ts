@@ -42,7 +42,7 @@ export async function listJudgeDisplayProfiles(
 
 export type CreateJudgeDisplayResult =
   | { status: "created"; judge: HackathonJudgeDisplay }
-  | { status: "duplicate" }
+  | { status: "duplicate"; matchedBy: "clerk_user" | "name" }
   | { status: "error" }
 
 export async function createJudgeDisplayProfile(
@@ -58,7 +58,7 @@ export async function createJudgeDisplayProfile(
       .eq("hackathon_id", hackathonId)
       .eq("clerk_user_id", input.clerkUserId)
       .maybeSingle()
-    if (existing) return { status: "duplicate" }
+    if (existing) return { status: "duplicate", matchedBy: "clerk_user" }
   } else {
     const { data: existing } = await client
       .from("hackathon_judges_display")
@@ -67,7 +67,7 @@ export async function createJudgeDisplayProfile(
       .eq("name", input.name)
       .is("clerk_user_id", null)
       .maybeSingle()
-    if (existing) return { status: "duplicate" }
+    if (existing) return { status: "duplicate", matchedBy: "name" }
   }
 
   const { data, error } = await client
