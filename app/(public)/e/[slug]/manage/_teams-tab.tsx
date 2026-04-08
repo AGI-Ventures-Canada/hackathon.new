@@ -69,7 +69,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
   const [savingSettings, setSavingSettings] = useState(false)
   const [settingsError, setSettingsError] = useState<string | null>(null)
 
-  async function saveTeamSettings(patch: Record<string, unknown>) {
+  async function saveTeamSettings(patch: Record<string, unknown>, rollback: () => void) {
     setSavingSettings(true)
     setSettingsError(null)
     try {
@@ -83,6 +83,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         throw new Error(data.error || "Failed to save")
       }
     } catch (err) {
+      rollback()
       setSettingsError(err instanceof Error ? err.message : "Failed to save")
     } finally {
       setSavingSettings(false)
@@ -203,7 +204,8 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                 onChange={(e) => setMaxSize(Number(e.target.value))}
                 onBlur={() => {
                   if (maxSize >= minSize && maxSize >= 1) {
-                    saveTeamSettings({ maxTeamSize: maxSize })
+                    const prev = maxSize
+                    saveTeamSettings({ maxTeamSize: maxSize }, () => setMaxSize(prev))
                   }
                 }}
                 className="w-20"
@@ -225,7 +227,8 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                 onChange={(e) => setMinSize(Number(e.target.value))}
                 onBlur={() => {
                   if (minSize >= 1 && minSize <= maxSize) {
-                    saveTeamSettings({ minTeamSize: minSize })
+                    const prev = minSize
+                    saveTeamSettings({ minTeamSize: minSize }, () => setMinSize(prev))
                   }
                 }}
                 className="w-20"
@@ -241,9 +244,10 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                 id="allow-solo"
                 checked={allowSolo}
                 onCheckedChange={(checked) => {
+                  const prev = allowSolo
                   const value = !!checked
                   setAllowSolo(value)
-                  saveTeamSettings({ allowSolo: value })
+                  saveTeamSettings({ allowSolo: value }, () => setAllowSolo(prev))
                 }}
                 disabled={savingSettings}
               />

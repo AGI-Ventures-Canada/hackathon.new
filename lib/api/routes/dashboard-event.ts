@@ -264,6 +264,11 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if (authErr) return authErr
 
+    if (!isValidUuid(params.teamId)) {
+      set.status = 400
+      return { error: "Invalid team ID" }
+    }
+
     const { name } = body as { name: string }
     if (!name.trim() || name.length > 100) {
       set.status = 400
@@ -284,6 +289,8 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       set.status = 404
       return { error: "Team not found" }
     }
+
+    await logAudit({ principal, action: "team.name_updated", resourceType: "team", resourceId: params.teamId, metadata: { hackathonId: params.id, name: name.trim() } })
 
     return data
   }, {

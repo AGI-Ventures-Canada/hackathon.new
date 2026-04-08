@@ -885,6 +885,21 @@ curl -s -X DELETE "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/judging/assi
 
 ---
 
+### Teams
+
+#### Update team name
+
+Scope: `hackathons:write`
+
+```bash
+curl -s -X PATCH "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/teams/$TEAM_ID" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "New Team Name"}'
+```
+
+---
+
 ### Prizes
 
 #### List prizes
