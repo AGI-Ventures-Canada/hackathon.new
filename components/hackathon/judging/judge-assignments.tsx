@@ -159,6 +159,7 @@ export function JudgeAssignments({
   const [showInviteForm, setShowInviteForm] = useState(false)
   const [inviteEmail, setInviteEmail] = useState("")
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   const [removingJudgeId, setRemovingJudgeId] = useState<string | null>(null)
   const [removeJudgeError, setRemoveJudgeError] = useState<string | null>(null)
@@ -218,6 +219,7 @@ export function JudgeAssignments({
     setAddJudgeSuccess(null)
     setShowInviteForm(false)
     setInviteEmail("")
+    abortRef.current?.abort()
     setAddJudgeOpen(true)
   }
 
@@ -230,6 +232,7 @@ export function JudgeAssignments({
       if (searchTimeoutRef.current) {
         clearTimeout(searchTimeoutRef.current)
       }
+      abortRef.current?.abort()
 
       if (query.trim().length < 2) {
         setSearchResults([])
@@ -237,21 +240,29 @@ export function JudgeAssignments({
         return
       }
 
-      setSearching(true)
       searchTimeoutRef.current = setTimeout(async () => {
+        const controller = new AbortController()
+        abortRef.current = controller
+        setSearching(true)
         try {
           const res = await fetch(
-            `${base}/user-search?q=${encodeURIComponent(query.trim())}`
+            `${base}/user-search?q=${encodeURIComponent(query.trim())}`,
+            { signal: controller.signal }
           )
           if (!res.ok) throw new Error("Search failed")
           const data = await res.json()
-          setSearchResults(data.users ?? [])
-        } catch {
+          if (!controller.signal.aborted) {
+            setSearchResults(data.users ?? [])
+          }
+        } catch (err) {
+          if (err instanceof DOMException && err.name === "AbortError") return
           setSearchResults([])
         } finally {
-          setSearching(false)
+          if (!controller.signal.aborted) {
+            setSearching(false)
+          }
         }
-      }, 300)
+      }, 100)
     },
     [base]
   )
@@ -278,8 +289,8 @@ export function JudgeAssignments({
       setJudges((prev) => [
         ...prev,
         {
-          participantId: data.participantId,
-          clerkUserId: data.clerkUserId,
+          participantId: data.participant.id,
+          clerkUserId: data.participant.clerkUserId,
           displayName,
           email: user.email,
           imageUrl: user.imageUrl,
@@ -291,7 +302,7 @@ export function JudgeAssignments({
       setSearchQuery("")
       setSearchResults([])
       onMutation?.()
-      setTimeout(() => setAddJudgeOpen(false), 1200)
+      setTimeout(() => setAddJudgeOpen(false), 800)
     } catch (err) {
       setAddJudgeError(err instanceof Error ? err.message : "Something went wrong")
     } finally {
@@ -319,10 +330,10 @@ export function JudgeAssignments({
       }
       const data = await res.json()
 
-      if (data.invited) {
+      if (data.invitation) {
         setInvitations((prev) => [
           {
-            id: data.invitationId,
+            id: data.invitation.id,
             email,
             status: "pending",
             expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
@@ -335,8 +346,8 @@ export function JudgeAssignments({
         setJudges((prev) => [
           ...prev,
           {
-            participantId: data.participantId,
-            clerkUserId: data.clerkUserId,
+            participantId: data.participant.id,
+            clerkUserId: data.participant.clerkUserId,
             displayName: email,
             email,
             imageUrl: null,
@@ -350,7 +361,7 @@ export function JudgeAssignments({
       setInviteEmail("")
       setShowInviteForm(false)
       onMutation?.()
-      setTimeout(() => setAddJudgeOpen(false), 1200)
+      setTimeout(() => setAddJudgeOpen(false), 800)
     } catch (err) {
       setAddJudgeError(err instanceof Error ? err.message : "Something went wrong")
     } finally {
