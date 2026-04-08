@@ -82,8 +82,10 @@ describe("Judge Display Service", () => {
         name: "Jane Doe",
       })
 
-      expect(result).not.toBeNull()
-      expect(result?.name).toBe("Jane Doe")
+      expect(result.status).toBe("created")
+      if (result.status === "created") {
+        expect(result.judge.name).toBe("Jane Doe")
+      }
     })
 
     it("creates judge profile with all fields", async () => {
@@ -100,11 +102,13 @@ describe("Judge Display Service", () => {
         displayOrder: 0,
       })
 
-      expect(result).not.toBeNull()
-      expect(result?.title).toBe("CTO")
+      expect(result.status).toBe("created")
+      if (result.status === "created") {
+        expect(result.judge.title).toBe("CTO")
+      }
     })
 
-    it("returns null when database insert fails", async () => {
+    it("returns error when database insert fails", async () => {
       const chain = createChainableMock({
         data: null,
         error: { message: "DB error" },
@@ -113,7 +117,7 @@ describe("Judge Display Service", () => {
 
       const result = await createJudgeDisplayProfile("h1", { name: "Test" })
 
-      expect(result).toBeNull()
+      expect(result.status).toBe("error")
     })
   })
 
@@ -232,7 +236,7 @@ describe("Judge Display Service", () => {
   })
 
   describe("createJudgeDisplayProfile duplicate check", () => {
-    it("returns null when clerk_user_id already has a display profile", async () => {
+    it("returns duplicate when clerk_user_id already has a display profile", async () => {
       const chain = createChainableMock({
         data: { id: "existing-j1" },
         error: null,
@@ -244,7 +248,7 @@ describe("Judge Display Service", () => {
         clerkUserId: "clerk_1",
       })
 
-      expect(result).toBeNull()
+      expect(result.status).toBe("duplicate")
     })
 
     it("creates profile when clerk_user_id has no existing display profile", async () => {
@@ -262,8 +266,10 @@ describe("Judge Display Service", () => {
         clerkUserId: "clerk_1",
       })
 
-      expect(result).not.toBeNull()
-      expect(result?.name).toBe("Jane Doe")
+      expect(result.status).toBe("created")
+      if (result.status === "created") {
+        expect(result.judge.name).toBe("Jane Doe")
+      }
     })
   })
 

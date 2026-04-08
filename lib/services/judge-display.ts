@@ -40,10 +40,15 @@ export async function listJudgeDisplayProfiles(
   return data as unknown as HackathonJudgeDisplay[]
 }
 
+export type CreateJudgeDisplayResult =
+  | { status: "created"; judge: HackathonJudgeDisplay }
+  | { status: "duplicate" }
+  | { status: "error" }
+
 export async function createJudgeDisplayProfile(
   hackathonId: string,
   input: CreateJudgeDisplayInput
-): Promise<HackathonJudgeDisplay | null> {
+): Promise<CreateJudgeDisplayResult> {
   const client = getSupabase() as unknown as SupabaseClient
 
   if (input.clerkUserId) {
@@ -53,7 +58,7 @@ export async function createJudgeDisplayProfile(
       .eq("hackathon_id", hackathonId)
       .eq("clerk_user_id", input.clerkUserId)
       .maybeSingle()
-    if (existing) return null
+    if (existing) return { status: "duplicate" }
   }
 
   const { data, error } = await client
@@ -73,10 +78,10 @@ export async function createJudgeDisplayProfile(
 
   if (error) {
     console.error("Failed to create judge display profile:", error)
-    return null
+    return { status: "error" }
   }
 
-  return data as unknown as HackathonJudgeDisplay
+  return { status: "created", judge: data as unknown as HackathonJudgeDisplay }
 }
 
 export async function updateJudgeDisplayProfile(

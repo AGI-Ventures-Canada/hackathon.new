@@ -86,7 +86,7 @@ export const dashboardJudgeDisplayRoutes = new Elysia()
       }
 
       const { createJudgeDisplayProfile } = await import("@/lib/services/judge-display")
-      const judge = await createJudgeDisplayProfile(params.id, {
+      const createResult = await createJudgeDisplayProfile(params.id, {
         name: resolvedName,
         title: body.title,
         organization: body.organization,
@@ -96,12 +96,21 @@ export const dashboardJudgeDisplayRoutes = new Elysia()
         displayOrder: body.displayOrder,
       })
 
-      if (!judge) {
+      if (createResult.status === "duplicate") {
+        return new Response(JSON.stringify({ error: "Judge already exists" }), {
+          status: 409,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+
+      if (createResult.status === "error") {
         return new Response(JSON.stringify({ error: "Failed to create judge profile" }), {
           status: 500,
           headers: { "Content-Type": "application/json" },
         })
       }
+
+      const judge = createResult.judge
 
       await logAudit({
         principal,

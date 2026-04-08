@@ -210,6 +210,8 @@ export function JudgesEditForm({
         await Promise.all(lookups)
       }
 
+      const succeededEmails = new Set<string>()
+
       const addResults = await Promise.allSettled(
         emailEntries.map(async (entry) => {
           const clerkUser = entry.clerkUser ?? resolvedMap.get(entry.email) ?? null
@@ -230,10 +232,16 @@ export function JudgesEditForm({
               }),
             }
           )
+          if (res.status === 409) {
+            succeededEmails.add(entry.email)
+            return
+          }
           if (!res.ok) {
             const data = await res.json()
             throw new Error(data.error || `Failed to add ${name}`)
           }
+
+          succeededEmails.add(entry.email)
 
           if (entry.email) {
             const judgeRes = await fetch(
@@ -257,12 +265,13 @@ export function JudgesEditForm({
       const failures = addResults.filter(
         (r): r is PromiseRejectedResult => r.status === "rejected"
       )
+
+      setEmailEntries((prev) => prev.filter((e) => !succeededEmails.has(e.email)))
+      router.refresh()
+
       if (failures.length > 0) {
         throw failures[0].reason
       }
-
-      setEmailEntries([])
-      router.refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add judges")
     } finally {
