@@ -210,46 +210,55 @@ export function JudgesEditForm({
         await Promise.all(lookups)
       }
 
-      for (const entry of emailEntries) {
-        const clerkUser = entry.clerkUser ?? resolvedMap.get(entry.email) ?? null
-        const name = clerkUser
-          ? [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") || entry.email.split("@")[0]
-          : entry.email.split("@")[0]
+      const addResults = await Promise.allSettled(
+        emailEntries.map(async (entry) => {
+          const clerkUser = entry.clerkUser ?? resolvedMap.get(entry.email) ?? null
+          const name = clerkUser
+            ? [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") || entry.email.split("@")[0]
+            : entry.email.split("@")[0]
 
-        const res = await fetch(
-          `/api/dashboard/hackathons/${hackathonId}/judges/display`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              name,
-              ...(clerkUser ? { clerkUserId: clerkUser.id } : {}),
-              ...(clerkUser?.imageUrl ? { headshotUrl: clerkUser.imageUrl } : {}),
-              ...(entry.email ? { email: entry.email } : {}),
-            }),
-          }
-        )
-        if (!res.ok) {
-          const data = await res.json()
-          throw new Error(data.error || `Failed to add ${name}`)
-        }
-
-        if (entry.email) {
-          const judgeRes = await fetch(
-            `/api/dashboard/hackathons/${hackathonId}/judging/judges`,
+          const res = await fetch(
+            `/api/dashboard/hackathons/${hackathonId}/judges/display`,
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(
-                clerkUser ? { clerkUserId: clerkUser.id } : { email: entry.email }
-              ),
+              body: JSON.stringify({
+                name,
+                ...(clerkUser ? { clerkUserId: clerkUser.id } : {}),
+                ...(clerkUser?.imageUrl ? { headshotUrl: clerkUser.imageUrl } : {}),
+                ...(entry.email ? { email: entry.email } : {}),
+              }),
             }
           )
-          if (!judgeRes.ok) {
-            const judgeData = await judgeRes.json()
-            throw new Error(`${name}: ${judgeData.error || "Failed to assign judge role"}`)
+          if (!res.ok) {
+            const data = await res.json()
+            throw new Error(data.error || `Failed to add ${name}`)
           }
-        }
+
+          if (entry.email) {
+            const judgeRes = await fetch(
+              `/api/dashboard/hackathons/${hackathonId}/judging/judges`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(
+                  clerkUser ? { clerkUserId: clerkUser.id } : { email: entry.email }
+                ),
+              }
+            )
+            if (!judgeRes.ok) {
+              const judgeData = await judgeRes.json()
+              throw new Error(`${name}: ${judgeData.error || "Failed to assign judge role"}`)
+            }
+          }
+        })
+      )
+
+      const failures = addResults.filter(
+        (r): r is PromiseRejectedResult => r.status === "rejected"
+      )
+      if (failures.length > 0) {
+        throw failures[0].reason
       }
 
       setEmailEntries([])

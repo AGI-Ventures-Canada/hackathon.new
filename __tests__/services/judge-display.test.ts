@@ -5,6 +5,7 @@ import {
   resetSupabaseMocks,
   setMockFromImplementation,
   mockTableQuery,
+  mockMultiTableQuery,
   mockSuccess,
   mockError,
   mockCount,
@@ -169,6 +170,100 @@ describe("Judge Display Service", () => {
       const result = await deleteJudgeDisplayProfile("j1", "h1")
 
       expect(result).toBe(false)
+    })
+
+    it("cascade-deletes assignments and participant when profile has participant_id", async () => {
+      mockMultiTableQuery({
+        hackathon_judges_display: {
+          data: { participant_id: "p1", clerk_user_id: null },
+          error: null,
+        },
+        judge_assignments: { data: null, error: null },
+        hackathon_participants: { data: null, error: null },
+      })
+
+      const result = await deleteJudgeDisplayProfile("j1", "h1")
+
+      expect(result).toBe(true)
+    })
+
+    it("looks up participant by clerk_user_id when participant_id is null", async () => {
+      mockMultiTableQuery({
+        hackathon_judges_display: {
+          data: { participant_id: null, clerk_user_id: "clerk_1" },
+          error: null,
+        },
+        hackathon_participants: { data: { id: "p1" }, error: null },
+        judge_assignments: { data: null, error: null },
+      })
+
+      const result = await deleteJudgeDisplayProfile("j1", "h1")
+
+      expect(result).toBe(true)
+    })
+
+    it("returns true even when cascade delete fails", async () => {
+      mockMultiTableQuery({
+        hackathon_judges_display: {
+          data: { participant_id: "p1", clerk_user_id: null },
+          error: null,
+        },
+        judge_assignments: { data: null, error: { message: "FK constraint" } },
+        hackathon_participants: { data: null, error: { message: "FK constraint" } },
+      })
+
+      const result = await deleteJudgeDisplayProfile("j1", "h1")
+
+      expect(result).toBe(true)
+    })
+
+    it("skips cascade when profile has no participant_id or clerk_user_id", async () => {
+      mockMultiTableQuery({
+        hackathon_judges_display: {
+          data: { participant_id: null, clerk_user_id: null },
+          error: null,
+        },
+      })
+
+      const result = await deleteJudgeDisplayProfile("j1", "h1")
+
+      expect(result).toBe(true)
+    })
+  })
+
+  describe("createJudgeDisplayProfile duplicate check", () => {
+    it("returns null when clerk_user_id already has a display profile", async () => {
+      const chain = createChainableMock({
+        data: { id: "existing-j1" },
+        error: null,
+      })
+      setMockFromImplementation(() => chain)
+
+      const result = await createJudgeDisplayProfile("h1", {
+        name: "Jane Doe",
+        clerkUserId: "clerk_1",
+      })
+
+      expect(result).toBeNull()
+    })
+
+    it("creates profile when clerk_user_id has no existing display profile", async () => {
+      let callCount = 0
+      setMockFromImplementation(() => {
+        callCount++
+        if (callCount === 1) {
+          return createChainableMock({ data: null, error: null })
+        }
+        return createChainableMock({ data: mockJudge, error: null })
+      })
+
+      const result = await createJudgeDisplayProfile("h1", {
+        name: "Jane Doe",
+        clerkUserId: "clerk_1",
+      })
+
+      expect(result).not.toBeNull()
+      expect(result?.name).toBe("Jane Doe")
     })
   })
 

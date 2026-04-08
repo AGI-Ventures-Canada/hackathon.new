@@ -45,6 +45,17 @@ export async function createJudgeDisplayProfile(
   input: CreateJudgeDisplayInput
 ): Promise<HackathonJudgeDisplay | null> {
   const client = getSupabase() as unknown as SupabaseClient
+
+  if (input.clerkUserId) {
+    const { data: existing } = await client
+      .from("hackathon_judges_display")
+      .select("id")
+      .eq("hackathon_id", hackathonId)
+      .eq("clerk_user_id", input.clerkUserId)
+      .maybeSingle()
+    if (existing) return null
+  }
+
   const { data, error } = await client
     .from("hackathon_judges_display")
     .insert({
@@ -138,18 +149,26 @@ export async function deleteJudgeDisplayProfile(
   }
 
   if (participantId) {
-    await client
+    const { error: assignmentError } = await client
       .from("judge_assignments")
       .delete()
       .eq("hackathon_id", hackathonId)
       .eq("judge_participant_id", participantId)
 
-    await client
+    if (assignmentError) {
+      console.error("Failed to cascade-delete judge assignments:", assignmentError)
+    }
+
+    const { error: participantError } = await client
       .from("hackathon_participants")
       .delete()
       .eq("id", participantId)
       .eq("hackathon_id", hackathonId)
       .eq("role", "judge")
+
+    if (participantError) {
+      console.error("Failed to cascade-delete judge participant:", participantError)
+    }
   }
 
   return true
