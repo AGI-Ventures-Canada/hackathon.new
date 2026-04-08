@@ -164,10 +164,23 @@ export function JudgesEditForm({
   const [error, setError] = useState<string | null>(null)
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set())
   const [localEdits, setLocalEdits] = useState<Record<string, Record<string, string | null>>>({})
+  const savingFieldsRef = useRef<Set<string>>(new Set())
 
 
   useEffect(() => {
-    setLocalEdits({})
+    setLocalEdits((prev) => {
+      const kept: Record<string, Record<string, string | null>> = {}
+      for (const [judgeId, fields] of Object.entries(prev)) {
+        const remaining: Record<string, string | null> = {}
+        for (const [field, value] of Object.entries(fields)) {
+          if (savingFieldsRef.current.has(`${judgeId}:${field}`)) {
+            remaining[field] = value
+          }
+        }
+        if (Object.keys(remaining).length > 0) kept[judgeId] = remaining
+      }
+      return kept
+    })
     setHiddenIds(new Set())
   }, [initialJudges])
 
@@ -219,6 +232,7 @@ export function JudgesEditForm({
       }
 
       const succeededEmails = new Set<string>()
+      const duplicateEmails: string[] = []
 
       const addResults = await Promise.allSettled(
         emailEntries.map(async (entry) => {
@@ -242,6 +256,7 @@ export function JudgesEditForm({
           )
           if (res.status === 409) {
             succeededEmails.add(entry.email)
+            duplicateEmails.push(entry.email)
             return
           }
           if (!res.ok) {
@@ -279,6 +294,10 @@ export function JudgesEditForm({
 
       if (failures.length > 0) {
         throw failures[0].reason
+      }
+
+      if (duplicateEmails.length > 0) {
+        setError(`Already added: ${duplicateEmails.join(", ")}`)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add judges")
@@ -328,6 +347,8 @@ export function JudgesEditForm({
     const oldValue = (original as unknown as Record<string, unknown>)[field] as string | null
     if ((value || null) === (oldValue || null)) return
 
+    const fieldKey = `${judgeId}:${field}`
+    savingFieldsRef.current.add(fieldKey)
     try {
       const res = await fetch(
         `/api/dashboard/hackathons/${hackathonId}/judges/display/${judgeId}`,
@@ -341,8 +362,10 @@ export function JudgesEditForm({
         const data = await res.json()
         throw new Error(data.error || "Failed to update judge")
       }
+      savingFieldsRef.current.delete(fieldKey)
       router.refresh()
     } catch (err) {
+      savingFieldsRef.current.delete(fieldKey)
       setLocalEdits((prev) => {
         const next = { ...prev }
         if (next[judgeId]) {

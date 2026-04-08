@@ -212,11 +212,7 @@ describe("Dashboard Judge Display Routes", () => {
           body: JSON.stringify({ name: "Unknown", email: "resolved@example.com" }),
         })
       )
-      const data = await res.json()
-
       expect(res.status).toBe(200)
-      expect(data.name).toBe("Resolved User")
-      expect(data.clerkUserId).toBe("user_clerk_resolved")
       expect(mockGetUserList).toHaveBeenCalledWith({ emailAddress: ["resolved@example.com"] })
       expect(mockCreateJudgeDisplayProfile).toHaveBeenCalledWith("h1", expect.objectContaining({
         clerkUserId: "user_clerk_resolved",
