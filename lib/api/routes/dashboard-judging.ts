@@ -524,6 +524,8 @@ export const dashboardJudgingRoutes = new Elysia()
     return {
       users: searchResults.data.map((u) => ({
         id: u.id,
+        firstName: u.firstName ?? null,
+        lastName: u.lastName ?? null,
         displayName: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.username || u.id,
         email: u.primaryEmailAddress?.emailAddress ?? null,
         imageUrl: u.imageUrl ?? null,

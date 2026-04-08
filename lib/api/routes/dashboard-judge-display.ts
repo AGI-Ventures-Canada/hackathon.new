@@ -69,13 +69,29 @@ export const dashboardJudgeDisplayRoutes = new Elysia()
         })
       }
 
+      let resolvedClerkUserId = body.clerkUserId
+      let resolvedName = body.name
+      let resolvedHeadshotUrl = body.headshotUrl
+      if (!resolvedClerkUserId && body.email) {
+        const { clerkClient } = await import("@clerk/nextjs/server")
+        const client = await clerkClient()
+        const existingUsers = await client.users.getUserList({ emailAddress: [body.email] })
+        if (existingUsers.data.length > 0) {
+          const user = existingUsers.data[0]
+          resolvedClerkUserId = user.id
+          const clerkName = [user.firstName, user.lastName].filter(Boolean).join(" ")
+          if (clerkName) resolvedName = clerkName
+          if (!resolvedHeadshotUrl && user.imageUrl) resolvedHeadshotUrl = user.imageUrl
+        }
+      }
+
       const { createJudgeDisplayProfile } = await import("@/lib/services/judge-display")
       const judge = await createJudgeDisplayProfile(params.id, {
-        name: body.name,
+        name: resolvedName,
         title: body.title,
         organization: body.organization,
-        headshotUrl: body.headshotUrl,
-        clerkUserId: body.clerkUserId,
+        headshotUrl: resolvedHeadshotUrl,
+        clerkUserId: resolvedClerkUserId,
         participantId: body.participantId,
         displayOrder: body.displayOrder,
       })

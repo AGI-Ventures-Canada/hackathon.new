@@ -54,6 +54,7 @@ export function EmailChipsInput({
   const inputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const debounceRef = useRef<NodeJS.Timeout | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   const allEmails = [
     ...existingEmails,
@@ -62,25 +63,14 @@ export function EmailChipsInput({
   const allEmailsRef = useRef(allEmails)
   allEmailsRef.current = allEmails
 
-  const searchUsers = useCallback(async (query: string) => {
-    if (!query.includes("@") || query.indexOf("@") === query.length - 1) {
-      setSearchResults([])
-      setShowDropdown(false)
-      return
-    }
-
-    const domainPart = query.split("@")[1]
-    if (!domainPart || domainPart.length < 2) {
-      setSearchResults([])
-      setShowDropdown(false)
-      return
-    }
-
+  const searchUsers = useCallback(async (query: string, signal: AbortSignal) => {
     setSearching(true)
     try {
       const res = await fetch(
-        `/api/dashboard/hackathons/${hackathonId}/judging/user-search?q=${encodeURIComponent(query)}`
+        `/api/dashboard/hackathons/${hackathonId}/judging/user-search?q=${encodeURIComponent(query)}`,
+        { signal }
       )
+      if (signal.aborted) return
       if (res.ok) {
         const data = await res.json()
         const filtered = (data.users || []).filter(
@@ -90,25 +80,31 @@ export function EmailChipsInput({
         setShowDropdown(filtered.length > 0)
         setSelectedIndex(-1)
       }
-    } catch {
+    } catch (err) {
+      if ((err as Error).name === "AbortError") return
       setSearchResults([])
     } finally {
-      setSearching(false)
+      if (!signal.aborted) setSearching(false)
     }
   }, [hackathonId])
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (abortRef.current) abortRef.current.abort()
 
-    if (input.includes("@") && input.split("@")[1]?.length >= 2) {
-      debounceRef.current = setTimeout(() => searchUsers(input), 300)
+    if (input.trim().length >= 2) {
+      const controller = new AbortController()
+      abortRef.current = controller
+      debounceRef.current = setTimeout(() => searchUsers(input.trim(), controller.signal), 100)
     } else {
+      abortRef.current = null
       setSearchResults([])
       setShowDropdown(false)
     }
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
+      if (abortRef.current) abortRef.current.abort()
     }
   }, [input, searchUsers])
 
@@ -117,7 +113,20 @@ export function EmailChipsInput({
     if (!isValidEmail(trimmed)) return
     if (allEmails.includes(trimmed)) return
 
-    onAdd([{ email: trimmed, clerkUser: clerkUser ?? null }])
+    let resolvedClerkUser = clerkUser ?? null
+    if (!resolvedClerkUser) {
+      const match = searchResults.find((u) => u.email?.toLowerCase() === trimmed)
+      if (match) {
+        resolvedClerkUser = {
+          id: match.id,
+          firstName: match.firstName,
+          lastName: match.lastName,
+          imageUrl: match.imageUrl,
+        }
+      }
+    }
+
+    onAdd([{ email: trimmed, clerkUser: resolvedClerkUser }])
     setInput("")
     setShowDropdown(false)
     setSearchResults([])
@@ -134,7 +143,13 @@ export function EmailChipsInput({
       for (const part of parts) {
         const trimmed = part.trim().toLowerCase()
         if (isValidEmail(trimmed) && !allEmails.includes(trimmed)) {
-          newEntries.push({ email: trimmed, clerkUser: null })
+          const match = searchResults.find((u) => u.email?.toLowerCase() === trimmed)
+          newEntries.push({
+            email: trimmed,
+            clerkUser: match
+              ? { id: match.id, firstName: match.firstName, lastName: match.lastName, imageUrl: match.imageUrl }
+              : null,
+          })
         } else if (trimmed) {
           remaining = trimmed
         }

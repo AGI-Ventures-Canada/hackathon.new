@@ -106,6 +106,14 @@ export async function deleteJudgeDisplayProfile(
   hackathonId: string
 ): Promise<boolean> {
   const client = getSupabase() as unknown as SupabaseClient
+
+  const { data: profile } = await client
+    .from("hackathon_judges_display")
+    .select("participant_id, clerk_user_id")
+    .eq("id", id)
+    .eq("hackathon_id", hackathonId)
+    .maybeSingle()
+
   const { error } = await client
     .from("hackathon_judges_display")
     .delete()
@@ -115,6 +123,33 @@ export async function deleteJudgeDisplayProfile(
   if (error) {
     console.error("Failed to delete judge display profile:", error)
     return false
+  }
+
+  let participantId = profile?.participant_id
+  if (!participantId && profile?.clerk_user_id) {
+    const { data: participant } = await client
+      .from("hackathon_participants")
+      .select("id")
+      .eq("hackathon_id", hackathonId)
+      .eq("clerk_user_id", profile.clerk_user_id)
+      .eq("role", "judge")
+      .maybeSingle()
+    participantId = participant?.id
+  }
+
+  if (participantId) {
+    await client
+      .from("judge_assignments")
+      .delete()
+      .eq("hackathon_id", hackathonId)
+      .eq("judge_participant_id", participantId)
+
+    await client
+      .from("hackathon_participants")
+      .delete()
+      .eq("id", participantId)
+      .eq("hackathon_id", hackathonId)
+      .eq("role", "judge")
   }
 
   return true
