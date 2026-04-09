@@ -240,7 +240,7 @@ function HackathonPreviewContent({
                     }
                   }}
                   disabled={savingTeamName}
-                  className="h-6 text-sm w-32"
+                  className="h-6 text-sm w-48 sm:w-64"
                   maxLength={100}
                   autoComplete="off"
                   data-1p-ignore
