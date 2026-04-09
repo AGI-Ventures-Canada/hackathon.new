@@ -512,7 +512,7 @@ export const dashboardJudgingRoutes = new Elysia()
     }
 
     const q = (query as Record<string, string>).q
-    if (!q || q.length < 2) return { users: [] }
+    if (!q || q.length < 1) return { users: [] }
 
     const { clerkClient } = await import("@clerk/nextjs/server")
     const clerk = await clerkClient()

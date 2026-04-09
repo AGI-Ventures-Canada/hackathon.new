@@ -29,11 +29,15 @@ type SearchUser = {
   imageUrl: string | null
 }
 
+export type AddJudgeResult =
+  | { type: "judge"; participantId: string; clerkUserId: string; displayName: string; email: string | null; imageUrl: string | null }
+  | { type: "invitation"; id: string; email: string }
+
 interface AddJudgeDialogProps {
   hackathonId: string
   open: boolean
   onOpenChange: (open: boolean) => void
-  onSuccess?: () => void
+  onSuccess?: (result: AddJudgeResult) => void
 }
 
 export function AddJudgeDialog({
@@ -50,7 +54,6 @@ export function AddJudgeDialog({
   const [success, setSuccess] = useState<string | null>(null)
   const [showInviteForm, setShowInviteForm] = useState(false)
   const [inviteEmail, setInviteEmail] = useState("")
-  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
   const base = `/api/dashboard/hackathons/${hackathonId}/judging`
@@ -71,45 +74,39 @@ export function AddJudgeDialog({
   }
 
   const handleSearch = useCallback(
-    (query: string) => {
+    async (query: string) => {
       setSearchQuery(query)
       setError(null)
       setSuccess(null)
-
-      if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current)
-      }
       abortRef.current?.abort()
 
-      if (query.trim().length < 2) {
+      if (query.trim().length < 1) {
         setSearchResults([])
         setSearching(false)
         return
       }
 
-      searchTimeoutRef.current = setTimeout(async () => {
-        const controller = new AbortController()
-        abortRef.current = controller
-        setSearching(true)
-        try {
-          const res = await fetch(
-            `${base}/user-search?q=${encodeURIComponent(query.trim())}`,
-            { signal: controller.signal }
-          )
-          if (!res.ok) throw new Error("Search failed")
-          const data = await res.json()
-          if (!controller.signal.aborted) {
-            setSearchResults(data.users ?? [])
-          }
-        } catch (err) {
-          if (err instanceof DOMException && err.name === "AbortError") return
-          setSearchResults([])
-        } finally {
-          if (!controller.signal.aborted) {
-            setSearching(false)
-          }
+      const controller = new AbortController()
+      abortRef.current = controller
+      setSearching(true)
+      try {
+        const res = await fetch(
+          `${base}/user-search?q=${encodeURIComponent(query.trim())}`,
+          { signal: controller.signal }
+        )
+        if (!res.ok) throw new Error("Search failed")
+        const data = await res.json()
+        if (!controller.signal.aborted) {
+          setSearchResults(data.users ?? [])
         }
-      }, 100)
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return
+        setSearchResults([])
+      } finally {
+        if (!controller.signal.aborted) {
+          setSearching(false)
+        }
+      }
     },
     [base]
   )
@@ -146,7 +143,15 @@ export function AddJudgeDialog({
         const data = await res.json()
         throw new Error(data.error || "Failed to add judge")
       }
-      onSuccess?.()
+      const data = await res.json()
+      onSuccess?.({
+        type: "judge",
+        participantId: data.participant.id,
+        clerkUserId: user.id,
+        displayName: getDisplayName(user),
+        email: user.email,
+        imageUrl: user.imageUrl,
+      })
       setSuccess(`${getDisplayName(user)} added as judge`)
       setTimeout(() => handleOpenChange(false), 800)
     } catch (err) {
@@ -175,7 +180,18 @@ export function AddJudgeDialog({
         throw new Error(data.error || "Failed to invite judge")
       }
       const data = await res.json()
-      onSuccess?.()
+      if (data.invitation) {
+        onSuccess?.({ type: "invitation", id: data.invitation.id, email })
+      } else {
+        onSuccess?.({
+          type: "judge",
+          participantId: data.participant.id,
+          clerkUserId: data.participant.clerkUserId,
+          displayName: email,
+          email,
+          imageUrl: null,
+        })
+      }
       setSuccess(
         data.invitation ? `Invitation sent to ${email}` : `${email} added as judge`
       )
@@ -228,14 +244,14 @@ export function AddJudgeDialog({
 
             {error && <p className="text-sm text-destructive">{error}</p>}
 
-            {searching && (
+            {searching && searchResults.length === 0 && (
               <div className="flex items-center justify-center py-4">
                 <Loader2 className="size-5 animate-spin text-muted-foreground" />
               </div>
             )}
 
-            {!searching && searchResults.length > 0 && (
-              <div className="space-y-1 max-h-64 overflow-y-auto">
+            {searchResults.length > 0 && (
+              <div className={`space-y-1 max-h-64 overflow-y-auto transition-opacity ${searching ? "opacity-60" : ""}`}>
                 {searchResults.map((user) => {
                   const displayName = getDisplayName(user)
                   return (
@@ -272,7 +288,7 @@ export function AddJudgeDialog({
             )}
 
             {!searching &&
-              searchQuery.length >= 2 &&
+              searchQuery.length >= 1 &&
               searchResults.length === 0 && (
                 <p className="text-sm text-muted-foreground text-center py-3">
                   No users found
