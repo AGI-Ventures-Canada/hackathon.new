@@ -269,6 +269,11 @@ function HackathonPreviewContent({
       {teamNameError && (
         <p className="text-xs text-destructive px-3">{teamNameError}</p>
       )}
+      {teamInfo?.isCaptain && (
+        <p className="text-xs text-muted-foreground px-1">
+          You&apos;re the team captain &mdash; you can invite members and rename your team.
+        </p>
+      )}
       {teamInfo && (
         <div className="space-y-1 pl-1">
           <div className="flex items-center gap-1.5">
