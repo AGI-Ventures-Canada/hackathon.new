@@ -15,6 +15,7 @@ import { PrizeSection } from "@/components/hackathon/prize-section"
 import { SubmissionGallery, type GallerySubmission } from "@/components/hackathon/submission-gallery"
 import { TeamInviteDialog } from "@/components/hackathon/team-invite-dialog"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
@@ -87,6 +88,45 @@ function HackathonPreviewContent({
   useEffect(() => {
     setOptimisticJudges(null)
   }, [hackathon.judges])
+  const [editingTeamName, setEditingTeamName] = useState(false)
+  const [teamNameValue, setTeamNameValue] = useState(teamInfo?.team.name ?? "")
+  const [savingTeamName, setSavingTeamName] = useState(false)
+  const [teamNameError, setTeamNameError] = useState<string | null>(null)
+  const teamNameInputRef = useRef<HTMLInputElement>(null)
+
+  async function handleSaveTeamName() {
+    if (!teamInfo) return
+    const trimmed = teamNameValue.trim()
+    if (!trimmed || trimmed === teamInfo.team.name) {
+      setTeamNameValue(teamInfo.team.name)
+      setEditingTeamName(false)
+      return
+    }
+    setSavingTeamName(true)
+    setTeamNameError(null)
+    try {
+      const res = await fetch(
+        `/api/dashboard/hackathons/${hackathon.id}/teams/${teamInfo.team.id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: trimmed }),
+        }
+      )
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || "Failed to rename team")
+      }
+      setEditingTeamName(false)
+      router.refresh()
+    } catch (err) {
+      setTeamNameValue(teamInfo.team.name)
+      setEditingTeamName(false)
+      setTeamNameError(err instanceof Error ? err.message : "Failed to rename team")
+    } finally {
+      setSavingTeamName(false)
+    }
+  }
 
   const handleRegistrationSuccess = () => {
     setIsRegistered(true)
@@ -171,7 +211,45 @@ function HackathonPreviewContent({
           {teamInfo && (
             <>
               <span className="text-muted-foreground">·</span>
-              <span className="text-sm text-muted-foreground truncate">{teamInfo.team.name}</span>
+              {teamInfo.isCaptain && teamInfo.team.status === "forming" && !editingTeamName ? (
+                <button
+                  type="button"
+                  className="text-sm text-muted-foreground truncate hover:underline underline-offset-2 decoration-muted-foreground/40"
+                  onClick={() => {
+                    setEditingTeamName(true)
+                    setTeamNameError(null)
+                    setTimeout(() => teamNameInputRef.current?.select(), 0)
+                  }}
+                >
+                  {teamInfo.team.name}
+                </button>
+              ) : editingTeamName ? (
+                <Input
+                  ref={teamNameInputRef}
+                  value={teamNameValue}
+                  onChange={(e) => setTeamNameValue(e.target.value)}
+                  onBlur={handleSaveTeamName}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault()
+                      ;(e.target as HTMLInputElement).blur()
+                    }
+                    if (e.key === "Escape") {
+                      setTeamNameValue(teamInfo.team.name)
+                      setEditingTeamName(false)
+                    }
+                  }}
+                  disabled={savingTeamName}
+                  className="h-6 text-sm w-32"
+                  maxLength={100}
+                  autoComplete="off"
+                  data-1p-ignore
+                  data-lpignore="true"
+                  data-form-type="other"
+                />
+              ) : (
+                <span className="text-sm text-muted-foreground truncate">{teamInfo.team.name}</span>
+              )}
               {teamInfo.team.status === "locked" && (
                 <Lock className="size-3 text-muted-foreground shrink-0" />
               )}
@@ -188,6 +266,9 @@ function HackathonPreviewContent({
           />
         )}
       </div>
+      {teamNameError && (
+        <p className="text-xs text-destructive px-3">{teamNameError}</p>
+      )}
       {teamInfo && (
         <div className="space-y-1 pl-1">
           <div className="flex items-center gap-1.5">
