@@ -213,7 +213,7 @@ export function SignUpForm({ redirectUrl }: { redirectUrl?: string }) {
       await signUp.authenticateWithRedirect({
         strategy: provider,
         redirectUrl: "/sso-callback",
-        redirectUrlComplete: redirectUrl ? finalRedirect : onboardingUrl,
+        redirectUrlComplete: onboardingUrl,
       });
     } catch (err) {
       if (isClerkAPIResponseError(err)) {

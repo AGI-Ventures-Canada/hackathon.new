@@ -204,8 +204,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                 onChange={(e) => setMaxSize(Number(e.target.value))}
                 onBlur={() => {
                   if (maxSize >= minSize && maxSize >= 1) {
-                    const prev = maxSize
-                    saveTeamSettings({ maxTeamSize: maxSize }, () => setMaxSize(prev))
+                    saveTeamSettings({ maxTeamSize: maxSize }, () => setMaxSize(initialMax))
                   }
                 }}
                 className="w-20"
@@ -227,8 +226,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                 onChange={(e) => setMinSize(Number(e.target.value))}
                 onBlur={() => {
                   if (minSize >= 1 && minSize <= maxSize) {
-                    const prev = minSize
-                    saveTeamSettings({ minTeamSize: minSize }, () => setMinSize(prev))
+                    saveTeamSettings({ minTeamSize: minSize }, () => setMinSize(initialMin))
                   }
                 }}
                 className="w-20"
@@ -244,10 +242,9 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                 id="allow-solo"
                 checked={allowSolo}
                 onCheckedChange={(checked) => {
-                  const prev = allowSolo
                   const value = !!checked
                   setAllowSolo(value)
-                  saveTeamSettings({ allowSolo: value }, () => setAllowSolo(prev))
+                  saveTeamSettings({ allowSolo: value }, () => setAllowSolo(initialSolo))
                 }}
                 disabled={savingSettings}
               />

@@ -281,6 +281,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
         set.status = 403
         return { error: "Only the team captain or an organizer can rename a team" }
       }
+      set.status = 200
     }
 
     const { name } = body
