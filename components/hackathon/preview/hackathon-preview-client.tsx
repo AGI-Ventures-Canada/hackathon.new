@@ -14,6 +14,7 @@ import { JudgeSection } from "@/components/hackathon/judge-section"
 import { PrizeSection } from "@/components/hackathon/prize-section"
 import { SubmissionGallery, type GallerySubmission } from "@/components/hackathon/submission-gallery"
 import { TeamInviteDialog } from "@/components/hackathon/team-invite-dialog"
+import { useTeamRename } from "@/hooks/use-team-rename"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -88,45 +89,7 @@ function HackathonPreviewContent({
   useEffect(() => {
     setOptimisticJudges(null)
   }, [hackathon.judges])
-  const [editingTeamName, setEditingTeamName] = useState(false)
-  const [teamNameValue, setTeamNameValue] = useState(teamInfo?.team.name ?? "")
-  const [savingTeamName, setSavingTeamName] = useState(false)
-  const [teamNameError, setTeamNameError] = useState<string | null>(null)
-  const teamNameInputRef = useRef<HTMLInputElement>(null)
-
-  async function handleSaveTeamName() {
-    if (!teamInfo) return
-    const trimmed = teamNameValue.trim()
-    if (!trimmed || trimmed === teamInfo.team.name) {
-      setTeamNameValue(teamInfo.team.name)
-      setEditingTeamName(false)
-      return
-    }
-    setSavingTeamName(true)
-    setTeamNameError(null)
-    try {
-      const res = await fetch(
-        `/api/dashboard/hackathons/${hackathon.id}/teams/${teamInfo.team.id}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: trimmed }),
-        }
-      )
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || "Failed to rename team")
-      }
-      setEditingTeamName(false)
-      router.refresh()
-    } catch (err) {
-      setTeamNameValue(teamInfo.team.name)
-      setEditingTeamName(false)
-      setTeamNameError(err instanceof Error ? err.message : "Failed to rename team")
-    } finally {
-      setSavingTeamName(false)
-    }
-  }
+  const rename = useTeamRename(hackathon.id, teamInfo?.team.id ?? "", teamInfo?.team.name ?? "")
 
   const handleRegistrationSuccess = () => {
     setIsRegistered(true)
@@ -211,35 +174,22 @@ function HackathonPreviewContent({
           {teamInfo && (
             <>
               <span className="text-muted-foreground">·</span>
-              {teamInfo.isCaptain && teamInfo.team.status === "forming" && !editingTeamName ? (
+              {teamInfo.isCaptain && teamInfo.team.status === "forming" && !rename.editing ? (
                 <button
                   type="button"
                   className="text-sm text-muted-foreground truncate hover:underline underline-offset-2 decoration-muted-foreground/40"
-                  onClick={() => {
-                    setEditingTeamName(true)
-                    setTeamNameError(null)
-                    setTimeout(() => teamNameInputRef.current?.select(), 0)
-                  }}
+                  onClick={rename.startEditing}
                 >
                   {teamInfo.team.name}
                 </button>
-              ) : editingTeamName ? (
+              ) : rename.editing ? (
                 <Input
-                  ref={teamNameInputRef}
-                  value={teamNameValue}
-                  onChange={(e) => setTeamNameValue(e.target.value)}
-                  onBlur={handleSaveTeamName}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault()
-                      ;(e.target as HTMLInputElement).blur()
-                    }
-                    if (e.key === "Escape") {
-                      setTeamNameValue(teamInfo.team.name)
-                      setEditingTeamName(false)
-                    }
-                  }}
-                  disabled={savingTeamName}
+                  ref={rename.inputRef}
+                  value={rename.value}
+                  onChange={(e) => rename.setValue(e.target.value)}
+                  onBlur={rename.save}
+                  onKeyDown={rename.handleKeyDown}
+                  disabled={rename.saving}
                   className="h-6 text-sm w-48 sm:w-64"
                   maxLength={100}
                   autoComplete="off"
@@ -266,8 +216,8 @@ function HackathonPreviewContent({
           />
         )}
       </div>
-      {teamNameError && (
-        <p className="text-xs text-destructive px-3">{teamNameError}</p>
+      {rename.error && (
+        <p className="text-xs text-destructive px-3">{rename.error}</p>
       )}
       {teamInfo?.isCaptain && (
         <p className="text-xs text-muted-foreground px-1">

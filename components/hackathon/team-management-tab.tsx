@@ -1,8 +1,9 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { useUser } from "@clerk/nextjs"
+import { useTeamRename } from "@/hooks/use-team-rename"
 import { TeamInviteDialog } from "./team-invite-dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -22,44 +23,8 @@ export function TeamManagementTab({ teamInfo, hackathonId, maxTeamSize }: TeamMa
   const router = useRouter()
   const { user } = useUser()
   const [cancellingId, setCancellingId] = useState<string | null>(null)
-  const [editingName, setEditingName] = useState(false)
-  const [nameValue, setNameValue] = useState(teamInfo.team.name)
-  const [savingName, setSavingName] = useState(false)
-  const [nameError, setNameError] = useState<string | null>(null)
-  const nameInputRef = useRef<HTMLInputElement>(null)
-
-  async function handleSaveName() {
-    const trimmed = nameValue.trim()
-    if (!trimmed || trimmed === teamInfo.team.name) {
-      setNameValue(teamInfo.team.name)
-      setEditingName(false)
-      return
-    }
-    setSavingName(true)
-    setNameError(null)
-    try {
-      const res = await fetch(
-        `/api/dashboard/hackathons/${hackathonId}/teams/${teamInfo.team.id}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: trimmed }),
-        }
-      )
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || "Failed to rename team")
-      }
-      setEditingName(false)
-      router.refresh()
-    } catch (err) {
-      setNameValue(teamInfo.team.name)
-      setEditingName(false)
-      setNameError(err instanceof Error ? err.message : "Failed to rename team")
-    } finally {
-      setSavingName(false)
-    }
-  }
+  const rename = useTeamRename(hackathonId, teamInfo.team.id, teamInfo.team.name)
+  const canEdit = teamInfo.isCaptain && teamInfo.team.status === "forming"
 
   async function handleCancelInvitation(invitationId: string) {
     setCancellingId(invitationId)
@@ -102,31 +67,22 @@ export function TeamManagementTab({ teamInfo, hackathonId, maxTeamSize }: TeamMa
             <div>
               <CardTitle className="flex items-center gap-2">
                 <Users className="size-5" />
-                {teamInfo.isCaptain && !editingName ? (
+                {canEdit && !rename.editing ? (
                   <button
                     type="button"
                     className="text-left hover:underline underline-offset-2 decoration-muted-foreground/40"
-                    onClick={() => {
-                      setEditingName(true)
-                      setTimeout(() => nameInputRef.current?.select(), 0)
-                    }}
+                    onClick={rename.startEditing}
                   >
                     {teamInfo.team.name}
                   </button>
-                ) : editingName ? (
+                ) : rename.editing ? (
                   <Input
-                    ref={nameInputRef}
-                    value={nameValue}
-                    onChange={(e) => setNameValue(e.target.value)}
-                    onBlur={handleSaveName}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleSaveName()
-                      if (e.key === "Escape") {
-                        setNameValue(teamInfo.team.name)
-                        setEditingName(false)
-                      }
-                    }}
-                    disabled={savingName}
+                    ref={rename.inputRef}
+                    value={rename.value}
+                    onChange={(e) => rename.setValue(e.target.value)}
+                    onBlur={rename.save}
+                    onKeyDown={rename.handleKeyDown}
+                    disabled={rename.saving}
                     className="h-7 text-base font-semibold"
                     maxLength={100}
                     autoComplete="off"
@@ -147,8 +103,8 @@ export function TeamManagementTab({ teamInfo, hackathonId, maxTeamSize }: TeamMa
                   You&apos;re the team captain &mdash; you can invite members and manage your team.
                 </p>
               )}
-              {nameError && (
-                <p className="text-xs text-destructive mt-1">{nameError}</p>
+              {rename.error && (
+                <p className="text-xs text-destructive mt-1">{rename.error}</p>
               )}
             </div>
             {teamInfo.isCaptain && teamInfo.team.status === "forming" && (

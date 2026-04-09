@@ -1,6 +1,7 @@
 "use client"
 
 import { Fragment, useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import {
   Loader2, Plus, Users, ChevronRight, FileText, DoorOpen, Crown, Mail,
 } from "lucide-react"
@@ -53,6 +54,7 @@ type TeamsTabProps = {
 }
 
 export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: initialMin, allowSolo: initialSolo }: TeamsTabProps) {
+  const router = useRouter()
   const [teams, setTeams] = useState<Team[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -82,6 +84,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         const data = await res.json()
         throw new Error(data.error || "Failed to save")
       }
+      router.refresh()
     } catch (err) {
       rollback()
       setSettingsError(err instanceof Error ? err.message : "Failed to save")

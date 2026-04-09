@@ -267,9 +267,17 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       return { error: "Invalid team ID" }
     }
 
-    const organizerErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (organizerErr) {
-      if (principal.kind !== "user") return organizerErr
+    const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+    const check = await checkHackathonOrganizer(params.id, principal.tenantId)
+    if (check.status === "not_found") {
+      set.status = 404
+      return { error: "Hackathon not found" }
+    }
+    if (check.status === "not_authorized") {
+      if (principal.kind !== "user") {
+        set.status = 403
+        return { error: "Not authorized to manage this hackathon" }
+      }
       const { supabase } = await import("@/lib/db/client")
       const { data: team } = await supabase()
         .from("teams")
@@ -281,7 +289,6 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
         set.status = 403
         return { error: "Only the team captain or an organizer can rename a team" }
       }
-      set.status = 200
     }
 
     const { name } = body
