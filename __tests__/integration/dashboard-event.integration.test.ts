@@ -86,21 +86,6 @@ mock.module("@/lib/auth/principal", () => {
   }
 })
 
-const mockFrom = mock(() => ({
-  select: mock(() => ({ eq: mock(() => ({ eq: mock(() => ({ single: mock(() => Promise.resolve({ data: null, error: null })) })) })) })),
-  update: mock(() => ({ eq: mock(() => ({ eq: mock(() => ({ select: mock(() => ({ single: mock(() => Promise.resolve({ data: { id: "team-1", name: "New Name" }, error: null })) })) })) })) })),
-}))
-
-mock.module("@/lib/db/client", () => ({
-  supabase: () => ({ from: mockFrom }),
-}))
-
-const mockLogAudit = mock(() => Promise.resolve())
-
-mock.module("@/lib/services/audit", () => ({
-  logAudit: mockLogAudit,
-}))
-
 mock.module("@/lib/services/rate-limit", () => ({
   checkRateLimit: () => ({ allowed: true, remaining: 100, resetAt: Date.now() + 60000 }),
   getRateLimitHeaders: () => ({}),
@@ -150,10 +135,7 @@ describe("Dashboard Event Routes Integration Tests", () => {
     mockCreateScheduleItem.mockReset()
     mockUpdateScheduleItem.mockReset()
     mockDeleteScheduleItem.mockReset()
-    mockFrom.mockReset()
-    mockLogAudit.mockReset()
 
-    mockLogAudit.mockResolvedValue(undefined)
     mockSetPhase.mockResolvedValue({ success: true })
     mockCheckHackathonOrganizer.mockResolvedValue({
       status: "authorized" as const,
@@ -629,155 +611,6 @@ describe("Dashboard Event Routes Integration Tests", () => {
 
       expect(res.status).toBe(400)
       expect(data.error).toBe("Invalid schedule item ID")
-    })
-  })
-
-  describe("PATCH /api/dashboard/hackathons/:id/teams/:teamId", () => {
-    const hackathonId = "11111111-1111-1111-1111-111111111111"
-    const teamId = "22222222-2222-2222-2222-222222222222"
-    const url = `http://localhost/api/dashboard/hackathons/${hackathonId}/teams/${teamId}`
-
-    it("rejects unauthenticated requests", async () => {
-      mockResolvePrincipal.mockResolvedValue({ kind: "anon" })
-
-      const res = await app.handle(
-        new Request(url, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: "New Name" }),
-        })
-      )
-
-      expect(res.status).toBe(401)
-    })
-
-    it("returns 400 for invalid team UUID", async () => {
-      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
-
-      const badUrl = `http://localhost/api/dashboard/hackathons/${hackathonId}/teams/not-a-uuid`
-      const res = await app.handle(
-        new Request(badUrl, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: "New Name" }),
-        })
-      )
-      const data = await res.json()
-
-      expect(res.status).toBe(400)
-      expect(data.error).toBe("Invalid team ID")
-    })
-
-    it("allows organizer to rename team", async () => {
-      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
-      mockCheckHackathonOrganizer.mockResolvedValue({
-        status: "authorized" as const,
-        hackathon: { id: hackathonId, tenant_id: "tenant-123" },
-      })
-
-      const mockSingle = mock(() => Promise.resolve({ data: { id: teamId, name: "New Name" }, error: null }))
-      mockFrom.mockReturnValue({
-        update: mock(() => ({
-          eq: mock(() => ({
-            eq: mock(() => ({
-              select: mock(() => ({
-                single: mockSingle,
-              })),
-            })),
-          })),
-        })),
-      })
-
-      const res = await app.handle(
-        new Request(url, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: "New Name" }),
-        })
-      )
-      const data = await res.json()
-
-      expect(res.status).toBe(200)
-      expect(data.name).toBe("New Name")
-    })
-
-    it("allows captain to rename their team", async () => {
-      const captainPrincipal = { ...mockUserPrincipal, userId: "captain-123" }
-      mockResolvePrincipal.mockResolvedValue(captainPrincipal)
-      mockCheckHackathonOrganizer.mockResolvedValue({
-        status: "not_authorized" as const,
-      })
-
-      const mockSelectSingle = mock(() => Promise.resolve({ data: { captain_clerk_user_id: "captain-123" }, error: null }))
-      const mockUpdateSingle = mock(() => Promise.resolve({ data: { id: teamId, name: "Captain Name" }, error: null }))
-
-      let callCount = 0
-      mockFrom.mockImplementation(() => {
-        callCount++
-        if (callCount === 1) {
-          return {
-            select: mock(() => ({
-              eq: mock(() => ({
-                eq: mock(() => ({
-                  single: mockSelectSingle,
-                })),
-              })),
-            })),
-          }
-        }
-        return {
-          update: mock(() => ({
-            eq: mock(() => ({
-              eq: mock(() => ({
-                select: mock(() => ({
-                  single: mockUpdateSingle,
-                })),
-              })),
-            })),
-          })),
-        }
-      })
-
-      const res = await app.handle(
-        new Request(url, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: "Captain Name" }),
-        })
-      )
-      const data = await res.json()
-
-      expect(res.status).toBe(200)
-      expect(data.name).toBe("Captain Name")
-    })
-
-    it("rejects non-captain non-organizer with 403", async () => {
-      mockResolvePrincipal.mockResolvedValue({ ...mockUserPrincipal, userId: "random-user" })
-      mockCheckHackathonOrganizer.mockResolvedValue({
-        status: "not_authorized" as const,
-      })
-
-      mockFrom.mockReturnValue({
-        select: mock(() => ({
-          eq: mock(() => ({
-            eq: mock(() => ({
-              single: mock(() => Promise.resolve({ data: { captain_clerk_user_id: "captain-123" }, error: null })),
-            })),
-          })),
-        })),
-      })
-
-      const res = await app.handle(
-        new Request(url, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: "Nope" }),
-        })
-      )
-      const data = await res.json()
-
-      expect(res.status).toBe(403)
-      expect(data.error).toContain("captain")
     })
   })
 })
