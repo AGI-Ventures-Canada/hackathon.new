@@ -12,7 +12,9 @@ import {
   createSubmission,
   updateSubmission,
   getHackathonSubmissions,
+  getTeamMemberCount,
 } from "@/lib/services/submissions"
+import { getTeamSizeWarning } from "@/lib/utils/team-size"
 
 export const publicRoutes = new Elysia({ prefix: "/public" })
   .get("/health", () => ({
@@ -363,6 +365,20 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
+      let teamSizeWarning: string | null = null
+      let teamMemberCount = 1
+      if (participant.teamId) {
+        teamMemberCount = await getTeamMemberCount(participant.teamId)
+        const warning = getTeamSizeWarning({
+          memberCount: teamMemberCount,
+          minTeamSize: hackathon.min_team_size,
+          allowSolo: hackathon.allow_solo,
+        })
+        if (warning) teamSizeWarning = warning.message
+      } else if (!hackathon.allow_solo) {
+        teamSizeWarning = `Solo participants are not allowed — this event requires teams of at least ${hackathon.min_team_size}.`
+      }
+
       const githubUrl = normalizeUrl(body.githubUrl)
       const liveAppUrl = body.liveAppUrl ? normalizeUrl(body.liveAppUrl) : body.liveAppUrl
 
@@ -390,6 +406,9 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
           description: body.description,
           githubUrl,
           liveAppUrl,
+          metadata: teamSizeWarning
+            ? { teamSizeWarning, teamMemberCount }
+            : undefined,
         }
       )
 
@@ -407,7 +426,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         data: { hackathonId: hackathon.id, submissionId: submission.id, title: body.title },
       }).catch(console.error)
 
-      return { success: true, submissionId: submission.id }
+      return { success: true, submissionId: submission.id, teamSizeWarning }
     },
     {
       detail: {

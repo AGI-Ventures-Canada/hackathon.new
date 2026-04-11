@@ -1523,6 +1523,7 @@ export type JudgeAssignmentForJudge = {
   submissionLiveAppUrl: string | null
   submissionScreenshotUrl: string | null
   teamName: string | null
+  teamMemberCount: number | null
   isComplete: boolean
   notes: string
   viewedAt: string | null
@@ -1576,9 +1577,23 @@ export async function getJudgeAssignments(
     .filter((id): id is string => id !== null)
 
   let teamsMap: Record<string, string> = {}
+  const memberCountMap: Record<string, number> = {}
   if (teamIds.length > 0) {
     const { data: teams } = await client.from("teams").select("id, name").in("id", teamIds)
     teamsMap = Object.fromEntries((teams ?? []).map((t) => [t.id, t.name]))
+
+    const { data: members } = await client
+      .from("hackathon_participants")
+      .select("team_id")
+      .in("team_id", teamIds)
+      .eq("role", "participant")
+    if (members) {
+      for (const row of members) {
+        if (row.team_id) {
+          memberCountMap[row.team_id] = (memberCountMap[row.team_id] || 0) + 1
+        }
+      }
+    }
   }
 
   return assignments.map((a: Record<string, unknown>) => {
@@ -1600,6 +1615,7 @@ export async function getJudgeAssignments(
       submissionLiveAppUrl: sub.live_app_url,
       submissionScreenshotUrl: sub.screenshot_url,
       teamName: sub.team_id ? teamsMap[sub.team_id] ?? null : null,
+      teamMemberCount: sub.team_id ? memberCountMap[sub.team_id] ?? null : null,
       isComplete: a.is_complete as boolean,
       notes: a.notes as string,
       viewedAt: (a.viewed_at as string | null) ?? null,

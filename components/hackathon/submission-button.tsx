@@ -14,7 +14,7 @@ import {
   FieldGroup,
 } from "@/components/ui/field"
 import { SteppedDialogContent } from "@/components/ui/stepped-dialog-content"
-import { Loader2, Send, Pencil, Lock, Upload, X, ImageIcon } from "lucide-react"
+import { Loader2, Send, Pencil, Lock, Upload, X, ImageIcon, AlertTriangle } from "lucide-react"
 import type { HackathonStatus, Submission } from "@/lib/db/hackathon-types"
 import {
   normalizeOptionalUrl,
@@ -47,6 +47,7 @@ interface SubmissionButtonProps {
   status: HackathonStatus
   isRegistered: boolean
   submission: Submission | null
+  teamSizeWarning?: string | null
 }
 
 export function SubmissionButton({
@@ -54,6 +55,7 @@ export function SubmissionButton({
   status,
   isRegistered,
   submission: initialSubmission,
+  teamSizeWarning,
 }: SubmissionButtonProps) {
   const { isSignedIn, isLoaded } = useUser()
   const router = useRouter()
@@ -550,6 +552,16 @@ export function SubmissionButton({
           }))}
           title={submission ? "Edit Your Submission" : "Submit Your Project"}
         >
+          {teamSizeWarning && (
+            <div className="flex items-start gap-2 rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2.5">
+              <AlertTriangle className="size-4 text-destructive shrink-0 mt-0.5" />
+              <div>
+                <p className="text-xs font-medium text-destructive">Team size warning</p>
+                <p className="text-xs text-destructive/90">{teamSizeWarning}</p>
+                <p className="text-xs text-muted-foreground mt-1">You can still submit, but judges will see this warning.</p>
+              </div>
+            </div>
+          )}
           <form onSubmit={handleFormSubmit} onKeyDown={handleKeyDown} className="space-y-4" autoComplete="off">
             <FieldGroup>
               {currentStep === 0 && (

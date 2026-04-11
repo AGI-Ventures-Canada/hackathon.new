@@ -35,6 +35,22 @@ export async function getParticipantWithTeam(
   }
 }
 
+export async function getTeamMemberCount(teamId: string): Promise<number> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const { count, error } = await client
+    .from("hackathon_participants")
+    .select("*", { count: "exact", head: true })
+    .eq("team_id", teamId)
+    .eq("role", "participant")
+
+  if (error) {
+    console.error("Failed to get team member count:", error)
+    return 0
+  }
+
+  return count ?? 0
+}
+
 export async function getSubmissionForParticipant(
   hackathonId: string,
   clerkUserId: string
@@ -73,6 +89,7 @@ export type CreateSubmissionInput = {
   githubUrl: string
   liveAppUrl?: string | null
   screenshotUrl?: string | null
+  metadata?: Record<string, unknown>
 }
 
 export async function createSubmission(
@@ -95,7 +112,7 @@ export async function createSubmission(
       live_app_url: input.liveAppUrl ?? null,
       screenshot_url: input.screenshotUrl ?? null,
       status: "submitted",
-      metadata: {},
+      metadata: input.metadata ?? {},
     })
     .select()
     .single()

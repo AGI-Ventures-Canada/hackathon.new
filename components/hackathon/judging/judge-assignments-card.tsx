@@ -4,11 +4,17 @@ import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Gavel, CheckCircle2, Circle, ChevronDown, ChevronLeft, ChevronRight, Focus, List, Eye } from "lucide-react"
+import { Gavel, CheckCircle2, Circle, ChevronDown, ChevronLeft, ChevronRight, Focus, List, Eye, AlertTriangle } from "lucide-react"
+import { getTeamSizeWarning } from "@/lib/utils/team-size"
 import { ScoringPanel } from "./scoring-panel"
 import { FocusScoringView } from "./focus-scoring-view"
 
 const PAGE_SIZE = 20
+
+type TeamSettings = {
+  minTeamSize: number
+  allowSolo: boolean
+}
 
 type JudgeAssignment = {
   id: string
@@ -19,6 +25,7 @@ type JudgeAssignment = {
   submissionLiveAppUrl: string | null
   submissionScreenshotUrl: string | null
   teamName: string | null
+  teamMemberCount: number | null
   isComplete: boolean
   notes: string
   viewedAt: string | null
@@ -27,11 +34,13 @@ type JudgeAssignment = {
 interface JudgeAssignmentsCardProps {
   hackathonSlug: string
   assignments: JudgeAssignment[]
+  teamSettings?: TeamSettings
 }
 
 export function JudgeAssignmentsCard({
   hackathonSlug,
   assignments,
+  teamSettings,
 }: JudgeAssignmentsCardProps) {
   const [viewMode, setViewMode] = useState<"focus" | "list">("focus")
   const [openAssignmentId, setOpenAssignmentId] = useState<string | null>(null)
@@ -105,6 +114,7 @@ export function JudgeAssignmentsCard({
             assignments={assignments}
             initialCompletedIds={completedIds}
             onScoreSubmitted={handleScoreSubmitted}
+            teamSettings={teamSettings}
           />
         ) : (
           <>
@@ -127,9 +137,21 @@ export function JudgeAssignmentsCard({
                       )}
                       <div className="text-left flex-1">
                         <p className="font-medium text-sm">{a.submissionTitle}</p>
-                        {a.teamName && (
-                          <p className="text-xs text-muted-foreground">{a.teamName}</p>
-                        )}
+                        <div className="flex items-center gap-2">
+                          {a.teamName && (
+                            <p className="text-xs text-muted-foreground">{a.teamName}</p>
+                          )}
+                          {teamSettings && a.teamMemberCount != null && getTeamSizeWarning({
+                            memberCount: a.teamMemberCount,
+                            minTeamSize: teamSettings.minTeamSize,
+                            allowSolo: teamSettings.allowSolo,
+                          }) && (
+                            <Badge variant="destructive">
+                              <AlertTriangle className="size-3 mr-1" />
+                              Team size
+                            </Badge>
+                          )}
+                        </div>
                       </div>
                       {!isComplete && a.viewedAt && (
                         <Eye className="size-3.5 text-muted-foreground" />
@@ -149,6 +171,14 @@ export function JudgeAssignmentsCard({
                           assignmentId={a.id}
                           onClose={() => setOpenAssignmentId(null)}
                           onScoreSubmitted={() => handleScoreSubmitted(a.id)}
+                          teamSizeWarning={teamSettings && a.teamMemberCount != null
+                            ? (getTeamSizeWarning({
+                                memberCount: a.teamMemberCount,
+                                minTeamSize: teamSettings.minTeamSize,
+                                allowSolo: teamSettings.allowSolo,
+                              })?.message ?? null)
+                            : null
+                          }
                         />
                       </div>
                     )}

@@ -20,12 +20,13 @@ import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
-import { CheckCircle2, Crown, Clock, X, Lock, Scale, Mail, CalendarClock, MapPin } from "lucide-react"
+import { CheckCircle2, Crown, Clock, X, Lock, Scale, Mail, CalendarClock, MapPin, AlertTriangle } from "lucide-react"
 import { formatDateTimeDisplay } from "@/lib/utils/format"
 import type { PublicHackathon } from "@/lib/services/public-hackathons"
 import type { HackathonJudgeDisplay } from "@/lib/db/hackathon-types"
 import type { Submission } from "@/lib/db/hackathon-types"
 import type { ParticipantTeamInfo } from "@/lib/services/hackathons"
+import { getTeamSizeWarning } from "@/lib/utils/team-size"
 import { PublicResults } from "@/components/hackathon/results/public-results"
 import { MarkdownContent } from "@/components/ui/markdown-content"
 import { TruncatableContent } from "./truncatable-content"
@@ -231,6 +232,20 @@ function HackathonPreviewContent({
               {teamInfo.members.length + teamInfo.pendingInvitations.length} / {hackathon.max_team_size} members
             </span>
           </div>
+          {(() => {
+            const warning = getTeamSizeWarning({
+              memberCount: teamInfo.members.length,
+              minTeamSize: hackathon.min_team_size,
+              allowSolo: hackathon.allow_solo,
+            })
+            if (!warning) return null
+            return (
+              <div className="flex items-start gap-2 rounded-md border border-destructive/20 bg-destructive/5 px-2.5 py-2">
+                <AlertTriangle className="size-3.5 text-destructive shrink-0 mt-0.5" />
+                <span className="text-xs text-destructive">{warning.message}</span>
+              </div>
+            )
+          })()}
           <div className="space-y-0.5">
             {teamInfo.members.map((member) => {
               const isCurrentUser = member.clerkUserId === currentUserId
@@ -616,6 +631,11 @@ function HackathonPreviewContent({
         requireLocationVerification: hackathon.require_location_verification,
         submission,
         onRegistrationSuccess: handleRegistrationSuccess,
+        teamSizeWarning: teamInfo ? (getTeamSizeWarning({
+          memberCount: teamInfo.members.length,
+          minTeamSize: hackathon.min_team_size,
+          allowSolo: hackathon.allow_solo,
+        })?.message ?? null) : (!hackathon.allow_solo ? `Solo participants are not allowed — this event requires teams of at least ${hackathon.min_team_size}.` : null),
       }}
     />
   )

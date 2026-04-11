@@ -194,32 +194,10 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
           <CardTitle className="text-base">Team Settings</CardTitle>
           <CardDescription>Configure team size limits for this event</CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:gap-6">
-            <div className="space-y-1.5">
-              <Label htmlFor="max-team-size" className="text-xs">Max team size</Label>
-              <Input
-                id="max-team-size"
-                type="number"
-                min={1}
-                max={50}
-                value={maxSize}
-                onChange={(e) => setMaxSize(Number(e.target.value))}
-                onBlur={() => {
-                  if (maxSize >= minSize && maxSize >= 1) {
-                    saveTeamSettings({ maxTeamSize: maxSize }, () => setMaxSize(initialMax))
-                  }
-                }}
-                className="w-20"
-                disabled={savingSettings}
-                autoComplete="off"
-                data-1p-ignore
-                data-lpignore="true"
-                data-form-type="other"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="min-team-size" className="text-xs">Min team size</Label>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label className="text-xs">Team size</Label>
+            <div className="flex items-center gap-2">
               <Input
                 id="min-team-size"
                 type="number"
@@ -232,28 +210,64 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                     saveTeamSettings({ minTeamSize: minSize }, () => setMinSize(initialMin))
                   }
                 }}
-                className="w-20"
+                className="w-16 text-center"
+                disabled={savingSettings || allowSolo}
+                autoComplete="off"
+                data-1p-ignore
+                data-lpignore="true"
+                data-form-type="other"
+                aria-label="Minimum team size"
+              />
+              <span className="text-sm text-muted-foreground">to</span>
+              <Input
+                id="max-team-size"
+                type="number"
+                min={1}
+                max={50}
+                value={maxSize}
+                onChange={(e) => setMaxSize(Number(e.target.value))}
+                onBlur={() => {
+                  if (maxSize >= minSize && maxSize >= 1) {
+                    saveTeamSettings({ maxTeamSize: maxSize }, () => setMaxSize(initialMax))
+                  }
+                }}
+                className="w-16 text-center"
                 disabled={savingSettings}
                 autoComplete="off"
                 data-1p-ignore
                 data-lpignore="true"
                 data-form-type="other"
+                aria-label="Maximum team size"
               />
-            </div>
-            <div className="flex items-center gap-2 pb-1">
-              <Checkbox
-                id="allow-solo"
-                checked={allowSolo}
-                onCheckedChange={(checked) => {
-                  const value = !!checked
-                  setAllowSolo(value)
-                  saveTeamSettings({ allowSolo: value }, () => setAllowSolo(initialSolo))
-                }}
-                disabled={savingSettings}
-              />
-              <Label htmlFor="allow-solo" className="text-xs">Allow solo participants</Label>
+              <span className="text-sm text-muted-foreground">members</span>
             </div>
           </div>
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="allow-solo"
+              checked={allowSolo}
+              onCheckedChange={(checked) => {
+                const value = !!checked
+                const prevSolo = allowSolo
+                setAllowSolo(value)
+                if (value) {
+                  const prevMin = minSize
+                  setMinSize(1)
+                  saveTeamSettings(
+                    { allowSolo: value, minTeamSize: 1 },
+                    () => { setAllowSolo(prevSolo); setMinSize(prevMin) }
+                  )
+                } else {
+                  saveTeamSettings({ allowSolo: value }, () => setAllowSolo(prevSolo))
+                }
+              }}
+              disabled={savingSettings}
+            />
+            <Label htmlFor="allow-solo" className="text-xs">Allow solo participants</Label>
+          </div>
+          {allowSolo && (
+            <p className="text-xs text-muted-foreground">Minimum team size is set to 1</p>
+          )}
           {settingsError && <p className="text-destructive text-xs mt-2">{settingsError}</p>}
         </CardContent>
       </Card>
