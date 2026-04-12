@@ -390,6 +390,7 @@ export function ActionItemsProvider({
                 submissionDeadlineRef.current?.openDialog()
               }
             }}
+            onAddChallenge={() => challengeRef.current?.openChallengeDialog()}
           />
         </DialogContent>
       </Dialog>

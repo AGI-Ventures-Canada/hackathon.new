@@ -281,18 +281,60 @@ export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challe
       {!hideHeader && (
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold">Agenda</h3>
-          <Button size="sm" variant="outline" onClick={openCreate}>
-            <Plus className="size-4" />
-            <span className="hidden sm:inline">Add</span>
-          </Button>
+          {onAddChallenge ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline">
+                  <Plus className="size-4" />
+                  <span className="hidden sm:inline">Add</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={openCreate}>
+                  <Calendar className="size-4" />
+                  Agenda item
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={onAddChallenge}>
+                  <Zap className="size-4" />
+                  Challenge
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <Button size="sm" variant="outline" onClick={openCreate}>
+              <Plus className="size-4" />
+              <span className="hidden sm:inline">Add</span>
+            </Button>
+          )}
         </div>
       )}
       {hideHeader && (
         <div className="flex justify-end mb-3">
-          <Button size="sm" variant="outline" onClick={openCreate}>
-            <Plus className="size-4" />
-            Add
-          </Button>
+          {onAddChallenge ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline">
+                  <Plus className="size-4" />
+                  Add
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={openCreate}>
+                  <Calendar className="size-4" />
+                  Agenda item
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={onAddChallenge}>
+                  <Zap className="size-4" />
+                  Challenge
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <Button size="sm" variant="outline" onClick={openCreate}>
+              <Plus className="size-4" />
+              Add
+            </Button>
+          )}
         </div>
       )}
 

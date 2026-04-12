@@ -18,9 +18,17 @@ export function OverviewSchedule(props: Props) {
     }
   }, [ctx])
 
+  const onAddChallenge = useCallback(() => {
+    ctx?.handleActionClick({ id: "create-challenge", label: "", severity: "info", action: "open-challenge-dialog" })
+  }, [ctx])
+
   return (
     <div className="rounded-lg border p-4">
-      <ScheduleEditor {...props} onEditTriggerItem={ctx ? onEditTriggerItem : undefined} />
+      <ScheduleEditor
+        {...props}
+        onEditTriggerItem={ctx ? onEditTriggerItem : undefined}
+        onAddChallenge={ctx ? onAddChallenge : undefined}
+      />
     </div>
   )
 }
