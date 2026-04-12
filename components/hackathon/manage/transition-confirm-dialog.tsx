@@ -14,7 +14,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { useActionItems } from "./action-items-context"
-import { getTransitionConfirmation, resolveStageIndex } from "@/lib/utils/lifecycle-stages"
+import { getTransitionConfirmation } from "@/lib/utils/lifecycle-stages"
 import type { HackathonStatus } from "@/lib/db/hackathon-types"
 
 export type TransitionConfirmDialogHandle = {
@@ -51,10 +51,6 @@ export const TransitionConfirmDialog = forwardRef<TransitionConfirmDialogHandle,
       setPendingTarget(null)
       setError(null)
     }
-
-    const currentIndex = resolveStageIndex(status)
-    const targetIndex = pendingTarget ? resolveStageIndex(pendingTarget as HackathonStatus) : -1
-    const isRollback = targetIndex < currentIndex
 
     async function commitTransition() {
       if (!pendingTarget) return

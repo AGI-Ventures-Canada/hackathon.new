@@ -3,6 +3,7 @@
 import { ClipboardList, ChevronRight, CircleCheck } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion"
 import { SEVERITY_GROUP_LABEL, type ActionSeverity } from "@/lib/utils/organizer-actions"
 import { useActionItems } from "./action-items-context"
 import { ActionItemRow } from "./action-item-row"
@@ -79,11 +80,8 @@ export function ActionItemsPanel({ visible }: Props) {
         )}
       >
         <div className="flex h-full w-full flex-col border-l bg-muted">
-          <div className="flex items-center justify-between border-b px-4 py-3 shrink-0">
+          <div className="flex items-center border-b px-4 py-3 shrink-0">
             <h3 className="text-sm font-semibold">Action Items</h3>
-            {remainingCount > 0 && (
-              <Badge variant="count" className="rounded-full">{remainingCount} remaining</Badge>
-            )}
           </div>
 
           <div className="flex-1 overflow-y-auto px-2 py-3 space-y-4">
@@ -110,7 +108,7 @@ export function ActionItemsPanel({ visible }: Props) {
                 {groups.map((group) => (
                   <div key={group.severity}>
                     <p className={cn("text-xs font-semibold uppercase tracking-wide mb-1 px-2", groupColor[group.severity])}>
-                      {group.label}
+                      {group.label} ({group.items.length})
                     </p>
                     <div className="divide-y divide-border">
                       {group.items.map((item) => (
@@ -125,16 +123,20 @@ export function ActionItemsPanel({ visible }: Props) {
                 </div>
 
                 {completedItems.length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1 px-2">
-                      COMPLETED
-                    </p>
-                    <div className="divide-y divide-border">
-                      {completedItems.map((item) => (
-                        <ActionItemRow key={item.id} item={item} completed={true} compact />
-                      ))}
-                    </div>
-                  </div>
+                  <Accordion type="single" collapsible>
+                    <AccordionItem value="completed" className="border-none">
+                      <AccordionTrigger className="text-xs font-semibold uppercase tracking-wide text-muted-foreground px-2">
+                        COMPLETED ({completedItems.length})
+                      </AccordionTrigger>
+                      <AccordionContent>
+                        <div className="divide-y divide-border">
+                          {completedItems.map((item) => (
+                            <ActionItemRow key={item.id} item={item} completed={true} compact />
+                          ))}
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
+                  </Accordion>
                 )}
               </>
             )}

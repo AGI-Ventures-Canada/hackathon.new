@@ -130,6 +130,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
         status={hackathon.status}
         phase={hackathon.phase}
         challengeExists={!!hackathon.challenge_title}
+        challengeReleasedAt={hackathon.challenge_released_at}
         scheduleItems={scheduleItems}
         startsAt={hackathon.starts_at}
         endsAt={hackathon.ends_at}

@@ -1,5 +1,5 @@
 import React from "react"
-import { describe, it, expect, afterEach } from "bun:test"
+import { describe, it, expect, afterEach, mock } from "bun:test"
 import { render, screen, cleanup, fireEvent } from "@testing-library/react"
 
 afterEach(cleanup)
@@ -39,6 +39,9 @@ const allItems = [regularItem, challengeReleaseItem, submissionDeadlineItem]
 const { OverviewSchedule } = await import(
   "@/components/hackathon/overview-schedule"
 )
+const { ScheduleEditor } = await import(
+  "@/components/hackathon/schedule-editor"
+)
 
 const defaultProps = {
   hackathonId: "hack-1",
@@ -56,16 +59,20 @@ describe("OverviewSchedule (interactive agenda)", () => {
   })
 
   it("hides challenge_release item when no challenge exists", () => {
-    render(<OverviewSchedule {...defaultProps} challengeExists={false} />)
+    render(<OverviewSchedule {...defaultProps} challengeExists={false} challengeReleasedAt={null} />)
     expect(screen.getByText("Opening Kickoff")).toBeDefined()
     expect(screen.queryByText("Challenge Release")).toBeNull()
-    expect(screen.getByText("Submissions Close")).toBeDefined()
   })
 
-  it("renders the Agenda header with Add Item button", () => {
+  it("shows challenge_release item when challenge has been released", () => {
+    render(<OverviewSchedule {...defaultProps} challengeExists={false} challengeReleasedAt="2026-04-10T09:00:00Z" />)
+    expect(screen.getByText("Challenge Release")).toBeDefined()
+  })
+
+  it("renders the Agenda header with Add button", () => {
     render(<OverviewSchedule {...defaultProps} />)
     expect(screen.getByText("Agenda")).toBeDefined()
-    expect(screen.getByText("Add Item")).toBeDefined()
+    expect(screen.getByText("Add")).toBeDefined()
   })
 
   it("renders location for items that have one", () => {
@@ -73,26 +80,18 @@ describe("OverviewSchedule (interactive agenda)", () => {
     expect(screen.getByText("Main Hall")).toBeDefined()
   })
 
-  it("shows Scheduled badge for unreleased challenge when challenge exists", () => {
-    render(<OverviewSchedule {...defaultProps} challengeReleasedAt={null} />)
-    const badges = screen.getAllByText("Scheduled")
+  it("shows Automated badge on trigger items", () => {
+    render(<OverviewSchedule {...defaultProps} />)
+    const badges = screen.getAllByText("Automated")
     expect(badges.length).toBeGreaterThanOrEqual(1)
-  })
-
-  it("shows Released badge when challenge has been released", () => {
-    render(
-      <OverviewSchedule
-        {...defaultProps}
-        challengeReleasedAt="2026-04-10T09:30:00Z"
-      />
-    )
-    expect(screen.getByText("Released")).toBeDefined()
   })
 
   it("does not show Release Now or Create Challenge buttons on timeline", () => {
     render(<OverviewSchedule {...defaultProps} challengeExists={true} challengeReleasedAt={null} />)
     expect(screen.queryByText("Release Now")).toBeNull()
     expect(screen.queryByText("Create Challenge")).toBeNull()
+    expect(screen.queryByText("Scheduled")).toBeNull()
+    expect(screen.queryByText("Released")).toBeNull()
   })
 
   it("shows empty state when no items", () => {
@@ -111,9 +110,9 @@ describe("OverviewSchedule (interactive agenda)", () => {
     expect(screen.getByText("Edit agenda item")).toBeDefined()
   })
 
-  it("opens create dialog when clicking Add Item", () => {
+  it("opens create dialog when clicking Add button", () => {
     render(<OverviewSchedule {...defaultProps} />)
-    fireEvent.click(screen.getByText("Add Item"))
+    fireEvent.click(screen.getByText("Add"))
     expect(screen.getByText("Add agenda item")).toBeDefined()
   })
 
@@ -131,5 +130,33 @@ describe("OverviewSchedule (interactive agenda)", () => {
       />
     )
     expect(screen.queryByText("Delete agenda item?")).toBeNull()
+  })
+
+  it("calls onEditTriggerItem instead of opening generic editor for trigger items", () => {
+    const onEditTrigger = mock(() => {})
+    render(
+      <ScheduleEditor
+        {...defaultProps}
+        scheduleItems={[challengeReleaseItem]}
+        onEditTriggerItem={onEditTrigger}
+      />
+    )
+    const row = screen.getByText("Challenge Release").closest("[role=button]")
+    if (row) fireEvent.click(row)
+    expect(onEditTrigger).toHaveBeenCalledTimes(1)
+    expect(onEditTrigger.mock.calls[0][0].trigger_type).toBe("challenge_release")
+    expect(screen.queryByText("Edit agenda item")).toBeNull()
+  })
+
+  it("falls back to generic editor for trigger items when no callback provided", () => {
+    render(
+      <ScheduleEditor
+        {...defaultProps}
+        scheduleItems={[challengeReleaseItem]}
+      />
+    )
+    const row = screen.getByText("Challenge Release").closest("[role=button]")
+    if (row) fireEvent.click(row)
+    expect(screen.getByText("Edit agenda item")).toBeDefined()
   })
 })

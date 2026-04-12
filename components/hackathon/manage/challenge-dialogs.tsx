@@ -169,7 +169,7 @@ export const ChallengeDialogs = forwardRef<ChallengeDialogsHandle, Props>(
     return (
       <>
         <Dialog open={challengeDialogOpen} onOpenChange={setChallengeDialogOpen}>
-          <DialogContent onInteractOutside={(e) => e.preventDefault()}>
+          <DialogContent className="max-w-2xl" onInteractOutside={(e) => e.preventDefault()}>
             <DialogHeader>
               <DialogTitle>{challengeExistsLocal ? "Edit Challenge" : "Create Challenge"}</DialogTitle>
             </DialogHeader>
@@ -214,7 +214,7 @@ export const ChallengeDialogs = forwardRef<ChallengeDialogsHandle, Props>(
                     value={challengeBody}
                     onChange={setChallengeBody}
                     placeholder="Describe the challenge in detail..."
-                    rows={8}
+                    rows={14}
                   />
                   <p className="text-xs text-muted-foreground">Supports markdown: **bold**, _italic_, ## headings, lists, and [links](url)</p>
                 </div>

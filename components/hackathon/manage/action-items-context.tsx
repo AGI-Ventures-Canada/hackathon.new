@@ -15,8 +15,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { ChallengeDialogs, type ChallengeDialogsHandle } from "./challenge-dialogs"
 import { TransitionConfirmDialog, type TransitionConfirmDialogHandle } from "./transition-confirm-dialog"
+import { SubmissionDeadlineDialog, type SubmissionDeadlineDialogHandle } from "./submission-deadline-dialog"
+import { ScheduleEditor } from "@/components/hackathon/schedule-editor"
 import type { ScheduleItem } from "@/lib/services/schedule-items"
 
 const SEVERITY_ORDER: ActionSeverity[] = ["urgent", "warning", "info"]
@@ -51,6 +59,10 @@ export function useActionItems() {
   return ctx
 }
 
+export function useActionItemsOptional() {
+  return useContext(ActionItemsContext)
+}
+
 export function buildActionHref(slug: string, item: ActionItem): string | null {
   if (item.action) return null
   if (!item.tab) return null
@@ -66,6 +78,7 @@ type ProviderProps = {
   status: HackathonStatus
   phase: HackathonPhase | null
   challengeExists: boolean
+  challengeReleasedAt: string | null
   scheduleItems: ScheduleItem[]
   startsAt: string | null
   endsAt: string | null
@@ -79,6 +92,7 @@ export function ActionItemsProvider({
   status: serverStatus,
   phase: serverPhase,
   challengeExists,
+  challengeReleasedAt,
   scheduleItems,
   startsAt,
   endsAt: serverEndsAt,
@@ -87,7 +101,9 @@ export function ActionItemsProvider({
   const router = useRouter()
   const challengeRef = useRef<ChallengeDialogsHandle>(null)
   const transitionRef = useRef<TransitionConfirmDialogHandle>(null)
+  const submissionDeadlineRef = useRef<SubmissionDeadlineDialogHandle>(null)
   const [promoteDialogOpen, setPromoteDialogOpen] = useState(false)
+  const [agendaDialogOpen, setAgendaDialogOpen] = useState(false)
 
   const { data: pollData, refresh: refreshPoll } = useOrganizerPoll(hackathonId)
   const actionItems = pollData ? getOrganizerActionItems(pollData) : serverActionItems
@@ -120,6 +136,16 @@ export function ActionItemsProvider({
     } catch { return [] }
   })
 
+  const [completedSnapshots, setCompletedSnapshots] = useState<Record<string, ActionItem>>(() => {
+    if (typeof window === "undefined") return {}
+    try {
+      const stored = localStorage.getItem(`completed-snapshots-${hackathonId}`)
+      return stored ? JSON.parse(stored) : {}
+    } catch { return {} }
+  })
+  const snapshotsRef = useRef(completedSnapshots)
+  snapshotsRef.current = completedSnapshots
+
   const [panelOpen, setPanelOpenState] = useState(true)
 
   useEffect(() => {
@@ -133,16 +159,10 @@ export function ActionItemsProvider({
   const effectiveCompletedIds = useMemo(() => {
     const filtered = new Set<string>()
     for (const id of completedIds) {
-      if (actionItemIds.has(id)) filtered.add(id)
+      if (actionItemIds.has(id) || snapshotsRef.current[id]) filtered.add(id)
     }
     return filtered.size !== completedIds.size ? filtered : completedIds
   }, [completedIds, actionItemIds])
-
-  useEffect(() => {
-    if (effectiveCompletedIds !== completedIds) {
-      localStorage.setItem(`completed-actions-${hackathonId}`, JSON.stringify([...effectiveCompletedIds]))
-    }
-  }, [effectiveCompletedIds, completedIds, hackathonId])
 
   const effectiveDismissedIds = useMemo(() => {
     const filtered = new Set<string>()
@@ -159,6 +179,7 @@ export function ActionItemsProvider({
   }, [effectiveDismissedIds, dismissedIds, hackathonId])
 
   const toggleComplete = useCallback((id: string) => {
+    const wasCompleted = completedIds.has(id)
     setCompletedIds((prev) => {
       const next = new Set(prev)
       if (next.has(id)) {
@@ -169,7 +190,18 @@ export function ActionItemsProvider({
       localStorage.setItem(`completed-actions-${hackathonId}`, JSON.stringify([...next]))
       return next
     })
-  }, [hackathonId])
+    setCompletedSnapshots((prev) => {
+      const next = { ...prev }
+      if (wasCompleted) {
+        delete next[id]
+      } else {
+        const item = allItems.find((i) => i.id === id)
+        if (item) next[id] = item
+      }
+      localStorage.setItem(`completed-snapshots-${hackathonId}`, JSON.stringify(next))
+      return next
+    })
+  }, [hackathonId, allItems, completedIds])
 
   const dismissItem = useCallback((id: string) => {
     setDismissedIds((prev) => {
@@ -206,6 +238,13 @@ export function ActionItemsProvider({
       localStorage.setItem(`completed-actions-${hackathonId}`, JSON.stringify([...next]))
       return next
     })
+    setCompletedSnapshots((prev) => {
+      if (!prev[id]) return prev
+      const next = { ...prev }
+      delete next[id]
+      localStorage.setItem(`completed-snapshots-${hackathonId}`, JSON.stringify(next))
+      return next
+    })
   }, [hackathonId])
 
   const setPanelOpen = useCallback((open: boolean) => {
@@ -220,8 +259,12 @@ export function ActionItemsProvider({
       challengeRef.current?.openChallengeDialog()
     } else if (item.action === "release-challenge") {
       challengeRef.current?.openReleaseDialog()
-    } else if (item.action === "highlight-agenda") {
-      router.push(`/e/${slug}/manage?tab=overview`)
+    } else if (item.action === "open-agenda-dialog") {
+      setAgendaDialogOpen(true)
+      if (!completedIds.has(item.id)) toggleComplete(item.id)
+    } else if (item.action === "open-submission-deadline-dialog") {
+      submissionDeadlineRef.current?.openDialog()
+      if (!completedIds.has(item.id)) toggleComplete(item.id)
     } else if (item.action?.startsWith("transition-to-")) {
       const targetStatus = item.action.replace("transition-to-", "")
       transitionRef.current?.openTransitionDialog(targetStatus)
@@ -229,16 +272,40 @@ export function ActionItemsProvider({
       const href = buildActionHref(slug, item)
       if (href) router.push(href)
     }
-  }, [slug, router])
+  }, [slug, router, completedIds, toggleComplete])
 
   const triggerTransition = useCallback((targetStatus: string) => {
     transitionRef.current?.openTransitionDialog(targetStatus)
   }, [])
 
+  // Snapshot server-completed and user-completed items so they persist across status changes
+  useEffect(() => {
+    const current = snapshotsRef.current
+    let changed = false
+    const next = { ...current }
+    for (const item of allItems) {
+      if ((item.completed || completedIds.has(item.id)) && !next[item.id]) {
+        next[item.id] = item
+        changed = true
+      }
+      if (!item.completed && !completedIds.has(item.id) && next[item.id]) {
+        delete next[item.id]
+        changed = true
+      }
+    }
+    if (changed) {
+      snapshotsRef.current = next
+      setCompletedSnapshots(next)
+      localStorage.setItem(`completed-snapshots-${hackathonId}`, JSON.stringify(next))
+    }
+  }, [allItems, completedIds, hackathonId])
+
   const { activeItems, completedItems } = useMemo(() => {
     const active: ActionItem[] = []
     const completed: ActionItem[] = []
+    const seenIds = new Set<string>()
     for (const item of allItems) {
+      seenIds.add(item.id)
       if (effectiveDismissedIds.has(item.id)) continue
       if (item.completed || effectiveCompletedIds.has(item.id)) {
         completed.push(item)
@@ -246,11 +313,18 @@ export function ActionItemsProvider({
         active.push(item)
       }
     }
+    // Include completed items from previous statuses that are no longer in current action items
+    for (const [id, item] of Object.entries(completedSnapshots)) {
+      if (!seenIds.has(id) && !effectiveDismissedIds.has(id)) {
+        completed.push(item)
+      }
+    }
     active.sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity))
     return { activeItems: active, completedItems: completed }
-  }, [allItems, effectiveCompletedIds, effectiveDismissedIds])
+  }, [allItems, effectiveCompletedIds, effectiveDismissedIds, completedSnapshots])
 
-  const totalCount = allItems.filter((i) => !effectiveDismissedIds.has(i.id)).length
+  const persistedCount = Object.keys(completedSnapshots).filter((id) => !actionItemIds.has(id) && !effectiveDismissedIds.has(id)).length
+  const totalCount = allItems.filter((i) => !effectiveDismissedIds.has(i.id)).length + persistedCount
   const remainingCount = activeItems.length
 
   const value = useMemo<ActionItemsContextValue>(() => ({
@@ -292,6 +366,33 @@ export function ActionItemsProvider({
         endsAt={liveEndsAt}
         onTransitioned={refreshPoll}
       />
+      <SubmissionDeadlineDialog
+        ref={submissionDeadlineRef}
+        hackathonId={hackathonId}
+        scheduleItems={scheduleItems}
+        endsAt={liveEndsAt}
+      />
+      <Dialog open={agendaDialogOpen} onOpenChange={setAgendaDialogOpen}>
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Your agenda</DialogTitle>
+          </DialogHeader>
+          <ScheduleEditor
+            hackathonId={hackathonId}
+            scheduleItems={scheduleItems}
+            challengeReleasedAt={challengeReleasedAt}
+            challengeExists={liveChallengeExists}
+            hideHeader
+            onEditTriggerItem={(item) => {
+              if (item.trigger_type === "challenge_release") {
+                challengeRef.current?.openChallengeDialog()
+              } else if (item.trigger_type === "submission_deadline") {
+                submissionDeadlineRef.current?.openDialog()
+              }
+            }}
+          />
+        </DialogContent>
+      </Dialog>
       <AlertDialog open={promoteDialogOpen} onOpenChange={setPromoteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

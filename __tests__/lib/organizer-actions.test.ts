@@ -114,14 +114,21 @@ describe("getOrganizerActionItems", () => {
       expect(items.find((i) => i.id === "no-location")?.completed).toBe(true)
     })
 
-    it("shows default-schedule when few schedule items exist", () => {
-      const items = getOrganizerActionItems(makeInput({ scheduleItemCount: 3 }))
-      expect(items.find((i) => i.id === "default-schedule")).toBeDefined()
+    it("always shows review agenda item during draft", () => {
+      for (const count of [0, 3, 8]) {
+        const items = getOrganizerActionItems(makeInput({ scheduleItemCount: count }))
+        const item = items.find((i) => i.id === "add-schedule" && !i.completed)
+        expect(item).toBeDefined()
+        expect(item?.severity).toBe("warning")
+        expect(item?.ctaLabel).toBe("Review")
+      }
     })
 
-    it("hides default-schedule when many schedule items exist", () => {
-      const items = getOrganizerActionItems(makeInput({ scheduleItemCount: 8 }))
-      expect(items.find((i) => i.id === "default-schedule")).toBeUndefined()
+    it("uses submission deadline dialog action for check-submission-deadline", () => {
+      const items = getOrganizerActionItems(makeInput())
+      const item = items.find((i) => i.id === "check-submission-deadline")
+      expect(item).toBeDefined()
+      expect(item?.action).toBe("open-submission-deadline-dialog")
     })
 
     it("does not show ready-to-publish when dates are missing", () => {
@@ -186,6 +193,19 @@ describe("getOrganizerActionItems", () => {
       expect(item?.variant).toBe("transition")
       expect(item?.action).toBe("transition-to-active")
       expect(item?.ctaLabel).toBe("Go Live")
+    })
+
+    it("shows verify-automated-times in published phase", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "published",
+        participantCount: 0,
+      }))
+      const item = items.find((i) => i.id === "verify-automated-times")
+      expect(item).toBeDefined()
+      expect(item?.severity).toBe("info")
+      expect(item?.action).toBe("open-agenda-dialog")
+      expect(item?.ctaLabel).toBe("Review")
+      expect(item?.dismissible).toBe(true)
     })
   })
 

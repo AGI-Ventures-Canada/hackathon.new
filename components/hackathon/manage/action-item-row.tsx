@@ -108,7 +108,7 @@ export function ActionItemRow({ item, completed, compact }: Props) {
           onCheckedChange={() => toggleComplete(item.id)}
         />
       </span>
-      <span className={cn("flex-1 min-w-0", completed && "line-through opacity-50")}>
+      <span className={cn("flex-1 min-w-0", completed && "opacity-50")}>
         <span className={cn("text-sm block", compact && "text-sm")}>{item.label}</span>
         {!compact && !completed && item.hint && (
           <span className="text-xs text-muted-foreground block">{item.hint}</span>
