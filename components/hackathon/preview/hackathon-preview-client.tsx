@@ -20,7 +20,7 @@ import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
-import { CheckCircle2, Crown, Clock, X, Lock, Scale, Mail, CalendarClock, MapPin, AlertTriangle } from "lucide-react"
+import { CheckCircle2, Crown, Clock, X, Lock, Scale, Mail, CalendarClock, MapPin, AlertTriangle, Pencil } from "lucide-react"
 import { formatDateTimeDisplay } from "@/lib/utils/format"
 import type { PublicHackathon } from "@/lib/services/public-hackathons"
 import type { HackathonJudgeDisplay } from "@/lib/db/hackathon-types"
@@ -176,13 +176,17 @@ function HackathonPreviewContent({
             <>
               <span className="text-muted-foreground">·</span>
               {teamInfo.isCaptain && teamInfo.team.status === "forming" && !rename.editing ? (
-                <button
-                  type="button"
-                  className="text-sm text-muted-foreground truncate hover:underline underline-offset-2 decoration-muted-foreground/40"
-                  onClick={rename.startEditing}
-                >
-                  {teamInfo.team.name}
-                </button>
+                <>
+                  <span className="text-sm text-muted-foreground truncate">{teamInfo.team.name}</span>
+                  <button
+                    type="button"
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground shrink-0 ml-1"
+                    onClick={rename.startEditing}
+                  >
+                    <Pencil className="size-3" />
+                    Edit
+                  </button>
+                </>
               ) : rename.editing ? (
                 <Input
                   ref={rename.inputRef}
