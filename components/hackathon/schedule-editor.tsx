@@ -281,7 +281,7 @@ export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challe
       {!hideHeader && (
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold">Agenda</h3>
-          {onAddChallenge ? (
+          {onAddChallenge && !challengeExists ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button size="sm" variant="outline">
@@ -310,7 +310,7 @@ export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challe
       )}
       {hideHeader && (
         <div className="flex justify-end mb-3">
-          {onAddChallenge ? (
+          {onAddChallenge && !challengeExists ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button size="sm" variant="outline">

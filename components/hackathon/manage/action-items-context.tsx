@@ -48,6 +48,7 @@ interface ActionItemsContextValue {
   customItems: ActionItem[]
   hackathonStatus: HackathonStatus
   hackathonPhase: HackathonPhase | null
+  challengeExists: boolean
   slug: string
 }
 
@@ -112,37 +113,29 @@ export function ActionItemsProvider({
   const liveStatus = (pollData ? pollData.status : serverStatus) as HackathonStatus
   const livePhase = (pollData ? pollData.phase : serverPhase) as HackathonPhase | null
 
-  const [completedIds, setCompletedIds] = useState<Set<string>>(() => {
-    if (typeof window === "undefined") return new Set()
+  const [completedIds, setCompletedIds] = useState<Set<string>>(new Set())
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set())
+  const [customItems, setCustomItems] = useState<ActionItem[]>([])
+  const [completedSnapshots, setCompletedSnapshots] = useState<Record<string, ActionItem>>({})
+
+  useEffect(() => {
     try {
       const stored = localStorage.getItem(`completed-actions-${hackathonId}`)
-      return stored ? new Set(JSON.parse(stored)) : new Set()
-    } catch { return new Set() }
-  })
-
-  const [dismissedIds, setDismissedIds] = useState<Set<string>>(() => {
-    if (typeof window === "undefined") return new Set()
+      if (stored) setCompletedIds(new Set(JSON.parse(stored)))
+    } catch {}
     try {
       const stored = localStorage.getItem(`dismissed-actions-${hackathonId}`)
-      return stored ? new Set(JSON.parse(stored)) : new Set()
-    } catch { return new Set() }
-  })
-
-  const [customItems, setCustomItems] = useState<ActionItem[]>(() => {
-    if (typeof window === "undefined") return []
+      if (stored) setDismissedIds(new Set(JSON.parse(stored)))
+    } catch {}
     try {
       const stored = localStorage.getItem(`custom-actions-${hackathonId}`)
-      return stored ? JSON.parse(stored) : []
-    } catch { return [] }
-  })
-
-  const [completedSnapshots, setCompletedSnapshots] = useState<Record<string, ActionItem>>(() => {
-    if (typeof window === "undefined") return {}
+      if (stored) setCustomItems(JSON.parse(stored))
+    } catch {}
     try {
       const stored = localStorage.getItem(`completed-snapshots-${hackathonId}`)
-      return stored ? JSON.parse(stored) : {}
-    } catch { return {} }
-  })
+      if (stored) setCompletedSnapshots(JSON.parse(stored))
+    } catch {}
+  }, [hackathonId])
   const snapshotsRef = useRef(completedSnapshots)
   snapshotsRef.current = completedSnapshots
 
@@ -346,8 +339,9 @@ export function ActionItemsProvider({
     customItems,
     hackathonStatus: liveStatus,
     hackathonPhase: livePhase,
+    challengeExists: liveChallengeExists,
     slug,
-  }), [actionItems, effectiveCompletedIds, effectiveDismissedIds, activeItems, completedItems, remainingCount, totalCount, toggleComplete, dismissItem, panelOpen, setPanelOpen, handleActionClick, triggerTransition, addCustomItem, removeCustomItem, customItems, liveStatus, livePhase, slug])
+  }), [actionItems, effectiveCompletedIds, effectiveDismissedIds, activeItems, completedItems, remainingCount, totalCount, toggleComplete, dismissItem, panelOpen, setPanelOpen, handleActionClick, triggerTransition, addCustomItem, removeCustomItem, customItems, liveStatus, livePhase, liveChallengeExists, slug])
 
   return (
     <ActionItemsContext.Provider value={value}>

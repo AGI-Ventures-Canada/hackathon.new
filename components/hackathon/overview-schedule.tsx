@@ -26,6 +26,7 @@ export function OverviewSchedule(props: Props) {
     <div className="rounded-lg border p-4">
       <ScheduleEditor
         {...props}
+        challengeExists={ctx?.challengeExists ?? props.challengeExists}
         onEditTriggerItem={ctx ? onEditTriggerItem : undefined}
         onAddChallenge={ctx ? onAddChallenge : undefined}
       />
