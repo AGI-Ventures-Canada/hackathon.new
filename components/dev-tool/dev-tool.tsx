@@ -54,12 +54,13 @@ export function DevTool() {
   const [isSnapping, setIsSnapping] = useState(false)
   const [isActiveDrag, setIsActiveDrag] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
-  const buttonRef = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
   const positionRef = useRef(position)
   const edgeRef = useRef(edge)
   const isDragging = useRef(false)
   const dragStart = useRef({ x: 0, y: 0, posX: 0, posY: 0 })
   const hasMoved = useRef(false)
+  const suppressClick = useRef(false)
 
   const eventContext = useEventContext()
 
@@ -116,20 +117,19 @@ export function DevTool() {
   }, [])
 
   const handlePointerDown = useCallback(
-    (e: React.PointerEvent) => {
+    (e: React.PointerEvent<HTMLButtonElement>) => {
       if (expanded) return
-      if ((e.target as HTMLElement).closest("button, [role=button], a, input, textarea, select")) return
       isDragging.current = true
       hasMoved.current = false
       dragStart.current = { x: e.clientX, y: e.clientY, posX: position.x, posY: position.y }
-      ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+      e.currentTarget.setPointerCapture(e.pointerId)
       setIsSnapping(false)
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- expanded intentionally excluded to avoid re-binding during drag
     [position]
   )
 
-  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
     if (!isDragging.current) return
     const dx = e.clientX - dragStart.current.x
     const dy = e.clientY - dragStart.current.y
@@ -146,6 +146,7 @@ export function DevTool() {
     isDragging.current = false
     hasMoved.current = false
     setIsActiveDrag(false)
+    suppressClick.current = wasDragging
 
     if (wasDragging) {
       const centerX = positionRef.current.x + BUTTON_SIZE / 2
@@ -154,10 +155,24 @@ export function DevTool() {
       setIsSnapping(true)
       setPosition({ x: snapped.x, y: snapped.y })
       setEdge(snapped.edge)
-    } else if (!expanded) {
-      setExpanded(true)
     }
-  }, [expanded])
+  }, [])
+
+  const handlePointerCancel = useCallback(() => {
+    isDragging.current = false
+    hasMoved.current = false
+    setIsActiveDrag(false)
+    suppressClick.current = false
+  }, [])
+
+  const handleButtonClick = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    if (suppressClick.current) {
+      suppressClick.current = false
+      e.preventDefault()
+      return
+    }
+    setExpanded(true)
+  }, [])
 
   if (!mounted) return null
 
@@ -176,9 +191,6 @@ export function DevTool() {
         top: position.y,
         transition: isSnapping ? SNAP_TRANSITION : "none",
       }}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
     >
       {expanded ? (
         <>
@@ -213,15 +225,23 @@ export function DevTool() {
         </div>
         </>
       ) : (
-        <div
+        <button
           ref={buttonRef}
-          className="flex size-11 items-center justify-center rounded-full border bg-card text-muted-foreground shadow-md hover:text-foreground hover:shadow-lg transition-all duration-150"
+          type="button"
+          aria-label="Open dev tools"
+          aria-expanded={expanded}
+          className="relative flex size-11 items-center justify-center rounded-full border bg-card text-muted-foreground shadow-md transition-all duration-150 hover:text-foreground hover:shadow-lg"
+          onClick={handleButtonClick}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerCancel}
         >
           <FlaskConical className="size-5 shrink-0" />
           {eventContext && (
             <span className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-primary" />
           )}
-        </div>
+        </button>
       )}
     </div>
   )

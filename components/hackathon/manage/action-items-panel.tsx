@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { SEVERITY_GROUP_LABEL, type ActionSeverity } from "@/lib/utils/organizer-actions"
 import { useActionItems } from "./action-items-context"
 import { ActionItemRow } from "./action-item-row"
+import { AddItemInput } from "./add-item-input"
 
 const groupOrder: ActionSeverity[] = ["urgent", "warning", "info"]
 
@@ -20,7 +21,7 @@ type Props = {
 }
 
 export function ActionItemsPanel({ visible }: Props) {
-  const { activeItems, completedItems, remainingCount, panelOpen, setPanelOpen } = useActionItems()
+  const { activeItems, completedItems, addCustomItem, remainingCount, panelOpen, setPanelOpen } = useActionItems()
 
   const hasUrgent = activeItems.some((i) => i.severity === "urgent" || i.severity === "warning")
   const transitionItems = activeItems.filter((i) => i.variant === "transition")
@@ -118,6 +119,10 @@ export function ActionItemsPanel({ visible }: Props) {
                     </div>
                   </div>
                 ))}
+
+                <div className="mx-2">
+                  <AddItemInput onAdd={addCustomItem} compact />
+                </div>
 
                 {completedItems.length > 0 && (
                   <div>

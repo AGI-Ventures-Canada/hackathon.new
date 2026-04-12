@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useCallback, useRef, useMemo, useEffect, startTransition } from "react"
 import { useRouter } from "next/navigation"
 import { getOrganizerActionItems, type ActionItem, type ActionSeverity } from "@/lib/utils/organizer-actions"
+import type { HackathonStatus, HackathonPhase } from "@/lib/db/hackathon-types"
 import { useOrganizerPoll } from "@/hooks/use-organizer-poll"
 import {
   AlertDialog,
@@ -33,6 +34,12 @@ interface ActionItemsContextValue {
   panelOpen: boolean
   setPanelOpen: (open: boolean) => void
   handleActionClick: (item: ActionItem) => void
+  triggerTransition: (targetStatus: string) => void
+  addCustomItem: (label: string, severity?: ActionSeverity) => void
+  removeCustomItem: (id: string) => void
+  customItems: ActionItem[]
+  hackathonStatus: HackathonStatus
+  hackathonPhase: HackathonPhase | null
   slug: string
 }
 
@@ -56,8 +63,11 @@ type ProviderProps = {
   actionItems: ActionItem[]
   hackathonId: string
   slug: string
+  status: HackathonStatus
+  phase: HackathonPhase | null
   challengeExists: boolean
   scheduleItems: ScheduleItem[]
+  startsAt: string | null
   endsAt: string | null
   children: React.ReactNode
 }
@@ -66,8 +76,11 @@ export function ActionItemsProvider({
   actionItems: serverActionItems,
   hackathonId,
   slug,
+  status: serverStatus,
+  phase: serverPhase,
   challengeExists,
   scheduleItems,
+  startsAt,
   endsAt: serverEndsAt,
   children,
 }: ProviderProps) {
@@ -80,6 +93,8 @@ export function ActionItemsProvider({
   const actionItems = pollData ? getOrganizerActionItems(pollData) : serverActionItems
   const liveChallengeExists = pollData ? pollData.challengeExists : challengeExists
   const liveEndsAt = pollData ? pollData.endsAt : serverEndsAt
+  const liveStatus = (pollData ? pollData.status : serverStatus) as HackathonStatus
+  const livePhase = (pollData ? pollData.phase : serverPhase) as HackathonPhase | null
 
   const [completedIds, setCompletedIds] = useState<Set<string>>(() => {
     if (typeof window === "undefined") return new Set()
@@ -97,6 +112,14 @@ export function ActionItemsProvider({
     } catch { return new Set() }
   })
 
+  const [customItems, setCustomItems] = useState<ActionItem[]>(() => {
+    if (typeof window === "undefined") return []
+    try {
+      const stored = localStorage.getItem(`custom-actions-${hackathonId}`)
+      return stored ? JSON.parse(stored) : []
+    } catch { return [] }
+  })
+
   const [panelOpen, setPanelOpenState] = useState(true)
 
   useEffect(() => {
@@ -104,7 +127,8 @@ export function ActionItemsProvider({
     if (stored !== null) startTransition(() => setPanelOpenState(stored === "true"))
   }, [hackathonId])
 
-  const actionItemIds = useMemo(() => new Set(actionItems.map((i) => i.id)), [actionItems])
+  const allItems = useMemo(() => [...actionItems, ...customItems], [actionItems, customItems])
+  const actionItemIds = useMemo(() => new Set(allItems.map((i) => i.id)), [allItems])
 
   const effectiveCompletedIds = useMemo(() => {
     const filtered = new Set<string>()
@@ -156,6 +180,34 @@ export function ActionItemsProvider({
     })
   }, [hackathonId])
 
+  const addCustomItem = useCallback((label: string, severity: ActionSeverity = "info") => {
+    const item: ActionItem = {
+      id: `custom-${Date.now()}`,
+      label,
+      severity,
+    }
+    setCustomItems((prev) => {
+      const next = [...prev, item]
+      localStorage.setItem(`custom-actions-${hackathonId}`, JSON.stringify(next))
+      return next
+    })
+  }, [hackathonId])
+
+  const removeCustomItem = useCallback((id: string) => {
+    setCustomItems((prev) => {
+      const next = prev.filter((i) => i.id !== id)
+      localStorage.setItem(`custom-actions-${hackathonId}`, JSON.stringify(next))
+      return next
+    })
+    setCompletedIds((prev) => {
+      if (!prev.has(id)) return prev
+      const next = new Set(prev)
+      next.delete(id)
+      localStorage.setItem(`completed-actions-${hackathonId}`, JSON.stringify([...next]))
+      return next
+    })
+  }, [hackathonId])
+
   const setPanelOpen = useCallback((open: boolean) => {
     setPanelOpenState(open)
     localStorage.setItem(`action-panel-open-${hackathonId}`, String(open))
@@ -179,10 +231,14 @@ export function ActionItemsProvider({
     }
   }, [slug, router])
 
+  const triggerTransition = useCallback((targetStatus: string) => {
+    transitionRef.current?.openTransitionDialog(targetStatus)
+  }, [])
+
   const { activeItems, completedItems } = useMemo(() => {
     const active: ActionItem[] = []
     const completed: ActionItem[] = []
-    for (const item of actionItems) {
+    for (const item of allItems) {
       if (effectiveDismissedIds.has(item.id)) continue
       if (item.completed || effectiveCompletedIds.has(item.id)) {
         completed.push(item)
@@ -192,9 +248,9 @@ export function ActionItemsProvider({
     }
     active.sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity))
     return { activeItems: active, completedItems: completed }
-  }, [actionItems, effectiveCompletedIds, effectiveDismissedIds])
+  }, [allItems, effectiveCompletedIds, effectiveDismissedIds])
 
-  const totalCount = actionItems.filter((i) => !effectiveDismissedIds.has(i.id)).length
+  const totalCount = allItems.filter((i) => !effectiveDismissedIds.has(i.id)).length
   const remainingCount = activeItems.length
 
   const value = useMemo<ActionItemsContextValue>(() => ({
@@ -210,8 +266,14 @@ export function ActionItemsProvider({
     panelOpen,
     setPanelOpen,
     handleActionClick,
+    triggerTransition,
+    addCustomItem,
+    removeCustomItem,
+    customItems,
+    hackathonStatus: liveStatus,
+    hackathonPhase: livePhase,
     slug,
-  }), [actionItems, effectiveCompletedIds, effectiveDismissedIds, activeItems, completedItems, remainingCount, totalCount, toggleComplete, dismissItem, panelOpen, setPanelOpen, handleActionClick, slug])
+  }), [actionItems, effectiveCompletedIds, effectiveDismissedIds, activeItems, completedItems, remainingCount, totalCount, toggleComplete, dismissItem, panelOpen, setPanelOpen, handleActionClick, triggerTransition, addCustomItem, removeCustomItem, customItems, liveStatus, livePhase, slug])
 
   return (
     <ActionItemsContext.Provider value={value}>
@@ -221,10 +283,12 @@ export function ActionItemsProvider({
         hackathonId={hackathonId}
         challengeExists={liveChallengeExists}
         scheduleItems={scheduleItems}
+        startsAt={startsAt}
       />
       <TransitionConfirmDialog
         ref={transitionRef}
         hackathonId={hackathonId}
+        status={liveStatus}
         endsAt={liveEndsAt}
         onTransitioned={refreshPoll}
       />

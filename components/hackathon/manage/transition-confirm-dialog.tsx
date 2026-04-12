@@ -14,6 +14,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { useActionItems } from "./action-items-context"
+import { getTransitionConfirmation, resolveStageIndex } from "@/lib/utils/lifecycle-stages"
+import type { HackathonStatus } from "@/lib/db/hackathon-types"
 
 export type TransitionConfirmDialogHandle = {
   openTransitionDialog: (targetStatus: string) => void
@@ -21,31 +23,13 @@ export type TransitionConfirmDialogHandle = {
 
 type Props = {
   hackathonId: string
+  status: HackathonStatus
   endsAt: string | null
   onTransitioned?: () => void
 }
 
-const confirmations: Record<string, { title: string; description: string }> = {
-  published: {
-    title: "Publish hackathon?",
-    description: "Your hackathon will become visible and open for registration.",
-  },
-  active: {
-    title: "Start hackathon?",
-    description: "The hackathon will go live and participants can start building.",
-  },
-  judging: {
-    title: "Close submissions?",
-    description: "Submissions will close and the judging phase will begin.",
-  },
-  completed: {
-    title: "Complete the event?",
-    description: "The event will be marked as completed. Results will be calculated and published if possible.",
-  },
-}
-
 export const TransitionConfirmDialog = forwardRef<TransitionConfirmDialogHandle, Props>(
-  function TransitionConfirmDialog({ hackathonId, endsAt, onTransitioned }, ref) {
+  function TransitionConfirmDialog({ hackathonId, status, endsAt, onTransitioned }, ref) {
     const router = useRouter()
     const { activeItems } = useActionItems()
     const [pendingTarget, setPendingTarget] = useState<string | null>(null)
@@ -67,6 +51,10 @@ export const TransitionConfirmDialog = forwardRef<TransitionConfirmDialogHandle,
       setPendingTarget(null)
       setError(null)
     }
+
+    const currentIndex = resolveStageIndex(status)
+    const targetIndex = pendingTarget ? resolveStageIndex(pendingTarget as HackathonStatus) : -1
+    const isRollback = targetIndex < currentIndex
 
     async function commitTransition() {
       if (!pendingTarget) return
@@ -121,6 +109,14 @@ export const TransitionConfirmDialog = forwardRef<TransitionConfirmDialogHandle,
           return
         }
 
+        // Reverting from completed — unpublish results first
+        if (status === "completed" || status === "archived") {
+          await fetch(
+            `/api/dashboard/hackathons/${hackathonId}/results/unpublish`,
+            { method: "POST" },
+          )
+        }
+
         const dbStatus = pendingTarget === "published" ? "registration_open" : pendingTarget
         const body: Record<string, unknown> = { status: dbStatus }
 
@@ -149,7 +145,7 @@ export const TransitionConfirmDialog = forwardRef<TransitionConfirmDialogHandle,
       }
     }
 
-    const confirmation = pendingTarget ? confirmations[pendingTarget] : null
+    const confirmation = pendingTarget ? getTransitionConfirmation(status, pendingTarget) : null
 
     return (
       <AlertDialog

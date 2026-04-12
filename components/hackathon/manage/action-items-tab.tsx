@@ -1,11 +1,13 @@
 "use client"
 
-import { CircleCheck } from "lucide-react"
+import { useState } from "react"
+import { CircleCheck, Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Progress } from "@/components/ui/progress"
 import { SEVERITY_GROUP_LABEL, type ActionSeverity } from "@/lib/utils/organizer-actions"
 import { useActionItems } from "./action-items-context"
 import { ActionItemRow } from "./action-item-row"
+import { AddItemInput } from "./add-item-input"
 
 const groupOrder: ActionSeverity[] = ["urgent", "warning", "info"]
 
@@ -16,7 +18,7 @@ const groupColor: Record<ActionSeverity, string> = {
 }
 
 export function ActionItemsTab() {
-  const { activeItems, completedItems, remainingCount, totalCount } = useActionItems()
+  const { activeItems, completedItems, addCustomItem, remainingCount, totalCount } = useActionItems()
 
   const transitionItems = activeItems.filter((i) => i.variant === "transition")
   const regularItems = activeItems.filter((i) => i.variant !== "transition")
@@ -76,6 +78,8 @@ export function ActionItemsTab() {
           </div>
         </div>
       ))}
+
+      <AddItemInput onAdd={addCustomItem} />
 
       {completedItems.length > 0 && (
         <div>

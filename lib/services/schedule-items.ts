@@ -11,6 +11,7 @@ export type ScheduleItem = {
   location: string | null
   sort_order: number
   trigger_type: "challenge_release" | "submission_deadline" | null
+  linked_to: "event_start" | "event_end" | null
   created_at: string
   updated_at: string
 }
@@ -32,6 +33,7 @@ export type UpdateScheduleItemInput = {
   endsAt?: string | null
   location?: string | null
   sortOrder?: number
+  linkedTo?: "event_start" | "event_end" | null
 }
 
 export async function listScheduleItems(hackathonId: string): Promise<ScheduleItem[]> {
@@ -84,6 +86,7 @@ export async function updateScheduleItem(itemId: string, hackathonId: string, in
   if (input.endsAt !== undefined) updates.ends_at = input.endsAt
   if (input.location !== undefined) updates.location = input.location
   if (input.sortOrder !== undefined) updates.sort_order = input.sortOrder
+  if (input.linkedTo !== undefined) updates.linked_to = input.linkedTo
 
   const { data, error } = await client
     .from("hackathon_schedule_items")

@@ -21,6 +21,7 @@ import { ActionItemsProvider } from "@/components/hackathon/manage/action-items-
 import { ActionItemsTab } from "@/components/hackathon/manage/action-items-tab"
 import { ActionItemsLayout } from "@/components/hackathon/manage/action-items-layout"
 import { ActionItemsTabBadge } from "@/components/hackathon/manage/action-items-tab-badge"
+import { StatusBadgeMenu } from "@/components/hackathon/manage/status-badge-menu"
 import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { TabCount } from "@/components/ui/tab-count"
 import { TabsUrlSync } from "./_tabs-url-sync"
@@ -126,14 +127,18 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
         actionItems={actionItems}
         hackathonId={hackathon.id}
         slug={hackathon.slug}
+        status={hackathon.status}
+        phase={hackathon.phase}
         challengeExists={!!hackathon.challenge_title}
         scheduleItems={scheduleItems}
+        startsAt={hackathon.starts_at}
         endsAt={hackathon.ends_at}
       >
         <TabsUrlSync paramKey="tab" value={activeTab}>
           <ActionItemsLayout>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5">
               <h1 className="text-lg font-semibold">{hackathon.name}</h1>
+              <StatusBadgeMenu />
               <HackathonPageActions
                 slug={hackathon.slug}
                 hackathonName={hackathon.name}

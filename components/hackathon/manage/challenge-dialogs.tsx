@@ -35,20 +35,23 @@ type Props = {
   hackathonId: string
   challengeExists: boolean
   scheduleItems: ScheduleItem[]
+  startsAt: string | null
   onChallengeCreated?: () => void
   onChallengeReleased?: () => void
 }
 
 export const ChallengeDialogs = forwardRef<ChallengeDialogsHandle, Props>(
-  function ChallengeDialogs({ hackathonId, challengeExists, scheduleItems, onChallengeCreated, onChallengeReleased }, ref) {
+  function ChallengeDialogs({ hackathonId, challengeExists, scheduleItems, startsAt, onChallengeCreated, onChallengeReleased }, ref) {
     const router = useRouter()
     const challengeReleaseItem = scheduleItems.find((s) => s.trigger_type === "challenge_release")
     const defaultReleaseTime = challengeReleaseItem?.starts_at ? new Date(challengeReleaseItem.starts_at) : null
+    const defaultLinkedToEventStart = challengeReleaseItem?.linked_to === "event_start"
 
     const [challengeDialogOpen, setChallengeDialogOpen] = useState(false)
     const [challengeTitle, setChallengeTitle] = useState("")
     const [challengeBody, setChallengeBody] = useState("")
     const [challengeReleaseAt, setChallengeReleaseAt] = useState<Date | null>(defaultReleaseTime)
+    const [linkedToEventStart, setLinkedToEventStart] = useState(defaultLinkedToEventStart)
     const [challengeSaving, setChallengeSaving] = useState(false)
     const [challengeError, setChallengeError] = useState<string | null>(null)
     const [challengeSaved, setChallengeSaved] = useState(false)
@@ -63,6 +66,7 @@ export const ChallengeDialogs = forwardRef<ChallengeDialogsHandle, Props>(
       setChallengeError(null)
       setChallengeSaved(false)
       setChallengeReleaseAt(defaultReleaseTime)
+      setLinkedToEventStart(defaultLinkedToEventStart)
       if (challengeExistsLocal) {
         try {
           const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/challenge`)
@@ -95,12 +99,19 @@ export const ChallengeDialogs = forwardRef<ChallengeDialogsHandle, Props>(
           const data = await res.json().catch(() => ({}))
           throw new Error(data.error || "Failed to save challenge")
         }
-        if (challengeReleaseAt && challengeReleaseItem) {
-          await fetch(`/api/dashboard/hackathons/${hackathonId}/schedule/${challengeReleaseItem.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ title: "Challenge Release", startsAt: challengeReleaseAt.toISOString() }),
-          })
+        if (challengeReleaseItem) {
+          const releaseTime = linkedToEventStart && startsAt ? startsAt : challengeReleaseAt?.toISOString()
+          if (releaseTime) {
+            await fetch(`/api/dashboard/hackathons/${hackathonId}/schedule/${challengeReleaseItem.id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                title: "Challenge Release",
+                startsAt: releaseTime,
+                linkedTo: linkedToEventStart ? "event_start" : null,
+              }),
+            })
+          }
         }
         setChallengeExistsLocal(true)
         setChallengeSaved(true)
@@ -166,11 +177,13 @@ export const ChallengeDialogs = forwardRef<ChallengeDialogsHandle, Props>(
               <div className="flex flex-col items-center gap-2 py-8">
                 <CheckCircle2 className="size-8 text-primary" />
                 <p className="text-sm font-medium">Challenge saved</p>
-                {challengeReleaseAt && (
-                  <p className="text-xs text-muted-foreground">
-                    Releases {challengeReleaseAt.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
-                  </p>
-                )}
+                <p className="text-xs text-muted-foreground">
+                  {linkedToEventStart
+                    ? "Releases when the event starts"
+                    : challengeReleaseAt
+                      ? `Releases ${challengeReleaseAt.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`
+                      : null}
+                </p>
               </div>
             ) : (
               <form
@@ -206,12 +219,31 @@ export const ChallengeDialogs = forwardRef<ChallengeDialogsHandle, Props>(
                   <p className="text-xs text-muted-foreground">Supports markdown: **bold**, _italic_, ## headings, lists, and [links](url)</p>
                 </div>
                 <div className="space-y-2">
-                  <Label>Release time</Label>
-                  <DateTimePicker
-                    value={challengeReleaseAt}
-                    onChange={setChallengeReleaseAt}
-                    placeholder="When should participants see this?"
-                  />
+                  <div className="flex items-center justify-between">
+                    <Label>Release time</Label>
+                    {startsAt && (
+                      <Button
+                        type="button"
+                        variant="link"
+                        size="sm"
+                        className="h-auto p-0 text-xs"
+                        onClick={() => setLinkedToEventStart(!linkedToEventStart)}
+                      >
+                        {linkedToEventStart ? "Use custom time" : "Use event start"}
+                      </Button>
+                    )}
+                  </div>
+                  {linkedToEventStart && startsAt ? (
+                    <p className="rounded-md border bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+                      Releases when the event starts ({new Date(startsAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })})
+                    </p>
+                  ) : (
+                    <DateTimePicker
+                      value={challengeReleaseAt}
+                      onChange={setChallengeReleaseAt}
+                      placeholder="When should participants see this?"
+                    />
+                  )}
                 </div>
                 {challengeError && <p className="text-destructive text-xs">{challengeError}</p>}
                 <Button type="submit" disabled={challengeSaving || !challengeTitle.trim()} className="w-full">

@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
@@ -54,7 +55,8 @@ function WithTooltip({ tooltip, children }: { tooltip?: string; children: React.
 }
 
 export function ActionItemRow({ item, completed, compact }: Props) {
-  const { toggleComplete, handleActionClick, slug } = useActionItems()
+  const { toggleComplete, handleActionClick, removeCustomItem, slug } = useActionItems()
+  const isCustom = item.id.startsWith("custom-")
   const href = buildActionHref(slug, item)
   const hasAction = !!item.action
   const isTransition = item.variant === "transition"
@@ -113,6 +115,17 @@ export function ActionItemRow({ item, completed, compact }: Props) {
         )}
       </span>
       {ctaBadge}
+      {isCustom && (
+        <span
+          role="button"
+          tabIndex={0}
+          className="shrink-0 rounded p-0.5 opacity-0 group-hover:opacity-100 hover:bg-muted-foreground/10 transition-opacity"
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeCustomItem(item.id) }}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); removeCustomItem(item.id) } }}
+        >
+          <X className="size-3.5 text-muted-foreground" />
+        </span>
+      )}
     </span>
   )
 
