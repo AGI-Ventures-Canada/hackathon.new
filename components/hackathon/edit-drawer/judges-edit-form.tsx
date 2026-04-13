@@ -169,12 +169,17 @@ export function JudgesEditForm({
 
 
   useEffect(() => {
+    const serverMap = new Map(initialJudges.map((j) => [j.id, j]))
     setLocalEdits((prev) => {
       const kept: Record<string, Record<string, string | null>> = {}
       for (const [judgeId, fields] of Object.entries(prev)) {
+        const server = serverMap.get(judgeId) as Record<string, unknown> | undefined
         const remaining: Record<string, string | null> = {}
         for (const [field, value] of Object.entries(fields)) {
-          if (savingFieldsRef.current.has(`${judgeId}:${field}`)) {
+          const isSaving = savingFieldsRef.current.has(`${judgeId}:${field}`)
+          const serverValue = (server?.[field] as string | null) ?? null
+          const localValue = value ?? null
+          if (isSaving || localValue !== serverValue) {
             remaining[field] = value
           }
         }
@@ -260,7 +265,6 @@ export function JudgesEditForm({
                 name,
                 ...(clerkUser ? { clerkUserId: clerkUser.id } : {}),
                 ...(clerkUser?.imageUrl ? { headshotUrl: clerkUser.imageUrl } : {}),
-                ...(entry.email ? { email: entry.email } : {}),
               }),
             }
           )
