@@ -7,8 +7,8 @@ afterEach(cleanup)
 const regularItem = {
   id: "item-1",
   title: "Opening Kickoff",
-  starts_at: "2026-04-10T09:00:00Z",
-  ends_at: "2026-04-10T09:30:00Z",
+  starts_at: "2030-04-10T09:00:00Z",
+  ends_at: "2030-04-10T09:30:00Z",
   location: "Main Hall",
   sort_order: 0,
   trigger_type: null,
@@ -17,7 +17,7 @@ const regularItem = {
 const challengeReleaseItem = {
   id: "item-2",
   title: "Challenge Release",
-  starts_at: "2026-04-10T09:30:00Z",
+  starts_at: "2030-04-10T09:30:00Z",
   ends_at: null,
   location: null,
   sort_order: 1,
@@ -27,7 +27,7 @@ const challengeReleaseItem = {
 const submissionDeadlineItem = {
   id: "item-3",
   title: "Submissions Close",
-  starts_at: "2026-04-12T17:00:00Z",
+  starts_at: "2030-04-12T17:00:00Z",
   ends_at: null,
   location: null,
   sort_order: 2,

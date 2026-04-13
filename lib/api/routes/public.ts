@@ -1006,11 +1006,6 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
-    // Product decision: sibling tokens are intentionally returned to enable
-    // one team member to claim all of their submission's prizes in a single
-    // session. The claim token is the authorization — no additional auth is
-    // required. All tokens belong to the same submission, so cross-member
-    // claiming is by design (any teammate can fulfill on behalf of the team).
     const { getSiblingClaims } = await import("@/lib/services/prize-fulfillment")
     const siblings = await getSiblingClaims(params.token)
     const publicSiblings = siblings.map(({ recipientEmail: _email, shippingAddress: _addr, ...rest }) => rest)

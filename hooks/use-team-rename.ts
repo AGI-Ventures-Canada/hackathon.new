@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { useRouter } from "next/navigation"
 
 export function useTeamRename(hackathonId: string, teamId: string, currentName: string) {
@@ -10,6 +10,10 @@ export function useTeamRename(hackathonId: string, teamId: string, currentName: 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!editing) setValue(currentName)
+  }, [currentName, editing])
 
   function startEditing() {
     setEditing(true)
@@ -39,6 +43,7 @@ export function useTeamRename(hackathonId: string, teamId: string, currentName: 
         const data = await res.json().catch(() => ({}))
         throw new Error(data.error || "Failed to rename team")
       }
+      setValue(trimmed)
       setEditing(false)
       router.refresh()
     } catch (err) {

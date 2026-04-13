@@ -273,21 +273,26 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       set.status = 404
       return { error: "Hackathon not found" }
     }
+    const { supabase } = await import("@/lib/db/client")
+
     if (check.status === "not_authorized") {
       if (principal.kind !== "user") {
         set.status = 403
         return { error: "Not authorized to manage this hackathon" }
       }
-      const { supabase } = await import("@/lib/db/client")
       const { data: team } = await supabase()
         .from("teams")
-        .select("captain_clerk_user_id")
+        .select("captain_clerk_user_id, status")
         .eq("id", params.teamId)
         .eq("hackathon_id", params.id)
         .single()
       if (!team || team.captain_clerk_user_id !== principal.userId) {
         set.status = 403
         return { error: "Only the team captain or an organizer can rename a team" }
+      }
+      if (team.status !== "forming") {
+        set.status = 409
+        return { error: "Team name can only be changed while the team is forming" }
       }
     }
 
@@ -297,7 +302,6 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       return { error: "Team name must be 1-100 characters" }
     }
 
-    const { supabase } = await import("@/lib/db/client")
     const client = supabase()
     const { data, error } = await client
       .from("teams")
@@ -316,7 +320,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
 
     return data
   }, {
-    body: t.Object({ name: t.String() }),
+    body: t.Object({ name: t.String({ minLength: 1, maxLength: 100 }) }),
     detail: { summary: "Update team name" },
   })
   .get("/hackathons/:id/categories", async ({ params, principal, set }) => {

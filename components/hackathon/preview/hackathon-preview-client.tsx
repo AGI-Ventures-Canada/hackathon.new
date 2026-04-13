@@ -16,7 +16,6 @@ import { SubmissionGallery, type GallerySubmission } from "@/components/hackatho
 import { TeamInviteDialog } from "@/components/hackathon/team-invite-dialog"
 import { useTeamRename } from "@/hooks/use-team-rename"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
@@ -188,14 +187,14 @@ function HackathonPreviewContent({
                   </button>
                 </>
               ) : rename.editing ? (
-                <Input
+                <input
                   ref={rename.inputRef}
                   value={rename.value}
                   onChange={(e) => rename.setValue(e.target.value)}
                   onBlur={rename.save}
                   onKeyDown={rename.handleKeyDown}
                   disabled={rename.saving}
-                  className="h-6 text-sm w-48 sm:w-64"
+                  className="h-6 text-sm bg-transparent border-b border-input outline-none focus:border-ring w-48 sm:w-64"
                   maxLength={100}
                   autoComplete="off"
                   data-1p-ignore

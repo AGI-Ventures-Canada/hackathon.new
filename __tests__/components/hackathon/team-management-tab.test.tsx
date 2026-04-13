@@ -1,14 +1,7 @@
-import { describe, it, expect, mock, beforeEach } from "bun:test"
+import { describe, it, expect, beforeEach } from "bun:test"
 import { render, screen, cleanup } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-
-mock.module("next/navigation", () => ({
-  useRouter: () => ({ refresh: () => {} }),
-}))
-
-mock.module("@clerk/nextjs", () => ({
-  useUser: () => ({ user: { id: "user-1" } }),
-}))
+import { resetComponentMocks, setClerkAuth, setClerkUser } from "../../lib/component-mocks"
 
 const { TeamManagementTab } = await import(
   "@/components/hackathon/team-management-tab"
@@ -39,6 +32,9 @@ const baseTeamInfo = {
 describe("TeamManagementTab", () => {
   beforeEach(() => {
     cleanup()
+    resetComponentMocks()
+    setClerkAuth({ userId: "user-1", isSignedIn: true })
+    setClerkUser({ id: "user-1", fullName: "Alice", firstName: "Alice", imageUrl: null })
   })
 
   it("shows captain info block when user is captain", () => {

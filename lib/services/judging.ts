@@ -1431,10 +1431,6 @@ async function insertRankedResults(
   return { success: true, count: inserts.length }
 }
 
-// ============================================================
-// Auto-recalculate after scoring
-// ============================================================
-
 export async function recalculateForAssignment(assignmentId: string): Promise<void> {
   const client = getSupabase() as unknown as SupabaseClient
   const { data } = await client

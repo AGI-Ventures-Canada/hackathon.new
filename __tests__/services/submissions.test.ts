@@ -12,6 +12,7 @@ const {
   getExistingSubmission,
   createSubmission,
   updateSubmission,
+  getTeamMemberCount,
 } = await import("@/lib/services/submissions")
 
 const mockSubmission: Submission = {
@@ -303,6 +304,56 @@ describe("Submissions Service", () => {
       })
 
       expect(result).toBeNull()
+    })
+  })
+
+  describe("getTeamMemberCount", () => {
+    it("returns the count of participants in a team", async () => {
+      const chain = createChainableMock({
+        data: null,
+        error: null,
+        count: 3,
+      })
+      setMockFromImplementation(() => chain)
+
+      const result = await getTeamMemberCount("team-1")
+      expect(result).toBe(3)
+    })
+
+    it("returns 0 when team has no members", async () => {
+      const chain = createChainableMock({
+        data: null,
+        error: null,
+        count: 0,
+      })
+      setMockFromImplementation(() => chain)
+
+      const result = await getTeamMemberCount("team-1")
+      expect(result).toBe(0)
+    })
+
+    it("returns 0 when database query fails", async () => {
+      const chain = createChainableMock({
+        data: null,
+        error: { message: "DB error" },
+        count: null,
+      })
+      setMockFromImplementation(() => chain)
+
+      const result = await getTeamMemberCount("team-1")
+      expect(result).toBe(0)
+    })
+
+    it("returns 0 when count is null", async () => {
+      const chain = createChainableMock({
+        data: null,
+        error: null,
+        count: null,
+      })
+      setMockFromImplementation(() => chain)
+
+      const result = await getTeamMemberCount("team-1")
+      expect(result).toBe(0)
     })
   })
 })

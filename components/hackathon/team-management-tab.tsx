@@ -6,7 +6,6 @@ import { useUser } from "@clerk/nextjs"
 import { useTeamRename } from "@/hooks/use-team-rename"
 import { TeamInviteDialog } from "./team-invite-dialog"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -76,14 +75,14 @@ export function TeamManagementTab({ teamInfo, hackathonId, maxTeamSize }: TeamMa
                     {teamInfo.team.name}
                   </button>
                 ) : rename.editing ? (
-                  <Input
+                  <input
                     ref={rename.inputRef}
                     value={rename.value}
                     onChange={(e) => rename.setValue(e.target.value)}
                     onBlur={rename.save}
                     onKeyDown={rename.handleKeyDown}
                     disabled={rename.saving}
-                    className="h-7 text-base font-semibold"
+                    className="h-7 text-base font-semibold bg-transparent border-b border-input outline-none focus:border-ring w-full"
                     maxLength={100}
                     autoComplete="off"
                     data-1p-ignore

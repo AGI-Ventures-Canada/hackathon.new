@@ -207,7 +207,11 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                 onChange={(e) => setMinSize(Number(e.target.value))}
                 onBlur={() => {
                   if (minSize >= 1 && minSize <= maxSize) {
+                    setSettingsError(null)
                     saveTeamSettings({ minTeamSize: minSize }, () => setMinSize(initialMin))
+                  } else {
+                    setSettingsError("Minimum must be between 1 and maximum team size")
+                    setMinSize(initialMin)
                   }
                 }}
                 className="w-16 text-center"
@@ -228,7 +232,11 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                 onChange={(e) => setMaxSize(Number(e.target.value))}
                 onBlur={() => {
                   if (maxSize >= minSize && maxSize >= 1) {
+                    setSettingsError(null)
                     saveTeamSettings({ maxTeamSize: maxSize }, () => setMaxSize(initialMax))
+                  } else {
+                    setSettingsError("Maximum must be at least the minimum team size")
+                    setMaxSize(initialMax)
                   }
                 }}
                 className="w-16 text-center"

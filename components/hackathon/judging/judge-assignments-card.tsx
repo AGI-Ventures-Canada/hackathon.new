@@ -55,12 +55,13 @@ export function JudgeAssignmentsCard({
   const pageAssignments = assignments.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
 
   function handleScoreSubmitted(assignmentId: string) {
-    setCompletedIds((prev) => new Set([...prev, assignmentId]))
+    const updatedIds = new Set([...completedIds, assignmentId])
+    setCompletedIds(updatedIds)
 
     if (viewMode === "list") {
       const currentIdx = assignments.findIndex((a) => a.id === assignmentId)
       const nextUnscored = assignments.find(
-        (a, idx) => idx > currentIdx && !completedIds.has(a.id) && a.id !== assignmentId
+        (a, idx) => idx > currentIdx && !updatedIds.has(a.id)
       )
       if (nextUnscored) {
         setTimeout(() => setOpenAssignmentId(nextUnscored.id), 500)

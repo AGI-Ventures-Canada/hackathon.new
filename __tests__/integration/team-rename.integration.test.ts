@@ -1,7 +1,7 @@
 import { describe, expect, it, mock, beforeEach } from "bun:test"
 
 const mockCheckHackathonOrganizer = mock(() =>
-  Promise.resolve({ status: "authorized" as const, hackathon: { id: "h1", tenant_id: "tenant-123" } })
+  Promise.resolve({ status: "ok" as const, hackathon: { id: "h1", tenant_id: "tenant-123" } })
 )
 
 mock.module("@/lib/services/public-hackathons", () => ({

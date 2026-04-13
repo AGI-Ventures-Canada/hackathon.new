@@ -61,6 +61,7 @@ mock.module("@/lib/services/submissions", () => ({
   createSubmission: mock(() => Promise.resolve({ id: "new-sub" })),
   updateSubmission: mockUpdateSubmission,
   getHackathonSubmissions: mockGetHackathonSubmissions,
+  getTeamMemberCount: mock(() => Promise.resolve(0)),
 }))
 
 const mockUploadScreenshot = mock(() => Promise.resolve({ url: "https://storage.test/screenshot.webp", path: "sub123/screenshot.webp" }))

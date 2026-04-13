@@ -1,9 +1,6 @@
-import { describe, it, expect, mock, beforeEach } from "bun:test"
+import { describe, it, expect, beforeEach } from "bun:test"
 import { render, screen, cleanup } from "@testing-library/react"
-
-mock.module("next/navigation", () => ({
-  useRouter: () => ({ refresh: () => {} }),
-}))
+import { resetComponentMocks } from "../../lib/component-mocks"
 
 const { TeamInviteDialog } = await import(
   "@/components/hackathon/team-invite-dialog"
@@ -12,6 +9,7 @@ const { TeamInviteDialog } = await import(
 describe("TeamInviteDialog", () => {
   beforeEach(() => {
     cleanup()
+    resetComponentMocks()
   })
 
   it("renders the invite button", () => {
