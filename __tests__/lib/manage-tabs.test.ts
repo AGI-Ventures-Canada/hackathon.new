@@ -3,8 +3,10 @@ import {
   VALID_TABS,
   VALID_ETABS,
   VALID_MTABS,
+  VALID_JTABS,
   DEFAULT_TAB,
   DEFAULT_MTAB,
+  DEFAULT_JTAB,
   resolveTab,
   getJudgingRedirectUrl,
 } from "@/lib/utils/manage-tabs"

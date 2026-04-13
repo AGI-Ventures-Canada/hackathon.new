@@ -178,7 +178,7 @@ function addActiveActions(items: ActionItem[], input: ActionItemsInput) {
   const hasJudges = input.judgeCount > 0
   items.push(hasJudges
     ? { id: "no-judges-active", label: "Judges assigned", hint: "Ready to evaluate submissions when the time comes", severity: "warning", tab: "judging", completed: true, tooltip: "Judges are assigned and will be notified when the judging phase begins. They'll score submissions based on the rubrics you've defined for each prize category." }
-    : { id: "no-judges-active", label: "No judges assigned yet", hint: "You'll need judges before starting the judging phase", severity: "warning", tab: "judging", ctaLabel: "Invite", tooltip: "Judges are needed to evaluate submissions once the hackathon ends. Without judges, you won't be able to score projects and determine winners. Invite them now so they're ready when judging begins." }
+    : { id: "no-judges-active", label: "No judges assigned yet", hint: "You'll need judges before starting the judging phase", severity: "warning", tab: "judging", subtab: "setup", subtabKey: "jtab", ctaLabel: "Invite", tooltip: "Judges are needed to evaluate submissions once the hackathon ends. Without judges, you won't be able to score projects and determine winners. Invite them now so they're ready when judging begins." }
   )
 
   if (input.submissionCount > 0 && hasJudges && input.challengeReleased) {
