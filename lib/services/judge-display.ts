@@ -68,6 +68,9 @@ export async function createJudgeDisplayProfile(
 
   if (error) {
     if (error.code === "23505") {
+      // Safe because the two unique partial indexes are mutually exclusive:
+      // udx_judges_display_clerk_user  → WHERE clerk_user_id IS NOT NULL
+      // udx_judges_display_name_manual → WHERE clerk_user_id IS NULL
       const matchedBy = input.clerkUserId ? "clerk_user" : "name"
       return { status: "duplicate", matchedBy } as const
     }

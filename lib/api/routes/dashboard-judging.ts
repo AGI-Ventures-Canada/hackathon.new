@@ -4,6 +4,10 @@ import { logAudit } from "@/lib/services/audit"
 import { resolveAdderName } from "@/lib/auth/resolve-adder-name"
 
 type CachedAuthResult = { status: "ok" } | { status: "not_found" } | { status: "not_authorized" }
+// Local-dev-only optimisation: avoids repeated checkHackathonOrganizer calls
+// during rapid judge search typing. On Vercel (short-lived lambdas) the cache
+// won't persist across invocations, so this is effectively a no-op in prod.
+const SEARCH_AUTH_MAX = 500
 const searchAuthCache = new Map<string, { result: CachedAuthResult; expires: number }>()
 const SEARCH_AUTH_TTL = 30_000
 
@@ -509,6 +513,10 @@ export const dashboardJudgingRoutes = new Elysia()
     let authResult = searchAuthCache.get(cacheKey)
     if (!authResult || Date.now() >= authResult.expires) {
       searchAuthCache.delete(cacheKey)
+      if (searchAuthCache.size >= SEARCH_AUTH_MAX) {
+        const oldest = searchAuthCache.keys().next().value!
+        searchAuthCache.delete(oldest)
+      }
       const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
       const result = await checkHackathonOrganizer(params.id, principal.tenantId)
       searchAuthCache.set(cacheKey, { result: { status: result.status }, expires: Date.now() + SEARCH_AUTH_TTL })
