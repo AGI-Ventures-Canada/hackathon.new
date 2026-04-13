@@ -361,10 +361,8 @@ export function ActionItemsProvider({
         challengeRef.current?.openReleaseDialog();
       } else if (item.action === "open-agenda-dialog") {
         setAgendaDialogOpen(true);
-        if (!completedIds.has(item.id)) toggleComplete(item.id);
       } else if (item.action === "open-submission-deadline-dialog") {
         submissionDeadlineRef.current?.openDialog();
-        if (!completedIds.has(item.id)) toggleComplete(item.id);
       } else if (item.action?.startsWith("transition-to-")) {
         const targetStatus = item.action.replace("transition-to-", "");
         transitionRef.current?.openTransitionDialog(targetStatus);
@@ -388,7 +386,7 @@ export function ActionItemsProvider({
         }
       }
     },
-    [slug, router, completedIds, toggleComplete, searchParams],
+    [slug, router, searchParams],
   );
 
   const triggerTransition = useCallback((targetStatus: string) => {
