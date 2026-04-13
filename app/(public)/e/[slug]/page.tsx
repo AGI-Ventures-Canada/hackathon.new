@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation"
 import { auth } from "@clerk/nextjs/server"
-import { getPublicHackathon } from "@/lib/services/public-hackathons"
+import { getPublicHackathon, PUBLISHED_STATUSES } from "@/lib/services/public-hackathons"
 import { listScheduleItems } from "@/lib/services/schedule-items"
 import { listPublishedAnnouncements } from "@/lib/services/announcements"
 import { HackathonPreviewClient } from "@/components/hackathon/preview/hackathon-preview-client"
@@ -27,8 +27,6 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     description: hackathon.description || `Join ${hackathon.name} hackathon`,
   }
 }
-
-const PUBLISHED_STATUSES = ["published", "registration_open", "active", "judging", "completed"]
 
 export default async function EventPage({ params }: PageProps) {
   const { slug } = await params

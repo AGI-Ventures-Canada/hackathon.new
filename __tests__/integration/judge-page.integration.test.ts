@@ -32,6 +32,7 @@ mock.module("@/lib/services/public-hackathons", () => ({
   getHackathonByIdWithFullData: mock(() => Promise.resolve(null)),
   getHackathonByIdWithAccess: mock(() => Promise.resolve(null)),
   updateHackathonSettings: mock(() => Promise.resolve(null)),
+  PUBLISHED_STATUSES: ["published", "registration_open", "active", "judging", "completed"],
 }))
 
 const mockGetRegistrationInfo = mock(() => Promise.resolve({ participantRole: null }))

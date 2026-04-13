@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation"
 import { auth } from "@clerk/nextjs/server"
-import { getPublicHackathon } from "@/lib/services/public-hackathons"
+import { getPublicHackathon, PUBLISHED_STATUSES } from "@/lib/services/public-hackathons"
 import { JudgeAssignmentsCard } from "@/components/hackathon/judging/judge-assignments-card"
 import { PageHeader } from "@/components/page-header"
 import { Clock } from "lucide-react"
@@ -8,8 +8,6 @@ import { Clock } from "lucide-react"
 type PageProps = {
   params: Promise<{ slug: string }>
 }
-
-const PUBLISHED_STATUSES = ["published", "registration_open", "active", "judging", "completed"]
 
 export default async function JudgePage({ params }: PageProps) {
   const { slug } = await params
