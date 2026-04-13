@@ -85,4 +85,61 @@ describe("getTeamSizeWarning", () => {
     expect(result!.type).toBe("below_min")
     expect(result!.requiredMin).toBe(1)
   })
+
+  it("returns soft warning when pending invites would meet minimum", () => {
+    const result = getTeamSizeWarning({
+      memberCount: 1,
+      minTeamSize: 2,
+      allowSolo: false,
+      pendingInviteCount: 1,
+    })
+    expect(result).not.toBeNull()
+    expect(result!.type).toBe("below_min")
+    expect(result!.message).toContain("pending invite")
+    expect(result!.message).toContain("once accepted")
+  })
+
+  it("returns soft warning with plural invites", () => {
+    const result = getTeamSizeWarning({
+      memberCount: 1,
+      minTeamSize: 4,
+      allowSolo: false,
+      pendingInviteCount: 3,
+    })
+    expect(result).not.toBeNull()
+    expect(result!.message).toContain("3 pending invites")
+  })
+
+  it("returns hard warning when pending invites still not enough", () => {
+    const result = getTeamSizeWarning({
+      memberCount: 1,
+      minTeamSize: 4,
+      allowSolo: false,
+      pendingInviteCount: 1,
+    })
+    expect(result).not.toBeNull()
+    expect(result!.type).toBe("solo_not_allowed")
+    expect(result!.message).toContain("Solo participants are not allowed")
+  })
+
+  it("returns hard warning when pendingInviteCount is not provided", () => {
+    const result = getTeamSizeWarning({
+      memberCount: 1,
+      minTeamSize: 2,
+      allowSolo: false,
+    })
+    expect(result).not.toBeNull()
+    expect(result!.type).toBe("solo_not_allowed")
+    expect(result!.message).not.toContain("pending invite")
+  })
+
+  it("returns null when pending invites are provided but team already meets minimum", () => {
+    const result = getTeamSizeWarning({
+      memberCount: 3,
+      minTeamSize: 2,
+      allowSolo: false,
+      pendingInviteCount: 2,
+    })
+    expect(result).toBeNull()
+  })
 })

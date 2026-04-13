@@ -9,12 +9,23 @@ export function getTeamSizeWarning(opts: {
   memberCount: number
   minTeamSize: number
   allowSolo: boolean
+  pendingInviteCount?: number
 }): TeamSizeWarning | null {
   const effectiveMin = opts.allowSolo
     ? Math.min(1, opts.minTeamSize)
     : opts.minTeamSize
+  const pending = opts.pendingInviteCount ?? 0
 
   if (opts.memberCount >= effectiveMin) return null
+
+  if (pending > 0 && opts.memberCount + pending >= effectiveMin) {
+    return {
+      type: "below_min",
+      message: `Your team needs at least ${effectiveMin} members to submit. You have ${pending} pending invite${pending === 1 ? "" : "s"} — once accepted, you're all set.`,
+      memberCount: opts.memberCount,
+      requiredMin: effectiveMin,
+    }
+  }
 
   if (opts.memberCount === 1 && !opts.allowSolo) {
     return {

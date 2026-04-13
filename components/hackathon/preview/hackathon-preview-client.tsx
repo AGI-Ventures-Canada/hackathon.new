@@ -240,6 +240,7 @@ function HackathonPreviewContent({
               memberCount: teamInfo.members.length,
               minTeamSize: hackathon.min_team_size,
               allowSolo: hackathon.allow_solo,
+              pendingInviteCount: teamInfo.pendingInvitations.length,
             })
             if (!warning) return null
             return (
@@ -264,7 +265,7 @@ function HackathonPreviewContent({
                   <span className="text-xs truncate">{displayName}{isCurrentUser && " (you)"}</span>
                   {member.email && <span className="text-xs text-muted-foreground truncate">{member.email}</span>}
                   {member.isCaptain && <Crown className="size-3 text-primary shrink-0" />}
-                  <Badge variant="secondary" className="ml-auto">
+                  <Badge variant="secondary" className="shrink-0">
                     <CheckCircle2 />
                     Joined
                   </Badge>
@@ -280,16 +281,16 @@ function HackathonPreviewContent({
 
               return (
                 <Popover key={invitation.id}>
-                  <div className="flex items-center gap-2">
+                  <div className="group/row flex items-center gap-2">
                     <Avatar className="size-5 shrink-0">
                       <AvatarFallback className="text-[9px]">
                         <Mail className="size-2.5" />
                       </AvatarFallback>
                     </Avatar>
                     <PopoverTrigger asChild>
-                      <button className="flex items-center gap-2 min-w-0 flex-1">
+                      <button className="flex items-center gap-2 min-w-0">
                         <span className="text-xs text-muted-foreground truncate">{invitation.email}</span>
-                        <Badge variant="outline" className="ml-auto shrink-0">
+                        <Badge variant="outline" className="shrink-0">
                           <Clock />
                           Pending
                         </Badge>
@@ -298,8 +299,8 @@ function HackathonPreviewContent({
                     {teamInfo.isCaptain && (
                       <Button
                         variant="ghost"
-                        size="icon"
-                        className="size-4 shrink-0"
+                        size="icon-xs"
+                        className="shrink-0 opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 transition-opacity max-sm:opacity-100"
                         onClick={() => handleCancelInvitation(invitation.id)}
                         disabled={cancellingId === invitation.id}
                       >
@@ -638,6 +639,7 @@ function HackathonPreviewContent({
           memberCount: teamInfo.members.length,
           minTeamSize: hackathon.min_team_size,
           allowSolo: hackathon.allow_solo,
+          pendingInviteCount: teamInfo.pendingInvitations.length,
         })?.message ?? null) : (!hackathon.allow_solo ? `Solo participants are not allowed — this event requires teams of at least ${hackathon.min_team_size}.` : null),
       }}
     />
