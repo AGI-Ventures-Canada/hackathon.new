@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -51,6 +51,7 @@ import {
   Award,
   X,
 } from "lucide-react"
+import { useActionItemsOptional } from "@/components/hackathon/manage/action-items-context"
 import { AddJudgeDialog } from "./add-judge-dialog"
 import { AddPrizeDialog } from "./add-prize-dialog"
 import { AssignJudgesDialog } from "./assign-judges-dialog"
@@ -142,9 +143,27 @@ export function JudgingTabClient({
   const [showAddJudge, setShowAddJudge] = useState(false)
   const [showAddPrize, setShowAddPrize] = useState(false)
   const [publishing, setPublishing] = useState(false)
+  const [publishDialogOpen, setPublishDialogOpen] = useState(false)
   const results = initialResults
   const [isPublished, setIsPublished] = useState(initialIsPublished)
   const [error, setError] = useState<string | null>(null)
+
+  const actionItems = useActionItemsOptional()
+
+  useEffect(() => {
+    if (!actionItems) return
+    const { registerTabAction, unregisterTabAction } = actionItems
+    registerTabAction("no-prizes", () => setShowAddPrize(true))
+    registerTabAction("no-judges", () => setShowAddJudge(true))
+    registerTabAction("no-judges-active", () => setShowAddJudge(true))
+    registerTabAction("results-not-published", () => setPublishDialogOpen(true))
+    return () => {
+      unregisterTabAction("no-prizes")
+      unregisterTabAction("no-judges")
+      unregisterTabAction("no-judges-active")
+      unregisterTabAction("results-not-published")
+    }
+  }, [actionItems])
 
   const [hiddenJudges, setHiddenJudges] = useState<Set<string>>(new Set())
   const [hiddenPrizes, setHiddenPrizes] = useState<Set<string>>(new Set())
@@ -301,6 +320,8 @@ export function JudgingTabClient({
           results={results}
           isPublished={isPublished}
           publishing={publishing}
+          publishDialogOpen={publishDialogOpen}
+          onPublishDialogChange={setPublishDialogOpen}
           onPublish={handlePublish}
           onUnpublish={handleUnpublish}
           incompleteAssignments={initialProgress.totalAssignments - initialProgress.completedAssignments}
@@ -648,6 +669,8 @@ function ResultsSection({
   results,
   isPublished,
   publishing,
+  publishDialogOpen,
+  onPublishDialogChange,
   onPublish,
   onUnpublish,
   incompleteAssignments,
@@ -656,6 +679,8 @@ function ResultsSection({
   results: ResultData[]
   isPublished: boolean
   publishing: boolean
+  publishDialogOpen: boolean
+  onPublishDialogChange: (open: boolean) => void
   onPublish: () => void
   onUnpublish: () => void
   incompleteAssignments: number
@@ -693,7 +718,7 @@ function ResultsSection({
               </AlertDialogContent>
             </AlertDialog>
           ) : (
-            <AlertDialog>
+            <AlertDialog open={publishDialogOpen} onOpenChange={onPublishDialogChange}>
               <AlertDialogTrigger asChild>
                 <Button size="sm" disabled={publishing || results.length === 0}>
                   {publishing ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Globe className="mr-2 size-4" />}

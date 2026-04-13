@@ -102,7 +102,7 @@ export const ChallengeDialogs = forwardRef<ChallengeDialogsHandle, Props>(
         if (challengeReleaseItem) {
           const releaseTime = linkedToEventStart && startsAt ? startsAt : challengeReleaseAt?.toISOString()
           if (releaseTime) {
-            await fetch(`/api/dashboard/hackathons/${hackathonId}/schedule/${challengeReleaseItem.id}`, {
+            const scheduleRes = await fetch(`/api/dashboard/hackathons/${hackathonId}/schedule/${challengeReleaseItem.id}`, {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -111,6 +111,10 @@ export const ChallengeDialogs = forwardRef<ChallengeDialogsHandle, Props>(
                 linkedTo: linkedToEventStart ? "event_start" : null,
               }),
             })
+            if (!scheduleRes.ok) {
+              const data = await scheduleRes.json().catch(() => ({}))
+              throw new Error(data.error || "Challenge saved but failed to update release time")
+            }
           }
         }
         setChallengeExistsLocal(true)
@@ -169,7 +173,7 @@ export const ChallengeDialogs = forwardRef<ChallengeDialogsHandle, Props>(
     return (
       <>
         <Dialog open={challengeDialogOpen} onOpenChange={setChallengeDialogOpen}>
-          <DialogContent className="max-w-2xl" onInteractOutside={(e) => e.preventDefault()}>
+          <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>{challengeExistsLocal ? "Edit Challenge" : "Create Challenge"}</DialogTitle>
             </DialogHeader>

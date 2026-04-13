@@ -138,6 +138,7 @@ export function ActionItemRow({ item, completed, compact }: Props) {
       <WithTooltip tooltip={item.tooltip}>
         <Link
           href={href}
+          onClick={(e) => { e.preventDefault(); handleActionClick(item) }}
           className="group block rounded-md px-2 hover:bg-muted transition-colors"
         >
           {content}
