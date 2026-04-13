@@ -203,7 +203,7 @@ export function CreateFlow({ onSubmit, onPatchSettings }: CreateFlowProps) {
   const isLastStep = currentStep === TOTAL_STEPS - 1
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-background overflow-y-auto">
+    <div className="flex flex-1 flex-col bg-background overflow-y-auto">
       <div className="w-full px-4 pt-6 sm:px-8">
         <div className="mx-auto max-w-2xl">
           {currentStep === 0 ? (

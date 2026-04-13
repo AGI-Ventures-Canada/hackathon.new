@@ -620,6 +620,7 @@ export type Database = {
           ends_at: string | null
           hackathon_id: string
           id: string
+          linked_to: string | null
           location: string | null
           sort_order: number
           starts_at: string
@@ -633,6 +634,7 @@ export type Database = {
           ends_at?: string | null
           hackathon_id: string
           id?: string
+          linked_to?: string | null
           location?: string | null
           sort_order?: number
           starts_at: string
@@ -646,6 +648,7 @@ export type Database = {
           ends_at?: string | null
           hackathon_id?: string
           id?: string
+          linked_to?: string | null
           location?: string | null
           sort_order?: number
           starts_at?: string

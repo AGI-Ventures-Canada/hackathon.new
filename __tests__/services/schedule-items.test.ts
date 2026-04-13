@@ -206,7 +206,7 @@ describe("buildDefaultAgendaItems", () => {
     expect(items[0].title).toBe("Opening Kickoff")
     expect(items[1].title).toBe("Challenge Release")
     expect(items[1].triggerType).toBe("challenge_release")
-    expect(items[3].title).toBe("Submissions Close")
+    expect(items[3].title).toBe("Submissions Close & Judging Starts")
     expect(items[3].triggerType).toBe("submission_deadline")
     expect(items[5].title).toBe("Awards Ceremony")
   })
@@ -229,5 +229,17 @@ describe("buildDefaultAgendaItems", () => {
     expect(items[0].title).toBe("Opening Kickoff")
     expect(items[1].triggerType).toBe("challenge_release")
     expect(items[3].triggerType).toBe("submission_deadline")
+  })
+
+  it("sets submission deadline to event end when event is shorter than 1 hour", () => {
+    const items = buildDefaultAgendaItems("2026-04-10T09:00:00Z", "2026-04-10T09:30:00Z")
+    const deadline = items.find((i) => i.triggerType === "submission_deadline")
+    expect(deadline?.startsAt).toBe("2026-04-10T09:30:00.000Z")
+  })
+
+  it("sets submission deadline to 1hr before end when event is long enough", () => {
+    const items = buildDefaultAgendaItems("2026-04-10T09:00:00Z", "2026-04-10T18:00:00Z")
+    const deadline = items.find((i) => i.triggerType === "submission_deadline")
+    expect(deadline?.startsAt).toBe("2026-04-10T17:00:00.000Z")
   })
 })

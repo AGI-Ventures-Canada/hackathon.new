@@ -12,7 +12,7 @@ describe("buildGhostItems", () => {
     expect(items[0].title).toBe("Opening Kickoff")
     expect(items[1].title).toBe("Challenge Release")
     expect(items[2].title).toBe("Hacking Begins")
-    expect(items[3].title).toBe("Submissions Close")
+    expect(items[3].title).toBe("Submissions Close & Judging Starts")
     expect(items[4].title).toBe("Presentations")
     expect(items[5].title).toBe("Awards Ceremony")
   })
@@ -25,7 +25,7 @@ describe("buildGhostItems", () => {
 
   it("marks Submissions Close with submission_deadline trigger", () => {
     const items = buildGhostItems("2026-04-10T09:00:00Z", "2026-04-10T18:00:00Z")
-    const submission = items.find((i) => i.title === "Submissions Close")
+    const submission = items.find((i) => i.title === "Submissions Close & Judging Starts")
     expect(submission?.triggerType).toBe("submission_deadline")
   })
 
@@ -37,7 +37,7 @@ describe("buildGhostItems", () => {
 
   it("defaults submissions close to ends_at - 1h", () => {
     const items = buildGhostItems("2026-04-10T09:00:00Z", "2026-04-10T18:00:00Z")
-    const submission = items.find((i) => i.title === "Submissions Close")
+    const submission = items.find((i) => i.title === "Submissions Close & Judging Starts")
     expect(submission?.startsAt).toBe("2026-04-10T17:00:00.000Z")
   })
 })
@@ -54,7 +54,7 @@ describe("AgendaGhostItems", () => {
     )
     expect(screen.getByText("Opening Kickoff")).toBeDefined()
     expect(screen.getByText("Challenge Release")).toBeDefined()
-    expect(screen.getByText("Submissions Close")).toBeDefined()
+    expect(screen.getByText("Submissions Close & Judging Starts")).toBeDefined()
     expect(screen.getByText("Awards Ceremony")).toBeDefined()
     expect(screen.getByText("Add all")).toBeDefined()
   })

@@ -9,6 +9,7 @@ import {
 
 describe("VALID_TABS", () => {
   it("contains all manage tabs", () => {
+    expect(VALID_TABS).toContain("action-items")
     expect(VALID_TABS).toContain("overview")
     expect(VALID_TABS).toContain("edit")
     expect(VALID_TABS).toContain("teams")
@@ -18,7 +19,11 @@ describe("VALID_TABS", () => {
     expect(VALID_TABS).toContain("post-event")
     expect(VALID_TABS).toContain("event")
     expect(VALID_TABS).toContain("activity")
-    expect(VALID_TABS).toHaveLength(9)
+    expect(VALID_TABS).toHaveLength(10)
+  })
+
+  it("has action-items as the first tab", () => {
+    expect(VALID_TABS[0]).toBe("action-items")
   })
 
   it("does not contain old judges or prizes tabs", () => {
@@ -39,8 +44,8 @@ describe("VALID_ETABS", () => {
 })
 
 describe("DEFAULT_TAB", () => {
-  it("is overview", () => {
-    expect(DEFAULT_TAB).toBe("overview")
+  it("is action-items", () => {
+    expect(DEFAULT_TAB).toBe("action-items")
   })
 })
 

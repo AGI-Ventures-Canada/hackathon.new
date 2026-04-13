@@ -322,6 +322,17 @@ export async function createJudgePendingNotification(
   }
 }
 
+export async function countPendingJudgeInvitations(hackathonId: string): Promise<number> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const { count, error } = await client
+    .from("judge_invitations")
+    .select("id", { count: "exact", head: true })
+    .eq("hackathon_id", hackathonId)
+    .eq("status", "pending")
+  if (error) return 0
+  return count ?? 0
+}
+
 export async function listJudgeInvitations(
   hackathonId: string,
   status?: string

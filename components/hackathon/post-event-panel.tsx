@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Loader2, Mail, Clock, X, Send } from "lucide-react"
 import { normalizeUrl } from "@/lib/utils/url"
+import { useActionItemsOptional } from "@/components/hackathon/manage/action-items-context"
 
 type Reminder = {
   id: string
@@ -61,6 +62,18 @@ export function PostEventPanel({
   const [surveyResult, setSurveyResult] = useState<{ sent: number; failed: number } | null>(null)
   const [reminders, setReminders] = useState(initialReminders)
   const [processingReminder, setProcessingReminder] = useState<string | null>(null)
+
+  const actionItemsCtx = useActionItemsOptional()
+  useEffect(() => {
+    if (!actionItemsCtx) return
+    const { registerTabAction, unregisterTabAction } = actionItemsCtx
+    registerTabAction("feedback-survey-not-sent", () => {
+      document.getElementById("survey-url")?.focus()
+    })
+    return () => {
+      unregisterTabAction("feedback-survey-not-sent")
+    }
+  }, [actionItemsCtx])
 
   const refreshReminders = useCallback(async () => {
     const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/reminders`)

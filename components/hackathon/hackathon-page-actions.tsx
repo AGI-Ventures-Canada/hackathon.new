@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/tooltip"
 import {
   ExternalLink,
-  Monitor,
+  ChevronDown,
   Timer,
   DoorOpen,
   FileText,
@@ -54,12 +54,9 @@ export function HackathonPageActions({
 }: HackathonPageActionsProps) {
   return (
     <>
-      <span className="max-w-[200px] truncate text-sm font-medium">
-        {hackathonName}
-      </span>
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button asChild variant="outline" size="icon-sm">
+          <Button asChild variant="ghost" size="icon-sm">
             <Link href={`/e/${slug}`} target="_blank">
               <ExternalLink className="size-4" />
               <span className="sr-only">View Live</span>
@@ -71,12 +68,12 @@ export function HackathonPageActions({
       {isOrganizer ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="icon-sm">
-              <Monitor className="size-4" />
+            <Button variant="ghost" size="icon-sm">
+              <ChevronDown className="size-4" />
               <span className="sr-only">Screens</span>
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-52">
+          <DropdownMenuContent align="start" className="w-52">
             <DropdownMenuLabel>Projection Displays</DropdownMenuLabel>
             {DISPLAY_LINKS.map(({ href, label, icon: Icon }) => (
               <DropdownMenuItem key={href} asChild>

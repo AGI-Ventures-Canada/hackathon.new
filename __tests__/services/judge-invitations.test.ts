@@ -5,6 +5,9 @@ import {
   resetSupabaseMocks,
   setMockFromImplementation,
   mockMultiTableQuery,
+  mockTableQuery,
+  mockCount,
+  mockError,
 } from "../lib/supabase-mock"
 
 const mockSendJudgeInvitationEmail = mock(() => Promise.resolve({ success: true }))
@@ -25,6 +28,7 @@ const {
   createJudgePendingNotification,
   hasPendingJudgeInvitation,
   hasPendingJudgeEntry,
+  countPendingJudgeInvitations,
 } = await import("@/lib/services/judge-invitations")
 
 const mockInvitation: JudgeInvitation = {
@@ -551,6 +555,40 @@ describe("Judge Invitations Service", () => {
       if (!result.success) {
         expect(result.code).toBe("role_conflict")
       }
+    })
+  })
+
+  describe("countPendingJudgeInvitations", () => {
+    it("returns the count of pending invitations", async () => {
+      mockTableQuery("judge_invitations", mockCount(3))
+
+      const result = await countPendingJudgeInvitations("h1")
+
+      expect(result).toBe(3)
+    })
+
+    it("returns 0 when no pending invitations exist", async () => {
+      mockTableQuery("judge_invitations", mockCount(0))
+
+      const result = await countPendingJudgeInvitations("h1")
+
+      expect(result).toBe(0)
+    })
+
+    it("returns 0 when database query fails", async () => {
+      mockTableQuery("judge_invitations", mockError("DB error"))
+
+      const result = await countPendingJudgeInvitations("h1")
+
+      expect(result).toBe(0)
+    })
+
+    it("returns 0 when count is null", async () => {
+      mockTableQuery("judge_invitations", { data: null, error: null, count: null })
+
+      const result = await countPendingJudgeInvitations("h1")
+
+      expect(result).toBe(0)
     })
   })
 

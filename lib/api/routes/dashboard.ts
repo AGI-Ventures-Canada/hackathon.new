@@ -1032,6 +1032,27 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       description: "Returns full hackathon details for organizers. Requires hackathons:read scope.",
     },
   })
+  .get("/hackathons/:id/action-items-poll", async ({ principal, params, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
+
+    const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+    const result = await checkHackathonOrganizer(params.id, principal.tenantId)
+    if (result.status !== "ok") {
+      set.status = result.status === "not_found" ? 404 : 403
+      return { error: result.status === "not_found" ? "Not found" : "Not authorized" }
+    }
+
+    const { buildOrganizerPollPayload } = await import("@/lib/services/organizer-polling")
+    const payload = await buildOrganizerPollPayload(params.id)
+    if (!payload) { set.status = 500; return { error: "Failed to build poll payload" } }
+    set.headers["Cache-Control"] = "private, max-age=2, stale-while-revalidate=5"
+    return payload
+  }, {
+    detail: {
+      summary: "Poll action items data",
+      description: "Returns lightweight hackathon stats for computing organizer action items. Used for client-side polling.",
+    },
+  })
   .delete("/hackathons/:id", async ({ principal, params }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
 

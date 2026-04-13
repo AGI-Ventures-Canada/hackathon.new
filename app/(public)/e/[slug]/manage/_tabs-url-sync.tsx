@@ -1,8 +1,13 @@
 "use client"
 
-import { useCallback, useEffect, useState, useTransition } from "react"
+import { createContext, useContext, useCallback, useEffect, useState, useTransition } from "react"
 import { useRouter, usePathname, useSearchParams } from "next/navigation"
 import { Tabs } from "@/components/ui/tabs"
+
+const OptimisticTabContext = createContext<string | null>(null)
+export function useOptimisticTab() {
+  return useContext(OptimisticTabContext)
+}
 
 export function TabsUrlSync({
   paramKey,
@@ -39,8 +44,10 @@ export function TabsUrlSync({
   )
 
   return (
-    <Tabs value={optimistic} onValueChange={handleChange} className={className}>
-      {children}
-    </Tabs>
+    <OptimisticTabContext.Provider value={optimistic}>
+      <Tabs value={optimistic} onValueChange={handleChange} className={className}>
+        {children}
+      </Tabs>
+    </OptimisticTabContext.Provider>
   )
 }

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { EditProvider, useEdit, SECTION_ORDER } from "./edit-context"
+import { useActionItemsOptional } from "@/components/hackathon/manage/action-items-context"
 import { EditableSection } from "./editable-section"
 import { FloatingActionBar } from "./floating-action-bar"
 import { OrganizerLogoPrompt } from "@/components/hackathon/organizer-logo-prompt"
@@ -94,6 +95,24 @@ function HackathonPreviewContent({
       closeDrawer()
     }
   }
+
+  const actionItemsCtx = useActionItemsOptional()
+  useEffect(() => {
+    if (!actionItemsCtx || !isEditable) return
+    const { registerTabAction, unregisterTabAction } = actionItemsCtx
+    registerTabAction("no-dates", () => openSection("dates"))
+    registerTabAction("no-description", () => openSection("about"))
+    registerTabAction("no-location", () => openSection("location"))
+    registerTabAction("no-banner", () => {
+      document.querySelector("[data-banner-upload]")?.scrollIntoView({ behavior: "smooth", block: "center" })
+    })
+    return () => {
+      unregisterTabAction("no-dates")
+      unregisterTabAction("no-description")
+      unregisterTabAction("no-location")
+      unregisterTabAction("no-banner")
+    }
+  }, [actionItemsCtx, isEditable, openSection])
 
   const autoOpenedName = useRef(false)
   useEffect(() => {
@@ -265,18 +284,20 @@ function HackathonPreviewContent({
   const statusSlot = judgeStatus || registrationStatus || null
 
   const bannerEditSlot = isEditable && editMode ? (
-    <BannerUpload
-      hackathonId={hackathon.id}
-      currentBannerUrl={bannerUrl}
-      variant="hero"
-      mode={hackathon.id === "draft" ? "draft" : "persisted"}
-      onUploadComplete={(url) => {
-        const nextUrl = url ?? null
-        setBannerUrl(nextUrl)
-        void onBannerChange?.(nextUrl)
-      }}
-      onAuthRequired={onAuthRequired}
-    />
+    <div data-banner-upload>
+      <BannerUpload
+        hackathonId={hackathon.id}
+        currentBannerUrl={bannerUrl}
+        variant="hero"
+        mode={hackathon.id === "draft" ? "draft" : "persisted"}
+        onUploadComplete={(url) => {
+          const nextUrl = url ?? null
+          setBannerUrl(nextUrl)
+          void onBannerChange?.(nextUrl)
+        }}
+        onAuthRequired={onAuthRequired}
+      />
+    </div>
   ) : null
 
   const eventContent = (
