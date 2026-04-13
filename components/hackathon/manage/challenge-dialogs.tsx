@@ -43,15 +43,12 @@ type Props = {
 export const ChallengeDialogs = forwardRef<ChallengeDialogsHandle, Props>(
   function ChallengeDialogs({ hackathonId, challengeExists, scheduleItems, startsAt, onChallengeCreated, onChallengeReleased }, ref) {
     const router = useRouter()
-    const challengeReleaseItem = scheduleItems.find((s) => s.trigger_type === "challenge_release")
-    const defaultReleaseTime = challengeReleaseItem?.starts_at ? new Date(challengeReleaseItem.starts_at) : null
-    const defaultLinkedToEventStart = challengeReleaseItem?.linked_to === "event_start"
 
     const [challengeDialogOpen, setChallengeDialogOpen] = useState(false)
     const [challengeTitle, setChallengeTitle] = useState("")
     const [challengeBody, setChallengeBody] = useState("")
-    const [challengeReleaseAt, setChallengeReleaseAt] = useState<Date | null>(defaultReleaseTime)
-    const [linkedToEventStart, setLinkedToEventStart] = useState(defaultLinkedToEventStart)
+    const [challengeReleaseAt, setChallengeReleaseAt] = useState<Date | null>(null)
+    const [linkedToEventStart, setLinkedToEventStart] = useState(false)
     const [challengeSaving, setChallengeSaving] = useState(false)
     const [challengeError, setChallengeError] = useState<string | null>(null)
     const [challengeSaved, setChallengeSaved] = useState(false)
@@ -63,10 +60,11 @@ export const ChallengeDialogs = forwardRef<ChallengeDialogsHandle, Props>(
     const [releaseError, setReleaseError] = useState<string | null>(null)
 
     async function openChallengeDialog() {
+      const releaseItem = scheduleItems.find((s) => s.trigger_type === "challenge_release")
       setChallengeError(null)
       setChallengeSaved(false)
-      setChallengeReleaseAt(defaultReleaseTime)
-      setLinkedToEventStart(defaultLinkedToEventStart)
+      setChallengeReleaseAt(releaseItem?.starts_at ? new Date(releaseItem.starts_at) : null)
+      setLinkedToEventStart(releaseItem?.linked_to === "event_start")
       if (challengeExistsLocal) {
         try {
           const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/challenge`)
@@ -99,10 +97,11 @@ export const ChallengeDialogs = forwardRef<ChallengeDialogsHandle, Props>(
           const data = await res.json().catch(() => ({}))
           throw new Error(data.error || "Failed to save challenge")
         }
-        if (challengeReleaseItem) {
+        const currentReleaseItem = scheduleItems.find((s) => s.trigger_type === "challenge_release")
+        if (currentReleaseItem) {
           const releaseTime = linkedToEventStart && startsAt ? startsAt : challengeReleaseAt?.toISOString()
           if (releaseTime) {
-            const scheduleRes = await fetch(`/api/dashboard/hackathons/${hackathonId}/schedule/${challengeReleaseItem.id}`, {
+            const scheduleRes = await fetch(`/api/dashboard/hackathons/${hackathonId}/schedule/${currentReleaseItem.id}`, {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({

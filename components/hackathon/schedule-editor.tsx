@@ -155,9 +155,10 @@ export type ScheduleEditorProps = {
   hideHeader?: boolean
   onEditTriggerItem?: (item: ScheduleItemData) => void
   onAddChallenge?: () => void
+  onScheduleChange?: (items: ScheduleItemData[]) => void
 }
 
-export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challengeReleasedAt, challengeExists, hideHeader, onEditTriggerItem, onAddChallenge }: ScheduleEditorProps) {
+export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challengeReleasedAt, challengeExists, hideHeader, onEditTriggerItem, onAddChallenge, onScheduleChange }: ScheduleEditorProps) {
   const router = useRouter()
   const isMobile = useIsMobile()
   const now = new Date().toISOString()
@@ -248,11 +249,14 @@ export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challe
       })
       if (!res.ok) throw new Error("Failed to save")
       const saved = await res.json()
-      if (editing) {
-        setAllItems((prev) => prev.map((i) => (i.id === saved.id ? saved : i)).sort((a, b) => a.starts_at.localeCompare(b.starts_at) || (a.sort_order ?? 0) - (b.sort_order ?? 0)))
-      } else {
-        setAllItems((prev) => [...prev, saved].sort((a, b) => a.starts_at.localeCompare(b.starts_at) || (a.sort_order ?? 0) - (b.sort_order ?? 0)))
-      }
+      const sort = (a: ScheduleItemData, b: ScheduleItemData) => a.starts_at.localeCompare(b.starts_at) || (a.sort_order ?? 0) - (b.sort_order ?? 0)
+      setAllItems((prev) => {
+        const next = editing
+          ? prev.map((i) => (i.id === saved.id ? saved : i)).sort(sort)
+          : [...prev, saved].sort(sort)
+        onScheduleChange?.(next)
+        return next
+      })
       setDialogOpen(false)
       router.refresh()
     } catch {

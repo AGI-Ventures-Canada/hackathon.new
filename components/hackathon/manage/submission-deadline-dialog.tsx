@@ -28,21 +28,20 @@ export const SubmissionDeadlineDialog = forwardRef<SubmissionDeadlineDialogHandl
   function SubmissionDeadlineDialog({ hackathonId, scheduleItems, endsAt }, ref) {
     const router = useRouter()
     const deadlineItem = scheduleItems.find((s) => s.trigger_type === "submission_deadline")
-    const defaultTime = deadlineItem?.starts_at ? new Date(deadlineItem.starts_at) : null
-    const defaultLinkedToEventEnd = deadlineItem?.linked_to === "event_end"
 
     const [open, setOpen] = useState(false)
-    const [deadlineAt, setDeadlineAt] = useState<Date | null>(defaultTime)
-    const [linkedToEventEnd, setLinkedToEventEnd] = useState(defaultLinkedToEventEnd)
+    const [deadlineAt, setDeadlineAt] = useState<Date | null>(null)
+    const [linkedToEventEnd, setLinkedToEventEnd] = useState(false)
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [saved, setSaved] = useState(false)
 
     function openDialog() {
+      const item = scheduleItems.find((s) => s.trigger_type === "submission_deadline")
       setError(null)
       setSaved(false)
-      setDeadlineAt(defaultTime)
-      setLinkedToEventEnd(defaultLinkedToEventEnd)
+      setDeadlineAt(item?.starts_at ? new Date(item.starts_at) : null)
+      setLinkedToEventEnd(item?.linked_to === "event_end")
       setOpen(true)
     }
 

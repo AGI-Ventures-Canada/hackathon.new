@@ -45,7 +45,7 @@ export function useOrganizerPoll(
   hackathonId: string,
   options?: UseOrganizerPollOptions
 ) {
-  const { interval = 10000, enabled = true } = options ?? {}
+  const { interval = 30000, enabled = true } = options ?? {}
   const [data, setData] = useState<OrganizerPollResponse | null>(null)
   const [isStale, setIsStale] = useState(false)
   const stateRef = useRef<PollState>({ data: null, isStale: false, failCount: 0 })

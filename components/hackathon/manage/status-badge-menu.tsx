@@ -37,8 +37,8 @@ export function StatusBadgeMenu() {
           return (
             <DropdownMenuItem
               key={stage.key}
-              disabled={isCurrent}
-              onClick={() => !isCurrent && triggerTransition(stage.key)}
+              disabled={isCurrent || isPast}
+              onClick={() => !isCurrent && !isPast && triggerTransition(stage.key)}
               className="gap-2"
             >
               <Icon className="size-4 shrink-0" />

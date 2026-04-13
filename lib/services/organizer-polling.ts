@@ -1,115 +1,72 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { ActionItemsInput } from "@/lib/utils/organizer-actions"
+import type { HackathonStatus, HackathonPhase } from "@/lib/db/hackathon-types"
 
 export type OrganizerPollResponse = ActionItemsInput
+
+interface RpcPollRow {
+  status: string
+  phase: string | null
+  description: string | null
+  banner_url: string | null
+  challenge_title: string | null
+  challenge_released_at: string | null
+  results_published_at: string | null
+  starts_at: string | null
+  ends_at: string | null
+  location_type: string | null
+  feedback_survey_url: string | null
+  feedback_survey_sent_at: string | null
+  submission_count: number
+  participant_count: number
+  team_count: number
+  assignment_total: number
+  assignment_complete: number
+  judge_count: number
+  prize_count: number
+  judge_display_count: number
+  mentor_open_count: number
+  challenge_release_time: string | null
+  pending_judge_invitation_count: number
+}
 
 export async function buildOrganizerPollPayload(hackathonId: string): Promise<OrganizerPollResponse | null> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const [
-    hackathonResult,
-    submissionResult,
-    participantResult,
-    teamResult,
-    assignmentTotalResult,
-    assignmentCompleteResult,
-    judgeCountResult,
-    prizeResult,
-    judgeDisplayResult,
-    mentorResult,
-    challengeReleaseResult,
-    pendingJudgeInvResult,
-  ] = await Promise.all([
-    client
-      .from("hackathons")
-      .select("status, phase, description, banner_url, challenge_title, challenge_released_at, results_published_at, starts_at, ends_at, location_type, feedback_survey_url, feedback_survey_sent_at")
-      .eq("id", hackathonId)
-      .single(),
-    client
-      .from("submissions")
-      .select("id", { count: "exact", head: true })
-      .eq("hackathon_id", hackathonId)
-      .eq("status", "submitted"),
-    client
-      .from("hackathon_participants")
-      .select("id", { count: "exact", head: true })
-      .eq("hackathon_id", hackathonId),
-    client
-      .from("teams")
-      .select("id", { count: "exact", head: true })
-      .eq("hackathon_id", hackathonId)
-      .neq("status", "disbanded"),
-    client
-      .from("judge_assignments")
-      .select("id", { count: "exact", head: true })
-      .eq("hackathon_id", hackathonId),
-    client
-      .from("judge_assignments")
-      .select("id", { count: "exact", head: true })
-      .eq("hackathon_id", hackathonId)
-      .eq("is_complete", true),
-    client
-      .from("hackathon_participants")
-      .select("id", { count: "exact", head: true })
-      .eq("hackathon_id", hackathonId)
-      .eq("role", "judge"),
-    client
-      .from("prizes")
-      .select("id", { count: "exact", head: true })
-      .eq("hackathon_id", hackathonId),
-    client
-      .from("hackathon_judges_display")
-      .select("id", { count: "exact", head: true })
-      .eq("hackathon_id", hackathonId),
-    client
-      .from("mentor_requests")
-      .select("id", { count: "exact", head: true })
-      .eq("hackathon_id", hackathonId)
-      .eq("status", "open"),
-    client
-      .from("hackathon_schedule_items")
-      .select("starts_at")
-      .eq("hackathon_id", hackathonId)
-      .eq("trigger_type", "challenge_release")
-      .limit(1)
-      .maybeSingle(),
-    client
-      .from("judge_invitations")
-      .select("id", { count: "exact", head: true })
-      .eq("hackathon_id", hackathonId)
-      .eq("status", "pending"),
-  ])
+  const { data, error } = await client.rpc("get_organizer_poll_data", {
+    p_hackathon_id: hackathonId,
+  })
 
-  if (hackathonResult.error || !hackathonResult.data) return null
+  if (error || !data) return null
 
-  const h = hackathonResult.data
+  const r = data as RpcPollRow
 
   return {
-    status: h.status,
-    phase: h.phase,
-    submissionCount: submissionResult.count ?? 0,
-    participantCount: participantResult.count ?? 0,
-    teamCount: teamResult.count ?? 0,
+    status: r.status as HackathonStatus,
+    phase: r.phase as HackathonPhase | null,
+    submissionCount: r.submission_count ?? 0,
+    participantCount: r.participant_count ?? 0,
+    teamCount: r.team_count ?? 0,
     judgingProgress: {
-      totalAssignments: assignmentTotalResult.count ?? 0,
-      completedAssignments: assignmentCompleteResult.count ?? 0,
+      totalAssignments: r.assignment_total ?? 0,
+      completedAssignments: r.assignment_complete ?? 0,
     },
-    judgeCount: judgeCountResult.count ?? 0,
-    prizeCount: prizeResult.count ?? 0,
-    judgeDisplayCount: judgeDisplayResult.count ?? 0,
-    mentorQueue: { open: mentorResult.count ?? 0 },
-    challengeReleased: !!h.challenge_released_at,
-    challengeExists: !!h.challenge_title,
-    challengeReleaseTime: challengeReleaseResult.data?.starts_at ?? null,
-    resultsPublishedAt: h.results_published_at,
-    description: h.description,
-    bannerUrl: h.banner_url,
-    startsAt: h.starts_at,
-    endsAt: h.ends_at,
-    locationType: h.location_type ?? null,
-    feedbackSurveyUrl: h.feedback_survey_url ?? null,
-    feedbackSurveySentAt: h.feedback_survey_sent_at ?? null,
-    pendingJudgeInvitationCount: pendingJudgeInvResult.count ?? 0,
+    judgeCount: r.judge_count ?? 0,
+    prizeCount: r.prize_count ?? 0,
+    judgeDisplayCount: r.judge_display_count ?? 0,
+    mentorQueue: { open: r.mentor_open_count ?? 0 },
+    challengeReleased: !!r.challenge_released_at,
+    challengeExists: !!r.challenge_title,
+    challengeReleaseTime: r.challenge_release_time ?? null,
+    resultsPublishedAt: r.results_published_at,
+    description: r.description,
+    bannerUrl: r.banner_url,
+    startsAt: r.starts_at,
+    endsAt: r.ends_at,
+    locationType: r.location_type as ActionItemsInput["locationType"],
+    feedbackSurveyUrl: r.feedback_survey_url ?? null,
+    feedbackSurveySentAt: r.feedback_survey_sent_at ?? null,
+    pendingJudgeInvitationCount: r.pending_judge_invitation_count ?? 0,
   }
 }

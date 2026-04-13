@@ -114,7 +114,7 @@ export function ActionItemsProvider({
   phase: serverPhase,
   challengeExists,
   challengeReleasedAt,
-  scheduleItems,
+  scheduleItems: serverScheduleItems,
   startsAt,
   endsAt: serverEndsAt,
   children,
@@ -127,6 +127,11 @@ export function ActionItemsProvider({
   const tabActionsRef = useRef(new Map<string, () => void>());
   const [promoteDialogOpen, setPromoteDialogOpen] = useState(false);
   const [agendaDialogOpen, setAgendaDialogOpen] = useState(false);
+
+  const [scheduleItems, setScheduleItems] = useState(serverScheduleItems);
+  useEffect(() => {
+    setScheduleItems(serverScheduleItems);
+  }, [serverScheduleItems]);
 
   const { data: pollData, isStale, refresh: refreshPoll } =
     useOrganizerPoll(hackathonId);
@@ -549,6 +554,7 @@ export function ActionItemsProvider({
               }
             }}
             onAddChallenge={() => challengeRef.current?.openChallengeDialog()}
+            onScheduleChange={(items) => setScheduleItems(items as ScheduleItem[])}
           />
         </DialogContent>
       </Dialog>
