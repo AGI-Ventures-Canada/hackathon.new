@@ -111,7 +111,8 @@ export function AddJudgeDialog({
       if (debounceRef.current) clearTimeout(debounceRef.current)
       abortRef.current?.abort()
 
-      if (query.trim().length < 2) {
+      const minLength = query.includes("@") ? 2 : 3
+      if (query.trim().length < minLength) {
         setSearchResults([])
         setSearching(false)
         return
@@ -324,7 +325,7 @@ export function AddJudgeDialog({
             )}
 
             {!searching &&
-              searchQuery.length >= 2 &&
+              searchQuery.length >= (searchQuery.includes("@") ? 2 : 3) &&
               searchResults.length === 0 && (
                 <p className="text-sm text-muted-foreground text-center py-3">
                   No users found

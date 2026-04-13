@@ -28,28 +28,31 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   }
 }
 
+const PUBLISHED_STATUSES = ["published", "registration_open", "active", "judging", "completed"]
+
 export default async function EventPage({ params }: PageProps) {
   const { slug } = await params
   const { orgId, userId } = await auth()
 
-  let hackathon = await getPublicHackathon(slug)
+  const hackathon = await getPublicHackathon(slug, { includeUnpublished: true })
+
+  if (!hackathon) {
+    notFound()
+  }
+
+  const isPublished = PUBLISHED_STATUSES.includes(hackathon.status)
   let isPreview = false
   let isOrganizer = false
 
-  if (hackathon && orgId && hackathon.organizer.clerk_org_id === orgId) {
+  if (orgId && hackathon.organizer.clerk_org_id === orgId) {
     isOrganizer = true
-  }
-
-  if (!hackathon) {
-    const draftHackathon = await getPublicHackathon(slug, { includeUnpublished: true })
-
-    if (draftHackathon && orgId && draftHackathon.organizer.clerk_org_id === orgId) {
-      hackathon = draftHackathon
+    if (!isPublished) {
       isPreview = true
-      isOrganizer = true
-    } else if (draftHackathon && userId) {
+    }
+  } else if (!isPublished) {
+    if (userId) {
       const { getRegistrationInfo } = await import("@/lib/services/hackathons")
-      const regInfo = await getRegistrationInfo(draftHackathon.id, userId)
+      const regInfo = await getRegistrationInfo(hackathon.id, userId)
       if (regInfo.participantRole === "judge") {
         return (
           <div className="flex min-h-[60vh] flex-col items-center justify-center px-4 text-center">
@@ -63,9 +66,6 @@ export default async function EventPage({ params }: PageProps) {
         )
       }
     }
-  }
-
-  if (!hackathon) {
     notFound()
   }
 

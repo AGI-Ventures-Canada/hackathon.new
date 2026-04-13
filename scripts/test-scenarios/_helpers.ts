@@ -487,14 +487,16 @@ export async function seedJudgeDisplayProfiles(
   judgeParticipantIds: string[]
 ): Promise<void> {
   await supabase.from("hackathon_judges_display").delete().eq("hackathon_id", hackathonId)
-  for (let i = 0; i < judgeParticipantIds.length; i++) {
-    await supabase.from("hackathon_judges_display").insert({
-      hackathon_id: hackathonId,
-      name: JUDGE_DISPLAY_NAMES[i] ?? `Judge ${i + 1}`,
-      title: "Judge",
-      clerk_user_id: judgeUserIds[i],
-      participant_id: judgeParticipantIds[i],
-      display_order: i,
-    })
-  }
+  await Promise.all(
+    judgeParticipantIds.map((pid, i) =>
+      supabase.from("hackathon_judges_display").insert({
+        hackathon_id: hackathonId,
+        name: JUDGE_DISPLAY_NAMES[i] ?? `Judge ${i + 1}`,
+        title: "Judge",
+        clerk_user_id: judgeUserIds[i],
+        participant_id: pid,
+        display_order: i,
+      })
+    )
+  )
 }

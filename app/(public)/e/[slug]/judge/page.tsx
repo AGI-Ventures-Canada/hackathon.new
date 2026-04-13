@@ -9,6 +9,8 @@ type PageProps = {
   params: Promise<{ slug: string }>
 }
 
+const PUBLISHED_STATUSES = ["published", "registration_open", "active", "judging", "completed"]
+
 export default async function JudgePage({ params }: PageProps) {
   const { slug } = await params
   const { userId } = await auth()
@@ -17,24 +19,25 @@ export default async function JudgePage({ params }: PageProps) {
     redirect(`/e/${slug}`)
   }
 
-  const hackathon = await getPublicHackathon(slug)
+  const hackathon = await getPublicHackathon(slug, { includeUnpublished: true })
   if (!hackathon) {
-    const draftHackathon = await getPublicHackathon(slug, { includeUnpublished: true })
-    if (draftHackathon && userId) {
-      const { getRegistrationInfo } = await import("@/lib/services/hackathons")
-      const regInfo = await getRegistrationInfo(draftHackathon.id, userId)
-      if (regInfo.participantRole === "judge") {
-        return (
-          <div className="flex min-h-[60vh] flex-col items-center justify-center px-4 text-center">
-            <Clock className="size-10 text-muted-foreground mb-4" />
-            <h1 className="text-xl font-semibold mb-2">This event isn&apos;t live yet</h1>
-            <p className="text-muted-foreground max-w-md">
-              Judging assignments will appear here once the hackathon is published.
-              Check back later.
-            </p>
-          </div>
-        )
-      }
+    notFound()
+  }
+
+  if (!PUBLISHED_STATUSES.includes(hackathon.status)) {
+    const { getRegistrationInfo } = await import("@/lib/services/hackathons")
+    const regInfo = await getRegistrationInfo(hackathon.id, userId)
+    if (regInfo.participantRole === "judge") {
+      return (
+        <div className="flex min-h-[60vh] flex-col items-center justify-center px-4 text-center">
+          <Clock className="size-10 text-muted-foreground mb-4" />
+          <h1 className="text-xl font-semibold mb-2">This event isn&apos;t live yet</h1>
+          <p className="text-muted-foreground max-w-md">
+            Judging assignments will appear here once the hackathon is published.
+            Check back later.
+          </p>
+        </div>
+      )
     }
     notFound()
   }
