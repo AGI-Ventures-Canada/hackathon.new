@@ -3,6 +3,10 @@ import { resolvePrincipal, requirePrincipal } from "@/lib/auth/principal"
 import { logAudit } from "@/lib/services/audit"
 import { resolveAdderName } from "@/lib/auth/resolve-adder-name"
 
+type CachedAuthResult = { status: "ok" } | { status: "not_found" } | { status: "not_authorized" }
+const searchAuthCache = new Map<string, { result: CachedAuthResult; expires: number }>()
+const SEARCH_AUTH_TTL = 30_000
+
 export const dashboardJudgingRoutes = new Elysia()
   .derive(async ({ request }) => {
     const principal = await resolvePrincipal(request)
@@ -501,13 +505,20 @@ export const dashboardJudgingRoutes = new Elysia()
   .get("/hackathons/:id/judging/user-search", async ({ principal, params, query }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
 
-    const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
-    const result = await checkHackathonOrganizer(params.id, principal.tenantId)
+    const cacheKey = `${params.id}:${principal.tenantId}`
+    let authResult = searchAuthCache.get(cacheKey)
+    if (!authResult || Date.now() >= authResult.expires) {
+      searchAuthCache.delete(cacheKey)
+      const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+      const result = await checkHackathonOrganizer(params.id, principal.tenantId)
+      searchAuthCache.set(cacheKey, { result: { status: result.status }, expires: Date.now() + SEARCH_AUTH_TTL })
+      authResult = searchAuthCache.get(cacheKey)!
+    }
 
-    if (result.status === "not_found") {
+    if (authResult.result.status === "not_found") {
       return new Response(JSON.stringify({ error: "Hackathon not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
     }
-    if (result.status === "not_authorized") {
+    if (authResult.result.status === "not_authorized") {
       return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
     }
 

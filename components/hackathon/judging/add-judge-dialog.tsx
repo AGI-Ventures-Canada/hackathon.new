@@ -56,6 +56,7 @@ export function AddJudgeDialog({
   const [inviteEmail, setInviteEmail] = useState("")
   const abortRef = useRef<AbortController | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const cacheRef = useRef<Map<string, SearchUser[]>>(new Map())
 
   const base = `/api/dashboard/hackathons/${hackathonId}/judging`
 
@@ -68,6 +69,7 @@ export function AddJudgeDialog({
     setInviteEmail("")
     if (debounceRef.current) clearTimeout(debounceRef.current)
     abortRef.current?.abort()
+    cacheRef.current.clear()
   }
 
   function handleOpenChange(nextOpen: boolean) {
@@ -86,11 +88,12 @@ export function AddJudgeDialog({
         if (!res.ok) throw new Error("Search failed")
         const data = await res.json()
         if (!signal.aborted) {
-          setSearchResults(data.users ?? [])
+          const users = data.users ?? []
+          cacheRef.current.set(query.toLowerCase(), users)
+          setSearchResults(users)
         }
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return
-        setSearchResults([])
       } finally {
         if (!signal.aborted) {
           setSearching(false)
@@ -114,9 +117,32 @@ export function AddJudgeDialog({
         return
       }
 
+      const normalized = query.trim().toLowerCase()
+      let bestPrefix = ""
+      let bestResults: SearchUser[] | null = null
+      for (const [cachedQuery, cachedResults] of cacheRef.current) {
+        if (normalized.startsWith(cachedQuery) && cachedQuery.length > bestPrefix.length) {
+          bestPrefix = cachedQuery
+          bestResults = cachedResults
+        }
+      }
+      if (bestResults !== null) {
+        setSearchResults(
+          bestResults.filter((u) => {
+            const s = normalized
+            return (
+              u.firstName?.toLowerCase().includes(s) ||
+              u.lastName?.toLowerCase().includes(s) ||
+              u.email?.toLowerCase().includes(s) ||
+              u.username?.toLowerCase().includes(s)
+            )
+          })
+        )
+      }
+
       const controller = new AbortController()
       abortRef.current = controller
-      debounceRef.current = setTimeout(() => doSearch(query.trim(), controller.signal), 100)
+      debounceRef.current = setTimeout(() => doSearch(query.trim(), controller.signal), 200)
     },
     [doSearch]
   )

@@ -16,6 +16,7 @@ interface JudgesEditFormProps {
   hackathonId: string
   initialJudges: HackathonJudgeDisplay[]
   onSaveAndNext?: () => void
+  onJudgesChange?: (judges: HackathonJudgeDisplay[]) => void
 }
 
 interface OrgSearchResult {
@@ -156,6 +157,7 @@ export function JudgesEditForm({
   hackathonId,
   initialJudges,
   onSaveAndNext,
+  onJudgesChange,
 }: JudgesEditFormProps) {
   const router = useRouter()
   const { closeDrawer } = useEdit()
@@ -207,6 +209,10 @@ export function JudgesEditForm({
         return { ...j, ...edits }
       })
   }, [initialJudges, hiddenIds, localEdits])
+
+  useEffect(() => {
+    onJudgesChange?.(visibleJudges as HackathonJudgeDisplay[])
+  }, [visibleJudges, onJudgesChange])
 
   async function handleAddFromChips() {
     if (emailEntries.length === 0) return
@@ -441,11 +447,10 @@ export function JudgesEditForm({
         {error && <p className="text-destructive text-sm">{error}</p>}
       </FieldGroup>
 
-      {visibleJudges.length > 0 && (
-        <div className="space-y-3">
-          <h4 className="text-sm font-medium">
-            Judges ({visibleJudges.length})
-          </h4>
+      <div className={`space-y-3 ${visibleJudges.length === 0 ? "hidden" : ""}`}>
+        <h4 className="text-sm font-medium">
+          Judges ({visibleJudges.length})
+        </h4>
           <div className="space-y-2">
             {visibleJudges.map((judge) => (
               <div
@@ -504,8 +509,7 @@ export function JudgesEditForm({
               </div>
             ))}
           </div>
-        </div>
-      )}
+      </div>
 
       <div className="space-y-3 pt-2">
         <Button type="button" variant="outline" onClick={closeDrawer}>
