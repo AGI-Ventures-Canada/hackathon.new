@@ -38,7 +38,7 @@ export function ActionItemsTab() {
     }))
     .filter((g) => g.items.length > 0)
 
-  if (totalCount === 0) {
+  if (isClient && totalCount === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
         <CircleCheck className="size-8 text-muted-foreground/50 mb-2" />
@@ -59,7 +59,7 @@ export function ActionItemsTab() {
         </div>
       )}
 
-      {transitionItems.length > 0 && (
+      {isClient && transitionItems.length > 0 && (
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-primary mb-2">
             NEXT STEP
@@ -72,7 +72,7 @@ export function ActionItemsTab() {
         </div>
       )}
 
-      {groups.map((group) => (
+      {isClient && groups.map((group) => (
         <div key={group.severity}>
           <p className={cn("text-xs font-semibold uppercase tracking-wide mb-2", groupColor[group.severity])}>
             {group.label} ({group.items.length})
@@ -87,7 +87,7 @@ export function ActionItemsTab() {
 
       <AddItemInput onAdd={addCustomItem} />
 
-      {completedItems.length > 0 && (
+      {isClient && completedItems.length > 0 && (
         <Accordion type="single" collapsible>
           <AccordionItem value="completed" className="border-none">
             <AccordionTrigger className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -104,7 +104,7 @@ export function ActionItemsTab() {
         </Accordion>
       )}
 
-      {remainingCount === 0 && (
+      {isClient && remainingCount === 0 && (
         <div className="flex flex-col items-center justify-center py-8 text-center">
           <CircleCheck className="size-8 text-muted-foreground/50 mb-2" />
           <p className="text-sm text-muted-foreground">All caught up</p>
