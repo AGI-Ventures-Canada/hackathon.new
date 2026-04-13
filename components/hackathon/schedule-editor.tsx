@@ -32,11 +32,17 @@ import {
   HoverCardTrigger,
 } from "@/components/ui/hover-card"
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { MapPin, Plus, Pencil, Trash2, Loader2, Calendar, Zap } from "lucide-react"
 import type { ScheduleItem } from "@/lib/services/schedule-items"
 
@@ -153,6 +159,7 @@ export type ScheduleEditorProps = {
 
 export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challengeReleasedAt, challengeExists, hideHeader, onEditTriggerItem, onAddChallenge }: ScheduleEditorProps) {
   const router = useRouter()
+  const isMobile = useIsMobile()
   const now = new Date().toISOString()
 
   const [allItems, setAllItems] = useState<ScheduleItemData[]>(serverItems as ScheduleItemData[])
@@ -394,14 +401,25 @@ export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challe
                                   {isReleased ? (
                                     <Badge variant="secondary" className="text-xs">Released</Badge>
                                   ) : isTrigger && item.trigger_type ? (
-                                    <HoverCard openDelay={200} closeDelay={100}>
-                                      <HoverCardTrigger asChild>
-                                        <Badge variant="outline" className="text-xs cursor-help">Automated</Badge>
-                                      </HoverCardTrigger>
-                                      <HoverCardContent side="top" align="start" className="w-72 text-sm">
-                                        {TRIGGER_TOOLTIPS[item.trigger_type]}
-                                      </HoverCardContent>
-                                    </HoverCard>
+                                    isMobile ? (
+                                      <Popover>
+                                        <PopoverTrigger asChild>
+                                          <Badge variant="outline" className="text-xs cursor-help">Automated</Badge>
+                                        </PopoverTrigger>
+                                        <PopoverContent side="top" align="start" className="w-72 text-sm">
+                                          {TRIGGER_TOOLTIPS[item.trigger_type]}
+                                        </PopoverContent>
+                                      </Popover>
+                                    ) : (
+                                      <HoverCard openDelay={200} closeDelay={100}>
+                                        <HoverCardTrigger asChild>
+                                          <Badge variant="outline" className="text-xs cursor-help">Automated</Badge>
+                                        </HoverCardTrigger>
+                                        <HoverCardContent side="top" align="start" className="w-72 text-sm">
+                                          {TRIGGER_TOOLTIPS[item.trigger_type]}
+                                        </HoverCardContent>
+                                      </HoverCard>
+                                    )
                                   ) : null}
                                 </div>
                                 {item.location && (
@@ -414,7 +432,7 @@ export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challe
                                   <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{item.description}</p>
                                 )}
                               </div>
-                              <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <div className={`flex items-center gap-0.5 shrink-0 transition-opacity ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
                                 <Button
                                   size="icon"
                                   variant="ghost"

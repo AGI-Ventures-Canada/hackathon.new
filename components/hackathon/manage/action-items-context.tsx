@@ -64,6 +64,7 @@ interface ActionItemsContextValue {
   customItems: ActionItem[];
   registerTabAction: (actionItemId: string, callback: () => void) => void;
   unregisterTabAction: (actionItemId: string) => void;
+  isStale: boolean;
   hackathonStatus: HackathonStatus;
   hackathonPhase: HackathonPhase | null;
   challengeExists: boolean;
@@ -127,7 +128,7 @@ export function ActionItemsProvider({
   const [promoteDialogOpen, setPromoteDialogOpen] = useState(false);
   const [agendaDialogOpen, setAgendaDialogOpen] = useState(false);
 
-  const { data: pollData, refresh: refreshPoll } =
+  const { data: pollData, isStale, refresh: refreshPoll } =
     useOrganizerPoll(hackathonId);
   const actionItems = pollData
     ? getOrganizerActionItems(pollData)
@@ -473,6 +474,7 @@ export function ActionItemsProvider({
       customItems,
       registerTabAction,
       unregisterTabAction,
+      isStale,
       hackathonStatus: liveStatus,
       hackathonPhase: livePhase,
       challengeExists: liveChallengeExists,
@@ -497,6 +499,7 @@ export function ActionItemsProvider({
       customItems,
       registerTabAction,
       unregisterTabAction,
+      isStale,
       liveStatus,
       livePhase,
       liveChallengeExists,

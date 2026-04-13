@@ -1,6 +1,6 @@
 "use client"
 
-import { ClipboardList, ChevronRight, CircleCheck } from "lucide-react"
+import { ClipboardList, ChevronRight, CircleCheck, WifiOff } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion"
@@ -22,7 +22,7 @@ type Props = {
 }
 
 export function ActionItemsPanel({ visible }: Props) {
-  const { activeItems, completedItems, addCustomItem, remainingCount, panelOpen, setPanelOpen } = useActionItems()
+  const { activeItems, completedItems, addCustomItem, remainingCount, panelOpen, setPanelOpen, isStale } = useActionItems()
 
   const hasUrgent = activeItems.some((i) => i.severity === "urgent" || i.severity === "warning")
   const transitionItems = activeItems.filter((i) => i.variant === "transition")
@@ -83,6 +83,13 @@ export function ActionItemsPanel({ visible }: Props) {
           <div className="flex items-center border-b px-4 py-3 shrink-0">
             <h3 className="text-sm font-semibold">Action Items</h3>
           </div>
+
+          {isStale && (
+            <div className="flex items-center gap-1.5 border-b bg-muted/50 px-4 py-2 text-xs text-muted-foreground">
+              <WifiOff className="size-3 shrink-0" />
+              <span>Updates may be outdated</span>
+            </div>
+          )}
 
           <div className="flex-1 overflow-y-auto px-2 py-3 space-y-4">
             {groups.length === 0 && transitionItems.length === 0 && completedItems.length === 0 ? (

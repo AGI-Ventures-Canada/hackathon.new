@@ -3,9 +3,42 @@
 import { useEffect, useRef, useState, useCallback } from "react"
 import type { OrganizerPollResponse } from "@/lib/services/organizer-polling"
 
+export const STALE_THRESHOLD = 3
+
 interface UseOrganizerPollOptions {
   interval?: number
   enabled?: boolean
+}
+
+export type PollState = {
+  data: OrganizerPollResponse | null
+  isStale: boolean
+  failCount: number
+}
+
+export async function executePoll(
+  hackathonId: string,
+  state: PollState,
+  signal?: AbortSignal
+): Promise<PollState> {
+  if (document.hidden) return state
+
+  try {
+    const res = await fetch(
+      `/api/dashboard/hackathons/${hackathonId}/action-items-poll`,
+      { signal }
+    )
+    if (!res.ok) {
+      const failCount = state.failCount + 1
+      return { ...state, failCount, isStale: failCount >= STALE_THRESHOLD }
+    }
+    const data: OrganizerPollResponse = await res.json()
+    return { data, isStale: false, failCount: 0 }
+  } catch (e) {
+    if ((e as Error).name === "AbortError") return state
+    const failCount = state.failCount + 1
+    return { ...state, failCount, isStale: failCount >= STALE_THRESHOLD }
+  }
 }
 
 export function useOrganizerPoll(
@@ -15,34 +48,18 @@ export function useOrganizerPoll(
   const { interval = 10000, enabled = true } = options ?? {}
   const [data, setData] = useState<OrganizerPollResponse | null>(null)
   const [isStale, setIsStale] = useState(false)
-  const failCountRef = useRef(0)
+  const stateRef = useRef<PollState>({ data: null, isStale: false, failCount: 0 })
   const abortRef = useRef<AbortController | null>(null)
 
   const poll = useCallback(async () => {
-    if (document.hidden) return
-
     abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
 
-    try {
-      const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/action-items-poll`, {
-        signal: controller.signal,
-      })
-      if (!res.ok) {
-        failCountRef.current++
-        if (failCountRef.current >= 3) setIsStale(true)
-        return
-      }
-      const payload: OrganizerPollResponse = await res.json()
-      setData(payload)
-      setIsStale(false)
-      failCountRef.current = 0
-    } catch (e) {
-      if ((e as Error).name === "AbortError") return
-      failCountRef.current++
-      if (failCountRef.current >= 3) setIsStale(true)
-    }
+    const next = await executePoll(hackathonId, stateRef.current, controller.signal)
+    stateRef.current = next
+    setData(next.data)
+    setIsStale(next.isStale)
   }, [hackathonId])
 
   useEffect(() => {
