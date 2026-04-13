@@ -55,6 +55,7 @@ export function AddJudgeDialog({
   const [showInviteForm, setShowInviteForm] = useState(false)
   const [inviteEmail, setInviteEmail] = useState("")
   const abortRef = useRef<AbortController | null>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const base = `/api/dashboard/hackathons/${hackathonId}/judging`
 
@@ -65,6 +66,7 @@ export function AddJudgeDialog({
     setSuccess(null)
     setShowInviteForm(false)
     setInviteEmail("")
+    if (debounceRef.current) clearTimeout(debounceRef.current)
     abortRef.current?.abort()
   }
 
@@ -73,11 +75,37 @@ export function AddJudgeDialog({
     onOpenChange(nextOpen)
   }
 
+  const doSearch = useCallback(
+    async (query: string, signal: AbortSignal) => {
+      setSearching(true)
+      try {
+        const res = await fetch(
+          `${base}/user-search?q=${encodeURIComponent(query)}`,
+          { signal }
+        )
+        if (!res.ok) throw new Error("Search failed")
+        const data = await res.json()
+        if (!signal.aborted) {
+          setSearchResults(data.users ?? [])
+        }
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return
+        setSearchResults([])
+      } finally {
+        if (!signal.aborted) {
+          setSearching(false)
+        }
+      }
+    },
+    [base]
+  )
+
   const handleSearch = useCallback(
-    async (query: string) => {
+    (query: string) => {
       setSearchQuery(query)
       setError(null)
       setSuccess(null)
+      if (debounceRef.current) clearTimeout(debounceRef.current)
       abortRef.current?.abort()
 
       if (query.trim().length < 2) {
@@ -88,27 +116,9 @@ export function AddJudgeDialog({
 
       const controller = new AbortController()
       abortRef.current = controller
-      setSearching(true)
-      try {
-        const res = await fetch(
-          `${base}/user-search?q=${encodeURIComponent(query.trim())}`,
-          { signal: controller.signal }
-        )
-        if (!res.ok) throw new Error("Search failed")
-        const data = await res.json()
-        if (!controller.signal.aborted) {
-          setSearchResults(data.users ?? [])
-        }
-      } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") return
-        setSearchResults([])
-      } finally {
-        if (!controller.signal.aborted) {
-          setSearching(false)
-        }
-      }
+      debounceRef.current = setTimeout(() => doSearch(query.trim(), controller.signal), 100)
     },
-    [base]
+    [doSearch]
   )
 
   function getDisplayName(user: SearchUser) {

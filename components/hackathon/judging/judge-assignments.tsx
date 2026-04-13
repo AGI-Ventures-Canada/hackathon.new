@@ -240,9 +240,9 @@ export function JudgeAssignments({
         return
       }
 
+      const controller = new AbortController()
+      abortRef.current = controller
       searchTimeoutRef.current = setTimeout(async () => {
-        const controller = new AbortController()
-        abortRef.current = controller
         setSearching(true)
         try {
           const res = await fetch(
