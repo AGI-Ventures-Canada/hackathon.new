@@ -177,7 +177,7 @@ function HackathonPreviewContent({
               <span className="text-muted-foreground">·</span>
               {teamInfo.isCaptain && teamInfo.team.status === "forming" && !rename.editing ? (
                 <>
-                  <span className="text-sm text-muted-foreground truncate">{teamInfo.team.name}</span>
+                  <span className="text-sm font-medium text-muted-foreground truncate">{teamInfo.team.name}</span>
                   <button
                     type="button"
                     className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground shrink-0 ml-1"
