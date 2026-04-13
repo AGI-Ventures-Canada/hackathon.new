@@ -26,8 +26,10 @@ const baseAssignments = [
     submissionLiveAppUrl: null,
     submissionScreenshotUrl: null,
     teamName: "Team A",
+    teamMemberCount: 3,
     isComplete: false,
     notes: "",
+    viewedAt: null,
   },
   {
     id: "a2",
@@ -38,8 +40,10 @@ const baseAssignments = [
     submissionLiveAppUrl: null,
     submissionScreenshotUrl: null,
     teamName: "Team B",
+    teamMemberCount: 2,
     isComplete: true,
     notes: "Good work",
+    viewedAt: "2026-04-10T09:00:00Z",
   },
 ]
 
