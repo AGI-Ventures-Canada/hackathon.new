@@ -18,7 +18,7 @@ function makeRpcPayload(overrides: Record<string, unknown> = {}) {
     phase: "build",
     description: "A test hackathon",
     banner_url: "https://example.com/banner.png",
-    challenge_title: "Build an AI tool",
+    challenge_count: 1,
     challenge_released_at: "2026-04-28T10:00:00Z",
     results_published_at: null,
     starts_at: "2026-04-28T09:00:00Z",
@@ -150,7 +150,7 @@ describe("Organizer Polling Service", () => {
     it("sets challengeReleased to false when challenge_released_at is null", async () => {
       mockRpcCall("get_organizer_poll_data", mockSuccess(makeRpcPayload({
         challenge_released_at: null,
-        challenge_title: "A challenge",
+        challenge_count: 1,
       })))
 
       const result = await buildOrganizerPollPayload(hackathonId)
@@ -160,9 +160,9 @@ describe("Organizer Polling Service", () => {
       expect(result!.challengeExists).toBe(true)
     })
 
-    it("sets challengeExists to false when challenge_title is null", async () => {
+    it("sets challengeExists to false when challenge_count is zero", async () => {
       mockRpcCall("get_organizer_poll_data", mockSuccess(makeRpcPayload({
-        challenge_title: null,
+        challenge_count: 0,
         challenge_released_at: null,
       })))
 

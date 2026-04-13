@@ -10,7 +10,7 @@ interface RpcPollRow {
   phase: string | null
   description: string | null
   banner_url: string | null
-  challenge_title: string | null
+  challenge_count: number | null
   challenge_released_at: string | null
   results_published_at: string | null
   starts_at: string | null
@@ -57,7 +57,7 @@ export async function buildOrganizerPollPayload(hackathonId: string): Promise<Or
     judgeDisplayCount: r.judge_display_count ?? 0,
     mentorQueue: { open: r.mentor_open_count ?? 0 },
     challengeReleased: !!r.challenge_released_at,
-    challengeExists: !!r.challenge_title,
+    challengeExists: (r.challenge_count ?? 0) > 0,
     challengeReleaseTime: r.challenge_release_time ?? null,
     resultsPublishedAt: r.results_published_at,
     description: r.description,

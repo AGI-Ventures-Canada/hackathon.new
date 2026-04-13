@@ -27,12 +27,27 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
+import { extractYouTubeVideoId } from "@/lib/utils/youtube"
+import { YouTubeEmbed } from "@/components/hackathon/youtube-embed"
+import { SubmissionLinks } from "@/components/hackathon/submission-links"
 
 type TeamMember = {
   clerkUserId: string
   displayName: string | null
   email: string | null
   role: string
+}
+
+type TeamSubmission = {
+  id: string
+  title: string
+  status: string
+  description: string | null
+  githubUrl: string | null
+  liveAppUrl: string | null
+  demoVideoUrl: string | null
+  screenshotUrl: string | null
+  createdAt: string
 }
 
 type Team = {
@@ -42,8 +57,44 @@ type Team = {
   captainClerkUserId: string | null
   pendingCaptainEmail: string | null
   members: TeamMember[]
-  submission: { id: string; title: string; status: string } | null
+  submission: TeamSubmission | null
   room: { id: string; name: string } | null
+}
+
+function TeamSubmissionPanel({ submission }: { submission: TeamSubmission }) {
+  const youtubeVideoId = submission.demoVideoUrl
+    ? extractYouTubeVideoId(submission.demoVideoUrl)
+    : null
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-base font-semibold leading-tight">{submission.title}</h3>
+        {submission.description && (
+          <p className="mt-1.5 text-sm text-muted-foreground whitespace-pre-wrap">
+            {submission.description}
+          </p>
+        )}
+      </div>
+      {submission.screenshotUrl && (
+        <div className="rounded-md overflow-hidden border bg-background">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={submission.screenshotUrl}
+            alt={`Screenshot of ${submission.title}`}
+            className="w-full h-auto max-h-80 object-contain"
+          />
+        </div>
+      )}
+      {youtubeVideoId && <YouTubeEmbed videoId={youtubeVideoId} />}
+      <SubmissionLinks
+        githubUrl={submission.githubUrl}
+        liveAppUrl={submission.liveAppUrl}
+        demoVideoUrl={submission.demoVideoUrl}
+        isYouTube={youtubeVideoId !== null}
+      />
+    </div>
+  )
 }
 
 type TeamsTabProps = {
@@ -290,7 +341,10 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         <p className="text-muted-foreground">
           {teams.length === 0
             ? "No teams yet"
-            : `${teams.length} team${teams.length === 1 ? "" : "s"}`}
+            : (() => {
+                const submittedCount = teams.filter((t) => t.submission).length
+                return `${teams.length} team${teams.length === 1 ? "" : "s"} · ${submittedCount} submitted`
+              })()}
         </p>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
@@ -439,62 +493,76 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                         </TableCell>
                       </TableRow>
                       {isExpanded && (
-                        <TableRow>
+                        <TableRow className="bg-muted/30 hover:bg-muted/30">
                           <TableCell />
-                          <TableCell colSpan={5}>
-                            <div className="space-y-3 py-2">
-                              <div className="space-y-1.5">
-                                <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                                  <Users className="size-3" />
-                                  Members
-                                </div>
-                                {team.pendingCaptainEmail && (
-                                  <div className="flex items-center gap-2 text-sm">
-                                    <Mail className="size-3 text-muted-foreground" />
-                                    <span className="text-muted-foreground">{team.pendingCaptainEmail}</span>
-                                    <Badge variant="secondary">Pending invite</Badge>
+                          <TableCell colSpan={5} className="py-4">
+                            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+                              <div className="space-y-4">
+                                <section className="space-y-2">
+                                  <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                    <Users className="size-3" />
+                                    Members
                                   </div>
-                                )}
-                                {team.members.length === 0 && !team.pendingCaptainEmail ? (
-                                  <p className="text-sm text-muted-foreground">No members</p>
-                                ) : (
-                                  <div className="flex flex-col gap-1">
-                                    {team.members.map((m) => (
-                                      <div key={m.clerkUserId} className="flex items-center gap-2 text-sm">
-                                        {m.clerkUserId === team.captainClerkUserId && (
-                                          <Crown className="size-3 text-primary" />
-                                        )}
-                                        <span>{m.displayName || m.clerkUserId}</span>
-                                        {m.email && (
-                                          <span className="text-muted-foreground text-xs">
-                                            {m.email}
-                                          </span>
-                                        )}
+                                  <div className="rounded-md border bg-background p-3">
+                                    {team.pendingCaptainEmail && (
+                                      <div className="flex items-center gap-2 text-sm">
+                                        <Mail className="size-3 text-muted-foreground shrink-0" />
+                                        <span className="text-muted-foreground truncate">{team.pendingCaptainEmail}</span>
+                                        <Badge variant="secondary" className="ml-auto font-normal">Pending</Badge>
                                       </div>
-                                    ))}
+                                    )}
+                                    {team.members.length === 0 && !team.pendingCaptainEmail ? (
+                                      <p className="text-sm text-muted-foreground">No members yet</p>
+                                    ) : (
+                                      <ul className="flex flex-col gap-1.5">
+                                        {team.members.map((m) => (
+                                          <li key={m.clerkUserId} className="flex items-center gap-2 text-sm">
+                                            {m.clerkUserId === team.captainClerkUserId ? (
+                                              <Crown className="size-3 text-primary shrink-0" />
+                                            ) : (
+                                              <span className="size-3 shrink-0" />
+                                            )}
+                                            <span className="font-medium">{m.displayName || m.clerkUserId}</span>
+                                            {m.email && (
+                                              <span className="text-muted-foreground text-xs truncate">
+                                                {m.email}
+                                              </span>
+                                            )}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    )}
                                   </div>
+                                </section>
+
+                                {team.room && (
+                                  <section className="space-y-2">
+                                    <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                      <DoorOpen className="size-3" />
+                                      Room
+                                    </div>
+                                    <div className="rounded-md border bg-background px-3 py-2">
+                                      <p className="text-sm font-medium">{team.room.name}</p>
+                                    </div>
+                                  </section>
                                 )}
                               </div>
 
-                              {team.submission && (
-                                <div className="space-y-1">
-                                  <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                                    <FileText className="size-3" />
-                                    Submission
-                                  </div>
-                                  <p className="text-sm">{team.submission.title}</p>
+                              <section className="space-y-2">
+                                <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                  <FileText className="size-3" />
+                                  Submission
                                 </div>
-                              )}
-
-                              {team.room && (
-                                <div className="space-y-1">
-                                  <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                                    <DoorOpen className="size-3" />
-                                    Room
+                                {team.submission ? (
+                                  <div className="rounded-md border bg-background p-4">
+                                    <TeamSubmissionPanel submission={team.submission} />
                                   </div>
-                                  <p className="text-sm">{team.room.name}</p>
-                                </div>
-                              )}
+                                ) : (
+                                  <div className="rounded-md border border-dashed bg-background/50 px-4 py-6 text-center">
+                                    <p className="text-sm text-muted-foreground">No submission yet</p>
+                                  </div>
+                                )}
+                              </section>
                             </div>
                           </TableCell>
                         </TableRow>

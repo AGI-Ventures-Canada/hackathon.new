@@ -8,12 +8,12 @@ import { countPendingJudgeInvitations } from "@/lib/services/judge-invitations"
 import { countJudgeDisplayProfiles } from "@/lib/services/judge-display"
 import { getManageOverviewStats } from "@/lib/services/manage-overview"
 import { listAnnouncements } from "@/lib/services/announcements"
+import { listChallenges } from "@/lib/services/challenges"
 import { listScheduleItems, getSubmissionDeadline } from "@/lib/services/schedule-items"
 import { getOrganizerActionItems } from "@/lib/utils/organizer-actions"
-import { VALID_TABS, VALID_ETABS, DEFAULT_TAB, resolveTab } from "@/lib/utils/manage-tabs"
+import { VALID_TABS, VALID_ETABS, VALID_MTABS, DEFAULT_TAB, DEFAULT_MTAB, resolveTab } from "@/lib/utils/manage-tabs"
 import { HackathonPreviewClient } from "@/components/hackathon/preview/hackathon-preview-client"
 import { HackathonPageActions } from "@/components/hackathon/hackathon-page-actions"
-import { SubmissionGallery } from "@/components/hackathon/submission-gallery"
 import { LifecycleStepper } from "@/components/hackathon/lifecycle-stepper"
 import { OrganizerOverview } from "@/components/hackathon/organizer-overview"
 import { TimeRemainingBar } from "@/components/hackathon/time-remaining-bar"
@@ -22,19 +22,19 @@ import { ActionItemsTab } from "@/components/hackathon/manage/action-items-tab"
 import { ActionItemsLayout } from "@/components/hackathon/manage/action-items-layout"
 import { ActionItemsTabBadge } from "@/components/hackathon/manage/action-items-tab-badge"
 import { StatusBadgeMenu } from "@/components/hackathon/manage/status-badge-menu"
+import { ChallengesTab } from "@/components/hackathon/manage/challenges-tab"
 import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { TabCount } from "@/components/ui/tab-count"
 import { TabsUrlSync } from "./_tabs-url-sync"
 import { JudgingTabContent } from "./_judging-tab"
 import { PostEventTabContent } from "./_post-event-tab"
 import { EventTabContent } from "./_event-tab"
-import { RoomsTab } from "./_rooms-tab"
+import { MiscsTabContent } from "./_miscs-tab"
 import { TeamsTab } from "./_teams-tab"
-import { ActivityTab } from "./_activity-tab"
 
 type PageProps = {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ tab?: string; etab?: string }>
+  searchParams: Promise<{ tab?: string; etab?: string; mtab?: string }>
 }
 
 function TabLoadingSkeleton() {
@@ -43,7 +43,7 @@ function TabLoadingSkeleton() {
 
 export default async function ManagePage({ params, searchParams }: PageProps) {
   const { slug } = await params
-  const { tab, etab } = await searchParams
+  const { tab, etab, mtab } = await searchParams
   const [{ userId }, result] = await Promise.all([auth(), getManageHackathon(slug)])
 
   if (!result.ok) {
@@ -63,6 +63,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     scheduleItems,
     submissionDeadline,
     pendingJudgeInvitationCount,
+    challenges,
   ] = await Promise.all([
     getHackathonSubmissions(hackathon.id),
     getJudgingProgress(hackathon.id),
@@ -74,9 +75,11 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     listScheduleItems(hackathon.id),
     getSubmissionDeadline(hackathon.id),
     countPendingJudgeInvitations(hackathon.id),
+    listChallenges(hackathon.id),
   ])
 
   const submissionCount = submissions.length
+  const challengeExists = challenges.length > 0
   const challengeReleaseItem = scheduleItems.find((s) => s.trigger_type === "challenge_release")
   const actionItems = getOrganizerActionItems({
     status: hackathon.status,
@@ -90,7 +93,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     judgeDisplayCount,
     mentorQueue: overviewStats.mentorQueue,
     challengeReleased: overviewStats.challengeReleased,
-    challengeExists: !!hackathon.challenge_title,
+    challengeExists,
     challengeReleaseTime: challengeReleaseItem?.starts_at ?? null,
     resultsPublishedAt: hackathon.results_published_at,
     description: hackathon.description,
@@ -104,21 +107,12 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
   })
 
   const activeTab = resolveTab(tab, VALID_TABS, DEFAULT_TAB)
-  const activeEtab = resolveTab(etab, VALID_ETABS, "challenge")
+  const activeEtab = resolveTab(etab, VALID_ETABS, "announcements")
+  const mtabFallback = tab === "rooms" ? "rooms" : tab === "activity" ? "activity" : undefined
+  const activeMtab = resolveTab(mtab ?? mtabFallback, VALID_MTABS, DEFAULT_MTAB)
 
   const submissionsForSelect = submissions.map((s) => ({ id: s.id, title: s.title }))
-
-  const submissionsForGallery = submissions.map((s) => ({
-    id: s.id,
-    title: s.title,
-    description: s.description,
-    githubUrl: s.github_url,
-    liveAppUrl: s.live_app_url,
-    demoVideoUrl: s.demo_video_url,
-    screenshotUrl: s.screenshot_url,
-    submitter: s.submitter_name,
-    createdAt: s.created_at,
-  }))
+  const teamsTabTooltip = `${overviewStats.teamCount} team${overviewStats.teamCount === 1 ? "" : "s"} · ${submissionCount} submission${submissionCount === 1 ? "" : "s"}`
 
   return (
     <div className="space-y-6">
@@ -128,10 +122,9 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
         slug={hackathon.slug}
         status={hackathon.status}
         phase={hackathon.phase}
-        challengeExists={!!hackathon.challenge_title}
+        challengeExists={challengeExists}
         challengeReleasedAt={hackathon.challenge_released_at}
         scheduleItems={scheduleItems}
-        startsAt={hackathon.starts_at}
         endsAt={hackathon.ends_at}
       >
         <TabsUrlSync paramKey="tab" value={activeTab}>
@@ -149,14 +142,13 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
             <TabsList variant="line">
               <TabsTrigger value="action-items">Action Items<ActionItemsTabBadge /></TabsTrigger>
               <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="challenges">Challenges{challenges.length > 0 && <TabCount>{challenges.length}</TabCount>}</TabsTrigger>
               <TabsTrigger value="edit">Event Page</TabsTrigger>
-              <TabsTrigger value="teams">Teams</TabsTrigger>
-              <TabsTrigger value="rooms">Rooms</TabsTrigger>
-              <TabsTrigger value="submissions">Submissions{submissionCount > 0 && <TabCount>{submissionCount}</TabCount>}</TabsTrigger>
+              <TabsTrigger value="teams" title={teamsTabTooltip}>Teams</TabsTrigger>
               <TabsTrigger value="judging">Judging &amp; Prizes{prizes.length > 0 && <TabCount>{prizes.length}</TabCount>}</TabsTrigger>
               <TabsTrigger value="post-event">Post-Event</TabsTrigger>
-              <TabsTrigger value="event">Engage</TabsTrigger>
-              <TabsTrigger value="activity">Activity</TabsTrigger>
+              <TabsTrigger value="event">Communications</TabsTrigger>
+              <TabsTrigger value="miscs">Miscs</TabsTrigger>
             </TabsList>
           </div>
 
@@ -207,9 +199,17 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
                   announcements={announcements}
                   scheduleItems={scheduleItems}
                   challengeReleasedAt={hackathon.challenge_released_at}
-                  challengeExists={!!hackathon.challenge_title}
+                  challengeExists={challengeExists}
                 />
               </div>
+            </TabsContent>
+
+            <TabsContent value="challenges" forceMount className="data-[state=inactive]:hidden">
+              <ChallengesTab
+                hackathonId={hackathon.id}
+                initialChallenges={challenges}
+                releasedAt={hackathon.challenge_released_at}
+              />
             </TabsContent>
 
             <TabsContent value="edit" forceMount className="data-[state=inactive]:hidden">
@@ -248,27 +248,12 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
               />
             </TabsContent>
 
-            <TabsContent value="rooms" forceMount className="data-[state=inactive]:hidden">
-              <RoomsTab hackathonId={hackathon.id} />
-            </TabsContent>
-
-            <TabsContent value="submissions" forceMount className="data-[state=inactive]:hidden">
-              {submissionsForGallery.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16 text-center">
-                  <p className="text-lg font-semibold mb-1">No submissions yet</p>
-                  <p className="text-sm text-muted-foreground">Submissions will appear here once participants submit their projects.</p>
-                </div>
-              ) : (
-                <SubmissionGallery submissions={submissionsForGallery} />
-              )}
+            <TabsContent value="miscs" forceMount className="data-[state=inactive]:hidden">
+              <MiscsTabContent hackathonId={hackathon.id} activeMtab={activeMtab} />
             </TabsContent>
 
             <TabsContent value="event" forceMount className="data-[state=inactive]:hidden">
               <EventTabContent hackathonId={hackathon.id} activeEtab={activeEtab} hackathonStatus={hackathon.status} hackathonPhase={hackathon.phase} />
-            </TabsContent>
-
-            <TabsContent value="activity" forceMount className="data-[state=inactive]:hidden">
-              <ActivityTab hackathonId={hackathon.id} />
             </TabsContent>
           </ActionItemsLayout>
         </TabsUrlSync>

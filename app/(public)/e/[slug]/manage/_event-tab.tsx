@@ -6,7 +6,6 @@ import { TabsUrlSync } from "./_tabs-url-sync"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { MarkdownEditor } from "@/components/ui/markdown-editor"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -49,15 +48,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Loader2, CheckCircle2, Send, Eye, ThumbsUp, ThumbsDown, Plus, Pencil, Trash2, Megaphone, Zap, FileText, MessageCircle, Share2, Mail } from "lucide-react"
+import { Loader2, CheckCircle2, Send, Eye, ThumbsUp, ThumbsDown, Plus, Pencil, Trash2, Megaphone, Zap, MessageCircle, Share2, Mail } from "lucide-react"
 import type { AnnouncementAudience } from "@/lib/services/announcements"
 import type { HackathonStatus, HackathonPhase } from "@/lib/db/hackathon-types"
-
-type ChallengeData = {
-  title: string | null
-  body: string | null
-  releasedAt: string | null
-}
 
 type MentorRequest = {
   id: string
@@ -98,172 +91,6 @@ function formatDate(dateStr: string): string {
     hour: "numeric",
     minute: "2-digit",
   })
-}
-
-function ChallengeSubTab({ hackathonId }: { hackathonId: string }) {
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [releasing, setReleasing] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState(false)
-  const [title, setTitle] = useState("")
-  const [body, setBody] = useState("")
-  const [releasedAt, setReleasedAt] = useState<string | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    async function load() {
-      try {
-        const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/challenge`)
-        if (!res.ok) throw new Error("Failed to load challenge")
-        const data: ChallengeData = await res.json()
-        if (cancelled) return
-        setTitle(data.title ?? "")
-        setBody(data.body ?? "")
-        setReleasedAt(data.releasedAt)
-      } catch {
-        if (!cancelled) setError("Failed to load challenge")
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    load()
-    return () => { cancelled = true }
-  }, [hackathonId])
-
-  async function handleSave() {
-    setSaving(true)
-    setError(null)
-    setSuccess(false)
-    try {
-      const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/challenge`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, body }),
-      })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || "Failed to save challenge")
-      }
-      setSuccess(true)
-      setTimeout(() => setSuccess(false), 3000)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save challenge")
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleRelease() {
-    setReleasing(true)
-    setError(null)
-    try {
-      const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/challenge/release`, {
-        method: "POST",
-      })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || "Failed to release challenge")
-      }
-      setReleasedAt(new Date().toISOString())
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to release challenge")
-    } finally {
-      setReleasing(false)
-    }
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent) {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !saving) {
-      e.preventDefault()
-      handleSave()
-    }
-  }
-
-  if (loading) {
-    return <div className="flex items-center justify-center py-12"><Loader2 className="animate-spin text-muted-foreground" /></div>
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <CardTitle>Challenge</CardTitle>
-            <CardDescription>Define the problem statement for participants</CardDescription>
-          </div>
-          {releasedAt && (
-            <Badge variant="secondary">
-              Released {formatDate(releasedAt)}
-            </Badge>
-          )}
-        </div>
-      </CardHeader>
-      <CardContent>
-        <form
-          onSubmit={(e) => { e.preventDefault(); handleSave() }}
-          onKeyDown={handleKeyDown}
-          autoComplete="off"
-          className="space-y-4"
-        >
-          <div className="space-y-2">
-            <Label htmlFor="challenge-title">Title</Label>
-            <Input
-              id="challenge-title"
-              name="challenge-title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Challenge title"
-              autoComplete="off"
-              data-1p-ignore
-              data-lpignore="true"
-              data-form-type="other"
-              autoFocus
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="challenge-body">Description</Label>
-            <MarkdownEditor
-              id="challenge-body"
-              value={body}
-              onChange={setBody}
-              placeholder="Describe the challenge in detail..."
-              rows={8}
-            />
-            <p className="text-xs text-muted-foreground">Supports markdown: **bold**, _italic_, ## headings, lists, and [links](url)</p>
-          </div>
-          {error && <p className="text-destructive text-xs">{error}</p>}
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-2">
-              <Button type="submit" disabled={saving}>
-                {saving && <Loader2 className="animate-spin" />}
-                Save
-              </Button>
-              {success && (
-                <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <CheckCircle2 className="size-3" />
-                  Saved
-                </span>
-              )}
-            </div>
-            {!releasedAt && (
-              <Button
-                type="button"
-                variant="outline"
-                disabled={releasing || !title.trim()}
-                onClick={handleRelease}
-              >
-                {releasing && <Loader2 className="animate-spin" />}
-                <Eye />
-                <span className="hidden sm:inline">Release Challenge</span>
-                <span className="sm:hidden">Release</span>
-              </Button>
-            )}
-          </div>
-        </form>
-      </CardContent>
-    </Card>
-  )
 }
 
 function MentorsSubTab({ hackathonId }: { hackathonId: string }) {
@@ -1051,17 +878,12 @@ export function EventTabContent({ hackathonId, activeEtab, hackathonStatus, hack
     <TabsUrlSync paramKey="etab" value={activeEtab} className="space-y-6">
       <div className="overflow-x-auto scrollbar-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none]">
         <TabsList>
-          <TabsTrigger value="challenge"><FileText className="size-4" /><span className="hidden sm:inline">Challenge</span></TabsTrigger>
           <TabsTrigger value="announcements"><Megaphone className="size-4" /><span className="hidden sm:inline">Announcements</span></TabsTrigger>
           <TabsTrigger value="mentors"><MessageCircle className="size-4" /><span className="hidden sm:inline">Mentors</span></TabsTrigger>
           <TabsTrigger value="social"><Share2 className="size-4" /><span className="hidden sm:inline">Social</span></TabsTrigger>
           <TabsTrigger value="email"><Mail className="size-4" /><span className="hidden sm:inline">Email</span></TabsTrigger>
         </TabsList>
       </div>
-
-      <TabsContent value="challenge" forceMount className="data-[state=inactive]:hidden">
-        <ChallengeSubTab hackathonId={hackathonId} />
-      </TabsContent>
 
       <TabsContent value="announcements" forceMount className="data-[state=inactive]:hidden">
         <AnnouncementsSubTab hackathonId={hackathonId} hackathonStatus={hackathonStatus} hackathonPhase={hackathonPhase} />

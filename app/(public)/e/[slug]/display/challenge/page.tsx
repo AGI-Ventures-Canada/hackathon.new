@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation"
 import { getPublicHackathon } from "@/lib/services/public-hackathons"
-import { getChallenge } from "@/lib/services/challenge"
+import { listChallenges } from "@/lib/services/challenges"
 import { FullscreenChallenge } from "@/components/hackathon/display/fullscreen-challenge"
 import type { Metadata } from "next"
 
@@ -23,13 +23,13 @@ export default async function DisplayChallengePage({ params }: PageProps) {
   const hackathon = await getPublicHackathon(slug, { includeUnpublished: true })
   if (!hackathon) notFound()
 
-  const challenge = await getChallenge(hackathon.id)
+  const challenges = await listChallenges(hackathon.id)
 
   return (
     <FullscreenChallenge
       slug={slug}
-      initialTitle={challenge?.title ?? null}
-      initialReleased={!!challenge?.releasedAt}
+      initialChallenges={challenges}
+      initialReleased={!!hackathon.challenge_released_at}
       hackathonName={hackathon.name}
     />
   )

@@ -381,7 +381,16 @@ curl -s -X POST "$BASE_URL/api/dashboard/import/luma" \
     "endsAt": "2026-02-27T19:30:00.000-08:00",
     "locationType": "in_person",
     "locationName": "San Francisco, California",
-    "imageUrl": "https://images.lumacdn.com/cdn-cgi/image/.../event-covers/..."
+    "imageUrl": "https://images.lumacdn.com/cdn-cgi/image/.../event-covers/...",
+    "challenges": [
+      {
+        "title": "AI for Healthcare",
+        "description": "Build an agent that improves patient triage.",
+        "resources": [
+          { "label": "Sample dataset", "url": "https://example.com/dataset.csv" }
+        ]
+      }
+    ]
   }' | jq .
 ```
 
@@ -397,6 +406,10 @@ curl -s -X POST "$BASE_URL/api/dashboard/import/luma" \
 | `locationName` | No | Human-readable location |
 | `locationUrl` | No | URL for virtual events |
 | `imageUrl` | No | Banner image URL to download and import |
+| `sponsors` | No | Array of `{ name, tier }` |
+| `rules` | No | Combined event rules / code of conduct |
+| `prizes` | No | Array of `{ name, description?, value? }` |
+| `challenges` | No | Array of `{ title, description?, resources? }` — tracks/themes participants build for |
 
 **Response:**
 
@@ -999,6 +1012,114 @@ curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/prizes/$PRIZE_
 # Unassign
 curl -s -X DELETE "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/prizes/$PRIZE_ID/assign/$SUBMISSION_ID" \
   -H "Authorization: Bearer $API_KEY"
+```
+
+---
+
+### Judging Rounds
+
+Rounds are optional hackathon-level phases that enable finalists-style judging (round 1 narrows to top N, round 2 picks winners). Single-round hackathons don't need rounds at all.
+
+#### List rounds
+
+Scope: `hackathons:read`
+
+```bash
+curl -s "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/rounds" \
+  -H "Authorization: Bearer $API_KEY" | jq .
+```
+
+---
+
+#### Create a round
+
+Scope: `hackathons:write`
+
+```bash
+# Simple manual round
+curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/rounds" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "name": "Finals" }' | jq .
+
+# Round that auto-advances the top 10 by score
+curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/rounds" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Semifinals",
+    "advancement": "top_n",
+    "advancementConfig": { "topN": 10 }
+  }' | jq .
+```
+
+---
+
+#### Set up finalists judging (preset)
+
+Scope: `hackathons:write`. Creates two rounds (Semifinals → Finals) and a hidden screening prize in one call.
+
+```bash
+curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/rounds/finalists-preset" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "advanceTopN": 10 }' | jq .
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "roundIds": { "round1": "uuid", "round2": "uuid" },
+  "screeningPrizeId": "uuid"
+}
+```
+
+---
+
+#### Update / delete a round
+
+Scope: `hackathons:write`
+
+```bash
+# Update
+curl -s -X PATCH "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/rounds/$ROUND_ID" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "advancement": "top_n", "advancementConfig": { "topN": 8 } }' | jq .
+
+# Activate (only one round active at a time)
+curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/rounds/$ROUND_ID/activate" \
+  -H "Authorization: Bearer $API_KEY"
+
+# Complete
+curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/rounds/$ROUND_ID/complete" \
+  -H "Authorization: Bearer $API_KEY"
+
+# Delete (round must not be active)
+curl -s -X DELETE "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/rounds/$ROUND_ID" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+---
+
+#### Advance submissions to the next round
+
+Scope: `hackathons:write`
+
+```bash
+# Auto-advance using the round's top-N rule and screening prize scores
+curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/rounds/$ROUND_ID/advance" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "toRoundId": "uuid", "auto": true }' | jq .
+
+# Advance specific submissions manually
+curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/rounds/$ROUND_ID/advance" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "toRoundId": "uuid", "submissionIds": ["sub-1", "sub-2"] }' | jq .
 ```
 
 ---

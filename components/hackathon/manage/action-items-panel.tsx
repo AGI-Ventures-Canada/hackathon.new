@@ -1,5 +1,6 @@
 "use client"
 
+import { useSyncExternalStore } from "react"
 import { ClipboardList, ChevronRight, CircleCheck, WifiOff } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
@@ -8,6 +9,8 @@ import { SEVERITY_GROUP_LABEL, type ActionSeverity } from "@/lib/utils/organizer
 import { useActionItems } from "./action-items-context"
 import { ActionItemRow } from "./action-item-row"
 import { AddItemInput } from "./add-item-input"
+
+const emptySubscribe = () => () => {}
 
 const groupOrder: ActionSeverity[] = ["urgent", "warning", "info"]
 
@@ -23,6 +26,7 @@ type Props = {
 
 export function ActionItemsPanel({ visible }: Props) {
   const { activeItems, completedItems, addCustomItem, remainingCount, panelOpen, setPanelOpen, isStale } = useActionItems()
+  const isClient = useSyncExternalStore(emptySubscribe, () => true, () => false)
 
   const hasUrgent = activeItems.some((i) => i.severity === "urgent" || i.severity === "warning")
   const transitionItems = activeItems.filter((i) => i.variant === "transition")
@@ -62,7 +66,7 @@ export function ActionItemsPanel({ visible }: Props) {
           ) : (
             <>
               <ClipboardList className="size-5" />
-              {remainingCount > 0 && (
+              {isClient && remainingCount > 0 && (
                 <Badge variant={hasUrgent ? "default" : "count"} className="rounded-full px-1.5 text-xs">
                   {remainingCount}
                 </Badge>
@@ -92,14 +96,14 @@ export function ActionItemsPanel({ visible }: Props) {
           )}
 
           <div className="flex-1 overflow-y-auto px-2 py-3 space-y-4">
-            {groups.length === 0 && transitionItems.length === 0 && completedItems.length === 0 ? (
+            {isClient && groups.length === 0 && transitionItems.length === 0 && completedItems.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 text-center">
                 <CircleCheck className="size-6 text-muted-foreground/50 mb-2" />
                 <p className="text-xs text-muted-foreground">All caught up</p>
               </div>
             ) : (
               <>
-                {transitionItems.length > 0 && (
+                {isClient && transitionItems.length > 0 && (
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-primary mb-1 px-2">
                       NEXT STEP
@@ -112,7 +116,7 @@ export function ActionItemsPanel({ visible }: Props) {
                   </div>
                 )}
 
-                {groups.map((group) => (
+                {isClient && groups.map((group) => (
                   <div key={group.severity}>
                     <p className={cn("text-xs font-semibold uppercase tracking-wide mb-1 px-2", groupColor[group.severity])}>
                       {group.label} ({group.items.length})
@@ -129,7 +133,7 @@ export function ActionItemsPanel({ visible }: Props) {
                   <AddItemInput onAdd={addCustomItem} compact />
                 </div>
 
-                {completedItems.length > 0 && (
+                {isClient && completedItems.length > 0 && (
                   <Accordion type="single" collapsible>
                     <AccordionItem value="completed" className="border-none">
                       <AccordionTrigger className="text-xs font-semibold uppercase tracking-wide text-muted-foreground px-2">

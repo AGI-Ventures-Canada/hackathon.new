@@ -25,7 +25,6 @@ function createMockChains(overrides: {
       phase: "build",
       starts_at: "2026-04-28T09:00:00Z",
       ends_at: "2026-04-28T17:00:00Z",
-      challenge_title: "Build an AI tool",
       challenge_released_at: "2026-04-28T10:00:00Z",
     },
     hackathonError = null,
@@ -43,6 +42,7 @@ function createMockChains(overrides: {
     teams: createChainableMock({ data: null, error: null, count: teamCount }),
     rooms: createChainableMock({ data: rooms, error: null }),
     mentor_requests: createChainableMock({ data: null, error: null, count: mentorCount }),
+    challenges: createChainableMock({ data: [], error: null }),
   }
 
   let judgeCallCount = 0
@@ -93,7 +93,6 @@ describe("Polling Service", () => {
           phase: "preliminaries",
           starts_at: "2026-04-28T09:00:00Z",
           ends_at: "2026-04-28T17:00:00Z",
-          challenge_title: null,
           challenge_released_at: null,
         },
       })
@@ -111,7 +110,7 @@ describe("Polling Service", () => {
       expect(result!.challenge).toEqual({
         released: true,
         releasedAt: "2026-04-28T10:00:00Z",
-        title: "Build an AI tool",
+        challenges: [],
       })
     })
 
@@ -122,7 +121,6 @@ describe("Polling Service", () => {
           phase: "build",
           starts_at: "2026-04-28T09:00:00Z",
           ends_at: "2026-04-28T17:00:00Z",
-          challenge_title: "Build an AI tool",
           challenge_released_at: null,
         },
       })

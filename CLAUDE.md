@@ -146,6 +146,21 @@ All request APIs (`params`, `searchParams`, `cookies()`, `headers()`) are async 
 
 All page components in `app/` must be server-side rendered. Never use `"use client"` in page files. Extract client-side functionality into separate client components.
 
+### Hydration Safety
+
+**Never render browser-only state (`localStorage`, `sessionStorage`, `window`, `Date.now()`, `Math.random()`) during the first render pass.** The server has no access to these, so any derived UI diverges on hydration and React throws a mismatch error.
+
+Use `useSyncExternalStore` with an empty subscribe to produce a stable `isClient` flag:
+
+```tsx
+const emptySubscribe = () => () => {}
+const isClient = useSyncExternalStore(emptySubscribe, () => true, () => false)
+```
+
+Gate every branch, count, badge, and empty-state that depends on `localStorage`-seeded state behind `isClient && …`. This includes indirect dependencies — if a value is derived from another value that was seeded from storage (e.g., `groups` built from `activeItems` which filters by `completedIds`), the derived value is also unsafe during SSR.
+
+When adding a new UI surface that consumes this kind of state (panels, tabs, badges, counts), apply the guard at every render site, not just the primary one. Reference: `components/hackathon/manage/action-items-tab.tsx` and `action-items-panel.tsx`.
+
 ### UI Components
 
 Base components are shadcn/ui. Add missing components with `bunx shadcn@latest add <component-name>`. Check existing components before creating new ones.
@@ -277,7 +292,7 @@ Templates live in `emails/` as React Email components. Send logic in `lib/email/
 ### Starting New Work
 
 Automatically run before creating a feature branch:
-1. `git status` — investigate uncommitted changes. Discard auto-generated files; commit or stash real work
+1. `git status` — investigate uncommitted changes. Discard auto-generated files. **Do not stash real WIP** — leave it in the working tree and carry on; the user sorts out which files belong in which PR at commit time. If the WIP meaningfully conflicts with your new work, ask before touching it.
 2. `git fetch origin` — rebase/pull if behind
 3. `git checkout -b feature/<name> origin/staging`
 

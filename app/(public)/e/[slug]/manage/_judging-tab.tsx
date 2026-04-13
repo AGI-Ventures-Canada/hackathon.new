@@ -28,10 +28,12 @@ export async function JudgingTabContent({
     getResults(hackathonId),
   ])
 
+  const visiblePrizes = prizes.filter((p) => !p.is_screening)
+
   return (
     <JudgingTabClient
       hackathonId={hackathonId}
-      prizes={prizes.map((p) => ({
+      prizes={visiblePrizes.map((p) => ({
         id: p.id,
         name: p.name,
         description: p.description,
@@ -60,6 +62,10 @@ export async function JudgingTabContent({
         status: r.status,
         isActive: r.status === "active",
         displayOrder: r.displayOrder,
+        advancement: r.advancement,
+        advancementConfig: r.advancementConfig,
+        prizeCount: r.prizeCount,
+        screeningPrizeId: r.screeningPrizeId,
       }))}
       pendingInvitations={pendingInvitations.map((inv) => ({
         id: inv.id,

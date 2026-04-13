@@ -1,6 +1,8 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { HackathonPhase, HackathonStatus } from "@/lib/db/hackathon-types"
+import type { Challenge } from "@/lib/services/challenges"
+import { listChallenges } from "@/lib/services/challenges"
 
 export interface PollAnnouncement {
   id: string
@@ -31,7 +33,7 @@ export interface PollResponse {
   challenge: {
     released: boolean
     releasedAt: string | null
-    title: string | null
+    challenges: Challenge[]
   } | null
   stats: {
     submissionCount: number
@@ -49,11 +51,13 @@ export async function buildPollPayload(hackathonId: string): Promise<PollRespons
 
   const { data: hackathon, error: hErr } = await client
     .from("hackathons")
-    .select("status, phase, starts_at, ends_at, challenge_title, challenge_released_at")
+    .select("status, phase, starts_at, ends_at, challenge_released_at")
     .eq("id", hackathonId)
     .single()
 
   if (hErr || !hackathon) return null
+
+  const challenges = await listChallenges(hackathonId)
 
   const { count: submissionCount } = await client
     .from("submissions")
@@ -129,7 +133,7 @@ export async function buildPollPayload(hackathonId: string): Promise<PollRespons
     challenge: {
       released: !!hackathon.challenge_released_at,
       releasedAt: hackathon.challenge_released_at,
-      title: hackathon.challenge_title,
+      challenges,
     },
     stats: {
       submissionCount: submissionCount ?? 0,

@@ -21,7 +21,15 @@ import {
   Award,
   ChevronRight,
 } from "lucide-react"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import type { PrizeJudgingStyle } from "@/lib/db/hackathon-types"
+import type { RoundData } from "./rounds-types"
 
 const STYLE_OPTIONS: {
   value: PrizeJudgingStyle
@@ -67,6 +75,7 @@ interface AddPrizeDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSuccess?: () => void
+  rounds?: RoundData[]
 }
 
 export function AddPrizeDialog({
@@ -74,14 +83,20 @@ export function AddPrizeDialog({
   open,
   onOpenChange,
   onSuccess,
+  rounds = [],
 }: AddPrizeDialogProps) {
   const router = useRouter()
+  const visibleRounds = [...rounds].sort((a, b) => a.displayOrder - b.displayOrder)
+  const defaultRoundId = visibleRounds.length > 0
+    ? visibleRounds[visibleRounds.length - 1].id
+    : null
   const [step, setStep] = useState<CreateStep>("style")
   const [form, setForm] = useState({
     name: "",
     description: "",
     value: "",
     judgingStyle: "bucket_sort" as PrizeJudgingStyle,
+    roundId: defaultRoundId,
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -90,7 +105,13 @@ export function AddPrizeDialog({
   function handleOpenChange(nextOpen: boolean) {
     if (!nextOpen) {
       setStep("style")
-      setForm({ name: "", description: "", value: "", judgingStyle: "bucket_sort" })
+      setForm({
+        name: "",
+        description: "",
+        value: "",
+        judgingStyle: "bucket_sort",
+        roundId: defaultRoundId,
+      })
       setError(null)
       setSuccess(false)
     }
@@ -124,6 +145,7 @@ export function AddPrizeDialog({
             description: form.description.trim() || null,
             value: form.value.trim() || null,
             judgingStyle: form.judgingStyle,
+            roundId: form.roundId,
           }),
         }
       )
@@ -212,6 +234,32 @@ export function AddPrizeDialog({
                 Change
               </Button>
             </div>
+            {visibleRounds.length >= 1 && (
+              <div className="space-y-2">
+                <Label htmlFor="add-prize-round">Round</Label>
+                <Select
+                  value={form.roundId ?? "none"}
+                  onValueChange={(v) =>
+                    setForm({ ...form, roundId: v === "none" ? null : v })
+                  }
+                >
+                  <SelectTrigger id="add-prize-round">
+                    <SelectValue placeholder="Select a round" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {visibleRounds.map((r) => (
+                      <SelectItem key={r.id} value={r.id}>
+                        {r.name}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value="none">No round</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Prizes in a round only see submissions that advance into it.
+                </p>
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="add-prize-name">Name</Label>
               <Input

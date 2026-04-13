@@ -29,10 +29,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
 import {
-  ChallengeDialogs,
-  type ChallengeDialogsHandle,
-} from "./challenge-dialogs";
-import {
   TransitionConfirmDialog,
   type TransitionConfirmDialogHandle,
 } from "./transition-confirm-dialog";
@@ -101,7 +97,6 @@ type ProviderProps = {
   challengeExists: boolean;
   challengeReleasedAt: string | null;
   scheduleItems: ScheduleItem[];
-  startsAt: string | null;
   endsAt: string | null;
   children: React.ReactNode;
 };
@@ -115,13 +110,11 @@ export function ActionItemsProvider({
   challengeExists,
   challengeReleasedAt,
   scheduleItems: serverScheduleItems,
-  startsAt,
   endsAt: serverEndsAt,
   children,
 }: ProviderProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const challengeRef = useRef<ChallengeDialogsHandle>(null);
   const transitionRef = useRef<TransitionConfirmDialogHandle>(null);
   const submissionDeadlineRef = useRef<SubmissionDeadlineDialogHandle>(null);
   const tabActionsRef = useRef(new Map<string, () => void>());
@@ -355,10 +348,11 @@ export function ActionItemsProvider({
     (item: ActionItem) => {
       if (item.action === "confirm-promote") {
         setPromoteDialogOpen(true);
-      } else if (item.action === "open-challenge-dialog") {
-        challengeRef.current?.openChallengeDialog();
-      } else if (item.action === "release-challenge") {
-        challengeRef.current?.openReleaseDialog();
+      } else if (
+        item.action === "open-challenge-dialog" ||
+        item.action === "release-challenge"
+      ) {
+        router.push(`/e/${slug}/manage?tab=challenges`);
       } else if (item.action === "open-agenda-dialog") {
         setAgendaDialogOpen(true);
       } else if (item.action === "open-submission-deadline-dialog") {
@@ -513,13 +507,6 @@ export function ActionItemsProvider({
   return (
     <ActionItemsContext.Provider value={value}>
       {children}
-      <ChallengeDialogs
-        ref={challengeRef}
-        hackathonId={hackathonId}
-        challengeExists={liveChallengeExists}
-        scheduleItems={scheduleItems}
-        startsAt={startsAt}
-      />
       <TransitionConfirmDialog
         ref={transitionRef}
         hackathonId={hackathonId}
@@ -546,12 +533,16 @@ export function ActionItemsProvider({
             hideHeader
             onEditTriggerItem={(item) => {
               if (item.trigger_type === "challenge_release") {
-                challengeRef.current?.openChallengeDialog();
+                setAgendaDialogOpen(false);
+                router.push(`/e/${slug}/manage?tab=challenges`);
               } else if (item.trigger_type === "submission_deadline") {
                 submissionDeadlineRef.current?.openDialog();
               }
             }}
-            onAddChallenge={() => challengeRef.current?.openChallengeDialog()}
+            onAddChallenge={() => {
+              setAgendaDialogOpen(false);
+              router.push(`/e/${slug}/manage?tab=challenges`);
+            }}
             onScheduleChange={(items) => setScheduleItems(items as ScheduleItem[])}
           />
         </DialogContent>

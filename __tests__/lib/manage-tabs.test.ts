@@ -2,7 +2,9 @@ import { describe, expect, it } from "bun:test"
 import {
   VALID_TABS,
   VALID_ETABS,
+  VALID_MTABS,
   DEFAULT_TAB,
+  DEFAULT_MTAB,
   resolveTab,
   getJudgingRedirectUrl,
 } from "@/lib/utils/manage-tabs"
@@ -11,15 +13,22 @@ describe("VALID_TABS", () => {
   it("contains all manage tabs", () => {
     expect(VALID_TABS).toContain("action-items")
     expect(VALID_TABS).toContain("overview")
+    expect(VALID_TABS).toContain("challenges")
     expect(VALID_TABS).toContain("edit")
     expect(VALID_TABS).toContain("teams")
-    expect(VALID_TABS).toContain("rooms")
-    expect(VALID_TABS).toContain("submissions")
+    expect(VALID_TABS).toContain("miscs")
     expect(VALID_TABS).toContain("judging")
     expect(VALID_TABS).toContain("post-event")
     expect(VALID_TABS).toContain("event")
-    expect(VALID_TABS).toContain("activity")
-    expect(VALID_TABS).toHaveLength(10)
+    expect(VALID_TABS).toHaveLength(9)
+  })
+
+  it("does not contain the old activity tab", () => {
+    expect(VALID_TABS).not.toContain("activity")
+  })
+
+  it("does not contain the old submissions tab", () => {
+    expect(VALID_TABS).not.toContain("submissions")
   })
 
   it("has action-items as the first tab", () => {
@@ -33,19 +42,32 @@ describe("VALID_TABS", () => {
 })
 
 describe("VALID_ETABS", () => {
-  it("contains challenge, announcements, mentors, social, email", () => {
-    expect(VALID_ETABS).toContain("challenge")
+  it("contains announcements, mentors, social, email", () => {
     expect(VALID_ETABS).toContain("announcements")
     expect(VALID_ETABS).toContain("mentors")
     expect(VALID_ETABS).toContain("social")
     expect(VALID_ETABS).toContain("email")
-    expect(VALID_ETABS).toHaveLength(5)
+    expect(VALID_ETABS).toHaveLength(4)
+  })
+})
+
+describe("VALID_MTABS", () => {
+  it("contains rooms and activity", () => {
+    expect(VALID_MTABS).toContain("rooms")
+    expect(VALID_MTABS).toContain("activity")
+    expect(VALID_MTABS).toHaveLength(2)
   })
 })
 
 describe("DEFAULT_TAB", () => {
   it("is action-items", () => {
     expect(DEFAULT_TAB).toBe("action-items")
+  })
+})
+
+describe("DEFAULT_MTAB", () => {
+  it("is rooms", () => {
+    expect(DEFAULT_MTAB).toBe("rooms")
   })
 })
 
@@ -76,6 +98,18 @@ describe("resolveTab", () => {
 
   it("redirects fulfillment tab to post-event", () => {
     expect(resolveTab("fulfillment", VALID_TABS, "overview")).toBe("post-event")
+  })
+
+  it("redirects old rooms tab to miscs", () => {
+    expect(resolveTab("rooms", VALID_TABS, "overview")).toBe("miscs")
+  })
+
+  it("redirects old activity tab to miscs", () => {
+    expect(resolveTab("activity", VALID_TABS, "overview")).toBe("miscs")
+  })
+
+  it("redirects old submissions tab to teams", () => {
+    expect(resolveTab("submissions", VALID_TABS, "overview")).toBe("teams")
   })
 })
 

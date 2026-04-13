@@ -39,6 +39,8 @@ import { PrizesEditForm } from "@/components/hackathon/edit-drawer/prizes-edit-f
 import type { PublicResultWithDetails } from "@/lib/services/results"
 import type { ScheduleItem } from "@/lib/services/schedule-items"
 import type { Announcement } from "@/lib/services/announcements"
+import type { Challenge } from "@/lib/services/challenges"
+import { ChallengeSection } from "@/components/hackathon/challenge-section"
 
 interface HackathonPreviewClientProps {
   hackathon: PublicHackathon
@@ -54,6 +56,7 @@ interface HackathonPreviewClientProps {
   publicResults?: PublicResultWithDetails[]
   scheduleItems?: ScheduleItem[]
   announcements?: Announcement[]
+  challenges?: Challenge[]
   currentUserId?: string | null
   onFormSave?: (data: Record<string, unknown>) => Promise<boolean>
   onBannerChange?: (imageUrl: string | null) => void | Promise<void>
@@ -73,6 +76,7 @@ function HackathonPreviewContent({
   publicResults = [],
   scheduleItems = [],
   announcements = [],
+  challenges = [],
   currentUserId = null,
   onFormSave,
   onBannerChange,
@@ -441,6 +445,13 @@ function HackathonPreviewContent({
               <PublicResults results={publicResults} />
             )}
 
+            {challenges.length > 0 && (
+              <ChallengeSection
+                challenges={challenges}
+                releasedAt={hackathon.challenge_released_at}
+              />
+            )}
+
             {isEditable && editMode && activeSection === "timeline" ? (
               <div data-edit-section="timeline" className="scroll-mt-24">
                 <h2 className="text-xl font-bold mb-4">Timeline</h2>
@@ -672,6 +683,7 @@ export function HackathonPreviewClient({
   publicResults,
   scheduleItems,
   announcements,
+  challenges,
   currentUserId,
   onFormSave,
   onBannerChange,
@@ -692,6 +704,7 @@ export function HackathonPreviewClient({
         publicResults={publicResults}
         scheduleItems={scheduleItems}
         announcements={announcements}
+        challenges={challenges}
         currentUserId={currentUserId}
         onFormSave={onFormSave}
         onBannerChange={onBannerChange}
