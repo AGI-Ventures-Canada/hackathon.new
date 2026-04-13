@@ -26,7 +26,6 @@ function makeInput(overrides: Partial<Parameters<typeof getOrganizerActionItems>
     feedbackSurveyUrl: null,
     feedbackSurveySentAt: null,
     pendingJudgeInvitationCount: 0,
-    scheduleItemCount: 0,
     ...overrides,
   }
 }
@@ -115,13 +114,11 @@ describe("getOrganizerActionItems", () => {
     })
 
     it("always shows review agenda item during draft", () => {
-      for (const count of [0, 3, 8]) {
-        const items = getOrganizerActionItems(makeInput({ scheduleItemCount: count }))
-        const item = items.find((i) => i.id === "add-schedule" && !i.completed)
-        expect(item).toBeDefined()
-        expect(item?.severity).toBe("warning")
-        expect(item?.ctaLabel).toBe("Review")
-      }
+      const items = getOrganizerActionItems(makeInput())
+      const item = items.find((i) => i.id === "add-schedule" && !i.completed)
+      expect(item).toBeDefined()
+      expect(item?.severity).toBe("warning")
+      expect(item?.ctaLabel).toBe("Review")
     })
 
     it("uses submission deadline dialog action for check-submission-deadline", () => {
@@ -374,7 +371,7 @@ describe("getOrganizerActionItems", () => {
       const item = items.find((i) => i.id === "results-not-published" && !i.completed)
       expect(item).toBeDefined()
       expect(item?.severity).toBe("urgent")
-      expect(item?.hint).toBe("Review scores and announce winners")
+      expect(item?.hint).toBe("Publishing announces winners and automatically emails them")
     })
 
     it("marks results completed when published", () => {

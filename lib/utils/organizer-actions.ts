@@ -47,7 +47,6 @@ export type ActionItemsInput = {
   feedbackSurveyUrl: string | null
   feedbackSurveySentAt: string | null
   pendingJudgeInvitationCount: number
-  scheduleItemCount: number
 }
 
 export function getOrganizerActionItems(input: ActionItemsInput): ActionItem[] {
@@ -216,8 +215,8 @@ function addJudgingActions(items: ActionItem[], input: ActionItemsInput) {
 function addCompletedActions(items: ActionItem[], input: ActionItemsInput) {
   const resultsPublished = !!input.resultsPublishedAt
   items.push(resultsPublished
-    ? { id: "results-not-published", label: "Results published", hint: "Winners have been announced", severity: "urgent", tab: "judging", completed: true, tooltip: "Publishing results calculates final scores, assigns prizes to top submissions, and sends notification emails to winners and participants. This is the culmination of the entire event." }
-    : { id: "results-not-published", label: "Results not yet published", hint: "Review scores and announce winners", severity: "urgent", tab: "judging", ctaLabel: "Publish", tooltip: "Publishing results calculates final scores, assigns prizes to top submissions, and sends notification emails to winners and participants. Review the scores to make sure everything looks right before publishing." }
+    ? { id: "results-not-published", label: "Results published", hint: "Winners announced and notification emails sent", severity: "urgent", tab: "judging", completed: true, tooltip: "Publishing results calculates final scores, assigns prizes to top submissions, and sends notification emails to winners and participants. This is the culmination of the entire event." }
+    : { id: "results-not-published", label: "Results not yet published", hint: "Publishing announces winners and automatically emails them", severity: "urgent", tab: "judging", ctaLabel: "Publish", tooltip: "Publishing results calculates final scores, assigns prizes to top submissions, and automatically sends notification emails to winners and all participants. Review the scores to make sure everything looks right before publishing." }
   )
 
   if (input.feedbackSurveyUrl) {

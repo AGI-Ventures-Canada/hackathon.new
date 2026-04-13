@@ -25,7 +25,6 @@ function createMockChains(overrides: {
   mentorCount?: number | null
   challengeScheduleItem?: { starts_at: string } | null
   pendingJudgeInvCount?: number | null
-  scheduleItemCount?: number | null
 } = {}) {
   const {
     hackathon = {
@@ -54,7 +53,6 @@ function createMockChains(overrides: {
     mentorCount = 1,
     challengeScheduleItem = null,
     pendingJudgeInvCount = 0,
-    scheduleItemCount = 6,
   } = overrides
 
   const chains: Record<string, ReturnType<typeof createChainableMock>> = {
@@ -111,15 +109,9 @@ function createMockChains(overrides: {
     count: assignmentComplete,
   })
 
-  let scheduleItemCallCount = 0
   const challengeReleaseChain = createChainableMock({
     data: challengeScheduleItem,
     error: null,
-  })
-  const scheduleCountChain = createChainableMock({
-    data: null,
-    error: null,
-    count: scheduleItemCount,
   })
 
   let participantCallCount = 0
@@ -142,10 +134,7 @@ function createMockChains(overrides: {
         : judgeChainComplete
     }
     if (table === "hackathon_schedule_items") {
-      scheduleItemCallCount++
-      return scheduleItemCallCount === 1
-        ? challengeReleaseChain
-        : scheduleCountChain
+      return challengeReleaseChain
     }
     if (table === "hackathon_participants") {
       participantCallCount++
@@ -203,7 +192,6 @@ describe("Organizer Polling Service", () => {
       expect(result!.feedbackSurveyUrl).toBeNull()
       expect(result!.feedbackSurveySentAt).toBeNull()
       expect(result!.pendingJudgeInvitationCount).toBe(0)
-      expect(result!.scheduleItemCount).toBe(6)
     })
 
     it("handles challenge schedule item lookup", async () => {
@@ -235,15 +223,6 @@ describe("Organizer Polling Service", () => {
       expect(result!.pendingJudgeInvitationCount).toBe(7)
     })
 
-    it("includes schedule item count", async () => {
-      createMockChains({ scheduleItemCount: 12 })
-
-      const result = await buildOrganizerPollPayload(hackathonId)
-
-      expect(result).not.toBeNull()
-      expect(result!.scheduleItemCount).toBe(12)
-    })
-
     it("defaults counts to 0 when queries return null", async () => {
       createMockChains({
         submissionCount: null,
@@ -256,7 +235,6 @@ describe("Organizer Polling Service", () => {
         judgeDisplayCount: null,
         mentorCount: null,
         pendingJudgeInvCount: null,
-        scheduleItemCount: null,
       })
 
       const result = await buildOrganizerPollPayload(hackathonId)
@@ -272,7 +250,6 @@ describe("Organizer Polling Service", () => {
       expect(result!.judgeDisplayCount).toBe(0)
       expect(result!.mentorQueue.open).toBe(0)
       expect(result!.pendingJudgeInvitationCount).toBe(0)
-      expect(result!.scheduleItemCount).toBe(0)
     })
 
     it("sets challengeReleased to false when challenge_released_at is null", async () => {

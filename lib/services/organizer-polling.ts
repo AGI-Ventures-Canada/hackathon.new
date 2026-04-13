@@ -20,7 +20,6 @@ export async function buildOrganizerPollPayload(hackathonId: string): Promise<Or
     mentorResult,
     challengeReleaseResult,
     pendingJudgeInvResult,
-    scheduleCountResult,
   ] = await Promise.all([
     client
       .from("hackathons")
@@ -80,10 +79,6 @@ export async function buildOrganizerPollPayload(hackathonId: string): Promise<Or
       .select("id", { count: "exact", head: true })
       .eq("hackathon_id", hackathonId)
       .eq("status", "pending"),
-    client
-      .from("hackathon_schedule_items")
-      .select("id", { count: "exact", head: true })
-      .eq("hackathon_id", hackathonId),
   ])
 
   if (hackathonResult.error || !hackathonResult.data) return null
@@ -116,6 +111,5 @@ export async function buildOrganizerPollPayload(hackathonId: string): Promise<Or
     feedbackSurveyUrl: h.feedback_survey_url ?? null,
     feedbackSurveySentAt: h.feedback_survey_sent_at ?? null,
     pendingJudgeInvitationCount: pendingJudgeInvResult.count ?? 0,
-    scheduleItemCount: scheduleCountResult.count ?? 0,
   }
 }

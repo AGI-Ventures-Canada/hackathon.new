@@ -101,7 +101,6 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     feedbackSurveyUrl: hackathon.feedback_survey_url ?? null,
     feedbackSurveySentAt: hackathon.feedback_survey_sent_at ?? null,
     pendingJudgeInvitationCount,
-    scheduleItemCount: scheduleItems.length,
   })
 
   const activeTab = resolveTab(tab, VALID_TABS, DEFAULT_TAB)
