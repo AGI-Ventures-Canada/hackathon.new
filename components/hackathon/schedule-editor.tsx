@@ -115,31 +115,34 @@ function getTimeKey(iso: string): string {
   return formatShortTime(iso)
 }
 
-type DateGroup = {
-  dateKey: string
-  dateLabel: string
-  timeGroups: { timeKey: string; items: ScheduleItemData[] }[]
+type TimelineRow = {
+  timeKey: string
+  showTime: boolean
+  item: ScheduleItemData
 }
 
-function groupByDateAndTime(items: ScheduleItemData[]): DateGroup[] {
-  const dateMap = new Map<string, { dateLabel: string; timeMap: Map<string, ScheduleItemData[]> }>()
+type DateSection = {
+  dateKey: string
+  dateLabel: string
+  rows: TimelineRow[]
+}
+
+function groupByDate(items: ScheduleItemData[]): DateSection[] {
+  const dateMap = new Map<string, { dateLabel: string; rows: TimelineRow[]; seenTimes: Set<string> }>()
   for (const item of items) {
     const dk = getDateKey(item.starts_at)
     if (!dateMap.has(dk)) {
-      dateMap.set(dk, { dateLabel: formatDateKey(item.starts_at), timeMap: new Map() })
+      dateMap.set(dk, { dateLabel: formatDateKey(item.starts_at), rows: [], seenTimes: new Set() })
     }
-    const { timeMap } = dateMap.get(dk)!
+    const section = dateMap.get(dk)!
     const tk = getTimeKey(item.starts_at)
-    if (!timeMap.has(tk)) timeMap.set(tk, [])
-    timeMap.get(tk)!.push(item)
+    const showTime = !section.seenTimes.has(tk)
+    section.seenTimes.add(tk)
+    section.rows.push({ timeKey: tk, showTime, item })
   }
   return [...dateMap.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([dateKey, { dateLabel, timeMap }]) => ({
-      dateKey,
-      dateLabel,
-      timeGroups: [...timeMap.entries()].map(([timeKey, items]) => ({ timeKey, items })),
-    }))
+    .map(([dateKey, { dateLabel, rows }]) => ({ dateKey, dateLabel, rows }))
 }
 
 function isCurrent(item: ScheduleItemData, now: string): boolean {
@@ -169,7 +172,7 @@ export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challe
     if (challengeExists || challengeReleasedAt) return allItems
     return allItems.filter((i) => i.trigger_type !== "challenge_release")
   }, [allItems, challengeExists, challengeReleasedAt])
-  const dateGroups = useMemo(() => groupByDateAndTime(items), [items])
+  const dateSections = useMemo(() => groupByDate(items), [items])
   const [error, setError] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<ScheduleItemData | null>(null)
@@ -357,128 +360,120 @@ export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challe
         </div>
       ) : (
         <div className="space-y-0">
-          {dateGroups.map((dateGroup, dateIdx) => (
-            <div key={dateGroup.dateKey}>
-              {(dateGroups.length > 1 || dateIdx > 0) && (
-                <div className="flex items-center gap-2 py-2">
-                  <div className="h-px flex-1 bg-border" />
-                  <span className="text-xs font-medium text-muted-foreground shrink-0">{dateGroup.dateLabel}</span>
-                  <div className="h-px flex-1 bg-border" />
-                </div>
-              )}
-              {dateGroup.timeGroups.map((timeGroup, timeIdx) => {
-                const isLastTimeInDate = timeIdx === dateGroup.timeGroups.length - 1
-                const isLastDate = dateIdx === dateGroups.length - 1
-                const showLine = !(isLastTimeInDate && isLastDate)
-                return (
-                  <div key={timeGroup.timeKey} className="flex gap-2">
-                    <div className="shrink-0 w-16 pt-2.5 text-right">
-                      <span className="text-xs leading-none tabular-nums text-muted-foreground">
-                        {timeGroup.timeKey}
-                      </span>
-                    </div>
-                    <div className="flex flex-col items-center shrink-0 pt-2.5">
-                      <div className={`mt-0.5 rounded-full ${timeGroup.items.some((i) => isCurrent(i, now)) ? "size-2.5 bg-primary" : "size-2 bg-muted-foreground/40"}`} />
-                      {showLine && <div className="w-px flex-1 bg-border" />}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      {timeGroup.items.map((item) => {
-                        const current = isCurrent(item, now)
-                        const isTrigger = !!item.trigger_type
-                        const isReleased = item.trigger_type === "challenge_release" && !!challengeReleasedAt
-                        return (
-                          <div
-                            key={item.id}
-                            className={`group relative ${current ? "rounded-md bg-primary/5 -mx-2 px-2 py-1.5" : "py-1.5"} ${isReleased ? "opacity-50" : ""}`}
-                          >
-                            <div
-                              className="flex items-center gap-1 cursor-pointer"
-                              role="button"
-                              tabIndex={0}
-                              onClick={() => handleItemClick(item)}
-                              onKeyDown={(e) => { if (e.key === "Enter") handleItemClick(item) }}
-                            >
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <p className="text-sm font-medium truncate">{item.title}</p>
-                                  {current && <Badge variant="secondary">Now</Badge>}
-                                  {isReleased ? (
-                                    <Badge variant="secondary" className="text-xs">Released</Badge>
-                                  ) : isTrigger && item.trigger_type ? (
-                                    isMobile ? (
-                                      <Popover>
-                                        <PopoverTrigger asChild>
-                                          <Badge variant="outline" className="text-xs cursor-help">Automated</Badge>
-                                        </PopoverTrigger>
-                                        <PopoverContent side="top" align="start" className="w-72 text-sm">
-                                          {TRIGGER_TOOLTIPS[item.trigger_type]}
-                                        </PopoverContent>
-                                      </Popover>
-                                    ) : (
-                                      <HoverCard openDelay={200} closeDelay={100}>
-                                        <HoverCardTrigger asChild>
-                                          <Badge variant="outline" className="text-xs cursor-help">Automated</Badge>
-                                        </HoverCardTrigger>
-                                        <HoverCardContent side="top" align="start" className="w-72 text-sm">
-                                          {TRIGGER_TOOLTIPS[item.trigger_type]}
-                                        </HoverCardContent>
-                                      </HoverCard>
-                                    )
-                                  ) : null}
-                                </div>
-                                {item.location && (
-                                  <span className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
-                                    <MapPin className="size-3" />
-                                    {item.location}
-                                  </span>
-                                )}
-                                {item.description && (
-                                  <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{item.description}</p>
-                                )}
-                              </div>
-                              <div className={`flex items-center gap-0.5 shrink-0 transition-opacity ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  className="size-7"
-                                  onClick={(e) => { e.stopPropagation(); handleItemClick(item) }}
-                                >
-                                  <Pencil className="size-3.5" />
-                                </Button>
-                                {!isTrigger && (
-                                  <AlertDialog>
-                                    <AlertDialogTrigger asChild>
-                                      <Button
-                                        size="icon"
-                                        variant="ghost"
-                                        className="size-7"
-                                        onClick={(e) => e.stopPropagation()}
-                                      >
-                                        <Trash2 className="size-3.5" />
-                                      </Button>
-                                    </AlertDialogTrigger>
-                                    <AlertDialogContent>
-                                      <AlertDialogHeader>
-                                        <AlertDialogTitle>Delete agenda item?</AlertDialogTitle>
-                                        <AlertDialogDescription>This cannot be undone.</AlertDialogDescription>
-                                      </AlertDialogHeader>
-                                      <AlertDialogFooter>
-                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                        <AlertDialogAction onClick={() => handleDelete(item.id)}>Delete</AlertDialogAction>
-                                      </AlertDialogFooter>
-                                    </AlertDialogContent>
-                                  </AlertDialog>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
+          {dateSections.map((section, sectionIdx) => (
+              <div key={section.dateKey}>
+                {(dateSections.length > 1 || sectionIdx > 0) && (
+                  <div className="flex items-center gap-2 py-2">
+                    <div className="h-px flex-1 bg-border" />
+                    <span className="text-xs font-medium text-muted-foreground shrink-0">{section.dateLabel}</span>
+                    <div className="h-px flex-1 bg-border" />
                   </div>
-                )
-              })}
-            </div>
+                )}
+                {section.rows.map((row, rowIdx) => {
+                  const item = row.item
+                  const current = isCurrent(item, now)
+                  const isTrigger = !!item.trigger_type
+                  const isReleased = item.trigger_type === "challenge_release" && !!challengeReleasedAt
+                  const showTopStem = rowIdx > 0
+                  const showBottomStem = rowIdx < section.rows.length - 1
+                  return (
+                    <div key={item.id} className="flex gap-2 items-stretch">
+                      <div className="shrink-0 w-16 text-right self-center">
+                        <span className="text-xs leading-none tabular-nums text-muted-foreground">
+                          {row.showTime ? row.timeKey : ""}
+                        </span>
+                      </div>
+                      <div className="flex flex-col items-center shrink-0 w-2 self-stretch">
+                        <div className={`w-px flex-1 ${showTopStem ? "bg-border" : ""}`} />
+                        <div className={`shrink-0 my-1 rounded-full ${current ? "size-2.5 bg-primary" : "size-2 bg-muted-foreground/40"}`} />
+                        <div className={`w-px flex-1 ${showBottomStem ? "bg-border" : ""}`} />
+                      </div>
+                      <div className={`group flex-1 min-w-0 py-2 ${current ? "rounded-md bg-primary/5 -mx-2 px-2" : ""} ${isReleased ? "opacity-50" : ""}`}>
+                        <div
+                          className="flex items-center gap-1 cursor-pointer"
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => handleItemClick(item)}
+                          onKeyDown={(e) => { if (e.key === "Enter") handleItemClick(item) }}
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="text-sm font-medium truncate">{item.title}</p>
+                              {current && <Badge variant="secondary">Now</Badge>}
+                              {isReleased ? (
+                                <Badge variant="secondary" className="text-xs">Released</Badge>
+                              ) : isTrigger && item.trigger_type ? (
+                                isMobile ? (
+                                  <Popover>
+                                    <PopoverTrigger asChild>
+                                      <Badge variant="outline" className="text-xs cursor-help">Automated</Badge>
+                                    </PopoverTrigger>
+                                    <PopoverContent side="top" align="start" className="w-72 text-sm">
+                                      {TRIGGER_TOOLTIPS[item.trigger_type]}
+                                    </PopoverContent>
+                                  </Popover>
+                                ) : (
+                                  <HoverCard openDelay={200} closeDelay={100}>
+                                    <HoverCardTrigger asChild>
+                                      <Badge variant="outline" className="text-xs cursor-help">Automated</Badge>
+                                    </HoverCardTrigger>
+                                    <HoverCardContent side="top" align="start" className="w-72 text-sm">
+                                      {TRIGGER_TOOLTIPS[item.trigger_type]}
+                                    </HoverCardContent>
+                                  </HoverCard>
+                                )
+                              ) : null}
+                            </div>
+                            {item.location && (
+                              <span className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
+                                <MapPin className="size-3" />
+                                {item.location}
+                              </span>
+                            )}
+                            {item.description && (
+                              <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{item.description}</p>
+                            )}
+                          </div>
+                          <div className={`flex items-center gap-0.5 shrink-0 transition-opacity ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="size-7"
+                              onClick={(e) => { e.stopPropagation(); handleItemClick(item) }}
+                            >
+                              <Pencil className="size-3.5" />
+                            </Button>
+                            {!isTrigger && (
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="size-7"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <Trash2 className="size-3.5" />
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Delete agenda item?</AlertDialogTitle>
+                                    <AlertDialogDescription>This cannot be undone.</AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction onClick={() => handleDelete(item.id)}>Delete</AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
           ))}
         </div>
       )}

@@ -132,7 +132,7 @@ function addDraftActions(items: ActionItem[], input: ActionItemsInput) {
 
   items.push({ id: "add-schedule", label: "Review and customize your agenda", hint: "The default schedule is auto-generated — add your own items", severity: "warning", action: "open-agenda-dialog", ctaLabel: "Review", tooltip: "New events come with a default agenda. Review it and add sessions like workshops, meal breaks, sponsor demos, or networking time. Participants see the schedule on the event page." })
 
-  items.push({ id: "check-submission-deadline", label: "Confirm submission close time", hint: "This controls when submissions lock and judging begins", severity: "warning", action: "open-submission-deadline-dialog", ctaLabel: "Check", tooltip: "The submission deadline is an automated agenda item that locks submissions and starts the judging phase. Make sure the time is correct — once it passes, participants can no longer submit or edit their projects." })
+  items.push({ id: "check-submission-deadline", label: "Double-check submissions close & judging start time", hint: "This time locks submissions and flips the event into judging mode", severity: "warning", action: "open-submission-deadline-dialog", ctaLabel: "Check", tooltip: "The submission deadline is an automated agenda item that locks submissions and starts the judging phase. Make sure the time is correct — once it passes, participants can no longer submit or edit their projects." })
 
   if (hasDates && hasLocation) {
     items.push({ id: "ready-to-publish", label: "Ready to publish your event", hint: "All prerequisites are met", severity: "info", action: "transition-to-published", ctaLabel: "Publish", variant: "transition" })
@@ -163,7 +163,7 @@ function addPublishedActions(items: ActionItem[], input: ActionItemsInput) {
     }
   }
 
-  items.push({ id: "verify-automated-times", label: "Double-check automated times", hint: "Verify challenge release and submission close times", severity: "info", action: "open-agenda-dialog", ctaLabel: "Review", dismissible: true, tooltip: "The challenge release and submission deadline are automated events that trigger at specific times. Review the agenda to make sure these times are correct before the event goes live." })
+  items.push({ id: "verify-automated-times", label: "Double-check automated times", hint: "Challenge release and submissions-close / judging-start times", severity: "info", action: "open-agenda-dialog", ctaLabel: "Review", dismissible: true, tooltip: "The challenge release and submission deadline are automated events that trigger at specific times. Review the agenda to make sure these times are correct before the event goes live." })
 
   items.push({ id: "ready-to-go-live", label: "Ready to go live", hint: "The essentials are in place — you can finish the rest later", severity: "info", action: "transition-to-active", ctaLabel: "Go Live", variant: "transition" })
 }
