@@ -302,12 +302,18 @@ export function JudgesEditForm({
       setEmailEntries((prev) => prev.filter((e) => !succeededEmails.has(e.email)))
       router.refresh()
 
-      if (failures.length > 0) {
-        throw failures[0].reason
-      }
-
+      const messages: string[] = []
       if (duplicateEmails.length > 0) {
-        setError(`Already added: ${duplicateEmails.join(", ")}`)
+        messages.push(`Already added: ${duplicateEmails.join(", ")}`)
+      }
+      if (failures.length > 0) {
+        const reasons = failures
+          .map((f) => (f.reason instanceof Error ? f.reason.message : String(f.reason)))
+          .join("; ")
+        messages.push(reasons)
+      }
+      if (messages.length > 0) {
+        setError(messages.join(". "))
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add judges")
