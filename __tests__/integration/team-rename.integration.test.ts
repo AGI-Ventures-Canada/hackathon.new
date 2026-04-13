@@ -263,7 +263,7 @@ describe("PATCH /api/dashboard/hackathons/:id/teams/:teamId", () => {
           select: mock(() => ({
             eq: mock(() => ({
               eq: mock(() => ({
-                single: mock(() => Promise.resolve({ data: { captain_clerk_user_id: "captain-123" }, error: null })),
+                single: mock(() => Promise.resolve({ data: { captain_clerk_user_id: "captain-123", status: "forming" }, error: null })),
               })),
             })),
           })),
