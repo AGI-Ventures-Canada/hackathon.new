@@ -381,15 +381,9 @@ export function JudgesEditForm({
       router.refresh()
     } catch (err) {
       savingFieldsRef.current.delete(fieldKey)
-      setLocalEdits((prev) => {
-        const next = { ...prev }
-        if (next[judgeId]) {
-          delete next[judgeId][field]
-          if (Object.keys(next[judgeId]).length === 0) delete next[judgeId]
-        }
-        return next
-      })
-      setError(err instanceof Error ? err.message : "Failed to update")
+      const judge = initialJudges.find((j) => j.id === judgeId)
+      const label = judge ? `${judge.name}'s ${field}` : field
+      setError(err instanceof Error ? `Failed to update ${label}: ${err.message}` : `Failed to update ${label}`)
     }
   }
 

@@ -222,14 +222,16 @@ export async function seedJudgeDisplayProfiles(
 ): Promise<void> {
   const client = getSupabase() as unknown as SupabaseClient
   await client.from("hackathon_judges_display").delete().eq("hackathon_id", hackathonId)
-  for (let i = 0; i < judgeParticipantIds.length; i++) {
-    await client.from("hackathon_judges_display").insert({
-      hackathon_id: hackathonId,
-      name: SEED_JUDGE_NAMES[i] ?? `Judge ${i + 1}`,
-      title: "Judge",
-      clerk_user_id: judgeUserIds[i],
-      participant_id: judgeParticipantIds[i],
-      display_order: i,
-    })
-  }
+  await Promise.all(
+    judgeParticipantIds.map((_, i) =>
+      client.from("hackathon_judges_display").insert({
+        hackathon_id: hackathonId,
+        name: SEED_JUDGE_NAMES[i] ?? `Judge ${i + 1}`,
+        title: "Judge",
+        clerk_user_id: judgeUserIds[i],
+        participant_id: judgeParticipantIds[i],
+        display_order: i,
+      })
+    )
+  )
 }
