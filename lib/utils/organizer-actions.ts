@@ -107,7 +107,7 @@ function addDraftActions(items: ActionItem[], input: ActionItemsInput) {
   const hasLocation = !!input.locationType
   items.push(hasLocation
     ? { id: "no-location", label: "Location set", hint: "Participants know where to attend", severity: "urgent", tab: "edit", completed: true, tooltip: "Setting the location type (in-person or virtual) is required to publish. For in-person events, include the venue address. For virtual events, you can add a link to the video call or platform later." }
-    : { id: "no-location", label: "Set event location", hint: "Required before you can publish", severity: "urgent", tab: "edit", ctaLabel: "Set", tooltip: "Setting the location type (in-person or virtual) is required to publish. For in-person events, include the venue address. For virtual events, you can add a link to the video call or platform later." }
+    : { id: "no-location", label: "Set event location", hint: "Required before you can publish", severity: "urgent", tab: "edit", action: "open-location-dialog", ctaLabel: "Set", tooltip: "Setting the location type (in-person or virtual) is required to publish. For in-person events, include the venue address. For virtual events, you can add a link to the video call or platform later." }
   )
 
   const hasBanner = !!input.bannerUrl
@@ -121,13 +121,13 @@ function addDraftActions(items: ActionItem[], input: ActionItemsInput) {
   const hasPrizes = input.prizeCount > 0
   items.push(hasPrizes
     ? { id: "no-prizes", label: `${input.prizeCount} prize${input.prizeCount !== 1 ? "s" : ""} defined`, hint: "Teams know what they're competing for", severity: "warning", tab: "judging", completed: true, tooltip: "Prizes motivate participation and give teams a clear goal. Define categories like Best Overall, Most Creative, or domain-specific tracks. Each prize can have its own judging criteria." }
-    : { id: "no-prizes", label: "Add prizes", hint: "Define what teams are competing for", severity: "warning", tab: "judging", ctaLabel: "Add", tooltip: "Prizes motivate participation and give teams a clear goal. Define categories like Best Overall, Most Creative, or domain-specific tracks. Each prize can have its own judging criteria." }
+    : { id: "no-prizes", label: "Add prizes", hint: "Define what teams are competing for", severity: "warning", tab: "judging", subtab: "setup", subtabKey: "jtab", ctaLabel: "Add", tooltip: "Prizes motivate participation and give teams a clear goal. Define categories like Best Overall, Most Creative, or domain-specific tracks. Each prize can have its own judging criteria." }
   )
 
   const hasJudges = input.judgeDisplayCount > 0 || input.judgeCount > 0
   items.push(hasJudges
     ? { id: "no-judges", label: judgesLabel(input), hint: "Your judging panel is being assembled", severity: "warning", tab: "judging", completed: true, tooltip: "Judges review and score submissions after the hackathon ends. Invite them early so they can prepare. You can assign judges to specific prize categories and they'll receive email notifications when judging begins." }
-    : { id: "no-judges", label: "Invite judges", hint: "Assemble your judging panel", severity: "warning", tab: "judging", ctaLabel: "Invite", tooltip: "Judges review and score submissions after the hackathon ends. Invite them early so they can prepare. You can assign judges to specific prize categories and they'll receive email notifications when judging begins." }
+    : { id: "no-judges", label: "Invite judges", hint: "Assemble your judging panel", severity: "warning", tab: "judging", subtab: "setup", subtabKey: "jtab", ctaLabel: "Invite", tooltip: "Judges review and score submissions after the hackathon ends. Invite them early so they can prepare. You can assign judges to specific prize categories and they'll receive email notifications when judging begins." }
   )
 
   items.push({ id: "add-schedule", label: "Review and customize your agenda", hint: "The default schedule is auto-generated — add your own items", severity: "warning", action: "open-agenda-dialog", ctaLabel: "Review", tooltip: "New events come with a default agenda. Review it and add sessions like workshops, meal breaks, sponsor demos, or networking time. Participants see the schedule on the event page." })
@@ -145,13 +145,13 @@ function addPublishedActions(items: ActionItem[], input: ActionItemsInput) {
   const hasJudges = input.judgeDisplayCount > 0 || input.judgeCount > 0
   items.push(hasJudges
     ? { id: "no-judges", label: judgesLabel(input), hint: "Your judging panel is being assembled", severity: "warning", tab: "judging", completed: true, tooltip: "Judges review and score submissions after the hackathon ends. Invite them early so they can prepare. You can assign judges to specific prize categories and they'll receive email notifications when judging begins." }
-    : { id: "no-judges", label: "No judges invited yet", hint: "You'll need judges to evaluate submissions", severity: "warning", tab: "judging", ctaLabel: "Invite", tooltip: "Judges review and score submissions after the hackathon ends. Invite them early so they can prepare. You can assign judges to specific prize categories and they'll receive email notifications when judging begins." }
+    : { id: "no-judges", label: "No judges invited yet", hint: "You'll need judges to evaluate submissions", severity: "warning", tab: "judging", subtab: "setup", subtabKey: "jtab", ctaLabel: "Invite", tooltip: "Judges review and score submissions after the hackathon ends. Invite them early so they can prepare. You can assign judges to specific prize categories and they'll receive email notifications when judging begins." }
   )
 
   const hasPrizes = input.prizeCount > 0
   items.push(hasPrizes
     ? { id: "no-prizes", label: `${input.prizeCount} prize${input.prizeCount !== 1 ? "s" : ""} defined`, hint: "Teams know what they're competing for", severity: "warning", tab: "judging", completed: true, tooltip: "Prizes motivate participation and give teams a clear goal. Define categories like Best Overall, Most Creative, or domain-specific tracks. Each prize can have its own judging criteria." }
-    : { id: "no-prizes", label: "No prizes defined", hint: "Teams don't know what they're competing for yet", severity: "warning", tab: "judging", ctaLabel: "Add", tooltip: "Prizes motivate participation and give teams a clear goal. Define categories like Best Overall, Most Creative, or domain-specific tracks. Each prize can have its own judging criteria." }
+    : { id: "no-prizes", label: "No prizes defined", hint: "Teams don't know what they're competing for yet", severity: "warning", tab: "judging", subtab: "setup", subtabKey: "jtab", ctaLabel: "Add", tooltip: "Prizes motivate participation and give teams a clear goal. Define categories like Best Overall, Most Creative, or domain-specific tracks. Each prize can have its own judging criteria." }
   )
 
   addChallengeActions(items, input)

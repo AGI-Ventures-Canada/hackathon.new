@@ -285,6 +285,25 @@ describe("Challenges Service", () => {
 
       expect(result).toBe(false)
     })
+
+    it("returns false when orderedIds contains duplicates", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({ data: { id: hackathonId }, error: null })
+        }
+        if (table === "challenges") {
+          return createChainableMock({
+            data: [{ id: "a" }, { id: "b" }],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await reorderChallenges(hackathonId, tenantId, ["a", "a"])
+
+      expect(result).toBe(false)
+    })
   })
 
   describe("releaseChallenges", () => {

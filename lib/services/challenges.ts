@@ -232,6 +232,7 @@ export async function reorderChallenges(
 
   const existingIds = new Set(existing.map((r) => r.id))
   if (orderedIds.length !== existingIds.size) return false
+  if (new Set(orderedIds).size !== orderedIds.length) return false
   if (orderedIds.some((id) => !existingIds.has(id))) return false
 
   const updates = orderedIds.map((id, idx) =>

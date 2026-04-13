@@ -38,6 +38,7 @@ import {
 } from "./submission-deadline-dialog";
 import { ScheduleEditor } from "@/components/hackathon/schedule-editor";
 import type { ScheduleItem } from "@/lib/services/schedule-items";
+import { LocationEditDialog } from "./location-edit-dialog";
 
 const SEVERITY_ORDER: ActionSeverity[] = ["urgent", "warning", "info"];
 
@@ -88,6 +89,15 @@ export function buildActionHref(slug: string, item: ActionItem): string | null {
   return `/e/${slug}/manage?${params.toString()}`;
 }
 
+type LocationInitialData = {
+  locationType: "in_person" | "virtual" | null;
+  locationName: string | null;
+  locationUrl: string | null;
+  locationLatitude: number | null;
+  locationLongitude: number | null;
+  requireLocationVerification: boolean;
+};
+
 type ProviderProps = {
   actionItems: ActionItem[];
   hackathonId: string;
@@ -98,6 +108,7 @@ type ProviderProps = {
   challengeReleasedAt: string | null;
   scheduleItems: ScheduleItem[];
   endsAt: string | null;
+  locationInitialData: LocationInitialData;
   children: React.ReactNode;
 };
 
@@ -111,6 +122,7 @@ export function ActionItemsProvider({
   challengeReleasedAt,
   scheduleItems: serverScheduleItems,
   endsAt: serverEndsAt,
+  locationInitialData,
   children,
 }: ProviderProps) {
   const router = useRouter();
@@ -120,6 +132,7 @@ export function ActionItemsProvider({
   const tabActionsRef = useRef(new Map<string, () => void>());
   const [promoteDialogOpen, setPromoteDialogOpen] = useState(false);
   const [agendaDialogOpen, setAgendaDialogOpen] = useState(false);
+  const [locationDialogOpen, setLocationDialogOpen] = useState(false);
 
   const [scheduleItems, setScheduleItems] = useState(serverScheduleItems);
   useEffect(() => {
@@ -257,6 +270,33 @@ export function ActionItemsProvider({
     [hackathonId, allItems, completedIds],
   );
 
+  const markComplete = useCallback(
+    (id: string) => {
+      setCompletedIds((prev) => {
+        if (prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.add(id);
+        localStorage.setItem(
+          `completed-actions-${hackathonId}`,
+          JSON.stringify([...next]),
+        );
+        return next;
+      });
+      setCompletedSnapshots((prev) => {
+        if (prev[id]) return prev;
+        const item = allItems.find((i) => i.id === id);
+        if (!item) return prev;
+        const next = { ...prev, [id]: item };
+        localStorage.setItem(
+          `completed-snapshots-${hackathonId}`,
+          JSON.stringify(next),
+        );
+        return next;
+      });
+    },
+    [hackathonId, allItems],
+  );
+
   const dismissItem = useCallback(
     (id: string) => {
       setDismissedIds((prev) => {
@@ -355,6 +395,8 @@ export function ActionItemsProvider({
         router.push(`/e/${slug}/manage?tab=challenges`);
       } else if (item.action === "open-agenda-dialog") {
         setAgendaDialogOpen(true);
+      } else if (item.action === "open-location-dialog") {
+        setLocationDialogOpen(true);
       } else if (item.action === "open-submission-deadline-dialog") {
         submissionDeadlineRef.current?.openDialog();
       } else if (item.action?.startsWith("transition-to-")) {
@@ -519,6 +561,7 @@ export function ActionItemsProvider({
         hackathonId={hackathonId}
         scheduleItems={scheduleItems}
         endsAt={liveEndsAt}
+        onSaved={() => markComplete("check-submission-deadline")}
       />
       <Dialog open={agendaDialogOpen} onOpenChange={setAgendaDialogOpen}>
         <DialogContent className="sm:max-w-3xl">
@@ -547,6 +590,12 @@ export function ActionItemsProvider({
           />
         </DialogContent>
       </Dialog>
+      <LocationEditDialog
+        open={locationDialogOpen}
+        onOpenChange={setLocationDialogOpen}
+        hackathonId={hackathonId}
+        initialData={locationInitialData}
+      />
       <Dialog open={promoteDialogOpen} onOpenChange={setPromoteDialogOpen}>
         <DialogContent>
           <DialogHeader>

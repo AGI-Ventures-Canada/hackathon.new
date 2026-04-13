@@ -1,6 +1,7 @@
 import { Elysia, t } from "elysia"
 import { auth, clerkClient } from "@clerk/nextjs/server"
 import { normalizeUrl } from "@/lib/utils/url"
+import { isValidUuid } from "@/lib/utils/uuid"
 import { exchangeCodeForTokens, saveIntegration, getProviderConfig } from "@/lib/integrations/oauth"
 import { getPublicHackathon, listPublicHackathons } from "@/lib/services/public-hackathons"
 import { registerForHackathon, getParticipantCount, isUserRegistered } from "@/lib/services/hackathons"
@@ -397,6 +398,13 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
+      if (body.challengeIds?.some((id) => !isValidUuid(id))) {
+        return new Response(
+          JSON.stringify({ error: "Invalid challenge ID", code: "invalid_challenge_id" }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
       const submission = await createSubmission(
         hackathon.id,
         participant.participantId,
@@ -511,6 +519,13 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
             { status: 400, headers: { "Content-Type": "application/json" } }
           )
         }
+      }
+
+      if (body.challengeIds?.some((id) => !isValidUuid(id))) {
+        return new Response(
+          JSON.stringify({ error: "Invalid challenge ID", code: "invalid_challenge_id" }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        )
       }
 
       const submission = await updateSubmission(

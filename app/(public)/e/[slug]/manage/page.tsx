@@ -3,7 +3,7 @@ import { notFound } from "next/navigation"
 import { auth } from "@clerk/nextjs/server"
 import { getManageHackathon } from "@/lib/services/manage-hackathon"
 import { getHackathonSubmissions } from "@/lib/services/submissions"
-import { countJudges, getJudgingProgress, listPrizes } from "@/lib/services/judging"
+import { countJudges, getJudgingProgress, listPrizes, listRounds } from "@/lib/services/judging"
 import { countPendingJudgeInvitations } from "@/lib/services/judge-invitations"
 import { countJudgeDisplayProfiles } from "@/lib/services/judge-display"
 import { getManageOverviewStats } from "@/lib/services/manage-overview"
@@ -11,7 +11,7 @@ import { listAnnouncements } from "@/lib/services/announcements"
 import { listChallenges } from "@/lib/services/challenges"
 import { listScheduleItems, getSubmissionDeadline } from "@/lib/services/schedule-items"
 import { getOrganizerActionItems } from "@/lib/utils/organizer-actions"
-import { VALID_TABS, VALID_ETABS, VALID_MTABS, DEFAULT_TAB, DEFAULT_MTAB, resolveTab } from "@/lib/utils/manage-tabs"
+import { VALID_TABS, VALID_ETABS, VALID_MTABS, VALID_JTABS, DEFAULT_TAB, DEFAULT_MTAB, DEFAULT_JTAB, resolveTab } from "@/lib/utils/manage-tabs"
 import { HackathonPreviewClient } from "@/components/hackathon/preview/hackathon-preview-client"
 import { HackathonPageActions } from "@/components/hackathon/hackathon-page-actions"
 import { LifecycleStepper } from "@/components/hackathon/lifecycle-stepper"
@@ -34,7 +34,7 @@ import { TeamsTab } from "./_teams-tab"
 
 type PageProps = {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ tab?: string; etab?: string; mtab?: string }>
+  searchParams: Promise<{ tab?: string; etab?: string; mtab?: string; jtab?: string }>
 }
 
 function TabLoadingSkeleton() {
@@ -43,7 +43,7 @@ function TabLoadingSkeleton() {
 
 export default async function ManagePage({ params, searchParams }: PageProps) {
   const { slug } = await params
-  const { tab, etab, mtab } = await searchParams
+  const { tab, etab, mtab, jtab } = await searchParams
   const [{ userId }, result] = await Promise.all([auth(), getManageHackathon(slug)])
 
   if (!result.ok) {
@@ -64,6 +64,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     submissionDeadline,
     pendingJudgeInvitationCount,
     challenges,
+    rounds,
   ] = await Promise.all([
     getHackathonSubmissions(hackathon.id),
     getJudgingProgress(hackathon.id),
@@ -76,6 +77,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     getSubmissionDeadline(hackathon.id),
     countPendingJudgeInvitations(hackathon.id),
     listChallenges(hackathon.id),
+    listRounds(hackathon.id),
   ])
 
   const submissionCount = submissions.length
@@ -110,6 +112,8 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
   const activeEtab = resolveTab(etab, VALID_ETABS, "announcements")
   const mtabFallback = tab === "rooms" ? "rooms" : tab === "activity" ? "activity" : undefined
   const activeMtab = resolveTab(mtab ?? mtabFallback, VALID_MTABS, DEFAULT_MTAB)
+  const activeJtab = resolveTab(jtab, VALID_JTABS, DEFAULT_JTAB) as "data" | "setup"
+  const hasJudgingSetup = prizes.length > 0 || judgeCount > 0 || rounds.length > 0
 
   const submissionsForSelect = submissions.map((s) => ({ id: s.id, title: s.title }))
   const teamsTabTooltip = `${overviewStats.teamCount} team${overviewStats.teamCount === 1 ? "" : "s"} · ${submissionCount} submission${submissionCount === 1 ? "" : "s"}`
@@ -126,6 +130,14 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
         challengeReleasedAt={hackathon.challenge_released_at}
         scheduleItems={scheduleItems}
         endsAt={hackathon.ends_at}
+        locationInitialData={{
+          locationType: hackathon.location_type,
+          locationName: hackathon.location_name,
+          locationUrl: hackathon.location_url,
+          locationLatitude: hackathon.location_latitude,
+          locationLongitude: hackathon.location_longitude,
+          requireLocationVerification: hackathon.require_location_verification,
+        }}
       >
         <TabsUrlSync paramKey="tab" value={activeTab}>
           <ActionItemsLayout>
@@ -222,8 +234,11 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
               <Suspense fallback={<TabLoadingSkeleton />}>
                 <JudgingTabContent
                   hackathonId={hackathon.id}
+                  slug={hackathon.slug}
                   submissions={submissionsForSelect}
                   resultsPublishedAt={hackathon.results_published_at}
+                  activeJtab={activeJtab}
+                  hasJudgingSetup={hasJudgingSetup}
                 />
               </Suspense>
             </TabsContent>
