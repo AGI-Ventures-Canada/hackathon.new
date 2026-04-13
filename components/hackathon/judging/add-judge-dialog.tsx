@@ -80,7 +80,7 @@ export function AddJudgeDialog({
       setSuccess(null)
       abortRef.current?.abort()
 
-      if (query.trim().length < 1) {
+      if (query.trim().length < 2) {
         setSearchResults([])
         setSearching(false)
         return
@@ -288,7 +288,7 @@ export function AddJudgeDialog({
             )}
 
             {!searching &&
-              searchQuery.length >= 1 &&
+              searchQuery.length >= 2 &&
               searchResults.length === 0 && (
                 <p className="text-sm text-muted-foreground text-center py-3">
                   No users found

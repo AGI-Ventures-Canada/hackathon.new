@@ -479,6 +479,8 @@ export function printReady(slug: string) {
 
 const JUDGE_DISPLAY_NAMES = ["Alice Johnson", "Bob Chen", "Carol Davis", "Dave Kim", "Eve Martin"]
 
+// Intentionally duplicated from lib/services/judge-display.ts — scripts run
+// standalone with their own Supabase client and cannot import from the app.
 export async function seedJudgeDisplayProfiles(
   hackathonId: string,
   judgeUserIds: string[],

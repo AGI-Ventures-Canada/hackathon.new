@@ -143,6 +143,8 @@ export async function deleteJudgeDisplayProfile(
   }
 
   if (participantId) {
+    const cascadeErrors: string[] = []
+
     const { error: assignmentError } = await client
       .from("judge_assignments")
       .delete()
@@ -151,7 +153,7 @@ export async function deleteJudgeDisplayProfile(
 
     if (assignmentError) {
       console.error("Failed to cascade-delete judge assignments:", assignmentError)
-      return { deleted: true, cascadeError: "Failed to remove judge assignments" }
+      cascadeErrors.push("assignments")
     }
 
     const { error: participantError } = await client
@@ -163,7 +165,11 @@ export async function deleteJudgeDisplayProfile(
 
     if (participantError) {
       console.error("Failed to cascade-delete judge participant:", participantError)
-      return { deleted: true, cascadeError: "Failed to remove judge participant record" }
+      cascadeErrors.push("participant record")
+    }
+
+    if (cascadeErrors.length > 0) {
+      return { deleted: true, cascadeError: `Failed to remove judge ${cascadeErrors.join(" and ")}` }
     }
   }
 

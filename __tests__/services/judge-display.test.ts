@@ -215,7 +215,8 @@ describe("Judge Display Service", () => {
       const result = await deleteJudgeDisplayProfile("j1", "h1")
 
       expect(result.deleted).toBe(true)
-      expect(result.cascadeError).toBeDefined()
+      expect(result.cascadeError).toContain("assignments")
+      expect(result.cascadeError).toContain("participant record")
     })
 
     it("skips cascade when profile has no participant_id or clerk_user_id", async () => {
