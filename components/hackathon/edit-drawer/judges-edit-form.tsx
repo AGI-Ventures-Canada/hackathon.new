@@ -182,7 +182,15 @@ export function JudgesEditForm({
       }
       return kept
     })
-    setHiddenIds(new Set())
+    setHiddenIds((prev) => {
+      if (prev.size === 0) return prev
+      const serverIds = new Set(initialJudges.map((j) => j.id))
+      const next = new Set<string>()
+      for (const id of prev) {
+        if (serverIds.has(id)) next.add(id)
+      }
+      return next.size === prev.size ? prev : next
+    })
   }, [initialJudges])
 
   const visibleJudges = useMemo(() => {

@@ -72,14 +72,9 @@ describe("Judge Display Service", () => {
 
   describe("createJudgeDisplayProfile", () => {
     it("creates judge profile with required fields", async () => {
-      let callCount = 0
-      setMockFromImplementation(() => {
-        callCount++
-        if (callCount === 1) {
-          return createChainableMock({ data: null, error: null })
-        }
-        return createChainableMock({ data: mockJudge, error: null })
-      })
+      setMockFromImplementation(() =>
+        createChainableMock({ data: mockJudge, error: null })
+      )
 
       const result = await createJudgeDisplayProfile("h1", {
         name: "Jane Doe",
@@ -92,14 +87,9 @@ describe("Judge Display Service", () => {
     })
 
     it("creates judge profile with all fields", async () => {
-      let callCount = 0
-      setMockFromImplementation(() => {
-        callCount++
-        if (callCount === 1) {
-          return createChainableMock({ data: null, error: null })
-        }
-        return createChainableMock({ data: mockJudge, error: null })
-      })
+      setMockFromImplementation(() =>
+        createChainableMock({ data: mockJudge, error: null })
+      )
 
       const result = await createJudgeDisplayProfile("h1", {
         name: "Jane Doe",
@@ -245,8 +235,8 @@ describe("Judge Display Service", () => {
   describe("createJudgeDisplayProfile duplicate check", () => {
     it("returns duplicate when clerk_user_id already has a display profile", async () => {
       const chain = createChainableMock({
-        data: { id: "existing-j1" },
-        error: null,
+        data: null,
+        error: { code: "23505", message: "unique constraint violation" },
       })
       setMockFromImplementation(() => chain)
 
@@ -263,8 +253,8 @@ describe("Judge Display Service", () => {
 
     it("returns duplicate when name matches an existing non-Clerk judge", async () => {
       const chain = createChainableMock({
-        data: { id: "existing-j2" },
-        error: null,
+        data: null,
+        error: { code: "23505", message: "unique constraint violation" },
       })
       setMockFromImplementation(() => chain)
 
@@ -278,15 +268,10 @@ describe("Judge Display Service", () => {
       }
     })
 
-    it("creates profile when name matches but has different clerk_user_id", async () => {
-      let callCount = 0
-      setMockFromImplementation(() => {
-        callCount++
-        if (callCount === 1) {
-          return createChainableMock({ data: null, error: null })
-        }
-        return createChainableMock({ data: mockJudge, error: null })
-      })
+    it("creates profile when no unique constraint violation", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({ data: mockJudge, error: null })
+      )
 
       const result = await createJudgeDisplayProfile("h1", {
         name: "Jane Doe",
@@ -297,14 +282,9 @@ describe("Judge Display Service", () => {
     })
 
     it("creates profile when clerk_user_id has no existing display profile", async () => {
-      let callCount = 0
-      setMockFromImplementation(() => {
-        callCount++
-        if (callCount === 1) {
-          return createChainableMock({ data: null, error: null })
-        }
-        return createChainableMock({ data: mockJudge, error: null })
-      })
+      setMockFromImplementation(() =>
+        createChainableMock({ data: mockJudge, error: null })
+      )
 
       const result = await createJudgeDisplayProfile("h1", {
         name: "Jane Doe",

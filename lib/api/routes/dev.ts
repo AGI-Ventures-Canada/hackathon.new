@@ -449,24 +449,14 @@ export const devRoutes = new Elysia({ prefix: "/dev" })
       }
 
       const judgeUserIds = SEED_USERS.slice(0, 3)
-      const judgeNames = ["Alice Johnson", "Bob Chen", "Carol Davis"]
       const judgePids: string[] = []
       for (const uid of judgeUserIds) {
         const pid = await ensureParticipant(db, params.id, uid, "judge")
         judgePids.push(pid)
       }
 
-      await db.from("hackathon_judges_display").delete().eq("hackathon_id", params.id)
-      for (let i = 0; i < judgePids.length; i++) {
-        await db.from("hackathon_judges_display").insert({
-          hackathon_id: params.id,
-          name: judgeNames[i],
-          title: "Judge",
-          clerk_user_id: judgeUserIds[i],
-          participant_id: judgePids[i],
-          display_order: i,
-        })
-      }
+      const { seedJudgeDisplayProfiles } = await import("@/lib/services/judge-display")
+      await seedJudgeDisplayProfiles(params.id, judgeUserIds, judgePids)
 
       const { data: submissions } = await db
         .from("submissions")

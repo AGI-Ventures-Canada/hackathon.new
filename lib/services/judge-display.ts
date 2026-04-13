@@ -51,25 +51,6 @@ export async function createJudgeDisplayProfile(
 ): Promise<CreateJudgeDisplayResult> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  if (input.clerkUserId) {
-    const { data: existing } = await client
-      .from("hackathon_judges_display")
-      .select("id")
-      .eq("hackathon_id", hackathonId)
-      .eq("clerk_user_id", input.clerkUserId)
-      .maybeSingle()
-    if (existing) return { status: "duplicate", matchedBy: "clerk_user" }
-  } else {
-    const { data: existing } = await client
-      .from("hackathon_judges_display")
-      .select("id")
-      .eq("hackathon_id", hackathonId)
-      .eq("name", input.name)
-      .is("clerk_user_id", null)
-      .maybeSingle()
-    if (existing) return { status: "duplicate", matchedBy: "name" }
-  }
-
   const { data, error } = await client
     .from("hackathon_judges_display")
     .insert({
@@ -86,6 +67,10 @@ export async function createJudgeDisplayProfile(
     .single()
 
   if (error) {
+    if (error.code === "23505") {
+      const matchedBy = input.clerkUserId ? "clerk_user" : "name"
+      return { status: "duplicate", matchedBy } as const
+    }
     console.error("Failed to create judge display profile:", error)
     return { status: "error" }
   }
@@ -226,4 +211,25 @@ export async function countJudgeDisplayProfiles(
   }
 
   return count ?? 0
+}
+
+const SEED_JUDGE_NAMES = ["Alice Johnson", "Bob Chen", "Carol Davis", "Dave Kim", "Eve Martin"]
+
+export async function seedJudgeDisplayProfiles(
+  hackathonId: string,
+  judgeUserIds: string[],
+  judgeParticipantIds: string[]
+): Promise<void> {
+  const client = getSupabase() as unknown as SupabaseClient
+  await client.from("hackathon_judges_display").delete().eq("hackathon_id", hackathonId)
+  for (let i = 0; i < judgeParticipantIds.length; i++) {
+    await client.from("hackathon_judges_display").insert({
+      hackathon_id: hackathonId,
+      name: SEED_JUDGE_NAMES[i] ?? `Judge ${i + 1}`,
+      title: "Judge",
+      clerk_user_id: judgeUserIds[i],
+      participant_id: judgeParticipantIds[i],
+      display_order: i,
+    })
+  }
 }

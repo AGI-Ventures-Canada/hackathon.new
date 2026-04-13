@@ -393,18 +393,8 @@ const scenarioRunners: Record<string, (tenantId?: string, principalOrgId?: strin
 
     await addJudgingCriteria(hackathonId)
 
-    const judgeDisplayNames = ["Alice Johnson", "Bob Chen", "Carol Davis"]
-    await db.from("hackathon_judges_display").delete().eq("hackathon_id", hackathonId)
-    for (let i = 0; i < judgeParticipantIds.length; i++) {
-      await db.from("hackathon_judges_display").insert({
-        hackathon_id: hackathonId,
-        name: judgeDisplayNames[i] ?? `Judge ${i + 1}`,
-        title: "Judge",
-        clerk_user_id: judgeUsers[i],
-        participant_id: judgeParticipantIds[i],
-        display_order: i,
-      })
-    }
+    const { seedJudgeDisplayProfiles } = await import("@/lib/services/judge-display")
+    await seedJudgeDisplayProfiles(hackathonId, judgeUsers, judgeParticipantIds)
 
     for (const judgeId of judgeParticipantIds) {
       const judgeTeamId = judgeTeamIds[judgeId]
