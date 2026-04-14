@@ -2,13 +2,13 @@ import { listScenarios, getActiveScenarios } from "@/lib/services/admin-scenario
 import { ScenarioRunner } from "./runner"
 
 export default async function AdminScenariosPage() {
-  if (process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production") {
+  if (process.env.VERCEL_ENV === "production") {
     return (
       <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-bold">Test Scenarios</h1>
           <p className="text-sm text-muted-foreground">
-            Scenarios are only available in local development and staging.
+            Scenarios are not available in production.
           </p>
         </div>
       </div>
