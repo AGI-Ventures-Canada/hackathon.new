@@ -146,6 +146,21 @@ All request APIs (`params`, `searchParams`, `cookies()`, `headers()`) are async 
 
 All page components in `app/` must be server-side rendered. Never use `"use client"` in page files. Extract client-side functionality into separate client components.
 
+### Hydration Safety
+
+**Never render browser-only state (`localStorage`, `sessionStorage`, `window`, `Date.now()`, `Math.random()`) during the first render pass.** The server has no access to these, so any derived UI diverges on hydration and React throws a mismatch error.
+
+Use `useSyncExternalStore` with an empty subscribe to produce a stable `isClient` flag:
+
+```tsx
+const emptySubscribe = () => () => {}
+const isClient = useSyncExternalStore(emptySubscribe, () => true, () => false)
+```
+
+Gate every branch, count, badge, and empty-state that depends on `localStorage`-seeded state behind `isClient && …`. This includes indirect dependencies — if a value is derived from another value that was seeded from storage (e.g., `groups` built from `activeItems` which filters by `completedIds`), the derived value is also unsafe during SSR.
+
+When adding a new UI surface that consumes this kind of state (panels, tabs, badges, counts), apply the guard at every render site, not just the primary one. Reference: `components/hackathon/manage/action-items-tab.tsx` and `action-items-panel.tsx`.
+
 ### UI Components
 
 Base components are shadcn/ui. Add missing components with `bunx shadcn@latest add <component-name>`. Check existing components before creating new ones.
@@ -164,10 +179,31 @@ The dashboard sidebar is `components/app-sidebar-simple.tsx` — a custom compon
 
 ### Copywriting
 
+**CRITICAL: Write at a 5th-grade reading level. No jargon, no domain terms, no formal phrasing.** Organizers are not engineers — copy that reads like a product spec (e.g. "Advancement", "Top N by score", "Submissions scoring at or above the threshold advance") confuses them. Use the words a friend would use.
+
+Translate jargon to plain English:
+
+| Don't write | Write |
+|-------------|-------|
+| "Advancement" / "Advancement rules" | "Who moves on?" |
+| "Advance top N by score" | "The top few scorers move on" |
+| "Submissions scoring ≥ threshold advance" | "Everyone who hits the score or higher moves on" |
+| "Attach prizes and advancement rules to rounds" | "Add prizes. Pick who moves on." |
+| "Seed screening prize" | "We'll add a hidden prize so judges have something to score" |
+| "Promote to active status" | "Go live" |
+| "Submissions" (to organizers/attendees) | "Projects" |
+| "Participants" (to organizers/attendees) | "People" or "attendees" |
+
+Other rules:
+
 - Lead with the user outcome, not the internal feature or brand name
 - Prefer one short sentence over two average ones
+- Use contractions ("you're", "we'll", "don't") — they read friendlier
+- Keep sentences under ~15 words when possible
+- Ask questions for section labels where it fits ("Who's judging?" beats "Judges")
 - Keep technical caveats out of first-glance UI copy; move details into tooltips, help text, or docs
 - Use job-to-be-done labels ("Manage hackathons from your AI agent" not "Install Oatmeal Skills")
+- Test: read it out loud. If you stumble or it sounds formal, rewrite.
 
 ### Supabase
 
@@ -229,11 +265,75 @@ When a feature references a user by email and they don't exist in Clerk, send a 
 
 ### Optimistic Rendering
 
-**Default to optimistic UI updates for all user-initiated mutations.** Pattern: track "hidden"/"pending" sets in state, filter server data through them, revert on API failure.
+**CRITICAL: Every user-initiated mutation — add, delete, toggle, reorder, assign, unassign — MUST update the UI instantly, before the network round-trip completes. Waiting for a server response is not acceptable, even for fast APIs.** Optimistic rendering is the default, not an enhancement. If you write a handler that awaits `fetch` before calling `setState` or `router.refresh()`, you wrote the wrong handler.
 
-- Remove loading spinners on items that disappear instantly
-- Keep `router.refresh()` after success for eventual consistency
-- Re-throw errors when called by child components that also handle errors
+This applies to **every list and every item in every list** — rounds, prizes, judges, invitations, action items, schedule items, challenges, teams, members, etc. New rows appear the frame you click "Add". Deleted rows disappear the frame you click "Delete". Nothing blocks on the network.
+
+**The pattern** (non-negotiable):
+
+```tsx
+const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set())
+const [pendingItems, setPendingItems] = useState<Item[]>([])
+
+const visibleItems = useMemo(
+  () => [...items.filter((i) => !hiddenIds.has(i.id)), ...pendingItems],
+  [items, hiddenIds, pendingItems],
+)
+
+async function handleDelete(id: string) {
+  setHiddenIds((prev) => new Set(prev).add(id))  // hide INSTANTLY
+  try {
+    const res = await fetch(`/api/.../${id}`, { method: "DELETE" })
+    if (!res.ok) throw new Error("Failed")
+    router.refresh()  // eventual consistency — props will update
+  } catch (err) {
+    setHiddenIds((prev) => { const n = new Set(prev); n.delete(id); return n })  // revert
+    setError(err instanceof Error ? err.message : "Failed")
+  }
+}
+
+async function handleAdd(input: NewItem) {
+  const tempId = `pending-${Date.now()}`
+  const optimistic = { ...input, id: tempId, pending: true }
+  setPendingItems((prev) => [...prev, optimistic])  // show INSTANTLY
+  try {
+    const res = await fetch(`/api/...`, { method: "POST", body: JSON.stringify(input) })
+    if (!res.ok) throw new Error("Failed")
+    router.refresh()
+    // Clear pending when server props overtake — use useEffect with items dep to reconcile
+    setPendingItems((prev) => prev.filter((p) => p.id !== tempId))
+  } catch (err) {
+    setPendingItems((prev) => prev.filter((p) => p.id !== tempId))  // revert
+    setError(err instanceof Error ? err.message : "Failed")
+  }
+}
+```
+
+**Rules:**
+
+- **Hide/add BEFORE `await fetch`.** The first line of every mutation handler updates local state. The network call is second.
+- **Every list render must filter through the hidden set** — don't render raw props.
+- **Revert on failure** — restore the hidden/pending state and surface the error via `setError`.
+- **Keep `router.refresh()` on success** for eventual consistency — but NEVER rely on it for the initial visual update.
+- **Re-throw errors** when a handler is called by a child component that also handles errors (e.g., dialogs showing their own error state).
+- **No loading spinners on rows that disappear instantly.** If the row is gone, there's nothing to spin on.
+- **Dialogs that create items** should return the created entity via `onSuccess(item)` so the parent can add it optimistically without a round-trip wait.
+
+**Anti-patterns (REJECT in review):**
+
+```tsx
+// ❌ WRONG — user stares at unchanged UI until fetch returns
+async function handleDelete(id: string) {
+  const res = await fetch(`/api/.../${id}`, { method: "DELETE" })
+  if (res.ok) router.refresh()
+}
+
+// ❌ WRONG — "if (res.ok)" gate means failure silently does nothing
+// ❌ WRONG — no revert, no error surfaced
+// ❌ WRONG — no optimistic hide
+```
+
+**Reference implementations:** `components/hackathon/judging/judging-setup-wizard.tsx`, `components/hackathon/judging/judging-tab-client.tsx`, `components/hackathon/judging/rounds-section.tsx`.
 
 ### Keep Seed Data in Sync
 
@@ -277,7 +377,7 @@ Templates live in `emails/` as React Email components. Send logic in `lib/email/
 ### Starting New Work
 
 Automatically run before creating a feature branch:
-1. `git status` — investigate uncommitted changes. Discard auto-generated files; commit or stash real work
+1. `git status` — investigate uncommitted changes. Discard auto-generated files. **Do not stash real WIP** — leave it in the working tree and carry on; the user sorts out which files belong in which PR at commit time. If the WIP meaningfully conflicts with your new work, ask before touching it.
 2. `git fetch origin` — rebase/pull if behind
 3. `git checkout -b feature/<name> origin/staging`
 

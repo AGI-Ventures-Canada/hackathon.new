@@ -12,14 +12,14 @@ export function OverviewSchedule(props: Props) {
   const onEditTriggerItem: ScheduleEditorProps["onEditTriggerItem"] = useCallback((item: ScheduleItemData) => {
     if (!ctx) return
     if (item.trigger_type === "challenge_release") {
-      ctx.handleActionClick({ id: "create-challenge", label: "", severity: "info", action: "open-challenge-dialog" })
+      ctx.handleActionClick({ id: "create-challenge", label: "", severity: "info", action: "open-challenge-dialog", close: { kind: "auto", isComplete: false } })
     } else if (item.trigger_type === "submission_deadline") {
-      ctx.handleActionClick({ id: "check-submission-deadline", label: "", severity: "info", action: "open-submission-deadline-dialog" })
+      ctx.handleActionClick({ id: "check-submission-deadline", label: "", severity: "info", action: "open-submission-deadline-dialog", close: { kind: "manual" } })
     }
   }, [ctx])
 
   const onAddChallenge = useCallback(() => {
-    ctx?.handleActionClick({ id: "create-challenge", label: "", severity: "info", action: "open-challenge-dialog" })
+    ctx?.handleActionClick({ id: "create-challenge", label: "", severity: "info", action: "open-challenge-dialog", close: { kind: "auto", isComplete: false } })
   }, [ctx])
 
   return (

@@ -254,6 +254,47 @@ export type Database = {
           },
         ]
       }
+      challenges: {
+        Row: {
+          created_at: string
+          description: string | null
+          hackathon_id: string
+          id: string
+          resources: Json
+          sort_order: number
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          hackathon_id: string
+          id?: string
+          resources?: Json
+          sort_order?: number
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          hackathon_id?: string
+          id?: string
+          resources?: Json
+          sort_order?: number
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "challenges_hackathon_id_fkey"
+            columns: ["hackathon_id"]
+            isOneToOne: false
+            referencedRelation: "hackathons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cli_auth_sessions: {
         Row: {
           created_at: string
@@ -779,9 +820,7 @@ export type Database = {
           allow_solo: boolean | null
           anonymous_judging: boolean
           banner_url: string | null
-          challenge_body: string | null
           challenge_released_at: string | null
-          challenge_title: string | null
           created_at: string
           description: string | null
           ends_at: string | null
@@ -817,9 +856,7 @@ export type Database = {
           allow_solo?: boolean | null
           anonymous_judging?: boolean
           banner_url?: string | null
-          challenge_body?: string | null
           challenge_released_at?: string | null
-          challenge_title?: string | null
           created_at?: string
           description?: string | null
           ends_at?: string | null
@@ -855,9 +892,7 @@ export type Database = {
           allow_solo?: boolean | null
           anonymous_judging?: boolean
           banner_url?: string | null
-          challenge_body?: string | null
           challenge_released_at?: string | null
-          challenge_title?: string | null
           created_at?: string
           description?: string | null
           ends_at?: string | null
@@ -2288,6 +2323,39 @@ export type Database = {
           },
         ]
       }
+      submission_challenges: {
+        Row: {
+          challenge_id: string
+          created_at: string
+          submission_id: string
+        }
+        Insert: {
+          challenge_id: string
+          created_at?: string
+          submission_id: string
+        }
+        Update: {
+          challenge_id?: string
+          created_at?: string
+          submission_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "submission_challenges_challenge_id_fkey"
+            columns: ["challenge_id"]
+            isOneToOne: false
+            referencedRelation: "challenges"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "submission_challenges_submission_id_fkey"
+            columns: ["submission_id"]
+            isOneToOne: false
+            referencedRelation: "submissions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       submissions: {
         Row: {
           created_at: string
@@ -2720,6 +2788,10 @@ export type Database = {
           status: Database["public"]["Enums"]["hackathon_status"]
         }
         Returns: Database["public"]["Enums"]["hackathon_status"]
+      }
+      get_organizer_poll_data: {
+        Args: { p_hackathon_id: string }
+        Returns: Json
       }
       register_for_hackathon:
         | {

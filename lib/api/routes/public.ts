@@ -1,6 +1,7 @@
 import { Elysia, t } from "elysia"
 import { auth, clerkClient } from "@clerk/nextjs/server"
 import { normalizeUrl } from "@/lib/utils/url"
+import { isValidUuid } from "@/lib/utils/uuid"
 import { exchangeCodeForTokens, saveIntegration, getProviderConfig } from "@/lib/integrations/oauth"
 import { getPublicHackathon, listPublicHackathons } from "@/lib/services/public-hackathons"
 import { registerForHackathon, getParticipantCount, isUserRegistered } from "@/lib/services/hackathons"
@@ -397,6 +398,13 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
+      if (body.challengeIds?.some((id) => !isValidUuid(id))) {
+        return new Response(
+          JSON.stringify({ error: "Invalid challenge ID", code: "invalid_challenge_id" }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
       const submission = await createSubmission(
         hackathon.id,
         participant.participantId,
@@ -409,6 +417,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
           metadata: teamSizeWarning
             ? { teamSizeWarning, teamMemberCount }
             : undefined,
+          challengeIds: body.challengeIds,
         }
       )
 
@@ -438,6 +447,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         description: t.String({ minLength: 1, maxLength: 280 }),
         githubUrl: t.String(),
         liveAppUrl: t.Optional(t.Union([t.String(), t.Null()])),
+        challengeIds: t.Optional(t.Array(t.String())),
       }),
     }
   )
@@ -511,6 +521,13 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         }
       }
 
+      if (body.challengeIds?.some((id) => !isValidUuid(id))) {
+        return new Response(
+          JSON.stringify({ error: "Invalid challenge ID", code: "invalid_challenge_id" }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
       const submission = await updateSubmission(
         existing.id,
         participant.participantId,
@@ -520,6 +537,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
           description: body.description,
           githubUrl: normalizedGithubUrl,
           liveAppUrl: normalizedLiveAppUrl,
+          challengeIds: body.challengeIds,
         }
       )
 
@@ -549,6 +567,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         description: t.Optional(t.String({ minLength: 1, maxLength: 280 })),
         githubUrl: t.Optional(t.String()),
         liveAppUrl: t.Optional(t.Union([t.String(), t.Null()])),
+        challengeIds: t.Optional(t.Array(t.String())),
       }),
     }
   )

@@ -465,7 +465,17 @@ export type TeamWithMembers = {
   captainClerkUserId: string | null
   pendingCaptainEmail: string | null
   members: { clerkUserId: string; displayName: string | null; email: string | null; role: string }[]
-  submission: { id: string; title: string; status: string } | null
+  submission: {
+    id: string
+    title: string
+    status: string
+    description: string | null
+    githubUrl: string | null
+    liveAppUrl: string | null
+    demoVideoUrl: string | null
+    screenshotUrl: string | null
+    createdAt: string
+  } | null
   room: { id: string; name: string } | null
 }
 
@@ -491,7 +501,7 @@ export async function listTeamsWithMembers(hackathonId: string): Promise<TeamWit
       .in("team_id", teamIds),
     client
       .from("submissions")
-      .select("id, title, status, team_id")
+      .select("id, title, status, team_id, description, github_url, live_app_url, demo_video_url, screenshot_url, created_at")
       .eq("hackathon_id", hackathonId)
       .in("team_id", teamIds),
     client
@@ -500,9 +510,21 @@ export async function listTeamsWithMembers(hackathonId: string): Promise<TeamWit
       .in("team_id", teamIds),
   ])
 
-  const submissionByTeam: Record<string, { id: string; title: string; status: string }> = {}
+  const submissionByTeam: Record<string, TeamWithMembers["submission"]> = {}
   for (const s of submissions ?? []) {
-    if (s.team_id) submissionByTeam[s.team_id] = { id: s.id, title: s.title, status: s.status }
+    if (s.team_id) {
+      submissionByTeam[s.team_id] = {
+        id: s.id,
+        title: s.title,
+        status: s.status,
+        description: s.description ?? null,
+        githubUrl: s.github_url ?? null,
+        liveAppUrl: s.live_app_url ?? null,
+        demoVideoUrl: s.demo_video_url ?? null,
+        screenshotUrl: s.screenshot_url ?? null,
+        createdAt: s.created_at,
+      }
+    }
   }
 
   const roomByTeam: Record<string, { id: string; name: string }> = {}

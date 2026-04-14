@@ -567,13 +567,18 @@ export const devRoutes = new Elysia({ prefix: "/dev" })
       if (guard) return guard
 
       const db = await getDb()
+      await db.from("challenges").delete().eq("hackathon_id", params.id)
+      const { error: insertErr } = await db.from("challenges").insert({
+        hackathon_id: params.id,
+        title: "Build an AI Agent That Solves a Real Problem",
+        description: "Create an AI-powered agent that addresses a genuine pain point. Your solution should demonstrate autonomous decision-making, tool usage, and real-world applicability. Bonus points for creative use of MCP, multi-modal inputs, or novel agentic patterns.",
+        resources: [],
+        sort_order: 0,
+      })
+      if (insertErr) { set.status = 500; return { error: "Failed" } }
       const { error } = await db
         .from("hackathons")
-        .update({
-          challenge_title: "Build an AI Agent That Solves a Real Problem",
-          challenge_body: "Create an AI-powered agent that addresses a genuine pain point. Your solution should demonstrate autonomous decision-making, tool usage, and real-world applicability. Bonus points for creative use of MCP, multi-modal inputs, or novel agentic patterns.",
-          challenge_released_at: new Date().toISOString(),
-        })
+        .update({ challenge_released_at: new Date().toISOString() })
         .eq("id", params.id)
 
       if (error) { set.status = 500; return { error: "Failed" } }
@@ -734,8 +739,15 @@ export const devRoutes = new Elysia({ prefix: "/dev" })
         })
       }
 
+      await db.from("challenges").delete().eq("hackathon_id", params.id)
+      await db.from("challenges").insert({
+        hackathon_id: params.id,
+        title: "Build an AI Agent That Solves a Real Problem",
+        description: null,
+        resources: [],
+        sort_order: 0,
+      })
       await db.from("hackathons").update({
-        challenge_title: "Build an AI Agent That Solves a Real Problem",
         challenge_released_at: new Date().toISOString(),
       }).eq("id", params.id)
 

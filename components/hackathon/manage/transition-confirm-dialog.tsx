@@ -14,6 +14,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { useActionItems } from "./action-items-context"
+import { isCompleted } from "@/lib/utils/organizer-actions"
 import { getTransitionConfirmation } from "@/lib/utils/lifecycle-stages"
 import type { HackathonStatus } from "@/lib/db/hackathon-types"
 
@@ -37,7 +38,7 @@ export const TransitionConfirmDialog = forwardRef<TransitionConfirmDialogHandle,
     const [error, setError] = useState<string | null>(null)
 
     const skippedItems = pendingTarget
-      ? activeItems.filter((i) => i.variant !== "transition" && !i.completed)
+      ? activeItems.filter((i) => i.close.kind !== "transition" && !isCompleted(i))
       : []
 
     useImperativeHandle(ref, () => ({

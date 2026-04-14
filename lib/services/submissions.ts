@@ -2,6 +2,7 @@ import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Submission } from "@/lib/db/hackathon-types"
 import { trackEvent } from "@/lib/analytics/posthog"
+import { tagSubmissionChallenges } from "@/lib/services/challenges"
 
 export type ParticipantInfo = {
   participantId: string
@@ -90,6 +91,7 @@ export type CreateSubmissionInput = {
   liveAppUrl?: string | null
   screenshotUrl?: string | null
   metadata?: Record<string, unknown>
+  challengeIds?: string[]
 }
 
 export async function createSubmission(
@@ -129,6 +131,13 @@ export async function createSubmission(
     title: input.title,
   })
 
+  if (input.challengeIds && input.challengeIds.length > 0) {
+    const tagged = await tagSubmissionChallenges(data.id, input.challengeIds)
+    if (!tagged) {
+      console.error("Submission created but challenge tags could not be saved:", data.id)
+    }
+  }
+
   return data as unknown as Submission
 }
 
@@ -138,6 +147,7 @@ export type UpdateSubmissionInput = {
   githubUrl?: string
   liveAppUrl?: string | null
   screenshotUrl?: string | null
+  challengeIds?: string[]
 }
 
 export async function updateSubmission(
@@ -171,6 +181,13 @@ export async function updateSubmission(
   if (error) {
     console.error("Failed to update submission:", error)
     return null
+  }
+
+  if (input.challengeIds !== undefined) {
+    const tagged = await tagSubmissionChallenges(submissionId, input.challengeIds)
+    if (!tagged) {
+      console.error("Submission updated but challenge tags could not be saved:", submissionId)
+    }
   }
 
   return data as unknown as Submission

@@ -31,6 +31,18 @@ const mockGenerateObject = mock(() =>
         { name: "Grand Prize", description: null, value: "$5,000" },
         { name: "Best Design", description: null, value: "MacBook Pro" },
       ],
+      challenges: [
+        {
+          title: "AI for Healthcare",
+          description: "Improve patient triage.",
+          resources: [{ label: "Dataset", url: "https://example.com/data.csv" }],
+        },
+        {
+          title: "Climate Track",
+          description: null,
+          resources: [],
+        },
+      ],
     },
   })
 )
@@ -61,7 +73,7 @@ describe("extractLumaRichContent", () => {
     delete process.env.TAVILY_API_KEY
   })
 
-  it("extracts sponsors, rules, and prizes from page content", async () => {
+  it("extracts sponsors, rules, prizes, and challenges from page content", async () => {
     const result = await extractLumaRichContent("test-hackathon")
 
     expect(result).not.toBeNull()
@@ -74,6 +86,14 @@ describe("extractLumaRichContent", () => {
     expect(result!.prizes).toHaveLength(2)
     expect(result!.prizes[0].name).toBe("Grand Prize")
     expect(result!.prizes[0].value).toBe("$5,000")
+    expect(result!.challenges).toHaveLength(2)
+    expect(result!.challenges[0].title).toBe("AI for Healthcare")
+    expect(result!.challenges[0].description).toBe("Improve patient triage.")
+    expect(result!.challenges[0].resources).toEqual([
+      { label: "Dataset", url: "https://example.com/data.csv" },
+    ])
+    expect(result!.challenges[1].title).toBe("Climate Track")
+    expect(result!.challenges[1].resources).toEqual([])
   })
 
   it("returns null when TAVILY_API_KEY is not set", async () => {

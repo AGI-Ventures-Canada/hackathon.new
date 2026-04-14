@@ -22,10 +22,11 @@ type Props = {
   hackathonId: string
   scheduleItems: ScheduleItem[]
   endsAt: string | null
+  onSaved?: () => void
 }
 
 export const SubmissionDeadlineDialog = forwardRef<SubmissionDeadlineDialogHandle, Props>(
-  function SubmissionDeadlineDialog({ hackathonId, scheduleItems, endsAt }, ref) {
+  function SubmissionDeadlineDialog({ hackathonId, scheduleItems, endsAt, onSaved }, ref) {
     const router = useRouter()
     const deadlineItem = scheduleItems.find((s) => s.trigger_type === "submission_deadline")
 
@@ -65,6 +66,7 @@ export const SubmissionDeadlineDialog = forwardRef<SubmissionDeadlineDialogHandl
           throw new Error(data.error || "Failed to save")
         }
         setSaved(true)
+        onSaved?.()
         setTimeout(() => {
           setOpen(false)
           setSaved(false)

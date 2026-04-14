@@ -43,6 +43,30 @@ const EventPageRichContentSchema = z.object({
       })
     )
     .describe("List of prizes or awards mentioned on the event page"),
+
+  challenges: z
+    .array(
+      z.object({
+        title: z.string().describe("Challenge, track, or theme name (e.g. 'AI for Healthcare', 'Climate Track')"),
+        description: z
+          .string()
+          .nullable()
+          .describe(
+            "What participants should build or solve for this challenge/track. null if not specified."
+          ),
+        resources: z
+          .array(
+            z.object({
+              label: z.string().describe("Human-readable label for the resource link"),
+              url: z.string().describe("URL of the resource"),
+            })
+          )
+          .describe(
+            "Links to APIs, docs, datasets, starter kits, or other materials referenced with this challenge. Empty array if none."
+          ),
+      })
+    )
+    .describe("List of challenges, tracks, or themes that describe what participants should build"),
 })
 
 export type EventPageRichContent = z.infer<typeof EventPageRichContentSchema>
@@ -82,14 +106,15 @@ export async function extractEventPageRichContent(
     const { object } = await generateObject({
       model: anthropic("claude-haiku-4-5-20251001"),
       schema: EventPageRichContentSchema,
-      prompt: `Extract sponsors, rules, and prizes from this hackathon/event page content.
+      prompt: `Extract sponsors, rules, prizes, and challenges from this hackathon/event page content.
 
 Only extract information that is explicitly present in the content. Do not infer or fabricate data.
 - For sponsors: Look for sections labeled "Sponsors", "Partners", "Supported by", or company logos listed as sponsors.
 - For rules: Look for ANY content that describes what participants must follow — this includes sections labeled "Rules", "Guidelines", "Code of Conduct", "Requirements", but ALSO FAQ answers that contain team size limits, tool usage policies, eligibility criteria, format requirements (in-person vs virtual), what to bring, and participation guidelines. Combine all rule-like content into a single coherent text.
-- For prizes: Look for sections labeled "Prizes", "Awards", "Rewards", "Tracks", or prize track descriptions with values.
+- For prizes: Look for sections labeled "Prizes", "Awards", or "Rewards" that describe monetary or material awards. Extract the award itself — not the track it belongs to.
+- For challenges: Look for sections labeled "Challenges", "Tracks", "Themes", "Problem Statements", or category buckets that describe what participants should build or solve. Extract the track name, a description of the problem/goal, and any resource links mentioned alongside it (API docs, datasets, starter repos, sponsor APIs). When a page lists tracks with their own prizes, extract BOTH a challenge (for the track/theme) AND a prize (for the associated award) — use the track name in the prize description to link them.
 
-If a section is not present in the content, return an empty array for sponsors/prizes and null for rules.
+If a section is not present in the content, return an empty array for sponsors/prizes/challenges and null for rules.
 
 Page content:
 ${rawContent}`,

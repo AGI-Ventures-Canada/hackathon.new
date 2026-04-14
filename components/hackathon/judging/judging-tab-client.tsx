@@ -56,6 +56,8 @@ import { AddJudgeDialog, type AddJudgeResult } from "./add-judge-dialog"
 import { AddPrizeDialog } from "./add-prize-dialog"
 import { AssignJudgesDialog } from "./assign-judges-dialog"
 import { JudgePill } from "./judge-pill"
+import { RoundsSection } from "./rounds-section"
+import type { RoundData } from "./rounds-types"
 
 type PrizeData = {
   id: string
@@ -79,14 +81,6 @@ type JudgeData = {
   email: string | null
   imageUrl: string | null
   prizeIds: string[]
-}
-
-type RoundData = {
-  id: string
-  name: string
-  status: string
-  isActive: boolean
-  displayOrder: number
 }
 
 type InvitationData = {
@@ -318,6 +312,8 @@ export function JudgingTabClient({
         onCancelInvitation={handleCancelInvitation}
       />
 
+      <RoundsSection hackathonId={hackathonId} rounds={rounds} />
+
       <PrizesSection
         hackathonId={hackathonId}
         prizes={prizes}
@@ -375,6 +371,7 @@ export function JudgingTabClient({
         open={showAddPrize}
         onOpenChange={setShowAddPrize}
         onSuccess={() => router.refresh()}
+        rounds={rounds}
       />
     </div>
   )
@@ -522,21 +519,6 @@ function PrizesSection({
         </Button>
       </div>
 
-      {rounds.length > 1 && (
-        <div className="flex items-center gap-2 overflow-x-auto pb-1">
-          <Layers className="size-4 text-muted-foreground shrink-0" />
-          {rounds.map((round, i) => (
-            <div key={round.id} className="flex items-center gap-1.5">
-              {i > 0 && <span className="text-muted-foreground">&rarr;</span>}
-              <Badge variant={round.isActive ? "default" : "outline"}>
-                {round.name}
-                {round.isActive && " (Active)"}
-              </Badge>
-            </div>
-          ))}
-        </div>
-      )}
-
       {prizes.length === 0 ? (
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center justify-center py-12">
@@ -550,117 +532,41 @@ function PrizesSection({
             </Button>
           </CardContent>
         </Card>
+      ) : rounds.length > 1 ? (
+        <div className="space-y-4">
+          {groupPrizesByRound(prizes, rounds).map((group) => (
+            <div key={group.key} className="space-y-2">
+              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                <Layers className="size-3" />
+                {group.label}
+              </div>
+              <div className="grid gap-3">
+                {group.prizes.map((prize) => (
+                  <PrizeCard
+                    key={prize.id}
+                    prize={prize}
+                    judges={judges}
+                    onDeletePrize={onDeletePrize}
+                    onAssignJudgesClick={setAssignDialogPrize}
+                    onRemoveJudgeFromPrize={setRemovingFromPrize}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       ) : (
         <div className="grid gap-3">
-          {prizes.map((prize) => {
-            const style = prize.judgingStyle ? STYLE_META[prize.judgingStyle] : null
-            const StyleIcon = style?.icon ?? Trophy
-            const pct = prize.totalAssignments > 0
-              ? Math.round((prize.completedAssignments / prize.totalAssignments) * 100)
-              : 0
-            const assignedJudges = judges.filter((j) => j.prizeIds.includes(prize.id))
-            const isCrowdVote = prize.judgingStyle === "crowd_vote"
-
-            return (
-              <Card key={prize.id}>
-                <CardContent className="p-4 space-y-3">
-                  <div className="flex items-start gap-3">
-                    <div className="flex-1 min-w-0 space-y-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold">{prize.name}</span>
-                        {prize.value && (
-                          <Badge variant="secondary">{prize.value}</Badge>
-                        )}
-                        {style && (
-                          <Badge variant="outline" className={style.color}>
-                            <StyleIcon className="mr-1 size-3" />
-                            {style.label}
-                          </Badge>
-                        )}
-                      </div>
-                      {prize.description && (
-                        <p className="text-sm text-muted-foreground line-clamp-1">{prize.description}</p>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      {prize.totalAssignments > 0 && (
-                        <div className="flex items-center gap-2 w-24">
-                          <Progress value={pct} className="h-1.5" />
-                          <span className="text-xs text-muted-foreground w-8 text-right">{pct}%</span>
-                        </div>
-                      )}
-
-                      <AlertDialog>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="size-8">
-                              <MoreHorizontal className="size-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <AlertDialogTrigger asChild>
-                              <DropdownMenuItem className="text-destructive">
-                                <Trash2 className="mr-2 size-4" />
-                                Delete Prize
-                              </DropdownMenuItem>
-                            </AlertDialogTrigger>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Delete &ldquo;{prize.name}&rdquo;?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              This will delete the prize and all its judge assignments, bucket definitions, and results. This cannot be undone.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => onDeletePrize(prize.id)}>
-                              Delete
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </div>
-                  </div>
-
-                  {!isCrowdVote && (
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {assignedJudges.map((j) => (
-                        <JudgePill
-                          key={j.participantId}
-                          imageUrl={j.imageUrl}
-                          displayName={j.displayName}
-                          action={
-                            <button
-                              type="button"
-                              onClick={() => setRemovingFromPrize({ prizeId: prize.id, prizeName: prize.name, judge: j })}
-                              className="flex items-center justify-center size-4 rounded-full text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                            >
-                              <X className="size-3" />
-                            </button>
-                          }
-                        />
-                      ))}
-
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 rounded-full gap-1.5"
-                        onClick={() => setAssignDialogPrize({ id: prize.id, name: prize.name })}
-                      >
-                        <Plus className="size-3" />
-                        <span className="hidden sm:inline">
-                          {assignedJudges.length === 0 ? "Assign Judges" : "Edit"}
-                        </span>
-                      </Button>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )
-          })}
+          {prizes.map((prize) => (
+            <PrizeCard
+              key={prize.id}
+              prize={prize}
+              judges={judges}
+              onDeletePrize={onDeletePrize}
+              onAssignJudgesClick={setAssignDialogPrize}
+              onRemoveJudgeFromPrize={setRemovingFromPrize}
+            />
+          ))}
         </div>
       )}
 
@@ -697,6 +603,155 @@ function PrizesSection({
       </AlertDialog>
     </div>
   )
+}
+
+type RemovingFromPrize = { prizeId: string; prizeName: string; judge: JudgeData }
+
+function PrizeCard({
+  prize,
+  judges,
+  onDeletePrize,
+  onAssignJudgesClick,
+  onRemoveJudgeFromPrize,
+}: {
+  prize: PrizeData
+  judges: JudgeData[]
+  onDeletePrize: (id: string) => void
+  onAssignJudgesClick: (args: { id: string; name: string }) => void
+  onRemoveJudgeFromPrize: (args: RemovingFromPrize) => void
+}) {
+  const style = prize.judgingStyle ? STYLE_META[prize.judgingStyle] : null
+  const StyleIcon = style?.icon ?? Trophy
+  const pct = prize.totalAssignments > 0
+    ? Math.round((prize.completedAssignments / prize.totalAssignments) * 100)
+    : 0
+  const assignedJudges = judges.filter((j) => j.prizeIds.includes(prize.id))
+  const isCrowdVote = prize.judgingStyle === "crowd_vote"
+
+  return (
+    <Card>
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-start gap-3">
+          <div className="flex-1 min-w-0 space-y-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold">{prize.name}</span>
+              {prize.value && <Badge variant="secondary">{prize.value}</Badge>}
+              {style && (
+                <Badge variant="outline" className={style.color}>
+                  <StyleIcon className="mr-1 size-3" />
+                  {style.label}
+                </Badge>
+              )}
+            </div>
+            {prize.description && (
+              <p className="text-sm text-muted-foreground line-clamp-1">{prize.description}</p>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {prize.totalAssignments > 0 && (
+              <div className="flex items-center gap-2 w-24">
+                <Progress value={pct} className="h-1.5" />
+                <span className="text-xs text-muted-foreground w-8 text-right">{pct}%</span>
+              </div>
+            )}
+
+            <AlertDialog>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="size-8">
+                    <MoreHorizontal className="size-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <AlertDialogTrigger asChild>
+                    <DropdownMenuItem className="text-destructive">
+                      <Trash2 className="mr-2 size-4" />
+                      Delete Prize
+                    </DropdownMenuItem>
+                  </AlertDialogTrigger>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete &ldquo;{prize.name}&rdquo;?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will delete the prize and all its judge assignments, bucket definitions, and results. This cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => onDeletePrize(prize.id)}>
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
+        </div>
+
+        {!isCrowdVote && (
+          <div className="flex items-center gap-2 flex-wrap">
+            {assignedJudges.map((j) => (
+              <JudgePill
+                key={j.participantId}
+                imageUrl={j.imageUrl}
+                displayName={j.displayName}
+                action={
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onRemoveJudgeFromPrize({ prizeId: prize.id, prizeName: prize.name, judge: j })
+                    }
+                    className="flex items-center justify-center size-4 rounded-full text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                  >
+                    <X className="size-3" />
+                  </button>
+                }
+              />
+            ))}
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 rounded-full gap-1.5"
+              onClick={() => onAssignJudgesClick({ id: prize.id, name: prize.name })}
+            >
+              <Plus className="size-3" />
+              <span className="hidden sm:inline">
+                {assignedJudges.length === 0 ? "Assign Judges" : "Edit"}
+              </span>
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function groupPrizesByRound(
+  prizes: PrizeData[],
+  rounds: RoundData[]
+): { key: string; label: string; prizes: PrizeData[] }[] {
+  const sorted = [...rounds].sort((a, b) => a.displayOrder - b.displayOrder)
+  const byRound = new Map<string | null, PrizeData[]>()
+  for (const p of prizes) {
+    const key = p.roundId ?? null
+    if (!byRound.has(key)) byRound.set(key, [])
+    byRound.get(key)!.push(p)
+  }
+  const groups: { key: string; label: string; prizes: PrizeData[] }[] = []
+  for (const r of sorted) {
+    const inRound = byRound.get(r.id)
+    if (inRound && inRound.length > 0) {
+      groups.push({ key: r.id, label: r.name, prizes: inRound })
+    }
+  }
+  const unassigned = byRound.get(null)
+  if (unassigned && unassigned.length > 0) {
+    groups.push({ key: "__none__", label: "No round", prizes: unassigned })
+  }
+  return groups
 }
 
 function ResultsSection({
