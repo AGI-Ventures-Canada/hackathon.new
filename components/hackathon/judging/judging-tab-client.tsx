@@ -325,7 +325,7 @@ export function JudgingTabClient({
     setPublishing(true)
     setError(null)
     try {
-      await fetch(`${base}/results/calculate`, { method: "POST" })
+      await fetch(`${base}/results/calculate`, { method: "POST" }).then(assertOk)
       await fetch(`${base}/results/publish`, { method: "POST" }).then(assertOk)
       setIsPublished(true)
       router.refresh()

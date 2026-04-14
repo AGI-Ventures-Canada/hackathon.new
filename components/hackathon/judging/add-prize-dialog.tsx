@@ -283,7 +283,8 @@ export function AddPrizeDialog({
     }
 
     setError(null)
-    handleOpenChange(false)
+    const savedForm = { ...form, name }
+    onOpenChange(false)
 
     try {
       const data = await fetch(
@@ -315,7 +316,10 @@ export function AddPrizeDialog({
         roundId: data.prize.round_id,
       })
     } catch (err) {
+      setForm(savedForm)
+      setStep("details")
       setError(err instanceof Error ? err.message : "Something went wrong")
+      onOpenChange(true)
     }
   }
 

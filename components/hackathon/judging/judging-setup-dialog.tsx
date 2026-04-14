@@ -14,6 +14,49 @@ import type { WizardJudgeAdded, WizardPrizeAdded } from "./judging-setup-wizard"
 import type { RoundData } from "./rounds-types"
 import { assertOk } from "@/lib/utils/fetch"
 
+type PrizeResponse = {
+  id: string
+  name: string
+  description: string | null
+  value: string | null
+  judging_style: string | null
+  assignment_mode: string | null
+  max_picks: number | null
+  round_id: string | null
+  display_order: number
+  is_screening: boolean
+  totalAssignments: number
+  completedAssignments: number
+  judgeCount: number
+}
+
+type JudgeResponse = {
+  participantId: string
+  clerkUserId: string
+  displayName: string
+  email: string | null
+  imageUrl: string | null
+  prizeIds: string[]
+}
+
+type RoundResponse = {
+  id: string
+  name: string
+  status: string
+  displayOrder: number
+  advancement: string
+  advancementConfig: Record<string, unknown>
+  prizeCount: number
+  screeningPrizeId: string | null
+}
+
+type InvitationResponse = {
+  id: string
+  email: string
+  status: string
+  created_at: string
+}
+
 type WizardPrize = {
   id: string
   name: string
@@ -75,13 +118,11 @@ export function JudgingSetupDialog({
     setLoading(true)
     setError(null)
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      type R = Record<string, any>
       const [prizesData, judgesData, roundsData, invitationsData] = await Promise.all([
-        fetch(`/api/dashboard/hackathons/${hackathonId}/prizes`).then(assertOk<{ prizes: R[] }>),
-        fetch(`/api/dashboard/hackathons/${hackathonId}/judging/judges`).then(assertOk<{ judges: R[] }>),
-        fetch(`/api/dashboard/hackathons/${hackathonId}/rounds`).then(assertOk<{ rounds: R[] }>),
-        fetch(`/api/dashboard/hackathons/${hackathonId}/judging/invitations`).then(assertOk<{ invitations: R[] }>),
+        fetch(`/api/dashboard/hackathons/${hackathonId}/prizes`).then(assertOk<{ prizes: PrizeResponse[] }>),
+        fetch(`/api/dashboard/hackathons/${hackathonId}/judging/judges`).then(assertOk<{ judges: JudgeResponse[] }>),
+        fetch(`/api/dashboard/hackathons/${hackathonId}/rounds`).then(assertOk<{ rounds: RoundResponse[] }>),
+        fetch(`/api/dashboard/hackathons/${hackathonId}/judging/invitations`).then(assertOk<{ invitations: InvitationResponse[] }>),
       ])
 
       setPrizes(
@@ -110,21 +151,21 @@ export function JudgingSetupDialog({
           displayName: j.displayName,
           email: j.email ?? null,
           imageUrl: j.imageUrl ?? null,
-          prizeIds: (j.prizeIds as string[]) ?? [],
+          prizeIds: j.prizeIds ?? [],
         }))
       )
 
       setRounds(
         (roundsData.rounds ?? []).map((r) => ({
-          id: r.id as string,
-          name: r.name as string,
-          status: (r.status as string) ?? "planned",
+          id: r.id,
+          name: r.name,
+          status: r.status ?? "planned",
           isActive: r.status === "active",
-          displayOrder: (r.displayOrder as number) ?? 0,
+          displayOrder: r.displayOrder ?? 0,
           advancement: (r.advancement as RoundData["advancement"]) ?? "manual",
           advancementConfig: (r.advancementConfig as RoundData["advancementConfig"]) ?? {},
-          prizeCount: (r.prizeCount as number) ?? 0,
-          screeningPrizeId: (r.screeningPrizeId as string) ?? null,
+          prizeCount: r.prizeCount ?? 0,
+          screeningPrizeId: r.screeningPrizeId ?? null,
         }))
       )
 
@@ -133,10 +174,10 @@ export function JudgingSetupDialog({
         allInvitations
           .filter((i) => i.status === "pending")
           .map((i) => ({
-            id: i.id as string,
-            email: i.email as string,
-            status: i.status as string,
-            createdAt: i.created_at as string,
+            id: i.id,
+            email: i.email,
+            status: i.status,
+            createdAt: i.created_at,
           }))
       )
     } catch (err) {
