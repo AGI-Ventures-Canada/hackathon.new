@@ -35,17 +35,17 @@ describe("timeAgo", () => {
   })
 
   it("returns 'in Xh' for future dates within 24h", () => {
-    const inTwoHours = new Date(Date.now() + 2 * 3_600_000).toISOString()
+    const inTwoHours = new Date(Date.now() + 2 * 3_600_000 + 5_000).toISOString()
     expect(timeAgo(inTwoHours)).toBe("in 2h")
   })
 
   it("returns 'in Xd' for future dates beyond 24h", () => {
-    const inThreeDays = new Date(Date.now() + 3 * 24 * 3_600_000).toISOString()
+    const inThreeDays = new Date(Date.now() + 3 * 24 * 3_600_000 + 5_000).toISOString()
     expect(timeAgo(inThreeDays)).toBe("in 3d")
   })
 
   it("returns 'in Xm' for near-future dates", () => {
-    const inTenMin = new Date(Date.now() + 10 * 60_000).toISOString()
+    const inTenMin = new Date(Date.now() + 10 * 60_000 + 5_000).toISOString()
     expect(timeAgo(inTenMin)).toBe("in 10m")
   })
 
