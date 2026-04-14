@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { assertOk } from "@/lib/utils/fetch"
 import { SignInButton, SignUpButton } from "@clerk/nextjs"
 import { Button } from "@/components/ui/button"
 import {
@@ -46,24 +47,16 @@ export function InviteAcceptClient({
     setError(null)
 
     try {
-      const res = await fetch(`/api/public/invitations/${token}/accept`, {
+      await fetch(`/api/public/invitations/${token}/accept`, {
         method: "POST",
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        setError(data.error || "Failed to accept invitation")
-        return
-      }
+      }).then(assertOk)
 
       setSuccess(true)
       setTimeout(() => {
         router.push(`/e/${invitation.hackathonSlug}`)
       }, 2000)
     } catch (err) {
-      console.error("Failed to accept invitation:", err)
-      setError("Failed to accept invitation")
+      setError(err instanceof Error ? err.message : "Failed to accept invitation")
     } finally {
       setLoading(false)
     }
@@ -74,20 +67,13 @@ export function InviteAcceptClient({
     setError(null)
 
     try {
-      const res = await fetch(`/api/public/invitations/${token}/decline`, {
+      await fetch(`/api/public/invitations/${token}/decline`, {
         method: "POST",
-      })
-
-      if (!res.ok) {
-        const data = await res.json()
-        setError(data.error || "Failed to decline invitation")
-        return
-      }
+      }).then(assertOk)
 
       router.push("/")
     } catch (err) {
-      console.error("Failed to decline invitation:", err)
-      setError("Failed to decline invitation")
+      setError(err instanceof Error ? err.message : "Failed to decline invitation")
     } finally {
       setLoading(false)
     }

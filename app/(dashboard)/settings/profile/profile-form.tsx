@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
+import { assertOk } from "@/lib/utils/fetch"
 import { useClerk } from "@clerk/nextjs"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -103,7 +104,7 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
 
     try {
       const normalizedWebsiteUrl = normalizeOptionalUrl(websiteUrl) ?? ""
-      const res = await fetch("/api/dashboard/org-profile", {
+      await fetch("/api/dashboard/org-profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -111,12 +112,7 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
           description: description || null,
           websiteUrl: normalizedWebsiteUrl || null,
         }),
-      })
-
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.error || "Failed to save profile")
-      }
+      }).then(assertOk)
 
       setWebsiteUrl(normalizedWebsiteUrl)
       lastSaved.current = { slug, description, websiteUrl: normalizedWebsiteUrl }

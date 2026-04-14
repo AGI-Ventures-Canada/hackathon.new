@@ -75,7 +75,7 @@ export function IntegrationList({
   connectedApiKeyProviders,
 }: IntegrationListProps) {
   const router = useRouter()
-  const [disconnecting, setDisconnecting] = useState<string | null>(null)
+  const [optimisticDisconnected, setOptimisticDisconnected] = useState<Set<string>>(new Set())
   const [confirmDisconnect, setConfirmDisconnect] = useState<{
     provider: string
     type: "oauth" | "api_key"
@@ -130,20 +130,27 @@ export function IntegrationList({
   const handleDisconnect = async () => {
     if (!confirmDisconnect) return
 
-    setDisconnecting(confirmDisconnect.provider)
+    const provider = confirmDisconnect.provider
+    const type = confirmDisconnect.type
+    setConfirmDisconnect(null)
+    setOptimisticDisconnected((prev) => new Set(prev).add(provider))
+
     try {
       const url =
-        confirmDisconnect.type === "oauth"
-          ? `/api/dashboard/integrations/${confirmDisconnect.provider}`
-          : `/api/dashboard/credentials/${confirmDisconnect.provider}`
+        type === "oauth"
+          ? `/api/dashboard/integrations/${provider}`
+          : `/api/dashboard/credentials/${provider}`
 
       const response = await fetch(url, { method: "DELETE" })
       if (response.ok) {
         router.refresh()
       }
-    } finally {
-      setDisconnecting(null)
-      setConfirmDisconnect(null)
+    } catch {
+      setOptimisticDisconnected((prev) => {
+        const next = new Set(prev)
+        next.delete(provider)
+        return next
+      })
     }
   }
 
@@ -151,7 +158,9 @@ export function IntegrationList({
     <>
       <div className="grid gap-4 md:grid-cols-2">
         {oauthIntegrations.map((integration) => {
-          const connected = connectedOAuthProviders.get(integration.provider)
+          const connected = optimisticDisconnected.has(integration.provider)
+            ? undefined
+            : connectedOAuthProviders.get(integration.provider)
           return (
             <IntegrationCard
               key={integration.provider}
@@ -165,16 +174,15 @@ export function IntegrationList({
               onDisconnect={() =>
                 setConfirmDisconnect({ provider: integration.provider, type: "oauth" })
               }
-              loading={
-                connecting === integration.provider ||
-                disconnecting === integration.provider
-              }
+              loading={connecting === integration.provider}
             />
           )
         })}
 
         {apiKeyIntegrations.map((integration) => {
-          const connected = connectedApiKeyProviders.get(integration.provider)
+          const connected = optimisticDisconnected.has(integration.provider)
+            ? undefined
+            : connectedApiKeyProviders.get(integration.provider)
           return (
             <IntegrationCard
               key={integration.provider}
@@ -189,7 +197,6 @@ export function IntegrationList({
               onDisconnect={() =>
                 setConfirmDisconnect({ provider: integration.provider, type: "api_key" })
               }
-              loading={disconnecting === integration.provider}
               badge={<Key className="size-3" />}
             />
           )
@@ -209,22 +216,12 @@ export function IntegrationList({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={!!disconnecting}>
-              Cancel
-            </AlertDialogCancel>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDisconnect}
-              disabled={!!disconnecting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {disconnecting ? (
-                <>
-                  <Loader2 className="size-4 mr-2 animate-spin" />
-                  Disconnecting...
-                </>
-              ) : (
-                "Disconnect"
-              )}
+              Disconnect
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

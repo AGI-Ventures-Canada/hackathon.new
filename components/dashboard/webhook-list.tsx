@@ -53,26 +53,32 @@ const eventLabels: Record<string, string> = {
 export function WebhookList({ webhooks }: WebhookListProps) {
   const router = useRouter()
   const [deleteId, setDeleteId] = useState<string | null>(null)
-  const [deleting, setDeleting] = useState(false)
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set())
 
   const handleDelete = async () => {
     if (!deleteId) return
-
-    setDeleting(true)
+    const id = deleteId
+    setDeleteId(null)
+    setHiddenIds((prev) => new Set(prev).add(id))
     try {
-      const response = await fetch(`/api/dashboard/webhooks/${deleteId}`, {
+      const response = await fetch(`/api/dashboard/webhooks/${id}`, {
         method: "DELETE",
       })
       if (response.ok) {
         router.refresh()
       }
-    } finally {
-      setDeleting(false)
-      setDeleteId(null)
+    } catch {
+      setHiddenIds((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
     }
   }
 
-  if (webhooks.length === 0) {
+  const visibleWebhooks = webhooks.filter((w) => !hiddenIds.has(w.id))
+
+  if (visibleWebhooks.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center">
         <Webhook className="size-12 text-muted-foreground mb-4" />
@@ -98,7 +104,7 @@ export function WebhookList({ webhooks }: WebhookListProps) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {webhooks.map((webhook) => (
+          {visibleWebhooks.map((webhook) => (
             <TableRow key={webhook.id}>
               <TableCell>
                 <code className="text-sm bg-muted px-1.5 py-0.5 rounded truncate max-w-xs block">
@@ -180,13 +186,13 @@ export function WebhookList({ webhooks }: WebhookListProps) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
-              disabled={deleting}
+
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {deleting ? "Deleting..." : "Delete"}
+              Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

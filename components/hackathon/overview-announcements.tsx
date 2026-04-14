@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { assertOk } from "@/lib/utils/fetch"
 import Link from "next/link"
 import { Megaphone, ArrowRight, Plus, Send, Clock, Users } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -52,7 +53,6 @@ export function OverviewAnnouncements({ slug, hackathonId, announcements }: Prop
   const [audience, setAudience] = useState<AnnouncementAudience>("everyone")
   const [publishMode, setPublishMode] = useState<PublishMode>("now")
   const [scheduledAt, setScheduledAt] = useState("")
-  const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const recent = announcements.slice(0, 3)
@@ -67,7 +67,7 @@ export function OverviewAnnouncements({ slug, hackathonId, announcements }: Prop
     setError(null)
   }
 
-  const canSubmit = title.trim() && body.trim() && (publishMode !== "schedule" || scheduledAt) && !saving
+  const canSubmit = title.trim() && body.trim() && (publishMode !== "schedule" || scheduledAt)
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && canSubmit) {
@@ -79,36 +79,32 @@ export function OverviewAnnouncements({ slug, hackathonId, announcements }: Prop
   async function handleSubmit() {
     if (!title.trim() || !body.trim()) return
     if (publishMode === "schedule" && !scheduledAt) return
-    setSaving(true)
     setError(null)
+    setDialogOpen(false)
+    const mode = publishMode
+    const scheduledTime = scheduledAt
+    resetForm()
+
     try {
-      const createRes = await fetch(`/api/dashboard/hackathons/${hackathonId}/announcements`, {
+      const created = await fetch(`/api/dashboard/hackathons/${hackathonId}/announcements`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, body, priority, audience }),
-      })
-      if (!createRes.ok) throw new Error("Failed to create")
-      const created = await createRes.json()
+      }).then(assertOk<{ id: string }>)
 
-      if (publishMode === "now") {
-        const pubRes = await fetch(`/api/dashboard/hackathons/${hackathonId}/announcements/${created.id}/publish`, { method: "POST" })
-        if (!pubRes.ok) throw new Error("Created but failed to publish")
-      } else if (publishMode === "schedule") {
-        const schedRes = await fetch(`/api/dashboard/hackathons/${hackathonId}/announcements/${created.id}/schedule`, {
+      if (mode === "now") {
+        await fetch(`/api/dashboard/hackathons/${hackathonId}/announcements/${created.id}/publish`, { method: "POST" }).then(assertOk)
+      } else if (mode === "schedule") {
+        await fetch(`/api/dashboard/hackathons/${hackathonId}/announcements/${created.id}/schedule`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ scheduledAt: new Date(scheduledAt).toISOString() }),
-        })
-        if (!schedRes.ok) throw new Error("Created but failed to schedule")
+          body: JSON.stringify({ scheduledAt: new Date(scheduledTime).toISOString() }),
+        }).then(assertOk)
       }
 
-      setDialogOpen(false)
-      resetForm()
       router.refresh()
     } catch {
       setError("Something went wrong. Please try again.")
-    } finally {
-      setSaving(false)
     }
   }
 
@@ -255,9 +251,9 @@ export function OverviewAnnouncements({ slug, hackathonId, announcements }: Prop
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
             <Button type="submit" disabled={!canSubmit} className="w-full">
-              {publishMode === "now" && <><Send className="size-4 mr-2" />{saving ? "Publishing..." : "Publish Now"}</>}
-              {publishMode === "schedule" && <><Clock className="size-4 mr-2" />{saving ? "Scheduling..." : "Schedule"}</>}
-              {publishMode === "draft" && <>{saving ? "Saving..." : "Save Draft"}</>}
+              {publishMode === "now" && <><Send className="size-4 mr-2" />Publish Now</>}
+              {publishMode === "schedule" && <><Clock className="size-4 mr-2" />Schedule</>}
+              {publishMode === "draft" && <>Save Draft</>}
             </Button>
           </form>
         </DialogContent>

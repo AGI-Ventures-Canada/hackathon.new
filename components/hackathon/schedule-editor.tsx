@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
+import { assertOk } from "@/lib/utils/fetch"
 import { toLocalDatetime } from "@/lib/utils/datetime"
 import { DateTimePicker } from "@/components/ui/date-time-picker"
 import { Button } from "@/components/ui/button"
@@ -302,8 +303,7 @@ export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challe
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       })
-      if (!res.ok) throw new Error("Failed to save")
-      const saved = await res.json()
+      const saved = await assertOk<ScheduleItemData>(res)
       const sort = (a: ScheduleItemData, b: ScheduleItemData) => a.starts_at.localeCompare(b.starts_at) || (a.sort_order ?? 0) - (b.sort_order ?? 0)
       setAllItems((prev) => {
         const next = editing
@@ -325,8 +325,7 @@ export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challe
     const prev = allItems
     setAllItems((current) => current.filter((i) => i.id !== id))
     try {
-      const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/schedule/${id}`, { method: "DELETE" })
-      if (!res.ok) throw new Error("Failed to delete")
+      await fetch(`/api/dashboard/hackathons/${hackathonId}/schedule/${id}`, { method: "DELETE" }).then(assertOk)
       router.refresh()
     } catch {
       setAllItems(prev)

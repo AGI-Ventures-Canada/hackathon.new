@@ -1,7 +1,10 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import { useOptimisticList } from "@/hooks/use-optimistic-list"
+import { useOptimisticMutation } from "@/hooks/use-optimistic-mutation"
+import { assertOk } from "@/lib/utils/fetch"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
@@ -205,93 +208,59 @@ export function JudgingTabClient({
     }
   }, [actionItems])
 
-  const [hiddenJudges, setHiddenJudges] = useState<Set<string>>(new Set())
-  const [hiddenPrizes, setHiddenPrizes] = useState<Set<string>>(new Set())
-  const [hiddenInvitations, setHiddenInvitations] = useState<Set<string>>(new Set())
-  const [hiddenPrizeJudges, setHiddenPrizeJudges] = useState<Set<string>>(new Set())
-  const [pendingJudges, setPendingJudges] = useState<JudgeData[]>([])
-  const [pendingInvitations, setPendingInvitations] = useState<InvitationData[]>([])
-  const [modeOverrides, setModeOverrides] = useState<Record<string, TeamMode[] | null>>({})
-  const [pendingPrizes, setPendingPrizes] = useState<PrizeData[]>([])
-  const [prizeOverrides, setPrizeOverrides] = useState<Record<string, Partial<PrizeData>>>({})
   const [editingPrize, setEditingPrize] = useState<EditablePrize | null>(null)
 
-  useEffect(() => {
-    setPendingJudges(prev => prev.filter(pj => !initialJudges.some(j => j.participantId === pj.participantId)))
-  }, [initialJudges])
-
-  useEffect(() => {
-    setPendingInvitations(prev => prev.filter(pi => !initialInvitations.some(i => i.id === pi.id)))
-  }, [initialInvitations])
-
-  useEffect(() => {
-    setPendingPrizes(prev => prev.filter(pp => !initialPrizes.some(ip => ip.id === pp.id)))
-    setPrizeOverrides(prev => {
-      const next: Record<string, Partial<PrizeData>> = {}
-      for (const [id, override] of Object.entries(prev)) {
-        if (!initialPrizes.some(ip => ip.id === id)) next[id] = override
-      }
-      return next
-    })
-  }, [initialPrizes])
-
-  const judges = [
-    ...initialJudges,
-    ...pendingJudges.filter(pj => !initialJudges.some(j => j.participantId === pj.participantId)),
-  ]
-    .filter(j => !hiddenJudges.has(j.participantId))
-    .map(j => ({
-      ...j,
-      prizeIds: j.prizeIds.filter(pid => !hiddenPrizeJudges.has(`${pid}:${j.participantId}`)),
-    }))
-  const prizes = [
-    ...initialPrizes,
-    ...pendingPrizes.filter(pp => !initialPrizes.some(ip => ip.id === pp.id)),
-  ]
-    .filter(p => !hiddenPrizes.has(p.id))
-    .map((p) => {
-      const merged = prizeOverrides[p.id] ? { ...p, ...prizeOverrides[p.id] } : p
-      return p.id in modeOverrides ? { ...merged, allowedTeamModes: modeOverrides[p.id] } : merged
-    })
-  const invitations = [
-    ...initialInvitations,
-    ...pendingInvitations.filter(pi => !initialInvitations.some(i => i.id === pi.id)),
-  ].filter(i => !hiddenInvitations.has(i.id))
-
-
   const base = `/api/dashboard/hackathons/${hackathonId}`
+
+  const prizesList = useOptimisticList({ items: initialPrizes, getId: (p) => p.id })
+  const judgesList = useOptimisticList({ items: initialJudges, getId: (j) => j.participantId })
+  const invitationsList = useOptimisticList({ items: initialInvitations, getId: (i) => i.id })
+  const [hiddenPrizeJudges, setHiddenPrizeJudges] = useState<Set<string>>(new Set())
+
+  const judges = useMemo(
+    () =>
+      judgesList.visibleItems.map((j) => ({
+        ...j,
+        prizeIds: j.prizeIds.filter(
+          (pid) => !hiddenPrizeJudges.has(`${pid}:${j.participantId}`)
+        ),
+      })),
+    [judgesList.visibleItems, hiddenPrizeJudges]
+  )
+  const prizes = prizesList.visibleItems
+  const invitations = invitationsList.visibleItems
 
   const overallPercent = initialProgress.totalAssignments > 0
     ? Math.round((initialProgress.completedAssignments / initialProgress.totalAssignments) * 100)
     : 0
 
+  const { execute: handleDeletePrize, error: deletePrizeError } = useOptimisticMutation({
+    fn: (prizeId: string) =>
+      fetch(`${base}/prizes/${prizeId}`, { method: "DELETE" }).then(assertOk),
+    onOptimistic: (prizeId) => prizesList.hideItem(prizeId),
+    onRevert: (prizeId) => prizesList.unhideItem(prizeId),
+  })
+
+  const { execute: handleRemoveJudge, error: removeJudgeError } = useOptimisticMutation({
+    fn: (participantId: string) =>
+      fetch(`${base}/judging/judges/${participantId}`, { method: "DELETE" }).then(assertOk),
+    onOptimistic: (participantId) => judgesList.hideItem(participantId),
+    onRevert: (participantId) => judgesList.unhideItem(participantId),
+  })
+
   async function handleUpdatePrizeModes(prizeId: string, modes: TeamMode[] | null) {
-    const previous = initialPrizes.find(p => p.id === prizeId)?.allowedTeamModes ?? null
-    setModeOverrides(prev => ({ ...prev, [prizeId]: modes }))
+    const previous = prizesList.visibleItems.find((p) => p.id === prizeId)?.allowedTeamModes ?? null
+    prizesList.setLocalEdit(prizeId, { allowedTeamModes: modes })
     try {
-      const res = await fetch(`${base}/prizes/${prizeId}`, {
+      await fetch(`${base}/prizes/${prizeId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ allowedTeamModes: modes }),
-      })
-      if (!res.ok) throw new Error("Failed to update prize filter")
+      }).then(assertOk)
       router.refresh()
     } catch (err) {
-      setModeOverrides(prev => ({ ...prev, [prizeId]: previous }))
+      prizesList.setLocalEdit(prizeId, { allowedTeamModes: previous })
       setError(err instanceof Error ? err.message : "Failed to update prize filter")
-      throw err
-    }
-  }
-
-  async function handleDeletePrize(prizeId: string) {
-    setHiddenPrizes(prev => new Set(prev).add(prizeId))
-    try {
-      const res = await fetch(`${base}/prizes/${prizeId}`, { method: "DELETE" })
-      if (!res.ok) throw new Error("Failed to delete")
-      router.refresh()
-    } catch {
-      setHiddenPrizes(prev => { const next = new Set(prev); next.delete(prizeId); return next })
-      setError("Failed to delete prize")
     }
   }
 
@@ -309,63 +278,45 @@ export function JudgingTabClient({
   }
 
   function handlePrizeUpdated(updated: UpdatedPrize) {
-    setPrizeOverrides(prev => ({
-      ...prev,
-      [updated.id]: {
-        name: updated.name,
-        description: updated.description,
-        value: updated.value,
-        maxPicks: updated.maxPicks,
-        criteria: updated.criteria,
-        buckets: updated.buckets,
-      },
-    }))
+    prizesList.setLocalEdit(updated.id, {
+      name: updated.name,
+      description: updated.description,
+      value: updated.value,
+      maxPicks: updated.maxPicks,
+      criteria: updated.criteria,
+      buckets: updated.buckets,
+    })
   }
 
-  async function handleRemoveJudge(participantId: string) {
-    setHiddenJudges(prev => new Set(prev).add(participantId))
-    try {
-      const res = await fetch(`${base}/judging/judges/${participantId}`, { method: "DELETE" })
-      if (!res.ok) throw new Error("Failed to remove")
-      router.refresh()
-    } catch {
-      setHiddenJudges(prev => { const next = new Set(prev); next.delete(participantId); return next })
-      setError("Failed to remove judge")
-    }
-  }
-
-  async function handleCancelInvitation(invitationId: string) {
-    setHiddenInvitations(prev => new Set(prev).add(invitationId))
-    try {
-      const res = await fetch(`${base}/judging/invitations/${invitationId}`, { method: "DELETE" })
-      if (!res.ok) throw new Error("Failed to cancel")
-      router.refresh()
-    } catch {
-      setHiddenInvitations(prev => { const next = new Set(prev); next.delete(invitationId); return next })
-      setError("Failed to cancel invitation")
-    }
-  }
+  const { execute: handleCancelInvitation, error: cancelInvitationError } = useOptimisticMutation({
+    fn: (invitationId: string) =>
+      fetch(`${base}/judging/invitations/${invitationId}`, { method: "DELETE" }).then(assertOk),
+    onOptimistic: (invitationId) => invitationsList.hideItem(invitationId),
+    onRevert: (invitationId) => invitationsList.unhideItem(invitationId),
+  })
 
   async function assignJudgeToPrize(prizeId: string, judgeParticipantId: string) {
-    const res = await fetch(`${base}/prizes/${prizeId}/assign-judge`, {
+    await fetch(`${base}/prizes/${prizeId}/assign-judge`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ judgeParticipantId }),
-    })
-    if (!res.ok) throw new Error("Failed to assign")
+    }).then(assertOk)
   }
 
   async function unassignJudgeFromPrize(prizeId: string, judgeParticipantId: string) {
     const key = `${prizeId}:${judgeParticipantId}`
-    setHiddenPrizeJudges(prev => new Set(prev).add(key))
+    setHiddenPrizeJudges((prev) => new Set(prev).add(key))
     try {
-      const res = await fetch(`${base}/prizes/${prizeId}/judges/${judgeParticipantId}`, {
+      await fetch(`${base}/prizes/${prizeId}/judges/${judgeParticipantId}`, {
         method: "DELETE",
-      })
-      if (!res.ok) throw new Error("Failed to unassign")
+      }).then(assertOk)
       router.refresh()
     } catch (err) {
-      setHiddenPrizeJudges(prev => { const next = new Set(prev); next.delete(key); return next })
+      setHiddenPrizeJudges((prev) => {
+        const next = new Set(prev)
+        next.delete(key)
+        return next
+      })
       throw err
     }
   }
@@ -375,8 +326,7 @@ export function JudgingTabClient({
     setError(null)
     try {
       await fetch(`${base}/results/calculate`, { method: "POST" })
-      const res = await fetch(`${base}/results/publish`, { method: "POST" })
-      if (!res.ok) throw new Error("Failed to publish")
+      await fetch(`${base}/results/publish`, { method: "POST" }).then(assertOk)
       setIsPublished(true)
       router.refresh()
     } catch (err) {
@@ -390,8 +340,7 @@ export function JudgingTabClient({
     setPublishing(true)
     setError(null)
     try {
-      const res = await fetch(`${base}/results/unpublish`, { method: "POST" })
-      if (!res.ok) throw new Error("Failed to unpublish")
+      await fetch(`${base}/results/unpublish`, { method: "POST" }).then(assertOk)
       setIsPublished(false)
       router.refresh()
     } catch (err) {
@@ -401,9 +350,11 @@ export function JudgingTabClient({
     }
   }
 
+  const mutationError = deletePrizeError || removeJudgeError || cancelInvitationError
+
   return (
     <div className="space-y-6">
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {(error || mutationError) && <p className="text-sm text-destructive">{error || mutationError}</p>}
 
       {initialProgress.totalAssignments > 0 && (
         <div className="space-y-2">
@@ -524,21 +475,21 @@ export function JudgingTabClient({
         onOpenChange={setShowAddJudge}
         onSuccess={(result: AddJudgeResult) => {
           if (result.type === "judge") {
-            setPendingJudges(prev => [...prev, {
+            judgesList.addPendingItem({
               participantId: result.participantId,
               clerkUserId: result.clerkUserId,
               displayName: result.displayName,
               email: result.email,
               imageUrl: result.imageUrl,
               prizeIds: [],
-            }])
+            })
           } else {
-            setPendingInvitations(prev => [...prev, {
+            invitationsList.addPendingItem({
               id: result.id,
               email: result.email,
               status: "pending",
               createdAt: new Date().toISOString(),
-            }])
+            })
           }
           router.refresh()
         }}
@@ -555,31 +506,6 @@ export function JudgingTabClient({
         hackathonId={hackathonId}
         open={showAddPrize}
         onOpenChange={setShowAddPrize}
-        onSuccess={(created) => {
-          if (created) {
-            setPendingPrizes((prev) => [
-              ...prev,
-              {
-                id: created.id,
-                name: created.name,
-                description: created.description,
-                value: created.value,
-                judgingStyle: created.judgingStyle,
-                assignmentMode: null,
-                maxPicks: created.maxPicks,
-                roundId: created.roundId,
-                displayOrder: prizes.length,
-                totalAssignments: 0,
-                completedAssignments: 0,
-                judgeCount: 0,
-                allowedTeamModes: null,
-                criteria: created.criteria,
-                buckets: created.buckets,
-              },
-            ])
-          }
-          router.refresh()
-        }}
         rounds={rounds}
       />
     </div>

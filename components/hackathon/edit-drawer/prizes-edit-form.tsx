@@ -1,22 +1,23 @@
-"use client"
+"use client";
 
-import { useState, useRef, useMemo } from "react"
-import { useRouter } from "next/navigation"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
+import { useState, useRef, useMemo } from "react";
+import { useRouter } from "next/navigation";
+import { assertOk } from "@/lib/utils/fetch";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
+} from "@/components/ui/select";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@/components/ui/popover"
+} from "@/components/ui/popover";
 import {
   Command,
   CommandEmpty,
@@ -24,61 +25,87 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from "@/components/ui/command"
-import { Field, FieldLabel, FieldGroup } from "@/components/ui/field"
-import { useEdit } from "@/components/hackathon/preview/edit-context"
-import { Kbd, KbdGroup } from "@/components/ui/kbd"
+} from "@/components/ui/command";
+import { Field, FieldLabel, FieldGroup } from "@/components/ui/field";
+import { useEdit } from "@/components/hackathon/preview/edit-context";
+import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
-} from "@/components/ui/hover-card"
-import { Trash2, Loader2, Undo2, Check, ChevronsUpDown, Trophy, Heart, Star, BarChart3 } from "lucide-react"
-import type { PrizeType, JudgingCriteria, JudgingMode } from "@/lib/db/hackathon-types"
-import type { PublicPrize } from "@/lib/services/public-hackathons"
+} from "@/components/ui/hover-card";
+import {
+  Trash2,
+  Loader2,
+  Undo2,
+  Check,
+  ChevronsUpDown,
+  Trophy,
+  Heart,
+  Star,
+  BarChart3,
+} from "lucide-react";
+import type {
+  PrizeType,
+  JudgingCriteria,
+  JudgingMode,
+} from "@/lib/db/hackathon-types";
+import type { PublicPrize } from "@/lib/services/public-hackathons";
 
 type Prize = PublicPrize & {
-  monetary_value?: number | null
-  currency?: string | null
-  distribution_method?: string | null
-}
-import { cn } from "@/lib/utils"
+  monetary_value?: number | null;
+  currency?: string | null;
+  distribution_method?: string | null;
+};
+import { cn } from "@/lib/utils";
 
 interface PrizesEditFormProps {
-  hackathonId: string
-  initialPrizes: Prize[]
-  criteria?: JudgingCriteria[]
-  judgingMode?: JudgingMode
-  onSaveAndNext?: () => void
-  onSave?: (data: { prizes: { name: string; description: string | null; value: string | null }[] }) => Promise<boolean>
+  hackathonId: string;
+  initialPrizes: Prize[];
+  criteria?: JudgingCriteria[];
+  judgingMode?: JudgingMode;
+  onSaveAndNext?: () => void;
+  onSave?: (data: {
+    prizes: {
+      name: string;
+      description: string | null;
+      value: string | null;
+    }[];
+  }) => Promise<boolean>;
 }
 
 type PendingChange =
   | { type: "add"; prize: Prize; tempId: string }
   | { type: "delete"; prizeId: string; originalPrize: Prize }
-  | { type: "update"; prizeId: string; field: string; newValue: unknown; oldValue: unknown }
+  | {
+      type: "update";
+      prizeId: string;
+      field: string;
+      newValue: unknown;
+      oldValue: unknown;
+    };
 
 type PresetContext = {
-  currentPrizes: Prize[]
-  criteria: JudgingCriteria[]
-  judgingMode: JudgingMode
-}
+  currentPrizes: Prize[];
+  criteria: JudgingCriteria[];
+  judgingMode: JudgingMode;
+};
 
 type PresetPrize = {
-  name: string
-  type: PrizeType
-  rank: number | null
-  kind: string
-  criteria_id: string | null
-}
+  name: string;
+  type: PrizeType;
+  rank: number | null;
+  kind: string;
+  criteria_id: string | null;
+};
 
 type PresetDef = {
-  id: string
-  label: string | ((ctx: PresetContext) => string)
-  description: string | ((ctx: PresetContext) => string)
-  icon: React.ComponentType<{ className?: string }>
-  prizes: (ctx: PresetContext) => PresetPrize[]
-}
+  id: string;
+  label: string | ((ctx: PresetContext) => string);
+  description: string | ((ctx: PresetContext) => string);
+  icon: React.ComponentType<{ className?: string }>;
+  prizes: (ctx: PresetContext) => PresetPrize[];
+};
 
 const STATIC_PRESETS: PresetDef[] = [
   {
@@ -91,13 +118,13 @@ const STATIC_PRESETS: PresetDef[] = [
       const existingRanks = new Set(
         currentPrizes
           .filter((p) => p.type === "score" && p.rank != null)
-          .map((p) => p.rank!)
-      )
+          .map((p) => p.rank!),
+      );
       const podium = [
         { rank: 1, name: "1st Place" },
         { rank: 2, name: "2nd Place" },
         { rank: 3, name: "3rd Place" },
-      ]
+      ];
       return podium
         .filter((p) => !existingRanks.has(p.rank))
         .map((p) => ({
@@ -106,7 +133,7 @@ const STATIC_PRESETS: PresetDef[] = [
           rank: p.rank,
           kind: "cash",
           criteria_id: null,
-        }))
+        }));
     },
   },
   {
@@ -116,8 +143,8 @@ const STATIC_PRESETS: PresetDef[] = [
       "One prize decided by audience voting. Participants and spectators vote for their favorite.",
     icon: Heart,
     prizes: ({ currentPrizes }) => {
-      const hasCrowd = currentPrizes.some((p) => p.type === "crowd")
-      if (hasCrowd) return []
+      const hasCrowd = currentPrizes.some((p) => p.type === "crowd");
+      if (hasCrowd) return [];
       return [
         {
           name: "Audience Favorite",
@@ -126,7 +153,7 @@ const STATIC_PRESETS: PresetDef[] = [
           kind: "other",
           criteria_id: null,
         },
-      ]
+      ];
     },
   },
   {
@@ -139,8 +166,8 @@ const STATIC_PRESETS: PresetDef[] = [
         : "One prize where you hand-pick the winner.",
     icon: Star,
     prizes: ({ currentPrizes }) => {
-      const hasFavorite = currentPrizes.some((p) => p.type === "favorite")
-      if (hasFavorite) return []
+      const hasFavorite = currentPrizes.some((p) => p.type === "favorite");
+      if (hasFavorite) return [];
       return [
         {
           name: "Judge's Choice",
@@ -149,10 +176,10 @@ const STATIC_PRESETS: PresetDef[] = [
           kind: "other",
           criteria_id: null,
         },
-      ]
+      ];
     },
   },
-]
+];
 
 function getCriteriaPresets(criteria: JudgingCriteria[]): PresetDef[] {
   return criteria.map((c) => ({
@@ -162,9 +189,9 @@ function getCriteriaPresets(criteria: JudgingCriteria[]): PresetDef[] {
     icon: BarChart3,
     prizes: ({ currentPrizes }) => {
       const exists = currentPrizes.some(
-        (p) => p.type === "criteria" && p.criteria_id === c.id
-      )
-      if (exists) return []
+        (p) => p.type === "criteria" && p.criteria_id === c.id,
+      );
+      if (exists) return [];
       return [
         {
           name: `Best in ${c.name}`,
@@ -173,9 +200,9 @@ function getCriteriaPresets(criteria: JudgingCriteria[]): PresetDef[] {
           kind: "other",
           criteria_id: c.id,
         },
-      ]
+      ];
     },
-  }))
+  }));
 }
 
 const KIND_PRESETS = [
@@ -184,24 +211,28 @@ const KIND_PRESETS = [
   { value: "swag", label: "Swag" },
   { value: "experience", label: "Experience" },
   { value: "other", label: "Other" },
-]
+];
 
-function getTypeInfo(type: PrizeType, judgingMode?: JudgingMode, criterionName?: string): string {
+function getTypeInfo(
+  type: PrizeType,
+  judgingMode?: JudgingMode,
+  criterionName?: string,
+): string {
   switch (type) {
     case "score":
-      return "Awarded to rank #N based on overall judging scores"
+      return "Awarded to rank #N based on overall judging scores";
     case "criteria":
       return criterionName
         ? `Awarded to highest score in ${criterionName}`
-        : "Awarded to highest score in a specific criterion"
+        : "Awarded to highest score in a specific criterion";
     case "favorite":
       return judgingMode === "subjective"
         ? "Judges vote for their pick — most-picked wins"
-        : "You'll manually select the winner"
+        : "You'll manually select the winner";
     case "crowd":
-      return "Determined by audience votes"
+      return "Determined by audience votes";
     default:
-      return ""
+      return "";
   }
 }
 
@@ -213,39 +244,41 @@ export function PrizesEditForm({
   onSaveAndNext,
   onSave,
 }: PrizesEditFormProps) {
-  const isLocalMode = !!onSave
-  const router = useRouter()
-  const { closeDrawer } = useEdit()
-  const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([])
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [nameInput, setNameInput] = useState("")
-  const tempIdCounter = useRef(0)
+  const isLocalMode = !!onSave;
+  const router = useRouter();
+  const { closeDrawer } = useEdit();
+  const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [nameInput, setNameInput] = useState("");
+  const tempIdCounter = useRef(0);
 
   const currentPrizes = useMemo(() => {
-    let prizes = [...initialPrizes]
+    let prizes = [...initialPrizes];
 
     for (const change of pendingChanges) {
       if (change.type === "add") {
-        prizes.push(change.prize)
+        prizes.push(change.prize);
       } else if (change.type === "delete") {
-        prizes = prizes.filter((p) => p.id !== change.prizeId)
+        prizes = prizes.filter((p) => p.id !== change.prizeId);
       } else if (change.type === "update") {
         prizes = prizes.map((p) =>
-          p.id === change.prizeId ? { ...p, [change.field]: change.newValue } : p
-        )
+          p.id === change.prizeId
+            ? { ...p, [change.field]: change.newValue }
+            : p,
+        );
       }
     }
 
-    return prizes
-  }, [initialPrizes, pendingChanges])
+    return prizes;
+  }, [initialPrizes, pendingChanges]);
 
-  const hasChanges = pendingChanges.length > 0
+  const hasChanges = pendingChanges.length > 0;
 
   function handleAddPrize() {
-    if (!nameInput.trim()) return
+    if (!nameInput.trim()) return;
 
-    const tempId = `temp-${++tempIdCounter.current}`
+    const tempId = `temp-${++tempIdCounter.current}`;
     const newPrize: Prize = {
       id: tempId,
       hackathon_id: hackathonId,
@@ -270,28 +303,31 @@ export function PrizesEditForm({
       display_order: currentPrizes.length,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-    }
+    };
 
-    setPendingChanges([...pendingChanges, { type: "add", prize: newPrize, tempId }])
-    setNameInput("")
+    setPendingChanges([
+      ...pendingChanges,
+      { type: "add", prize: newPrize, tempId },
+    ]);
+    setNameInput("");
   }
 
   const presetCtx: PresetContext = useMemo(
     () => ({ currentPrizes, criteria, judgingMode }),
-    [currentPrizes, criteria, judgingMode]
-  )
+    [currentPrizes, criteria, judgingMode],
+  );
 
   const allPresets = useMemo(
     () => [...STATIC_PRESETS, ...getCriteriaPresets(criteria)],
-    [criteria]
-  )
+    [criteria],
+  );
 
   function handleAddPreset(preset: PresetDef) {
-    const prizes = preset.prizes(presetCtx)
-    if (prizes.length === 0) return
+    const prizes = preset.prizes(presetCtx);
+    if (prizes.length === 0) return;
 
     const newChanges: PendingChange[] = prizes.map((p) => {
-      const tempId = `temp-${++tempIdCounter.current}`
+      const tempId = `temp-${++tempIdCounter.current}`;
       return {
         type: "add" as const,
         tempId,
@@ -320,142 +356,140 @@ export function PrizesEditForm({
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         },
-      }
-    })
+      };
+    });
 
-    setPendingChanges([...pendingChanges, ...newChanges])
+    setPendingChanges([...pendingChanges, ...newChanges]);
   }
 
   function handleDeletePrize(prizeId: string) {
     const addChange = pendingChanges.find(
-      (c) => c.type === "add" && c.tempId === prizeId
-    )
+      (c) => c.type === "add" && c.tempId === prizeId,
+    );
 
     if (addChange) {
-      setPendingChanges(pendingChanges.filter((c) => c !== addChange))
-      return
+      setPendingChanges(pendingChanges.filter((c) => c !== addChange));
+      return;
     }
 
-    const originalPrize = initialPrizes.find((p) => p.id === prizeId)
-    if (!originalPrize) return
+    const originalPrize = initialPrizes.find((p) => p.id === prizeId);
+    if (!originalPrize) return;
 
     const relatedChanges = pendingChanges.filter(
-      (c) => c.type === "update" && c.prizeId === prizeId
-    )
-    const filtered = pendingChanges.filter((c) => !relatedChanges.includes(c))
-    setPendingChanges([...filtered, { type: "delete", prizeId, originalPrize }])
+      (c) => c.type === "update" && c.prizeId === prizeId,
+    );
+    const filtered = pendingChanges.filter((c) => !relatedChanges.includes(c));
+    setPendingChanges([
+      ...filtered,
+      { type: "delete", prizeId, originalPrize },
+    ]);
   }
 
   function handleFieldChange(prizeId: string, field: string, value: unknown) {
     const addChange = pendingChanges.find(
-      (c) => c.type === "add" && c.tempId === prizeId
-    ) as Extract<PendingChange, { type: "add" }> | undefined
+      (c) => c.type === "add" && c.tempId === prizeId,
+    ) as Extract<PendingChange, { type: "add" }> | undefined;
 
     if (addChange) {
       setPendingChanges(
         pendingChanges.map((c) =>
-          c === addChange
-            ? { ...c, prize: { ...c.prize, [field]: value } }
-            : c
-        )
-      )
-      return
+          c === addChange ? { ...c, prize: { ...c.prize, [field]: value } } : c,
+        ),
+      );
+      return;
     }
 
     const existingUpdate = pendingChanges.findIndex(
-      (c) => c.type === "update" && c.prizeId === prizeId && c.field === field
-    )
+      (c) => c.type === "update" && c.prizeId === prizeId && c.field === field,
+    );
 
-    const original = initialPrizes.find((p) => p.id === prizeId)
-    if (!original) return
+    const original = initialPrizes.find((p) => p.id === prizeId);
+    if (!original) return;
 
-    const oldValue = (original as unknown as Record<string, unknown>)[field]
+    const oldValue = (original as unknown as Record<string, unknown>)[field];
 
     if (existingUpdate >= 0) {
       if (value === oldValue || (value === "" && oldValue === null)) {
-        setPendingChanges(pendingChanges.filter((_, i) => i !== existingUpdate))
+        setPendingChanges(
+          pendingChanges.filter((_, i) => i !== existingUpdate),
+        );
       } else {
-        const updated = [...pendingChanges]
-        updated[existingUpdate] = { type: "update", prizeId, field, newValue: value, oldValue }
-        setPendingChanges(updated)
+        const updated = [...pendingChanges];
+        updated[existingUpdate] = {
+          type: "update",
+          prizeId,
+          field,
+          newValue: value,
+          oldValue,
+        };
+        setPendingChanges(updated);
       }
-      return
+      return;
     }
 
     if (value !== oldValue && !(value === "" && oldValue === null)) {
       setPendingChanges([
         ...pendingChanges,
         { type: "update", prizeId, field, newValue: value, oldValue },
-      ])
+      ]);
     }
   }
 
   function handleUndo(index: number) {
-    setPendingChanges(pendingChanges.filter((_, i) => i !== index))
+    setPendingChanges(pendingChanges.filter((_, i) => i !== index));
   }
 
   function handleUndoAll() {
-    setPendingChanges([])
+    setPendingChanges([]);
   }
 
   async function saveChanges() {
-    if (!hasChanges) return true
+    if (!hasChanges) return true;
 
     if (isLocalMode) {
       const prizesData = currentPrizes.map((p) => ({
         name: p.name,
         description: p.description,
         value: p.value,
-      }))
-      const ok = await onSave!({ prizes: prizesData })
+      }));
+      const ok = await onSave!({ prizes: prizesData });
       if (ok) {
-        setPendingChanges([])
+        setPendingChanges([]);
       }
-      return ok
+      return ok;
     }
 
-    setSaving(true)
-    setError(null)
+    setSaving(true);
+    setError(null);
 
     try {
       for (const change of pendingChanges) {
         if (change.type === "add") {
-          const res = await fetch(
-            `/api/dashboard/hackathons/${hackathonId}/prizes`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                name: change.prize.name,
-                description: change.prize.description,
-                value: change.prize.value,
-                type: change.prize.type,
-                rank: change.prize.rank,
-                kind: change.prize.kind,
-                monetaryValue: change.prize.monetary_value,
-                currency: change.prize.currency,
-                distributionMethod: change.prize.distribution_method,
-                displayValue: change.prize.display_value,
-                criteriaId: change.prize.criteria_id,
-                displayOrder: change.prize.display_order,
-              }),
-            }
-          )
-          if (!res.ok) {
-            const data = await res.json()
-            throw new Error(data.error || `Failed to add ${change.prize.name}`)
-          }
+          await fetch(`/api/dashboard/hackathons/${hackathonId}/prizes`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: change.prize.name,
+              description: change.prize.description,
+              value: change.prize.value,
+              type: change.prize.type,
+              rank: change.prize.rank,
+              kind: change.prize.kind,
+              monetaryValue: change.prize.monetary_value,
+              currency: change.prize.currency,
+              distributionMethod: change.prize.distribution_method,
+              displayValue: change.prize.display_value,
+              criteriaId: change.prize.criteria_id,
+              displayOrder: change.prize.display_order,
+            }),
+          }).then(assertOk);
         } else if (change.type === "delete") {
-          const res = await fetch(
+          await fetch(
             `/api/dashboard/hackathons/${hackathonId}/prizes/${change.prizeId}`,
-            { method: "DELETE" }
-          )
-          if (!res.ok) {
-            const data = await res.json()
-            throw new Error(data.error || "Failed to remove prize")
-          }
+            { method: "DELETE" },
+          ).then(assertOk);
         } else if (change.type === "update") {
-          const body: Record<string, unknown> = {}
+          const body: Record<string, unknown> = {};
           const fieldMap: Record<string, string> = {
             type: "type",
             rank: "rank",
@@ -465,69 +499,65 @@ export function PrizesEditForm({
             distribution_method: "distributionMethod",
             display_value: "displayValue",
             criteria_id: "criteriaId",
-          }
+          };
 
-          const apiField = fieldMap[change.field] ?? change.field
-          body[apiField] = change.newValue ?? null
+          const apiField = fieldMap[change.field] ?? change.field;
+          body[apiField] = change.newValue ?? null;
 
-          const res = await fetch(
+          await fetch(
             `/api/dashboard/hackathons/${hackathonId}/prizes/${change.prizeId}`,
             {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(body),
-            }
-          )
-          if (!res.ok) {
-            const data = await res.json()
-            throw new Error(data.error || "Failed to update prize")
-          }
+            },
+          ).then(assertOk);
         }
       }
 
-      router.refresh()
-      return true
+      router.refresh();
+      return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save changes")
-      return false
+      setError(err instanceof Error ? err.message : "Failed to save changes");
+      return false;
     } finally {
-      setSaving(false)
+      setSaving(false);
     }
   }
 
   async function handleSave() {
     if (!hasChanges) {
-      closeDrawer()
-      return
+      closeDrawer();
+      return;
     }
 
-    const ok = await saveChanges()
-    if (ok) closeDrawer()
+    const ok = await saveChanges();
+    if (ok) closeDrawer();
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-      e.preventDefault()
+      e.preventDefault();
       if (nameInput.trim() && !saving) {
-        handleAddPrize()
+        handleAddPrize();
       } else if (!saving) {
         saveChanges().then((ok) => {
           if (ok) {
             if (onSaveAndNext) {
-              onSaveAndNext()
+              onSaveAndNext();
             } else {
-              closeDrawer()
+              closeDrawer();
             }
           }
-        })
+        });
       }
     }
   }
 
   function isDeleted(prizeId: string) {
     return pendingChanges.some(
-      (c) => c.type === "delete" && c.prizeId === prizeId
-    )
+      (c) => c.type === "delete" && c.prizeId === prizeId,
+    );
   }
 
   return (
@@ -537,17 +567,17 @@ export function PrizesEditForm({
           <FieldLabel>Quick Add</FieldLabel>
           <div className="flex flex-wrap gap-2">
             {allPresets.map((preset) => {
-              const remaining = preset.prizes(presetCtx)
-              const fullyUsed = remaining.length === 0
+              const remaining = preset.prizes(presetCtx);
+              const fullyUsed = remaining.length === 0;
               const label =
                 typeof preset.label === "function"
                   ? preset.label(presetCtx)
-                  : preset.label
+                  : preset.label;
               const description =
                 typeof preset.description === "function"
                   ? preset.description(presetCtx)
-                  : preset.description
-              const Icon = preset.icon
+                  : preset.description;
+              const Icon = preset.icon;
 
               return (
                 <HoverCard key={preset.id} openDelay={300}>
@@ -571,7 +601,7 @@ export function PrizesEditForm({
                     {description}
                   </HoverCardContent>
                 </HoverCard>
-              )
+              );
             })}
           </div>
         </Field>
@@ -584,8 +614,8 @@ export function PrizesEditForm({
             onChange={(e) => setNameInput(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && nameInput.trim()) {
-                e.preventDefault()
-                handleAddPrize()
+                e.preventDefault();
+                handleAddPrize();
               }
             }}
             autoFocus
@@ -623,23 +653,27 @@ export function PrizesEditForm({
           </div>
           <div className="space-y-2">
             {currentPrizes.map((prize) => {
-              const deleted = isDeleted(prize.id)
+              const deleted = isDeleted(prize.id);
               const criterionName = prize.criteria_id
                 ? criteria.find((c) => c.id === prize.criteria_id)?.name
-                : undefined
+                : undefined;
 
               return (
                 <div
                   key={prize.id}
                   className={`rounded-lg border p-3 space-y-3 ${
-                    prize.id.startsWith("temp-") ? "border-dashed bg-muted/30" : ""
+                    prize.id.startsWith("temp-")
+                      ? "border-dashed bg-muted/30"
+                      : ""
                   } ${deleted ? "opacity-50" : ""}`}
                 >
                   <div className="flex items-center gap-2">
                     <div className="flex-1 min-w-0">
                       <Input
                         value={prize.name}
-                        onChange={(e) => handleFieldChange(prize.id, "name", e.target.value)}
+                        onChange={(e) =>
+                          handleFieldChange(prize.id, "name", e.target.value)
+                        }
                         placeholder="Prize name"
                         disabled={deleted}
                         className="h-8 text-sm font-medium"
@@ -663,7 +697,9 @@ export function PrizesEditForm({
 
                   <Textarea
                     value={prize.description ?? ""}
-                    onChange={(e) => handleFieldChange(prize.id, "description", e.target.value)}
+                    onChange={(e) =>
+                      handleFieldChange(prize.id, "description", e.target.value)
+                    }
                     placeholder="Description"
                     disabled={deleted}
                     rows={2}
@@ -675,23 +711,33 @@ export function PrizesEditForm({
                   />
 
                   <div className="space-y-2">
-                    <p className="text-xs font-medium text-muted-foreground">What&apos;s the prize?</p>
+                    <p className="text-xs font-medium text-muted-foreground">
+                      What&apos;s the prize?
+                    </p>
                     <KindCombobox
                       value={prize.kind}
                       onChange={(v) => handleFieldChange(prize.id, "kind", v)}
                       disabled={deleted}
                     />
-                    <Input
-                      value={prize.display_value ?? ""}
-                      onChange={(e) => handleFieldChange(prize.id, "display_value", e.target.value)}
-                      placeholder='Display value (e.g. "$5,000 USD")'
-                      disabled={deleted}
-                      className="h-8 text-sm"
-                      autoComplete="off"
-                      data-1p-ignore
-                      data-lpignore="true"
-                      data-form-type="other"
-                    />
+                    {prize.kind !== "cash" && prize.kind !== "credit" && (
+                      <Input
+                        value={prize.display_value ?? ""}
+                        onChange={(e) =>
+                          handleFieldChange(
+                            prize.id,
+                            "display_value",
+                            e.target.value,
+                          )
+                        }
+                        placeholder='Display value (e.g. "$5,000 USD")'
+                        disabled={deleted}
+                        className="h-8 text-sm"
+                        autoComplete="off"
+                        data-1p-ignore
+                        data-lpignore="true"
+                        data-form-type="other"
+                      />
+                    )}
                     {(prize.kind === "cash" || prize.kind === "credit") && (
                       <div className="grid grid-cols-2 gap-2">
                         <Input
@@ -701,7 +747,9 @@ export function PrizesEditForm({
                             handleFieldChange(
                               prize.id,
                               "monetary_value",
-                              e.target.value ? parseFloat(e.target.value) : null
+                              e.target.value
+                                ? parseFloat(e.target.value)
+                                : null,
                             )
                           }
                           placeholder="Amount"
@@ -714,7 +762,13 @@ export function PrizesEditForm({
                         />
                         <Input
                           value={prize.currency ?? "USD"}
-                          onChange={(e) => handleFieldChange(prize.id, "currency", e.target.value)}
+                          onChange={(e) =>
+                            handleFieldChange(
+                              prize.id,
+                              "currency",
+                              e.target.value,
+                            )
+                          }
                           placeholder="Currency (e.g. USD)"
                           disabled={deleted}
                           className="h-8 text-sm"
@@ -725,10 +779,19 @@ export function PrizesEditForm({
                         />
                       </div>
                     )}
-                    <div>
+                    <div className="rounded-md border border-border p-2 space-y-1.5">
+                      <p className="text-xs font-bold text-primary">
+                        Not shown to participants
+                      </p>
                       <Input
                         value={prize.distribution_method ?? ""}
-                        onChange={(e) => handleFieldChange(prize.id, "distribution_method", e.target.value)}
+                        onChange={(e) =>
+                          handleFieldChange(
+                            prize.id,
+                            "distribution_method",
+                            e.target.value,
+                          )
+                        }
                         placeholder="Distribution note (e.g. Wire to captain)"
                         disabled={deleted}
                         className="h-8 text-sm"
@@ -737,19 +800,22 @@ export function PrizesEditForm({
                         data-lpignore="true"
                         data-form-type="other"
                       />
-                      <p className="text-xs text-muted-foreground mt-0.5">Not shown to participants</p>
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <p className="text-xs font-medium text-muted-foreground">How is the winner decided?</p>
+                    <p className="text-xs font-medium text-muted-foreground">
+                      How is the winner decided?
+                    </p>
                     <div className="flex items-center gap-2 flex-wrap">
                       <Select
                         value={prize.type}
                         onValueChange={(v) => {
-                          handleFieldChange(prize.id, "type", v as PrizeType)
-                          if (v !== "score") handleFieldChange(prize.id, "rank", null)
-                          if (v !== "criteria") handleFieldChange(prize.id, "criteria_id", null)
+                          handleFieldChange(prize.id, "type", v as PrizeType);
+                          if (v !== "score")
+                            handleFieldChange(prize.id, "rank", null);
+                          if (v !== "criteria")
+                            handleFieldChange(prize.id, "criteria_id", null);
                         }}
                         disabled={deleted}
                       >
@@ -758,17 +824,25 @@ export function PrizesEditForm({
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="score">Score-based</SelectItem>
-                          <SelectItem value="criteria">Best in Category</SelectItem>
-                          <SelectItem value="favorite">
-                            {judgingMode === "subjective" ? "Judge's Choice" : "Organizer's Pick"}
+                          <SelectItem value="criteria">
+                            Best in Category
                           </SelectItem>
-                          <SelectItem value="crowd">Crowd&apos;s Favorite</SelectItem>
+                          <SelectItem value="favorite">
+                            {judgingMode === "subjective"
+                              ? "Judge's Choice"
+                              : "Organizer's Pick"}
+                          </SelectItem>
+                          <SelectItem value="crowd">
+                            Crowd&apos;s Favorite
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                       {prize.type === "score" && (
                         <Select
                           value={prize.rank?.toString() ?? "1"}
-                          onValueChange={(v) => handleFieldChange(prize.id, "rank", parseInt(v))}
+                          onValueChange={(v) =>
+                            handleFieldChange(prize.id, "rank", parseInt(v))
+                          }
                           disabled={deleted}
                         >
                           <SelectTrigger className="w-20 h-8 text-xs">
@@ -786,7 +860,13 @@ export function PrizesEditForm({
                       {prize.type === "criteria" && criteria.length > 0 && (
                         <Select
                           value={prize.criteria_id ?? ""}
-                          onValueChange={(v) => handleFieldChange(prize.id, "criteria_id", v || null)}
+                          onValueChange={(v) =>
+                            handleFieldChange(
+                              prize.id,
+                              "criteria_id",
+                              v || null,
+                            )
+                          }
                           disabled={deleted}
                         >
                           <SelectTrigger className="w-44 h-8 text-xs">
@@ -807,7 +887,7 @@ export function PrizesEditForm({
                     </p>
                   </div>
                 </div>
-              )
+              );
             })}
           </div>
         </div>
@@ -826,7 +906,8 @@ export function PrizesEditForm({
               >
                 <span className="text-muted-foreground">
                   {change.type === "add" && `+ Add "${change.prize.name}"`}
-                  {change.type === "delete" && `- Remove "${change.originalPrize.name}"`}
+                  {change.type === "delete" &&
+                    `- Remove "${change.originalPrize.name}"`}
                   {change.type === "update" && `~ Update ${change.field}`}
                 </span>
                 <Button
@@ -852,8 +933,8 @@ export function PrizesEditForm({
                 type="button"
                 variant="outline"
                 onClick={() => {
-                  handleUndoAll()
-                  closeDrawer()
+                  handleUndoAll();
+                  closeDrawer();
                 }}
               >
                 Discard
@@ -880,7 +961,7 @@ export function PrizesEditForm({
         </div>
       </div>
     </div>
-  )
+  );
 }
 
 function KindCombobox({
@@ -888,14 +969,15 @@ function KindCombobox({
   onChange,
   disabled,
 }: {
-  value: string
-  onChange: (value: string) => void
-  disabled?: boolean
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
 }) {
-  const [open, setOpen] = useState(false)
-  const [search, setSearch] = useState("")
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
 
-  const selectedLabel = KIND_PRESETS.find((k) => k.value === value)?.label ?? value
+  const selectedLabel =
+    KIND_PRESETS.find((k) => k.value === value)?.label ?? value;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -925,9 +1007,9 @@ function KindCombobox({
                   type="button"
                   className="w-full px-2 py-1.5 text-sm text-left hover:bg-accent"
                   onClick={() => {
-                    onChange(search.trim().toLowerCase())
-                    setOpen(false)
-                    setSearch("")
+                    onChange(search.trim().toLowerCase());
+                    setOpen(false);
+                    setSearch("");
                   }}
                 >
                   Use &quot;{search.trim()}&quot;
@@ -942,15 +1024,15 @@ function KindCombobox({
                   key={kind.value}
                   value={kind.value}
                   onSelect={(v) => {
-                    onChange(v)
-                    setOpen(false)
-                    setSearch("")
+                    onChange(v);
+                    setOpen(false);
+                    setSearch("");
                   }}
                 >
                   <Check
                     className={cn(
                       "mr-2 size-3",
-                      value === kind.value ? "opacity-100" : "opacity-0"
+                      value === kind.value ? "opacity-100" : "opacity-0",
                     )}
                   />
                   {kind.label}
@@ -961,5 +1043,5 @@ function KindCombobox({
         </Command>
       </PopoverContent>
     </Popover>
-  )
+  );
 }

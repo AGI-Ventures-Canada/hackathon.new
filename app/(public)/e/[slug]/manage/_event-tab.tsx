@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { TabsUrlSync } from "./_tabs-url-sync"
 import { Button } from "@/components/ui/button"
@@ -49,6 +49,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Loader2, CheckCircle2, Send, Eye, ThumbsUp, ThumbsDown, Plus, Pencil, Trash2, Megaphone, Zap, MessageCircle, Share2, Mail } from "lucide-react"
+import { assertOk } from "@/lib/utils/fetch"
 import type { AnnouncementAudience } from "@/lib/services/announcements"
 import type { HackathonStatus, HackathonPhase } from "@/lib/db/hackathon-types"
 
@@ -178,7 +179,6 @@ function SocialSubTab({ hackathonId }: { hackathonId: string }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [submissions, setSubmissions] = useState<SocialSubmission[]>([])
-  const [reviewingId, setReviewingId] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -199,23 +199,22 @@ function SocialSubTab({ hackathonId }: { hackathonId: string }) {
     return () => { cancelled = true }
   }, [hackathonId])
 
-  async function handleReview(submissionId: string, status: "approved" | "rejected") {
-    setReviewingId(submissionId)
-    try {
-      const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/social-submissions/${submissionId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
+  function handleReview(submissionId: string, status: "approved" | "rejected") {
+    setSubmissions((prev) =>
+      prev.map((s) => (s.id === submissionId ? { ...s, status } : s))
+    )
+    fetch(`/api/dashboard/hackathons/${hackathonId}/social-submissions/${submissionId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    })
+      .then(assertOk)
+      .catch(() => {
+        setSubmissions((prev) =>
+          prev.map((s) => (s.id === submissionId ? { ...s, status: "pending" as const } : s))
+        )
+        setError("Failed to review submission")
       })
-      if (!res.ok) throw new Error("Failed to review submission")
-      setSubmissions((prev) =>
-        prev.map((s) => (s.id === submissionId ? { ...s, status } : s))
-      )
-    } catch {
-      setError("Failed to review submission")
-    } finally {
-      setReviewingId(null)
-    }
   }
 
   if (loading) {
@@ -287,19 +286,17 @@ function SocialSubTab({ hackathonId }: { hackathonId: string }) {
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled={reviewingId === sub.id}
                     onClick={() => handleReview(sub.id, "approved")}
                   >
-                    {reviewingId === sub.id ? <Loader2 className="animate-spin" /> : <ThumbsUp />}
+                    <ThumbsUp />
                     <span className="hidden sm:inline">Approve</span>
                   </Button>
                   <Button
                     size="sm"
                     variant="destructive"
-                    disabled={reviewingId === sub.id}
                     onClick={() => handleReview(sub.id, "rejected")}
                   >
-                    {reviewingId === sub.id ? <Loader2 className="animate-spin" /> : <ThumbsDown />}
+                    <ThumbsDown />
                     <span className="hidden sm:inline">Reject</span>
                   </Button>
                 </div>
@@ -528,8 +525,7 @@ function AnnouncementsSubTab({ hackathonId, hackathonStatus, hackathonPhase }: {
   const [body, setBody] = useState("")
   const [priority, setPriority] = useState<"normal" | "urgent">("normal")
   const [audience, setAudience] = useState<AnnouncementAudience>("everyone")
-  const [saving, setSaving] = useState(false)
-  const [togglingId, setTogglingId] = useState<string | null>(null)
+  const tempIdCounter = useRef(0)
 
   const suggestions = getSuggestedAnnouncements(hackathonStatus, hackathonPhase)
   const published = items.filter((i) => i.published_at)
@@ -583,73 +579,90 @@ function AnnouncementsSubTab({ hackathonId, hackathonStatus, hackathonPhase }: {
     setDialogOpen(true)
   }
 
-  async function handleSave(publish: boolean) {
+  function handleSave(publish: boolean) {
     if (!title.trim() || !body.trim()) return
-    setSaving(true)
     setError(null)
-    try {
-      if (editing) {
-        const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/announcements/${editing.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title, body, priority, audience }),
-        })
-        if (!res.ok) throw new Error("Failed to save")
-        const saved = await res.json()
-        setItems((prev) => prev.map((i) => (i.id === saved.id ? saved : i)))
-      } else {
-        const createRes = await fetch(`/api/dashboard/hackathons/${hackathonId}/announcements`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title, body, priority, audience }),
-        })
-        if (!createRes.ok) throw new Error("Failed to create")
-        const created = await createRes.json()
+    setDialogOpen(false)
 
-        if (publish) {
-          const pubRes = await fetch(`/api/dashboard/hackathons/${hackathonId}/announcements/${created.id}/publish`, { method: "POST" })
-          if (!pubRes.ok) throw new Error("Created but failed to publish")
-          const published = await pubRes.json()
-          setItems((prev) => [published, ...prev])
-        } else {
-          setItems((prev) => [created, ...prev])
-        }
+    if (editing) {
+      const prev = items.find((i) => i.id === editing.id)
+      setItems((old) => old.map((i) => (i.id === editing.id ? { ...i, title, body, priority, audience } : i)))
+      fetch(`/api/dashboard/hackathons/${hackathonId}/announcements/${editing.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, body, priority, audience }),
+      })
+        .then(assertOk<AnnouncementData>)
+        .then((saved) => setItems((old) => old.map((i) => (i.id === saved.id ? saved : i))))
+        .catch((err) => {
+          if (prev) setItems((old) => old.map((i) => (i.id === editing.id ? prev : i)))
+          setError(err instanceof Error ? err.message : "Failed to save announcement")
+        })
+    } else {
+      const tempId = `temp-${++tempIdCounter.current}`
+      const optimistic: AnnouncementData = {
+        id: tempId,
+        title,
+        body,
+        priority,
+        audience,
+        published_at: publish ? new Date().toISOString() : null,
+        created_at: new Date().toISOString(),
       }
-      setDialogOpen(false)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save announcement")
-    } finally {
-      setSaving(false)
+      setItems((old) => [optimistic, ...old])
+      fetch(`/api/dashboard/hackathons/${hackathonId}/announcements`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, body, priority, audience }),
+      })
+        .then(assertOk<AnnouncementData>)
+        .then(async (created) => {
+          if (publish) {
+            const published = await fetch(`/api/dashboard/hackathons/${hackathonId}/announcements/${created.id}/publish`, { method: "POST" }).then(assertOk<AnnouncementData>)
+            setItems((old) => old.map((i) => (i.id === tempId ? published : i)))
+          } else {
+            setItems((old) => old.map((i) => (i.id === tempId ? created : i)))
+          }
+        })
+        .catch((err) => {
+          setItems((old) => old.filter((i) => i.id !== tempId))
+          setError(err instanceof Error ? err.message : "Failed to save announcement")
+        })
     }
   }
 
-  async function handleDelete(id: string) {
-    try {
-      const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/announcements/${id}`, { method: "DELETE" })
-      if (!res.ok) throw new Error("Failed to delete")
-      setItems((prev) => prev.filter((i) => i.id !== id))
-    } catch {
-      setError("Failed to delete announcement")
-    }
+  function handleDelete(id: string) {
+    const prev = items.find((i) => i.id === id)
+    setItems((old) => old.filter((i) => i.id !== id))
+    fetch(`/api/dashboard/hackathons/${hackathonId}/announcements/${id}`, { method: "DELETE" })
+      .then(assertOk)
+      .catch(() => {
+        if (prev) setItems((old) => [prev, ...old])
+        setError("Failed to delete announcement")
+      })
   }
 
-  async function handleTogglePublish(item: AnnouncementData) {
-    setTogglingId(item.id)
-    try {
-      const action = item.published_at ? "unpublish" : "publish"
-      const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/announcements/${item.id}/${action}`, { method: "POST" })
-      if (!res.ok) throw new Error("Failed to toggle")
-      const updated = await res.json()
-      setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)))
-    } catch {
-      setError("Failed to update publish status")
-    } finally {
-      setTogglingId(null)
-    }
+  function handleTogglePublish(item: AnnouncementData) {
+    const action = item.published_at ? "unpublish" : "publish"
+    const prevItem = item
+    setItems((old) =>
+      old.map((i) =>
+        i.id === item.id
+          ? { ...i, published_at: item.published_at ? null : new Date().toISOString() }
+          : i
+      )
+    )
+    fetch(`/api/dashboard/hackathons/${hackathonId}/announcements/${item.id}/${action}`, { method: "POST" })
+      .then(assertOk<AnnouncementData>)
+      .then((updated) => setItems((old) => old.map((i) => (i.id === updated.id ? updated : i))))
+      .catch(() => {
+        setItems((old) => old.map((i) => (i.id === prevItem.id ? prevItem : i)))
+        setError("Failed to update publish status")
+      })
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !saving) {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault()
       handleSave(true)
     }
@@ -679,10 +692,9 @@ function AnnouncementsSubTab({ hackathonId, hackathonStatus, hackathonPhase }: {
               <Button
                 size="sm"
                 variant="default"
-                disabled={togglingId === item.id}
                 onClick={() => handleTogglePublish(item)}
               >
-                {togglingId === item.id ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+                <Send className="size-4" />
                 <span className="hidden sm:inline">Publish</span>
               </Button>
             )}
@@ -690,10 +702,9 @@ function AnnouncementsSubTab({ hackathonId, hackathonStatus, hackathonPhase }: {
               <Button
                 size="sm"
                 variant="ghost"
-                disabled={togglingId === item.id}
                 onClick={() => handleTogglePublish(item)}
               >
-                {togglingId === item.id ? <Loader2 className="size-4 animate-spin" /> : <Eye className="size-4" />}
+                <Eye className="size-4" />
                 <span className="hidden sm:inline">Unpublish</span>
               </Button>
             )}
@@ -850,18 +861,16 @@ function AnnouncementsSubTab({ hackathonId, hackathonStatus, hackathonPhase }: {
               </div>
             </div>
             {editing ? (
-              <Button type="submit" disabled={saving || !title.trim() || !body.trim()} className="w-full">
-                {saving && <Loader2 className="animate-spin" />}
+              <Button type="submit" disabled={!title.trim() || !body.trim()} className="w-full">
                 Update
               </Button>
             ) : (
               <div className="flex gap-2">
-                <Button type="submit" disabled={saving || !title.trim() || !body.trim()} className="flex-1">
-                  {saving && <Loader2 className="animate-spin" />}
+                <Button type="submit" disabled={!title.trim() || !body.trim()} className="flex-1">
                   <Send className="size-4" />
                   Publish Now
                 </Button>
-                <Button type="button" variant="outline" disabled={saving || !title.trim() || !body.trim()} onClick={() => handleSave(false)}>
+                <Button type="button" variant="outline" disabled={!title.trim() || !body.trim()} onClick={() => handleSave(false)}>
                   Save Draft
                 </Button>
               </div>

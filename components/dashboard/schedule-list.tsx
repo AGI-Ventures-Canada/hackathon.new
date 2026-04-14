@@ -11,6 +11,7 @@ import {
   Pause,
 } from "lucide-react"
 import type { Schedule } from "@/lib/db/hackathon-types"
+import { assertOk } from "@/lib/utils/fetch"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -63,40 +64,42 @@ const frequencyLabels: Record<string, string> = {
 export function ScheduleList({ schedules }: ScheduleListProps) {
   const router = useRouter()
   const [deleteId, setDeleteId] = useState<string | null>(null)
-  const [deleting, setDeleting] = useState(false)
   const [editSchedule, setEditSchedule] = useState<Schedule | null>(null)
-  const [toggling, setToggling] = useState<string | null>(null)
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set())
+  const [localToggles, setLocalToggles] = useState<Map<string, boolean>>(new Map())
 
   const handleDelete = async () => {
     if (!deleteId) return
-
-    setDeleting(true)
+    const id = deleteId
+    setDeleteId(null)
+    setHiddenIds((prev) => new Set(prev).add(id))
     try {
-      const response = await fetch(`/api/dashboard/schedules/${deleteId}`, {
+      await fetch(`/api/dashboard/schedules/${id}`, {
         method: "DELETE",
+      }).then(assertOk)
+      router.refresh()
+    } catch {
+      setHiddenIds((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
       })
-      if (response.ok) {
-        router.refresh()
-      }
-    } finally {
-      setDeleting(false)
-      setDeleteId(null)
     }
   }
 
   const handleToggle = async (schedule: Schedule) => {
-    setToggling(schedule.id)
+    const prevValue = localToggles.get(schedule.id) ?? schedule.is_active
+    const newValue = !prevValue
+    setLocalToggles((prev) => new Map(prev).set(schedule.id, newValue))
     try {
-      const response = await fetch(`/api/dashboard/schedules/${schedule.id}`, {
+      await fetch(`/api/dashboard/schedules/${schedule.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isActive: !schedule.is_active }),
-      })
-      if (response.ok) {
-        router.refresh()
-      }
-    } finally {
-      setToggling(null)
+        body: JSON.stringify({ isActive: newValue }),
+      }).then(assertOk)
+      router.refresh()
+    } catch {
+      setLocalToggles((prev) => new Map(prev).set(schedule.id, prevValue))
     }
   }
 
@@ -111,7 +114,9 @@ export function ScheduleList({ schedules }: ScheduleListProps) {
     return `${year}-${month}-${day} ${hours}:${minutes}`
   }
 
-  if (schedules.length === 0) {
+  const visibleSchedules = schedules.filter((s) => !hiddenIds.has(s.id))
+
+  if (visibleSchedules.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center">
         <Clock className="size-12 text-muted-foreground mb-4" />
@@ -139,7 +144,7 @@ export function ScheduleList({ schedules }: ScheduleListProps) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {schedules.map((schedule) => (
+          {visibleSchedules.map((schedule) => (
             <TableRow key={schedule.id}>
               <TableCell>
                 <div className="font-medium">{schedule.name}</div>
@@ -166,7 +171,7 @@ export function ScheduleList({ schedules }: ScheduleListProps) {
                 {formatDate(schedule.last_run_at)}
               </TableCell>
               <TableCell>
-                {schedule.is_active ? (
+                {(localToggles.get(schedule.id) ?? schedule.is_active) ? (
                   <Badge variant="default">Active</Badge>
                 ) : (
                   <Badge variant="secondary">Paused</Badge>
@@ -186,9 +191,8 @@ export function ScheduleList({ schedules }: ScheduleListProps) {
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() => handleToggle(schedule)}
-                      disabled={toggling === schedule.id}
                     >
-                      {schedule.is_active ? (
+                      {(localToggles.get(schedule.id) ?? schedule.is_active) ? (
                         <>
                           <Pause className="size-4 mr-2" />
                           Pause
@@ -227,13 +231,12 @@ export function ScheduleList({ schedules }: ScheduleListProps) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
-              disabled={deleting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {deleting ? "Deleting..." : "Delete"}
+              Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

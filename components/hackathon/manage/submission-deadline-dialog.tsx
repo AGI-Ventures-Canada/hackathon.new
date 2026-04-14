@@ -2,7 +2,7 @@
 
 import { useState, useImperativeHandle, forwardRef } from "react"
 import { useRouter } from "next/navigation"
-import { Loader2, CheckCircle2 } from "lucide-react"
+import { assertOk } from "@/lib/utils/fetch"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { DateTimePicker } from "@/components/ui/date-time-picker"
@@ -26,21 +26,18 @@ type Props = {
 }
 
 export const SubmissionDeadlineDialog = forwardRef<SubmissionDeadlineDialogHandle, Props>(
-  function SubmissionDeadlineDialog({ hackathonId, scheduleItems, endsAt, onSaved }, ref) {
+  function SubmissionDeadlineDialog({ hackathonId, scheduleItems, endsAt, onSaved: _onSaved }, ref) {
     const router = useRouter()
     const deadlineItem = scheduleItems.find((s) => s.trigger_type === "submission_deadline")
 
     const [open, setOpen] = useState(false)
     const [deadlineAt, setDeadlineAt] = useState<Date | null>(null)
     const [linkedToEventEnd, setLinkedToEventEnd] = useState(false)
-    const [saving, setSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
-    const [saved, setSaved] = useState(false)
 
     function openDialog() {
       const item = scheduleItems.find((s) => s.trigger_type === "submission_deadline")
       setError(null)
-      setSaved(false)
       setDeadlineAt(item?.starts_at ? new Date(item.starts_at) : null)
       setLinkedToEventEnd(item?.linked_to === "event_end")
       setOpen(true)
@@ -50,37 +47,25 @@ export const SubmissionDeadlineDialog = forwardRef<SubmissionDeadlineDialogHandl
       if (!deadlineItem) return
       const time = linkedToEventEnd && endsAt ? endsAt : deadlineAt?.toISOString()
       if (!time) return
-      setSaving(true)
       setError(null)
+      setOpen(false)
       try {
-        const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/schedule/${deadlineItem.id}`, {
+        await fetch(`/api/dashboard/hackathons/${hackathonId}/schedule/${deadlineItem.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             startsAt: time,
             linkedTo: linkedToEventEnd ? "event_end" : null,
           }),
-        })
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}))
-          throw new Error(data.error || "Failed to save")
-        }
-        setSaved(true)
-        onSaved?.()
-        setTimeout(() => {
-          setOpen(false)
-          setSaved(false)
-        }, 1500)
+        }).then(assertOk)
         router.refresh()
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to save")
-      } finally {
-        setSaving(false)
       }
     }
 
     function handleKeyDown(e: React.KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !saving) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
         e.preventDefault()
         handleSave()
       }
@@ -94,25 +79,12 @@ export const SubmissionDeadlineDialog = forwardRef<SubmissionDeadlineDialogHandl
           <DialogHeader>
             <DialogTitle>Submissions Close & Judging Starts</DialogTitle>
           </DialogHeader>
-          {saved ? (
-            <div className="flex flex-col items-center gap-2 py-8">
-              <CheckCircle2 className="size-8 text-primary" />
-              <p className="text-sm font-medium">Deadline updated</p>
-              <p className="text-xs text-muted-foreground">
-                {linkedToEventEnd
-                  ? "Submissions close when the event ends"
-                  : deadlineAt
-                    ? `Submissions close ${deadlineAt.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`
-                    : null}
-              </p>
-            </div>
-          ) : (
-            <form
-              onSubmit={(e) => { e.preventDefault(); handleSave() }}
-              onKeyDown={handleKeyDown}
-              autoComplete="off"
-              className="space-y-4"
-            >
+          <form
+            onSubmit={(e) => { e.preventDefault(); handleSave() }}
+            onKeyDown={handleKeyDown}
+            autoComplete="off"
+            className="space-y-4"
+          >
               <p className="text-sm text-muted-foreground">
                 When this time arrives, submissions are locked and the judging phase begins. Participants can no longer submit or edit projects after this point.
               </p>
@@ -146,14 +118,12 @@ export const SubmissionDeadlineDialog = forwardRef<SubmissionDeadlineDialogHandl
               {error && <p className="text-destructive text-xs">{error}</p>}
               <Button
                 type="submit"
-                disabled={saving || (!linkedToEventEnd && !deadlineAt)}
+                disabled={!linkedToEventEnd && !deadlineAt}
                 className="w-full"
               >
-                {saving && <Loader2 className="animate-spin" />}
                 Save
               </Button>
             </form>
-          )}
         </DialogContent>
       </Dialog>
     )

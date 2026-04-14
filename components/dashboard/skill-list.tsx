@@ -33,6 +33,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { assertOk } from "@/lib/utils/fetch"
 import { useState } from "react"
 
 interface SkillListProps {
@@ -42,26 +43,32 @@ interface SkillListProps {
 export function SkillList({ skills }: SkillListProps) {
   const router = useRouter()
   const [deleteId, setDeleteId] = useState<string | null>(null)
-  const [deleting, setDeleting] = useState(false)
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set())
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!deleteId) return
 
-    setDeleting(true)
-    try {
-      const response = await fetch(`/api/dashboard/skills/${deleteId}`, {
-        method: "DELETE",
-      })
-      if (response.ok) {
+    const id = deleteId
+    setHiddenIds((prev) => new Set(prev).add(id))
+    setDeleteId(null)
+
+    fetch(`/api/dashboard/skills/${id}`, { method: "DELETE" })
+      .then(assertOk)
+      .then(() => {
         router.refresh()
-      }
-    } finally {
-      setDeleting(false)
-      setDeleteId(null)
-    }
+      })
+      .catch(() => {
+        setHiddenIds((prev) => {
+          const next = new Set(prev)
+          next.delete(id)
+          return next
+        })
+      })
   }
 
-  if (skills.length === 0) {
+  const visibleSkills = skills.filter((s) => !hiddenIds.has(s.id))
+
+  if (visibleSkills.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center">
         <Sparkles className="size-12 text-muted-foreground mb-4" />
@@ -86,7 +93,7 @@ export function SkillList({ skills }: SkillListProps) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {skills.map((skill) => (
+          {visibleSkills.map((skill) => (
             <TableRow key={skill.id}>
               <TableCell>
                 <Link
@@ -166,13 +173,12 @@ export function SkillList({ skills }: SkillListProps) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
-              disabled={deleting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {deleting ? "Deleting..." : "Delete"}
+              Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

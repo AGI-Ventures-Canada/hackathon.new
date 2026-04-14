@@ -1,7 +1,8 @@
 "use client"
 
 import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { useOptimisticMutation } from "@/hooks/use-optimistic-mutation"
+import { assertOk } from "@/lib/utils/fetch"
 import { useUser } from "@clerk/nextjs"
 import { useTeamRename } from "@/hooks/use-team-rename"
 import { useTeamMode } from "@/hooks/use-team-mode"
@@ -21,28 +22,42 @@ interface TeamManagementTabProps {
 }
 
 export function TeamManagementTab({ teamInfo, hackathonId, maxTeamSize, locationType }: TeamManagementTabProps) {
-  const router = useRouter()
   const { user } = useUser()
-  const [cancellingId, setCancellingId] = useState<string | null>(null)
-  const rename = useTeamRename(hackathonId, teamInfo.team.id, teamInfo.team.name)
+  const [hiddenInvitations, setHiddenInvitations] = useState<Set<string>>(new Set())
+  const {
+    editing: renameEditing,
+    value: renameValue,
+    setValue: setRenameValue,
+    saving: renameSaving,
+    error: renameError,
+    inputRef: renameInputRef,
+    startEditing: renameStart,
+    save: renameSave,
+    handleKeyDown: renameHandleKeyDown,
+  } = useTeamRename(hackathonId, teamInfo.team.id, teamInfo.team.name)
   const teamMode = useTeamMode(hackathonId, teamInfo.team.id, teamInfo.team.mode ?? null)
   const canEdit = teamInfo.isCaptain && teamInfo.team.status === "forming"
   const showModePicker = locationType === "hybrid"
 
-  async function handleCancelInvitation(invitationId: string) {
-    setCancellingId(invitationId)
-    try {
-      const res = await fetch(
+  const { execute: handleCancelInvitation } = useOptimisticMutation({
+    fn: (invitationId: string) =>
+      fetch(
         `/api/dashboard/teams/${teamInfo.team.id}/invitations/${invitationId}`,
         { method: "DELETE" }
-      )
-      if (res.ok) {
-        router.refresh()
-      }
-    } finally {
-      setCancellingId(null)
-    }
-  }
+      ).then(assertOk),
+    onOptimistic: (invitationId) =>
+      setHiddenInvitations((prev) => new Set(prev).add(invitationId)),
+    onRevert: (invitationId) =>
+      setHiddenInvitations((prev) => {
+        const next = new Set(prev)
+        next.delete(invitationId)
+        return next
+      }),
+  })
+
+  const visibleInvitations = teamInfo.pendingInvitations.filter(
+    (inv) => !hiddenInvitations.has(inv.id)
+  )
 
   function getInitials(email: string) {
     return email.substring(0, 2).toUpperCase()
@@ -70,22 +85,22 @@ export function TeamManagementTab({ teamInfo, hackathonId, maxTeamSize, location
             <div className="min-w-0 flex-1">
               <CardTitle className="flex items-center gap-2 min-w-0">
                 <Users className="size-5" />
-                {canEdit && !rename.editing ? (
+                {canEdit && !renameEditing ? (
                   <button
                     type="button"
                     className="text-left hover:underline underline-offset-2 decoration-muted-foreground/40"
-                    onClick={rename.startEditing}
+                    onClick={renameStart}
                   >
                     {teamInfo.team.name}
                   </button>
-                ) : rename.editing ? (
+                ) : renameEditing ? (
                   <input
-                    ref={rename.inputRef}
-                    value={rename.value}
-                    onChange={(e) => rename.setValue(e.target.value)}
-                    onBlur={rename.save}
-                    onKeyDown={rename.handleKeyDown}
-                    disabled={rename.saving}
+                    ref={renameInputRef}
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    onBlur={renameSave}
+                    onKeyDown={renameHandleKeyDown}
+                    disabled={renameSaving}
                     className="h-8 text-base font-semibold bg-transparent border-b border-input outline-none focus:border-ring w-full min-w-0 flex-1"
                     maxLength={100}
                     autoComplete="off"
@@ -106,8 +121,8 @@ export function TeamManagementTab({ teamInfo, hackathonId, maxTeamSize, location
                   You&apos;re the team captain &mdash; you can invite members and manage your team.
                 </p>
               )}
-              {rename.error && (
-                <p className="text-xs text-destructive mt-1">{rename.error}</p>
+              {renameError && (
+                <p className="text-xs text-destructive mt-1">{renameError}</p>
               )}
               {showModePicker && (
                 <div className="mt-3 space-y-2">
@@ -209,7 +224,7 @@ export function TeamManagementTab({ teamInfo, hackathonId, maxTeamSize, location
         </CardContent>
       </Card>
 
-      {teamInfo.isCaptain && teamInfo.pendingInvitations.length > 0 && (
+      {teamInfo.isCaptain && visibleInvitations.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
@@ -222,7 +237,7 @@ export function TeamManagementTab({ teamInfo, hackathonId, maxTeamSize, location
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {teamInfo.pendingInvitations.map((invitation) => (
+              {visibleInvitations.map((invitation) => (
                 <div
                   key={invitation.id}
                   className="flex items-center justify-between py-2 border-b last:border-0"
@@ -247,7 +262,6 @@ export function TeamManagementTab({ teamInfo, hackathonId, maxTeamSize, location
                     variant="ghost"
                     size="sm"
                     onClick={() => handleCancelInvitation(invitation.id)}
-                    disabled={cancellingId === invitation.id}
                   >
                     <X className="size-4" />
                     <span className="sr-only">Cancel invitation</span>

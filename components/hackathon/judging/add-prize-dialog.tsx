@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
+import { assertOk } from "@/lib/utils/fetch"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -13,7 +14,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import {
-  Loader2,
   ArrowUpDown,
   ListChecks,
   Vote,
@@ -147,7 +147,6 @@ export function AddPrizeDialog({
     buckets: initialBuckets(),
     maxPicks: "3",
   })
-  const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -283,19 +282,19 @@ export function AddPrizeDialog({
       maxPicksPayload = parsed
     }
 
-    setSaving(true)
     setError(null)
+    handleOpenChange(false)
 
     try {
-      const res = await fetch(
+      await fetch(
         `/api/dashboard/hackathons/${hackathonId}/prizes`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             name,
-            description: form.description.trim() || null,
-            value: form.value.trim() || null,
+            description: form.description.trim() || undefined,
+            value: form.value.trim() || undefined,
             judgingStyle: form.judgingStyle,
             ...(form.roundId ? { roundId: form.roundId } : {}),
             ...(criteriaPayload ? { criteria: criteriaPayload } : {}),
@@ -303,51 +302,18 @@ export function AddPrizeDialog({
             ...(maxPicksPayload !== undefined ? { maxPicks: maxPicksPayload } : {}),
           }),
         }
-      )
+      ).then(assertOk)
 
-      const data = await res.json()
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to create prize")
-      }
-
-      const newId = data.id ?? data.prize?.id ?? ""
-      const created: CreatedPrize = {
-        id: newId,
-        name,
-        description: form.description.trim() || null,
-        value: form.value.trim() || null,
-        judgingStyle: form.judgingStyle,
-        roundId: form.roundId ?? null,
-        maxPicks: maxPicksPayload ?? null,
-        criteria: criteriaPayload
-          ? criteriaPayload.map((c, i) => ({
-              id: `optimistic-${newId}-criterion-${i}`,
-              name: c.name,
-              description: c.description,
-            }))
-          : null,
-        buckets: bucketsPayload
-          ? bucketsPayload.map((b, i) => ({
-              id: `optimistic-${newId}-bucket-${i}`,
-              level: b.level,
-              label: b.label,
-              description: b.description,
-            }))
-          : null,
-      }
-
-      onSuccess?.(created)
+      onSuccess?.()
       router.refresh()
-      handleOpenChange(false)
+      onSuccess?.()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong")
-    } finally {
-      setSaving(false)
     }
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !saving) {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault()
       handleCreate(e as unknown as React.FormEvent)
     }
@@ -365,34 +331,32 @@ export function AddPrizeDialog({
           </DialogTitle>
         </DialogHeader>
         {step === "style" ? (
-          <div className="space-y-3">
-            <div className="space-y-2">
-              {STYLE_OPTIONS.map((option) => {
-                const Icon = option.icon
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => selectStyle(option.value)}
-                    className="w-full rounded-lg border p-4 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <div className="flex items-start gap-3">
-                      <Icon className="size-5 mt-0.5 shrink-0 text-muted-foreground" />
-                      <div className="min-w-0 flex-1">
-                        <span className="font-medium">{option.label}</span>
-                        <p className="text-sm text-muted-foreground mt-0.5">
-                          {option.description}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {option.detail}
-                        </p>
-                      </div>
-                      <ChevronRight className="size-4 mt-1 shrink-0 text-muted-foreground" />
+          <div className="space-y-2">
+            {STYLE_OPTIONS.map((option) => {
+              const Icon = option.icon
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => selectStyle(option.value)}
+                  className="w-full rounded-lg border p-4 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <div className="flex items-start gap-3">
+                    <Icon className="size-5 mt-0.5 shrink-0 text-muted-foreground" />
+                    <div className="min-w-0 flex-1">
+                      <span className="font-medium">{option.label}</span>
+                      <p className="text-sm text-muted-foreground mt-0.5">
+                        {option.description}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {option.detail}
+                      </p>
                     </div>
-                  </button>
-                )
-              })}
-            </div>
+                    <ChevronRight className="size-4 mt-1 shrink-0 text-muted-foreground" />
+                  </div>
+                </button>
+              )
+            })}
           </div>
         ) : (
           <form onSubmit={handleCreate} onKeyDown={handleKeyDown} autoComplete="off" className="space-y-4">
@@ -614,8 +578,7 @@ export function AddPrizeDialog({
               <Button type="button" variant="outline" onClick={() => setStep("style")}>
                 Back
               </Button>
-              <Button type="submit" disabled={saving}>
-                {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
+              <Button type="submit">
                 Create Prize
               </Button>
             </div>

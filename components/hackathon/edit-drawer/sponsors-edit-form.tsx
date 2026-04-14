@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { assertOk } from "@/lib/utils/fetch";
 import { OptimizedImage } from "@/components/ui/optimized-image";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -395,7 +396,7 @@ export function SponsorsEditForm({
     setError(null);
     setSavingCount((c) => c + 1);
     try {
-      const res = await fetch(
+      await fetch(
         `/api/dashboard/hackathons/${hackathonId}/sponsors`,
         {
           method: "POST",
@@ -409,11 +410,7 @@ export function SponsorsEditForm({
             useOrgAssets: !org.isSaved,
           }),
         },
-      );
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || `Failed to add ${org.name}`);
-      }
+      ).then(assertOk);
       setQuery("");
       router.refresh();
     } catch (err) {
@@ -455,7 +452,7 @@ export function SponsorsEditForm({
     setError(null);
     setSavingCount((c) => c + 1);
     try {
-      const res = await fetch(
+      await fetch(
         `/api/dashboard/hackathons/${hackathonId}/sponsors`,
         {
           method: "POST",
@@ -465,11 +462,7 @@ export function SponsorsEditForm({
             tier: "none",
           }),
         },
-      );
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to add sponsor");
-      }
+      ).then(assertOk);
       setQuery("");
       router.refresh();
     } catch (err) {
@@ -492,14 +485,10 @@ export function SponsorsEditForm({
     setError(null);
     setSavingCount((c) => c + 1);
     try {
-      const res = await fetch(
+      await fetch(
         `/api/dashboard/hackathons/${hackathonId}/sponsors/${sponsorId}`,
         { method: "DELETE" },
-      );
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to remove sponsor");
-      }
+      ).then(assertOk);
       router.refresh();
     } catch (err) {
       setHiddenIds((prev) => {
@@ -531,18 +520,14 @@ export function SponsorsEditForm({
     try {
       const body: Record<string, unknown> = { tier: newTier };
       if (newTier === "custom") body.customTierLabel = customTierLabel || null;
-      const res = await fetch(
+      await fetch(
         `/api/dashboard/hackathons/${hackathonId}/sponsors/${sponsorId}`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         },
-      );
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to update tier");
-      }
+      ).then(assertOk);
       router.refresh();
     } catch (err) {
       setOptimisticUpdates((prev) => {
@@ -566,18 +551,14 @@ export function SponsorsEditForm({
     setError(null);
     setSavingCount((c) => c + 1);
     try {
-      const res = await fetch(
+      await fetch(
         `/api/dashboard/hackathons/${hackathonId}/sponsors/${sponsorId}`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ customTierLabel: label || null }),
         },
-      );
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to update custom tier label");
-      }
+      ).then(assertOk);
       router.refresh();
     } catch (err) {
       setOptimisticUpdates((prev) => {
@@ -633,7 +614,7 @@ export function SponsorsEditForm({
     setSavingCount((c) => c + 1);
 
     try {
-      const res = await fetch(
+      await fetch(
         `/api/dashboard/hackathons/${hackathonId}/sponsors/${sponsorId}`,
         {
           method: "PATCH",
@@ -644,11 +625,7 @@ export function SponsorsEditForm({
             useOrgAssets: false,
           }),
         },
-      );
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to link sponsor");
-      }
+      ).then(assertOk);
       router.refresh();
     } catch (err) {
       setOptimisticUpdates((prev) => {
@@ -678,18 +655,14 @@ export function SponsorsEditForm({
     setError(null);
     setSavingCount((c) => c + 1);
     try {
-      const res = await fetch(
+      await fetch(
         `/api/dashboard/hackathons/${hackathonId}/sponsors/${sponsorId}`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ useOrgAssets: nextUseOrgAssets }),
         },
-      );
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to update asset source");
-      }
+      ).then(assertOk);
       router.refresh();
     } catch (err) {
       setOptimisticUpdates((prev) => {

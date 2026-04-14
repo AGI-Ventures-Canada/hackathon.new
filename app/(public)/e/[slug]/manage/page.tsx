@@ -176,7 +176,6 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
               <StatusBadgeMenu />
               <HackathonPageActions
                 slug={hackathon.slug}
-                hackathonName={hackathon.name}
                 isOrganizer={true}
               />
             </div>

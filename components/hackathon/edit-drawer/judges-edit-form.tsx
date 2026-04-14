@@ -2,6 +2,8 @@
 
 import { useState, useRef, useMemo, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import { useOptimisticMutation } from "@/hooks/use-optimistic-mutation"
+import { assertOk } from "@/lib/utils/fetch"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Field, FieldLabel, FieldGroup } from "@/components/ui/field"
@@ -333,32 +335,29 @@ export function JudgesEditForm({
     }
   }
 
-  async function handleDeleteJudge(judgeId: string) {
-    setHiddenIds((prev) => new Set(prev).add(judgeId))
-    setError(null)
-    try {
-      const res = await fetch(
+  const { execute: handleDeleteJudge, error: deleteError } = useOptimisticMutation({
+    fn: async (judgeId: string) => {
+      const data = await fetch(
         `/api/dashboard/hackathons/${hackathonId}/judges/display/${judgeId}`,
         { method: "DELETE" }
-      )
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.error || "Failed to remove judge")
-      }
-      const data = await res.json()
+      ).then(assertOk<{ warning?: string }>)
       if (data.warning) {
         setError("Judge removed, but some linked data could not be cleaned up")
       }
-      router.refresh()
-    } catch (err) {
+      return data
+    },
+    onOptimistic: (judgeId) => {
+      setHiddenIds((prev) => new Set(prev).add(judgeId))
+      setError(null)
+    },
+    onRevert: (judgeId) => {
       setHiddenIds((prev) => {
         const next = new Set(prev)
         next.delete(judgeId)
         return next
       })
-      setError(err instanceof Error ? err.message : "Failed to remove judge")
-    }
-  }
+    },
+  })
 
   function handleFieldChange(judgeId: string, field: string, value: string) {
     setLocalEdits((prev) => ({
@@ -381,18 +380,14 @@ export function JudgesEditForm({
     const fieldKey = `${judgeId}:${field}`
     savingFieldsRef.current.add(fieldKey)
     try {
-      const res = await fetch(
+      await fetch(
         `/api/dashboard/hackathons/${hackathonId}/judges/display/${judgeId}`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ [field]: value || null }),
         }
-      )
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.error || "Failed to update judge")
-      }
+      ).then(assertOk)
       savingFieldsRef.current.delete(fieldKey)
       router.refresh()
     } catch (err) {
@@ -444,7 +439,7 @@ export function JudgesEditForm({
           </Button>
         )}
 
-        {error && <p className="text-destructive text-sm">{error}</p>}
+        {(error || deleteError) && <p className="text-destructive text-sm">{error || deleteError}</p>}
       </FieldGroup>
 
       <div className={`space-y-3 ${visibleJudges.length === 0 ? "hidden" : ""}`}>

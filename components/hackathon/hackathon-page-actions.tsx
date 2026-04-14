@@ -32,7 +32,6 @@ import {
 
 interface HackathonPageActionsProps {
   slug: string
-  hackathonName: string
   isOrganizer: boolean
 }
 
@@ -52,7 +51,6 @@ const PAGE_LINKS = [
 
 export function HackathonPageActions({
   slug,
-  hackathonName,
   isOrganizer,
 }: HackathonPageActionsProps) {
   const [copied, setCopied] = useState(false)
