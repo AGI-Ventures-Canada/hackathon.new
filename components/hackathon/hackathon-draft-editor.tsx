@@ -133,13 +133,17 @@ function stateToHackathon(state: DraftState): PublicHackathon {
   }
 }
 
-export function loadSavedState(storageKey: string): DraftState | null {
+export function loadSavedState(storageKey: string, sourceUrl?: string): DraftState | null {
   if (typeof window === "undefined") return null
   const saved = localStorage.getItem(storageKey)
   if (!saved) return null
   try {
     const parsed = JSON.parse(saved)
     if (Date.now() - parsed.savedAt >= STORAGE_EXPIRY_MS) {
+      localStorage.removeItem(storageKey)
+      return null
+    }
+    if (sourceUrl && parsed.sourceUrl && parsed.sourceUrl !== sourceUrl) {
       localStorage.removeItem(storageKey)
       return null
     }
@@ -173,7 +177,7 @@ export function HackathonDraftEditor({
   const { organization, isLoaded: isOrgLoaded } = useOrganization()
 
   const [state, setState] = useState<DraftState>(() => {
-    return loadSavedState(storageKey) ?? initialState
+    return loadSavedState(storageKey, sourceUrl) ?? initialState
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -185,8 +189,8 @@ export function HackathonDraftEditor({
   const autoTriggeredRef = useRef(false)
 
   useEffect(() => {
-    localStorage.setItem(storageKey, JSON.stringify({ state, savedAt: Date.now() }))
-  }, [state, storageKey])
+    localStorage.setItem(storageKey, JSON.stringify({ state, sourceUrl, savedAt: Date.now() }))
+  }, [state, storageKey, sourceUrl])
 
   useEffect(() => {
     if (!isLoaded || !isOrgLoaded || autoTriggeredRef.current) return
