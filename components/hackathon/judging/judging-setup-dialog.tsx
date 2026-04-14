@@ -186,6 +186,8 @@ export function JudgingSetupDialog({
     }
   }, [hackathonId])
 
+  // Rapid open/close can race — fetches aren't aborted. Low risk since
+  // the last write to state wins and router.refresh() re-syncs on close.
   useEffect(() => {
     if (open) {
       fetchData()
