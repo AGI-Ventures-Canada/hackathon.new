@@ -219,7 +219,8 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
   }
 
   async function handleDelete(roomId: string) {
-    const removed = rooms.find((r) => r.id === roomId)
+    const idx = rooms.findIndex((r) => r.id === roomId)
+    const removed = idx >= 0 ? rooms[idx] : undefined
     setRooms((prev) => prev.filter((r) => r.id !== roomId))
     try {
       await fetch(
@@ -227,7 +228,11 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
         { method: "DELETE" }
       ).then(assertOk)
     } catch {
-      if (removed) setRooms((prev) => [...prev, removed])
+      if (removed) setRooms((prev) => {
+        const next = [...prev]
+        next.splice(idx, 0, removed)
+        return next
+      })
       setError("Failed to delete room")
     }
   }

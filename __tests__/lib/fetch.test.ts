@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect } from "bun:test"
 import { assertOk } from "@/lib/utils/fetch"
 
 function fakeResponse(status: number, body?: unknown): Response {
