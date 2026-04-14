@@ -1,5 +1,10 @@
 import { describe, it, expect } from "bun:test"
-import { getOrganizerActionItems, SEVERITY_GROUP_LABEL } from "@/lib/utils/organizer-actions"
+import {
+  getOrganizerActionItems,
+  isCompleted,
+  SEVERITY_GROUP_LABEL,
+  type ActionItem,
+} from "@/lib/utils/organizer-actions"
 import type { HackathonStatus, HackathonPhase } from "@/lib/db/hackathon-types"
 
 function makeInput(overrides: Partial<Parameters<typeof getOrganizerActionItems>[0]> = {}) {
@@ -30,11 +35,15 @@ function makeInput(overrides: Partial<Parameters<typeof getOrganizerActionItems>
   }
 }
 
+function findPending(items: ActionItem[], id: string): ActionItem | undefined {
+  return items.find((i) => i.id === id && !isCompleted(i))
+}
+
 describe("getOrganizerActionItems", () => {
   describe("draft status", () => {
     it("returns incomplete action items for a bare draft hackathon", () => {
       const items = getOrganizerActionItems(makeInput())
-      const incomplete = items.filter((i) => !i.completed)
+      const incomplete = items.filter((i) => !isCompleted(i))
       const ids = incomplete.map((i) => i.id)
 
       expect(ids).toContain("no-description")
@@ -59,18 +68,18 @@ describe("getOrganizerActionItems", () => {
         locationType: "virtual",
       }))
 
-      expect(items.find((i) => i.id === "no-description")?.completed).toBe(true)
-      expect(items.find((i) => i.id === "no-dates")?.completed).toBe(true)
-      expect(items.find((i) => i.id === "no-prizes")?.completed).toBe(true)
-      expect(items.find((i) => i.id === "no-judges")?.completed).toBe(true)
-      expect(items.find((i) => i.id === "no-banner")?.completed).toBe(true)
-      expect(items.find((i) => i.id === "create-challenge")?.completed).toBe(true)
-      expect(items.find((i) => i.id === "no-location")?.completed).toBe(true)
+      expect(isCompleted(items.find((i) => i.id === "no-description")!)).toBe(true)
+      expect(isCompleted(items.find((i) => i.id === "no-dates")!)).toBe(true)
+      expect(isCompleted(items.find((i) => i.id === "no-prizes")!)).toBe(true)
+      expect(isCompleted(items.find((i) => i.id === "no-judges")!)).toBe(true)
+      expect(isCompleted(items.find((i) => i.id === "no-banner")!)).toBe(true)
+      expect(isCompleted(items.find((i) => i.id === "create-challenge")!)).toBe(true)
+      expect(isCompleted(items.find((i) => i.id === "no-location")!)).toBe(true)
     })
 
     it("marks missing dates as urgent", () => {
       const items = getOrganizerActionItems(makeInput())
-      const dateItem = items.find((i) => i.id === "no-dates" && !i.completed)
+      const dateItem = findPending(items, "no-dates")
 
       expect(dateItem?.severity).toBe("urgent")
       expect(dateItem?.hint).toBe("Required before you can publish")
@@ -78,7 +87,7 @@ describe("getOrganizerActionItems", () => {
 
     it("includes hint text on all incomplete non-transition draft action items", () => {
       const items = getOrganizerActionItems(makeInput())
-      for (const item of items.filter((i) => !i.completed && i.variant !== "transition")) {
+      for (const item of items.filter((i) => !isCompleted(i) && i.close.kind !== "transition")) {
         expect(typeof item.hint).toBe("string")
         expect(item.hint!.length).toBeGreaterThan(0)
       }
@@ -95,7 +104,7 @@ describe("getOrganizerActionItems", () => {
 
     it("marks judges completed when judgeCount > 0", () => {
       const items = getOrganizerActionItems(makeInput({ judgeCount: 3 }))
-      expect(items.find((i) => i.id === "no-judges")?.completed).toBe(true)
+      expect(isCompleted(items.find((i) => i.id === "no-judges")!)).toBe(true)
     })
 
     it("shows pending judge invitation count in completed label", () => {
@@ -103,22 +112,23 @@ describe("getOrganizerActionItems", () => {
         judgeDisplayCount: 2,
         pendingJudgeInvitationCount: 3,
       }))
-      const item = items.find((i) => i.id === "no-judges")
-      expect(item?.completed).toBe(true)
-      expect(item?.label).toContain("3 pending")
+      const item = items.find((i) => i.id === "no-judges")!
+      expect(isCompleted(item)).toBe(true)
+      expect(item.label).toContain("3 pending")
     })
 
     it("marks location completed when locationType is set", () => {
       const items = getOrganizerActionItems(makeInput({ locationType: "in_person" }))
-      expect(items.find((i) => i.id === "no-location")?.completed).toBe(true)
+      expect(isCompleted(items.find((i) => i.id === "no-location")!)).toBe(true)
     })
 
-    it("always shows review agenda item during draft", () => {
+    it("always shows review agenda item during draft as manual", () => {
       const items = getOrganizerActionItems(makeInput())
-      const item = items.find((i) => i.id === "add-schedule" && !i.completed)
+      const item = items.find((i) => i.id === "add-schedule")
       expect(item).toBeDefined()
       expect(item?.severity).toBe("warning")
       expect(item?.ctaLabel).toBe("Review")
+      expect(item?.close.kind).toBe("manual")
     })
 
     it("uses submission deadline dialog action for check-submission-deadline", () => {
@@ -126,6 +136,7 @@ describe("getOrganizerActionItems", () => {
       const item = items.find((i) => i.id === "check-submission-deadline")
       expect(item).toBeDefined()
       expect(item?.action).toBe("open-submission-deadline-dialog")
+      expect(item?.close.kind).toBe("manual")
     })
 
     it("does not show ready-to-publish when dates are missing", () => {
@@ -141,7 +152,7 @@ describe("getOrganizerActionItems", () => {
       }))
       const item = items.find((i) => i.id === "ready-to-publish")
       expect(item).toBeDefined()
-      expect(item?.variant).toBe("transition")
+      expect(item?.close.kind).toBe("transition")
       expect(item?.action).toBe("transition-to-published")
       expect(item?.ctaLabel).toBe("Publish")
     })
@@ -154,6 +165,16 @@ describe("getOrganizerActionItems", () => {
   })
 
   describe("published status", () => {
+    it("shows promote-event as manual", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "published",
+        participantCount: 0,
+      }))
+      const item = items.find((i) => i.id === "promote-event")
+      expect(item).toBeDefined()
+      expect(item?.close.kind).toBe("manual")
+    })
+
     it("shows starting soon when event starts within 24 hours", () => {
       const soon = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString()
       const items = getOrganizerActionItems(makeInput({
@@ -187,12 +208,12 @@ describe("getOrganizerActionItems", () => {
       }))
       const item = items.find((i) => i.id === "ready-to-go-live")
       expect(item).toBeDefined()
-      expect(item?.variant).toBe("transition")
+      expect(item?.close.kind).toBe("transition")
       expect(item?.action).toBe("transition-to-active")
       expect(item?.ctaLabel).toBe("Go Live")
     })
 
-    it("shows verify-automated-times in published phase", () => {
+    it("shows verify-automated-times as dismiss kind", () => {
       const items = getOrganizerActionItems(makeInput({
         status: "published",
         participantCount: 0,
@@ -202,7 +223,7 @@ describe("getOrganizerActionItems", () => {
       expect(item?.severity).toBe("info")
       expect(item?.action).toBe("open-agenda-dialog")
       expect(item?.ctaLabel).toBe("Review")
-      expect(item?.dismissible).toBe(true)
+      expect(item?.close.kind).toBe("dismiss")
     })
   })
 
@@ -215,7 +236,7 @@ describe("getOrganizerActionItems", () => {
         judgeCount: 2,
       }))
 
-      const item = items.find((i) => i.id === "create-challenge" && !i.completed)
+      const item = findPending(items, "create-challenge")
       expect(item).toBeDefined()
       expect(item?.severity).toBe("warning")
       expect(item?.hint).toBe("Define the problem participants will solve")
@@ -259,7 +280,7 @@ describe("getOrganizerActionItems", () => {
         submissionCount: 10,
       }))
 
-      const incomplete = items.filter((i) => !i.completed && i.variant !== "transition")
+      const incomplete = items.filter((i) => !isCompleted(i) && i.close.kind !== "transition")
       expect(incomplete).toHaveLength(0)
     })
 
@@ -283,7 +304,7 @@ describe("getOrganizerActionItems", () => {
       }))
       const item = items.find((i) => i.id === "ready-for-judging")
       expect(item).toBeDefined()
-      expect(item?.variant).toBe("transition")
+      expect(item?.close.kind).toBe("transition")
       expect(item?.action).toBe("transition-to-judging")
       expect(item?.ctaLabel).toBe("Start Judging")
     })
@@ -331,8 +352,8 @@ describe("getOrganizerActionItems", () => {
         judgingProgress: { totalAssignments: 20, completedAssignments: 20 },
       }))
 
-      const item = items.find((i) => i.id === "judging-incomplete")
-      expect(item?.completed).toBe(true)
+      const item = items.find((i) => i.id === "judging-incomplete")!
+      expect(isCompleted(item)).toBe(true)
     })
 
     it("shows complete-early when judging is incomplete", () => {
@@ -344,7 +365,7 @@ describe("getOrganizerActionItems", () => {
       expect(item).toBeDefined()
       expect(item?.label).toBe("Complete event early")
       expect(item?.hint).toBe("Judging is still in progress")
-      expect(item?.variant).toBe("transition")
+      expect(item?.close.kind).toBe("transition")
     })
 
     it("shows ready-to-wrap-up when all judging is done", () => {
@@ -356,7 +377,7 @@ describe("getOrganizerActionItems", () => {
       expect(item).toBeDefined()
       expect(item?.label).toBe("Ready to wrap up")
       expect(item?.hint).toBe("All judging is complete — publish results")
-      expect(item?.variant).toBe("transition")
+      expect(item?.close.kind).toBe("transition")
       expect(item?.ctaLabel).toBe("Complete Event")
     })
   })
@@ -368,7 +389,7 @@ describe("getOrganizerActionItems", () => {
         resultsPublishedAt: null,
       }))
 
-      const item = items.find((i) => i.id === "results-not-published" && !i.completed)
+      const item = findPending(items, "results-not-published")
       expect(item).toBeDefined()
       expect(item?.severity).toBe("urgent")
       expect(item?.hint).toBe("Publishing announces winners and automatically emails them")
@@ -380,8 +401,8 @@ describe("getOrganizerActionItems", () => {
         resultsPublishedAt: "2026-04-01T00:00:00Z",
       }))
 
-      const item = items.find((i) => i.id === "results-not-published")
-      expect(item?.completed).toBe(true)
+      const item = items.find((i) => i.id === "results-not-published")!
+      expect(isCompleted(item)).toBe(true)
     })
 
     it("shows feedback survey item when survey URL is set", () => {
@@ -391,7 +412,7 @@ describe("getOrganizerActionItems", () => {
         feedbackSurveyUrl: "https://example.com/survey",
         feedbackSurveySentAt: null,
       }))
-      const item = items.find((i) => i.id === "feedback-survey-not-sent" && !i.completed)
+      const item = findPending(items, "feedback-survey-not-sent")
       expect(item).toBeDefined()
       expect(item?.hint).toBe("Learn what worked and what to improve")
       expect(item?.tab).toBe("post-event")
@@ -404,7 +425,7 @@ describe("getOrganizerActionItems", () => {
         feedbackSurveyUrl: "https://example.com/survey",
         feedbackSurveySentAt: "2026-04-02T00:00:00Z",
       }))
-      expect(items.find((i) => i.id === "feedback-survey-not-sent")?.completed).toBe(true)
+      expect(isCompleted(items.find((i) => i.id === "feedback-survey-not-sent")!)).toBe(true)
     })
 
     it("does not show feedback survey when no URL configured", () => {
@@ -428,7 +449,7 @@ describe("getOrganizerActionItems", () => {
   describe("ctaLabel", () => {
     it("includes ctaLabel on all incomplete non-transition draft action items", () => {
       const items = getOrganizerActionItems(makeInput())
-      for (const item of items.filter((i) => !i.completed && i.variant !== "transition")) {
+      for (const item of items.filter((i) => !isCompleted(i) && i.close.kind !== "transition")) {
         expect(item.ctaLabel).toBeDefined()
         expect(typeof item.ctaLabel).toBe("string")
       }
@@ -436,13 +457,13 @@ describe("getOrganizerActionItems", () => {
 
     it("maps correct CTA labels for draft items", () => {
       const items = getOrganizerActionItems(makeInput())
-      expect(items.find((i) => i.id === "no-description" && !i.completed)?.ctaLabel).toBe("Edit")
-      expect(items.find((i) => i.id === "no-dates" && !i.completed)?.ctaLabel).toBe("Edit")
-      expect(items.find((i) => i.id === "no-prizes" && !i.completed)?.ctaLabel).toBe("Add")
-      expect(items.find((i) => i.id === "no-judges" && !i.completed)?.ctaLabel).toBe("Invite")
-      expect(items.find((i) => i.id === "no-banner" && !i.completed)?.ctaLabel).toBe("Add")
-      expect(items.find((i) => i.id === "create-challenge" && !i.completed)?.ctaLabel).toBe("Add")
-      expect(items.find((i) => i.id === "no-location" && !i.completed)?.ctaLabel).toBe("Set")
+      expect(findPending(items, "no-description")?.ctaLabel).toBe("Edit")
+      expect(findPending(items, "no-dates")?.ctaLabel).toBe("Edit")
+      expect(findPending(items, "no-prizes")?.ctaLabel).toBe("Add")
+      expect(findPending(items, "no-judges")?.ctaLabel).toBe("Invite")
+      expect(findPending(items, "no-banner")?.ctaLabel).toBe("Add")
+      expect(findPending(items, "create-challenge")?.ctaLabel).toBe("Add")
+      expect(findPending(items, "no-location")?.ctaLabel).toBe("Set")
     })
 
     it("maps correct CTA labels for published items", () => {
@@ -452,8 +473,8 @@ describe("getOrganizerActionItems", () => {
         judgeDisplayCount: 0,
         prizeCount: 0,
       }))
-      expect(items.find((i) => i.id === "no-judges" && !i.completed)?.ctaLabel).toBe("Invite")
-      expect(items.find((i) => i.id === "no-prizes" && !i.completed)?.ctaLabel).toBe("Add")
+      expect(findPending(items, "no-judges")?.ctaLabel).toBe("Invite")
+      expect(findPending(items, "no-prizes")?.ctaLabel).toBe("Add")
     })
 
     it("maps correct CTA labels for completed status items", () => {
@@ -461,26 +482,26 @@ describe("getOrganizerActionItems", () => {
         status: "completed",
         resultsPublishedAt: null,
       }))
-      expect(items.find((i) => i.id === "results-not-published" && !i.completed)?.ctaLabel).toBe("Publish")
+      expect(findPending(items, "results-not-published")?.ctaLabel).toBe("Publish")
     })
   })
 
   describe("transition items", () => {
-    it("all transition items have variant set", () => {
+    it("all transition items have close.kind transition", () => {
       const draftItems = getOrganizerActionItems(makeInput({
         startsAt: "2026-05-01T00:00:00Z",
         endsAt: "2026-05-02T00:00:00Z",
         locationType: "virtual",
       }))
       const publishItem = draftItems.find((i) => i.id === "ready-to-publish")
-      expect(publishItem?.variant).toBe("transition")
+      expect(publishItem?.close.kind).toBe("transition")
 
       const pubItems = getOrganizerActionItems(makeInput({
         status: "published",
         participantCount: 5,
       }))
       const goLiveItem = pubItems.find((i) => i.id === "ready-to-go-live")
-      expect(goLiveItem?.variant).toBe("transition")
+      expect(goLiveItem?.close.kind).toBe("transition")
 
       const activeItems = getOrganizerActionItems(makeInput({
         status: "active",
@@ -490,14 +511,71 @@ describe("getOrganizerActionItems", () => {
         challengeExists: true,
       }))
       const judgingItem = activeItems.find((i) => i.id === "ready-for-judging")
-      expect(judgingItem?.variant).toBe("transition")
+      expect(judgingItem?.close.kind).toBe("transition")
 
       const judgingItems = getOrganizerActionItems(makeInput({
         status: "judging",
         judgingProgress: { totalAssignments: 10, completedAssignments: 10 },
       }))
       const completeItem = judgingItems.find((i) => i.id === "ready-to-complete")
-      expect(completeItem?.variant).toBe("transition")
+      expect(completeItem?.close.kind).toBe("transition")
+    })
+  })
+
+  describe("close condition invariant", () => {
+    const representativeInputs: Array<[string, Parameters<typeof getOrganizerActionItems>[0]]> = [
+      ["bare draft", makeInput()],
+      ["draft with everything", makeInput({
+        description: "desc",
+        bannerUrl: "https://x",
+        startsAt: "2026-05-01T00:00:00Z",
+        endsAt: "2026-05-02T00:00:00Z",
+        locationType: "virtual",
+        challengeExists: true,
+        challengeReleased: true,
+        prizeCount: 2,
+        judgeDisplayCount: 3,
+      })],
+      ["published fresh", makeInput({ status: "published", participantCount: 0 })],
+      ["published starting soon", makeInput({
+        status: "published",
+        startsAt: new Date(Date.now() + 10 * 60 * 60 * 1000).toISOString(),
+      })],
+      ["active with everything", makeInput({
+        status: "active",
+        challengeReleased: true,
+        challengeExists: true,
+        submissionCount: 5,
+        judgeCount: 3,
+        mentorQueue: { open: 2 },
+      })],
+      ["active unreleased challenge", makeInput({
+        status: "active",
+        challengeExists: true,
+        challengeReleased: false,
+        challengeReleaseTime: "2026-05-01T09:00:00Z",
+      })],
+      ["judging in progress", makeInput({
+        status: "judging",
+        judgingProgress: { totalAssignments: 10, completedAssignments: 5 },
+        mentorQueue: { open: 1 },
+      })],
+      ["completed with survey", makeInput({
+        status: "completed",
+        resultsPublishedAt: "2026-04-01T00:00:00Z",
+        feedbackSurveyUrl: "https://x",
+      })],
+    ]
+
+    it.each(representativeInputs)("every item has a valid close.kind for %s", (_name, input) => {
+      const items = getOrganizerActionItems(input)
+      for (const item of items) {
+        expect(item.close).toBeDefined()
+        expect(["auto", "manual", "dismiss", "transition"]).toContain(item.close.kind)
+        if (item.close.kind === "auto") {
+          expect(typeof item.close.isComplete).toBe("boolean")
+        }
+      }
     })
   })
 

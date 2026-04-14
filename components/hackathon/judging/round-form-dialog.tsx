@@ -15,7 +15,9 @@ import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Loader2 } from "lucide-react"
-import type { AdvancementRule } from "./rounds-types"
+import type { AdvancementRule, RoundData } from "./rounds-types"
+
+export type CreatedRound = RoundData
 
 interface RoundFormValues {
   name: string
@@ -36,7 +38,7 @@ interface RoundFormDialogProps {
     topN?: number
     threshold?: number
   }
-  onSuccess?: () => void
+  onSuccess?: (created?: CreatedRound) => void
 }
 
 export function RoundFormDialog({
@@ -106,12 +108,29 @@ export function RoundFormDialog({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       })
+      const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
         throw new Error(data.error || "Failed to save round")
       }
+      if (mode === "create" && data.round) {
+        const r = data.round
+        const created: CreatedRound = {
+          id: r.id,
+          name: r.name,
+          status: r.status ?? "planned",
+          isActive: r.status === "active",
+          displayOrder: r.display_order ?? r.displayOrder ?? 0,
+          advancement: (r.advancement ?? form.advancement) as AdvancementRule,
+          advancementConfig:
+            r.advancement_config ?? r.advancementConfig ?? advancementConfig,
+          prizeCount: 0,
+          screeningPrizeId: null,
+        }
+        onSuccess?.(created)
+      } else {
+        onSuccess?.()
+      }
       router.refresh()
-      onSuccess?.()
       onOpenChange(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong")
@@ -131,16 +150,16 @@ export function RoundFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{mode === "edit" ? "Edit round" : "Add round"}</DialogTitle>
+          <DialogTitle>{mode === "edit" ? "Edit round" : "Add a round"}</DialogTitle>
           <DialogDescription>
             {mode === "edit"
-              ? "Update the round name or how submissions advance."
-              : "Create a new judging round. Prizes and advancement rules attach to rounds."}
+              ? "Change the name or how projects move on."
+              : "A round is one step of judging. Use rounds if you want to pick a shortlist first, then pick winners from it."}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} onKeyDown={handleKeyDown} autoComplete="off" className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="round-name">Name</Label>
+            <Label htmlFor="round-name">Round name</Label>
             <Input
               id="round-name"
               value={form.name}
@@ -155,7 +174,7 @@ export function RoundFormDialog({
           </div>
 
           <div className="space-y-2">
-            <Label>Advancement</Label>
+            <Label>Who moves to the next round?</Label>
             <RadioGroup
               value={form.advancement}
               onValueChange={(v) =>
@@ -169,9 +188,9 @@ export function RoundFormDialog({
               >
                 <RadioGroupItem id="adv-manual" value="manual" className="mt-0.5" />
                 <div className="space-y-0.5">
-                  <div className="text-sm font-medium">Manual</div>
+                  <div className="text-sm font-medium">I&apos;ll pick</div>
                   <div className="text-xs text-muted-foreground">
-                    I&apos;ll pick finalists myself once scoring is done.
+                    Choose who moves on after judges finish scoring.
                   </div>
                 </div>
               </Label>
@@ -183,14 +202,14 @@ export function RoundFormDialog({
                 <RadioGroupItem id="adv-topn" value="top_n" className="mt-0.5" />
                 <div className="flex-1 space-y-2">
                   <div>
-                    <div className="text-sm font-medium">Top N by score</div>
+                    <div className="text-sm font-medium">The top few scorers</div>
                     <div className="text-xs text-muted-foreground">
-                      The highest-scored submissions advance automatically.
+                      The submissions with the highest scores move on.
                     </div>
                   </div>
                   {form.advancement === "top_n" && (
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground">Advance top</span>
+                      <span className="text-xs text-muted-foreground">How many?</span>
                       <Input
                         type="number"
                         min={1}
@@ -213,14 +232,14 @@ export function RoundFormDialog({
                 <RadioGroupItem id="adv-threshold" value="threshold" className="mt-0.5" />
                 <div className="flex-1 space-y-2">
                   <div>
-                    <div className="text-sm font-medium">Score threshold</div>
+                    <div className="text-sm font-medium">Anyone who scores high enough</div>
                     <div className="text-xs text-muted-foreground">
-                      Any submission scoring at or above the threshold advances.
+                      Set a score. Everyone who hits it or higher moves on.
                     </div>
                   </div>
                   {form.advancement === "threshold" && (
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground">Minimum score</span>
+                      <span className="text-xs text-muted-foreground">Score to beat</span>
                       <Input
                         type="number"
                         step="0.1"

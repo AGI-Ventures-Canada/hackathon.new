@@ -29,8 +29,8 @@ export function ActionItemsPanel({ visible }: Props) {
   const isClient = useSyncExternalStore(emptySubscribe, () => true, () => false)
 
   const hasUrgent = activeItems.some((i) => i.severity === "urgent" || i.severity === "warning")
-  const transitionItems = activeItems.filter((i) => i.variant === "transition")
-  const regularItems = activeItems.filter((i) => i.variant !== "transition")
+  const transitionItems = activeItems.filter((i) => i.close.kind === "transition")
+  const regularItems = activeItems.filter((i) => i.close.kind !== "transition")
 
   const groups = groupOrder
     .map((severity) => ({

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -14,7 +14,6 @@ import {
 } from "@/components/ui/dialog"
 import {
   Loader2,
-  CheckCircle2,
   ArrowUpDown,
   ListChecks,
   Vote,
@@ -40,41 +39,50 @@ const STYLE_OPTIONS: {
 }[] = [
   {
     value: "bucket_sort",
-    label: "Bucket Sort",
-    description: "Judges sort submissions into tiers",
-    detail: "Best for: Grand Prize, Overall Winner",
+    label: "Sort into groups",
+    description: "Judges put each project into a group like great, okay, or not ready.",
+    detail: "Good for: grand prize or overall winner",
     icon: ArrowUpDown,
   },
   {
     value: "gate_check",
-    label: "Gate Check",
-    description: "Pass/fail checklist for each submission",
-    detail: 'Best for: "Best Use of [Product]", compliance prizes',
+    label: "Pass or fail",
+    description: "Each project gets a yes or no on a list of rules.",
+    detail: "Good for: “Best Use of [Product]” or rule-based prizes",
     icon: ListChecks,
   },
   {
     value: "crowd_vote",
-    label: "Crowd Vote",
-    description: "Open voting for all attendees",
-    detail: "Best for: People's Choice, Audience Award",
+    label: "Everyone votes",
+    description: "Anyone at the event can vote.",
+    detail: "Good for: People's Choice or Audience Award",
     icon: Vote,
   },
   {
     value: "judges_pick",
-    label: "Judge's Pick",
-    description: "Each judge picks their top N favorites",
-    detail: "Best for: Expert panels, sponsor prizes",
+    label: "Judge's picks",
+    description: "Each judge picks their top few favorites.",
+    detail: "Good for: expert panels or sponsor prizes",
     icon: Award,
   },
 ]
 
 type CreateStep = "style" | "details"
 
+export type CreatedPrize = {
+  id: string
+  name: string
+  description: string | null
+  value: string | null
+  judgingStyle: PrizeJudgingStyle
+  roundId: string | null
+}
+
 interface AddPrizeDialogProps {
   hackathonId: string
   open: boolean
   onOpenChange: (open: boolean) => void
-  onSuccess?: () => void
+  onSuccess?: (created?: CreatedPrize) => void
   rounds?: RoundData[]
 }
 
@@ -100,7 +108,17 @@ export function AddPrizeDialog({
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    setForm((prev) => {
+      const stillValid =
+        prev.roundId !== null && visibleRounds.some((r) => r.id === prev.roundId)
+      if (stillValid) return prev
+      return { ...prev, roundId: defaultRoundId }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, rounds])
 
   function handleOpenChange(nextOpen: boolean) {
     if (!nextOpen) {
@@ -113,7 +131,6 @@ export function AddPrizeDialog({
         roundId: defaultRoundId,
       })
       setError(null)
-      setSuccess(false)
     }
     onOpenChange(nextOpen)
   }
@@ -145,20 +162,28 @@ export function AddPrizeDialog({
             description: form.description.trim() || null,
             value: form.value.trim() || null,
             judgingStyle: form.judgingStyle,
-            roundId: form.roundId,
+            ...(form.roundId ? { roundId: form.roundId } : {}),
           }),
         }
       )
 
+      const data = await res.json()
       if (!res.ok) {
-        const data = await res.json()
         throw new Error(data.error || "Failed to create prize")
       }
 
-      setSuccess(true)
+      const created: CreatedPrize = {
+        id: data.id ?? data.prize?.id ?? "",
+        name,
+        description: form.description.trim() || null,
+        value: form.value.trim() || null,
+        judgingStyle: form.judgingStyle,
+        roundId: form.roundId ?? null,
+      }
+
+      onSuccess?.(created)
       router.refresh()
-      onSuccess?.()
-      setTimeout(() => handleOpenChange(false), 800)
+      handleOpenChange(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong")
     } finally {
@@ -181,41 +206,38 @@ export function AddPrizeDialog({
       <DialogContent className={step === "style" ? "sm:max-w-lg" : undefined}>
         <DialogHeader>
           <DialogTitle>
-            {step === "style" ? "How should this prize be judged?" : "Prize details"}
+            {step === "style" ? "How should judges pick the winner?" : "Prize details"}
           </DialogTitle>
         </DialogHeader>
-        {success ? (
-          <div className="flex flex-col items-center gap-3 py-8">
-            <CheckCircle2 className="size-10 text-primary" />
-            <p className="text-sm font-medium">Prize created</p>
-          </div>
-        ) : step === "style" ? (
-          <div className="space-y-2">
-            {STYLE_OPTIONS.map((option) => {
-              const Icon = option.icon
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => selectStyle(option.value)}
-                  className="w-full rounded-lg border p-4 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <div className="flex items-start gap-3">
-                    <Icon className="size-5 mt-0.5 shrink-0 text-muted-foreground" />
-                    <div className="min-w-0 flex-1">
-                      <span className="font-medium">{option.label}</span>
-                      <p className="text-sm text-muted-foreground mt-0.5">
-                        {option.description}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {option.detail}
-                      </p>
+        {step === "style" ? (
+          <div className="space-y-3">
+            <div className="space-y-2">
+              {STYLE_OPTIONS.map((option) => {
+                const Icon = option.icon
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => selectStyle(option.value)}
+                    className="w-full rounded-lg border p-4 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <div className="flex items-start gap-3">
+                      <Icon className="size-5 mt-0.5 shrink-0 text-muted-foreground" />
+                      <div className="min-w-0 flex-1">
+                        <span className="font-medium">{option.label}</span>
+                        <p className="text-sm text-muted-foreground mt-0.5">
+                          {option.description}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {option.detail}
+                        </p>
+                      </div>
+                      <ChevronRight className="size-4 mt-1 shrink-0 text-muted-foreground" />
                     </div>
-                    <ChevronRight className="size-4 mt-1 shrink-0 text-muted-foreground" />
-                  </div>
-                </button>
-              )
-            })}
+                  </button>
+                )
+              })}
+            </div>
           </div>
         ) : (
           <form onSubmit={handleCreate} onKeyDown={handleKeyDown} autoComplete="off" className="space-y-4 overflow-hidden">
@@ -256,7 +278,7 @@ export function AddPrizeDialog({
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  Prizes in a round only see submissions that advance into it.
+                  Judges only score this prize with the projects that made it into this round.
                 </p>
               </div>
             )}

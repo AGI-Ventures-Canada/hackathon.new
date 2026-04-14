@@ -123,13 +123,24 @@ export async function createPrize(
 ): Promise<CreatePrizeResult> {
   const client = getSupabase() as unknown as SupabaseClient
 
+  let safeRoundId: string | null = input.roundId ?? null
+  if (safeRoundId) {
+    const { data: round } = await client
+      .from("judging_rounds")
+      .select("id")
+      .eq("id", safeRoundId)
+      .eq("hackathon_id", hackathonId)
+      .maybeSingle()
+    if (!round) safeRoundId = null
+  }
+
   const row: Record<string, unknown> = {
     hackathon_id: hackathonId,
     name: input.name,
     description: input.description ?? null,
     value: input.value ?? null,
     judging_style: input.judgingStyle,
-    round_id: input.roundId ?? null,
+    round_id: safeRoundId,
     assignment_mode: input.assignmentMode ?? "organizer_assigned",
     max_picks: input.maxPicks ?? 3,
     display_order: input.displayOrder ?? 0,

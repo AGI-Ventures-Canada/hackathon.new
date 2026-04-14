@@ -55,11 +55,13 @@ function WithTooltip({ tooltip, children }: { tooltip?: string; children: React.
 }
 
 export function ActionItemRow({ item, completed, compact }: Props) {
-  const { toggleComplete, handleActionClick, removeCustomItem, slug } = useActionItems()
+  const { toggleComplete, dismissItem, handleActionClick, removeCustomItem, slug } = useActionItems()
   const isCustom = item.id.startsWith("custom-")
   const href = buildActionHref(slug, item)
   const hasAction = !!item.action
-  const isTransition = item.variant === "transition"
+  const isTransition = item.close.kind === "transition"
+  const canToggle = item.close.kind === "manual"
+  const canDismiss = item.close.kind === "dismiss"
 
   if (isTransition) {
     return (
@@ -97,17 +99,22 @@ export function ActionItemRow({ item, completed, compact }: Props) {
     </Badge>
   ) : null
 
+  const indicator = (
+    <span
+      className="shrink-0"
+      onClick={(e) => { e.preventDefault(); e.stopPropagation() }}
+    >
+      <Checkbox
+        checked={completed}
+        disabled={!canToggle}
+        onCheckedChange={canToggle ? () => toggleComplete(item.id) : undefined}
+      />
+    </span>
+  )
+
   const content = (
     <span className={cn("flex items-center gap-3 py-2.5", compact && "py-2")}>
-      <span
-        className="shrink-0"
-        onClick={(e) => { e.preventDefault(); e.stopPropagation() }}
-      >
-        <Checkbox
-          checked={completed}
-          onCheckedChange={() => toggleComplete(item.id)}
-        />
-      </span>
+      {indicator}
       <span className={cn("flex-1 min-w-0", completed && "opacity-50")}>
         <span className={cn("text-sm block", compact && "text-sm")}>{item.label}</span>
         {!compact && !completed && item.hint && (
@@ -115,13 +122,26 @@ export function ActionItemRow({ item, completed, compact }: Props) {
         )}
       </span>
       {ctaBadge}
-      {isCustom && (
+      {(isCustom || canDismiss) && !completed && (
         <span
           role="button"
           tabIndex={0}
+          aria-label={isCustom ? "Remove custom item" : "Dismiss"}
           className="shrink-0 rounded p-0.5 opacity-0 group-hover:opacity-100 hover:bg-muted-foreground/10 transition-opacity"
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeCustomItem(item.id) }}
-          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); removeCustomItem(item.id) } }}
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            if (isCustom) removeCustomItem(item.id)
+            else dismissItem(item.id)
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault()
+              e.stopPropagation()
+              if (isCustom) removeCustomItem(item.id)
+              else dismissItem(item.id)
+            }
+          }}
         >
           <X className="size-3.5 text-muted-foreground" />
         </span>

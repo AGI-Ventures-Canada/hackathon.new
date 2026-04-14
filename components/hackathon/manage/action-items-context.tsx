@@ -13,6 +13,7 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   getOrganizerActionItems,
+  isCompleted,
   type ActionItem,
   type ActionSeverity,
 } from "@/lib/utils/organizer-actions";
@@ -175,7 +176,10 @@ export function ActionItemsProvider({
     if (typeof window === "undefined") return [];
     try {
       const s = localStorage.getItem(`custom-actions-${hackathonId}`);
-      if (s) return JSON.parse(s) as ActionItem[];
+      if (s) {
+        const raw = JSON.parse(s) as Array<Partial<ActionItem> & { id: string; label: string; severity: ActionSeverity }>;
+        return raw.map((i) => ({ ...i, close: i.close ?? { kind: "manual" as const } }) as ActionItem);
+      }
     } catch {}
     return [];
   });
@@ -185,7 +189,14 @@ export function ActionItemsProvider({
     if (typeof window === "undefined") return {};
     try {
       const s = localStorage.getItem(`completed-snapshots-${hackathonId}`);
-      if (s) return JSON.parse(s) as Record<string, ActionItem>;
+      if (s) {
+        const raw = JSON.parse(s) as Record<string, Partial<ActionItem> & { id: string; label: string; severity: ActionSeverity }>;
+        const out: Record<string, ActionItem> = {};
+        for (const [k, v] of Object.entries(raw)) {
+          out[k] = { ...v, close: v.close ?? { kind: "auto" as const, isComplete: true } } as ActionItem;
+        }
+        return out;
+      }
     } catch {}
     return {};
   });
@@ -210,22 +221,29 @@ export function ActionItemsProvider({
     () => new Set(allItems.map((i) => i.id)),
     [allItems],
   );
+  const manualItemIds = useMemo(
+    () => new Set(allItems.filter((i) => i.close.kind === "manual").map((i) => i.id)),
+    [allItems],
+  );
 
   const effectiveCompletedIds = useMemo(() => {
     const filtered = new Set<string>();
     for (const id of completedIds) {
-      if (actionItemIds.has(id) || completedSnapshots[id]) filtered.add(id);
+      if (manualItemIds.has(id) || completedSnapshots[id]) filtered.add(id);
     }
     return filtered.size !== completedIds.size ? filtered : completedIds;
-  }, [completedIds, actionItemIds, completedSnapshots]);
+  }, [completedIds, manualItemIds, completedSnapshots]);
 
   const effectiveDismissedIds = useMemo(() => {
     const filtered = new Set<string>();
+    const dismissibleIds = new Set(
+      allItems.filter((i) => i.close.kind === "dismiss").map((i) => i.id),
+    );
     for (const id of dismissedIds) {
-      if (actionItemIds.has(id)) filtered.add(id);
+      if (dismissibleIds.has(id)) filtered.add(id);
     }
     return filtered.size !== dismissedIds.size ? filtered : dismissedIds;
-  }, [dismissedIds, actionItemIds]);
+  }, [dismissedIds, allItems]);
 
   useEffect(() => {
     if (effectiveDismissedIds !== dismissedIds) {
@@ -238,6 +256,8 @@ export function ActionItemsProvider({
 
   const toggleComplete = useCallback(
     (id: string) => {
+      const item = allItems.find((i) => i.id === id);
+      if (!item || item.close.kind !== "manual") return;
       const wasCompleted = completedIds.has(id);
       setCompletedIds((prev) => {
         const next = new Set(prev);
@@ -257,8 +277,7 @@ export function ActionItemsProvider({
         if (wasCompleted) {
           delete next[id];
         } else {
-          const item = allItems.find((i) => i.id === id);
-          if (item) next[id] = item;
+          next[id] = item;
         }
         localStorage.setItem(
           `completed-snapshots-${hackathonId}`,
@@ -272,6 +291,8 @@ export function ActionItemsProvider({
 
   const markComplete = useCallback(
     (id: string) => {
+      const item = allItems.find((i) => i.id === id);
+      if (!item || item.close.kind !== "manual") return;
       setCompletedIds((prev) => {
         if (prev.has(id)) return prev;
         const next = new Set(prev);
@@ -284,8 +305,6 @@ export function ActionItemsProvider({
       });
       setCompletedSnapshots((prev) => {
         if (prev[id]) return prev;
-        const item = allItems.find((i) => i.id === id);
-        if (!item) return prev;
         const next = { ...prev, [id]: item };
         localStorage.setItem(
           `completed-snapshots-${hackathonId}`,
@@ -299,6 +318,8 @@ export function ActionItemsProvider({
 
   const dismissItem = useCallback(
     (id: string) => {
+      const item = allItems.find((i) => i.id === id);
+      if (!item || item.close.kind !== "dismiss") return;
       setDismissedIds((prev) => {
         const next = new Set(prev);
         next.add(id);
@@ -309,7 +330,7 @@ export function ActionItemsProvider({
         return next;
       });
     },
-    [hackathonId],
+    [hackathonId, allItems],
   );
 
   const addCustomItem = useCallback(
@@ -318,6 +339,7 @@ export function ActionItemsProvider({
         id: `custom-${Date.now()}`,
         label,
         severity,
+        close: { kind: "manual" },
       };
       setCustomItems((prev) => {
         const next = [...prev, item];
@@ -429,17 +451,18 @@ export function ActionItemsProvider({
     transitionRef.current?.openTransitionDialog(targetStatus);
   }, []);
 
-  // Snapshot server-completed and user-completed items so they persist across status changes
+  // Snapshot auto-completed and manually-completed items so they persist across status changes
   useEffect(() => {
     const current = snapshotsRef.current;
     let changed = false;
     const next = { ...current };
     for (const item of allItems) {
-      if ((item.completed || completedIds.has(item.id)) && !next[item.id]) {
+      const itemComplete = isCompleted(item) || completedIds.has(item.id);
+      if (itemComplete && !next[item.id]) {
         next[item.id] = item;
         changed = true;
       }
-      if (!item.completed && !completedIds.has(item.id) && next[item.id]) {
+      if (!itemComplete && next[item.id]) {
         delete next[item.id];
         changed = true;
       }
@@ -461,7 +484,7 @@ export function ActionItemsProvider({
     for (const item of allItems) {
       seenIds.add(item.id);
       if (effectiveDismissedIds.has(item.id)) continue;
-      if (item.completed || effectiveCompletedIds.has(item.id)) {
+      if (isCompleted(item) || effectiveCompletedIds.has(item.id)) {
         completed.push(item);
       } else {
         active.push(item);

@@ -61,6 +61,14 @@ describe("VALID_MTABS", () => {
   })
 })
 
+describe("VALID_JTABS", () => {
+  it("contains data and setup", () => {
+    expect(VALID_JTABS).toContain("data")
+    expect(VALID_JTABS).toContain("setup")
+    expect(VALID_JTABS).toHaveLength(2)
+  })
+})
+
 describe("DEFAULT_TAB", () => {
   it("is action-items", () => {
     expect(DEFAULT_TAB).toBe("action-items")
@@ -70,6 +78,12 @@ describe("DEFAULT_TAB", () => {
 describe("DEFAULT_MTAB", () => {
   it("is rooms", () => {
     expect(DEFAULT_MTAB).toBe("rooms")
+  })
+})
+
+describe("DEFAULT_JTAB", () => {
+  it("is data", () => {
+    expect(DEFAULT_JTAB).toBe("data")
   })
 })
 

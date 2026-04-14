@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
   Trophy,
@@ -17,10 +17,10 @@ import {
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
-import { AddPrizeDialog } from "./add-prize-dialog"
-import { AddJudgeDialog } from "./add-judge-dialog"
+import { AddPrizeDialog, type CreatedPrize } from "./add-prize-dialog"
+import { AddJudgeDialog, type AddJudgeResult } from "./add-judge-dialog"
 import { AssignJudgesDialog } from "./assign-judges-dialog"
-import { RoundFormDialog } from "./round-form-dialog"
+import { RoundFormDialog, type CreatedRound } from "./round-form-dialog"
 import { JudgePill } from "./judge-pill"
 import type { RoundData } from "./rounds-types"
 
@@ -65,8 +65,8 @@ type Props = {
 }
 
 const STEPS = [
-  { id: 1, label: "Prizes", icon: Trophy },
-  { id: 2, label: "Rounds", icon: Layers },
+  { id: 1, label: "Rounds", icon: Layers },
+  { id: 2, label: "Prizes", icon: Trophy },
   { id: 3, label: "Judges", icon: Users },
   { id: 4, label: "Assignments", icon: CheckCircle2 },
 ] as const
@@ -79,8 +79,8 @@ function firstIncompleteStep(
   rounds: RoundData[],
   roundsAcknowledged: boolean,
 ): StepId {
-  if (prizes.length === 0) return 1
-  if (rounds.length === 0 && !roundsAcknowledged) return 2
+  if (rounds.length === 0 && !roundsAcknowledged) return 1
+  if (prizes.length === 0) return 2
   if (judges.length === 0) return 3
   return 4
 }
@@ -95,8 +95,77 @@ export function JudgingSetupWizard({
 }: Props) {
   const router = useRouter()
   const [roundsAcknowledged, setRoundsAcknowledged] = useState(false)
+  const [hiddenPrizeIds, setHiddenPrizeIds] = useState<Set<string>>(new Set())
+  const [hiddenRoundIds, setHiddenRoundIds] = useState<Set<string>>(new Set())
+  const [hiddenJudgeIds, setHiddenJudgeIds] = useState<Set<string>>(new Set())
+  const [hiddenInvitationIds, setHiddenInvitationIds] = useState<Set<string>>(new Set())
+  const [hiddenPrizeJudges, setHiddenPrizeJudges] = useState<Set<string>>(new Set())
+
+  const [pendingPrizes, setPendingPrizes] = useState<WizardPrize[]>([])
+  const [pendingRounds, setPendingRounds] = useState<RoundData[]>([])
+  const [pendingJudges, setPendingJudges] = useState<WizardJudge[]>([])
+  const [pendingInvites, setPendingInvites] = useState<WizardInvitation[]>([])
+
+  useEffect(() => {
+    const ids = new Set(prizes.map((p) => p.id))
+    setPendingPrizes((prev) => prev.filter((p) => !ids.has(p.id)))
+  }, [prizes])
+  useEffect(() => {
+    const ids = new Set(rounds.map((r) => r.id))
+    setPendingRounds((prev) => prev.filter((r) => !ids.has(r.id)))
+  }, [rounds])
+  useEffect(() => {
+    const ids = new Set(judges.map((j) => j.participantId))
+    setPendingJudges((prev) => prev.filter((j) => !ids.has(j.participantId)))
+  }, [judges])
+  useEffect(() => {
+    const ids = new Set(pendingInvitations.map((i) => i.id))
+    setPendingInvites((prev) => prev.filter((i) => !ids.has(i.id)))
+  }, [pendingInvitations])
+
+  const visiblePrizes = useMemo(
+    () =>
+      [...prizes, ...pendingPrizes].filter(
+        (p, idx, arr) =>
+          !hiddenPrizeIds.has(p.id) && arr.findIndex((x) => x.id === p.id) === idx,
+      ),
+    [prizes, pendingPrizes, hiddenPrizeIds],
+  )
+  const visibleRounds = useMemo(
+    () =>
+      [...rounds, ...pendingRounds].filter(
+        (r, idx, arr) =>
+          !hiddenRoundIds.has(r.id) && arr.findIndex((x) => x.id === r.id) === idx,
+      ),
+    [rounds, pendingRounds, hiddenRoundIds],
+  )
+  const visibleJudges = useMemo(
+    () =>
+      [...judges, ...pendingJudges]
+        .filter(
+          (j, idx, arr) =>
+            !hiddenJudgeIds.has(j.participantId) &&
+            arr.findIndex((x) => x.participantId === j.participantId) === idx,
+        )
+        .map((j) => ({
+          ...j,
+          prizeIds: j.prizeIds.filter(
+            (pid) => !hiddenPrizeJudges.has(`${pid}:${j.participantId}`),
+          ),
+        })),
+    [judges, pendingJudges, hiddenJudgeIds, hiddenPrizeJudges],
+  )
+  const visibleInvitations = useMemo(
+    () =>
+      [...pendingInvitations, ...pendingInvites].filter(
+        (i, idx, arr) =>
+          !hiddenInvitationIds.has(i.id) && arr.findIndex((x) => x.id === i.id) === idx,
+      ),
+    [pendingInvitations, pendingInvites, hiddenInvitationIds],
+  )
+
   const initialStep = useMemo(
-    () => firstIncompleteStep(prizes, judges, rounds, roundsAcknowledged),
+    () => firstIncompleteStep(visiblePrizes, visibleJudges, visibleRounds, roundsAcknowledged),
     // Seed once on mount; after that the user drives navigation explicitly.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
@@ -106,13 +175,74 @@ export function JudgingSetupWizard({
   const [showJudgeDialog, setShowJudgeDialog] = useState(false)
   const [showRoundDialog, setShowRoundDialog] = useState(false)
   const [assignDialogPrize, setAssignDialogPrize] = useState<{ id: string; name: string } | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   const refresh = () => router.refresh()
 
+  function handlePrizeCreated(created?: CreatedPrize) {
+    if (created?.id) {
+      setPendingPrizes((prev) => [
+        ...prev.filter((p) => p.id !== created.id),
+        {
+          id: created.id,
+          name: created.name,
+          description: created.description,
+          value: created.value,
+          judgingStyle: created.judgingStyle,
+          assignmentMode: null,
+          maxPicks: null,
+          roundId: created.roundId,
+          displayOrder: 9999,
+          totalAssignments: 0,
+          completedAssignments: 0,
+          judgeCount: 0,
+        },
+      ])
+    }
+    refresh()
+  }
+
+  function handleRoundCreated(created?: CreatedRound) {
+    if (created?.id) {
+      setPendingRounds((prev) => [
+        ...prev.filter((r) => r.id !== created.id),
+        created,
+      ])
+    }
+    refresh()
+  }
+
+  function handleJudgeCreated(result: AddJudgeResult) {
+    if (result.type === "judge") {
+      setPendingJudges((prev) => [
+        ...prev.filter((j) => j.participantId !== result.participantId),
+        {
+          participantId: result.participantId,
+          clerkUserId: result.clerkUserId,
+          displayName: result.displayName,
+          email: result.email,
+          imageUrl: result.imageUrl,
+          prizeIds: [],
+        },
+      ])
+    } else {
+      setPendingInvites((prev) => [
+        ...prev.filter((i) => i.id !== result.id),
+        {
+          id: result.id,
+          email: result.email,
+          status: "pending",
+          createdAt: new Date().toISOString(),
+        },
+      ])
+    }
+    refresh()
+  }
+
   const canAdvance = (() => {
-    if (currentStep === 1) return prizes.length > 0
-    if (currentStep === 2) return rounds.length > 0 || roundsAcknowledged
-    if (currentStep === 3) return judges.length > 0 || pendingInvitations.length > 0
+    if (currentStep === 1) return visibleRounds.length > 0 || roundsAcknowledged
+    if (currentStep === 2) return visiblePrizes.length > 0
+    if (currentStep === 3) return visibleJudges.length > 0 || visibleInvitations.length > 0
     return true
   })()
 
@@ -132,31 +262,79 @@ export function JudgingSetupWizard({
   }
 
   async function handleDeletePrize(prizeId: string) {
-    const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/prizes/${prizeId}`, {
-      method: "DELETE",
-    })
-    if (res.ok) refresh()
+    setError(null)
+    setHiddenPrizeIds((prev) => new Set(prev).add(prizeId))
+    try {
+      const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/prizes/${prizeId}`, {
+        method: "DELETE",
+      })
+      if (!res.ok) throw new Error("Failed to delete prize")
+      refresh()
+    } catch (err) {
+      setHiddenPrizeIds((prev) => {
+        const next = new Set(prev)
+        next.delete(prizeId)
+        return next
+      })
+      setError(err instanceof Error ? err.message : "Failed to delete prize")
+    }
   }
 
   async function handleDeleteRound(roundId: string) {
-    const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/rounds/${roundId}`, {
-      method: "DELETE",
-    })
-    if (res.ok) refresh()
+    setError(null)
+    setHiddenRoundIds((prev) => new Set(prev).add(roundId))
+    try {
+      const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/rounds/${roundId}`, {
+        method: "DELETE",
+      })
+      if (!res.ok) throw new Error("Failed to delete round")
+      refresh()
+    } catch (err) {
+      setHiddenRoundIds((prev) => {
+        const next = new Set(prev)
+        next.delete(roundId)
+        return next
+      })
+      setError(err instanceof Error ? err.message : "Failed to delete round")
+    }
   }
 
   async function handleCancelInvitation(invitationId: string) {
-    const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/judge-invitations/${invitationId}`, {
-      method: "DELETE",
-    })
-    if (res.ok) refresh()
+    setError(null)
+    setHiddenInvitationIds((prev) => new Set(prev).add(invitationId))
+    try {
+      const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/judge-invitations/${invitationId}`, {
+        method: "DELETE",
+      })
+      if (!res.ok) throw new Error("Failed to cancel invitation")
+      refresh()
+    } catch (err) {
+      setHiddenInvitationIds((prev) => {
+        const next = new Set(prev)
+        next.delete(invitationId)
+        return next
+      })
+      setError(err instanceof Error ? err.message : "Failed to cancel invitation")
+    }
   }
 
   async function handleRemoveJudge(participantId: string) {
-    const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/judges/${participantId}`, {
-      method: "DELETE",
-    })
-    if (res.ok) refresh()
+    setError(null)
+    setHiddenJudgeIds((prev) => new Set(prev).add(participantId))
+    try {
+      const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/judges/${participantId}`, {
+        method: "DELETE",
+      })
+      if (!res.ok) throw new Error("Failed to remove judge")
+      refresh()
+    } catch (err) {
+      setHiddenJudgeIds((prev) => {
+        const next = new Set(prev)
+        next.delete(participantId)
+        return next
+      })
+      setError(err instanceof Error ? err.message : "Failed to remove judge")
+    }
   }
 
   async function assignJudgeToPrize(prizeId: string, judgeParticipantId: string) {
@@ -169,29 +347,39 @@ export function JudgingSetupWizard({
   }
 
   async function unassignJudgeFromPrize(prizeId: string, judgeParticipantId: string) {
-    const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/prizes/${prizeId}/judges/${judgeParticipantId}`, {
-      method: "DELETE",
-    })
-    if (!res.ok) throw new Error("Failed to unassign")
-    refresh()
+    const key = `${prizeId}:${judgeParticipantId}`
+    setHiddenPrizeJudges((prev) => new Set(prev).add(key))
+    try {
+      const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/prizes/${prizeId}/judges/${judgeParticipantId}`, {
+        method: "DELETE",
+      })
+      if (!res.ok) throw new Error("Failed to unassign")
+      refresh()
+    } catch (err) {
+      setHiddenPrizeJudges((prev) => {
+        const next = new Set(prev)
+        next.delete(key)
+        return next
+      })
+      throw err
+    }
   }
 
   return (
     <div className="space-y-6">
-      <WizardHeader currentStep={currentStep} />
+      <WizardHeader
+        currentStep={currentStep}
+        onStepClick={(id) => {
+          if (id < currentStep) setCurrentStep(id)
+        }}
+      />
+
+      {error && <p className="text-sm text-destructive">{error}</p>}
 
       <div className="rounded-lg border bg-background p-6">
         {currentStep === 1 && (
-          <PrizesStep
-            prizes={prizes}
-            onAdd={() => setShowPrizeDialog(true)}
-            onDelete={handleDeletePrize}
-          />
-        )}
-
-        {currentStep === 2 && (
           <RoundsStep
-            rounds={rounds}
+            rounds={visibleRounds}
             roundsAcknowledged={roundsAcknowledged}
             onPickSingle={() => setRoundsAcknowledged(true)}
             onPickMultiple={() => {
@@ -203,10 +391,18 @@ export function JudgingSetupWizard({
           />
         )}
 
+        {currentStep === 2 && (
+          <PrizesStep
+            prizes={visiblePrizes}
+            onAdd={() => setShowPrizeDialog(true)}
+            onDelete={handleDeletePrize}
+          />
+        )}
+
         {currentStep === 3 && (
           <JudgesStep
-            judges={judges}
-            pendingInvitations={pendingInvitations}
+            judges={visibleJudges}
+            pendingInvitations={visibleInvitations}
             onAdd={() => setShowJudgeDialog(true)}
             onCancelInvite={handleCancelInvitation}
             onRemoveJudge={handleRemoveJudge}
@@ -215,8 +411,8 @@ export function JudgingSetupWizard({
 
         {currentStep === 4 && (
           <AssignmentsStep
-            prizes={prizes}
-            judges={judges}
+            prizes={visiblePrizes}
+            judges={visibleJudges}
             onOpenAssign={(p) => setAssignDialogPrize({ id: p.id, name: p.name })}
           />
         )}
@@ -235,7 +431,7 @@ export function JudgingSetupWizard({
         </Button>
 
         <div className="flex items-center gap-2">
-          {currentStep === 2 && !roundsAcknowledged && rounds.length === 0 && (
+          {currentStep === 1 && !roundsAcknowledged && visibleRounds.length === 0 && (
             <Button
               type="button"
               variant="ghost"
@@ -258,28 +454,28 @@ export function JudgingSetupWizard({
         hackathonId={hackathonId}
         open={showPrizeDialog}
         onOpenChange={setShowPrizeDialog}
-        onSuccess={refresh}
-        rounds={rounds}
+        onSuccess={handlePrizeCreated}
+        rounds={visibleRounds}
       />
       <AddJudgeDialog
         hackathonId={hackathonId}
         open={showJudgeDialog}
         onOpenChange={setShowJudgeDialog}
-        onSuccess={refresh}
+        onSuccess={handleJudgeCreated}
       />
       <RoundFormDialog
         hackathonId={hackathonId}
         mode="create"
         open={showRoundDialog}
         onOpenChange={setShowRoundDialog}
-        onSuccess={refresh}
+        onSuccess={handleRoundCreated}
       />
       {assignDialogPrize && (
         <AssignJudgesDialog
           hackathonId={hackathonId}
           prizeId={assignDialogPrize.id}
           prizeName={assignDialogPrize.name}
-          judges={judges}
+          judges={visibleJudges}
           open={assignDialogPrize !== null}
           onOpenChange={(open) => !open && setAssignDialogPrize(null)}
           onAssignJudge={assignJudgeToPrize}
@@ -291,16 +487,33 @@ export function JudgingSetupWizard({
   )
 }
 
-function WizardHeader({ currentStep }: { currentStep: StepId }) {
+function WizardHeader({
+  currentStep,
+  onStepClick,
+}: {
+  currentStep: StepId
+  onStepClick: (id: StepId) => void
+}) {
   return (
     <div className="flex items-center gap-3 overflow-x-auto">
       {STEPS.map((step, idx) => {
         const Icon = step.icon
         const isActive = step.id === currentStep
         const isComplete = step.id < currentStep
+        const isClickable = isComplete
         return (
           <div key={step.id} className="flex items-center gap-3 shrink-0">
-            <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => isClickable && onStepClick(step.id)}
+              disabled={!isClickable}
+              className={cn(
+                "flex items-center gap-2 rounded-md px-1 py-0.5 -mx-1 transition-colors",
+                isClickable && "cursor-pointer hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                !isClickable && "cursor-default",
+              )}
+              aria-label={isClickable ? `Go back to ${step.label}` : step.label}
+            >
               <div
                 className={cn(
                   "flex size-7 items-center justify-center rounded-full border text-xs font-semibold transition-colors",
@@ -319,7 +532,7 @@ function WizardHeader({ currentStep }: { currentStep: StepId }) {
               >
                 {step.label}
               </span>
-            </div>
+            </button>
             {idx < STEPS.length - 1 && (
               <div
                 className={cn(
