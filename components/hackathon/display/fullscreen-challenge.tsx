@@ -4,24 +4,25 @@ import { useEventPoll } from "@/hooks/use-event-poll"
 import { FullscreenWrapper } from "./fullscreen-wrapper"
 import { PhaseBadge } from "@/components/hackathon/phase-badge"
 import type { HackathonPhase } from "@/lib/db/hackathon-types"
+import type { Challenge } from "@/lib/services/challenges"
 
 interface FullscreenChallengeProps {
   slug: string
-  initialTitle: string | null
+  initialChallenges: Challenge[]
   initialReleased: boolean
   hackathonName: string
 }
 
 export function FullscreenChallenge({
   slug,
-  initialTitle,
+  initialChallenges,
   initialReleased,
   hackathonName,
 }: FullscreenChallengeProps) {
   const { data } = useEventPoll(slug, { interval: 5000 })
 
   const released = data?.challenge?.released ?? initialReleased
-  const title = data?.challenge?.title ?? initialTitle
+  const challenges = data?.challenge?.challenges ?? initialChallenges
   const phase = (data?.phase ?? null) as HackathonPhase | null
 
   return (
@@ -32,9 +33,29 @@ export function FullscreenChallenge({
         </h1>
         <PhaseBadge phase={phase} />
         {released ? (
-          <p className="max-w-4xl text-center text-4xl font-bold text-foreground sm:text-6xl">
-            {title}
-          </p>
+          <div className="flex w-full max-w-5xl flex-col items-center gap-6">
+            {challenges.length === 0 ? (
+              <p className="text-2xl text-muted-foreground sm:text-3xl">
+                Challenges released
+              </p>
+            ) : (
+              challenges.map((c) => (
+                <div
+                  key={c.id}
+                  className="flex w-full flex-col items-center gap-2 rounded-lg border bg-card/40 p-6 text-center"
+                >
+                  <p className="text-2xl font-bold text-foreground sm:text-4xl">
+                    {c.title}
+                  </p>
+                  {c.description ? (
+                    <p className="max-w-3xl whitespace-pre-wrap text-base text-muted-foreground sm:text-lg">
+                      {c.description}
+                    </p>
+                  ) : null}
+                </div>
+              ))
+            )}
+          </div>
         ) : (
           <div className="flex flex-col items-center gap-4">
             <p className="text-2xl text-muted-foreground sm:text-3xl">

@@ -2,6 +2,7 @@ import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Submission } from "@/lib/db/hackathon-types"
 import { trackEvent } from "@/lib/analytics/posthog"
+import { tagSubmissionChallenges } from "@/lib/services/challenges"
 
 export type ParticipantInfo = {
   participantId: string
@@ -33,6 +34,22 @@ export async function getParticipantWithTeam(
     participantId: data.id,
     teamId: data.team_id,
   }
+}
+
+export async function getTeamMemberCount(teamId: string): Promise<number> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const { count, error } = await client
+    .from("hackathon_participants")
+    .select("*", { count: "exact", head: true })
+    .eq("team_id", teamId)
+    .eq("role", "participant")
+
+  if (error) {
+    console.error("Failed to get team member count:", error)
+    return 0
+  }
+
+  return count ?? 0
 }
 
 export async function getSubmissionForParticipant(
@@ -73,6 +90,8 @@ export type CreateSubmissionInput = {
   githubUrl: string
   liveAppUrl?: string | null
   screenshotUrl?: string | null
+  metadata?: Record<string, unknown>
+  challengeIds?: string[]
 }
 
 export async function createSubmission(
@@ -95,7 +114,7 @@ export async function createSubmission(
       live_app_url: input.liveAppUrl ?? null,
       screenshot_url: input.screenshotUrl ?? null,
       status: "submitted",
-      metadata: {},
+      metadata: input.metadata ?? {},
     })
     .select()
     .single()
@@ -112,6 +131,13 @@ export async function createSubmission(
     title: input.title,
   })
 
+  if (input.challengeIds && input.challengeIds.length > 0) {
+    const tagged = await tagSubmissionChallenges(data.id, input.challengeIds)
+    if (!tagged) {
+      console.error("Submission created but challenge tags could not be saved:", data.id)
+    }
+  }
+
   return data as unknown as Submission
 }
 
@@ -121,6 +147,7 @@ export type UpdateSubmissionInput = {
   githubUrl?: string
   liveAppUrl?: string | null
   screenshotUrl?: string | null
+  challengeIds?: string[]
 }
 
 export async function updateSubmission(
@@ -154,6 +181,13 @@ export async function updateSubmission(
   if (error) {
     console.error("Failed to update submission:", error)
     return null
+  }
+
+  if (input.challengeIds !== undefined) {
+    const tagged = await tagSubmissionChallenges(submissionId, input.challengeIds)
+    if (!tagged) {
+      console.error("Submission updated but challenge tags could not be saved:", submissionId)
+    }
   }
 
   return data as unknown as Submission

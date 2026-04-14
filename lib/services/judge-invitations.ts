@@ -1,5 +1,5 @@
 import { supabase as getSupabase } from "@/lib/db/client"
-import type { JudgeInvitation, JudgePendingNotification } from "@/lib/db/hackathon-types"
+import type { JudgeInvitation } from "@/lib/db/hackathon-types"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { randomBytes } from "crypto"
 import { checkRoleConflict } from "@/lib/services/role-conflict"
@@ -320,6 +320,17 @@ export async function createJudgePendingNotification(
   if (error) {
     throw new Error(`Failed to create judge pending notification: ${error.message}`)
   }
+}
+
+export async function countPendingJudgeInvitations(hackathonId: string): Promise<number> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const { count, error } = await client
+    .from("judge_invitations")
+    .select("id", { count: "exact", head: true })
+    .eq("hackathon_id", hackathonId)
+    .eq("status", "pending")
+  if (error) return 0
+  return count ?? 0
 }
 
 export async function listJudgeInvitations(

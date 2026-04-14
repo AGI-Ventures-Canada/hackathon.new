@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -51,10 +51,13 @@ import {
   Award,
   X,
 } from "lucide-react"
-import { AddJudgeDialog } from "./add-judge-dialog"
+import { useActionItemsOptional } from "@/components/hackathon/manage/action-items-context"
+import { AddJudgeDialog, type AddJudgeResult } from "./add-judge-dialog"
 import { AddPrizeDialog } from "./add-prize-dialog"
 import { AssignJudgesDialog } from "./assign-judges-dialog"
 import { JudgePill } from "./judge-pill"
+import { RoundsSection } from "./rounds-section"
+import type { RoundData } from "./rounds-types"
 
 type PrizeData = {
   id: string
@@ -78,14 +81,6 @@ type JudgeData = {
   email: string | null
   imageUrl: string | null
   prizeIds: string[]
-}
-
-type RoundData = {
-  id: string
-  name: string
-  status: string
-  isActive: boolean
-  displayOrder: number
 }
 
 type InvitationData = {
@@ -142,23 +137,57 @@ export function JudgingTabClient({
   const [showAddJudge, setShowAddJudge] = useState(false)
   const [showAddPrize, setShowAddPrize] = useState(false)
   const [publishing, setPublishing] = useState(false)
+  const [publishDialogOpen, setPublishDialogOpen] = useState(false)
   const results = initialResults
   const [isPublished, setIsPublished] = useState(initialIsPublished)
   const [error, setError] = useState<string | null>(null)
+
+  const actionItems = useActionItemsOptional()
+
+  useEffect(() => {
+    if (!actionItems) return
+    const { registerTabAction, unregisterTabAction } = actionItems
+    registerTabAction("no-prizes", () => setShowAddPrize(true))
+    registerTabAction("no-judges", () => setShowAddJudge(true))
+    registerTabAction("no-judges-active", () => setShowAddJudge(true))
+    registerTabAction("results-not-published", () => setPublishDialogOpen(true))
+    return () => {
+      unregisterTabAction("no-prizes")
+      unregisterTabAction("no-judges")
+      unregisterTabAction("no-judges-active")
+      unregisterTabAction("results-not-published")
+    }
+  }, [actionItems])
 
   const [hiddenJudges, setHiddenJudges] = useState<Set<string>>(new Set())
   const [hiddenPrizes, setHiddenPrizes] = useState<Set<string>>(new Set())
   const [hiddenInvitations, setHiddenInvitations] = useState<Set<string>>(new Set())
   const [hiddenPrizeJudges, setHiddenPrizeJudges] = useState<Set<string>>(new Set())
+  const [pendingJudges, setPendingJudges] = useState<JudgeData[]>([])
+  const [pendingInvitations, setPendingInvitations] = useState<InvitationData[]>([])
 
-  const judges = initialJudges
+  useEffect(() => {
+    setPendingJudges(prev => prev.filter(pj => !initialJudges.some(j => j.participantId === pj.participantId)))
+  }, [initialJudges])
+
+  useEffect(() => {
+    setPendingInvitations(prev => prev.filter(pi => !initialInvitations.some(i => i.id === pi.id)))
+  }, [initialInvitations])
+
+  const judges = [
+    ...initialJudges,
+    ...pendingJudges.filter(pj => !initialJudges.some(j => j.participantId === pj.participantId)),
+  ]
     .filter(j => !hiddenJudges.has(j.participantId))
     .map(j => ({
       ...j,
       prizeIds: j.prizeIds.filter(pid => !hiddenPrizeJudges.has(`${pid}:${j.participantId}`)),
     }))
   const prizes = initialPrizes.filter(p => !hiddenPrizes.has(p.id))
-  const invitations = initialInvitations.filter(i => !hiddenInvitations.has(i.id))
+  const invitations = [
+    ...initialInvitations,
+    ...pendingInvitations.filter(pi => !initialInvitations.some(i => i.id === pi.id)),
+  ].filter(i => !hiddenInvitations.has(i.id))
 
 
   const base = `/api/dashboard/hackathons/${hackathonId}`
@@ -283,6 +312,8 @@ export function JudgingTabClient({
         onCancelInvitation={handleCancelInvitation}
       />
 
+      <RoundsSection hackathonId={hackathonId} rounds={rounds} />
+
       <PrizesSection
         hackathonId={hackathonId}
         prizes={prizes}
@@ -301,6 +332,8 @@ export function JudgingTabClient({
           results={results}
           isPublished={isPublished}
           publishing={publishing}
+          publishDialogOpen={publishDialogOpen}
+          onPublishDialogChange={setPublishDialogOpen}
           onPublish={handlePublish}
           onUnpublish={handleUnpublish}
           incompleteAssignments={initialProgress.totalAssignments - initialProgress.completedAssignments}
@@ -311,7 +344,26 @@ export function JudgingTabClient({
         hackathonId={hackathonId}
         open={showAddJudge}
         onOpenChange={setShowAddJudge}
-        onSuccess={() => router.refresh()}
+        onSuccess={(result: AddJudgeResult) => {
+          if (result.type === "judge") {
+            setPendingJudges(prev => [...prev, {
+              participantId: result.participantId,
+              clerkUserId: result.clerkUserId,
+              displayName: result.displayName,
+              email: result.email,
+              imageUrl: result.imageUrl,
+              prizeIds: [],
+            }])
+          } else {
+            setPendingInvitations(prev => [...prev, {
+              id: result.id,
+              email: result.email,
+              status: "pending",
+              createdAt: new Date().toISOString(),
+            }])
+          }
+          router.refresh()
+        }}
       />
 
       <AddPrizeDialog
@@ -319,6 +371,7 @@ export function JudgingTabClient({
         open={showAddPrize}
         onOpenChange={setShowAddPrize}
         onSuccess={() => router.refresh()}
+        rounds={rounds}
       />
     </div>
   )
@@ -466,21 +519,6 @@ function PrizesSection({
         </Button>
       </div>
 
-      {rounds.length > 1 && (
-        <div className="flex items-center gap-2 overflow-x-auto pb-1">
-          <Layers className="size-4 text-muted-foreground shrink-0" />
-          {rounds.map((round, i) => (
-            <div key={round.id} className="flex items-center gap-1.5">
-              {i > 0 && <span className="text-muted-foreground">&rarr;</span>}
-              <Badge variant={round.isActive ? "default" : "outline"}>
-                {round.name}
-                {round.isActive && " (Active)"}
-              </Badge>
-            </div>
-          ))}
-        </div>
-      )}
-
       {prizes.length === 0 ? (
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center justify-center py-12">
@@ -494,117 +532,41 @@ function PrizesSection({
             </Button>
           </CardContent>
         </Card>
+      ) : rounds.length > 1 ? (
+        <div className="space-y-4">
+          {groupPrizesByRound(prizes, rounds).map((group) => (
+            <div key={group.key} className="space-y-2">
+              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                <Layers className="size-3" />
+                {group.label}
+              </div>
+              <div className="grid gap-3">
+                {group.prizes.map((prize) => (
+                  <PrizeCard
+                    key={prize.id}
+                    prize={prize}
+                    judges={judges}
+                    onDeletePrize={onDeletePrize}
+                    onAssignJudgesClick={setAssignDialogPrize}
+                    onRemoveJudgeFromPrize={setRemovingFromPrize}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       ) : (
         <div className="grid gap-3">
-          {prizes.map((prize) => {
-            const style = prize.judgingStyle ? STYLE_META[prize.judgingStyle] : null
-            const StyleIcon = style?.icon ?? Trophy
-            const pct = prize.totalAssignments > 0
-              ? Math.round((prize.completedAssignments / prize.totalAssignments) * 100)
-              : 0
-            const assignedJudges = judges.filter((j) => j.prizeIds.includes(prize.id))
-            const isCrowdVote = prize.judgingStyle === "crowd_vote"
-
-            return (
-              <Card key={prize.id}>
-                <CardContent className="p-4 space-y-3">
-                  <div className="flex items-start gap-3">
-                    <div className="flex-1 min-w-0 space-y-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold">{prize.name}</span>
-                        {prize.value && (
-                          <Badge variant="secondary">{prize.value}</Badge>
-                        )}
-                        {style && (
-                          <Badge variant="outline" className={style.color}>
-                            <StyleIcon className="mr-1 size-3" />
-                            {style.label}
-                          </Badge>
-                        )}
-                      </div>
-                      {prize.description && (
-                        <p className="text-sm text-muted-foreground line-clamp-1">{prize.description}</p>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      {prize.totalAssignments > 0 && (
-                        <div className="flex items-center gap-2 w-24">
-                          <Progress value={pct} className="h-1.5" />
-                          <span className="text-xs text-muted-foreground w-8 text-right">{pct}%</span>
-                        </div>
-                      )}
-
-                      <AlertDialog>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="size-8">
-                              <MoreHorizontal className="size-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <AlertDialogTrigger asChild>
-                              <DropdownMenuItem className="text-destructive">
-                                <Trash2 className="mr-2 size-4" />
-                                Delete Prize
-                              </DropdownMenuItem>
-                            </AlertDialogTrigger>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Delete &ldquo;{prize.name}&rdquo;?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              This will delete the prize and all its judge assignments, bucket definitions, and results. This cannot be undone.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => onDeletePrize(prize.id)}>
-                              Delete
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </div>
-                  </div>
-
-                  {!isCrowdVote && (
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {assignedJudges.map((j) => (
-                        <JudgePill
-                          key={j.participantId}
-                          imageUrl={j.imageUrl}
-                          displayName={j.displayName}
-                          action={
-                            <button
-                              type="button"
-                              onClick={() => setRemovingFromPrize({ prizeId: prize.id, prizeName: prize.name, judge: j })}
-                              className="flex items-center justify-center size-4 rounded-full text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                            >
-                              <X className="size-3" />
-                            </button>
-                          }
-                        />
-                      ))}
-
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 rounded-full gap-1.5"
-                        onClick={() => setAssignDialogPrize({ id: prize.id, name: prize.name })}
-                      >
-                        <Plus className="size-3" />
-                        <span className="hidden sm:inline">
-                          {assignedJudges.length === 0 ? "Assign Judges" : "Edit"}
-                        </span>
-                      </Button>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )
-          })}
+          {prizes.map((prize) => (
+            <PrizeCard
+              key={prize.id}
+              prize={prize}
+              judges={judges}
+              onDeletePrize={onDeletePrize}
+              onAssignJudgesClick={setAssignDialogPrize}
+              onRemoveJudgeFromPrize={setRemovingFromPrize}
+            />
+          ))}
         </div>
       )}
 
@@ -643,11 +605,162 @@ function PrizesSection({
   )
 }
 
+type RemovingFromPrize = { prizeId: string; prizeName: string; judge: JudgeData }
+
+function PrizeCard({
+  prize,
+  judges,
+  onDeletePrize,
+  onAssignJudgesClick,
+  onRemoveJudgeFromPrize,
+}: {
+  prize: PrizeData
+  judges: JudgeData[]
+  onDeletePrize: (id: string) => void
+  onAssignJudgesClick: (args: { id: string; name: string }) => void
+  onRemoveJudgeFromPrize: (args: RemovingFromPrize) => void
+}) {
+  const style = prize.judgingStyle ? STYLE_META[prize.judgingStyle] : null
+  const StyleIcon = style?.icon ?? Trophy
+  const pct = prize.totalAssignments > 0
+    ? Math.round((prize.completedAssignments / prize.totalAssignments) * 100)
+    : 0
+  const assignedJudges = judges.filter((j) => j.prizeIds.includes(prize.id))
+  const isCrowdVote = prize.judgingStyle === "crowd_vote"
+
+  return (
+    <Card>
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-start gap-3">
+          <div className="flex-1 min-w-0 space-y-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold">{prize.name}</span>
+              {prize.value && <Badge variant="secondary">{prize.value}</Badge>}
+              {style && (
+                <Badge variant="outline" className={style.color}>
+                  <StyleIcon className="mr-1 size-3" />
+                  {style.label}
+                </Badge>
+              )}
+            </div>
+            {prize.description && (
+              <p className="text-sm text-muted-foreground line-clamp-1">{prize.description}</p>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {prize.totalAssignments > 0 && (
+              <div className="flex items-center gap-2 w-24">
+                <Progress value={pct} className="h-1.5" />
+                <span className="text-xs text-muted-foreground w-8 text-right">{pct}%</span>
+              </div>
+            )}
+
+            <AlertDialog>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="size-8">
+                    <MoreHorizontal className="size-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <AlertDialogTrigger asChild>
+                    <DropdownMenuItem className="text-destructive">
+                      <Trash2 className="mr-2 size-4" />
+                      Delete Prize
+                    </DropdownMenuItem>
+                  </AlertDialogTrigger>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete &ldquo;{prize.name}&rdquo;?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will delete the prize and all its judge assignments, bucket definitions, and results. This cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => onDeletePrize(prize.id)}>
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
+        </div>
+
+        {!isCrowdVote && (
+          <div className="flex items-center gap-2 flex-wrap">
+            {assignedJudges.map((j) => (
+              <JudgePill
+                key={j.participantId}
+                imageUrl={j.imageUrl}
+                displayName={j.displayName}
+                action={
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onRemoveJudgeFromPrize({ prizeId: prize.id, prizeName: prize.name, judge: j })
+                    }
+                    className="flex items-center justify-center size-4 rounded-full text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                  >
+                    <X className="size-3" />
+                  </button>
+                }
+              />
+            ))}
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 rounded-full gap-1.5"
+              onClick={() => onAssignJudgesClick({ id: prize.id, name: prize.name })}
+            >
+              <Plus className="size-3" />
+              <span className="hidden sm:inline">
+                {assignedJudges.length === 0 ? "Assign Judges" : "Edit"}
+              </span>
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function groupPrizesByRound(
+  prizes: PrizeData[],
+  rounds: RoundData[]
+): { key: string; label: string; prizes: PrizeData[] }[] {
+  const sorted = [...rounds].sort((a, b) => a.displayOrder - b.displayOrder)
+  const byRound = new Map<string | null, PrizeData[]>()
+  for (const p of prizes) {
+    const key = p.roundId ?? null
+    if (!byRound.has(key)) byRound.set(key, [])
+    byRound.get(key)!.push(p)
+  }
+  const groups: { key: string; label: string; prizes: PrizeData[] }[] = []
+  for (const r of sorted) {
+    const inRound = byRound.get(r.id)
+    if (inRound && inRound.length > 0) {
+      groups.push({ key: r.id, label: r.name, prizes: inRound })
+    }
+  }
+  const unassigned = byRound.get(null)
+  if (unassigned && unassigned.length > 0) {
+    groups.push({ key: "__none__", label: "No round", prizes: unassigned })
+  }
+  return groups
+}
+
 function ResultsSection({
   hackathonId: _hackathonId,
   results,
   isPublished,
   publishing,
+  publishDialogOpen,
+  onPublishDialogChange,
   onPublish,
   onUnpublish,
   incompleteAssignments,
@@ -656,6 +769,8 @@ function ResultsSection({
   results: ResultData[]
   isPublished: boolean
   publishing: boolean
+  publishDialogOpen: boolean
+  onPublishDialogChange: (open: boolean) => void
   onPublish: () => void
   onUnpublish: () => void
   incompleteAssignments: number
@@ -693,7 +808,7 @@ function ResultsSection({
               </AlertDialogContent>
             </AlertDialog>
           ) : (
-            <AlertDialog>
+            <AlertDialog open={publishDialogOpen} onOpenChange={onPublishDialogChange}>
               <AlertDialogTrigger asChild>
                 <Button size="sm" disabled={publishing || results.length === 0}>
                   {publishing ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Globe className="mr-2 size-4" />}

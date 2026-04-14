@@ -589,6 +589,7 @@ describe("Dashboard Event Routes Integration Tests", () => {
   describe("DELETE /api/dashboard/hackathons/:id/schedule/:itemId", () => {
     it("deletes a schedule item", async () => {
       mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockListScheduleItems.mockResolvedValue([{ id: itemId, trigger_type: null }])
       mockDeleteScheduleItem.mockResolvedValue(true)
 
       const res = await app.handle(

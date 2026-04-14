@@ -69,23 +69,51 @@ export const dashboardJudgeDisplayRoutes = new Elysia()
         })
       }
 
+      let resolvedClerkUserId = body.clerkUserId
+      let resolvedName = body.name
+      let resolvedHeadshotUrl = body.headshotUrl
+      if (!resolvedClerkUserId && body.email) {
+        const { clerkClient } = await import("@clerk/nextjs/server")
+        const client = await clerkClient()
+        const existingUsers = await client.users.getUserList({ emailAddress: [body.email] })
+        if (existingUsers.data.length > 0) {
+          const user = existingUsers.data[0]
+          resolvedClerkUserId = user.id
+          const clerkName = [user.firstName, user.lastName].filter(Boolean).join(" ")
+          if (clerkName) resolvedName = clerkName
+          if (!resolvedHeadshotUrl && user.imageUrl) resolvedHeadshotUrl = user.imageUrl
+        }
+      }
+
       const { createJudgeDisplayProfile } = await import("@/lib/services/judge-display")
-      const judge = await createJudgeDisplayProfile(params.id, {
-        name: body.name,
+      const createResult = await createJudgeDisplayProfile(params.id, {
+        name: resolvedName,
         title: body.title,
         organization: body.organization,
-        headshotUrl: body.headshotUrl,
-        clerkUserId: body.clerkUserId,
+        headshotUrl: resolvedHeadshotUrl,
+        clerkUserId: resolvedClerkUserId,
         participantId: body.participantId,
         displayOrder: body.displayOrder,
       })
 
-      if (!judge) {
+      if (createResult.status === "duplicate") {
+        const message = createResult.matchedBy === "name"
+          ? "A judge with this name already exists. If this is a different person, add them with a Clerk account to distinguish them."
+          : "This judge has already been added"
+        return new Response(JSON.stringify({ error: message }), {
+          status: 409,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+
+      if (createResult.status === "error") {
         return new Response(JSON.stringify({ error: "Failed to create judge profile" }), {
           status: 500,
           headers: { "Content-Type": "application/json" },
         })
       }
+
+      const judge = createResult.judge
 
       await logAudit({
         principal,
@@ -193,9 +221,9 @@ export const dashboardJudgeDisplayRoutes = new Elysia()
     }
 
     const { deleteJudgeDisplayProfile } = await import("@/lib/services/judge-display")
-    const success = await deleteJudgeDisplayProfile(params.judgeId, params.id)
+    const deleteResult = await deleteJudgeDisplayProfile(params.judgeId, params.id)
 
-    if (!success) {
+    if (!deleteResult.deleted) {
       return new Response(JSON.stringify({ error: "Judge profile not found" }), {
         status: 404,
         headers: { "Content-Type": "application/json" },
@@ -209,7 +237,11 @@ export const dashboardJudgeDisplayRoutes = new Elysia()
       resourceId: params.judgeId,
     })
 
-    return { success: true }
+    if (deleteResult.cascadeError) {
+      console.error(`Cascade cleanup failed for judge ${params.judgeId}: ${deleteResult.cascadeError}`)
+    }
+
+    return { success: true, warning: deleteResult.cascadeError ?? undefined }
   }, {
     detail: {
       summary: "Delete judge display profile",

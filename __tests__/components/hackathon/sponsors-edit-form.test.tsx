@@ -104,8 +104,12 @@ mock.module("@/components/hackathon/edit-drawer/sponsor-logo-upload", () => ({
   SponsorLogoUpload: () => <div data-testid="sponsor-logo-upload" />,
 }));
 
+let _selectOnValueChange: ((v: string) => void) | undefined;
 mock.module("@/components/ui/select", () => ({
-  Select: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  Select: ({ children, onValueChange }: { children: React.ReactNode; onValueChange?: (v: string) => void }) => {
+    _selectOnValueChange = onValueChange;
+    return <div>{children}</div>;
+  },
   SelectTrigger: ({
     children,
     className,
@@ -115,7 +119,9 @@ mock.module("@/components/ui/select", () => ({
   }) => <div className={className}>{children}</div>,
   SelectValue: () => null,
   SelectContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  SelectItem: ({ children }: { children: React.ReactNode; value: string }) => <div>{children}</div>,
+  SelectItem: ({ children, value }: { children: React.ReactNode; value: string; disabled?: boolean }) => (
+    <button onClick={() => _selectOnValueChange?.(value)}>{children}</button>
+  ),
 }));
 
 mock.module("@/components/ui/kbd", () => ({
@@ -127,6 +133,7 @@ const { SponsorsEditForm } = await import("@/components/hackathon/edit-drawer/sp
 
 beforeEach(() => {
   resetComponentMocks();
+  _selectOnValueChange = undefined;
   setRouter({ refresh: mockRefresh });
   mockRefresh.mockClear();
   mockCloseDrawer.mockClear();
@@ -155,6 +162,7 @@ describe("SponsorsEditForm", () => {
             logo_url_dark: null,
             website_url: null,
             tier: "none",
+            custom_tier_label: null,
             display_order: 0,
             created_at: "2026-03-19T00:00:00.000Z",
             tenant: null,
@@ -170,6 +178,7 @@ describe("SponsorsEditForm", () => {
             logo_url_dark: null,
             website_url: "https://linked.example.com",
             tier: "gold",
+            custom_tier_label: null,
             display_order: 1,
             created_at: "2026-03-19T00:00:00.000Z",
             tenant: {
@@ -183,7 +192,7 @@ describe("SponsorsEditForm", () => {
       />,
     );
 
-    expect(screen.getAllByRole("button", { name: "Link to org" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Link to an existing org" })).toHaveLength(1);
     expect(screen.getByText("Linked")).toBeDefined();
   });
 
@@ -202,7 +211,8 @@ describe("SponsorsEditForm", () => {
             logo_url: null,
             logo_url_dark: null,
             website_url: "https://linked.example.com",
-            tier: "partner",
+            tier: "gold",
+            custom_tier_label: null,
             display_order: 0,
             created_at: "2026-03-19T00:00:00.000Z",
             tenant: {
@@ -216,11 +226,10 @@ describe("SponsorsEditForm", () => {
       />,
     );
 
-    expect(screen.getByText("Title")).toBeDefined();
-    expect(screen.getByText("Partner")).toBeDefined();
+    expect(screen.getByText("Gold")).toBeDefined();
   });
 
-  it("lets a manual sponsor search for an org and saves the selected link", async () => {
+  it("auto-saves when linking a manual sponsor to an org", async () => {
     render(
       <SponsorsEditForm
         hackathonId="h1"
@@ -236,6 +245,7 @@ describe("SponsorsEditForm", () => {
             logo_url_dark: null,
             website_url: null,
             tier: "none",
+            custom_tier_label: null,
             display_order: 0,
             created_at: "2026-03-19T00:00:00.000Z",
             tenant: null,
@@ -244,7 +254,7 @@ describe("SponsorsEditForm", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Link to org" }));
+    fireEvent.click(screen.getByRole("button", { name: "Link to an existing org" }));
     fireEvent.change(screen.getByPlaceholderText("Search organizations..."), {
       target: { value: "go" },
     });
@@ -258,13 +268,6 @@ describe("SponsorsEditForm", () => {
     fireEvent.click(screen.getByText("Google"));
 
     await waitFor(() => {
-      expect(screen.getByText("Linked")).toBeDefined();
-      expect(screen.getByText("Save changes")).toBeDefined();
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-
-    await waitFor(() => {
       const patchCall = mockFetch.mock.calls.find(
         ([url, init]) =>
           typeof url === "string" &&
@@ -274,7 +277,6 @@ describe("SponsorsEditForm", () => {
 
       expect(patchCall).toBeDefined();
       expect(mockRefresh).toHaveBeenCalledTimes(1);
-      expect(mockCloseDrawer).toHaveBeenCalledTimes(1);
     });
 
     const patchCall = mockFetch.mock.calls.find(
@@ -289,5 +291,85 @@ describe("SponsorsEditForm", () => {
       useOrgAssets: false,
       websiteUrl: "https://google.com",
     });
+  });
+
+  it("auto-saves when changing a sponsor tier", async () => {
+    render(
+      <SponsorsEditForm
+        hackathonId="h1"
+        initialSponsors={[
+          {
+            id: "s1",
+            hackathon_id: "h1",
+            sponsor_tenant_id: null,
+            tenant_sponsor_id: null,
+            use_org_assets: false,
+            name: "Test Sponsor",
+            logo_url: null,
+            logo_url_dark: null,
+            website_url: null,
+            tier: "none",
+            custom_tier_label: null,
+            display_order: 0,
+            created_at: "2026-03-19T00:00:00.000Z",
+            tenant: null,
+          },
+        ]}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("No Tier"));
+    fireEvent.click(screen.getByText("Gold"));
+
+    await waitFor(() => {
+      const patchCall = mockFetch.mock.calls.find(
+        ([url, init]) =>
+          typeof url === "string" &&
+          url.includes("/sponsors/s1") &&
+          init?.method === "PATCH",
+      );
+
+      expect(patchCall).toBeDefined();
+      expect(mockRefresh).toHaveBeenCalledTimes(1);
+    });
+
+    const patchCall = mockFetch.mock.calls.find(
+      ([url, init]) =>
+        typeof url === "string" &&
+        url.includes("/sponsors/s1") &&
+        init?.method === "PATCH",
+    );
+    const body = JSON.parse(patchCall![1]!.body as string);
+    expect(body).toEqual({ tier: "gold" });
+  });
+
+  it("shows only Done button with no save/discard buttons", () => {
+    render(
+      <SponsorsEditForm
+        hackathonId="h1"
+        initialSponsors={[
+          {
+            id: "s1",
+            hackathon_id: "h1",
+            sponsor_tenant_id: null,
+            tenant_sponsor_id: null,
+            use_org_assets: false,
+            name: "Test Sponsor",
+            logo_url: null,
+            logo_url_dark: null,
+            website_url: null,
+            tier: "none",
+            custom_tier_label: null,
+            display_order: 0,
+            created_at: "2026-03-19T00:00:00.000Z",
+            tenant: null,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Done" })).toBeDefined();
+    expect(screen.queryByText("Save changes")).toBeNull();
+    expect(screen.queryByText("Discard")).toBeNull();
   });
 });

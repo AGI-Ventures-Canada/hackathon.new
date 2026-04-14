@@ -2,7 +2,7 @@ import { Elysia, t } from "elysia"
 import { HackathonStatusEnum } from "@/lib/api/validators"
 
 function devGuard(set: { status?: number | string }) {
-  if (process.env.NODE_ENV !== "development") {
+  if (process.env.NODE_ENV !== "development" && process.env.ADMIN_ENABLED !== "true") {
     set.status = 403
     return { error: "Forbidden" as const }
   }
@@ -64,6 +64,19 @@ const SUBMISSION_DATA = [
 const ROOM_NAMES = ["Room A", "Room B", "Room C", "Room D", "Room E"]
 
 export const devRoutes = new Elysia({ prefix: "/dev" })
+  .onBeforeHandle(async ({ set, request }) => {
+    if (process.env.NODE_ENV === "development") return
+    const { resolvePrincipal, isAdminEnabled } = await import("@/lib/auth/principal")
+    if (!isAdminEnabled()) {
+      set.status = 403
+      return { error: "Forbidden" as const }
+    }
+    const principal = await resolvePrincipal(request)
+    if (principal.kind !== "admin") {
+      set.status = 403
+      return { error: "Forbidden" as const }
+    }
+  })
   .get(
     "/config-status",
     ({ set }) => {
@@ -442,6 +455,9 @@ export const devRoutes = new Elysia({ prefix: "/dev" })
         judgePids.push(pid)
       }
 
+      const { seedJudgeDisplayProfiles } = await import("@/lib/services/judge-display")
+      await seedJudgeDisplayProfiles(params.id, judgeUserIds, judgePids)
+
       const { data: submissions } = await db
         .from("submissions")
         .select("id, team_id")
@@ -551,13 +567,18 @@ export const devRoutes = new Elysia({ prefix: "/dev" })
       if (guard) return guard
 
       const db = await getDb()
+      await db.from("challenges").delete().eq("hackathon_id", params.id)
+      const { error: insertErr } = await db.from("challenges").insert({
+        hackathon_id: params.id,
+        title: "Build an AI Agent That Solves a Real Problem",
+        description: "Create an AI-powered agent that addresses a genuine pain point. Your solution should demonstrate autonomous decision-making, tool usage, and real-world applicability. Bonus points for creative use of MCP, multi-modal inputs, or novel agentic patterns.",
+        resources: [],
+        sort_order: 0,
+      })
+      if (insertErr) { set.status = 500; return { error: "Failed" } }
       const { error } = await db
         .from("hackathons")
-        .update({
-          challenge_title: "Build an AI Agent That Solves a Real Problem",
-          challenge_body: "Create an AI-powered agent that addresses a genuine pain point. Your solution should demonstrate autonomous decision-making, tool usage, and real-world applicability. Bonus points for creative use of MCP, multi-modal inputs, or novel agentic patterns.",
-          challenge_released_at: new Date().toISOString(),
-        })
+        .update({ challenge_released_at: new Date().toISOString() })
         .eq("id", params.id)
 
       if (error) { set.status = 500; return { error: "Failed" } }
@@ -718,8 +739,15 @@ export const devRoutes = new Elysia({ prefix: "/dev" })
         })
       }
 
+      await db.from("challenges").delete().eq("hackathon_id", params.id)
+      await db.from("challenges").insert({
+        hackathon_id: params.id,
+        title: "Build an AI Agent That Solves a Real Problem",
+        description: null,
+        resources: [],
+        sort_order: 0,
+      })
       await db.from("hackathons").update({
-        challenge_title: "Build an AI Agent That Solves a Real Problem",
         challenge_released_at: new Date().toISOString(),
       }).eq("id", params.id)
 
@@ -998,6 +1026,7 @@ export const devRoutes = new Elysia({ prefix: "/dev" })
       )
       await db.from("prize_tracks").delete().eq("hackathon_id", params.id)
       await db.from("submissions").delete().eq("hackathon_id", params.id)
+      await db.from("hackathon_judges_display").delete().eq("hackathon_id", params.id).in("clerk_user_id", SEED_USERS)
       await db.from("hackathon_participants").delete().eq("hackathon_id", params.id).in("clerk_user_id", SEED_USERS)
       await db.from("teams").delete().eq("hackathon_id", params.id).in("captain_clerk_user_id", SEED_USERS)
 

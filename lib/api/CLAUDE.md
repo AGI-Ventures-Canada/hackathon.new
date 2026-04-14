@@ -10,7 +10,7 @@ All API routes are handled by a single Elysia instance via a Next.js catch-all r
 
 ## Dev Routes
 
-`lib/api/routes/dev.ts` exports `devRoutes`, which has **no auth**. It is protected at two levels: `lib/api/index.ts` only mounts it when `NODE_ENV === "development"`, and the handler itself returns 403 if `NODE_ENV !== "development"` (defence-in-depth for cases where the app runs locally against a remote DB). Never add it to a production-visible mount.
+`lib/api/routes/dev.ts` exports `devRoutes`. It is mounted when `NODE_ENV === "development"` or `ADMIN_ENABLED === "true"`. In development, all requests are allowed (no auth). In non-dev environments (preview/staging), an `onBeforeHandle` hook requires admin authentication via `resolvePrincipal()`. Per-handler `devGuard()` provides defence-in-depth env checks. Never mount on production without `ADMIN_ENABLED`.
 
 The handler uses dynamic `import()` for `@/lib/services/public-hackathons` and `@/lib/db/client` to avoid circular dependency issues that arise when those modules are imported at the top level in this file.
 

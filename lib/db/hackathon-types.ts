@@ -127,8 +127,6 @@ export interface Hackathon {
   feedback_survey_sent_at: string | null
   feedback_survey_url: string | null
   phase: HackathonPhase | null
-  challenge_title: string | null
-  challenge_body: string | null
   challenge_released_at: string | null
   metadata: Json
   created_at: string
@@ -314,7 +312,7 @@ export interface OrgIntegration {
   updated_at: string
 }
 
-export type SponsorTier = "none" | "gold" | "silver" | "bronze" | "title" | "partner"
+export type SponsorTier = "none" | "gold" | "silver" | "bronze" | "custom"
 
 export interface HackathonSponsor {
   id: string
@@ -327,6 +325,7 @@ export interface HackathonSponsor {
   logo_url_dark: string | null
   website_url: string | null
   tier: SponsorTier
+  custom_tier_label: string | null
   display_order: number
   created_at: string
 }
@@ -398,6 +397,7 @@ export interface Prize {
   round_id: string | null
   assignment_mode: PrizeAssignmentMode | null
   max_picks: number | null
+  is_screening: boolean
   display_order: number
   created_at: string
   updated_at: string

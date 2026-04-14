@@ -5,6 +5,7 @@ import {
   resetSupabaseMocks,
   setMockFromImplementation,
   resetClerkMocks,
+  mockClerkClient,
 } from "../lib/supabase-mock"
 
 const {
@@ -98,8 +99,35 @@ describe("Tenants Service", () => {
       expect(result?.name).toBe("Acme Inc.")
     })
 
-    it("generates default name from org id when no name provided", async () => {
+    it("fetches org name from Clerk when no name provided", async () => {
+      const tenantWithClerkName = { ...mockOrgTenant, name: "Test Org" }
+
+      let callCount = 0
+      setMockFromImplementation(() => {
+        callCount++
+        if (callCount === 1) {
+          return createChainableMock({ data: null, error: null })
+        }
+        return createChainableMock({ data: tenantWithClerkName, error: null })
+      })
+
+      const result = await getOrCreateTenant("org_abc123xyz789")
+
+      expect(result).not.toBeNull()
+      expect(result?.name).toBe("Test Org")
+      expect(mockClerkClient).toHaveBeenCalled()
+    })
+
+    it("falls back to org id prefix when Clerk fetch fails", async () => {
       const tenantWithDefaultName = { ...mockOrgTenant, name: "Org org_abc1" }
+
+      mockClerkClient.mockImplementation(() =>
+        Promise.resolve({
+          organizations: {
+            getOrganization: () => Promise.reject(new Error("Clerk unavailable")),
+          },
+        })
+      )
 
       let callCount = 0
       setMockFromImplementation(() => {
@@ -113,6 +141,27 @@ describe("Tenants Service", () => {
       const result = await getOrCreateTenant("org_abc123xyz789")
 
       expect(result).not.toBeNull()
+      expect(result?.name).toMatch(/^Org org_/)
+    })
+
+    it("syncs fallback name from Clerk for existing tenant", async () => {
+      const existingTenant = { ...mockOrgTenant, name: "Org org_abc1" }
+      const updatedTenant = { ...mockOrgTenant, name: "Test Org" }
+
+      let callCount = 0
+      setMockFromImplementation(() => {
+        callCount++
+        if (callCount === 1) {
+          return createChainableMock({ data: existingTenant, error: null })
+        }
+        return createChainableMock({ data: updatedTenant, error: null })
+      })
+
+      const result = await getOrCreateTenant("org_abc123")
+
+      expect(result).not.toBeNull()
+      expect(result?.name).toBe("Test Org")
+      expect(mockClerkClient).toHaveBeenCalled()
     })
 
     it("syncs name from Clerk when different", async () => {
@@ -255,6 +304,38 @@ describe("Tenants Service", () => {
       const result = await getOrCreatePersonalTenant("user_ab")
 
       expect(result).not.toBeNull()
+    })
+
+    it("updates name when existing tenant has fallback name and userName is provided", async () => {
+      const fallbackTenant = { ...mockPersonalTenant, name: "Personal Account" }
+      const updatedTenant = { ...fallbackTenant, name: "Jane Doe" }
+
+      let callCount = 0
+      setMockFromImplementation(() => {
+        callCount++
+        if (callCount === 1) {
+          return createChainableMock({ data: fallbackTenant, error: null })
+        }
+        return createChainableMock({ data: updatedTenant, error: null })
+      })
+
+      const result = await getOrCreatePersonalTenant("user_abc123", "Jane Doe")
+
+      expect(result).not.toBeNull()
+      expect(result?.name).toBe("Jane Doe")
+    })
+
+    it("does not update name when existing tenant has a real name", async () => {
+      const realNameTenant = { ...mockPersonalTenant, name: "Already Named" }
+
+      setMockFromImplementation(() =>
+        createChainableMock({ data: realNameTenant, error: null })
+      )
+
+      const result = await getOrCreatePersonalTenant("user_abc123", "New Name")
+
+      expect(result).not.toBeNull()
+      expect(result?.name).toBe("Already Named")
     })
 
     it("retries on race condition", async () => {

@@ -2,6 +2,8 @@ import { createHackathon } from "@/lib/services/hackathons"
 import { downloadAndUploadBanner } from "@/lib/services/storage"
 import { addSponsor } from "@/lib/services/sponsors"
 import { createPrize } from "@/lib/services/prizes"
+import { createChallenge } from "@/lib/services/challenges"
+import { normalizeUrl } from "@/lib/utils/url"
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Hackathon, SponsorTier } from "@/lib/db/hackathon-types"
@@ -56,7 +58,7 @@ export async function createHackathonFromImport(
   return { ...hackathon, banner_url: bannerResult?.url ?? null } as Hackathon
 }
 
-const VALID_TIERS = new Set<string>(["gold", "silver", "bronze", "title", "none"])
+const VALID_TIERS = new Set<string>(["gold", "silver", "bronze", "custom", "none"])
 
 export async function createSponsorsFromImport(
   hackathonId: string,
@@ -85,6 +87,28 @@ export async function createPrizesFromImport(
       description: p.description ?? null,
       value: p.value ?? null,
       displayOrder: i,
+    })
+  }
+}
+
+export async function createChallengesFromImport(
+  hackathonId: string,
+  tenantId: string,
+  challenges: {
+    title: string
+    description?: string | null
+    resources?: { label: string; url: string }[]
+  }[]
+): Promise<void> {
+  for (const c of challenges) {
+    const cleanedResources = (c.resources ?? [])
+      .map((r) => ({ label: r.label?.trim() ?? "", url: normalizeUrl(r.url?.trim() ?? "") }))
+      .filter((r) => r.url.length > 0)
+
+    await createChallenge(hackathonId, tenantId, {
+      title: c.title,
+      description: c.description ?? null,
+      resources: cleanedResources,
     })
   }
 }

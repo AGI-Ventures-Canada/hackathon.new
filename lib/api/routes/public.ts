@@ -1,6 +1,7 @@
 import { Elysia, t } from "elysia"
 import { auth, clerkClient } from "@clerk/nextjs/server"
 import { normalizeUrl } from "@/lib/utils/url"
+import { isValidUuid } from "@/lib/utils/uuid"
 import { exchangeCodeForTokens, saveIntegration, getProviderConfig } from "@/lib/integrations/oauth"
 import { getPublicHackathon, listPublicHackathons } from "@/lib/services/public-hackathons"
 import { registerForHackathon, getParticipantCount, isUserRegistered } from "@/lib/services/hackathons"
@@ -12,7 +13,9 @@ import {
   createSubmission,
   updateSubmission,
   getHackathonSubmissions,
+  getTeamMemberCount,
 } from "@/lib/services/submissions"
+import { getTeamSizeWarning } from "@/lib/utils/team-size"
 
 export const publicRoutes = new Elysia({ prefix: "/public" })
   .get("/health", () => ({
@@ -363,6 +366,20 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
+      let teamSizeWarning: string | null = null
+      let teamMemberCount = 1
+      if (participant.teamId) {
+        teamMemberCount = await getTeamMemberCount(participant.teamId)
+        const warning = getTeamSizeWarning({
+          memberCount: teamMemberCount,
+          minTeamSize: hackathon.min_team_size,
+          allowSolo: hackathon.allow_solo,
+        })
+        if (warning) teamSizeWarning = warning.message
+      } else if (!hackathon.allow_solo) {
+        teamSizeWarning = `Solo participants are not allowed — this event requires teams of at least ${hackathon.min_team_size}.`
+      }
+
       const githubUrl = normalizeUrl(body.githubUrl)
       const liveAppUrl = body.liveAppUrl ? normalizeUrl(body.liveAppUrl) : body.liveAppUrl
 
@@ -381,6 +398,13 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
+      if (body.challengeIds?.some((id) => !isValidUuid(id))) {
+        return new Response(
+          JSON.stringify({ error: "Invalid challenge ID", code: "invalid_challenge_id" }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
       const submission = await createSubmission(
         hackathon.id,
         participant.participantId,
@@ -390,6 +414,10 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
           description: body.description,
           githubUrl,
           liveAppUrl,
+          metadata: teamSizeWarning
+            ? { teamSizeWarning, teamMemberCount }
+            : undefined,
+          challengeIds: body.challengeIds,
         }
       )
 
@@ -407,7 +435,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         data: { hackathonId: hackathon.id, submissionId: submission.id, title: body.title },
       }).catch(console.error)
 
-      return { success: true, submissionId: submission.id }
+      return { success: true, submissionId: submission.id, teamSizeWarning }
     },
     {
       detail: {
@@ -419,6 +447,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         description: t.String({ minLength: 1, maxLength: 280 }),
         githubUrl: t.String(),
         liveAppUrl: t.Optional(t.Union([t.String(), t.Null()])),
+        challengeIds: t.Optional(t.Array(t.String())),
       }),
     }
   )
@@ -492,6 +521,13 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         }
       }
 
+      if (body.challengeIds?.some((id) => !isValidUuid(id))) {
+        return new Response(
+          JSON.stringify({ error: "Invalid challenge ID", code: "invalid_challenge_id" }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
       const submission = await updateSubmission(
         existing.id,
         participant.participantId,
@@ -501,6 +537,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
           description: body.description,
           githubUrl: normalizedGithubUrl,
           liveAppUrl: normalizedLiveAppUrl,
+          challengeIds: body.challengeIds,
         }
       )
 
@@ -530,6 +567,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         description: t.Optional(t.String({ minLength: 1, maxLength: 280 })),
         githubUrl: t.Optional(t.String()),
         liveAppUrl: t.Optional(t.Union([t.String(), t.Null()])),
+        challengeIds: t.Optional(t.Array(t.String())),
       }),
     }
   )
@@ -987,11 +1025,6 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
-    // Product decision: sibling tokens are intentionally returned to enable
-    // one team member to claim all of their submission's prizes in a single
-    // session. The claim token is the authorization — no additional auth is
-    // required. All tokens belong to the same submission, so cross-member
-    // claiming is by design (any teammate can fulfill on behalf of the team).
     const { getSiblingClaims } = await import("@/lib/services/prize-fulfillment")
     const siblings = await getSiblingClaims(params.token)
     const publicSiblings = siblings.map(({ recipientEmail: _email, shippingAddress: _addr, ...rest }) => rest)

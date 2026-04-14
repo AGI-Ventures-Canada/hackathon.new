@@ -29,6 +29,7 @@ export type CreatePrizeInput = {
   assignmentMode?: PrizeAssignmentMode
   maxPicks?: number
   displayOrder?: number
+  isScreening?: boolean
   type?: "score" | "favorite" | "crowd" | "criteria"
   rank?: number | null
   kind?: string
@@ -122,16 +123,28 @@ export async function createPrize(
 ): Promise<CreatePrizeResult> {
   const client = getSupabase() as unknown as SupabaseClient
 
+  let safeRoundId: string | null = input.roundId ?? null
+  if (safeRoundId) {
+    const { data: round } = await client
+      .from("judging_rounds")
+      .select("id")
+      .eq("id", safeRoundId)
+      .eq("hackathon_id", hackathonId)
+      .maybeSingle()
+    if (!round) safeRoundId = null
+  }
+
   const row: Record<string, unknown> = {
     hackathon_id: hackathonId,
     name: input.name,
     description: input.description ?? null,
     value: input.value ?? null,
     judging_style: input.judgingStyle,
-    round_id: input.roundId ?? null,
+    round_id: safeRoundId,
     assignment_mode: input.assignmentMode ?? "organizer_assigned",
     max_picks: input.maxPicks ?? 3,
     display_order: input.displayOrder ?? 0,
+    is_screening: input.isScreening ?? false,
   }
   if (input.type !== undefined) row.type = input.type
   if (input.rank !== undefined) row.rank = input.rank
@@ -337,6 +350,13 @@ export async function listBucketDefinitions(prizeId: string): Promise<BucketDefi
 // Rounds (hackathon-level)
 // ============================================================
 
+export type AdvancementRule = "manual" | "top_n" | "threshold"
+
+export type AdvancementConfig = {
+  topN?: number
+  threshold?: number
+}
+
 export type RoundInfo = {
   id: string
   hackathonId: string
@@ -344,6 +364,33 @@ export type RoundInfo = {
   status: string
   displayOrder: number
   submissionCount: number
+  advancement: AdvancementRule
+  advancementConfig: AdvancementConfig
+  prizeCount: number
+  screeningPrizeId: string | null
+}
+
+export type CreateRoundInput = {
+  name: string
+  advancement?: AdvancementRule
+  advancementConfig?: AdvancementConfig
+}
+
+export type UpdateRoundInput = {
+  name?: string
+  status?: string
+  advancement?: AdvancementRule
+  advancementConfig?: AdvancementConfig
+}
+
+function normalizeAdvancementConfig(value: unknown): AdvancementConfig {
+  if (!value || typeof value !== "object") return {}
+  const config = value as Record<string, unknown>
+  const out: AdvancementConfig = {}
+  if (typeof config.topN === "number") out.topN = config.topN
+  else if (typeof config.top_n === "number") out.topN = config.top_n
+  if (typeof config.threshold === "number") out.threshold = config.threshold
+  return out
 }
 
 export async function listRounds(hackathonId: string): Promise<RoundInfo[]> {
@@ -361,6 +408,8 @@ export async function listRounds(hackathonId: string): Promise<RoundInfo[]> {
 
   const roundIds = (data ?? []).map((r) => r.id)
   const roundSubCounts: Record<string, number> = {}
+  const prizeCountByRound: Record<string, number> = {}
+  const screeningPrizeByRound: Record<string, string> = {}
 
   if (roundIds.length > 0) {
     const { data: roundSubs } = await client
@@ -371,6 +420,18 @@ export async function listRounds(hackathonId: string): Promise<RoundInfo[]> {
     for (const rs of roundSubs ?? []) {
       roundSubCounts[rs.round_id] = (roundSubCounts[rs.round_id] ?? 0) + 1
     }
+
+    const { data: roundPrizes } = await client
+      .from("prizes")
+      .select("id, round_id, is_screening")
+      .in("round_id", roundIds)
+      .not("judging_style", "is", null)
+
+    for (const p of roundPrizes ?? []) {
+      if (!p.round_id) continue
+      prizeCountByRound[p.round_id] = (prizeCountByRound[p.round_id] ?? 0) + 1
+      if (p.is_screening) screeningPrizeByRound[p.round_id] = p.id
+    }
   }
 
   return (data ?? []).map((r) => ({
@@ -380,13 +441,19 @@ export async function listRounds(hackathonId: string): Promise<RoundInfo[]> {
     status: r.status ?? "planned",
     displayOrder: r.display_order,
     submissionCount: roundSubCounts[r.id] ?? 0,
+    advancement: (r.advancement ?? "manual") as AdvancementRule,
+    advancementConfig: normalizeAdvancementConfig(r.advancement_config),
+    prizeCount: prizeCountByRound[r.id] ?? 0,
+    screeningPrizeId: screeningPrizeByRound[r.id] ?? null,
   }))
 }
 
 export async function createRound(
   hackathonId: string,
-  name: string
+  input: CreateRoundInput | string
 ): Promise<RoundInfo | null> {
+  const params: CreateRoundInput =
+    typeof input === "string" ? { name: input } : input
   const client = getSupabase() as unknown as SupabaseClient
 
   const { data: existing } = await client
@@ -402,9 +469,10 @@ export async function createRound(
     .from("judging_rounds")
     .insert({
       hackathon_id: hackathonId,
-      name,
+      name: params.name,
       status: "planned",
-      advancement: "manual",
+      advancement: params.advancement ?? "manual",
+      advancement_config: params.advancementConfig ?? {},
       display_order: nextOrder,
     })
     .select()
@@ -422,17 +490,23 @@ export async function createRound(
     status: data.status ?? "planned",
     displayOrder: data.display_order,
     submissionCount: 0,
+    advancement: (data.advancement ?? "manual") as AdvancementRule,
+    advancementConfig: normalizeAdvancementConfig(data.advancement_config),
+    prizeCount: 0,
+    screeningPrizeId: null,
   }
 }
 
 export async function updateRound(
   roundId: string,
-  input: { name?: string; status?: string }
+  input: UpdateRoundInput
 ): Promise<boolean> {
   const client = getSupabase() as unknown as SupabaseClient
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
   if (input.name !== undefined) updates.name = input.name
   if (input.status !== undefined) updates.status = input.status
+  if (input.advancement !== undefined) updates.advancement = input.advancement
+  if (input.advancementConfig !== undefined) updates.advancement_config = input.advancementConfig
 
   const { error } = await client
     .from("judging_rounds")
@@ -444,6 +518,132 @@ export async function updateRound(
     return false
   }
   return true
+}
+
+export type DeleteRoundResult = {
+  success: boolean
+  error?: string
+  code?: "round_active" | "delete_failed" | "not_found"
+}
+
+export async function deleteRound(
+  roundId: string,
+  hackathonId: string
+): Promise<DeleteRoundResult> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data: round } = await client
+    .from("judging_rounds")
+    .select("id, status")
+    .eq("id", roundId)
+    .eq("hackathon_id", hackathonId)
+    .maybeSingle()
+
+  if (!round) {
+    return { success: false, error: "Round not found", code: "not_found" }
+  }
+
+  if (round.status === "active") {
+    return {
+      success: false,
+      error: "Complete the round before deleting it",
+      code: "round_active",
+    }
+  }
+
+  await client
+    .from("prizes")
+    .update({ round_id: null })
+    .eq("round_id", roundId)
+    .eq("is_screening", true)
+
+  const { data: screeningPrizes } = await client
+    .from("prizes")
+    .select("id")
+    .eq("round_id", roundId)
+    .eq("is_screening", true)
+
+  const screeningPrizeIds = (screeningPrizes ?? []).map((p) => p.id)
+  if (screeningPrizeIds.length > 0) {
+    await client.from("prizes").delete().in("id", screeningPrizeIds)
+  }
+
+  const { error } = await client
+    .from("judging_rounds")
+    .delete()
+    .eq("id", roundId)
+    .eq("hackathon_id", hackathonId)
+
+  if (error) {
+    console.error("Failed to delete round:", error)
+    return { success: false, error: "Database delete failed", code: "delete_failed" }
+  }
+
+  return { success: true }
+}
+
+export type FinalistsPresetInput = {
+  advanceTopN: number
+  round1Name?: string
+  round2Name?: string
+  seedScreeningPrize?: boolean
+}
+
+export type FinalistsPresetResult =
+  | {
+      success: true
+      roundIds: { round1: string; round2: string }
+      screeningPrizeId: string | null
+    }
+  | { success: false; error: string }
+
+export async function createFinalistsPreset(
+  hackathonId: string,
+  input: FinalistsPresetInput
+): Promise<FinalistsPresetResult> {
+  const { advanceTopN } = input
+  if (!Number.isInteger(advanceTopN) || advanceTopN < 1) {
+    return { success: false, error: "advanceTopN must be a positive integer" }
+  }
+
+  const round1Name = (input.round1Name ?? "Semifinals").trim() || "Semifinals"
+  const round2Name = (input.round2Name ?? "Finals").trim() || "Finals"
+
+  const round1 = await createRound(hackathonId, {
+    name: round1Name,
+    advancement: "top_n",
+    advancementConfig: { topN: advanceTopN },
+  })
+  if (!round1) return { success: false, error: "Failed to create round 1" }
+
+  const round2 = await createRound(hackathonId, {
+    name: round2Name,
+    advancement: "manual",
+    advancementConfig: {},
+  })
+  if (!round2) return { success: false, error: "Failed to create round 2" }
+
+  let screeningPrizeId: string | null = null
+  if (input.seedScreeningPrize !== false) {
+    const screening = await createPrize(hackathonId, {
+      name: "Screening Scores",
+      description: `Internal scoring used to narrow submissions to the top ${advanceTopN} finalists. Hidden from participants.`,
+      judgingStyle: "bucket_sort",
+      roundId: round1.id,
+      isScreening: true,
+    })
+    if (screening.success) {
+      screeningPrizeId = screening.prize.id
+    } else {
+      console.error("Failed to seed screening prize:", screening.error)
+    }
+  }
+
+  return {
+    success: true,
+    roundIds: { round1: round1.id, round2: round2.id },
+    screeningPrizeId,
+  }
 }
 
 export async function activateRound(roundId: string, hackathonId: string): Promise<boolean> {
@@ -550,6 +750,95 @@ export async function advanceSubmissions(
   }
 
   return { advancedCount: submissionIds.length }
+}
+
+export type AutoAdvanceResult =
+  | { success: true; advancedCount: number; submissionIds: string[] }
+  | { success: false; error: string; code: "no_screening_prize" | "no_scores" | "no_config" | "advance_failed" }
+
+export async function autoAdvanceFinalists(
+  hackathonId: string,
+  fromRoundId: string,
+  toRoundId: string
+): Promise<AutoAdvanceResult> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data: round } = await client
+    .from("judging_rounds")
+    .select("id, advancement, advancement_config")
+    .eq("id", fromRoundId)
+    .eq("hackathon_id", hackathonId)
+    .maybeSingle()
+
+  if (!round) {
+    return { success: false, error: "Round not found", code: "no_config" }
+  }
+
+  if (round.advancement !== "top_n") {
+    return {
+      success: false,
+      error: "Auto-advance requires a top-N advancement rule",
+      code: "no_config",
+    }
+  }
+
+  const topN = normalizeAdvancementConfig(round.advancement_config).topN
+  if (!topN || topN < 1) {
+    return {
+      success: false,
+      error: "Round is missing a valid topN in advancement_config",
+      code: "no_config",
+    }
+  }
+
+  const { data: screeningPrize } = await client
+    .from("prizes")
+    .select("id")
+    .eq("hackathon_id", hackathonId)
+    .eq("round_id", fromRoundId)
+    .eq("is_screening", true)
+    .maybeSingle()
+
+  if (!screeningPrize) {
+    return {
+      success: false,
+      error: "No screening prize found in this round",
+      code: "no_screening_prize",
+    }
+  }
+
+  await calculatePrizeResults(hackathonId, screeningPrize.id)
+
+  const { data: results } = await client
+    .from("hackathon_results")
+    .select("submission_id, rank, total_score, weighted_score")
+    .eq("prize_id", screeningPrize.id)
+    .order("rank", { ascending: true })
+    .limit(topN)
+
+  const submissionIds = (results ?? [])
+    .map((r) => r.submission_id)
+    .filter((id): id is string => !!id)
+
+  if (submissionIds.length === 0) {
+    return {
+      success: false,
+      error: "No screening scores yet. Ask judges to finish scoring before advancing.",
+      code: "no_scores",
+    }
+  }
+
+  const { advancedCount } = await advanceSubmissions(fromRoundId, toRoundId, submissionIds)
+
+  if (advancedCount === 0) {
+    return {
+      success: false,
+      error: "Failed to advance submissions",
+      code: "advance_failed",
+    }
+  }
+
+  return { success: true, advancedCount, submissionIds }
 }
 
 // ============================================================
@@ -1431,10 +1720,6 @@ async function insertRankedResults(
   return { success: true, count: inserts.length }
 }
 
-// ============================================================
-// Auto-recalculate after scoring
-// ============================================================
-
 export async function recalculateForAssignment(assignmentId: string): Promise<void> {
   const client = getSupabase() as unknown as SupabaseClient
   const { data } = await client
@@ -1523,6 +1808,7 @@ export type JudgeAssignmentForJudge = {
   submissionLiveAppUrl: string | null
   submissionScreenshotUrl: string | null
   teamName: string | null
+  teamMemberCount: number | null
   isComplete: boolean
   notes: string
   viewedAt: string | null
@@ -1576,9 +1862,23 @@ export async function getJudgeAssignments(
     .filter((id): id is string => id !== null)
 
   let teamsMap: Record<string, string> = {}
+  const memberCountMap: Record<string, number> = {}
   if (teamIds.length > 0) {
     const { data: teams } = await client.from("teams").select("id, name").in("id", teamIds)
     teamsMap = Object.fromEntries((teams ?? []).map((t) => [t.id, t.name]))
+
+    const { data: members } = await client
+      .from("hackathon_participants")
+      .select("team_id")
+      .in("team_id", teamIds)
+      .eq("role", "participant")
+    if (members) {
+      for (const row of members) {
+        if (row.team_id) {
+          memberCountMap[row.team_id] = (memberCountMap[row.team_id] || 0) + 1
+        }
+      }
+    }
   }
 
   return assignments.map((a: Record<string, unknown>) => {
@@ -1600,6 +1900,7 @@ export async function getJudgeAssignments(
       submissionLiveAppUrl: sub.live_app_url,
       submissionScreenshotUrl: sub.screenshot_url,
       teamName: sub.team_id ? teamsMap[sub.team_id] ?? null : null,
+      teamMemberCount: sub.team_id ? memberCountMap[sub.team_id] ?? null : null,
       isComplete: a.is_complete as boolean,
       notes: a.notes as string,
       viewedAt: (a.viewed_at as string | null) ?? null,

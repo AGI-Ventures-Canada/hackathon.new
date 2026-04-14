@@ -62,6 +62,6 @@ Authorization: Bearer sk_live_your_api_key_here
   .use(dashboardActivityRoutes)
   .use(v1Routes)
   .use(adminRoutes)
-  .use(process.env.NODE_ENV === "development" ? devRoutes : new Elysia())
+  .use(process.env.NODE_ENV === "development" || process.env.ADMIN_ENABLED === "true" ? devRoutes : new Elysia())
 
 export type Api = typeof api

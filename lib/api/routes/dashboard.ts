@@ -13,7 +13,7 @@ import { dashboardSponsorFulfillmentRoutes } from "./dashboard-sponsor-fulfillme
 import { getEffectiveStatus } from "@/lib/utils/timeline"
 import type { Scope } from "@/lib/auth/types"
 import { ALL_SCOPES } from "@/lib/auth/types"
-import type { WebhookEvent } from "@/lib/db/hackathon-types"
+import type { WebhookEvent, SponsorTier } from "@/lib/db/hackathon-types"
 
 export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
   .derive(async ({ request }) => {
@@ -1032,6 +1032,27 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       description: "Returns full hackathon details for organizers. Requires hackathons:read scope.",
     },
   })
+  .get("/hackathons/:id/action-items-poll", async ({ principal, params, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
+
+    const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+    const result = await checkHackathonOrganizer(params.id, principal.tenantId)
+    if (result.status !== "ok") {
+      set.status = result.status === "not_found" ? 404 : 403
+      return { error: result.status === "not_found" ? "Not found" : "Not authorized" }
+    }
+
+    const { buildOrganizerPollPayload } = await import("@/lib/services/organizer-polling")
+    const payload = await buildOrganizerPollPayload(params.id)
+    if (!payload) { set.status = 500; return { error: "Failed to build poll payload" } }
+    set.headers["Cache-Control"] = "private, max-age=2, stale-while-revalidate=5"
+    return payload
+  }, {
+    detail: {
+      summary: "Poll action items data",
+      description: "Returns lightweight hackathon stats for computing organizer action items. Used for client-side polling.",
+    },
+  })
   .delete("/hackathons/:id", async ({ principal, params }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
 
@@ -1071,8 +1092,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
     async ({ principal, params, body }) => {
       requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
 
-      const hasDateUpdate = body.startsAt !== undefined || body.endsAt !== undefined ||
-        body.registrationOpensAt !== undefined || body.registrationClosesAt !== undefined
+      const hasDateUpdate = body.startsAt !== undefined || body.endsAt !== undefined
       const isStatusChange = body.status !== undefined
 
       let previousStatus: string | undefined
@@ -1099,8 +1119,6 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         if (hasDateUpdate && !isTransition) {
           const { validateTimelineDates } = await import("@/lib/utils/timeline")
           const dateError = validateTimelineDates({
-            registrationOpensAt: body.registrationOpensAt !== undefined ? body.registrationOpensAt : currentHackathon.registration_opens_at,
-            registrationClosesAt: body.registrationClosesAt !== undefined ? body.registrationClosesAt : currentHackathon.registration_closes_at,
             startsAt: body.startsAt !== undefined ? body.startsAt : currentHackathon.starts_at,
             endsAt: body.endsAt !== undefined ? body.endsAt : currentHackathon.ends_at,
           })
@@ -1117,7 +1135,6 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       const hasOtherFields = body.bannerUrl !== undefined || body.name !== undefined ||
         body.description !== undefined || body.rules !== undefined ||
         body.startsAt !== undefined || body.endsAt !== undefined ||
-        body.registrationOpensAt !== undefined || body.registrationClosesAt !== undefined ||
         body.anonymousJudging !== undefined || body.judgingMode !== undefined ||
         body.locationType !== undefined || body.locationName !== undefined ||
         body.locationUrl !== undefined || body.locationLatitude !== undefined ||
@@ -1137,8 +1154,6 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           rules: body.rules,
           startsAt: body.startsAt,
           endsAt: body.endsAt,
-          registrationOpensAt: body.registrationOpensAt,
-          registrationClosesAt: body.registrationClosesAt,
           status: hasStatusTransition ? undefined : body.status as "draft" | "published" | "registration_open" | "active" | "judging" | "completed" | "archived" | undefined,
           anonymousJudging: body.anonymousJudging,
           judgingMode: body.judgingMode as "points" | "subjective" | "rubric" | undefined,
@@ -1162,6 +1177,13 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         })
       }
 
+      if (body.startsAt !== undefined && body.startsAt !== null) {
+        const { updateHackathonSettings: updateRegOnDate } = await import("@/lib/services/public-hackathons")
+        await updateRegOnDate(params.id, principal.tenantId, {
+          registrationClosesAt: body.startsAt,
+        })
+      }
+
       if (hasStatusTransition) {
         const { executeTransition } = await import("@/lib/services/lifecycle")
         const triggeredBy = principal.kind === "user" ? principal.userId : principal.keyId
@@ -1182,6 +1204,11 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         }
 
         if (previousStatus === "draft" && body.status !== "draft") {
+          const { updateHackathonSettings: updateReg } = await import("@/lib/services/public-hackathons")
+          await updateReg(params.id, principal.tenantId, {
+            registrationOpensAt: new Date().toISOString(),
+            registrationClosesAt: body.startsAt ?? hackathon.starts_at ?? new Date().toISOString(),
+          })
           const { resolveAdderName } = await import("@/lib/auth/resolve-adder-name")
           const inviterName = await resolveAdderName(principal)
           const { sendPendingJudgeInvitationEmails } = await import("@/lib/services/judge-invitations")
@@ -1301,8 +1328,6 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         rules: t.Optional(t.Union([t.String(), t.Null()])),
         startsAt: t.Optional(t.Union([t.String(), t.Null()])),
         endsAt: t.Optional(t.Union([t.String(), t.Null()])),
-        registrationOpensAt: t.Optional(t.Union([t.String(), t.Null()])),
-        registrationClosesAt: t.Optional(t.Union([t.String(), t.Null()])),
         status: t.Optional(t.Union([
           t.Literal("draft"),
           t.Literal("published"),
@@ -1541,7 +1566,8 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         name: body.name,
         logoUrl,
         websiteUrl,
-        tier: body.tier as "title" | "gold" | "silver" | "bronze" | "partner" | undefined,
+        tier: body.tier as SponsorTier | undefined,
+        customTierLabel: body.customTierLabel,
         sponsorTenantId: body.sponsorTenantId,
         tenantSponsorId,
         useOrgAssets: body.useOrgAssets,
@@ -1580,6 +1606,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         logoUrl: t.Optional(t.Union([t.String(), t.Null()])),
         websiteUrl: t.Optional(t.Union([t.String(), t.Null()])),
         tier: t.Optional(t.String()),
+        customTierLabel: t.Optional(t.Union([t.String(), t.Null()])),
         sponsorTenantId: t.Optional(t.Union([t.String(), t.Null()])),
         useOrgAssets: t.Optional(t.Boolean()),
         displayOrder: t.Optional(t.Number()),
@@ -1614,7 +1641,8 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         name: body.name,
         logoUrl: sponsorLogoUrl,
         websiteUrl: sponsorWebsiteUrl,
-        tier: body.tier as "title" | "gold" | "silver" | "bronze" | "partner" | undefined,
+        tier: body.tier as SponsorTier | undefined,
+        customTierLabel: body.customTierLabel,
         sponsorTenantId: body.sponsorTenantId,
         useOrgAssets: body.useOrgAssets,
         displayOrder: body.displayOrder,
@@ -1649,6 +1677,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         logoUrl: t.Optional(t.Union([t.String(), t.Null()])),
         websiteUrl: t.Optional(t.Union([t.String(), t.Null()])),
         tier: t.Optional(t.String()),
+        customTierLabel: t.Optional(t.Union([t.String(), t.Null()])),
         sponsorTenantId: t.Optional(t.Union([t.String(), t.Null()])),
         useOrgAssets: t.Optional(t.Boolean()),
         displayOrder: t.Optional(t.Number()),

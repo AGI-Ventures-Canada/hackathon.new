@@ -20,8 +20,6 @@ export interface Hackathon {
   description?: string
   status?: string
   phase?: string
-  registrationOpensAt?: string
-  registrationClosesAt?: string
   startsAt?: string
   endsAt?: string
   createdAt?: string

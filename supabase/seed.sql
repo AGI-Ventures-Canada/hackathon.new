@@ -1018,7 +1018,7 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- Manual sponsors on AGI House hackathons (no sponsor_tenant_id)
-INSERT INTO hackathon_sponsors (id, hackathon_id, sponsor_tenant_id, name, logo_url, website_url, tier, display_order, created_at)
+INSERT INTO hackathon_sponsors (id, hackathon_id, sponsor_tenant_id, name, logo_url, website_url, tier, custom_tier_label, display_order, created_at)
 VALUES
   (
     'a9c90001-a9c9-a9c9-a9c9-a9c90001a9c9',
@@ -1027,7 +1027,8 @@ VALUES
     'Microsoft',
     NULL,
     'https://microsoft.com',
-    'title',
+    'custom',
+    'Title',
     1,
     now()
   ),
@@ -1039,6 +1040,7 @@ VALUES
     NULL,
     'https://sequoiacap.com',
     'silver',
+    NULL,
     2,
     now()
   ),
@@ -1049,7 +1051,8 @@ VALUES
     'NVIDIA',
     NULL,
     'https://nvidia.com',
-    'title',
+    'custom',
+    'Title',
     0,
     now()
   ),
@@ -1061,6 +1064,7 @@ VALUES
     NULL,
     'https://intel.com',
     'gold',
+    NULL,
     1,
     now()
   ),
@@ -1071,7 +1075,8 @@ VALUES
     'Google',
     NULL,
     'https://google.com',
-    'title',
+    'custom',
+    'Title',
     0,
     now()
   ),
@@ -1083,6 +1088,7 @@ VALUES
     NULL,
     'https://microsoft.com',
     'silver',
+    NULL,
     1,
     now()
   ),
@@ -1094,6 +1100,7 @@ VALUES
     NULL,
     'https://google.com',
     'gold',
+    NULL,
     0,
     now()
   ),
@@ -1105,6 +1112,7 @@ VALUES
     NULL,
     'https://apple.com',
     'silver',
+    NULL,
     2,
     now()
   ),
@@ -1115,7 +1123,8 @@ VALUES
     'Microsoft',
     NULL,
     'https://microsoft.com',
-    'title',
+    'custom',
+    'Title',
     0,
     now()
   ),
@@ -1127,6 +1136,7 @@ VALUES
     NULL,
     'https://sequoiacap.com',
     'gold',
+    NULL,
     2,
     now()
   ),
@@ -1138,6 +1148,7 @@ VALUES
     NULL,
     'https://a16z.com',
     'silver',
+    NULL,
     3,
     now()
   ),
@@ -1148,7 +1159,8 @@ VALUES
     'NVIDIA',
     NULL,
     'https://nvidia.com',
-    'title',
+    'custom',
+    'Title',
     0,
     now()
   ),
@@ -1160,6 +1172,7 @@ VALUES
     NULL,
     'https://a16z.com',
     'gold',
+    NULL,
     1,
     now()
   ),
@@ -1171,6 +1184,7 @@ VALUES
     NULL,
     'https://boeing.com',
     'silver',
+    NULL,
     2,
     now()
   )

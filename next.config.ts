@@ -15,6 +15,8 @@ const nextConfig: NextConfig = {
     "@daytonaio/sdk",
     "ai",
     "zod",
+    "@react-email/components",
+    "@react-email/render",
   ],
   async rewrites() {
     return [

@@ -164,7 +164,8 @@ All fields optional:
 ```json
 {
   "name": "string (required)",
-  "tier": "title | gold | silver | bronze | partner",
+  "tier": "gold | silver | bronze | custom",
+  "customTierLabel": "string (when tier is custom)",
   "logoUrl": "string",
   "websiteUrl": "string"
 }

@@ -6,6 +6,7 @@ import {
   ALL_SCOPES,
   DEFAULT_API_KEY_SCOPES,
 } from "@/lib/auth/types"
+import { hasAdminMetadata } from "@/lib/auth/principal"
 import type { UserPrincipal, ApiKeyPrincipal, AnonPrincipal } from "@/lib/auth/types"
 
 describe("Auth Types", () => {
@@ -124,6 +125,21 @@ describe("Auth Types", () => {
 
     it("does not include admin scopes", () => {
       expect(DEFAULT_API_KEY_SCOPES).not.toContain("keys:write")
+    })
+  })
+
+  describe("hasAdminMetadata", () => {
+    it.each([
+      [null, false],
+      [undefined, false],
+      [{}, false],
+      [{ metadata: null }, false],
+      [{ metadata: {} }, false],
+      [{ metadata: { admin: false } }, false],
+      [{ metadata: { admin: "true" } }, false],
+      [{ metadata: { admin: true } }, true],
+    ])("hasAdminMetadata(%j) === %s", (claims, expected) => {
+      expect(hasAdminMetadata(claims)).toBe(expected)
     })
   })
 })

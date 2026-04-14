@@ -44,7 +44,7 @@ Comprehensive guide for planning and running successful hackathons, from first-t
 - **Set the date** — avoid exam periods, holidays, and competing events. Weekends work best. Check local university calendars
 - **Secure a venue** — needs reliable WiFi, power outlets everywhere, breakout rooms, and a presentation area. Universities, coworking spaces, and corporate offices are common choices
 - **Build your organizing team** — assign clear roles: logistics lead, sponsor lead, marketing lead, tech lead, volunteer coordinator
-- **Start sponsor outreach early** — sponsors take 4-8 weeks to commit. Prepare a sponsorship deck with tiered packages (title, gold, silver, bronze). Lead with what sponsors get: brand exposure, recruiting access, API/product adoption
+- **Start sponsor outreach early** — sponsors take 4-8 weeks to commit. Prepare a sponsorship deck with tiered packages (gold, silver, bronze, or custom names). Lead with what sponsors get: brand exposure, recruiting access, API/product adoption
 
 ### 1-3 Months Before
 

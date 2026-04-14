@@ -59,6 +59,7 @@ lib/**/*.d.ts.map
 # local dev
 specs.md
 examples/
+docs/
 
 # Claude Code
 .claude/worktrees/

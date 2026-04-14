@@ -71,7 +71,7 @@ export function SponsorForm({ hackathonId }: SponsorFormProps) {
         </div>
         <div className="space-y-2">
           <Label htmlFor="tier">Tier</Label>
-          <Select name="tier" defaultValue="partner">
+          <Select name="tier" defaultValue="none">
             <SelectTrigger>
               <SelectValue placeholder="Select tier" />
             </SelectTrigger>
@@ -80,7 +80,6 @@ export function SponsorForm({ hackathonId }: SponsorFormProps) {
               <SelectItem value="gold">Gold</SelectItem>
               <SelectItem value="silver">Silver</SelectItem>
               <SelectItem value="bronze">Bronze</SelectItem>
-              <SelectItem value="partner">Partner</SelectItem>
             </SelectContent>
           </Select>
         </div>

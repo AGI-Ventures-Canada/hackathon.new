@@ -15,68 +15,26 @@ const { TimelineEditForm } = await import(
 const baseData = {
   startsAt: new Date(2026, 2, 25, 9, 0).toISOString(),
   endsAt: new Date(2026, 2, 27, 17, 0).toISOString(),
-  registrationOpensAt: new Date(2026, 2, 23, 12, 0).toISOString(),
-  registrationClosesAt: new Date(2026, 2, 24, 12, 0).toISOString(),
 }
 
 const emptyData = {
   startsAt: null,
   endsAt: null,
-  registrationOpensAt: null,
-  registrationClosesAt: null,
 }
 
 describe("TimelineEditForm", () => {
   beforeEach(() => {})
   afterEach(cleanup)
 
-  it("renders registration and hackathon range pickers by default", () => {
+  it("renders event dates picker", () => {
     render(<TimelineEditForm initialData={baseData} />)
-    expect(screen.getByText("Registration Period")).toBeTruthy()
-    expect(screen.getByText("Hackathon Period")).toBeTruthy()
+    expect(screen.getByText("Event Dates")).toBeTruthy()
   })
 
-  it("hides registration dates when showRegistrationDates is false", () => {
-    render(
-      <TimelineEditForm initialData={baseData} showRegistrationDates={false} />,
-    )
-    expect(screen.queryByText("Registration Period")).toBeNull()
-    expect(screen.getByText("Hackathon Period")).toBeTruthy()
-  })
-
-  it("hides hackathon dates when showHackathonDates is false", () => {
-    render(
-      <TimelineEditForm initialData={baseData} showHackathonDates={false} />,
-    )
-    expect(screen.getByText("Registration Period")).toBeTruthy()
-    expect(screen.queryByText("Hackathon Period")).toBeNull()
-  })
-
-  it("shows contextual description for registration only", () => {
-    render(
-      <TimelineEditForm initialData={baseData} showHackathonDates={false} />,
-    )
-    expect(
-      screen.getByText("Set when registration opens and closes"),
-    ).toBeTruthy()
-  })
-
-  it("shows contextual description for hackathon only", () => {
-    render(
-      <TimelineEditForm
-        initialData={baseData}
-        showRegistrationDates={false}
-      />,
-    )
-    expect(
-      screen.getByText("Set when the hackathon starts and ends"),
-    ).toBeTruthy()
-  })
-
-  it("shows contextual description for both", () => {
+  it("shows description text", () => {
     render(<TimelineEditForm initialData={baseData} />)
     expect(
-      screen.getByText("Set the key dates for your hackathon timeline"),
+      screen.getByText("Set when the event starts and ends"),
     ).toBeTruthy()
   })
 
@@ -98,13 +56,11 @@ describe("TimelineEditForm", () => {
 
   it("renders placeholder text when dates are empty", () => {
     render(<TimelineEditForm initialData={emptyData} />)
-    expect(screen.getByText("Select registration dates")).toBeTruthy()
-    expect(screen.getByText("Select hackathon dates")).toBeTruthy()
+    expect(screen.getByText("Select event dates")).toBeTruthy()
   })
 
   it("renders formatted ranges when dates are set", () => {
     render(<TimelineEditForm initialData={baseData} />)
-    expect(screen.getByText(/Mar 23 at 12:00 PM/)).toBeTruthy()
     expect(screen.getByText(/Mar 25 at 9:00 AM/)).toBeTruthy()
   })
 

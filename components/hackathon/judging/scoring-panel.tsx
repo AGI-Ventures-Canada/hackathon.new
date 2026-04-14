@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Slider } from "@/components/ui/slider"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, CheckCircle2, ExternalLink, Github, Maximize2 } from "lucide-react"
+import { Loader2, CheckCircle2, ExternalLink, Github, Maximize2, AlertTriangle } from "lucide-react"
 import { RubricLevelSelector } from "./rubric-level-selector"
 import Image from "next/image"
 import {
@@ -47,6 +47,7 @@ interface ScoringPanelProps {
   onClose: () => void
   onScoreSubmitted: () => void
   cancelLabel?: string
+  teamSizeWarning?: string | null
 }
 
 export function ScoringPanel({
@@ -55,6 +56,7 @@ export function ScoringPanel({
   onClose,
   onScoreSubmitted,
   cancelLabel = "Cancel",
+  teamSizeWarning,
 }: ScoringPanelProps) {
   const [detail, setDetail] = useState<AssignmentDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -237,6 +239,13 @@ export function ScoringPanel({
 
       {detail.submissionDescription && (
         <p className="text-sm text-muted-foreground">{detail.submissionDescription}</p>
+      )}
+
+      {teamSizeWarning && (
+        <div className="flex items-start gap-2 rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2">
+          <AlertTriangle className="size-3.5 text-destructive shrink-0 mt-0.5" />
+          <span className="text-xs text-destructive">{teamSizeWarning}</span>
+        </div>
       )}
 
       <div className="flex flex-wrap gap-2">

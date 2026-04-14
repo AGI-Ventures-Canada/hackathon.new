@@ -12,7 +12,14 @@ import { listTeamsWithMembers, createTeamWithMembers, modifyTeamMembers, bulkAss
 import { listRounds, createRound, updateRound, deleteRound, activateRound } from "@/lib/services/judging-rounds"
 import { listSocialSubmissions, reviewSocialSubmission } from "@/lib/services/social-submissions"
 import { listMentorQueue } from "@/lib/services/mentor-requests"
-import { getChallenge, saveChallenge, releaseChallenge } from "@/lib/services/challenge"
+import {
+  listChallenges,
+  createChallenge,
+  updateChallenge,
+  deleteChallenge,
+  reorderChallenges,
+  releaseChallenges,
+} from "@/lib/services/challenges"
 import { getLiveStats } from "@/lib/services/event-dashboard"
 import { sendBulkEmail } from "@/lib/services/participant-emails"
 import type { HackathonPhase, ParticipantRole } from "@/lib/db/hackathon-types"
@@ -259,6 +266,70 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     body: t.Object({ assignments: t.Array(t.Object({ teamId: t.String(), roomId: t.String() })) }),
     detail: { summary: "Bulk assign teams to rooms" },
   })
+  .patch("/hackathons/:id/teams/:teamId", async ({ params, body, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+
+    if (!isValidUuid(params.teamId)) {
+      set.status = 400
+      return { error: "Invalid team ID" }
+    }
+
+    const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+    const check = await checkHackathonOrganizer(params.id, principal.tenantId)
+    if (check.status === "not_found") {
+      set.status = 404
+      return { error: "Hackathon not found" }
+    }
+    const { supabase } = await import("@/lib/db/client")
+
+    if (check.status === "not_authorized") {
+      if (principal.kind !== "user") {
+        set.status = 403
+        return { error: "Not authorized to manage this hackathon" }
+      }
+      const { data: team } = await supabase()
+        .from("teams")
+        .select("captain_clerk_user_id, status")
+        .eq("id", params.teamId)
+        .eq("hackathon_id", params.id)
+        .single()
+      if (!team || team.captain_clerk_user_id !== principal.userId) {
+        set.status = 403
+        return { error: "Only the team captain or an organizer can rename a team" }
+      }
+      if (team.status !== "forming") {
+        set.status = 409
+        return { error: "Team name can only be changed while the team is forming" }
+      }
+    }
+
+    const { name } = body
+    if (!name.trim() || name.length > 100) {
+      set.status = 400
+      return { error: "Team name must be 1-100 characters" }
+    }
+
+    const client = supabase()
+    const { data, error } = await client
+      .from("teams")
+      .update({ name: name.trim(), updated_at: new Date().toISOString() })
+      .eq("id", params.teamId)
+      .eq("hackathon_id", params.id)
+      .select("id, name")
+      .single()
+
+    if (error || !data) {
+      set.status = 404
+      return { error: "Team not found" }
+    }
+
+    await logAudit({ principal, action: "team.name_updated", resourceType: "team", resourceId: params.teamId, metadata: { hackathonId: params.id, name: name.trim() } })
+
+    return data
+  }, {
+    body: t.Object({ name: t.String({ minLength: 1, maxLength: 100 }) }),
+    detail: { summary: "Update team name" },
+  })
   .get("/hackathons/:id/categories", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
@@ -371,35 +442,78 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     if (authErr) return authErr
     return { requests: await listMentorQueue(params.id) }
   }, { detail: { summary: "List mentor requests" } })
-  .get("/hackathons/:id/challenge", async ({ params, principal, set }) => {
+  .get("/hackathons/:id/challenges", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if (authErr) return authErr
-    const challenge = await getChallenge(params.id)
-    return challenge ?? { title: null, body: null, releasedAt: null }
-  }, { detail: { summary: "Get challenge" } })
-  .put("/hackathons/:id/challenge", async ({ params, body, principal, set }) => {
+    return { challenges: await listChallenges(params.id) }
+  }, { detail: { summary: "List challenges" } })
+  .post("/hackathons/:id/challenges", async ({ params, body, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if (authErr) return authErr
-    const b = body as { title: string; body: string }
-    const ok = await saveChallenge(params.id, principal.tenantId, b)
-    if (!ok) { set.status = 400; return { error: "Failed to save challenge" } }
-    await logAudit({ principal, action: "challenge.saved", resourceType: "challenge", resourceId: params.id, metadata: { hackathonId: params.id, title: b.title } })
+    const b = body as { title: string; description?: string | null; resources?: { label: string; url: string }[] }
+    const created = await createChallenge(params.id, principal.tenantId, b)
+    if (!created) { set.status = 400; return { error: "Failed to create challenge" } }
+    await logAudit({ principal, action: "challenge.created", resourceType: "challenge", resourceId: created.id, metadata: { hackathonId: params.id, title: b.title } })
+    return { challenge: created }
+  }, {
+    body: t.Object({
+      title: t.String({ description: "Challenge title" }),
+      description: t.Optional(t.Union([t.String(), t.Null()])),
+      resources: t.Optional(t.Array(t.Object({ label: t.String(), url: t.String() }))),
+    }),
+    detail: { summary: "Create challenge" },
+  })
+  .put("/hackathons/:id/challenges/reorder", async ({ params, body, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if (authErr) return authErr
+    const b = body as { orderedIds: string[] }
+    const ok = await reorderChallenges(params.id, principal.tenantId, b.orderedIds)
+    if (!ok) { set.status = 400; return { error: "Failed to reorder challenges" } }
     return { success: true }
   }, {
-    body: t.Object({ title: t.String(), body: t.String() }),
-    detail: { summary: "Save challenge" },
+    body: t.Object({ orderedIds: t.Array(t.String()) }),
+    detail: { summary: "Reorder challenges" },
   })
+  .put("/hackathons/:id/challenges/:cid", async ({ params, body, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if (authErr) return authErr
+    if (!isValidUuid(params.cid)) { set.status = 404; return { error: "Challenge not found" } }
+    const b = body as { title?: string; description?: string | null; resources?: { label: string; url: string }[] }
+    const updated = await updateChallenge(params.cid, principal.tenantId, b)
+    if (!updated) { set.status = 400; return { error: "Failed to update challenge" } }
+    await logAudit({ principal, action: "challenge.updated", resourceType: "challenge", resourceId: params.cid, metadata: { hackathonId: params.id } })
+    return { challenge: updated }
+  }, {
+    body: t.Object({
+      title: t.Optional(t.String()),
+      description: t.Optional(t.Union([t.String(), t.Null()])),
+      resources: t.Optional(t.Array(t.Object({ label: t.String(), url: t.String() }))),
+    }),
+    detail: { summary: "Update challenge" },
+  })
+  .delete("/hackathons/:id/challenges/:cid", async ({ params, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if (authErr) return authErr
+    if (!isValidUuid(params.cid)) { set.status = 404; return { error: "Challenge not found" } }
+    const ok = await deleteChallenge(params.cid, principal.tenantId)
+    if (!ok) { set.status = 400; return { error: "Failed to delete challenge" } }
+    await logAudit({ principal, action: "challenge.deleted", resourceType: "challenge", resourceId: params.cid, metadata: { hackathonId: params.id } })
+    return { success: true }
+  }, { detail: { summary: "Delete challenge" } })
   .post("/hackathons/:id/challenge/release", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if (authErr) return authErr
-    const ok = await releaseChallenge(params.id, principal.tenantId)
-    if (!ok) { set.status = 400; return { error: "Failed to release challenge. Ensure a title is set." } }
+    const ok = await releaseChallenges(params.id, principal.tenantId)
+    if (!ok) { set.status = 400; return { error: "Failed to release challenges. Ensure at least one challenge exists." } }
     await logAudit({ principal, action: "challenge.released", resourceType: "challenge", resourceId: params.id, metadata: { hackathonId: params.id } })
     return { success: true }
-  }, { detail: { summary: "Release challenge" } })
+  }, { detail: { summary: "Release challenges" } })
   .get("/hackathons/:id/live-stats", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
@@ -528,13 +642,13 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if (authErr) return authErr
-    const b = body as { title: string; startsAt: string; description?: string; endsAt?: string; location?: string; sortOrder?: number }
+    const b = body as { title: string; startsAt: string; description?: string; endsAt?: string; location?: string; sortOrder?: number; triggerType?: "challenge_release" | "submission_deadline" | null }
     const item = await createScheduleItem(params.id, b)
     if (!item) { set.status = 400; return { error: "Failed to create schedule item" } }
     await logAudit({ principal, action: "schedule_item.created", resourceType: "schedule_item", resourceId: item.id, metadata: { hackathonId: params.id, title: b.title } })
     return item
   }, {
-    body: t.Object({ title: t.String(), startsAt: t.String(), description: t.Optional(t.String()), endsAt: t.Optional(t.String()), location: t.Optional(t.String()), sortOrder: t.Optional(t.Number()) }),
+    body: t.Object({ title: t.String(), startsAt: t.String(), description: t.Optional(t.String()), endsAt: t.Optional(t.String()), location: t.Optional(t.String()), sortOrder: t.Optional(t.Number()), triggerType: t.Optional(t.Union([t.Literal("challenge_release"), t.Literal("submission_deadline"), t.Null()])) }),
     detail: { summary: "Create schedule item" },
   })
   .patch("/hackathons/:id/schedule/:itemId", async ({ params, body, principal, set }) => {
@@ -542,12 +656,12 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     if (!isValidUuid(params.itemId)) { set.status = 400; return { error: "Invalid schedule item ID" } }
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if (authErr) return authErr
-    const item = await updateScheduleItem(params.itemId, params.id, body as { title?: string; startsAt?: string; description?: string | null; endsAt?: string | null; location?: string | null; sortOrder?: number })
+    const item = await updateScheduleItem(params.itemId, params.id, body as { title?: string; startsAt?: string; description?: string | null; endsAt?: string | null; location?: string | null; sortOrder?: number; linkedTo?: "event_start" | "event_end" | null })
     if (!item) { set.status = 400; return { error: "Failed to update schedule item" } }
     await logAudit({ principal, action: "schedule_item.updated", resourceType: "schedule_item", resourceId: params.itemId, metadata: { hackathonId: params.id } })
     return item
   }, {
-    body: t.Object({ title: t.Optional(t.String()), startsAt: t.Optional(t.String()), description: t.Optional(t.String()), endsAt: t.Optional(t.String()), location: t.Optional(t.String()), sortOrder: t.Optional(t.Number()) }),
+    body: t.Object({ title: t.Optional(t.String()), startsAt: t.Optional(t.String()), description: t.Optional(t.String()), endsAt: t.Optional(t.String()), location: t.Optional(t.String()), sortOrder: t.Optional(t.Number()), linkedTo: t.Optional(t.Union([t.Literal("event_start"), t.Literal("event_end"), t.Null()])) }),
     detail: { summary: "Update schedule item" },
   })
   .delete("/hackathons/:id/schedule/:itemId", async ({ params, principal, set }) => {
@@ -555,6 +669,9 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     if (!isValidUuid(params.itemId)) { set.status = 400; return { error: "Invalid schedule item ID" } }
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if (authErr) return authErr
+    const items = await listScheduleItems(params.id)
+    const item = items.find((i) => i.id === params.itemId)
+    if (item?.trigger_type) { set.status = 400; return { error: `Cannot delete ${item.trigger_type === "challenge_release" ? "challenge release" : "submission deadline"} — this item is required` } }
     const ok = await deleteScheduleItem(params.itemId, params.id)
     if (!ok) { set.status = 400; return { error: "Failed to delete schedule item" } }
     await logAudit({ principal, action: "schedule_item.deleted", resourceType: "schedule_item", resourceId: params.itemId, metadata: { hackathonId: params.id } })

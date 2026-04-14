@@ -52,7 +52,7 @@ export default async function Image({ params }: Props) {
     : "Dates TBD"
 
   const topSponsors = hackathon.sponsors
-    .filter((s) => s.tier === "title" || s.tier === "gold")
+    .filter((s) => s.tier === "custom" || s.tier === "gold")
     .slice(0, 4)
 
   return new ImageResponse(
@@ -83,7 +83,7 @@ export default async function Image({ params }: Props) {
               marginBottom: 16,
             }}
           >
-            Hosted by {hackathon.organizer.name}
+            Organized by {hackathon.organizer.name}
           </div>
           <div
             style={{

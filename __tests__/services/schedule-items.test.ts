@@ -10,6 +10,9 @@ const {
   createScheduleItem,
   updateScheduleItem,
   deleteScheduleItem,
+  getSubmissionDeadline,
+  getTriggerItem,
+  buildDefaultAgendaItems,
 } = await import("@/lib/services/schedule-items")
 
 const HACKATHON_ID = "11111111-1111-1111-1111-111111111111"
@@ -142,5 +145,101 @@ describe("deleteScheduleItem", () => {
     )
     const result = await deleteScheduleItem(ITEM_ID, HACKATHON_ID)
     expect(result).toBe(false)
+  })
+})
+
+describe("getSubmissionDeadline", () => {
+  beforeEach(() => {
+    resetSupabaseMocks()
+  })
+
+  it("returns starts_at of the submission_deadline item", async () => {
+    const chain = createChainableMock({
+      data: { id: "item-1", starts_at: "2026-04-10T17:00:00Z", trigger_type: "submission_deadline" },
+      error: null,
+    })
+    setMockFromImplementation(() => chain)
+
+    const result = await getSubmissionDeadline("hack-1")
+    expect(result).toBe("2026-04-10T17:00:00Z")
+  })
+
+  it("returns null when no submission_deadline item exists", async () => {
+    const chain = createChainableMock({ data: null, error: { message: "not found", code: "PGRST116" } })
+    setMockFromImplementation(() => chain)
+
+    const result = await getSubmissionDeadline("hack-1")
+    expect(result).toBeNull()
+  })
+})
+
+describe("getTriggerItem", () => {
+  beforeEach(() => {
+    resetSupabaseMocks()
+  })
+
+  it("returns the trigger item for a given type", async () => {
+    const chain = createChainableMock({
+      data: { id: "item-1", title: "Challenge Release", starts_at: "2026-04-10T09:00:00Z", trigger_type: "challenge_release" },
+      error: null,
+    })
+    setMockFromImplementation(() => chain)
+
+    const result = await getTriggerItem("hack-1", "challenge_release")
+    expect(result).not.toBeNull()
+    expect(result?.trigger_type).toBe("challenge_release")
+  })
+
+  it("returns null when no trigger item exists", async () => {
+    const chain = createChainableMock({ data: null, error: { message: "not found", code: "PGRST116" } })
+    setMockFromImplementation(() => chain)
+
+    const result = await getTriggerItem("hack-1", "challenge_release")
+    expect(result).toBeNull()
+  })
+})
+
+describe("buildDefaultAgendaItems", () => {
+  it("returns 6 items with correct trigger types", () => {
+    const items = buildDefaultAgendaItems("2026-04-10T09:00:00Z", "2026-04-10T18:00:00Z")
+    expect(items).toHaveLength(6)
+    expect(items[0].title).toBe("Opening Kickoff")
+    expect(items[1].title).toBe("Challenge Release")
+    expect(items[1].triggerType).toBe("challenge_release")
+    expect(items[3].title).toBe("Submissions Close & Judging Starts")
+    expect(items[3].triggerType).toBe("submission_deadline")
+    expect(items[5].title).toBe("Awards Ceremony")
+  })
+
+  it("derives times from start and end dates", () => {
+    const items = buildDefaultAgendaItems("2026-04-10T09:00:00Z", "2026-04-10T18:00:00Z")
+    expect(items[0].startsAt).toBe("2026-04-10T09:00:00.000Z")
+    expect(items[3].startsAt).toBe("2026-04-10T17:00:00.000Z")
+  })
+
+  it("non-trigger items have no triggerType", () => {
+    const items = buildDefaultAgendaItems("2026-04-10T09:00:00Z", "2026-04-10T18:00:00Z")
+    const nonTrigger = items.filter((i) => !i.triggerType)
+    expect(nonTrigger).toHaveLength(4)
+  })
+
+  it("returns 6 items with default times when dates are null", () => {
+    const items = buildDefaultAgendaItems(null, null)
+    expect(items).toHaveLength(6)
+    expect(items[0].title).toBe("Opening Kickoff")
+    expect(items[1].triggerType).toBe("challenge_release")
+    expect(items[3].triggerType).toBe("submission_deadline")
+  })
+
+  it("sets submission deadline to event end when event is shorter than 1 hour", () => {
+    const items = buildDefaultAgendaItems("2026-04-10T09:00:00Z", "2026-04-10T09:30:00Z")
+    const deadline = items.find((i) => i.triggerType === "submission_deadline")
+    expect(deadline?.startsAt).toBe("2026-04-10T09:30:00.000Z")
+  })
+
+  it("sets submission deadline to 1hr before end when event is long enough", () => {
+    const items = buildDefaultAgendaItems("2026-04-10T09:00:00Z", "2026-04-10T18:00:00Z")
+    const deadline = items.find((i) => i.triggerType === "submission_deadline")
+    expect(deadline?.startsAt).toBe("2026-04-10T17:00:00.000Z")
   })
 })

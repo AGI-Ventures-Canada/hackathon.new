@@ -3,6 +3,14 @@ import { resolvePrincipal, requirePrincipal } from "@/lib/auth/principal"
 import { logAudit } from "@/lib/services/audit"
 import { resolveAdderName } from "@/lib/auth/resolve-adder-name"
 
+type CachedAuthResult = { status: "ok" } | { status: "not_found" } | { status: "not_authorized" }
+// Local-dev-only optimisation: avoids repeated checkHackathonOrganizer calls
+// during rapid judge search typing. On Vercel (short-lived lambdas) the cache
+// won't persist across invocations, so this is effectively a no-op in prod.
+const SEARCH_AUTH_MAX = 500
+const searchAuthCache = new Map<string, { result: CachedAuthResult; expires: number }>()
+const SEARCH_AUTH_TTL = 30_000
+
 export const dashboardJudgingRoutes = new Elysia()
   .derive(async ({ request }) => {
     const principal = await resolvePrincipal(request)
@@ -84,7 +92,7 @@ export const dashboardJudgingRoutes = new Elysia()
         description: t.Optional(t.String({ description: "Prize description" })),
         value: t.Optional(t.String({ description: "Prize value (e.g. '$5000')" })),
         judgingStyle: t.String({ description: "bucket_sort | gate_check | crowd_vote | judges_pick" }),
-        roundId: t.Optional(t.String({ description: "Round ID this prize belongs to" })),
+        roundId: t.Optional(t.Nullable(t.String({ description: "Round ID this prize belongs to" }))),
         assignmentMode: t.Optional(t.String({ description: "organizer_assigned | self_select" })),
         maxPicks: t.Optional(t.Number({ description: "Max picks per judge (for judges_pick)" })),
         displayOrder: t.Optional(t.Number({ description: "Display order" })),
@@ -378,7 +386,11 @@ export const dashboardJudgingRoutes = new Elysia()
       }
 
       const { createRound } = await import("@/lib/services/judging")
-      const round = await createRound(params.id, body.name)
+      const round = await createRound(params.id, {
+        name: body.name,
+        advancement: body.advancement,
+        advancementConfig: body.advancementConfig,
+      })
 
       if (!round) {
         return new Response(JSON.stringify({ error: "Failed to create round" }), { status: 500, headers: { "Content-Type": "application/json" } })
@@ -388,9 +400,79 @@ export const dashboardJudgingRoutes = new Elysia()
     },
     {
       body: t.Object({
-        name: t.String({ description: "Round name (e.g. 'Preliminary', 'Finals')" }),
+        name: t.String({ description: "Round name (e.g. 'Semifinals', 'Finals')" }),
+        advancement: t.Optional(
+          t.Union([t.Literal("manual"), t.Literal("top_n"), t.Literal("threshold")], {
+            description: "How submissions move from this round to the next",
+          })
+        ),
+        advancementConfig: t.Optional(
+          t.Object(
+            {
+              topN: t.Optional(t.Number({ description: "Number of submissions to advance (for top_n)" })),
+              threshold: t.Optional(t.Number({ description: "Minimum score to advance (for threshold)" })),
+            },
+            { description: "Configuration for the advancement rule" }
+          )
+        ),
       }),
-      detail: { summary: "Create round", description: "Creates a new judging round." },
+      detail: {
+        summary: "Create round",
+        description:
+          "Creates a new judging round. Pass `advancement: 'top_n'` with `advancementConfig.topN` to auto-narrow by score.",
+      },
+    }
+  )
+
+  .post(
+    "/hackathons/:id/rounds/finalists-preset",
+    async ({ principal, params, body }) => {
+      requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+
+      const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+      const result = await checkHackathonOrganizer(params.id, principal.tenantId)
+
+      if (result.status === "not_found") {
+        return new Response(JSON.stringify({ error: "Hackathon not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+      }
+      if (result.status === "not_authorized") {
+        return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
+      }
+
+      const { createFinalistsPreset } = await import("@/lib/services/judging")
+      const preset = await createFinalistsPreset(params.id, {
+        advanceTopN: body.advanceTopN,
+        round1Name: body.round1Name,
+        round2Name: body.round2Name,
+        seedScreeningPrize: body.seedScreeningPrize,
+      })
+
+      if (!preset.success) {
+        return new Response(JSON.stringify({ error: preset.error }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+
+      return preset
+    },
+    {
+      body: t.Object({
+        advanceTopN: t.Number({ description: "How many finalists advance from round 1 to round 2" }),
+        round1Name: t.Optional(t.String({ description: "Defaults to 'Semifinals'" })),
+        round2Name: t.Optional(t.String({ description: "Defaults to 'Finals'" })),
+        seedScreeningPrize: t.Optional(
+          t.Boolean({
+            description:
+              "When true (default), seeds a hidden bucket_sort prize in round 1 used to drive the top-N advancement",
+          })
+        ),
+      }),
+      detail: {
+        summary: "Create finalists-judging preset",
+        description:
+          "Creates two rounds (Semifinals → Finals) and a hidden screening prize in one call. Round 1 uses top_n advancement with the given count; round 2 uses manual. Designed to make multi-round finalists setup a one-click flow.",
+      },
     }
   )
 
@@ -418,10 +500,55 @@ export const dashboardJudgingRoutes = new Elysia()
       body: t.Object({
         name: t.Optional(t.String()),
         status: t.Optional(t.String()),
+        advancement: t.Optional(
+          t.Union([t.Literal("manual"), t.Literal("top_n"), t.Literal("threshold")])
+        ),
+        advancementConfig: t.Optional(
+          t.Object({
+            topN: t.Optional(t.Number()),
+            threshold: t.Optional(t.Number()),
+          })
+        ),
       }),
-      detail: { summary: "Update round", description: "Updates a round's name or status." },
+      detail: {
+        summary: "Update round",
+        description: "Updates a round's name, status, advancement rule, or advancement config.",
+      },
     }
   )
+
+  .delete("/hackathons/:id/rounds/:roundId", async ({ principal, params }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+
+    const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+    const result = await checkHackathonOrganizer(params.id, principal.tenantId)
+
+    if (result.status === "not_found") {
+      return new Response(JSON.stringify({ error: "Hackathon not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+    }
+    if (result.status === "not_authorized") {
+      return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
+    }
+
+    const { deleteRound } = await import("@/lib/services/judging")
+    const outcome = await deleteRound(params.roundId, params.id)
+
+    if (!outcome.success) {
+      const status = outcome.code === "not_found" ? 404 : outcome.code === "round_active" ? 409 : 500
+      return new Response(JSON.stringify({ error: outcome.error }), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
+
+    return { success: true }
+  }, {
+    detail: {
+      summary: "Delete round",
+      description:
+        "Deletes a round. Prizes in the round are un-linked (round_id set to NULL); the hidden screening prize is deleted. Active rounds cannot be deleted — complete them first.",
+    },
+  })
 
   .post("/hackathons/:id/rounds/:roundId/activate", async ({ principal, params }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
@@ -480,6 +607,29 @@ export const dashboardJudgingRoutes = new Elysia()
         return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
       }
 
+      if (body.auto) {
+        const { autoAdvanceFinalists } = await import("@/lib/services/judging")
+        const outcome = await autoAdvanceFinalists(params.id, params.roundId, body.toRoundId)
+        if (!outcome.success) {
+          const status = outcome.code === "no_scores" ? 409 : 400
+          return new Response(JSON.stringify({ error: outcome.error, code: outcome.code }), {
+            status,
+            headers: { "Content-Type": "application/json" },
+          })
+        }
+        return {
+          advancedCount: outcome.advancedCount,
+          submissionIds: outcome.submissionIds,
+        }
+      }
+
+      if (!body.submissionIds || body.submissionIds.length === 0) {
+        return new Response(
+          JSON.stringify({ error: "submissionIds is required when auto is not set" }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
       const { advanceSubmissions } = await import("@/lib/services/judging")
       const advanced = await advanceSubmissions(params.roundId, body.toRoundId, body.submissionIds)
 
@@ -488,9 +638,19 @@ export const dashboardJudgingRoutes = new Elysia()
     {
       body: t.Object({
         toRoundId: t.String({ description: "Target round ID" }),
-        submissionIds: t.Array(t.String(), { description: "Submission IDs to advance" }),
+        submissionIds: t.Optional(t.Array(t.String(), { description: "Submission IDs to advance (required when auto is not true)" })),
+        auto: t.Optional(
+          t.Boolean({
+            description:
+              "When true, pulls the top-N submissions from the source round's screening prize using the round's advancement rule. Requires the round to have advancement='top_n' and a screening prize.",
+          })
+        ),
       }),
-      detail: { summary: "Advance submissions", description: "Advances selected submissions to the next round." },
+      detail: {
+        summary: "Advance submissions",
+        description:
+          "Advances submissions from this round to the next. Pass `auto: true` to use the screening prize's scores and the round's top-N rule; otherwise pass explicit submissionIds.",
+      },
     }
   )
 
@@ -501,13 +661,24 @@ export const dashboardJudgingRoutes = new Elysia()
   .get("/hackathons/:id/judging/user-search", async ({ principal, params, query }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
 
-    const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
-    const result = await checkHackathonOrganizer(params.id, principal.tenantId)
+    const cacheKey = `${params.id}:${principal.tenantId}`
+    let authResult = searchAuthCache.get(cacheKey)
+    if (!authResult || Date.now() >= authResult.expires) {
+      searchAuthCache.delete(cacheKey)
+      if (searchAuthCache.size >= SEARCH_AUTH_MAX) {
+        const oldest = searchAuthCache.keys().next().value!
+        searchAuthCache.delete(oldest)
+      }
+      const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+      const result = await checkHackathonOrganizer(params.id, principal.tenantId)
+      searchAuthCache.set(cacheKey, { result: { status: result.status }, expires: Date.now() + SEARCH_AUTH_TTL })
+      authResult = searchAuthCache.get(cacheKey)!
+    }
 
-    if (result.status === "not_found") {
+    if (authResult.result.status === "not_found") {
       return new Response(JSON.stringify({ error: "Hackathon not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
     }
-    if (result.status === "not_authorized") {
+    if (authResult.result.status === "not_authorized") {
       return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
     }
 
@@ -524,6 +695,8 @@ export const dashboardJudgingRoutes = new Elysia()
     return {
       users: searchResults.data.map((u) => ({
         id: u.id,
+        firstName: u.firstName ?? null,
+        lastName: u.lastName ?? null,
         displayName: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.username || u.id,
         email: u.primaryEmailAddress?.emailAddress ?? null,
         imageUrl: u.imageUrl ?? null,

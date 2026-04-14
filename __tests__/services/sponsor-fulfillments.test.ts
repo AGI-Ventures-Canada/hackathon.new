@@ -1,23 +1,24 @@
-import { describe, it, expect, beforeEach, mock } from "bun:test"
+import { describe, it, expect, beforeEach, afterAll } from "bun:test"
 import {
   createChainableMock,
   resetSupabaseMocks,
   setMockFromImplementation,
 } from "../lib/supabase-mock"
 
-mock.module("@/lib/services/encryption", () => ({
-  encryptToken: (plaintext: string) => `encrypted_${plaintext}`,
-  decryptToken: (ciphertext: string) => ciphertext.replace(/^encrypted_/, ""),
-  encryptJson: (data: Record<string, unknown>) => `encrypted_${JSON.stringify(data)}`,
-  decryptJson: (ciphertext: string) => JSON.parse(ciphertext.replace(/^encrypted_/, "")),
-  generateWebhookSecret: () => "mock-webhook-secret",
-  generateToken: () => "mock-token",
-  signWebhookPayload: (_secret: string, payload: string) => `sig_${payload}`,
-  safeDecrypt: (value: string) => value,
-  verifyWebhookSignature: () => true,
-}))
+const TEST_ENCRYPTION_KEY = "0".repeat(64)
+const originalEncryptionKey = process.env.ENCRYPTION_KEY
+process.env.ENCRYPTION_KEY = TEST_ENCRYPTION_KEY
 
+const { encryptToken } = await import("@/lib/services/encryption")
 const { listSponsorFulfillments, markSponsorFulfilled } = await import("@/lib/services/sponsor-fulfillments")
+
+afterAll(() => {
+  if (originalEncryptionKey === undefined) {
+    delete process.env.ENCRYPTION_KEY
+  } else {
+    process.env.ENCRYPTION_KEY = originalEncryptionKey
+  }
+})
 
 describe("Sponsor Fulfillments Service", () => {
   beforeEach(() => {
@@ -66,6 +67,7 @@ describe("Sponsor Fulfillments Service", () => {
     })
 
     it("strips PII from unclaimed fulfillments but shows it for claimed ones", async () => {
+      const encryptedPaymentDetail = encryptToken("visible@paypal.com")
       let callCount = 0
       setMockFromImplementation(() => {
         callCount++
@@ -103,7 +105,7 @@ describe("Sponsor Fulfillments Service", () => {
                 recipient_email: "visible@example.com",
                 shipping_address: "456 Public Ave",
                 payment_method: "paypal",
-                payment_detail: "visible@paypal.com",
+                payment_detail: encryptedPaymentDetail,
                 tracking_number: null,
                 claimed_at: "2026-04-01T00:00:00Z",
                 prize_assignment: {

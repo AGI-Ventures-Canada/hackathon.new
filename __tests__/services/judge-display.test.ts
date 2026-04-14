@@ -5,6 +5,7 @@ import {
   resetSupabaseMocks,
   setMockFromImplementation,
   mockTableQuery,
+  mockMultiTableQuery,
   mockSuccess,
   mockError,
   mockCount,
@@ -71,26 +72,24 @@ describe("Judge Display Service", () => {
 
   describe("createJudgeDisplayProfile", () => {
     it("creates judge profile with required fields", async () => {
-      const chain = createChainableMock({
-        data: mockJudge,
-        error: null,
-      })
-      setMockFromImplementation(() => chain)
+      setMockFromImplementation(() =>
+        createChainableMock({ data: mockJudge, error: null })
+      )
 
       const result = await createJudgeDisplayProfile("h1", {
         name: "Jane Doe",
       })
 
-      expect(result).not.toBeNull()
-      expect(result?.name).toBe("Jane Doe")
+      expect(result.status).toBe("created")
+      if (result.status === "created") {
+        expect(result.judge.name).toBe("Jane Doe")
+      }
     })
 
     it("creates judge profile with all fields", async () => {
-      const chain = createChainableMock({
-        data: mockJudge,
-        error: null,
-      })
-      setMockFromImplementation(() => chain)
+      setMockFromImplementation(() =>
+        createChainableMock({ data: mockJudge, error: null })
+      )
 
       const result = await createJudgeDisplayProfile("h1", {
         name: "Jane Doe",
@@ -99,11 +98,13 @@ describe("Judge Display Service", () => {
         displayOrder: 0,
       })
 
-      expect(result).not.toBeNull()
-      expect(result?.title).toBe("CTO")
+      expect(result.status).toBe("created")
+      if (result.status === "created") {
+        expect(result.judge.title).toBe("CTO")
+      }
     })
 
-    it("returns null when database insert fails", async () => {
+    it("returns error when database insert fails", async () => {
       const chain = createChainableMock({
         data: null,
         error: { message: "DB error" },
@@ -112,7 +113,7 @@ describe("Judge Display Service", () => {
 
       const result = await createJudgeDisplayProfile("h1", { name: "Test" })
 
-      expect(result).toBeNull()
+      expect(result.status).toBe("error")
     })
   })
 
@@ -147,7 +148,7 @@ describe("Judge Display Service", () => {
   })
 
   describe("deleteJudgeDisplayProfile", () => {
-    it("returns true on successful deletion", async () => {
+    it("returns deleted true on successful deletion", async () => {
       const chain = createChainableMock({
         data: null,
         error: null,
@@ -156,10 +157,10 @@ describe("Judge Display Service", () => {
 
       const result = await deleteJudgeDisplayProfile("j1", "h1")
 
-      expect(result).toBe(true)
+      expect(result).toEqual({ deleted: true })
     })
 
-    it("returns false when database delete fails", async () => {
+    it("returns deleted false when database delete fails", async () => {
       const chain = createChainableMock({
         data: null,
         error: { message: "DB error" },
@@ -168,7 +169,133 @@ describe("Judge Display Service", () => {
 
       const result = await deleteJudgeDisplayProfile("j1", "h1")
 
-      expect(result).toBe(false)
+      expect(result).toEqual({ deleted: false })
+    })
+
+    it("cascade-deletes assignments and participant when profile has participant_id", async () => {
+      mockMultiTableQuery({
+        hackathon_judges_display: {
+          data: { participant_id: "p1", clerk_user_id: null },
+          error: null,
+        },
+        judge_assignments: { data: null, error: null },
+        hackathon_participants: { data: null, error: null },
+      })
+
+      const result = await deleteJudgeDisplayProfile("j1", "h1")
+
+      expect(result).toEqual({ deleted: true })
+    })
+
+    it("looks up participant by clerk_user_id when participant_id is null", async () => {
+      mockMultiTableQuery({
+        hackathon_judges_display: {
+          data: { participant_id: null, clerk_user_id: "clerk_1" },
+          error: null,
+        },
+        hackathon_participants: { data: { id: "p1" }, error: null },
+        judge_assignments: { data: null, error: null },
+      })
+
+      const result = await deleteJudgeDisplayProfile("j1", "h1")
+
+      expect(result).toEqual({ deleted: true })
+    })
+
+    it("returns cascadeError when cascade delete fails", async () => {
+      mockMultiTableQuery({
+        hackathon_judges_display: {
+          data: { participant_id: "p1", clerk_user_id: null },
+          error: null,
+        },
+        judge_assignments: { data: null, error: { message: "FK constraint" } },
+        hackathon_participants: { data: null, error: { message: "FK constraint" } },
+      })
+
+      const result = await deleteJudgeDisplayProfile("j1", "h1")
+
+      expect(result.deleted).toBe(true)
+      expect(result.cascadeError).toContain("assignments")
+      expect(result.cascadeError).toContain("participant record")
+    })
+
+    it("skips cascade when profile has no participant_id or clerk_user_id", async () => {
+      mockMultiTableQuery({
+        hackathon_judges_display: {
+          data: { participant_id: null, clerk_user_id: null },
+          error: null,
+        },
+      })
+
+      const result = await deleteJudgeDisplayProfile("j1", "h1")
+
+      expect(result).toEqual({ deleted: true })
+    })
+  })
+
+  describe("createJudgeDisplayProfile duplicate check", () => {
+    it("returns duplicate when clerk_user_id already has a display profile", async () => {
+      const chain = createChainableMock({
+        data: null,
+        error: { code: "23505", message: "unique constraint violation" },
+      })
+      setMockFromImplementation(() => chain)
+
+      const result = await createJudgeDisplayProfile("h1", {
+        name: "Jane Doe",
+        clerkUserId: "clerk_1",
+      })
+
+      expect(result.status).toBe("duplicate")
+      if (result.status === "duplicate") {
+        expect(result.matchedBy).toBe("clerk_user")
+      }
+    })
+
+    it("returns duplicate when name matches an existing non-Clerk judge", async () => {
+      const chain = createChainableMock({
+        data: null,
+        error: { code: "23505", message: "unique constraint violation" },
+      })
+      setMockFromImplementation(() => chain)
+
+      const result = await createJudgeDisplayProfile("h1", {
+        name: "jane",
+      })
+
+      expect(result.status).toBe("duplicate")
+      if (result.status === "duplicate") {
+        expect(result.matchedBy).toBe("name")
+      }
+    })
+
+    it("creates profile when no unique constraint violation", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({ data: mockJudge, error: null })
+      )
+
+      const result = await createJudgeDisplayProfile("h1", {
+        name: "Jane Doe",
+        clerkUserId: "clerk_new",
+      })
+
+      expect(result.status).toBe("created")
+    })
+
+    it("creates profile when clerk_user_id has no existing display profile", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({ data: mockJudge, error: null })
+      )
+
+      const result = await createJudgeDisplayProfile("h1", {
+        name: "Jane Doe",
+        clerkUserId: "clerk_1",
+      })
+
+      expect(result.status).toBe("created")
+      if (result.status === "created") {
+        expect(result.judge.name).toBe("Jane Doe")
+      }
     })
   })
 

@@ -125,35 +125,16 @@ export function getTimelineState(hackathon: TimelineInput): TimelineState {
 }
 
 export interface TimelineDates {
-  registrationOpensAt?: string | Date | null
-  registrationClosesAt?: string | Date | null
   startsAt?: string | Date | null
   endsAt?: string | Date | null
 }
 
 export function validateTimelineDates(dates: TimelineDates): string | null {
-  const regOpens = dates.registrationOpensAt ? new Date(dates.registrationOpensAt) : null
-  const regCloses = dates.registrationClosesAt ? new Date(dates.registrationClosesAt) : null
   const starts = dates.startsAt ? new Date(dates.startsAt) : null
   const ends = dates.endsAt ? new Date(dates.endsAt) : null
 
-  if (regOpens && regCloses && regOpens >= regCloses) {
-    return "Registration must open before it closes"
-  }
-  if (regCloses && starts && regCloses > starts) {
-    return "Registration must close on or before the hackathon starts"
-  }
-  if (regOpens && starts && regOpens >= starts) {
-    return "Registration must open before the hackathon starts"
-  }
   if (starts && ends && starts >= ends) {
-    return "Hackathon must start before it ends"
-  }
-  if (regOpens && ends && regOpens >= ends) {
-    return "Registration must open before the hackathon ends"
-  }
-  if (regCloses && ends && regCloses > ends) {
-    return "Registration must close on or before the hackathon ends"
+    return "Event must start before it ends"
   }
 
   return null

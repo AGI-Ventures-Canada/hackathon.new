@@ -212,6 +212,98 @@ await createEmailAddress({
 }
 ```
 
+## Debugging React Email
+
+### Common Issues
+
+#### Build/Runtime Errors from Bundling
+
+React Email components use Node.js APIs (`fs`, `path`, streams) that break when Next.js tries to bundle them for the Edge or client. Symptoms:
+
+- `Module not found: Can't resolve 'fs'` or `'path'` during `next build`
+- `TypeError: Cannot read properties of undefined` at runtime when rendering emails
+- `Dynamic require of "..." is not supported` errors
+
+**Fix:** Ensure all React Email packages are in `serverExternalPackages` in [next.config.ts](../../next.config.ts). When upgrading or adding new `@react-email/*` packages, add them here too:
+
+```typescript
+serverExternalPackages: [
+  // ... other packages
+  "@react-email/components",
+  "@react-email/render",
+]
+```
+
+**How to verify:** Run `bun run build` — if it passes without email-related module errors, bundling is correct.
+
+#### `render()` Returns Empty or Broken HTML
+
+- Check that the component is being called as a function, not passed as JSX to `render()`:
+  ```typescript
+  // CORRECT — call the component to get a React element
+  const html = await render(MyEmail({ name: "Jane" }))
+
+  // WRONG — don't pass JSX; render() expects a React element from a function call
+  const html = await render(<MyEmail name="Jane" />)
+  ```
+- Check `PreviewProps` — if the component works in `bun email:dev` but fails at send time, the props you're passing at runtime may be missing required fields or have wrong types.
+
+#### Styles Not Rendering in Email Clients
+
+React Email uses inline styles, not Tailwind classes. If styles disappear in Gmail/Outlook:
+
+- Use the `style` prop on React Email primitives (`<Text>`, `<Section>`, `<Row>`, etc.) — not `className`
+- Use the color tokens from [emails/_components/constants.ts](../../emails/_components/constants.ts) instead of hardcoded hex values
+- Test with `bun email:dev` (port 3001) to preview across email client rendering
+
+#### Template Not Showing in Dev Preview
+
+`bun email:dev` scans the `emails/` directory. If a new template doesn't appear:
+
+- Verify the file is directly in `emails/` (not in a subdirectory like `emails/_components/`)
+- Verify the file has a `default` export (named exports won't be picked up as templates)
+- Restart the dev server — `email dev` doesn't always hot-reload new files
+
+### Research Workflow
+
+When debugging a React Email issue you haven't seen before:
+
+1. **Check the dev preview first:** `bun email:dev` — does the template render at `http://localhost:3001`? If yes, the issue is in the send path or Next.js bundling, not the template itself.
+
+2. **Isolate render vs. send:** Add a temporary log to see what `render()` produces:
+   ```typescript
+   const html = await render(MyEmail({ ...props }))
+   console.log("[email debug] html length:", html.length)
+   console.log("[email debug] html preview:", html.slice(0, 500))
+   ```
+
+3. **Check `serverExternalPackages`:** If the error is a module resolution or bundling failure, check [next.config.ts](../../next.config.ts). Run `bun run build` to reproduce — these errors only appear at build time or in production mode, not in dev.
+
+4. **Check React Email changelogs:** When upgrading `@react-email/components` or `react-email`, breaking changes often involve the render API or component props. Check:
+   - React Email releases: https://github.com/resend/react-email/releases
+   - `@react-email/components` changelog: https://github.com/resend/react-email/blob/main/packages/components/CHANGELOG.md
+   - `@react-email/render` changelog: https://github.com/resend/react-email/blob/main/packages/render/CHANGELOG.md
+
+5. **Test the rendered output:** Email template tests (`bun run test:email`) assert on HTML content with `.toContain()`. If a template change breaks tests, inspect the actual HTML:
+   ```typescript
+   const call = mockSendEmail.mock.calls[0][0]
+   console.log(call.html) // full rendered HTML
+   ```
+
+6. **Verify in actual email client:** The dev preview approximates rendering but doesn't match Gmail/Outlook exactly. For critical templates, send a real test email via Resend's dashboard or a temporary script and check it in the target client.
+
+### Key Files
+
+| File | Role |
+|------|------|
+| [next.config.ts](../../next.config.ts) | `serverExternalPackages` — must include all `@react-email/*` packages |
+| [lib/email/utils.ts](utils.ts) | `renderEmail()` — shared render helper that produces both HTML and plain text |
+| [lib/email/resend.ts](resend.ts) | `sendEmail()` — Resend SDK wrapper, handles missing API key gracefully |
+| [emails/_components/](../../emails/_components/) | Shared layout, buttons, info boxes, color constants |
+| [emails/](../../emails/) | All email templates (one default export per file) |
+| [__tests__/lib/email-templates.test.ts](../../__tests__/lib/email-templates.test.ts) | Template smoke tests (render without error) |
+| [__tests__/integration/*.email.test.ts](../../__tests__/integration/) | Email integration tests (mock `sendEmail`, assert on content) |
+
 ## Documentation Links
 
 - Introduction: https://resend.com/docs/introduction

@@ -10,6 +10,8 @@ export type ScheduleItem = {
   ends_at: string | null
   location: string | null
   sort_order: number
+  trigger_type: "challenge_release" | "submission_deadline" | null
+  linked_to: "event_start" | "event_end" | null
   created_at: string
   updated_at: string
 }
@@ -21,6 +23,7 @@ export type CreateScheduleItemInput = {
   endsAt?: string
   location?: string
   sortOrder?: number
+  triggerType?: "challenge_release" | "submission_deadline" | null
 }
 
 export type UpdateScheduleItemInput = {
@@ -30,6 +33,7 @@ export type UpdateScheduleItemInput = {
   endsAt?: string | null
   location?: string | null
   sortOrder?: number
+  linkedTo?: "event_start" | "event_end" | null
 }
 
 export async function listScheduleItems(hackathonId: string): Promise<ScheduleItem[]> {
@@ -60,6 +64,7 @@ export async function createScheduleItem(hackathonId: string, input: CreateSched
       ends_at: input.endsAt ?? null,
       location: input.location ?? null,
       sort_order: input.sortOrder ?? 0,
+      trigger_type: input.triggerType ?? null,
     })
     .select()
     .single()
@@ -81,6 +86,7 @@ export async function updateScheduleItem(itemId: string, hackathonId: string, in
   if (input.endsAt !== undefined) updates.ends_at = input.endsAt
   if (input.location !== undefined) updates.location = input.location
   if (input.sortOrder !== undefined) updates.sort_order = input.sortOrder
+  if (input.linkedTo !== undefined) updates.linked_to = input.linkedTo
 
   const { data, error } = await client
     .from("hackathon_schedule_items")
@@ -110,4 +116,64 @@ export async function deleteScheduleItem(itemId: string, hackathonId: string): P
     return false
   }
   return true
+}
+
+export async function getSubmissionDeadline(hackathonId: string): Promise<string | null> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data, error } = await client
+    .from("hackathon_schedule_items")
+    .select("starts_at")
+    .eq("hackathon_id", hackathonId)
+    .eq("trigger_type", "submission_deadline")
+    .single()
+
+  if (error || !data) return null
+  return data.starts_at
+}
+
+export function buildDefaultAgendaItems(startsAt: string | null, endsAt: string | null): CreateScheduleItemInput[] {
+  const now = new Date()
+  const defaultStart = new Date(now)
+  defaultStart.setDate(defaultStart.getDate() + 14)
+  defaultStart.setHours(8, 30, 0, 0)
+  const defaultEnd = new Date(defaultStart)
+  defaultEnd.setDate(defaultEnd.getDate() + 1)
+  defaultEnd.setHours(17, 0, 0, 0)
+
+  const start = startsAt ? new Date(startsAt) : defaultStart
+  const end = endsAt ? new Date(endsAt) : defaultEnd
+
+  function offset(base: Date, minutes: number): string {
+    return new Date(base.getTime() + minutes * 60_000).toISOString()
+  }
+
+  const durationMs = end.getTime() - start.getTime()
+  const submissionCloseTime = durationMs >= 60 * 60_000 ? offset(end, -60) : end.toISOString()
+
+  return [
+    { title: "Opening Kickoff", startsAt: start.toISOString(), endsAt: offset(start, 30) },
+    { title: "Challenge Release", startsAt: start.toISOString(), endsAt: start.toISOString(), triggerType: "challenge_release" },
+    { title: "Hacking Begins", startsAt: offset(start, 30), endsAt: offset(start, 60) },
+    { title: "Submissions Close & Judging Starts", startsAt: submissionCloseTime, endsAt: submissionCloseTime, triggerType: "submission_deadline" },
+    { title: "Presentations", startsAt: offset(end, -30), endsAt: end.toISOString() },
+    { title: "Awards Ceremony", startsAt: end.toISOString(), endsAt: offset(end, 30) },
+  ]
+}
+
+export async function getTriggerItem(
+  hackathonId: string,
+  triggerType: "challenge_release" | "submission_deadline"
+): Promise<ScheduleItem | null> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data, error } = await client
+    .from("hackathon_schedule_items")
+    .select("*")
+    .eq("hackathon_id", hackathonId)
+    .eq("trigger_type", triggerType)
+    .single()
+
+  if (error || !data) return null
+  return data as ScheduleItem
 }

@@ -55,6 +55,7 @@ export async function getBatchJudgeStats(
 export type SponsorshipInfo = {
   hackathonId: string
   tier: SponsorTier
+  customTierLabel: string | null
   name: string
 }
 
@@ -67,7 +68,7 @@ export async function getSponsorshipDetails(
   const client = getSupabase() as unknown as SupabaseClient
   const { data, error } = await client
     .from("hackathon_sponsors")
-    .select("hackathon_id, tier, name")
+    .select("hackathon_id, tier, custom_tier_label, name")
     .eq("sponsor_tenant_id", tenantId)
     .in("hackathon_id", hackathonIds)
 
@@ -78,6 +79,7 @@ export async function getSponsorshipDetails(
     result.set(row.hackathon_id, {
       hackathonId: row.hackathon_id,
       tier: row.tier as SponsorTier,
+      customTierLabel: row.custom_tier_label ?? null,
       name: row.name,
     })
   }

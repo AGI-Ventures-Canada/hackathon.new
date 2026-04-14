@@ -19,11 +19,10 @@ type PageProps = {
 }
 
 const tierLabels: Record<string, string> = {
-  title: "Title",
   gold: "Gold",
   silver: "Silver",
   bronze: "Bronze",
-  partner: "Partner",
+  custom: "Custom",
 }
 
 export default async function SponsorsPage({ params }: PageProps) {
@@ -78,7 +77,9 @@ export default async function SponsorsPage({ params }: PageProps) {
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-base">{sponsor.name}</CardTitle>
-                    <Badge variant="outline">{tierLabels[sponsor.tier]}</Badge>
+                    {sponsor.tier !== "none" && (
+                      <Badge variant="outline">{sponsor.tier === "custom" && sponsor.custom_tier_label ? sponsor.custom_tier_label : (tierLabels[sponsor.tier] ?? sponsor.tier)}</Badge>
+                    )}
                   </div>
                   {sponsor.website_url && (
                     <CardDescription className="flex items-center gap-1">

@@ -6,7 +6,6 @@ export type EditSection =
   | "name"
   | "dates"
   | "about"
-  | "rules"
   | "timeline"
   | "location"
   | "sponsors"
@@ -23,7 +22,6 @@ export const SECTION_ORDER: Exclude<EditSection, null>[] = [
   "prizes",
   "timeline",
   "about",
-  "rules",
 ]
 
 interface EditContextValue {

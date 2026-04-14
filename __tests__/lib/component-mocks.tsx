@@ -124,10 +124,26 @@ export function resetComponentMocks() {
     forward: mock(() => {}),
   }
   resetClerkState()
+  resetDialogMockState()
   createHackathonMenuImpl = ({ trigger }: { trigger: React.ReactNode }) => <div data-testid="create-hackathon-menu">{trigger}</div>
   installSkillButtonImpl = ({ trigger }: { trigger?: React.ReactNode }) => <div data-testid="install-skill-button">{trigger}</div>
   createOrganizationDialogImpl = ({ open }: { open: boolean }) =>
     open ? <div data-testid="create-org-dialog" /> : null
+}
+
+// ============================================================================
+// Dialog mock state (shared across all component tests)
+// ============================================================================
+
+let _dialogOpen = true
+let _dialogOnOpenChange: ((v: boolean) => void) | undefined
+
+export function getDialogOpen() { return _dialogOpen }
+export function getDialogOnOpenChange() { return _dialogOnOpenChange }
+
+export function resetDialogMockState() {
+  _dialogOpen = true
+  _dialogOnOpenChange = undefined
 }
 
 // ============================================================================
@@ -138,29 +154,32 @@ export function resetComponentMocks() {
 
 mock.module("@/components/ui/dialog", () => ({
   Dialog: ({ children, open, onOpenChange }: { children: React.ReactNode; open?: boolean; onOpenChange?: (v: boolean) => void }) => {
-    const isControlled = open !== undefined
-    if (isControlled && !open) return null
+    if (open !== undefined) _dialogOpen = open
+    else _dialogOpen = true
+    _dialogOnOpenChange = onOpenChange
     return (
       <div>
-        {isControlled && <button type="button" onClick={() => onOpenChange?.(false)}>Close Dialog</button>}
+        {_dialogOpen && onOpenChange && <button type="button" onClick={() => onOpenChange(false)}>Close Dialog</button>}
         {children}
       </div>
     )
   },
   DialogContent: ({ children, className }: { children: React.ReactNode; className?: string }) => (
-    <div role="dialog" className={className}>{children}</div>
+    _dialogOpen ? <div role="dialog" className={className}>{children}</div> : null
   ),
   DialogHeader: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   DialogTitle: ({ children }: { children: React.ReactNode }) => <h2>{children}</h2>,
   DialogDescription: ({ children }: { children: React.ReactNode }) => <p>{children}</p>,
   DialogTrigger: ({ children, asChild }: { children: React.ReactNode; asChild?: boolean; [key: string]: unknown }) => {
+    const handleClick = () => _dialogOnOpenChange?.(!_dialogOpen)
     if (asChild && React.isValidElement(children)) {
       return React.cloneElement(children as React.ReactElement<Record<string, unknown>>, {
+        onClick: handleClick,
         "aria-haspopup": "dialog",
         "aria-expanded": "false",
       })
     }
-    return <button type="button" aria-haspopup="dialog" aria-expanded={false}>{children}</button>
+    return <button type="button" onClick={handleClick} aria-haspopup="dialog" aria-expanded={false}>{children}</button>
   },
   DialogClose: ({ children, ...props }: { children?: React.ReactNode; [key: string]: unknown }) => (
     <button type="button" {...props}>{children}</button>

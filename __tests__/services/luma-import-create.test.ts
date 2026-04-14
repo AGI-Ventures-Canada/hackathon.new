@@ -44,7 +44,7 @@ mock.module("@/lib/db/client", () => ({
   }),
 }))
 
-const { createHackathonFromImport, createPrizesFromImport } = await import("@/lib/services/luma-import-create")
+const { createHackathonFromImport, createPrizesFromImport, createChallengesFromImport } = await import("@/lib/services/luma-import-create")
 
 describe("createHackathonFromImport", () => {
   beforeEach(() => {
@@ -262,5 +262,93 @@ describe("createPrizesFromImport", () => {
       value: null,
       display_order: 0,
     }))
+  })
+})
+
+describe("createChallengesFromImport", () => {
+  beforeEach(() => {
+    resetSupabaseMocks()
+  })
+
+  function setupChallengeMocks() {
+    const hackathonsChain = createChainableMock({
+      data: { id: "h1" },
+      error: null,
+    })
+    const challengesChain = createChainableMock({
+      data: {
+        id: "c1",
+        hackathon_id: "h1",
+        title: "Challenge",
+        description: null,
+        resources: [],
+        sort_order: 0,
+        created_at: "",
+        updated_at: "",
+      },
+      error: null,
+    })
+    setMockFromImplementation((table: string) => {
+      if (table === "hackathons") return hackathonsChain
+      return challengesChain
+    })
+    return { hackathonsChain, challengesChain }
+  }
+
+  it("creates challenges with title, description, and resources", async () => {
+    const { challengesChain } = setupChallengeMocks()
+
+    await createChallengesFromImport("h1", "tenant-1", [
+      {
+        title: "AI for Healthcare",
+        description: "Improve patient triage.",
+        resources: [{ label: "Dataset", url: "https://example.com/data.csv" }],
+      },
+      {
+        title: "Climate Track",
+        description: null,
+      },
+    ])
+
+    expect(challengesChain.insert).toHaveBeenCalledTimes(2)
+    expect(challengesChain.insert).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      hackathon_id: "h1",
+      title: "AI for Healthcare",
+      description: "Improve patient triage.",
+      resources: [{ label: "Dataset", url: "https://example.com/data.csv" }],
+    }))
+    expect(challengesChain.insert).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      hackathon_id: "h1",
+      title: "Climate Track",
+      description: null,
+      resources: [],
+    }))
+  })
+
+  it("drops resource entries with empty urls and normalizes the rest", async () => {
+    const { challengesChain } = setupChallengeMocks()
+
+    await createChallengesFromImport("h1", "tenant-1", [
+      {
+        title: "Resources Test",
+        resources: [
+          { label: "Valid", url: "  example.com/api  " },
+          { label: "Empty", url: "" },
+        ],
+      },
+    ])
+
+    expect(challengesChain.insert).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Resources Test",
+      resources: [{ label: "Valid", url: "https://example.com/api" }],
+    }))
+  })
+
+  it("handles empty challenges array", async () => {
+    const { challengesChain } = setupChallengeMocks()
+
+    await createChallengesFromImport("h1", "tenant-1", [])
+
+    expect(challengesChain.insert).not.toHaveBeenCalled()
   })
 })

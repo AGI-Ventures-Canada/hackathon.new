@@ -52,7 +52,7 @@ describe("winner-pages service", () => {
     it("returns report data", async () => {
       setMockFromImplementation((table) => {
         if (table === "hackathons") return createChainableMock(mockSuccess({ name: "Build OS26" }))
-        if (table === "hackathon_sponsors") return createChainableMock(mockSuccess([{ name: "Mila", tier: "title", logo_url: null }]))
+        if (table === "hackathon_sponsors") return createChainableMock(mockSuccess([{ name: "Mila", tier: "custom", custom_tier_label: "Title", logo_url: null }]))
         if (table === "prize_assignments") return createChainableMock(mockSuccess([]))
         return createChainableMock({ data: null, error: null, count: 10 })
       })

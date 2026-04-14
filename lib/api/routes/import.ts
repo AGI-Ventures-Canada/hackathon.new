@@ -76,6 +76,11 @@ export const dashboardImportRoutes = new Elysia({ prefix: "/dashboard/import" })
         await createPrizesFromImport(hackathon.id, body.prizes)
       }
 
+      if (body.challenges?.length) {
+        const { createChallengesFromImport } = await import("@/lib/services/luma-import-create")
+        await createChallengesFromImport(hackathon.id, principal.tenantId, body.challenges)
+      }
+
       const source = body.sourceUrl && isLumaUrl(body.sourceUrl) ? "luma_import" : "event_page_import"
 
       await logAudit({
@@ -125,6 +130,14 @@ export const dashboardImportRoutes = new Elysia({ prefix: "/dashboard/import" })
           name: t.String({ minLength: 1 }),
           description: t.Optional(t.Union([t.String(), t.Null()])),
           value: t.Optional(t.Union([t.String(), t.Null()])),
+        }))),
+        challenges: t.Optional(t.Array(t.Object({
+          title: t.String({ minLength: 1 }),
+          description: t.Optional(t.Union([t.String(), t.Null()])),
+          resources: t.Optional(t.Array(t.Object({
+            label: t.String(),
+            url: t.String(),
+          }))),
         }))),
         sourceUrl: t.Optional(t.Union([t.String(), t.Null()])),
       }),
@@ -178,6 +191,11 @@ export const dashboardImportRoutes = new Elysia({ prefix: "/dashboard/import" })
       if (richContent?.prizes?.length) {
         const { createPrizesFromImport } = await import("@/lib/services/luma-import-create")
         await createPrizesFromImport(hackathon.id, richContent.prizes)
+      }
+
+      if (richContent?.challenges?.length) {
+        const { createChallengesFromImport } = await import("@/lib/services/luma-import-create")
+        await createChallengesFromImport(hackathon.id, principal.tenantId, richContent.challenges)
       }
 
       const source = isLumaUrl(url) ? "luma_import" : "event_page_import"

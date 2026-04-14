@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test"
 import { render, screen, cleanup } from "@testing-library/react"
 import { resetComponentMocks } from "../../lib/component-mocks"
+import type { SponsorTier } from "@/lib/db/hackathon-types"
 
 const { SponsoringDashboard } = await import(
   "@/app/(dashboard)/home/sponsoring/sponsoring-dashboard"
@@ -27,9 +28,10 @@ const makeHackathon = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 })
 
-const makeSponsorship = (hackathonId: string, tier: string = "gold") => ({
+const makeSponsorship = (hackathonId: string, tier: SponsorTier = "gold", customTierLabel: string | null = null) => ({
   hackathonId,
   tier,
+  customTierLabel,
   name: "Acme Corp",
 })
 
@@ -75,7 +77,7 @@ describe("SponsoringDashboard", () => {
     render(
       <SponsoringDashboard
         hackathons={[h]}
-        sponsorships={{ h1: makeSponsorship("h1", "title") }}
+        sponsorships={{ h1: makeSponsorship("h1", "custom") }}
       />,
     )
     expect(screen.getByText("Past events")).toBeDefined()
@@ -98,12 +100,12 @@ describe("SponsoringDashboard", () => {
       makeHackathon({ id: "h2", slug: "h2", name: "Hack 2" }),
     ]
     const sponsorships = {
-      h1: makeSponsorship("h1", "title"),
+      h1: makeSponsorship("h1", "custom", "Platinum"),
       h2: makeSponsorship("h2", "bronze"),
     }
 
     render(<SponsoringDashboard hackathons={hackathons} sponsorships={sponsorships} />)
-    expect(screen.getByText("Title")).toBeDefined()
+    expect(screen.getByText("Platinum")).toBeDefined()
     expect(screen.getByText("Bronze")).toBeDefined()
   })
 })

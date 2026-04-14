@@ -5,6 +5,19 @@ const ENCRYPTION_MOCK_TESTS = [
 ]
 const encryptionMockSet = new Set(ENCRYPTION_MOCK_TESTS)
 
+const SERVICE_MOCK_ISOLATED_TESTS = [
+  "__tests__/services/notification-dispatcher.test.ts",
+  "__tests__/services/lifecycle.test.ts",
+  "__tests__/services/cli-auth.test.ts",
+]
+const serviceMockSet = new Set(SERVICE_MOCK_ISOLATED_TESTS)
+
+const STORAGE_MOCK_ISOLATED_TESTS = [
+  "__tests__/services/storage.test.ts",
+  "__tests__/services/luma-import-create.test.ts",
+]
+const storageMockSet = new Set(STORAGE_MOCK_ISOLATED_TESTS)
+
 const RADIX_ISOLATED_TESTS = [
   "__tests__/components/hackathon/submission-button.test.tsx",
   "__tests__/components/hackathon/prizes-manager.test.tsx",
@@ -40,11 +53,23 @@ const groups: Group[] = [
   {
     name: "api + lib + services",
     args: ["__tests__/api", "__tests__/lib/*.test.ts", "__tests__/services"],
-    exclude: encryptionMockSet,
+    exclude: new Set([...encryptionMockSet, ...serviceMockSet, ...storageMockSet]),
   },
   {
     name: "services (encryption-mock isolated)",
     args: ENCRYPTION_MOCK_TESTS,
+  },
+  {
+    name: "services (service-mock isolated)",
+    args: SERVICE_MOCK_ISOLATED_TESTS,
+  },
+  {
+    name: "services (storage-mock isolated: storage)",
+    args: ["__tests__/services/storage.test.ts"],
+  },
+  {
+    name: "services (storage-mock isolated: luma-import-create)",
+    args: ["__tests__/services/luma-import-create.test.ts"],
   },
   {
     name: "components",
@@ -72,11 +97,12 @@ const groups: Group[] = [
     args: ["__tests__/workflows"],
   },
   {
-    name: "email",
-    args: [
-      "__tests__/email/resolve-emails.test.ts",
-      "__tests__/email/sponsor-notifications.test.ts",
-    ],
+    name: "email (resolve-emails)",
+    args: ["__tests__/email/resolve-emails.test.ts"],
+  },
+  {
+    name: "email (sponsor-notifications)",
+    args: ["__tests__/email/sponsor-notifications.test.ts"],
   },
 ]
 

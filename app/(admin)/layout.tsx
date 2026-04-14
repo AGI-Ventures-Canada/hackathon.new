@@ -2,7 +2,7 @@ import { auth } from "@clerk/nextjs/server"
 import { redirect } from "next/navigation"
 import { headers } from "next/headers"
 import Link from "next/link"
-import { isAdminEnabled } from "@/lib/auth/principal"
+import { isAdminEnabled, hasAdminMetadata } from "@/lib/auth/principal"
 import { AdminNav } from "./admin-nav"
 
 export default async function AdminLayout({
@@ -21,11 +21,7 @@ export default async function AdminLayout({
     redirect(`/sign-in?redirect_url=${encodeURIComponent(pathname)}`)
   }
 
-  const metadata = (session.sessionClaims as Record<string, unknown>)?.metadata as
-    | Record<string, unknown>
-    | undefined
-
-  if (metadata?.admin !== true) {
+  if (!hasAdminMetadata(session.sessionClaims)) {
     redirect("/")
   }
 

@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { useUser } from "@clerk/nextjs"
+import { useTeamRename } from "@/hooks/use-team-rename"
 import { TeamInviteDialog } from "./team-invite-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -14,12 +15,15 @@ import type { ParticipantTeamInfo } from "@/lib/services/hackathons"
 interface TeamManagementTabProps {
   teamInfo: NonNullable<ParticipantTeamInfo>
   hackathonId: string
+  maxTeamSize: number
 }
 
-export function TeamManagementTab({ teamInfo, hackathonId }: TeamManagementTabProps) {
+export function TeamManagementTab({ teamInfo, hackathonId, maxTeamSize }: TeamManagementTabProps) {
   const router = useRouter()
   const { user } = useUser()
   const [cancellingId, setCancellingId] = useState<string | null>(null)
+  const rename = useTeamRename(hackathonId, teamInfo.team.id, teamInfo.team.name)
+  const canEdit = teamInfo.isCaptain && teamInfo.team.status === "forming"
 
   async function handleCancelInvitation(invitationId: string) {
     setCancellingId(invitationId)
@@ -62,18 +66,52 @@ export function TeamManagementTab({ teamInfo, hackathonId }: TeamManagementTabPr
             <div>
               <CardTitle className="flex items-center gap-2">
                 <Users className="size-5" />
-                {teamInfo.team.name}
+                {canEdit && !rename.editing ? (
+                  <button
+                    type="button"
+                    className="text-left hover:underline underline-offset-2 decoration-muted-foreground/40"
+                    onClick={rename.startEditing}
+                  >
+                    {teamInfo.team.name}
+                  </button>
+                ) : rename.editing ? (
+                  <input
+                    ref={rename.inputRef}
+                    value={rename.value}
+                    onChange={(e) => rename.setValue(e.target.value)}
+                    onBlur={rename.save}
+                    onKeyDown={rename.handleKeyDown}
+                    disabled={rename.saving}
+                    className="h-7 text-base font-semibold bg-transparent border-b border-input outline-none focus:border-ring w-full"
+                    maxLength={100}
+                    autoComplete="off"
+                    data-1p-ignore
+                    data-lpignore="true"
+                    data-form-type="other"
+                  />
+                ) : (
+                  teamInfo.team.name
+                )}
               </CardTitle>
               <CardDescription>
                 {teamInfo.members.length} member{teamInfo.members.length !== 1 ? "s" : ""}
                 {teamInfo.team.status === "locked" && " · Team locked"}
               </CardDescription>
+              {teamInfo.isCaptain && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  You&apos;re the team captain &mdash; you can invite members and manage your team.
+                </p>
+              )}
+              {rename.error && (
+                <p className="text-xs text-destructive mt-1">{rename.error}</p>
+              )}
             </div>
             {teamInfo.isCaptain && teamInfo.team.status === "forming" && (
               <TeamInviteDialog
                 teamId={teamInfo.team.id}
                 hackathonId={hackathonId}
                 teamName={teamInfo.team.name}
+                maxTeamSize={maxTeamSize}
               />
             )}
           </div>

@@ -30,8 +30,6 @@ export async function runHackathonsGet(
       { label: "Description", value: hackathon.description },
       { label: "Starts", value: hackathon.startsAt },
       { label: "Ends", value: hackathon.endsAt },
-      { label: "Registration Opens", value: hackathon.registrationOpensAt },
-      { label: "Registration Closes", value: hackathon.registrationClosesAt },
       { label: "Created", value: hackathon.createdAt },
     ])
   )

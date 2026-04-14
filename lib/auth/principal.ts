@@ -9,6 +9,13 @@ export function isAdminEnabled(): boolean {
   return process.env.ADMIN_ENABLED === "true"
 }
 
+export function hasAdminMetadata(sessionClaims: unknown): boolean {
+  const metadata = (sessionClaims as Record<string, unknown> | undefined)?.metadata as
+    | Record<string, unknown>
+    | undefined
+  return metadata?.admin === true
+}
+
 export async function resolvePrincipal(request: Request): Promise<Principal> {
   const authHeader = request.headers.get("authorization")
 
@@ -38,10 +45,7 @@ export async function resolvePrincipal(request: Request): Promise<Principal> {
     return { kind: "anon" }
   }
 
-  const metadata = (session.sessionClaims as Record<string, unknown>)?.metadata as
-    | Record<string, unknown>
-    | undefined
-  const isAdmin = isAdminEnabled() && metadata?.admin === true
+  const isAdmin = isAdminEnabled() && hasAdminMetadata(session.sessionClaims)
 
   let tenant
   if (orgId) {

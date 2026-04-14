@@ -3,6 +3,18 @@ import { redirect } from "next/navigation"
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { Tenant } from "@/lib/db/hackathon-types"
 
+async function fetchClerkOrgName(clerkOrgId: string): Promise<string | undefined> {
+  try {
+    const client = await clerkClient()
+    const org = await client.organizations.getOrganization({ organizationId: clerkOrgId })
+    return org.name
+  } catch {
+    return undefined
+  }
+}
+
+const FALLBACK_NAME_RE = /^Org org_|^Unnamed Organization$|^Personal user_|^Personal Account$/
+
 export async function getOrCreateTenant(
   clerkOrgId: string,
   clerkOrgName?: string
@@ -14,7 +26,10 @@ export async function getOrCreateTenant(
     .single()
 
   if (existing) {
-    // Sync name from Clerk if provided and different
+    // Resolve name from Clerk if not provided and existing name is a fallback
+    if (!clerkOrgName && FALLBACK_NAME_RE.test(existing.name)) {
+      clerkOrgName = await fetchClerkOrgName(clerkOrgId)
+    }
     if (clerkOrgName && existing.name !== clerkOrgName) {
       const { data: updated } = await getSupabase()
         .from("tenants")
@@ -27,11 +42,16 @@ export async function getOrCreateTenant(
     return existing as Tenant
   }
 
+  // Resolve name from Clerk if not provided
+  if (!clerkOrgName) {
+    clerkOrgName = await fetchClerkOrgName(clerkOrgId)
+  }
+
   const { data: created, error } = await getSupabase()
     .from("tenants")
     .insert({
       clerk_org_id: clerkOrgId,
-      name: clerkOrgName ?? `Org ${clerkOrgId.slice(0, 8)}`,
+      name: clerkOrgName ?? "Unnamed Organization",
     })
     .select()
     .single()
@@ -59,13 +79,24 @@ export async function getOrCreatePersonalTenant(
     .eq("clerk_user_id", clerkUserId)
     .single()
 
-  if (existing) return existing as Tenant
+  if (existing) {
+    if (userName && existing.name !== userName && FALLBACK_NAME_RE.test(existing.name)) {
+      const { data: updated } = await getSupabase()
+        .from("tenants")
+        .update({ name: userName, updated_at: new Date().toISOString() })
+        .eq("id", existing.id)
+        .select()
+        .single()
+      return (updated as Tenant) ?? (existing as Tenant)
+    }
+    return existing as Tenant
+  }
 
   const { data: created, error } = await getSupabase()
     .from("tenants")
     .insert({
       clerk_user_id: clerkUserId,
-      name: userName ?? `Personal ${clerkUserId.slice(0, 8)}`,
+      name: userName ?? "Personal Account",
     })
     .select()
     .single()
@@ -93,15 +124,7 @@ export async function resolvePageTenant(): Promise<Tenant> {
   let tenant: Tenant | null
 
   if (orgId) {
-    // Fetch org name from Clerk to sync
-    let orgName: string | undefined
-    try {
-      const client = await clerkClient()
-      const org = await client.organizations.getOrganization({ organizationId: orgId })
-      orgName = org.name
-    } catch {
-      // Ignore errors fetching org name
-    }
+    const orgName = await fetchClerkOrgName(orgId)
     tenant = await getOrCreateTenant(orgId, orgName)
   } else {
     tenant = await getOrCreatePersonalTenant(userId)

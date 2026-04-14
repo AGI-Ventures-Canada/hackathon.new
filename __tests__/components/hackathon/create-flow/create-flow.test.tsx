@@ -288,8 +288,6 @@ describe("CreateFlow", () => {
             description: null,
             startsAt: null,
             endsAt: null,
-            registrationOpensAt: null,
-            registrationClosesAt: null,
             locationType: null,
             locationName: null,
             locationUrl: null,

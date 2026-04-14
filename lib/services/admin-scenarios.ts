@@ -393,6 +393,9 @@ const scenarioRunners: Record<string, (tenantId?: string, principalOrgId?: strin
 
     await addJudgingCriteria(hackathonId)
 
+    const { seedJudgeDisplayProfiles } = await import("@/lib/services/judge-display")
+    await seedJudgeDisplayProfiles(hackathonId, judgeUsers, judgeParticipantIds)
+
     for (const judgeId of judgeParticipantIds) {
       const judgeTeamId = judgeTeamIds[judgeId]
       for (const subId of submissions) {
@@ -623,8 +626,8 @@ async function clearScenario(name: string): Promise<void> {
 }
 
 export async function runScenario(name: string, tenantId?: string, principalOrgId?: string | null, options?: ScenarioOptions): Promise<{ hackathonId: string; slug: string; tenantId: string }> {
-  if (process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production") {
-    throw new Error("Test scenarios can only be run in local development or staging")
+  if (process.env.VERCEL_ENV === "production") {
+    throw new Error("Test scenarios cannot be run in production")
   }
 
   const runner = scenarioRunners[name]

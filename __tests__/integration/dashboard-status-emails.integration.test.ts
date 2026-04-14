@@ -253,7 +253,14 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - status change emails", 
 
     await Promise.resolve()
 
-    expect(mockUpdateHackathonSettings).not.toHaveBeenCalled()
+    expect(mockUpdateHackathonSettings).toHaveBeenCalledWith(
+      "h1",
+      "tenant-123",
+      expect.objectContaining({
+        registrationOpensAt: expect.any(String),
+        registrationClosesAt: expect.any(String),
+      }),
+    )
     expect(mockExecuteTransition).toHaveBeenCalledTimes(1)
     expect(mockSendPendingJudgeInvitationEmails).toHaveBeenCalledTimes(1)
     expect(mockSendPendingJudgeInvitationEmails).toHaveBeenCalledWith(

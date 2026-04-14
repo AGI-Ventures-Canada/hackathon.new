@@ -35,11 +35,10 @@ type Props = {
 }
 
 const TIER_LABELS: Record<SponsorTier, string> = {
-  title: "Title",
+  custom: "Custom",
   gold: "Gold",
   silver: "Silver",
   bronze: "Bronze",
-  partner: "Partner",
   none: "Sponsor",
 }
 
@@ -57,11 +56,12 @@ function StatCard({ label, value, icon: Icon }: { label: string; value: number; 
   )
 }
 
-function TierBadge({ tier }: { tier: SponsorTier }) {
+function TierBadge({ tier, customLabel }: { tier: SponsorTier; customLabel?: string | null }) {
+  if (tier === "none") return null
   return (
     <Badge variant="outline">
       <Star className="mr-1 size-3" />
-      {TIER_LABELS[tier]}
+      {tier === "custom" && customLabel ? customLabel : TIER_LABELS[tier]}
     </Badge>
   )
 }
@@ -106,7 +106,7 @@ export function SponsoringDashboard({ hackathons, sponsorships }: Props) {
     return counts
   }, [sponsorMap])
 
-  const titleOrGold = (tierCounts.get("title") ?? 0) + (tierCounts.get("gold") ?? 0)
+  const titleOrGold = (tierCounts.get("custom") ?? 0) + (tierCounts.get("gold") ?? 0)
 
   if (hackathons.length === 0) {
     return (
@@ -155,7 +155,7 @@ export function SponsoringDashboard({ hackathons, sponsorships }: Props) {
                   <HackathonCard
                     hackathon={h}
                     href={`/e/${h.slug}`}
-                    extras={info ? <TierBadge tier={info.tier} /> : undefined}
+                    extras={info ? <TierBadge tier={info.tier} customLabel={info.customTierLabel} /> : undefined}
                   />
                   {(h.status === "completed" || h.status === "archived") && (
                     <Button variant="outline" size="sm" className="w-full" asChild>
@@ -189,7 +189,7 @@ export function SponsoringDashboard({ hackathons, sponsorships }: Props) {
                     <HackathonCard
                       hackathon={h}
                       href={`/e/${h.slug}`}
-                      extras={info ? <TierBadge tier={info.tier} /> : undefined}
+                      extras={info ? <TierBadge tier={info.tier} customLabel={info.customTierLabel} /> : undefined}
                     />
                     <Button variant="outline" size="sm" className="w-full" asChild>
                       <Link href={`/home/sponsoring/${h.id}/fulfillments`}>

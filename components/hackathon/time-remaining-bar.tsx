@@ -11,6 +11,7 @@ type Props = {
   registrationClosesAt: string | null
   startsAt: string | null
   endsAt: string | null
+  submissionDeadline?: string | null
 }
 
 type Milestone = {
@@ -46,8 +47,9 @@ function getMilestone(props: Props): Milestone | null {
   }
 
   if (props.status === "active") {
-    if (props.endsAt) {
-      const d = new Date(props.endsAt)
+    const deadline = props.submissionDeadline ?? props.endsAt
+    if (deadline) {
+      const d = new Date(deadline)
       if (d > now) {
         const start = props.startsAt ? new Date(props.startsAt) : now
         return { label: "Submissions close", deadline: d, startRef: start }

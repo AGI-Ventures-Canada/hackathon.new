@@ -11,8 +11,6 @@ import {
   Users,
   UsersRound,
   FolderOpen,
-  ArrowRight,
-  AlertCircle,
   ChevronDown,
   Plus,
 } from "lucide-react"
@@ -27,6 +25,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { HackathonCard } from "@/components/hackathon/hackathon-card"
+import { NeedsAttentionCard } from "@/components/hackathon/needs-attention-card"
 import { groupOrganizedHackathons, hasUrgencySignals } from "@/lib/utils/organize-groups"
 import type { HackathonMiniStats } from "@/lib/services/organizer-dashboard"
 import type { HackathonStatus } from "@/lib/db/hackathon-types"
@@ -106,29 +105,16 @@ function ActiveBanner({
         </span>
         <h2 className="text-sm font-semibold">Needs attention</h2>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        {hackathons.map((h) => {
-          const stats = statsMap.get(h.id)
-          const urgent = hasUrgencySignals(h.id, statsMap)
-          return (
-            <Link
-              key={h.id}
-              href={`/e/${h.slug}/manage`}
-              className="group flex items-start justify-between gap-3 rounded-lg border border-primary/20 bg-primary/5 p-4 transition-colors hover:border-primary/40 hover:bg-primary/10"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <h3 className="truncate font-semibold">{h.name}</h3>
-                  {urgent && (
-                    <AlertCircle className="size-4 shrink-0 text-destructive" />
-                  )}
-                </div>
-                {stats && <MiniStatsRow stats={stats} />}
-              </div>
-              <ArrowRight className="mt-1 size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
-            </Link>
-          )
-        })}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {hackathons.map((h) => (
+          <NeedsAttentionCard
+            key={h.id}
+            hackathon={h}
+            stats={statsMap.get(h.id)}
+            urgent={hasUrgencySignals(h.id, statsMap)}
+            role="Organizer"
+          />
+        ))}
       </div>
     </div>
   )

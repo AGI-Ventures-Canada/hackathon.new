@@ -476,3 +476,27 @@ export function printReady(slug: string) {
   console.log(`Manage: http://localhost:3000/e/${slug}/manage`)
   console.log()
 }
+
+const JUDGE_DISPLAY_NAMES = ["Alice Johnson", "Bob Chen", "Carol Davis", "Dave Kim", "Eve Martin"]
+
+// Intentionally duplicated from lib/services/judge-display.ts — scripts run
+// standalone with their own Supabase client and cannot import from the app.
+export async function seedJudgeDisplayProfiles(
+  hackathonId: string,
+  judgeUserIds: string[],
+  judgeParticipantIds: string[]
+): Promise<void> {
+  await supabase.from("hackathon_judges_display").delete().eq("hackathon_id", hackathonId)
+  await Promise.all(
+    judgeParticipantIds.map((pid, i) =>
+      supabase.from("hackathon_judges_display").insert({
+        hackathon_id: hackathonId,
+        name: JUDGE_DISPLAY_NAMES[i] ?? `Judge ${i + 1}`,
+        title: "Judge",
+        clerk_user_id: judgeUserIds[i],
+        participant_id: pid,
+        display_order: i,
+      })
+    )
+  )
+}
