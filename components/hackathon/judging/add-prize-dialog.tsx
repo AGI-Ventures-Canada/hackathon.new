@@ -286,7 +286,7 @@ export function AddPrizeDialog({
     handleOpenChange(false)
 
     try {
-      await fetch(
+      const data = await fetch(
         `/api/dashboard/hackathons/${hackathonId}/prizes`,
         {
           method: "POST",
@@ -302,11 +302,18 @@ export function AddPrizeDialog({
             ...(maxPicksPayload !== undefined ? { maxPicks: maxPicksPayload } : {}),
           }),
         }
-      ).then(assertOk)
+      ).then(assertOk<{ prize: { id: string; name: string; description: string | null; value: string | null; judging_style: string | null; round_id: string | null } }>)
 
       onSuccess?.()
       router.refresh()
-      onSuccess?.()
+      onSuccess?.({
+        id: data.prize.id,
+        name: data.prize.name,
+        description: data.prize.description,
+        value: data.prize.value,
+        judgingStyle: data.prize.judging_style as PrizeJudgingStyle,
+        roundId: data.prize.round_id,
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong")
     }

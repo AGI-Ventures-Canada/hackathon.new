@@ -55,6 +55,20 @@ type WizardInvitation = {
   createdAt: string
 }
 
+export type WizardJudgeAdded = {
+  displayName: string
+  email: string | null
+  imageUrl: string | null
+}
+
+export type WizardPrizeAdded = {
+  id: string
+  name: string
+  description: string | null
+  value: string | null
+  judgingStyle: string | null
+}
+
 type Props = {
   hackathonId: string
   slug: string
@@ -62,6 +76,10 @@ type Props = {
   judges: WizardJudge[]
   rounds: RoundData[]
   pendingInvitations: WizardInvitation[]
+  onFinish?: () => void
+  defaultStep?: 1 | 2 | 3 | 4
+  onJudgeAdded?: (judge: WizardJudgeAdded) => void
+  onPrizeAdded?: (prize: WizardPrizeAdded) => void
 }
 
 const STEPS = [
@@ -92,6 +110,10 @@ export function JudgingSetupWizard({
   judges,
   rounds,
   pendingInvitations,
+  onFinish,
+  defaultStep,
+  onJudgeAdded,
+  onPrizeAdded,
 }: Props) {
   const router = useRouter()
   const [roundsAcknowledged, setRoundsAcknowledged] = useState(false)
@@ -166,6 +188,7 @@ export function JudgingSetupWizard({
 
   const storageKey = `wizard-step-${hackathonId}`
   const initialStep = useMemo(() => {
+    if (defaultStep) return defaultStep
     if (typeof window !== "undefined") {
       const saved = sessionStorage.getItem(storageKey)
       if (saved) {
@@ -209,6 +232,13 @@ export function JudgingSetupWizard({
           judgeCount: 0,
         },
       ])
+      onPrizeAdded?.({
+        id: created.id,
+        name: created.name,
+        description: created.description ?? null,
+        value: created.value ?? null,
+        judgingStyle: created.judgingStyle,
+      })
     }
     refresh()
   }
@@ -236,6 +266,11 @@ export function JudgingSetupWizard({
           prizeIds: [],
         },
       ])
+      onJudgeAdded?.({
+        displayName: result.displayName,
+        email: result.email,
+        imageUrl: result.imageUrl,
+      })
     } else {
       setPendingInvites((prev) => [
         ...prev.filter((i) => i.id !== result.id),
@@ -260,6 +295,8 @@ export function JudgingSetupWizard({
   function goNext() {
     if (currentStep < 4) {
       setCurrentStep((currentStep + 1) as StepId)
+    } else if (onFinish) {
+      onFinish()
     } else {
       router.push(`/e/${slug}/manage?tab=judging&jtab=judges`)
       router.refresh()
@@ -333,7 +370,7 @@ export function JudgingSetupWizard({
     setError(null)
     setHiddenJudgeIds((prev) => new Set(prev).add(participantId))
     try {
-      const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/judges/${participantId}`, {
+      const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/judging/judges/${participantId}`, {
         method: "DELETE",
       })
       if (!res.ok) throw new Error("Failed to remove judge")

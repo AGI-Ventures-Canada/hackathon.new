@@ -18,8 +18,7 @@ export const SECTION_ORDER: Exclude<EditSection, null>[] = [
   "dates",
   "location",
   "sponsors",
-  "judges",
-  "prizes",
+  "timeline",
   "community",
   "about",
 ]
