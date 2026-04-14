@@ -265,7 +265,7 @@ When a feature references a user by email and they don't exist in Clerk, send a 
 
 ### Optimistic Rendering
 
-**Default to optimistic UI updates for all user-initiated mutations.** Update the UI immediately, fire the API call, revert on failure. Never show loading spinners for operations that can be reflected instantly.
+**CRITICAL: Every user-initiated mutation — add, delete, toggle, reorder, assign, unassign — MUST update the UI instantly, before the network round-trip completes.** If you write a handler that awaits `fetch` before calling `setState` or `router.refresh()`, you wrote the wrong handler. Optimistic rendering is the default, not an enhancement. Never show loading spinners for operations that can be reflected instantly.
 
 #### Shared Hooks (`hooks/`)
 

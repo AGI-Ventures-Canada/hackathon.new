@@ -43,12 +43,14 @@ export const SubmissionDeadlineDialog = forwardRef<SubmissionDeadlineDialogHandl
       setOpen(true)
     }
 
+    const [saving, setSaving] = useState(false)
+
     async function handleSave() {
       if (!deadlineItem) return
       const time = linkedToEventEnd && endsAt ? endsAt : deadlineAt?.toISOString()
       if (!time) return
       setError(null)
-      setOpen(false)
+      setSaving(true)
       try {
         await fetch(`/api/dashboard/hackathons/${hackathonId}/schedule/${deadlineItem.id}`, {
           method: "PATCH",
@@ -58,10 +60,13 @@ export const SubmissionDeadlineDialog = forwardRef<SubmissionDeadlineDialogHandl
             linkedTo: linkedToEventEnd ? "event_end" : null,
           }),
         }).then(assertOk)
+        setOpen(false)
         router.refresh()
         onSaved?.()
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to save")
+      } finally {
+        setSaving(false)
       }
     }
 
@@ -119,10 +124,10 @@ export const SubmissionDeadlineDialog = forwardRef<SubmissionDeadlineDialogHandl
               {error && <p className="text-destructive text-xs">{error}</p>}
               <Button
                 type="submit"
-                disabled={!linkedToEventEnd && !deadlineAt}
+                disabled={saving || (!linkedToEventEnd && !deadlineAt)}
                 className="w-full"
               >
-                Save
+                {saving ? "Saving..." : "Save"}
               </Button>
             </form>
         </DialogContent>

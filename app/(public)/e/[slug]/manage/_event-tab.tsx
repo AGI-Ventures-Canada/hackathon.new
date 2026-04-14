@@ -632,12 +632,13 @@ function AnnouncementsSubTab({ hackathonId, hackathonStatus, hackathonPhase }: {
   }
 
   function handleDelete(id: string) {
-    const prev = items.find((i) => i.id === id)
+    const index = items.findIndex((i) => i.id === id)
+    const prev = index >= 0 ? items[index] : null
     setItems((old) => old.filter((i) => i.id !== id))
     fetch(`/api/dashboard/hackathons/${hackathonId}/announcements/${id}`, { method: "DELETE" })
       .then(assertOk)
       .catch(() => {
-        if (prev) setItems((old) => [prev, ...old])
+        if (prev) setItems((old) => { const next = [...old]; next.splice(index, 0, prev); return next })
         setError("Failed to delete announcement")
       })
   }
