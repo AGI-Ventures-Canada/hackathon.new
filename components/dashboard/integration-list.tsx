@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation"
 import { useState } from "react"
+import { assertOk } from "@/lib/utils/fetch"
 import { FileText, PartyPopper, Loader2, Key } from "lucide-react"
 import type { OrgIntegration, IntegrationProvider, OrgApiCredential, ApiCredentialProvider } from "@/lib/db/hackathon-types"
 import { IntegrationCard } from "@/components/dashboard/integration-card"
@@ -141,10 +142,8 @@ export function IntegrationList({
           ? `/api/dashboard/integrations/${provider}`
           : `/api/dashboard/credentials/${provider}`
 
-      const response = await fetch(url, { method: "DELETE" })
-      if (response.ok) {
-        router.refresh()
-      }
+      await fetch(url, { method: "DELETE" }).then(assertOk)
+      router.refresh()
     } catch {
       setOptimisticDisconnected((prev) => {
         const next = new Set(prev)

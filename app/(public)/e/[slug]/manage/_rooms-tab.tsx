@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { cn } from "@/lib/utils"
 import { assertOk } from "@/lib/utils/fetch"
 import { Button } from "@/components/ui/button"
@@ -96,8 +96,6 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
   const [customMinutes, setCustomMinutes] = useState("")
   const [timerLabel, setTimerLabel] = useState("")
 
-  const pendingMutationsRef = useRef(0)
-
   const fetchRooms = useCallback(async () => {
     try {
       const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/rooms`)
@@ -157,7 +155,6 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
 
     setError(null)
     setRoomDialogOpen(false)
-    pendingMutationsRef.current++
 
     if (editingRoom) {
       const prevName = editingRoom.name
@@ -181,8 +178,6 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
           prev.map((r) => (r.id === editingRoom.id ? { ...r, name: prevName } : r))
         )
         setError(err instanceof Error ? err.message : "Failed to update room")
-      } finally {
-        pendingMutationsRef.current--
       }
     } else {
       const tempId = `temp-${crypto.randomUUID()}`
@@ -219,8 +214,6 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
       } catch (err) {
         setRooms((prev) => prev.filter((r) => r.id !== tempId))
         setError(err instanceof Error ? err.message : "Failed to create room")
-      } finally {
-        pendingMutationsRef.current--
       }
     }
   }
@@ -247,8 +240,9 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
     const label = timerLabel.trim() || null
     const roomId = timerRoomId
 
-    setRooms((prev) =>
-      prev.map((r) =>
+    const prev = rooms.find((r) => r.id === roomId)
+    setRooms((rs) =>
+      rs.map((r) =>
         r.id === roomId
           ? { ...r, timer_ends_at: endsAt, timer_remaining_ms: null, timer_label: label }
           : r
@@ -268,18 +262,23 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
           }),
         }
       ).then(assertOk<{ timer_ends_at: string | null; timer_label: string | null }>)
-      setRooms((prev) =>
-        prev.map((r) =>
+      setRooms((rs) =>
+        rs.map((r) =>
           r.id === roomId
             ? { ...r, timer_ends_at: updated.timer_ends_at, timer_label: updated.timer_label }
             : r
         )
       )
     } catch (err) {
-      setRooms((prev) =>
-        prev.map((r) =>
+      setRooms((rs) =>
+        rs.map((r) =>
           r.id === roomId
-            ? { ...r, timer_ends_at: null, timer_remaining_ms: null, timer_label: null }
+            ? {
+                ...r,
+                timer_ends_at: prev?.timer_ends_at ?? null,
+                timer_remaining_ms: prev?.timer_remaining_ms ?? null,
+                timer_label: prev?.timer_label ?? null,
+              }
             : r
         )
       )

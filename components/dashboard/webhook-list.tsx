@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation"
 import { useState } from "react"
+import { assertOk } from "@/lib/utils/fetch"
 import { Webhook, MoreHorizontal, Trash2, AlertTriangle } from "lucide-react"
 import type { Webhook as WebhookType } from "@/lib/db/hackathon-types"
 import { Badge } from "@/components/ui/badge"
@@ -61,12 +62,10 @@ export function WebhookList({ webhooks }: WebhookListProps) {
     setDeleteId(null)
     setHiddenIds((prev) => new Set(prev).add(id))
     try {
-      const response = await fetch(`/api/dashboard/webhooks/${id}`, {
+      await fetch(`/api/dashboard/webhooks/${id}`, {
         method: "DELETE",
-      })
-      if (response.ok) {
-        router.refresh()
-      }
+      }).then(assertOk)
+      router.refresh()
     } catch {
       setHiddenIds((prev) => {
         const next = new Set(prev)
