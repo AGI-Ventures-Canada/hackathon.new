@@ -12,11 +12,12 @@ import { AddItemInput } from "./add-item-input"
 
 const emptySubscribe = () => () => {}
 
-const groupOrder: ActionSeverity[] = ["urgent", "warning", "info"]
+const groupOrder: ActionSeverity[] = ["urgent", "warning", "scheduled", "info"]
 
 const groupColor: Record<ActionSeverity, string> = {
   urgent: "text-destructive",
   warning: "text-primary",
+  scheduled: "text-muted-foreground",
   info: "text-muted-foreground",
 }
 

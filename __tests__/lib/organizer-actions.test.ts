@@ -201,16 +201,30 @@ describe("getOrganizerActionItems", () => {
       expect(items.find((i) => i.id === "starting-soon")).toBeUndefined()
     })
 
-    it("always shows ready-to-go-live in published phase", () => {
+    it("shows ready-to-go-live when dates and location are set", () => {
       const items = getOrganizerActionItems(makeInput({
         status: "published",
         participantCount: 0,
+        startsAt: "2026-05-01T00:00:00Z",
+        endsAt: "2026-05-02T00:00:00Z",
+        locationType: "virtual",
       }))
       const item = items.find((i) => i.id === "ready-to-go-live")
       expect(item).toBeDefined()
       expect(item?.close.kind).toBe("transition")
       expect(item?.action).toBe("transition-to-active")
       expect(item?.ctaLabel).toBe("Go Live")
+    })
+
+    it("does not show ready-to-go-live when location is missing", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "published",
+        participantCount: 0,
+        startsAt: "2026-05-01T00:00:00Z",
+        endsAt: "2026-05-02T00:00:00Z",
+        locationType: null,
+      }))
+      expect(items.find((i) => i.id === "ready-to-go-live")).toBeUndefined()
     })
 
     it("shows verify-automated-times as dismiss kind", () => {
@@ -253,7 +267,7 @@ describe("getOrganizerActionItems", () => {
 
       const item = items.find((i) => i.id === "release-challenge")
       expect(item).toBeDefined()
-      expect(item?.severity).toBe("warning")
+      expect(item?.severity).toBe("scheduled")
       expect(item?.action).toBe("release-challenge")
     })
 
@@ -270,7 +284,7 @@ describe("getOrganizerActionItems", () => {
       expect(item?.label).toContain("3")
     })
 
-    it("marks all items completed when everything is set up", () => {
+    it("marks all auto-close items completed when everything is set up", () => {
       const items = getOrganizerActionItems(makeInput({
         status: "active",
         challengeReleased: true,
@@ -278,10 +292,17 @@ describe("getOrganizerActionItems", () => {
         judgeCount: 5,
         mentorQueue: { open: 0 },
         submissionCount: 10,
+        description: "A hackathon",
+        bannerUrl: "https://example.com/banner.png",
+        startsAt: "2026-05-01T00:00:00Z",
+        endsAt: "2026-05-02T00:00:00Z",
+        locationType: "virtual",
+        prizeCount: 2,
+        judgeDisplayCount: 3,
       }))
 
-      const incomplete = items.filter((i) => !isCompleted(i) && i.close.kind !== "transition")
-      expect(incomplete).toHaveLength(0)
+      const incompleteAuto = items.filter((i) => i.close.kind === "auto" && !isCompleted(i))
+      expect(incompleteAuto).toHaveLength(0)
     })
 
     it("does not show ready-for-judging when missing prerequisites", () => {
@@ -499,6 +520,9 @@ describe("getOrganizerActionItems", () => {
       const pubItems = getOrganizerActionItems(makeInput({
         status: "published",
         participantCount: 5,
+        startsAt: "2026-05-01T00:00:00Z",
+        endsAt: "2026-05-02T00:00:00Z",
+        locationType: "virtual",
       }))
       const goLiveItem = pubItems.find((i) => i.id === "ready-to-go-live")
       expect(goLiveItem?.close.kind).toBe("transition")
@@ -579,10 +603,75 @@ describe("getOrganizerActionItems", () => {
     })
   })
 
+  describe("accumulative across statuses", () => {
+    it("published status includes draft items", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "published",
+        participantCount: 0,
+      }))
+      const ids = items.map((i) => i.id)
+      expect(ids).toContain("no-description")
+      expect(ids).toContain("no-banner")
+      expect(ids).toContain("add-schedule")
+      expect(ids).toContain("check-submission-deadline")
+      expect(ids).toContain("review-team-settings")
+    })
+
+    it("active status includes draft and published items", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "active",
+        challengeReleased: true,
+        challengeExists: true,
+        judgeCount: 2,
+      }))
+      const ids = items.map((i) => i.id)
+      expect(ids).toContain("no-description")
+      expect(ids).toContain("add-schedule")
+      expect(ids).toContain("promote-event")
+    })
+
+    it("later phase overrides earlier phase items with same ID", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "published",
+        participantCount: 0,
+        judgeDisplayCount: 0,
+        prizeCount: 0,
+      }))
+      const judgeItems = items.filter((i) => i.id === "no-judges")
+      expect(judgeItems).toHaveLength(1)
+      expect(judgeItems[0].label).toContain("No judges invited yet")
+    })
+
+    it("excludes transition actions from previous phases", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "published",
+        startsAt: "2026-05-01T00:00:00Z",
+        endsAt: "2026-05-02T00:00:00Z",
+        locationType: "virtual",
+      }))
+      expect(items.find((i) => i.id === "ready-to-publish")).toBeUndefined()
+      expect(items.find((i) => i.id === "ready-to-go-live")).toBeDefined()
+    })
+
+    it("active phase no-judges overrides draft/published version", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "active",
+        judgeDisplayCount: 3,
+        judgeCount: 0,
+        challengeReleased: true,
+        challengeExists: true,
+      }))
+      const item = items.find((i) => i.id === "no-judges")
+      expect(item).toBeDefined()
+      expect(isCompleted(item!)).toBe(false)
+    })
+  })
+
   describe("SEVERITY_GROUP_LABEL", () => {
     it("maps severity levels to display labels", () => {
       expect(SEVERITY_GROUP_LABEL.urgent).toBe("BLOCKERS")
       expect(SEVERITY_GROUP_LABEL.warning).toBe("WARNINGS")
+      expect(SEVERITY_GROUP_LABEL.scheduled).toBe("SCHEDULED")
       expect(SEVERITY_GROUP_LABEL.info).toBe("OPTIONAL")
     })
   })

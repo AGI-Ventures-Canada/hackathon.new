@@ -1813,6 +1813,7 @@ export type Database = {
           distribution_method: string | null
           hackathon_id: string
           id: string
+          is_screening: boolean
           judging_style: string | null
           kind: string
           max_picks: number | null
@@ -1836,6 +1837,7 @@ export type Database = {
           distribution_method?: string | null
           hackathon_id: string
           id?: string
+          is_screening?: boolean
           judging_style?: string | null
           kind?: string
           max_picks?: number | null
@@ -1859,6 +1861,7 @@ export type Database = {
           distribution_method?: string | null
           hackathon_id?: string
           id?: string
+          is_screening?: boolean
           judging_style?: string | null
           kind?: string
           max_picks?: number | null

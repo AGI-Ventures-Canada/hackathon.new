@@ -11,7 +11,7 @@ import { listAnnouncements } from "@/lib/services/announcements"
 import { listChallenges } from "@/lib/services/challenges"
 import { listScheduleItems, getSubmissionDeadline } from "@/lib/services/schedule-items"
 import { getOrganizerActionItems } from "@/lib/utils/organizer-actions"
-import { VALID_TABS, VALID_ETABS, VALID_MTABS, VALID_JTABS, DEFAULT_TAB, DEFAULT_MTAB, DEFAULT_JTAB, resolveTab } from "@/lib/utils/manage-tabs"
+import { VALID_TABS, VALID_ETABS, VALID_MTABS, VALID_JTABS, VALID_PTABS, DEFAULT_TAB, DEFAULT_MTAB, DEFAULT_JTAB, DEFAULT_PTAB, resolveTab } from "@/lib/utils/manage-tabs"
 import { HackathonPreviewClient } from "@/components/hackathon/preview/hackathon-preview-client"
 import { HackathonPageActions } from "@/components/hackathon/hackathon-page-actions"
 import { LifecycleStepper } from "@/components/hackathon/lifecycle-stepper"
@@ -34,7 +34,7 @@ import { TeamsTab } from "./_teams-tab"
 
 type PageProps = {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ tab?: string; etab?: string; mtab?: string; jtab?: string }>
+  searchParams: Promise<{ tab?: string; etab?: string; mtab?: string; jtab?: string; ptab?: string }>
 }
 
 function TabLoadingSkeleton() {
@@ -43,7 +43,7 @@ function TabLoadingSkeleton() {
 
 export default async function ManagePage({ params, searchParams }: PageProps) {
   const { slug } = await params
-  const { tab, etab, mtab, jtab } = await searchParams
+  const { tab, etab, mtab, jtab, ptab } = await searchParams
   const [{ userId }, result] = await Promise.all([auth(), getManageHackathon(slug)])
 
   if (!result.ok) {
@@ -113,6 +113,8 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
   const mtabFallback = tab === "rooms" ? "rooms" : tab === "activity" ? "activity" : undefined
   const activeMtab = resolveTab(mtab ?? mtabFallback, VALID_MTABS, DEFAULT_MTAB)
   const activeJtab = resolveTab(jtab, VALID_JTABS, DEFAULT_JTAB) as "data" | "setup"
+  const ptabFallback = tab === "fulfillment" ? "fulfillment" : tab === "feedback" ? "feedback" : undefined
+  const activePtab = resolveTab(ptab ?? ptabFallback, VALID_PTABS, DEFAULT_PTAB)
   const hasJudgingSetup = prizes.length > 0 || judgeCount > 0 || rounds.length > 0
 
   const submissionsForSelect = submissions.map((s) => ({ id: s.id, title: s.title }))
@@ -137,6 +139,11 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
           locationLatitude: hackathon.location_latitude,
           locationLongitude: hackathon.location_longitude,
           requireLocationVerification: hackathon.require_location_verification,
+        }}
+        teamSettingsInitialData={{
+          minTeamSize: hackathon.min_team_size ?? 1,
+          maxTeamSize: hackathon.max_team_size ?? 5,
+          allowSolo: hackathon.allow_solo ?? true,
         }}
       >
         <TabsUrlSync paramKey="tab" value={activeTab}>
@@ -250,6 +257,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
                   resultsPublishedAt={hackathon.results_published_at}
                   feedbackSurveySentAt={hackathon.feedback_survey_sent_at ?? null}
                   feedbackSurveyUrl={hackathon.feedback_survey_url ?? null}
+                  activePtab={activePtab}
                 />
               </Suspense>
             </TabsContent>

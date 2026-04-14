@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Loader2, Plus, Pencil, Trash2, ArrowUp, ArrowDown, Eye, Link as LinkIcon } from "lucide-react"
+import { Loader2, Plus, Pencil, Trash2, ArrowUp, ArrowDown, Send, Link as LinkIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -136,47 +136,40 @@ export function ChallengesTab({ hackathonId, initialChallenges, releasedAt: init
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-lg font-semibold">Challenges</h2>
-          <p className="text-sm text-muted-foreground">
-            Problem statements or themes for participants. Released together at one time.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {releasedAt ? (
-            <Badge variant="secondary">Released {formatDate(releasedAt)}</Badge>
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={challenges.length === 0}
-              onClick={() => setReleaseDialogOpen(true)}
-            >
-              <Eye className="size-4" />
-              <span className="hidden sm:inline">Release to participants</span>
-              <span className="sm:hidden">Release</span>
-            </Button>
-          )}
-          <Button size="sm" onClick={openCreate}>
-            <Plus className="size-4" />
-            <span className="hidden sm:inline">Add challenge</span>
-            <span className="sm:hidden">Add</span>
-          </Button>
-        </div>
-      </div>
-
       {challenges.length === 0 ? (
         <div className="rounded-lg border border-dashed p-8 text-center">
           <p className="text-sm font-medium">No challenges yet</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Add one or more challenges, then release them to participants when you&apos;re ready.
+            What should teams build? Add a challenge to give them direction.
           </p>
           <Button className="mt-4" size="sm" onClick={openCreate}>
-            <Plus className="size-4" /> Add your first challenge
+            <Plus className="size-4" /> Add challenge
           </Button>
         </div>
       ) : (
+        <>
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
+            {challenges.length} challenge{challenges.length === 1 ? "" : "s"}
+            {releasedAt ? ` · released ${formatDate(releasedAt)}` : ""}
+          </p>
+          <div className="flex items-center gap-2">
+            {!releasedAt && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setReleaseDialogOpen(true)}
+              >
+                <Send className="size-4" />
+                <span className="hidden sm:inline">Release</span>
+              </Button>
+            )}
+            <Button size="sm" onClick={openCreate}>
+              <Plus className="size-4" />
+              <span className="hidden sm:inline">Add</span>
+            </Button>
+          </div>
+        </div>
         <div className="space-y-3">
           {challenges.map((c, idx) => (
             <div key={c.id} className="rounded-lg border bg-card p-4">
@@ -217,6 +210,7 @@ export function ChallengesTab({ hackathonId, initialChallenges, releasedAt: init
             </div>
           ))}
         </div>
+        </>
       )}
 
       <ChallengeEditorDialog

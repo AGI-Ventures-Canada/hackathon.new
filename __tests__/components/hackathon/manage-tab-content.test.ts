@@ -60,11 +60,6 @@ function getJudgingClientProps(element: any): Record<string, unknown> {
   return dataTab.props.children.props
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function getJudgingClientProps(element: any): Record<string, unknown> {
-  return element.props
-}
-
 describe("JudgingTabContent", () => {
   beforeEach(() => {
     mockListPrizes.mockClear()
