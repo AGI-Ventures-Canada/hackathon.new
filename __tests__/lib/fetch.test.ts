@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test"
-import { assertOk } from "@/lib/utils/fetch"
+import { assertOk, assertOkJson } from "@/lib/utils/fetch"
 
 function fakeResponse(status: number, body?: unknown): Response {
   const hasBody = body !== undefined
@@ -13,15 +13,12 @@ function fakeResponse(status: number, body?: unknown): Response {
 }
 
 describe("assertOk", () => {
-  it("resolves with parsed JSON for 200", async () => {
-    const data = { id: "1", name: "test" }
-    const result = await assertOk<typeof data>(fakeResponse(200, data))
-    expect(result).toEqual(data)
+  it("resolves for 200", async () => {
+    await expect(assertOk(fakeResponse(200, {}))).resolves.toBeUndefined()
   })
 
-  it("returns undefined for 204 (no content)", async () => {
-    const result = await assertOk(fakeResponse(204))
-    expect(result).toBeUndefined()
+  it("resolves for 204 (no content)", async () => {
+    await expect(assertOk(fakeResponse(204))).resolves.toBeUndefined()
   })
 
   it("throws with error field from JSON body on 4xx", async () => {
@@ -36,7 +33,7 @@ describe("assertOk", () => {
     ).rejects.toThrow("Request failed (422)")
   })
 
-  it("throws with status code when 4xx body is not JSON", async () => {
+  it("throws with status code when body is not JSON", async () => {
     const res = {
       ok: false,
       status: 500,
@@ -45,10 +42,40 @@ describe("assertOk", () => {
 
     await expect(assertOk(res)).rejects.toThrow("Request failed (500)")
   })
+})
 
-  it("resolves for other 2xx statuses (e.g. 201)", async () => {
-    const data = { created: true }
-    const result = await assertOk<typeof data>(fakeResponse(201, data))
+describe("assertOkJson", () => {
+  it("resolves with parsed JSON for 200", async () => {
+    const data = { id: "1", name: "test" }
+    const result = await assertOkJson<typeof data>(fakeResponse(200, data))
     expect(result).toEqual(data)
+  })
+
+  it("resolves with parsed JSON for 201", async () => {
+    const data = { created: true }
+    const result = await assertOkJson<typeof data>(fakeResponse(201, data))
+    expect(result).toEqual(data)
+  })
+
+  it("throws on 204 (no content)", async () => {
+    await expect(
+      assertOkJson<{ id: string }>(fakeResponse(204))
+    ).rejects.toThrow("Expected JSON response but received 204 No Content")
+  })
+
+  it("throws with error field from JSON body on 4xx", async () => {
+    await expect(
+      assertOkJson<unknown>(fakeResponse(400, { error: "Bad request" }))
+    ).rejects.toThrow("Bad request")
+  })
+
+  it("throws with status code when body is not JSON", async () => {
+    const res = {
+      ok: false,
+      status: 500,
+      json: () => Promise.reject(new Error("not json")),
+    } as unknown as Response
+
+    await expect(assertOkJson<unknown>(res)).rejects.toThrow("Request failed (500)")
   })
 })

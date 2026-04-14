@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { cn } from "@/lib/utils"
-import { assertOk } from "@/lib/utils/fetch"
+import { assertOk, assertOkJson } from "@/lib/utils/fetch"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -169,7 +169,7 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ name: trimmed }),
           }
-        ).then(assertOk<Room>)
+        ).then(assertOkJson<Room>)
         setRooms((prev) =>
           prev.map((r) => (r.id === editingRoom.id ? { ...r, ...updated } : r))
         )
@@ -203,7 +203,7 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ name: trimmed, displayOrder: rooms.length }),
           }
-        ).then(assertOk<Room>)
+        ).then(assertOkJson<Room>)
         setRooms((prev) =>
           prev.map((r) =>
             r.id === tempId
@@ -266,7 +266,7 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
             label: label || undefined,
           }),
         }
-      ).then(assertOk<{ timer_ends_at: string | null; timer_label: string | null }>)
+      ).then(assertOkJson<{ timer_ends_at: string | null; timer_label: string | null }>)
       setRooms((rs) =>
         rs.map((r) =>
           r.id === roomId
@@ -344,7 +344,7 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
       const updated = await fetch(
         `/api/dashboard/hackathons/${hackathonId}/rooms/${roomId}/timer/pause`,
         { method: "POST" }
-      ).then(assertOk<{ timer_ends_at: string | null; timer_remaining_ms: number | null }>)
+      ).then(assertOkJson<{ timer_ends_at: string | null; timer_remaining_ms: number | null }>)
       setRooms((rs) =>
         rs.map((r) =>
           r.id === roomId
@@ -380,7 +380,7 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
       const updated = await fetch(
         `/api/dashboard/hackathons/${hackathonId}/rooms/${roomId}/timer/resume`,
         { method: "POST" }
-      ).then(assertOk<{ timer_ends_at: string | null; timer_remaining_ms: number | null }>)
+      ).then(assertOkJson<{ timer_ends_at: string | null; timer_remaining_ms: number | null }>)
       setRooms((rs) =>
         rs.map((r) =>
           r.id === roomId

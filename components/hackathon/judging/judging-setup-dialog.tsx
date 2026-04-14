@@ -13,7 +13,7 @@ import {
 import { JudgingSetupWizard } from "./judging-setup-wizard"
 import type { WizardJudgeAdded, WizardPrizeAdded } from "./judging-setup-wizard"
 import type { RoundData } from "./rounds-types"
-import { assertOk } from "@/lib/utils/fetch"
+import { assertOkJson } from "@/lib/utils/fetch"
 
 type PrizeResponse = {
   id: string
@@ -113,15 +113,15 @@ export function JudgingSetupDialog({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (signal?: AbortSignal) => {
     setLoading(true)
     setError(null)
     try {
       const [prizesData, judgesData, roundsData, invitationsData] = await Promise.all([
-        fetch(`/api/dashboard/hackathons/${hackathonId}/prizes`).then(assertOk<{ prizes: PrizeResponse[] }>),
-        fetch(`/api/dashboard/hackathons/${hackathonId}/judging/judges`).then(assertOk<{ judges: JudgeResponse[] }>),
-        fetch(`/api/dashboard/hackathons/${hackathonId}/rounds`).then(assertOk<{ rounds: RoundResponse[] }>),
-        fetch(`/api/dashboard/hackathons/${hackathonId}/judging/invitations`).then(assertOk<{ invitations: InvitationResponse[] }>),
+        fetch(`/api/dashboard/hackathons/${hackathonId}/prizes`, { signal }).then(assertOkJson<{ prizes: PrizeResponse[] }>),
+        fetch(`/api/dashboard/hackathons/${hackathonId}/judging/judges`, { signal }).then(assertOkJson<{ judges: JudgeResponse[] }>),
+        fetch(`/api/dashboard/hackathons/${hackathonId}/rounds`, { signal }).then(assertOkJson<{ rounds: RoundResponse[] }>),
+        fetch(`/api/dashboard/hackathons/${hackathonId}/judging/invitations`, { signal }).then(assertOkJson<{ invitations: InvitationResponse[] }>),
       ])
 
       setPrizes(
@@ -180,18 +180,18 @@ export function JudgingSetupDialog({
           }))
       )
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return
       setError(err instanceof Error ? err.message : "Failed to load judging data")
     } finally {
       setLoading(false)
     }
   }, [hackathonId])
 
-  // Rapid open/close can race — fetches aren't aborted. Low risk since
-  // the last write to state wins and router.refresh() re-syncs on close.
   useEffect(() => {
-    if (open) {
-      fetchData()
-    }
+    if (!open) return
+    const controller = new AbortController()
+    fetchData(controller.signal)
+    return () => controller.abort()
   }, [open, fetchData])
 
   return (
@@ -210,7 +210,7 @@ export function JudgingSetupDialog({
         ) : error ? (
           <div className="py-8 text-center space-y-3">
             <p className="text-sm text-destructive">{error}</p>
-            <Button variant="outline" size="sm" onClick={fetchData}>
+            <Button variant="outline" size="sm" onClick={() => fetchData()}>
               <RotateCw className="size-3.5" />
               Try again
             </Button>

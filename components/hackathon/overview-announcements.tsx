@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { assertOk } from "@/lib/utils/fetch"
+import { assertOk, assertOkJson } from "@/lib/utils/fetch"
 import Link from "next/link"
 import { Megaphone, ArrowRight, Plus, Send, Clock, Users } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -90,7 +90,7 @@ export function OverviewAnnouncements({ slug, hackathonId, announcements }: Prop
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, body, priority, audience }),
-      }).then(assertOk<{ id: string }>)
+      }).then(assertOkJson<{ id: string }>)
 
       if (mode === "now") {
         await fetch(`/api/dashboard/hackathons/${hackathonId}/announcements/${created.id}/publish`, { method: "POST" }).then(assertOk)

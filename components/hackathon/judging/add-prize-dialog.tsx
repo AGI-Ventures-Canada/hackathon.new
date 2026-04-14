@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { assertOk } from "@/lib/utils/fetch"
+import { assertOkJson } from "@/lib/utils/fetch"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -304,7 +304,7 @@ export function AddPrizeDialog({
             ...(maxPicksPayload !== undefined ? { maxPicks: maxPicksPayload } : {}),
           }),
         }
-      ).then(assertOk<{ prize: { id: string; name: string; description: string | null; value: string | null; type: string | null; judging_style: string | null; round_id: string | null } }>)
+      ).then(assertOkJson<{ prize: { id: string; name: string; description: string | null; value: string | null; type: string | null; judging_style: string | null; round_id: string | null } }>)
 
       onSuccess?.()
       router.refresh()

@@ -3,7 +3,7 @@
 import { useState, useRef, useMemo, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useOptimisticMutation } from "@/hooks/use-optimistic-mutation"
-import { assertOk } from "@/lib/utils/fetch"
+import { assertOk, assertOkJson } from "@/lib/utils/fetch"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Field, FieldLabel, FieldGroup } from "@/components/ui/field"
@@ -340,7 +340,7 @@ export function JudgesEditForm({
       const data = await fetch(
         `/api/dashboard/hackathons/${hackathonId}/judges/display/${judgeId}`,
         { method: "DELETE" }
-      ).then(assertOk<{ warning?: string }>)
+      ).then(assertOkJson<{ warning?: string }>)
       if (data.warning) {
         setError("Judge removed, but some linked data could not be cleaned up")
       }

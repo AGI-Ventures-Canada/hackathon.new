@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
-import { assertOk } from "@/lib/utils/fetch"
+import { assertOk, assertOkJson } from "@/lib/utils/fetch"
 import {
   Loader2, Plus, Users, ChevronRight, FileText, DoorOpen, Crown, Mail, Settings2,
 } from "lucide-react"
@@ -211,7 +211,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, captainEmail: email }),
-      }).then(assertOk<{ team?: Team; invited?: boolean }>)
+      }).then(assertOkJson<{ team?: Team; invited?: boolean }>)
 
       if (data.invited) {
         setInviteSuccess(`Invite sent to ${email}`)

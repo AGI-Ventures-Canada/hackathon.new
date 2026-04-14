@@ -1,23 +1,34 @@
 /**
- * Throws on non-2xx responses. Parses JSON for 2xx, returns undefined for 204.
+ * Asserts a response is 2xx, throws on error. Returns void — use for
+ * DELETE / fire-and-forget where no response body is needed.
  *
- * Usage:
- *   .then(assertOk)              // DELETE / fire-and-forget — returns void
- *   .then(assertOk<MyType>)      // expects JSON body — returns MyType
- *
- * 204 responses return undefined even when T is specified. Callers that
- * type-parameterize assertOk on endpoints that may return 204 should
- * account for undefined at the call site.
+ * Usage:  .then(assertOk)
  */
-export async function assertOk(res: Response): Promise<void>
-export async function assertOk<T>(res: Response): Promise<T>
-export async function assertOk<T = unknown>(res: Response): Promise<T | void> {
+export async function assertOk(res: Response): Promise<void> {
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
     throw new Error(
       (body as { error?: string }).error || `Request failed (${res.status})`
     )
   }
-  if (res.status === 204) return undefined
+}
+
+/**
+ * Asserts a response is 2xx and parses the JSON body as T. Throws on
+ * non-2xx responses AND on 204 (no content) — if you asked for T, a
+ * missing body is a contract violation.
+ *
+ * Usage:  .then(assertOkJson<MyType>)
+ */
+export async function assertOkJson<T>(res: Response): Promise<T> {
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(
+      (body as { error?: string }).error || `Request failed (${res.status})`
+    )
+  }
+  if (res.status === 204) {
+    throw new Error("Expected JSON response but received 204 No Content")
+  }
   return res.json() as Promise<T>
 }

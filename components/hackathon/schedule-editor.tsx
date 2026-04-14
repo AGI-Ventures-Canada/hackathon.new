@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
-import { assertOk } from "@/lib/utils/fetch"
+import { assertOk, assertOkJson } from "@/lib/utils/fetch"
 import { toLocalDatetime } from "@/lib/utils/datetime"
 import { DateTimePicker } from "@/components/ui/date-time-picker"
 import { Button } from "@/components/ui/button"
@@ -303,7 +303,7 @@ export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challe
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       })
-      const saved = await assertOk<ScheduleItemData>(res)
+      const saved = await assertOkJson<ScheduleItemData>(res)
       const sort = (a: ScheduleItemData, b: ScheduleItemData) => a.starts_at.localeCompare(b.starts_at) || (a.sort_order ?? 0) - (b.sort_order ?? 0)
       setAllItems((prev) => {
         const next = editing

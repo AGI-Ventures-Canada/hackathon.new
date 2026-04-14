@@ -49,7 +49,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Loader2, CheckCircle2, Send, Eye, ThumbsUp, ThumbsDown, Plus, Pencil, Trash2, Megaphone, Zap, MessageCircle, Share2, Mail } from "lucide-react"
-import { assertOk } from "@/lib/utils/fetch"
+import { assertOk, assertOkJson } from "@/lib/utils/fetch"
 import type { AnnouncementAudience } from "@/lib/services/announcements"
 import type { HackathonStatus, HackathonPhase } from "@/lib/db/hackathon-types"
 
@@ -592,7 +592,7 @@ function AnnouncementsSubTab({ hackathonId, hackathonStatus, hackathonPhase }: {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, body, priority, audience }),
       })
-        .then(assertOk<AnnouncementData>)
+        .then(assertOkJson<AnnouncementData>)
         .then((saved) => setItems((old) => old.map((i) => (i.id === saved.id ? saved : i))))
         .catch((err) => {
           if (prev) setItems((old) => old.map((i) => (i.id === editing.id ? prev : i)))
@@ -615,10 +615,10 @@ function AnnouncementsSubTab({ hackathonId, hackathonStatus, hackathonPhase }: {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, body, priority, audience }),
       })
-        .then(assertOk<AnnouncementData>)
+        .then(assertOkJson<AnnouncementData>)
         .then(async (created) => {
           if (publish) {
-            const published = await fetch(`/api/dashboard/hackathons/${hackathonId}/announcements/${created.id}/publish`, { method: "POST" }).then(assertOk<AnnouncementData>)
+            const published = await fetch(`/api/dashboard/hackathons/${hackathonId}/announcements/${created.id}/publish`, { method: "POST" }).then(assertOkJson<AnnouncementData>)
             setItems((old) => old.map((i) => (i.id === tempId ? published : i)))
           } else {
             setItems((old) => old.map((i) => (i.id === tempId ? created : i)))
@@ -654,7 +654,7 @@ function AnnouncementsSubTab({ hackathonId, hackathonStatus, hackathonPhase }: {
       )
     )
     fetch(`/api/dashboard/hackathons/${hackathonId}/announcements/${item.id}/${action}`, { method: "POST" })
-      .then(assertOk<AnnouncementData>)
+      .then(assertOkJson<AnnouncementData>)
       .then((updated) => setItems((old) => old.map((i) => (i.id === updated.id ? updated : i))))
       .catch(() => {
         setItems((old) => old.map((i) => (i.id === prevItem.id ? prevItem : i)))

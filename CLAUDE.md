@@ -289,7 +289,9 @@ const list = useOptimisticList({ items: serverPrizes, getId: (p) => p.id })
 // list.setLocalEdit(id, { name: "New" }) — optimistic update
 ```
 
-**`assertOk<T>`** (`lib/utils/fetch.ts`) — Replaces `if (!res.ok) { const data = await res.json(); throw new Error(data.error || "...") }` boilerplate. Use as `.then(assertOk)` or `.then(assertOk<ResponseType>)`.
+**`assertOk`** / **`assertOkJson<T>`** (`lib/utils/fetch.ts`) — Replaces `if (!res.ok) { ... throw ... }` boilerplate.
+- `.then(assertOk)` — void return, 204-safe. Use for DELETE / fire-and-forget.
+- `.then(assertOkJson<MyType>)` — parses JSON as `T`, throws on 204. Use when you expect a response body.
 
 #### When to Use Each Pattern
 
@@ -311,7 +313,7 @@ const list = useOptimisticList({ items: serverPrizes, getId: (p) => p.id })
 - **Error rollback**: revert optimistic state, show inline error via `{error && <p className="text-sm text-destructive">{error}</p>}`. `useOptimisticMutation` auto-dismisses after 8 seconds
 - **Re-throw errors** when called by child components that also handle errors
 - **Keep `Loader2` spinners only** for genuinely async operations that can't be reflected instantly: file uploads, OAuth redirects, multi-step batch saves, critical state transitions
-- **Use `assertOk`** for all `fetch()` calls to eliminate `if (!res.ok)` boilerplate. Exception: when you need the response body before deciding whether to throw (e.g., `already_claimed` error codes)
+- **Use `assertOk` / `assertOkJson<T>`** for all `fetch()` calls to eliminate `if (!res.ok)` boilerplate. Use `assertOkJson<T>` when you need the parsed body, `assertOk` for void operations. Exception: when you need the response body before deciding whether to throw (e.g., `already_claimed` error codes)
 - **For client-fetched lists** (data loaded via `useEffect` + `fetch`, not server props): apply optimistic state directly to the `useState` array, don't use `useOptimisticList`
 - **For props-based lists** (data passed from server components): use `useOptimisticList` which handles reconciliation when props change after `router.refresh()`
 
