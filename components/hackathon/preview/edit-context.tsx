@@ -8,8 +8,7 @@ export type EditSection =
   | "about"
   | "location"
   | "sponsors"
-  | "judges"
-  | "prizes"
+  | "judging"
   | "community"
   | null
 

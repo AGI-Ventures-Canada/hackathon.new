@@ -78,7 +78,6 @@ type Props = {
   rounds: RoundData[]
   pendingInvitations: WizardInvitation[]
   onFinish?: () => void
-  defaultStep?: 1 | 2 | 3 | 4
   onJudgeAdded?: (judge: WizardJudgeAdded) => void
   onPrizeAdded?: (prize: WizardPrizeAdded) => void
 }
@@ -112,7 +111,6 @@ export function JudgingSetupWizard({
   rounds,
   pendingInvitations,
   onFinish,
-  defaultStep,
   onJudgeAdded,
   onPrizeAdded,
 }: Props) {
@@ -189,7 +187,6 @@ export function JudgingSetupWizard({
 
   const storageKey = `wizard-step-${hackathonId}`
   const initialStep = useMemo(() => {
-    if (defaultStep) return defaultStep
     if (typeof window !== "undefined") {
       const saved = sessionStorage.getItem(storageKey)
       if (saved) {

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useRef } from "react"
+import { useState, useCallback, useRef, useEffect } from "react"
 import { useRouter } from "next/navigation"
 
 export interface UseOptimisticMutationOptions<TInput, TResponse> {
@@ -37,6 +37,10 @@ export function useOptimisticMutation<TInput, TResponse = unknown>(
   const [isPending, setIsPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => () => {
+    if (errorTimerRef.current) clearTimeout(errorTimerRef.current)
+  }, [])
 
   const clearError = useCallback(() => {
     setError(null)

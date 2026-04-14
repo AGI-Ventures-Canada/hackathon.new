@@ -45,25 +45,23 @@ export function SkillList({ skills }: SkillListProps) {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set())
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!deleteId) return
 
     const id = deleteId
     setHiddenIds((prev) => new Set(prev).add(id))
     setDeleteId(null)
 
-    fetch(`/api/dashboard/skills/${id}`, { method: "DELETE" })
-      .then(assertOk)
-      .then(() => {
-        router.refresh()
+    try {
+      await fetch(`/api/dashboard/skills/${id}`, { method: "DELETE" }).then(assertOk)
+      router.refresh()
+    } catch {
+      setHiddenIds((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
       })
-      .catch(() => {
-        setHiddenIds((prev) => {
-          const next = new Set(prev)
-          next.delete(id)
-          return next
-        })
-      })
+    }
   }
 
   const visibleSkills = skills.filter((s) => !hiddenIds.has(s.id))

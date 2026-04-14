@@ -93,7 +93,6 @@ interface JudgingSetupDialogProps {
   slug: string
   open: boolean
   onOpenChange: (open: boolean) => void
-  defaultStep?: 1 | 2 | 3 | 4
   onJudgeAdded?: (judge: WizardJudgeAdded) => void
   onPrizeAdded?: (prize: WizardPrizeAdded) => void
 }
@@ -103,7 +102,6 @@ export function JudgingSetupDialog({
   slug,
   open,
   onOpenChange,
-  defaultStep,
   onJudgeAdded,
   onPrizeAdded,
 }: JudgingSetupDialogProps) {
@@ -212,7 +210,6 @@ export function JudgingSetupDialog({
           </div>
         ) : (
           <JudgingSetupWizard
-            key={defaultStep}
             hackathonId={hackathonId}
             slug={slug}
             prizes={prizes}
@@ -220,7 +217,6 @@ export function JudgingSetupDialog({
             rounds={rounds}
             pendingInvitations={pendingInvitations}
             onFinish={() => onOpenChange(false)}
-            defaultStep={defaultStep}
             onJudgeAdded={onJudgeAdded}
             onPrizeAdded={onPrizeAdded}
           />

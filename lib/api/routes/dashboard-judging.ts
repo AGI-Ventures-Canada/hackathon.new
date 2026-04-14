@@ -1005,13 +1005,17 @@ export const dashboardJudgingRoutes = new Elysia()
           return new Response(JSON.stringify({ error: addResult.error, code: addResult.code }), { status: 400, headers: { "Content-Type": "application/json" } })
         }
 
-        const { createJudgeDisplayProfile } = await import("@/lib/services/judge-display")
-        await createJudgeDisplayProfile(params.id, {
-          name: judgeName!,
-          headshotUrl: judgeImageUrl,
-          clerkUserId: typedBody.clerkUserId,
-          participantId: addResult.participant.id,
-        })
+        try {
+          const { createJudgeDisplayProfile } = await import("@/lib/services/judge-display")
+          await createJudgeDisplayProfile(params.id, {
+            name: judgeName!,
+            headshotUrl: judgeImageUrl,
+            clerkUserId: typedBody.clerkUserId,
+            participantId: addResult.participant.id,
+          })
+        } catch (err) {
+          console.error("Failed to create judge display profile:", err)
+        }
 
         if (judgeEmail) {
           try {
@@ -1070,14 +1074,18 @@ export const dashboardJudgingRoutes = new Elysia()
             return new Response(JSON.stringify({ error: addResult.error, code: addResult.code }), { status: 400, headers: { "Content-Type": "application/json" } })
           }
 
-          const { createJudgeDisplayProfile } = await import("@/lib/services/judge-display")
-          const displayName = [existingUser.firstName, existingUser.lastName].filter(Boolean).join(" ") || typedBody.email
-          await createJudgeDisplayProfile(params.id, {
-            name: displayName,
-            headshotUrl: existingUser.imageUrl,
-            clerkUserId: existingUser.id,
-            participantId: addResult.participant.id,
-          })
+          try {
+            const { createJudgeDisplayProfile } = await import("@/lib/services/judge-display")
+            const displayName = [existingUser.firstName, existingUser.lastName].filter(Boolean).join(" ") || typedBody.email
+            await createJudgeDisplayProfile(params.id, {
+              name: displayName,
+              headshotUrl: existingUser.imageUrl,
+              clerkUserId: existingUser.id,
+              participantId: addResult.participant.id,
+            })
+          } catch (err) {
+            console.error("Failed to create judge display profile:", err)
+          }
 
           if (hackathon.status !== "draft") {
             const addedByName = await resolveAdderName(principal, client)

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { EditProvider, useEdit, SECTION_ORDER } from "./edit-context"
 import { useActionItemsOptional } from "@/components/hackathon/manage/action-items-context"
@@ -95,7 +95,8 @@ function HackathonPreviewContent({
   const [bannerUrl, setBannerUrl] = useState(hackathon.banner_url)
   const [pendingJudges, setPendingJudges] = useState<HackathonJudgeDisplay[]>([])
   const [pendingPrizes, setPendingPrizes] = useState<PublicPrize[]>([])
-  const [judgingDialogStep, setJudgingDialogStep] = useState<1 | 2 | 3 | 4 | null>(null)
+  const [judgingDialogOpen, setJudgingDialogOpen] = useState(false)
+  const skipNextJudgingOpen = useRef(false)
 
   useEffect(() => {
     const serverIds = new Set(hackathon.prizes.map((p) => p.id))
@@ -107,16 +108,20 @@ function HackathonPreviewContent({
     setPendingJudges((prev) => prev.filter((j) => !j.participant_id || !serverParticipantIds.has(j.participant_id)))
   }, [hackathon.judges])
 
-  const serverJudgeParticipantIds = new Set(hackathon.judges.map((j) => j.participant_id).filter(Boolean))
-  const displayJudges = [
-    ...hackathon.judges,
-    ...pendingJudges.filter((j) => !j.participant_id || !serverJudgeParticipantIds.has(j.participant_id)),
-  ]
-  const serverPrizeIds = new Set(hackathon.prizes.map((p) => p.id))
-  const displayPrizes = [
-    ...hackathon.prizes,
-    ...pendingPrizes.filter((p) => !serverPrizeIds.has(p.id)),
-  ]
+  const displayJudges = useMemo(() => {
+    const serverParticipantIds = new Set(hackathon.judges.map((j) => j.participant_id).filter(Boolean))
+    return [
+      ...hackathon.judges,
+      ...pendingJudges.filter((j) => !j.participant_id || !serverParticipantIds.has(j.participant_id)),
+    ]
+  }, [hackathon.judges, pendingJudges])
+  const displayPrizes = useMemo(() => {
+    const serverIds = new Set(hackathon.prizes.map((p) => p.id))
+    return [
+      ...hackathon.prizes,
+      ...pendingPrizes.filter((p) => !serverIds.has(p.id)),
+    ]
+  }, [hackathon.prizes, pendingPrizes])
 
   const [nowIso, setNowIso] = useState<string | null>(null)
   useEffect(() => {
@@ -167,15 +172,6 @@ function HackathonPreviewContent({
     }
   }, [isEditable, editMode, hackathon.name, activeSection, openSection])
 
-  useEffect(() => {
-    if (activeSection === "judges") {
-      closeDrawer()
-      setJudgingDialogStep(3)
-    } else if (activeSection === "prizes") {
-      closeDrawer()
-      setJudgingDialogStep(2)
-    }
-  }, [activeSection, closeDrawer])
 
   const hasTimeline = hackathon.registration_opens_at || hackathon.registration_closes_at || hackathon.starts_at || hackathon.ends_at
 
@@ -427,13 +423,21 @@ function HackathonPreviewContent({
     </EditableSection>
   )
 
-  const judgesBlock = (
+  const judgingBlock = (
     <EditableSection
-      section="judges"
-      isEmpty={displayJudges.length === 0}
-      emptyLabel="Click to add judges"
+      section="judging"
+      isEmpty={displayJudges.length === 0 && displayPrizes.length === 0}
+      emptyLabel="Click to setup judges and prizes"
+      onClick={() => {
+        if (!skipNextJudgingOpen.current) setJudgingDialogOpen(true)
+      }}
     >
       <JudgeSection judges={displayJudges} />
+      <PrizeSection
+        prizes={displayPrizes}
+        hackathonSlug={hackathon.slug}
+        hackathonStatus={hackathon.status}
+      />
     </EditableSection>
   )
 
@@ -481,34 +485,21 @@ function HackathonPreviewContent({
     )
   })()
 
-  const prizesBlock = (
-    <EditableSection
-      section="prizes"
-      isEmpty={displayPrizes.length === 0}
-      emptyLabel="Click to add prizes"
-    >
-      <PrizeSection
-        prizes={displayPrizes}
-        hackathonSlug={hackathon.slug}
-        hackathonStatus={hackathon.status}
-      />
-    </EditableSection>
-  )
-
   const eventContent = (
     <>
       {isEditable && (
         <JudgingSetupDialog
           hackathonId={hackathon.id}
           slug={hackathon.slug}
-          open={judgingDialogStep !== null}
+          open={judgingDialogOpen}
           onOpenChange={(open) => {
             if (!open) {
-              setJudgingDialogStep(null)
+              skipNextJudgingOpen.current = true
+              setJudgingDialogOpen(false)
               router.refresh()
+              setTimeout(() => { skipNextJudgingOpen.current = false }, 500)
             }
           }}
-          defaultStep={judgingDialogStep ?? undefined}
           onJudgeAdded={(judge) => {
             setPendingJudges((prev) => [
               ...prev,
@@ -626,8 +617,7 @@ function HackathonPreviewContent({
               )}
 
               {sponsorsBlock}
-              {judgesBlock}
-              {prizesBlock}
+              {judgingBlock}
             </TabsContent>
 
             <TabsContent value="schedule" className="mt-6">
