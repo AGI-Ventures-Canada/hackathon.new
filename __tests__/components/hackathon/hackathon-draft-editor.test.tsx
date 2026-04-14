@@ -259,6 +259,71 @@ describe("HackathonDraftEditor", () => {
     })
   })
 
+  describe("sourceUrl-based localStorage invalidation", () => {
+    const STORAGE_KEY = "test-draft"
+
+    it("discards stale localStorage when sourceUrl changes", () => {
+      storage.set(
+        STORAGE_KEY,
+        JSON.stringify({
+          state: { ...defaultState, name: "Event A" },
+          sourceUrl: "https://luma.com/event-a",
+          savedAt: Date.now(),
+        })
+      )
+
+      renderEditor({
+        storageKey: STORAGE_KEY,
+        sourceUrl: "https://luma.com/event-b",
+        initialState: { ...defaultState, name: "Event B" },
+      })
+
+      expect(screen.getByText("Create Event")).toBeDefined()
+      expect(storage.get(STORAGE_KEY)).toBeDefined()
+      const stored = JSON.parse(storage.get(STORAGE_KEY)!)
+      expect(stored.state.name).toBe("Event B")
+      expect(stored.sourceUrl).toBe("https://luma.com/event-b")
+    })
+
+    it("restores localStorage when sourceUrl matches", () => {
+      storage.set(
+        STORAGE_KEY,
+        JSON.stringify({
+          state: { ...defaultState, name: "Event A Edited" },
+          sourceUrl: "https://luma.com/event-a",
+          savedAt: Date.now(),
+        })
+      )
+
+      renderEditor({
+        storageKey: STORAGE_KEY,
+        sourceUrl: "https://luma.com/event-a",
+        initialState: { ...defaultState, name: "Event A" },
+      })
+
+      const stored = JSON.parse(storage.get(STORAGE_KEY)!)
+      expect(stored.state.name).toBe("Event A Edited")
+    })
+
+    it("restores localStorage when no sourceUrl is provided (create-from-scratch)", () => {
+      storage.set(
+        STORAGE_KEY,
+        JSON.stringify({
+          state: { ...defaultState, name: "My Draft" },
+          savedAt: Date.now(),
+        })
+      )
+
+      renderEditor({
+        storageKey: STORAGE_KEY,
+        initialState: { ...defaultState, name: "Default" },
+      })
+
+      const stored = JSON.parse(storage.get(STORAGE_KEY)!)
+      expect(stored.state.name).toBe("My Draft")
+    })
+  })
+
   it("shows a truncated source URL and copies the full URL", async () => {
     renderEditor({
       sourceUrl: "https://www.eventbrite.com/e/devops-for-genai-hackathon-ottawa-2026-tickets-1984872192158?aff=ebdssbdestsearch",
