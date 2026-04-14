@@ -96,7 +96,6 @@ function HackathonPreviewContent({
   const [pendingJudges, setPendingJudges] = useState<HackathonJudgeDisplay[]>([])
   const [pendingPrizes, setPendingPrizes] = useState<PublicPrize[]>([])
   const [judgingDialogOpen, setJudgingDialogOpen] = useState(false)
-  const skipNextJudgingOpen = useRef(false)
 
   useEffect(() => {
     const serverIds = new Set(hackathon.prizes.map((p) => p.id))
@@ -429,7 +428,7 @@ function HackathonPreviewContent({
       isEmpty={displayJudges.length === 0 && displayPrizes.length === 0}
       emptyLabel="Click to setup judges and prizes"
       onClick={() => {
-        if (!skipNextJudgingOpen.current) setJudgingDialogOpen(true)
+        if (!judgingDialogOpen) setJudgingDialogOpen(true)
       }}
     >
       <JudgeSection judges={displayJudges} />
@@ -494,10 +493,8 @@ function HackathonPreviewContent({
           open={judgingDialogOpen}
           onOpenChange={(open) => {
             if (!open) {
-              skipNextJudgingOpen.current = true
               setJudgingDialogOpen(false)
               router.refresh()
-              requestAnimationFrame(() => { skipNextJudgingOpen.current = false })
             }
           }}
           onJudgeAdded={(judge) => {
