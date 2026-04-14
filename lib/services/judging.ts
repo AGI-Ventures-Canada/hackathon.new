@@ -184,7 +184,7 @@ export async function createPrize(
     description: input.description ?? null,
     value: input.value ?? null,
     judging_style: input.judgingStyle ?? null,
-    round_id: input.roundId ?? null,
+    round_id: safeRoundId,
     assignment_mode: input.assignmentMode ?? "organizer_assigned",
     max_picks: input.maxPicks ?? 3,
     display_order: input.displayOrder ?? 0,
@@ -1329,11 +1329,15 @@ export async function removeJudge(
     return { success: false }
   }
 
-  await client
+  const { error: displayError } = await client
     .from("hackathon_judges_display")
     .delete()
     .eq("hackathon_id", hackathonId)
     .eq("participant_id", judgeParticipantId)
+
+  if (displayError) {
+    console.error("Failed to remove judge display profile:", displayError)
+  }
 
   const { error } = await client
     .from("hackathon_participants")

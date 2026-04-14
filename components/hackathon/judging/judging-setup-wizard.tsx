@@ -17,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
+import { assertOk } from "@/lib/utils/fetch"
 import { AddPrizeDialog, type CreatedPrize } from "./add-prize-dialog"
 import { AddJudgeDialog, type AddJudgeResult } from "./add-judge-dialog"
 import { AssignJudgesDialog } from "./assign-judges-dialog"
@@ -314,10 +315,9 @@ export function JudgingSetupWizard({
     setError(null)
     setHiddenPrizeIds((prev) => new Set(prev).add(prizeId))
     try {
-      const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/prizes/${prizeId}`, {
+      await fetch(`/api/dashboard/hackathons/${hackathonId}/prizes/${prizeId}`, {
         method: "DELETE",
-      })
-      if (!res.ok) throw new Error("Failed to delete prize")
+      }).then(assertOk)
       refresh()
     } catch (err) {
       setHiddenPrizeIds((prev) => {
@@ -333,10 +333,9 @@ export function JudgingSetupWizard({
     setError(null)
     setHiddenRoundIds((prev) => new Set(prev).add(roundId))
     try {
-      const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/rounds/${roundId}`, {
+      await fetch(`/api/dashboard/hackathons/${hackathonId}/rounds/${roundId}`, {
         method: "DELETE",
-      })
-      if (!res.ok) throw new Error("Failed to delete round")
+      }).then(assertOk)
       refresh()
     } catch (err) {
       setHiddenRoundIds((prev) => {
@@ -352,10 +351,9 @@ export function JudgingSetupWizard({
     setError(null)
     setHiddenInvitationIds((prev) => new Set(prev).add(invitationId))
     try {
-      const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/judge-invitations/${invitationId}`, {
+      await fetch(`/api/dashboard/hackathons/${hackathonId}/judge-invitations/${invitationId}`, {
         method: "DELETE",
-      })
-      if (!res.ok) throw new Error("Failed to cancel invitation")
+      }).then(assertOk)
       refresh()
     } catch (err) {
       setHiddenInvitationIds((prev) => {
@@ -371,10 +369,9 @@ export function JudgingSetupWizard({
     setError(null)
     setHiddenJudgeIds((prev) => new Set(prev).add(participantId))
     try {
-      const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/judging/judges/${participantId}`, {
+      await fetch(`/api/dashboard/hackathons/${hackathonId}/judging/judges/${participantId}`, {
         method: "DELETE",
-      })
-      if (!res.ok) throw new Error("Failed to remove judge")
+      }).then(assertOk)
       refresh()
     } catch (err) {
       setHiddenJudgeIds((prev) => {
@@ -387,22 +384,20 @@ export function JudgingSetupWizard({
   }
 
   async function assignJudgeToPrize(prizeId: string, judgeParticipantId: string) {
-    const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/prizes/${prizeId}/assign-judge`, {
+    await fetch(`/api/dashboard/hackathons/${hackathonId}/prizes/${prizeId}/assign-judge`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ judgeParticipantId }),
-    })
-    if (!res.ok) throw new Error("Failed to assign")
+    }).then(assertOk)
   }
 
   async function unassignJudgeFromPrize(prizeId: string, judgeParticipantId: string) {
     const key = `${prizeId}:${judgeParticipantId}`
     setHiddenPrizeJudges((prev) => new Set(prev).add(key))
     try {
-      const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/prizes/${prizeId}/judges/${judgeParticipantId}`, {
+      await fetch(`/api/dashboard/hackathons/${hackathonId}/prizes/${prizeId}/judges/${judgeParticipantId}`, {
         method: "DELETE",
-      })
-      if (!res.ok) throw new Error("Failed to unassign")
+      }).then(assertOk)
       refresh()
     } catch (err) {
       setHiddenPrizeJudges((prev) => {
