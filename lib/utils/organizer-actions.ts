@@ -1,6 +1,6 @@
 import type { HackathonStatus, HackathonPhase } from "@/lib/db/hackathon-types"
 
-export type ActionSeverity = "urgent" | "warning" | "info"
+export type ActionSeverity = "urgent" | "warning" | "scheduled" | "info"
 
 export type CloseCondition =
   | { kind: "auto"; isComplete: boolean }
@@ -25,6 +25,7 @@ export type ActionItem = {
 export const SEVERITY_GROUP_LABEL: Record<ActionSeverity, string> = {
   urgent: "BLOCKERS",
   warning: "WARNINGS",
+  scheduled: "SCHEDULED",
   info: "OPTIONAL",
 }
 
@@ -123,23 +124,34 @@ export type ActionItemsInput = {
   pendingJudgeInvitationCount: number
 }
 
-export function getOrganizerActionItems(input: ActionItemsInput): ActionItem[] {
-  const items: ActionItem[] = []
-  const { status } = input
+const STATUS_ORDER: HackathonStatus[] = ["draft", "published", "active", "judging", "completed"]
 
-  if (status === "draft") {
-    addDraftActions(items, input)
-  } else if (status === "published" || status === "registration_open") {
-    addPublishedActions(items, input)
-  } else if (status === "active") {
-    addActiveActions(items, input)
-  } else if (status === "judging") {
-    addJudgingActions(items, input)
-  } else if (status === "completed") {
-    addCompletedActions(items, input)
+function statusIndex(status: HackathonStatus): number {
+  if (status === "registration_open") return STATUS_ORDER.indexOf("published")
+  return STATUS_ORDER.indexOf(status)
+}
+
+export function getOrganizerActionItems(input: ActionItemsInput): ActionItem[] {
+  const currentIdx = statusIndex(input.status)
+  if (currentIdx < 0) return []
+
+  const itemMap = new Map<string, ActionItem>()
+  for (let i = 0; i <= currentIdx; i++) {
+    const phaseItems: ActionItem[] = []
+    const phase = STATUS_ORDER[i]
+    if (phase === "draft") addDraftActions(phaseItems, input)
+    else if (phase === "published") addPublishedActions(phaseItems, input)
+    else if (phase === "active") addActiveActions(phaseItems, input)
+    else if (phase === "judging") addJudgingActions(phaseItems, input)
+    else if (phase === "completed") addCompletedActions(phaseItems, input)
+
+    for (const item of phaseItems) {
+      if (item.close.kind === "transition" && i < currentIdx) continue
+      itemMap.set(item.id, item)
+    }
   }
 
-  return items
+  return Array.from(itemMap.values())
 }
 
 const CHALLENGE_TOOLTIP = "The challenge is the problem statement or theme that participants build around. Without it, teams won't know what to work on. You can schedule it to release at a specific time or publish it immediately."
@@ -165,21 +177,31 @@ function addChallengeActions(items: ActionItem[], input: ActionItemsInput) {
       tooltip: CHALLENGE_TOOLTIP,
       isComplete: false,
       pending: { label: "Create your challenge", hint: "Define the problem participants will solve" },
-      completed: { label: "Challenge released", hint: "Participants can see the problem statement" },
+      completed: { label: "Challenge created", hint: "Now release it so participants can see it" },
     }))
-  } else if (input.challengeReleaseTime) {
+  } else {
+    items.push(autoAction({
+      id: "create-challenge",
+      severity: "info",
+      tooltip: CHALLENGE_TOOLTIP,
+      isComplete: true,
+      pending: { label: "Create your challenge", hint: "Define the problem participants will solve" },
+      completed: { label: "Challenge created", hint: "Now release it so participants can see it" },
+    }))
+  }
+  if (input.challengeExists && input.challengeReleaseTime) {
     const time = new Date(input.challengeReleaseTime).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
     items.push(autoAction({
       id: "release-challenge",
-      severity: "warning",
+      severity: "scheduled",
       action: "release-challenge",
-      ctaLabel: "Release",
+      ctaLabel: "Release now",
       tooltip: CHALLENGE_TOOLTIP,
       isComplete: false,
       pending: { label: `Challenge releases at ${time}`, hint: "Scheduled — click to release now instead" },
       completed: { label: "Challenge released", hint: "Participants can see the problem statement" },
     }))
-  } else {
+  } else if (input.challengeExists) {
     items.push(autoAction({
       id: "release-challenge",
       severity: "warning",
@@ -286,6 +308,17 @@ function addDraftActions(items: ActionItem[], input: ActionItemsInput) {
   }))
 
   items.push(manualAction({
+    id: "review-team-settings",
+    label: "Review team size settings",
+    hint: "Decide how big teams can be and whether solo is allowed",
+    severity: "info",
+    tab: "teams",
+    action: "open-team-settings-dialog",
+    ctaLabel: "Review",
+    tooltip: "Team size limits control how many people can join a team. You can allow solo participants, require pairs, or set a custom range. These settings affect registration and team formation.",
+  }))
+
+  items.push(manualAction({
     id: "add-schedule",
     label: "Review and customize your agenda",
     hint: "The default schedule is auto-generated — add your own items",
@@ -384,14 +417,18 @@ function addPublishedActions(items: ActionItem[], input: ActionItemsInput) {
     tooltip: "The challenge release and submission deadline are automated events that trigger at specific times. Review the agenda to make sure these times are correct before the event goes live.",
   }))
 
-  items.push(transitionAction({
-    id: "ready-to-go-live",
-    label: "Ready to go live",
-    hint: "The essentials are in place — you can finish the rest later",
-    severity: "info",
-    action: "transition-to-active",
-    ctaLabel: "Go Live",
-  }))
+  const hasDates = !!input.startsAt && !!input.endsAt
+  const hasLocation = !!input.locationType
+  if (hasDates && hasLocation) {
+    items.push(transitionAction({
+      id: "ready-to-go-live",
+      label: "Ready to go live",
+      hint: "The essentials are in place — you can finish the rest later",
+      severity: "info",
+      action: "transition-to-active",
+      ctaLabel: "Go Live",
+    }))
+  }
 }
 
 function addActiveActions(items: ActionItem[], input: ActionItemsInput) {
@@ -417,7 +454,7 @@ function addActiveActions(items: ActionItem[], input: ActionItemsInput) {
 
   const hasJudges = input.judgeCount > 0
   items.push(autoAction({
-    id: "no-judges-active",
+    id: "no-judges",
     severity: "warning",
     tab: "judging",
     subtab: hasJudges ? undefined : "setup",

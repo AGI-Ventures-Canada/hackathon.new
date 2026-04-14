@@ -164,13 +164,24 @@ export function JudgingSetupWizard({
     [pendingInvitations, pendingInvites, hiddenInvitationIds],
   )
 
-  const initialStep = useMemo(
-    () => firstIncompleteStep(visiblePrizes, visibleJudges, visibleRounds, roundsAcknowledged),
+  const storageKey = `wizard-step-${hackathonId}`
+  const initialStep = useMemo(() => {
+    if (typeof window !== "undefined") {
+      const saved = sessionStorage.getItem(storageKey)
+      if (saved) {
+        const parsed = Number(saved) as StepId
+        if (parsed >= 1 && parsed <= 4) return parsed
+      }
+    }
+    return firstIncompleteStep(visiblePrizes, visibleJudges, visibleRounds, roundsAcknowledged)
     // Seed once on mount; after that the user drives navigation explicitly.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  )
-  const [currentStep, setCurrentStep] = useState<StepId>(initialStep)
+  }, [])
+  const [currentStep, setCurrentStepRaw] = useState<StepId>(initialStep)
+  const setCurrentStep = (step: StepId) => {
+    setCurrentStepRaw(step)
+    sessionStorage.setItem(storageKey, String(step))
+  }
   const [showPrizeDialog, setShowPrizeDialog] = useState(false)
   const [showJudgeDialog, setShowJudgeDialog] = useState(false)
   const [showRoundDialog, setShowRoundDialog] = useState(false)
@@ -369,9 +380,13 @@ export function JudgingSetupWizard({
     <div className="space-y-6">
       <WizardHeader
         currentStep={currentStep}
-        onStepClick={(id) => {
-          if (id < currentStep) setCurrentStep(id)
-        }}
+        stepsWithData={new Set<StepId>([
+          ...(visibleRounds.length > 0 || roundsAcknowledged ? [1 as StepId] : []),
+          ...(visiblePrizes.length > 0 ? [2 as StepId] : []),
+          ...(visibleJudges.length > 0 || visibleInvitations.length > 0 ? [3 as StepId] : []),
+          ...(visiblePrizes.length > 0 ? [4 as StepId] : []),
+        ])}
+        onStepClick={setCurrentStep}
       />
 
       {error && <p className="text-sm text-destructive">{error}</p>}
@@ -413,6 +428,7 @@ export function JudgingSetupWizard({
           <AssignmentsStep
             prizes={visiblePrizes}
             judges={visibleJudges}
+            rounds={visibleRounds}
             onOpenAssign={(p) => setAssignDialogPrize({ id: p.id, name: p.name })}
           />
         )}
@@ -489,9 +505,11 @@ export function JudgingSetupWizard({
 
 function WizardHeader({
   currentStep,
+  stepsWithData,
   onStepClick,
 }: {
   currentStep: StepId
+  stepsWithData: Set<StepId>
   onStepClick: (id: StepId) => void
 }) {
   return (
@@ -500,7 +518,8 @@ function WizardHeader({
         const Icon = step.icon
         const isActive = step.id === currentStep
         const isComplete = step.id < currentStep
-        const isClickable = isComplete
+        const hasData = stepsWithData.has(step.id)
+        const isClickable = !isActive && (isComplete || hasData)
         return (
           <div key={step.id} className="flex items-center gap-3 shrink-0">
             <button
@@ -512,14 +531,15 @@ function WizardHeader({
                 isClickable && "cursor-pointer hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 !isClickable && "cursor-default",
               )}
-              aria-label={isClickable ? `Go back to ${step.label}` : step.label}
+              aria-label={isClickable ? `Go to ${step.label}` : step.label}
             >
               <div
                 className={cn(
                   "flex size-7 items-center justify-center rounded-full border text-xs font-semibold transition-colors",
                   isActive && "border-primary bg-primary text-primary-foreground",
                   isComplete && "border-primary bg-primary/10 text-primary",
-                  !isActive && !isComplete && "border-muted-foreground/20 bg-background text-muted-foreground",
+                  !isActive && !isComplete && hasData && "border-primary/50 bg-primary/5 text-primary/70",
+                  !isActive && !isComplete && !hasData && "border-muted-foreground/20 bg-background text-muted-foreground",
                 )}
               >
                 {isComplete ? <CheckCircle2 className="size-4" /> : <Icon className="size-3.5" />}
@@ -805,15 +825,63 @@ function JudgesStep({
   )
 }
 
+function PrizeAssignmentCard({
+  prize,
+  judges,
+  onOpenAssign,
+}: {
+  prize: WizardPrize
+  judges: WizardJudge[]
+  onOpenAssign: (prize: { id: string; name: string }) => void
+}) {
+  const assigned = judges.filter((j) => j.prizeIds.includes(prize.id))
+  return (
+    <div className="rounded-md border p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-medium truncate">{prize.name}</p>
+          {assigned.length === 0 ? (
+            <p className="mt-1 text-xs text-muted-foreground">No judges assigned</p>
+          ) : (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {assigned.map((judge) => (
+                <JudgePill
+                  key={judge.participantId}
+                  imageUrl={judge.imageUrl}
+                  displayName={judge.displayName}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => onOpenAssign({ id: prize.id, name: prize.name })}
+          className="shrink-0"
+        >
+          {assigned.length === 0 ? "Assign" : "Edit"}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 function AssignmentsStep({
   prizes,
   judges,
+  rounds,
   onOpenAssign,
 }: {
   prizes: WizardPrize[]
   judges: WizardJudge[]
+  rounds: RoundData[]
   onOpenAssign: (prize: { id: string; name: string }) => void
 }) {
+  const grouped = rounds.length > 1
+  const groups = grouped ? groupPrizesByRound(prizes, rounds) : null
+
   return (
     <div>
       <StepIntro
@@ -822,47 +890,62 @@ function AssignmentsStep({
       />
       {prizes.length === 0 ? (
         <p className="text-sm text-muted-foreground">Add prizes first.</p>
+      ) : groups ? (
+        <div className="space-y-4">
+          {groups.map((group) => (
+            <div key={group.key} className="space-y-2">
+              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                <Layers className="size-3" />
+                {group.label}
+              </div>
+              {group.prizes.map((prize) => (
+                <PrizeAssignmentCard
+                  key={prize.id}
+                  prize={prize}
+                  judges={judges}
+                  onOpenAssign={onOpenAssign}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
       ) : (
         <div className="space-y-2">
-          {prizes.map((prize) => {
-            const assigned = judges.filter((j) => j.prizeIds.includes(prize.id))
-            return (
-              <div
-                key={prize.id}
-                className="rounded-md border p-3"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-medium truncate">{prize.name}</p>
-                    {assigned.length === 0 ? (
-                      <p className="mt-1 text-xs text-muted-foreground">No judges assigned</p>
-                    ) : (
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {assigned.map((judge) => (
-                          <JudgePill
-                            key={judge.participantId}
-                            imageUrl={judge.imageUrl}
-                            displayName={judge.displayName}
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => onOpenAssign({ id: prize.id, name: prize.name })}
-                    className="shrink-0"
-                  >
-                    {assigned.length === 0 ? "Assign" : "Edit"}
-                  </Button>
-                </div>
-              </div>
-            )
-          })}
+          {prizes.map((prize) => (
+            <PrizeAssignmentCard
+              key={prize.id}
+              prize={prize}
+              judges={judges}
+              onOpenAssign={onOpenAssign}
+            />
+          ))}
         </div>
       )}
     </div>
   )
+}
+
+function groupPrizesByRound(
+  prizes: WizardPrize[],
+  rounds: RoundData[]
+): { key: string; label: string; prizes: WizardPrize[] }[] {
+  const sorted = [...rounds].sort((a, b) => a.displayOrder - b.displayOrder)
+  const byRound = new Map<string | null, WizardPrize[]>()
+  for (const p of prizes) {
+    const key = p.roundId ?? null
+    if (!byRound.has(key)) byRound.set(key, [])
+    byRound.get(key)!.push(p)
+  }
+  const groups: { key: string; label: string; prizes: WizardPrize[] }[] = []
+  for (const r of sorted) {
+    const inRound = byRound.get(r.id)
+    if (inRound && inRound.length > 0) {
+      groups.push({ key: r.id, label: r.name, prizes: inRound })
+    }
+  }
+  const unassigned = byRound.get(null)
+  if (unassigned && unassigned.length > 0) {
+    groups.push({ key: "__none__", label: "No round", prizes: unassigned })
+  }
+  return groups
 }

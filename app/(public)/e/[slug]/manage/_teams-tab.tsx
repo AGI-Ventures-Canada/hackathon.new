@@ -3,13 +3,10 @@
 import { Fragment, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
-  Loader2, Plus, Users, ChevronRight, FileText, DoorOpen, Crown, Mail,
+  Loader2, Plus, Users, ChevronRight, FileText, DoorOpen, Crown, Mail, Settings2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Label } from "@/components/ui/label"
 import {
   Dialog,
   DialogContent,
@@ -18,6 +15,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { useActionItemsOptional } from "@/components/hackathon/manage/action-items-context"
+import { TeamSettingsDialog, teamSettingsSummary } from "@/components/hackathon/manage/team-settings-dialog"
 import {
   Table,
   TableBody,
@@ -106,43 +105,24 @@ type TeamsTabProps = {
 
 export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: initialMin, allowSolo: initialSolo }: TeamsTabProps) {
   const router = useRouter()
+  const ctx = useActionItemsOptional()
   const [teams, setTeams] = useState<Team[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
   const [teamName, setTeamName] = useState("")
   const [captainEmail, setCaptainEmail] = useState("")
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [maxSize, setMaxSize] = useState(initialMax)
-  const [minSize, setMinSize] = useState(initialMin)
-  const [allowSolo, setAllowSolo] = useState(initialSolo)
-  const [savingSettings, setSavingSettings] = useState(false)
-  const [settingsError, setSettingsError] = useState<string | null>(null)
 
-  async function saveTeamSettings(patch: Record<string, unknown>, rollback: () => void) {
-    setSavingSettings(true)
-    setSettingsError(null)
-    try {
-      const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/settings`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
-      })
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.error || "Failed to save")
-      }
-      router.refresh()
-    } catch (err) {
-      rollback()
-      setSettingsError(err instanceof Error ? err.message : "Failed to save")
-    } finally {
-      setSavingSettings(false)
-    }
-  }
+  useEffect(() => {
+    if (!ctx) return
+    ctx.registerTabAction("review-team-settings", () => setSettingsDialogOpen(true))
+    return () => ctx.unregisterTabAction("review-team-settings")
+  }, [ctx])
 
   async function fetchTeams() {
     try {
@@ -240,96 +220,23 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Team Settings</CardTitle>
-          <CardDescription>Configure team size limits for this event</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label className="text-xs">Team size</Label>
-            <div className="flex items-center gap-2">
-              <Input
-                id="min-team-size"
-                type="number"
-                min={1}
-                max={maxSize}
-                value={minSize}
-                onChange={(e) => setMinSize(Number(e.target.value))}
-                onBlur={() => {
-                  if (minSize >= 1 && minSize <= maxSize) {
-                    setSettingsError(null)
-                    saveTeamSettings({ minTeamSize: minSize }, () => setMinSize(initialMin))
-                  } else {
-                    setSettingsError("Minimum must be between 1 and maximum team size")
-                    setMinSize(initialMin)
-                  }
-                }}
-                className="w-16 text-center"
-                disabled={savingSettings || allowSolo}
-                autoComplete="off"
-                data-1p-ignore
-                data-lpignore="true"
-                data-form-type="other"
-                aria-label="Minimum team size"
-              />
-              <span className="text-sm text-muted-foreground">to</span>
-              <Input
-                id="max-team-size"
-                type="number"
-                min={1}
-                max={50}
-                value={maxSize}
-                onChange={(e) => setMaxSize(Number(e.target.value))}
-                onBlur={() => {
-                  if (maxSize >= minSize && maxSize >= 1) {
-                    setSettingsError(null)
-                    saveTeamSettings({ maxTeamSize: maxSize }, () => setMaxSize(initialMax))
-                  } else {
-                    setSettingsError("Maximum must be at least the minimum team size")
-                    setMaxSize(initialMax)
-                  }
-                }}
-                className="w-16 text-center"
-                disabled={savingSettings}
-                autoComplete="off"
-                data-1p-ignore
-                data-lpignore="true"
-                data-form-type="other"
-                aria-label="Maximum team size"
-              />
-              <span className="text-sm text-muted-foreground">members</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="allow-solo"
-              checked={allowSolo}
-              onCheckedChange={(checked) => {
-                const value = !!checked
-                const prevSolo = allowSolo
-                setAllowSolo(value)
-                if (value) {
-                  const prevMin = minSize
-                  setMinSize(1)
-                  saveTeamSettings(
-                    { allowSolo: value, minTeamSize: 1 },
-                    () => { setAllowSolo(prevSolo); setMinSize(prevMin) }
-                  )
-                } else {
-                  saveTeamSettings({ allowSolo: value }, () => setAllowSolo(prevSolo))
-                }
-              }}
-              disabled={savingSettings}
-            />
-            <Label htmlFor="allow-solo" className="text-xs">Allow solo participants</Label>
-          </div>
-          {allowSolo && (
-            <p className="text-xs text-muted-foreground">Minimum team size is set to 1</p>
-          )}
-          {settingsError && <p className="text-destructive text-xs mt-2">{settingsError}</p>}
-        </CardContent>
-      </Card>
+      <button
+        type="button"
+        className="flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left hover:bg-muted/50 transition-colors cursor-pointer"
+        onClick={() => setSettingsDialogOpen(true)}
+      >
+        <div className="flex items-center gap-2">
+          <Settings2 className="size-4 text-muted-foreground" />
+          <span className="text-sm">{teamSettingsSummary({ minTeamSize: initialMin, maxTeamSize: initialMax, allowSolo: initialSolo })}</span>
+        </div>
+        <span className="text-sm text-muted-foreground">Edit</span>
+      </button>
+      <TeamSettingsDialog
+        open={settingsDialogOpen}
+        onOpenChange={setSettingsDialogOpen}
+        hackathonId={hackathonId}
+        initialData={{ minTeamSize: initialMin, maxTeamSize: initialMax, allowSolo: initialSolo }}
+      />
 
       {inviteSuccess && (
         <div className="flex items-center gap-2 rounded-lg border bg-muted/50 px-4 py-3 text-sm">

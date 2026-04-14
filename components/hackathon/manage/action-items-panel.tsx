@@ -12,11 +12,12 @@ import { AddItemInput } from "./add-item-input"
 
 const emptySubscribe = () => () => {}
 
-const groupOrder: ActionSeverity[] = ["urgent", "warning", "info"]
+const groupOrder: ActionSeverity[] = ["urgent", "warning", "scheduled", "info"]
 
 const groupColor: Record<ActionSeverity, string> = {
   urgent: "text-destructive",
   warning: "text-primary",
+  scheduled: "text-muted-foreground",
   info: "text-muted-foreground",
 }
 
@@ -47,7 +48,7 @@ export function ActionItemsPanel({ visible }: Props) {
       <div
         className={cn(
           "transition-[width] duration-300 ease-in-out",
-          expanded ? "w-72" : "w-0",
+          expanded ? "w-80" : "w-0",
         )}
       />
 
@@ -57,7 +58,7 @@ export function ActionItemsPanel({ visible }: Props) {
           className={cn(
             "fixed z-50 flex items-center gap-1.5 rounded-lg border bg-background px-3 py-2.5 text-sm shadow-md transition-colors hover:bg-muted",
             "top-16",
-            panelOpen ? "right-[calc(18rem+0.25rem)]" : "right-2",
+            panelOpen ? "right-[calc(20rem+0.25rem)]" : "right-2",
             !panelOpen && hasUrgent && remainingCount > 0 && "border-primary/50 bg-primary/5",
           )}
         >
@@ -80,7 +81,7 @@ export function ActionItemsPanel({ visible }: Props) {
         className={cn(
           "fixed inset-y-0 right-0 z-30 hidden h-svh lg:flex",
           "transition-[width] duration-300 ease-in-out overflow-hidden",
-          expanded ? "w-72" : "w-0",
+          expanded ? "w-80" : "w-0",
         )}
       >
         <div className="flex h-full w-full flex-col border-l bg-muted">
