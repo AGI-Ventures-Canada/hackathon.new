@@ -1,13 +1,16 @@
+import { Suspense } from "react"
 import { listFulfillments, getFulfillmentSummary } from "@/lib/services/prize-fulfillment"
 import { listReminders } from "@/lib/services/post-event-reminders"
 import { PrizeFulfillmentTracker } from "@/components/hackathon/prizes/prize-fulfillment-tracker"
 import { PostEventPanel } from "@/components/hackathon/post-event-panel"
+import { PostEventSubTabs } from "./_post-event-sub-tabs"
 
 export type PostEventTabContentProps = {
   hackathonId: string
   resultsPublishedAt: string | null
   feedbackSurveySentAt: string | null
   feedbackSurveyUrl: string | null
+  activePtab: string
 }
 
 export async function PostEventTabContent({
@@ -15,6 +18,7 @@ export async function PostEventTabContent({
   resultsPublishedAt,
   feedbackSurveySentAt,
   feedbackSurveyUrl,
+  activePtab,
 }: PostEventTabContentProps) {
   const [fulfillments, fulfillmentSummary, reminders] = await Promise.all([
     listFulfillments(hackathonId),
@@ -23,7 +27,7 @@ export async function PostEventTabContent({
   ])
 
   return (
-    <div className="space-y-8">
+    <PostEventSubTabs activePtab={activePtab}>
       <PrizeFulfillmentTracker
         hackathonId={hackathonId}
         resultsPublishedAt={resultsPublishedAt}
@@ -64,6 +68,6 @@ export async function PostEventTabContent({
           createdAt: r.created_at,
         }))}
       />
-    </div>
+    </PostEventSubTabs>
   )
 }

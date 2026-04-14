@@ -5,6 +5,7 @@ import { X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import {
   HoverCard,
   HoverCardContent,
@@ -22,6 +23,7 @@ import { buildActionHref, useActionItems } from "./action-items-context"
 const severityDotClass: Record<ActionSeverity, string> = {
   urgent: "bg-destructive",
   warning: "bg-primary",
+  scheduled: "bg-muted-foreground",
   info: "bg-muted-foreground",
 }
 
@@ -64,6 +66,13 @@ export function ActionItemRow({ item, completed, compact }: Props) {
   const canDismiss = item.close.kind === "dismiss"
 
   if (isTransition) {
+    if (compact) {
+      return (
+        <Button size="sm" className="w-full" onClick={() => handleActionClick(item)}>
+          {item.ctaLabel || item.label}
+        </Button>
+      )
+    }
     return (
       <div
         role="button"
@@ -72,10 +81,10 @@ export function ActionItemRow({ item, completed, compact }: Props) {
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleActionClick(item) } }}
         className="group block w-full text-left rounded-md px-2 hover:bg-primary/5 transition-colors cursor-pointer border border-primary/20 bg-primary/5 my-1"
       >
-        <span className={cn("flex items-center gap-3 py-2.5", compact && "py-2")}>
+        <span className="flex items-center gap-3 py-2.5">
           <span className="flex-1 min-w-0">
-            <span className={cn("text-sm font-medium block", compact && "text-sm")}>{item.label}</span>
-            {!compact && item.hint && (
+            <span className="text-sm font-medium block">{item.label}</span>
+            {item.hint && (
               <span className="text-xs text-muted-foreground block">{item.hint}</span>
             )}
           </span>
@@ -89,7 +98,7 @@ export function ActionItemRow({ item, completed, compact }: Props) {
     )
   }
 
-  const ctaBadge = item.ctaLabel && !completed ? (
+  const ctaBadge = item.ctaLabel && !completed && !compact ? (
     <Badge
       variant="outline"
       className="shrink-0 gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium cursor-pointer"

@@ -40,8 +40,9 @@ import {
 import { ScheduleEditor } from "@/components/hackathon/schedule-editor";
 import type { ScheduleItem } from "@/lib/services/schedule-items";
 import { LocationEditDialog } from "./location-edit-dialog";
+import { TeamSettingsDialog } from "./team-settings-dialog";
 
-const SEVERITY_ORDER: ActionSeverity[] = ["urgent", "warning", "info"];
+const SEVERITY_ORDER: ActionSeverity[] = ["urgent", "warning", "scheduled", "info"];
 
 interface ActionItemsContextValue {
   actionItems: ActionItem[];
@@ -90,6 +91,12 @@ export function buildActionHref(slug: string, item: ActionItem): string | null {
   return `/e/${slug}/manage?${params.toString()}`;
 }
 
+type TeamSettingsInitialData = {
+  minTeamSize: number;
+  maxTeamSize: number;
+  allowSolo: boolean;
+};
+
 type LocationInitialData = {
   locationType: "in_person" | "virtual" | null;
   locationName: string | null;
@@ -110,6 +117,7 @@ type ProviderProps = {
   scheduleItems: ScheduleItem[];
   endsAt: string | null;
   locationInitialData: LocationInitialData;
+  teamSettingsInitialData: TeamSettingsInitialData;
   children: React.ReactNode;
 };
 
@@ -124,6 +132,7 @@ export function ActionItemsProvider({
   scheduleItems: serverScheduleItems,
   endsAt: serverEndsAt,
   locationInitialData,
+  teamSettingsInitialData,
   children,
 }: ProviderProps) {
   const router = useRouter();
@@ -134,6 +143,7 @@ export function ActionItemsProvider({
   const [promoteDialogOpen, setPromoteDialogOpen] = useState(false);
   const [agendaDialogOpen, setAgendaDialogOpen] = useState(false);
   const [locationDialogOpen, setLocationDialogOpen] = useState(false);
+  const [teamSettingsDialogOpen, setTeamSettingsDialogOpen] = useState(false);
 
   const [scheduleItems, setScheduleItems] = useState(serverScheduleItems);
   useEffect(() => {
@@ -142,6 +152,19 @@ export function ActionItemsProvider({
 
   const { data: pollData, isStale, refresh: refreshPoll } =
     useOrganizerPoll(hackathonId);
+
+  const serverFingerprint = useMemo(
+    () => serverActionItems.map((i) => `${i.id}:${i.close.kind === "auto" ? i.close.isComplete : ""}`).join(","),
+    [serverActionItems],
+  );
+  const prevFingerprintRef = useRef(serverFingerprint);
+  useEffect(() => {
+    if (prevFingerprintRef.current !== serverFingerprint) {
+      prevFingerprintRef.current = serverFingerprint;
+      refreshPoll();
+    }
+  }, [serverFingerprint, refreshPoll]);
+
   const actionItems = pollData
     ? getOrganizerActionItems(pollData)
     : serverActionItems;
@@ -419,6 +442,8 @@ export function ActionItemsProvider({
         setAgendaDialogOpen(true);
       } else if (item.action === "open-location-dialog") {
         setLocationDialogOpen(true);
+      } else if (item.action === "open-team-settings-dialog") {
+        setTeamSettingsDialogOpen(true);
       } else if (item.action === "open-submission-deadline-dialog") {
         submissionDeadlineRef.current?.openDialog();
       } else if (item.action?.startsWith("transition-to-")) {
@@ -618,6 +643,14 @@ export function ActionItemsProvider({
         onOpenChange={setLocationDialogOpen}
         hackathonId={hackathonId}
         initialData={locationInitialData}
+        onSaved={refreshPoll}
+      />
+      <TeamSettingsDialog
+        open={teamSettingsDialogOpen}
+        onOpenChange={setTeamSettingsDialogOpen}
+        hackathonId={hackathonId}
+        initialData={teamSettingsInitialData}
+        onSaved={() => markComplete("review-team-settings")}
       />
       <Dialog open={promoteDialogOpen} onOpenChange={setPromoteDialogOpen}>
         <DialogContent>
