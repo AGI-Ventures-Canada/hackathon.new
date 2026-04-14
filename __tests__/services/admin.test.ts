@@ -141,19 +141,28 @@ describe("Admin Service", () => {
   })
 
   describe("runScenario", () => {
-    const originalNodeEnv = process.env.NODE_ENV
+    const originalVercelEnv = process.env.VERCEL_ENV
 
     afterEach(() => {
-      process.env.NODE_ENV = originalNodeEnv
+      if (originalVercelEnv === undefined) {
+        delete process.env.VERCEL_ENV
+      } else {
+        process.env.VERCEL_ENV = originalVercelEnv
+      }
     })
 
     it("throws in production environment", async () => {
-      process.env.NODE_ENV = "production"
+      process.env.VERCEL_ENV = "production"
       expect(runScenario("pre-registration")).rejects.toThrow("Test scenarios can only be run in local development")
     })
 
+    it("allows preview environment", async () => {
+      process.env.VERCEL_ENV = "preview"
+      expect(runScenario("nonexistent")).rejects.toThrow("Unknown scenario: nonexistent")
+    })
+
     it("throws for unknown scenario", async () => {
-      process.env.NODE_ENV = "test"
+      delete process.env.VERCEL_ENV
       expect(runScenario("nonexistent")).rejects.toThrow("Unknown scenario: nonexistent")
     })
   })

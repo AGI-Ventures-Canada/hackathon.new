@@ -2,7 +2,7 @@ import { listScenarios, getActiveScenarios } from "@/lib/services/admin-scenario
 import { ScenarioRunner } from "./runner"
 
 export default async function AdminScenariosPage() {
-  if (process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production") {
+  if (process.env.VERCEL_ENV === "production") {
     return (
       <div className="space-y-6">
         <div>

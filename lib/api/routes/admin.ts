@@ -299,7 +299,7 @@ export const adminRoutes = new Elysia({ prefix: "/admin" })
     "/scenario-tokens",
     async ({ body, principal }) => {
       requireAdminScopes(principal, ["admin:scenarios"])
-      if (process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production") {
+      if (process.env.VERCEL_ENV === "production") {
         throw new AuthError("Not available in production", 403)
       }
       if (!isValidUuid(body.hackathon_id)) {
@@ -333,7 +333,7 @@ export const adminRoutes = new Elysia({ prefix: "/admin" })
     "/scenario-switch",
     async ({ body, principal }) => {
       requireAdminScopes(principal, ["admin:scenarios"])
-      if (process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production") {
+      if (process.env.VERCEL_ENV === "production") {
         throw new AuthError("Not available in production", 403)
       }
 

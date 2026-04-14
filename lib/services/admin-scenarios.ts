@@ -626,7 +626,7 @@ async function clearScenario(name: string): Promise<void> {
 }
 
 export async function runScenario(name: string, tenantId?: string, principalOrgId?: string | null, options?: ScenarioOptions): Promise<{ hackathonId: string; slug: string; tenantId: string }> {
-  if (process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production") {
+  if (process.env.VERCEL_ENV === "production") {
     throw new Error("Test scenarios can only be run in local development or staging")
   }
 
