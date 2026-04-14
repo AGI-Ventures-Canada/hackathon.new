@@ -32,6 +32,10 @@ export function useOptimisticList<T>(
   )
   const [prevItems, setPrevItems] = useState(items)
 
+  // Reconcile optimistic state when server data changes (after router.refresh()).
+  // This is React's "setState during render" pattern (equivalent to
+  // getDerivedStateFromProps) — intentionally not a useEffect, which would
+  // cause a one-frame flicker showing stale pending/hidden items.
   if (items !== prevItems) {
     setPrevItems(items)
     const serverIds = new Set(items.map(getId))

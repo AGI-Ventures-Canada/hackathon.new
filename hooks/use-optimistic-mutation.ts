@@ -43,9 +43,13 @@ export function useOptimisticMutation<TInput, TResponse = unknown>(
     }
   }, [])
 
+  const pendingRef = useRef(false)
+
   const execute = useCallback(
     async (input: TInput) => {
+      if (pendingRef.current) return
       const { fn, onOptimistic, onSuccess, onRevert, onError, refreshOnSuccess = true } = optionsRef.current
+      pendingRef.current = true
       clearError()
       setIsPending(true)
       onOptimistic?.(input)
@@ -65,6 +69,7 @@ export function useOptimisticMutation<TInput, TResponse = unknown>(
           errorTimerRef.current = null
         }, ERROR_DISMISS_MS)
       } finally {
+        pendingRef.current = false
         setIsPending(false)
       }
     },
