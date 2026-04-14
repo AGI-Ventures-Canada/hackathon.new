@@ -26,6 +26,7 @@ interface RegistrationProps {
   requireLocationVerification?: boolean;
   submission?: Submission | null;
   onRegistrationSuccess?: () => void;
+  teamSizeWarning?: string | null;
 }
 
 interface EventHeroProps {
@@ -433,6 +434,7 @@ export function EventHero({
             status={registrationProps.status}
             isRegistered={registrationProps.isRegistered}
             submission={registrationProps.submission ?? null}
+            teamSizeWarning={registrationProps.teamSizeWarning}
           />
           {tabsSlot}
         </div>

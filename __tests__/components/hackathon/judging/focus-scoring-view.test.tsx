@@ -17,9 +17,9 @@ const { FocusScoringView } = await import(
 )
 
 const baseAssignments = [
-  { id: "a1", submissionTitle: "Project Alpha", teamName: "Team A", isComplete: false },
-  { id: "a2", submissionTitle: "Project Beta", teamName: "Team B", isComplete: false },
-  { id: "a3", submissionTitle: "Project Gamma", teamName: null, isComplete: false },
+  { id: "a1", submissionTitle: "Project Alpha", teamName: "Team A", teamMemberCount: 3, isComplete: false },
+  { id: "a2", submissionTitle: "Project Beta", teamName: "Team B", teamMemberCount: 2, isComplete: false },
+  { id: "a3", submissionTitle: "Project Gamma", teamName: null, teamMemberCount: 1, isComplete: false },
 ]
 
 describe("FocusScoringView", () => {

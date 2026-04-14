@@ -259,6 +259,70 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     body: t.Object({ assignments: t.Array(t.Object({ teamId: t.String(), roomId: t.String() })) }),
     detail: { summary: "Bulk assign teams to rooms" },
   })
+  .patch("/hackathons/:id/teams/:teamId", async ({ params, body, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+
+    if (!isValidUuid(params.teamId)) {
+      set.status = 400
+      return { error: "Invalid team ID" }
+    }
+
+    const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+    const check = await checkHackathonOrganizer(params.id, principal.tenantId)
+    if (check.status === "not_found") {
+      set.status = 404
+      return { error: "Hackathon not found" }
+    }
+    const { supabase } = await import("@/lib/db/client")
+
+    if (check.status === "not_authorized") {
+      if (principal.kind !== "user") {
+        set.status = 403
+        return { error: "Not authorized to manage this hackathon" }
+      }
+      const { data: team } = await supabase()
+        .from("teams")
+        .select("captain_clerk_user_id, status")
+        .eq("id", params.teamId)
+        .eq("hackathon_id", params.id)
+        .single()
+      if (!team || team.captain_clerk_user_id !== principal.userId) {
+        set.status = 403
+        return { error: "Only the team captain or an organizer can rename a team" }
+      }
+      if (team.status !== "forming") {
+        set.status = 409
+        return { error: "Team name can only be changed while the team is forming" }
+      }
+    }
+
+    const { name } = body
+    if (!name.trim() || name.length > 100) {
+      set.status = 400
+      return { error: "Team name must be 1-100 characters" }
+    }
+
+    const client = supabase()
+    const { data, error } = await client
+      .from("teams")
+      .update({ name: name.trim(), updated_at: new Date().toISOString() })
+      .eq("id", params.teamId)
+      .eq("hackathon_id", params.id)
+      .select("id, name")
+      .single()
+
+    if (error || !data) {
+      set.status = 404
+      return { error: "Team not found" }
+    }
+
+    await logAudit({ principal, action: "team.name_updated", resourceType: "team", resourceId: params.teamId, metadata: { hackathonId: params.id, name: name.trim() } })
+
+    return data
+  }, {
+    body: t.Object({ name: t.String({ minLength: 1, maxLength: 100 }) }),
+    detail: { summary: "Update team name" },
+  })
   .get("/hackathons/:id/categories", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)

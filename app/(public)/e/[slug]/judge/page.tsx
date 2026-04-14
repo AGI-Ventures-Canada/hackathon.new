@@ -51,7 +51,7 @@ export default async function JudgePage({ params }: PageProps) {
   let judgeAssignments = await getJudgeAssignments(hackathon.id, userId)
 
   if (hackathon.anonymous_judging) {
-    judgeAssignments = judgeAssignments.map((a) => ({ ...a, teamName: null }))
+    judgeAssignments = judgeAssignments.map((a) => ({ ...a, teamName: null, teamMemberCount: null }))
   }
 
   return (
@@ -73,6 +73,10 @@ export default async function JudgePage({ params }: PageProps) {
         <JudgeAssignmentsCard
           hackathonSlug={slug}
           assignments={judgeAssignments}
+          teamSettings={{
+            minTeamSize: hackathon.min_team_size,
+            allowSolo: hackathon.allow_solo,
+          }}
         />
       )}
     </div>

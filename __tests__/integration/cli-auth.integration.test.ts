@@ -80,6 +80,7 @@ mock.module("@/lib/services/submissions", () => ({
   createSubmission: mock(() => Promise.resolve(null)),
   updateSubmission: mock(() => Promise.resolve(null)),
   getHackathonSubmissions: mock(() => Promise.resolve([])),
+  getTeamMemberCount: mock(() => Promise.resolve(0)),
 }))
 
 mock.module("@/lib/utils/url", () => ({

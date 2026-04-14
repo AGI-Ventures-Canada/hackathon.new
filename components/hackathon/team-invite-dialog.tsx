@@ -23,11 +23,12 @@ interface TeamInviteDialogProps {
   teamId: string
   hackathonId: string
   teamName: string
+  maxTeamSize: number
 }
 
 const INVITE_COUNTDOWN = 6
 
-export function TeamInviteDialog({ teamId, hackathonId, teamName }: TeamInviteDialogProps) {
+export function TeamInviteDialog({ teamId, hackathonId, teamName, maxTeamSize }: TeamInviteDialogProps) {
   const router = useRouter()
   const emailInputRef = useRef<HTMLInputElement>(null)
   const [open, setOpen] = useState(false)
@@ -208,6 +209,10 @@ export function TeamInviteDialog({ teamId, hackathonId, teamName }: TeamInviteDi
                   />
                 </div>
               </div>
+
+              <p className="text-xs text-muted-foreground mt-2">
+                This person will be added to your team and count toward the {maxTeamSize}-member limit.
+              </p>
 
               <AlertDialogFooter className="mt-4">
                 <AlertDialogCancel type="button">Cancel</AlertDialogCancel>

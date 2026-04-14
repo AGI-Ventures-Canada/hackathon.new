@@ -240,7 +240,12 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
             </TabsContent>
 
             <TabsContent value="teams" forceMount className="data-[state=inactive]:hidden">
-              <TeamsTab hackathonId={hackathon.id} />
+              <TeamsTab
+                hackathonId={hackathon.id}
+                maxTeamSize={hackathon.max_team_size ?? 5}
+                minTeamSize={hackathon.min_team_size ?? 1}
+                allowSolo={hackathon.allow_solo ?? true}
+              />
             </TabsContent>
 
             <TabsContent value="rooms" forceMount className="data-[state=inactive]:hidden">

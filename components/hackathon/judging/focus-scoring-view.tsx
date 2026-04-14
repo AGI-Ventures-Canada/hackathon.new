@@ -5,11 +5,18 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ChevronLeft, ChevronRight, CheckCircle2 } from "lucide-react"
 import { ScoringPanel } from "./scoring-panel"
+import { getTeamSizeWarning } from "@/lib/utils/team-size"
+
+type TeamSettings = {
+  minTeamSize: number
+  allowSolo: boolean
+}
 
 type FocusAssignment = {
   id: string
   submissionTitle: string
   teamName: string | null
+  teamMemberCount: number | null
   isComplete: boolean
 }
 
@@ -18,6 +25,7 @@ interface FocusScoringViewProps {
   assignments: FocusAssignment[]
   initialCompletedIds: Set<string>
   onScoreSubmitted: (assignmentId: string) => void
+  teamSettings?: TeamSettings
 }
 
 export function FocusScoringView({
@@ -25,6 +33,7 @@ export function FocusScoringView({
   assignments,
   initialCompletedIds,
   onScoreSubmitted,
+  teamSettings,
 }: FocusScoringViewProps) {
   const [completedIds, setCompletedIds] = useState<Set<string>>(initialCompletedIds)
 
@@ -141,6 +150,14 @@ export function FocusScoringView({
         onClose={goToNext}
         onScoreSubmitted={handleScoreSubmitted}
         cancelLabel="Skip"
+        teamSizeWarning={teamSettings && current.teamMemberCount != null
+          ? (getTeamSizeWarning({
+              memberCount: current.teamMemberCount,
+              minTeamSize: teamSettings.minTeamSize,
+              allowSolo: teamSettings.allowSolo,
+            })?.message ?? null)
+          : null
+        }
       />
 
       <div className="flex items-center justify-center gap-2 pt-2 text-sm text-muted-foreground">
