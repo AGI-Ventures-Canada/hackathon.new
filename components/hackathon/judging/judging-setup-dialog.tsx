@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Loader2, RotateCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -112,6 +112,7 @@ export function JudgingSetupDialog({
   const [pendingInvitations, setPendingInvitations] = useState<WizardInvitation[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   const fetchData = useCallback(async (signal?: AbortSignal) => {
     setLoading(true)
@@ -189,9 +190,17 @@ export function JudgingSetupDialog({
     }
   }, [hackathonId])
 
+  const handleRetry = useCallback(() => {
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+    fetchData(controller.signal)
+  }, [fetchData])
+
   useEffect(() => {
     if (!open) return
     const controller = new AbortController()
+    abortRef.current = controller
     fetchData(controller.signal)
     return () => controller.abort()
   }, [open, fetchData])
@@ -212,7 +221,7 @@ export function JudgingSetupDialog({
         ) : error ? (
           <div className="py-8 text-center space-y-3">
             <p className="text-sm text-destructive">{error}</p>
-            <Button variant="outline" size="sm" onClick={() => fetchData()}>
+            <Button variant="outline" size="sm" onClick={handleRetry}>
               <RotateCw className="size-3.5" />
               Try again
             </Button>

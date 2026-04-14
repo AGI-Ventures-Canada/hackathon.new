@@ -54,6 +54,7 @@ export function OverviewAnnouncements({ slug, hackathonId, announcements }: Prop
   const [publishMode, setPublishMode] = useState<PublishMode>("now")
   const [scheduledAt, setScheduledAt] = useState("")
   const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
 
   const recent = announcements.slice(0, 3)
 
@@ -80,10 +81,7 @@ export function OverviewAnnouncements({ slug, hackathonId, announcements }: Prop
     if (!title.trim() || !body.trim()) return
     if (publishMode === "schedule" && !scheduledAt) return
     setError(null)
-    setDialogOpen(false)
-    const mode = publishMode
-    const scheduledTime = scheduledAt
-    resetForm()
+    setSubmitting(true)
 
     try {
       const created = await fetch(`/api/dashboard/hackathons/${hackathonId}/announcements`, {
@@ -92,19 +90,23 @@ export function OverviewAnnouncements({ slug, hackathonId, announcements }: Prop
         body: JSON.stringify({ title, body, priority, audience }),
       }).then(assertOkJson<{ id: string }>)
 
-      if (mode === "now") {
+      if (publishMode === "now") {
         await fetch(`/api/dashboard/hackathons/${hackathonId}/announcements/${created.id}/publish`, { method: "POST" }).then(assertOk)
-      } else if (mode === "schedule") {
+      } else if (publishMode === "schedule") {
         await fetch(`/api/dashboard/hackathons/${hackathonId}/announcements/${created.id}/schedule`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ scheduledAt: new Date(scheduledTime).toISOString() }),
+          body: JSON.stringify({ scheduledAt: new Date(scheduledAt).toISOString() }),
         }).then(assertOk)
       }
 
+      setDialogOpen(false)
+      resetForm()
       router.refresh()
     } catch {
       setError("Something went wrong. Please try again.")
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -250,7 +252,7 @@ export function OverviewAnnouncements({ slug, hackathonId, announcements }: Prop
               )}
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" disabled={!canSubmit} className="w-full">
+            <Button type="submit" disabled={!canSubmit || submitting} className="w-full">
               {publishMode === "now" && <><Send className="size-4 mr-2" />Publish Now</>}
               {publishMode === "schedule" && <><Clock className="size-4 mr-2" />Schedule</>}
               {publishMode === "draft" && <>Save Draft</>}

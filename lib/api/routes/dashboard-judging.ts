@@ -117,7 +117,7 @@ export const dashboardJudgingRoutes = new Elysia()
         description: t.Optional(t.Union([t.String(), t.Null()], { description: "Prize description" })),
         value: t.Optional(t.Union([t.String(), t.Null()], { description: "Prize value (e.g. '$5000')" })),
         judgingStyle: t.Optional(t.String({ description: "bucket_sort | gate_check | crowd_vote | judges_pick" })),
-        roundId: t.Optional(t.String({ description: "Round ID this prize belongs to" })),
+        roundId: t.Optional(t.Nullable(t.String({ description: "Round ID this prize belongs to" }))),
         assignmentMode: t.Optional(t.String({ description: "organizer_assigned | self_select" })),
         maxPicks: t.Optional(
           t.Integer({

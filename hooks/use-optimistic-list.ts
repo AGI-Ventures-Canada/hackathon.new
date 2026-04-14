@@ -20,6 +20,12 @@ export interface UseOptimisticListReturn<T> {
   clearAllEdits: () => void
 }
 
+/**
+ * Reconciliation compares `items` by reference (`!==`). If callers
+ * compute items inline (e.g. `items: arr.filter(...)`) a new array
+ * is created every render, triggering reconciliation each time and
+ * silently evicting pending/hidden state. Stabilise with `useMemo`.
+ */
 export function useOptimisticList<T>(
   options: UseOptimisticListOptions<T>
 ): UseOptimisticListReturn<T> {
