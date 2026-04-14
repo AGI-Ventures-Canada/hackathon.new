@@ -8,7 +8,7 @@ export default async function AdminScenariosPage() {
         <div>
           <h1 className="text-2xl font-bold">Test Scenarios</h1>
           <p className="text-sm text-muted-foreground">
-            Scenarios are only available in local development and staging.
+            Scenarios are not available in production.
           </p>
         </div>
       </div>

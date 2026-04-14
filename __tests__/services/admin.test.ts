@@ -153,17 +153,17 @@ describe("Admin Service", () => {
 
     it("throws in production environment", async () => {
       process.env.VERCEL_ENV = "production"
-      expect(runScenario("pre-registration")).rejects.toThrow("Test scenarios can only be run in local development")
+      await expect(runScenario("pre-registration")).rejects.toThrow("Test scenarios cannot be run in production")
     })
 
     it("allows preview environment", async () => {
       process.env.VERCEL_ENV = "preview"
-      expect(runScenario("nonexistent")).rejects.toThrow("Unknown scenario: nonexistent")
+      await expect(runScenario("nonexistent")).rejects.toThrow("Unknown scenario: nonexistent")
     })
 
     it("throws for unknown scenario", async () => {
       delete process.env.VERCEL_ENV
-      expect(runScenario("nonexistent")).rejects.toThrow("Unknown scenario: nonexistent")
+      await expect(runScenario("nonexistent")).rejects.toThrow("Unknown scenario: nonexistent")
     })
   })
 })
