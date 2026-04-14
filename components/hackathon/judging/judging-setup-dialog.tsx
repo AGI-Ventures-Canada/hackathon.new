@@ -121,7 +121,9 @@ export function JudgingSetupDialog({
         fetch(`/api/dashboard/hackathons/${hackathonId}/prizes`, { signal }).then(assertOkJson<{ prizes: PrizeResponse[] }>),
         fetch(`/api/dashboard/hackathons/${hackathonId}/judging/judges`, { signal }).then(assertOkJson<{ judges: JudgeResponse[] }>),
         fetch(`/api/dashboard/hackathons/${hackathonId}/rounds`, { signal }).then(assertOkJson<{ rounds: RoundResponse[] }>),
-        fetch(`/api/dashboard/hackathons/${hackathonId}/judging/invitations`, { signal }).then(assertOkJson<{ invitations: InvitationResponse[] }>),
+        fetch(`/api/dashboard/hackathons/${hackathonId}/judging/invitations`, { signal })
+          .then(assertOkJson<{ invitations: InvitationResponse[] }>)
+          .catch(() => ({ invitations: [] as InvitationResponse[] })),
       ])
 
       setPrizes(

@@ -221,7 +221,10 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
       await fetchTeams()
     } catch (err) {
       setTeams((prev) => prev.filter((t) => t.id !== tempId))
+      setTeamName(name)
+      setCaptainEmail(email)
       setCreateError(err instanceof Error ? err.message : "Failed to create team")
+      setDialogOpen(true)
     }
   }
 

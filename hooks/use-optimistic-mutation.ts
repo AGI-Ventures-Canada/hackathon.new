@@ -43,6 +43,12 @@ export function useOptimisticMutation<TInput, TResponse = unknown>(
     }
   }, [])
 
+  /**
+   * Guards against concurrent executions. While a mutation is in-flight,
+   * subsequent calls to `execute` are silently dropped. This is intentional
+   * for destructive ops (deletes) but means double-clicking a "Create"
+   * button will discard the second request without user feedback.
+   */
   const pendingRef = useRef(false)
 
   const execute = useCallback(
