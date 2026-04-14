@@ -52,7 +52,7 @@ import {
   X,
 } from "lucide-react"
 import { useActionItemsOptional } from "@/components/hackathon/manage/action-items-context"
-import { AddJudgeDialog } from "./add-judge-dialog"
+import { AddJudgeDialog, type AddJudgeResult } from "./add-judge-dialog"
 import { AddPrizeDialog } from "./add-prize-dialog"
 import { AssignJudgesDialog } from "./assign-judges-dialog"
 import { JudgePill } from "./judge-pill"
@@ -169,15 +169,31 @@ export function JudgingTabClient({
   const [hiddenPrizes, setHiddenPrizes] = useState<Set<string>>(new Set())
   const [hiddenInvitations, setHiddenInvitations] = useState<Set<string>>(new Set())
   const [hiddenPrizeJudges, setHiddenPrizeJudges] = useState<Set<string>>(new Set())
+  const [pendingJudges, setPendingJudges] = useState<JudgeData[]>([])
+  const [pendingInvitations, setPendingInvitations] = useState<InvitationData[]>([])
 
-  const judges = initialJudges
+  useEffect(() => {
+    setPendingJudges(prev => prev.filter(pj => !initialJudges.some(j => j.participantId === pj.participantId)))
+  }, [initialJudges])
+
+  useEffect(() => {
+    setPendingInvitations(prev => prev.filter(pi => !initialInvitations.some(i => i.id === pi.id)))
+  }, [initialInvitations])
+
+  const judges = [
+    ...initialJudges,
+    ...pendingJudges.filter(pj => !initialJudges.some(j => j.participantId === pj.participantId)),
+  ]
     .filter(j => !hiddenJudges.has(j.participantId))
     .map(j => ({
       ...j,
       prizeIds: j.prizeIds.filter(pid => !hiddenPrizeJudges.has(`${pid}:${j.participantId}`)),
     }))
   const prizes = initialPrizes.filter(p => !hiddenPrizes.has(p.id))
-  const invitations = initialInvitations.filter(i => !hiddenInvitations.has(i.id))
+  const invitations = [
+    ...initialInvitations,
+    ...pendingInvitations.filter(pi => !initialInvitations.some(i => i.id === pi.id)),
+  ].filter(i => !hiddenInvitations.has(i.id))
 
 
   const base = `/api/dashboard/hackathons/${hackathonId}`
@@ -332,7 +348,26 @@ export function JudgingTabClient({
         hackathonId={hackathonId}
         open={showAddJudge}
         onOpenChange={setShowAddJudge}
-        onSuccess={() => router.refresh()}
+        onSuccess={(result: AddJudgeResult) => {
+          if (result.type === "judge") {
+            setPendingJudges(prev => [...prev, {
+              participantId: result.participantId,
+              clerkUserId: result.clerkUserId,
+              displayName: result.displayName,
+              email: result.email,
+              imageUrl: result.imageUrl,
+              prizeIds: [],
+            }])
+          } else {
+            setPendingInvitations(prev => [...prev, {
+              id: result.id,
+              email: result.email,
+              status: "pending",
+              createdAt: new Date().toISOString(),
+            }])
+          }
+          router.refresh()
+        }}
       />
 
       <AddPrizeDialog

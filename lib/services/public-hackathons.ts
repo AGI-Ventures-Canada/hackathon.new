@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Hackathon, TenantProfile, HackathonSponsor, HackathonStatus, HackathonJudgeDisplay, Prize, JudgingMode } from "@/lib/db/hackathon-types"
 
 export type PublicPrize = Omit<Prize, "distribution_method" | "monetary_value" | "currency">
+export const PUBLISHED_STATUSES: HackathonStatus[] = ["published", "registration_open", "active", "judging", "completed"]
 import { getEffectiveStatus } from "@/lib/utils/timeline"
 import { sortByStatusPriority } from "@/lib/utils/sort-hackathons"
 
@@ -50,7 +51,7 @@ export async function getPublicHackathon(
     .eq("slug", slug)
 
   if (!options?.includeUnpublished) {
-    query = query.in("status", ["published", "registration_open", "active", "judging", "completed"])
+    query = query.in("status", PUBLISHED_STATUSES)
   }
 
   const { data: hackathon, error: hackathonError } = await query.single()
@@ -125,12 +126,10 @@ export async function listPublicHackathons(
   const limit = options?.limit ?? 9
   const offset = (page - 1) * limit
 
-  const publicStatuses = ["published", "registration_open", "active", "judging", "completed"]
-
   let countQuery = client
     .from("hackathons")
     .select("id", { count: "exact", head: true })
-    .in("status", publicStatuses)
+    .in("status", PUBLISHED_STATUSES)
 
   let dataQuery = client
     .from("hackathons")
@@ -138,7 +137,7 @@ export async function listPublicHackathons(
       *,
       organizer:tenants!tenant_id(id, name, slug, logo_url, logo_url_dark, clerk_org_id)
     `)
-    .in("status", publicStatuses)
+    .in("status", PUBLISHED_STATUSES)
     .order("status", { ascending: true })
     .order("starts_at", { ascending: true })
     .range(offset, offset + limit - 1)

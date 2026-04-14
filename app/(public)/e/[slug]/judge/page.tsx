@@ -1,8 +1,9 @@
 import { notFound, redirect } from "next/navigation"
 import { auth } from "@clerk/nextjs/server"
-import { getPublicHackathon } from "@/lib/services/public-hackathons"
+import { getPublicHackathon, PUBLISHED_STATUSES } from "@/lib/services/public-hackathons"
 import { JudgeAssignmentsCard } from "@/components/hackathon/judging/judge-assignments-card"
 import { PageHeader } from "@/components/page-header"
+import { Clock } from "lucide-react"
 
 type PageProps = {
   params: Promise<{ slug: string }>
@@ -16,8 +17,26 @@ export default async function JudgePage({ params }: PageProps) {
     redirect(`/e/${slug}`)
   }
 
-  const hackathon = await getPublicHackathon(slug)
+  const hackathon = await getPublicHackathon(slug, { includeUnpublished: true })
   if (!hackathon) {
+    notFound()
+  }
+
+  if (!PUBLISHED_STATUSES.includes(hackathon.status)) {
+    const { getRegistrationInfo } = await import("@/lib/services/hackathons")
+    const regInfo = await getRegistrationInfo(hackathon.id, userId)
+    if (regInfo.participantRole === "judge") {
+      return (
+        <div className="flex min-h-[60vh] flex-col items-center justify-center px-4 text-center">
+          <Clock className="size-10 text-muted-foreground mb-4" />
+          <h1 className="text-xl font-semibold mb-2">This event isn&apos;t live yet</h1>
+          <p className="text-muted-foreground max-w-md">
+            Judging assignments will appear here once the hackathon is published.
+            Check back later.
+          </p>
+        </div>
+      )
+    }
     notFound()
   }
 

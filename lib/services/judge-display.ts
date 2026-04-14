@@ -40,11 +40,17 @@ export async function listJudgeDisplayProfiles(
   return data as unknown as HackathonJudgeDisplay[]
 }
 
+export type CreateJudgeDisplayResult =
+  | { status: "created"; judge: HackathonJudgeDisplay }
+  | { status: "duplicate"; matchedBy: "clerk_user" | "name" }
+  | { status: "error" }
+
 export async function createJudgeDisplayProfile(
   hackathonId: string,
   input: CreateJudgeDisplayInput
-): Promise<HackathonJudgeDisplay | null> {
+): Promise<CreateJudgeDisplayResult> {
   const client = getSupabase() as unknown as SupabaseClient
+
   const { data, error } = await client
     .from("hackathon_judges_display")
     .insert({
@@ -61,11 +67,18 @@ export async function createJudgeDisplayProfile(
     .single()
 
   if (error) {
+    if (error.code === "23505") {
+      // Safe because the two unique partial indexes are mutually exclusive:
+      // udx_judges_display_clerk_user  → WHERE clerk_user_id IS NOT NULL
+      // udx_judges_display_name_manual → WHERE clerk_user_id IS NULL
+      const matchedBy = input.clerkUserId ? "clerk_user" : "name"
+      return { status: "duplicate", matchedBy } as const
+    }
     console.error("Failed to create judge display profile:", error)
-    return null
+    return { status: "error" }
   }
 
-  return data as unknown as HackathonJudgeDisplay
+  return { status: "created", judge: data as unknown as HackathonJudgeDisplay }
 }
 
 export async function updateJudgeDisplayProfile(
@@ -104,20 +117,66 @@ export async function updateJudgeDisplayProfile(
 export async function deleteJudgeDisplayProfile(
   id: string,
   hackathonId: string
-): Promise<boolean> {
+): Promise<{ deleted: boolean; cascadeError?: string }> {
   const client = getSupabase() as unknown as SupabaseClient
-  const { error } = await client
+
+  const { data: profile, error } = await client
     .from("hackathon_judges_display")
     .delete()
     .eq("id", id)
     .eq("hackathon_id", hackathonId)
+    .select("participant_id, clerk_user_id")
+    .maybeSingle()
 
   if (error) {
     console.error("Failed to delete judge display profile:", error)
-    return false
+    return { deleted: false }
   }
 
-  return true
+  let participantId = profile?.participant_id
+  if (!participantId && profile?.clerk_user_id) {
+    const { data: participant } = await client
+      .from("hackathon_participants")
+      .select("id")
+      .eq("hackathon_id", hackathonId)
+      .eq("clerk_user_id", profile.clerk_user_id)
+      .eq("role", "judge")
+      .maybeSingle()
+    participantId = participant?.id
+  }
+
+  if (participantId) {
+    const cascadeErrors: string[] = []
+
+    const { error: assignmentError } = await client
+      .from("judge_assignments")
+      .delete()
+      .eq("hackathon_id", hackathonId)
+      .eq("judge_participant_id", participantId)
+
+    if (assignmentError) {
+      console.error("Failed to cascade-delete judge assignments:", assignmentError)
+      cascadeErrors.push("assignments")
+    }
+
+    const { error: participantError } = await client
+      .from("hackathon_participants")
+      .delete()
+      .eq("id", participantId)
+      .eq("hackathon_id", hackathonId)
+      .eq("role", "judge")
+
+    if (participantError) {
+      console.error("Failed to cascade-delete judge participant:", participantError)
+      cascadeErrors.push("participant record")
+    }
+
+    if (cascadeErrors.length > 0) {
+      return { deleted: true, cascadeError: `Failed to remove judge ${cascadeErrors.join(" and ")}` }
+    }
+  }
+
+  return { deleted: true }
 }
 
 export async function reorderJudgeDisplayProfiles(
@@ -161,4 +220,27 @@ export async function countJudgeDisplayProfiles(
   }
 
   return count ?? 0
+}
+
+const SEED_JUDGE_NAMES = ["Alice Johnson", "Bob Chen", "Carol Davis", "Dave Kim", "Eve Martin"]
+
+export async function seedJudgeDisplayProfiles(
+  hackathonId: string,
+  judgeUserIds: string[],
+  judgeParticipantIds: string[]
+): Promise<void> {
+  const client = getSupabase() as unknown as SupabaseClient
+  await client.from("hackathon_judges_display").delete().eq("hackathon_id", hackathonId)
+  await Promise.all(
+    judgeParticipantIds.map((_, i) =>
+      client.from("hackathon_judges_display").insert({
+        hackathon_id: hackathonId,
+        name: SEED_JUDGE_NAMES[i] ?? `Judge ${i + 1}`,
+        title: "Judge",
+        clerk_user_id: judgeUserIds[i],
+        participant_id: judgeParticipantIds[i],
+        display_order: i,
+      })
+    )
+  )
 }

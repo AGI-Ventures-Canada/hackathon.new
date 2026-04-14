@@ -6,6 +6,7 @@ import {
   createSubmission,
   addJudgingCriteria,
   assignJudges,
+  seedJudgeDisplayProfiles,
   submitRandomScores,
   buildDefaultPrizes,
   createPrizes,
@@ -75,6 +76,7 @@ async function run() {
   }
 
   const criteriaIds = await addJudgingCriteria(hackathonId)
+  await seedJudgeDisplayProfiles(hackathonId, judgeUsers, judgeParticipantIds)
   const assignmentIds = await assignJudges(hackathonId, judgeParticipantIds, submissions, judgeTeamIds)
 
   const halfPoint = Math.floor(assignmentIds.length * 0.6)

@@ -455,6 +455,9 @@ export const devRoutes = new Elysia({ prefix: "/dev" })
         judgePids.push(pid)
       }
 
+      const { seedJudgeDisplayProfiles } = await import("@/lib/services/judge-display")
+      await seedJudgeDisplayProfiles(params.id, judgeUserIds, judgePids)
+
       const { data: submissions } = await db
         .from("submissions")
         .select("id, team_id")
@@ -1011,6 +1014,7 @@ export const devRoutes = new Elysia({ prefix: "/dev" })
       )
       await db.from("prize_tracks").delete().eq("hackathon_id", params.id)
       await db.from("submissions").delete().eq("hackathon_id", params.id)
+      await db.from("hackathon_judges_display").delete().eq("hackathon_id", params.id).in("clerk_user_id", SEED_USERS)
       await db.from("hackathon_participants").delete().eq("hackathon_id", params.id).in("clerk_user_id", SEED_USERS)
       await db.from("teams").delete().eq("hackathon_id", params.id).in("captain_clerk_user_id", SEED_USERS)
 

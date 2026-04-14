@@ -6,6 +6,7 @@ import {
   createSubmission,
   addJudgingCriteria,
   assignJudges,
+  seedJudgeDisplayProfiles,
   DEV_USER_ID,
   SEED_USERS,
   printReady,
@@ -71,6 +72,7 @@ async function run() {
   }
 
   await addJudgingCriteria(hackathonId)
+  await seedJudgeDisplayProfiles(hackathonId, judgeUsers, judgeParticipantIds)
   const assignmentIds = await assignJudges(hackathonId, judgeParticipantIds, submissions, judgeTeamIds)
 
   console.log(`Created 5 teams, 5 submissions, 3 judges, ${assignmentIds.length} assignments.`)

@@ -29,11 +29,15 @@ type SearchUser = {
   imageUrl: string | null
 }
 
+export type AddJudgeResult =
+  | { type: "judge"; participantId: string; clerkUserId: string; displayName: string; email: string | null; imageUrl: string | null }
+  | { type: "invitation"; id: string; email: string }
+
 interface AddJudgeDialogProps {
   hackathonId: string
   open: boolean
   onOpenChange: (open: boolean) => void
-  onSuccess?: () => void
+  onSuccess?: (result: AddJudgeResult) => void
 }
 
 export function AddJudgeDialog({
@@ -50,7 +54,9 @@ export function AddJudgeDialog({
   const [success, setSuccess] = useState<string | null>(null)
   const [showInviteForm, setShowInviteForm] = useState(false)
   const [inviteEmail, setInviteEmail] = useState("")
-  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const cacheRef = useRef<Map<string, SearchUser[]>>(new Map())
 
   const base = `/api/dashboard/hackathons/${hackathonId}/judging`
 
@@ -61,6 +67,9 @@ export function AddJudgeDialog({
     setSuccess(null)
     setShowInviteForm(false)
     setInviteEmail("")
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    abortRef.current?.abort()
+    cacheRef.current.clear()
   }
 
   function handleOpenChange(nextOpen: boolean) {
@@ -68,39 +77,75 @@ export function AddJudgeDialog({
     onOpenChange(nextOpen)
   }
 
+  const doSearch = useCallback(
+    async (query: string, signal: AbortSignal) => {
+      setSearching(true)
+      try {
+        const res = await fetch(
+          `${base}/user-search?q=${encodeURIComponent(query)}`,
+          { signal }
+        )
+        if (!res.ok) throw new Error("Search failed")
+        const data = await res.json()
+        if (!signal.aborted) {
+          const users = data.users ?? []
+          cacheRef.current.set(query.toLowerCase(), users)
+          setSearchResults(users)
+        }
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return
+      } finally {
+        if (!signal.aborted) {
+          setSearching(false)
+        }
+      }
+    },
+    [base]
+  )
+
   const handleSearch = useCallback(
     (query: string) => {
       setSearchQuery(query)
       setError(null)
       setSuccess(null)
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      abortRef.current?.abort()
 
-      if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current)
-      }
-
-      if (query.trim().length < 2) {
+      const minLength = query.includes("@") ? 2 : 3
+      if (query.trim().length < minLength) {
         setSearchResults([])
         setSearching(false)
         return
       }
 
-      setSearching(true)
-      searchTimeoutRef.current = setTimeout(async () => {
-        try {
-          const res = await fetch(
-            `${base}/user-search?q=${encodeURIComponent(query.trim())}`
-          )
-          if (!res.ok) throw new Error("Search failed")
-          const data = await res.json()
-          setSearchResults(data.users ?? [])
-        } catch {
-          setSearchResults([])
-        } finally {
-          setSearching(false)
+      const normalized = query.trim().toLowerCase()
+      let bestPrefix = ""
+      let bestResults: SearchUser[] | null = null
+      for (const [cachedQuery, cachedResults] of cacheRef.current) {
+        if (normalized.startsWith(cachedQuery) && cachedQuery.length > bestPrefix.length) {
+          bestPrefix = cachedQuery
+          bestResults = cachedResults
         }
-      }, 300)
+      }
+      if (bestResults !== null) {
+        setSearchResults(
+          bestResults.filter((u) => {
+            const s = normalized
+            return (
+              u.firstName?.toLowerCase().includes(s) ||
+              u.lastName?.toLowerCase().includes(s) ||
+              u.email?.toLowerCase().includes(s) ||
+              u.username?.toLowerCase().includes(s)
+            )
+          })
+        )
+      }
+
+      const controller = new AbortController()
+      abortRef.current = controller
+      debounceRef.current = setTimeout(() => doSearch(query.trim(), controller.signal), 200)
     },
-    [base]
+    [doSearch]
   )
 
   function getDisplayName(user: SearchUser) {
@@ -135,9 +180,17 @@ export function AddJudgeDialog({
         const data = await res.json()
         throw new Error(data.error || "Failed to add judge")
       }
+      const data = await res.json()
+      onSuccess?.({
+        type: "judge",
+        participantId: data.participant.id,
+        clerkUserId: user.id,
+        displayName: getDisplayName(user),
+        email: user.email,
+        imageUrl: user.imageUrl,
+      })
       setSuccess(`${getDisplayName(user)} added as judge`)
-      onSuccess?.()
-      setTimeout(() => handleOpenChange(false), 1200)
+      setTimeout(() => handleOpenChange(false), 800)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong")
     } finally {
@@ -164,11 +217,22 @@ export function AddJudgeDialog({
         throw new Error(data.error || "Failed to invite judge")
       }
       const data = await res.json()
+      if (data.invitation) {
+        onSuccess?.({ type: "invitation", id: data.invitation.id, email })
+      } else {
+        onSuccess?.({
+          type: "judge",
+          participantId: data.participant.id,
+          clerkUserId: data.participant.clerkUserId,
+          displayName: email,
+          email,
+          imageUrl: null,
+        })
+      }
       setSuccess(
-        data.invited ? `Invitation sent to ${email}` : `${email} added as judge`
+        data.invitation ? `Invitation sent to ${email}` : `${email} added as judge`
       )
-      onSuccess?.()
-      setTimeout(() => handleOpenChange(false), 1200)
+      setTimeout(() => handleOpenChange(false), 800)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong")
     } finally {
@@ -217,14 +281,14 @@ export function AddJudgeDialog({
 
             {error && <p className="text-sm text-destructive">{error}</p>}
 
-            {searching && (
+            {searching && searchResults.length === 0 && (
               <div className="flex items-center justify-center py-4">
                 <Loader2 className="size-5 animate-spin text-muted-foreground" />
               </div>
             )}
 
-            {!searching && searchResults.length > 0 && (
-              <div className="space-y-1 max-h-64 overflow-y-auto">
+            {searchResults.length > 0 && (
+              <div className={`space-y-1 max-h-64 overflow-y-auto transition-opacity ${searching ? "opacity-60" : ""}`}>
                 {searchResults.map((user) => {
                   const displayName = getDisplayName(user)
                   return (
@@ -261,7 +325,7 @@ export function AddJudgeDialog({
             )}
 
             {!searching &&
-              searchQuery.length >= 2 &&
+              searchQuery.length >= (searchQuery.includes("@") ? 2 : 3) &&
               searchResults.length === 0 && (
                 <p className="text-sm text-muted-foreground text-center py-3">
                   No users found

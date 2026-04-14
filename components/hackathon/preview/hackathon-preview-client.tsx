@@ -21,6 +21,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { CheckCircle2, Crown, Clock, X, Lock, Scale, Mail, CalendarClock, MapPin } from "lucide-react"
 import { formatDateTimeDisplay } from "@/lib/utils/format"
 import type { PublicHackathon } from "@/lib/services/public-hackathons"
+import type { HackathonJudgeDisplay } from "@/lib/db/hackathon-types"
 import type { Submission } from "@/lib/db/hackathon-types"
 import type { ParticipantTeamInfo } from "@/lib/services/hackathons"
 import { PublicResults } from "@/components/hackathon/results/public-results"
@@ -81,6 +82,11 @@ function HackathonPreviewContent({
   const [isRegistered, setIsRegistered] = useState(initialIsRegistered)
   const [justRegistered, setJustRegistered] = useState(false)
   const [bannerUrl, setBannerUrl] = useState(hackathon.banner_url)
+  const [optimisticJudges, setOptimisticJudges] = useState<HackathonJudgeDisplay[] | null>(null)
+
+  useEffect(() => {
+    setOptimisticJudges(null)
+  }, [hackathon.judges])
 
   const handleRegistrationSuccess = () => {
     setIsRegistered(true)
@@ -331,17 +337,18 @@ function HackathonPreviewContent({
               hackathonId={hackathon.id}
               initialJudges={hackathon.judges}
               onSaveAndNext={() => handleSaveAndNext("judges")}
+              onJudgesChange={setOptimisticJudges}
             />
           </div>
         </div>
       ) : (
         <EditableSection
           section="judges"
-          isEmpty={hackathon.judges.length === 0}
+          isEmpty={(optimisticJudges ?? hackathon.judges).length === 0}
           emptyLabel="Click to add judges"
           className="py-12"
         >
-          <JudgeSection judges={hackathon.judges} />
+          <JudgeSection judges={optimisticJudges ?? hackathon.judges} />
         </EditableSection>
       )}
 

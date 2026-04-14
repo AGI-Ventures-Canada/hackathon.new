@@ -393,6 +393,9 @@ const scenarioRunners: Record<string, (tenantId?: string, principalOrgId?: strin
 
     await addJudgingCriteria(hackathonId)
 
+    const { seedJudgeDisplayProfiles } = await import("@/lib/services/judge-display")
+    await seedJudgeDisplayProfiles(hackathonId, judgeUsers, judgeParticipantIds)
+
     for (const judgeId of judgeParticipantIds) {
       const judgeTeamId = judgeTeamIds[judgeId]
       for (const subId of submissions) {

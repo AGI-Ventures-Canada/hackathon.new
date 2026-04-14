@@ -1,11 +1,11 @@
 import { notFound } from "next/navigation"
 import { auth } from "@clerk/nextjs/server"
-import { getPublicHackathon } from "@/lib/services/public-hackathons"
+import { getPublicHackathon, PUBLISHED_STATUSES } from "@/lib/services/public-hackathons"
 import { listScheduleItems } from "@/lib/services/schedule-items"
 import { listPublishedAnnouncements } from "@/lib/services/announcements"
 import { HackathonPreviewClient } from "@/components/hackathon/preview/hackathon-preview-client"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Eye } from "lucide-react"
+import { Eye, Clock } from "lucide-react"
 import type { Metadata } from "next"
 
 type PageProps = {
@@ -32,25 +32,38 @@ export default async function EventPage({ params }: PageProps) {
   const { slug } = await params
   const { orgId, userId } = await auth()
 
-  let hackathon = await getPublicHackathon(slug)
+  const hackathon = await getPublicHackathon(slug, { includeUnpublished: true })
+
+  if (!hackathon) {
+    notFound()
+  }
+
+  const isPublished = PUBLISHED_STATUSES.includes(hackathon.status)
   let isPreview = false
   let isOrganizer = false
 
-  if (hackathon && orgId && hackathon.organizer.clerk_org_id === orgId) {
+  if (orgId && hackathon.organizer.clerk_org_id === orgId) {
     isOrganizer = true
-  }
-
-  if (!hackathon) {
-    const draftHackathon = await getPublicHackathon(slug, { includeUnpublished: true })
-
-    if (draftHackathon && orgId && draftHackathon.organizer.clerk_org_id === orgId) {
-      hackathon = draftHackathon
+    if (!isPublished) {
       isPreview = true
-      isOrganizer = true
     }
-  }
-
-  if (!hackathon) {
+  } else if (!isPublished) {
+    if (userId) {
+      const { getRegistrationInfo } = await import("@/lib/services/hackathons")
+      const regInfo = await getRegistrationInfo(hackathon.id, userId)
+      if (regInfo.participantRole === "judge") {
+        return (
+          <div className="flex min-h-[60vh] flex-col items-center justify-center px-4 text-center">
+            <Clock className="size-10 text-muted-foreground mb-4" />
+            <h1 className="text-xl font-semibold mb-2">This event isn&apos;t live yet</h1>
+            <p className="text-muted-foreground max-w-md">
+              You&apos;ve been added as a judge for this hackathon, but it hasn&apos;t been
+              published yet. Check back later — you&apos;ll be notified when it&apos;s ready.
+            </p>
+          </div>
+        )
+      }
+    }
     notFound()
   }
 
