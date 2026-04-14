@@ -23,6 +23,7 @@ import { AddJudgeDialog, type AddJudgeResult } from "./add-judge-dialog"
 import { AssignJudgesDialog } from "./assign-judges-dialog"
 import { RoundFormDialog, type CreatedRound } from "./round-form-dialog"
 import { JudgePill } from "./judge-pill"
+import type { PrizeJudgingStyle } from "@/lib/db/hackathon-types"
 import type { RoundData } from "./rounds-types"
 
 type WizardPrize = {
@@ -69,7 +70,7 @@ export type WizardPrizeAdded = {
   description: string | null
   value: string | null
   type: string | null
-  judgingStyle: string | null
+  judgingStyle: PrizeJudgingStyle | null
 }
 
 type Props = {

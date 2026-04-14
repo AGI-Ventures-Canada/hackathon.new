@@ -529,7 +529,7 @@ function HackathonPreviewContent({
                 kind: "prize",
                 criteria_id: null,
                 prize_track_id: null,
-                judging_style: prize.judgingStyle as PublicPrize["judging_style"],
+                judging_style: prize.judgingStyle,
                 round_id: null,
                 assignment_mode: null,
                 max_picks: null,
