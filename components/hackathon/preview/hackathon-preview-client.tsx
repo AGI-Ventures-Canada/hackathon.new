@@ -497,7 +497,7 @@ function HackathonPreviewContent({
               skipNextJudgingOpen.current = true
               setJudgingDialogOpen(false)
               router.refresh()
-              setTimeout(() => { skipNextJudgingOpen.current = false }, 500)
+              requestAnimationFrame(() => { skipNextJudgingOpen.current = false })
             }
           }}
           onJudgeAdded={(judge) => {
@@ -527,7 +527,7 @@ function HackathonPreviewContent({
                 name: prize.name,
                 description: prize.description,
                 value: prize.value,
-                type: "score" as const,
+                type: (prize.type ?? "score") as PublicPrize["type"],
                 rank: null,
                 kind: "prize",
                 criteria_id: null,

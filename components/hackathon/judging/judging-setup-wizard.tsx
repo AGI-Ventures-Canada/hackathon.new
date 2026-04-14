@@ -67,6 +67,7 @@ export type WizardPrizeAdded = {
   name: string
   description: string | null
   value: string | null
+  type: string | null
   judgingStyle: string | null
 }
 
@@ -235,6 +236,7 @@ export function JudgingSetupWizard({
         name: created.name,
         description: created.description ?? null,
         value: created.value ?? null,
+        type: created.type ?? null,
         judgingStyle: created.judgingStyle,
       })
     }

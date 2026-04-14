@@ -24,19 +24,12 @@ const ERROR_DISMISS_MS = 8000
 export function useOptimisticMutation<TInput, TResponse = unknown>(
   options: UseOptimisticMutationOptions<TInput, TResponse>
 ): UseOptimisticMutationReturn<TInput> {
-  const {
-    fn,
-    onOptimistic,
-    onSuccess,
-    onRevert,
-    onError,
-    refreshOnSuccess = true,
-  } = options
-
   const router = useRouter()
   const [isPending, setIsPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const optionsRef = useRef(options)
+  optionsRef.current = options
 
   useEffect(() => () => {
     if (errorTimerRef.current) clearTimeout(errorTimerRef.current)
@@ -52,6 +45,7 @@ export function useOptimisticMutation<TInput, TResponse = unknown>(
 
   const execute = useCallback(
     async (input: TInput) => {
+      const { fn, onOptimistic, onSuccess, onRevert, onError, refreshOnSuccess = true } = optionsRef.current
       clearError()
       setIsPending(true)
       onOptimistic?.(input)
@@ -74,7 +68,7 @@ export function useOptimisticMutation<TInput, TResponse = unknown>(
         setIsPending(false)
       }
     },
-    [fn, onOptimistic, onSuccess, onRevert, onError, refreshOnSuccess, router, clearError]
+    [router, clearError]
   )
 
   return { execute, isPending, error, clearError }

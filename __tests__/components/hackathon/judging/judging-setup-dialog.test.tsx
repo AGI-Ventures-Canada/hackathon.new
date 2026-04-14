@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test"
-import { render, screen, cleanup, waitFor } from "@testing-library/react"
+import { render, screen, cleanup, waitFor, fireEvent } from "@testing-library/react"
 import { resetComponentMocks } from "../../../lib/component-mocks"
 
 let fetchImpl: (url: string, init?: RequestInit) => Promise<Response>
@@ -154,7 +154,7 @@ describe("JudgingSetupDialog", () => {
     expect(screen.getByTestId("invitation-count").textContent).toBe("1")
   })
 
-  it("shows error when an API call fails", async () => {
+  it("shows error with retry button when an API call fails", async () => {
     mockFetchError("/prizes")
 
     render(
@@ -171,6 +171,14 @@ describe("JudgingSetupDialog", () => {
     })
 
     expect(screen.queryByTestId("wizard")).toBeNull()
+    expect(screen.getByText("Try again")).toBeDefined()
+
+    mockFetchSuccess()
+    fireEvent.click(screen.getByText("Try again"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("wizard")).toBeDefined()
+    })
   })
 
   it("does not fetch when closed", async () => {

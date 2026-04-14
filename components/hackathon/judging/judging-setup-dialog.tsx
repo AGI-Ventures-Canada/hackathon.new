@@ -1,7 +1,8 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { Loader2 } from "lucide-react"
+import { Loader2, RotateCw } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
@@ -205,8 +206,12 @@ export function JudgingSetupDialog({
             <Loader2 className="size-6 animate-spin text-muted-foreground" />
           </div>
         ) : error ? (
-          <div className="py-8 text-center">
+          <div className="py-8 text-center space-y-3">
             <p className="text-sm text-destructive">{error}</p>
+            <Button variant="outline" size="sm" onClick={fetchData}>
+              <RotateCw className="size-3.5" />
+              Try again
+            </Button>
           </div>
         ) : (
           <JudgingSetupWizard

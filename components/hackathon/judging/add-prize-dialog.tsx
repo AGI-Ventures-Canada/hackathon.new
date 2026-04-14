@@ -83,6 +83,7 @@ export type CreatedPrize = {
   name: string
   description: string | null
   value: string | null
+  type: string | null
   judgingStyle: PrizeJudgingStyle
   roundId: string | null
   maxPicks: number | null
@@ -303,7 +304,7 @@ export function AddPrizeDialog({
             ...(maxPicksPayload !== undefined ? { maxPicks: maxPicksPayload } : {}),
           }),
         }
-      ).then(assertOk<{ prize: { id: string; name: string; description: string | null; value: string | null; judging_style: string | null; round_id: string | null } }>)
+      ).then(assertOk<{ prize: { id: string; name: string; description: string | null; value: string | null; type: string | null; judging_style: string | null; round_id: string | null } }>)
 
       onSuccess?.()
       router.refresh()
@@ -312,6 +313,7 @@ export function AddPrizeDialog({
         name: data.prize.name,
         description: data.prize.description,
         value: data.prize.value,
+        type: data.prize.type,
         judgingStyle: data.prize.judging_style as PrizeJudgingStyle,
         roundId: data.prize.round_id,
       })
