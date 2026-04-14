@@ -56,9 +56,12 @@ export function WebhookList({ webhooks }: WebhookListProps) {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set())
 
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+
   const handleDelete = async () => {
     if (!deleteId) return
     const id = deleteId
+    setDeleteError(null)
     setDeleteId(null)
     setHiddenIds((prev) => new Set(prev).add(id))
     try {
@@ -66,12 +69,13 @@ export function WebhookList({ webhooks }: WebhookListProps) {
         method: "DELETE",
       }).then(assertOk)
       router.refresh()
-    } catch {
+    } catch (err) {
       setHiddenIds((prev) => {
         const next = new Set(prev)
         next.delete(id)
         return next
       })
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete webhook")
     }
   }
 
@@ -91,6 +95,9 @@ export function WebhookList({ webhooks }: WebhookListProps) {
 
   return (
     <>
+      {deleteError && (
+        <p className="text-sm text-destructive mb-2">{deleteError}</p>
+      )}
       <div className="overflow-x-auto">
       <Table>
         <TableHeader>

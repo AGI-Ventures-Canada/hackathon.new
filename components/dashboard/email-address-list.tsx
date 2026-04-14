@@ -57,23 +57,27 @@ export function EmailAddressList({ emailAddresses, agentMap }: EmailAddressListP
 
   const visibleAddresses = emailAddresses.filter((a) => !hiddenIds.has(a.id))
 
-  const handleDelete = () => {
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+
+  const handleDelete = async () => {
     if (!deleteId) return
 
     const id = deleteId
+    setDeleteError(null)
     setHiddenIds((prev) => new Set(prev).add(id))
     setDeleteId(null)
 
-    fetch(`/api/dashboard/email-addresses/${id}`, { method: "DELETE" })
-      .then(assertOk)
-      .then(() => router.refresh())
-      .catch(() => {
-        setHiddenIds((prev) => {
-          const next = new Set(prev)
-          next.delete(id)
-          return next
-        })
+    try {
+      await fetch(`/api/dashboard/email-addresses/${id}`, { method: "DELETE" }).then(assertOk)
+      router.refresh()
+    } catch (err) {
+      setHiddenIds((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
       })
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete email address")
+    }
   }
 
   const handleCopy = async (address: EmailAddress) => {
@@ -96,6 +100,9 @@ export function EmailAddressList({ emailAddresses, agentMap }: EmailAddressListP
 
   return (
     <>
+      {deleteError && (
+        <p className="text-sm text-destructive mb-2">{deleteError}</p>
+      )}
       <Table>
         <TableHeader>
           <TableRow>
