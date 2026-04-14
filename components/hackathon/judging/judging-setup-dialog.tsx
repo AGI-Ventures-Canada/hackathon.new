@@ -12,6 +12,7 @@ import {
 import { JudgingSetupWizard } from "./judging-setup-wizard"
 import type { WizardJudgeAdded, WizardPrizeAdded } from "./judging-setup-wizard"
 import type { RoundData } from "./rounds-types"
+import { assertOk } from "@/lib/utils/fetch"
 
 type WizardPrize = {
   id: string
@@ -74,24 +75,19 @@ export function JudgingSetupDialog({
     setLoading(true)
     setError(null)
     try {
-      const [prizesRes, judgesRes, roundsRes, invitationsRes] = await Promise.all([
-        fetch(`/api/dashboard/hackathons/${hackathonId}/prizes`),
-        fetch(`/api/dashboard/hackathons/${hackathonId}/judging/judges`),
-        fetch(`/api/dashboard/hackathons/${hackathonId}/rounds`),
-        fetch(`/api/dashboard/hackathons/${hackathonId}/judging/invitations`),
-      ])
-
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      type R = Record<string, any>
       const [prizesData, judgesData, roundsData, invitationsData] = await Promise.all([
-        prizesRes.json(),
-        judgesRes.json(),
-        roundsRes.json(),
-        invitationsRes.json(),
+        fetch(`/api/dashboard/hackathons/${hackathonId}/prizes`).then(assertOk<{ prizes: R[] }>),
+        fetch(`/api/dashboard/hackathons/${hackathonId}/judging/judges`).then(assertOk<{ judges: R[] }>),
+        fetch(`/api/dashboard/hackathons/${hackathonId}/rounds`).then(assertOk<{ rounds: R[] }>),
+        fetch(`/api/dashboard/hackathons/${hackathonId}/judging/invitations`).then(assertOk<{ invitations: R[] }>),
       ])
 
       setPrizes(
         (prizesData.prizes ?? [])
-          .filter((p: { is_screening?: boolean }) => !p.is_screening)
-          .map((p: Record<string, unknown>) => ({
+          .filter((p) => !p.is_screening)
+          .map((p) => ({
             id: p.id,
             name: p.name,
             description: p.description ?? null,
@@ -108,7 +104,7 @@ export function JudgingSetupDialog({
       )
 
       setJudges(
-        (judgesData.judges ?? []).map((j: Record<string, unknown>) => ({
+        (judgesData.judges ?? []).map((j) => ({
           participantId: j.participantId,
           clerkUserId: j.clerkUserId,
           displayName: j.displayName,
@@ -119,7 +115,7 @@ export function JudgingSetupDialog({
       )
 
       setRounds(
-        (roundsData.rounds ?? []).map((r: Record<string, unknown>) => ({
+        (roundsData.rounds ?? []).map((r) => ({
           id: r.id as string,
           name: r.name as string,
           status: (r.status as string) ?? "planned",
@@ -135,16 +131,16 @@ export function JudgingSetupDialog({
       const allInvitations = invitationsData.invitations ?? []
       setPendingInvitations(
         allInvitations
-          .filter((i: { status: string }) => i.status === "pending")
-          .map((i: Record<string, unknown>) => ({
+          .filter((i) => i.status === "pending")
+          .map((i) => ({
             id: i.id as string,
             email: i.email as string,
             status: i.status as string,
             createdAt: i.created_at as string,
           }))
       )
-    } catch {
-      setError("Failed to load judging data")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load judging data")
     } finally {
       setLoading(false)
     }

@@ -974,9 +974,13 @@ export const dashboardJudgingRoutes = new Elysia()
         const hackathon = result.hackathon
 
         let judgeEmail: string | undefined
+        let judgeName: string | undefined
+        let judgeImageUrl: string | undefined
         try {
           const judgeUser = await client.users.getUser(typedBody.clerkUserId)
           judgeEmail = judgeUser.primaryEmailAddress?.emailAddress
+          judgeName = [judgeUser.firstName, judgeUser.lastName].filter(Boolean).join(" ") || judgeEmail || "Judge"
+          judgeImageUrl = judgeUser.imageUrl
         } catch {
           return new Response(JSON.stringify({ error: "Failed to look up judge info", code: "lookup_failed" }), { status: 500, headers: { "Content-Type": "application/json" } })
         }
@@ -1000,6 +1004,14 @@ export const dashboardJudgingRoutes = new Elysia()
         if (!addResult.success) {
           return new Response(JSON.stringify({ error: addResult.error, code: addResult.code }), { status: 400, headers: { "Content-Type": "application/json" } })
         }
+
+        const { createJudgeDisplayProfile } = await import("@/lib/services/judge-display")
+        await createJudgeDisplayProfile(params.id, {
+          name: judgeName!,
+          headshotUrl: judgeImageUrl,
+          clerkUserId: typedBody.clerkUserId,
+          participantId: addResult.participant.id,
+        })
 
         if (judgeEmail) {
           try {
@@ -1057,6 +1069,15 @@ export const dashboardJudgingRoutes = new Elysia()
           if (!addResult.success) {
             return new Response(JSON.stringify({ error: addResult.error, code: addResult.code }), { status: 400, headers: { "Content-Type": "application/json" } })
           }
+
+          const { createJudgeDisplayProfile } = await import("@/lib/services/judge-display")
+          const displayName = [existingUser.firstName, existingUser.lastName].filter(Boolean).join(" ") || typedBody.email
+          await createJudgeDisplayProfile(params.id, {
+            name: displayName,
+            headshotUrl: existingUser.imageUrl,
+            clerkUserId: existingUser.id,
+            participantId: addResult.participant.id,
+          })
 
           if (hackathon.status !== "draft") {
             const addedByName = await resolveAdderName(principal, client)

@@ -1329,6 +1329,12 @@ export async function removeJudge(
     return { success: false }
   }
 
+  await client
+    .from("hackathon_judges_display")
+    .delete()
+    .eq("hackathon_id", hackathonId)
+    .eq("participant_id", judgeParticipantId)
+
   const { error } = await client
     .from("hackathon_participants")
     .delete()

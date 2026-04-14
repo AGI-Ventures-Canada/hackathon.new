@@ -56,6 +56,7 @@ type WizardInvitation = {
 }
 
 export type WizardJudgeAdded = {
+  participantId: string
   displayName: string
   email: string | null
   imageUrl: string | null
@@ -267,6 +268,7 @@ export function JudgingSetupWizard({
         },
       ])
       onJudgeAdded?.({
+        participantId: result.participantId,
         displayName: result.displayName,
         email: result.email,
         imageUrl: result.imageUrl,

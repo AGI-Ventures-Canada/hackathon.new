@@ -5,5 +5,6 @@ export async function assertOk<T = unknown>(res: Response): Promise<T> {
       (body as { error?: string }).error || `Request failed (${res.status})`
     )
   }
+  if (res.status === 204) return undefined as T
   return res.json() as Promise<T>
 }

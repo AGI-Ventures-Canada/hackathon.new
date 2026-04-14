@@ -102,10 +102,15 @@ function HackathonPreviewContent({
     setPendingPrizes((prev) => prev.filter((p) => !serverIds.has(p.id)))
   }, [hackathon.prizes])
 
-  const serverJudgeNames = new Set(hackathon.judges.map((j) => j.name))
+  useEffect(() => {
+    const serverParticipantIds = new Set(hackathon.judges.map((j) => j.participant_id).filter(Boolean))
+    setPendingJudges((prev) => prev.filter((j) => !j.participant_id || !serverParticipantIds.has(j.participant_id)))
+  }, [hackathon.judges])
+
+  const serverJudgeParticipantIds = new Set(hackathon.judges.map((j) => j.participant_id).filter(Boolean))
   const displayJudges = [
     ...hackathon.judges,
-    ...pendingJudges.filter((j) => !serverJudgeNames.has(j.name)),
+    ...pendingJudges.filter((j) => !j.participant_id || !serverJudgeParticipantIds.has(j.participant_id)),
   ]
   const serverPrizeIds = new Set(hackathon.prizes.map((p) => p.id))
   const displayPrizes = [
@@ -515,7 +520,7 @@ function HackathonPreviewContent({
                 organization: null,
                 headshot_url: judge.imageUrl,
                 clerk_user_id: null,
-                participant_id: null,
+                participant_id: judge.participantId,
                 display_order: 9999,
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
