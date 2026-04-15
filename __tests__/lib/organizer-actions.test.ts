@@ -238,7 +238,7 @@ describe("getOrganizerActionItems", () => {
       expect(item).toBeDefined()
       expect(item?.close.kind).toBe("transition")
       expect(item?.action).toBe("transition-to-active")
-      expect(item?.ctaLabel).toBe("Go Live")
+      expect(item?.ctaLabel).toBe("Start the main event")
     })
 
     it("does not show ready-to-go-live when location is missing", () => {

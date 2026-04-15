@@ -125,6 +125,7 @@ export type ActionItemsInput = {
   perkCount: number
   perksNone: boolean
   rounds: { plannedCount: number; activeCount: number; completeCount: number }
+  communityUrl?: string | null
 }
 
 const STATUS_ORDER: HackathonStatus[] = ["draft", "published", "active", "judging", "completed"]
@@ -367,6 +368,8 @@ function addDraftActions(items: ActionItem[], input: ActionItemsInput) {
     tooltip: "The submission deadline is an automated agenda item that locks submissions and starts the judging phase. Make sure the time is correct — once it passes, participants can no longer submit or edit their projects.",
   }))
 
+  addCommunityLinkAction(items, input)
+
   if (hasDates && hasLocation) {
     items.push(transitionAction({
       id: "ready-to-publish",
@@ -377,6 +380,19 @@ function addDraftActions(items: ActionItem[], input: ActionItemsInput) {
       ctaLabel: "Publish",
     }))
   }
+}
+
+function addCommunityLinkAction(items: ActionItem[], input: ActionItemsInput) {
+  if (input.communityUrl) return
+  items.push(manualAction({
+    id: "add-community-link",
+    label: "Add a community/help link",
+    hint: "Share a Discord, Slack, or help link with registered attendees",
+    severity: "info",
+    action: "open-community-dialog",
+    ctaLabel: "Add",
+    tooltip: "Drop a link to your Discord, Slack, Telegram, or help doc. Registered attendees will see it on the event page so they can ask questions and meet other builders.",
+  }))
 }
 
 function addPublishedActions(items: ActionItem[], input: ActionItemsInput) {
@@ -438,6 +454,8 @@ function addPublishedActions(items: ActionItem[], input: ActionItemsInput) {
     }
   }
 
+  addCommunityLinkAction(items, input)
+
   items.push(dismissAction({
     id: "verify-automated-times",
     label: "Double-check automated times",
@@ -457,7 +475,7 @@ function addPublishedActions(items: ActionItem[], input: ActionItemsInput) {
       hint: "The essentials are in place — you can finish the rest later",
       severity: "info",
       action: "transition-to-active",
-      ctaLabel: "Go Live",
+      ctaLabel: "Start the main event",
     }))
   }
 }

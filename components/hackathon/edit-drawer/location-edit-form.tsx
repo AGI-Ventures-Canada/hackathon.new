@@ -154,11 +154,14 @@ export function LocationEditForm({ hackathonId, initialData, onSaveAndNext, onSa
       setRequireLocationVerification(false)
     } else {
       setLocationType(type)
-      setLocationName("")
-      setLocationUrl("")
-      setLocationLatitude(null)
-      setLocationLongitude(null)
-      if (type !== "in_person") setRequireLocationVerification(false)
+      if (type === "virtual") {
+        setLocationName("")
+        setLocationLatitude(null)
+        setLocationLongitude(null)
+        setRequireLocationVerification(false)
+      } else if (type === "in_person") {
+        setLocationUrl("")
+      }
     }
   }
 

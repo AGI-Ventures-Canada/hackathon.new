@@ -41,6 +41,7 @@ import { ScheduleEditor } from "@/components/hackathon/schedule-editor";
 import type { ScheduleItem } from "@/lib/services/schedule-items";
 import { LocationEditDialog } from "./location-edit-dialog";
 import { TeamSettingsDialog } from "./team-settings-dialog";
+import { CommunityEditForm } from "@/components/hackathon/edit-drawer/community-edit-form";
 
 const SEVERITY_ORDER: ActionSeverity[] = ["urgent", "warning", "scheduled", "info"];
 
@@ -115,9 +116,11 @@ type ProviderProps = {
   challengeExists: boolean;
   challengeReleasedAt: string | null;
   scheduleItems: ScheduleItem[];
+  startsAt: string | null;
   endsAt: string | null;
   locationInitialData: LocationInitialData;
   teamSettingsInitialData: TeamSettingsInitialData;
+  communityInitialData: { url: string | null; label: string | null };
   children: React.ReactNode;
 };
 
@@ -130,9 +133,11 @@ export function ActionItemsProvider({
   challengeExists,
   challengeReleasedAt,
   scheduleItems: serverScheduleItems,
+  startsAt: serverStartsAt,
   endsAt: serverEndsAt,
   locationInitialData,
   teamSettingsInitialData,
+  communityInitialData,
   children,
 }: ProviderProps) {
   const router = useRouter();
@@ -144,6 +149,7 @@ export function ActionItemsProvider({
   const [agendaDialogOpen, setAgendaDialogOpen] = useState(false);
   const [locationDialogOpen, setLocationDialogOpen] = useState(false);
   const [teamSettingsDialogOpen, setTeamSettingsDialogOpen] = useState(false);
+  const [communityDialogOpen, setCommunityDialogOpen] = useState(false);
 
   const [scheduleItems, setScheduleItems] = useState(serverScheduleItems);
   useEffect(() => {
@@ -444,6 +450,8 @@ export function ActionItemsProvider({
         setLocationDialogOpen(true);
       } else if (item.action === "open-team-settings-dialog") {
         setTeamSettingsDialogOpen(true);
+      } else if (item.action === "open-community-dialog") {
+        setCommunityDialogOpen(true);
       } else if (item.action === "open-submission-deadline-dialog") {
         submissionDeadlineRef.current?.openDialog();
       } else if (item.action?.startsWith("transition-to-")) {
@@ -621,6 +629,9 @@ export function ActionItemsProvider({
             scheduleItems={scheduleItems}
             challengeReleasedAt={challengeReleasedAt}
             challengeExists={liveChallengeExists}
+            hackathonStartsAt={serverStartsAt}
+            hackathonEndsAt={liveEndsAt}
+            hackathonStatus={liveStatus}
             hideHeader
             onEditTriggerItem={(item) => {
               if (item.trigger_type === "challenge_release") {
@@ -652,6 +663,26 @@ export function ActionItemsProvider({
         initialData={teamSettingsInitialData}
         onSaved={() => markComplete("review-team-settings")}
       />
+      <Dialog open={communityDialogOpen} onOpenChange={setCommunityDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Community link</DialogTitle>
+            <DialogDescription>
+              Share a Discord, Slack, or help link with registered attendees.
+            </DialogDescription>
+          </DialogHeader>
+          <CommunityEditForm
+            hackathonId={hackathonId}
+            initialUrl={communityInitialData.url}
+            initialLabel={communityInitialData.label}
+            onCancel={() => setCommunityDialogOpen(false)}
+            onSaveAndNext={() => {
+              setCommunityDialogOpen(false);
+              refreshPoll();
+            }}
+          />
+        </DialogContent>
+      </Dialog>
       <Dialog open={promoteDialogOpen} onOpenChange={setPromoteDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -661,8 +692,8 @@ export function ActionItemsProvider({
               participants, and spread the word through your community.
             </DialogDescription>
           </DialogHeader>
-          <div className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2">
-            <code className="flex-1 truncate text-sm">{`${typeof window !== "undefined" ? window.location.origin : ""}/e/${slug}`}</code>
+          <div className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2 min-w-0">
+            <code className="flex-1 min-w-0 truncate text-sm">{`${typeof window !== "undefined" ? window.location.origin : ""}/e/${slug}`}</code>
             <CopyButton value={`${typeof window !== "undefined" ? window.location.origin : ""}/e/${slug}`} showLabel={false} size="icon" />
           </div>
           <DialogFooter>

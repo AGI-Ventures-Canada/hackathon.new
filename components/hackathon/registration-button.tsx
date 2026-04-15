@@ -22,7 +22,7 @@ interface RegistrationButtonProps {
 }
 
 const blockedStatuses: HackathonStatus[] = ["draft", "archived", "completed", "judging"]
-const openStatuses: HackathonStatus[] = ["registration_open", "active"]
+const openStatuses: HackathonStatus[] = ["published", "registration_open", "active"]
 
 export function RegistrationButton({
   hackathonSlug,
@@ -114,14 +114,6 @@ export function RegistrationButton({
   }
 
   if (!opensAt && !closesAt && !openStatuses.includes(status)) {
-    if (status === "published") {
-      return (
-        <Button disabled variant="secondary" size="lg">
-          <CalendarClock className="size-4" />
-          Registration Coming Soon
-        </Button>
-      )
-    }
     return (
       <div className="flex flex-col gap-1.5">
         <Button disabled variant="secondary" size="lg">

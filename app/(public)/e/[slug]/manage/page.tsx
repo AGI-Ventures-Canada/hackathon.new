@@ -122,6 +122,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     perkCount: perks.length,
     perksNone: hackathon.perks_none ?? false,
     rounds: roundsSummary,
+    communityUrl: hackathon.community_url ?? null,
   })
 
   const activeTab = resolveTab(tab, VALID_TABS, DEFAULT_TAB)
@@ -148,6 +149,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
         challengeExists={challengeExists}
         challengeReleasedAt={hackathon.challenge_released_at}
         scheduleItems={scheduleItems}
+        startsAt={hackathon.starts_at}
         endsAt={hackathon.ends_at}
         locationInitialData={{
           locationType: hackathon.location_type,
@@ -161,6 +163,10 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
           minTeamSize: hackathon.min_team_size ?? 1,
           maxTeamSize: hackathon.max_team_size ?? 5,
           allowSolo: hackathon.allow_solo ?? true,
+        }}
+        communityInitialData={{
+          url: hackathon.community_url ?? null,
+          label: hackathon.community_label ?? null,
         }}
       >
         <TabsUrlSync paramKey="tab" value={activeTab}>
@@ -233,10 +239,12 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
                     judgingProgress,
                     mentorQueue: overviewStats.mentorQueue,
                   }}
-                  announcements={announcements}
                   scheduleItems={scheduleItems}
                   challengeReleasedAt={hackathon.challenge_released_at}
                   challengeExists={challengeExists}
+                  hackathonStartsAt={hackathon.starts_at}
+                  hackathonEndsAt={hackathon.ends_at}
+                  hackathonStatus={hackathon.status}
                 />
               </div>
             </TabsContent>

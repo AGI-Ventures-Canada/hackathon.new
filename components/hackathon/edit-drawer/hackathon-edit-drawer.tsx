@@ -12,11 +12,11 @@ import { ChevronUp, ChevronDown } from "lucide-react"
 import { useEdit, type EditSection, SECTION_ORDER } from "@/components/hackathon/preview/edit-context"
 import { NameEditForm } from "./name-edit-form"
 
-import { TimelineEditForm } from "./timeline-edit-form"
 import { LocationEditForm } from "./location-edit-form"
 import { SponsorsEditForm } from "./sponsors-edit-form"
 import { JudgesEditForm } from "./judges-edit-form"
 import { PrizesEditForm } from "./prizes-edit-form"
+import { CommunityEditForm } from "./community-edit-form"
 import type { PublicHackathon } from "@/lib/services/public-hackathons"
 
 interface HackathonEditDrawerProps {
@@ -36,10 +36,6 @@ const sectionMeta: Record<Exclude<EditSection, null>, { title: string; descripti
     title: "Edit About",
     description: "Update the hackathon description",
   },
-  timeline: {
-    title: "Edit Timeline",
-    description: "Update the hackathon schedule",
-  },
   location: {
     title: "Edit Location",
     description: "Set the event location or virtual link",
@@ -55,6 +51,10 @@ const sectionMeta: Record<Exclude<EditSection, null>, { title: string; descripti
   prizes: {
     title: "Manage Prizes",
     description: "Add or remove hackathon prizes",
+  },
+  community: {
+    title: "Community Link",
+    description: "Share a Discord, Slack, or help link with registered attendees",
   },
 }
 
@@ -130,17 +130,6 @@ export function HackathonEditDrawer({ hackathon }: HackathonEditDrawerProps) {
             />
           )}
 
-          {activeSection === "timeline" && (
-            <TimelineEditForm
-              hackathonId={hackathon.id}
-              initialData={{
-                startsAt: hackathon.starts_at,
-                endsAt: hackathon.ends_at,
-              }}
-              onSaveAndNext={handleSaveAndNext}
-            />
-          )}
-
           {activeSection === "location" && (
             <LocationEditForm
               hackathonId={hackathon.id}
@@ -176,6 +165,15 @@ export function HackathonEditDrawer({ hackathon }: HackathonEditDrawerProps) {
             <PrizesEditForm
               hackathonId={hackathon.id}
               initialPrizes={hackathon.prizes}
+              onSaveAndNext={handleSaveAndNext}
+            />
+          )}
+
+          {activeSection === "community" && (
+            <CommunityEditForm
+              hackathonId={hackathon.id}
+              initialUrl={hackathon.community_url}
+              initialLabel={hackathon.community_label}
               onSaveAndNext={handleSaveAndNext}
             />
           )}
