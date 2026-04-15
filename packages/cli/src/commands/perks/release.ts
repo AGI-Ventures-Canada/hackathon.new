@@ -13,15 +13,15 @@ export async function runPerksRelease(
     process.exit(1)
   }
 
-  const perk = await client.post<Perk>(
+  const response = await client.post<{ perk: Perk }>(
     `/api/dashboard/hackathons/${hackathonId}/perks/${perkId}/release`,
     {}
   )
 
   if (options.json) {
-    console.log(formatJson(perk))
+    console.log(formatJson(response.perk))
     return
   }
 
-  console.log(formatSuccess(`Released perk "${perk.name}"`))
+  console.log(formatSuccess(`Released perk "${response.perk.name}"`))
 }

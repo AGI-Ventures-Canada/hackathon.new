@@ -139,7 +139,7 @@ export default async function EventPage({ params }: PageProps) {
 
   let viewerPerks: import("@/lib/services/perks").Perk[] = []
   const perksNone = hackathon.perks_none ?? false
-  if (!perksNone && (teamInfo || isOrganizer)) {
+  if (!perksNone && teamInfo) {
     const { listPerks, isPerkReleased } = await import("@/lib/services/perks")
     const all = await listPerks(hackathon.id)
     const now = new Date()

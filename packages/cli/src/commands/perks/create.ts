@@ -81,7 +81,7 @@ export async function runPerksCreate(
     process.exit(1)
   }
 
-  const perk = await client.post<Perk>(
+  const response = await client.post<{ perk: Perk }>(
     `/api/dashboard/hackathons/${hackathonId}/perks`,
     {
       name,
@@ -96,9 +96,9 @@ export async function runPerksCreate(
   )
 
   if (options.json) {
-    console.log(formatJson(perk))
+    console.log(formatJson(response.perk))
     return
   }
 
-  console.log(formatSuccess(`Created perk "${perk.name}" (${perk.id})`))
+  console.log(formatSuccess(`Created perk "${response.perk.name}" (${response.perk.id})`))
 }
