@@ -1,6 +1,6 @@
 {
   "name": "@agi-ventures-canada/hackathon-cli",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "CLI for the Oatmeal hackathon platform",
   "type": "module",
   "bin": {
