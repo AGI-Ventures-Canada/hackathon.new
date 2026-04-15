@@ -20,7 +20,6 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
 import { CheckCircle2, Crown, Clock, X, Lock, Scale, Mail, CalendarClock, MapPin, AlertTriangle, Pencil } from "lucide-react"
-import { formatDateTimeDisplay } from "@/lib/utils/format"
 import type { PublicHackathon } from "@/lib/services/public-hackathons"
 import type { HackathonJudgeDisplay } from "@/lib/db/hackathon-types"
 import type { Submission } from "@/lib/db/hackathon-types"
@@ -33,6 +32,7 @@ import { NameEditForm } from "@/components/hackathon/edit-drawer/name-edit-form"
 import { AboutEditForm } from "@/components/hackathon/edit-drawer/about-edit-form"
 import { TimelineEditForm } from "@/components/hackathon/edit-drawer/timeline-edit-form"
 import { LocationEditForm } from "@/components/hackathon/edit-drawer/location-edit-form"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { SponsorsEditForm } from "@/components/hackathon/edit-drawer/sponsors-edit-form"
 import { JudgesEditForm } from "@/components/hackathon/edit-drawer/judges-edit-form"
 import { PrizesEditForm } from "@/components/hackathon/edit-drawer/prizes-edit-form"
@@ -139,7 +139,6 @@ function HackathonPreviewContent({
     }
   }, [isEditable, editMode, hackathon.name, activeSection, openSection])
 
-  const hasTimeline = hackathon.registration_opens_at || hackathon.registration_closes_at || hackathon.starts_at || hackathon.ends_at
 
   async function handleCancelInvitation(invitationId: string) {
     if (!teamInfo) return
@@ -370,146 +369,141 @@ function HackathonPreviewContent({
     </div>
   ) : null
 
+  const sponsorsBlock = isEditable && editMode && activeSection === "sponsors" ? (
+    <div data-edit-section="sponsors" className="scroll-mt-24">
+      <SponsorsEditForm
+        hackathonId={hackathon.id}
+        initialSponsors={hackathon.sponsors}
+        onSaveAndNext={() => handleSaveAndNext("sponsors")}
+        onSave={onFormSave ? (data) => onFormSave(data) : undefined}
+      />
+    </div>
+  ) : (
+    <EditableSection
+      section="sponsors"
+      isEmpty={hackathon.sponsors.length === 0}
+      emptyLabel="Click to add sponsors"
+    >
+      <SponsorSection sponsors={hackathon.sponsors} />
+    </EditableSection>
+  )
+
+  const judgesBlock = isEditable && editMode && activeSection === "judges" ? (
+    <div data-edit-section="judges" className="scroll-mt-24">
+      <JudgesEditForm
+        hackathonId={hackathon.id}
+        initialJudges={hackathon.judges}
+        onSaveAndNext={() => handleSaveAndNext("judges")}
+        onJudgesChange={setOptimisticJudges}
+      />
+    </div>
+  ) : (
+    <EditableSection
+      section="judges"
+      isEmpty={(optimisticJudges ?? hackathon.judges).length === 0}
+      emptyLabel="Click to add judges"
+    >
+      <JudgeSection judges={optimisticJudges ?? hackathon.judges} />
+    </EditableSection>
+  )
+
+  const prizesBlock = isEditable && editMode && activeSection === "prizes" ? (
+    <div data-edit-section="prizes" className="scroll-mt-24">
+      <PrizesEditForm
+        hackathonId={hackathon.id}
+        initialPrizes={hackathon.prizes}
+        onSaveAndNext={() => handleSaveAndNext("prizes")}
+        onSave={onFormSave ? (data) => onFormSave(data) : undefined}
+      />
+    </div>
+  ) : (
+    <EditableSection
+      section="prizes"
+      isEmpty={hackathon.prizes.length === 0}
+      emptyLabel="Click to add prizes"
+    >
+      <PrizeSection
+        prizes={hackathon.prizes}
+        hackathonSlug={hackathon.slug}
+        hackathonStatus={hackathon.status}
+      />
+    </EditableSection>
+  )
+
   const eventContent = (
     <>
-      {isEditable && editMode && activeSection === "sponsors" ? (
-        <div data-edit-section="sponsors" className="py-12 scroll-mt-24">
-          <div className="mx-auto max-w-4xl px-4">
-            <SponsorsEditForm
-              hackathonId={hackathon.id}
-              initialSponsors={hackathon.sponsors}
-              onSaveAndNext={() => handleSaveAndNext("sponsors")}
-              onSave={onFormSave ? (data) => onFormSave(data) : undefined}
-            />
-          </div>
-        </div>
-      ) : (
-        <EditableSection
-          section="sponsors"
-          isEmpty={hackathon.sponsors.length === 0}
-          emptyLabel="Click to add sponsors"
-          className="py-12"
-        >
-          <SponsorSection sponsors={hackathon.sponsors} />
-        </EditableSection>
-      )}
-
-      {isEditable && editMode && activeSection === "judges" ? (
-        <div data-edit-section="judges" className="py-12 scroll-mt-24">
-          <div className="mx-auto max-w-4xl px-4">
-            <JudgesEditForm
-              hackathonId={hackathon.id}
-              initialJudges={hackathon.judges}
-              onSaveAndNext={() => handleSaveAndNext("judges")}
-              onJudgesChange={setOptimisticJudges}
-            />
-          </div>
-        </div>
-      ) : (
-        <EditableSection
-          section="judges"
-          isEmpty={(optimisticJudges ?? hackathon.judges).length === 0}
-          emptyLabel="Click to add judges"
-          className="py-12"
-        >
-          <JudgeSection judges={optimisticJudges ?? hackathon.judges} />
-        </EditableSection>
-      )}
-
-      {isEditable && editMode && activeSection === "prizes" ? (
-        <div data-edit-section="prizes" className="py-12 scroll-mt-24">
-          <div className="mx-auto max-w-4xl px-4">
-            <PrizesEditForm
-              hackathonId={hackathon.id}
-              initialPrizes={hackathon.prizes}
-              onSaveAndNext={() => handleSaveAndNext("prizes")}
-              onSave={onFormSave ? (data) => onFormSave(data) : undefined}
-            />
-          </div>
-        </div>
-      ) : (
-        <EditableSection
-          section="prizes"
-          isEmpty={hackathon.prizes.length === 0}
-          emptyLabel="Click to add prizes"
-          className="py-12"
-        >
-          <PrizeSection
-            prizes={hackathon.prizes}
-            hackathonSlug={hackathon.slug}
-            hackathonStatus={hackathon.status}
-          />
-        </EditableSection>
-      )}
-
       <section className="py-12 border-t">
         <div className="mx-auto max-w-4xl px-4">
-          <div className="space-y-8">
-            {publicResults.length > 0 && (
-              <PublicResults results={publicResults} />
-            )}
-
-            {challenges.length > 0 && (
-              <ChallengeSection
-                challenges={challenges}
-                releasedAt={hackathon.challenge_released_at}
-              />
-            )}
-
-            {viewerPerks.length > 0 && (
-              <PerksSection
-                perks={viewerPerks}
-                sponsors={hackathon.sponsors.map((s) => ({ id: s.id, name: s.name }))}
-              />
-            )}
-
-            {isEditable && editMode && activeSection === "timeline" ? (
-              <div data-edit-section="timeline" className="scroll-mt-24">
-                <h2 className="text-xl font-bold mb-4">Timeline</h2>
-                <TimelineEditForm
-                  hackathonId={hackathon.id}
-                  initialData={{
-                    startsAt: hackathon.starts_at,
-                    endsAt: hackathon.ends_at,
-                  }}
-                  onSaveAndNext={() => handleSaveAndNext("timeline")}
-                  onSave={onFormSave ? (data) => onFormSave({
-                    startsAt: data.startsAt?.toISOString() ?? null,
-                    endsAt: data.endsAt?.toISOString() ?? null,
-                  }) : undefined}
-                />
-              </div>
-            ) : (
-              <EditableSection
-                section="timeline"
-                isEmpty={!hasTimeline}
-                emptyLabel="Click to add timeline"
-              >
-                {hasTimeline && (
-                  <div>
-                    <h2 className="text-xl font-bold mb-4">Timeline</h2>
-                    <div className="space-y-2 text-sm">
-                      {hackathon.starts_at && (
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Hackathon Starts</span>
-                          <span>{formatDateTimeDisplay(hackathon.starts_at)}</span>
-                        </div>
-                      )}
-                      {hackathon.ends_at && (
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Hackathon Ends</span>
-                          <span>{formatDateTimeDisplay(hackathon.ends_at)}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+          <Tabs defaultValue="overview" className="w-full">
+            <div className="overflow-x-auto overflow-y-hidden">
+              <TabsList variant="line">
+                <TabsTrigger value="overview">Overview</TabsTrigger>
+                <TabsTrigger value="schedule">Schedule</TabsTrigger>
+                {challenges.length > 0 && (
+                  <TabsTrigger value="challenges">Challenges</TabsTrigger>
                 )}
-              </EditableSection>
-            )}
+                {viewerPerks.length > 0 && (
+                  <TabsTrigger value="perks">Perks</TabsTrigger>
+                )}
+              </TabsList>
+            </div>
 
-            {scheduleItems.length > 0 && (
-              <div>
-                <h2 className="text-xl font-bold mb-4">Schedule</h2>
+            <TabsContent value="overview" className="mt-6 space-y-8">
+              {publicResults.length > 0 && (
+                <PublicResults results={publicResults} />
+              )}
+
+              {announcements.length > 0 && (
+                <div>
+                  <h2 className="text-xl font-bold mb-4">Announcements</h2>
+                  <div className="space-y-3">
+                    {announcements.map((a) => (
+                      <div key={a.id}>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium">{a.title}</p>
+                          {a.priority === "urgent" && <Badge variant="destructive">urgent</Badge>}
+                        </div>
+                        <p className="text-sm text-muted-foreground mt-0.5">{a.body}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {isEditable && editMode && activeSection === "about" ? (
+                <div data-edit-section="about" className="scroll-mt-24">
+                  <h2 className="text-xl font-bold mb-4">About</h2>
+                  <AboutEditForm
+                    hackathonId={hackathon.id}
+                    initialData={{ description: hackathon.description }}
+                    onSaveAndNext={() => handleSaveAndNext("about")}
+                    onSave={onFormSave ? (data) => onFormSave(data) : undefined}
+                  />
+                </div>
+              ) : (
+                <EditableSection
+                  section="about"
+                  isEmpty={!hackathon.description}
+                  emptyLabel="Click to add description"
+                >
+                  {hackathon.description && (
+                    <div>
+                      <h2 className="text-xl font-bold mb-4">About</h2>
+                      <TruncatableContent>
+                        <MarkdownContent>{hackathon.description}</MarkdownContent>
+                      </TruncatableContent>
+                    </div>
+                  )}
+                </EditableSection>
+              )}
+
+              {sponsorsBlock}
+              {judgesBlock}
+              {prizesBlock}
+            </TabsContent>
+
+            <TabsContent value="schedule" className="mt-6">
+              {scheduleItems.length > 0 ? (
                 <div className="space-y-3">
                   {scheduleItems.map((item) => (
                     <div key={item.id} className="flex items-start gap-3">
@@ -529,54 +523,29 @@ function HackathonPreviewContent({
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
+              ) : (
+                <p className="text-sm text-muted-foreground">No schedule items yet.</p>
+              )}
+            </TabsContent>
 
-            {announcements.length > 0 && (
-              <div>
-                <h2 className="text-xl font-bold mb-4">Announcements</h2>
-                <div className="space-y-3">
-                  {announcements.map((a) => (
-                    <div key={a.id}>
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium">{a.title}</p>
-                        {a.priority === "urgent" && <Badge variant="destructive">urgent</Badge>}
-                      </div>
-                      <p className="text-sm text-muted-foreground mt-0.5">{a.body}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {isEditable && editMode && activeSection === "about" ? (
-              <div data-edit-section="about" className="scroll-mt-24">
-                <h2 className="text-xl font-bold mb-4">About</h2>
-                <AboutEditForm
-                  hackathonId={hackathon.id}
-                  initialData={{ description: hackathon.description }}
-                  onSaveAndNext={() => handleSaveAndNext("about")}
-                  onSave={onFormSave ? (data) => onFormSave(data) : undefined}
+            {challenges.length > 0 && (
+              <TabsContent value="challenges" className="mt-6">
+                <ChallengeSection
+                  challenges={challenges}
+                  releasedAt={hackathon.challenge_released_at}
                 />
-              </div>
-            ) : (
-              <EditableSection
-                section="about"
-                isEmpty={!hackathon.description}
-                emptyLabel="Click to add description"
-              >
-                {hackathon.description && (
-                  <div>
-                    <h2 className="text-xl font-bold mb-4">About</h2>
-                    <TruncatableContent>
-                      <MarkdownContent>{hackathon.description}</MarkdownContent>
-                    </TruncatableContent>
-                  </div>
-                )}
-              </EditableSection>
+              </TabsContent>
             )}
 
-          </div>
+            {viewerPerks.length > 0 && (
+              <TabsContent value="perks" className="mt-6">
+                <PerksSection
+                  perks={viewerPerks}
+                  sponsors={hackathon.sponsors.map((s) => ({ id: s.id, name: s.name }))}
+                />
+              </TabsContent>
+            )}
+          </Tabs>
         </div>
       </section>
 

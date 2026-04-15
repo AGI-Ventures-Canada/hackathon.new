@@ -12,7 +12,6 @@ import { ChevronUp, ChevronDown } from "lucide-react"
 import { useEdit, type EditSection, SECTION_ORDER } from "@/components/hackathon/preview/edit-context"
 import { NameEditForm } from "./name-edit-form"
 
-import { TimelineEditForm } from "./timeline-edit-form"
 import { LocationEditForm } from "./location-edit-form"
 import { SponsorsEditForm } from "./sponsors-edit-form"
 import { JudgesEditForm } from "./judges-edit-form"
@@ -35,10 +34,6 @@ const sectionMeta: Record<Exclude<EditSection, null>, { title: string; descripti
   about: {
     title: "Edit About",
     description: "Update the hackathon description",
-  },
-  timeline: {
-    title: "Edit Timeline",
-    description: "Update the hackathon schedule",
   },
   location: {
     title: "Edit Location",
@@ -126,17 +121,6 @@ export function HackathonEditDrawer({ hackathon }: HackathonEditDrawerProps) {
             <NameEditForm
               hackathonId={hackathon.id}
               initialName={hackathon.name}
-              onSaveAndNext={handleSaveAndNext}
-            />
-          )}
-
-          {activeSection === "timeline" && (
-            <TimelineEditForm
-              hackathonId={hackathon.id}
-              initialData={{
-                startsAt: hackathon.starts_at,
-                endsAt: hackathon.ends_at,
-              }}
               onSaveAndNext={handleSaveAndNext}
             />
           )}

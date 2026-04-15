@@ -6,7 +6,6 @@ export type EditSection =
   | "name"
   | "dates"
   | "about"
-  | "timeline"
   | "location"
   | "sponsors"
   | "judges"
@@ -20,7 +19,6 @@ export const SECTION_ORDER: Exclude<EditSection, null>[] = [
   "sponsors",
   "judges",
   "prizes",
-  "timeline",
   "about",
 ]
 
