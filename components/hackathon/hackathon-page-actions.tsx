@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import {
@@ -25,6 +26,8 @@ import {
   LayoutDashboard,
   Trophy,
   MessageCircle,
+  Copy,
+  Check,
 } from "lucide-react"
 
 interface HackathonPageActionsProps {
@@ -52,6 +55,18 @@ export function HackathonPageActions({
   hackathonName,
   isOrganizer,
 }: HackathonPageActionsProps) {
+  const [copied, setCopied] = useState(false)
+
+  async function handleCopyUrl() {
+    const url =
+      typeof window !== "undefined"
+        ? `${window.location.origin}/e/${slug}`
+        : `/e/${slug}`
+    await navigator.clipboard.writeText(url)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
   return (
     <>
       <Tooltip>
@@ -64,6 +79,15 @@ export function HackathonPageActions({
           </Button>
         </TooltipTrigger>
         <TooltipContent>View Live</TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="ghost" size="icon-sm" onClick={handleCopyUrl}>
+            {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+            <span className="sr-only">Copy event URL</span>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{copied ? "Copied!" : "Copy event URL"}</TooltipContent>
       </Tooltip>
       {isOrganizer ? (
         <DropdownMenu>
