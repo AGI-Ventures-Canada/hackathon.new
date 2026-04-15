@@ -383,7 +383,7 @@ function addDraftActions(items: ActionItem[], input: ActionItemsInput) {
 }
 
 function addCommunityLinkAction(items: ActionItem[], input: ActionItemsInput) {
-  if (input.communityUrl !== null) return
+  if (input.communityUrl) return
   items.push(manualAction({
     id: "add-community-link",
     label: "Add a community/help link",
