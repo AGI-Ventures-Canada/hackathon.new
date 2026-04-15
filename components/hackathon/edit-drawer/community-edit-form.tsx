@@ -117,6 +117,7 @@ export function CommunityEditForm({
             name="community-url"
             type="text"
             inputMode="url"
+            autoFocus
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             placeholder="discord.gg/your-server"

@@ -38,7 +38,7 @@ export function ChallengeSection({ challenges, releasedAt, showResources = false
   }
 
   const visibleChallenges = showAll ? challenges : challenges.slice(0, INITIAL_VISIBLE)
-  const hiddenCount = challenges.length - INITIAL_VISIBLE
+  const hiddenCount = Math.max(0, challenges.length - INITIAL_VISIBLE)
 
   return (
     <div>

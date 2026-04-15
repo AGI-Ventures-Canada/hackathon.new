@@ -151,8 +151,8 @@ function groupByDateAndTime(items: ScheduleItemData[]): DateGroup[] {
     }))
 }
 
-function isCurrent(item: ScheduleItemData, now: string): boolean {
-  if (!item.ends_at) return false
+function isCurrent(item: ScheduleItemData, now: string | null): boolean {
+  if (!now || !item.ends_at) return false
   return item.starts_at <= now && item.ends_at > now
 }
 
@@ -173,7 +173,12 @@ export type ScheduleEditorProps = {
 export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challengeReleasedAt, challengeExists, hackathonStartsAt, hackathonEndsAt, hackathonStatus, hideHeader, onEditTriggerItem, onAddChallenge, onScheduleChange }: ScheduleEditorProps) {
   const router = useRouter()
   const isMobile = useIsMobile()
-  const now = new Date().toISOString()
+  const [now, setNow] = useState<string | null>(null)
+  useEffect(() => {
+    setNow(new Date().toISOString())
+    const id = setInterval(() => setNow(new Date().toISOString()), 30_000)
+    return () => clearInterval(id)
+  }, [])
 
   const [allItems, setAllItems] = useState<ScheduleItemData[]>(serverItems as ScheduleItemData[])
   useEffect(() => { setAllItems(serverItems as ScheduleItemData[]) }, [serverItems])
