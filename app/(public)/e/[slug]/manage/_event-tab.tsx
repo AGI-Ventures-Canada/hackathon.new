@@ -618,8 +618,13 @@ function AnnouncementsSubTab({ hackathonId, hackathonStatus, hackathonPhase }: {
         .then(assertOkJson<AnnouncementData>)
         .then(async (created) => {
           if (publish) {
-            const published = await fetch(`/api/dashboard/hackathons/${hackathonId}/announcements/${created.id}/publish`, { method: "POST" }).then(assertOkJson<AnnouncementData>)
-            setItems((old) => old.map((i) => (i.id === tempId ? published : i)))
+            try {
+              const published = await fetch(`/api/dashboard/hackathons/${hackathonId}/announcements/${created.id}/publish`, { method: "POST" }).then(assertOkJson<AnnouncementData>)
+              setItems((old) => old.map((i) => (i.id === tempId ? published : i)))
+            } catch {
+              setItems((old) => old.map((i) => (i.id === tempId ? created : i)))
+              setError("Saved as draft — couldn't publish. Try publishing again.")
+            }
           } else {
             setItems((old) => old.map((i) => (i.id === tempId ? created : i)))
           }

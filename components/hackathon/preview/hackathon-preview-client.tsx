@@ -37,6 +37,7 @@ import { SponsorsEditForm } from "@/components/hackathon/edit-drawer/sponsors-ed
 import { CommunityEditForm } from "@/components/hackathon/edit-drawer/community-edit-form"
 import { JudgingSetupDialog } from "@/components/hackathon/judging/judging-setup-dialog"
 import type { PublicPrize } from "@/lib/services/public-hackathons"
+import type { PrizeType } from "@/lib/db/hackathon-types"
 import type { PublicResultWithDetails } from "@/lib/services/results"
 import type { ScheduleItem } from "@/lib/services/schedule-items"
 import type { Announcement } from "@/lib/services/announcements"
@@ -523,7 +524,9 @@ function HackathonPreviewContent({
                 name: prize.name,
                 description: prize.description,
                 value: prize.value,
-                type: (prize.type ?? "score") as PublicPrize["type"],
+                type: (["score", "favorite", "crowd", "criteria"] as PrizeType[]).includes(prize.type as PrizeType)
+                  ? (prize.type as PublicPrize["type"])
+                  : "score",
                 rank: null,
                 kind: "prize",
                 criteria_id: null,
