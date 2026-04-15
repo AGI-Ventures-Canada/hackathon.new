@@ -261,7 +261,7 @@ export function JudgingSetupWizard({
     if (currentStep < 4) {
       setCurrentStep((currentStep + 1) as StepId)
     } else {
-      router.push(`/e/${slug}/manage?tab=judging&jtab=data`)
+      router.push(`/e/${slug}/manage?tab=judging&jtab=judges`)
       router.refresh()
     }
   }

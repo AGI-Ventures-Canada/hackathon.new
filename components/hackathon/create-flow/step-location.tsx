@@ -1,13 +1,13 @@
 "use client"
 
-import { MapPin, Video } from "lucide-react"
+import { MapPin, Video, Globe } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Field, FieldLabel } from "@/components/ui/field"
 import { AddressAutocomplete } from "@/components/ui/address-autocomplete"
 import { normalizeUrlFieldValue, urlInputProps } from "@/lib/utils/url"
 
-type LocationType = "in_person" | "virtual" | null
+type LocationType = "in_person" | "virtual" | "hybrid" | null
 
 interface StepLocationProps {
   locationType: LocationType
@@ -28,7 +28,7 @@ export function StepLocation({ locationType, locationName, locationUrl, onChange
           Where will it take place?
         </h1>
         <p className="text-muted-foreground">
-          In-person, virtual, or skip this for now.
+          In-person, virtual, both, or skip for now.
         </p>
       </div>
 
@@ -63,9 +63,24 @@ export function StepLocation({ locationType, locationName, locationUrl, onChange
           <Video className="size-5" />
           <span className="text-sm">Virtual</span>
         </Button>
+        <Button
+          type="button"
+          variant={locationType === "hybrid" ? "default" : "outline"}
+          className="h-auto flex-1 flex-col gap-1 py-4"
+          onClick={() =>
+            onChange({
+              locationType: "hybrid",
+              locationName: locationName,
+              locationUrl: locationUrl,
+            })
+          }
+        >
+          <Globe className="size-5" />
+          <span className="text-sm">Hybrid</span>
+        </Button>
       </div>
 
-      {locationType === "in_person" && (
+      {(locationType === "in_person" || locationType === "hybrid") && (
         <Field>
           <FieldLabel htmlFor="location-name">Venue</FieldLabel>
           <AddressAutocomplete
@@ -79,7 +94,7 @@ export function StepLocation({ locationType, locationName, locationUrl, onChange
         </Field>
       )}
 
-      {locationType === "virtual" && (
+      {(locationType === "virtual" || locationType === "hybrid") && (
         <Field>
           <FieldLabel htmlFor="location-url">Meeting link</FieldLabel>
           <Input

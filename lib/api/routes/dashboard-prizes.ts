@@ -101,6 +101,7 @@ export const dashboardPrizesRoutes = new Elysia()
         displayValue: body.displayValue,
         criteriaId: body.criteriaId,
         displayOrder: body.displayOrder,
+        allowedTeamModes: body.allowedTeamModes,
       })
 
       if (!prize) {
@@ -138,6 +139,7 @@ export const dashboardPrizesRoutes = new Elysia()
         displayValue: t.Optional(t.Union([t.String(), t.Null()])),
         criteriaId: t.Optional(t.Union([t.String(), t.Null()])),
         displayOrder: t.Optional(t.Number()),
+        allowedTeamModes: t.Optional(t.Union([t.Array(t.Union([t.Literal("in_person"), t.Literal("virtual")])), t.Null()])),
       }),
     }
   )
@@ -176,6 +178,7 @@ export const dashboardPrizesRoutes = new Elysia()
         displayValue: body.displayValue,
         criteriaId: body.criteriaId,
         displayOrder: body.displayOrder,
+        allowedTeamModes: body.allowedTeamModes,
       })
 
       if (!prize) {
@@ -205,6 +208,7 @@ export const dashboardPrizesRoutes = new Elysia()
         displayValue: t.Optional(t.Union([t.String(), t.Null()])),
         criteriaId: t.Optional(t.Union([t.String(), t.Null()])),
         displayOrder: t.Optional(t.Number()),
+        allowedTeamModes: t.Optional(t.Union([t.Array(t.Union([t.Literal("in_person"), t.Literal("virtual")])), t.Null()])),
       }),
     }
   )

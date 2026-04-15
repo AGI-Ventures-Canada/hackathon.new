@@ -15,11 +15,11 @@ import {
 import { Kbd, KbdGroup } from "@/components/ui/kbd"
 import { useEditOptional } from "@/components/hackathon/preview/edit-context"
 import { AddressAutocomplete } from "@/components/ui/address-autocomplete"
-import { MapPin, Video, Undo2 } from "lucide-react"
+import { MapPin, Video, Undo2, Globe } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { normalizeOptionalUrl, normalizeUrlFieldValue, urlInputProps } from "@/lib/utils/url"
 
-type LocationType = "in_person" | "virtual" | null
+type LocationType = "in_person" | "virtual" | "hybrid" | null
 
 interface LocationEditFormProps {
   hackathonId?: string
@@ -167,7 +167,7 @@ export function LocationEditForm({ hackathonId, initialData, onSaveAndNext, onSa
       <FieldGroup>
         <Field>
           <FieldLabel>Location Type</FieldLabel>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <button
               type="button"
               onClick={() => selectType("in_person")}
@@ -194,13 +194,26 @@ export function LocationEditForm({ hackathonId, initialData, onSaveAndNext, onSa
               <Video className="size-4" />
               Virtual
             </button>
+            <button
+              type="button"
+              onClick={() => selectType("hybrid")}
+              className={cn(
+                "flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm transition-colors",
+                locationType === "hybrid"
+                  ? "border-primary bg-primary/5 text-foreground"
+                  : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
+              )}
+            >
+              <Globe className="size-4" />
+              Hybrid
+            </button>
           </div>
           <FieldDescription>
             Click again to clear the selection
           </FieldDescription>
         </Field>
 
-        {locationType === "in_person" && (
+        {(locationType === "in_person" || locationType === "hybrid") && (
           <>
             <Field>
               <FieldLabel htmlFor="location-name">Venue Name & Address</FieldLabel>
@@ -221,31 +234,35 @@ export function LocationEditForm({ hackathonId, initialData, onSaveAndNext, onSa
               </FieldDescription>
             </Field>
 
-            <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
-              <div className="space-y-0.5">
-                <Label htmlFor="require-location" className="text-sm font-medium">
-                  Require location verification
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  Attendees must share their location when registering
-                </p>
-              </div>
-              <Switch
-                id="require-location"
-                checked={requireLocationVerification}
-                onCheckedChange={setRequireLocationVerification}
-                disabled={!locationLatitude}
-              />
-            </div>
-            {requireLocationVerification && !locationLatitude && (
-              <p className="text-xs text-muted-foreground">
-                Select an address from the suggestions to enable verification
-              </p>
+            {locationType === "in_person" && (
+              <>
+                <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="require-location" className="text-sm font-medium">
+                      Require location verification
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Attendees must share their location when registering
+                    </p>
+                  </div>
+                  <Switch
+                    id="require-location"
+                    checked={requireLocationVerification}
+                    onCheckedChange={setRequireLocationVerification}
+                    disabled={!locationLatitude}
+                  />
+                </div>
+                {requireLocationVerification && !locationLatitude && (
+                  <p className="text-xs text-muted-foreground">
+                    Select an address from the suggestions to enable verification
+                  </p>
+                )}
+              </>
             )}
           </>
         )}
 
-        {locationType === "virtual" && (
+        {(locationType === "virtual" || locationType === "hybrid") && (
           <Field>
             <FieldLabel htmlFor="location-url">Meeting Link</FieldLabel>
             <Input
@@ -256,7 +273,7 @@ export function LocationEditForm({ hackathonId, initialData, onSaveAndNext, onSa
               value={locationUrl}
               onChange={(e) => setLocationUrl(e.target.value)}
               onBlur={() => setLocationUrl(normalizeUrlFieldValue(locationUrl))}
-              autoFocus
+              autoFocus={locationType === "virtual"}
               autoComplete="off"
               data-1p-ignore
               data-lpignore="true"
@@ -266,6 +283,12 @@ export function LocationEditForm({ hackathonId, initialData, onSaveAndNext, onSa
               Zoom, Google Meet, Discord, or any meeting link
             </FieldDescription>
           </Field>
+        )}
+
+        {locationType === "hybrid" && (
+          <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
+            People can join in person or online. When teams sign up, they&apos;ll pick which one they&apos;re doing.
+          </div>
         )}
 
         {error && (

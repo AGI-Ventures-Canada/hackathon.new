@@ -1075,6 +1075,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         submissionLiveAppUrl: a.submissionLiveAppUrl,
         submissionScreenshotUrl: a.submissionScreenshotUrl,
         teamName: anonymize ? null : a.teamName,
+        teamMode: anonymize ? null : a.teamMode,
         isComplete: a.isComplete,
         notes: a.notes,
       })),

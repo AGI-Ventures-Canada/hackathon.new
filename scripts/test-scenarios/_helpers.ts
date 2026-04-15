@@ -370,6 +370,7 @@ export type SeedPrize = {
   monetary_value?: number
   currency?: string
   display_order: number
+  gate_criteria?: { name: string; description?: string | null }[]
 }
 
 export function buildDefaultPrizes(criteriaIds: string[]): SeedPrize[] {
@@ -406,6 +407,19 @@ export function buildDefaultPrizes(criteriaIds: string[]): SeedPrize[] {
       judging_style: "judges_pick",
       display_order: 2,
     },
+    {
+      name: "Rules Compliant",
+      description: "Meets all hackathon requirements",
+      value: "Swag Pack",
+      type: "score",
+      kind: "swag",
+      judging_style: "gate_check",
+      display_order: 3,
+      gate_criteria: [
+        { name: "Submitted on time", description: "Project pushed before the deadline" },
+        { name: "Working demo", description: "Runs end-to-end without manual patching" },
+      ],
+    },
   ]
 }
 
@@ -438,6 +452,23 @@ export async function createPrizes(
     if (error || !data) {
       console.error(`Failed to create prize "${p.name}":`, error)
       process.exit(1)
+    }
+
+    if (p.judging_style === "gate_check" && p.gate_criteria?.length) {
+      const rows = p.gate_criteria.map((c, i) => ({
+        hackathon_id: hackathonId,
+        prize_id: data.id,
+        name: c.name,
+        description: c.description ?? null,
+        max_score: 1,
+        weight: 1,
+        display_order: i,
+      }))
+      const { error: critError } = await supabase.from("judging_criteria").insert(rows)
+      if (critError) {
+        console.error(`Failed to create gate criteria for prize "${p.name}":`, critError)
+        process.exit(1)
+      }
     }
 
     prizeIds.push(data.id)

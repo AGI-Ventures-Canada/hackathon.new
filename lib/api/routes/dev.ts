@@ -587,6 +587,55 @@ export const devRoutes = new Elysia({ prefix: "/dev" })
   )
 
   .post(
+    "/hackathons/:id/seed-perks",
+    async ({ params, set }) => {
+      const guard = devGuard(set)
+      if (guard) return guard
+
+      const db = await getDb()
+      await db.from("hackathon_perks").delete().eq("hackathon_id", params.id)
+      const now = new Date().toISOString()
+      const { error: insertErr } = await db.from("hackathon_perks").insert([
+        {
+          hackathon_id: params.id,
+          name: "OpenAI API credits",
+          description: "$50 in credits for your team",
+          type: "credit",
+          code: "HACK-OPENAI-2026",
+          redemption_url: "https://platform.openai.com/redeem",
+          instructions: "Log into your OpenAI account and paste the code on the billing page.",
+          released_at: now,
+          sort_order: 0,
+        },
+        {
+          hackathon_id: params.id,
+          name: "Anthropic API key",
+          description: "Claude API access for the weekend",
+          type: "api_key",
+          code: "sk-ant-demo-xxxxxxxxxxxxxxxxxxxxxxxx",
+          redemption_url: null,
+          instructions: "Add this to your .env as ANTHROPIC_API_KEY.",
+          released_at: now,
+          sort_order: 1,
+        },
+        {
+          hackathon_id: params.id,
+          name: "Vercel coupon",
+          description: "Free Pro month for deployment",
+          type: "coupon",
+          code: "HACK-VERCEL",
+          redemption_url: "https://vercel.com/account/billing",
+          instructions: "Apply at checkout.",
+          released_at: null,
+          sort_order: 2,
+        },
+      ])
+      if (insertErr) { set.status = 500; return { error: "Failed" } }
+      return { seeded: true }
+    },
+  )
+
+  .post(
     "/hackathons/:id/seed-mentors",
     async ({ params, set }) => {
       const guard = devGuard(set)
@@ -778,6 +827,7 @@ export const devRoutes = new Elysia({ prefix: "/dev" })
         kind?: string
         monetaryValue?: number
         currency?: string
+        criteria?: { name: string; description?: string | null }[]
       }
 
       const { data: criteriaRows } = await db
@@ -808,7 +858,10 @@ export const devRoutes = new Elysia({ prefix: "/dev" })
           { name: "Best AI Agent", judgingStyle: "bucket_sort", description: "Most capable autonomous agent", value: "$5,000", type: "score", rank: 2, kind: "cash", monetaryValue: 5000, currency: "USD" },
           { name: "Best UX", judgingStyle: "judges_pick", description: "Best user experience and design", value: "$2,500", type: "criteria", kind: "cash", monetaryValue: 2500, currency: "USD" },
           { name: "Most Innovative", judgingStyle: "judges_pick", description: "Creative and novel approach", value: "$500 API Credits", type: "criteria", kind: "credit" },
-          { name: "Best Use of MCP", judgingStyle: "gate_check", description: "Best Model Context Protocol integration", value: "Swag Pack", type: "score", rank: 3, kind: "swag" },
+          { name: "Best Use of MCP", judgingStyle: "gate_check", description: "Best Model Context Protocol integration", value: "Swag Pack", type: "score", rank: 3, kind: "swag", criteria: [
+            { name: "Uses Model Context Protocol", description: "Project integrates MCP in a meaningful way" },
+            { name: "Working demo", description: "MCP integration runs end-to-end" },
+          ] },
           { name: "People's Choice", judgingStyle: "crowd_vote", description: "Live audience voting", value: "Swag Pack", type: "crowd", kind: "swag" },
         ],
       }
@@ -837,6 +890,7 @@ export const devRoutes = new Elysia({ prefix: "/dev" })
           monetaryValue: p.monetaryValue,
           currency: p.currency,
           criteriaId: p.type === "criteria" ? firstCriteriaId : undefined,
+          criteria: p.criteria,
         })
         if (prizeResult.success) created.push(prizeResult.prize.id)
       }

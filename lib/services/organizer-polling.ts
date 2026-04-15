@@ -29,6 +29,11 @@ interface RpcPollRow {
   mentor_open_count: number
   challenge_release_time: string | null
   pending_judge_invitation_count: number
+  planned_round_count: number | null
+  active_round_count: number | null
+  complete_round_count: number | null
+  perk_count: number | null
+  perks_none: boolean | null
 }
 
 export async function buildOrganizerPollPayload(hackathonId: string): Promise<OrganizerPollResponse | null> {
@@ -68,5 +73,12 @@ export async function buildOrganizerPollPayload(hackathonId: string): Promise<Or
     feedbackSurveyUrl: r.feedback_survey_url ?? null,
     feedbackSurveySentAt: r.feedback_survey_sent_at ?? null,
     pendingJudgeInvitationCount: r.pending_judge_invitation_count ?? 0,
+    perkCount: r.perk_count ?? 0,
+    perksNone: r.perks_none ?? false,
+    rounds: {
+      plannedCount: r.planned_round_count ?? 0,
+      activeCount: r.active_round_count ?? 0,
+      completeCount: r.complete_round_count ?? 0,
+    },
   }
 }

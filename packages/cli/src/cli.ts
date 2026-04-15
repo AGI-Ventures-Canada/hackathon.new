@@ -145,6 +145,12 @@ const BANNER = `
     prizes assign <id> <pid>                 Assign prize
     prizes unassign <id> <pid> <sid>         Unassign prize
 
+  ${pc.dim("PERKS")}
+    perks list <id>                          List perks
+    perks create <id>                        Create a perk (--name --type --sponsor-id --code --url --scheduled)
+    perks delete <id> <pid>                  Delete a perk
+    perks release <id> <pid>                 Release a perk now
+
   ${pc.dim("JUDGE DISPLAY")}
     judge-display list <id>             List display profiles
     judge-display create <id>           Create display profile
@@ -575,6 +581,36 @@ async function main() {
           }
           default:
             console.error(`Unknown prizes command: ${sub}`)
+            process.exit(1)
+        }
+        break
+      }
+
+      case "perks": {
+        const client = createAuthenticatedClient(flags)
+        switch (sub) {
+          case "list": {
+            const { runPerksList } = await import("./commands/perks/list.js")
+            await runPerksList(client, rest[2], { json: flags.json })
+            break
+          }
+          case "create": {
+            const { runPerksCreate } = await import("./commands/perks/create.js")
+            await runPerksCreate(client, rest[2], rest.slice(3).concat(flags.json ? ["--json"] : []))
+            break
+          }
+          case "delete": {
+            const { runPerksDelete } = await import("./commands/perks/delete.js")
+            await runPerksDelete(client, rest[2], rest[3], { yes: flags.yes })
+            break
+          }
+          case "release": {
+            const { runPerksRelease } = await import("./commands/perks/release.js")
+            await runPerksRelease(client, rest[2], rest[3], { json: flags.json })
+            break
+          }
+          default:
+            console.error(`Unknown perks command: ${sub}`)
             process.exit(1)
         }
         break

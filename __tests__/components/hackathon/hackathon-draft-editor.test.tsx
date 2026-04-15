@@ -70,7 +70,7 @@ const defaultState = {
   endsAt: null,
   registrationOpensAt: null,
   registrationClosesAt: null,
-  locationType: null as "in_person" | "virtual" | null,
+  locationType: null as "in_person" | "virtual" | "hybrid" | null,
   locationName: null,
   locationUrl: null,
   imageUrl: null,

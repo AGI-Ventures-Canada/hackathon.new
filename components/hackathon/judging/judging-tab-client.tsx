@@ -21,6 +21,9 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
@@ -31,10 +34,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { TabsUrlSync } from "@/app/(public)/e/[slug]/manage/_tabs-url-sync"
+import { JudgingSetupWizard } from "./judging-setup-wizard"
+import type { ManageJtab } from "@/lib/utils/manage-tabs"
 import {
   Plus,
   UserPlus,
   Trash2,
+  Pencil,
   MoreHorizontal,
   Trophy,
   Users,
@@ -50,14 +58,43 @@ import {
   ArrowUpDown,
   Award,
   X,
+  MapPin,
 } from "lucide-react"
 import { useActionItemsOptional } from "@/components/hackathon/manage/action-items-context"
 import { AddJudgeDialog, type AddJudgeResult } from "./add-judge-dialog"
 import { AddPrizeDialog } from "./add-prize-dialog"
+import { EditPrizeDialog, type EditablePrize, type UpdatedPrize } from "./edit-prize-dialog"
 import { AssignJudgesDialog } from "./assign-judges-dialog"
 import { JudgePill } from "./judge-pill"
 import { RoundsSection } from "./rounds-section"
 import type { RoundData } from "./rounds-types"
+
+type TeamMode = "in_person" | "virtual"
+
+type ModeFilter = "all" | "in_person" | "virtual"
+
+function modesToFilter(modes: TeamMode[] | null): ModeFilter {
+  if (!modes || modes.length === 0 || modes.length === 2) return "all"
+  return modes[0]
+}
+
+function filterToModes(filter: ModeFilter): TeamMode[] | null {
+  if (filter === "all") return null
+  return [filter]
+}
+
+type PrizeCriterionData = {
+  id: string
+  name: string
+  description: string | null
+}
+
+type PrizeBucketData = {
+  id: string
+  level: number
+  label: string
+  description: string | null
+}
 
 type PrizeData = {
   id: string
@@ -72,6 +109,9 @@ type PrizeData = {
   totalAssignments: number
   completedAssignments: number
   judgeCount: number
+  allowedTeamModes: TeamMode[] | null
+  criteria: PrizeCriterionData[] | null
+  buckets: PrizeBucketData[] | null
 }
 
 type JudgeData = {
@@ -105,6 +145,7 @@ type ResultData = {
 
 interface JudgingTabClientProps {
   hackathonId: string
+  slug: string
   prizes: PrizeData[]
   judges: JudgeData[]
   progress: { totalAssignments: number; completedAssignments: number; judges: { participantId: string; clerkUserId: string; displayName: string; completed: number; total: number }[] }
@@ -113,6 +154,8 @@ interface JudgingTabClientProps {
   results: ResultData[]
   submissions: Array<{ id: string; title: string }>
   isPublished: boolean
+  locationType: "in_person" | "virtual" | "hybrid" | null
+  activeJtab: ManageJtab
 }
 
 const STYLE_META: Record<string, { label: string; icon: typeof Trophy; color: string }> = {
@@ -124,6 +167,7 @@ const STYLE_META: Record<string, { label: string; icon: typeof Trophy; color: st
 
 export function JudgingTabClient({
   hackathonId,
+  slug,
   prizes: initialPrizes,
   judges: initialJudges,
   progress: initialProgress,
@@ -132,6 +176,8 @@ export function JudgingTabClient({
   results: initialResults,
   submissions: _submissions,
   isPublished: initialIsPublished,
+  locationType,
+  activeJtab,
 }: JudgingTabClientProps) {
   const router = useRouter()
   const [showAddJudge, setShowAddJudge] = useState(false)
@@ -165,6 +211,10 @@ export function JudgingTabClient({
   const [hiddenPrizeJudges, setHiddenPrizeJudges] = useState<Set<string>>(new Set())
   const [pendingJudges, setPendingJudges] = useState<JudgeData[]>([])
   const [pendingInvitations, setPendingInvitations] = useState<InvitationData[]>([])
+  const [modeOverrides, setModeOverrides] = useState<Record<string, TeamMode[] | null>>({})
+  const [pendingPrizes, setPendingPrizes] = useState<PrizeData[]>([])
+  const [prizeOverrides, setPrizeOverrides] = useState<Record<string, Partial<PrizeData>>>({})
+  const [editingPrize, setEditingPrize] = useState<EditablePrize | null>(null)
 
   useEffect(() => {
     setPendingJudges(prev => prev.filter(pj => !initialJudges.some(j => j.participantId === pj.participantId)))
@@ -173,6 +223,17 @@ export function JudgingTabClient({
   useEffect(() => {
     setPendingInvitations(prev => prev.filter(pi => !initialInvitations.some(i => i.id === pi.id)))
   }, [initialInvitations])
+
+  useEffect(() => {
+    setPendingPrizes(prev => prev.filter(pp => !initialPrizes.some(ip => ip.id === pp.id)))
+    setPrizeOverrides(prev => {
+      const next: Record<string, Partial<PrizeData>> = {}
+      for (const [id, override] of Object.entries(prev)) {
+        if (!initialPrizes.some(ip => ip.id === id)) next[id] = override
+      }
+      return next
+    })
+  }, [initialPrizes])
 
   const judges = [
     ...initialJudges,
@@ -183,7 +244,15 @@ export function JudgingTabClient({
       ...j,
       prizeIds: j.prizeIds.filter(pid => !hiddenPrizeJudges.has(`${pid}:${j.participantId}`)),
     }))
-  const prizes = initialPrizes.filter(p => !hiddenPrizes.has(p.id))
+  const prizes = [
+    ...initialPrizes,
+    ...pendingPrizes.filter(pp => !initialPrizes.some(ip => ip.id === pp.id)),
+  ]
+    .filter(p => !hiddenPrizes.has(p.id))
+    .map((p) => {
+      const merged = prizeOverrides[p.id] ? { ...p, ...prizeOverrides[p.id] } : p
+      return p.id in modeOverrides ? { ...merged, allowedTeamModes: modeOverrides[p.id] } : merged
+    })
   const invitations = [
     ...initialInvitations,
     ...pendingInvitations.filter(pi => !initialInvitations.some(i => i.id === pi.id)),
@@ -196,6 +265,24 @@ export function JudgingTabClient({
     ? Math.round((initialProgress.completedAssignments / initialProgress.totalAssignments) * 100)
     : 0
 
+  async function handleUpdatePrizeModes(prizeId: string, modes: TeamMode[] | null) {
+    const previous = initialPrizes.find(p => p.id === prizeId)?.allowedTeamModes ?? null
+    setModeOverrides(prev => ({ ...prev, [prizeId]: modes }))
+    try {
+      const res = await fetch(`${base}/prizes/${prizeId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allowedTeamModes: modes }),
+      })
+      if (!res.ok) throw new Error("Failed to update prize filter")
+      router.refresh()
+    } catch (err) {
+      setModeOverrides(prev => ({ ...prev, [prizeId]: previous }))
+      setError(err instanceof Error ? err.message : "Failed to update prize filter")
+      throw err
+    }
+  }
+
   async function handleDeletePrize(prizeId: string) {
     setHiddenPrizes(prev => new Set(prev).add(prizeId))
     try {
@@ -206,6 +293,33 @@ export function JudgingTabClient({
       setHiddenPrizes(prev => { const next = new Set(prev); next.delete(prizeId); return next })
       setError("Failed to delete prize")
     }
+  }
+
+  function handleEditPrize(prize: PrizeData) {
+    setEditingPrize({
+      id: prize.id,
+      name: prize.name,
+      description: prize.description,
+      value: prize.value,
+      judgingStyle: prize.judgingStyle as EditablePrize["judgingStyle"],
+      maxPicks: prize.maxPicks,
+      criteria: prize.criteria,
+      buckets: prize.buckets,
+    })
+  }
+
+  function handlePrizeUpdated(updated: UpdatedPrize) {
+    setPrizeOverrides(prev => ({
+      ...prev,
+      [updated.id]: {
+        name: updated.name,
+        description: updated.description,
+        value: updated.value,
+        maxPicks: updated.maxPicks,
+        criteria: updated.criteria,
+        buckets: updated.buckets,
+      },
+    }))
   }
 
   async function handleRemoveJudge(participantId: string) {
@@ -303,42 +417,106 @@ export function JudgingTabClient({
         </div>
       )}
 
-      <JudgesSection
-        judges={judges}
-        invitations={invitations}
-        hackathonId={hackathonId}
-        onAddJudge={() => setShowAddJudge(true)}
-        onRemoveJudge={handleRemoveJudge}
-        onCancelInvitation={handleCancelInvitation}
-      />
+      <TabsUrlSync paramKey="jtab" value={activeJtab}>
+        <TabsList variant="line">
+          <TabsTrigger value="setup">
+            <ListChecks className="size-3.5" />
+            Setup Guide
+          </TabsTrigger>
+          <TabsTrigger value="judges">
+            <Users className="size-3.5" />
+            Judges
+            {judges.length > 0 && (
+              <Badge variant="secondary" className="ml-1">{judges.length}</Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="rounds">
+            <Layers className="size-3.5" />
+            Rounds
+            {rounds.length > 0 && (
+              <Badge variant="secondary" className="ml-1">{rounds.length}</Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="prizes">
+            <Trophy className="size-3.5" />
+            Prizes
+            {prizes.length > 0 && (
+              <Badge variant="secondary" className="ml-1">{prizes.length}</Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="results">
+            <Calculator className="size-3.5" />
+            Results
+          </TabsTrigger>
+        </TabsList>
 
-      <RoundsSection hackathonId={hackathonId} rounds={rounds} />
+        <TabsContent value="setup" className="mt-4">
+          <JudgingSetupWizard
+            hackathonId={hackathonId}
+            slug={slug}
+            prizes={initialPrizes}
+            judges={initialJudges}
+            rounds={rounds}
+            pendingInvitations={initialInvitations}
+          />
+        </TabsContent>
 
-      <PrizesSection
-        hackathonId={hackathonId}
-        prizes={prizes}
-        judges={judges}
-        rounds={rounds}
-        onAddPrize={() => setShowAddPrize(true)}
-        onDeletePrize={handleDeletePrize}
-        onAssignJudge={assignJudgeToPrize}
-        onUnassignJudge={unassignJudgeFromPrize}
-        onRefresh={() => router.refresh()}
-      />
+        <TabsContent value="judges" className="mt-4">
+          <JudgesSection
+            judges={judges}
+            invitations={invitations}
+            hackathonId={hackathonId}
+            onAddJudge={() => setShowAddJudge(true)}
+            onRemoveJudge={handleRemoveJudge}
+            onCancelInvitation={handleCancelInvitation}
+          />
+        </TabsContent>
 
-      {(prizes.length > 0 || results.length > 0) && (
-        <ResultsSection
-          hackathonId={hackathonId}
-          results={results}
-          isPublished={isPublished}
-          publishing={publishing}
-          publishDialogOpen={publishDialogOpen}
-          onPublishDialogChange={setPublishDialogOpen}
-          onPublish={handlePublish}
-          onUnpublish={handleUnpublish}
-          incompleteAssignments={initialProgress.totalAssignments - initialProgress.completedAssignments}
-        />
-      )}
+        <TabsContent value="rounds" className="mt-4">
+          <RoundsSection hackathonId={hackathonId} rounds={rounds} />
+        </TabsContent>
+
+        <TabsContent value="prizes" className="mt-4">
+          <PrizesSection
+            hackathonId={hackathonId}
+            prizes={prizes}
+            judges={judges}
+            rounds={rounds}
+            locationType={locationType}
+            onAddPrize={() => setShowAddPrize(true)}
+            onDeletePrize={handleDeletePrize}
+            onEditPrize={handleEditPrize}
+            onAssignJudge={assignJudgeToPrize}
+            onUnassignJudge={unassignJudgeFromPrize}
+            onUpdateModes={handleUpdatePrizeModes}
+            onRefresh={() => router.refresh()}
+          />
+        </TabsContent>
+
+        <TabsContent value="results" className="mt-4">
+          {prizes.length > 0 || results.length > 0 ? (
+            <ResultsSection
+              hackathonId={hackathonId}
+              results={results}
+              isPublished={isPublished}
+              publishing={publishing}
+              publishDialogOpen={publishDialogOpen}
+              onPublishDialogChange={setPublishDialogOpen}
+              onPublish={handlePublish}
+              onUnpublish={handleUnpublish}
+              incompleteAssignments={initialProgress.totalAssignments - initialProgress.completedAssignments}
+            />
+          ) : (
+            <Card className="border-dashed">
+              <CardContent className="py-8 text-center">
+                <p className="text-sm text-muted-foreground">
+                  Add prizes and judges to see results here.
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+      </TabsUrlSync>
 
       <AddJudgeDialog
         hackathonId={hackathonId}
@@ -366,11 +544,42 @@ export function JudgingTabClient({
         }}
       />
 
+      <EditPrizeDialog
+        hackathonId={hackathonId}
+        prize={editingPrize}
+        onClose={() => setEditingPrize(null)}
+        onSuccess={handlePrizeUpdated}
+      />
+
       <AddPrizeDialog
         hackathonId={hackathonId}
         open={showAddPrize}
         onOpenChange={setShowAddPrize}
-        onSuccess={() => router.refresh()}
+        onSuccess={(created) => {
+          if (created) {
+            setPendingPrizes((prev) => [
+              ...prev,
+              {
+                id: created.id,
+                name: created.name,
+                description: created.description,
+                value: created.value,
+                judgingStyle: created.judgingStyle,
+                assignmentMode: null,
+                maxPicks: created.maxPicks,
+                roundId: created.roundId,
+                displayOrder: prizes.length,
+                totalAssignments: 0,
+                completedAssignments: 0,
+                judgeCount: 0,
+                allowedTeamModes: null,
+                criteria: created.criteria,
+                buckets: created.buckets,
+              },
+            ])
+          }
+          router.refresh()
+        }}
         rounds={rounds}
       />
     </div>
@@ -479,20 +688,26 @@ function PrizesSection({
   prizes,
   judges,
   rounds,
+  locationType,
   onAddPrize,
   onDeletePrize,
+  onEditPrize,
   onAssignJudge,
   onUnassignJudge,
+  onUpdateModes,
   onRefresh,
 }: {
   hackathonId: string
   prizes: PrizeData[]
   judges: JudgeData[]
   rounds: RoundData[]
+  locationType: "in_person" | "virtual" | "hybrid" | null
   onAddPrize: () => void
   onDeletePrize: (id: string) => void
+  onEditPrize: (prize: PrizeData) => void
   onAssignJudge: (prizeId: string, judgeParticipantId: string) => Promise<void>
   onUnassignJudge: (prizeId: string, judgeParticipantId: string) => Promise<void>
+  onUpdateModes: (prizeId: string, modes: TeamMode[] | null) => Promise<void>
   onRefresh: () => void
 }) {
   const [assignDialogPrize, setAssignDialogPrize] = useState<{ id: string; name: string } | null>(null)
@@ -546,9 +761,12 @@ function PrizesSection({
                     key={prize.id}
                     prize={prize}
                     judges={judges}
+                    locationType={locationType}
                     onDeletePrize={onDeletePrize}
+                    onEditPrize={onEditPrize}
                     onAssignJudgesClick={setAssignDialogPrize}
                     onRemoveJudgeFromPrize={setRemovingFromPrize}
+                    onUpdateModes={onUpdateModes}
                   />
                 ))}
               </div>
@@ -562,9 +780,12 @@ function PrizesSection({
               key={prize.id}
               prize={prize}
               judges={judges}
+              locationType={locationType}
               onDeletePrize={onDeletePrize}
+              onEditPrize={onEditPrize}
               onAssignJudgesClick={setAssignDialogPrize}
               onRemoveJudgeFromPrize={setRemovingFromPrize}
+              onUpdateModes={onUpdateModes}
             />
           ))}
         </div>
@@ -610,15 +831,21 @@ type RemovingFromPrize = { prizeId: string; prizeName: string; judge: JudgeData 
 function PrizeCard({
   prize,
   judges,
+  locationType,
   onDeletePrize,
+  onEditPrize,
   onAssignJudgesClick,
   onRemoveJudgeFromPrize,
+  onUpdateModes,
 }: {
   prize: PrizeData
   judges: JudgeData[]
+  locationType: "in_person" | "virtual" | "hybrid" | null
   onDeletePrize: (id: string) => void
+  onEditPrize: (prize: PrizeData) => void
   onAssignJudgesClick: (args: { id: string; name: string }) => void
   onRemoveJudgeFromPrize: (args: RemovingFromPrize) => void
+  onUpdateModes: (prizeId: string, modes: TeamMode[] | null) => Promise<void>
 }) {
   const style = prize.judgingStyle ? STYLE_META[prize.judgingStyle] : null
   const StyleIcon = style?.icon ?? Trophy
@@ -627,6 +854,8 @@ function PrizeCard({
     : 0
   const assignedJudges = judges.filter((j) => j.prizeIds.includes(prize.id))
   const isCrowdVote = prize.judgingStyle === "crowd_vote"
+  const isHybrid = locationType === "hybrid"
+  const modeFilter = modesToFilter(prize.allowedTeamModes)
 
   return (
     <Card>
@@ -641,6 +870,39 @@ function PrizeCard({
                   <StyleIcon className="mr-1 size-3" />
                   {style.label}
                 </Badge>
+              )}
+              {isHybrid && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 gap-1 px-2 text-xs font-normal"
+                    >
+                      <MapPin className="size-3" />
+                      {modeFilter === "all"
+                        ? "All teams"
+                        : modeFilter === "in_person"
+                          ? "In-person teams only"
+                          : "Virtual teams only"}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                      Who can win this prize?
+                    </DropdownMenuLabel>
+                    <DropdownMenuRadioGroup
+                      value={modeFilter}
+                      onValueChange={(v) => {
+                        void onUpdateModes(prize.id, filterToModes(v as ModeFilter))
+                      }}
+                    >
+                      <DropdownMenuRadioItem value="all">All teams</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="in_person">In-person teams only</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="virtual">Virtual teams only</DropdownMenuRadioItem>
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
             </div>
             {prize.description && (
@@ -664,6 +926,10 @@ function PrizeCard({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={() => onEditPrize(prize)}>
+                    <Pencil className="mr-2 size-4" />
+                    Edit prize
+                  </DropdownMenuItem>
                   <AlertDialogTrigger asChild>
                     <DropdownMenuItem className="text-destructive">
                       <Trash2 className="mr-2 size-4" />
@@ -689,6 +955,48 @@ function PrizeCard({
             </AlertDialog>
           </div>
         </div>
+
+        {prize.judgingStyle === "gate_check" && prize.criteria && prize.criteria.length > 0 && (
+          <div className="rounded-md border bg-muted/30 p-3 space-y-1.5">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Pass-or-fail rules ({prize.criteria.length})
+            </p>
+            <ul className="space-y-1">
+              {prize.criteria.map((c) => (
+                <li key={c.id} className="text-sm">
+                  <span className="font-medium">{c.name}</span>
+                  {c.description && (
+                    <span className="text-muted-foreground"> — {c.description}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {prize.judgingStyle === "bucket_sort" && prize.buckets && prize.buckets.length > 0 && (
+          <div className="rounded-md border bg-muted/30 p-3 space-y-1.5">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Sort groups ({prize.buckets.length})
+            </p>
+            <ul className="space-y-1">
+              {prize.buckets.map((b) => (
+                <li key={b.id} className="text-sm">
+                  <span className="font-medium">{b.label}</span>
+                  {b.description && (
+                    <span className="text-muted-foreground"> — {b.description}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {prize.judgingStyle === "judges_pick" && prize.maxPicks != null && (
+          <p className="text-xs text-muted-foreground">
+            Each judge picks up to <span className="font-medium text-foreground">{prize.maxPicks}</span>.
+          </p>
+        )}
 
         {!isCrowdVote && (
           <div className="flex items-center gap-2 flex-wrap">

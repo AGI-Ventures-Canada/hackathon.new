@@ -37,6 +37,9 @@ function makeRpcPayload(overrides: Record<string, unknown> = {}) {
     mentor_open_count: 1,
     challenge_release_time: null,
     pending_judge_invitation_count: 0,
+    planned_round_count: 0,
+    active_round_count: 0,
+    complete_round_count: 0,
     ...overrides,
   }
 }
@@ -105,6 +108,32 @@ describe("Organizer Polling Service", () => {
 
       expect(result).not.toBeNull()
       expect(result!.challengeReleaseTime).toBe("2026-04-28T11:00:00Z")
+    })
+
+    it("maps round counts into rounds summary", async () => {
+      mockRpcCall("get_organizer_poll_data", mockSuccess(makeRpcPayload({
+        planned_round_count: 2,
+        active_round_count: 1,
+        complete_round_count: 0,
+      })))
+
+      const result = await buildOrganizerPollPayload(hackathonId)
+
+      expect(result).not.toBeNull()
+      expect(result!.rounds).toEqual({ plannedCount: 2, activeCount: 1, completeCount: 0 })
+    })
+
+    it("defaults round counts to 0 when null", async () => {
+      mockRpcCall("get_organizer_poll_data", mockSuccess(makeRpcPayload({
+        planned_round_count: null,
+        active_round_count: null,
+        complete_round_count: null,
+      })))
+
+      const result = await buildOrganizerPollPayload(hackathonId)
+
+      expect(result).not.toBeNull()
+      expect(result!.rounds).toEqual({ plannedCount: 0, activeCount: 0, completeCount: 0 })
     })
 
     it("includes pending judge invitation count", async () => {

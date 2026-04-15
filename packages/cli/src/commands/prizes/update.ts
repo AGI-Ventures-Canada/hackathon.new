@@ -7,6 +7,7 @@ interface PrizeUpdateOptions {
   description?: string
   type?: string
   value?: string
+  modes?: string
   json?: boolean
 }
 
@@ -26,12 +27,28 @@ export function parsePrizeUpdateOptions(args: string[]): PrizeUpdateOptions {
       case "--value":
         options.value = args[++i]
         break
+      case "--modes":
+        options.modes = args[++i]
+        break
       case "--json":
         options.json = true
         break
     }
   }
   return options
+}
+
+function parseModes(value: string | undefined): ("in_person" | "virtual")[] | null | undefined {
+  if (value === undefined) return undefined
+  if (value === "" || value === "all" || value === "null") return null
+  const parts = value.split(",").map((s) => s.trim()).filter(Boolean)
+  for (const p of parts) {
+    if (p !== "in_person" && p !== "virtual") {
+      console.error(`Error: --modes must be a comma-separated list of "in_person" or "virtual" (or "all" to clear)`)
+      process.exit(1)
+    }
+  }
+  return parts as ("in_person" | "virtual")[]
 }
 
 export async function runPrizesUpdate(
@@ -51,6 +68,8 @@ export async function runPrizesUpdate(
   if (options.description) body.description = options.description
   if (options.type) body.type = options.type
   if (options.value) body.value = options.value
+  const parsedModes = parseModes(options.modes)
+  if (parsedModes !== undefined) body.allowedTeamModes = parsedModes
 
   if (Object.keys(body).length === 0) {
     console.error("Error: provide at least one field to update")

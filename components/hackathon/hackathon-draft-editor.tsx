@@ -29,7 +29,7 @@ export type DraftState = {
   description: string | null
   startsAt: string | null
   endsAt: string | null
-  locationType: "in_person" | "virtual" | null
+  locationType: "in_person" | "virtual" | "hybrid" | null
   locationName: string | null
   locationUrl: string | null
   imageUrl: string | null
@@ -75,6 +75,7 @@ function stateToHackathon(state: DraftState): PublicHackathon {
     status: "draft",
     phase: null,
     challenge_released_at: null,
+    perks_none: false,
     banner_url: state.imageUrl,
     location_type: state.locationType,
     location_name: state.locationName,
@@ -126,6 +127,7 @@ function stateToHackathon(state: DraftState): PublicHackathon {
       assignment_mode: null,
       max_picks: null,
       is_screening: false,
+      allowed_team_modes: null,
       display_order: i,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),

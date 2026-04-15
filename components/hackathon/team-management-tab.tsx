@@ -4,26 +4,30 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { useUser } from "@clerk/nextjs"
 import { useTeamRename } from "@/hooks/use-team-rename"
+import { useTeamMode } from "@/hooks/use-team-mode"
 import { TeamInviteDialog } from "./team-invite-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Crown, Clock, X, Mail, Users } from "lucide-react"
+import { Crown, Clock, X, Mail, Users, MapPin, Video, AlertTriangle } from "lucide-react"
 import type { ParticipantTeamInfo } from "@/lib/services/hackathons"
 
 interface TeamManagementTabProps {
   teamInfo: NonNullable<ParticipantTeamInfo>
   hackathonId: string
   maxTeamSize: number
+  locationType?: "in_person" | "virtual" | "hybrid" | null
 }
 
-export function TeamManagementTab({ teamInfo, hackathonId, maxTeamSize }: TeamManagementTabProps) {
+export function TeamManagementTab({ teamInfo, hackathonId, maxTeamSize, locationType }: TeamManagementTabProps) {
   const router = useRouter()
   const { user } = useUser()
   const [cancellingId, setCancellingId] = useState<string | null>(null)
   const rename = useTeamRename(hackathonId, teamInfo.team.id, teamInfo.team.name)
+  const teamMode = useTeamMode(hackathonId, teamInfo.team.id, teamInfo.team.mode ?? null)
   const canEdit = teamInfo.isCaptain && teamInfo.team.status === "forming"
+  const showModePicker = locationType === "hybrid"
 
   async function handleCancelInvitation(invitationId: string) {
     setCancellingId(invitationId)
@@ -104,6 +108,54 @@ export function TeamManagementTab({ teamInfo, hackathonId, maxTeamSize }: TeamMa
               )}
               {rename.error && (
                 <p className="text-xs text-destructive mt-1">{rename.error}</p>
+              )}
+              {showModePicker && (
+                <div className="mt-3 space-y-2">
+                  <p className="text-xs font-medium text-foreground">
+                    How will your team join?
+                  </p>
+                  {teamInfo.isCaptain ? (
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant={teamMode.mode === "in_person" ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => teamMode.setMode("in_person")}
+                        disabled={teamMode.saving}
+                      >
+                        <MapPin className="size-3.5" />
+                        In person
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={teamMode.mode === "virtual" ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => teamMode.setMode("virtual")}
+                        disabled={teamMode.saving}
+                      >
+                        <Video className="size-3.5" />
+                        Virtual
+                      </Button>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      {teamMode.mode === "in_person"
+                        ? "Joining in person"
+                        : teamMode.mode === "virtual"
+                          ? "Joining virtually"
+                          : "Your captain hasn't chosen yet"}
+                    </p>
+                  )}
+                  {teamMode.mode === null && teamInfo.isCaptain && (
+                    <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                      <AlertTriangle className="size-3 mt-0.5 shrink-0" />
+                      <span>Pick one so judges know where to find your team.</span>
+                    </div>
+                  )}
+                  {teamMode.error && (
+                    <p className="text-xs text-destructive">{teamMode.error}</p>
+                  )}
+                </div>
               )}
             </div>
             {teamInfo.isCaptain && teamInfo.team.status === "forming" && (

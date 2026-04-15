@@ -36,6 +36,8 @@ export type CreatePrizeInput = {
   monetaryValue?: number | null
   currency?: string | null
   criteriaId?: string | null
+  criteria?: { name: string; description?: string | null }[]
+  buckets?: { level: number; label: string; description?: string | null }[]
 }
 
 export type UpdatePrizeInput = {
@@ -49,11 +51,19 @@ export type UpdatePrizeInput = {
   displayOrder?: number
 }
 
+export type PrizeCriterion = {
+  id: string
+  name: string
+  description: string | null
+  displayOrder: number
+}
+
 export type PrizeWithProgress = Prize & {
   judgeCount: number
   totalAssignments: number
   completedAssignments: number
   buckets?: BucketDefinition[]
+  criteria?: PrizeCriterion[]
 }
 
 export async function listPrizes(hackathonId: string): Promise<PrizeWithProgress[]> {
@@ -104,18 +114,42 @@ export async function listPrizes(hackathonId: string): Promise<PrizeWithProgress
     }
   }
 
+  const gateCheckPrizeIds = prizes.filter((p) => p.judging_style === "gate_check").map((p) => p.id)
+  const criteriaMap: Record<string, PrizeCriterion[]> = {}
+  if (gateCheckPrizeIds.length > 0) {
+    const { data: criteriaRows } = await client
+      .from("judging_criteria")
+      .select("id, prize_id, name, description, display_order")
+      .in("prize_id", gateCheckPrizeIds)
+      .order("display_order")
+
+    for (const c of criteriaRows ?? []) {
+      if (!c.prize_id) continue
+      if (!criteriaMap[c.prize_id]) criteriaMap[c.prize_id] = []
+      criteriaMap[c.prize_id].push({
+        id: c.id,
+        name: c.name,
+        description: c.description,
+        displayOrder: c.display_order,
+      })
+    }
+  }
+
   return (prizes as unknown as Prize[]).map((p) => ({
     ...p,
     judgeCount: prizeStats[p.id]?.judges.size ?? 0,
     totalAssignments: prizeStats[p.id]?.total ?? 0,
     completedAssignments: prizeStats[p.id]?.completed ?? 0,
     buckets: bucketMap[p.id],
+    criteria: criteriaMap[p.id],
   }))
 }
 
+export type CreatePrizeErrorCode = "validation" | "db_error"
+
 export type CreatePrizeResult =
   | { success: true; prize: Prize }
-  | { success: false; error: string }
+  | { success: false; error: string; code: CreatePrizeErrorCode }
 
 export async function createPrize(
   hackathonId: string,
@@ -153,6 +187,32 @@ export async function createPrize(
   if (input.currency !== undefined) row.currency = input.currency
   if (input.criteriaId !== undefined) row.criteria_id = input.criteriaId
 
+  const cleanCriteria =
+    input.judgingStyle === "gate_check"
+      ? (input.criteria ?? []).filter((c) => c.name.trim().length > 0)
+      : []
+
+  if (input.judgingStyle === "gate_check" && cleanCriteria.length === 0) {
+    return {
+      success: false,
+      error: "At least one criterion is required for pass-or-fail prizes",
+      code: "validation",
+    }
+  }
+
+  const cleanBuckets =
+    input.judgingStyle === "bucket_sort" && input.buckets !== undefined
+      ? input.buckets.filter((b) => b.label.trim().length > 0)
+      : null
+
+  if (cleanBuckets !== null && cleanBuckets.length < 2) {
+    return {
+      success: false,
+      error: "Sort groups need at least two named labels",
+      code: "validation",
+    }
+  }
+
   const { data: prize, error } = await client
     .from("prizes")
     .insert(row)
@@ -161,11 +221,53 @@ export async function createPrize(
 
   if (error || !prize) {
     console.error("Failed to create prize:", error)
-    return { success: false, error: error?.message ?? "Database insert failed" }
+    return {
+      success: false,
+      error: error?.message ?? "Database insert failed",
+      code: "db_error",
+    }
+  }
+
+  if (input.judgingStyle === "gate_check") {
+    const criteriaRows = cleanCriteria.map((c, i) => ({
+      hackathon_id: hackathonId,
+      prize_id: prize.id,
+      name: c.name.trim(),
+      description: c.description?.trim() || null,
+      max_score: 1,
+      weight: 1,
+      display_order: i,
+    }))
+    const { error: critError } = await client.from("judging_criteria").insert(criteriaRows)
+    if (critError) {
+      console.error("Failed to insert criteria, rolling back prize:", critError)
+      await client.from("prizes").delete().eq("id", prize.id)
+      return { success: false, error: critError.message, code: "db_error" }
+    }
   }
 
   if (input.judgingStyle === "bucket_sort") {
-    await createDefaultBucketsForPrize(prize.id)
+    const created =
+      cleanBuckets !== null
+        ? await replaceBucketDefinitions(
+            prize.id,
+            cleanBuckets.map((b, i) => ({
+              level: b.level ?? i + 1,
+              label: b.label.trim(),
+              description: b.description?.trim() || null,
+            }))
+          )
+        : await createDefaultBucketsForPrize(prize.id)
+
+    if (created.length === 0) {
+      console.error("Failed to create bucket definitions, rolling back prize")
+      await client.from("prizes").delete().eq("id", prize.id)
+      return {
+        success: false,
+        error: "Failed to create sort groups",
+        code: "db_error",
+      }
+    }
   }
 
   return { success: true, prize: prize as unknown as Prize }
@@ -202,6 +304,59 @@ export async function updatePrize(
   }
 
   return data as unknown as Prize
+}
+
+export type ReplacePrizeCriteriaInput = {
+  name: string
+  description?: string | null
+}
+
+export async function replacePrizeCriteria(
+  hackathonId: string,
+  prizeId: string,
+  criteria: ReplacePrizeCriteriaInput[]
+): Promise<PrizeCriterion[] | null> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const cleaned = criteria.filter((c) => c.name.trim().length > 0)
+
+  const { error: deleteError } = await client
+    .from("judging_criteria")
+    .delete()
+    .eq("prize_id", prizeId)
+
+  if (deleteError) {
+    console.error("Failed to clear prize criteria:", deleteError)
+    return null
+  }
+
+  if (cleaned.length === 0) return []
+
+  const rows = cleaned.map((c, i) => ({
+    hackathon_id: hackathonId,
+    prize_id: prizeId,
+    name: c.name.trim(),
+    description: c.description?.trim() || null,
+    max_score: 1,
+    weight: 1,
+    display_order: i,
+  }))
+
+  const { data, error } = await client
+    .from("judging_criteria")
+    .insert(rows)
+    .select("id, name, description, display_order")
+
+  if (error) {
+    console.error("Failed to insert prize criteria:", error)
+    return null
+  }
+
+  return (data ?? []).map((c) => ({
+    id: c.id,
+    name: c.name,
+    description: c.description,
+    displayOrder: c.display_order,
+  }))
 }
 
 export async function deletePrize(prizeId: string, hackathonId: string): Promise<boolean> {
@@ -250,12 +405,28 @@ export async function getPrizeDetails(prizeId: string): Promise<PrizeWithProgres
     buckets = (data ?? []) as unknown as BucketDefinition[]
   }
 
+  let criteria: PrizeCriterion[] | undefined
+  if ((prize as unknown as Prize).judging_style === "gate_check") {
+    const { data } = await client
+      .from("judging_criteria")
+      .select("id, name, description, display_order")
+      .eq("prize_id", prizeId)
+      .order("display_order")
+    criteria = (data ?? []).map((c) => ({
+      id: c.id,
+      name: c.name,
+      description: c.description,
+      displayOrder: c.display_order,
+    }))
+  }
+
   return {
     ...(prize as unknown as Prize),
     judgeCount: judges.size,
     totalAssignments: total,
     completedAssignments: completed,
     buckets,
+    criteria,
   }
 }
 
@@ -283,7 +454,7 @@ export async function createDefaultBucketsForPrize(prizeId: string): Promise<Buc
     return []
   }
 
-  return data as unknown as BucketDefinition[]
+  return (data ?? []) as unknown as BucketDefinition[]
 }
 
 export type UpsertBucketInput = {
@@ -327,7 +498,7 @@ export async function replaceBucketDefinitions(
     return []
   }
 
-  return data as unknown as BucketDefinition[]
+  return (data ?? []) as unknown as BucketDefinition[]
 }
 
 export async function listBucketDefinitions(prizeId: string): Promise<BucketDefinition[]> {
@@ -582,6 +753,141 @@ export async function deleteRound(
   return { success: true }
 }
 
+export type RoundsPresetKind = "single" | "shortlist" | "threshold"
+
+export type RoundsPresetInput = {
+  preset: RoundsPresetKind
+  round1Name?: string
+  round2Name?: string
+  advanceTopN?: number
+  threshold?: number
+  seedScreeningPrize?: boolean
+}
+
+export type RoundsPresetResult =
+  | {
+      success: true
+      roundIds: string[]
+      screeningPrizeId: string | null
+    }
+  | { success: false; error: string }
+
+function defaultRoundName(preset: RoundsPresetKind, which: 1 | 2): string {
+  if (preset === "single") return "Judging"
+  if (preset === "shortlist") return which === 1 ? "Shortlist" : "Finals"
+  return which === 1 ? "First round" : "Finals"
+}
+
+export async function createRoundsPreset(
+  hackathonId: string,
+  input: RoundsPresetInput
+): Promise<RoundsPresetResult> {
+  const preset = input.preset
+
+  if (preset === "single") {
+    const name = (input.round1Name ?? defaultRoundName("single", 1)).trim() || defaultRoundName("single", 1)
+    const round = await createRound(hackathonId, {
+      name,
+      advancement: "manual",
+      advancementConfig: {},
+    })
+    if (!round) return { success: false, error: "Failed to create round" }
+    return { success: true, roundIds: [round.id], screeningPrizeId: null }
+  }
+
+  if (preset === "shortlist") {
+    const topN = input.advanceTopN
+    if (!Number.isInteger(topN) || (topN as number) < 1) {
+      return { success: false, error: "advanceTopN must be a positive integer" }
+    }
+    const round1Name = (input.round1Name ?? defaultRoundName("shortlist", 1)).trim() || defaultRoundName("shortlist", 1)
+    const round2Name = (input.round2Name ?? defaultRoundName("shortlist", 2)).trim() || defaultRoundName("shortlist", 2)
+
+    const round1 = await createRound(hackathonId, {
+      name: round1Name,
+      advancement: "top_n",
+      advancementConfig: { topN: topN as number },
+    })
+    if (!round1) return { success: false, error: "Failed to create round 1" }
+
+    const round2 = await createRound(hackathonId, {
+      name: round2Name,
+      advancement: "manual",
+      advancementConfig: {},
+    })
+    if (!round2) return { success: false, error: "Failed to create round 2" }
+
+    let screeningPrizeId: string | null = null
+    if (input.seedScreeningPrize !== false) {
+      const screening = await createPrize(hackathonId, {
+        name: "Screening Scores",
+        description: `Hidden helper prize so judges have something to score in round 1. The top ${topN} by score move on.`,
+        judgingStyle: "bucket_sort",
+        roundId: round1.id,
+        isScreening: true,
+      })
+      if (screening.success) {
+        screeningPrizeId = screening.prize.id
+      } else {
+        console.error("Failed to seed screening prize:", screening.error)
+      }
+    }
+
+    return {
+      success: true,
+      roundIds: [round1.id, round2.id],
+      screeningPrizeId,
+    }
+  }
+
+  if (preset === "threshold") {
+    const threshold = input.threshold
+    if (typeof threshold !== "number" || Number.isNaN(threshold)) {
+      return { success: false, error: "threshold must be a number" }
+    }
+    const round1Name = (input.round1Name ?? defaultRoundName("threshold", 1)).trim() || defaultRoundName("threshold", 1)
+    const round2Name = (input.round2Name ?? defaultRoundName("threshold", 2)).trim() || defaultRoundName("threshold", 2)
+
+    const round1 = await createRound(hackathonId, {
+      name: round1Name,
+      advancement: "threshold",
+      advancementConfig: { threshold },
+    })
+    if (!round1) return { success: false, error: "Failed to create round 1" }
+
+    const round2 = await createRound(hackathonId, {
+      name: round2Name,
+      advancement: "manual",
+      advancementConfig: {},
+    })
+    if (!round2) return { success: false, error: "Failed to create round 2" }
+
+    let screeningPrizeId: string | null = null
+    if (input.seedScreeningPrize !== false) {
+      const screening = await createPrize(hackathonId, {
+        name: "Screening Scores",
+        description: `Hidden helper prize so judges have something to score in round 1. Everyone scoring ${threshold} or higher moves on.`,
+        judgingStyle: "bucket_sort",
+        roundId: round1.id,
+        isScreening: true,
+      })
+      if (screening.success) {
+        screeningPrizeId = screening.prize.id
+      } else {
+        console.error("Failed to seed screening prize:", screening.error)
+      }
+    }
+
+    return {
+      success: true,
+      roundIds: [round1.id, round2.id],
+      screeningPrizeId,
+    }
+  }
+
+  return { success: false, error: `Unknown preset: ${preset}` }
+}
+
 export type FinalistsPresetInput = {
   advanceTopN: number
   round1Name?: string
@@ -601,48 +907,21 @@ export async function createFinalistsPreset(
   hackathonId: string,
   input: FinalistsPresetInput
 ): Promise<FinalistsPresetResult> {
-  const { advanceTopN } = input
-  if (!Number.isInteger(advanceTopN) || advanceTopN < 1) {
-    return { success: false, error: "advanceTopN must be a positive integer" }
-  }
-
-  const round1Name = (input.round1Name ?? "Semifinals").trim() || "Semifinals"
-  const round2Name = (input.round2Name ?? "Finals").trim() || "Finals"
-
-  const round1 = await createRound(hackathonId, {
-    name: round1Name,
-    advancement: "top_n",
-    advancementConfig: { topN: advanceTopN },
+  const result = await createRoundsPreset(hackathonId, {
+    preset: "shortlist",
+    advanceTopN: input.advanceTopN,
+    round1Name: input.round1Name ?? "Semifinals",
+    round2Name: input.round2Name ?? "Finals",
+    seedScreeningPrize: input.seedScreeningPrize,
   })
-  if (!round1) return { success: false, error: "Failed to create round 1" }
 
-  const round2 = await createRound(hackathonId, {
-    name: round2Name,
-    advancement: "manual",
-    advancementConfig: {},
-  })
-  if (!round2) return { success: false, error: "Failed to create round 2" }
+  if (!result.success) return result
 
-  let screeningPrizeId: string | null = null
-  if (input.seedScreeningPrize !== false) {
-    const screening = await createPrize(hackathonId, {
-      name: "Screening Scores",
-      description: `Internal scoring used to narrow submissions to the top ${advanceTopN} finalists. Hidden from participants.`,
-      judgingStyle: "bucket_sort",
-      roundId: round1.id,
-      isScreening: true,
-    })
-    if (screening.success) {
-      screeningPrizeId = screening.prize.id
-    } else {
-      console.error("Failed to seed screening prize:", screening.error)
-    }
-  }
-
+  const [r1, r2] = result.roundIds
   return {
     success: true,
-    roundIds: { round1: round1.id, round2: round2.id },
-    screeningPrizeId,
+    roundIds: { round1: r1, round2: r2 },
+    screeningPrizeId: result.screeningPrizeId,
   }
 }
 
@@ -1190,7 +1469,7 @@ export async function autoAssignJudges(
 
   const { data: prize } = await client
     .from("prizes")
-    .select("id, round_id")
+    .select("id, round_id, allowed_team_modes")
     .eq("id", prizeId)
     .eq("hackathon_id", hackathonId)
     .single()
@@ -1208,12 +1487,21 @@ export async function autoAssignJudges(
   const pool = await getRoundPool(hackathonId, prize.round_id)
   if (pool.length === 0) return { assignedCount: 0 }
 
-  const { data: submissions } = await client
+  const { data: submissionsRaw } = await client
     .from("submissions")
-    .select("id, team_id")
+    .select("id, team_id, teams:teams!submissions_team_id_fkey(id, mode)")
     .in("id", pool)
 
-  if (!submissions || submissions.length === 0) return { assignedCount: 0 }
+  if (!submissionsRaw || submissionsRaw.length === 0) return { assignedCount: 0 }
+
+  const allowedModes = (prize as { allowed_team_modes: ("in_person" | "virtual")[] | null }).allowed_team_modes
+  const submissions = (submissionsRaw as unknown as { id: string; team_id: string; teams: { id: string; mode: "in_person" | "virtual" | null } | null }[])
+    .filter((s) => {
+      if (!allowedModes || allowedModes.length === 0) return true
+      return s.teams?.mode ? allowedModes.includes(s.teams.mode) : false
+    })
+
+  if (submissions.length === 0) return { assignedCount: 0 }
 
   const { data: existing } = await client
     .from("judge_assignments")
@@ -1808,6 +2096,7 @@ export type JudgeAssignmentForJudge = {
   submissionLiveAppUrl: string | null
   submissionScreenshotUrl: string | null
   teamName: string | null
+  teamMode: "in_person" | "virtual" | null
   teamMemberCount: number | null
   isComplete: boolean
   notes: string
@@ -1862,10 +2151,14 @@ export async function getJudgeAssignments(
     .filter((id): id is string => id !== null)
 
   let teamsMap: Record<string, string> = {}
+  let teamModeMap: Record<string, "in_person" | "virtual" | null> = {}
   const memberCountMap: Record<string, number> = {}
   if (teamIds.length > 0) {
-    const { data: teams } = await client.from("teams").select("id, name").in("id", teamIds)
+    const { data: teams } = await client.from("teams").select("id, name, mode").in("id", teamIds)
     teamsMap = Object.fromEntries((teams ?? []).map((t) => [t.id, t.name]))
+    teamModeMap = Object.fromEntries(
+      (teams ?? []).map((t) => [t.id, (t as { mode: "in_person" | "virtual" | null }).mode ?? null])
+    )
 
     const { data: members } = await client
       .from("hackathon_participants")
@@ -1900,6 +2193,7 @@ export async function getJudgeAssignments(
       submissionLiveAppUrl: sub.live_app_url,
       submissionScreenshotUrl: sub.screenshot_url,
       teamName: sub.team_id ? teamsMap[sub.team_id] ?? null : null,
+      teamMode: sub.team_id ? teamModeMap[sub.team_id] ?? null : null,
       teamMemberCount: sub.team_id ? memberCountMap[sub.team_id] ?? null : null,
       isComplete: a.is_complete as boolean,
       notes: a.notes as string,
