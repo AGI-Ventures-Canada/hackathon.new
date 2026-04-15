@@ -368,6 +368,18 @@ function addDraftActions(items: ActionItem[], input: ActionItemsInput) {
     tooltip: "The submission deadline is an automated agenda item that locks submissions and starts the judging phase. Make sure the time is correct — once it passes, participants can no longer submit or edit their projects.",
   }))
 
+  if (input.communityUrl === null) {
+    items.push(manualAction({
+      id: "add-community-link",
+      label: "Add a community/help link",
+      hint: "Share a Discord, Slack, or help link with registered attendees",
+      severity: "info",
+      tab: "edit",
+      ctaLabel: "Add",
+      tooltip: "Drop a link to your Discord, Slack, Telegram, or help doc. Registered attendees will see it on the event page so they can ask questions and meet other builders.",
+    }))
+  }
+
   if (hasDates && hasLocation) {
     items.push(transitionAction({
       id: "ready-to-publish",
