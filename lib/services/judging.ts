@@ -145,9 +145,11 @@ export async function listPrizes(hackathonId: string): Promise<PrizeWithProgress
   }))
 }
 
+export type CreatePrizeErrorCode = "validation" | "db_error"
+
 export type CreatePrizeResult =
   | { success: true; prize: Prize }
-  | { success: false; error: string }
+  | { success: false; error: string; code: CreatePrizeErrorCode }
 
 export async function createPrize(
   hackathonId: string,
@@ -185,13 +187,16 @@ export async function createPrize(
   if (input.currency !== undefined) row.currency = input.currency
   if (input.criteriaId !== undefined) row.criteria_id = input.criteriaId
 
-  if (input.judgingStyle === "gate_check") {
-    const cleanCriteria = (input.criteria ?? []).filter((c) => c.name.trim().length > 0)
-    if (cleanCriteria.length === 0) {
-      return {
-        success: false,
-        error: "At least one criterion is required for pass-or-fail prizes",
-      }
+  const cleanCriteria =
+    input.judgingStyle === "gate_check"
+      ? (input.criteria ?? []).filter((c) => c.name.trim().length > 0)
+      : []
+
+  if (input.judgingStyle === "gate_check" && cleanCriteria.length === 0) {
+    return {
+      success: false,
+      error: "At least one criterion is required for pass-or-fail prizes",
+      code: "validation",
     }
   }
 
@@ -203,11 +208,14 @@ export async function createPrize(
 
   if (error || !prize) {
     console.error("Failed to create prize:", error)
-    return { success: false, error: error?.message ?? "Database insert failed" }
+    return {
+      success: false,
+      error: error?.message ?? "Database insert failed",
+      code: "db_error",
+    }
   }
 
   if (input.judgingStyle === "gate_check") {
-    const cleanCriteria = (input.criteria ?? []).filter((c) => c.name.trim().length > 0)
     const criteriaRows = cleanCriteria.map((c, i) => ({
       hackathon_id: hackathonId,
       prize_id: prize.id,
@@ -221,23 +229,32 @@ export async function createPrize(
     if (critError) {
       console.error("Failed to insert criteria, rolling back prize:", critError)
       await client.from("prizes").delete().eq("id", prize.id)
-      return { success: false, error: critError.message }
+      return { success: false, error: critError.message, code: "db_error" }
     }
   }
 
   if (input.judgingStyle === "bucket_sort") {
     const providedBuckets = (input.buckets ?? []).filter((b) => b.label.trim().length > 0)
-    if (providedBuckets.length > 0) {
-      await replaceBucketDefinitions(
-        prize.id,
-        providedBuckets.map((b, i) => ({
-          level: b.level ?? i + 1,
-          label: b.label.trim(),
-          description: b.description?.trim() || null,
-        }))
-      )
-    } else {
-      await createDefaultBucketsForPrize(prize.id)
+    const created =
+      providedBuckets.length > 0
+        ? await replaceBucketDefinitions(
+            prize.id,
+            providedBuckets.map((b, i) => ({
+              level: b.level ?? i + 1,
+              label: b.label.trim(),
+              description: b.description?.trim() || null,
+            }))
+          )
+        : await createDefaultBucketsForPrize(prize.id)
+
+    if (created.length === 0) {
+      console.error("Failed to create bucket definitions, rolling back prize")
+      await client.from("prizes").delete().eq("id", prize.id)
+      return {
+        success: false,
+        error: "Failed to create sort groups",
+        code: "db_error",
+      }
     }
   }
 
@@ -372,7 +389,7 @@ export async function createDefaultBucketsForPrize(prizeId: string): Promise<Buc
     return []
   }
 
-  return data as unknown as BucketDefinition[]
+  return (data ?? []) as unknown as BucketDefinition[]
 }
 
 export type UpsertBucketInput = {
@@ -416,7 +433,7 @@ export async function replaceBucketDefinitions(
     return []
   }
 
-  return data as unknown as BucketDefinition[]
+  return (data ?? []) as unknown as BucketDefinition[]
 }
 
 export async function listBucketDefinitions(prizeId: string): Promise<BucketDefinition[]> {

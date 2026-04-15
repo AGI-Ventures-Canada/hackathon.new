@@ -805,6 +805,7 @@ describe("Judging Service", () => {
       expect(result.success).toBe(false)
       if (!result.success) {
         expect(result.error).toContain("criterion")
+        expect(result.code).toBe("validation")
       }
       expect(callCount).toBe(0)
     })
@@ -820,6 +821,9 @@ describe("Judging Service", () => {
       })
 
       expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.code).toBe("validation")
+      }
     })
 
     it("inserts criteria linked to the new prize for gate_check", async () => {
@@ -865,13 +869,20 @@ describe("Judging Service", () => {
       const chains: Record<string, ReturnType<typeof createChainableMock>[]> = {}
 
       setMockFromImplementation((table: string) => {
-        const chain =
-          table === "prizes"
-            ? createChainableMock({
-                data: { id: "prize_bs", name: "Grand Prize", judging_style: "bucket_sort" },
-                error: null,
-              })
-            : createChainableMock({ data: null, error: null })
+        let chain: ReturnType<typeof createChainableMock>
+        if (table === "prizes") {
+          chain = createChainableMock({
+            data: { id: "prize_bs", name: "Grand Prize", judging_style: "bucket_sort" },
+            error: null,
+          })
+        } else if (table === "bucket_definitions") {
+          chain = createChainableMock({
+            data: [{ id: "b1" }, { id: "b2" }],
+            error: null,
+          })
+        } else {
+          chain = createChainableMock({ data: null, error: null })
+        }
         if (!chains[table]) chains[table] = []
         chains[table].push(chain)
         return chain

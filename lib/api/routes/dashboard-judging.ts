@@ -84,9 +84,8 @@ export const dashboardJudgingRoutes = new Elysia()
       })
 
       if (!createResult.success) {
-        const isValidation = createResult.error.startsWith("At least one criterion")
         return new Response(JSON.stringify({ error: createResult.error }), {
-          status: isValidation ? 400 : 500,
+          status: createResult.code === "validation" ? 400 : 500,
           headers: { "Content-Type": "application/json" },
         })
       }
@@ -112,7 +111,13 @@ export const dashboardJudgingRoutes = new Elysia()
         judgingStyle: t.String({ description: "bucket_sort | gate_check | crowd_vote | judges_pick" }),
         roundId: t.Optional(t.Nullable(t.String({ description: "Round ID this prize belongs to" }))),
         assignmentMode: t.Optional(t.String({ description: "organizer_assigned | self_select" })),
-        maxPicks: t.Optional(t.Number({ description: "Max picks per judge (for judges_pick)" })),
+        maxPicks: t.Optional(
+          t.Integer({
+            minimum: 1,
+            maximum: 100,
+            description: "Max picks per judge (for judges_pick)",
+          })
+        ),
         displayOrder: t.Optional(t.Number({ description: "Display order" })),
         criteria: t.Optional(
           t.Array(
@@ -183,7 +188,7 @@ export const dashboardJudgingRoutes = new Elysia()
         judgingStyle: t.Optional(t.String()),
         roundId: t.Optional(t.Nullable(t.String())),
         assignmentMode: t.Optional(t.String()),
-        maxPicks: t.Optional(t.Number()),
+        maxPicks: t.Optional(t.Integer({ minimum: 1, maximum: 100 })),
         displayOrder: t.Optional(t.Number()),
       }),
       detail: { summary: "Update prize", description: "Updates a prize's properties." },
