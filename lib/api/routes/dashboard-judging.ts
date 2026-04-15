@@ -57,6 +57,18 @@ export const dashboardJudgingRoutes = new Elysia()
         return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
       }
 
+      if (body.judgingStyle === "gate_check") {
+        const nonEmpty = (body.criteria ?? []).filter((c) => c.name.trim().length > 0)
+        if (nonEmpty.length === 0) {
+          return new Response(
+            JSON.stringify({
+              error: "At least one criterion is required for pass-or-fail prizes",
+            }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          )
+        }
+      }
+
       const { createPrize } = await import("@/lib/services/judging")
       const createResult = await createPrize(params.id, {
         name: body.name,
@@ -67,10 +79,16 @@ export const dashboardJudgingRoutes = new Elysia()
         assignmentMode: body.assignmentMode as "organizer_assigned" | "self_select" | undefined,
         maxPicks: body.maxPicks,
         displayOrder: body.displayOrder,
+        criteria: body.criteria,
+        buckets: body.buckets,
       })
 
       if (!createResult.success) {
-        return new Response(JSON.stringify({ error: createResult.error }), { status: 500, headers: { "Content-Type": "application/json" } })
+        const isValidation = createResult.error.startsWith("At least one criterion")
+        return new Response(JSON.stringify({ error: createResult.error }), {
+          status: isValidation ? 400 : 500,
+          headers: { "Content-Type": "application/json" },
+        })
       }
 
       const prize = createResult.prize
@@ -96,8 +114,31 @@ export const dashboardJudgingRoutes = new Elysia()
         assignmentMode: t.Optional(t.String({ description: "organizer_assigned | self_select" })),
         maxPicks: t.Optional(t.Number({ description: "Max picks per judge (for judges_pick)" })),
         displayOrder: t.Optional(t.Number({ description: "Display order" })),
+        criteria: t.Optional(
+          t.Array(
+            t.Object({
+              name: t.String(),
+              description: t.Optional(t.Nullable(t.String())),
+            }),
+            { description: "Pass/fail criteria. Required when judgingStyle is 'gate_check'." }
+          )
+        ),
+        buckets: t.Optional(
+          t.Array(
+            t.Object({
+              level: t.Number(),
+              label: t.String(),
+              description: t.Optional(t.Nullable(t.String())),
+            }),
+            { description: "Sort groups for 'bucket_sort'. Defaults are used when omitted." }
+          )
+        ),
       }),
-      detail: { summary: "Create prize", description: "Creates a new prize with judging style. Auto-creates bucket definitions for bucket_sort." },
+      detail: {
+        summary: "Create prize",
+        description:
+          "Creates a new prize with judging style. For 'gate_check', 'criteria' must be a non-empty array. For 'bucket_sort', optional 'buckets' override the default sort groups. For 'judges_pick', 'maxPicks' sets how many picks each judge gets.",
+      },
     }
   )
 

@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "next-dev",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["dev"],
+      "port": 3000
+    },
+    {
+      "name": "email-dev",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["email:dev"],
+      "port": 3001
+    }
+  ]
+}

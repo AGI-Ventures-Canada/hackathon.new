@@ -36,6 +36,8 @@ export type CreatePrizeInput = {
   monetaryValue?: number | null
   currency?: string | null
   criteriaId?: string | null
+  criteria?: { name: string; description?: string | null }[]
+  buckets?: { level: number; label: string; description?: string | null }[]
 }
 
 export type UpdatePrizeInput = {
@@ -49,11 +51,19 @@ export type UpdatePrizeInput = {
   displayOrder?: number
 }
 
+export type PrizeCriterion = {
+  id: string
+  name: string
+  description: string | null
+  displayOrder: number
+}
+
 export type PrizeWithProgress = Prize & {
   judgeCount: number
   totalAssignments: number
   completedAssignments: number
   buckets?: BucketDefinition[]
+  criteria?: PrizeCriterion[]
 }
 
 export async function listPrizes(hackathonId: string): Promise<PrizeWithProgress[]> {
@@ -104,12 +114,34 @@ export async function listPrizes(hackathonId: string): Promise<PrizeWithProgress
     }
   }
 
+  const gateCheckPrizeIds = prizes.filter((p) => p.judging_style === "gate_check").map((p) => p.id)
+  const criteriaMap: Record<string, PrizeCriterion[]> = {}
+  if (gateCheckPrizeIds.length > 0) {
+    const { data: criteriaRows } = await client
+      .from("judging_criteria")
+      .select("id, prize_id, name, description, display_order")
+      .in("prize_id", gateCheckPrizeIds)
+      .order("display_order")
+
+    for (const c of criteriaRows ?? []) {
+      if (!c.prize_id) continue
+      if (!criteriaMap[c.prize_id]) criteriaMap[c.prize_id] = []
+      criteriaMap[c.prize_id].push({
+        id: c.id,
+        name: c.name,
+        description: c.description,
+        displayOrder: c.display_order,
+      })
+    }
+  }
+
   return (prizes as unknown as Prize[]).map((p) => ({
     ...p,
     judgeCount: prizeStats[p.id]?.judges.size ?? 0,
     totalAssignments: prizeStats[p.id]?.total ?? 0,
     completedAssignments: prizeStats[p.id]?.completed ?? 0,
     buckets: bucketMap[p.id],
+    criteria: criteriaMap[p.id],
   }))
 }
 
@@ -153,6 +185,16 @@ export async function createPrize(
   if (input.currency !== undefined) row.currency = input.currency
   if (input.criteriaId !== undefined) row.criteria_id = input.criteriaId
 
+  if (input.judgingStyle === "gate_check") {
+    const cleanCriteria = (input.criteria ?? []).filter((c) => c.name.trim().length > 0)
+    if (cleanCriteria.length === 0) {
+      return {
+        success: false,
+        error: "At least one criterion is required for pass-or-fail prizes",
+      }
+    }
+  }
+
   const { data: prize, error } = await client
     .from("prizes")
     .insert(row)
@@ -164,8 +206,39 @@ export async function createPrize(
     return { success: false, error: error?.message ?? "Database insert failed" }
   }
 
+  if (input.judgingStyle === "gate_check") {
+    const cleanCriteria = (input.criteria ?? []).filter((c) => c.name.trim().length > 0)
+    const criteriaRows = cleanCriteria.map((c, i) => ({
+      hackathon_id: hackathonId,
+      prize_id: prize.id,
+      name: c.name.trim(),
+      description: c.description?.trim() || null,
+      max_score: 1,
+      weight: 1,
+      display_order: i,
+    }))
+    const { error: critError } = await client.from("judging_criteria").insert(criteriaRows)
+    if (critError) {
+      console.error("Failed to insert criteria, rolling back prize:", critError)
+      await client.from("prizes").delete().eq("id", prize.id)
+      return { success: false, error: critError.message }
+    }
+  }
+
   if (input.judgingStyle === "bucket_sort") {
-    await createDefaultBucketsForPrize(prize.id)
+    const providedBuckets = (input.buckets ?? []).filter((b) => b.label.trim().length > 0)
+    if (providedBuckets.length > 0) {
+      await replaceBucketDefinitions(
+        prize.id,
+        providedBuckets.map((b, i) => ({
+          level: b.level ?? i + 1,
+          label: b.label.trim(),
+          description: b.description?.trim() || null,
+        }))
+      )
+    } else {
+      await createDefaultBucketsForPrize(prize.id)
+    }
   }
 
   return { success: true, prize: prize as unknown as Prize }
@@ -250,12 +323,28 @@ export async function getPrizeDetails(prizeId: string): Promise<PrizeWithProgres
     buckets = (data ?? []) as unknown as BucketDefinition[]
   }
 
+  let criteria: PrizeCriterion[] | undefined
+  if ((prize as unknown as Prize).judging_style === "gate_check") {
+    const { data } = await client
+      .from("judging_criteria")
+      .select("id, name, description, display_order")
+      .eq("prize_id", prizeId)
+      .order("display_order")
+    criteria = (data ?? []).map((c) => ({
+      id: c.id,
+      name: c.name,
+      description: c.description,
+      displayOrder: c.display_order,
+    }))
+  }
+
   return {
     ...(prize as unknown as Prize),
     judgeCount: judges.size,
     totalAssignments: total,
     completedAssignments: completed,
     buckets,
+    criteria,
   }
 }
 

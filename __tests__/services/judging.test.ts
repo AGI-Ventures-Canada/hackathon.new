@@ -15,6 +15,7 @@ const {
   saveNotes,
   markAssignmentViewed,
   recalculateForAssignment,
+  createPrize,
 } = await import("@/lib/services/judging")
 
 describe("Judging Service", () => {
@@ -785,6 +786,141 @@ describe("Judging Service", () => {
 
       await recalculateForAssignment("nonexistent")
       expect(callCount).toBe(1)
+    })
+  })
+
+  describe("createPrize", () => {
+    it("rejects gate_check without criteria before touching the database", async () => {
+      let callCount = 0
+      setMockFromImplementation(() => {
+        callCount++
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await createPrize("h1", {
+        name: "Best Use of MCP",
+        judgingStyle: "gate_check",
+      })
+
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.error).toContain("criterion")
+      }
+      expect(callCount).toBe(0)
+    })
+
+    it("rejects gate_check when criteria is present but every name is blank", async () => {
+      const result = await createPrize("h1", {
+        name: "Blank Checks",
+        judgingStyle: "gate_check",
+        criteria: [
+          { name: "   " },
+          { name: "" },
+        ],
+      })
+
+      expect(result.success).toBe(false)
+    })
+
+    it("inserts criteria linked to the new prize for gate_check", async () => {
+      const chains: Record<string, ReturnType<typeof createChainableMock>[]> = {}
+
+      setMockFromImplementation((table: string) => {
+        const chain =
+          table === "prizes"
+            ? createChainableMock({
+                data: { id: "prize_new", name: "Best Use of MCP", judging_style: "gate_check" },
+                error: null,
+              })
+            : createChainableMock({ data: null, error: null })
+        if (!chains[table]) chains[table] = []
+        chains[table].push(chain)
+        return chain
+      })
+
+      const result = await createPrize("h1", {
+        name: "Best Use of MCP",
+        judgingStyle: "gate_check",
+        criteria: [
+          { name: "Uses MCP", description: "Integrates MCP meaningfully" },
+          { name: "Working demo", description: null },
+        ],
+      })
+
+      expect(result.success).toBe(true)
+      const criteriaChain = chains["judging_criteria"]?.[0]
+      expect(criteriaChain).toBeDefined()
+      const insertArgs = criteriaChain!.insert.mock.calls[0]?.[0] as Record<string, unknown>[]
+      expect(insertArgs).toBeDefined()
+      expect(insertArgs.length).toBe(2)
+      expect(insertArgs[0]).toMatchObject({
+        hackathon_id: "h1",
+        prize_id: "prize_new",
+        name: "Uses MCP",
+        display_order: 0,
+      })
+    })
+
+    it("uses provided buckets for bucket_sort instead of defaults", async () => {
+      const chains: Record<string, ReturnType<typeof createChainableMock>[]> = {}
+
+      setMockFromImplementation((table: string) => {
+        const chain =
+          table === "prizes"
+            ? createChainableMock({
+                data: { id: "prize_bs", name: "Grand Prize", judging_style: "bucket_sort" },
+                error: null,
+              })
+            : createChainableMock({ data: null, error: null })
+        if (!chains[table]) chains[table] = []
+        chains[table].push(chain)
+        return chain
+      })
+
+      const result = await createPrize("h1", {
+        name: "Grand Prize",
+        judgingStyle: "bucket_sort",
+        buckets: [
+          { level: 1, label: "Yes" },
+          { level: 2, label: "No" },
+        ],
+      })
+
+      expect(result.success).toBe(true)
+      const bucketChains = chains["bucket_definitions"] ?? []
+      const insertCalls = bucketChains.flatMap((c) => c.insert.mock.calls as unknown as [Record<string, unknown>[]][])
+      const bucketInsertArgs = insertCalls.find(([rows]) => Array.isArray(rows) && rows.length === 2)?.[0]
+      expect(bucketInsertArgs).toBeDefined()
+      expect(bucketInsertArgs![0]).toMatchObject({ prize_id: "prize_bs", label: "Yes" })
+    })
+
+    it("stores maxPicks for judges_pick", async () => {
+      const chains: Record<string, ReturnType<typeof createChainableMock>[]> = {}
+
+      setMockFromImplementation((table: string) => {
+        const chain =
+          table === "prizes"
+            ? createChainableMock({
+                data: { id: "prize_jp", name: "Sponsor Pick", judging_style: "judges_pick", max_picks: 5 },
+                error: null,
+              })
+            : createChainableMock({ data: null, error: null })
+        if (!chains[table]) chains[table] = []
+        chains[table].push(chain)
+        return chain
+      })
+
+      const result = await createPrize("h1", {
+        name: "Sponsor Pick",
+        judgingStyle: "judges_pick",
+        maxPicks: 5,
+      })
+
+      expect(result.success).toBe(true)
+      const prizeChain = chains["prizes"]?.[0]
+      const insertArgs = prizeChain?.insert.mock.calls[0]?.[0] as Record<string, unknown>
+      expect(insertArgs).toBeDefined()
+      expect(insertArgs.max_picks).toBe(5)
     })
   })
 
