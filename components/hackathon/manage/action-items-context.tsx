@@ -115,6 +115,7 @@ type ProviderProps = {
   challengeExists: boolean;
   challengeReleasedAt: string | null;
   scheduleItems: ScheduleItem[];
+  startsAt: string | null;
   endsAt: string | null;
   locationInitialData: LocationInitialData;
   teamSettingsInitialData: TeamSettingsInitialData;
@@ -130,6 +131,7 @@ export function ActionItemsProvider({
   challengeExists,
   challengeReleasedAt,
   scheduleItems: serverScheduleItems,
+  startsAt: serverStartsAt,
   endsAt: serverEndsAt,
   locationInitialData,
   teamSettingsInitialData,
@@ -621,6 +623,9 @@ export function ActionItemsProvider({
             scheduleItems={scheduleItems}
             challengeReleasedAt={challengeReleasedAt}
             challengeExists={liveChallengeExists}
+            hackathonStartsAt={serverStartsAt}
+            hackathonEndsAt={liveEndsAt}
+            hackathonStatus={liveStatus}
             hideHeader
             onEditTriggerItem={(item) => {
               if (item.trigger_type === "challenge_release") {

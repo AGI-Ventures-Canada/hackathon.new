@@ -27,6 +27,9 @@ type Props = {
   scheduleItems: ScheduleItem[]
   challengeReleasedAt: string | null
   challengeExists: boolean
+  hackathonStartsAt?: string | null
+  hackathonEndsAt?: string | null
+  hackathonStatus?: string
 }
 
 function StatCard({ icon: Icon, value, label, href }: { icon: typeof Users; value: string; label: string; href?: string }) {
@@ -43,7 +46,7 @@ function StatCard({ icon: Icon, value, label, href }: { icon: typeof Users; valu
   return inner
 }
 
-export function OrganizerOverview({ slug, hackathonId, stats, scheduleItems, challengeReleasedAt, challengeExists }: Props) {
+export function OrganizerOverview({ slug, hackathonId, stats, scheduleItems, challengeReleasedAt, challengeExists, hackathonStartsAt, hackathonEndsAt, hackathonStatus }: Props) {
   const judgingValue = stats.judgingProgress.totalAssignments > 0
     ? `${Math.round((stats.judgingProgress.completedAssignments / stats.judgingProgress.totalAssignments) * 100)}%`
     : "—"
@@ -73,6 +76,9 @@ export function OrganizerOverview({ slug, hackathonId, stats, scheduleItems, cha
             scheduleItems={scheduleItems}
             challengeReleasedAt={challengeReleasedAt}
             challengeExists={challengeExists}
+            hackathonStartsAt={hackathonStartsAt}
+            hackathonEndsAt={hackathonEndsAt}
+            hackathonStatus={hackathonStatus}
           />
         </div>
       </div>

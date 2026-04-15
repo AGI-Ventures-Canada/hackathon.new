@@ -148,6 +148,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
         challengeExists={challengeExists}
         challengeReleasedAt={hackathon.challenge_released_at}
         scheduleItems={scheduleItems}
+        startsAt={hackathon.starts_at}
         endsAt={hackathon.ends_at}
         locationInitialData={{
           locationType: hackathon.location_type,
@@ -236,6 +237,9 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
                   scheduleItems={scheduleItems}
                   challengeReleasedAt={hackathon.challenge_released_at}
                   challengeExists={challengeExists}
+                  hackathonStartsAt={hackathon.starts_at}
+                  hackathonEndsAt={hackathon.ends_at}
+                  hackathonStatus={hackathon.status}
                 />
               </div>
             </TabsContent>
