@@ -425,6 +425,69 @@ export const dashboardJudgingRoutes = new Elysia()
   )
 
   .post(
+    "/hackathons/:id/rounds/preset",
+    async ({ principal, params, body }) => {
+      requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+
+      const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+      const result = await checkHackathonOrganizer(params.id, principal.tenantId)
+
+      if (result.status === "not_found") {
+        return new Response(JSON.stringify({ error: "Hackathon not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+      }
+      if (result.status === "not_authorized") {
+        return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
+      }
+
+      const { createRoundsPreset } = await import("@/lib/services/judging")
+      const preset = await createRoundsPreset(params.id, {
+        preset: body.preset,
+        advanceTopN: body.advanceTopN,
+        threshold: body.threshold,
+        round1Name: body.round1Name,
+        round2Name: body.round2Name,
+        seedScreeningPrize: body.seedScreeningPrize,
+      })
+
+      if (!preset.success) {
+        return new Response(JSON.stringify({ error: preset.error }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+
+      return preset
+    },
+    {
+      body: t.Object({
+        preset: t.Union(
+          [t.Literal("single"), t.Literal("shortlist"), t.Literal("threshold")],
+          { description: "Which starter template to use" }
+        ),
+        advanceTopN: t.Optional(
+          t.Number({ description: "Required for 'shortlist'. How many submissions move on from round 1" })
+        ),
+        threshold: t.Optional(
+          t.Number({ description: "Required for 'threshold'. Submissions scoring this or higher move on" })
+        ),
+        round1Name: t.Optional(t.String({ description: "Name of the first round. Defaults per preset." })),
+        round2Name: t.Optional(t.String({ description: "Name of the second round. Ignored for 'single'." })),
+        seedScreeningPrize: t.Optional(
+          t.Boolean({
+            description:
+              "When true (default), seeds a hidden helper prize so judges have something to score in round 1. Ignored for 'single'.",
+          })
+        ),
+      }),
+      detail: {
+        summary: "Create a judging rounds preset",
+        description:
+          "Creates a starter template of rounds in one call. 'single' creates one round. 'shortlist' creates two rounds where the top N by score advance. 'threshold' creates two rounds where everyone scoring above a bar advances. All rounds are fully editable after creation.",
+      },
+    }
+  )
+
+  .post(
     "/hackathons/:id/rounds/finalists-preset",
     async ({ principal, params, body }) => {
       requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
@@ -469,9 +532,9 @@ export const dashboardJudgingRoutes = new Elysia()
         ),
       }),
       detail: {
-        summary: "Create finalists-judging preset",
+        summary: "Create finalists-judging preset (legacy alias for /rounds/preset with preset='shortlist')",
         description:
-          "Creates two rounds (Semifinals → Finals) and a hidden screening prize in one call. Round 1 uses top_n advancement with the given count; round 2 uses manual. Designed to make multi-round finalists setup a one-click flow.",
+          "Creates two rounds (Semifinals → Finals) and a hidden screening prize in one call. Round 1 uses top_n advancement with the given count; round 2 uses manual. Prefer /rounds/preset for new integrations.",
       },
     }
   )

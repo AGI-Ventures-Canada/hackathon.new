@@ -46,18 +46,13 @@ const baseProps = {
   slug: "test-event",
   submissions: [],
   resultsPublishedAt: null,
-  activeJtab: "data" as const,
-  hasJudgingSetup: true,
+  activeJtab: "judges" as const,
+  locationType: null,
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function getJudgingClientProps(element: any): Record<string, unknown> {
-  // The rendered tree is TabsUrlSync > [TabsList, TabsContent(dataView), TabsContent(wizard)]
-  // dataView is the JudgingTabClient element; its .props is what the client receives.
-  const children = Array.isArray(element.props.children) ? element.props.children : [element.props.children]
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const dataTab = children.find((c: any) => c?.props?.value === "data")
-  return dataTab.props.children.props
+  return element.props
 }
 
 describe("JudgingTabContent", () => {

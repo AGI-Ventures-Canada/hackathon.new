@@ -15,6 +15,7 @@ const {
   saveNotes,
   markAssignmentViewed,
   recalculateForAssignment,
+  createRoundsPreset,
 } = await import("@/lib/services/judging")
 
 describe("Judging Service", () => {
@@ -785,6 +786,103 @@ describe("Judging Service", () => {
 
       await recalculateForAssignment("nonexistent")
       expect(callCount).toBe(1)
+    })
+  })
+
+  describe("createRoundsPreset", () => {
+    function mockPresetChain() {
+      let roundInsertCount = 0
+      let prizeInsertCount = 0
+      setMockFromImplementation((table: string) => {
+        if (table === "judging_rounds") {
+          roundInsertCount++
+          return createChainableMock({
+            data: { id: `round-${roundInsertCount}`, display_order: roundInsertCount - 1 },
+            error: null,
+          })
+        }
+        if (table === "prizes") {
+          prizeInsertCount++
+          return createChainableMock({
+            data: { id: `prize-${prizeInsertCount}` },
+            error: null,
+          })
+        }
+        return createChainableMock({ data: [], error: null })
+      })
+    }
+
+    it("creates one round for preset 'single'", async () => {
+      mockPresetChain()
+      const result = await createRoundsPreset("h1", { preset: "single" })
+
+      expect(result.success).toBe(true)
+      if (result.success) {
+        expect(result.roundIds.length).toBe(1)
+        expect(result.screeningPrizeId).toBeNull()
+      }
+    })
+
+    it("creates two rounds + screening prize for preset 'shortlist'", async () => {
+      mockPresetChain()
+      const result = await createRoundsPreset("h1", {
+        preset: "shortlist",
+        advanceTopN: 5,
+      })
+
+      expect(result.success).toBe(true)
+      if (result.success) {
+        expect(result.roundIds.length).toBe(2)
+        expect(result.screeningPrizeId).not.toBeNull()
+      }
+    })
+
+    it("rejects 'shortlist' without advanceTopN", async () => {
+      mockPresetChain()
+      const result = await createRoundsPreset("h1", { preset: "shortlist" })
+
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.error).toMatch(/advanceTopN/)
+      }
+    })
+
+    it("creates two rounds + screening prize for preset 'threshold'", async () => {
+      mockPresetChain()
+      const result = await createRoundsPreset("h1", {
+        preset: "threshold",
+        threshold: 3.5,
+      })
+
+      expect(result.success).toBe(true)
+      if (result.success) {
+        expect(result.roundIds.length).toBe(2)
+        expect(result.screeningPrizeId).not.toBeNull()
+      }
+    })
+
+    it("rejects 'threshold' without a numeric threshold", async () => {
+      mockPresetChain()
+      const result = await createRoundsPreset("h1", { preset: "threshold" })
+
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.error).toMatch(/threshold/)
+      }
+    })
+
+    it("skips screening prize when seedScreeningPrize is false", async () => {
+      mockPresetChain()
+      const result = await createRoundsPreset("h1", {
+        preset: "shortlist",
+        advanceTopN: 3,
+        seedScreeningPrize: false,
+      })
+
+      expect(result.success).toBe(true)
+      if (result.success) {
+        expect(result.screeningPrizeId).toBeNull()
+      }
     })
   })
 
