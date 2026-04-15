@@ -122,6 +122,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     perkCount: perks.length,
     perksNone: hackathon.perks_none ?? false,
     rounds: roundsSummary,
+    communityUrl: hackathon.community_url ?? null,
   })
 
   const activeTab = resolveTab(tab, VALID_TABS, DEFAULT_TAB)

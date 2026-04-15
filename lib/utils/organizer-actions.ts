@@ -125,6 +125,7 @@ export type ActionItemsInput = {
   perkCount: number
   perksNone: boolean
   rounds: { plannedCount: number; activeCount: number; completeCount: number }
+  communityUrl?: string | null
 }
 
 const STATUS_ORDER: HackathonStatus[] = ["draft", "published", "active", "judging", "completed"]
@@ -436,6 +437,18 @@ function addPublishedActions(items: ActionItem[], input: ActionItemsInput) {
         completed: { label: "Event starts in less than 24 hours", hint: "Double-check everything is ready" },
       }))
     }
+  }
+
+  if (input.communityUrl === null) {
+    items.push(manualAction({
+      id: "add-community-link",
+      label: "Add a community/help link",
+      hint: "Share a Discord, Slack, or help link with registered attendees",
+      severity: "info",
+      tab: "edit",
+      ctaLabel: "Add",
+      tooltip: "Drop a link to your Discord, Slack, Telegram, or help doc. Registered attendees will see it on the event page so they can ask questions and meet other builders.",
+    }))
   }
 
   items.push(dismissAction({

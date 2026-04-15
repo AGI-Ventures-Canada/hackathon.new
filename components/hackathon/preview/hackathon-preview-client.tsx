@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
-import { CheckCircle2, Crown, Clock, X, Lock, Scale, Mail, CalendarClock, MapPin, AlertTriangle, Pencil } from "lucide-react"
+import { CheckCircle2, Crown, Clock, X, Lock, Scale, Mail, CalendarClock, MapPin, AlertTriangle, Pencil, Users as UsersIcon } from "lucide-react"
 import type { PublicHackathon } from "@/lib/services/public-hackathons"
 import type { HackathonJudgeDisplay } from "@/lib/db/hackathon-types"
 import type { Submission } from "@/lib/db/hackathon-types"
@@ -36,6 +36,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { SponsorsEditForm } from "@/components/hackathon/edit-drawer/sponsors-edit-form"
 import { JudgesEditForm } from "@/components/hackathon/edit-drawer/judges-edit-form"
 import { PrizesEditForm } from "@/components/hackathon/edit-drawer/prizes-edit-form"
+import { CommunityEditForm } from "@/components/hackathon/edit-drawer/community-edit-form"
 import type { PublicResultWithDetails } from "@/lib/services/results"
 import type { ScheduleItem } from "@/lib/services/schedule-items"
 import type { Announcement } from "@/lib/services/announcements"
@@ -415,6 +416,50 @@ function HackathonPreviewContent({
     </EditableSection>
   )
 
+  const communityBlock = isEditable && editMode && activeSection === "community" ? (
+    <div data-edit-section="community" className="scroll-mt-24">
+      <CommunityEditForm
+        hackathonId={hackathon.id}
+        initialUrl={hackathon.community_url}
+        initialLabel={hackathon.community_label}
+        onSaveAndNext={() => handleSaveAndNext("community")}
+        onSave={onFormSave ? (data) => onFormSave(data) : undefined}
+      />
+    </div>
+  ) : (() => {
+    const hasLink = !!hackathon.community_url
+    if (!isEditable && !hasLink) return null
+    if (!isEditable && !isRegistered) return null
+    return (
+      <EditableSection
+        section="community"
+        isEmpty={!hasLink}
+        emptyLabel="Click to add a community/help link for attendees"
+      >
+        {hasLink && (
+          <div className="rounded-lg border p-4 flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="rounded-full bg-primary/10 p-2 shrink-0">
+                <UsersIcon className="size-4 text-primary" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Community & help</p>
+                <p className="text-xs text-muted-foreground truncate">
+                  Join other attendees and get support from the organizers.
+                </p>
+              </div>
+            </div>
+            <Button asChild size="sm">
+              <a href={hackathon.community_url!} target="_blank" rel="noopener noreferrer">
+                {hackathon.community_label || "Join community"}
+              </a>
+            </Button>
+          </div>
+        )}
+      </EditableSection>
+    )
+  })()
+
   const prizesBlock = isEditable && editMode && activeSection === "prizes" ? (
     <div data-edit-section="prizes" className="scroll-mt-24">
       <PrizesEditForm
@@ -505,6 +550,7 @@ function HackathonPreviewContent({
                 </EditableSection>
               )}
 
+              {communityBlock}
               {sponsorsBlock}
               {judgesBlock}
               {prizesBlock}

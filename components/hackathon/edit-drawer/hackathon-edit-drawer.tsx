@@ -16,6 +16,7 @@ import { LocationEditForm } from "./location-edit-form"
 import { SponsorsEditForm } from "./sponsors-edit-form"
 import { JudgesEditForm } from "./judges-edit-form"
 import { PrizesEditForm } from "./prizes-edit-form"
+import { CommunityEditForm } from "./community-edit-form"
 import type { PublicHackathon } from "@/lib/services/public-hackathons"
 
 interface HackathonEditDrawerProps {
@@ -50,6 +51,10 @@ const sectionMeta: Record<Exclude<EditSection, null>, { title: string; descripti
   prizes: {
     title: "Manage Prizes",
     description: "Add or remove hackathon prizes",
+  },
+  community: {
+    title: "Community Link",
+    description: "Share a Discord, Slack, or help link with registered attendees",
   },
 }
 
@@ -160,6 +165,15 @@ export function HackathonEditDrawer({ hackathon }: HackathonEditDrawerProps) {
             <PrizesEditForm
               hackathonId={hackathon.id}
               initialPrizes={hackathon.prizes}
+              onSaveAndNext={handleSaveAndNext}
+            />
+          )}
+
+          {activeSection === "community" && (
+            <CommunityEditForm
+              hackathonId={hackathon.id}
+              initialUrl={hackathon.community_url}
+              initialLabel={hackathon.community_label}
               onSaveAndNext={handleSaveAndNext}
             />
           )}

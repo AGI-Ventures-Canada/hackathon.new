@@ -76,6 +76,8 @@ function stateToHackathon(state: DraftState): PublicHackathon {
     phase: null,
     challenge_released_at: null,
     perks_none: false,
+    community_url: null,
+    community_label: null,
     banner_url: state.imageUrl,
     location_type: state.locationType,
     location_name: state.locationName,
