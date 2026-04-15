@@ -200,6 +200,19 @@ export async function createPrize(
     }
   }
 
+  const cleanBuckets =
+    input.judgingStyle === "bucket_sort" && input.buckets !== undefined
+      ? input.buckets.filter((b) => b.label.trim().length > 0)
+      : null
+
+  if (cleanBuckets !== null && cleanBuckets.length < 2) {
+    return {
+      success: false,
+      error: "Sort groups need at least two named labels",
+      code: "validation",
+    }
+  }
+
   const { data: prize, error } = await client
     .from("prizes")
     .insert(row)
@@ -234,12 +247,11 @@ export async function createPrize(
   }
 
   if (input.judgingStyle === "bucket_sort") {
-    const providedBuckets = (input.buckets ?? []).filter((b) => b.label.trim().length > 0)
     const created =
-      providedBuckets.length > 0
+      cleanBuckets !== null
         ? await replaceBucketDefinitions(
             prize.id,
-            providedBuckets.map((b, i) => ({
+            cleanBuckets.map((b, i) => ({
               level: b.level ?? i + 1,
               label: b.label.trim(),
               description: b.description?.trim() || null,

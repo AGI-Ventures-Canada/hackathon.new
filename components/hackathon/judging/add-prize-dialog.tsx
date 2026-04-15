@@ -85,10 +85,23 @@ export type CreatedPrize = {
   value: string | null
   judgingStyle: PrizeJudgingStyle
   roundId: string | null
+  maxPicks: number | null
+  criteria:
+    | { id: string; name: string; description: string | null }[]
+    | null
+  buckets:
+    | { id: string; level: number; label: string; description: string | null }[]
+    | null
 }
 
-type CriterionDraft = { name: string; description: string }
-type BucketDraft = { level: number; label: string; description: string }
+type CriterionDraft = { id: string; name: string; description: string }
+type BucketDraft = { id: string; level: number; label: string; description: string }
+
+let draftIdCounter = 0
+function nextDraftId(): string {
+  draftIdCounter += 1
+  return `draft-${draftIdCounter}`
+}
 
 interface AddPrizeDialogProps {
   hackathonId: string
@@ -99,11 +112,16 @@ interface AddPrizeDialogProps {
 }
 
 function initialCriteria(): CriterionDraft[] {
-  return [{ name: "", description: "" }]
+  return [{ id: nextDraftId(), name: "", description: "" }]
 }
 
 function initialBuckets(): BucketDraft[] {
-  return DEFAULT_BUCKETS.map((b) => ({ level: b.level, label: b.label, description: b.description }))
+  return DEFAULT_BUCKETS.map((b) => ({
+    id: nextDraftId(),
+    level: b.level,
+    label: b.label,
+    description: b.description,
+  }))
 }
 
 export function AddPrizeDialog({
@@ -181,7 +199,10 @@ export function AddPrizeDialog({
   }
 
   function addCriterion() {
-    setForm({ ...form, criteria: [...form.criteria, { name: "", description: "" }] })
+    setForm({
+      ...form,
+      criteria: [...form.criteria, { id: nextDraftId(), name: "", description: "" }],
+    })
   }
 
   function removeCriterion(index: number) {
@@ -202,7 +223,10 @@ export function AddPrizeDialog({
       : 1
     setForm({
       ...form,
-      buckets: [...form.buckets, { level: nextLevel, label: "", description: "" }],
+      buckets: [
+        ...form.buckets,
+        { id: nextDraftId(), level: nextLevel, label: "", description: "" },
+      ],
     })
   }
 
@@ -281,13 +305,30 @@ export function AddPrizeDialog({
         throw new Error(data.error || "Failed to create prize")
       }
 
+      const newId = data.id ?? data.prize?.id ?? ""
       const created: CreatedPrize = {
-        id: data.id ?? data.prize?.id ?? "",
+        id: newId,
         name,
         description: form.description.trim() || null,
         value: form.value.trim() || null,
         judgingStyle: form.judgingStyle,
         roundId: form.roundId ?? null,
+        maxPicks: maxPicksPayload ?? null,
+        criteria: criteriaPayload
+          ? criteriaPayload.map((c, i) => ({
+              id: `optimistic-${newId}-criterion-${i}`,
+              name: c.name,
+              description: c.description,
+            }))
+          : null,
+        buckets: bucketsPayload
+          ? bucketsPayload.map((b, i) => ({
+              id: `optimistic-${newId}-bucket-${i}`,
+              level: b.level,
+              label: b.label,
+              description: b.description,
+            }))
+          : null,
       }
 
       onSuccess?.(created)
@@ -452,7 +493,7 @@ export function AddPrizeDialog({
                 </div>
                 <div className="space-y-2">
                   {form.criteria.map((c, i) => (
-                    <div key={i} className="flex items-start gap-2 rounded-md border p-3">
+                    <div key={c.id} className="flex items-start gap-2 rounded-md border p-3">
                       <div className="flex-1 space-y-2 min-w-0">
                         <Input
                           value={c.name}
@@ -506,7 +547,7 @@ export function AddPrizeDialog({
                 </div>
                 <div className="space-y-2">
                   {form.buckets.map((b, i) => (
-                    <div key={i} className="flex items-start gap-2 rounded-md border p-3">
+                    <div key={b.id} className="flex items-start gap-2 rounded-md border p-3">
                       <div className="flex-1 space-y-2 min-w-0">
                         <Input
                           value={b.label}

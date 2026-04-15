@@ -59,6 +59,19 @@ import { JudgePill } from "./judge-pill"
 import { RoundsSection } from "./rounds-section"
 import type { RoundData } from "./rounds-types"
 
+type PrizeCriterionData = {
+  id: string
+  name: string
+  description: string | null
+}
+
+type PrizeBucketData = {
+  id: string
+  level: number
+  label: string
+  description: string | null
+}
+
 type PrizeData = {
   id: string
   name: string
@@ -72,6 +85,8 @@ type PrizeData = {
   totalAssignments: number
   completedAssignments: number
   judgeCount: number
+  criteria: PrizeCriterionData[] | null
+  buckets: PrizeBucketData[] | null
 }
 
 type JudgeData = {
@@ -165,6 +180,7 @@ export function JudgingTabClient({
   const [hiddenPrizeJudges, setHiddenPrizeJudges] = useState<Set<string>>(new Set())
   const [pendingJudges, setPendingJudges] = useState<JudgeData[]>([])
   const [pendingInvitations, setPendingInvitations] = useState<InvitationData[]>([])
+  const [pendingPrizes, setPendingPrizes] = useState<PrizeData[]>([])
 
   useEffect(() => {
     setPendingJudges(prev => prev.filter(pj => !initialJudges.some(j => j.participantId === pj.participantId)))
@@ -173,6 +189,10 @@ export function JudgingTabClient({
   useEffect(() => {
     setPendingInvitations(prev => prev.filter(pi => !initialInvitations.some(i => i.id === pi.id)))
   }, [initialInvitations])
+
+  useEffect(() => {
+    setPendingPrizes(prev => prev.filter(pp => !initialPrizes.some(ip => ip.id === pp.id)))
+  }, [initialPrizes])
 
   const judges = [
     ...initialJudges,
@@ -183,7 +203,10 @@ export function JudgingTabClient({
       ...j,
       prizeIds: j.prizeIds.filter(pid => !hiddenPrizeJudges.has(`${pid}:${j.participantId}`)),
     }))
-  const prizes = initialPrizes.filter(p => !hiddenPrizes.has(p.id))
+  const prizes = [
+    ...initialPrizes,
+    ...pendingPrizes.filter(pp => !initialPrizes.some(ip => ip.id === pp.id)),
+  ].filter(p => !hiddenPrizes.has(p.id))
   const invitations = [
     ...initialInvitations,
     ...pendingInvitations.filter(pi => !initialInvitations.some(i => i.id === pi.id)),
@@ -370,7 +393,30 @@ export function JudgingTabClient({
         hackathonId={hackathonId}
         open={showAddPrize}
         onOpenChange={setShowAddPrize}
-        onSuccess={() => router.refresh()}
+        onSuccess={(created) => {
+          if (created) {
+            setPendingPrizes((prev) => [
+              ...prev,
+              {
+                id: created.id,
+                name: created.name,
+                description: created.description,
+                value: created.value,
+                judgingStyle: created.judgingStyle,
+                assignmentMode: null,
+                maxPicks: created.maxPicks,
+                roundId: created.roundId,
+                displayOrder: prizes.length,
+                totalAssignments: 0,
+                completedAssignments: 0,
+                judgeCount: 0,
+                criteria: created.criteria,
+                buckets: created.buckets,
+              },
+            ])
+          }
+          router.refresh()
+        }}
         rounds={rounds}
       />
     </div>
@@ -689,6 +735,48 @@ function PrizeCard({
             </AlertDialog>
           </div>
         </div>
+
+        {prize.judgingStyle === "gate_check" && prize.criteria && prize.criteria.length > 0 && (
+          <div className="rounded-md border bg-muted/30 p-3 space-y-1.5">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Pass-or-fail rules ({prize.criteria.length})
+            </p>
+            <ul className="space-y-1">
+              {prize.criteria.map((c) => (
+                <li key={c.id} className="text-sm">
+                  <span className="font-medium">{c.name}</span>
+                  {c.description && (
+                    <span className="text-muted-foreground"> — {c.description}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {prize.judgingStyle === "bucket_sort" && prize.buckets && prize.buckets.length > 0 && (
+          <div className="rounded-md border bg-muted/30 p-3 space-y-1.5">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Sort groups ({prize.buckets.length})
+            </p>
+            <ul className="space-y-1">
+              {prize.buckets.map((b) => (
+                <li key={b.id} className="text-sm">
+                  <span className="font-medium">{b.label}</span>
+                  {b.description && (
+                    <span className="text-muted-foreground"> — {b.description}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {prize.judgingStyle === "judges_pick" && prize.maxPicks != null && (
+          <p className="text-xs text-muted-foreground">
+            Each judge picks up to <span className="font-medium text-foreground">{prize.maxPicks}</span>.
+          </p>
+        )}
 
         {!isCrowdVote && (
           <div className="flex items-center gap-2 flex-wrap">

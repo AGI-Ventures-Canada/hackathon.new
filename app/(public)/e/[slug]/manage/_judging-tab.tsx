@@ -52,6 +52,17 @@ export async function JudgingTabContent({
     totalAssignments: p.totalAssignments,
     completedAssignments: p.completedAssignments,
     judgeCount: p.judgeCount,
+    criteria: p.criteria?.map((c) => ({
+      id: c.id,
+      name: c.name,
+      description: c.description,
+    })) ?? null,
+    buckets: p.buckets?.map((b) => ({
+      id: b.id,
+      level: b.level,
+      label: b.label,
+      description: b.description,
+    })) ?? null,
   }))
 
   const judgesForClient = judges.map((j) => ({
