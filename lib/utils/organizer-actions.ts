@@ -374,7 +374,7 @@ function addDraftActions(items: ActionItem[], input: ActionItemsInput) {
       label: "Add a community/help link",
       hint: "Share a Discord, Slack, or help link with registered attendees",
       severity: "info",
-      tab: "edit",
+      action: "open-community-dialog",
       ctaLabel: "Add",
       tooltip: "Drop a link to your Discord, Slack, Telegram, or help doc. Registered attendees will see it on the event page so they can ask questions and meet other builders.",
     }))
@@ -457,7 +457,7 @@ function addPublishedActions(items: ActionItem[], input: ActionItemsInput) {
       label: "Add a community/help link",
       hint: "Share a Discord, Slack, or help link with registered attendees",
       severity: "info",
-      tab: "edit",
+      action: "open-community-dialog",
       ctaLabel: "Add",
       tooltip: "Drop a link to your Discord, Slack, Telegram, or help doc. Registered attendees will see it on the event page so they can ask questions and meet other builders.",
     }))

@@ -164,6 +164,10 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
           maxTeamSize: hackathon.max_team_size ?? 5,
           allowSolo: hackathon.allow_solo ?? true,
         }}
+        communityInitialData={{
+          url: hackathon.community_url ?? null,
+          label: hackathon.community_label ?? null,
+        }}
       >
         <TabsUrlSync paramKey="tab" value={activeTab}>
           <ActionItemsLayout>

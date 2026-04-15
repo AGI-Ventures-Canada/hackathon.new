@@ -498,6 +498,9 @@ function HackathonPreviewContent({
                 {viewerPerks.length > 0 && (
                   <TabsTrigger value="perks">Perks</TabsTrigger>
                 )}
+                {(isEditable || (isRegistered && !!hackathon.community_url)) && (
+                  <TabsTrigger value="community">Community</TabsTrigger>
+                )}
               </TabsList>
             </div>
 
@@ -550,7 +553,6 @@ function HackathonPreviewContent({
                 </EditableSection>
               )}
 
-              {communityBlock}
               {sponsorsBlock}
               {judgesBlock}
               {prizesBlock}
@@ -608,6 +610,12 @@ function HackathonPreviewContent({
                   perks={viewerPerks}
                   sponsors={hackathon.sponsors.map((s) => ({ id: s.id, name: s.name }))}
                 />
+              </TabsContent>
+            )}
+
+            {(isEditable || (isRegistered && !!hackathon.community_url)) && (
+              <TabsContent value="community" className="mt-6">
+                {communityBlock}
               </TabsContent>
             )}
           </Tabs>
