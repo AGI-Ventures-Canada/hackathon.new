@@ -169,7 +169,16 @@ export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challe
     if (challengeExists || challengeReleasedAt) return allItems
     return allItems.filter((i) => i.trigger_type !== "challenge_release")
   }, [allItems, challengeExists, challengeReleasedAt])
-  const dateGroups = useMemo(() => groupByDateAndTime(items), [items])
+  const groupingItems = useMemo(
+    () =>
+      items.map((i) =>
+        i.trigger_type === "challenge_release" && challengeReleasedAt
+          ? { ...i, starts_at: challengeReleasedAt }
+          : i,
+      ),
+    [items, challengeReleasedAt],
+  )
+  const dateGroups = useMemo(() => groupByDateAndTime(groupingItems), [groupingItems])
   const [error, setError] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<ScheduleItemData | null>(null)
@@ -397,11 +406,11 @@ export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challe
                               className={`group relative ${current ? "rounded-md bg-primary/5 -mx-2 px-2" : ""} ${isReleased ? "opacity-50" : ""}`}
                             >
                               <div
-                                className="flex items-start gap-2 cursor-pointer"
-                                role="button"
-                                tabIndex={0}
-                                onClick={() => handleItemClick(item)}
-                                onKeyDown={(e) => { if (e.key === "Enter") handleItemClick(item) }}
+                                className={`flex items-start gap-2 ${isReleased ? "" : "cursor-pointer"}`}
+                                role={isReleased ? undefined : "button"}
+                                tabIndex={isReleased ? undefined : 0}
+                                onClick={isReleased ? undefined : () => handleItemClick(item)}
+                                onKeyDown={isReleased ? undefined : (e) => { if (e.key === "Enter") handleItemClick(item) }}
                               >
                                 <div className="flex-1 min-w-0">
                                   <div className="flex min-h-10 items-center gap-2 flex-wrap">
@@ -441,40 +450,43 @@ export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challe
                                     <p className="text-xs text-muted-foreground -mt-0.5 line-clamp-1">{item.description}</p>
                                   )}
                                 </div>
-                                <div className={`flex min-h-10 items-center gap-0.5 shrink-0 transition-opacity ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
-                                  <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    className="size-7"
-                                    onClick={(e) => { e.stopPropagation(); handleItemClick(item) }}
-                                  >
-                                    <Pencil className="size-3.5" />
-                                  </Button>
-                                  {!isTrigger && (
-                                    <AlertDialog>
-                                      <AlertDialogTrigger asChild>
-                                        <Button
-                                          size="icon"
-                                          variant="ghost"
-                                          className="size-7"
-                                          onClick={(e) => e.stopPropagation()}
-                                        >
-                                          <Trash2 className="size-3.5" />
-                                        </Button>
-                                      </AlertDialogTrigger>
-                                      <AlertDialogContent>
-                                        <AlertDialogHeader>
-                                          <AlertDialogTitle>Delete agenda item?</AlertDialogTitle>
-                                          <AlertDialogDescription>This cannot be undone.</AlertDialogDescription>
-                                        </AlertDialogHeader>
-                                        <AlertDialogFooter>
-                                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                          <AlertDialogAction onClick={() => handleDelete(item.id)}>Delete</AlertDialogAction>
-                                        </AlertDialogFooter>
-                                      </AlertDialogContent>
-                                    </AlertDialog>
-                                  )}
-                                </div>
+                                {!isReleased && (
+                                  <div className={`flex min-h-10 items-center gap-0.5 shrink-0 transition-opacity ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      className="size-7"
+                                      onClick={(e) => { e.stopPropagation(); handleItemClick(item) }}
+                                    >
+                                      <Pencil className="size-3.5" />
+                                    </Button>
+                                    {!isTrigger && (
+                                      <div onClick={(e) => e.stopPropagation()}>
+                                        <AlertDialog>
+                                          <AlertDialogTrigger asChild>
+                                            <Button
+                                              size="icon"
+                                              variant="ghost"
+                                              className="size-7"
+                                            >
+                                              <Trash2 className="size-3.5" />
+                                            </Button>
+                                          </AlertDialogTrigger>
+                                          <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                                            <AlertDialogHeader>
+                                              <AlertDialogTitle>Delete agenda item?</AlertDialogTitle>
+                                              <AlertDialogDescription>This cannot be undone.</AlertDialogDescription>
+                                            </AlertDialogHeader>
+                                            <AlertDialogFooter>
+                                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                              <AlertDialogAction onClick={() => handleDelete(item.id)}>Delete</AlertDialogAction>
+                                            </AlertDialogFooter>
+                                          </AlertDialogContent>
+                                        </AlertDialog>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           )
