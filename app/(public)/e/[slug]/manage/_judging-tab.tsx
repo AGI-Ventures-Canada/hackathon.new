@@ -2,9 +2,6 @@ import { listPrizes, listJudges, getJudgingProgress, listRounds } from "@/lib/se
 import { listJudgeInvitations } from "@/lib/services/judge-invitations"
 import { calculateResults, getResults } from "@/lib/services/results"
 import { JudgingTabClient } from "@/components/hackathon/judging/judging-tab-client"
-import { JudgingSetupWizard } from "@/components/hackathon/judging/judging-setup-wizard"
-import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { TabsUrlSync } from "./_tabs-url-sync"
 import type { ManageJtab } from "@/lib/utils/manage-tabs"
 
 export type JudgingTabContentProps = {
@@ -13,7 +10,7 @@ export type JudgingTabContentProps = {
   submissions: Array<{ id: string; title: string }>
   resultsPublishedAt: string | null
   activeJtab: ManageJtab
-  hasJudgingSetup: boolean
+  locationType: "in_person" | "virtual" | "hybrid" | null
 }
 
 export async function JudgingTabContent({
@@ -22,7 +19,7 @@ export async function JudgingTabContent({
   submissions,
   resultsPublishedAt,
   activeJtab,
-  hasJudgingSetup,
+  locationType,
 }: JudgingTabContentProps) {
   if (!resultsPublishedAt) {
     await calculateResults(hackathonId)
@@ -52,6 +49,7 @@ export async function JudgingTabContent({
     totalAssignments: p.totalAssignments,
     completedAssignments: p.completedAssignments,
     judgeCount: p.judgeCount,
+    allowedTeamModes: p.allowed_team_modes,
     criteria: p.criteria?.map((c) => ({
       id: c.id,
       name: c.name,
@@ -93,9 +91,10 @@ export async function JudgingTabContent({
     createdAt: inv.created_at,
   }))
 
-  const dataView = (
+  return (
     <JudgingTabClient
       hackathonId={hackathonId}
+      slug={slug}
       prizes={prizesForClient}
       judges={judgesForClient}
       progress={progress}
@@ -115,36 +114,8 @@ export async function JudgingTabContent({
       }))}
       submissions={submissions}
       isPublished={resultsPublishedAt !== null}
+      locationType={locationType}
+      activeJtab={activeJtab}
     />
-  )
-
-  const wizard = (
-    <JudgingSetupWizard
-      hackathonId={hackathonId}
-      slug={slug}
-      prizes={prizesForClient}
-      judges={judgesForClient}
-      rounds={roundsForClient}
-      pendingInvitations={pendingInvitesForClient}
-    />
-  )
-
-  if (!hasJudgingSetup) {
-    return wizard
-  }
-
-  return (
-    <TabsUrlSync paramKey="jtab" value={activeJtab}>
-      <TabsList variant="line">
-        <TabsTrigger value="data">All data</TabsTrigger>
-        <TabsTrigger value="setup">Setup guide</TabsTrigger>
-      </TabsList>
-      <TabsContent value="data" forceMount className="data-[state=inactive]:hidden">
-        {dataView}
-      </TabsContent>
-      <TabsContent value="setup" forceMount className="data-[state=inactive]:hidden">
-        {wizard}
-      </TabsContent>
-    </TabsUrlSync>
   )
 }

@@ -753,6 +753,141 @@ export async function deleteRound(
   return { success: true }
 }
 
+export type RoundsPresetKind = "single" | "shortlist" | "threshold"
+
+export type RoundsPresetInput = {
+  preset: RoundsPresetKind
+  round1Name?: string
+  round2Name?: string
+  advanceTopN?: number
+  threshold?: number
+  seedScreeningPrize?: boolean
+}
+
+export type RoundsPresetResult =
+  | {
+      success: true
+      roundIds: string[]
+      screeningPrizeId: string | null
+    }
+  | { success: false; error: string }
+
+function defaultRoundName(preset: RoundsPresetKind, which: 1 | 2): string {
+  if (preset === "single") return "Judging"
+  if (preset === "shortlist") return which === 1 ? "Shortlist" : "Finals"
+  return which === 1 ? "First round" : "Finals"
+}
+
+export async function createRoundsPreset(
+  hackathonId: string,
+  input: RoundsPresetInput
+): Promise<RoundsPresetResult> {
+  const preset = input.preset
+
+  if (preset === "single") {
+    const name = (input.round1Name ?? defaultRoundName("single", 1)).trim() || defaultRoundName("single", 1)
+    const round = await createRound(hackathonId, {
+      name,
+      advancement: "manual",
+      advancementConfig: {},
+    })
+    if (!round) return { success: false, error: "Failed to create round" }
+    return { success: true, roundIds: [round.id], screeningPrizeId: null }
+  }
+
+  if (preset === "shortlist") {
+    const topN = input.advanceTopN
+    if (!Number.isInteger(topN) || (topN as number) < 1) {
+      return { success: false, error: "advanceTopN must be a positive integer" }
+    }
+    const round1Name = (input.round1Name ?? defaultRoundName("shortlist", 1)).trim() || defaultRoundName("shortlist", 1)
+    const round2Name = (input.round2Name ?? defaultRoundName("shortlist", 2)).trim() || defaultRoundName("shortlist", 2)
+
+    const round1 = await createRound(hackathonId, {
+      name: round1Name,
+      advancement: "top_n",
+      advancementConfig: { topN: topN as number },
+    })
+    if (!round1) return { success: false, error: "Failed to create round 1" }
+
+    const round2 = await createRound(hackathonId, {
+      name: round2Name,
+      advancement: "manual",
+      advancementConfig: {},
+    })
+    if (!round2) return { success: false, error: "Failed to create round 2" }
+
+    let screeningPrizeId: string | null = null
+    if (input.seedScreeningPrize !== false) {
+      const screening = await createPrize(hackathonId, {
+        name: "Screening Scores",
+        description: `Hidden helper prize so judges have something to score in round 1. The top ${topN} by score move on.`,
+        judgingStyle: "bucket_sort",
+        roundId: round1.id,
+        isScreening: true,
+      })
+      if (screening.success) {
+        screeningPrizeId = screening.prize.id
+      } else {
+        console.error("Failed to seed screening prize:", screening.error)
+      }
+    }
+
+    return {
+      success: true,
+      roundIds: [round1.id, round2.id],
+      screeningPrizeId,
+    }
+  }
+
+  if (preset === "threshold") {
+    const threshold = input.threshold
+    if (typeof threshold !== "number" || Number.isNaN(threshold)) {
+      return { success: false, error: "threshold must be a number" }
+    }
+    const round1Name = (input.round1Name ?? defaultRoundName("threshold", 1)).trim() || defaultRoundName("threshold", 1)
+    const round2Name = (input.round2Name ?? defaultRoundName("threshold", 2)).trim() || defaultRoundName("threshold", 2)
+
+    const round1 = await createRound(hackathonId, {
+      name: round1Name,
+      advancement: "threshold",
+      advancementConfig: { threshold },
+    })
+    if (!round1) return { success: false, error: "Failed to create round 1" }
+
+    const round2 = await createRound(hackathonId, {
+      name: round2Name,
+      advancement: "manual",
+      advancementConfig: {},
+    })
+    if (!round2) return { success: false, error: "Failed to create round 2" }
+
+    let screeningPrizeId: string | null = null
+    if (input.seedScreeningPrize !== false) {
+      const screening = await createPrize(hackathonId, {
+        name: "Screening Scores",
+        description: `Hidden helper prize so judges have something to score in round 1. Everyone scoring ${threshold} or higher moves on.`,
+        judgingStyle: "bucket_sort",
+        roundId: round1.id,
+        isScreening: true,
+      })
+      if (screening.success) {
+        screeningPrizeId = screening.prize.id
+      } else {
+        console.error("Failed to seed screening prize:", screening.error)
+      }
+    }
+
+    return {
+      success: true,
+      roundIds: [round1.id, round2.id],
+      screeningPrizeId,
+    }
+  }
+
+  return { success: false, error: `Unknown preset: ${preset}` }
+}
+
 export type FinalistsPresetInput = {
   advanceTopN: number
   round1Name?: string
@@ -772,48 +907,21 @@ export async function createFinalistsPreset(
   hackathonId: string,
   input: FinalistsPresetInput
 ): Promise<FinalistsPresetResult> {
-  const { advanceTopN } = input
-  if (!Number.isInteger(advanceTopN) || advanceTopN < 1) {
-    return { success: false, error: "advanceTopN must be a positive integer" }
-  }
-
-  const round1Name = (input.round1Name ?? "Semifinals").trim() || "Semifinals"
-  const round2Name = (input.round2Name ?? "Finals").trim() || "Finals"
-
-  const round1 = await createRound(hackathonId, {
-    name: round1Name,
-    advancement: "top_n",
-    advancementConfig: { topN: advanceTopN },
+  const result = await createRoundsPreset(hackathonId, {
+    preset: "shortlist",
+    advanceTopN: input.advanceTopN,
+    round1Name: input.round1Name ?? "Semifinals",
+    round2Name: input.round2Name ?? "Finals",
+    seedScreeningPrize: input.seedScreeningPrize,
   })
-  if (!round1) return { success: false, error: "Failed to create round 1" }
 
-  const round2 = await createRound(hackathonId, {
-    name: round2Name,
-    advancement: "manual",
-    advancementConfig: {},
-  })
-  if (!round2) return { success: false, error: "Failed to create round 2" }
+  if (!result.success) return result
 
-  let screeningPrizeId: string | null = null
-  if (input.seedScreeningPrize !== false) {
-    const screening = await createPrize(hackathonId, {
-      name: "Screening Scores",
-      description: `Internal scoring used to narrow submissions to the top ${advanceTopN} finalists. Hidden from participants.`,
-      judgingStyle: "bucket_sort",
-      roundId: round1.id,
-      isScreening: true,
-    })
-    if (screening.success) {
-      screeningPrizeId = screening.prize.id
-    } else {
-      console.error("Failed to seed screening prize:", screening.error)
-    }
-  }
-
+  const [r1, r2] = result.roundIds
   return {
     success: true,
-    roundIds: { round1: round1.id, round2: round2.id },
-    screeningPrizeId,
+    roundIds: { round1: r1, round2: r2 },
+    screeningPrizeId: result.screeningPrizeId,
   }
 }
 
@@ -1361,7 +1469,7 @@ export async function autoAssignJudges(
 
   const { data: prize } = await client
     .from("prizes")
-    .select("id, round_id")
+    .select("id, round_id, allowed_team_modes")
     .eq("id", prizeId)
     .eq("hackathon_id", hackathonId)
     .single()
@@ -1379,12 +1487,21 @@ export async function autoAssignJudges(
   const pool = await getRoundPool(hackathonId, prize.round_id)
   if (pool.length === 0) return { assignedCount: 0 }
 
-  const { data: submissions } = await client
+  const { data: submissionsRaw } = await client
     .from("submissions")
-    .select("id, team_id")
+    .select("id, team_id, teams:teams!submissions_team_id_fkey(id, mode)")
     .in("id", pool)
 
-  if (!submissions || submissions.length === 0) return { assignedCount: 0 }
+  if (!submissionsRaw || submissionsRaw.length === 0) return { assignedCount: 0 }
+
+  const allowedModes = (prize as { allowed_team_modes: ("in_person" | "virtual")[] | null }).allowed_team_modes
+  const submissions = (submissionsRaw as unknown as { id: string; team_id: string; teams: { id: string; mode: "in_person" | "virtual" | null } | null }[])
+    .filter((s) => {
+      if (!allowedModes || allowedModes.length === 0) return true
+      return s.teams?.mode ? allowedModes.includes(s.teams.mode) : false
+    })
+
+  if (submissions.length === 0) return { assignedCount: 0 }
 
   const { data: existing } = await client
     .from("judge_assignments")
@@ -1979,6 +2096,7 @@ export type JudgeAssignmentForJudge = {
   submissionLiveAppUrl: string | null
   submissionScreenshotUrl: string | null
   teamName: string | null
+  teamMode: "in_person" | "virtual" | null
   teamMemberCount: number | null
   isComplete: boolean
   notes: string
@@ -2033,10 +2151,14 @@ export async function getJudgeAssignments(
     .filter((id): id is string => id !== null)
 
   let teamsMap: Record<string, string> = {}
+  let teamModeMap: Record<string, "in_person" | "virtual" | null> = {}
   const memberCountMap: Record<string, number> = {}
   if (teamIds.length > 0) {
-    const { data: teams } = await client.from("teams").select("id, name").in("id", teamIds)
+    const { data: teams } = await client.from("teams").select("id, name, mode").in("id", teamIds)
     teamsMap = Object.fromEntries((teams ?? []).map((t) => [t.id, t.name]))
+    teamModeMap = Object.fromEntries(
+      (teams ?? []).map((t) => [t.id, (t as { mode: "in_person" | "virtual" | null }).mode ?? null])
+    )
 
     const { data: members } = await client
       .from("hackathon_participants")
@@ -2071,6 +2193,7 @@ export async function getJudgeAssignments(
       submissionLiveAppUrl: sub.live_app_url,
       submissionScreenshotUrl: sub.screenshot_url,
       teamName: sub.team_id ? teamsMap[sub.team_id] ?? null : null,
+      teamMode: sub.team_id ? teamModeMap[sub.team_id] ?? null : null,
       teamMemberCount: sub.team_id ? memberCountMap[sub.team_id] ?? null : null,
       isComplete: a.is_complete as boolean,
       notes: a.notes as string,

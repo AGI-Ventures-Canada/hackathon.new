@@ -8,6 +8,7 @@ interface PrizeCreateOptions {
   description?: string
   type?: string
   value?: string
+  modes?: string
   json?: boolean
 }
 
@@ -27,12 +28,27 @@ export function parsePrizeCreateOptions(args: string[]): PrizeCreateOptions {
       case "--value":
         options.value = args[++i]
         break
+      case "--modes":
+        options.modes = args[++i]
+        break
       case "--json":
         options.json = true
         break
     }
   }
   return options
+}
+
+function parseModes(value: string | undefined): ("in_person" | "virtual")[] | undefined {
+  if (!value) return undefined
+  const parts = value.split(",").map((s) => s.trim()).filter(Boolean)
+  for (const p of parts) {
+    if (p !== "in_person" && p !== "virtual") {
+      console.error(`Error: --modes must be a comma-separated list of "in_person" or "virtual"`)
+      process.exit(1)
+    }
+  }
+  return parts as ("in_person" | "virtual")[]
 }
 
 export async function runPrizesCreate(
@@ -62,6 +78,7 @@ export async function runPrizesCreate(
       description: options.description,
       type: options.type,
       value: options.value,
+      allowedTeamModes: parseModes(options.modes),
     }
   )
 

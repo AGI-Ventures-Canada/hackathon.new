@@ -1,6 +1,6 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
-import type { Prize, PrizeAssignment, PrizeType } from "@/lib/db/hackathon-types"
+import type { Prize, PrizeAssignment, PrizeType, TeamMode } from "@/lib/db/hackathon-types"
 
 export type CreatePrizeInput = {
   name: string
@@ -15,6 +15,7 @@ export type CreatePrizeInput = {
   displayValue?: string | null
   criteriaId?: string | null
   displayOrder?: number
+  allowedTeamModes?: TeamMode[] | null
 }
 
 export type UpdatePrizeInput = {
@@ -30,6 +31,7 @@ export type UpdatePrizeInput = {
   displayValue?: string | null
   criteriaId?: string | null
   displayOrder?: number
+  allowedTeamModes?: TeamMode[] | null
 }
 
 export async function listPrizes(hackathonId: string): Promise<Prize[]> {
@@ -69,6 +71,7 @@ export async function createPrize(
       display_value: input.displayValue ?? null,
       criteria_id: input.criteriaId ?? null,
       display_order: input.displayOrder ?? 0,
+      allowed_team_modes: input.allowedTeamModes ?? null,
     })
     .select()
     .single()
@@ -101,6 +104,7 @@ export async function updatePrize(
   if (input.displayValue !== undefined) updates.display_value = input.displayValue
   if (input.criteriaId !== undefined) updates.criteria_id = input.criteriaId
   if (input.displayOrder !== undefined) updates.display_order = input.displayOrder
+  if (input.allowedTeamModes !== undefined) updates.allowed_team_modes = input.allowedTeamModes
   updates.updated_at = new Date().toISOString()
 
   const { data, error } = await client

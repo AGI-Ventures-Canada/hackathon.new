@@ -16,13 +16,14 @@ describe("VALID_TABS", () => {
     expect(VALID_TABS).toContain("action-items")
     expect(VALID_TABS).toContain("overview")
     expect(VALID_TABS).toContain("challenges")
+    expect(VALID_TABS).toContain("perks")
     expect(VALID_TABS).toContain("edit")
     expect(VALID_TABS).toContain("teams")
     expect(VALID_TABS).toContain("miscs")
     expect(VALID_TABS).toContain("judging")
     expect(VALID_TABS).toContain("post-event")
     expect(VALID_TABS).toContain("event")
-    expect(VALID_TABS).toHaveLength(9)
+    expect(VALID_TABS).toHaveLength(10)
   })
 
   it("does not contain the old activity tab", () => {
@@ -62,10 +63,13 @@ describe("VALID_MTABS", () => {
 })
 
 describe("VALID_JTABS", () => {
-  it("contains data and setup", () => {
-    expect(VALID_JTABS).toContain("data")
+  it("contains setup, judges, rounds, prizes, results", () => {
     expect(VALID_JTABS).toContain("setup")
-    expect(VALID_JTABS).toHaveLength(2)
+    expect(VALID_JTABS).toContain("judges")
+    expect(VALID_JTABS).toContain("rounds")
+    expect(VALID_JTABS).toContain("prizes")
+    expect(VALID_JTABS).toContain("results")
+    expect(VALID_JTABS).toHaveLength(5)
   })
 })
 
@@ -82,8 +86,8 @@ describe("DEFAULT_MTAB", () => {
 })
 
 describe("DEFAULT_JTAB", () => {
-  it("is data", () => {
-    expect(DEFAULT_JTAB).toBe("data")
+  it("is judges", () => {
+    expect(DEFAULT_JTAB).toBe("judges")
   })
 })
 

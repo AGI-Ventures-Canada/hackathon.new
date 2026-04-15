@@ -113,7 +113,7 @@ export interface Hackathon {
   allow_solo: boolean
   status: HackathonStatus
   banner_url: string | null
-  location_type: "in_person" | "virtual" | null
+  location_type: "in_person" | "virtual" | "hybrid" | null
   location_name: string | null
   location_url: string | null
   location_latitude: number | null
@@ -128,10 +128,13 @@ export interface Hackathon {
   feedback_survey_url: string | null
   phase: HackathonPhase | null
   challenge_released_at: string | null
+  perks_none: boolean
   metadata: Json
   created_at: string
   updated_at: string
 }
+
+export type TeamMode = "in_person" | "virtual"
 
 export interface Team {
   id: string
@@ -140,6 +143,7 @@ export interface Team {
   captain_clerk_user_id: string
   invite_code: string
   status: TeamStatus
+  mode: TeamMode | null
   created_at: string
   updated_at: string
 }
@@ -398,6 +402,7 @@ export interface Prize {
   assignment_mode: PrizeAssignmentMode | null
   max_picks: number | null
   is_screening: boolean
+  allowed_team_modes: TeamMode[] | null
   display_order: number
   created_at: string
   updated_at: string

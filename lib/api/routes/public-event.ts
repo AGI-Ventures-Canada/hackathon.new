@@ -128,3 +128,29 @@ export const publicEventRoutes = new Elysia({ prefix: "/public" })
     set.headers["Cache-Control"] = "public, max-age=30, stale-while-revalidate=60"
     return { winners }
   }, { detail: { summary: "Get winners" } })
+  // --- Perks (released, team-members only) ---
+  .get("/hackathons/:slug/perks", async ({ params, request, set }) => {
+    const { error, hackathon } = await resolveHackathonBySlug(params.slug, set)
+    if (error) return { error }
+
+    const principal = await resolvePrincipal(request)
+    if (principal.kind !== "user" && principal.kind !== "admin") {
+      set.status = 401
+      return { error: "Authentication required" }
+    }
+
+    const { getParticipantWithTeam } = await import("@/lib/services/submissions")
+    const participant = await getParticipantWithTeam(hackathon!.id, principal.userId)
+    if (!participant || !participant.teamId) {
+      set.status = 403
+      return { error: "You must be on a team to view perks" }
+    }
+
+    const { listPerks, isPerkReleased } = await import("@/lib/services/perks")
+    const allPerks = await listPerks(hackathon!.id)
+    const startsAt = (hackathon as { starts_at?: string | null }).starts_at ?? null
+    const now = new Date()
+    const released = allPerks.filter((p) => isPerkReleased(p, startsAt, now))
+
+    return { perks: released }
+  }, { detail: { summary: "List released perks (team members only)" } })

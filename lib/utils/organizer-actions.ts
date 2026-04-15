@@ -118,10 +118,13 @@ export type ActionItemsInput = {
   bannerUrl: string | null
   startsAt: string | null
   endsAt: string | null
-  locationType: "in_person" | "virtual" | null
+  locationType: "in_person" | "virtual" | "hybrid" | null
   feedbackSurveyUrl: string | null
   feedbackSurveySentAt: string | null
   pendingJudgeInvitationCount: number
+  perkCount: number
+  perksNone: boolean
+  rounds: { plannedCount: number; activeCount: number; completeCount: number }
 }
 
 const STATUS_ORDER: HackathonStatus[] = ["draft", "published", "active", "judging", "completed"]
@@ -215,6 +218,30 @@ function addChallengeActions(items: ActionItem[], input: ActionItemsInput) {
   }
 }
 
+const PERKS_TOOLTIP = "Perks are sponsor API keys, credits, or coupons that registered teams can use during the event. Add them here and they'll show up on the event page once released. If your event doesn't have any, mark it so we stop nagging you."
+
+function addPerksAction(items: ActionItem[], input: ActionItemsInput) {
+  const hasPerks = input.perkCount > 0 || input.perksNone
+  const label = input.perksNone
+    ? "No perks for this event"
+    : input.perkCount > 0
+      ? `${input.perkCount} perk${input.perkCount === 1 ? "" : "s"} added`
+      : "Add sponsor perks"
+  const completedHint = input.perksNone
+    ? "You said this event has no perks"
+    : "Teams will see these on the event page"
+  items.push(autoAction({
+    id: "add-perks",
+    severity: "info",
+    tab: "perks",
+    ctaLabel: "Add",
+    tooltip: PERKS_TOOLTIP,
+    isComplete: hasPerks,
+    pending: { label: "Add sponsor perks", hint: "API keys, credits, or coupons teams can use. Or mark that you don't have any." },
+    completed: { label, hint: completedHint },
+  }))
+}
+
 function judgesLabel(input: ActionItemsInput): string {
   const pending = input.pendingJudgeInvitationCount
   if (pending > 0) return `Judges invited (${pending} pending)`
@@ -275,6 +302,8 @@ function addDraftActions(items: ActionItem[], input: ActionItemsInput) {
   }))
 
   addChallengeActions(items, input)
+
+  addPerksAction(items, input)
 
   const hasPrizes = input.prizeCount > 0
   items.push(autoAction({
@@ -393,6 +422,8 @@ function addPublishedActions(items: ActionItem[], input: ActionItemsInput) {
 
   addChallengeActions(items, input)
 
+  addPerksAction(items, input)
+
   if (input.startsAt) {
     const hoursUntilStart = (new Date(input.startsAt).getTime() - Date.now()) / (1000 * 60 * 60)
     if (hoursUntilStart > 0 && hoursUntilStart <= 24) {
@@ -466,6 +497,31 @@ function addActiveActions(items: ActionItem[], input: ActionItemsInput) {
     completed: { label: "Judges assigned", hint: "Ready to evaluate submissions when the time comes" },
   }))
 
+  if (
+    input.rounds.plannedCount > 0 &&
+    input.rounds.activeCount === 0 &&
+    input.rounds.completeCount === 0
+  ) {
+    items.push(autoAction({
+      id: "activate-first-round",
+      severity: "warning",
+      tab: "judging",
+      subtab: "rounds",
+      subtabKey: "jtab",
+      ctaLabel: "Activate",
+      tooltip: "Activating a round opens scoring for the judges assigned to its prizes. You can activate early if judges are ready to review as submissions come in.",
+      isComplete: false,
+      pending: {
+        label: "Activate your first judging round when you're ready",
+        hint: "Judges can start scoring as soon as you flip this on.",
+      },
+      completed: {
+        label: "First judging round activated",
+        hint: "Judges can now score submissions",
+      },
+    }))
+  }
+
   if (input.submissionCount > 0 && hasJudges && input.challengeReleased) {
     items.push(transitionAction({
       id: "ready-for-judging",
@@ -479,6 +535,31 @@ function addActiveActions(items: ActionItem[], input: ActionItemsInput) {
 }
 
 function addJudgingActions(items: ActionItem[], input: ActionItemsInput) {
+  if (
+    input.rounds.plannedCount > 0 &&
+    input.rounds.activeCount === 0 &&
+    input.rounds.completeCount === 0
+  ) {
+    items.push(autoAction({
+      id: "activate-first-round",
+      severity: "urgent",
+      tab: "judging",
+      subtab: "rounds",
+      subtabKey: "jtab",
+      ctaLabel: "Activate",
+      tooltip: "Activating a round opens scoring for the judges assigned to its prizes. Judging can't begin until a round is active.",
+      isComplete: false,
+      pending: {
+        label: "Start your first judging round",
+        hint: "Judging won't begin until you activate a round.",
+      },
+      completed: {
+        label: "First judging round activated",
+        hint: "Judges can now score submissions",
+      },
+    }))
+  }
+
   const { totalAssignments, completedAssignments } = input.judgingProgress
   const judgingTooltip = "Each judge is assigned submissions to review and score. Track progress here to know when all evaluations are in. You can nudge judges who haven't completed their reviews."
   if (totalAssignments > 0) {

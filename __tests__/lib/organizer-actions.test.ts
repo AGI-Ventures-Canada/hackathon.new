@@ -31,6 +31,9 @@ function makeInput(overrides: Partial<Parameters<typeof getOrganizerActionItems>
     feedbackSurveyUrl: null,
     feedbackSurveySentAt: null,
     pendingJudgeInvitationCount: 0,
+    perkCount: 0,
+    perksNone: false,
+    rounds: { plannedCount: 0, activeCount: 0, completeCount: 0 },
     ...overrides,
   }
 }
@@ -155,6 +158,28 @@ describe("getOrganizerActionItems", () => {
       expect(item?.close.kind).toBe("transition")
       expect(item?.action).toBe("transition-to-published")
       expect(item?.ctaLabel).toBe("Publish")
+    })
+
+    it("shows add-perks as incomplete when no perks and not opted out", () => {
+      const items = getOrganizerActionItems(makeInput())
+      const item = items.find((i) => i.id === "add-perks")
+      expect(item).toBeDefined()
+      expect(isCompleted(item!)).toBe(false)
+      expect(item?.tab).toBe("perks")
+    })
+
+    it("marks add-perks completed when perkCount > 0", () => {
+      const items = getOrganizerActionItems(makeInput({ perkCount: 1 }))
+      const item = items.find((i) => i.id === "add-perks")!
+      expect(isCompleted(item)).toBe(true)
+      expect(item.label).toContain("1 perk")
+    })
+
+    it("marks add-perks completed when perksNone is true", () => {
+      const items = getOrganizerActionItems(makeInput({ perksNone: true }))
+      const item = items.find((i) => i.id === "add-perks")!
+      expect(isCompleted(item)).toBe(true)
+      expect(item.label.toLowerCase()).toContain("no perks")
     })
 
     it("orders items with dates first then description", () => {
@@ -299,6 +324,7 @@ describe("getOrganizerActionItems", () => {
         locationType: "virtual",
         prizeCount: 2,
         judgeDisplayCount: 3,
+        perkCount: 2,
       }))
 
       const incompleteAuto = items.filter((i) => i.close.kind === "auto" && !isCompleted(i))
@@ -673,6 +699,69 @@ describe("getOrganizerActionItems", () => {
       expect(SEVERITY_GROUP_LABEL.warning).toBe("WARNINGS")
       expect(SEVERITY_GROUP_LABEL.scheduled).toBe("SCHEDULED")
       expect(SEVERITY_GROUP_LABEL.info).toBe("OPTIONAL")
+    })
+  })
+
+  describe("activate-first-round", () => {
+    it("is not shown when there are no rounds", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "judging",
+        rounds: { plannedCount: 0, activeCount: 0, completeCount: 0 },
+      }))
+      expect(items.find((i) => i.id === "activate-first-round")).toBeUndefined()
+    })
+
+    it("shows as warning during active phase when a round is planned", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "active",
+        challengeReleased: true,
+        challengeExists: true,
+        rounds: { plannedCount: 1, activeCount: 0, completeCount: 0 },
+      }))
+      const item = items.find((i) => i.id === "activate-first-round")
+      expect(item).toBeDefined()
+      expect(item?.severity).toBe("warning")
+      expect(item?.tab).toBe("judging")
+      expect(item?.subtab).toBe("rounds")
+      expect(item?.subtabKey).toBe("jtab")
+      expect(item?.ctaLabel).toBe("Activate")
+    })
+
+    it("shows as urgent during judging phase when a round is planned", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "judging",
+        rounds: { plannedCount: 1, activeCount: 0, completeCount: 0 },
+      }))
+      const item = items.find((i) => i.id === "activate-first-round")
+      expect(item).toBeDefined()
+      expect(item?.severity).toBe("urgent")
+      expect(item?.label).toBe("Start your first judging round")
+    })
+
+    it("judging phase takes precedence over active phase for same id", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "judging",
+        rounds: { plannedCount: 2, activeCount: 0, completeCount: 0 },
+      }))
+      const matches = items.filter((i) => i.id === "activate-first-round")
+      expect(matches).toHaveLength(1)
+      expect(matches[0].severity).toBe("urgent")
+    })
+
+    it("is not shown when a round is already active", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "judging",
+        rounds: { plannedCount: 1, activeCount: 1, completeCount: 0 },
+      }))
+      expect(items.find((i) => i.id === "activate-first-round")).toBeUndefined()
+    })
+
+    it("is not shown when any round is already complete", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "judging",
+        rounds: { plannedCount: 1, activeCount: 0, completeCount: 1 },
+      }))
+      expect(items.find((i) => i.id === "activate-first-round")).toBeUndefined()
     })
   })
 })
