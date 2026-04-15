@@ -14,7 +14,7 @@ type Props = {
   onOpenChange: (open: boolean) => void
   hackathonId: string
   initialData: {
-    locationType: "in_person" | "virtual" | null
+    locationType: "in_person" | "virtual" | "hybrid" | null
     locationName: string | null
     locationUrl: string | null
     locationLatitude: number | null

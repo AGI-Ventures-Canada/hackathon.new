@@ -353,6 +353,7 @@ export type ParticipantTeamInfo = {
     status: "forming" | "locked" | "disbanded"
     inviteCode: string
     captainClerkUserId: string
+    mode: "in_person" | "virtual" | null
   }
   members: TeamMember[]
   pendingInvitations: {
@@ -384,7 +385,7 @@ export async function getParticipantTeamInfo(
   const [teamResult, membersResult, invitationsResult] = await Promise.all([
     client
       .from("teams")
-      .select("id, name, status, invite_code, captain_clerk_user_id")
+      .select("id, name, status, invite_code, captain_clerk_user_id, mode")
       .eq("id", participant.team_id)
       .single(),
     client
@@ -451,6 +452,7 @@ export async function getParticipantTeamInfo(
       status: team.status,
       inviteCode: team.invite_code,
       captainClerkUserId: team.captain_clerk_user_id,
+      mode: team.mode ?? null,
     },
     members,
     pendingInvitations,

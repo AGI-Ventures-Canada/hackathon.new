@@ -1190,7 +1190,7 @@ export async function autoAssignJudges(
 
   const { data: prize } = await client
     .from("prizes")
-    .select("id, round_id")
+    .select("id, round_id, allowed_team_modes")
     .eq("id", prizeId)
     .eq("hackathon_id", hackathonId)
     .single()
@@ -1208,12 +1208,21 @@ export async function autoAssignJudges(
   const pool = await getRoundPool(hackathonId, prize.round_id)
   if (pool.length === 0) return { assignedCount: 0 }
 
-  const { data: submissions } = await client
+  const { data: submissionsRaw } = await client
     .from("submissions")
-    .select("id, team_id")
+    .select("id, team_id, teams:teams!submissions_team_id_fkey(id, mode)")
     .in("id", pool)
 
-  if (!submissions || submissions.length === 0) return { assignedCount: 0 }
+  if (!submissionsRaw || submissionsRaw.length === 0) return { assignedCount: 0 }
+
+  const allowedModes = (prize as { allowed_team_modes: ("in_person" | "virtual")[] | null }).allowed_team_modes
+  const submissions = (submissionsRaw as unknown as { id: string; team_id: string; teams: { id: string; mode: "in_person" | "virtual" | null } | null }[])
+    .filter((s) => {
+      if (!allowedModes || allowedModes.length === 0) return true
+      return s.teams?.mode ? allowedModes.includes(s.teams.mode) : false
+    })
+
+  if (submissions.length === 0) return { assignedCount: 0 }
 
   const { data: existing } = await client
     .from("judge_assignments")
@@ -1808,6 +1817,7 @@ export type JudgeAssignmentForJudge = {
   submissionLiveAppUrl: string | null
   submissionScreenshotUrl: string | null
   teamName: string | null
+  teamMode: "in_person" | "virtual" | null
   teamMemberCount: number | null
   isComplete: boolean
   notes: string
@@ -1862,10 +1872,14 @@ export async function getJudgeAssignments(
     .filter((id): id is string => id !== null)
 
   let teamsMap: Record<string, string> = {}
+  let teamModeMap: Record<string, "in_person" | "virtual" | null> = {}
   const memberCountMap: Record<string, number> = {}
   if (teamIds.length > 0) {
-    const { data: teams } = await client.from("teams").select("id, name").in("id", teamIds)
+    const { data: teams } = await client.from("teams").select("id, name, mode").in("id", teamIds)
     teamsMap = Object.fromEntries((teams ?? []).map((t) => [t.id, t.name]))
+    teamModeMap = Object.fromEntries(
+      (teams ?? []).map((t) => [t.id, (t as { mode: "in_person" | "virtual" | null }).mode ?? null])
+    )
 
     const { data: members } = await client
       .from("hackathon_participants")
@@ -1900,6 +1914,7 @@ export async function getJudgeAssignments(
       submissionLiveAppUrl: sub.live_app_url,
       submissionScreenshotUrl: sub.screenshot_url,
       teamName: sub.team_id ? teamsMap[sub.team_id] ?? null : null,
+      teamMode: sub.team_id ? teamModeMap[sub.team_id] ?? null : null,
       teamMemberCount: sub.team_id ? memberCountMap[sub.team_id] ?? null : null,
       isComplete: a.is_complete as boolean,
       notes: a.notes as string,

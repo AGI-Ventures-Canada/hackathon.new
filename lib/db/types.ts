@@ -1803,6 +1803,7 @@ export type Database = {
       }
       prizes: {
         Row: {
+          allowed_team_modes: Database["public"]["Enums"]["team_mode"][] | null
           assignment_mode: string | null
           created_at: string
           criteria_id: string | null
@@ -1827,6 +1828,7 @@ export type Database = {
           value: string | null
         }
         Insert: {
+          allowed_team_modes?: Database["public"]["Enums"]["team_mode"][] | null
           assignment_mode?: string | null
           created_at?: string
           criteria_id?: string | null
@@ -1851,6 +1853,7 @@ export type Database = {
           value?: string | null
         }
         Update: {
+          allowed_team_modes?: Database["public"]["Enums"]["team_mode"][] | null
           assignment_mode?: string | null
           created_at?: string
           criteria_id?: string | null
@@ -2502,6 +2505,7 @@ export type Database = {
           hackathon_id: string
           id: string
           invite_code: string
+          mode: Database["public"]["Enums"]["team_mode"] | null
           name: string
           pending_captain_email: string | null
           status: Database["public"]["Enums"]["team_status"]
@@ -2513,6 +2517,7 @@ export type Database = {
           hackathon_id: string
           id?: string
           invite_code: string
+          mode?: Database["public"]["Enums"]["team_mode"] | null
           name: string
           pending_captain_email?: string | null
           status?: Database["public"]["Enums"]["team_status"]
@@ -2524,6 +2529,7 @@ export type Database = {
           hackathon_id?: string
           id?: string
           invite_code?: string
+          mode?: Database["public"]["Enums"]["team_mode"] | null
           name?: string
           pending_captain_email?: string | null
           status?: Database["public"]["Enums"]["team_status"]
@@ -2869,7 +2875,7 @@ export type Database = {
         | "crowd"
         | "points"
         | "subjective"
-      location_type: "in_person" | "virtual"
+      location_type: "in_person" | "virtual" | "hybrid"
       mentor_request_status: "open" | "claimed" | "resolved" | "cancelled"
       participant_role: "participant" | "judge" | "mentor" | "organizer"
       prize_fulfillment_status: "assigned" | "contacted" | "shipped" | "claimed"
@@ -2890,6 +2896,7 @@ export type Database = {
         | "accepted"
         | "rejected"
         | "winner"
+      team_mode: "in_person" | "virtual"
       team_status: "forming" | "locked" | "disbanded"
       track_intent:
         | "overall_winner"
@@ -3078,7 +3085,7 @@ export const Constants = {
         "points",
         "subjective",
       ],
-      location_type: ["in_person", "virtual"],
+      location_type: ["in_person", "virtual", "hybrid"],
       mentor_request_status: ["open", "claimed", "resolved", "cancelled"],
       participant_role: ["participant", "judge", "mentor", "organizer"],
       prize_fulfillment_status: ["assigned", "contacted", "shipped", "claimed"],
@@ -3101,6 +3108,7 @@ export const Constants = {
         "rejected",
         "winner",
       ],
+      team_mode: ["in_person", "virtual"],
       team_status: ["forming", "locked", "disbanded"],
       track_intent: [
         "overall_winner",

@@ -83,6 +83,8 @@ export type AuditAction =
   | "team.members_modified"
   | "team.bulk_assigned"
   | "team.name_updated"
+  | "team.mode_updated"
+  | "team.updated"
   | "category.created"
   | "category.updated"
   | "category.deleted"

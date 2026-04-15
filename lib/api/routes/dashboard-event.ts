@@ -303,19 +303,28 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       }
     }
 
-    const { name } = body
-    if (!name.trim() || name.length > 100) {
+    const { name, mode } = body as { name?: string; mode?: "in_person" | "virtual" | null }
+    if (name !== undefined && (!name.trim() || name.length > 100)) {
       set.status = 400
       return { error: "Team name must be 1-100 characters" }
+    }
+
+    const updatePayload: Record<string, unknown> = { updated_at: new Date().toISOString() }
+    if (name !== undefined) updatePayload.name = name.trim()
+    if (mode !== undefined) updatePayload.mode = mode
+
+    if (Object.keys(updatePayload).length === 1) {
+      set.status = 400
+      return { error: "No changes to update" }
     }
 
     const client = supabase()
     const { data, error } = await client
       .from("teams")
-      .update({ name: name.trim(), updated_at: new Date().toISOString() })
+      .update(updatePayload)
       .eq("id", params.teamId)
       .eq("hackathon_id", params.id)
-      .select("id, name")
+      .select("id, name, mode")
       .single()
 
     if (error || !data) {
@@ -323,12 +332,21 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       return { error: "Team not found" }
     }
 
-    await logAudit({ principal, action: "team.name_updated", resourceType: "team", resourceId: params.teamId, metadata: { hackathonId: params.id, name: name.trim() } })
+    await logAudit({
+      principal,
+      action: mode !== undefined && name === undefined ? "team.mode_updated" : "team.updated",
+      resourceType: "team",
+      resourceId: params.teamId,
+      metadata: { hackathonId: params.id, ...(name !== undefined ? { name: name.trim() } : {}), ...(mode !== undefined ? { mode } : {}) },
+    })
 
     return data
   }, {
-    body: t.Object({ name: t.String({ minLength: 1, maxLength: 100 }) }),
-    detail: { summary: "Update team name" },
+    body: t.Object({
+      name: t.Optional(t.String({ minLength: 1, maxLength: 100 })),
+      mode: t.Optional(t.Union([t.Literal("in_person"), t.Literal("virtual"), t.Null()])),
+    }),
+    detail: { summary: "Update team name or mode" },
   })
   .get("/hackathons/:id/categories", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])

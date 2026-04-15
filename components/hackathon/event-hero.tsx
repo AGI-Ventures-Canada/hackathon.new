@@ -38,7 +38,7 @@ interface EventHeroProps {
   registrationOpensAt?: string | null;
   registrationClosesAt?: string | null;
   organizer: Pick<TenantProfile, "name" | "slug" | "logo_url" | "logo_url_dark">;
-  locationType?: "in_person" | "virtual" | null;
+  locationType?: "in_person" | "virtual" | "hybrid" | null;
   locationName?: string | null;
   locationUrl?: string | null;
   onNameClick?: () => void;
@@ -228,11 +228,13 @@ export function EventHero({
   );
 
   const locationLabel =
-    locationType === "in_person"
-      ? locationName || "In Person"
-      : locationName || locationUrl || "Virtual";
+    locationType === "hybrid"
+      ? locationName || "Hybrid — in person or online"
+      : locationType === "in_person"
+        ? locationName || "In Person"
+        : locationName || locationUrl || "Virtual";
 
-  const LocationIcon = locationType === "in_person" ? MapPin : Video;
+  const LocationIcon = locationType === "virtual" ? Video : MapPin;
 
   const locationContent = (
     <div className="flex min-w-0 items-start gap-1.5 text-sm text-muted-foreground text-left">

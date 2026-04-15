@@ -118,7 +118,7 @@ export type ActionItemsInput = {
   bannerUrl: string | null
   startsAt: string | null
   endsAt: string | null
-  locationType: "in_person" | "virtual" | null
+  locationType: "in_person" | "virtual" | "hybrid" | null
   feedbackSurveyUrl: string | null
   feedbackSurveySentAt: string | null
   pendingJudgeInvitationCount: number
