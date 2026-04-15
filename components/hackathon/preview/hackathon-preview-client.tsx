@@ -97,6 +97,14 @@ function HackathonPreviewContent({
   useEffect(() => {
     setOptimisticJudges(null)
   }, [hackathon.judges])
+
+  const [nowIso, setNowIso] = useState<string | null>(null)
+  useEffect(() => {
+    const tick = () => setNowIso(new Date().toISOString())
+    tick()
+    const interval = setInterval(tick, 30_000)
+    return () => clearInterval(interval)
+  }, [])
   const rename = useTeamRename(hackathon.id, teamInfo?.team.id ?? "", teamInfo?.team.name ?? "")
 
   const handleRegistrationSuccess = () => {
@@ -505,23 +513,34 @@ function HackathonPreviewContent({
             <TabsContent value="schedule" className="mt-6">
               {scheduleItems.length > 0 ? (
                 <div className="space-y-3">
-                  {scheduleItems.map((item) => (
-                    <div key={item.id} className="flex items-start gap-3">
-                      <span className="text-xs tabular-nums text-muted-foreground shrink-0 w-16 pt-0.5 text-right">
-                        {new Date(item.starts_at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium">{item.title}</p>
-                        {item.description && <p className="text-sm text-muted-foreground mt-0.5">{item.description}</p>}
-                        {item.location && (
-                          <span className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
-                            <MapPin className="size-3" />
-                            {item.location}
-                          </span>
-                        )}
+                  {scheduleItems.map((item) => {
+                    const isCurrent = Boolean(
+                      nowIso && item.ends_at && item.starts_at <= nowIso && item.ends_at > nowIso,
+                    )
+                    return (
+                      <div
+                        key={item.id}
+                        className={`flex items-start gap-3 ${isCurrent ? "rounded-md bg-primary/5 -mx-2 px-2 py-1" : ""}`}
+                      >
+                        <span className="text-xs tabular-nums text-muted-foreground shrink-0 w-16 pt-0.5 text-right">
+                          {new Date(item.starts_at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium">{item.title}</p>
+                            {isCurrent && <Badge variant="secondary">Now</Badge>}
+                          </div>
+                          {item.description && <p className="text-sm text-muted-foreground mt-0.5">{item.description}</p>}
+                          {item.location && (
+                            <span className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
+                              <MapPin className="size-3" />
+                              {item.location}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">No schedule items yet.</p>
