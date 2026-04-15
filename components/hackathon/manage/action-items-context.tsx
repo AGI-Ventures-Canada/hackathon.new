@@ -98,7 +98,7 @@ type TeamSettingsInitialData = {
 };
 
 type LocationInitialData = {
-  locationType: "in_person" | "virtual" | null;
+  locationType: "in_person" | "virtual" | "hybrid" | null;
   locationName: string | null;
   locationUrl: string | null;
   locationLatitude: number | null;

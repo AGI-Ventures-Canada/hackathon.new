@@ -1055,15 +1055,26 @@ curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/rounds" \
 
 ---
 
-#### Set up finalists judging (preset)
+#### Set up rounds from a preset
 
-Scope: `hackathons:write`. Creates two rounds (Semifinals → Finals) and a hidden screening prize in one call.
+Scope: `hackathons:write`. Creates a starter template of rounds. Three presets:
+
+- `single` — one round, judges score every project once
+- `shortlist` — two rounds; the top N by score move on (requires `advanceTopN`)
+- `threshold` — two rounds; everyone scoring at or above a bar moves on (requires `threshold`)
 
 ```bash
-curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/rounds/finalists-preset" \
+# Shortlist preset: top 10 move on to finals
+curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/rounds/preset" \
   -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{ "advanceTopN": 10 }' | jq .
+  -d '{ "preset": "shortlist", "advanceTopN": 10 }' | jq .
+
+# Single-round preset
+curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/rounds/preset" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "preset": "single" }' | jq .
 ```
 
 **Response:**
@@ -1071,10 +1082,12 @@ curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/rounds/finalis
 ```json
 {
   "success": true,
-  "roundIds": { "round1": "uuid", "round2": "uuid" },
+  "roundIds": ["uuid", "uuid"],
   "screeningPrizeId": "uuid"
 }
 ```
+
+The legacy `/rounds/finalists-preset` endpoint still works as an alias for `{ "preset": "shortlist", "advanceTopN": N }` but prefer `/rounds/preset` for new integrations.
 
 ---
 

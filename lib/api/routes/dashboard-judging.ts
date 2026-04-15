@@ -57,6 +57,18 @@ export const dashboardJudgingRoutes = new Elysia()
         return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
       }
 
+      if (body.judgingStyle === "gate_check") {
+        const nonEmpty = (body.criteria ?? []).filter((c) => c.name.trim().length > 0)
+        if (nonEmpty.length === 0) {
+          return new Response(
+            JSON.stringify({
+              error: "At least one criterion is required for pass-or-fail prizes",
+            }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          )
+        }
+      }
+
       const { createPrize } = await import("@/lib/services/judging")
       const createResult = await createPrize(params.id, {
         name: body.name,
@@ -67,10 +79,15 @@ export const dashboardJudgingRoutes = new Elysia()
         assignmentMode: body.assignmentMode as "organizer_assigned" | "self_select" | undefined,
         maxPicks: body.maxPicks,
         displayOrder: body.displayOrder,
+        criteria: body.criteria,
+        buckets: body.buckets,
       })
 
       if (!createResult.success) {
-        return new Response(JSON.stringify({ error: createResult.error }), { status: 500, headers: { "Content-Type": "application/json" } })
+        return new Response(JSON.stringify({ error: createResult.error }), {
+          status: createResult.code === "validation" ? 400 : 500,
+          headers: { "Content-Type": "application/json" },
+        })
       }
 
       const prize = createResult.prize
@@ -94,10 +111,39 @@ export const dashboardJudgingRoutes = new Elysia()
         judgingStyle: t.String({ description: "bucket_sort | gate_check | crowd_vote | judges_pick" }),
         roundId: t.Optional(t.Nullable(t.String({ description: "Round ID this prize belongs to" }))),
         assignmentMode: t.Optional(t.String({ description: "organizer_assigned | self_select" })),
-        maxPicks: t.Optional(t.Number({ description: "Max picks per judge (for judges_pick)" })),
+        maxPicks: t.Optional(
+          t.Integer({
+            minimum: 1,
+            maximum: 100,
+            description: "Max picks per judge (for judges_pick)",
+          })
+        ),
         displayOrder: t.Optional(t.Number({ description: "Display order" })),
+        criteria: t.Optional(
+          t.Array(
+            t.Object({
+              name: t.String(),
+              description: t.Optional(t.Nullable(t.String())),
+            }),
+            { description: "Pass/fail criteria. Required when judgingStyle is 'gate_check'." }
+          )
+        ),
+        buckets: t.Optional(
+          t.Array(
+            t.Object({
+              level: t.Number(),
+              label: t.String(),
+              description: t.Optional(t.Nullable(t.String())),
+            }),
+            { description: "Sort groups for 'bucket_sort'. Defaults are used when omitted." }
+          )
+        ),
       }),
-      detail: { summary: "Create prize", description: "Creates a new prize with judging style. Auto-creates bucket definitions for bucket_sort." },
+      detail: {
+        summary: "Create prize",
+        description:
+          "Creates a new prize with judging style. For 'gate_check', 'criteria' must be a non-empty array. For 'bucket_sort', optional 'buckets' override the default sort groups. For 'judges_pick', 'maxPicks' sets how many picks each judge gets.",
+      },
     }
   )
 
@@ -116,12 +162,40 @@ export const dashboardJudgingRoutes = new Elysia()
         return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
       }
 
-      const { updatePrize } = await import("@/lib/services/judging")
+      const effectiveStyle = (body.judgingStyle ?? undefined) as
+        | import("@/lib/db/hackathon-types").PrizeJudgingStyle
+        | undefined
+
+      if (body.criteria !== undefined) {
+        const nonEmpty = body.criteria.filter((c) => c.name.trim().length > 0)
+        if (nonEmpty.length === 0) {
+          return new Response(
+            JSON.stringify({
+              error: "At least one criterion is required for pass-or-fail prizes",
+            }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          )
+        }
+      }
+
+      if (body.buckets !== undefined) {
+        const nonEmpty = body.buckets.filter((b) => b.label.trim().length > 0)
+        if (nonEmpty.length < 2) {
+          return new Response(
+            JSON.stringify({ error: "Sort groups need at least two named labels" }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          )
+        }
+      }
+
+      const { updatePrize, replacePrizeCriteria, replaceBucketDefinitions } = await import(
+        "@/lib/services/judging"
+      )
       const prize = await updatePrize(params.prizeId, params.id, {
         name: body.name,
         description: body.description,
         value: body.value,
-        judgingStyle: body.judgingStyle as import("@/lib/db/hackathon-types").PrizeJudgingStyle | undefined,
+        judgingStyle: effectiveStyle,
         roundId: body.roundId,
         assignmentMode: body.assignmentMode as import("@/lib/db/hackathon-types").PrizeAssignmentMode | undefined,
         maxPicks: body.maxPicks,
@@ -130,6 +204,37 @@ export const dashboardJudgingRoutes = new Elysia()
 
       if (!prize) {
         return new Response(JSON.stringify({ error: "Prize not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+      }
+
+      if (body.criteria !== undefined) {
+        const updatedCriteria = await replacePrizeCriteria(
+          params.id,
+          params.prizeId,
+          body.criteria
+        )
+        if (updatedCriteria === null) {
+          return new Response(
+            JSON.stringify({ error: "Failed to save criteria" }),
+            { status: 500, headers: { "Content-Type": "application/json" } }
+          )
+        }
+      }
+
+      if (body.buckets !== undefined) {
+        const updatedBuckets = await replaceBucketDefinitions(
+          params.prizeId,
+          body.buckets.map((b, i) => ({
+            level: b.level ?? i + 1,
+            label: b.label.trim(),
+            description: b.description?.trim() || null,
+          }))
+        )
+        if (updatedBuckets.length === 0) {
+          return new Response(
+            JSON.stringify({ error: "Failed to save sort groups" }),
+            { status: 500, headers: { "Content-Type": "application/json" } }
+          )
+        }
       }
 
       return { prize }
@@ -142,10 +247,33 @@ export const dashboardJudgingRoutes = new Elysia()
         judgingStyle: t.Optional(t.String()),
         roundId: t.Optional(t.Nullable(t.String())),
         assignmentMode: t.Optional(t.String()),
-        maxPicks: t.Optional(t.Number()),
+        maxPicks: t.Optional(t.Integer({ minimum: 1, maximum: 100 })),
         displayOrder: t.Optional(t.Number()),
+        criteria: t.Optional(
+          t.Array(
+            t.Object({
+              name: t.String(),
+              description: t.Optional(t.Nullable(t.String())),
+            }),
+            { description: "Replace all pass/fail criteria for this prize." }
+          )
+        ),
+        buckets: t.Optional(
+          t.Array(
+            t.Object({
+              level: t.Number(),
+              label: t.String(),
+              description: t.Optional(t.Nullable(t.String())),
+            }),
+            { description: "Replace all sort groups for this prize." }
+          )
+        ),
       }),
-      detail: { summary: "Update prize", description: "Updates a prize's properties." },
+      detail: {
+        summary: "Update prize",
+        description:
+          "Updates a prize's properties. When 'criteria' is provided, replaces all criteria for the prize (must be non-empty if sent). When 'buckets' is provided, replaces all sort groups (minimum 2 named labels).",
+      },
     }
   )
 
@@ -425,6 +553,69 @@ export const dashboardJudgingRoutes = new Elysia()
   )
 
   .post(
+    "/hackathons/:id/rounds/preset",
+    async ({ principal, params, body }) => {
+      requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+
+      const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+      const result = await checkHackathonOrganizer(params.id, principal.tenantId)
+
+      if (result.status === "not_found") {
+        return new Response(JSON.stringify({ error: "Hackathon not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+      }
+      if (result.status === "not_authorized") {
+        return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
+      }
+
+      const { createRoundsPreset } = await import("@/lib/services/judging")
+      const preset = await createRoundsPreset(params.id, {
+        preset: body.preset,
+        advanceTopN: body.advanceTopN,
+        threshold: body.threshold,
+        round1Name: body.round1Name,
+        round2Name: body.round2Name,
+        seedScreeningPrize: body.seedScreeningPrize,
+      })
+
+      if (!preset.success) {
+        return new Response(JSON.stringify({ error: preset.error }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+
+      return preset
+    },
+    {
+      body: t.Object({
+        preset: t.Union(
+          [t.Literal("single"), t.Literal("shortlist"), t.Literal("threshold")],
+          { description: "Which starter template to use" }
+        ),
+        advanceTopN: t.Optional(
+          t.Number({ description: "Required for 'shortlist'. How many submissions move on from round 1" })
+        ),
+        threshold: t.Optional(
+          t.Number({ description: "Required for 'threshold'. Submissions scoring this or higher move on" })
+        ),
+        round1Name: t.Optional(t.String({ description: "Name of the first round. Defaults per preset." })),
+        round2Name: t.Optional(t.String({ description: "Name of the second round. Ignored for 'single'." })),
+        seedScreeningPrize: t.Optional(
+          t.Boolean({
+            description:
+              "When true (default), seeds a hidden helper prize so judges have something to score in round 1. Ignored for 'single'.",
+          })
+        ),
+      }),
+      detail: {
+        summary: "Create a judging rounds preset",
+        description:
+          "Creates a starter template of rounds in one call. 'single' creates one round. 'shortlist' creates two rounds where the top N by score advance. 'threshold' creates two rounds where everyone scoring above a bar advances. All rounds are fully editable after creation.",
+      },
+    }
+  )
+
+  .post(
     "/hackathons/:id/rounds/finalists-preset",
     async ({ principal, params, body }) => {
       requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
@@ -469,9 +660,9 @@ export const dashboardJudgingRoutes = new Elysia()
         ),
       }),
       detail: {
-        summary: "Create finalists-judging preset",
+        summary: "Create finalists-judging preset (legacy alias for /rounds/preset with preset='shortlist')",
         description:
-          "Creates two rounds (Semifinals → Finals) and a hidden screening prize in one call. Round 1 uses top_n advancement with the given count; round 2 uses manual. Designed to make multi-round finalists setup a one-click flow.",
+          "Creates two rounds (Semifinals → Finals) and a hidden screening prize in one call. Round 1 uses top_n advancement with the given count; round 2 uses manual. Prefer /rounds/preset for new integrations.",
       },
     }
   )

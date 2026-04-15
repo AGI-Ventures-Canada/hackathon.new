@@ -159,4 +159,51 @@ describe("OverviewSchedule (interactive agenda)", () => {
     if (row) fireEvent.click(row)
     expect(screen.getByText("Edit agenda item")).toBeDefined()
   })
+
+  it("isolates delete confirmation clicks from the row's edit handler", () => {
+    render(<OverviewSchedule {...defaultProps} />)
+    const kickoffRow = screen.getByText("Opening Kickoff").closest("[role=button]")!
+    const trashButton = kickoffRow.querySelector("svg.lucide-trash2")?.closest("button")
+    expect(trashButton).toBeDefined()
+    const wrapper = trashButton!.parentElement!
+    const handled = fireEvent.click(wrapper)
+    expect(handled).toBe(true)
+    expect(screen.queryByText("Edit agenda item")).toBeNull()
+  })
+
+  it("makes released challenge items read-only (no click, no edit/delete buttons)", () => {
+    render(
+      <ScheduleEditor
+        {...defaultProps}
+        scheduleItems={[challengeReleaseItem]}
+        challengeReleasedAt="2030-04-10T09:45:00Z"
+        onEditTriggerItem={mock(() => {})}
+      />,
+    )
+    expect(screen.getByText("Released")).toBeDefined()
+    expect(screen.getByText("Challenge Release").closest("[role=button]")).toBeNull()
+    const row = screen.getByText("Challenge Release").closest("div")!
+    fireEvent.click(row)
+    expect(screen.queryByText("Edit agenda item")).toBeNull()
+  })
+
+  it("shows released challenge under the actual release time, not scheduled time", () => {
+    render(
+      <ScheduleEditor
+        {...defaultProps}
+        scheduleItems={[challengeReleaseItem]}
+        challengeReleasedAt="2030-04-10T14:30:00Z"
+      />,
+    )
+    const releasedTime = new Date("2030-04-10T14:30:00Z").toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    })
+    const scheduledTime = new Date("2030-04-10T09:30:00Z").toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    })
+    expect(screen.getByText(releasedTime)).toBeDefined()
+    expect(screen.queryByText(scheduledTime)).toBeNull()
+  })
 })

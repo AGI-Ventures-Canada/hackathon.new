@@ -63,7 +63,7 @@ interface LifecycleStepperProps {
   registrationClosesAt?: string | null
   description?: string | null
   bannerUrl?: string | null
-  locationType?: "in_person" | "virtual" | null
+  locationType?: "in_person" | "virtual" | "hybrid" | null
   locationName?: string | null
   locationUrl?: string | null
   sponsorCount?: number
@@ -307,8 +307,8 @@ export function LifecycleStepper({
     !description && "No description",
     !bannerUrl && "No banner image",
     !locationType && "Location not set",
-    locationType === "in_person" && !locationName && "Venue details missing",
-    locationType === "virtual" && !locationUrl && "Virtual link missing",
+    (locationType === "in_person" || locationType === "hybrid") && !locationName && "Venue details missing",
+    (locationType === "virtual" || locationType === "hybrid") && !locationUrl && "Virtual link missing",
     sponsorCount === 0 && "No sponsors",
     judgeDisplayCount === 0 && "No judges added",
     prizeCount === 0 && "No prizes defined",

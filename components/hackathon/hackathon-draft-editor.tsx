@@ -29,7 +29,7 @@ export type DraftState = {
   description: string | null
   startsAt: string | null
   endsAt: string | null
-  locationType: "in_person" | "virtual" | null
+  locationType: "in_person" | "virtual" | "hybrid" | null
   locationName: string | null
   locationUrl: string | null
   imageUrl: string | null
@@ -75,6 +75,7 @@ function stateToHackathon(state: DraftState): PublicHackathon {
     status: "draft",
     phase: null,
     challenge_released_at: null,
+    perks_none: false,
     banner_url: state.imageUrl,
     location_type: state.locationType,
     location_name: state.locationName,
@@ -126,6 +127,7 @@ function stateToHackathon(state: DraftState): PublicHackathon {
       assignment_mode: null,
       max_picks: null,
       is_screening: false,
+      allowed_team_modes: null,
       display_order: i,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -133,13 +135,17 @@ function stateToHackathon(state: DraftState): PublicHackathon {
   }
 }
 
-export function loadSavedState(storageKey: string): DraftState | null {
+export function loadSavedState(storageKey: string, sourceUrl?: string): DraftState | null {
   if (typeof window === "undefined") return null
   const saved = localStorage.getItem(storageKey)
   if (!saved) return null
   try {
     const parsed = JSON.parse(saved)
     if (Date.now() - parsed.savedAt >= STORAGE_EXPIRY_MS) {
+      localStorage.removeItem(storageKey)
+      return null
+    }
+    if (sourceUrl && parsed.sourceUrl && parsed.sourceUrl !== sourceUrl) {
       localStorage.removeItem(storageKey)
       return null
     }
@@ -173,7 +179,7 @@ export function HackathonDraftEditor({
   const { organization, isLoaded: isOrgLoaded } = useOrganization()
 
   const [state, setState] = useState<DraftState>(() => {
-    return loadSavedState(storageKey) ?? initialState
+    return loadSavedState(storageKey, sourceUrl) ?? initialState
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -185,8 +191,8 @@ export function HackathonDraftEditor({
   const autoTriggeredRef = useRef(false)
 
   useEffect(() => {
-    localStorage.setItem(storageKey, JSON.stringify({ state, savedAt: Date.now() }))
-  }, [state, storageKey])
+    localStorage.setItem(storageKey, JSON.stringify({ state, sourceUrl, savedAt: Date.now() }))
+  }, [state, storageKey, sourceUrl])
 
   useEffect(() => {
     if (!isLoaded || !isOrgLoaded || autoTriggeredRef.current) return

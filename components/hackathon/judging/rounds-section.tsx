@@ -25,7 +25,6 @@ import {
 import {
   Layers,
   Plus,
-  Sparkles,
   ArrowDown,
   MoreHorizontal,
   Pencil,
@@ -34,8 +33,9 @@ import {
   Play,
   CheckCircle2,
   ArrowRight,
+  ChevronRight,
 } from "lucide-react"
-import { FinalistsPresetDialog } from "./finalists-preset-dialog"
+import { RoundsPresetDialog, type RoundsPresetKind } from "./rounds-preset-dialog"
 import { RoundFormDialog } from "./round-form-dialog"
 import { AdvanceFinalistsDialog } from "./advance-finalists-dialog"
 import type { RoundData } from "./rounds-types"
@@ -47,7 +47,7 @@ interface RoundsSectionProps {
 
 export function RoundsSection({ hackathonId, rounds }: RoundsSectionProps) {
   const router = useRouter()
-  const [showPreset, setShowPreset] = useState(false)
+  const [presetKind, setPresetKind] = useState<RoundsPresetKind | null>(null)
   const [showAddRound, setShowAddRound] = useState(false)
   const [editRound, setEditRound] = useState<RoundData | null>(null)
   const [deleteRound, setDeleteRound] = useState<RoundData | null>(null)
@@ -124,19 +124,39 @@ export function RoundsSection({ hackathonId, rounds }: RoundsSectionProps) {
         {error && <p className="text-sm text-destructive mb-3">{error}</p>}
 
         {visibleRounds.length === 0 ? (
-          <div className="rounded-lg border border-dashed p-6 text-center space-y-3">
-            <p className="text-sm text-muted-foreground max-w-md mx-auto">
-              Most hackathons judge in one round. Add rounds only if you want a finalists stage
-              (e.g. narrow to a shortlist, then pick winners).
-            </p>
-            <div className="flex flex-col sm:flex-row gap-2 justify-center pt-1">
-              <Button size="sm" onClick={() => setShowPreset(true)}>
-                <Sparkles className="mr-2 size-4" />
-                Set up finalists judging
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => setShowAddRound(true)}>
+          <div className="rounded-lg border border-dashed p-4 sm:p-6 space-y-4">
+            <div className="space-y-1">
+              <p className="text-sm font-medium">Quick setup</p>
+              <p className="text-xs text-muted-foreground">
+                Pick a starter. You can rename, re-order, or delete rounds after.
+              </p>
+            </div>
+            <div className="grid gap-2">
+              <PresetTile
+                label="One round"
+                hint="Judges score every project once. You pick the winners."
+                onClick={() => setPresetKind("single")}
+              />
+              <PresetTile
+                label="Shortlist + Finals"
+                hint="The top few scorers move on to a finals round."
+                onClick={() => setPresetKind("shortlist")}
+              />
+              <PresetTile
+                label="Score gate + Finals"
+                hint="Everyone above your score moves on to a finals round."
+                onClick={() => setPresetKind("threshold")}
+              />
+            </div>
+            <div className="pt-1 border-t">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="w-full justify-center text-muted-foreground"
+                onClick={() => setShowAddRound(true)}
+              >
                 <Plus className="mr-2 size-4" />
-                Add round
+                Add round manually
               </Button>
             </div>
           </div>
@@ -232,10 +252,13 @@ export function RoundsSection({ hackathonId, rounds }: RoundsSectionProps) {
         )}
       </CardContent>
 
-      <FinalistsPresetDialog
+      <RoundsPresetDialog
         hackathonId={hackathonId}
-        open={showPreset}
-        onOpenChange={setShowPreset}
+        preset={presetKind}
+        open={!!presetKind}
+        onOpenChange={(open) => {
+          if (!open) setPresetKind(null)
+        }}
       />
 
       <RoundFormDialog
@@ -307,6 +330,30 @@ export function RoundsSection({ hackathonId, rounds }: RoundsSectionProps) {
         </AlertDialogContent>
       </AlertDialog>
     </Card>
+  )
+}
+
+function PresetTile({
+  label,
+  hint,
+  onClick,
+}: {
+  label: string
+  hint: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex items-center gap-3 rounded-lg border bg-card p-3 text-left hover:bg-accent hover:border-ring transition-colors"
+    >
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium">{label}</p>
+        <p className="text-xs text-muted-foreground">{hint}</p>
+      </div>
+      <ChevronRight className="size-4 text-muted-foreground group-hover:text-foreground shrink-0" />
+    </button>
   )
 }
 

@@ -9,6 +9,7 @@ import { countJudgeDisplayProfiles } from "@/lib/services/judge-display"
 import { getManageOverviewStats } from "@/lib/services/manage-overview"
 import { listAnnouncements } from "@/lib/services/announcements"
 import { listChallenges } from "@/lib/services/challenges"
+import { listPerks } from "@/lib/services/perks"
 import { listScheduleItems, getSubmissionDeadline } from "@/lib/services/schedule-items"
 import { getOrganizerActionItems } from "@/lib/utils/organizer-actions"
 import { VALID_TABS, VALID_ETABS, VALID_MTABS, VALID_JTABS, VALID_PTABS, DEFAULT_TAB, DEFAULT_MTAB, DEFAULT_JTAB, DEFAULT_PTAB, resolveTab } from "@/lib/utils/manage-tabs"
@@ -23,6 +24,7 @@ import { ActionItemsLayout } from "@/components/hackathon/manage/action-items-la
 import { ActionItemsTabBadge } from "@/components/hackathon/manage/action-items-tab-badge"
 import { StatusBadgeMenu } from "@/components/hackathon/manage/status-badge-menu"
 import { ChallengesTab } from "@/components/hackathon/manage/challenges-tab"
+import { PerksTab } from "@/components/hackathon/manage/perks-tab"
 import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { TabCount } from "@/components/ui/tab-count"
 import { TabsUrlSync } from "./_tabs-url-sync"
@@ -65,6 +67,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     pendingJudgeInvitationCount,
     challenges,
     rounds,
+    perks,
   ] = await Promise.all([
     getHackathonSubmissions(hackathon.id),
     getJudgingProgress(hackathon.id),
@@ -78,11 +81,21 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     countPendingJudgeInvitations(hackathon.id),
     listChallenges(hackathon.id),
     listRounds(hackathon.id),
+    listPerks(hackathon.id),
   ])
 
   const submissionCount = submissions.length
   const challengeExists = challenges.length > 0
   const challengeReleaseItem = scheduleItems.find((s) => s.trigger_type === "challenge_release")
+  const roundsSummary = rounds.reduce(
+    (acc, r) => {
+      if (r.status === "planned") acc.plannedCount += 1
+      else if (r.status === "active") acc.activeCount += 1
+      else if (r.status === "complete" || r.status === "advanced") acc.completeCount += 1
+      return acc
+    },
+    { plannedCount: 0, activeCount: 0, completeCount: 0 },
+  )
   const actionItems = getOrganizerActionItems({
     status: hackathon.status,
     phase: hackathon.phase,
@@ -106,16 +119,20 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     feedbackSurveyUrl: hackathon.feedback_survey_url ?? null,
     feedbackSurveySentAt: hackathon.feedback_survey_sent_at ?? null,
     pendingJudgeInvitationCount,
+    perkCount: perks.length,
+    perksNone: hackathon.perks_none ?? false,
+    rounds: roundsSummary,
   })
 
   const activeTab = resolveTab(tab, VALID_TABS, DEFAULT_TAB)
   const activeEtab = resolveTab(etab, VALID_ETABS, "announcements")
   const mtabFallback = tab === "rooms" ? "rooms" : tab === "activity" ? "activity" : undefined
   const activeMtab = resolveTab(mtab ?? mtabFallback, VALID_MTABS, DEFAULT_MTAB)
-  const activeJtab = resolveTab(jtab, VALID_JTABS, DEFAULT_JTAB) as "data" | "setup"
+  const hasJudgingSetup = prizes.length > 0 || judgeCount > 0 || rounds.length > 0
+  const jtabFallback = hasJudgingSetup ? DEFAULT_JTAB : "setup"
+  const activeJtab = resolveTab(jtab, VALID_JTABS, jtabFallback) as "setup" | "judges" | "rounds" | "prizes" | "results"
   const ptabFallback = tab === "fulfillment" ? "fulfillment" : tab === "feedback" ? "feedback" : undefined
   const activePtab = resolveTab(ptab ?? ptabFallback, VALID_PTABS, DEFAULT_PTAB)
-  const hasJudgingSetup = prizes.length > 0 || judgeCount > 0 || rounds.length > 0
 
   const submissionsForSelect = submissions.map((s) => ({ id: s.id, title: s.title }))
   const teamsTabTooltip = `${overviewStats.teamCount} team${overviewStats.teamCount === 1 ? "" : "s"} · ${submissionCount} submission${submissionCount === 1 ? "" : "s"}`
@@ -162,6 +179,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
               <TabsTrigger value="action-items">Action Items<ActionItemsTabBadge /></TabsTrigger>
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="challenges">Challenges{challenges.length > 0 && <TabCount>{challenges.length}</TabCount>}</TabsTrigger>
+              <TabsTrigger value="perks">Perks{perks.length > 0 && <TabCount>{perks.length}</TabCount>}</TabsTrigger>
               <TabsTrigger value="edit">Event Page</TabsTrigger>
               <TabsTrigger value="teams" title={teamsTabTooltip}>Teams</TabsTrigger>
               <TabsTrigger value="judging">Judging &amp; Prizes{prizes.length > 0 && <TabCount>{prizes.length}</TabCount>}</TabsTrigger>
@@ -231,6 +249,16 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
               />
             </TabsContent>
 
+            <TabsContent value="perks" forceMount className="data-[state=inactive]:hidden">
+              <PerksTab
+                hackathonId={hackathon.id}
+                initialPerks={perks}
+                sponsors={hackathon.sponsors.map((s) => ({ id: s.id, name: s.name }))}
+                startsAt={hackathon.starts_at}
+                perksNone={hackathon.perks_none ?? false}
+              />
+            </TabsContent>
+
             <TabsContent value="edit" forceMount className="data-[state=inactive]:hidden">
               <div className="rounded-lg border overflow-hidden">
                 <HackathonPreviewClient hackathon={hackathon} isEditable={true} currentUserId={userId} />
@@ -245,7 +273,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
                   submissions={submissionsForSelect}
                   resultsPublishedAt={hackathon.results_published_at}
                   activeJtab={activeJtab}
-                  hasJudgingSetup={hasJudgingSetup}
+                  locationType={hackathon.location_type ?? null}
                 />
               </Suspense>
             </TabsContent>
