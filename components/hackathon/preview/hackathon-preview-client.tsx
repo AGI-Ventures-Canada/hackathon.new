@@ -41,6 +41,8 @@ import type { ScheduleItem } from "@/lib/services/schedule-items"
 import type { Announcement } from "@/lib/services/announcements"
 import type { Challenge } from "@/lib/services/challenges"
 import { ChallengeSection } from "@/components/hackathon/challenge-section"
+import type { Perk } from "@/lib/services/perks"
+import { PerksSection } from "@/components/hackathon/perks-section"
 
 interface HackathonPreviewClientProps {
   hackathon: PublicHackathon
@@ -57,6 +59,7 @@ interface HackathonPreviewClientProps {
   scheduleItems?: ScheduleItem[]
   announcements?: Announcement[]
   challenges?: Challenge[]
+  viewerPerks?: Perk[]
   currentUserId?: string | null
   onFormSave?: (data: Record<string, unknown>) => Promise<boolean>
   onBannerChange?: (imageUrl: string | null) => void | Promise<void>
@@ -77,6 +80,7 @@ function HackathonPreviewContent({
   scheduleItems = [],
   announcements = [],
   challenges = [],
+  viewerPerks = [],
   currentUserId = null,
   onFormSave,
   onBannerChange,
@@ -452,6 +456,13 @@ function HackathonPreviewContent({
               />
             )}
 
+            {viewerPerks.length > 0 && (
+              <PerksSection
+                perks={viewerPerks}
+                sponsors={hackathon.sponsors.map((s) => ({ id: s.id, name: s.name }))}
+              />
+            )}
+
             {isEditable && editMode && activeSection === "timeline" ? (
               <div data-edit-section="timeline" className="scroll-mt-24">
                 <h2 className="text-xl font-bold mb-4">Timeline</h2>
@@ -684,6 +695,7 @@ export function HackathonPreviewClient({
   scheduleItems,
   announcements,
   challenges,
+  viewerPerks,
   currentUserId,
   onFormSave,
   onBannerChange,
@@ -705,6 +717,7 @@ export function HackathonPreviewClient({
         scheduleItems={scheduleItems}
         announcements={announcements}
         challenges={challenges}
+        viewerPerks={viewerPerks}
         currentUserId={currentUserId}
         onFormSave={onFormSave}
         onBannerChange={onBannerChange}

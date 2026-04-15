@@ -20,6 +20,16 @@ import {
   reorderChallenges,
   releaseChallenges,
 } from "@/lib/services/challenges"
+import {
+  listPerks,
+  createPerk,
+  updatePerk,
+  deletePerk,
+  releasePerkNow,
+  setPerksNone,
+  PERK_TYPES,
+  type PerkType,
+} from "@/lib/services/perks"
 import { getLiveStats } from "@/lib/services/event-dashboard"
 import { sendBulkEmail } from "@/lib/services/participant-emails"
 import type { HackathonPhase, ParticipantRole } from "@/lib/db/hackathon-types"
@@ -532,6 +542,117 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     await logAudit({ principal, action: "challenge.released", resourceType: "challenge", resourceId: params.id, metadata: { hackathonId: params.id } })
     return { success: true }
   }, { detail: { summary: "Release challenges" } })
+  // --- Perks (sponsor API keys, credits, coupons) ---
+  .get("/hackathons/:id/perks", async ({ params, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if (authErr) return authErr
+    return { perks: await listPerks(params.id) }
+  }, { detail: { summary: "List perks" } })
+  .post("/hackathons/:id/perks", async ({ params, body, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if (authErr) return authErr
+    const b = body as {
+      name: string
+      description?: string | null
+      type?: PerkType
+      sponsorId?: string | null
+      code?: string | null
+      redemptionUrl?: string | null
+      instructions?: string | null
+      scheduledReleaseAt?: string | null
+    }
+    if (b.type && !PERK_TYPES.includes(b.type)) {
+      set.status = 400
+      return { error: `Invalid type. Valid: ${PERK_TYPES.join(", ")}` }
+    }
+    const created = await createPerk(params.id, principal.tenantId, b)
+    if (!created) { set.status = 400; return { error: "Failed to create perk" } }
+    await logAudit({ principal, action: "perk.created", resourceType: "perk", resourceId: created.id, metadata: { hackathonId: params.id, name: b.name } })
+    return { perk: created }
+  }, {
+    body: t.Object({
+      name: t.String({ description: "Perk name, e.g. 'OpenAI API credit'" }),
+      description: t.Optional(t.Union([t.String(), t.Null()])),
+      type: t.Optional(t.Union([t.Literal("api_key"), t.Literal("credit"), t.Literal("coupon"), t.Literal("other")])),
+      sponsorId: t.Optional(t.Union([t.String(), t.Null()])),
+      code: t.Optional(t.Union([t.String(), t.Null()])),
+      redemptionUrl: t.Optional(t.Union([t.String(), t.Null()])),
+      instructions: t.Optional(t.Union([t.String(), t.Null()])),
+      scheduledReleaseAt: t.Optional(t.Union([t.String(), t.Null()])),
+    }),
+    detail: { summary: "Create perk" },
+  })
+  .put("/hackathons/:id/perks/:pid", async ({ params, body, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if (authErr) return authErr
+    if (!isValidUuid(params.pid)) { set.status = 404; return { error: "Perk not found" } }
+    const b = body as Partial<{
+      name: string
+      description: string | null
+      type: PerkType
+      sponsorId: string | null
+      code: string | null
+      redemptionUrl: string | null
+      instructions: string | null
+      scheduledReleaseAt: string | null
+    }>
+    if (b.type !== undefined && !PERK_TYPES.includes(b.type)) {
+      set.status = 400
+      return { error: `Invalid type. Valid: ${PERK_TYPES.join(", ")}` }
+    }
+    const updated = await updatePerk(params.pid, principal.tenantId, b)
+    if (!updated) { set.status = 400; return { error: "Failed to update perk" } }
+    await logAudit({ principal, action: "perk.updated", resourceType: "perk", resourceId: params.pid, metadata: { hackathonId: params.id } })
+    return { perk: updated }
+  }, {
+    body: t.Object({
+      name: t.Optional(t.String()),
+      description: t.Optional(t.Union([t.String(), t.Null()])),
+      type: t.Optional(t.Union([t.Literal("api_key"), t.Literal("credit"), t.Literal("coupon"), t.Literal("other")])),
+      sponsorId: t.Optional(t.Union([t.String(), t.Null()])),
+      code: t.Optional(t.Union([t.String(), t.Null()])),
+      redemptionUrl: t.Optional(t.Union([t.String(), t.Null()])),
+      instructions: t.Optional(t.Union([t.String(), t.Null()])),
+      scheduledReleaseAt: t.Optional(t.Union([t.String(), t.Null()])),
+    }),
+    detail: { summary: "Update perk" },
+  })
+  .delete("/hackathons/:id/perks/:pid", async ({ params, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if (authErr) return authErr
+    if (!isValidUuid(params.pid)) { set.status = 404; return { error: "Perk not found" } }
+    const ok = await deletePerk(params.pid, principal.tenantId)
+    if (!ok) { set.status = 400; return { error: "Failed to delete perk" } }
+    await logAudit({ principal, action: "perk.deleted", resourceType: "perk", resourceId: params.pid, metadata: { hackathonId: params.id } })
+    return { success: true }
+  }, { detail: { summary: "Delete perk" } })
+  .post("/hackathons/:id/perks/:pid/release", async ({ params, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if (authErr) return authErr
+    if (!isValidUuid(params.pid)) { set.status = 404; return { error: "Perk not found" } }
+    const released = await releasePerkNow(params.pid, principal.tenantId)
+    if (!released) { set.status = 400; return { error: "Failed to release perk" } }
+    await logAudit({ principal, action: "perk.released", resourceType: "perk", resourceId: params.pid, metadata: { hackathonId: params.id } })
+    return { perk: released }
+  }, { detail: { summary: "Release perk now" } })
+  .post("/hackathons/:id/perks-none", async ({ params, body, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if (authErr) return authErr
+    const b = body as { perksNone: boolean }
+    const ok = await setPerksNone(params.id, principal.tenantId, b.perksNone)
+    if (!ok) { set.status = 400; return { error: "Failed to update" } }
+    await logAudit({ principal, action: "perk.none_toggled", resourceType: "hackathon", resourceId: params.id, metadata: { perksNone: b.perksNone } })
+    return { success: true, perksNone: b.perksNone }
+  }, {
+    body: t.Object({ perksNone: t.Boolean() }),
+    detail: { summary: "Mark event as having no perks" },
+  })
   .get("/hackathons/:id/live-stats", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)

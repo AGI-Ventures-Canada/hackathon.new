@@ -573,6 +573,72 @@ export type Database = {
           },
         ]
       }
+      hackathon_perks: {
+        Row: {
+          code: string | null
+          created_at: string
+          description: string | null
+          hackathon_id: string
+          id: string
+          instructions: string | null
+          name: string
+          redemption_url: string | null
+          released_at: string | null
+          scheduled_release_at: string | null
+          sort_order: number
+          sponsor_id: string | null
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          code?: string | null
+          created_at?: string
+          description?: string | null
+          hackathon_id: string
+          id?: string
+          instructions?: string | null
+          name: string
+          redemption_url?: string | null
+          released_at?: string | null
+          scheduled_release_at?: string | null
+          sort_order?: number
+          sponsor_id?: string | null
+          type?: string
+          updated_at?: string
+        }
+        Update: {
+          code?: string | null
+          created_at?: string
+          description?: string | null
+          hackathon_id?: string
+          id?: string
+          instructions?: string | null
+          name?: string
+          redemption_url?: string | null
+          released_at?: string | null
+          scheduled_release_at?: string | null
+          sort_order?: number
+          sponsor_id?: string | null
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hackathon_perks_hackathon_id_fkey"
+            columns: ["hackathon_id"]
+            isOneToOne: false
+            referencedRelation: "hackathons"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hackathon_perks_sponsor_id_fkey"
+            columns: ["sponsor_id"]
+            isOneToOne: false
+            referencedRelation: "hackathon_sponsors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       hackathon_results: {
         Row: {
           created_at: string
@@ -838,6 +904,7 @@ export type Database = {
           metadata: Json | null
           min_team_size: number | null
           name: string
+          perks_none: boolean
           phase: Database["public"]["Enums"]["hackathon_phase"] | null
           registration_closes_at: string | null
           registration_opens_at: string | null
@@ -874,6 +941,7 @@ export type Database = {
           metadata?: Json | null
           min_team_size?: number | null
           name: string
+          perks_none?: boolean
           phase?: Database["public"]["Enums"]["hackathon_phase"] | null
           registration_closes_at?: string | null
           registration_opens_at?: string | null
@@ -910,6 +978,7 @@ export type Database = {
           metadata?: Json | null
           min_team_size?: number | null
           name?: string
+          perks_none?: boolean
           phase?: Database["public"]["Enums"]["hackathon_phase"] | null
           registration_closes_at?: string | null
           registration_opens_at?: string | null

@@ -128,6 +128,7 @@ export interface Hackathon {
   feedback_survey_url: string | null
   phase: HackathonPhase | null
   challenge_released_at: string | null
+  perks_none: boolean
   metadata: Json
   created_at: string
   updated_at: string

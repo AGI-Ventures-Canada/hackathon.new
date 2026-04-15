@@ -136,6 +136,15 @@ export default async function EventPage({ params }: PageProps) {
     listPublishedAnnouncements(hackathon.id),
     listChallenges(hackathon.id),
   ])
+
+  let viewerPerks: import("@/lib/services/perks").Perk[] = []
+  const perksNone = hackathon.perks_none ?? false
+  if (!perksNone && (teamInfo || isOrganizer)) {
+    const { listPerks, isPerkReleased } = await import("@/lib/services/perks")
+    const all = await listPerks(hackathon.id)
+    const now = new Date()
+    viewerPerks = all.filter((p) => isPerkReleased(p, hackathon.starts_at, now))
+  }
   const gallerySubmissions = rawSubmissions.map((s) => ({
     id: s.id,
     title: s.title,
@@ -181,6 +190,7 @@ export default async function EventPage({ params }: PageProps) {
         scheduleItems={scheduleItems}
         announcements={publishedAnnouncements}
         challenges={challenges}
+        viewerPerks={viewerPerks}
         currentUserId={userId}
       />
     </div>

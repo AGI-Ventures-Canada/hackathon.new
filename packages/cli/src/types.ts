@@ -102,6 +102,23 @@ export interface Prize {
   assignedSubmissionName?: string
 }
 
+export interface Perk {
+  id: string
+  hackathonId: string
+  sponsorId?: string | null
+  name: string
+  description?: string | null
+  type: "api_key" | "credit" | "coupon" | "other"
+  code?: string | null
+  redemptionUrl?: string | null
+  instructions?: string | null
+  scheduledReleaseAt?: string | null
+  releasedAt?: string | null
+  sortOrder?: number
+  createdAt?: string
+  updatedAt?: string
+}
+
 export interface JudgeDisplayProfile {
   id: string
   hackathonId: string
