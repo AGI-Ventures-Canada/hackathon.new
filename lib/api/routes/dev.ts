@@ -778,6 +778,7 @@ export const devRoutes = new Elysia({ prefix: "/dev" })
         kind?: string
         monetaryValue?: number
         currency?: string
+        criteria?: { name: string; description?: string | null }[]
       }
 
       const { data: criteriaRows } = await db
@@ -808,7 +809,10 @@ export const devRoutes = new Elysia({ prefix: "/dev" })
           { name: "Best AI Agent", judgingStyle: "bucket_sort", description: "Most capable autonomous agent", value: "$5,000", type: "score", rank: 2, kind: "cash", monetaryValue: 5000, currency: "USD" },
           { name: "Best UX", judgingStyle: "judges_pick", description: "Best user experience and design", value: "$2,500", type: "criteria", kind: "cash", monetaryValue: 2500, currency: "USD" },
           { name: "Most Innovative", judgingStyle: "judges_pick", description: "Creative and novel approach", value: "$500 API Credits", type: "criteria", kind: "credit" },
-          { name: "Best Use of MCP", judgingStyle: "gate_check", description: "Best Model Context Protocol integration", value: "Swag Pack", type: "score", rank: 3, kind: "swag" },
+          { name: "Best Use of MCP", judgingStyle: "gate_check", description: "Best Model Context Protocol integration", value: "Swag Pack", type: "score", rank: 3, kind: "swag", criteria: [
+            { name: "Uses Model Context Protocol", description: "Project integrates MCP in a meaningful way" },
+            { name: "Working demo", description: "MCP integration runs end-to-end" },
+          ] },
           { name: "People's Choice", judgingStyle: "crowd_vote", description: "Live audience voting", value: "Swag Pack", type: "crowd", kind: "swag" },
         ],
       }
@@ -837,6 +841,7 @@ export const devRoutes = new Elysia({ prefix: "/dev" })
           monetaryValue: p.monetaryValue,
           currency: p.currency,
           criteriaId: p.type === "criteria" ? firstCriteriaId : undefined,
+          criteria: p.criteria,
         })
         if (prizeResult.success) created.push(prizeResult.prize.id)
       }

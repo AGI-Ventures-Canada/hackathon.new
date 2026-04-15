@@ -35,6 +35,7 @@ import {
   Plus,
   UserPlus,
   Trash2,
+  Pencil,
   MoreHorizontal,
   Trophy,
   Users,
@@ -54,10 +55,24 @@ import {
 import { useActionItemsOptional } from "@/components/hackathon/manage/action-items-context"
 import { AddJudgeDialog, type AddJudgeResult } from "./add-judge-dialog"
 import { AddPrizeDialog } from "./add-prize-dialog"
+import { EditPrizeDialog, type EditablePrize, type UpdatedPrize } from "./edit-prize-dialog"
 import { AssignJudgesDialog } from "./assign-judges-dialog"
 import { JudgePill } from "./judge-pill"
 import { RoundsSection } from "./rounds-section"
 import type { RoundData } from "./rounds-types"
+
+type PrizeCriterionData = {
+  id: string
+  name: string
+  description: string | null
+}
+
+type PrizeBucketData = {
+  id: string
+  level: number
+  label: string
+  description: string | null
+}
 
 type PrizeData = {
   id: string
@@ -72,6 +87,8 @@ type PrizeData = {
   totalAssignments: number
   completedAssignments: number
   judgeCount: number
+  criteria: PrizeCriterionData[] | null
+  buckets: PrizeBucketData[] | null
 }
 
 type JudgeData = {
@@ -165,6 +182,9 @@ export function JudgingTabClient({
   const [hiddenPrizeJudges, setHiddenPrizeJudges] = useState<Set<string>>(new Set())
   const [pendingJudges, setPendingJudges] = useState<JudgeData[]>([])
   const [pendingInvitations, setPendingInvitations] = useState<InvitationData[]>([])
+  const [pendingPrizes, setPendingPrizes] = useState<PrizeData[]>([])
+  const [prizeOverrides, setPrizeOverrides] = useState<Record<string, Partial<PrizeData>>>({})
+  const [editingPrize, setEditingPrize] = useState<EditablePrize | null>(null)
 
   useEffect(() => {
     setPendingJudges(prev => prev.filter(pj => !initialJudges.some(j => j.participantId === pj.participantId)))
@@ -173,6 +193,17 @@ export function JudgingTabClient({
   useEffect(() => {
     setPendingInvitations(prev => prev.filter(pi => !initialInvitations.some(i => i.id === pi.id)))
   }, [initialInvitations])
+
+  useEffect(() => {
+    setPendingPrizes(prev => prev.filter(pp => !initialPrizes.some(ip => ip.id === pp.id)))
+    setPrizeOverrides(prev => {
+      const next: Record<string, Partial<PrizeData>> = {}
+      for (const [id, override] of Object.entries(prev)) {
+        if (!initialPrizes.some(ip => ip.id === id)) next[id] = override
+      }
+      return next
+    })
+  }, [initialPrizes])
 
   const judges = [
     ...initialJudges,
@@ -183,7 +214,12 @@ export function JudgingTabClient({
       ...j,
       prizeIds: j.prizeIds.filter(pid => !hiddenPrizeJudges.has(`${pid}:${j.participantId}`)),
     }))
-  const prizes = initialPrizes.filter(p => !hiddenPrizes.has(p.id))
+  const prizes = [
+    ...initialPrizes,
+    ...pendingPrizes.filter(pp => !initialPrizes.some(ip => ip.id === pp.id)),
+  ]
+    .filter(p => !hiddenPrizes.has(p.id))
+    .map(p => (prizeOverrides[p.id] ? { ...p, ...prizeOverrides[p.id] } : p))
   const invitations = [
     ...initialInvitations,
     ...pendingInvitations.filter(pi => !initialInvitations.some(i => i.id === pi.id)),
@@ -206,6 +242,33 @@ export function JudgingTabClient({
       setHiddenPrizes(prev => { const next = new Set(prev); next.delete(prizeId); return next })
       setError("Failed to delete prize")
     }
+  }
+
+  function handleEditPrize(prize: PrizeData) {
+    setEditingPrize({
+      id: prize.id,
+      name: prize.name,
+      description: prize.description,
+      value: prize.value,
+      judgingStyle: prize.judgingStyle as EditablePrize["judgingStyle"],
+      maxPicks: prize.maxPicks,
+      criteria: prize.criteria,
+      buckets: prize.buckets,
+    })
+  }
+
+  function handlePrizeUpdated(updated: UpdatedPrize) {
+    setPrizeOverrides(prev => ({
+      ...prev,
+      [updated.id]: {
+        name: updated.name,
+        description: updated.description,
+        value: updated.value,
+        maxPicks: updated.maxPicks,
+        criteria: updated.criteria,
+        buckets: updated.buckets,
+      },
+    }))
   }
 
   async function handleRemoveJudge(participantId: string) {
@@ -321,6 +384,7 @@ export function JudgingTabClient({
         rounds={rounds}
         onAddPrize={() => setShowAddPrize(true)}
         onDeletePrize={handleDeletePrize}
+        onEditPrize={handleEditPrize}
         onAssignJudge={assignJudgeToPrize}
         onUnassignJudge={unassignJudgeFromPrize}
         onRefresh={() => router.refresh()}
@@ -366,11 +430,41 @@ export function JudgingTabClient({
         }}
       />
 
+      <EditPrizeDialog
+        hackathonId={hackathonId}
+        prize={editingPrize}
+        onClose={() => setEditingPrize(null)}
+        onSuccess={handlePrizeUpdated}
+      />
+
       <AddPrizeDialog
         hackathonId={hackathonId}
         open={showAddPrize}
         onOpenChange={setShowAddPrize}
-        onSuccess={() => router.refresh()}
+        onSuccess={(created) => {
+          if (created) {
+            setPendingPrizes((prev) => [
+              ...prev,
+              {
+                id: created.id,
+                name: created.name,
+                description: created.description,
+                value: created.value,
+                judgingStyle: created.judgingStyle,
+                assignmentMode: null,
+                maxPicks: created.maxPicks,
+                roundId: created.roundId,
+                displayOrder: prizes.length,
+                totalAssignments: 0,
+                completedAssignments: 0,
+                judgeCount: 0,
+                criteria: created.criteria,
+                buckets: created.buckets,
+              },
+            ])
+          }
+          router.refresh()
+        }}
         rounds={rounds}
       />
     </div>
@@ -481,6 +575,7 @@ function PrizesSection({
   rounds,
   onAddPrize,
   onDeletePrize,
+  onEditPrize,
   onAssignJudge,
   onUnassignJudge,
   onRefresh,
@@ -491,6 +586,7 @@ function PrizesSection({
   rounds: RoundData[]
   onAddPrize: () => void
   onDeletePrize: (id: string) => void
+  onEditPrize: (prize: PrizeData) => void
   onAssignJudge: (prizeId: string, judgeParticipantId: string) => Promise<void>
   onUnassignJudge: (prizeId: string, judgeParticipantId: string) => Promise<void>
   onRefresh: () => void
@@ -547,6 +643,7 @@ function PrizesSection({
                     prize={prize}
                     judges={judges}
                     onDeletePrize={onDeletePrize}
+                    onEditPrize={onEditPrize}
                     onAssignJudgesClick={setAssignDialogPrize}
                     onRemoveJudgeFromPrize={setRemovingFromPrize}
                   />
@@ -563,6 +660,7 @@ function PrizesSection({
               prize={prize}
               judges={judges}
               onDeletePrize={onDeletePrize}
+              onEditPrize={onEditPrize}
               onAssignJudgesClick={setAssignDialogPrize}
               onRemoveJudgeFromPrize={setRemovingFromPrize}
             />
@@ -611,12 +709,14 @@ function PrizeCard({
   prize,
   judges,
   onDeletePrize,
+  onEditPrize,
   onAssignJudgesClick,
   onRemoveJudgeFromPrize,
 }: {
   prize: PrizeData
   judges: JudgeData[]
   onDeletePrize: (id: string) => void
+  onEditPrize: (prize: PrizeData) => void
   onAssignJudgesClick: (args: { id: string; name: string }) => void
   onRemoveJudgeFromPrize: (args: RemovingFromPrize) => void
 }) {
@@ -664,6 +764,10 @@ function PrizeCard({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={() => onEditPrize(prize)}>
+                    <Pencil className="mr-2 size-4" />
+                    Edit prize
+                  </DropdownMenuItem>
                   <AlertDialogTrigger asChild>
                     <DropdownMenuItem className="text-destructive">
                       <Trash2 className="mr-2 size-4" />
@@ -689,6 +793,48 @@ function PrizeCard({
             </AlertDialog>
           </div>
         </div>
+
+        {prize.judgingStyle === "gate_check" && prize.criteria && prize.criteria.length > 0 && (
+          <div className="rounded-md border bg-muted/30 p-3 space-y-1.5">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Pass-or-fail rules ({prize.criteria.length})
+            </p>
+            <ul className="space-y-1">
+              {prize.criteria.map((c) => (
+                <li key={c.id} className="text-sm">
+                  <span className="font-medium">{c.name}</span>
+                  {c.description && (
+                    <span className="text-muted-foreground"> — {c.description}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {prize.judgingStyle === "bucket_sort" && prize.buckets && prize.buckets.length > 0 && (
+          <div className="rounded-md border bg-muted/30 p-3 space-y-1.5">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Sort groups ({prize.buckets.length})
+            </p>
+            <ul className="space-y-1">
+              {prize.buckets.map((b) => (
+                <li key={b.id} className="text-sm">
+                  <span className="font-medium">{b.label}</span>
+                  {b.description && (
+                    <span className="text-muted-foreground"> — {b.description}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {prize.judgingStyle === "judges_pick" && prize.maxPicks != null && (
+          <p className="text-xs text-muted-foreground">
+            Each judge picks up to <span className="font-medium text-foreground">{prize.maxPicks}</span>.
+          </p>
+        )}
 
         {!isCrowdVote && (
           <div className="flex items-center gap-2 flex-wrap">

@@ -12,79 +12,24 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import {
-  Loader2,
-  ArrowUpDown,
-  ListChecks,
-  Vote,
-  Award,
-  ChevronRight,
-  Plus,
-  Trash2,
-} from "lucide-react"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Loader2, Plus, Trash2 } from "lucide-react"
 import type { PrizeJudgingStyle } from "@/lib/db/hackathon-types"
-import type { RoundData } from "./rounds-types"
 
-const STYLE_OPTIONS: {
-  value: PrizeJudgingStyle
-  label: string
-  description: string
-  detail: string
-  icon: typeof ArrowUpDown
-}[] = [
-  {
-    value: "bucket_sort",
-    label: "Sort into groups",
-    description: "Judges put each project into a group like great, okay, or not ready.",
-    detail: "Good for: grand prize or overall winner",
-    icon: ArrowUpDown,
-  },
-  {
-    value: "gate_check",
-    label: "Pass or fail",
-    description: "Each project gets a yes or no on a list of rules.",
-    detail: "Good for: “Best Use of [Product]” or rule-based prizes",
-    icon: ListChecks,
-  },
-  {
-    value: "crowd_vote",
-    label: "Everyone votes",
-    description: "Anyone at the event can vote.",
-    detail: "Good for: People's Choice or Audience Award",
-    icon: Vote,
-  },
-  {
-    value: "judges_pick",
-    label: "Judge's picks",
-    description: "Each judge picks their top few favorites.",
-    detail: "Good for: expert panels or sponsor prizes",
-    icon: Award,
-  },
-]
+type CriterionDraft = { id: string; name: string; description: string }
+type BucketDraft = { id: string; level: number; label: string; description: string }
 
-const DEFAULT_BUCKETS = [
-  { level: 1, label: "Not Ready", description: "No working demo or unclear problem statement" },
-  { level: 2, label: "Solid Effort", description: "Working demo, clear problem, but incremental or execution has gaps" },
-  { level: 3, label: "Strong Contender", description: "Working demo, novel approach, good execution" },
-  { level: 4, label: "Outstanding", description: "Would invest in this team today. Exceptional on multiple dimensions" },
-]
+let draftIdCounter = 0
+function nextDraftId(): string {
+  draftIdCounter += 1
+  return `edit-draft-${draftIdCounter}`
+}
 
-type CreateStep = "style" | "details"
-
-export type CreatedPrize = {
+export type EditablePrize = {
   id: string
   name: string
   description: string | null
   value: string | null
-  judgingStyle: PrizeJudgingStyle
-  roundId: string | null
+  judgingStyle: PrizeJudgingStyle | null
   maxPicks: number | null
   criteria:
     | { id: string; name: string; description: string | null }[]
@@ -94,102 +39,72 @@ export type CreatedPrize = {
     | null
 }
 
-type CriterionDraft = { id: string; name: string; description: string }
-type BucketDraft = { id: string; level: number; label: string; description: string }
-
-let draftIdCounter = 0
-function nextDraftId(): string {
-  draftIdCounter += 1
-  return `draft-${draftIdCounter}`
+export type UpdatedPrize = {
+  id: string
+  name: string
+  description: string | null
+  value: string | null
+  maxPicks: number | null
+  criteria:
+    | { id: string; name: string; description: string | null }[]
+    | null
+  buckets:
+    | { id: string; level: number; label: string; description: string | null }[]
+    | null
 }
 
-interface AddPrizeDialogProps {
+interface EditPrizeDialogProps {
   hackathonId: string
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  onSuccess?: (created?: CreatedPrize) => void
-  rounds?: RoundData[]
+  prize: EditablePrize | null
+  onClose: () => void
+  onSuccess?: (updated: UpdatedPrize) => void
 }
 
-function initialCriteria(): CriterionDraft[] {
-  return [{ id: nextDraftId(), name: "", description: "" }]
-}
-
-function initialBuckets(): BucketDraft[] {
-  return DEFAULT_BUCKETS.map((b) => ({
-    id: nextDraftId(),
-    level: b.level,
-    label: b.label,
-    description: b.description,
-  }))
-}
-
-export function AddPrizeDialog({
+export function EditPrizeDialog({
   hackathonId,
-  open,
-  onOpenChange,
+  prize,
+  onClose,
   onSuccess,
-  rounds = [],
-}: AddPrizeDialogProps) {
+}: EditPrizeDialogProps) {
   const router = useRouter()
-  const visibleRounds = [...rounds].sort((a, b) => a.displayOrder - b.displayOrder)
-  const defaultRoundId = visibleRounds.length > 0
-    ? visibleRounds[visibleRounds.length - 1].id
-    : null
-  const [step, setStep] = useState<CreateStep>("style")
   const [form, setForm] = useState({
     name: "",
     description: "",
     value: "",
-    judgingStyle: "bucket_sort" as PrizeJudgingStyle,
-    roundId: defaultRoundId,
-    criteria: initialCriteria(),
-    buckets: initialBuckets(),
     maxPicks: "3",
+    criteria: [] as CriterionDraft[],
+    buckets: [] as BucketDraft[],
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!open) return
-    setForm((prev) => {
-      const stillValid =
-        prev.roundId !== null && visibleRounds.some((r) => r.id === prev.roundId)
-      if (stillValid) return prev
-      return { ...prev, roundId: defaultRoundId }
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, rounds])
-
-  function handleOpenChange(nextOpen: boolean) {
-    if (!nextOpen) {
-      setStep("style")
-      setForm({
-        name: "",
-        description: "",
-        value: "",
-        judgingStyle: "bucket_sort",
-        roundId: defaultRoundId,
-        criteria: initialCriteria(),
-        buckets: initialBuckets(),
-        maxPicks: "3",
-      })
-      setError(null)
-    }
-    onOpenChange(nextOpen)
-  }
-
-  function selectStyle(style: PrizeJudgingStyle) {
+    if (!prize) return
+    setError(null)
     setForm({
-      ...form,
-      name: "",
-      judgingStyle: style,
-      criteria: style === "gate_check" ? initialCriteria() : form.criteria,
-      buckets: style === "bucket_sort" ? initialBuckets() : form.buckets,
-      maxPicks: style === "judges_pick" ? "3" : form.maxPicks,
+      name: prize.name,
+      description: prize.description ?? "",
+      value: prize.value ?? "",
+      maxPicks: prize.maxPicks != null ? String(prize.maxPicks) : "3",
+      criteria:
+        prize.judgingStyle === "gate_check"
+          ? (prize.criteria ?? []).map((c) => ({
+              id: nextDraftId(),
+              name: c.name,
+              description: c.description ?? "",
+            }))
+          : [],
+      buckets:
+        prize.judgingStyle === "bucket_sort"
+          ? (prize.buckets ?? []).map((b) => ({
+              id: nextDraftId(),
+              level: b.level,
+              label: b.label,
+              description: b.description ?? "",
+            }))
+          : [],
     })
-    setStep("details")
-  }
+  }, [prize])
 
   function updateCriterion(index: number, patch: Partial<CriterionDraft>) {
     setForm({
@@ -235,8 +150,10 @@ export function AddPrizeDialog({
     setForm({ ...form, buckets: form.buckets.filter((_, i) => i !== index) })
   }
 
-  async function handleCreate(e: React.FormEvent) {
+  async function handleSave(e: React.FormEvent) {
     e.preventDefault()
+    if (!prize) return
+
     const name = form.name.trim()
     if (!name) {
       setError("Name is required")
@@ -247,7 +164,7 @@ export function AddPrizeDialog({
     let bucketsPayload: { level: number; label: string; description: string | null }[] | undefined
     let maxPicksPayload: number | undefined
 
-    if (form.judgingStyle === "gate_check") {
+    if (prize.judgingStyle === "gate_check") {
       const cleaned = form.criteria
         .map((c) => ({ name: c.name.trim(), description: c.description.trim() || null }))
         .filter((c) => c.name.length > 0)
@@ -258,7 +175,7 @@ export function AddPrizeDialog({
       criteriaPayload = cleaned
     }
 
-    if (form.judgingStyle === "bucket_sort") {
+    if (prize.judgingStyle === "bucket_sort") {
       const cleaned = form.buckets
         .map((b) => ({ level: b.level, label: b.label.trim(), description: b.description.trim() || null }))
         .filter((b) => b.label.length > 0)
@@ -269,10 +186,10 @@ export function AddPrizeDialog({
       bucketsPayload = cleaned
     }
 
-    if (form.judgingStyle === "judges_pick") {
+    if (prize.judgingStyle === "judges_pick") {
       const parsed = parseInt(form.maxPicks, 10)
-      if (!Number.isFinite(parsed) || parsed < 1) {
-        setError("Max picks must be 1 or more")
+      if (!Number.isFinite(parsed) || parsed < 1 || parsed > 100) {
+        setError("Max picks must be between 1 and 100")
         return
       }
       maxPicksPayload = parsed
@@ -283,16 +200,14 @@ export function AddPrizeDialog({
 
     try {
       const res = await fetch(
-        `/api/dashboard/hackathons/${hackathonId}/prizes`,
+        `/api/dashboard/hackathons/${hackathonId}/prizes/${prize.id}`,
         {
-          method: "POST",
+          method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             name,
             description: form.description.trim() || null,
             value: form.value.trim() || null,
-            judgingStyle: form.judgingStyle,
-            ...(form.roundId ? { roundId: form.roundId } : {}),
             ...(criteriaPayload ? { criteria: criteriaPayload } : {}),
             ...(bucketsPayload ? { buckets: bucketsPayload } : {}),
             ...(maxPicksPayload !== undefined ? { maxPicks: maxPicksPayload } : {}),
@@ -302,38 +217,35 @@ export function AddPrizeDialog({
 
       const data = await res.json()
       if (!res.ok) {
-        throw new Error(data.error || "Failed to create prize")
+        throw new Error(data.error || "Failed to save")
       }
 
-      const newId = data.id ?? data.prize?.id ?? ""
-      const created: CreatedPrize = {
-        id: newId,
+      const updated: UpdatedPrize = {
+        id: prize.id,
         name,
         description: form.description.trim() || null,
         value: form.value.trim() || null,
-        judgingStyle: form.judgingStyle,
-        roundId: form.roundId ?? null,
-        maxPicks: maxPicksPayload ?? null,
+        maxPicks: maxPicksPayload ?? prize.maxPicks,
         criteria: criteriaPayload
           ? criteriaPayload.map((c, i) => ({
-              id: `optimistic-${newId}-criterion-${i}`,
+              id: `optimistic-edit-${prize.id}-criterion-${i}`,
               name: c.name,
               description: c.description,
             }))
-          : null,
+          : prize.criteria,
         buckets: bucketsPayload
           ? bucketsPayload.map((b, i) => ({
-              id: `optimistic-${newId}-bucket-${i}`,
+              id: `optimistic-edit-${prize.id}-bucket-${i}`,
               level: b.level,
               label: b.label,
               description: b.description,
             }))
-          : null,
+          : prize.buckets,
       }
 
-      onSuccess?.(created)
+      onSuccess?.(updated)
       router.refresh()
-      handleOpenChange(false)
+      onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong")
     } finally {
@@ -344,102 +256,26 @@ export function AddPrizeDialog({
   function handleKeyDown(e: React.KeyboardEvent) {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !saving) {
       e.preventDefault()
-      handleCreate(e as unknown as React.FormEvent)
+      handleSave(e as unknown as React.FormEvent)
     }
   }
 
-  const selectedOption = STYLE_OPTIONS.find((o) => o.value === form.judgingStyle)
-  const SelectedIcon = selectedOption?.icon ?? ArrowUpDown
+  const open = prize !== null
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className={step === "style" ? "sm:max-w-lg" : "sm:max-w-xl max-h-[90vh] overflow-y-auto"}>
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose() }}>
+      <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>
-            {step === "style" ? "How should judges pick the winner?" : "Prize details"}
-          </DialogTitle>
+          <DialogTitle>Edit prize</DialogTitle>
         </DialogHeader>
-        {step === "style" ? (
-          <div className="space-y-3">
+        {prize && (
+          <form onSubmit={handleSave} onKeyDown={handleKeyDown} autoComplete="off" className="space-y-4">
             <div className="space-y-2">
-              {STYLE_OPTIONS.map((option) => {
-                const Icon = option.icon
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => selectStyle(option.value)}
-                    className="w-full rounded-lg border p-4 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <div className="flex items-start gap-3">
-                      <Icon className="size-5 mt-0.5 shrink-0 text-muted-foreground" />
-                      <div className="min-w-0 flex-1">
-                        <span className="font-medium">{option.label}</span>
-                        <p className="text-sm text-muted-foreground mt-0.5">
-                          {option.description}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {option.detail}
-                        </p>
-                      </div>
-                      <ChevronRight className="size-4 mt-1 shrink-0 text-muted-foreground" />
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        ) : (
-          <form onSubmit={handleCreate} onKeyDown={handleKeyDown} autoComplete="off" className="space-y-4">
-            <div className="flex items-center justify-between gap-2 rounded-md bg-muted px-3 py-2 text-sm">
-              <div className="flex items-center gap-2 min-w-0">
-                <SelectedIcon className="size-4 shrink-0" />
-                <span className="font-medium truncate">{selectedOption?.label}</span>
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-auto shrink-0 px-2 py-1 text-xs"
-                onClick={() => setStep("style")}
-              >
-                Change
-              </Button>
-            </div>
-            {visibleRounds.length >= 1 && (
-              <div className="space-y-2">
-                <Label htmlFor="add-prize-round">Round</Label>
-                <Select
-                  value={form.roundId ?? "none"}
-                  onValueChange={(v) =>
-                    setForm({ ...form, roundId: v === "none" ? null : v })
-                  }
-                >
-                  <SelectTrigger id="add-prize-round">
-                    <SelectValue placeholder="Select a round" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {visibleRounds.map((r) => (
-                      <SelectItem key={r.id} value={r.id}>
-                        {r.name}
-                      </SelectItem>
-                    ))}
-                    <SelectItem value="none">No round</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  Judges only score this prize with the projects that made it into this round.
-                </p>
-              </div>
-            )}
-            <div className="space-y-2">
-              <Label htmlFor="add-prize-name">Name</Label>
+              <Label htmlFor="edit-prize-name">Name</Label>
               <Input
-                id="add-prize-name"
-                name="add-prize-name"
+                id="edit-prize-name"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="e.g. Grand Prize"
                 autoFocus
                 autoComplete="off"
                 data-1p-ignore
@@ -448,10 +284,9 @@ export function AddPrizeDialog({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="add-prize-value">Reward</Label>
+              <Label htmlFor="edit-prize-value">Reward</Label>
               <Input
-                id="add-prize-value"
-                name="add-prize-value"
+                id="edit-prize-value"
                 value={form.value}
                 onChange={(e) => setForm({ ...form, value: e.target.value })}
                 placeholder="e.g. $5,000, MacBook Pro"
@@ -462,13 +297,11 @@ export function AddPrizeDialog({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="add-prize-description">Description</Label>
+              <Label htmlFor="edit-prize-description">Description</Label>
               <Textarea
-                id="add-prize-description"
-                name="add-prize-description"
+                id="edit-prize-description"
                 value={form.description}
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
-                placeholder="What does the winner receive?"
                 rows={2}
                 autoComplete="off"
                 data-1p-ignore
@@ -477,7 +310,7 @@ export function AddPrizeDialog({
               />
             </div>
 
-            {form.judgingStyle === "gate_check" && (
+            {prize.judgingStyle === "gate_check" && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div>
@@ -531,7 +364,7 @@ export function AddPrizeDialog({
               </div>
             )}
 
-            {form.judgingStyle === "bucket_sort" && (
+            {prize.judgingStyle === "bucket_sort" && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div>
@@ -585,33 +418,31 @@ export function AddPrizeDialog({
               </div>
             )}
 
-            {form.judgingStyle === "judges_pick" && (
+            {prize.judgingStyle === "judges_pick" && (
               <div className="space-y-2">
-                <Label htmlFor="add-prize-max-picks">How many can each judge pick?</Label>
+                <Label htmlFor="edit-prize-max-picks">How many can each judge pick?</Label>
                 <Input
-                  id="add-prize-max-picks"
+                  id="edit-prize-max-picks"
                   type="number"
                   inputMode="numeric"
                   min={1}
+                  max={100}
                   value={form.maxPicks}
                   onChange={(e) => setForm({ ...form, maxPicks: e.target.value })}
                   className="w-full sm:w-32"
                   autoComplete="off"
                 />
-                <p className="text-xs text-muted-foreground">
-                  For example, 3 means each judge picks their top 3.
-                </p>
               </div>
             )}
 
             {error && <p className="text-sm text-destructive">{error}</p>}
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setStep("style")}>
-                Back
+              <Button type="button" variant="outline" onClick={onClose}>
+                Cancel
               </Button>
               <Button type="submit" disabled={saving}>
                 {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
-                Create Prize
+                Save
               </Button>
             </div>
           </form>
