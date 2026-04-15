@@ -271,13 +271,13 @@ describe("getTimelineState", () => {
   })
 
   describe("default fallback", () => {
-    it("returns Coming Soon for published status without dates", () => {
+    it("returns Registration Open for published status without dates", () => {
       const result = getTimelineState({
         status: "published",
         registration_opens_at: null,
         registration_closes_at: null,
       })
-      expect(result).toEqual({ label: "Coming Soon", variant: "secondary" })
+      expect(result).toEqual({ label: "Registration Open", variant: "default" })
     })
   })
 })

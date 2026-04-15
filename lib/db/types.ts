@@ -887,6 +887,8 @@ export type Database = {
           anonymous_judging: boolean
           banner_url: string | null
           challenge_released_at: string | null
+          community_label: string | null
+          community_url: string | null
           created_at: string
           description: string | null
           ends_at: string | null
@@ -924,6 +926,8 @@ export type Database = {
           anonymous_judging?: boolean
           banner_url?: string | null
           challenge_released_at?: string | null
+          community_label?: string | null
+          community_url?: string | null
           created_at?: string
           description?: string | null
           ends_at?: string | null
@@ -961,6 +965,8 @@ export type Database = {
           anonymous_judging?: boolean
           banner_url?: string | null
           challenge_released_at?: string | null
+          community_label?: string | null
+          community_url?: string | null
           created_at?: string
           description?: string | null
           ends_at?: string | null
@@ -1371,6 +1377,7 @@ export type Database = {
           id: string
           max_score: number
           name: string
+          prize_id: string | null
           round_id: string | null
           updated_at: string
           weight: number
@@ -1385,6 +1392,7 @@ export type Database = {
           id?: string
           max_score?: number
           name: string
+          prize_id?: string | null
           round_id?: string | null
           updated_at?: string
           weight?: number
@@ -1399,6 +1407,7 @@ export type Database = {
           id?: string
           max_score?: number
           name?: string
+          prize_id?: string | null
           round_id?: string | null
           updated_at?: string
           weight?: number
@@ -1416,6 +1425,13 @@ export type Database = {
             columns: ["hackathon_id"]
             isOneToOne: false
             referencedRelation: "hackathons"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "judging_criteria_prize_id_fkey"
+            columns: ["prize_id"]
+            isOneToOne: false
+            referencedRelation: "prizes"
             referencedColumns: ["id"]
           },
           {

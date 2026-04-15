@@ -34,6 +34,7 @@ interface RpcPollRow {
   complete_round_count: number | null
   perk_count: number | null
   perks_none: boolean | null
+  community_url: string | null
 }
 
 export async function buildOrganizerPollPayload(hackathonId: string): Promise<OrganizerPollResponse | null> {
@@ -75,6 +76,7 @@ export async function buildOrganizerPollPayload(hackathonId: string): Promise<Or
     pendingJudgeInvitationCount: r.pending_judge_invitation_count ?? 0,
     perkCount: r.perk_count ?? 0,
     perksNone: r.perks_none ?? false,
+    communityUrl: r.community_url ?? null,
     rounds: {
       plannedCount: r.planned_round_count ?? 0,
       activeCount: r.active_round_count ?? 0,

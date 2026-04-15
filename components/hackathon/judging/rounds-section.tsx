@@ -33,7 +33,6 @@ import {
   Play,
   CheckCircle2,
   ArrowRight,
-  ChevronRight,
 } from "lucide-react"
 import { RoundsPresetDialog, type RoundsPresetKind } from "./rounds-preset-dialog"
 import { RoundFormDialog } from "./round-form-dialog"
@@ -124,40 +123,24 @@ export function RoundsSection({ hackathonId, rounds }: RoundsSectionProps) {
         {error && <p className="text-sm text-destructive mb-3">{error}</p>}
 
         {visibleRounds.length === 0 ? (
-          <div className="rounded-lg border border-dashed p-4 sm:p-6 space-y-4">
+          <div className="rounded-lg border border-dashed p-6 sm:p-8 space-y-6 text-center">
             <div className="space-y-1">
-              <p className="text-sm font-medium">Quick setup</p>
+              <p className="text-sm font-medium">No rounds yet</p>
               <p className="text-xs text-muted-foreground">
-                Pick a starter. You can rename, re-order, or delete rounds after.
+                Add a round to decide how judges score projects.
               </p>
             </div>
-            <div className="grid gap-2">
-              <PresetTile
-                label="One round"
-                hint="Judges score every project once. You pick the winners."
-                onClick={() => setPresetKind("single")}
-              />
-              <PresetTile
-                label="Shortlist + Finals"
-                hint="The top few scorers move on to a finals round."
-                onClick={() => setPresetKind("shortlist")}
-              />
-              <PresetTile
-                label="Score gate + Finals"
-                hint="Everyone above your score moves on to a finals round."
-                onClick={() => setPresetKind("threshold")}
-              />
-            </div>
-            <div className="pt-1 border-t">
-              <Button
-                size="sm"
-                variant="ghost"
-                className="w-full justify-center text-muted-foreground"
-                onClick={() => setShowAddRound(true)}
-              >
-                <Plus className="mr-2 size-4" />
-                Add round manually
-              </Button>
+            <Button size="lg" onClick={() => setShowAddRound(true)}>
+              <Plus className="mr-2 size-4" />
+              Add round
+            </Button>
+            <div className="pt-2">
+              <p className="text-xs text-muted-foreground mb-2">Or start from a template</p>
+              <div className="flex flex-wrap justify-center gap-2">
+                <TemplateChip label="One round" onClick={() => setPresetKind("single")} />
+                <TemplateChip label="Shortlist + Finals" onClick={() => setPresetKind("shortlist")} />
+                <TemplateChip label="Score gate + Finals" onClick={() => setPresetKind("threshold")} />
+              </div>
             </div>
           </div>
         ) : (
@@ -333,27 +316,11 @@ export function RoundsSection({ hackathonId, rounds }: RoundsSectionProps) {
   )
 }
 
-function PresetTile({
-  label,
-  hint,
-  onClick,
-}: {
-  label: string
-  hint: string
-  onClick: () => void
-}) {
+function TemplateChip({ label, onClick }: { label: string; onClick: () => void }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="group flex items-center gap-3 rounded-lg border bg-card p-3 text-left hover:bg-accent hover:border-ring transition-colors"
-    >
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium">{label}</p>
-        <p className="text-xs text-muted-foreground">{hint}</p>
-      </div>
-      <ChevronRight className="size-4 text-muted-foreground group-hover:text-foreground shrink-0" />
-    </button>
+    <Button type="button" variant="outline" size="sm" onClick={onClick}>
+      {label}
+    </Button>
   )
 }
 

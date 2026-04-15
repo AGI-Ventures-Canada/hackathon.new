@@ -206,22 +206,18 @@ export function DateTimePicker({
     setOpen(false);
   }
 
+  // Per issue #217: closing the popover commits the pending selection instead
+  // of discarding it. Users were picking a date then clicking away expecting
+  // it to save.
   function handleOpenChange(nextOpen: boolean) {
     if (!nextOpen) {
-      setPendingDate(value ?? null);
-      if (value) {
-        const { hours, period } = to12Hour(value.getHours());
-        setTime({
-          hours: hours.toString().padStart(2, "0"),
-          minutes: value.getMinutes().toString().padStart(2, "0"),
-          period,
-        });
-      } else {
-        setTime({ hours: "09", minutes: "00", period: "AM" });
+      if (pendingDate && pendingDate.getTime() !== (value?.getTime() ?? -1)) {
+        onChange?.(pendingDate);
       }
     }
     setOpen(nextOpen);
   }
+
 
   function handlePopoverKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
     if (e.key === "Enter" && !e.defaultPrevented) {

@@ -109,7 +109,7 @@ export function getTimelineState(hackathon: TimelineInput): TimelineState {
     }
   }
 
-  if (status === "registration_open") {
+  if (status === "registration_open" || status === "published") {
     if (startsAt && now < startsAt) {
       return {
         label: "Registration Open",

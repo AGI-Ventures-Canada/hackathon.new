@@ -346,6 +346,8 @@ export async function updateHackathonSettings(
     minTeamSize?: number
     maxTeamSize?: number
     allowSolo?: boolean
+    communityUrl?: string | null
+    communityLabel?: string | null
   }
 ): Promise<Hackathon | null> {
   const client = getSupabase() as unknown as SupabaseClient
@@ -372,6 +374,8 @@ export async function updateHackathonSettings(
   if (updates.minTeamSize !== undefined) updateData.min_team_size = updates.minTeamSize
   if (updates.maxTeamSize !== undefined) updateData.max_team_size = updates.maxTeamSize
   if (updates.allowSolo !== undefined) updateData.allow_solo = updates.allowSolo
+  if (updates.communityUrl !== undefined) updateData.community_url = updates.communityUrl
+  if (updates.communityLabel !== undefined) updateData.community_label = updates.communityLabel
 
   const { data, error } = await client
     .from("hackathons")

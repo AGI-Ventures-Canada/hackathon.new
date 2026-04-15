@@ -1140,7 +1140,8 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         body.locationUrl !== undefined || body.locationLatitude !== undefined ||
         body.locationLongitude !== undefined || body.requireLocationVerification !== undefined ||
         body.maxParticipants !== undefined || body.minTeamSize !== undefined ||
-        body.maxTeamSize !== undefined || body.allowSolo !== undefined
+        body.maxTeamSize !== undefined || body.allowSolo !== undefined ||
+        body.communityUrl !== undefined || body.communityLabel !== undefined
 
       let hackathon: import("@/lib/db/hackathon-types").Hackathon | null
       if (hasStatusTransition && !hasOtherFields) {
@@ -1167,6 +1168,8 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           minTeamSize: body.minTeamSize,
           maxTeamSize: body.maxTeamSize,
           allowSolo: body.allowSolo,
+          communityUrl: normalizeOptionalUrl(body.communityUrl),
+          communityLabel: body.communityLabel,
         })
       }
 
@@ -1349,6 +1352,8 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         minTeamSize: t.Optional(t.Number()),
         maxTeamSize: t.Optional(t.Number()),
         allowSolo: t.Optional(t.Boolean()),
+        communityUrl: t.Optional(t.Union([t.String(), t.Null()])),
+        communityLabel: t.Optional(t.Union([t.String(), t.Null()])),
       }),
     }
   )

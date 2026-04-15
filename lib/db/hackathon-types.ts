@@ -129,6 +129,8 @@ export interface Hackathon {
   phase: HackathonPhase | null
   challenge_released_at: string | null
   perks_none: boolean
+  community_url: string | null
+  community_label: string | null
   metadata: Json
   created_at: string
   updated_at: string
