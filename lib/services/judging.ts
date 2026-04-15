@@ -306,6 +306,59 @@ export async function updatePrize(
   return data as unknown as Prize
 }
 
+export type ReplacePrizeCriteriaInput = {
+  name: string
+  description?: string | null
+}
+
+export async function replacePrizeCriteria(
+  hackathonId: string,
+  prizeId: string,
+  criteria: ReplacePrizeCriteriaInput[]
+): Promise<PrizeCriterion[] | null> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const cleaned = criteria.filter((c) => c.name.trim().length > 0)
+
+  const { error: deleteError } = await client
+    .from("judging_criteria")
+    .delete()
+    .eq("prize_id", prizeId)
+
+  if (deleteError) {
+    console.error("Failed to clear prize criteria:", deleteError)
+    return null
+  }
+
+  if (cleaned.length === 0) return []
+
+  const rows = cleaned.map((c, i) => ({
+    hackathon_id: hackathonId,
+    prize_id: prizeId,
+    name: c.name.trim(),
+    description: c.description?.trim() || null,
+    max_score: 1,
+    weight: 1,
+    display_order: i,
+  }))
+
+  const { data, error } = await client
+    .from("judging_criteria")
+    .insert(rows)
+    .select("id, name, description, display_order")
+
+  if (error) {
+    console.error("Failed to insert prize criteria:", error)
+    return null
+  }
+
+  return (data ?? []).map((c) => ({
+    id: c.id,
+    name: c.name,
+    description: c.description,
+    displayOrder: c.display_order,
+  }))
+}
+
 export async function deletePrize(prizeId: string, hackathonId: string): Promise<boolean> {
   const client = getSupabase() as unknown as SupabaseClient
   const { error } = await client

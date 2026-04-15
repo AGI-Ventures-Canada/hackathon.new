@@ -17,6 +17,7 @@ const {
   recalculateForAssignment,
   createPrize,
   listPrizes,
+  replacePrizeCriteria,
 } = await import("@/lib/services/judging")
 
 describe("Judging Service", () => {
@@ -1026,6 +1027,64 @@ describe("Judging Service", () => {
 
       await listPrizes("h1")
       expect(queriedTables).not.toContain("judging_criteria")
+    })
+  })
+
+  describe("replacePrizeCriteria", () => {
+    it("deletes existing rows and inserts the new ones with prize_id", async () => {
+      const chains: ReturnType<typeof createChainableMock>[] = []
+      setMockFromImplementation((table: string) => {
+        const chain = createChainableMock({
+          data: [
+            { id: "c1", name: "Uses MCP", description: null, display_order: 0 },
+            { id: "c2", name: "Working demo", description: "Runs end-to-end", display_order: 1 },
+          ],
+          error: null,
+        })
+        if (table === "judging_criteria") chains.push(chain)
+        return chain
+      })
+
+      const result = await replacePrizeCriteria("h1", "prize_new", [
+        { name: "Uses MCP" },
+        { name: "Working demo", description: "Runs end-to-end" },
+        { name: "   " },
+      ])
+
+      expect(result).not.toBeNull()
+      expect(result?.length).toBe(2)
+      expect(result?.[0]).toMatchObject({ id: "c1", name: "Uses MCP", displayOrder: 0 })
+
+      const insertCalls = chains.flatMap(
+        (c) => c.insert.mock.calls as unknown as [Record<string, unknown>[]][]
+      )
+      const insertArgs = insertCalls.find(([rows]) => Array.isArray(rows))?.[0]
+      expect(insertArgs).toBeDefined()
+      expect(insertArgs?.length).toBe(2)
+      expect(insertArgs?.[0]).toMatchObject({
+        hackathon_id: "h1",
+        prize_id: "prize_new",
+        name: "Uses MCP",
+        display_order: 0,
+      })
+    })
+
+    it("returns an empty array (no insert) when every name is blank", async () => {
+      const chains: ReturnType<typeof createChainableMock>[] = []
+      setMockFromImplementation((table: string) => {
+        const chain = createChainableMock({ data: null, error: null })
+        if (table === "judging_criteria") chains.push(chain)
+        return chain
+      })
+
+      const result = await replacePrizeCriteria("h1", "prize_new", [
+        { name: "" },
+        { name: "   " },
+      ])
+
+      expect(result).toEqual([])
+      const insertCalled = chains.some((c) => c.insert.mock.calls.length > 0)
+      expect(insertCalled).toBe(false)
     })
   })
 
