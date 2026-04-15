@@ -5,7 +5,13 @@
 ALTER TYPE location_type ADD VALUE IF NOT EXISTS 'hybrid';
 
 -- 2. Add team_mode enum + column on teams (nullable: null = not a hybrid event)
-CREATE TYPE team_mode AS ENUM ('in_person', 'virtual');
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'team_mode') THEN
+    CREATE TYPE team_mode AS ENUM ('in_person', 'virtual');
+  END IF;
+END
+$$;
 
 ALTER TABLE teams
   ADD COLUMN IF NOT EXISTS mode team_mode;
