@@ -208,16 +208,8 @@ export function DateTimePicker({
 
   function handleOpenChange(nextOpen: boolean) {
     if (!nextOpen) {
-      setPendingDate(value ?? null);
-      if (value) {
-        const { hours, period } = to12Hour(value.getHours());
-        setTime({
-          hours: hours.toString().padStart(2, "0"),
-          minutes: value.getMinutes().toString().padStart(2, "0"),
-          period,
-        });
-      } else {
-        setTime({ hours: "09", minutes: "00", period: "AM" });
+      if (pendingDate && pendingDate.getTime() !== (value?.getTime() ?? -1)) {
+        onChange?.(pendingDate);
       }
     }
     setOpen(nextOpen);

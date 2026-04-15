@@ -242,6 +242,11 @@ export function AddPrizeDialog({
       setError("Name is required")
       return
     }
+    const description = form.description.trim()
+    if (!description) {
+      setError("Description is required — judges need to know what this prize is for")
+      return
+    }
 
     let criteriaPayload: { name: string; description: string | null }[] | undefined
     let bucketsPayload: { level: number; label: string; description: string | null }[] | undefined

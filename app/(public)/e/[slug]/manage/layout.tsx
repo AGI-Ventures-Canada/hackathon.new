@@ -12,7 +12,7 @@ export default async function ManageLayout({ children, params }: LayoutProps) {
 
   if (!result.ok) {
     if (result.reason === "unauthenticated") {
-      redirect("/sign-in")
+      redirect(`/sign-in?redirect_url=${encodeURIComponent(`/e/${slug}/manage`)}`)
     }
     notFound()
   }

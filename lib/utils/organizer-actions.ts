@@ -457,7 +457,7 @@ function addPublishedActions(items: ActionItem[], input: ActionItemsInput) {
       hint: "The essentials are in place — you can finish the rest later",
       severity: "info",
       action: "transition-to-active",
-      ctaLabel: "Go Live",
+      ctaLabel: "Start the main event",
     }))
   }
 }

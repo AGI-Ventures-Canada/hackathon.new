@@ -66,9 +66,9 @@ export function TeamManagementTab({ teamInfo, hackathonId, maxTeamSize, location
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <CardTitle className="flex items-center gap-2 min-w-0">
                 <Users className="size-5" />
                 {canEdit && !rename.editing ? (
                   <button
@@ -86,7 +86,7 @@ export function TeamManagementTab({ teamInfo, hackathonId, maxTeamSize, location
                     onBlur={rename.save}
                     onKeyDown={rename.handleKeyDown}
                     disabled={rename.saving}
-                    className="h-7 text-base font-semibold bg-transparent border-b border-input outline-none focus:border-ring w-full"
+                    className="h-8 text-base font-semibold bg-transparent border-b border-input outline-none focus:border-ring w-full min-w-0 flex-1"
                     maxLength={100}
                     autoComplete="off"
                     data-1p-ignore

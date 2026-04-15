@@ -9,9 +9,7 @@ import {
   MessageCircle,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { OverviewAnnouncements } from "@/components/hackathon/overview-announcements"
 import { OverviewSchedule } from "@/components/hackathon/overview-schedule"
-import type { Announcement } from "@/lib/services/announcements"
 import type { ScheduleItem } from "@/lib/services/schedule-items"
 
 type QuickStats = {
@@ -26,7 +24,6 @@ type Props = {
   slug: string
   hackathonId: string
   stats: QuickStats
-  announcements: Announcement[]
   scheduleItems: ScheduleItem[]
   challengeReleasedAt: string | null
   challengeExists: boolean
@@ -46,7 +43,7 @@ function StatCard({ icon: Icon, value, label, href }: { icon: typeof Users; valu
   return inner
 }
 
-export function OrganizerOverview({ slug, hackathonId, stats, announcements, scheduleItems, challengeReleasedAt, challengeExists }: Props) {
+export function OrganizerOverview({ slug, hackathonId, stats, scheduleItems, challengeReleasedAt, challengeExists }: Props) {
   const judgingValue = stats.judgingProgress.totalAssignments > 0
     ? `${Math.round((stats.judgingProgress.completedAssignments / stats.judgingProgress.totalAssignments) * 100)}%`
     : "—"
@@ -78,7 +75,6 @@ export function OrganizerOverview({ slug, hackathonId, stats, announcements, sch
             challengeExists={challengeExists}
           />
         </div>
-        <OverviewAnnouncements slug={slug} hackathonId={hackathonId} announcements={announcements} />
       </div>
     </div>
   )

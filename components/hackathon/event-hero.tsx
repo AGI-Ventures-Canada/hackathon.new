@@ -237,11 +237,26 @@ export function EventHero({
   const LocationIcon = locationType === "virtual" ? Video : MapPin;
 
   const locationContent = (
-    <div className="flex min-w-0 items-start gap-1.5 text-sm text-muted-foreground text-left">
-      <LocationIcon className="mt-0.5 size-3.5 shrink-0" />
-      <span className="block min-w-0 break-words text-left">
-        {locationLabel}
-      </span>
+    <div className="flex min-w-0 flex-col gap-1 text-sm text-muted-foreground text-left">
+      <div className="flex min-w-0 items-start gap-1.5">
+        <LocationIcon className="mt-0.5 size-3.5 shrink-0" />
+        <span className="block min-w-0 break-words text-left">
+          {locationLabel}
+        </span>
+      </div>
+      {locationType === "hybrid" && locationUrl && (
+        <div className="flex min-w-0 items-start gap-1.5">
+          <Video className="mt-0.5 size-3.5 shrink-0" />
+          <a
+            href={locationUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block min-w-0 break-words text-left underline hover:text-foreground"
+          >
+            {locationUrl}
+          </a>
+        </div>
+      )}
     </div>
   );
 

@@ -661,8 +661,8 @@ export function ActionItemsProvider({
               participants, and spread the word through your community.
             </DialogDescription>
           </DialogHeader>
-          <div className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2">
-            <code className="flex-1 truncate text-sm">{`${typeof window !== "undefined" ? window.location.origin : ""}/e/${slug}`}</code>
+          <div className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2 min-w-0">
+            <code className="flex-1 min-w-0 truncate text-sm">{`${typeof window !== "undefined" ? window.location.origin : ""}/e/${slug}`}</code>
             <CopyButton value={`${typeof window !== "undefined" ? window.location.origin : ""}/e/${slug}`} showLabel={false} size="icon" />
           </div>
           <DialogFooter>

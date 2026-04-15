@@ -61,14 +61,27 @@ export default async function EventImportPage({ searchParams }: PageProps) {
       <div className="mx-auto max-w-2xl px-4 py-16 text-center">
         <div className="flex flex-col items-center gap-4">
           <TriangleAlert className="size-10 text-muted-foreground" />
-          <h2 className="text-lg font-semibold">Couldn&apos;t read that event page</h2>
+          <h2 className="text-lg font-semibold">We couldn&apos;t read that event page</h2>
           <p className="max-w-md text-sm text-muted-foreground">
-            We weren&apos;t able to extract event details from this URL. The page may not include
-            structured event data, or it may require a login to view.
+            The page at <span className="font-mono text-foreground">{normalizedUrl}</span> didn&apos;t
+            give us the info we needed. A few things that can cause this:
           </p>
-          <Button asChild variant="outline">
-            <Link href="/">Go back</Link>
-          </Button>
+          <ul className="text-left text-sm text-muted-foreground list-disc pl-5 space-y-1">
+            <li>The page needs a login to see the event details.</li>
+            <li>The page doesn&apos;t have a title, date, or description we could find.</li>
+            <li>The site is blocking automated readers.</li>
+          </ul>
+          <p className="max-w-md text-sm text-muted-foreground">
+            You can start from scratch instead — it only takes a minute.
+          </p>
+          <div className="flex gap-2">
+            <Button asChild variant="outline">
+              <Link href="/">Go back</Link>
+            </Button>
+            <Button asChild>
+              <Link href="/hackathons/new">Start from scratch</Link>
+            </Button>
+          </div>
         </div>
       </div>
     )

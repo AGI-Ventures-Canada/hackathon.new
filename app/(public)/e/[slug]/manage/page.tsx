@@ -233,7 +233,6 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
                     judgingProgress,
                     mentorQueue: overviewStats.mentorQueue,
                   }}
-                  announcements={announcements}
                   scheduleItems={scheduleItems}
                   challengeReleasedAt={hackathon.challenge_released_at}
                   challengeExists={challengeExists}
