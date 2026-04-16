@@ -306,7 +306,6 @@ export function AddPrizeDialog({
         }
       ).then(assertOkJson<{ prize: { id: string; name: string; description: string | null; value: string | null; type: string | null; judging_style: string | null; round_id: string | null } }>)
 
-      onSuccess?.()
       router.refresh()
       onSuccess?.({
         id: data.prize.id,
@@ -316,6 +315,22 @@ export function AddPrizeDialog({
         type: data.prize.type,
         judgingStyle: data.prize.judging_style as PrizeJudgingStyle,
         roundId: data.prize.round_id,
+        maxPicks: maxPicksPayload ?? null,
+        criteria: criteriaPayload
+          ? criteriaPayload.map((c, i) => ({
+              id: `optimistic-${data.prize.id}-criterion-${i}`,
+              name: c.name,
+              description: c.description,
+            }))
+          : null,
+        buckets: bucketsPayload
+          ? bucketsPayload.map((b, i) => ({
+              id: `optimistic-${data.prize.id}-bucket-${i}`,
+              level: b.level,
+              label: b.label,
+              description: b.description,
+            }))
+          : null,
       })
     } catch (err) {
       setForm(savedForm)
