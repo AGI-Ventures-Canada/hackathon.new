@@ -193,7 +193,7 @@ describe("sendOrganizerClaimNotification", () => {
       hackathonSlug: "ai-hack",
       winnerName: "Carol",
       hackathonId: "hack_3",
-      prizeValue: "$5,000",
+      prizeValue: "5,000",
     })
 
     expect(mockSendEmail).toHaveBeenCalledTimes(1)

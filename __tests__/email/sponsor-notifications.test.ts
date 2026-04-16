@@ -165,7 +165,7 @@ describe("sendSponsorClaimNotification", () => {
       hackathonName: "AI Hack",
       winnerName: "Carol",
       sponsorTenantId: "tenant_3",
-      prizeValue: "$2,000",
+      prizeValue: "2,000",
     })
 
     expect(mockSendEmail).toHaveBeenCalledTimes(1)
