@@ -2303,14 +2303,6 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       })
     }
 
-    const rateLimitResult = await checkRateLimit(`team_invitation_remind:${params.teamId}`, {
-      maxRequests: 5,
-      windowMs: 60_000,
-    })
-    if (!rateLimitResult.allowed) {
-      throw new RateLimitError(rateLimitResult.resetAt, rateLimitResult.remaining)
-    }
-
     const { remindTeamInvitation, getTeamWithHackathon } = await import(
       "@/lib/services/team-invitations"
     )
@@ -2321,6 +2313,14 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         status: 404,
         headers: { "Content-Type": "application/json" },
       })
+    }
+
+    const rateLimitResult = await checkRateLimit(`team_invitation_remind:${params.teamId}`, {
+      maxRequests: 5,
+      windowMs: 60_000,
+    })
+    if (!rateLimitResult.allowed) {
+      throw new RateLimitError(rateLimitResult.resetAt, rateLimitResult.remaining)
     }
 
     const result = await remindTeamInvitation(params.invitationId, principal.userId!, params.teamId)

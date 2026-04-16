@@ -836,12 +836,12 @@ describe("Team Invitations Service", () => {
         })
       })
 
-      const result = await remindTeamInvitation("11111111-1111-1111-1111-111111111111", "user_captain")
+      const result = await remindTeamInvitation("11111111-1111-1111-1111-111111111111", "user_captain", "22222222-2222-2222-2222-222222222222")
 
       expect(result.success).toBe(true)
     })
 
-    it("succeeds when teamId is provided and matches", async () => {
+    it("succeeds when teamId matches", async () => {
       let callCount = 0
       setMockFromImplementation(() => {
         callCount++
@@ -898,7 +898,7 @@ describe("Team Invitations Service", () => {
         createChainableMock({ data: null, error: { message: "Not found" } })
       )
 
-      const result = await remindTeamInvitation("22222222-2222-2222-2222-222222222222", "user_captain")
+      const result = await remindTeamInvitation("22222222-2222-2222-2222-222222222222", "user_captain", "33333333-3333-3333-3333-333333333333")
 
       expect(result.success).toBe(false)
       if (!result.success) {
@@ -911,7 +911,7 @@ describe("Team Invitations Service", () => {
         createChainableMock({ data: pendingInvitation, error: null })
       )
 
-      const result = await remindTeamInvitation("11111111-1111-1111-1111-111111111111", "user_not_captain")
+      const result = await remindTeamInvitation("11111111-1111-1111-1111-111111111111", "user_not_captain", "22222222-2222-2222-2222-222222222222")
 
       expect(result.success).toBe(false)
       if (!result.success) {
@@ -927,7 +927,7 @@ describe("Team Invitations Service", () => {
         })
       )
 
-      const result = await remindTeamInvitation("11111111-1111-1111-1111-111111111111", "user_captain")
+      const result = await remindTeamInvitation("11111111-1111-1111-1111-111111111111", "user_captain", "22222222-2222-2222-2222-222222222222")
 
       expect(result.success).toBe(false)
       if (!result.success) {
@@ -946,7 +946,7 @@ describe("Team Invitations Service", () => {
         })
       )
 
-      const result = await remindTeamInvitation("11111111-1111-1111-1111-111111111111", "user_captain")
+      const result = await remindTeamInvitation("11111111-1111-1111-1111-111111111111", "user_captain", "22222222-2222-2222-2222-222222222222")
 
       expect(result.success).toBe(false)
       if (!result.success) {
@@ -965,7 +965,7 @@ describe("Team Invitations Service", () => {
         })
       )
 
-      const result = await remindTeamInvitation("11111111-1111-1111-1111-111111111111", "user_captain")
+      const result = await remindTeamInvitation("11111111-1111-1111-1111-111111111111", "user_captain", "22222222-2222-2222-2222-222222222222")
 
       expect(result.success).toBe(false)
       if (!result.success) {

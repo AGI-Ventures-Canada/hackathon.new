@@ -1277,14 +1277,6 @@ export const dashboardJudgingRoutes = new Elysia()
       return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
     }
 
-    const rateLimitResult = await checkRateLimit(`judge_invitation_remind:${params.id}`, {
-      maxRequests: 5,
-      windowMs: 60_000,
-    })
-    if (!rateLimitResult.allowed) {
-      throw new RateLimitError(rateLimitResult.resetAt, rateLimitResult.remaining)
-    }
-
     const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
     const result = await checkHackathonOrganizer(params.id, principal.tenantId)
 
@@ -1293,6 +1285,14 @@ export const dashboardJudgingRoutes = new Elysia()
     }
     if (result.status === "not_authorized") {
       return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
+    }
+
+    const rateLimitResult = await checkRateLimit(`judge_invitation_remind:${params.id}`, {
+      maxRequests: 5,
+      windowMs: 60_000,
+    })
+    if (!rateLimitResult.allowed) {
+      throw new RateLimitError(rateLimitResult.resetAt, rateLimitResult.remaining)
     }
 
     const { remindJudgeInvitation } = await import("@/lib/services/judge-invitations")
@@ -1305,10 +1305,7 @@ export const dashboardJudgingRoutes = new Elysia()
       })
     }
 
-    if (!result.hackathon) {
-      return new Response(JSON.stringify({ error: "Hackathon not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
-    }
-    const hackathon = result.hackathon
+    const hackathon = result.hackathon!
     const { clerkClient } = await import("@clerk/nextjs/server")
     const client = await clerkClient()
     const inviterName = await resolveAdderName(principal, client)
@@ -1322,7 +1319,7 @@ export const dashboardJudgingRoutes = new Elysia()
       expiresAt: remindResult.invitation.expires_at,
     }).catch(console.error)
 
-    logAudit({
+    await logAudit({
       principal,
       action: "judge_invitation.reminded",
       resourceType: "hackathon",

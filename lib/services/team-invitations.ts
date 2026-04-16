@@ -339,28 +339,20 @@ export type RemindTeamInvitationResult =
 export async function remindTeamInvitation(
   invitationId: string,
   clerkUserId: string,
-  teamId?: string
+  teamId: string
 ): Promise<RemindTeamInvitationResult> {
-  if (!isValidUuid(invitationId)) {
-    return { success: false, error: "Invitation not found", code: "not_found" }
-  }
-
-  if (teamId && !isValidUuid(teamId)) {
+  if (!isValidUuid(invitationId) || !isValidUuid(teamId)) {
     return { success: false, error: "Invitation not found", code: "not_found" }
   }
 
   const client = getSupabase()
 
-  let fetchQuery = client
+  const { data: invitation, error: fetchError } = await client
     .from("team_invitations")
     .select("*, teams!inner(captain_clerk_user_id)")
     .eq("id", invitationId)
-
-  if (teamId) {
-    fetchQuery = fetchQuery.eq("team_id", teamId)
-  }
-
-  const { data: invitation, error: fetchError } = await fetchQuery.single()
+    .eq("team_id", teamId)
+    .single()
 
   if (fetchError || !invitation) {
     return { success: false, error: "Invitation not found", code: "not_found" }
@@ -383,17 +375,12 @@ export async function remindTeamInvitation(
     return { success: false, error: "Reminder already sent", code: "already_reminded" }
   }
 
-  let updateQuery = client
+  const { data: updated, error: updateError } = await client
     .from("team_invitations")
     .update({ reminded_at: new Date().toISOString(), updated_at: new Date().toISOString() })
     .eq("id", invitationId)
+    .eq("team_id", teamId)
     .is("reminded_at", null)
-
-  if (teamId) {
-    updateQuery = updateQuery.eq("team_id", teamId)
-  }
-
-  const { data: updated, error: updateError } = await updateQuery
     .select()
     .single()
 
