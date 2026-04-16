@@ -21,7 +21,7 @@ export default function OrganizerClaimNotificationEmail({
   hackathonSlug,
   prizeValue,
 }: OrganizerClaimNotificationEmailProps) {
-  const appUrl = "https://getoatmeal.com"
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://getoatmeal.com"
   const eventUrl = hackathonSlug ? `${appUrl}/e/${hackathonSlug}` : undefined
 
   return (

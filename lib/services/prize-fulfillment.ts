@@ -443,6 +443,7 @@ export async function claimPrize(
   type ClaimPrizeAssignment = {
     prize: {
       name: string
+      value: string | null
       kind: string
       value: string | null
       prize_track: { sponsor: { sponsor_tenant_id: string | null } } | null
