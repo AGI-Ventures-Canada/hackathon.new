@@ -336,19 +336,19 @@ export function JudgesEditForm({
   }
 
   const { execute: handleDeleteJudge, error: deleteError } = useOptimisticMutation({
-    fn: async (judgeId: string) => {
-      const data = await fetch(
+    fn: (judgeId: string) =>
+      fetch(
         `/api/dashboard/hackathons/${hackathonId}/judges/display/${judgeId}`,
         { method: "DELETE" }
-      ).then(assertOkJson<{ warning?: string }>)
-      if (data.warning) {
-        setError("Judge removed, but some linked data could not be cleaned up")
-      }
-      return data
-    },
+      ).then(assertOkJson<{ warning?: string }>),
     onOptimistic: (judgeId) => {
       setHiddenIds((prev) => new Set(prev).add(judgeId))
       setError(null)
+    },
+    onSuccess: (data) => {
+      if (data.warning) {
+        setError("Judge removed, but some linked data could not be cleaned up")
+      }
     },
     onRevert: (judgeId) => {
       setHiddenIds((prev) => {

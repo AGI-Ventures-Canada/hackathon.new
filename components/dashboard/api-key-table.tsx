@@ -30,7 +30,7 @@ type Props = {
 export function ApiKeyTable({ keys }: Props) {
   const [optimisticRevoked, setOptimisticRevoked] = useState<Set<string>>(new Set())
 
-  const { execute: handleRevoke } = useOptimisticMutation({
+  const { execute: handleRevoke, error: revokeError } = useOptimisticMutation({
     fn: (keyId: string) =>
       fetch(`/api/dashboard/keys/${keyId}/revoke`, { method: "POST" }).then(assertOk),
     onOptimistic: (keyId) =>
@@ -53,6 +53,7 @@ export function ApiKeyTable({ keys }: Props) {
 
   return (
     <div className="overflow-x-auto">
+    {revokeError && <p className="text-sm text-destructive mb-2">{revokeError}</p>}
     <Table>
       <TableHeader>
         <TableRow>

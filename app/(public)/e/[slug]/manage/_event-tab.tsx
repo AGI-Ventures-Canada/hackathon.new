@@ -200,6 +200,7 @@ function SocialSubTab({ hackathonId }: { hackathonId: string }) {
   }, [hackathonId])
 
   function handleReview(submissionId: string, status: "approved" | "rejected") {
+    const previous = submissions.find((s) => s.id === submissionId)?.status ?? "pending"
     setSubmissions((prev) =>
       prev.map((s) => (s.id === submissionId ? { ...s, status } : s))
     )
@@ -211,7 +212,7 @@ function SocialSubTab({ hackathonId }: { hackathonId: string }) {
       .then(assertOk)
       .catch(() => {
         setSubmissions((prev) =>
-          prev.map((s) => (s.id === submissionId ? { ...s, status: "pending" as const } : s))
+          prev.map((s) => (s.id === submissionId ? { ...s, status: previous } : s))
         )
         setError("Failed to review submission")
       })
