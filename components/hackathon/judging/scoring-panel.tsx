@@ -47,6 +47,8 @@ export function ScoringPanel({
   const [screenshotOpen, setScreenshotOpen] = useState(false)
   const notesTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const appliedDetailRef = useRef<string | null>(null)
+  const prefetchedDetailRef = useRef(prefetchedDetail)
+  prefetchedDetailRef.current = prefetchedDetail
 
   useEffect(() => {
     setError(null)
@@ -64,8 +66,9 @@ export function ScoringPanel({
       appliedDetailRef.current = data.id
     }
 
-    if (prefetchedDetail && prefetchedDetail.id === assignmentId && !appliedDetailRef.current) {
-      applyDetail(prefetchedDetail)
+    const cached = prefetchedDetailRef.current
+    if (cached && cached.id === assignmentId && !appliedDetailRef.current) {
+      applyDetail(cached)
       return
     }
 

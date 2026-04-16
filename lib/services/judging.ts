@@ -2333,17 +2333,18 @@ export type AssignmentDetail = {
 
 export async function getAssignmentDetail(
   assignmentId: string,
-  clerkUserId: string
+  clerkUserId: string,
+  ownership?: AssignmentOwnership
 ): Promise<AssignmentDetail | null> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const isOwner = await verifyAssignmentOwnership(assignmentId, clerkUserId)
-  if (!isOwner) return null
+  const verified = ownership ?? await verifyAssignmentOwnership(assignmentId, clerkUserId)
+  if (!verified) return null
 
   const { data: assignment, error: assignmentError } = await client
     .from("judge_assignments")
     .select(`
-      id, submission_id, hackathon_id, prize_id, is_complete, notes,
+      id, submission_id, is_complete, notes,
       submission:submissions!submission_id(title, description, github_url, live_app_url, screenshot_url, team_id)
     `)
     .eq("id", assignmentId)
@@ -2379,11 +2380,11 @@ export async function getAssignmentDetail(
     category: string | null
   }[] = []
 
-  if (assignment.prize_id) {
+  if (verified.prizeId) {
     const { data } = await client
       .from("judging_criteria")
       .select("id, name, description, max_score, weight, category")
-      .eq("prize_id", assignment.prize_id)
+      .eq("prize_id", verified.prizeId)
       .order("display_order")
     criteria = (data ?? []) as typeof criteria
   }
@@ -2392,7 +2393,7 @@ export async function getAssignmentDetail(
     const { data } = await client
       .from("judging_criteria")
       .select("id, name, description, max_score, weight, category")
-      .eq("hackathon_id", assignment.hackathon_id)
+      .eq("hackathon_id", verified.hackathonId)
       .is("prize_id", null)
       .order("display_order")
     criteria = (data ?? []) as typeof criteria
@@ -2491,6 +2492,9 @@ export async function submitScores(
     for (const s of scores) {
       if (!validCriteriaIds.has(s.criteriaId)) {
         return { success: false, error: `Invalid criteria ID: ${s.criteriaId}`, code: "invalid_criteria" }
+      }
+      if (s.score < 0) {
+        return { success: false, error: `Score cannot be negative`, code: "score_below_zero" }
       }
       const maxScore = maxScoreMap.get(s.criteriaId)
       if (maxScore != null && s.score > maxScore) {

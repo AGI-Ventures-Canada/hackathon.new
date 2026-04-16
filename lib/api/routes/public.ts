@@ -1161,7 +1161,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
-      const detail = await getAssignmentDetail(params.assignmentId, userId)
+      const detail = await getAssignmentDetail(params.assignmentId, userId, ownerCheck)
 
       if (!detail) {
         return new Response(
