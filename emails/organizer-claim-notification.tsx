@@ -8,6 +8,7 @@ interface OrganizerClaimNotificationEmailProps {
   prizeName: string
   hackathonName: string
   fulfillmentUrl: string | null
+  prizeValue?: string | null
 }
 
 export default function OrganizerClaimNotificationEmail({
@@ -15,6 +16,7 @@ export default function OrganizerClaimNotificationEmail({
   prizeName,
   hackathonName,
   fulfillmentUrl,
+  prizeValue,
 }: OrganizerClaimNotificationEmailProps) {
   return (
     <OatmealLayout
@@ -24,7 +26,7 @@ export default function OrganizerClaimNotificationEmail({
     >
       <Text style={{ fontSize: "14px", marginBottom: "16px", lineHeight: "1.6" }}>
         <strong>{winnerName}</strong> has claimed the{" "}
-        <strong>{prizeName}</strong> prize from {hackathonName}.
+        <strong>{prizeName}</strong>{prizeValue ? ` ($${prizeValue})` : ""} prize from {hackathonName}.
       </Text>
 
       <Text
@@ -51,4 +53,5 @@ OrganizerClaimNotificationEmail.PreviewProps = {
   prizeName: "Best AI Application",
   hackathonName: "AI Innovation Hackathon 2026",
   fulfillmentUrl: "https://getoatmeal.com/e/ai-innovation-2026/manage?tab=post-event",
+  prizeValue: "500",
 } satisfies OrganizerClaimNotificationEmailProps

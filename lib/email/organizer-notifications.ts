@@ -8,8 +8,9 @@ export async function sendOrganizerClaimNotification(params: {
   hackathonSlug: string
   winnerName: string
   hackathonId: string
+  prizeValue?: string | null
 }): Promise<number> {
-  const { prizeName, hackathonName, hackathonSlug, winnerName, hackathonId } = params
+  const { prizeName, hackathonName, hackathonSlug, winnerName, hackathonId, prizeValue } = params
   const { supabase: getSupabase } = await import("@/lib/db/client")
   const client = getSupabase()
 
@@ -46,6 +47,7 @@ export async function sendOrganizerClaimNotification(params: {
       prizeName,
       hackathonName,
       fulfillmentUrl,
+      prizeValue,
     })
   )
 

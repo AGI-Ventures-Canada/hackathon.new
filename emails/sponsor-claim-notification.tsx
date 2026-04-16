@@ -1,18 +1,26 @@
 import { Text } from "@react-email/components"
 import { OatmealLayout } from "./_components/oatmeal-layout"
 import { colors } from "./_components/constants"
+import { CTAButton } from "./_components/cta-button"
 
 interface SponsorClaimNotificationEmailProps {
   winnerName: string
   prizeName: string
   hackathonName: string
+  hackathonSlug?: string
+  prizeValue?: string | null
 }
 
 export default function SponsorClaimNotificationEmail({
   winnerName,
   prizeName,
   hackathonName,
+  hackathonSlug,
+  prizeValue,
 }: SponsorClaimNotificationEmailProps) {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://getoatmeal.com"
+  const eventUrl = hackathonSlug ? `${appUrl}/e/${hackathonSlug}` : null
+
   return (
     <OatmealLayout
       heading="Winner Info Ready"
@@ -21,19 +29,24 @@ export default function SponsorClaimNotificationEmail({
     >
       <Text style={{ fontSize: "14px", marginBottom: "16px", lineHeight: "1.6" }}>
         <strong>{winnerName}</strong> has claimed the{" "}
-        <strong>{prizeName}</strong> prize from {hackathonName}.
+        <strong>{prizeName}</strong>{prizeValue ? ` ($${prizeValue})` : ""} prize from {hackathonName}.
       </Text>
 
       <Text
         style={{
           fontSize: "13px",
           color: colors.textMuted,
+          marginBottom: "24px",
           lineHeight: "1.5",
         }}
       >
         Their contact and delivery details are now available. The event organizer
         will coordinate fulfillment.
       </Text>
+
+      {eventUrl && (
+        <CTAButton href={eventUrl}>View Event</CTAButton>
+      )}
     </OatmealLayout>
   )
 }
@@ -42,4 +55,6 @@ SponsorClaimNotificationEmail.PreviewProps = {
   winnerName: "Jane Smith",
   prizeName: "Best AI Application",
   hackathonName: "AI Innovation Hackathon 2026",
+  hackathonSlug: "ai-innovation-2026",
+  prizeValue: "500",
 } satisfies SponsorClaimNotificationEmailProps
