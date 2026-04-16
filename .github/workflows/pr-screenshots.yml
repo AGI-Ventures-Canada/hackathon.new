@@ -121,6 +121,8 @@ jobs:
           })()
           CLERKEOF
           )
+          # Safe: JWTs contain only base64url chars (alphanumeric, hyphen, underscore, period)
+          # so the token value cannot break out of the JS string produced by jq -Rs.
           INJECT_TOKEN="window.__CLERK_TICKET__ = $(printf '%s' "$TOKEN" | jq -Rs .);"
           SIGN_IN_SCRIPT="${INJECT_TOKEN}${SIGN_IN_SCRIPT}"
           SIGN_IN_RESULT=$(echo "$SIGN_IN_SCRIPT" | agent-browser --session pr-screenshots eval --stdin 2>&1) || true
