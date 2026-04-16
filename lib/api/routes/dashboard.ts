@@ -1962,7 +1962,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       const { updateTenantProfile, isSlugAvailable } = await import("@/lib/services/tenant-profiles")
 
       if (body.slug !== undefined) {
-        if (!body.slug || !/^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(body.slug) || body.slug.length < 3) {
+        if (!body.slug || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(body.slug) || body.slug.length < 3) {
           return new Response(JSON.stringify({ error: "Slug must be at least 3 characters and contain only lowercase letters, numbers, and hyphens" }), {
             status: 400,
             headers: { "Content-Type": "application/json" },

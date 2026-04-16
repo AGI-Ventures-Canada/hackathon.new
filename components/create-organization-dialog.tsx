@@ -30,7 +30,7 @@ function generateSlug(name: string): string {
 }
 
 function isValidSlugFormat(slug: string): boolean {
-  return slug.length >= 3 && /^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(slug)
+  return slug.length >= 3 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)
 }
 
 export function CreateOrganizationDialog({
@@ -127,7 +127,9 @@ export function CreateOrganizationDialog({
       })
 
       if (!res.ok) {
-        try { await org.destroy() } catch {}
+        try { await org.destroy() } catch (destroyErr) {
+          console.error("Failed to destroy org after slug save failure", destroyErr)
+        }
         const data = await res.json().catch(() => ({}))
         throw new Error(data.error ?? "Failed to save organization slug")
       }
