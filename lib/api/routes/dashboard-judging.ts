@@ -1287,7 +1287,7 @@ export const dashboardJudgingRoutes = new Elysia()
       return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
     }
 
-    const rateLimitResult = await checkRateLimit(`judge_invitation_remind:${params.id}`, {
+    const rateLimitResult = await checkRateLimit(`judge_invitation_remind:${params.id}:${params.invitationId}`, {
       maxRequests: 5,
       windowMs: 60_000,
     })

@@ -194,7 +194,7 @@ function HackathonPreviewContent({
   const { execute: handleRemindInvitation, error: remindError } = useOptimisticMutation({
     fn: (invitationId: string) =>
       fetch(
-        `/api/dashboard/teams/${teamInfo?.team.id}/invitations/${invitationId}/remind`,
+        `/api/dashboard/teams/${teamInfo!.team.id}/invitations/${invitationId}/remind`,
         { method: "POST" }
       ).then(assertOk),
     onOptimistic: (invitationId) =>
