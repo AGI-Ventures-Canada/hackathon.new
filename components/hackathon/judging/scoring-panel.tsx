@@ -46,9 +46,11 @@ export function ScoringPanel({
   const [savingNotes, setSavingNotes] = useState(false)
   const [screenshotOpen, setScreenshotOpen] = useState(false)
   const notesTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const appliedDetailRef = useRef<string | null>(null)
 
   useEffect(() => {
     setError(null)
+    appliedDetailRef.current = null
 
     function applyDetail(data: AssignmentDetail) {
       setDetail(data)
@@ -59,9 +61,10 @@ export function ScoringPanel({
       setScores(initialScores)
       setNotes(data.notes ?? "")
       setLoading(false)
+      appliedDetailRef.current = data.id
     }
 
-    if (prefetchedDetail && prefetchedDetail.id === assignmentId) {
+    if (prefetchedDetail && prefetchedDetail.id === assignmentId && !appliedDetailRef.current) {
       applyDetail(prefetchedDetail)
       return
     }
@@ -69,10 +72,14 @@ export function ScoringPanel({
     setLoading(true)
     fetch(`/api/public/hackathons/${hackathonSlug}/judging/assignments/${assignmentId}`)
       .then(assertOkJson<AssignmentDetail>)
-      .then(applyDetail)
+      .then((data) => {
+        if (!appliedDetailRef.current) {
+          applyDetail(data)
+        }
+      })
       .catch(() => setError("Failed to load assignment"))
       .finally(() => setLoading(false))
-  }, [assignmentId, hackathonSlug, prefetchedDetail])
+  }, [assignmentId, hackathonSlug])
 
   const debouncedSaveNotes = useCallback(
     (value: string) => {

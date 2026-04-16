@@ -1437,20 +1437,29 @@ export async function assignJudgeToPrize(
   return { success: true, assignedCount: newAssignments.length }
 }
 
+export type AssignmentOwnership = {
+  hackathonId: string
+  prizeId: string | null
+}
+
 export async function verifyAssignmentOwnership(
   assignmentId: string,
   clerkUserId: string
-): Promise<boolean> {
+): Promise<AssignmentOwnership | false> {
   const client = getSupabase() as unknown as SupabaseClient
   const { data } = await client
     .from("judge_assignments")
-    .select("judge_participant_id, hackathon_participants!inner(clerk_user_id)")
+    .select("judge_participant_id, hackathon_id, prize_id, hackathon_participants!inner(clerk_user_id)")
     .eq("id", assignmentId)
     .single()
 
   if (!data) return false
   const participant = data.hackathon_participants as unknown as { clerk_user_id: string }
-  return participant.clerk_user_id === clerkUserId
+  if (participant.clerk_user_id !== clerkUserId) return false
+  return {
+    hackathonId: data.hackathon_id,
+    prizeId: data.prize_id ?? null,
+  }
 }
 
 export async function removeJudgeFromPrize(
@@ -2458,23 +2467,34 @@ export async function submitScores(
 ): Promise<SubmitScoresResult> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const isOwner = await verifyAssignmentOwnership(assignmentId, clerkUserId)
-  if (!isOwner) return { success: false, error: "Assignment not found", code: "not_found" }
+  const ownerResult = await verifyAssignmentOwnership(assignmentId, clerkUserId)
+  if (!ownerResult) return { success: false, error: "Assignment not found", code: "not_found" }
 
   if (scores.length > 0) {
-    const criteriaIds = scores.map((s) => s.criteriaId)
-    const { data: criteria } = await client
+    let criteriaQuery = client
       .from("judging_criteria")
       .select("id, max_score")
-      .in("id", criteriaIds)
 
-    if (criteria) {
-      const maxScoreMap = new Map(criteria.map((c) => [c.id, c.max_score]))
-      for (const s of scores) {
-        const maxScore = maxScoreMap.get(s.criteriaId)
-        if (maxScore != null && s.score > maxScore) {
-          return { success: false, error: `Score ${s.score} exceeds maximum ${maxScore}`, code: "score_exceeds_max" }
-        }
+    if (ownerResult.prizeId) {
+      criteriaQuery = criteriaQuery.eq("prize_id", ownerResult.prizeId)
+    } else {
+      criteriaQuery = criteriaQuery
+        .eq("hackathon_id", ownerResult.hackathonId)
+        .is("prize_id", null)
+    }
+
+    const { data: criteria } = await criteriaQuery
+
+    const validCriteriaIds = new Set((criteria ?? []).map((c) => c.id))
+    const maxScoreMap = new Map((criteria ?? []).map((c) => [c.id, c.max_score]))
+
+    for (const s of scores) {
+      if (!validCriteriaIds.has(s.criteriaId)) {
+        return { success: false, error: `Invalid criteria ID: ${s.criteriaId}`, code: "invalid_criteria" }
+      }
+      const maxScore = maxScoreMap.get(s.criteriaId)
+      if (maxScore != null && s.score > maxScore) {
+        return { success: false, error: `Score ${s.score} exceeds maximum ${maxScore}`, code: "score_exceeds_max" }
       }
     }
   }

@@ -21,6 +21,8 @@ function mockOwnershipSuccess() {
   return createChainableMock({
     data: {
       judge_participant_id: "jp1",
+      hackathon_id: HACKATHON_ID,
+      prize_id: PRIZE_ID,
       hackathon_participants: { clerk_user_id: USER_ID },
     },
     error: null,
@@ -31,6 +33,8 @@ function mockOwnershipFailure() {
   return createChainableMock({
     data: {
       judge_participant_id: "jp1",
+      hackathon_id: HACKATHON_ID,
+      prize_id: PRIZE_ID,
       hackathon_participants: { clerk_user_id: "other_user" },
     },
     error: null,
@@ -420,6 +424,33 @@ describe("Judging Scoring Service", () => {
       expect(result.success).toBe(false)
       if (!result.success) {
         expect(result.code).toBe("score_exceeds_max")
+      }
+    })
+
+    it("rejects criteriaId not belonging to assignment's prize", async () => {
+      let callIndex = 0
+      setMockFromImplementation((table) => {
+        callIndex++
+
+        if (callIndex === 1) {
+          return mockOwnershipSuccess()
+        }
+        if (table === "judging_criteria") {
+          return createChainableMock({ data: [{ id: CRITERIA_ID_1, max_score: 10 }], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await submitScores(
+        ASSIGNMENT_ID,
+        USER_ID,
+        [{ criteriaId: "99999999-9999-9999-9999-999999999999", score: 5 }],
+        ""
+      )
+
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.code).toBe("invalid_criteria")
       }
     })
 
