@@ -32,6 +32,12 @@ const mockPrize: Prize = {
   distribution_method: null,
   display_value: "$5,000 USD",
   criteria_id: null,
+  prize_track_id: null,
+  judging_style: null,
+  round_id: null,
+  assignment_mode: null,
+  max_picks: null,
+  is_screening: false,
   display_order: 0,
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
@@ -121,6 +127,44 @@ describe("Prizes Service", () => {
       expect(result).not.toBeNull()
       expect(result?.description).toBe("The grand prize")
       expect(result?.value).toBe("$5000")
+    })
+
+    it("creates prize with extended fields", async () => {
+      const extendedPrize = {
+        ...mockPrize,
+        type: "favorite" as const,
+        rank: 2,
+        kind: "swag",
+        monetary_value: 100,
+        currency: "CAD",
+        criteria_id: "c1",
+        distribution_method: "raffle",
+        display_value: "$100 CAD",
+      }
+      const chain = createChainableMock({
+        data: extendedPrize,
+        error: null,
+      })
+      setMockFromImplementation(() => chain)
+
+      const result = await createPrize("h1", {
+        name: "First Place",
+        type: "favorite",
+        rank: 2,
+        kind: "swag",
+        monetaryValue: 100,
+        currency: "CAD",
+        criteriaId: "c1",
+        distributionMethod: "raffle",
+        displayValue: "$100 CAD",
+      })
+
+      expect(result).not.toBeNull()
+      expect(result?.type).toBe("favorite")
+      expect(result?.rank).toBe(2)
+      expect(result?.kind).toBe("swag")
+      expect(result?.monetary_value).toBe(100)
+      expect(result?.currency).toBe("CAD")
     })
 
     it("returns null when database insert fails", async () => {

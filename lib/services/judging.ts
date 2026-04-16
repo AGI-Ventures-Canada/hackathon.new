@@ -24,7 +24,7 @@ export type CreatePrizeInput = {
   name: string
   description?: string | null
   value?: string | null
-  judgingStyle: PrizeJudgingStyle
+  judgingStyle?: PrizeJudgingStyle
   roundId?: string | null
   assignmentMode?: PrizeAssignmentMode
   maxPicks?: number
@@ -38,6 +38,8 @@ export type CreatePrizeInput = {
   criteriaId?: string | null
   criteria?: { name: string; description?: string | null }[]
   buckets?: { level: number; label: string; description?: string | null }[]
+  distributionMethod?: string | null
+  displayValue?: string | null
 }
 
 export type UpdatePrizeInput = {
@@ -49,6 +51,14 @@ export type UpdatePrizeInput = {
   assignmentMode?: PrizeAssignmentMode
   maxPicks?: number
   displayOrder?: number
+  type?: "score" | "favorite" | "crowd" | "criteria"
+  rank?: number | null
+  kind?: string
+  monetaryValue?: number | null
+  currency?: string | null
+  criteriaId?: string | null
+  distributionMethod?: string | null
+  displayValue?: string | null
 }
 
 export type PrizeCriterion = {
@@ -173,7 +183,7 @@ export async function createPrize(
     name: input.name,
     description: input.description ?? null,
     value: input.value ?? null,
-    judging_style: input.judgingStyle,
+    judging_style: input.judgingStyle ?? null,
     round_id: safeRoundId,
     assignment_mode: input.assignmentMode ?? "organizer_assigned",
     max_picks: input.maxPicks ?? 3,
@@ -186,6 +196,8 @@ export async function createPrize(
   if (input.monetaryValue !== undefined) row.monetary_value = input.monetaryValue
   if (input.currency !== undefined) row.currency = input.currency
   if (input.criteriaId !== undefined) row.criteria_id = input.criteriaId
+  if (input.distributionMethod !== undefined) row.distribution_method = input.distributionMethod
+  if (input.displayValue !== undefined) row.display_value = input.displayValue
 
   const cleanCriteria =
     input.judgingStyle === "gate_check"
@@ -289,6 +301,14 @@ export async function updatePrize(
   if (input.assignmentMode !== undefined) updates.assignment_mode = input.assignmentMode
   if (input.maxPicks !== undefined) updates.max_picks = input.maxPicks
   if (input.displayOrder !== undefined) updates.display_order = input.displayOrder
+  if (input.type !== undefined) updates.type = input.type
+  if (input.rank !== undefined) updates.rank = input.rank
+  if (input.kind !== undefined) updates.kind = input.kind
+  if (input.monetaryValue !== undefined) updates.monetary_value = input.monetaryValue
+  if (input.currency !== undefined) updates.currency = input.currency
+  if (input.criteriaId !== undefined) updates.criteria_id = input.criteriaId
+  if (input.distributionMethod !== undefined) updates.distribution_method = input.distributionMethod
+  if (input.displayValue !== undefined) updates.display_value = input.displayValue
 
   const { data, error } = await client
     .from("prizes")
@@ -1307,6 +1327,16 @@ export async function removeJudge(
   if (assignmentError) {
     console.error("Failed to remove judge assignments:", assignmentError)
     return { success: false }
+  }
+
+  const { error: displayError } = await client
+    .from("hackathon_judges_display")
+    .delete()
+    .eq("hackathon_id", hackathonId)
+    .eq("participant_id", judgeParticipantId)
+
+  if (displayError) {
+    console.error("Failed to remove judge display profile:", displayError)
   }
 
   const { error } = await client

@@ -74,13 +74,21 @@ export const dashboardJudgingRoutes = new Elysia()
         name: body.name,
         description: body.description,
         value: body.value,
-        judgingStyle: body.judgingStyle as "bucket_sort" | "gate_check" | "crowd_vote" | "judges_pick",
+        judgingStyle: body.judgingStyle as "bucket_sort" | "gate_check" | "crowd_vote" | "judges_pick" | undefined,
         roundId: body.roundId,
         assignmentMode: body.assignmentMode as "organizer_assigned" | "self_select" | undefined,
         maxPicks: body.maxPicks,
         displayOrder: body.displayOrder,
         criteria: body.criteria,
         buckets: body.buckets,
+        type: body.type as "score" | "favorite" | "crowd" | "criteria" | undefined,
+        rank: body.rank,
+        kind: body.kind,
+        monetaryValue: body.monetaryValue,
+        currency: body.currency,
+        criteriaId: body.criteriaId,
+        distributionMethod: body.distributionMethod,
+        displayValue: body.displayValue,
       })
 
       if (!createResult.success) {
@@ -106,9 +114,9 @@ export const dashboardJudgingRoutes = new Elysia()
     {
       body: t.Object({
         name: t.String({ description: "Prize name" }),
-        description: t.Optional(t.String({ description: "Prize description" })),
-        value: t.Optional(t.String({ description: "Prize value (e.g. '$5000')" })),
-        judgingStyle: t.String({ description: "bucket_sort | gate_check | crowd_vote | judges_pick" }),
+        description: t.Optional(t.Union([t.String(), t.Null()], { description: "Prize description" })),
+        value: t.Optional(t.Union([t.String(), t.Null()], { description: "Prize value (e.g. '$5000')" })),
+        judgingStyle: t.Optional(t.String({ description: "bucket_sort | gate_check | crowd_vote | judges_pick" })),
         roundId: t.Optional(t.Nullable(t.String({ description: "Round ID this prize belongs to" }))),
         assignmentMode: t.Optional(t.String({ description: "organizer_assigned | self_select" })),
         maxPicks: t.Optional(
@@ -138,11 +146,19 @@ export const dashboardJudgingRoutes = new Elysia()
             { description: "Sort groups for 'bucket_sort'. Defaults are used when omitted." }
           )
         ),
+        type: t.Optional(t.Union([t.Literal("score"), t.Literal("favorite"), t.Literal("crowd"), t.Literal("criteria")])),
+        rank: t.Optional(t.Union([t.Number(), t.Null()])),
+        kind: t.Optional(t.String()),
+        monetaryValue: t.Optional(t.Union([t.Number(), t.Null()])),
+        currency: t.Optional(t.Union([t.String(), t.Null()])),
+        criteriaId: t.Optional(t.Union([t.String(), t.Null()])),
+        distributionMethod: t.Optional(t.Union([t.String(), t.Null()])),
+        displayValue: t.Optional(t.Union([t.String(), t.Null()])),
       }),
       detail: {
         summary: "Create prize",
         description:
-          "Creates a new prize with judging style. For 'gate_check', 'criteria' must be a non-empty array. For 'bucket_sort', optional 'buckets' override the default sort groups. For 'judges_pick', 'maxPicks' sets how many picks each judge gets.",
+          "Creates a new prize. Accepts judgingStyle with criteria/buckets for judging tab, or legacy type/rank/kind fields from edit drawer.",
       },
     }
   )
@@ -200,6 +216,14 @@ export const dashboardJudgingRoutes = new Elysia()
         assignmentMode: body.assignmentMode as import("@/lib/db/hackathon-types").PrizeAssignmentMode | undefined,
         maxPicks: body.maxPicks,
         displayOrder: body.displayOrder,
+        type: body.type as "score" | "favorite" | "crowd" | "criteria" | undefined,
+        rank: body.rank,
+        kind: body.kind ?? undefined,
+        monetaryValue: body.monetaryValue,
+        currency: body.currency,
+        criteriaId: body.criteriaId,
+        distributionMethod: body.distributionMethod,
+        displayValue: body.displayValue,
       })
 
       if (!prize) {
@@ -268,6 +292,14 @@ export const dashboardJudgingRoutes = new Elysia()
             { description: "Replace all sort groups for this prize." }
           )
         ),
+        type: t.Optional(t.Union([t.Literal("score"), t.Literal("favorite"), t.Literal("crowd"), t.Literal("criteria")])),
+        rank: t.Optional(t.Union([t.Number(), t.Null()])),
+        kind: t.Optional(t.Nullable(t.String())),
+        monetaryValue: t.Optional(t.Union([t.Number(), t.Null()])),
+        currency: t.Optional(t.Nullable(t.String())),
+        criteriaId: t.Optional(t.Nullable(t.String())),
+        distributionMethod: t.Optional(t.Nullable(t.String())),
+        displayValue: t.Optional(t.Nullable(t.String())),
       }),
       detail: {
         summary: "Update prize",
@@ -942,9 +974,13 @@ export const dashboardJudgingRoutes = new Elysia()
         const hackathon = result.hackathon
 
         let judgeEmail: string | undefined
+        let judgeName: string | undefined
+        let judgeImageUrl: string | undefined
         try {
           const judgeUser = await client.users.getUser(typedBody.clerkUserId)
           judgeEmail = judgeUser.primaryEmailAddress?.emailAddress
+          judgeName = [judgeUser.firstName, judgeUser.lastName].filter(Boolean).join(" ") || judgeEmail || "Judge"
+          judgeImageUrl = judgeUser.imageUrl
         } catch {
           return new Response(JSON.stringify({ error: "Failed to look up judge info", code: "lookup_failed" }), { status: 500, headers: { "Content-Type": "application/json" } })
         }
@@ -967,6 +1003,18 @@ export const dashboardJudgingRoutes = new Elysia()
 
         if (!addResult.success) {
           return new Response(JSON.stringify({ error: addResult.error, code: addResult.code }), { status: 400, headers: { "Content-Type": "application/json" } })
+        }
+
+        try {
+          const { createJudgeDisplayProfile } = await import("@/lib/services/judge-display")
+          await createJudgeDisplayProfile(params.id, {
+            name: judgeName!,
+            headshotUrl: judgeImageUrl,
+            clerkUserId: typedBody.clerkUserId,
+            participantId: addResult.participant.id,
+          })
+        } catch (err) {
+          console.error("Failed to create judge display profile:", err)
         }
 
         if (judgeEmail) {
@@ -1024,6 +1072,19 @@ export const dashboardJudgingRoutes = new Elysia()
 
           if (!addResult.success) {
             return new Response(JSON.stringify({ error: addResult.error, code: addResult.code }), { status: 400, headers: { "Content-Type": "application/json" } })
+          }
+
+          try {
+            const { createJudgeDisplayProfile } = await import("@/lib/services/judge-display")
+            const displayName = [existingUser.firstName, existingUser.lastName].filter(Boolean).join(" ") || typedBody.email
+            await createJudgeDisplayProfile(params.id, {
+              name: displayName,
+              headshotUrl: existingUser.imageUrl,
+              clerkUserId: existingUser.id,
+              participantId: addResult.participant.id,
+            })
+          } catch (err) {
+            console.error("Failed to create judge display profile:", err)
           }
 
           if (hackathon.status !== "draft") {

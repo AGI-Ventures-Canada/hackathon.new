@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { EditProvider, useEdit, SECTION_ORDER } from "./edit-context"
 import { useActionItemsOptional } from "@/components/hackathon/manage/action-items-context"
@@ -34,9 +34,10 @@ import { TimelineEditForm } from "@/components/hackathon/edit-drawer/timeline-ed
 import { LocationEditForm } from "@/components/hackathon/edit-drawer/location-edit-form"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { SponsorsEditForm } from "@/components/hackathon/edit-drawer/sponsors-edit-form"
-import { JudgesEditForm } from "@/components/hackathon/edit-drawer/judges-edit-form"
-import { PrizesEditForm } from "@/components/hackathon/edit-drawer/prizes-edit-form"
 import { CommunityEditForm } from "@/components/hackathon/edit-drawer/community-edit-form"
+import { JudgingSetupDialog } from "@/components/hackathon/judging/judging-setup-dialog"
+import type { PublicPrize } from "@/lib/services/public-hackathons"
+import type { PrizeType } from "@/lib/db/hackathon-types"
 import type { PublicResultWithDetails } from "@/lib/services/results"
 import type { ScheduleItem } from "@/lib/services/schedule-items"
 import type { Announcement } from "@/lib/services/announcements"
@@ -93,11 +94,34 @@ function HackathonPreviewContent({
   const [isRegistered, setIsRegistered] = useState(initialIsRegistered)
   const [justRegistered, setJustRegistered] = useState(false)
   const [bannerUrl, setBannerUrl] = useState(hackathon.banner_url)
-  const [optimisticJudges, setOptimisticJudges] = useState<HackathonJudgeDisplay[] | null>(null)
+  const [pendingJudges, setPendingJudges] = useState<HackathonJudgeDisplay[]>([])
+  const [pendingPrizes, setPendingPrizes] = useState<PublicPrize[]>([])
+  const [judgingDialogOpen, setJudgingDialogOpen] = useState(false)
 
   useEffect(() => {
-    setOptimisticJudges(null)
+    const serverIds = new Set(hackathon.prizes.map((p) => p.id))
+    setPendingPrizes((prev) => prev.filter((p) => !serverIds.has(p.id)))
+  }, [hackathon.prizes])
+
+  useEffect(() => {
+    const serverParticipantIds = new Set(hackathon.judges.map((j) => j.participant_id).filter(Boolean))
+    setPendingJudges((prev) => prev.filter((j) => !j.participant_id || !serverParticipantIds.has(j.participant_id)))
   }, [hackathon.judges])
+
+  const displayJudges = useMemo(() => {
+    const serverParticipantIds = new Set(hackathon.judges.map((j) => j.participant_id).filter(Boolean))
+    return [
+      ...hackathon.judges,
+      ...pendingJudges.filter((j) => !j.participant_id || !serverParticipantIds.has(j.participant_id)),
+    ]
+  }, [hackathon.judges, pendingJudges])
+  const displayPrizes = useMemo(() => {
+    const serverIds = new Set(hackathon.prizes.map((p) => p.id))
+    return [
+      ...hackathon.prizes,
+      ...pendingPrizes.filter((p) => !serverIds.has(p.id)),
+    ]
+  }, [hackathon.prizes, pendingPrizes])
 
   const [nowIso, setNowIso] = useState<string | null>(null)
   useEffect(() => {
@@ -147,7 +171,6 @@ function HackathonPreviewContent({
       openSection("name")
     }
   }, [isEditable, editMode, hackathon.name, activeSection, openSection])
-
 
   async function handleCancelInvitation(invitationId: string) {
     if (!teamInfo) return
@@ -397,22 +420,21 @@ function HackathonPreviewContent({
     </EditableSection>
   )
 
-  const judgesBlock = isEditable && editMode && activeSection === "judges" ? (
-    <div data-edit-section="judges" className="scroll-mt-24">
-      <JudgesEditForm
-        hackathonId={hackathon.id}
-        initialJudges={hackathon.judges}
-        onSaveAndNext={() => handleSaveAndNext("judges")}
-        onJudgesChange={setOptimisticJudges}
-      />
-    </div>
-  ) : (
+  const judgingBlock = (
     <EditableSection
-      section="judges"
-      isEmpty={(optimisticJudges ?? hackathon.judges).length === 0}
-      emptyLabel="Click to add judges"
+      section="judging"
+      isEmpty={displayJudges.length === 0 && displayPrizes.length === 0}
+      emptyLabel="Click to setup judges and prizes"
+      onClick={() => {
+        if (!judgingDialogOpen) setJudgingDialogOpen(true)
+      }}
     >
-      <JudgeSection judges={optimisticJudges ?? hackathon.judges} />
+      <JudgeSection judges={displayJudges} />
+      <PrizeSection
+        prizes={displayPrizes}
+        hackathonSlug={hackathon.slug}
+        hackathonStatus={hackathon.status}
+      />
     </EditableSection>
   )
 
@@ -460,31 +482,69 @@ function HackathonPreviewContent({
     )
   })()
 
-  const prizesBlock = isEditable && editMode && activeSection === "prizes" ? (
-    <div data-edit-section="prizes" className="scroll-mt-24">
-      <PrizesEditForm
-        hackathonId={hackathon.id}
-        initialPrizes={hackathon.prizes}
-        onSaveAndNext={() => handleSaveAndNext("prizes")}
-        onSave={onFormSave ? (data) => onFormSave(data) : undefined}
-      />
-    </div>
-  ) : (
-    <EditableSection
-      section="prizes"
-      isEmpty={hackathon.prizes.length === 0}
-      emptyLabel="Click to add prizes"
-    >
-      <PrizeSection
-        prizes={hackathon.prizes}
-        hackathonSlug={hackathon.slug}
-        hackathonStatus={hackathon.status}
-      />
-    </EditableSection>
-  )
-
   const eventContent = (
     <>
+      {isEditable && (
+        <JudgingSetupDialog
+          hackathonId={hackathon.id}
+          slug={hackathon.slug}
+          open={judgingDialogOpen}
+          onOpenChange={(open) => {
+            if (!open) {
+              setJudgingDialogOpen(false)
+              router.refresh()
+            }
+          }}
+          onJudgeAdded={(judge) => {
+            setPendingJudges((prev) => [
+              ...prev,
+              {
+                id: `pending-${Date.now()}`,
+                hackathon_id: hackathon.id,
+                name: judge.displayName,
+                title: null,
+                organization: null,
+                headshot_url: judge.imageUrl,
+                clerk_user_id: null,
+                participant_id: judge.participantId,
+                display_order: 9999,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              },
+            ])
+          }}
+          onPrizeAdded={(prize) => {
+            setPendingPrizes((prev) => [
+              ...prev,
+              {
+                id: prize.id,
+                hackathon_id: hackathon.id,
+                name: prize.name,
+                description: prize.description,
+                value: prize.value,
+                type: (["score", "favorite", "crowd", "criteria"] as PrizeType[]).includes(prize.type as PrizeType)
+                  ? (prize.type as PublicPrize["type"])
+                  : "score",
+                rank: null,
+                kind: "prize",
+                criteria_id: null,
+                prize_track_id: null,
+                judging_style: prize.judgingStyle,
+                round_id: null,
+                assignment_mode: null,
+                max_picks: null,
+                is_screening: false,
+                display_order: 9999,
+                display_value: null,
+                allowed_team_modes: null,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              },
+            ])
+          }}
+        />
+      )}
+
       <section className="py-12 border-t">
         <div className="mx-auto max-w-4xl px-4">
           <Tabs defaultValue="overview" className="w-full">
@@ -554,8 +614,7 @@ function HackathonPreviewContent({
               )}
 
               {sponsorsBlock}
-              {judgesBlock}
-              {prizesBlock}
+              {judgingBlock}
             </TabsContent>
 
             <TabsContent value="schedule" className="mt-6">

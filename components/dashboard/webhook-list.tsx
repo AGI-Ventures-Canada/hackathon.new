@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation"
 import { useState } from "react"
+import { assertOk } from "@/lib/utils/fetch"
 import { Webhook, MoreHorizontal, Trash2, AlertTriangle } from "lucide-react"
 import type { Webhook as WebhookType } from "@/lib/db/hackathon-types"
 import { Badge } from "@/components/ui/badge"
@@ -53,26 +54,34 @@ const eventLabels: Record<string, string> = {
 export function WebhookList({ webhooks }: WebhookListProps) {
   const router = useRouter()
   const [deleteId, setDeleteId] = useState<string | null>(null)
-  const [deleting, setDeleting] = useState(false)
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set())
+
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const handleDelete = async () => {
     if (!deleteId) return
-
-    setDeleting(true)
+    const id = deleteId
+    setDeleteError(null)
+    setDeleteId(null)
+    setHiddenIds((prev) => new Set(prev).add(id))
     try {
-      const response = await fetch(`/api/dashboard/webhooks/${deleteId}`, {
+      await fetch(`/api/dashboard/webhooks/${id}`, {
         method: "DELETE",
+      }).then(assertOk)
+      router.refresh()
+    } catch (err) {
+      setHiddenIds((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
       })
-      if (response.ok) {
-        router.refresh()
-      }
-    } finally {
-      setDeleting(false)
-      setDeleteId(null)
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete webhook")
     }
   }
 
-  if (webhooks.length === 0) {
+  const visibleWebhooks = webhooks.filter((w) => !hiddenIds.has(w.id))
+
+  if (visibleWebhooks.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center">
         <Webhook className="size-12 text-muted-foreground mb-4" />
@@ -86,6 +95,9 @@ export function WebhookList({ webhooks }: WebhookListProps) {
 
   return (
     <>
+      {deleteError && (
+        <p className="text-sm text-destructive mb-2">{deleteError}</p>
+      )}
       <div className="overflow-x-auto">
       <Table>
         <TableHeader>
@@ -98,7 +110,7 @@ export function WebhookList({ webhooks }: WebhookListProps) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {webhooks.map((webhook) => (
+          {visibleWebhooks.map((webhook) => (
             <TableRow key={webhook.id}>
               <TableCell>
                 <code className="text-sm bg-muted px-1.5 py-0.5 rounded truncate max-w-xs block">
@@ -180,13 +192,13 @@ export function WebhookList({ webhooks }: WebhookListProps) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
-              disabled={deleting}
+
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {deleting ? "Deleting..." : "Delete"}
+              Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

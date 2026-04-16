@@ -287,6 +287,31 @@ describe("Judging Service", () => {
 
       expect(result.success).toBe(false)
     })
+
+    it("succeeds even when hackathon_judges_display deletion fails", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "judge_assignments") {
+          return createChainableMock({ data: null, error: null })
+        }
+        if (table === "hackathon_judges_display") {
+          return createChainableMock({
+            data: null,
+            error: { message: "Display delete failed" },
+          })
+        }
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: null, error: null })
+        }
+        if (table === "hackathon_results") {
+          return createChainableMock({ data: [], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await removeJudge("h1", "j1")
+
+      expect(result.success).toBe(true)
+    })
   })
 
   describe("autoAssignJudges", () => {
