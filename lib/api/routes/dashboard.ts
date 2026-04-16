@@ -2293,7 +2293,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
     },
   })
   .post("/teams/:teamId/invitations/:invitationId/remind", async ({ principal, params }) => {
-    requirePrincipal(principal, ["user"])
+    requirePrincipal(principal, ["user"], ["hackathons:write"])
 
     const { isValidUuid } = await import("@/lib/utils/uuid")
     if (!isValidUuid(params.teamId) || !isValidUuid(params.invitationId)) {

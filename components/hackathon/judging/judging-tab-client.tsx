@@ -297,7 +297,7 @@ export function JudgingTabClient({
     onRevert: (invitationId) => invitationsList.unhideItem(invitationId),
   })
 
-  const { execute: handleRemindInvitation } = useOptimisticMutation({
+  const { execute: handleRemindInvitation, error: remindInvitationError } = useOptimisticMutation({
     fn: (invitationId: string) =>
       fetch(`${base}/judging/invitations/${invitationId}/remind`, { method: "POST" }).then(assertOk),
     onOptimistic: (invitationId) =>
@@ -361,7 +361,7 @@ export function JudgingTabClient({
     }
   }
 
-  const mutationError = deletePrizeError || removeJudgeError || cancelInvitationError
+  const mutationError = deletePrizeError || removeJudgeError || cancelInvitationError || remindInvitationError
 
   return (
     <div className="space-y-6">

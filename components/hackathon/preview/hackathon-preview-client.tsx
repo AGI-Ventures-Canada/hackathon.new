@@ -191,7 +191,7 @@ function HackathonPreviewContent({
     }
   }
 
-  const { execute: handleRemindInvitation } = useOptimisticMutation({
+  const { execute: handleRemindInvitation, error: remindError } = useOptimisticMutation({
     fn: (invitationId: string) =>
       fetch(
         `/api/dashboard/teams/${teamInfo?.team.id}/invitations/${invitationId}/remind`,
@@ -415,6 +415,7 @@ function HackathonPreviewContent({
               )
             })}
           </div>
+          {remindError && <p className="text-sm text-destructive">{remindError}</p>}
         </div>
       )}
     </div>

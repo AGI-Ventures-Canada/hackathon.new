@@ -57,7 +57,7 @@ export function TeamManagementTab({ teamInfo, hackathonId, maxTeamSize, location
 
   const [remindedIds, setRemindedIds] = useState<Set<string>>(new Set())
 
-  const { execute: handleRemindInvitation } = useOptimisticMutation({
+  const { execute: handleRemindInvitation, error: remindError } = useOptimisticMutation({
     fn: (invitationId: string) =>
       fetch(
         `/api/dashboard/teams/${teamInfo.team.id}/invitations/${invitationId}/remind`,
@@ -304,6 +304,7 @@ export function TeamManagementTab({ teamInfo, hackathonId, maxTeamSize, location
                 </div>
               ))}
             </div>
+            {remindError && <p className="text-sm text-destructive mt-2">{remindError}</p>}
           </CardContent>
         </Card>
       )}
