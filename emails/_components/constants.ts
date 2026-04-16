@@ -37,8 +37,4 @@ export const fontFamily =
 export const monoFontFamily =
   "'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', 'Courier New', monospace"
 
-export function buildEventUrl(hackathonSlug?: string): string | undefined {
-  if (!hackathonSlug) return undefined
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://getoatmeal.com"
-  return `${baseUrl}/e/${hackathonSlug}`
-}
+export { buildEventUrl } from "@/lib/email/utils"

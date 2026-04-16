@@ -1,7 +1,11 @@
 import { render } from "@react-email/components"
 
-export function buildEventUrl(slug: string, path?: string): string {
-  const base = `${process.env.NEXT_PUBLIC_APP_URL}/e/${slug}`
+export function buildEventUrl(slug: string, path?: string): string
+export function buildEventUrl(slug?: string, path?: string): string | undefined
+export function buildEventUrl(slug?: string, path?: string): string | undefined {
+  if (!slug) return undefined
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://getoatmeal.com"
+  const base = `${baseUrl}/e/${slug}`
   return path ? `${base}${path}` : base
 }
 

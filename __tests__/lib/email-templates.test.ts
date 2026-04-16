@@ -9,6 +9,8 @@ import TransitionNotificationEmail from "@/emails/transition-notification"
 import PostEventReminderEmail from "@/emails/post-event-reminder"
 import WinnerNotificationEmail from "@/emails/winner-notification"
 import AgentNotificationEmail from "@/emails/agent-notification"
+import SponsorClaimNotificationEmail from "@/emails/sponsor-claim-notification"
+import OrganizerClaimNotificationEmail from "@/emails/organizer-claim-notification"
 
 describe("Email Template Rendering", () => {
   it("renders team-invitation", async () => {
@@ -135,5 +137,72 @@ describe("Email Template Rendering", () => {
     expect(html).toContain("Data Sync")
     expect(html).toContain("Failed")
     expect(html).toContain("Connection timeout after 30s")
+  })
+
+  it("renders team-invitation with date range and team members", async () => {
+    const { html } = await renderEmail(
+      TeamInvitationEmail({
+        ...TeamInvitationEmail.PreviewProps,
+        hackathonStartsAt: "2026-04-20T08:30:00Z",
+        hackathonEndsAt: "2026-04-22T17:00:00Z",
+        teamMembers: ["Sarah Chen", "Marcus Rivera"],
+      })
+    )
+    expect(html).toContain("Apr 20")
+    expect(html).toContain("Sarah Chen")
+    expect(html).toContain("Marcus Rivera")
+  })
+
+  it("renders judge-invitation with event dates", async () => {
+    const { html } = await renderEmail(
+      JudgeInvitationEmail({
+        ...JudgeInvitationEmail.PreviewProps,
+        hackathonStartsAt: "2026-04-20T08:30:00Z",
+        hackathonEndsAt: "2026-04-22T17:00:00Z",
+      })
+    )
+    expect(html).toContain("Apr 20")
+  })
+
+  it("renders judge-added with event dates", async () => {
+    const { html } = await renderEmail(
+      JudgeAddedEmail({
+        ...JudgeAddedEmail.PreviewProps,
+        hackathonStartsAt: "2026-04-20T08:30:00Z",
+        hackathonEndsAt: "2026-04-22T17:00:00Z",
+      })
+    )
+    expect(html).toContain("Apr 20")
+  })
+
+  it("renders sponsor-claim-notification with prizeValue", async () => {
+    const { html } = await renderEmail(
+      SponsorClaimNotificationEmail({
+        ...SponsorClaimNotificationEmail.PreviewProps,
+        prizeValue: "$2,000",
+      })
+    )
+    expect(html).toContain("$2,000")
+  })
+
+  it("renders organizer-claim-notification with prizeValue", async () => {
+    const { html } = await renderEmail(
+      OrganizerClaimNotificationEmail({
+        ...OrganizerClaimNotificationEmail.PreviewProps,
+        prizeValue: "$5,000",
+      })
+    )
+    expect(html).toContain("$5,000")
+  })
+
+  it("renders winner-notification with event dates", async () => {
+    const { html } = await renderEmail(
+      WinnerNotificationEmail({
+        ...WinnerNotificationEmail.PreviewProps,
+        hackathonStartsAt: "2026-04-20T08:30:00Z",
+        hackathonEndsAt: "2026-04-22T17:00:00Z",
+      })
+    )
+    expect(html).toContain("Apr 20")
   })
 })
