@@ -2315,18 +2315,11 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       "@/lib/services/team-invitations"
     )
 
-    const result = await remindTeamInvitation(params.invitationId, principal.userId!)
+    const result = await remindTeamInvitation(params.invitationId, principal.userId!, params.teamId)
 
     if (!result.success) {
       return new Response(JSON.stringify({ error: result.error, code: result.code }), {
         status: 400,
-        headers: { "Content-Type": "application/json" },
-      })
-    }
-
-    if (result.invitation.team_id !== params.teamId) {
-      return new Response(JSON.stringify({ error: "Not found" }), {
-        status: 404,
         headers: { "Content-Type": "application/json" },
       })
     }

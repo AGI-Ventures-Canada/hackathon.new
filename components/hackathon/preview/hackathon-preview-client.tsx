@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
+import { useOptimisticMutation } from "@/hooks/use-optimistic-mutation"
+import { assertOk } from "@/lib/utils/fetch"
 import { EditProvider, useEdit, SECTION_ORDER } from "./edit-context"
 import { useActionItemsOptional } from "@/components/hackathon/manage/action-items-context"
 import { EditableSection } from "./editable-section"
@@ -189,29 +191,21 @@ function HackathonPreviewContent({
     }
   }
 
-  async function handleRemindInvitation(invitationId: string) {
-    if (!teamInfo) return
-    setRemindedIds((prev) => new Set(prev).add(invitationId))
-    try {
-      const res = await fetch(
-        `/api/dashboard/teams/${teamInfo.team.id}/invitations/${invitationId}/remind`,
+  const { execute: handleRemindInvitation } = useOptimisticMutation({
+    fn: (invitationId: string) =>
+      fetch(
+        `/api/dashboard/teams/${teamInfo?.team.id}/invitations/${invitationId}/remind`,
         { method: "POST" }
-      )
-      if (!res.ok) {
-        setRemindedIds((prev) => {
-          const next = new Set(prev)
-          next.delete(invitationId)
-          return next
-        })
-      }
-    } catch {
+      ).then(assertOk),
+    onOptimistic: (invitationId) =>
+      setRemindedIds((prev) => new Set(prev).add(invitationId)),
+    onRevert: (invitationId) =>
       setRemindedIds((prev) => {
         const next = new Set(prev)
         next.delete(invitationId)
         return next
-      })
-    }
-  }
+      }),
+  })
 
   const isJudge = participantRole === "judge"
 

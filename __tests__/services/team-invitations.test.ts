@@ -841,6 +841,58 @@ describe("Team Invitations Service", () => {
       expect(result.success).toBe(true)
     })
 
+    it("succeeds when teamId is provided and matches", async () => {
+      let callCount = 0
+      setMockFromImplementation(() => {
+        callCount++
+        if (callCount === 1) {
+          return createChainableMock({ data: pendingInvitation, error: null })
+        }
+        return createChainableMock({
+          data: { ...pendingInvitation, reminded_at: new Date().toISOString() },
+          error: null,
+        })
+      })
+
+      const result = await remindTeamInvitation(
+        "11111111-1111-1111-1111-111111111111",
+        "user_captain",
+        "22222222-2222-2222-2222-222222222222"
+      )
+
+      expect(result.success).toBe(true)
+    })
+
+    it("returns not_found when teamId is not a valid UUID", async () => {
+      const result = await remindTeamInvitation(
+        "11111111-1111-1111-1111-111111111111",
+        "user_captain",
+        "not-a-uuid"
+      )
+
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.code).toBe("not_found")
+      }
+    })
+
+    it("returns not_found when teamId does not match invitation", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({ data: null, error: { message: "Not found" } })
+      )
+
+      const result = await remindTeamInvitation(
+        "11111111-1111-1111-1111-111111111111",
+        "user_captain",
+        "33333333-3333-3333-3333-333333333333"
+      )
+
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.code).toBe("not_found")
+      }
+    })
+
     it("returns not_found when invitation does not exist", async () => {
       setMockFromImplementation(() =>
         createChainableMock({ data: null, error: { message: "Not found" } })
