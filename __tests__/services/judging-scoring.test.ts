@@ -17,6 +17,8 @@ const CRITERIA_ID_1 = "44444444-4444-4444-4444-444444444444"
 const CRITERIA_ID_2 = "55555555-5555-5555-5555-555555555555"
 const TEAM_ID = "66666666-6666-6666-6666-666666666666"
 
+const MOCK_OWNERSHIP = { hackathonId: HACKATHON_ID, prizeId: PRIZE_ID }
+
 function mockOwnershipSuccess() {
   return createChainableMock({
     data: {
@@ -89,19 +91,12 @@ describe("Judging Scoring Service", () => {
   })
 
   describe("getAssignmentDetail", () => {
-    it("returns null when ownership verification fails", async () => {
-      setMockFromImplementation(() => mockOwnershipFailure())
-
-      const result = await getAssignmentDetail(ASSIGNMENT_ID, USER_ID)
-      expect(result).toBeNull()
-    })
-
     it("returns null when assignment not found", async () => {
       setMockFromImplementation(() =>
         createChainableMock({ data: null, error: null })
       )
 
-      const result = await getAssignmentDetail(ASSIGNMENT_ID, USER_ID)
+      const result = await getAssignmentDetail(ASSIGNMENT_ID, MOCK_OWNERSHIP)
       expect(result).toBeNull()
     })
 
@@ -111,9 +106,6 @@ describe("Judging Scoring Service", () => {
         callIndex++
 
         if (callIndex === 1) {
-          return mockOwnershipSuccess()
-        }
-        if (callIndex === 2) {
           return createChainableMock({ data: mockAssignmentRow(), error: null })
         }
         if (table === "teams") {
@@ -159,7 +151,7 @@ describe("Judging Scoring Service", () => {
         return createChainableMock({ data: null, error: null })
       })
 
-      const result = await getAssignmentDetail(ASSIGNMENT_ID, USER_ID)
+      const result = await getAssignmentDetail(ASSIGNMENT_ID, MOCK_OWNERSHIP)
 
       expect(result).not.toBeNull()
       expect(result!.id).toBe(ASSIGNMENT_ID)
@@ -193,9 +185,6 @@ describe("Judging Scoring Service", () => {
         callIndex++
 
         if (callIndex === 1) {
-          return mockOwnershipSuccess()
-        }
-        if (callIndex === 2) {
           return createChainableMock({ data: mockAssignmentRow(), error: null })
         }
         if (table === "teams") {
@@ -224,7 +213,7 @@ describe("Judging Scoring Service", () => {
         return createChainableMock({ data: null, error: null })
       })
 
-      const result = await getAssignmentDetail(ASSIGNMENT_ID, USER_ID)
+      const result = await getAssignmentDetail(ASSIGNMENT_ID, MOCK_OWNERSHIP)
 
       expect(result).not.toBeNull()
       expect(result!.criteria).toHaveLength(2)
@@ -240,9 +229,6 @@ describe("Judging Scoring Service", () => {
         callIndex++
 
         if (callIndex === 1) {
-          return mockOwnershipSuccess()
-        }
-        if (callIndex === 2) {
           return createChainableMock({ data: assignmentNoTeam, error: null })
         }
         if (table === "judging_criteria") {
@@ -252,7 +238,7 @@ describe("Judging Scoring Service", () => {
         return createChainableMock({ data: null, error: null })
       })
 
-      const result = await getAssignmentDetail(ASSIGNMENT_ID, USER_ID)
+      const result = await getAssignmentDetail(ASSIGNMENT_ID, MOCK_OWNERSHIP)
 
       expect(result).not.toBeNull()
       expect(result!.teamName).toBeNull()
@@ -264,9 +250,6 @@ describe("Judging Scoring Service", () => {
         callIndex++
 
         if (callIndex === 1) {
-          return mockOwnershipSuccess()
-        }
-        if (callIndex === 2) {
           return createChainableMock({ data: mockAssignmentRow(), error: null })
         }
         if (table === "teams") {
@@ -282,7 +265,7 @@ describe("Judging Scoring Service", () => {
         return createChainableMock({ data: null, error: null })
       })
 
-      const result = await getAssignmentDetail(ASSIGNMENT_ID, USER_ID)
+      const result = await getAssignmentDetail(ASSIGNMENT_ID, MOCK_OWNERSHIP)
 
       expect(result).not.toBeNull()
       expect(result!.criteria).toHaveLength(0)

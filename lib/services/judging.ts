@@ -2333,13 +2333,9 @@ export type AssignmentDetail = {
 
 export async function getAssignmentDetail(
   assignmentId: string,
-  clerkUserId: string,
-  ownership?: AssignmentOwnership
+  ownership: AssignmentOwnership
 ): Promise<AssignmentDetail | null> {
   const client = getSupabase() as unknown as SupabaseClient
-
-  const verified = ownership ?? await verifyAssignmentOwnership(assignmentId, clerkUserId)
-  if (!verified) return null
 
   const { data: assignment, error: assignmentError } = await client
     .from("judge_assignments")
@@ -2380,11 +2376,11 @@ export async function getAssignmentDetail(
     category: string | null
   }[] = []
 
-  if (verified.prizeId) {
+  if (ownership.prizeId) {
     const { data } = await client
       .from("judging_criteria")
       .select("id, name, description, max_score, weight, category")
-      .eq("prize_id", verified.prizeId)
+      .eq("prize_id", ownership.prizeId)
       .order("display_order")
     criteria = (data ?? []) as typeof criteria
   }
@@ -2393,7 +2389,7 @@ export async function getAssignmentDetail(
     const { data } = await client
       .from("judging_criteria")
       .select("id, name, description, max_score, weight, category")
-      .eq("hackathon_id", verified.hackathonId)
+      .eq("hackathon_id", ownership.hackathonId)
       .is("prize_id", null)
       .order("display_order")
     criteria = (data ?? []) as typeof criteria

@@ -1,11 +1,12 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ChevronLeft, ChevronRight, CheckCircle2 } from "lucide-react"
 import { ScoringPanel } from "./scoring-panel"
 import { getTeamSizeWarning } from "@/lib/utils/team-size"
+import { usePrefetchAssignment } from "@/hooks/use-prefetch-assignment"
 
 type TeamSettings = {
   minTeamSize: number
@@ -45,29 +46,14 @@ export function FocusScoringView({
   const current = assignments[currentIndex]
   const allDone = completed === total
 
-  const [prefetchCache, setPrefetchCache] = useState<Record<string, React.ComponentProps<typeof ScoringPanel>["prefetchedDetail"]>>({})
-  const prefetchedIdsRef = useRef<Set<string>>(new Set())
-
-  useEffect(() => {
-    const nextUnscored = assignments.findIndex(
-      (a, idx) => idx > currentIndex && !completedIds.has(a.id)
+  const nextUnscoredId = useMemo(() => {
+    const idx = assignments.findIndex(
+      (a, i) => i > currentIndex && !completedIds.has(a.id)
     )
-    if (nextUnscored < 0) return
-    const nextId = assignments[nextUnscored].id
-    if (prefetchedIdsRef.current.has(nextId)) return
-    prefetchedIdsRef.current.add(nextId)
+    return idx >= 0 ? assignments[idx].id : null
+  }, [currentIndex, assignments, completedIds])
 
-    let cancelled = false
-    fetch(`/api/public/hackathons/${hackathonSlug}/judging/assignments/${nextId}`)
-      .then((res) => res.ok ? res.json() : null)
-      .then((data) => {
-        if (data && !cancelled) {
-          setPrefetchCache((prev) => ({ ...prev, [nextId]: data }))
-        }
-      })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [currentIndex, assignments, completedIds, hackathonSlug])
+  const prefetchCache = usePrefetchAssignment(hackathonSlug, nextUnscoredId)
 
   const goToNext = useCallback(() => {
     if (currentIndex < total - 1) setCurrentIndex((i) => i + 1)

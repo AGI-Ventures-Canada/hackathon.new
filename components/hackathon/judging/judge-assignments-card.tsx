@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -8,6 +8,7 @@ import { Gavel, CheckCircle2, Circle, ChevronDown, ChevronLeft, ChevronRight, Fo
 import { getTeamSizeWarning } from "@/lib/utils/team-size"
 import { ScoringPanel } from "./scoring-panel"
 import { FocusScoringView } from "./focus-scoring-view"
+import { usePrefetchAssignment } from "@/hooks/use-prefetch-assignment"
 
 const PAGE_SIZE = 20
 
@@ -54,29 +55,16 @@ export function JudgeAssignmentsCard({
   const totalPages = Math.ceil(total / PAGE_SIZE)
   const pageAssignments = assignments.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
 
-  const [prefetchCache, setPrefetchCache] = useState<Record<string, React.ComponentProps<typeof ScoringPanel>["prefetchedDetail"]>>({})
-  const prefetchedIdsRef = useRef<Set<string>>(new Set())
-
-  useEffect(() => {
-    if (!openAssignmentId) return
+  const nextUnscoredId = useMemo(() => {
+    if (!openAssignmentId) return null
     const currentIdx = assignments.findIndex((a) => a.id === openAssignmentId)
-    const nextUnscored = assignments.find(
+    const next = assignments.find(
       (a, idx) => idx > currentIdx && !completedIds.has(a.id) && a.id !== openAssignmentId
     )
-    if (!nextUnscored || prefetchedIdsRef.current.has(nextUnscored.id)) return
-    prefetchedIdsRef.current.add(nextUnscored.id)
+    return next?.id ?? null
+  }, [openAssignmentId, assignments, completedIds])
 
-    let cancelled = false
-    fetch(`/api/public/hackathons/${hackathonSlug}/judging/assignments/${nextUnscored.id}`)
-      .then((res) => res.ok ? res.json() : null)
-      .then((data) => {
-        if (data && !cancelled) {
-          setPrefetchCache((prev) => ({ ...prev, [nextUnscored.id]: data }))
-        }
-      })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [openAssignmentId, assignments, completedIds, hackathonSlug])
+  const prefetchCache = usePrefetchAssignment(hackathonSlug, nextUnscoredId)
 
   function handleScoreSubmitted(assignmentId: string) {
     const updatedIds = new Set([...completedIds, assignmentId])
