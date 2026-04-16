@@ -26,6 +26,15 @@ export async function renderEmail(
   return { html, text }
 }
 
+export function formatTimeLeft(expiresAt: string): string {
+  const diff = new Date(expiresAt).getTime() - Date.now()
+  if (diff <= 0) return "less than an hour"
+  const hours = Math.ceil(diff / (1000 * 60 * 60))
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"}`
+  const days = Math.ceil(diff / (1000 * 60 * 60 * 24))
+  return `${days} day${days === 1 ? "" : "s"}`
+}
+
 export async function resolveEmailsForTenant(tenant: {
   clerk_org_id: string | null
   clerk_user_id: string | null

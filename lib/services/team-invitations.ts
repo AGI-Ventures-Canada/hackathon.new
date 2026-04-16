@@ -331,6 +331,58 @@ export async function listTeamInvitations(
   return { success: true, invitations: data as TeamInvitation[] }
 }
 
+export type RemindTeamInvitationResult =
+  | { success: true; invitation: TeamInvitation }
+  | { success: false; error: string; code: string }
+
+export async function remindTeamInvitation(
+  invitationId: string,
+  clerkUserId: string
+): Promise<RemindTeamInvitationResult> {
+  const client = getSupabase()
+
+  const { data: invitation, error: fetchError } = await client
+    .from("team_invitations")
+    .select("*, teams!inner(captain_clerk_user_id)")
+    .eq("id", invitationId)
+    .single()
+
+  if (fetchError || !invitation) {
+    return { success: false, error: "Invitation not found", code: "not_found" }
+  }
+
+  const team = invitation.teams as unknown as { captain_clerk_user_id: string }
+  if (team.captain_clerk_user_id !== clerkUserId) {
+    return { success: false, error: "Only team captain can send reminders", code: "not_captain" }
+  }
+
+  if (invitation.status !== "pending") {
+    return { success: false, error: "Invitation is not pending", code: "not_pending" }
+  }
+
+  if (new Date(invitation.expires_at) < new Date()) {
+    return { success: false, error: "Invitation has expired", code: "expired" }
+  }
+
+  if (invitation.reminded_at) {
+    return { success: false, error: "Reminder already sent", code: "already_reminded" }
+  }
+
+  const { data: updated, error: updateError } = await client
+    .from("team_invitations")
+    .update({ reminded_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq("id", invitationId)
+    .is("reminded_at", null)
+    .select()
+    .single()
+
+  if (updateError || !updated) {
+    return { success: false, error: "Reminder already sent", code: "already_reminded" }
+  }
+
+  return { success: true, invitation: updated as TeamInvitation }
+}
+
 interface TeamWithHackathon {
   name: string
   hackathon: { name: string; slug: string; starts_at: string | null; ends_at: string | null }

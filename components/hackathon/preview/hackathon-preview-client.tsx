@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
-import { CheckCircle2, Crown, Clock, X, Lock, Scale, Mail, CalendarClock, MapPin, AlertTriangle, Pencil, Users as UsersIcon } from "lucide-react"
+import { CheckCircle2, Crown, Clock, X, Lock, Scale, Mail, CalendarClock, MapPin, AlertTriangle, Pencil, Users as UsersIcon, Bell } from "lucide-react"
 import type { PublicHackathon } from "@/lib/services/public-hackathons"
 import type { HackathonJudgeDisplay } from "@/lib/db/hackathon-types"
 import type { Submission } from "@/lib/db/hackathon-types"
@@ -91,6 +91,7 @@ function HackathonPreviewContent({
   const { isEditable, editMode, activeSection, openSection, closeDrawer } = useEdit()
   const router = useRouter()
   const [cancellingId, setCancellingId] = useState<string | null>(null)
+  const [remindedIds, setRemindedIds] = useState<Set<string>>(new Set())
   const [isRegistered, setIsRegistered] = useState(initialIsRegistered)
   const [justRegistered, setJustRegistered] = useState(false)
   const [bannerUrl, setBannerUrl] = useState(hackathon.banner_url)
@@ -185,6 +186,30 @@ function HackathonPreviewContent({
       }
     } finally {
       setCancellingId(null)
+    }
+  }
+
+  async function handleRemindInvitation(invitationId: string) {
+    if (!teamInfo) return
+    setRemindedIds((prev) => new Set(prev).add(invitationId))
+    try {
+      const res = await fetch(
+        `/api/dashboard/teams/${teamInfo.team.id}/invitations/${invitationId}/remind`,
+        { method: "POST" }
+      )
+      if (!res.ok) {
+        setRemindedIds((prev) => {
+          const next = new Set(prev)
+          next.delete(invitationId)
+          return next
+        })
+      }
+    } catch {
+      setRemindedIds((prev) => {
+        const next = new Set(prev)
+        next.delete(invitationId)
+        return next
+      })
     }
   }
 
@@ -336,16 +361,29 @@ function HackathonPreviewContent({
                       </button>
                     </PopoverTrigger>
                     {teamInfo.isCaptain && (
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        className="shrink-0 opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 transition-opacity max-sm:opacity-100"
-                        onClick={() => handleCancelInvitation(invitation.id)}
-                        disabled={cancellingId === invitation.id}
-                      >
-                        <X className="size-3" />
-                        <span className="sr-only">Cancel</span>
-                      </Button>
+                      <div className="flex items-center gap-0.5">
+                        {!isExpired && !(invitation.remindedAt || remindedIds.has(invitation.id)) && (
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            className="shrink-0 opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 transition-opacity max-sm:opacity-100"
+                            onClick={() => handleRemindInvitation(invitation.id)}
+                          >
+                            <Bell className="size-3" />
+                            <span className="sr-only">Remind</span>
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          className="shrink-0 opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 transition-opacity max-sm:opacity-100"
+                          onClick={() => handleCancelInvitation(invitation.id)}
+                          disabled={cancellingId === invitation.id}
+                        >
+                          <X className="size-3" />
+                          <span className="sr-only">Cancel</span>
+                        </Button>
+                      </div>
                     )}
                   </div>
                   <PopoverContent side="top" align="start" className="w-56">
@@ -371,6 +409,12 @@ function HackathonPreviewContent({
                           }
                         </span>
                       </div>
+                      {(invitation.remindedAt || remindedIds.has(invitation.id)) && (
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Bell className="size-3.5 shrink-0" />
+                          <span className="text-xs">Reminder sent</span>
+                        </div>
+                      )}
                     </div>
                   </PopoverContent>
                 </Popover>

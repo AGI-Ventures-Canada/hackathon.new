@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Crown, Clock, X, Mail, Users, MapPin, Video, AlertTriangle } from "lucide-react"
+import { Crown, Clock, X, Mail, Users, MapPin, Video, AlertTriangle, Bell } from "lucide-react"
 import type { ParticipantTeamInfo } from "@/lib/services/hackathons"
 
 interface TeamManagementTabProps {
@@ -49,6 +49,24 @@ export function TeamManagementTab({ teamInfo, hackathonId, maxTeamSize, location
       setHiddenInvitations((prev) => new Set(prev).add(invitationId)),
     onRevert: (invitationId) =>
       setHiddenInvitations((prev) => {
+        const next = new Set(prev)
+        next.delete(invitationId)
+        return next
+      }),
+  })
+
+  const [remindedIds, setRemindedIds] = useState<Set<string>>(new Set())
+
+  const { execute: handleRemindInvitation } = useOptimisticMutation({
+    fn: (invitationId: string) =>
+      fetch(
+        `/api/dashboard/teams/${teamInfo.team.id}/invitations/${invitationId}/remind`,
+        { method: "POST" }
+      ).then(assertOk),
+    onOptimistic: (invitationId) =>
+      setRemindedIds((prev) => new Set(prev).add(invitationId)),
+    onRevert: (invitationId) =>
+      setRemindedIds((prev) => {
         const next = new Set(prev)
         next.delete(invitationId)
         return next
@@ -258,14 +276,31 @@ export function TeamManagementTab({ teamInfo, hackathonId, maxTeamSize, location
                       </div>
                     </div>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleCancelInvitation(invitation.id)}
-                  >
-                    <X className="size-4" />
-                    <span className="sr-only">Cancel invitation</span>
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    {invitation.remindedAt || remindedIds.has(invitation.id) ? (
+                      <span className="text-xs text-muted-foreground flex items-center gap-1 px-2">
+                        <Bell className="size-3" />
+                        Reminded
+                      </span>
+                    ) : !isExpiringSoon(invitation.expiresAt) || new Date(invitation.expiresAt) > new Date() ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleRemindInvitation(invitation.id)}
+                      >
+                        <Bell className="size-4" />
+                        <span className="sr-only">Send reminder</span>
+                      </Button>
+                    ) : null}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleCancelInvitation(invitation.id)}
+                    >
+                      <X className="size-4" />
+                      <span className="sr-only">Cancel invitation</span>
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>

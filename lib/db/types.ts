@@ -1170,6 +1170,7 @@ export type Database = {
           hackathon_id: string
           id: string
           invited_by_clerk_user_id: string
+          reminded_at: string | null
           status: string
           token: string
           updated_at: string
@@ -1183,6 +1184,7 @@ export type Database = {
           hackathon_id: string
           id?: string
           invited_by_clerk_user_id: string
+          reminded_at?: string | null
           status?: string
           token: string
           updated_at?: string
@@ -1196,6 +1198,7 @@ export type Database = {
           hackathon_id?: string
           id?: string
           invited_by_clerk_user_id?: string
+          reminded_at?: string | null
           status?: string
           token?: string
           updated_at?: string
@@ -2531,6 +2534,7 @@ export type Database = {
           id: string
           invited_by_clerk_user_id: string
           is_captain_invite: boolean
+          reminded_at: string | null
           status: Database["public"]["Enums"]["invitation_status"]
           team_id: string
           token: string
@@ -2546,6 +2550,7 @@ export type Database = {
           id?: string
           invited_by_clerk_user_id: string
           is_captain_invite?: boolean
+          reminded_at?: string | null
           status?: Database["public"]["Enums"]["invitation_status"]
           team_id: string
           token: string
@@ -2561,6 +2566,7 @@ export type Database = {
           id?: string
           invited_by_clerk_user_id?: string
           is_captain_invite?: boolean
+          reminded_at?: string | null
           status?: Database["public"]["Enums"]["invitation_status"]
           team_id?: string
           token?: string

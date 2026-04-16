@@ -2243,6 +2243,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           status: i.status,
           expiresAt: i.expires_at,
           createdAt: i.created_at,
+          remindedAt: i.reminded_at ?? null,
         })),
       }
     },
@@ -2289,6 +2290,59 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
     detail: {
       summary: "Cancel team invitation",
       description: "Cancels a pending team invitation. Clerk-only.",
+    },
+  })
+  .post("/teams/:teamId/invitations/:invitationId/remind", async ({ principal, params }) => {
+    requirePrincipal(principal, ["user"])
+
+    const rateLimitResult = await checkRateLimit(`team_invitation_remind:${params.teamId}`, {
+      maxRequests: 5,
+      windowMs: 60_000,
+    })
+    if (!rateLimitResult.allowed) {
+      throw new RateLimitError(rateLimitResult.resetAt, rateLimitResult.remaining)
+    }
+
+    const { remindTeamInvitation, getTeamWithHackathon } = await import(
+      "@/lib/services/team-invitations"
+    )
+
+    const result = await remindTeamInvitation(params.invitationId, principal.userId!)
+
+    if (!result.success) {
+      return new Response(JSON.stringify({ error: result.error, code: result.code }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
+
+    const teamInfo = await getTeamWithHackathon(params.teamId)
+    if (teamInfo) {
+      const { sendTeamInvitationReminderEmail } = await import(
+        "@/lib/email/team-invitations"
+      )
+      sendTeamInvitationReminderEmail({
+        to: result.invitation.email,
+        teamName: teamInfo.name,
+        hackathonName: teamInfo.hackathon.name,
+        inviterName: "Your team captain",
+        inviteToken: result.invitation.token,
+        expiresAt: result.invitation.expires_at,
+      }).catch(console.error)
+    }
+
+    await logAudit({
+      principal,
+      action: "team_invitation.reminded",
+      resourceType: "team_invitation",
+      resourceId: params.invitationId,
+    })
+
+    return { success: true }
+  }, {
+    detail: {
+      summary: "Send team invitation reminder",
+      description: "Sends a reminder email for a pending team invitation. One reminder per invitation. Clerk-only.",
     },
   })
   .use(dashboardJudgingRoutes)

@@ -213,6 +213,54 @@ export async function cancelJudgeInvitation(
   return { success: !error }
 }
 
+export type RemindJudgeInvitationResult =
+  | { success: true; invitation: JudgeInvitation }
+  | { success: false; error: string; code: string }
+
+export async function remindJudgeInvitation(
+  invitationId: string,
+  hackathonId: string
+): Promise<RemindJudgeInvitationResult> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data: invitation, error: fetchError } = await client
+    .from("judge_invitations")
+    .select("*")
+    .eq("id", invitationId)
+    .eq("hackathon_id", hackathonId)
+    .single()
+
+  if (fetchError || !invitation) {
+    return { success: false, error: "Invitation not found", code: "not_found" }
+  }
+
+  if (invitation.status !== "pending") {
+    return { success: false, error: "Invitation is not pending", code: "not_pending" }
+  }
+
+  if (new Date(invitation.expires_at) < new Date()) {
+    return { success: false, error: "Invitation has expired", code: "expired" }
+  }
+
+  if (invitation.reminded_at) {
+    return { success: false, error: "Reminder already sent", code: "already_reminded" }
+  }
+
+  const { data: updated, error: updateError } = await client
+    .from("judge_invitations")
+    .update({ reminded_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq("id", invitationId)
+    .is("reminded_at", null)
+    .select()
+    .single()
+
+  if (updateError || !updated) {
+    return { success: false, error: "Reminder already sent", code: "already_reminded" }
+  }
+
+  return { success: true, invitation: updated as JudgeInvitation }
+}
+
 export async function sendPendingJudgeInvitationEmails(
   hackathonId: string,
   hackathonName: string,

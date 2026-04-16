@@ -1,7 +1,8 @@
 import { sendEmail } from "./resend"
-import { sanitizeTag, renderEmail, buildEventUrl } from "./utils"
+import { sanitizeTag, renderEmail, buildEventUrl, formatTimeLeft } from "./utils"
 import JudgeAddedEmail from "@/emails/judge-added"
 import JudgeInvitationEmail from "@/emails/judge-invitation"
+import JudgeInvitationReminderEmail from "@/emails/judge-invitation-reminder"
 
 export type SendJudgeInvitationInput = {
   to: string
@@ -94,6 +95,55 @@ export async function sendJudgeInvitationEmail(
     text,
     tags: [
       { name: "type", value: "judge_invitation" },
+      { name: "hackathon", value: sanitizeTag(input.hackathonName) },
+    ],
+  })
+
+  return { success: result !== null }
+}
+
+export type SendJudgeInvitationReminderInput = {
+  to: string
+  hackathonName: string
+  inviterName: string
+  inviteToken: string
+  expiresAt: string
+}
+
+export async function sendJudgeInvitationReminderEmail(
+  input: SendJudgeInvitationReminderInput
+): Promise<{ success: boolean }> {
+  if (!process.env.NEXT_PUBLIC_APP_URL) {
+    console.error("NEXT_PUBLIC_APP_URL not set, cannot send reminder email")
+    return { success: false }
+  }
+
+  const acceptUrl = `${process.env.NEXT_PUBLIC_APP_URL}/judge-invite/${input.inviteToken}`
+  const expiresDate = new Date(input.expiresAt).toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  })
+  const timeLeft = formatTimeLeft(input.expiresAt)
+
+  const { html, text } = await renderEmail(
+    JudgeInvitationReminderEmail({
+      inviterName: input.inviterName,
+      hackathonName: input.hackathonName,
+      acceptUrl,
+      expiresDate,
+      timeLeft,
+    })
+  )
+
+  const result = await sendEmail({
+    to: input.to,
+    subject: `Reminder: Judge ${input.hackathonName}`,
+    html,
+    text,
+    tags: [
+      { name: "type", value: "judge_invitation_reminder" },
       { name: "hackathon", value: sanitizeTag(input.hackathonName) },
     ],
   })

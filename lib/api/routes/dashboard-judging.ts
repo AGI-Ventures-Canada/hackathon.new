@@ -1268,6 +1268,56 @@ export const dashboardJudgingRoutes = new Elysia()
     detail: { summary: "Cancel invitation", description: "Cancels a pending judge invitation." },
   })
 
+  .post("/hackathons/:id/judging/invitations/:invitationId/remind", async ({ principal, params }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+
+    const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+    const result = await checkHackathonOrganizer(params.id, principal.tenantId)
+
+    if (result.status === "not_found") {
+      return new Response(JSON.stringify({ error: "Hackathon not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+    }
+    if (result.status === "not_authorized") {
+      return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
+    }
+
+    const { remindJudgeInvitation } = await import("@/lib/services/judge-invitations")
+    const remindResult = await remindJudgeInvitation(params.invitationId, params.id)
+
+    if (!remindResult.success) {
+      return new Response(JSON.stringify({ error: remindResult.error, code: remindResult.code }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
+
+    const hackathon = result.hackathon!
+    const { clerkClient } = await import("@clerk/nextjs/server")
+    const client = await clerkClient()
+    const inviterName = await resolveAdderName(principal, client)
+
+    const { sendJudgeInvitationReminderEmail } = await import("@/lib/email/judge-invitations")
+    sendJudgeInvitationReminderEmail({
+      to: remindResult.invitation.email,
+      hackathonName: hackathon.name,
+      inviterName,
+      inviteToken: remindResult.invitation.token,
+      expiresAt: remindResult.invitation.expires_at,
+    }).catch(console.error)
+
+    logAudit({
+      principal,
+      action: "judge_invitation.reminded",
+      resourceType: "hackathon",
+      resourceId: params.id,
+      metadata: { invitationId: params.invitationId },
+    })
+
+    return { success: true }
+  }, {
+    detail: { summary: "Send invitation reminder", description: "Sends a reminder email for a pending judge invitation. One reminder per invitation." },
+  })
+
   .get("/hackathons/:id/judging/progress", async ({ principal, params }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
 
