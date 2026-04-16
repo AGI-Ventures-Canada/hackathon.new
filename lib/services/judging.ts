@@ -2357,54 +2357,59 @@ export async function getAssignmentDetail(
     team_id: string | null
   }
 
-  let teamName: string | null = null
-  if (sub.team_id) {
-    const { data: team } = await client
-      .from("teams")
-      .select("name")
-      .eq("id", sub.team_id)
-      .single()
-    teamName = team?.name ?? null
-  }
-
-  let criteria: {
+  type CriteriaRow = {
     id: string
     name: string
     description: string | null
     max_score: number
     weight: number
     category: string | null
-  }[] = []
-
-  if (ownership.prizeId) {
-    const { data } = await client
-      .from("judging_criteria")
-      .select("id, name, description, max_score, weight, category")
-      .eq("prize_id", ownership.prizeId)
-      .order("display_order")
-    criteria = (data ?? []) as typeof criteria
   }
 
-  if (criteria.length === 0) {
+  const teamNamePromise = sub.team_id
+    ? client.from("teams").select("name").eq("id", sub.team_id).single().then(({ data }) => data?.name ?? null)
+    : Promise.resolve(null)
+
+  async function fetchCriteria(): Promise<CriteriaRow[]> {
+    if (ownership.prizeId) {
+      const { data } = await client
+        .from("judging_criteria")
+        .select("id, name, description, max_score, weight, category")
+        .eq("prize_id", ownership.prizeId)
+        .order("display_order")
+      if (data && data.length > 0) return data as CriteriaRow[]
+    }
     const { data } = await client
       .from("judging_criteria")
       .select("id, name, description, max_score, weight, category")
       .eq("hackathon_id", ownership.hackathonId)
       .is("prize_id", null)
       .order("display_order")
-    criteria = (data ?? []) as typeof criteria
+    return (data ?? []) as CriteriaRow[]
   }
+
+  const [teamName, criteria] = await Promise.all([teamNamePromise, fetchCriteria()])
 
   const criteriaIds = criteria.map((c) => c.id)
 
   const rubricMap: Record<string, { id: string; level_number: number; label: string; description: string | null }[]> = {}
+  const scoreMap: Record<string, number> = {}
+
   if (criteriaIds.length > 0) {
-    const { data: levels } = await client
-      .from("rubric_levels")
-      .select("id, criteria_id, level_number, label, description")
-      .in("criteria_id", criteriaIds)
-      .order("level_number")
-    for (const lvl of levels ?? []) {
+    const [levelsResult, scoresResult] = await Promise.all([
+      client
+        .from("rubric_levels")
+        .select("id, criteria_id, level_number, label, description")
+        .in("criteria_id", criteriaIds)
+        .order("level_number"),
+      client
+        .from("scores")
+        .select("criteria_id, score")
+        .eq("judge_assignment_id", assignmentId)
+        .in("criteria_id", criteriaIds),
+    ])
+
+    for (const lvl of levelsResult.data ?? []) {
       const cid = (lvl as unknown as { criteria_id: string }).criteria_id
       if (!rubricMap[cid]) rubricMap[cid] = []
       rubricMap[cid].push({
@@ -2414,16 +2419,8 @@ export async function getAssignmentDetail(
         description: lvl.description ?? null,
       })
     }
-  }
 
-  const scoreMap: Record<string, number> = {}
-  if (criteriaIds.length > 0) {
-    const { data: scores } = await client
-      .from("scores")
-      .select("criteria_id, score")
-      .eq("judge_assignment_id", assignmentId)
-      .in("criteria_id", criteriaIds)
-    for (const s of scores ?? []) {
+    for (const s of scoresResult.data ?? []) {
       scoreMap[s.criteria_id] = s.score
     }
   }
@@ -2458,25 +2455,22 @@ export type SubmitScoresResult =
 
 export async function submitScores(
   assignmentId: string,
-  clerkUserId: string,
+  ownership: AssignmentOwnership,
   scores: { criteriaId: string; score: number }[],
   notes: string
 ): Promise<SubmitScoresResult> {
   const client = getSupabase() as unknown as SupabaseClient
-
-  const ownerResult = await verifyAssignmentOwnership(assignmentId, clerkUserId)
-  if (!ownerResult) return { success: false, error: "Assignment not found", code: "not_found" }
 
   if (scores.length > 0) {
     let criteriaQuery = client
       .from("judging_criteria")
       .select("id, max_score")
 
-    if (ownerResult.prizeId) {
-      criteriaQuery = criteriaQuery.eq("prize_id", ownerResult.prizeId)
+    if (ownership.prizeId) {
+      criteriaQuery = criteriaQuery.eq("prize_id", ownership.prizeId)
     } else {
       criteriaQuery = criteriaQuery
-        .eq("hackathon_id", ownerResult.hackathonId)
+        .eq("hackathon_id", ownership.hackathonId)
         .is("prize_id", null)
     }
 

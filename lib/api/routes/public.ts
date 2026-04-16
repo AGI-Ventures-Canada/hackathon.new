@@ -1235,7 +1235,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
 
       const result = await submitScores(
         params.assignmentId,
-        userId,
+        ownerCheck,
         body.scores,
         body.notes ?? ""
       )

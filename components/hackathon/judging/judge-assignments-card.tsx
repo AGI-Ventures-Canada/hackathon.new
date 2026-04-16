@@ -59,7 +59,7 @@ export function JudgeAssignmentsCard({
     if (!openAssignmentId) return null
     const currentIdx = assignments.findIndex((a) => a.id === openAssignmentId)
     const next = assignments.find(
-      (a, idx) => idx > currentIdx && !completedIds.has(a.id) && a.id !== openAssignmentId
+      (a, idx) => idx > currentIdx && !completedIds.has(a.id)
     )
     return next?.id ?? null
   }, [openAssignmentId, assignments, completedIds])
