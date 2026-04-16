@@ -1,7 +1,7 @@
 import { Text } from "@react-email/components"
 import { OatmealLayout } from "./_components/oatmeal-layout"
 import { CTAButton } from "./_components/cta-button"
-import { colors, fontSize, spacing } from "./_components/constants"
+import { buildEventUrl, colors, fontSize, spacing } from "./_components/constants"
 import { formatPrizeValue } from "./_components/format-utils"
 
 interface OrganizerClaimNotificationEmailProps {
@@ -21,8 +21,7 @@ export default function OrganizerClaimNotificationEmail({
   hackathonSlug,
   prizeValue,
 }: OrganizerClaimNotificationEmailProps) {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://getoatmeal.com"
-  const eventUrl = hackathonSlug ? `${appUrl}/e/${hackathonSlug}` : undefined
+  const eventUrl = buildEventUrl(hackathonSlug)
 
   return (
     <OatmealLayout

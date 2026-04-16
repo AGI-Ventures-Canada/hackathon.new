@@ -1,7 +1,7 @@
 import { Text } from "@react-email/components"
 import { OatmealLayout } from "./_components/oatmeal-layout"
 import { CTAButton } from "./_components/cta-button"
-import { fontSize, spacing } from "./_components/constants"
+import { buildEventUrl, fontSize, spacing } from "./_components/constants"
 
 interface FeedbackSurveyEmailProps {
   participantName: string
@@ -16,9 +16,7 @@ export default function FeedbackSurveyEmail({
   surveyUrl,
   hackathonSlug,
 }: FeedbackSurveyEmailProps) {
-  const eventUrl = hackathonSlug
-    ? `${process.env.NEXT_PUBLIC_APP_URL || "https://getoatmeal.com"}/e/${hackathonSlug}`
-    : undefined
+  const eventUrl = buildEventUrl(hackathonSlug)
 
   return (
     <OatmealLayout

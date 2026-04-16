@@ -83,3 +83,6 @@ supabase/.temp
 .playwright-mcp/
 
 /tmp
+
+# email screenshots
+.github/email-screenshots/

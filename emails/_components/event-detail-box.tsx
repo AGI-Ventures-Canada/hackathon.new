@@ -22,19 +22,20 @@ export function formatDateRange(
       month: "short",
       day: "numeric",
       year: "numeric",
+      timeZone: "UTC",
     })
 
   if (!end) return formatDate(start)
 
-  const sameYear = start.getFullYear() === end.getFullYear()
-  const sameMonth = sameYear && start.getMonth() === end.getMonth()
+  const sameYear = start.getUTCFullYear() === end.getUTCFullYear()
+  const sameMonth = sameYear && start.getUTCMonth() === end.getUTCMonth()
 
   if (sameMonth) {
-    return `${start.toLocaleDateString("en-US", { month: "short", day: "numeric" })} \u2013 ${end.toLocaleDateString("en-US", { day: "numeric" })}, ${end.getFullYear()}`
+    return `${start.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })} \u2013 ${end.toLocaleDateString("en-US", { day: "numeric", timeZone: "UTC" })}, ${end.getUTCFullYear()}`
   }
 
   if (sameYear) {
-    return `${start.toLocaleDateString("en-US", { month: "short", day: "numeric" })} \u2013 ${formatDate(end)}`
+    return `${start.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })} \u2013 ${formatDate(end)}`
   }
 
   return `${formatDate(start)} \u2013 ${formatDate(end)}`

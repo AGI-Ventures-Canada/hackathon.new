@@ -2,7 +2,7 @@ import { Text } from "@react-email/components"
 import { OatmealLayout } from "./_components/oatmeal-layout"
 import { EventDetailBox } from "./_components/event-detail-box"
 import { CTAButton } from "./_components/cta-button"
-import { colors, fontSize, spacing } from "./_components/constants"
+import { buildEventUrl, colors, fontSize, spacing } from "./_components/constants"
 
 interface TeamInvitationEmailProps {
   inviterName: string
@@ -27,9 +27,7 @@ export default function TeamInvitationEmail({
   hackathonEndsAt,
   teamMembers,
 }: TeamInvitationEmailProps) {
-  const eventUrl = hackathonSlug
-    ? `${process.env.NEXT_PUBLIC_APP_URL || "https://getoatmeal.com"}/e/${hackathonSlug}`
-    : undefined
+  const eventUrl = buildEventUrl(hackathonSlug)
 
   return (
     <OatmealLayout

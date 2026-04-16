@@ -1,6 +1,6 @@
 import { Section, Text } from "@react-email/components"
 import { OatmealLayout } from "./_components/oatmeal-layout"
-import { colors, fontSize, spacing } from "./_components/constants"
+import { buildEventUrl, colors, fontSize, spacing } from "./_components/constants"
 
 interface PrizeShippedEmailProps {
   recipientName: string
@@ -17,9 +17,7 @@ export default function PrizeShippedEmail({
   trackingNumber,
   hackathonSlug,
 }: PrizeShippedEmailProps) {
-  const eventUrl = hackathonSlug
-    ? `${process.env.NEXT_PUBLIC_APP_URL || "https://getoatmeal.com"}/e/${hackathonSlug}`
-    : undefined
+  const eventUrl = buildEventUrl(hackathonSlug)
 
   return (
     <OatmealLayout
