@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test"
-import { SLUG_REGEX, isValidSlugFormat, generateSlug } from "@/lib/utils/slug"
+import { isValidSlugFormat, generateSlug } from "@/lib/utils/slug"
 
 describe("slug validation regex", () => {
   describe("valid slugs", () => {
@@ -90,23 +90,23 @@ describe("slug validation regex", () => {
     })
   })
 
-  describe("SLUG_REGEX enforces minimum length", () => {
+  describe("isValidSlugFormat enforces minimum length", () => {
     it("accepts valid slugs", () => {
-      expect(SLUG_REGEX.test("my-org")).toBe(true)
-      expect(SLUG_REGEX.test("abc")).toBe(true)
+      expect(isValidSlugFormat("my-org")).toBe(true)
+      expect(isValidSlugFormat("abc")).toBe(true)
     })
 
     it("rejects slugs shorter than 3 characters", () => {
-      expect(SLUG_REGEX.test("a")).toBe(false)
-      expect(SLUG_REGEX.test("ab")).toBe(false)
+      expect(isValidSlugFormat("a")).toBe(false)
+      expect(isValidSlugFormat("ab")).toBe(false)
     })
 
     it("rejects empty strings", () => {
-      expect(SLUG_REGEX.test("")).toBe(false)
+      expect(isValidSlugFormat("")).toBe(false)
     })
 
     it("rejects invalid patterns", () => {
-      expect(SLUG_REGEX.test("my--org")).toBe(false)
+      expect(isValidSlugFormat("my--org")).toBe(false)
     })
   })
 })

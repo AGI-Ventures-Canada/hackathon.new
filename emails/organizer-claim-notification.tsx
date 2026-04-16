@@ -11,6 +11,15 @@ interface OrganizerClaimNotificationEmailProps {
   prizeValue?: string | null
 }
 
+function formatPrizeValue(value: string): string {
+  const stripped = value.replace(/^\$/, "")
+  const num = Number(stripped.replace(/,/g, ""))
+  if (!Number.isNaN(num) && Number.isFinite(num)) {
+    return `$${num.toLocaleString("en-US")}`
+  }
+  return stripped.startsWith("$") ? stripped : `$${stripped}`
+}
+
 export default function OrganizerClaimNotificationEmail({
   winnerName,
   prizeName,
@@ -26,7 +35,7 @@ export default function OrganizerClaimNotificationEmail({
     >
       <Text style={{ fontSize: "14px", marginBottom: "16px", lineHeight: "1.6" }}>
         <strong>{winnerName}</strong> has claimed the{" "}
-        <strong>{prizeName}</strong>{prizeValue ? ` ($${prizeValue})` : ""} prize from {hackathonName}.
+        <strong>{prizeName}</strong>{prizeValue ? ` (${formatPrizeValue(prizeValue)})` : ""} prize from {hackathonName}.
       </Text>
 
       <Text
@@ -53,5 +62,5 @@ OrganizerClaimNotificationEmail.PreviewProps = {
   prizeName: "Best AI Application",
   hackathonName: "AI Innovation Hackathon 2026",
   fulfillmentUrl: "https://getoatmeal.com/e/ai-innovation-2026/manage?tab=post-event",
-  prizeValue: "500",
+  prizeValue: "5000",
 } satisfies OrganizerClaimNotificationEmailProps

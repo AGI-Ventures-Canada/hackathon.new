@@ -1,4 +1,4 @@
-export const SLUG_REGEX = /^(?=.{3,})[a-z0-9]+(?:-[a-z0-9]+)*$/
+const SLUG_REGEX = /^(?=.{3,})[a-z0-9]+(?:-[a-z0-9]+)*$/
 
 export function isValidSlugFormat(slug: string): boolean {
   return SLUG_REGEX.test(slug)

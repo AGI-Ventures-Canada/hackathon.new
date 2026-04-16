@@ -117,6 +117,7 @@ export function CreateOrganizationDialog({
       if (!res.ok) {
         try {
           await org.destroy()
+          await setActive?.({ organization: null })
         } catch {
           setError("Something went wrong and we couldn't clean up. Please contact support.")
           return
