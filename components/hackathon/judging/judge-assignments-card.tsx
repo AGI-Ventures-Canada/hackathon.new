@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -53,6 +53,28 @@ export function JudgeAssignmentsCard({
   const total = assignments.length
   const totalPages = Math.ceil(total / PAGE_SIZE)
   const pageAssignments = assignments.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+
+  const [prefetchCache, setPrefetchCache] = useState<Record<string, React.ComponentProps<typeof ScoringPanel>["prefetchedDetail"]>>({})
+
+  useEffect(() => {
+    if (!openAssignmentId) return
+    const currentIdx = assignments.findIndex((a) => a.id === openAssignmentId)
+    const nextUnscored = assignments.find(
+      (a, idx) => idx > currentIdx && !completedIds.has(a.id) && a.id !== openAssignmentId
+    )
+    if (!nextUnscored || prefetchCache[nextUnscored.id]) return
+
+    let cancelled = false
+    fetch(`/api/public/hackathons/${hackathonSlug}/judging/assignments/${nextUnscored.id}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && !cancelled) {
+          setPrefetchCache((prev) => ({ ...prev, [nextUnscored.id]: data }))
+        }
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [openAssignmentId, assignments, completedIds, hackathonSlug, prefetchCache])
 
   function handleScoreSubmitted(assignmentId: string) {
     const updatedIds = new Set([...completedIds, assignmentId])
@@ -172,6 +194,7 @@ export function JudgeAssignmentsCard({
                           assignmentId={a.id}
                           onClose={() => setOpenAssignmentId(null)}
                           onScoreSubmitted={() => handleScoreSubmitted(a.id)}
+                          prefetchedDetail={prefetchCache[a.id] ?? null}
                           teamSizeWarning={teamSettings && a.teamMemberCount != null
                             ? (getTeamSizeWarning({
                                 memberCount: a.teamMemberCount,

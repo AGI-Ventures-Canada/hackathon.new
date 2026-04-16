@@ -48,6 +48,7 @@ interface ScoringPanelProps {
   onScoreSubmitted: () => void
   cancelLabel?: string
   teamSizeWarning?: string | null
+  prefetchedDetail?: AssignmentDetail | null
 }
 
 export function ScoringPanel({
@@ -57,6 +58,7 @@ export function ScoringPanel({
   onScoreSubmitted,
   cancelLabel = "Cancel",
   teamSizeWarning,
+  prefetchedDetail,
 }: ScoringPanelProps) {
   const [detail, setDetail] = useState<AssignmentDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -70,24 +72,35 @@ export function ScoringPanel({
   const notesTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   useEffect(() => {
-    setLoading(true)
     setSubmitted(false)
     setError(null)
 
+    function applyDetail(data: AssignmentDetail) {
+      setDetail(data)
+      const initialScores: Record<string, number | null> = {}
+      for (const c of data.criteria ?? []) {
+        initialScores[c.id] = c.currentScore ?? ((c.rubricLevels?.length ?? 0) > 0 ? null : 0)
+      }
+      setScores(initialScores)
+      setNotes(data.notes ?? "")
+      setLoading(false)
+    }
+
+    if (prefetchedDetail && prefetchedDetail.id === assignmentId) {
+      applyDetail(prefetchedDetail)
+      return
+    }
+
+    setLoading(true)
     fetch(`/api/public/hackathons/${hackathonSlug}/judging/assignments/${assignmentId}`)
-      .then((res) => res.json())
-      .then((data) => {
-        setDetail(data)
-        const initialScores: Record<string, number | null> = {}
-        for (const c of data.criteria ?? []) {
-          initialScores[c.id] = c.currentScore ?? (c.rubricLevels?.length > 0 ? null : 0)
-        }
-        setScores(initialScores)
-        setNotes(data.notes ?? "")
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to load assignment")
+        return res.json()
       })
+      .then(applyDetail)
       .catch(() => setError("Failed to load assignment"))
       .finally(() => setLoading(false))
-  }, [assignmentId, hackathonSlug])
+  }, [assignmentId, hackathonSlug, prefetchedDetail])
 
   const debouncedSaveNotes = useCallback(
     (value: string) => {

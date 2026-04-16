@@ -2296,3 +2296,207 @@ export async function saveNotes(
 
   return true
 }
+
+// ============================================================
+// Assignment detail + score submission
+// ============================================================
+
+export type AssignmentDetailCriterion = {
+  id: string
+  name: string
+  description: string | null
+  max_score: number
+  weight: number
+  category: string | null
+  currentScore: number | null
+  rubricLevels: { id: string; level_number: number; label: string; description: string | null }[]
+}
+
+export type AssignmentDetail = {
+  id: string
+  submissionId: string
+  submissionTitle: string
+  submissionDescription: string | null
+  submissionGithubUrl: string | null
+  submissionLiveAppUrl: string | null
+  submissionScreenshotUrl: string | null
+  teamName: string | null
+  isComplete: boolean
+  notes: string
+  criteria: AssignmentDetailCriterion[]
+}
+
+export async function getAssignmentDetail(
+  assignmentId: string,
+  clerkUserId: string
+): Promise<AssignmentDetail | null> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const isOwner = await verifyAssignmentOwnership(assignmentId, clerkUserId)
+  if (!isOwner) return null
+
+  const { data: assignment, error: assignmentError } = await client
+    .from("judge_assignments")
+    .select(`
+      id, submission_id, hackathon_id, prize_id, is_complete, notes,
+      submission:submissions!submission_id(title, description, github_url, live_app_url, screenshot_url, team_id)
+    `)
+    .eq("id", assignmentId)
+    .single()
+
+  if (assignmentError || !assignment) return null
+
+  const sub = assignment.submission as unknown as {
+    title: string
+    description: string | null
+    github_url: string | null
+    live_app_url: string | null
+    screenshot_url: string | null
+    team_id: string | null
+  }
+
+  let teamName: string | null = null
+  if (sub.team_id) {
+    const { data: team } = await client
+      .from("teams")
+      .select("name")
+      .eq("id", sub.team_id)
+      .single()
+    teamName = team?.name ?? null
+  }
+
+  let criteria: {
+    id: string
+    name: string
+    description: string | null
+    max_score: number
+    weight: number
+    category: string | null
+    display_order: number
+  }[] = []
+
+  if (assignment.prize_id) {
+    const { data } = await client
+      .from("judging_criteria")
+      .select("id, name, description, max_score, weight, category, display_order")
+      .eq("prize_id", assignment.prize_id)
+      .order("display_order")
+    criteria = (data ?? []) as typeof criteria
+  }
+
+  if (criteria.length === 0) {
+    const { data } = await client
+      .from("judging_criteria")
+      .select("id, name, description, max_score, weight, category, display_order")
+      .eq("hackathon_id", assignment.hackathon_id)
+      .is("prize_id", null)
+      .order("display_order")
+    criteria = (data ?? []) as typeof criteria
+  }
+
+  const criteriaIds = criteria.map((c) => c.id)
+
+  const rubricMap: Record<string, { id: string; level_number: number; label: string; description: string | null }[]> = {}
+  if (criteriaIds.length > 0) {
+    const { data: levels } = await client
+      .from("rubric_levels")
+      .select("id, criteria_id, level_number, label, description")
+      .in("criteria_id", criteriaIds)
+      .order("level_number")
+    for (const lvl of levels ?? []) {
+      const cid = (lvl as unknown as { criteria_id: string }).criteria_id
+      if (!rubricMap[cid]) rubricMap[cid] = []
+      rubricMap[cid].push({
+        id: lvl.id,
+        level_number: lvl.level_number,
+        label: lvl.label,
+        description: lvl.description ?? null,
+      })
+    }
+  }
+
+  const scoreMap: Record<string, number> = {}
+  if (criteriaIds.length > 0) {
+    const { data: scores } = await client
+      .from("scores")
+      .select("criteria_id, score")
+      .eq("judge_assignment_id", assignmentId)
+      .in("criteria_id", criteriaIds)
+    for (const s of scores ?? []) {
+      scoreMap[s.criteria_id] = s.score
+    }
+  }
+
+  return {
+    id: assignment.id,
+    submissionId: assignment.submission_id,
+    submissionTitle: sub.title,
+    submissionDescription: sub.description,
+    submissionGithubUrl: sub.github_url,
+    submissionLiveAppUrl: sub.live_app_url,
+    submissionScreenshotUrl: sub.screenshot_url,
+    teamName,
+    isComplete: assignment.is_complete,
+    notes: assignment.notes,
+    criteria: criteria.map((c) => ({
+      id: c.id,
+      name: c.name,
+      description: c.description,
+      max_score: c.max_score,
+      weight: Number(c.weight),
+      category: c.category ?? null,
+      currentScore: scoreMap[c.id] ?? null,
+      rubricLevels: rubricMap[c.id] ?? [],
+    })),
+  }
+}
+
+export type SubmitScoresResult =
+  | { success: true }
+  | { success: false; error: string; code: string }
+
+export async function submitScores(
+  assignmentId: string,
+  clerkUserId: string,
+  scores: { criteriaId: string; score: number }[],
+  notes: string
+): Promise<SubmitScoresResult> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const isOwner = await verifyAssignmentOwnership(assignmentId, clerkUserId)
+  if (!isOwner) return { success: false, error: "Assignment not found", code: "not_found" }
+
+  const rows = scores.map((s) => ({
+    judge_assignment_id: assignmentId,
+    criteria_id: s.criteriaId,
+    score: s.score,
+    updated_at: new Date().toISOString(),
+  }))
+
+  if (rows.length > 0) {
+    const { error: upsertError } = await client
+      .from("scores")
+      .upsert(rows, { onConflict: "judge_assignment_id,criteria_id" })
+
+    if (upsertError) {
+      console.error("Failed to upsert scores:", upsertError)
+      return { success: false, error: "Failed to save scores", code: "upsert_failed" }
+    }
+  }
+
+  const { error: updateError } = await client
+    .from("judge_assignments")
+    .update({
+      notes,
+      is_complete: true,
+      completed_at: new Date().toISOString(),
+    })
+    .eq("id", assignmentId)
+
+  if (updateError) {
+    console.error("Failed to mark assignment complete:", updateError)
+    return { success: false, error: "Failed to complete assignment", code: "update_failed" }
+  }
+
+  return { success: true }
+}

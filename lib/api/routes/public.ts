@@ -1117,6 +1117,121 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       },
     }
   )
+  .get(
+    "/hackathons/:slug/judging/assignments/:assignmentId",
+    async ({ params }) => {
+      const { userId } = await auth()
+
+      if (!userId) {
+        return new Response(
+          JSON.stringify({ error: "Sign in required", code: "not_authenticated" }),
+          { status: 401, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
+      const hackathon = await getPublicHackathon(params.slug)
+      if (!hackathon) {
+        return new Response(
+          JSON.stringify({ error: "Hackathon not found" }),
+          { status: 404, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
+      const { getAssignmentDetail } = await import("@/lib/services/judging")
+      const detail = await getAssignmentDetail(params.assignmentId, userId)
+
+      if (!detail) {
+        return new Response(
+          JSON.stringify({ error: "Assignment not found", code: "not_found" }),
+          { status: 404, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
+      if (hackathon.anonymous_judging) {
+        detail.teamName = null
+      }
+
+      return detail
+    },
+    {
+      detail: {
+        summary: "Get assignment detail for scoring",
+        description: "Returns full assignment details with criteria, rubric levels, and existing scores.",
+      },
+    }
+  )
+  .post(
+    "/hackathons/:slug/judging/assignments/:assignmentId/scores",
+    async ({ params, body }) => {
+      const { userId } = await auth()
+
+      if (!userId) {
+        return new Response(
+          JSON.stringify({ error: "Sign in required", code: "not_authenticated" }),
+          { status: 401, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
+      const hackathon = await getPublicHackathon(params.slug)
+      if (!hackathon) {
+        return new Response(
+          JSON.stringify({ error: "Hackathon not found" }),
+          { status: 404, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
+      if (hackathon.status !== "judging" && hackathon.status !== "active") {
+        return new Response(
+          JSON.stringify({ error: "Hackathon is not in judging phase", code: "not_judging" }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
+      const { verifyAssignmentOwnership } = await import("@/lib/services/judging")
+      const ownerCheck = await verifyAssignmentOwnership(params.assignmentId, userId)
+      if (!ownerCheck) {
+        return new Response(
+          JSON.stringify({ error: "Assignment not found", code: "not_found" }),
+          { status: 404, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
+      const { submitScores } = await import("@/lib/services/judging")
+      const result = await submitScores(
+        params.assignmentId,
+        userId,
+        body.scores,
+        body.notes ?? ""
+      )
+
+      if (!result.success) {
+        return new Response(
+          JSON.stringify({ error: result.error, code: result.code }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
+      const { recalculateForAssignment } = await import("@/lib/services/judging")
+      recalculateForAssignment(params.assignmentId).catch((err) => {
+        console.error(`[judging] auto-recalculate failed for assignment ${params.assignmentId}:`, err)
+      })
+
+      return { success: true }
+    },
+    {
+      detail: {
+        summary: "Submit scores for assignment",
+        description: "Submits rubric/criteria scores for a judging assignment and marks it complete.",
+      },
+      body: t.Object({
+        scores: t.Array(t.Object({
+          criteriaId: t.String(),
+          score: t.Number({ minimum: 0 }),
+        })),
+        notes: t.Optional(t.String()),
+      }),
+    }
+  )
   .get("/hackathons/:slug/judging/picks", async ({ params }) => {
     const { userId } = await auth()
 

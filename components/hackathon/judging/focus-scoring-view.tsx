@@ -45,6 +45,28 @@ export function FocusScoringView({
   const current = assignments[currentIndex]
   const allDone = completed === total
 
+  const [prefetchCache, setPrefetchCache] = useState<Record<string, React.ComponentProps<typeof ScoringPanel>["prefetchedDetail"]>>({})
+
+  useEffect(() => {
+    const nextUnscored = assignments.findIndex(
+      (a, idx) => idx > currentIndex && !completedIds.has(a.id)
+    )
+    if (nextUnscored < 0) return
+    const nextId = assignments[nextUnscored].id
+    if (prefetchCache[nextId]) return
+
+    let cancelled = false
+    fetch(`/api/public/hackathons/${hackathonSlug}/judging/assignments/${nextId}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && !cancelled) {
+          setPrefetchCache((prev) => ({ ...prev, [nextId]: data }))
+        }
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [currentIndex, assignments, completedIds, hackathonSlug, prefetchCache])
+
   const goToNext = useCallback(() => {
     if (currentIndex < total - 1) setCurrentIndex((i) => i + 1)
   }, [currentIndex, total])
@@ -150,6 +172,7 @@ export function FocusScoringView({
         onClose={goToNext}
         onScoreSubmitted={handleScoreSubmitted}
         cancelLabel="Skip"
+        prefetchedDetail={prefetchCache[current.id] ?? null}
         teamSizeWarning={teamSettings && current.teamMemberCount != null
           ? (getTeamSizeWarning({
               memberCount: current.teamMemberCount,
