@@ -217,10 +217,10 @@ jobs:
           }
 
           echo "$TARGETS" | jq -r '.[] | "\(.path)\t\(.name)"' | while IFS=$'\t' read -r path name; do
-            # Sanitize name for use as filename
             safe_name=$(echo "$name" | tr -cd 'a-zA-Z0-9_-')
-            echo "Capturing ${path} as ${safe_name}..."
-            capture "${PREVIEW_URL}${path}" "$safe_name" || echo "::warning::Failed to capture ${path}"
+            safe_path=$(echo "$path" | sed 's/[?#].*//')
+            echo "Capturing ${safe_path} as ${safe_name}..."
+            capture "${PREVIEW_URL}${safe_path}" "$safe_name" || echo "::warning::Failed to capture ${safe_path}"
           done
 
       - name: Close browser
