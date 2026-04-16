@@ -172,8 +172,6 @@ function HackathonPreviewContent({
     }
   }, [isEditable, editMode, hackathon.name, activeSection, openSection])
 
-  const hasTimeline = hackathon.registration_opens_at || hackathon.registration_closes_at || hackathon.starts_at || hackathon.ends_at
-
   async function handleCancelInvitation(invitationId: string) {
     if (!teamInfo) return
     setCancellingId(invitationId)
