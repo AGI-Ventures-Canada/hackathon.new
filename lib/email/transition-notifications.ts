@@ -1,4 +1,4 @@
-import { sanitizeTag, renderEmail } from "./utils"
+import { sanitizeTag, renderEmail, buildEventUrl } from "./utils"
 import type { TransitionEvent } from "@/lib/db/hackathon-types"
 import TransitionNotificationEmail from "@/emails/transition-notification"
 
@@ -25,8 +25,7 @@ export async function buildTransitionEmail(
     hackathonEndsAt?: string | null
   }
 ): Promise<EmailContent> {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://getoatmeal.com"
-  const eventUrl = `${appUrl}/e/${hackathonSlug}`
+  const eventUrl = buildEventUrl(hackathonSlug)
   const tag = sanitizeTag(hackathonName)
 
   const { html, text } = await renderEmail(
