@@ -90,9 +90,22 @@ describe("slug validation regex", () => {
     })
   })
 
-  describe("SLUG_REGEX is the same instance used by isValidSlugFormat", () => {
-    it("matches the exported regex directly", () => {
+  describe("SLUG_REGEX enforces minimum length", () => {
+    it("accepts valid slugs", () => {
       expect(SLUG_REGEX.test("my-org")).toBe(true)
+      expect(SLUG_REGEX.test("abc")).toBe(true)
+    })
+
+    it("rejects slugs shorter than 3 characters", () => {
+      expect(SLUG_REGEX.test("a")).toBe(false)
+      expect(SLUG_REGEX.test("ab")).toBe(false)
+    })
+
+    it("rejects empty strings", () => {
+      expect(SLUG_REGEX.test("")).toBe(false)
+    })
+
+    it("rejects invalid patterns", () => {
       expect(SLUG_REGEX.test("my--org")).toBe(false)
     })
   })

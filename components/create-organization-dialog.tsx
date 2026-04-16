@@ -117,8 +117,9 @@ export function CreateOrganizationDialog({
       if (!res.ok) {
         try {
           await org.destroy()
-        } catch (destroyErr) {
-          console.error("Failed to destroy org after slug save failure", destroyErr)
+        } catch {
+          setError("Something went wrong and we couldn't clean up. Please contact support.")
+          return
         }
         const data = await res.json().catch(() => ({}))
         throw new Error(data.error ?? "Failed to save organization slug")
