@@ -2,6 +2,7 @@ import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { TenantProfile, Hackathon } from "@/lib/db/hackathon-types"
 import { sortByStartDate } from "@/lib/utils/format"
+export { generateSlug } from "@/lib/utils/slug"
 
 export async function getPublicTenantBySlug(
   slug: string
