@@ -31,7 +31,7 @@ export default function AgentNotificationEmail({
       footerText="This is an automated notification from your Oatmeal agent."
     >
       <InfoBox label="Agent">
-        <Text style={{ margin: "0", fontSize: "16px", fontWeight: 600 }}>
+        <Text style={{ margin: "0", fontSize: fontSize.lg, fontWeight: 600 }}>
           {agentName}
         </Text>
       </InfoBox>

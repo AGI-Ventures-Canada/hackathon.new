@@ -1,5 +1,10 @@
 import { render } from "@react-email/components"
 
+export function buildEventUrl(slug: string, path?: string): string {
+  const base = `${process.env.NEXT_PUBLIC_APP_URL}/e/${slug}`
+  return path ? `${base}${path}` : base
+}
+
 export function sanitizeTag(name: string): string {
   return name
     .replace(/[^a-zA-Z0-9_-]/g, "_")

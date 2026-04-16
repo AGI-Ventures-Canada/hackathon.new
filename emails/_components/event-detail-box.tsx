@@ -62,7 +62,7 @@ export function EventDetailBox({
       <Text
         style={{
           margin: "0",
-          fontSize: "16px",
+          fontSize: fontSize.lg,
           fontWeight: 600,
           color: colors.textPrimary,
         }}
