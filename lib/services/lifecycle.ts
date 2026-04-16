@@ -92,6 +92,8 @@ export async function executeTransition(
       hackathon: {
         name: hackathon.name as string,
         slug: hackathon.slug as string,
+        starts_at: hackathon.starts_at as string | null,
+        ends_at: hackathon.ends_at as string | null,
       },
       trigger,
       triggeredBy,

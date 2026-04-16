@@ -47,6 +47,7 @@ export async function sendOrganizerClaimNotification(params: {
       prizeName,
       hackathonName,
       fulfillmentUrl,
+      hackathonSlug,
       prizeValue,
     })
   )

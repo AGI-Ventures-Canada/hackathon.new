@@ -169,6 +169,8 @@ export async function sendWinnerEmails(hackathonId: string): Promise<number> {
             resultsUrl,
             prizes,
             primaryClaimUrl,
+            hackathonStartsAt: hackathon.starts_at,
+            hackathonEndsAt: hackathon.ends_at,
           })
         )
 
@@ -283,6 +285,8 @@ export async function sendPrizeClaimEmail(
           claimUrl,
         }],
         primaryClaimUrl: claimUrl,
+        hackathonStartsAt: hackathon.starts_at,
+        hackathonEndsAt: hackathon.ends_at,
       })
     )
 

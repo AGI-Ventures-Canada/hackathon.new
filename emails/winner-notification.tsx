@@ -1,5 +1,6 @@
 import { Text, Link, Section } from "@react-email/components"
 import { OatmealLayout } from "./_components/oatmeal-layout"
+import { EventDetailBox } from "./_components/event-detail-box"
 import { CTAButton } from "./_components/cta-button"
 import { colors, fontSize, spacing } from "./_components/constants"
 
@@ -16,7 +17,8 @@ interface WinnerNotificationEmailProps {
   resultsUrl: string
   prizes: WinnerPrize[]
   primaryClaimUrl: string | null
-  prizeClaimDeadline?: string | null
+  hackathonStartsAt?: string | null
+  hackathonEndsAt?: string | null
 }
 
 export default function WinnerNotificationEmail({
@@ -26,7 +28,8 @@ export default function WinnerNotificationEmail({
   resultsUrl,
   prizes,
   primaryClaimUrl,
-  prizeClaimDeadline,
+  hackathonStartsAt,
+  hackathonEndsAt,
 }: WinnerNotificationEmailProps) {
   return (
     <OatmealLayout
@@ -46,6 +49,12 @@ export default function WinnerNotificationEmail({
         Your project <strong>&ldquo;{submissionTitle}&rdquo;</strong> placed{" "}
         <strong>{rank}</strong> in <strong>{hackathonName}</strong>!
       </Text>
+
+      <EventDetailBox
+        hackathonName={hackathonName}
+        startsAt={hackathonStartsAt}
+        endsAt={hackathonEndsAt}
+      />
 
       {prizes.length > 0 && (
         <Section
@@ -96,18 +105,6 @@ export default function WinnerNotificationEmail({
               )}
             </Text>
           ))}
-          {prizeClaimDeadline && (
-            <Text
-              style={{
-                margin: `${spacing.sm} 0 0 0`,
-                fontSize: fontSize.sm,
-                color: colors.textSecondary,
-                fontWeight: 600,
-              }}
-            >
-              Claim by {prizeClaimDeadline}
-            </Text>
-          )}
         </Section>
       )}
 
@@ -155,5 +152,6 @@ WinnerNotificationEmail.PreviewProps = {
     },
   ],
   primaryClaimUrl: "https://getoatmeal.com/prizes/claim/tk1",
-  prizeClaimDeadline: "May 1, 2026",
+  hackathonStartsAt: "2026-04-20T08:30:00Z",
+  hackathonEndsAt: "2026-04-22T17:00:00Z",
 } satisfies WinnerNotificationEmailProps
