@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect, useRef } from "react"
+import { useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useAuth, useOrganization } from "@clerk/nextjs"
 import { HackathonPreviewClient } from "@/components/hackathon/preview/hackathon-preview-client"
@@ -235,16 +235,20 @@ export function HackathonDraftEditor({
   }, [])
 
   const hackathon = stateToHackathon(state)
-  const draftChallenges: Challenge[] = (state.challenges ?? []).map((c, i) => ({
-    id: `draft-${i}`,
-    hackathonId: "draft",
-    title: c.title,
-    description: c.description,
-    resources: c.resources,
-    sortOrder: i,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  }))
+  const draftChallenges: Challenge[] = useMemo(
+    () =>
+      (state.challenges ?? []).map((c, i) => ({
+        id: `draft-${i}`,
+        hackathonId: "draft",
+        title: c.title,
+        description: c.description,
+        resources: c.resources,
+        sortOrder: i,
+        createdAt: "draft",
+        updatedAt: "draft",
+      })),
+    [state.challenges]
+  )
 
   const doSubmit = useCallback(async () => {
     setIsSubmitting(true)
