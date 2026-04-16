@@ -165,8 +165,7 @@ export function loadSavedState(storageKey: string, sourceUrl?: string): DraftSta
       return null
     }
     const state = parsed.state ?? null
-    if (state && !state.challenges) state.challenges = []
-    return state
+    return state ? { ...state, challenges: state.challenges ?? [] } : null
   } catch {
     localStorage.removeItem(storageKey)
     return null
