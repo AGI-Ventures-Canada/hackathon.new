@@ -101,6 +101,14 @@ jobs:
           # Sign in using Clerk.js directly on the preview domain.
           # This sets __session cookie on the preview domain so server-side
           # middleware recognizes the user on subsequent navigations.
+          #
+          # The token is written to a temp file and read back via jq to
+          # avoid interpolating the secret directly into a shell variable
+          # that gets embedded in a JS string literal.
+          TOKEN_FILE=$(mktemp)
+          printf '%s' "$TOKEN" > "$TOKEN_FILE"
+          INJECT_SCRIPT="window.__CLERK_TICKET__ = $(jq -Rs . < "$TOKEN_FILE");"
+          rm -f "$TOKEN_FILE"
           SIGN_IN_SCRIPT=$(cat <<'CLERKEOF'
           (async () => {
             const waitForClerk = () => new Promise((resolve, reject) => {
@@ -121,11 +129,7 @@ jobs:
           })()
           CLERKEOF
           )
-          # Safe: JWTs contain only base64url chars (alphanumeric, hyphen, underscore, period)
-          # so the token value cannot break out of the JS string produced by jq -Rs.
-          INJECT_TOKEN="window.__CLERK_TICKET__ = $(printf '%s' "$TOKEN" | jq -Rs .);"
-          SIGN_IN_SCRIPT="${INJECT_TOKEN}${SIGN_IN_SCRIPT}"
-          SIGN_IN_RESULT=$(echo "$SIGN_IN_SCRIPT" | agent-browser --session pr-screenshots eval --stdin 2>&1) || true
+          SIGN_IN_RESULT=$(echo "${INJECT_SCRIPT}${SIGN_IN_SCRIPT}" | agent-browser --session pr-screenshots eval --stdin 2>&1) || true
 
           if echo "$SIGN_IN_RESULT" | grep -q "^ok"; then
             echo "Clerk sign-in succeeded on preview domain"
