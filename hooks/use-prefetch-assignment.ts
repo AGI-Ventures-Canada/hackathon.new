@@ -20,7 +20,7 @@ export function usePrefetchAssignment(
           setCache((prev) => ({ ...prev, [nextAssignmentId]: data }))
         }
       })
-      .catch(() => {})
+      .catch((err) => console.warn("Prefetch failed:", err))
     return () => { cancelled = true }
   }, [nextAssignmentId, hackathonSlug])
 

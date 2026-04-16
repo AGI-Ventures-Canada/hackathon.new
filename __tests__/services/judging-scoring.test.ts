@@ -16,7 +16,7 @@ const CRITERIA_ID_1 = "44444444-4444-4444-4444-444444444444"
 const CRITERIA_ID_2 = "55555555-5555-5555-5555-555555555555"
 const TEAM_ID = "66666666-6666-6666-6666-666666666666"
 
-const MOCK_OWNERSHIP = { hackathonId: HACKATHON_ID, prizeId: PRIZE_ID }
+const MOCK_OWNERSHIP = { hackathonId: HACKATHON_ID, prizeId: PRIZE_ID, isComplete: false }
 
 function mockAssignmentRow() {
   return {
@@ -376,6 +376,23 @@ describe("Judging Scoring Service", () => {
       const result = await submitScores(ASSIGNMENT_ID, MOCK_OWNERSHIP, [], "just notes")
 
       expect(result).toEqual({ success: true })
+    })
+
+    it("rejects submission when assignment is already complete", async () => {
+      const completeOwnership = { hackathonId: HACKATHON_ID, prizeId: PRIZE_ID, isComplete: true }
+
+      const result = await submitScores(
+        ASSIGNMENT_ID,
+        completeOwnership,
+        [{ criteriaId: CRITERIA_ID_1, score: 5 }],
+        "notes"
+      )
+
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.code).toBe("already_complete")
+        expect(result.error).toBe("Assignment is already complete")
+      }
     })
   })
 })

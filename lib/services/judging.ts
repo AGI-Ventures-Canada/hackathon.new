@@ -1440,6 +1440,7 @@ export async function assignJudgeToPrize(
 export type AssignmentOwnership = {
   hackathonId: string
   prizeId: string | null
+  isComplete: boolean
 }
 
 export async function verifyAssignmentOwnership(
@@ -1449,7 +1450,7 @@ export async function verifyAssignmentOwnership(
   const client = getSupabase() as unknown as SupabaseClient
   const { data } = await client
     .from("judge_assignments")
-    .select("judge_participant_id, hackathon_id, prize_id, hackathon_participants!inner(clerk_user_id)")
+    .select("judge_participant_id, hackathon_id, prize_id, is_complete, hackathon_participants!inner(clerk_user_id)")
     .eq("id", assignmentId)
     .single()
 
@@ -1459,6 +1460,7 @@ export async function verifyAssignmentOwnership(
   return {
     hackathonId: data.hackathon_id,
     prizeId: data.prize_id ?? null,
+    isComplete: data.is_complete === true,
   }
 }
 
@@ -2459,6 +2461,10 @@ export async function submitScores(
   scores: { criteriaId: string; score: number }[],
   notes: string
 ): Promise<SubmitScoresResult> {
+  if (ownership.isComplete) {
+    return { success: false, error: "Assignment is already complete", code: "already_complete" }
+  }
+
   const client = getSupabase() as unknown as SupabaseClient
 
   if (scores.length > 0) {
@@ -2481,10 +2487,7 @@ export async function submitScores(
 
     for (const s of scores) {
       if (!validCriteriaIds.has(s.criteriaId)) {
-        return { success: false, error: `Invalid criteria ID: ${s.criteriaId}`, code: "invalid_criteria" }
-      }
-      if (s.score < 0) {
-        return { success: false, error: `Score cannot be negative`, code: "score_below_zero" }
+        return { success: false, error: "One or more criteria IDs are invalid", code: "invalid_criteria" }
       }
       const maxScore = maxScoreMap.get(s.criteriaId)
       if (maxScore != null && s.score > maxScore) {
