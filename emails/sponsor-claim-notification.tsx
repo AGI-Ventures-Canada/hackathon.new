@@ -18,7 +18,6 @@ export default function SponsorClaimNotificationEmail({
   eventUrl,
   prizeValue,
 }: SponsorClaimNotificationEmailProps) {
-
   return (
     <OatmealLayout
       heading="Winner Info Ready"

@@ -161,6 +161,68 @@ describe("sendOrganizerClaimNotification", () => {
     expect(sent).toBe(0)
   })
 
+  it("includes prizeValue in rendered email when provided", async () => {
+    let callCount = 0
+    mockSingle.mockImplementation(() => {
+      callCount++
+      if (callCount === 1) {
+        return Promise.resolve({ data: { tenant_id: "tenant_1" }, error: null })
+      }
+      return Promise.resolve({
+        data: { clerk_org_id: "org_123", clerk_user_id: null },
+        error: null,
+      })
+    })
+
+    await sendOrganizerClaimNotification({
+      prizeName: "Best AI",
+      hackathonName: "AI Hack",
+      hackathonSlug: "ai-hack",
+      winnerName: "Carol",
+      hackathonId: "hack_3",
+      prizeValue: "$5,000",
+    })
+
+    expect(mockSendEmail).toHaveBeenCalledTimes(1)
+    const call = mockSendEmail.mock.calls[0]![0] as Record<string, unknown>
+    expect((call.html as string)).toContain("$5,000")
+  })
+
+  it("includes fulfillment URL in rendered email", async () => {
+    const originalEnv = process.env.NEXT_PUBLIC_APP_URL
+    process.env.NEXT_PUBLIC_APP_URL = "https://test.getoatmeal.com"
+
+    let callCount = 0
+    mockSingle.mockImplementation(() => {
+      callCount++
+      if (callCount === 1) {
+        return Promise.resolve({ data: { tenant_id: "tenant_1" }, error: null })
+      }
+      return Promise.resolve({
+        data: { clerk_org_id: "org_123", clerk_user_id: null },
+        error: null,
+      })
+    })
+
+    await sendOrganizerClaimNotification({
+      prizeName: "Best AI",
+      hackathonName: "AI Hack",
+      hackathonSlug: "ai-hack-2026",
+      winnerName: "Carol",
+      hackathonId: "hack_3",
+    })
+
+    expect(mockSendEmail).toHaveBeenCalledTimes(1)
+    const call = mockSendEmail.mock.calls[0]![0] as Record<string, unknown>
+    expect((call.html as string)).toContain("https://test.getoatmeal.com/e/ai-hack-2026/manage")
+
+    if (originalEnv === undefined) {
+      delete process.env.NEXT_PUBLIC_APP_URL
+    } else {
+      process.env.NEXT_PUBLIC_APP_URL = originalEnv
+    }
+  })
+
   it("uses correct Resend tags", async () => {
     let callCount = 0
     mockSingle.mockImplementation(() => {

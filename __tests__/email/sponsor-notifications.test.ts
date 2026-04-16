@@ -138,4 +138,55 @@ describe("sendSponsorClaimNotification", () => {
 
     expect(sent).toBe(0)
   })
+
+  it("includes prizeValue in rendered email when provided", async () => {
+    mockSingle.mockImplementation(() =>
+      Promise.resolve({
+        data: { clerk_org_id: null, clerk_user_id: "user_solo" },
+        error: null,
+      })
+    )
+
+    await sendSponsorClaimNotification({
+      prizeName: "Best AI",
+      hackathonName: "AI Hack",
+      winnerName: "Carol",
+      sponsorTenantId: "tenant_3",
+      prizeValue: "$2,000",
+    })
+
+    expect(mockSendEmail).toHaveBeenCalledTimes(1)
+    const call = mockSendEmail.mock.calls[0]![0] as Record<string, unknown>
+    expect((call.html as string)).toContain("$2,000")
+  })
+
+  it("includes eventUrl in rendered email when hackathonSlug provided", async () => {
+    const originalEnv = process.env.NEXT_PUBLIC_APP_URL
+    process.env.NEXT_PUBLIC_APP_URL = "https://test.getoatmeal.com"
+
+    mockSingle.mockImplementation(() =>
+      Promise.resolve({
+        data: { clerk_org_id: null, clerk_user_id: "user_solo" },
+        error: null,
+      })
+    )
+
+    await sendSponsorClaimNotification({
+      prizeName: "Best AI",
+      hackathonName: "AI Hack",
+      winnerName: "Carol",
+      sponsorTenantId: "tenant_3",
+      hackathonSlug: "ai-hack-2026",
+    })
+
+    expect(mockSendEmail).toHaveBeenCalledTimes(1)
+    const call = mockSendEmail.mock.calls[0]![0] as Record<string, unknown>
+    expect((call.html as string)).toContain("https://test.getoatmeal.com/e/ai-hack-2026")
+
+    if (originalEnv === undefined) {
+      delete process.env.NEXT_PUBLIC_APP_URL
+    } else {
+      process.env.NEXT_PUBLIC_APP_URL = originalEnv
+    }
+  })
 })
