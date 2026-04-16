@@ -1,10 +1,5 @@
 import { describe, it, expect } from "bun:test"
-
-const SLUG_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
-
-function isValidSlugFormat(slug: string): boolean {
-  return slug.length >= 3 && SLUG_REGEX.test(slug)
-}
+import { SLUG_REGEX, isValidSlugFormat, generateSlug } from "@/lib/utils/slug"
 
 describe("slug validation regex", () => {
   describe("valid slugs", () => {
@@ -95,48 +90,15 @@ describe("slug validation regex", () => {
     })
   })
 
-  describe("regex pattern parity between client and server", () => {
-    const serverRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
-
-    function serverValidation(slug: string): boolean {
-      return slug.length >= 3 && serverRegex.test(slug)
-    }
-
-    const testCases = [
-      { slug: "my-org", expected: true },
-      { slug: "acmecorp", expected: true },
-      { slug: "abc123-def456", expected: true },
-      { slug: "my--org", expected: false },
-      { slug: "-myorg", expected: false },
-      { slug: "myorg-", expected: false },
-      { slug: "My-Org", expected: false },
-      { slug: "a", expected: false },
-      { slug: "ab", expected: false },
-      { slug: "abc", expected: true },
-    ]
-
-    for (const { slug, expected } of testCases) {
-      it(`client and server agree on "${slug}" (${expected ? "valid" : "invalid"})`, () => {
-        const clientResult = isValidSlugFormat(slug)
-        const serverResult = serverValidation(slug)
-        expect(clientResult).toBe(expected)
-        expect(serverResult).toBe(expected)
-        expect(clientResult).toBe(serverResult)
-      })
-    }
+  describe("SLUG_REGEX is the same instance used by isValidSlugFormat", () => {
+    it("matches the exported regex directly", () => {
+      expect(SLUG_REGEX.test("my-org")).toBe(true)
+      expect(SLUG_REGEX.test("my--org")).toBe(false)
+    })
   })
 })
 
 describe("generateSlug", () => {
-  function generateSlug(name: string): string {
-    return name
-      .toLowerCase()
-      .replace(/[^a-z0-9\s-]/g, "")
-      .replace(/\s+/g, "-")
-      .replace(/-+/g, "-")
-      .replace(/^-|-$/g, "")
-  }
-
   it("converts a name to lowercase kebab-case", () => {
     expect(generateSlug("My Organization")).toBe("my-organization")
   })

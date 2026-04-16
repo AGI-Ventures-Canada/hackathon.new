@@ -13,24 +13,12 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { generateSlug, isValidSlugFormat } from "@/lib/utils/slug"
 
 interface CreateOrganizationDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSuccess?: () => void
-}
-
-function generateSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-}
-
-function isValidSlugFormat(slug: string): boolean {
-  return slug.length >= 3 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)
 }
 
 export function CreateOrganizationDialog({
@@ -127,7 +115,9 @@ export function CreateOrganizationDialog({
       })
 
       if (!res.ok) {
-        try { await org.destroy() } catch (destroyErr) {
+        try {
+          await org.destroy()
+        } catch (destroyErr) {
           console.error("Failed to destroy org after slug save failure", destroyErr)
         }
         const data = await res.json().catch(() => ({}))

@@ -77,14 +77,7 @@ export async function updateTenantProfile(
   return data as unknown as TenantProfile
 }
 
-export function generateSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-}
+export { generateSlug } from "@/lib/utils/slug"
 
 export async function isSlugAvailable(
   slug: string,

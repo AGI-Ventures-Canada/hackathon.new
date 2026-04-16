@@ -2,6 +2,7 @@ import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Hackathon, HackathonParticipant } from "@/lib/db/hackathon-types"
 import { sortByStartDate } from "@/lib/utils/format"
+import { generateSlug } from "@/lib/utils/slug"
 import { clerkClient } from "@clerk/nextjs/server"
 import { trackEvent } from "@/lib/analytics/posthog"
 
@@ -129,15 +130,6 @@ export async function listJudgingHackathons(
   }
 
   return sortByStartDate(hackathons)
-}
-
-function generateSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
 }
 
 export type CreateHackathonInput = {

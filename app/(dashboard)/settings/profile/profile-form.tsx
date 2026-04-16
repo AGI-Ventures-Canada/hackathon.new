@@ -23,10 +23,7 @@ import {
 } from "@/components/ui/card"
 import { Sun, Moon, ImageIcon, ExternalLink, Users, CreditCard, TriangleAlert, Check, X, Loader2 } from "lucide-react"
 import { normalizeOptionalUrl, normalizeUrlFieldValue, urlInputProps } from "@/lib/utils/url"
-
-function isValidSlugFormat(s: string): boolean {
-  return s.length >= 3 && /^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(s)
-}
+import { isValidSlugFormat } from "@/lib/utils/slug"
 
 type SlugStatus = "idle" | "checking" | "available" | "taken" | "invalid"
 
