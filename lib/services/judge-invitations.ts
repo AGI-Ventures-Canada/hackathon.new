@@ -3,6 +3,7 @@ import type { JudgeInvitation } from "@/lib/db/hackathon-types"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { randomBytes } from "crypto"
 import { checkRoleConflict } from "@/lib/services/role-conflict"
+import { isValidUuid } from "@/lib/utils/uuid"
 
 const INVITATION_EXPIRY_DAYS = 7
 const INVITATION_EXPIRY_MS = INVITATION_EXPIRY_DAYS * 24 * 60 * 60 * 1000
@@ -221,6 +222,10 @@ export async function remindJudgeInvitation(
   invitationId: string,
   hackathonId: string
 ): Promise<RemindJudgeInvitationResult> {
+  if (!isValidUuid(invitationId) || !isValidUuid(hackathonId)) {
+    return { success: false, error: "Invitation not found", code: "not_found" }
+  }
+
   const client = getSupabase() as unknown as SupabaseClient
 
   const { data: invitation, error: fetchError } = await client

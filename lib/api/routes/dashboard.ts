@@ -2318,6 +2318,9 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
 
     const teamInfo = await getTeamWithHackathon(params.teamId)
     if (teamInfo) {
+      const { resolveAdderName } = await import("@/lib/auth/resolve-adder-name")
+      const inviterName = await resolveAdderName(principal)
+
       const { sendTeamInvitationReminderEmail } = await import(
         "@/lib/email/team-invitations"
       )
@@ -2325,7 +2328,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         to: result.invitation.email,
         teamName: teamInfo.name,
         hackathonName: teamInfo.hackathon.name,
-        inviterName: "Your team captain",
+        inviterName,
         inviteToken: result.invitation.token,
         expiresAt: result.invitation.expires_at,
       }).catch(console.error)

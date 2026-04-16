@@ -2,6 +2,7 @@ import { Elysia, t } from "elysia"
 import { resolvePrincipal, requirePrincipal } from "@/lib/auth/principal"
 import { logAudit } from "@/lib/services/audit"
 import { resolveAdderName } from "@/lib/auth/resolve-adder-name"
+import { checkRateLimit, RateLimitError } from "@/lib/services/rate-limit"
 
 type CachedAuthResult = { status: "ok" } | { status: "not_found" } | { status: "not_authorized" }
 // Local-dev-only optimisation: avoids repeated checkHackathonOrganizer calls
@@ -1270,6 +1271,14 @@ export const dashboardJudgingRoutes = new Elysia()
 
   .post("/hackathons/:id/judging/invitations/:invitationId/remind", async ({ principal, params }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+
+    const rateLimitResult = await checkRateLimit(`judge_invitation_remind:${params.id}`, {
+      maxRequests: 5,
+      windowMs: 60_000,
+    })
+    if (!rateLimitResult.allowed) {
+      throw new RateLimitError(rateLimitResult.resetAt, rateLimitResult.remaining)
+    }
 
     const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
     const result = await checkHackathonOrganizer(params.id, principal.tenantId)

@@ -282,7 +282,7 @@ export function TeamManagementTab({ teamInfo, hackathonId, maxTeamSize, location
                         <Bell className="size-3" />
                         Reminded
                       </span>
-                    ) : !isExpiringSoon(invitation.expiresAt) || new Date(invitation.expiresAt) > new Date() ? (
+                    ) : new Date(invitation.expiresAt) > new Date() ? (
                       <Button
                         variant="ghost"
                         size="sm"

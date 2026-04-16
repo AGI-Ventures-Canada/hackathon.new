@@ -2,6 +2,7 @@ import { supabase as getSupabase } from "@/lib/db/client"
 import type { TeamInvitation } from "@/lib/db/hackathon-types"
 import { randomBytes } from "crypto"
 import { checkRoleConflict } from "@/lib/services/role-conflict"
+import { isValidUuid } from "@/lib/utils/uuid"
 
 const INVITATION_EXPIRY_DAYS = 7
 const INVITATION_EXPIRY_MS = INVITATION_EXPIRY_DAYS * 24 * 60 * 60 * 1000
@@ -339,6 +340,10 @@ export async function remindTeamInvitation(
   invitationId: string,
   clerkUserId: string
 ): Promise<RemindTeamInvitationResult> {
+  if (!isValidUuid(invitationId)) {
+    return { success: false, error: "Invitation not found", code: "not_found" }
+  }
+
   const client = getSupabase()
 
   const { data: invitation, error: fetchError } = await client
