@@ -648,7 +648,7 @@ async function createPendingTeamWithInvite(
 ): Promise<CreateTeamResult> {
   const { data: hackathon } = await client
     .from("hackathons")
-    .select("name")
+    .select("name, slug, starts_at, ends_at")
     .eq("id", hackathonId)
     .single()
 
@@ -717,6 +717,9 @@ async function createPendingTeamWithInvite(
     inviterName,
     inviteToken: token,
     expiresAt,
+    hackathonSlug: hackathon.slug,
+    hackathonStartsAt: hackathon.starts_at,
+    hackathonEndsAt: hackathon.ends_at,
   })
 
   return { team, invited: true }

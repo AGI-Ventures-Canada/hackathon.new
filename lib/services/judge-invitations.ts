@@ -216,7 +216,8 @@ export async function cancelJudgeInvitation(
 export async function sendPendingJudgeInvitationEmails(
   hackathonId: string,
   hackathonName: string,
-  inviterName: string
+  inviterName: string,
+  opts?: { hackathonSlug?: string; hackathonStartsAt?: string | null; hackathonEndsAt?: string | null }
 ): Promise<{ sent: number; total: number; failedEmails: string[] }> {
   const client = getSupabase() as unknown as SupabaseClient
 
@@ -239,6 +240,9 @@ export async function sendPendingJudgeInvitationEmails(
         inviterName,
         inviteToken: invitation.token,
         expiresAt: invitation.expires_at,
+        hackathonSlug: opts?.hackathonSlug,
+        hackathonStartsAt: opts?.hackathonStartsAt,
+        hackathonEndsAt: opts?.hackathonEndsAt,
       })
       if (result.success) {
         await client

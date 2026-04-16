@@ -333,14 +333,15 @@ export async function listTeamInvitations(
 
 export async function getTeamWithHackathon(
   teamId: string
-): Promise<{ name: string; hackathon: { name: string; slug: string } } | null> {
+): Promise<{ name: string; hackathon: { name: string; slug: string; starts_at: string | null; ends_at: string | null }; memberNames: string[] } | null> {
   const client = getSupabase()
 
   const { data, error } = await client
     .from("teams")
     .select(`
       name,
-      hackathons!inner(name, slug)
+      hackathons!inner(name, slug, starts_at, ends_at),
+      hackathon_participants(clerk_user_id)
     `)
     .eq("id", teamId)
     .single()
@@ -349,13 +350,34 @@ export async function getTeamWithHackathon(
     return null
   }
 
-  const hackathon = data.hackathons as unknown as { name: string; slug: string }
+  const hackathon = data.hackathons as unknown as { name: string; slug: string; starts_at: string | null; ends_at: string | null }
+  const participants = (data.hackathon_participants ?? []) as unknown as { clerk_user_id: string }[]
+
+  let memberNames: string[] = []
+  if (participants.length > 0) {
+    try {
+      const { clerkClient } = await import("@clerk/nextjs/server")
+      const clerk = await clerkClient()
+      const users = await clerk.users.getUserList({
+        userId: participants.map((p) => p.clerk_user_id),
+        limit: 100,
+      })
+      memberNames = users.data
+        .map((u) => [u.firstName, u.lastName].filter(Boolean).join(" "))
+        .filter((name) => name.length > 0)
+    } catch {
+      // fallback to empty — team members are optional in the email
+    }
+  }
 
   return {
     name: data.name,
     hackathon: {
       name: hackathon.name,
       slug: hackathon.slug,
+      starts_at: hackathon.starts_at,
+      ends_at: hackathon.ends_at,
     },
+    memberNames,
   }
 }
