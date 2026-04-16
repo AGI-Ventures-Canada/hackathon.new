@@ -366,7 +366,6 @@ export async function getTeamWithHackathon(
         .map((u) => [u.firstName, u.lastName].filter(Boolean).join(" "))
         .filter((name) => name.length > 0)
     } catch {
-      // fallback to empty — team members are optional in the email
     }
   }
 

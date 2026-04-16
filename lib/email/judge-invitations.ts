@@ -1,5 +1,5 @@
 import { sendEmail } from "./resend"
-import { sanitizeTag, renderEmail } from "./utils"
+import { sanitizeTag, renderEmail, buildEventUrl } from "./utils"
 import JudgeAddedEmail from "@/emails/judge-added"
 import JudgeInvitationEmail from "@/emails/judge-invitation"
 
@@ -26,12 +26,7 @@ export type SendJudgeAddedNotificationInput = {
 export async function sendJudgeAddedNotification(
   input: SendJudgeAddedNotificationInput
 ): Promise<{ success: boolean }> {
-  if (!process.env.NEXT_PUBLIC_APP_URL) {
-    console.error("NEXT_PUBLIC_APP_URL not set, cannot send notification email")
-    return { success: false }
-  }
-
-  const eventUrl = `${process.env.NEXT_PUBLIC_APP_URL}/e/${input.hackathonSlug}`
+  const eventUrl = buildEventUrl(input.hackathonSlug)
 
   const { html, text } = await renderEmail(
     JudgeAddedEmail({
