@@ -2296,7 +2296,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
     requirePrincipal(principal, ["user"])
 
     const { isValidUuid } = await import("@/lib/utils/uuid")
-    if (!isValidUuid(params.teamId)) {
+    if (!isValidUuid(params.teamId) || !isValidUuid(params.invitationId)) {
       return new Response(JSON.stringify({ error: "Not found" }), {
         status: 404,
         headers: { "Content-Type": "application/json" },
