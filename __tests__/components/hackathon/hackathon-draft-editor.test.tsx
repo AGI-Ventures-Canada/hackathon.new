@@ -59,7 +59,7 @@ mock.module("@/components/create-organization-dialog", () => ({
   },
 }))
 
-const { HackathonDraftEditor } = await import(
+const { HackathonDraftEditor, loadSavedState } = await import(
   "@/components/hackathon/hackathon-draft-editor"
 )
 
@@ -321,6 +321,40 @@ describe("HackathonDraftEditor", () => {
 
       const stored = JSON.parse(storage.get(STORAGE_KEY)!)
       expect(stored.state.name).toBe("My Draft")
+    })
+  })
+
+  describe("loadSavedState migration", () => {
+    const STORAGE_KEY = "test-migration"
+
+    it("adds challenges: [] to state missing the field", () => {
+      storage.set(
+        STORAGE_KEY,
+        JSON.stringify({
+          state: { ...defaultState, name: "Legacy Event" },
+          savedAt: Date.now(),
+        })
+      )
+
+      const result = loadSavedState(STORAGE_KEY)
+      expect(result).not.toBeNull()
+      expect(result!.name).toBe("Legacy Event")
+      expect(result!.challenges).toEqual([])
+    })
+
+    it("preserves existing challenges field", () => {
+      const challenges = [{ title: "Build an AI", description: null }]
+      storage.set(
+        STORAGE_KEY,
+        JSON.stringify({
+          state: { ...defaultState, name: "New Event", challenges },
+          savedAt: Date.now(),
+        })
+      )
+
+      const result = loadSavedState(STORAGE_KEY)
+      expect(result).not.toBeNull()
+      expect(result!.challenges).toEqual(challenges)
     })
   })
 
