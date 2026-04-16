@@ -9,6 +9,7 @@ jobs:
       github.event.deployment_status.state == 'success' &&
       github.event.deployment.environment == 'Preview'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
       pull-requests: write
@@ -69,6 +70,7 @@ jobs:
           CLERK_TEST_USER_ID: ${{ secrets.CLERK_TEST_USER_ID }}
           PREVIEW_URL: ${{ github.event.deployment_status.target_url }}
           VERCEL_BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          PR_NUMBER: ${{ steps.check.outputs.pr_number }}
         run: |
           if [ -z "$CLERK_SECRET_KEY" ] || [ -z "$CLERK_TEST_USER_ID" ]; then
             echo "CLERK_SECRET_KEY or CLERK_TEST_USER_ID not set — authenticated pages will be skipped"
@@ -81,9 +83,10 @@ jobs:
           if [ -n "$VERCEL_BYPASS" ]; then
             BYPASS_QS="?x-vercel-protection-bypass=${VERCEL_BYPASS}&x-vercel-set-bypass-cookie=samesitenone"
           fi
-          agent-browser --session pr-screenshots open "${PREVIEW_URL}${BYPASS_QS}" >/dev/null 2>&1
-          agent-browser --session pr-screenshots wait --load networkidle >/dev/null 2>&1 || true
-          agent-browser --session pr-screenshots wait 3000 >/dev/null 2>&1 || true
+          SESSION="pr-${PR_NUMBER}"
+          agent-browser --session "$SESSION" open "${PREVIEW_URL}${BYPASS_QS}" >/dev/null 2>&1
+          agent-browser --session "$SESSION" wait --load networkidle >/dev/null 2>&1 || true
+          agent-browser --session "$SESSION" wait 3000 >/dev/null 2>&1 || true
 
           # Create a sign-in token via Clerk API
           TOKEN=$(curl -sf -X POST "https://api.clerk.com/v1/sign_in_tokens" \
@@ -129,11 +132,15 @@ jobs:
           })()
           CLERKEOF
           )
-          SIGN_IN_RESULT=$(echo "${INJECT_SCRIPT}${SIGN_IN_SCRIPT}" | agent-browser --session pr-screenshots eval --stdin 2>&1) || true
+          # Safe to interpolate: INJECT_SCRIPT is a JS assignment built via jq
+          # (JSON-escaped), and SIGN_IN_SCRIPT is a static heredoc. The Clerk
+          # sign-in token is base64url (alphanumeric, hyphen, underscore, dot)
+          # so it contains no shell metacharacters.
+          SIGN_IN_RESULT=$(echo "${INJECT_SCRIPT}${SIGN_IN_SCRIPT}" | agent-browser --session "$SESSION" eval --stdin 2>&1) || true
 
           if echo "$SIGN_IN_RESULT" | grep -q "^ok"; then
             echo "Clerk sign-in succeeded on preview domain"
-            agent-browser --session pr-screenshots wait 3000 >/dev/null 2>&1 || true
+            agent-browser --session "$SESSION" wait 3000 >/dev/null 2>&1 || true
             echo "authenticated=true" >> "$GITHUB_OUTPUT"
           else
             echo "::warning::Clerk sign-in failed: ${SIGN_IN_RESULT}"
@@ -208,16 +215,18 @@ jobs:
         env:
           PREVIEW_URL: ${{ github.event.deployment_status.target_url }}
           TARGETS: ${{ steps.targets.outputs.targets }}
+          PR_NUMBER: ${{ steps.check.outputs.pr_number }}
         run: |
           DIR="/tmp/pr-screenshots"
           mkdir -p "$DIR"
+          SESSION="pr-${PR_NUMBER}"
 
           capture() {
             local url="$1" name="$2"
-            agent-browser --session pr-screenshots open "$url" 2>/dev/null || return 1
-            agent-browser --session pr-screenshots wait --load networkidle 2>/dev/null || true
-            agent-browser --session pr-screenshots wait 2000 2>/dev/null || true
-            agent-browser --session pr-screenshots screenshot --full "$DIR/${name}.png" 2>/dev/null || return 1
+            agent-browser --session "$SESSION" open "$url" 2>/dev/null || return 1
+            agent-browser --session "$SESSION" wait --load networkidle 2>/dev/null || true
+            agent-browser --session "$SESSION" wait 2000 2>/dev/null || true
+            agent-browser --session "$SESSION" screenshot --full "$DIR/${name}.png" 2>/dev/null || return 1
           }
 
           echo "$TARGETS" | jq -r '.[] | "\(.path)\t\(.name)"' | while IFS=$'\t' read -r path name; do
@@ -229,7 +238,9 @@ jobs:
 
       - name: Close browser
         if: always()
-        run: agent-browser --session pr-screenshots close >/dev/null 2>&1 || true
+        env:
+          PR_NUMBER: ${{ steps.check.outputs.pr_number }}
+        run: agent-browser --session "pr-${PR_NUMBER}" close >/dev/null 2>&1 || true
 
       - name: Upload and comment on PR
         if: steps.check.outputs.skip != 'true'
@@ -287,6 +298,7 @@ jobs:
           # Post or update PR comment (idempotent via HTML marker)
           MARKER="<!-- pr-screenshots -->"
           EXISTING_ID=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" \
+            --field per_page=100 \
             --jq ".[] | select(.body | contains(\"${MARKER}\")) | .id" 2>/dev/null | head -1 || true)
 
           BODY_JSON=$(jq -n --arg body "$BODY" '{"body": $body}')
