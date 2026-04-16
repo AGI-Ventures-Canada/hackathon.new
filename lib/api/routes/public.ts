@@ -1129,6 +1129,13 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
+      if (!isValidUuid(params.assignmentId)) {
+        return new Response(
+          JSON.stringify({ error: "Assignment not found", code: "not_found" }),
+          { status: 404, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
       const hackathon = await getPublicHackathon(params.slug)
       if (!hackathon) {
         return new Response(
@@ -1172,6 +1179,13 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
+      if (!isValidUuid(params.assignmentId)) {
+        return new Response(
+          JSON.stringify({ error: "Assignment not found", code: "not_found" }),
+          { status: 404, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
       const hackathon = await getPublicHackathon(params.slug)
       if (!hackathon) {
         return new Response(
@@ -1184,15 +1198,6 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         return new Response(
           JSON.stringify({ error: "Hackathon is not in judging phase", code: "not_judging" }),
           { status: 400, headers: { "Content-Type": "application/json" } }
-        )
-      }
-
-      const { verifyAssignmentOwnership } = await import("@/lib/services/judging")
-      const ownerCheck = await verifyAssignmentOwnership(params.assignmentId, userId)
-      if (!ownerCheck) {
-        return new Response(
-          JSON.stringify({ error: "Assignment not found", code: "not_found" }),
-          { status: 404, headers: { "Content-Type": "application/json" } }
         )
       }
 

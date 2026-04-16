@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ChevronLeft, ChevronRight, CheckCircle2 } from "lucide-react"
@@ -46,6 +46,7 @@ export function FocusScoringView({
   const allDone = completed === total
 
   const [prefetchCache, setPrefetchCache] = useState<Record<string, React.ComponentProps<typeof ScoringPanel>["prefetchedDetail"]>>({})
+  const prefetchedIdsRef = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     const nextUnscored = assignments.findIndex(
@@ -53,11 +54,12 @@ export function FocusScoringView({
     )
     if (nextUnscored < 0) return
     const nextId = assignments[nextUnscored].id
-    if (prefetchCache[nextId]) return
+    if (prefetchedIdsRef.current.has(nextId)) return
+    prefetchedIdsRef.current.add(nextId)
 
     let cancelled = false
     fetch(`/api/public/hackathons/${hackathonSlug}/judging/assignments/${nextId}`)
-      .then((res) => (res.ok ? res.json() : null))
+      .then((res) => res.ok ? res.json() : null)
       .then((data) => {
         if (data && !cancelled) {
           setPrefetchCache((prev) => ({ ...prev, [nextId]: data }))
@@ -65,7 +67,7 @@ export function FocusScoringView({
       })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [currentIndex, assignments, completedIds, hackathonSlug, prefetchCache])
+  }, [currentIndex, assignments, completedIds, hackathonSlug])
 
   const goToNext = useCallback(() => {
     if (currentIndex < total - 1) setCurrentIndex((i) => i + 1)
@@ -96,7 +98,7 @@ export function FocusScoringView({
       (a, idx) => idx > currentIndex && !updatedIds.has(a.id)
     )
     if (nextUnscored >= 0) {
-      setTimeout(() => setCurrentIndex(nextUnscored), 600)
+      setCurrentIndex(nextUnscored)
     }
   }
 

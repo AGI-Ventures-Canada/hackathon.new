@@ -288,11 +288,17 @@ describe("Judging Scoring Service", () => {
   describe("submitScores", () => {
     it("upserts scores and marks assignment complete", async () => {
       let callIndex = 0
-      setMockFromImplementation(() => {
+      setMockFromImplementation((table) => {
         callIndex++
 
         if (callIndex === 1) {
           return mockOwnershipSuccess()
+        }
+        if (table === "judging_criteria") {
+          return createChainableMock({ data: [
+            { id: CRITERIA_ID_1, max_score: 10 },
+            { id: CRITERIA_ID_2, max_score: 10 },
+          ], error: null })
         }
         return createChainableMock({ data: null, error: null })
       })
@@ -329,11 +335,14 @@ describe("Judging Scoring Service", () => {
 
     it("returns error when score upsert fails", async () => {
       let callIndex = 0
-      setMockFromImplementation(() => {
+      setMockFromImplementation((table) => {
         callIndex++
 
         if (callIndex === 1) {
           return mockOwnershipSuccess()
+        }
+        if (table === "judging_criteria") {
+          return createChainableMock({ data: [{ id: CRITERIA_ID_1, max_score: 10 }], error: null })
         }
         return createChainableMock({
           data: null,
@@ -356,13 +365,16 @@ describe("Judging Scoring Service", () => {
 
     it("returns error when marking complete fails", async () => {
       let callIndex = 0
-      setMockFromImplementation(() => {
+      setMockFromImplementation((table) => {
         callIndex++
 
         if (callIndex === 1) {
           return mockOwnershipSuccess()
         }
-        if (callIndex === 2) {
+        if (table === "judging_criteria") {
+          return createChainableMock({ data: [{ id: CRITERIA_ID_1, max_score: 10 }], error: null })
+        }
+        if (callIndex === 3) {
           return createChainableMock({ data: null, error: null })
         }
         return createChainableMock({
@@ -381,6 +393,33 @@ describe("Judging Scoring Service", () => {
       expect(result.success).toBe(false)
       if (!result.success) {
         expect(result.code).toBe("update_failed")
+      }
+    })
+
+    it("rejects score exceeding max_score", async () => {
+      let callIndex = 0
+      setMockFromImplementation((table) => {
+        callIndex++
+
+        if (callIndex === 1) {
+          return mockOwnershipSuccess()
+        }
+        if (table === "judging_criteria") {
+          return createChainableMock({ data: [{ id: CRITERIA_ID_1, max_score: 10 }], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await submitScores(
+        ASSIGNMENT_ID,
+        USER_ID,
+        [{ criteriaId: CRITERIA_ID_1, score: 15 }],
+        ""
+      )
+
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.code).toBe("score_exceeds_max")
       }
     })
 

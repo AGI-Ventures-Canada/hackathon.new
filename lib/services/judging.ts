@@ -2297,10 +2297,6 @@ export async function saveNotes(
   return true
 }
 
-// ============================================================
-// Assignment detail + score submission
-// ============================================================
-
 export type AssignmentDetailCriterion = {
   id: string
   name: string
@@ -2372,13 +2368,12 @@ export async function getAssignmentDetail(
     max_score: number
     weight: number
     category: string | null
-    display_order: number
   }[] = []
 
   if (assignment.prize_id) {
     const { data } = await client
       .from("judging_criteria")
-      .select("id, name, description, max_score, weight, category, display_order")
+      .select("id, name, description, max_score, weight, category")
       .eq("prize_id", assignment.prize_id)
       .order("display_order")
     criteria = (data ?? []) as typeof criteria
@@ -2387,7 +2382,7 @@ export async function getAssignmentDetail(
   if (criteria.length === 0) {
     const { data } = await client
       .from("judging_criteria")
-      .select("id, name, description, max_score, weight, category, display_order")
+      .select("id, name, description, max_score, weight, category")
       .eq("hackathon_id", assignment.hackathon_id)
       .is("prize_id", null)
       .order("display_order")
@@ -2465,6 +2460,24 @@ export async function submitScores(
 
   const isOwner = await verifyAssignmentOwnership(assignmentId, clerkUserId)
   if (!isOwner) return { success: false, error: "Assignment not found", code: "not_found" }
+
+  if (scores.length > 0) {
+    const criteriaIds = scores.map((s) => s.criteriaId)
+    const { data: criteria } = await client
+      .from("judging_criteria")
+      .select("id, max_score")
+      .in("id", criteriaIds)
+
+    if (criteria) {
+      const maxScoreMap = new Map(criteria.map((c) => [c.id, c.max_score]))
+      for (const s of scores) {
+        const maxScore = maxScoreMap.get(s.criteriaId)
+        if (maxScore != null && s.score > maxScore) {
+          return { success: false, error: `Score ${s.score} exceeds maximum ${maxScore}`, code: "score_exceeds_max" }
+        }
+      }
+    }
+  }
 
   const rows = scores.map((s) => ({
     judge_assignment_id: assignmentId,

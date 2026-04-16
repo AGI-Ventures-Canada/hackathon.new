@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -55,6 +55,7 @@ export function JudgeAssignmentsCard({
   const pageAssignments = assignments.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
 
   const [prefetchCache, setPrefetchCache] = useState<Record<string, React.ComponentProps<typeof ScoringPanel>["prefetchedDetail"]>>({})
+  const prefetchedIdsRef = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     if (!openAssignmentId) return
@@ -62,11 +63,12 @@ export function JudgeAssignmentsCard({
     const nextUnscored = assignments.find(
       (a, idx) => idx > currentIdx && !completedIds.has(a.id) && a.id !== openAssignmentId
     )
-    if (!nextUnscored || prefetchCache[nextUnscored.id]) return
+    if (!nextUnscored || prefetchedIdsRef.current.has(nextUnscored.id)) return
+    prefetchedIdsRef.current.add(nextUnscored.id)
 
     let cancelled = false
     fetch(`/api/public/hackathons/${hackathonSlug}/judging/assignments/${nextUnscored.id}`)
-      .then((res) => (res.ok ? res.json() : null))
+      .then((res) => res.ok ? res.json() : null)
       .then((data) => {
         if (data && !cancelled) {
           setPrefetchCache((prev) => ({ ...prev, [nextUnscored.id]: data }))
@@ -74,7 +76,7 @@ export function JudgeAssignmentsCard({
       })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [openAssignmentId, assignments, completedIds, hackathonSlug, prefetchCache])
+  }, [openAssignmentId, assignments, completedIds, hackathonSlug])
 
   function handleScoreSubmitted(assignmentId: string) {
     const updatedIds = new Set([...completedIds, assignmentId])
@@ -86,9 +88,9 @@ export function JudgeAssignmentsCard({
         (a, idx) => idx > currentIdx && !updatedIds.has(a.id)
       )
       if (nextUnscored) {
-        setTimeout(() => setOpenAssignmentId(nextUnscored.id), 500)
+        setOpenAssignmentId(nextUnscored.id)
       } else {
-        setTimeout(() => setOpenAssignmentId(null), 500)
+        setOpenAssignmentId(null)
       }
     }
   }

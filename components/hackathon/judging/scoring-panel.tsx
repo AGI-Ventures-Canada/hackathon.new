@@ -7,39 +7,16 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Slider } from "@/components/ui/slider"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, CheckCircle2, ExternalLink, Github, Maximize2, AlertTriangle } from "lucide-react"
+import { Loader2, ExternalLink, Github, Maximize2, AlertTriangle } from "lucide-react"
 import { RubricLevelSelector } from "./rubric-level-selector"
 import Image from "next/image"
+import { assertOk, assertOkJson } from "@/lib/utils/fetch"
+import type { AssignmentDetail } from "@/lib/services/judging"
 import {
   Dialog,
   DialogContent,
   DialogTitle,
 } from "@/components/ui/dialog"
-
-type CriterionWithScore = {
-  id: string
-  name: string
-  description: string | null
-  max_score: number
-  weight: number
-  category?: string | null
-  currentScore: number | null
-  rubricLevels?: { id: string; level_number: number; label: string; description: string | null }[]
-}
-
-type AssignmentDetail = {
-  id: string
-  submissionId: string
-  submissionTitle: string
-  submissionDescription: string | null
-  submissionGithubUrl: string | null
-  submissionLiveAppUrl: string | null
-  submissionScreenshotUrl: string | null
-  teamName: string | null
-  isComplete: boolean
-  notes: string
-  criteria: CriterionWithScore[]
-}
 
 interface ScoringPanelProps {
   hackathonSlug: string
@@ -65,14 +42,12 @@ export function ScoringPanel({
   const [scores, setScores] = useState<Record<string, number | null>>({})
   const [notes, setNotes] = useState("")
   const [submitting, setSubmitting] = useState(false)
-  const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [savingNotes, setSavingNotes] = useState(false)
   const [screenshotOpen, setScreenshotOpen] = useState(false)
   const notesTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   useEffect(() => {
-    setSubmitted(false)
     setError(null)
 
     function applyDetail(data: AssignmentDetail) {
@@ -93,10 +68,7 @@ export function ScoringPanel({
 
     setLoading(true)
     fetch(`/api/public/hackathons/${hackathonSlug}/judging/assignments/${assignmentId}`)
-      .then((res) => {
-        if (!res.ok) throw new Error("Failed to load assignment")
-        return res.json()
-      })
+      .then(assertOkJson<AssignmentDetail>)
       .then(applyDetail)
       .catch(() => setError("Failed to load assignment"))
       .finally(() => setLoading(false))
@@ -150,7 +122,7 @@ export function ScoringPanel({
         .filter(([, score]) => score !== null)
         .map(([criteriaId, score]) => ({ criteriaId, score }))
 
-      const res = await fetch(
+      await fetch(
         `/api/public/hackathons/${hackathonSlug}/judging/assignments/${assignmentId}/scores`,
         {
           method: "POST",
@@ -160,14 +132,8 @@ export function ScoringPanel({
             notes,
           }),
         }
-      )
+      ).then(assertOk)
 
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.error || "Failed to submit")
-      }
-
-      setSubmitted(true)
       onScoreSubmitted()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to submit scores")
@@ -187,16 +153,6 @@ export function ScoringPanel({
     return (
       <div className="flex items-center justify-center py-8">
         <Loader2 className="size-5 animate-spin text-muted-foreground" />
-      </div>
-    )
-  }
-
-  if (submitted) {
-    return (
-      <div className="flex flex-col items-center gap-3 py-8">
-        <CheckCircle2 className="size-10 text-primary" />
-        <p className="text-base font-semibold">Scores Submitted</p>
-        <p className="text-sm text-muted-foreground">Moving to next assignment...</p>
       </div>
     )
   }
@@ -239,10 +195,12 @@ export function ScoringPanel({
           <Dialog open={screenshotOpen} onOpenChange={setScreenshotOpen}>
             <DialogContent className="max-w-6xl w-full p-2">
               <DialogTitle className="sr-only">{detail.submissionTitle} screenshot</DialogTitle>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+              <Image
                 src={detail.submissionScreenshotUrl}
                 alt={detail.submissionTitle}
+                width={1920}
+                height={1080}
+                unoptimized
                 className="w-full h-auto rounded-md"
               />
             </DialogContent>
