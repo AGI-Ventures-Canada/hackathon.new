@@ -941,7 +941,7 @@ export function PrizesEditForm({
               </Button>
               <Button type="button" onClick={handleSave} disabled={saving}>
                 {saving && <Loader2 className="size-4 mr-2 animate-spin" />}
-                Save changes
+                Save & exit
               </Button>
             </>
           ) : (

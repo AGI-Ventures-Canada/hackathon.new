@@ -120,7 +120,7 @@ export function AboutEditForm({ hackathonId, initialData, onSaveAndNext, onSave,
       <div className="space-y-3">
         <div className="flex gap-2">
           <Button type="submit" disabled={saving || !isDirty}>
-            {saving ? "Saving..." : "Save"}
+            {saving ? "Saving..." : "Save & exit"}
           </Button>
           <Button type="button" variant="outline" onClick={closeDrawer} disabled={saving}>
             Cancel
