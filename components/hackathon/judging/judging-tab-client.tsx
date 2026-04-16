@@ -621,6 +621,7 @@ function JudgesSection({
                       onClick={() => onRemindInvitation(inv.id)}
                     >
                       <Bell className="size-3" />
+                      <span className="sr-only">Send reminder</span>
                     </Button>
                   )}
                   <Button

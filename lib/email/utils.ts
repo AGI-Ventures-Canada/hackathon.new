@@ -29,9 +29,10 @@ export async function renderEmail(
 export function formatTimeLeft(expiresAt: string): string {
   const diff = new Date(expiresAt).getTime() - Date.now()
   if (diff <= 0) return "less than an hour"
-  const hours = Math.ceil(diff / (1000 * 60 * 60))
+  const hours = Math.floor(diff / (1000 * 60 * 60))
+  if (hours === 0) return "less than an hour"
   if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"}`
-  const days = Math.ceil(diff / (1000 * 60 * 60 * 24))
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
   return `${days} day${days === 1 ? "" : "s"}`
 }
 

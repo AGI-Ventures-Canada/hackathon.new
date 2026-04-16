@@ -2315,6 +2315,14 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       "@/lib/services/team-invitations"
     )
 
+    const teamInfo = await getTeamWithHackathon(params.teamId)
+    if (!teamInfo) {
+      return new Response(JSON.stringify({ error: "Team not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
+
     const result = await remindTeamInvitation(params.invitationId, principal.userId!, params.teamId)
 
     if (!result.success) {
@@ -2324,23 +2332,20 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       })
     }
 
-    const teamInfo = await getTeamWithHackathon(params.teamId)
-    if (teamInfo) {
-      const { resolveAdderName } = await import("@/lib/auth/resolve-adder-name")
-      const inviterName = await resolveAdderName(principal)
+    const { resolveAdderName } = await import("@/lib/auth/resolve-adder-name")
+    const inviterName = await resolveAdderName(principal)
 
-      const { sendTeamInvitationReminderEmail } = await import(
-        "@/lib/email/team-invitations"
-      )
-      sendTeamInvitationReminderEmail({
-        to: result.invitation.email,
-        teamName: teamInfo.name,
-        hackathonName: teamInfo.hackathon.name,
-        inviterName,
-        inviteToken: result.invitation.token,
-        expiresAt: result.invitation.expires_at,
-      }).catch(console.error)
-    }
+    const { sendTeamInvitationReminderEmail } = await import(
+      "@/lib/email/team-invitations"
+    )
+    sendTeamInvitationReminderEmail({
+      to: result.invitation.email,
+      teamName: teamInfo.name,
+      hackathonName: teamInfo.hackathon.name,
+      inviterName,
+      inviteToken: result.invitation.token,
+      expiresAt: result.invitation.expires_at,
+    }).catch(console.error)
 
     await logAudit({
       principal,

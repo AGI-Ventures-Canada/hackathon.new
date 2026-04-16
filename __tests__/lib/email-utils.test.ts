@@ -15,9 +15,15 @@ describe("formatTimeLeft", () => {
   })
 
   it("returns 1 hour for singular", () => {
-    const oneHour = new Date(Date.now() + 30 * 60 * 1000).toISOString()
+    const oneHour = new Date(Date.now() + 90 * 60 * 1000).toISOString()
     const result = formatTimeLeft(oneHour)
     expect(result).toBe("1 hour")
+  })
+
+  it("returns 'less than an hour' for sub-hour future dates", () => {
+    const thirtyMin = new Date(Date.now() + 30 * 60 * 1000).toISOString()
+    const result = formatTimeLeft(thirtyMin)
+    expect(result).toBe("less than an hour")
   })
 
   it("returns 'less than an hour' for expired dates", () => {
