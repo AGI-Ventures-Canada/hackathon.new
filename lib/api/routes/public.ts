@@ -1144,13 +1144,6 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
-      if (hackathon.status !== "judging" && hackathon.status !== "active") {
-        return new Response(
-          JSON.stringify({ error: "Hackathon is not in judging phase", code: "not_judging" }),
-          { status: 400, headers: { "Content-Type": "application/json" } }
-        )
-      }
-
       const { getAssignmentDetail, verifyAssignmentOwnership } = await import("@/lib/services/judging")
 
       const ownerCheck = await verifyAssignmentOwnership(params.assignmentId, userId)

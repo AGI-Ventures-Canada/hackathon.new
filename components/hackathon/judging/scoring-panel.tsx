@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2, ExternalLink, Github, Maximize2, AlertTriangle } from "lucide-react"
 import { RubricLevelSelector } from "./rubric-level-selector"
 import Image from "next/image"
-import { assertOk, assertOkJson } from "@/lib/utils/fetch"
+import { assertOkJson } from "@/lib/utils/fetch"
 import type { AssignmentDetail } from "@/lib/services/judging"
 import {
   Dialog,
@@ -132,7 +132,7 @@ export function ScoringPanel({
         .filter(([, score]) => score !== null)
         .map(([criteriaId, score]) => ({ criteriaId, score }))
 
-      await fetch(
+      const res = await fetch(
         `/api/public/hackathons/${hackathonSlug}/judging/assignments/${assignmentId}/scores`,
         {
           method: "POST",
@@ -142,7 +142,12 @@ export function ScoringPanel({
             notes,
           }),
         }
-      ).then(assertOk)
+      )
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error((data as { error?: string }).error || "Failed to submit scores")
+      }
 
       onScoreSubmitted()
     } catch (err) {
