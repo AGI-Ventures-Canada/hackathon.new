@@ -368,8 +368,29 @@ describe("Judging Scoring Service", () => {
       }
     })
 
-    it("succeeds with empty scores array", async () => {
-      setMockFromImplementation(() => {
+    it("rejects empty scores when criteria exist", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "judging_criteria") {
+          return createChainableMock({ data: [
+            { id: CRITERIA_ID_1, max_score: 10 },
+          ], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await submitScores(ASSIGNMENT_ID, MOCK_OWNERSHIP, [], "just notes")
+
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.code).toBe("empty_scores")
+      }
+    })
+
+    it("succeeds with empty scores when no criteria exist", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "judging_criteria") {
+          return createChainableMock({ data: [], error: null })
+        }
         return createChainableMock({ data: null, error: null })
       })
 

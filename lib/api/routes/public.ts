@@ -1217,7 +1217,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
-      const { verifyAssignmentOwnership, submitScores } = await import("@/lib/services/judging")
+      const { verifyAssignmentOwnership, submitScores, recalculateForAssignment } = await import("@/lib/services/judging")
       const ownerCheck = await verifyAssignmentOwnership(params.assignmentId, userId)
       if (!ownerCheck) {
         return new Response(
@@ -1247,7 +1247,6 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
-      const { recalculateForAssignment } = await import("@/lib/services/judging")
       recalculateForAssignment(params.assignmentId).catch((err) => {
         console.error(`[judging] auto-recalculate failed for assignment ${params.assignmentId}:`, err)
       })

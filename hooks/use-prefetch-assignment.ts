@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react"
 import type { AssignmentDetail } from "@/lib/services/judging"
 
+const MAX_CACHE_SIZE = 3
+
 export function usePrefetchAssignment(
   hackathonSlug: string,
   nextAssignmentId: string | null
@@ -17,7 +19,17 @@ export function usePrefetchAssignment(
       .then((res) => res.ok ? res.json() : null)
       .then((data) => {
         if (data && !cancelled) {
-          setCache((prev) => ({ ...prev, [nextAssignmentId]: data }))
+          setCache((prev) => {
+            const next = { ...prev, [nextAssignmentId]: data }
+            const keys = Object.keys(next)
+            if (keys.length > MAX_CACHE_SIZE) {
+              const keysToRemove = keys.slice(0, keys.length - MAX_CACHE_SIZE)
+              for (const key of keysToRemove) {
+                delete next[key]
+              }
+            }
+            return next
+          })
         }
       })
       .catch((err) => console.warn("Prefetch failed:", err))

@@ -2467,21 +2467,25 @@ export async function submitScores(
 
   const client = getSupabase() as unknown as SupabaseClient
 
+  let criteriaQuery = client
+    .from("judging_criteria")
+    .select("id, max_score")
+
+  if (ownership.prizeId) {
+    criteriaQuery = criteriaQuery.eq("prize_id", ownership.prizeId)
+  } else {
+    criteriaQuery = criteriaQuery
+      .eq("hackathon_id", ownership.hackathonId)
+      .is("prize_id", null)
+  }
+
+  const { data: criteria } = await criteriaQuery
+
+  if (scores.length === 0 && (criteria ?? []).length > 0) {
+    return { success: false, error: "Scores are required for all criteria", code: "empty_scores" }
+  }
+
   if (scores.length > 0) {
-    let criteriaQuery = client
-      .from("judging_criteria")
-      .select("id, max_score")
-
-    if (ownership.prizeId) {
-      criteriaQuery = criteriaQuery.eq("prize_id", ownership.prizeId)
-    } else {
-      criteriaQuery = criteriaQuery
-        .eq("hackathon_id", ownership.hackathonId)
-        .is("prize_id", null)
-    }
-
-    const { data: criteria } = await criteriaQuery
-
     const validCriteriaIds = new Set((criteria ?? []).map((c) => c.id))
     const maxScoreMap = new Map((criteria ?? []).map((c) => [c.id, c.max_score]))
 
