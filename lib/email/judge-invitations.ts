@@ -26,6 +26,11 @@ export type SendJudgeAddedNotificationInput = {
 export async function sendJudgeAddedNotification(
   input: SendJudgeAddedNotificationInput
 ): Promise<{ success: boolean }> {
+  if (!process.env.NEXT_PUBLIC_APP_URL) {
+    console.error("NEXT_PUBLIC_APP_URL not set, cannot send judge added notification")
+    return { success: false }
+  }
+
   const eventUrl = buildEventUrl(input.hackathonSlug)
 
   const { html, text } = await renderEmail(
