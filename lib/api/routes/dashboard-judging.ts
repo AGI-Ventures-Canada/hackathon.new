@@ -607,6 +607,8 @@ export const dashboardJudgingRoutes = new Elysia()
         round1Name: body.round1Name,
         round2Name: body.round2Name,
         seedScreeningPrize: body.seedScreeningPrize,
+        prizeName: body.prizeName,
+        maxPicks: body.maxPicks,
       })
 
       if (!preset.success) {
@@ -621,7 +623,12 @@ export const dashboardJudgingRoutes = new Elysia()
     {
       body: t.Object({
         preset: t.Union(
-          [t.Literal("single"), t.Literal("shortlist"), t.Literal("threshold")],
+          [
+            t.Literal("single"),
+            t.Literal("shortlist"),
+            t.Literal("threshold"),
+            t.Literal("finalists_pick"),
+          ],
           { description: "Which starter template to use" }
         ),
         advanceTopN: t.Optional(
@@ -631,18 +638,24 @@ export const dashboardJudgingRoutes = new Elysia()
           t.Number({ description: "Required for 'threshold'. Submissions scoring this or higher move on" })
         ),
         round1Name: t.Optional(t.String({ description: "Name of the first round. Defaults per preset." })),
-        round2Name: t.Optional(t.String({ description: "Name of the second round. Ignored for 'single'." })),
+        round2Name: t.Optional(t.String({ description: "Name of the second round. Ignored for 'single' and 'finalists_pick'." })),
         seedScreeningPrize: t.Optional(
           t.Boolean({
             description:
-              "When true (default), seeds a hidden helper prize so judges have something to score in round 1. Ignored for 'single'.",
+              "When true (default), seeds a hidden helper prize so judges have something to score in round 1. Ignored for 'single' and 'finalists_pick'.",
           })
+        ),
+        prizeName: t.Optional(
+          t.String({ description: "Used by 'finalists_pick'. Name of the judges_pick prize. Defaults to 'Grand Prize'." })
+        ),
+        maxPicks: t.Optional(
+          t.Integer({ minimum: 1, maximum: 50, description: "Used by 'finalists_pick'. How many projects each judge picks (1-50). Defaults to 1." })
         ),
       }),
       detail: {
         summary: "Create a judging rounds preset",
         description:
-          "Creates a starter template of rounds in one call. 'single' creates one round. 'shortlist' creates two rounds where the top N by score advance. 'threshold' creates two rounds where everyone scoring above a bar advances. All rounds are fully editable after creation.",
+          "Creates a starter template of rounds in one call. 'single' creates one round. 'shortlist' creates two rounds where the top N by score advance. 'threshold' creates two rounds where everyone scoring above a bar advances. 'finalists_pick' creates one manual round with a judges_pick prize for vibes-based selection. All rounds are fully editable after creation.",
       },
     }
   )
