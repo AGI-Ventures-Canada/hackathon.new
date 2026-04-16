@@ -1,5 +1,6 @@
 import { Elysia, t } from "elysia"
 import { normalizeOptionalUrl, normalizeUrl } from "@/lib/utils/url"
+import { isValidSlugFormat } from "@/lib/utils/slug"
 import { resolvePrincipal, requirePrincipal } from "@/lib/auth/principal"
 import { createApiKey, listApiKeys, revokeApiKey, getApiKeyById } from "@/lib/services/api-keys"
 import { listJobs, getJobById } from "@/lib/services/jobs"
@@ -1962,7 +1963,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       const { updateTenantProfile, isSlugAvailable } = await import("@/lib/services/tenant-profiles")
 
       if (body.slug !== undefined) {
-        if (!body.slug || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(body.slug) || body.slug.length < 3) {
+        if (!body.slug || !isValidSlugFormat(body.slug)) {
           return new Response(JSON.stringify({ error: "Slug must be at least 3 characters and contain only lowercase letters, numbers, and hyphens" }), {
             status: 400,
             headers: { "Content-Type": "application/json" },

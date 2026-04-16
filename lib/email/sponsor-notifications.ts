@@ -29,12 +29,16 @@ export async function sendSponsorClaimNotification(params: {
     return 0
   }
 
+  const eventUrl = hackathonSlug && process.env.NEXT_PUBLIC_APP_URL
+    ? `${process.env.NEXT_PUBLIC_APP_URL}/e/${hackathonSlug}`
+    : null
+
   const { html, text } = await renderEmail(
     SponsorClaimNotificationEmail({
       winnerName,
       prizeName,
       hackathonName,
-      hackathonSlug,
+      eventUrl,
       prizeValue,
     })
   )

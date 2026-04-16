@@ -7,7 +7,7 @@ interface SponsorClaimNotificationEmailProps {
   winnerName: string
   prizeName: string
   hackathonName: string
-  hackathonSlug?: string
+  eventUrl?: string | null
   prizeValue?: string | null
 }
 
@@ -15,11 +15,9 @@ export default function SponsorClaimNotificationEmail({
   winnerName,
   prizeName,
   hackathonName,
-  hackathonSlug,
+  eventUrl,
   prizeValue,
 }: SponsorClaimNotificationEmailProps) {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://getoatmeal.com"
-  const eventUrl = hackathonSlug ? `${appUrl}/e/${hackathonSlug}` : null
 
   return (
     <OatmealLayout
@@ -55,6 +53,6 @@ SponsorClaimNotificationEmail.PreviewProps = {
   winnerName: "Jane Smith",
   prizeName: "Best AI Application",
   hackathonName: "AI Innovation Hackathon 2026",
-  hackathonSlug: "ai-innovation-2026",
+  eventUrl: "https://getoatmeal.com/e/ai-innovation-2026",
   prizeValue: "500",
 } satisfies SponsorClaimNotificationEmailProps
