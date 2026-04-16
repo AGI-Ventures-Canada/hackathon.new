@@ -112,7 +112,7 @@ jobs:
             });
             try {
               await waitForClerk();
-              const si = await window.Clerk.client.signIn.create({ strategy: 'ticket', ticket: 'TOKEN_PLACEHOLDER' });
+              const si = await window.Clerk.client.signIn.create({ strategy: 'ticket', ticket: window.__CLERK_TICKET__ });
               await window.Clerk.setActive({ session: si.createdSessionId });
               return 'ok';
             } catch (e) {
@@ -121,7 +121,8 @@ jobs:
           })()
           CLERKEOF
           )
-          SIGN_IN_SCRIPT="${SIGN_IN_SCRIPT//TOKEN_PLACEHOLDER/$TOKEN}"
+          INJECT_TOKEN="window.__CLERK_TICKET__ = $(printf '%s' "$TOKEN" | jq -Rs .);"
+          SIGN_IN_SCRIPT="${INJECT_TOKEN}${SIGN_IN_SCRIPT}"
           SIGN_IN_RESULT=$(echo "$SIGN_IN_SCRIPT" | agent-browser --session pr-screenshots eval --stdin 2>&1) || true
 
           if echo "$SIGN_IN_RESULT" | grep -q "^ok"; then
