@@ -773,7 +773,7 @@ export async function deleteRound(
   return { success: true }
 }
 
-export type RoundsPresetKind = "single" | "shortlist" | "threshold"
+export type RoundsPresetKind = "single" | "shortlist" | "threshold" | "finalists_pick"
 
 export type RoundsPresetInput = {
   preset: RoundsPresetKind
@@ -782,6 +782,8 @@ export type RoundsPresetInput = {
   advanceTopN?: number
   threshold?: number
   seedScreeningPrize?: boolean
+  prizeName?: string
+  maxPicks?: number
 }
 
 export type RoundsPresetResult =
@@ -789,12 +791,14 @@ export type RoundsPresetResult =
       success: true
       roundIds: string[]
       screeningPrizeId: string | null
+      prizeId?: string | null
     }
   | { success: false; error: string }
 
 function defaultRoundName(preset: RoundsPresetKind, which: 1 | 2): string {
   if (preset === "single") return "Judging"
   if (preset === "shortlist") return which === 1 ? "Shortlist" : "Finals"
+  if (preset === "finalists_pick") return "Finals"
   return which === 1 ? "First round" : "Finals"
 }
 
@@ -902,6 +906,37 @@ export async function createRoundsPreset(
       success: true,
       roundIds: [round1.id, round2.id],
       screeningPrizeId,
+    }
+  }
+
+  if (preset === "finalists_pick") {
+    const name = (input.round1Name ?? defaultRoundName("finalists_pick", 1)).trim() || defaultRoundName("finalists_pick", 1)
+    const round = await createRound(hackathonId, {
+      name,
+      advancement: "manual",
+      advancementConfig: {},
+    })
+    if (!round) return { success: false, error: "Failed to create round" }
+
+    const prizeName = (input.prizeName ?? "Grand Prize").trim() || "Grand Prize"
+    const maxPicks = Number.isInteger(input.maxPicks) && (input.maxPicks as number) >= 1 ? (input.maxPicks as number) : 1
+    const prize = await createPrize(hackathonId, {
+      name: prizeName,
+      description: "Each judge picks their favorites. The project with the most picks wins.",
+      judgingStyle: "judges_pick",
+      roundId: round.id,
+      maxPicks,
+    })
+
+    if (!prize.success) {
+      return { success: false, error: prize.error }
+    }
+
+    return {
+      success: true,
+      roundIds: [round.id],
+      screeningPrizeId: null,
+      prizeId: prize.prize.id,
     }
   }
 

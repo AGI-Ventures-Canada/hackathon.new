@@ -138,6 +138,7 @@ export function RoundsSection({ hackathonId, rounds }: RoundsSectionProps) {
               <p className="text-xs text-muted-foreground mb-2">Or start from a template</p>
               <div className="flex flex-wrap justify-center gap-2">
                 <TemplateChip label="One round" onClick={() => setPresetKind("single")} />
+                <TemplateChip label="Finalists — judges pick" onClick={() => setPresetKind("finalists_pick")} />
                 <TemplateChip label="Shortlist + Finals" onClick={() => setPresetKind("shortlist")} />
                 <TemplateChip label="Score gate + Finals" onClick={() => setPresetKind("threshold")} />
               </div>

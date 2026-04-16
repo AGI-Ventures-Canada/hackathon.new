@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "bun:test"
+import { describe, it, expect, beforeEach, mock } from "bun:test"
 import {
   createChainableMock,
   resetSupabaseMocks,
@@ -1217,6 +1217,91 @@ describe("Judging Service", () => {
       if (result.success) {
         expect(result.screeningPrizeId).toBeNull()
       }
+    })
+
+    it("creates one manual round + judges_pick prize for preset 'finalists_pick'", async () => {
+      let roundInsertPayload: Record<string, unknown> | null = null
+      let prizeInsertPayload: Record<string, unknown> | null = null
+      setMockFromImplementation((table: string) => {
+        if (table === "judging_rounds") {
+          const chain = createChainableMock({
+            data: { id: "round-1", display_order: 0 },
+            error: null,
+          })
+          chain.insert = mock((payload: unknown) => {
+            roundInsertPayload = Array.isArray(payload)
+              ? (payload[0] as Record<string, unknown>)
+              : (payload as Record<string, unknown>)
+            return chain
+          }) as typeof chain.insert
+          return chain
+        }
+        if (table === "prizes") {
+          const chain = createChainableMock({
+            data: { id: "prize-1" },
+            error: null,
+          })
+          chain.insert = mock((payload: unknown) => {
+            prizeInsertPayload = Array.isArray(payload)
+              ? (payload[0] as Record<string, unknown>)
+              : (payload as Record<string, unknown>)
+            return chain
+          }) as typeof chain.insert
+          return chain
+        }
+        return createChainableMock({ data: [], error: null })
+      })
+
+      const result = await createRoundsPreset("h1", {
+        preset: "finalists_pick",
+        prizeName: "Best Overall",
+        maxPicks: 2,
+      })
+
+      expect(result.success).toBe(true)
+      if (result.success) {
+        expect(result.roundIds.length).toBe(1)
+        expect(result.screeningPrizeId).toBeNull()
+        expect(result.prizeId).toBe("prize-1")
+      }
+      expect(roundInsertPayload).not.toBeNull()
+      expect(roundInsertPayload!.advancement).toBe("manual")
+      expect(roundInsertPayload!.name).toBe("Finals")
+      expect(prizeInsertPayload).not.toBeNull()
+      expect(prizeInsertPayload!.judging_style).toBe("judges_pick")
+      expect(prizeInsertPayload!.round_id).toBe("round-1")
+      expect(prizeInsertPayload!.max_picks).toBe(2)
+      expect(prizeInsertPayload!.name).toBe("Best Overall")
+    })
+
+    it("defaults 'finalists_pick' prize name and max picks", async () => {
+      let prizeInsertPayload: Record<string, unknown> | null = null
+      setMockFromImplementation((table: string) => {
+        if (table === "judging_rounds") {
+          return createChainableMock({ data: { id: "round-1", display_order: 0 }, error: null })
+        }
+        if (table === "prizes") {
+          const chain = createChainableMock({
+            data: { id: "prize-1" },
+            error: null,
+          })
+          chain.insert = mock((payload: unknown) => {
+            prizeInsertPayload = Array.isArray(payload)
+              ? (payload[0] as Record<string, unknown>)
+              : (payload as Record<string, unknown>)
+            return chain
+          }) as typeof chain.insert
+          return chain
+        }
+        return createChainableMock({ data: [], error: null })
+      })
+
+      const result = await createRoundsPreset("h1", { preset: "finalists_pick" })
+
+      expect(result.success).toBe(true)
+      expect(prizeInsertPayload).not.toBeNull()
+      expect(prizeInsertPayload!.name).toBe("Grand Prize")
+      expect(prizeInsertPayload!.max_picks).toBe(1)
     })
   })
 

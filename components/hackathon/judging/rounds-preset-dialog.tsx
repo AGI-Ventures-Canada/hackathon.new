@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Loader2, ArrowDown } from "lucide-react"
 
-export type RoundsPresetKind = "single" | "shortlist" | "threshold"
+export type RoundsPresetKind = "single" | "shortlist" | "threshold" | "finalists_pick"
 
 interface RoundsPresetDialogProps {
   hackathonId: string
@@ -32,6 +32,9 @@ const COPY: Record<RoundsPresetKind, {
   round2Default?: string
   needsTopN?: boolean
   needsThreshold?: boolean
+  needsPrizeName?: boolean
+  needsMaxPicks?: boolean
+  prizeNameDefault?: string
   helperText?: string
 }> = {
   single: {
@@ -55,6 +58,15 @@ const COPY: Record<RoundsPresetKind, {
     needsThreshold: true,
     helperText: "We'll add a hidden helper prize so judges have something to score in round 1.",
   },
+  finalists_pick: {
+    title: "Finalists — judges pick",
+    description: "You pick who makes finals. Judges each pick their favorite. Most picks wins.",
+    round1Default: "Finals",
+    needsPrizeName: true,
+    needsMaxPicks: true,
+    prizeNameDefault: "Grand Prize",
+    helperText: "Example: 6 finalists, 3 judges, each judge picks 1 favorite. The project with the most picks wins. No scoring.",
+  },
 }
 
 export function RoundsPresetDialog({
@@ -69,6 +81,8 @@ export function RoundsPresetDialog({
   const [round2Name, setRound2Name] = useState("")
   const [advanceTopN, setAdvanceTopN] = useState(10)
   const [threshold, setThreshold] = useState(3)
+  const [prizeName, setPrizeName] = useState("")
+  const [maxPicks, setMaxPicks] = useState(1)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -79,6 +93,8 @@ export function RoundsPresetDialog({
     setRound2Name(copy.round2Default ?? "")
     setAdvanceTopN(10)
     setThreshold(3)
+    setPrizeName(copy.prizeNameDefault ?? "")
+    setMaxPicks(1)
     setError(null)
   }, [preset])
 
@@ -98,6 +114,10 @@ export function RoundsPresetDialog({
       setError("Advance at least 1 project")
       return
     }
+    if (copy.needsMaxPicks && maxPicks < 1) {
+      setError("Each judge must pick at least 1")
+      return
+    }
 
     setSaving(true)
     setError(null)
@@ -114,6 +134,8 @@ export function RoundsPresetDialog({
             advanceTopN: copy.needsTopN ? advanceTopN : undefined,
             threshold: copy.needsThreshold ? threshold : undefined,
             seedScreeningPrize: true,
+            prizeName: copy.needsPrizeName ? (prizeName.trim() || copy.prizeNameDefault) : undefined,
+            maxPicks: copy.needsMaxPicks ? maxPicks : undefined,
           }),
         }
       )
@@ -209,6 +231,41 @@ export function RoundsPresetDialog({
                 />
                 <p className="text-xs text-muted-foreground">
                   Everyone scoring {threshold} or higher moves on.
+                </p>
+              </div>
+            )}
+            {copy.needsPrizeName && (
+              <div className="space-y-2">
+                <Label htmlFor="preset-prize-name">Prize name</Label>
+                <Input
+                  id="preset-prize-name"
+                  value={prizeName}
+                  onChange={(e) => setPrizeName(e.target.value)}
+                  placeholder={copy.prizeNameDefault}
+                  autoComplete="off"
+                  data-1p-ignore
+                  data-lpignore="true"
+                  data-form-type="other"
+                />
+              </div>
+            )}
+            {copy.needsMaxPicks && (
+              <div className="space-y-2">
+                <Label htmlFor="preset-max-picks">How many can each judge pick?</Label>
+                <Input
+                  id="preset-max-picks"
+                  type="number"
+                  min={1}
+                  inputMode="numeric"
+                  value={maxPicks}
+                  onChange={(e) => setMaxPicks(Math.max(1, Number(e.target.value) || 1))}
+                  autoComplete="off"
+                  data-1p-ignore
+                  data-lpignore="true"
+                  data-form-type="other"
+                />
+                <p className="text-xs text-muted-foreground">
+                  For example, 1 means each judge picks their single favorite.
                 </p>
               </div>
             )}

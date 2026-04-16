@@ -1057,11 +1057,12 @@ curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/rounds" \
 
 #### Set up rounds from a preset
 
-Scope: `hackathons:write`. Creates a starter template of rounds. Three presets:
+Scope: `hackathons:write`. Creates a starter template of rounds. Four presets:
 
 - `single` — one round, judges score every project once
 - `shortlist` — two rounds; the top N by score move on (requires `advanceTopN`)
 - `threshold` — two rounds; everyone scoring at or above a bar moves on (requires `threshold`)
+- `finalists_pick` — one manual round with a `judges_pick` prize; judges select favorites, most picks wins (optional `prizeName`, `maxPicks`)
 
 ```bash
 # Shortlist preset: top 10 move on to finals
@@ -1075,6 +1076,12 @@ curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/rounds/preset"
   -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{ "preset": "single" }' | jq .
+
+# Finalists — judges pick by vibes (no scoring): 1 round + 1 judges_pick prize
+curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/rounds/preset" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "preset": "finalists_pick", "prizeName": "Grand Prize", "maxPicks": 1 }' | jq .
 ```
 
 **Response:**

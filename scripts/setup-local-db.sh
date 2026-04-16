@@ -9,6 +9,45 @@ if ! docker info &>/dev/null 2>&1; then
   exit 1
 fi
 
+sync_env_from_main_worktree() {
+  local git_common_dir
+  git_common_dir=$(git rev-parse --git-common-dir 2>/dev/null) || return 0
+  local main_worktree
+  main_worktree=$(cd "$git_common_dir/.." 2>/dev/null && pwd) || return 0
+  local current_worktree
+  current_worktree=$(pwd)
+  if [ "$main_worktree" = "$current_worktree" ]; then
+    return 0
+  fi
+  local main_env="$main_worktree/$ENV_FILE"
+  if [ ! -f "$main_env" ]; then
+    return 0
+  fi
+  touch "$ENV_FILE"
+  local copied=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
+    case "$line" in
+      ''|\#*) continue ;;
+    esac
+    local key="${line%%=*}"
+    case "$key" in
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY|CLERK_SECRET_KEY|ENCRYPTION_KEY|SCENARIO_ORG_ID|SCENARIO_DEV_USER_ID) ;;
+      *) continue ;;
+    esac
+    if grep -q "^${key}=" "$ENV_FILE" 2>/dev/null; then
+      continue
+    fi
+    echo "$line" >> "$ENV_FILE"
+    copied=$((copied + 1))
+  done < "$main_env"
+  if [ $copied -gt 0 ]; then
+    echo "Copied $copied key(s) from main worktree's .env.local (Clerk, encryption, scenarios)"
+  fi
+}
+
+sync_env_from_main_worktree
+
 stop_other_projects() {
   local other_containers=$(docker ps --filter "name=supabase_" --format "{{.Names}}" | grep -v "oatmeal" || true)
   if [ -n "$other_containers" ]; then
