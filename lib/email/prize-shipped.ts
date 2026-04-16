@@ -8,8 +8,9 @@ export async function sendPrizeShippedEmail(params: {
   prizeName: string
   hackathonName: string
   trackingNumber: string | null
+  hackathonSlug?: string
 }): Promise<boolean> {
-  const { recipientEmail, recipientName, prizeName, hackathonName, trackingNumber } = params
+  const { recipientEmail, recipientName, prizeName, hackathonName, trackingNumber, hackathonSlug } = params
 
   const { html, text } = await renderEmail(
     PrizeShippedEmail({
@@ -17,6 +18,7 @@ export async function sendPrizeShippedEmail(params: {
       prizeName,
       hackathonName,
       trackingNumber,
+      hackathonSlug,
     })
   )
 

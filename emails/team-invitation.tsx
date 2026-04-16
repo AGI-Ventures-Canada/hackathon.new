@@ -1,8 +1,8 @@
 import { Text } from "@react-email/components"
 import { OatmealLayout } from "./_components/oatmeal-layout"
-import { InfoBox } from "./_components/info-box"
+import { EventDetailBox } from "./_components/event-detail-box"
 import { CTAButton } from "./_components/cta-button"
-import { colors } from "./_components/constants"
+import { colors, fontSize, spacing } from "./_components/constants"
 
 interface TeamInvitationEmailProps {
   inviterName: string
@@ -10,6 +10,10 @@ interface TeamInvitationEmailProps {
   hackathonName: string
   acceptUrl: string
   expiresDate: string
+  hackathonSlug?: string
+  hackathonStartsAt?: string | null
+  hackathonEndsAt?: string | null
+  teamMembers?: string[]
 }
 
 export default function TeamInvitationEmail({
@@ -18,36 +22,64 @@ export default function TeamInvitationEmail({
   hackathonName,
   acceptUrl,
   expiresDate,
+  hackathonSlug,
+  hackathonStartsAt,
+  hackathonEndsAt,
+  teamMembers,
 }: TeamInvitationEmailProps) {
+  const eventUrl = hackathonSlug
+    ? `${process.env.NEXT_PUBLIC_APP_URL || "https://getoatmeal.com"}/e/${hackathonSlug}`
+    : undefined
+
   return (
     <OatmealLayout
       heading="You're Invited to Join a Team!"
       preview={`${inviterName} invited you to join "${teamName}" for ${hackathonName}`}
+      eventUrl={eventUrl}
+      hackathonName={hackathonName}
     >
-      <Text style={{ fontSize: "14px", marginBottom: "24px", lineHeight: "1.6" }}>
-        <strong>{inviterName}</strong> has invited you to join team{" "}
-        <strong>&ldquo;{teamName}&rdquo;</strong> for the{" "}
-        <strong>{hackathonName}</strong> hackathon.
+      <Text
+        style={{
+          fontSize: fontSize.base,
+          marginBottom: spacing.lg,
+          lineHeight: "1.6",
+        }}
+      >
+        <strong>{inviterName}</strong> wants you on team{" "}
+        <strong>&ldquo;{teamName}&rdquo;</strong> for{" "}
+        <strong>{hackathonName}</strong>.
       </Text>
 
-      <InfoBox label="Team">
-        <Text style={{ margin: "0", fontSize: "16px", fontWeight: 600 }}>
-          {teamName}
+      <EventDetailBox
+        hackathonName={hackathonName}
+        startsAt={hackathonStartsAt}
+        endsAt={hackathonEndsAt}
+      />
+
+      {teamMembers && teamMembers.length > 0 && (
+        <Text
+          style={{
+            fontSize: fontSize.sm,
+            color: colors.textSecondary,
+            margin: `-${spacing.md} 0 ${spacing.lg} 0`,
+          }}
+        >
+          Already on the team: {teamMembers.join(", ")}
         </Text>
-      </InfoBox>
+      )}
 
       <CTAButton href={acceptUrl}>Accept Invitation</CTAButton>
 
       <Text
         style={{
-          fontSize: "12px",
+          fontSize: fontSize.sm,
           color: colors.textMuted,
-          marginTop: "24px",
+          marginTop: spacing.lg,
           lineHeight: "1.5",
         }}
       >
-        This invitation expires on {expiresDate}. If you don&rsquo;t have an
-        account, you&rsquo;ll be able to create one when accepting.
+        This invite is good until {expiresDate}. Don&rsquo;t have an account?
+        You can make one when you accept.
       </Text>
     </OatmealLayout>
   )
@@ -59,4 +91,8 @@ TeamInvitationEmail.PreviewProps = {
   hackathonName: "AI Innovation Hackathon 2026",
   acceptUrl: "https://getoatmeal.com/invite/abc123",
   expiresDate: "Friday, April 17, 2026",
+  hackathonSlug: "ai-innovation-2026",
+  hackathonStartsAt: "2026-04-20T08:30:00Z",
+  hackathonEndsAt: "2026-04-22T17:00:00Z",
+  teamMembers: ["Sarah Chen", "Marcus Rivera"],
 } satisfies TeamInvitationEmailProps

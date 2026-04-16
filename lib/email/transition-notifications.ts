@@ -19,14 +19,24 @@ const subjectMap: Record<TransitionEvent, (name: string) => string> = {
 export async function buildTransitionEmail(
   event: TransitionEvent,
   hackathonName: string,
-  hackathonSlug: string
+  hackathonSlug: string,
+  options?: {
+    hackathonStartsAt?: string | null
+    hackathonEndsAt?: string | null
+  }
 ): Promise<EmailContent> {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://getoatmeal.com"
   const eventUrl = `${appUrl}/e/${hackathonSlug}`
   const tag = sanitizeTag(hackathonName)
 
   const { html, text } = await renderEmail(
-    TransitionNotificationEmail({ event, hackathonName, eventUrl })
+    TransitionNotificationEmail({
+      event,
+      hackathonName,
+      eventUrl,
+      hackathonStartsAt: options?.hackathonStartsAt,
+      hackathonEndsAt: options?.hackathonEndsAt,
+    })
   )
 
   return { subject: subjectMap[event](hackathonName), html, text, tag }

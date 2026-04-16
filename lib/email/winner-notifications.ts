@@ -28,7 +28,7 @@ export async function sendWinnerEmails(hackathonId: string): Promise<number> {
 
   const { data: hackathon } = await client
     .from("hackathons")
-    .select("name, slug")
+    .select("name, slug, starts_at, ends_at")
     .eq("id", hackathonId)
     .single()
 
@@ -205,7 +205,7 @@ export async function sendPrizeClaimEmail(
 
   const { data: hackathon } = await client
     .from("hackathons")
-    .select("name, slug")
+    .select("name, slug, starts_at, ends_at")
     .eq("id", hackathonId)
     .single()
 

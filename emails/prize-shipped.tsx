@@ -1,12 +1,13 @@
 import { Section, Text } from "@react-email/components"
 import { OatmealLayout } from "./_components/oatmeal-layout"
-import { colors } from "./_components/constants"
+import { colors, fontSize, spacing } from "./_components/constants"
 
 interface PrizeShippedEmailProps {
   recipientName: string
   prizeName: string
   hackathonName: string
   trackingNumber: string | null
+  hackathonSlug?: string
 }
 
 export default function PrizeShippedEmail({
@@ -14,14 +15,27 @@ export default function PrizeShippedEmail({
   prizeName,
   hackathonName,
   trackingNumber,
+  hackathonSlug,
 }: PrizeShippedEmailProps) {
+  const eventUrl = hackathonSlug
+    ? `${process.env.NEXT_PUBLIC_APP_URL || "https://getoatmeal.com"}/e/${hackathonSlug}`
+    : undefined
+
   return (
     <OatmealLayout
       heading="Your Prize is On Its Way!"
       preview={`${prizeName} from ${hackathonName} has been shipped`}
-      footerText={`You\u2019re receiving this because you claimed a prize from ${hackathonName}.`}
+      footerText={`You\u2019re getting this because you claimed a prize from ${hackathonName}.`}
+      eventUrl={eventUrl}
+      hackathonName={hackathonName}
     >
-      <Text style={{ fontSize: "14px", marginBottom: "16px", lineHeight: "1.6" }}>
+      <Text
+        style={{
+          fontSize: fontSize.base,
+          marginBottom: spacing.md,
+          lineHeight: "1.6",
+        }}
+      >
         Hi {recipientName}, great news! Your prize{" "}
         <strong>{prizeName}</strong> from {hackathonName} has been shipped.
       </Text>
@@ -30,11 +44,13 @@ export default function PrizeShippedEmail({
         <Section
           style={{
             background: colors.infoBoxBg,
-            padding: "12px 16px",
-            marginBottom: "16px",
+            padding: `${spacing.md} ${spacing.lg}`,
+            marginBottom: spacing.md,
+            borderRadius: "8px",
+            borderLeft: `3px solid ${colors.accent}`,
           }}
         >
-          <Text style={{ margin: "0", fontSize: "14px" }}>
+          <Text style={{ margin: "0", fontSize: fontSize.base }}>
             <strong>Tracking number:</strong> {trackingNumber}
           </Text>
         </Section>
@@ -42,7 +58,7 @@ export default function PrizeShippedEmail({
 
       <Text
         style={{
-          fontSize: "13px",
+          fontSize: fontSize.sm,
           color: colors.textMuted,
           lineHeight: "1.5",
         }}
@@ -58,4 +74,5 @@ PrizeShippedEmail.PreviewProps = {
   prizeName: "Best AI Application",
   hackathonName: "AI Innovation Hackathon 2026",
   trackingNumber: "1Z999AA10123456784",
+  hackathonSlug: "ai-innovation-2026",
 } satisfies PrizeShippedEmailProps

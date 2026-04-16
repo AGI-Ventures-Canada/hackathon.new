@@ -196,6 +196,10 @@ export async function sendReminderEmails(
 
       const content = contentBuilder(displayName, email)
 
+      const eventUrl = process.env.NEXT_PUBLIC_APP_URL
+        ? `${process.env.NEXT_PUBLIC_APP_URL}/e/${hackathon.slug}`
+        : undefined
+
       const { html, text } = await renderEmail(
         PostEventReminderEmail({
           heading: content.heading,
@@ -204,6 +208,7 @@ export async function sendReminderEmails(
           ctaLabel: content.ctaLabel,
           ctaUrl: content.ctaUrl,
           hackathonName: hackathon.name,
+          eventUrl,
         })
       )
 

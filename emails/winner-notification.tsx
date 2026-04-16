@@ -1,7 +1,7 @@
 import { Text, Link, Section } from "@react-email/components"
 import { OatmealLayout } from "./_components/oatmeal-layout"
 import { CTAButton } from "./_components/cta-button"
-import { colors } from "./_components/constants"
+import { colors, fontSize, spacing } from "./_components/constants"
 
 interface WinnerPrize {
   name: string
@@ -16,6 +16,7 @@ interface WinnerNotificationEmailProps {
   resultsUrl: string
   prizes: WinnerPrize[]
   primaryClaimUrl: string | null
+  prizeClaimDeadline?: string | null
 }
 
 export default function WinnerNotificationEmail({
@@ -25,34 +26,43 @@ export default function WinnerNotificationEmail({
   resultsUrl,
   prizes,
   primaryClaimUrl,
+  prizeClaimDeadline,
 }: WinnerNotificationEmailProps) {
   return (
     <OatmealLayout
       heading="Congratulations!"
       preview={`${rank} Place in ${hackathonName}!`}
-      footerText={`You\u2019re receiving this because you participated in ${hackathonName}.`}
+      footerText={`You\u2019re getting this because you took part in ${hackathonName}.`}
+      eventUrl={resultsUrl}
+      hackathonName={hackathonName}
     >
-      <Text style={{ fontSize: "14px", marginBottom: "24px", lineHeight: "1.6" }}>
-        Your submission <strong>&ldquo;{submissionTitle}&rdquo;</strong> placed{" "}
-        <strong>{rank}</strong> in the <strong>{hackathonName}</strong>{" "}
-        hackathon!
+      <Text
+        style={{
+          fontSize: fontSize.base,
+          marginBottom: spacing.lg,
+          lineHeight: "1.6",
+        }}
+      >
+        Your project <strong>&ldquo;{submissionTitle}&rdquo;</strong> placed{" "}
+        <strong>{rank}</strong> in <strong>{hackathonName}</strong>!
       </Text>
 
       {prizes.length > 0 && (
         <Section
           style={{
             background: colors.infoBoxBg,
-            padding: "16px 20px",
-            marginBottom: "24px",
+            padding: `${spacing.md} ${spacing.lg}`,
+            marginBottom: spacing.lg,
+            borderRadius: "8px",
+            borderLeft: `3px solid ${colors.accent}`,
           }}
         >
           <Text
             style={{
               margin: "0 0 12px 0",
-              fontSize: "11px",
-              color: colors.textMuted,
-              textTransform: "uppercase" as const,
-              letterSpacing: "0.05em",
+              fontSize: fontSize.xs,
+              color: colors.textSecondary,
+              fontWeight: 600,
             }}
           >
             Prizes won
@@ -62,7 +72,7 @@ export default function WinnerNotificationEmail({
               key={prize.name}
               style={{
                 margin: "0 0 8px 0",
-                fontSize: "14px",
+                fontSize: fontSize.base,
                 fontWeight: 600,
               }}
             >
@@ -75,7 +85,7 @@ export default function WinnerNotificationEmail({
                     href={prize.claimUrl}
                     style={{
                       color: colors.accent,
-                      fontSize: "12px",
+                      fontSize: fontSize.sm,
                       fontWeight: 600,
                       textDecoration: "underline",
                     }}
@@ -86,6 +96,18 @@ export default function WinnerNotificationEmail({
               )}
             </Text>
           ))}
+          {prizeClaimDeadline && (
+            <Text
+              style={{
+                margin: `${spacing.sm} 0 0 0`,
+                fontSize: fontSize.sm,
+                color: colors.textSecondary,
+                fontWeight: 600,
+              }}
+            >
+              Claim by {prizeClaimDeadline}
+            </Text>
+          )}
         </Section>
       )}
 
@@ -94,9 +116,9 @@ export default function WinnerNotificationEmail({
           <CTAButton href={primaryClaimUrl}>Claim Your Prize</CTAButton>
           <Text
             style={{
-              fontSize: "12px",
+              fontSize: fontSize.sm,
               color: colors.textMuted,
-              marginTop: "24px",
+              marginTop: spacing.lg,
               lineHeight: "1.5",
             }}
           >
@@ -133,4 +155,5 @@ WinnerNotificationEmail.PreviewProps = {
     },
   ],
   primaryClaimUrl: "https://getoatmeal.com/prizes/claim/tk1",
+  prizeClaimDeadline: "May 1, 2026",
 } satisfies WinnerNotificationEmailProps

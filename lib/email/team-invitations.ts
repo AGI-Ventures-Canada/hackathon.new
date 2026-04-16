@@ -9,6 +9,10 @@ export type SendTeamInvitationInput = {
   inviterName: string
   inviteToken: string
   expiresAt: string
+  hackathonSlug?: string
+  hackathonStartsAt?: string | null
+  hackathonEndsAt?: string | null
+  teamMembers?: string[]
 }
 
 export async function sendTeamInvitationEmail(
@@ -34,6 +38,10 @@ export async function sendTeamInvitationEmail(
       hackathonName: input.hackathonName,
       acceptUrl,
       expiresDate,
+      hackathonSlug: input.hackathonSlug,
+      hackathonStartsAt: input.hackathonStartsAt,
+      hackathonEndsAt: input.hackathonEndsAt,
+      teamMembers: input.teamMembers,
     })
   )
 

@@ -9,6 +9,9 @@ export type SendJudgeInvitationInput = {
   inviterName: string
   inviteToken: string
   expiresAt: string
+  hackathonSlug?: string
+  hackathonStartsAt?: string | null
+  hackathonEndsAt?: string | null
 }
 
 export type SendJudgeAddedNotificationInput = {
@@ -16,6 +19,8 @@ export type SendJudgeAddedNotificationInput = {
   hackathonName: string
   hackathonSlug: string
   addedByName: string
+  hackathonStartsAt?: string | null
+  hackathonEndsAt?: string | null
 }
 
 export async function sendJudgeAddedNotification(
@@ -33,6 +38,8 @@ export async function sendJudgeAddedNotification(
       addedByName: input.addedByName,
       hackathonName: input.hackathonName,
       eventUrl,
+      hackathonStartsAt: input.hackathonStartsAt,
+      hackathonEndsAt: input.hackathonEndsAt,
     })
   )
 
@@ -72,6 +79,9 @@ export async function sendJudgeInvitationEmail(
       hackathonName: input.hackathonName,
       acceptUrl,
       expiresDate,
+      hackathonSlug: input.hackathonSlug,
+      hackathonStartsAt: input.hackathonStartsAt,
+      hackathonEndsAt: input.hackathonEndsAt,
     })
   )
 

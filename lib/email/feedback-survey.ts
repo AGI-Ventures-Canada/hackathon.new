@@ -60,6 +60,7 @@ export async function sendFeedbackSurveyEmails(
           participantName: displayName,
           hackathonName: hackathon.name,
           surveyUrl,
+          hackathonSlug: hackathon.slug,
         })
       )
 

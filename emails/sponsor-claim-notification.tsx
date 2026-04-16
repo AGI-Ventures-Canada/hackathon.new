@@ -1,7 +1,7 @@
 import { Text } from "@react-email/components"
 import { OatmealLayout } from "./_components/oatmeal-layout"
-import { colors } from "./_components/constants"
 import { CTAButton } from "./_components/cta-button"
+import { colors, fontSize, spacing } from "./_components/constants"
 import { formatPrizeValue } from "./_components/format-utils"
 
 interface SponsorClaimNotificationEmailProps {
@@ -23,23 +23,31 @@ export default function SponsorClaimNotificationEmail({
     <OatmealLayout
       heading="Winner Info Ready"
       preview={`${winnerName} claimed ${prizeName}`}
-      footerText={`You\u2019re receiving this because your organization sponsors a prize in ${hackathonName}.`}
+      footerText={`You\u2019re getting this because your organization sponsors a prize in ${hackathonName}.`}
+      eventUrl={eventUrl ?? undefined}
+      hackathonName={hackathonName}
     >
-      <Text style={{ fontSize: "14px", marginBottom: "16px", lineHeight: "1.6" }}>
+      <Text
+        style={{
+          fontSize: fontSize.base,
+          marginBottom: spacing.md,
+          lineHeight: "1.6",
+        }}
+      >
         <strong>{winnerName}</strong> has claimed the{" "}
-        <strong>{prizeName}</strong>{prizeValue ? ` (${formatPrizeValue(prizeValue)})` : ""} prize from {hackathonName}.
+        <strong>{prizeName}</strong>
+        {prizeValue ? ` (${formatPrizeValue(prizeValue)})` : ""} prize from {hackathonName}.
       </Text>
 
       <Text
         style={{
-          fontSize: "13px",
+          fontSize: fontSize.sm,
           color: colors.textMuted,
           marginBottom: "24px",
           lineHeight: "1.5",
         }}
       >
-        Their contact and delivery details are now available. The event organizer
-        will coordinate fulfillment.
+        The organizer will reach out to sort out delivery.
       </Text>
 
       {eventUrl && (
