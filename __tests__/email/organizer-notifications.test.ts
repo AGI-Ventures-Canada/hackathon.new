@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, mock } from "bun:test"
+import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test"
 
 let sendEmailImpl: (input: unknown) => Promise<{ id: string } | null> = () =>
   Promise.resolve({ id: "email_123" })
@@ -45,6 +45,8 @@ const { sendOrganizerClaimNotification } = await import(
   "@/lib/email/organizer-notifications"
 )
 
+const savedAppUrl = process.env.NEXT_PUBLIC_APP_URL
+
 describe("sendOrganizerClaimNotification", () => {
   beforeEach(() => {
     mockSendEmail.mockClear()
@@ -56,6 +58,15 @@ describe("sendOrganizerClaimNotification", () => {
     mockEq.mockClear()
     mockSingle.mockClear()
     sendEmailImpl = () => Promise.resolve({ id: "email_123" })
+    delete process.env.NEXT_PUBLIC_APP_URL
+  })
+
+  afterEach(() => {
+    if (savedAppUrl === undefined) {
+      delete process.env.NEXT_PUBLIC_APP_URL
+    } else {
+      process.env.NEXT_PUBLIC_APP_URL = savedAppUrl
+    }
   })
 
   it("sends email to org members when hackathon has org tenant", async () => {
@@ -90,6 +101,8 @@ describe("sendOrganizerClaimNotification", () => {
     expect((call.html as string)).toContain("Best Demo")
     expect((call.html as string)).toContain("Test Hackathon")
     expect((call.text as string)).toContain("Alice")
+    expect((call.html as string)).not.toContain("($")
+    expect((call.html as string)).not.toContain("View Fulfillment Tracker")
   })
 
   it("sends email to personal tenant user", async () => {
@@ -189,7 +202,6 @@ describe("sendOrganizerClaimNotification", () => {
   })
 
   it("includes fulfillment URL in rendered email", async () => {
-    const originalEnv = process.env.NEXT_PUBLIC_APP_URL
     process.env.NEXT_PUBLIC_APP_URL = "https://test.getoatmeal.com"
 
     let callCount = 0
@@ -215,12 +227,6 @@ describe("sendOrganizerClaimNotification", () => {
     expect(mockSendEmail).toHaveBeenCalledTimes(1)
     const call = mockSendEmail.mock.calls[0]![0] as Record<string, unknown>
     expect((call.html as string)).toContain("https://test.getoatmeal.com/e/ai-hack-2026/manage")
-
-    if (originalEnv === undefined) {
-      delete process.env.NEXT_PUBLIC_APP_URL
-    } else {
-      process.env.NEXT_PUBLIC_APP_URL = originalEnv
-    }
   })
 
   it("uses correct Resend tags", async () => {

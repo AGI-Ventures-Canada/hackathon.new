@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, mock } from "bun:test"
+import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test"
 
 let sendEmailImpl: (input: unknown) => Promise<{ id: string } | null> = () =>
   Promise.resolve({ id: "email_123" })
@@ -45,6 +45,8 @@ const { sendSponsorClaimNotification } = await import(
   "@/lib/email/sponsor-notifications"
 )
 
+const savedAppUrl = process.env.NEXT_PUBLIC_APP_URL
+
 describe("sendSponsorClaimNotification", () => {
   beforeEach(() => {
     mockSendEmail.mockClear()
@@ -56,6 +58,15 @@ describe("sendSponsorClaimNotification", () => {
     mockEq.mockClear()
     mockSingle.mockClear()
     sendEmailImpl = () => Promise.resolve({ id: "email_123" })
+    delete process.env.NEXT_PUBLIC_APP_URL
+  })
+
+  afterEach(() => {
+    if (savedAppUrl === undefined) {
+      delete process.env.NEXT_PUBLIC_APP_URL
+    } else {
+      process.env.NEXT_PUBLIC_APP_URL = savedAppUrl
+    }
   })
 
   it("sends email to org members when sponsor is an organization", async () => {
@@ -81,6 +92,8 @@ describe("sendSponsorClaimNotification", () => {
     expect(call.to).toBe("sponsor@test.com")
     expect(call.subject).toContain("Grand Prize")
     expect((call.html as string)).toContain("Alice")
+    expect((call.html as string)).not.toContain("($")
+    expect((call.html as string)).not.toContain("View Event")
   })
 
   it("sends email to individual user when sponsor has no org", async () => {
@@ -161,7 +174,6 @@ describe("sendSponsorClaimNotification", () => {
   })
 
   it("includes eventUrl in rendered email when hackathonSlug provided", async () => {
-    const originalEnv = process.env.NEXT_PUBLIC_APP_URL
     process.env.NEXT_PUBLIC_APP_URL = "https://test.getoatmeal.com"
 
     mockSingle.mockImplementation(() =>
@@ -182,11 +194,5 @@ describe("sendSponsorClaimNotification", () => {
     expect(mockSendEmail).toHaveBeenCalledTimes(1)
     const call = mockSendEmail.mock.calls[0]![0] as Record<string, unknown>
     expect((call.html as string)).toContain("https://test.getoatmeal.com/e/ai-hack-2026")
-
-    if (originalEnv === undefined) {
-      delete process.env.NEXT_PUBLIC_APP_URL
-    } else {
-      process.env.NEXT_PUBLIC_APP_URL = originalEnv
-    }
   })
 })

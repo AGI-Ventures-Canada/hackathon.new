@@ -77,8 +77,6 @@ export async function updateTenantProfile(
   return data as unknown as TenantProfile
 }
 
-export { generateSlug } from "@/lib/utils/slug"
-
 export async function isSlugAvailable(
   slug: string,
   excludeTenantId?: string
