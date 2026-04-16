@@ -2295,6 +2295,14 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
   .post("/teams/:teamId/invitations/:invitationId/remind", async ({ principal, params }) => {
     requirePrincipal(principal, ["user"])
 
+    const { isValidUuid } = await import("@/lib/utils/uuid")
+    if (!isValidUuid(params.teamId)) {
+      return new Response(JSON.stringify({ error: "Not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
+
     const rateLimitResult = await checkRateLimit(`team_invitation_remind:${params.teamId}`, {
       maxRequests: 5,
       windowMs: 60_000,
@@ -2312,6 +2320,13 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
     if (!result.success) {
       return new Response(JSON.stringify({ error: result.error, code: result.code }), {
         status: 400,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
+
+    if (result.invitation.team_id !== params.teamId) {
+      return new Response(JSON.stringify({ error: "Not found" }), {
+        status: 404,
         headers: { "Content-Type": "application/json" },
       })
     }
