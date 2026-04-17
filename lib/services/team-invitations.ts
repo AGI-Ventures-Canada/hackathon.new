@@ -2,6 +2,7 @@ import { supabase as getSupabase } from "@/lib/db/client"
 import type { TeamInvitation } from "@/lib/db/hackathon-types"
 import { randomBytes } from "crypto"
 import { checkRoleConflict } from "@/lib/services/role-conflict"
+import { isValidUuid } from "@/lib/utils/uuid"
 
 const INVITATION_EXPIRY_DAYS = 7
 const INVITATION_EXPIRY_MS = INVITATION_EXPIRY_DAYS * 24 * 60 * 60 * 1000
@@ -329,6 +330,60 @@ export async function listTeamInvitations(
   }
 
   return { success: true, invitations: data as TeamInvitation[] }
+}
+
+export type RemindTeamInvitationResult =
+  | { success: true; invitation: TeamInvitation }
+  | { success: false; error: string; code: string }
+
+export async function remindTeamInvitation(
+  invitationId: string,
+  clerkUserId: string,
+  teamId: string
+): Promise<RemindTeamInvitationResult> {
+  if (!isValidUuid(invitationId) || !isValidUuid(teamId)) {
+    return { success: false, error: "Invitation not found", code: "not_found" }
+  }
+
+  const client = getSupabase()
+
+  const { data: invitation, error: fetchError } = await client
+    .from("team_invitations")
+    .select("*, teams!inner(captain_clerk_user_id)")
+    .eq("id", invitationId)
+    .eq("team_id", teamId)
+    .single()
+
+  if (fetchError || !invitation) {
+    return { success: false, error: "Invitation not found", code: "not_found" }
+  }
+
+  const team = invitation.teams as unknown as { captain_clerk_user_id: string }
+  if (team.captain_clerk_user_id !== clerkUserId) {
+    return { success: false, error: "Only team captain can send reminders", code: "not_captain" }
+  }
+
+  if (invitation.status !== "pending") {
+    return { success: false, error: "Invitation is not pending", code: "not_pending" }
+  }
+
+  if (new Date(invitation.expires_at) < new Date()) {
+    return { success: false, error: "Invitation has expired", code: "expired" }
+  }
+
+  const { data: updated, error: updateError } = await client
+    .from("team_invitations")
+    .update({ reminded_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq("id", invitationId)
+    .eq("team_id", teamId)
+    .select()
+    .single()
+
+  if (updateError || !updated) {
+    return { success: false, error: "Failed to update reminder status", code: "update_failed" }
+  }
+
+  return { success: true, invitation: updated as TeamInvitation }
 }
 
 interface TeamWithHackathon {

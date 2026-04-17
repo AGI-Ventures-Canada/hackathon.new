@@ -2,6 +2,7 @@ import { Elysia, t } from "elysia"
 import { resolvePrincipal, requirePrincipal } from "@/lib/auth/principal"
 import { logAudit } from "@/lib/services/audit"
 import { resolveAdderName } from "@/lib/auth/resolve-adder-name"
+import { checkRateLimit, RateLimitError } from "@/lib/services/rate-limit"
 
 type CachedAuthResult = { status: "ok" } | { status: "not_found" } | { status: "not_authorized" }
 // Local-dev-only optimisation: avoids repeated checkHackathonOrganizer calls
@@ -1171,6 +1172,23 @@ export const dashboardJudgingRoutes = new Elysia()
           await createJudgePendingNotification(hackathon.id, invitationResult.invitation.id, typedBody.email, inviterName)
         }
 
+        const { scheduleReminders } = await import("@/lib/services/smart-reminders")
+        scheduleReminders(
+          "judge_invitation",
+          invitationResult.invitation.id,
+          params.id,
+          "invitation_reminder",
+          new Date(invitationResult.invitation.created_at),
+          new Date(invitationResult.invitation.expires_at),
+          {
+            email: typedBody.email,
+            hackathonName: hackathon.name,
+            inviterName,
+            inviteToken: invitationResult.invitation.token,
+            expiresAt: invitationResult.invitation.expires_at,
+          }
+        ).catch((err) => console.error(`Failed to schedule reminders for judge_invitation ${invitationResult.invitation.id} (hackathon=${params.id}):`, err))
+
         logAudit({
           principal,
           action: "judge.invited",
@@ -1263,9 +1281,82 @@ export const dashboardJudgingRoutes = new Elysia()
     const { cancelJudgeInvitation } = await import("@/lib/services/judge-invitations")
     const result2 = await cancelJudgeInvitation(params.invitationId, params.id)
 
+    if (result2.success) {
+      const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
+      cancelRemindersForEntity("judge_invitation", params.invitationId).catch((err) =>
+        console.error(`Failed to cancel reminders for judge_invitation ${params.invitationId} (hackathon=${params.id}):`, err)
+      )
+    }
+
     return { success: result2.success }
   }, {
     detail: { summary: "Cancel invitation", description: "Cancels a pending judge invitation." },
+  })
+
+  .post("/hackathons/:id/judging/invitations/:invitationId/remind", async ({ principal, params }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+
+    const { isValidUuid } = await import("@/lib/utils/uuid")
+    if (!isValidUuid(params.invitationId)) {
+      return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+    }
+
+    const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+    const result = await checkHackathonOrganizer(params.id, principal.tenantId)
+
+    if (result.status === "not_found") {
+      return new Response(JSON.stringify({ error: "Hackathon not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+    }
+    if (result.status === "not_authorized") {
+      return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
+    }
+
+    const rateLimitResult = await checkRateLimit(`judge_invitation_remind:${params.id}:${params.invitationId}`, {
+      maxRequests: 5,
+      windowMs: 60_000,
+    })
+    if (!rateLimitResult.allowed) {
+      throw new RateLimitError(rateLimitResult.resetAt, rateLimitResult.remaining)
+    }
+
+    const { remindJudgeInvitation } = await import("@/lib/services/judge-invitations")
+    const remindResult = await remindJudgeInvitation(params.invitationId, params.id)
+
+    if (!remindResult.success) {
+      return new Response(JSON.stringify({ error: remindResult.error, code: remindResult.code }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
+
+    const hackathon = result.hackathon!
+    const { clerkClient } = await import("@clerk/nextjs/server")
+    const client = await clerkClient()
+    const inviterName = await resolveAdderName(principal, client)
+
+    const { sendJudgeInvitationReminderEmail } = await import("@/lib/email/judge-invitations")
+    sendJudgeInvitationReminderEmail({
+      to: remindResult.invitation.email,
+      hackathonName: hackathon.name,
+      inviterName,
+      inviteToken: remindResult.invitation.token,
+      expiresAt: remindResult.invitation.expires_at,
+    }).catch(console.error)
+
+    const { cancelUpcomingReminder } = await import("@/lib/services/smart-reminders")
+    cancelUpcomingReminder("judge_invitation", params.invitationId).catch(console.error)
+
+    await logAudit({
+      principal,
+      action: "judge_invitation.reminded",
+      resourceType: "hackathon",
+      resourceId: params.id,
+      metadata: { invitationId: params.invitationId },
+    })
+
+    return { success: true }
+  }, {
+    detail: { summary: "Send invitation reminder", description: "Sends a reminder email for a pending judge invitation." },
   })
 
   .get("/hackathons/:id/judging/progress", async ({ principal, params }) => {

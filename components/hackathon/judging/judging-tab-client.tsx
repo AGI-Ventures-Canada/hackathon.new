@@ -62,6 +62,7 @@ import {
   Award,
   X,
   MapPin,
+  Bell,
 } from "lucide-react"
 import { useActionItemsOptional } from "@/components/hackathon/manage/action-items-context"
 import { AddJudgeDialog, type AddJudgeResult } from "./add-judge-dialog"
@@ -131,6 +132,7 @@ type InvitationData = {
   email: string
   status: string
   createdAt: string
+  remindedAt: string | null
 }
 
 type ResultData = {
@@ -295,6 +297,15 @@ export function JudgingTabClient({
     onRevert: (invitationId) => invitationsList.unhideItem(invitationId),
   })
 
+  const { execute: handleRemindInvitation, error: remindInvitationError } = useOptimisticMutation({
+    fn: (invitationId: string) =>
+      fetch(`${base}/judging/invitations/${invitationId}/remind`, { method: "POST" }).then(assertOk),
+    onOptimistic: (invitationId) =>
+      invitationsList.setLocalEdit(invitationId, { remindedAt: new Date().toISOString() }),
+    onRevert: (invitationId) =>
+      invitationsList.clearLocalEdit(invitationId),
+  })
+
   async function assignJudgeToPrize(prizeId: string, judgeParticipantId: string) {
     await fetch(`${base}/prizes/${prizeId}/assign-judge`, {
       method: "POST",
@@ -350,7 +361,7 @@ export function JudgingTabClient({
     }
   }
 
-  const mutationError = deletePrizeError || removeJudgeError || cancelInvitationError
+  const mutationError = deletePrizeError || removeJudgeError || cancelInvitationError || remindInvitationError
 
   return (
     <div className="space-y-6">
@@ -420,6 +431,7 @@ export function JudgingTabClient({
             onAddJudge={() => setShowAddJudge(true)}
             onRemoveJudge={handleRemoveJudge}
             onCancelInvitation={handleCancelInvitation}
+            onRemindInvitation={handleRemindInvitation}
           />
         </TabsContent>
 
@@ -489,6 +501,7 @@ export function JudgingTabClient({
               email: result.email,
               status: "pending",
               createdAt: new Date().toISOString(),
+              remindedAt: null,
             })
           }
           router.refresh()
@@ -519,6 +532,7 @@ function JudgesSection({
   onAddJudge,
   onRemoveJudge,
   onCancelInvitation,
+  onRemindInvitation,
 }: {
   judges: JudgeData[]
   invitations: InvitationData[]
@@ -526,6 +540,7 @@ function JudgesSection({
   onAddJudge: () => void
   onRemoveJudge: (id: string) => void
   onCancelInvitation: (id: string) => void
+  onRemindInvitation: (id: string) => void
 }) {
   return (
     <Card>
@@ -587,10 +602,26 @@ function JudgesSection({
                 >
                   <Mail className="size-3.5" />
                   <span>{inv.email}</span>
-                  <Badge variant="outline" className="text-xs">
-                    <Clock className="mr-1 size-3" />
-                    Invited
-                  </Badge>
+                  {inv.remindedAt ? (
+                    <Badge variant="secondary" className="text-xs">
+                      <Bell className="mr-1 size-3" />
+                      Reminded
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-xs">
+                      <Clock className="mr-1 size-3" />
+                      Invited
+                    </Badge>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-6"
+                    onClick={() => onRemindInvitation(inv.id)}
+                  >
+                    <Bell className="size-3" />
+                    <span className="sr-only">Send reminder</span>
+                  </Button>
                   <Button
                     variant="ghost"
                     size="icon"

@@ -911,7 +911,8 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
-    const { acceptTeamInvitation } = await import("@/lib/services/team-invitations")
+    const { acceptTeamInvitation, getInvitationByToken } = await import("@/lib/services/team-invitations")
+    const invitation = await getInvitationByToken(params.token)
     const result = await acceptTeamInvitation(params.token, userId, userEmail)
 
     if (!result.success) {
@@ -919,6 +920,13 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       return new Response(
         JSON.stringify({ error: result.error, code: result.code }),
         { status: statusCode, headers: { "Content-Type": "application/json" } }
+      )
+    }
+
+    if (invitation) {
+      const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
+      cancelRemindersForEntity("team_invitation", invitation.id).catch((err) =>
+        console.error(`Failed to cancel reminders for team_invitation ${invitation.id}:`, err)
       )
     }
 
@@ -1673,7 +1681,8 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
-    const { acceptJudgeInvitation } = await import("@/lib/services/judge-invitations")
+    const { acceptJudgeInvitation, getJudgeInvitationByToken } = await import("@/lib/services/judge-invitations")
+    const judgeInvitation = await getJudgeInvitationByToken(params.token)
     const result = await acceptJudgeInvitation(params.token, userId, userEmails)
 
     if (!result.success) {
@@ -1681,6 +1690,13 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       return new Response(
         JSON.stringify({ error: result.error, code: result.code }),
         { status: statusCode, headers: { "Content-Type": "application/json" } }
+      )
+    }
+
+    if (judgeInvitation) {
+      const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
+      cancelRemindersForEntity("judge_invitation", judgeInvitation.id).catch((err) =>
+        console.error(`Failed to cancel reminders for judge_invitation ${judgeInvitation.id}:`, err)
       )
     }
 
@@ -1719,6 +1735,11 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         { status: 400, headers: { "Content-Type": "application/json" } }
       )
     }
+
+    const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
+    cancelRemindersForEntity("judge_invitation", invitation.id).catch((err) =>
+      console.error(`Failed to cancel reminders for judge_invitation ${invitation.id}:`, err)
+    )
 
     return { success: true }
   }, {

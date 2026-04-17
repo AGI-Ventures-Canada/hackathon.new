@@ -29,6 +29,7 @@ const {
   hasPendingJudgeInvitation,
   hasPendingJudgeEntry,
   countPendingJudgeInvitations,
+  remindJudgeInvitation,
 } = await import("@/lib/services/judge-invitations")
 
 const mockInvitation: JudgeInvitation = {
@@ -41,6 +42,7 @@ const mockInvitation: JudgeInvitation = {
   expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
   accepted_by_clerk_user_id: null,
   emailed_at: null,
+  reminded_at: null,
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
 }
@@ -629,6 +631,90 @@ describe("Judge Invitations Service", () => {
       if (!result.success) {
         expect(result.code).toBe("role_conflict")
       }
+    })
+  })
+
+  describe("remindJudgeInvitation", () => {
+    it("succeeds for a pending invitation with no prior reminder", async () => {
+      let callCount = 0
+      setMockFromImplementation(() => {
+        callCount++
+        if (callCount === 1) {
+          return createChainableMock({ data: mockInvitation, error: null })
+        }
+        return createChainableMock({
+          data: { ...mockInvitation, reminded_at: new Date().toISOString() },
+          error: null,
+        })
+      })
+
+      const result = await remindJudgeInvitation("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")
+
+      expect(result.success).toBe(true)
+    })
+
+    it("returns not_found when invitation does not exist", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({ data: null, error: { message: "Not found" } })
+      )
+
+      const result = await remindJudgeInvitation("33333333-3333-3333-3333-333333333333", "22222222-2222-2222-2222-222222222222")
+
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.code).toBe("not_found")
+      }
+    })
+
+    it("returns not_pending when invitation is not pending", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({
+          data: { ...mockInvitation, status: "accepted" },
+          error: null,
+        })
+      )
+
+      const result = await remindJudgeInvitation("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")
+
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.code).toBe("not_pending")
+      }
+    })
+
+    it("returns expired when invitation has expired", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({
+          data: {
+            ...mockInvitation,
+            expires_at: new Date(Date.now() - 1000).toISOString(),
+          },
+          error: null,
+        })
+      )
+
+      const result = await remindJudgeInvitation("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")
+
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.code).toBe("expired")
+      }
+    })
+
+    it("allows repeat reminders when already reminded", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({
+          data: {
+            ...mockInvitation,
+            reminded_at: new Date().toISOString(),
+          },
+          error: null,
+        })
+      )
+
+      const result = await remindJudgeInvitation("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")
+
+      expect(result.success).toBe(true)
     })
   })
 })

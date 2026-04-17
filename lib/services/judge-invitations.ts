@@ -3,6 +3,7 @@ import type { JudgeInvitation } from "@/lib/db/hackathon-types"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { randomBytes } from "crypto"
 import { checkRoleConflict } from "@/lib/services/role-conflict"
+import { isValidUuid } from "@/lib/utils/uuid"
 
 const INVITATION_EXPIRY_DAYS = 7
 const INVITATION_EXPIRY_MS = INVITATION_EXPIRY_DAYS * 24 * 60 * 60 * 1000
@@ -211,6 +212,53 @@ export async function cancelJudgeInvitation(
     .eq("id", invitationId)
 
   return { success: !error }
+}
+
+export type RemindJudgeInvitationResult =
+  | { success: true; invitation: JudgeInvitation }
+  | { success: false; error: string; code: string }
+
+export async function remindJudgeInvitation(
+  invitationId: string,
+  hackathonId: string
+): Promise<RemindJudgeInvitationResult> {
+  if (!isValidUuid(invitationId) || !isValidUuid(hackathonId)) {
+    return { success: false, error: "Invitation not found", code: "not_found" }
+  }
+
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data: invitation, error: fetchError } = await client
+    .from("judge_invitations")
+    .select("*")
+    .eq("id", invitationId)
+    .eq("hackathon_id", hackathonId)
+    .single()
+
+  if (fetchError || !invitation) {
+    return { success: false, error: "Invitation not found", code: "not_found" }
+  }
+
+  if (invitation.status !== "pending") {
+    return { success: false, error: "Invitation is not pending", code: "not_pending" }
+  }
+
+  if (new Date(invitation.expires_at) < new Date()) {
+    return { success: false, error: "Invitation has expired", code: "expired" }
+  }
+
+  const { data: updated, error: updateError } = await client
+    .from("judge_invitations")
+    .update({ reminded_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq("id", invitationId)
+    .select()
+    .single()
+
+  if (updateError || !updated) {
+    return { success: false, error: "Failed to update reminder status", code: "update_failed" }
+  }
+
+  return { success: true, invitation: updated as JudgeInvitation }
 }
 
 export async function sendPendingJudgeInvitationEmails(

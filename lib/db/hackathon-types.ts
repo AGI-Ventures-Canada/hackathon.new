@@ -161,6 +161,7 @@ export interface TeamInvitation {
   expires_at: string
   accepted_at: string | null
   accepted_by_clerk_user_id: string | null
+  reminded_at: string | null
   created_at: string
   updated_at: string
 }
@@ -534,6 +535,7 @@ export interface JudgeInvitation {
   accepted_by_clerk_user_id: string | null
   expires_at: string
   emailed_at: string | null
+  reminded_at: string | null
   created_at: string
   updated_at: string
 }

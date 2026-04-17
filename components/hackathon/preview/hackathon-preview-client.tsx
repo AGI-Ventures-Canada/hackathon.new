@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
+import { useOptimisticMutation } from "@/hooks/use-optimistic-mutation"
+import { assertOk } from "@/lib/utils/fetch"
 import { EditProvider, useEdit, SECTION_ORDER } from "./edit-context"
 import { useActionItemsOptional } from "@/components/hackathon/manage/action-items-context"
 import { EditableSection } from "./editable-section"
@@ -19,7 +21,7 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
-import { CheckCircle2, Crown, Clock, X, Lock, Scale, Mail, CalendarClock, MapPin, AlertTriangle, Pencil, Users as UsersIcon } from "lucide-react"
+import { CheckCircle2, Crown, Clock, X, Lock, Scale, Mail, CalendarClock, MapPin, AlertTriangle, Pencil, Users as UsersIcon, Bell } from "lucide-react"
 import type { PublicHackathon } from "@/lib/services/public-hackathons"
 import type { HackathonJudgeDisplay } from "@/lib/db/hackathon-types"
 import type { Submission } from "@/lib/db/hackathon-types"
@@ -91,6 +93,7 @@ function HackathonPreviewContent({
   const { isEditable, editMode, activeSection, openSection, closeDrawer } = useEdit()
   const router = useRouter()
   const [cancellingId, setCancellingId] = useState<string | null>(null)
+  const [remindedIds, setRemindedIds] = useState<Set<string>>(new Set())
   const [isRegistered, setIsRegistered] = useState(initialIsRegistered)
   const [justRegistered, setJustRegistered] = useState(false)
   const [bannerUrl, setBannerUrl] = useState(hackathon.banner_url)
@@ -187,6 +190,22 @@ function HackathonPreviewContent({
       setCancellingId(null)
     }
   }
+
+  const { execute: handleRemindInvitation, error: remindError } = useOptimisticMutation({
+    fn: (invitationId: string) =>
+      fetch(
+        `/api/dashboard/teams/${teamInfo!.team.id}/invitations/${invitationId}/remind`,
+        { method: "POST" }
+      ).then(assertOk),
+    onOptimistic: (invitationId) =>
+      setRemindedIds((prev) => new Set(prev).add(invitationId)),
+    onRevert: (invitationId) =>
+      setRemindedIds((prev) => {
+        const next = new Set(prev)
+        next.delete(invitationId)
+        return next
+      }),
+  })
 
   const isJudge = participantRole === "judge"
 
@@ -336,16 +355,29 @@ function HackathonPreviewContent({
                       </button>
                     </PopoverTrigger>
                     {teamInfo.isCaptain && (
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        className="shrink-0 opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 transition-opacity max-sm:opacity-100"
-                        onClick={() => handleCancelInvitation(invitation.id)}
-                        disabled={cancellingId === invitation.id}
-                      >
-                        <X className="size-3" />
-                        <span className="sr-only">Cancel</span>
-                      </Button>
+                      <div className="flex items-center gap-0.5">
+                        {!isExpired && !(invitation.remindedAt || remindedIds.has(invitation.id)) && (
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            className="shrink-0 opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 transition-opacity max-sm:opacity-100"
+                            onClick={() => handleRemindInvitation(invitation.id)}
+                          >
+                            <Bell className="size-3" />
+                            <span className="sr-only">Remind</span>
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          className="shrink-0 opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 transition-opacity max-sm:opacity-100"
+                          onClick={() => handleCancelInvitation(invitation.id)}
+                          disabled={cancellingId === invitation.id}
+                        >
+                          <X className="size-3" />
+                          <span className="sr-only">Cancel</span>
+                        </Button>
+                      </div>
                     )}
                   </div>
                   <PopoverContent side="top" align="start" className="w-56">
@@ -371,12 +403,19 @@ function HackathonPreviewContent({
                           }
                         </span>
                       </div>
+                      {(invitation.remindedAt || remindedIds.has(invitation.id)) && (
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Bell className="size-3.5 shrink-0" />
+                          <span className="text-xs">Reminder sent</span>
+                        </div>
+                      )}
                     </div>
                   </PopoverContent>
                 </Popover>
               )
             })}
           </div>
+          {remindError && <p className="text-sm text-destructive">{remindError}</p>}
         </div>
       )}
     </div>
