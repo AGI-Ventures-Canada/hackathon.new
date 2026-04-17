@@ -90,10 +90,11 @@ export async function sendMyEmail(to: string, name: string) {
 
 ## Shared Components
 
-- **OatmealLayout**: Wraps all emails. Props: `heading`, `preview?`, `children`, `footerText?`
-- **InfoBox**: Gray highlight box. Props: `label`, `children`
-- **CTAButton**: Dark primary or outline secondary button. Props: `href`, `children`, `variant?`
-- **constants.ts**: Color tokens and font family — use these instead of hardcoding hex values
+- **OatmealLayout**: Wraps all emails. Props: `heading`, `preview?`, `children`, `footerText?`, `eventUrl?`, `hackathonName?`. When `eventUrl` is provided, renders a footer link to the event page.
+- **InfoBox**: Accent-bordered highlight box. Props: `label`, `children`
+- **EventDetailBox**: Multi-field hackathon info box. Props: `hackathonName`, `startsAt?`, `endsAt?`, `location?`. Use instead of InfoBox when showing hackathon details with dates.
+- **CTAButton**: Primary (accent) or secondary (light) button. Props: `href`, `children`, `variant?`
+- **constants.ts**: Color tokens (`colors`), font families (`fontFamily`, `monoFontFamily`), `fontSize`, and `spacing` — use these instead of hardcoding values
 
 ## Sending Email
 

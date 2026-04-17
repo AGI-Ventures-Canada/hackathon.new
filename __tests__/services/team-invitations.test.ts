@@ -786,7 +786,8 @@ describe("Team Invitations Service", () => {
         createChainableMock({
           data: {
             name: "Test Team",
-            hackathons: { name: "Test Hackathon", slug: "test-hackathon" },
+            hackathons: { name: "Test Hackathon", slug: "test-hackathon", starts_at: "2025-06-01T00:00:00Z", ends_at: "2025-06-02T00:00:00Z" },
+            hackathon_participants: [],
           },
           error: null,
         })
@@ -798,6 +799,9 @@ describe("Team Invitations Service", () => {
       expect(result?.name).toBe("Test Team")
       expect(result?.hackathon.name).toBe("Test Hackathon")
       expect(result?.hackathon.slug).toBe("test-hackathon")
+      expect(result?.hackathon.starts_at).toBe("2025-06-01T00:00:00Z")
+      expect(result?.hackathon.ends_at).toBe("2025-06-02T00:00:00Z")
+      expect(result?.memberNames).toEqual([])
     })
 
     it("returns null when team not found", async () => {

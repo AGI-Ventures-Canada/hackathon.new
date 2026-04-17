@@ -6,6 +6,8 @@ export type TransitionNotificationInput = {
   hackathonId: string
   hackathonName: string
   hackathonSlug: string
+  hackathonStartsAt?: string | null
+  hackathonEndsAt?: string | null
   event: TransitionEvent
   recipientRoles: string[]
 }
@@ -28,6 +30,8 @@ export async function sendTransitionNotificationsWorkflow(
         event: input.event,
         hackathonName: input.hackathonName,
         hackathonSlug: input.hackathonSlug,
+        hackathonStartsAt: input.hackathonStartsAt,
+        hackathonEndsAt: input.hackathonEndsAt,
       })
       sent++
     } catch (err) {

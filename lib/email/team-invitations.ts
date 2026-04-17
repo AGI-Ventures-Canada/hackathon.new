@@ -1,5 +1,5 @@
 import { sendEmail } from "./resend"
-import { sanitizeTag, renderEmail } from "./utils"
+import { sanitizeTag, renderEmail, buildEventUrl } from "./utils"
 import TeamInvitationEmail from "@/emails/team-invitation"
 
 export type SendTeamInvitationInput = {
@@ -9,6 +9,10 @@ export type SendTeamInvitationInput = {
   inviterName: string
   inviteToken: string
   expiresAt: string
+  hackathonSlug?: string
+  hackathonStartsAt?: string | null
+  hackathonEndsAt?: string | null
+  teamMembers?: string[]
 }
 
 export async function sendTeamInvitationEmail(
@@ -34,6 +38,10 @@ export async function sendTeamInvitationEmail(
       hackathonName: input.hackathonName,
       acceptUrl,
       expiresDate,
+      eventUrl: buildEventUrl(input.hackathonSlug),
+      hackathonStartsAt: input.hackathonStartsAt,
+      hackathonEndsAt: input.hackathonEndsAt,
+      teamMembers: input.teamMembers,
     })
   )
 

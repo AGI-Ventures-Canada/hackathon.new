@@ -1040,6 +1040,8 @@ export const dashboardJudgingRoutes = new Elysia()
                 hackathonName: hackathon.name,
                 hackathonSlug: hackathon.slug,
                 addedByName,
+                hackathonStartsAt: hackathon.starts_at,
+                hackathonEndsAt: hackathon.ends_at,
               }).catch(console.error)
             } else {
               const addedByName = await resolveAdderName(principal, client)
@@ -1108,6 +1110,8 @@ export const dashboardJudgingRoutes = new Elysia()
               hackathonName: hackathon.name,
               hackathonSlug: hackathon.slug,
               addedByName,
+              hackathonStartsAt: hackathon.starts_at,
+              hackathonEndsAt: hackathon.ends_at,
             }).catch(console.error)
           } else {
             const addedByName = await resolveAdderName(principal, client)
@@ -1158,6 +1162,9 @@ export const dashboardJudgingRoutes = new Elysia()
             inviterName,
             inviteToken: invitationResult.invitation.token,
             expiresAt: invitationResult.invitation.expires_at,
+            hackathonSlug: hackathon.slug,
+            hackathonStartsAt: hackathon.starts_at,
+            hackathonEndsAt: hackathon.ends_at,
           }).catch(console.error)
         } else {
           const { createJudgePendingNotification } = await import("@/lib/services/judge-invitations")

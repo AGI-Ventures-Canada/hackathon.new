@@ -1,5 +1,5 @@
 import { sendEmail } from "./resend"
-import { sanitizeTag, renderEmail } from "./utils"
+import { sanitizeTag, renderEmail, buildEventUrl } from "./utils"
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { clerkClient } from "@clerk/nextjs/server"
@@ -60,6 +60,7 @@ export async function sendFeedbackSurveyEmails(
           participantName: displayName,
           hackathonName: hackathon.name,
           surveyUrl,
+          eventUrl: buildEventUrl(hackathon.slug),
         })
       )
 

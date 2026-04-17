@@ -1,5 +1,5 @@
 import { sendEmail } from "./resend"
-import { sanitizeTag, renderEmail } from "./utils"
+import { sanitizeTag, renderEmail, buildEventUrl } from "./utils"
 import JudgeAddedEmail from "@/emails/judge-added"
 import JudgeInvitationEmail from "@/emails/judge-invitation"
 
@@ -9,6 +9,9 @@ export type SendJudgeInvitationInput = {
   inviterName: string
   inviteToken: string
   expiresAt: string
+  hackathonSlug?: string
+  hackathonStartsAt?: string | null
+  hackathonEndsAt?: string | null
 }
 
 export type SendJudgeAddedNotificationInput = {
@@ -16,23 +19,27 @@ export type SendJudgeAddedNotificationInput = {
   hackathonName: string
   hackathonSlug: string
   addedByName: string
+  hackathonStartsAt?: string | null
+  hackathonEndsAt?: string | null
 }
 
 export async function sendJudgeAddedNotification(
   input: SendJudgeAddedNotificationInput
 ): Promise<{ success: boolean }> {
   if (!process.env.NEXT_PUBLIC_APP_URL) {
-    console.error("NEXT_PUBLIC_APP_URL not set, cannot send notification email")
+    console.error("NEXT_PUBLIC_APP_URL not set, cannot send judge added notification")
     return { success: false }
   }
 
-  const eventUrl = `${process.env.NEXT_PUBLIC_APP_URL}/e/${input.hackathonSlug}`
+  const eventUrl = buildEventUrl(input.hackathonSlug)
 
   const { html, text } = await renderEmail(
     JudgeAddedEmail({
       addedByName: input.addedByName,
       hackathonName: input.hackathonName,
       eventUrl,
+      hackathonStartsAt: input.hackathonStartsAt,
+      hackathonEndsAt: input.hackathonEndsAt,
     })
   )
 
@@ -53,6 +60,8 @@ export async function sendJudgeAddedNotification(
 export async function sendJudgeInvitationEmail(
   input: SendJudgeInvitationInput
 ): Promise<{ success: boolean }> {
+  // Guard required: acceptUrl is a functional token link that must resolve to the real app,
+  // unlike display-only event links where buildEventUrl's fallback is acceptable.
   if (!process.env.NEXT_PUBLIC_APP_URL) {
     console.error("NEXT_PUBLIC_APP_URL not set, cannot send invitation email")
     return { success: false }
@@ -72,6 +81,9 @@ export async function sendJudgeInvitationEmail(
       hackathonName: input.hackathonName,
       acceptUrl,
       expiresDate,
+      eventUrl: buildEventUrl(input.hackathonSlug),
+      hackathonStartsAt: input.hackathonStartsAt,
+      hackathonEndsAt: input.hackathonEndsAt,
     })
   )
 

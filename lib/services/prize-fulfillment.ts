@@ -209,7 +209,7 @@ async function notifyWinnerOfShipment(
 
   const { data: hackathon } = await client
     .from("hackathons")
-    .select("name")
+    .select("name, slug")
     .eq("id", hackathonId)
     .single()
 
@@ -223,6 +223,7 @@ async function notifyWinnerOfShipment(
     prizeName: pa.prize.name,
     hackathonName: hackathon.name,
     trackingNumber: fulfillment.tracking_number,
+    hackathonSlug: hackathon.slug,
   })
 }
 

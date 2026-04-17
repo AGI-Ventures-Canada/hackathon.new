@@ -50,6 +50,8 @@ export type SendTransitionEmailInput = {
   event: TransitionEvent
   hackathonName: string
   hackathonSlug: string
+  hackathonStartsAt?: string | null
+  hackathonEndsAt?: string | null
 }
 
 export async function sendTransitionEmail(
@@ -63,7 +65,11 @@ export async function sendTransitionEmail(
   const { subject, html, text, tag } = await buildTransitionEmail(
     input.event,
     input.hackathonName,
-    input.hackathonSlug
+    input.hackathonSlug,
+    {
+      hackathonStartsAt: input.hackathonStartsAt,
+      hackathonEndsAt: input.hackathonEndsAt,
+    }
   )
 
   const result = await sendEmail({

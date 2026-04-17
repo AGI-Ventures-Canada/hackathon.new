@@ -1,13 +1,16 @@
 import { Text } from "@react-email/components"
 import type { TransitionEvent } from "@/lib/db/hackathon-types"
 import { OatmealLayout } from "./_components/oatmeal-layout"
-import { InfoBox } from "./_components/info-box"
+import { EventDetailBox } from "./_components/event-detail-box"
 import { CTAButton } from "./_components/cta-button"
+import { fontSize, spacing } from "./_components/constants"
 
 interface TransitionNotificationEmailProps {
   event: TransitionEvent
   hackathonName: string
   eventUrl: string
+  hackathonStartsAt?: string | null
+  hackathonEndsAt?: string | null
 }
 
 const eventConfig: Record<
@@ -49,6 +52,8 @@ export default function TransitionNotificationEmail({
   event,
   hackathonName,
   eventUrl,
+  hackathonStartsAt,
+  hackathonEndsAt,
 }: TransitionNotificationEmailProps) {
   const config = eventConfig[event]
 
@@ -56,19 +61,27 @@ export default function TransitionNotificationEmail({
     <OatmealLayout
       heading={config.heading(hackathonName)}
       preview={`${config.heading(hackathonName)}`}
-      footerText={`You received this because you\u2019re registered for ${hackathonName}.`}
+      footerText={`You got this because you\u2019re registered for ${hackathonName}.`}
+      eventUrl={eventUrl}
+      hackathonName={hackathonName}
     >
-      <Text style={{ fontSize: "14px", marginBottom: "24px", lineHeight: "1.6" }}>
+      <Text
+        style={{
+          fontSize: fontSize.base,
+          marginBottom: spacing.lg,
+          lineHeight: "1.6",
+        }}
+      >
         {config.bodyPrefix}
         <strong>{hackathonName}</strong>
         {config.bodySuffix}
       </Text>
 
-      <InfoBox label="Hackathon">
-        <Text style={{ margin: "0", fontSize: "16px", fontWeight: 600 }}>
-          {hackathonName}
-        </Text>
-      </InfoBox>
+      <EventDetailBox
+        hackathonName={hackathonName}
+        startsAt={hackathonStartsAt}
+        endsAt={hackathonEndsAt}
+      />
 
       <CTAButton href={eventUrl}>{config.ctaLabel}</CTAButton>
     </OatmealLayout>
@@ -79,4 +92,6 @@ TransitionNotificationEmail.PreviewProps = {
   event: "hackathon_started",
   hackathonName: "AI Innovation Hackathon 2026",
   eventUrl: "https://getoatmeal.com/e/ai-innovation-2026",
+  hackathonStartsAt: "2026-04-20T08:30:00Z",
+  hackathonEndsAt: "2026-04-22T17:00:00Z",
 } satisfies TransitionNotificationEmailProps

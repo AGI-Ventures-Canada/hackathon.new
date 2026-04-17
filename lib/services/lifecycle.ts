@@ -90,8 +90,10 @@ export async function executeTransition(
       hackathonId,
       tenantId,
       hackathon: {
-        name: hackathon.name as string,
-        slug: hackathon.slug as string,
+        name: hackathon.name,
+        slug: hackathon.slug,
+        starts_at: hackathon.starts_at,
+        ends_at: hackathon.ends_at,
       },
       trigger,
       triggeredBy,
@@ -136,8 +138,8 @@ export async function processAutoTransitions(): Promise<AutoTransitionResult> {
     const stored = h.status as HackathonStatus
     const effective = getEffectiveStatus({
       status: stored,
-      starts_at: h.starts_at as string | null,
-      ends_at: h.ends_at as string | null,
+      starts_at: h.starts_at,
+      ends_at: h.ends_at,
     })
 
     if (effective === stored) continue

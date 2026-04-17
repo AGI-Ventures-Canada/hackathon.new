@@ -331,16 +331,28 @@ export async function listTeamInvitations(
   return { success: true, invitations: data as TeamInvitation[] }
 }
 
+interface TeamWithHackathon {
+  name: string
+  hackathon: { name: string; slug: string; starts_at: string | null; ends_at: string | null }
+  memberNames: string[]
+}
+
+/**
+ * Fetches team info with hackathon details and participant names for invitation emails.
+ * Member names are fetched from Clerk with a hard cap of 100 (Clerk API limit).
+ * The email template caps the display at 5 names with "and N others" overflow.
+ */
 export async function getTeamWithHackathon(
   teamId: string
-): Promise<{ name: string; hackathon: { name: string; slug: string } } | null> {
+): Promise<TeamWithHackathon | null> {
   const client = getSupabase()
 
   const { data, error } = await client
     .from("teams")
     .select(`
       name,
-      hackathons!inner(name, slug)
+      hackathons!inner(name, slug, starts_at, ends_at),
+      hackathon_participants!hackathon_participants_team_id_fkey(clerk_user_id, role)
     `)
     .eq("id", teamId)
     .single()
@@ -349,13 +361,39 @@ export async function getTeamWithHackathon(
     return null
   }
 
-  const hackathon = data.hackathons as unknown as { name: string; slug: string }
+  const hackathon = data.hackathons as unknown as { name: string; slug: string; starts_at: string | null; ends_at: string | null }
+  const rawParticipants = (data.hackathon_participants ?? []) as unknown as { clerk_user_id: string; role: string }[]
+  const participants = rawParticipants.filter((p) => p.role === "participant")
+
+  let memberNames: string[] = []
+  if (participants.length > 0) {
+    try {
+      const { clerkClient } = await import("@clerk/nextjs/server")
+      const clerk = await clerkClient()
+      const userIds = participants.map((p) => p.clerk_user_id)
+      const users = await clerk.users.getUserList({
+        userId: userIds,
+        limit: 100,
+      })
+      if (users.data.length === 100 && userIds.length > 100) {
+        console.warn(`[getTeamWithHackathon] Team ${teamId} has ${userIds.length} members, only first 100 names fetched from Clerk`)
+      }
+      memberNames = users.data
+        .map((u) => [u.firstName, u.lastName].filter(Boolean).join(" "))
+        .filter((name) => name.length > 0)
+    } catch (err) {
+      console.warn("Failed to fetch member names from Clerk:", err)
+    }
+  }
 
   return {
     name: data.name,
     hackathon: {
       name: hackathon.name,
       slug: hackathon.slug,
+      starts_at: hackathon.starts_at,
+      ends_at: hackathon.ends_at,
     },
+    memberNames,
   }
 }

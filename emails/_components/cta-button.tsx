@@ -20,12 +20,13 @@ export function CTAButton({
         href={href}
         style={{
           display: "inline-block",
-          background: isPrimary ? colors.accent : "transparent",
-          color: isPrimary ? colors.white : colors.textPrimary,
-          padding: "12px 24px",
+          background: isPrimary ? colors.accent : colors.accentLight,
+          color: isPrimary ? colors.white : colors.accent,
+          padding: "14px 28px",
           textDecoration: "none",
           fontWeight: 600,
           fontSize: "14px",
+          borderRadius: "6px",
           ...(isPrimary ? {} : { border: `1px solid ${colors.border}` }),
         }}
       >

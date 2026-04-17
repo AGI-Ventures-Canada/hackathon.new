@@ -1,5 +1,5 @@
 import { sendEmail } from "./resend"
-import { sanitizeTag, renderEmail } from "./utils"
+import { sanitizeTag, renderEmail, buildEventUrl } from "./utils"
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { clerkClient } from "@clerk/nextjs/server"
@@ -21,7 +21,7 @@ export function buildPrizeClaimReminderContent(hackathonName: string, hackathonS
     heading: "Don't Forget Your Prize!",
     body: `you won a prize in ${hackathonName} but haven't claimed it yet. Check your winner notification email for a direct claim link, or contact the organizers.`,
     ctaLabel: "View Results",
-    ctaUrl: `${process.env.NEXT_PUBLIC_APP_URL}/e/${hackathonSlug}`,
+    ctaUrl: buildEventUrl(hackathonSlug),
   }
 }
 
@@ -35,7 +35,7 @@ export function buildOrganizerFulfillmentReminderContent(
     heading: "Prizes Awaiting Fulfillment",
     body: `you have ${unfulfilledCount} prize${unfulfilledCount === 1 ? "" : "s"} still awaiting fulfillment for ${hackathonName}. Keep your winners happy by completing prize delivery.`,
     ctaLabel: "Manage Fulfillment",
-    ctaUrl: `${process.env.NEXT_PUBLIC_APP_URL}/e/${hackathonSlug}/manage?tab=post-event`,
+    ctaUrl: buildEventUrl(hackathonSlug, "/manage?tab=post-event"),
   }
 }
 
@@ -45,7 +45,7 @@ export function buildPrizeClaimFollowupContent(hackathonName: string, hackathonS
     heading: "Last Call for Your Prize!",
     body: `you won a prize in ${hackathonName} and it's still unclaimed. Don't miss out — check your winner notification email for a direct claim link, or reach out to the organizers before it expires.`,
     ctaLabel: "View Results",
-    ctaUrl: `${process.env.NEXT_PUBLIC_APP_URL}/e/${hackathonSlug}`,
+    ctaUrl: buildEventUrl(hackathonSlug),
   }
 }
 
@@ -60,7 +60,7 @@ export function buildWinnerUnresponsiveContent(
     heading: "Winners Need Follow-Up",
     body: `${unclaimedCount} prize winner${unclaimedCount === 1 ? " has" : "s have"} not claimed ${unclaimedCount === 1 ? "a" : "their"} prize${unclaimedCount === 1 ? "" : "s"} after 10 days: ${unclaimedDetails}. Consider reaching out directly or reassigning.`,
     ctaLabel: "Review Fulfillment",
-    ctaUrl: `${process.env.NEXT_PUBLIC_APP_URL}/e/${hackathonSlug}/manage?tab=post-event`,
+    ctaUrl: buildEventUrl(hackathonSlug, "/manage?tab=post-event"),
   }
 }
 
@@ -196,6 +196,8 @@ export async function sendReminderEmails(
 
       const content = contentBuilder(displayName, email)
 
+      const eventUrl = buildEventUrl(hackathon.slug)
+
       const { html, text } = await renderEmail(
         PostEventReminderEmail({
           heading: content.heading,
@@ -204,6 +206,7 @@ export async function sendReminderEmails(
           ctaLabel: content.ctaLabel,
           ctaUrl: content.ctaUrl,
           hackathonName: hackathon.name,
+          eventUrl,
         })
       )
 

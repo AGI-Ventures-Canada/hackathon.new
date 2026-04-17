@@ -1,5 +1,5 @@
 import { Section, Text } from "@react-email/components"
-import { colors } from "./constants"
+import { colors, fontSize, spacing } from "./constants"
 
 interface InfoBoxProps {
   label: string
@@ -11,17 +11,18 @@ export function InfoBox({ label, children }: InfoBoxProps) {
     <Section
       style={{
         background: colors.infoBoxBg,
-        padding: "16px 20px",
-        marginBottom: "24px",
+        padding: `${spacing.md} ${spacing.lg}`,
+        marginBottom: spacing.lg,
+        borderRadius: "8px",
+        borderLeft: `3px solid ${colors.accent}`,
       }}
     >
       <Text
         style={{
           margin: "0 0 4px 0",
-          fontSize: "11px",
-          color: colors.textMuted,
-          textTransform: "uppercase" as const,
-          letterSpacing: "0.05em",
+          fontSize: fontSize.xs,
+          color: colors.textSecondary,
+          fontWeight: 600,
         }}
       >
         {label}

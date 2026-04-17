@@ -8,7 +8,7 @@ export type DispatchInput = {
   type: TransitionEvent
   hackathonId: string
   tenantId: string
-  hackathon: { name: string; slug: string }
+  hackathon: { name: string; slug: string; starts_at?: string | null; ends_at?: string | null }
   trigger: TransitionTrigger
   triggeredBy: string
   fromStatus: string
@@ -57,6 +57,8 @@ export async function dispatchTransitionNotifications(
           hackathonId: input.hackathonId,
           hackathonName: input.hackathon.name,
           hackathonSlug: input.hackathon.slug,
+          hackathonStartsAt: input.hackathon.starts_at ?? null,
+          hackathonEndsAt: input.hackathon.ends_at ?? null,
           event: input.type,
           recipientRoles: roles,
         },

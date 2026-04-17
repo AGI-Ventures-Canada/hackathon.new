@@ -1,5 +1,5 @@
 import { sendEmail } from "./resend"
-import { renderEmail, sanitizeTag, resolveEmailsForTenant } from "./utils"
+import { renderEmail, sanitizeTag, resolveEmailsForTenant, buildEventUrl } from "./utils"
 import OrganizerClaimNotificationEmail from "@/emails/organizer-claim-notification"
 
 export async function sendOrganizerClaimNotification(params: {
@@ -47,6 +47,7 @@ export async function sendOrganizerClaimNotification(params: {
       prizeName,
       hackathonName,
       fulfillmentUrl,
+      eventUrl: buildEventUrl(hackathonSlug),
       prizeValue,
     })
   )

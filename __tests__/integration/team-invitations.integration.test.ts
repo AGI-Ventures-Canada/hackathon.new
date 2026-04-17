@@ -42,7 +42,8 @@ const mockCancelTeamInvitation = mock(() => Promise.resolve({ success: true }))
 const mockGetTeamWithHackathon = mock(() =>
   Promise.resolve({
     name: "Test Team",
-    hackathon: { name: "Test Hackathon", slug: "test-hackathon" },
+    hackathon: { name: "Test Hackathon", slug: "test-hackathon", starts_at: "2025-06-01T00:00:00Z", ends_at: "2025-06-02T00:00:00Z" },
+    memberNames: [],
   })
 )
 
@@ -466,7 +467,8 @@ describe("Dashboard Team Invitations Routes", () => {
 
     mockGetTeamWithHackathon.mockResolvedValue({
       name: "Test Team",
-      hackathon: { name: "Test Hackathon", slug: "test-hackathon" },
+      hackathon: { name: "Test Hackathon", slug: "test-hackathon", starts_at: "2025-06-01T00:00:00Z", ends_at: "2025-06-02T00:00:00Z" },
+      memberNames: [],
     })
 
     mockResolvePrincipal.mockResolvedValue({

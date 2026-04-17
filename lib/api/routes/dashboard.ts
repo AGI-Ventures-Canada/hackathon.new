@@ -1216,7 +1216,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           const { resolveAdderName } = await import("@/lib/auth/resolve-adder-name")
           const inviterName = await resolveAdderName(principal)
           const { sendPendingJudgeInvitationEmails } = await import("@/lib/services/judge-invitations")
-          sendPendingJudgeInvitationEmails(hackathon.id, hackathon.name, inviterName)
+          sendPendingJudgeInvitationEmails(hackathon.id, hackathon.name, inviterName, { hackathonSlug: hackathon.slug, hackathonStartsAt: hackathon.starts_at, hackathonEndsAt: hackathon.ends_at })
             .then(({ sent, total, failedEmails }) => {
               if (total === 0) return
               if (failedEmails.length > 0) {
@@ -2176,6 +2176,10 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           inviterName: body.inviterName || "A team captain",
           inviteToken: result.invitation.token,
           expiresAt: result.invitation.expires_at,
+          hackathonSlug: teamInfo.hackathon.slug,
+          hackathonStartsAt: teamInfo.hackathon.starts_at,
+          hackathonEndsAt: teamInfo.hackathon.ends_at,
+          teamMembers: teamInfo.memberNames,
         }
         const { start } = await import("workflow/api")
         const { sendTeamInvitationWorkflow } = await import("@/lib/workflows/team-invitations")

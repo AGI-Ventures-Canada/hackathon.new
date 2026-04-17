@@ -1,14 +1,17 @@
 import { Text } from "@react-email/components"
 import { OatmealLayout } from "./_components/oatmeal-layout"
-import { InfoBox } from "./_components/info-box"
+import { EventDetailBox } from "./_components/event-detail-box"
 import { CTAButton } from "./_components/cta-button"
-import { colors } from "./_components/constants"
+import { colors, fontSize, spacing } from "./_components/constants"
 
 interface JudgeInvitationEmailProps {
   inviterName: string
   hackathonName: string
   acceptUrl: string
   expiresDate: string
+  eventUrl?: string
+  hackathonStartsAt?: string | null
+  hackathonEndsAt?: string | null
 }
 
 export default function JudgeInvitationEmail({
@@ -16,36 +19,47 @@ export default function JudgeInvitationEmail({
   hackathonName,
   acceptUrl,
   expiresDate,
+  eventUrl,
+  hackathonStartsAt,
+  hackathonEndsAt,
 }: JudgeInvitationEmailProps) {
   return (
     <OatmealLayout
       heading="You're Invited to Judge!"
       preview={`${inviterName} invited you to judge ${hackathonName}`}
       footerText="If you didn&#x2019;t expect this invitation, you can safely ignore this email."
+      eventUrl={eventUrl}
+      hackathonName={hackathonName}
     >
-      <Text style={{ fontSize: "14px", marginBottom: "24px", lineHeight: "1.6" }}>
-        <strong>{inviterName}</strong> has invited you to be a judge for the{" "}
-        <strong>{hackathonName}</strong> hackathon.
+      <Text
+        style={{
+          fontSize: fontSize.base,
+          marginBottom: spacing.lg,
+          lineHeight: "1.6",
+        }}
+      >
+        <strong>{inviterName}</strong> wants you to be a judge for{" "}
+        <strong>{hackathonName}</strong>.
       </Text>
 
-      <InfoBox label="Hackathon">
-        <Text style={{ margin: "0", fontSize: "16px", fontWeight: 600 }}>
-          {hackathonName}
-        </Text>
-      </InfoBox>
+      <EventDetailBox
+        hackathonName={hackathonName}
+        startsAt={hackathonStartsAt}
+        endsAt={hackathonEndsAt}
+      />
 
       <CTAButton href={acceptUrl}>Accept Invitation</CTAButton>
 
       <Text
         style={{
-          fontSize: "12px",
+          fontSize: fontSize.sm,
           color: colors.textMuted,
-          marginTop: "24px",
+          marginTop: spacing.lg,
           lineHeight: "1.5",
         }}
       >
-        This invitation expires on {expiresDate}. If you don&rsquo;t have an
-        account, you&rsquo;ll be able to create one when accepting.
+        This invite is good until {expiresDate}. Don&rsquo;t have an account?
+        You can make one when you accept.
       </Text>
     </OatmealLayout>
   )
@@ -56,4 +70,7 @@ JudgeInvitationEmail.PreviewProps = {
   hackathonName: "AI Innovation Hackathon 2026",
   acceptUrl: "https://getoatmeal.com/judge-invite/xyz789",
   expiresDate: "Friday, April 17, 2026",
+  eventUrl: "https://getoatmeal.com/e/ai-innovation-2026",
+  hackathonStartsAt: "2026-04-20T08:30:00Z",
+  hackathonEndsAt: "2026-04-22T17:00:00Z",
 } satisfies JudgeInvitationEmailProps
