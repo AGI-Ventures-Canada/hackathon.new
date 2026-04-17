@@ -331,9 +331,15 @@ export async function listTeamInvitations(
   return { success: true, invitations: data as TeamInvitation[] }
 }
 
+interface TeamWithHackathon {
+  name: string
+  hackathon: { name: string; slug: string; starts_at: string | null; ends_at: string | null }
+  memberNames: string[]
+}
+
 export async function getTeamWithHackathon(
   teamId: string
-): Promise<{ name: string; hackathon: { name: string; slug: string; starts_at: string | null; ends_at: string | null }; memberNames: string[] } | null> {
+): Promise<TeamWithHackathon | null> {
   const client = getSupabase()
 
   const { data, error } = await client
@@ -365,7 +371,8 @@ export async function getTeamWithHackathon(
       memberNames = users.data
         .map((u) => [u.firstName, u.lastName].filter(Boolean).join(" "))
         .filter((name) => name.length > 0)
-    } catch {
+    } catch (err) {
+      console.warn("Failed to fetch member names from Clerk:", err)
     }
   }
 
