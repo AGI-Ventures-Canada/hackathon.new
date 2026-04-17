@@ -73,16 +73,23 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
       return
     }
     setSlugStatus("checking")
+    const controller = new AbortController()
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/dashboard/organizations/slug-available?slug=${encodeURIComponent(slug)}`)
+        const res = await fetch(
+          `/api/dashboard/organizations/slug-available?slug=${encodeURIComponent(slug)}`,
+          { signal: controller.signal },
+        )
         const data = await res.json()
         setSlugStatus(data.available ? "available" : "taken")
       } catch {
-        setSlugStatus("idle")
+        if (!controller.signal.aborted) setSlugStatus("idle")
       }
     }, 400)
-    return () => clearTimeout(timer)
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
   }, [slug])
 
   useEffect(() => {
