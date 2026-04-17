@@ -1535,7 +1535,7 @@ export async function assertAssignmentWritable(
   clerkUserId: string,
   hackathon: { id: string; status: string }
 ): Promise<AssertAssignmentWritableResult> {
-  const client = getSupabase() as unknown as SupabaseClient
+  const client = getSupabase()
 
   if (hackathon.status !== "judging" && hackathon.status !== "active") {
     return {
