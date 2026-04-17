@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect, useRef } from "react"
+import { useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useAuth, useOrganization } from "@clerk/nextjs"
 import { HackathonPreviewClient } from "@/components/hackathon/preview/hackathon-preview-client"
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Check, Copy, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { PublicHackathon } from "@/lib/services/public-hackathons"
+import type { Challenge } from "@/lib/services/challenges"
 
 export const STORAGE_EXPIRY_MS = 24 * 60 * 60 * 1000
 
@@ -24,6 +25,17 @@ export type DraftPrize = {
   value: string | null
 }
 
+export type DraftChallengeResource = {
+  label: string
+  url: string
+}
+
+export type DraftChallenge = {
+  title: string
+  description: string | null
+  resources: DraftChallengeResource[]
+}
+
 export type DraftState = {
   name: string
   description: string | null
@@ -36,6 +48,7 @@ export type DraftState = {
   sponsors: DraftSponsor[]
   rules: string | null
   prizes: DraftPrize[]
+  challenges: DraftChallenge[]
 }
 
 type HackathonDraftEditorProps = {
@@ -151,7 +164,8 @@ export function loadSavedState(storageKey: string, sourceUrl?: string): DraftSta
       localStorage.removeItem(storageKey)
       return null
     }
-    return parsed.state ?? null
+    const state = parsed.state ?? null
+    return state ? { ...state, challenges: state.challenges ?? [] } : null
   } catch {
     localStorage.removeItem(storageKey)
     return null
@@ -220,6 +234,20 @@ export function HackathonDraftEditor({
   }, [])
 
   const hackathon = stateToHackathon(state)
+  const draftChallenges: Challenge[] = useMemo(
+    () =>
+      (state.challenges ?? []).map((c, i) => ({
+        id: `draft-${i}`,
+        hackathonId: "draft",
+        title: c.title,
+        description: c.description,
+        resources: c.resources,
+        sortOrder: i,
+        createdAt: "draft",
+        updatedAt: "draft",
+      })),
+    [state.challenges]
+  )
 
   const doSubmit = useCallback(async () => {
     setIsSubmitting(true)
@@ -272,6 +300,7 @@ export function HackathonDraftEditor({
       if ("imageUrl" in data) next.imageUrl = data.imageUrl as string | null
       if ("sponsors" in data) next.sponsors = data.sponsors as DraftSponsor[]
       if ("prizes" in data) next.prizes = data.prizes as DraftPrize[]
+      if ("challenges" in data) next.challenges = data.challenges as DraftChallenge[]
       return next
     })
     return true
@@ -301,6 +330,7 @@ export function HackathonDraftEditor({
     <div>
       <HackathonPreviewClient
         hackathon={hackathon}
+        challenges={draftChallenges}
         isEditable={true}
         onFormSave={handleFormSave}
         onBannerChange={(imageUrl) => {
