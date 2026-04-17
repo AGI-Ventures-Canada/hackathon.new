@@ -119,6 +119,66 @@ export interface Perk {
   updatedAt?: string
 }
 
+export interface Sponsor {
+  id: string
+  name: string
+  tier?: string | null
+  customTierLabel?: string | null
+  logoUrl?: string | null
+  websiteUrl?: string | null
+  displayOrder?: number
+  useOrgAssets?: boolean
+  sponsorTenantId?: string | null
+  createdAt?: string
+}
+
+export interface Team {
+  id: string
+  hackathonId: string
+  name: string
+  mode?: "in_person" | "virtual" | null
+  roomId?: string | null
+  roomName?: string | null
+  captain?: { id?: string; email?: string; name?: string } | null
+  members?: Array<{ id: string; email?: string; name?: string; role?: string }>
+  createdAt?: string
+}
+
+export interface Announcement {
+  id: string
+  hackathonId: string
+  title: string
+  body?: string
+  audience?: string
+  priority?: string
+  status?: string
+  publishedAt?: string | null
+  scheduledAt?: string | null
+  createdAt?: string
+}
+
+export interface Challenge {
+  id: string
+  hackathonId: string
+  title: string
+  description?: string | null
+  resources?: Array<{ label: string; url: string }>
+  displayOrder?: number
+  createdAt?: string
+}
+
+export interface ScheduleItem {
+  id: string
+  hackathonId: string
+  title: string
+  description?: string | null
+  startsAt?: string
+  endsAt?: string | null
+  location?: string | null
+  type?: string | null
+  displayOrder?: number
+}
+
 export interface JudgeDisplayProfile {
   id: string
   hackathonId: string

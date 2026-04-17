@@ -332,6 +332,29 @@ export async function assignJudges(
   return assignmentIds
 }
 
+export async function createJudgeAssignment(
+  hackathonId: string,
+  judgeParticipantId: string,
+  submissionId: string
+): Promise<string> {
+  const { data, error } = await supabase
+    .from("judge_assignments")
+    .insert({
+      hackathon_id: hackathonId,
+      judge_participant_id: judgeParticipantId,
+      submission_id: submissionId,
+    })
+    .select("id")
+    .single()
+
+  if (error || !data) {
+    console.error("Failed to create judge assignment:", error)
+    process.exit(1)
+  }
+
+  return data.id
+}
+
 export async function submitRandomScores(
   assignmentId: string,
   criteriaIds: string[]
@@ -506,6 +529,144 @@ export function printReady(slug: string) {
   console.log(`\nReady: http://localhost:3000/e/${slug}`)
   console.log(`Manage: http://localhost:3000/e/${slug}/manage`)
   console.log()
+}
+
+export type InvitationStatus = "pending" | "accepted" | "declined" | "expired" | "cancelled"
+
+export async function createPendingInvitation(
+  teamId: string,
+  hackathonId: string,
+  email: string,
+  opts: {
+    expiresInHours?: number
+    status?: InvitationStatus
+    invitedBy?: string
+    acceptedByClerkUserId?: string
+    acceptedAt?: Date
+  } = {}
+): Promise<string> {
+  const expiresInHours = opts.expiresInHours ?? 24 * 7
+  const expiresAt = new Date(Date.now() + expiresInHours * 3600_000)
+
+  const { data, error } = await supabase
+    .from("team_invitations")
+    .insert({
+      team_id: teamId,
+      hackathon_id: hackathonId,
+      email,
+      token: crypto.randomUUID(),
+      invited_by_clerk_user_id: opts.invitedBy ?? DEV_USER_ID,
+      status: opts.status ?? "pending",
+      expires_at: expiresAt.toISOString(),
+      accepted_at: opts.acceptedAt?.toISOString() ?? null,
+      accepted_by_clerk_user_id: opts.acceptedByClerkUserId ?? null,
+    })
+    .select("id, token")
+    .single()
+
+  if (error || !data) {
+    console.error("Failed to create team invitation:", error)
+    process.exit(1)
+  }
+
+  return data.token
+}
+
+export type AnnouncementAudience =
+  | "everyone"
+  | "organizers"
+  | "judges"
+  | "mentors"
+  | "attendees"
+  | "submitted"
+  | "not_submitted"
+
+export async function createAnnouncementSeed(
+  hackathonId: string,
+  opts: {
+    title: string
+    body: string
+    audience?: AnnouncementAudience
+    priority?: "normal" | "urgent"
+    published?: boolean
+  }
+): Promise<string> {
+  const { data, error } = await supabase
+    .from("hackathon_announcements")
+    .insert({
+      hackathon_id: hackathonId,
+      title: opts.title,
+      body: opts.body,
+      audience: opts.audience ?? "everyone",
+      priority: opts.priority ?? "normal",
+      published_at: opts.published === false ? null : new Date().toISOString(),
+    })
+    .select("id")
+    .single()
+
+  if (error || !data) {
+    console.error("Failed to create announcement:", error)
+    process.exit(1)
+  }
+
+  return data.id
+}
+
+export async function createPerkSeed(
+  hackathonId: string,
+  opts: {
+    name: string
+    description?: string
+    type?: "api_key" | "credit" | "coupon" | "other"
+    code?: string
+    redemptionUrl?: string
+    instructions?: string
+    sponsorId?: string
+    releasedAt?: Date | null
+    scheduledReleaseAt?: Date | null
+    sortOrder?: number
+  }
+): Promise<string> {
+  const { data, error } = await supabase
+    .from("hackathon_perks")
+    .insert({
+      hackathon_id: hackathonId,
+      sponsor_id: opts.sponsorId ?? null,
+      name: opts.name,
+      description: opts.description ?? null,
+      type: opts.type ?? "other",
+      code: opts.code ?? null,
+      redemption_url: opts.redemptionUrl ?? null,
+      instructions: opts.instructions ?? null,
+      released_at: opts.releasedAt?.toISOString() ?? null,
+      scheduled_release_at: opts.scheduledReleaseAt?.toISOString() ?? null,
+      sort_order: opts.sortOrder ?? 0,
+    })
+    .select("id")
+    .single()
+
+  if (error || !data) {
+    console.error("Failed to create perk:", error)
+    process.exit(1)
+  }
+
+  return data.id
+}
+
+export async function removeTeamMember(
+  hackathonId: string,
+  clerkUserId: string
+): Promise<void> {
+  const { error } = await supabase
+    .from("hackathon_participants")
+    .update({ team_id: null })
+    .eq("hackathon_id", hackathonId)
+    .eq("clerk_user_id", clerkUserId)
+
+  if (error) {
+    console.error("Failed to remove team member:", error)
+    process.exit(1)
+  }
 }
 
 const JUDGE_DISPLAY_NAMES = ["Alice Johnson", "Bob Chen", "Carol Davis", "Dave Kim", "Eve Martin"]

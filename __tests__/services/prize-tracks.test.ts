@@ -273,14 +273,30 @@ describe("prize-tracks service", () => {
   })
 
   describe("submitBinaryResponses", () => {
-    it("upserts binary responses", async () => {
+    it("upserts binary responses and returns success", async () => {
       const resp = { id: "br1", judge_assignment_id: ASSIGNMENT_ID, criteria_id: CRITERIA_ID, passed: true }
       setMockFromImplementation(() => createChainableMock(mockSuccess(resp)))
       const result = await submitBinaryResponses(ASSIGNMENT_ID, [
         { criteriaId: CRITERIA_ID, passed: true },
       ])
-      expect(result).toHaveLength(1)
-      expect(result[0].passed).toBe(true)
+      expect(result.success).toBe(true)
+      if (result.success) {
+        expect(result.results).toHaveLength(1)
+        expect(result.results[0].passed).toBe(true)
+      }
+    })
+
+    it("fails closed on partial failure without marking any progress as complete", async () => {
+      setMockFromImplementation(() => createChainableMock(mockError("Database offline")))
+      const result = await submitBinaryResponses(ASSIGNMENT_ID, [
+        { criteriaId: CRITERIA_ID, passed: true },
+      ])
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.code).toBe("partial_save")
+        expect(result.savedCount).toBe(0)
+        expect(result.totalCount).toBe(1)
+      }
     })
   })
 
@@ -304,6 +320,19 @@ describe("prize-tracks service", () => {
       })
       expect(result.success).toBe(false)
     })
+
+    it("does not mark complete when a gate response fails", async () => {
+      setMockFromImplementation(() => createChainableMock(mockError("Gate failed")))
+
+      const result = await submitBucketSortResponse(ASSIGNMENT_ID, {
+        gates: [{ criteriaId: CRITERIA_ID, passed: true }],
+        bucketId: BUCKET_ID,
+      })
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.code).toBe("partial_save")
+      }
+    })
   })
 
   describe("submitGateCheckResponse", () => {
@@ -315,6 +344,17 @@ describe("prize-tracks service", () => {
         { criteriaId: CRITERIA_ID, passed: true },
       ])
       expect(result.success).toBe(true)
+    })
+
+    it("does not mark complete when gate binary response fails", async () => {
+      setMockFromImplementation(() => createChainableMock(mockError("Binary failed")))
+      const result = await submitGateCheckResponse(ASSIGNMENT_ID, [
+        { criteriaId: CRITERIA_ID, passed: true },
+      ])
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.code).toBe("partial_save")
+      }
     })
   })
 

@@ -36,6 +36,10 @@ Remove saved credentials (`~/.hackathon/config.json`).
 
 Show current auth info: tenant ID, key ID, and scopes.
 
+### `hackathon update`
+
+Check for a newer version of the CLI and update it.
+
 ---
 
 ## Browse (public, no auth required)
@@ -58,13 +62,15 @@ View organization profile by slug.
 
 ---
 
-## Hackathons
+## Hackathons / Events
 
-### `hackathon hackathons list`
+`events` is an alias for `hackathons` — the two groups are interchangeable.
+
+### `hackathon events list`
 
 List all hackathons for your organization.
 
-### `hackathon hackathons create`
+### `hackathon events create`
 
 Create a new hackathon. Prompts interactively if flags omitted in TTY.
 
@@ -73,13 +79,13 @@ Create a new hackathon. Prompts interactively if flags omitted in TTY.
 | `--name` | Yes | Hackathon name |
 | `--slug` | Yes | URL-safe identifier (auto-suggested from name in interactive mode) |
 | `--description` | No | Short description |
-| `--from-url` | No | Import a hackathon from a supported public event page URL (`luma.com` / `lu.ma`). When used, the CLI creates the hackathon from the external event data instead of the scratch flow. |
+| `--from-url` | No | Import from a supported public event page URL (`luma.com` / `lu.ma`). When used, CLI creates the hackathon from the external event data instead of the scratch flow. |
 
-### `hackathon hackathons get <id-or-slug>`
+### `hackathon events get <id-or-slug>`
 
 Get full details for a hackathon. Supports both UUID and slug.
 
-### `hackathon hackathons update <id-or-slug>`
+### `hackathon events update <id-or-slug>`
 
 Update hackathon settings.
 
@@ -91,9 +97,13 @@ Update hackathon settings.
 
 At least one flag is required.
 
-### `hackathon hackathons delete <id-or-slug>`
+### `hackathon events delete <id-or-slug>`
 
 Delete a hackathon. Prompts for confirmation (skip with `--yes`).
+
+### `hackathon events activity <id-or-slug>`
+
+Show recent activity log for the hackathon.
 
 ---
 
@@ -121,6 +131,49 @@ Update a criterion. Same flags as `create`, all optional.
 ### `hackathon judging criteria delete <hackathon-id> <criteria-id>`
 
 Delete a criterion. Prompts for confirmation.
+
+---
+
+## Judging — Levels (Rubric Descriptors)
+
+Level descriptors tell judges what each score on a criterion means (e.g. "Baseline", "Solid", "Exceptional"). **Unlike other judging commands, levels use verbose flags rather than positional args.**
+
+### `hackathon judging levels list --hackathon-id <id> --criteria-id <cid>`
+
+List rubric levels for a criterion.
+
+### `hackathon judging levels add`
+
+Add a level to a criterion.
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--hackathon-id` | Yes | Hackathon ID |
+| `--criteria-id` | Yes | Criterion ID |
+| `--label` | Yes | Short label (e.g. "Solid") |
+| `--description` | No | Longer description of what this level means |
+
+### `hackathon judging levels update`
+
+Update a level.
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--hackathon-id` | Yes | Hackathon ID |
+| `--criteria-id` | Yes | Criterion ID |
+| `--level-id` | Yes | Level ID |
+| `--label` | No | New label |
+| `--description` | No | New description |
+
+### `hackathon judging levels delete`
+
+Delete a level. Prompts for confirmation.
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--hackathon-id` | Yes | Hackathon ID |
+| `--criteria-id` | Yes | Criterion ID |
+| `--level-id` | Yes | Level ID |
 
 ---
 
@@ -188,6 +241,77 @@ Remove an assignment. Prompts for confirmation.
 
 View pick-based judging results.
 
+### `hackathon judging track-assign <hackathon-id>`
+
+Assign a judge to a specific track (multi-track hackathons).
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--judge` | Yes | Judge participant ID |
+| `--track` | Yes | Prize track ID |
+
+### `hackathon judging track-unassign <hackathon-id>`
+
+Remove a judge's track assignment.
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--judge` | Yes | Judge participant ID |
+| `--track` | Yes | Prize track ID |
+
+---
+
+## Prize Tracks
+
+Tracks group prizes together and drive multi-round judging (screening → semi-finals → finalists).
+
+### `hackathon tracks list <hackathon-id>`
+
+List all prize tracks.
+
+### `hackathon tracks get <hackathon-id> <track-id>`
+
+Get track details including rounds.
+
+### `hackathon tracks create <hackathon-id>`
+
+Create a track.
+
+| Flag | Description |
+|------|-------------|
+| `--name` | Track name |
+| `--description` | Track description |
+
+### `hackathon tracks update <hackathon-id> <track-id>`
+
+Update a track. Same flags as `create`, all optional.
+
+### `hackathon tracks delete <hackathon-id> <track-id>`
+
+Delete a track. Prompts for confirmation.
+
+### `hackathon tracks buckets <hackathon-id> <track-id>`
+
+List rounds (buckets) for a track.
+
+### `hackathon tracks update-round <hackathon-id> <track-id> <round-id>`
+
+Update a round's advancement rules.
+
+| Flag | Description |
+|------|-------------|
+| `--advance-top-n` | Top N submissions advance to next round |
+| `--advance-threshold` | Submissions scoring ≥ threshold advance |
+| `--name` | Round name |
+
+### `hackathon tracks activate-round <hackathon-id> <track-id> <round-id>`
+
+Make a round the active scoring round.
+
+### `hackathon tracks calculate-results <hackathon-id> <track-id>`
+
+Calculate advancement for the active round.
+
 ---
 
 ## Prizes
@@ -230,6 +354,230 @@ Assign a prize to a winning submission.
 ### `hackathon prizes unassign <hackathon-id> <prize-id> <submission-id>`
 
 Remove a prize assignment. Prompts for confirmation.
+
+---
+
+## Sponsors
+
+### `hackathon sponsors list <hackathon-id>`
+
+List all sponsors ordered by `displayOrder`.
+
+### `hackathon sponsors add <hackathon-id>`
+
+Add a sponsor.
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--name` | Yes | Sponsor display name |
+| `--tier` | No | Tier (e.g. `gold`, `silver`, `platinum`) |
+| `--custom-tier-label` | No | Free-form tier label (overrides `--tier` label in UI) |
+| `--website` | No | Sponsor website URL |
+| `--logo-url` | No | Existing logo URL (skip for local upload) |
+| `--sponsor-tenant-id` | No | Link to an Oatmeal tenant (so the sponsor can self-manage) |
+| `--use-org-assets` | No | Copy org logo/description instead of requiring upload |
+
+### `hackathon sponsors update <hackathon-id> <sponsor-id>`
+
+Update sponsor fields. Same flags as `add`, all optional.
+
+### `hackathon sponsors remove <hackathon-id> <sponsor-id>`
+
+Remove a sponsor. Prompts for confirmation.
+
+### `hackathon sponsors reorder <hackathon-id> <id-1> <id-2> ...`
+
+Reorder sponsors by passing sponsor IDs in desired order.
+
+---
+
+## Sponsor Perks
+
+Perks are credits, API keys, coupons, or custom offers released to participants.
+
+### `hackathon perks list <hackathon-id>`
+
+List all perks.
+
+### `hackathon perks create <hackathon-id>`
+
+Create a perk.
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--name` | Yes | Perk name |
+| `--description` | No | Perk description |
+| `--type` | No | `api_key`, `credit`, `coupon`, or `other` |
+| `--sponsor` | No | Sponsor ID (links the perk to a sponsor) |
+| `--code` | No | Static redemption code |
+| `--redemption-url` | No | URL participants visit to claim |
+| `--instructions` | No | Redemption instructions |
+| `--scheduled-release-at` | No | ISO 8601 timestamp to auto-release |
+
+### `hackathon perks update <hackathon-id> <perk-id>`
+
+Update a perk. Same flags as `create`, all optional.
+
+### `hackathon perks delete <hackathon-id> <perk-id>`
+
+Delete a perk. Prompts for confirmation.
+
+### `hackathon perks release <hackathon-id> <perk-id>`
+
+Release a perk now — makes it visible to participants.
+
+---
+
+## Teams
+
+### `hackathon teams list <hackathon-id>`
+
+List all teams with members and room assignments.
+
+### `hackathon teams create <hackathon-id>`
+
+Create a team.
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--name` | Yes | Team name |
+| `--captain-email` | Yes | Email of the team captain (invites if not on platform) |
+
+### `hackathon teams update <hackathon-id> <team-id>`
+
+Update a team.
+
+| Flag | Description |
+|------|-------------|
+| `--name` | Team name |
+| `--mode` | `in_person`, `virtual`, or `none` (clears the mode) |
+
+### `hackathon teams update-members <hackathon-id> <team-id>`
+
+Add or remove members by email.
+
+| Flag | Description |
+|------|-------------|
+| `--add` | Comma-separated emails to add |
+| `--remove` | Comma-separated emails to remove |
+
+### `hackathon teams delete <hackathon-id> <team-id>`
+
+Delete a team. Prompts for confirmation.
+
+### `hackathon teams assign-room <hackathon-id>`
+
+Assign a team to a room.
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--team` | Yes | Team ID |
+| `--room` | Yes | Room ID |
+
+### `hackathon teams unassign-room <hackathon-id> <room-id> <team-id>`
+
+Remove a team from a room. Prompts for confirmation.
+
+---
+
+## Announcements
+
+### `hackathon announcements list <hackathon-id>`
+
+List all announcements (published, scheduled, and drafts).
+
+### `hackathon announcements create <hackathon-id>`
+
+Create an announcement.
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--title` | Yes | Announcement title |
+| `--body` | Yes | Announcement body |
+| `--priority` | No | `normal` or `urgent` |
+| `--audience` | No | Target audience (`all`, `teams`, `judges`) |
+
+### `hackathon announcements update <hackathon-id> <announcement-id>`
+
+Update an announcement. Same flags as `create`, all optional.
+
+### `hackathon announcements delete <hackathon-id> <announcement-id>`
+
+Delete an announcement. Prompts for confirmation.
+
+### `hackathon announcements publish <hackathon-id> <announcement-id>`
+
+Publish (send) immediately.
+
+### `hackathon announcements schedule <hackathon-id> <announcement-id>`
+
+Schedule for later delivery.
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--at` | Yes | ISO 8601 timestamp |
+
+---
+
+## Challenges
+
+Sponsor or theme-based prompts. Released on the event timeline.
+
+### `hackathon challenges list <hackathon-id>`
+
+List all challenges.
+
+### `hackathon challenges create <hackathon-id>`
+
+Create a challenge.
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--title` | Yes | Challenge title |
+| `--description` | No | Challenge prompt / description |
+
+### `hackathon challenges update <hackathon-id> <challenge-id>`
+
+Update a challenge. Same flags as `create`, all optional.
+
+### `hackathon challenges delete <hackathon-id> <challenge-id>`
+
+Delete a challenge. Prompts for confirmation.
+
+### `hackathon challenges reorder <hackathon-id> <id-1> <id-2> ...`
+
+Reorder challenges by passing IDs in desired order.
+
+---
+
+## Event Schedule
+
+Event-scoped timeline items (kickoff, lunch, demos). **Different from** `hackathon schedules` which manages **org-level cron jobs**.
+
+### `hackathon schedule list <hackathon-id>`
+
+List all schedule items.
+
+### `hackathon schedule add <hackathon-id>`
+
+Add a schedule item. If `--starts-at` is omitted in TTY, the CLI defaults to the next 15-minute slot after the last item (or 9:00 AM tomorrow if no items exist), with a 30-minute duration.
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--title` | Yes | Item title |
+| `--starts-at` | No | ISO 8601 start timestamp |
+| `--ends-at` | No | ISO 8601 end timestamp |
+| `--description` | No | Longer description |
+| `--location` | No | Location (room name, URL) |
+| `--trigger-type` | No | `challenge_release` or `submission_deadline` to tie the item to a programmatic event |
+
+### `hackathon schedule update <hackathon-id> <item-id>`
+
+Update a schedule item. Same flags as `add`, all optional.
+
+### `hackathon schedule delete <hackathon-id> <item-id>`
+
+Delete a schedule item. Prompts for confirmation. Items with a trigger-type are protected — remove the trigger first.
 
 ---
 
@@ -322,15 +670,17 @@ Cancel a running job. Prompts for confirmation.
 
 ---
 
-## Schedules
+## Org Schedules (cron jobs)
+
+Different from event `schedule` — these are **org-level cron jobs** (e.g., daily digests).
 
 ### `hackathon schedules list`
 
-List all schedules.
+List all org schedules.
 
 ### `hackathon schedules create`
 
-Create a schedule.
+Create a cron schedule.
 
 ### `hackathon schedules get <id>`
 

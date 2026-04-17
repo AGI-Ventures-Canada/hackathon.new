@@ -19,6 +19,7 @@ const {
   listPrizes,
   replacePrizeCriteria,
   createRoundsPreset,
+  assertAssignmentWritable,
 } = await import("@/lib/services/judging")
 
 describe("Judging Service", () => {
@@ -1302,6 +1303,209 @@ describe("Judging Service", () => {
       expect(prizeInsertPayload).not.toBeNull()
       expect(prizeInsertPayload!.name).toBe("Grand Prize")
       expect(prizeInsertPayload!.max_picks).toBe(1)
+    })
+  })
+
+  describe("getJudgeAssignments — selfJudging flag", () => {
+    it("flags assignments as self-judging when judge and submission share a team", async () => {
+      let foundParticipant = false
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants" && !foundParticipant) {
+          foundParticipant = true
+          return createChainableMock({
+            data: { id: "j1", team_id: "team-shared" },
+            error: null,
+          })
+        }
+        if (table === "judge_assignments") {
+          return createChainableMock({
+            data: [
+              {
+                id: "a1",
+                submission_id: "s1",
+                is_complete: false,
+                notes: "",
+                prize_id: null,
+                submission: {
+                  title: "Project",
+                  description: null,
+                  github_url: null,
+                  live_app_url: null,
+                  screenshot_url: null,
+                  team_id: "team-shared",
+                },
+              },
+            ],
+            error: null,
+          })
+        }
+        if (table === "teams") {
+          return createChainableMock({ data: [{ id: "team-shared", name: "Same" }], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await getJudgeAssignments("h1", "user_123")
+      expect(result).toHaveLength(1)
+      expect(result[0].selfJudging).toBe(true)
+    })
+
+    it("does not flag self-judging when teams differ", async () => {
+      let foundParticipant = false
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants" && !foundParticipant) {
+          foundParticipant = true
+          return createChainableMock({ data: { id: "j1", team_id: "team-a" }, error: null })
+        }
+        if (table === "judge_assignments") {
+          return createChainableMock({
+            data: [
+              {
+                id: "a1",
+                submission_id: "s1",
+                is_complete: false,
+                notes: "",
+                prize_id: null,
+                submission: {
+                  title: "P",
+                  description: null,
+                  github_url: null,
+                  live_app_url: null,
+                  screenshot_url: null,
+                  team_id: "team-b",
+                },
+              },
+            ],
+            error: null,
+          })
+        }
+        if (table === "teams") {
+          return createChainableMock({ data: [{ id: "team-b", name: "B" }], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await getJudgeAssignments("h1", "user_123")
+      expect(result[0].selfJudging).toBe(false)
+    })
+  })
+
+  describe("assertAssignmentWritable", () => {
+    it("rejects when hackathon is not in judging or active phase", async () => {
+      const result = await assertAssignmentWritable("a1", "user_123", { id: "h1", status: "results-ready" })
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.code).toBe("not_judging")
+    })
+
+    it("returns not_found when assignment does not exist", async () => {
+      setMockFromImplementation(() => createChainableMock({ data: null, error: null }))
+      const result = await assertAssignmentWritable("a1", "user_123", { id: "h1", status: "judging" })
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.code).toBe("not_found")
+    })
+
+    it("returns not_found when assignment belongs to different hackathon", async () => {
+      setMockFromImplementation(() => createChainableMock({
+        data: {
+          submission_id: "s1",
+          round_id: null,
+          hackathon_id: "other-hackathon",
+          judge: { clerk_user_id: "user_123", team_id: null },
+          submission: { team_id: null },
+        },
+        error: null,
+      }))
+      const result = await assertAssignmentWritable("a1", "user_123", { id: "h1", status: "judging" })
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.code).toBe("not_found")
+    })
+
+    it("returns not_found when user is not the owner", async () => {
+      setMockFromImplementation(() => createChainableMock({
+        data: {
+          submission_id: "s1",
+          round_id: null,
+          hackathon_id: "h1",
+          judge: { clerk_user_id: "different_user", team_id: null },
+          submission: { team_id: null },
+        },
+        error: null,
+      }))
+      const result = await assertAssignmentWritable("a1", "user_123", { id: "h1", status: "judging" })
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.code).toBe("not_found")
+    })
+
+    it("returns self_judging when judge and submission share a team", async () => {
+      setMockFromImplementation(() => createChainableMock({
+        data: {
+          submission_id: "s1",
+          round_id: null,
+          hackathon_id: "h1",
+          judge: { clerk_user_id: "user_123", team_id: "team-a" },
+          submission: { team_id: "team-a" },
+        },
+        error: null,
+      }))
+      const result = await assertAssignmentWritable("a1", "user_123", { id: "h1", status: "judging" })
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.code).toBe("self_judging")
+        expect(result.status).toBe(409)
+      }
+    })
+
+    it("rejects when round status is complete or advanced", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "judging_rounds") {
+          return createChainableMock({ data: { status: "complete" }, error: null })
+        }
+        return createChainableMock({
+          data: {
+            submission_id: "s1",
+            round_id: "r1",
+            hackathon_id: "h1",
+            judge: { clerk_user_id: "user_123", team_id: null },
+            submission: { team_id: "team-b" },
+          },
+          error: null,
+        })
+      })
+      const result = await assertAssignmentWritable("a1", "user_123", { id: "h1", status: "judging" })
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.code).toBe("round_not_active")
+    })
+
+    it("passes when everything is valid and returns ownership", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "judging_rounds") {
+          return createChainableMock({ data: { status: "active" }, error: null })
+        }
+        return createChainableMock({
+          data: {
+            submission_id: "s1",
+            round_id: "r1",
+            hackathon_id: "h1",
+            prize_id: "p1",
+            is_complete: false,
+            notes: "partial",
+            judge: { clerk_user_id: "user_123", team_id: null },
+            submission: { team_id: "team-b" },
+          },
+          error: null,
+        })
+      })
+      const result = await assertAssignmentWritable("a1", "user_123", { id: "h1", status: "judging" })
+      expect(result.ok).toBe(true)
+      if (result.ok) {
+        expect(result.ownership).toEqual({
+          hackathonId: "h1",
+          prizeId: "p1",
+          isComplete: false,
+          submissionId: "s1",
+          notes: "partial",
+        })
+      }
     })
   })
 
