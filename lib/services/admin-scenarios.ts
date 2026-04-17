@@ -238,6 +238,104 @@ async function addJudgingCriteria(hackathonId: string): Promise<string[]> {
   return ids
 }
 
+async function createPendingInvitation(
+  teamId: string,
+  hackathonId: string,
+  email: string,
+  opts: {
+    expiresInHours?: number
+    status?: "pending" | "accepted" | "declined" | "expired" | "cancelled"
+    invitedBy?: string
+  } = {}
+): Promise<string> {
+  const db = getSupabase()
+  const expiresInHours = opts.expiresInHours ?? 24 * 7
+  const expiresAt = new Date(Date.now() + expiresInHours * 3600_000)
+
+  const { data, error } = await db
+    .from("team_invitations")
+    .insert({
+      team_id: teamId,
+      hackathon_id: hackathonId,
+      email,
+      token: crypto.randomUUID(),
+      invited_by_clerk_user_id: opts.invitedBy ?? getSeedUsers()[0],
+      status: opts.status ?? "pending",
+      expires_at: expiresAt.toISOString(),
+    })
+    .select("token")
+    .single()
+
+  if (error || !data) {
+    throw new Error(`Failed to create invitation: ${error?.message}`)
+  }
+
+  return data.token
+}
+
+async function createAnnouncement(
+  hackathonId: string,
+  opts: {
+    title: string
+    body: string
+    audience?: "everyone" | "organizers" | "judges" | "mentors" | "attendees" | "submitted" | "not_submitted"
+    priority?: "normal" | "urgent"
+  }
+): Promise<void> {
+  const db = getSupabase()
+  const { error } = await db.from("hackathon_announcements").insert({
+    hackathon_id: hackathonId,
+    title: opts.title,
+    body: opts.body,
+    audience: opts.audience ?? "everyone",
+    priority: opts.priority ?? "normal",
+    published_at: new Date().toISOString(),
+  })
+  if (error) throw new Error(`Failed to create announcement: ${error.message}`)
+}
+
+async function createPerk(
+  hackathonId: string,
+  opts: {
+    name: string
+    description?: string
+    type?: "api_key" | "credit" | "coupon" | "other"
+    code?: string
+    redemptionUrl?: string
+    releasedAt?: Date | null
+    scheduledReleaseAt?: Date | null
+    sortOrder?: number
+  }
+): Promise<void> {
+  const db = getSupabase()
+  const { error } = await db.from("hackathon_perks").insert({
+    hackathon_id: hackathonId,
+    name: opts.name,
+    description: opts.description ?? null,
+    type: opts.type ?? "other",
+    code: opts.code ?? null,
+    redemption_url: opts.redemptionUrl ?? null,
+    released_at: opts.releasedAt?.toISOString() ?? null,
+    scheduled_release_at: opts.scheduledReleaseAt?.toISOString() ?? null,
+    sort_order: opts.sortOrder ?? 0,
+  })
+  if (error) throw new Error(`Failed to create perk: ${error.message}`)
+}
+
+async function removeTeamMember(hackathonId: string, clerkUserId: string): Promise<void> {
+  const db = getSupabase()
+  const { error } = await db
+    .from("hackathon_participants")
+    .update({ team_id: null })
+    .eq("hackathon_id", hackathonId)
+    .eq("clerk_user_id", clerkUserId)
+  if (error) throw new Error(`Failed to remove team member: ${error.message}`)
+}
+
+function getDevUserId(): string {
+  return process.env.SCENARIO_DEV_USER_ID ?? getSeedUsers()[0]
+}
+
 const scenarioRunners: Record<string, (tenantId?: string, principalOrgId?: string | null, options?: ScenarioOptions) => Promise<{ hackathonId: string; slug: string; tenantId: string }>> = {
   "pre-registration": async (overrideTenantId, principalOrgId) => {
     const tenantId = await resolveScenarioTenant(overrideTenantId, principalOrgId)
@@ -566,6 +664,324 @@ const scenarioRunners: Record<string, (tenantId?: string, principalOrgId?: strin
     await initializeFulfillments(result.hackathonId)
 
     return { hackathonId: result.hackathonId, slug, tenantId: result.tenantId }
+  },
+
+  "attendee-captain-pending-invite": async (overrideTenantId, principalOrgId) => {
+    const tenantId = await resolveScenarioTenant(overrideTenantId, principalOrgId)
+    const now = new Date()
+    const slug = uniqueSlug("test-attendee-captain-pending-invite")
+    const hackathonId = await createTestHackathon({
+      tenantId,
+      slug,
+      name: "Captain Pending Invite",
+      status: "active",
+      startsAt: new Date(now.getTime() - 1 * 86400000),
+      endsAt: new Date(now.getTime() + 6 * 86400000),
+    })
+    const devUser = getDevUserId()
+    const teamId = await createTeamWithMembers(hackathonId, devUser, [])
+    await createPendingInvitation(teamId, hackathonId, "unknown-invitee@example.com", {
+      invitedBy: devUser,
+    })
+    return { hackathonId, slug, tenantId }
+  },
+
+  "attendee-invite-expired": async (overrideTenantId, principalOrgId) => {
+    const tenantId = await resolveScenarioTenant(overrideTenantId, principalOrgId)
+    const now = new Date()
+    const slug = uniqueSlug("test-attendee-invite-expired")
+    const hackathonId = await createTestHackathon({
+      tenantId,
+      slug,
+      name: "Invite Expired",
+      status: "active",
+      startsAt: new Date(now.getTime() - 1 * 86400000),
+      endsAt: new Date(now.getTime() + 6 * 86400000),
+    })
+    const devUser = getDevUserId()
+    const teamId = await createTeamWithMembers(hackathonId, devUser, [])
+    await createPendingInvitation(teamId, hackathonId, "expired@example.com", {
+      expiresInHours: -24 * 8,
+      invitedBy: devUser,
+    })
+    return { hackathonId, slug, tenantId }
+  },
+
+  "attendee-invite-declined": async (overrideTenantId, principalOrgId) => {
+    const tenantId = await resolveScenarioTenant(overrideTenantId, principalOrgId)
+    const now = new Date()
+    const slug = uniqueSlug("test-attendee-invite-declined")
+    const hackathonId = await createTestHackathon({
+      tenantId,
+      slug,
+      name: "Invite Declined",
+      status: "active",
+      startsAt: new Date(now.getTime() - 1 * 86400000),
+      endsAt: new Date(now.getTime() + 6 * 86400000),
+    })
+    const devUser = getDevUserId()
+    const teamId = await createTeamWithMembers(hackathonId, devUser, [])
+    await createPendingInvitation(teamId, hackathonId, "declined@example.com", {
+      status: "declined",
+      invitedBy: devUser,
+    })
+    return { hackathonId, slug, tenantId }
+  },
+
+  "attendee-team-at-capacity": async (overrideTenantId, principalOrgId) => {
+    const tenantId = await resolveScenarioTenant(overrideTenantId, principalOrgId)
+    const now = new Date()
+    const slug = uniqueSlug("test-attendee-team-at-capacity")
+    const hackathonId = await createTestHackathon({
+      tenantId,
+      slug,
+      name: "Team At Capacity",
+      status: "active",
+      startsAt: new Date(now.getTime() - 1 * 86400000),
+      endsAt: new Date(now.getTime() + 6 * 86400000),
+    })
+    const devUser = getDevUserId()
+    const seed = getSeedUsers()
+    const teamId = await createTeamWithMembers(hackathonId, devUser, [seed[0], seed[1], seed[2]])
+    await createPendingInvitation(teamId, hackathonId, "overflow@example.com", {
+      invitedBy: devUser,
+    })
+    return { hackathonId, slug, tenantId }
+  },
+
+  "attendee-invited-to-team": async (overrideTenantId, principalOrgId) => {
+    const tenantId = await resolveScenarioTenant(overrideTenantId, principalOrgId)
+    const db = getSupabase()
+    const now = new Date()
+    const slug = uniqueSlug("test-attendee-invited-to-team")
+    const hackathonId = await createTestHackathon({
+      tenantId,
+      slug,
+      name: "Invited To Team",
+      status: "active",
+      startsAt: new Date(now.getTime() - 1 * 86400000),
+      endsAt: new Date(now.getTime() + 6 * 86400000),
+    })
+    const seed = getSeedUsers()
+    const otherCaptain = seed[0]
+    const teamId = await createTeamWithMembers(hackathonId, otherCaptain, [seed[1]])
+    await db.from("teams").update({ name: "The Other Captain's Team" }).eq("id", teamId)
+    await createPendingInvitation(teamId, hackathonId, "hai@agiventures.ca", {
+      invitedBy: otherCaptain,
+    })
+    return { hackathonId, slug, tenantId }
+  },
+
+  "attendee-solo-submitted": async (overrideTenantId, principalOrgId) => {
+    const tenantId = await resolveScenarioTenant(overrideTenantId, principalOrgId)
+    const now = new Date()
+    const slug = uniqueSlug("test-attendee-solo-submitted")
+    const hackathonId = await createTestHackathon({
+      tenantId,
+      slug,
+      name: "Solo Submitted",
+      status: "active",
+      startsAt: new Date(now.getTime() - 5 * 86400000),
+      endsAt: new Date(now.getTime() + 2 * 86400000),
+    })
+    const devUser = getDevUserId()
+    const teamId = await createTeamWithMembers(hackathonId, devUser, [])
+    const pid = await registerParticipant(hackathonId, devUser)
+    await createSubmission(hackathonId, teamId, pid, 0)
+    return { hackathonId, slug, tenantId }
+  },
+
+  "attendee-submitted-then-left": async (overrideTenantId, principalOrgId) => {
+    const tenantId = await resolveScenarioTenant(overrideTenantId, principalOrgId)
+    const db = getSupabase()
+    const now = new Date()
+    const slug = uniqueSlug("test-attendee-submitted-then-left")
+    const hackathonId = await createTestHackathon({
+      tenantId,
+      slug,
+      name: "Submitted Then Left",
+      status: "active",
+      startsAt: new Date(now.getTime() - 5 * 86400000),
+      endsAt: new Date(now.getTime() + 2 * 86400000),
+    })
+    const devUser = getDevUserId()
+    const seed = getSeedUsers()
+    const remainingCaptain = seed[0]
+    const teamId = await createTeamWithMembers(hackathonId, remainingCaptain, [devUser, seed[1]])
+    const pid = await registerParticipant(hackathonId, devUser)
+    await createSubmission(hackathonId, teamId, pid, 1)
+    await removeTeamMember(hackathonId, devUser)
+    await db.from("teams").update({ captain_clerk_user_id: remainingCaptain }).eq("id", teamId)
+    return { hackathonId, slug, tenantId }
+  },
+
+  "attendee-announcements-audiences": async (overrideTenantId, principalOrgId) => {
+    const tenantId = await resolveScenarioTenant(overrideTenantId, principalOrgId)
+    const now = new Date()
+    const slug = uniqueSlug("test-attendee-announcements-audiences")
+    const hackathonId = await createTestHackathon({
+      tenantId,
+      slug,
+      name: "Announcements Per Audience",
+      status: "active",
+      startsAt: new Date(now.getTime() - 1 * 86400000),
+      endsAt: new Date(now.getTime() + 6 * 86400000),
+    })
+    const devUser = getDevUserId()
+    await createTeamWithMembers(hackathonId, devUser, [])
+    const audiences = [
+      "everyone",
+      "organizers",
+      "judges",
+      "mentors",
+      "attendees",
+      "submitted",
+      "not_submitted",
+    ] as const
+    for (const audience of audiences) {
+      await createAnnouncement(hackathonId, {
+        title: `[${audience}] Targeted announcement`,
+        body: `This announcement targets **${audience}** only. If a registered non-submitted attendee sees all 7, the audience filter is broken.`,
+        audience,
+      })
+    }
+    return { hackathonId, slug, tenantId }
+  },
+
+  "attendee-perks-mixed": async (overrideTenantId, principalOrgId) => {
+    const tenantId = await resolveScenarioTenant(overrideTenantId, principalOrgId)
+    const now = new Date()
+    const slug = uniqueSlug("test-attendee-perks-mixed")
+    const hackathonId = await createTestHackathon({
+      tenantId,
+      slug,
+      name: "Perks (Mixed Visibility)",
+      status: "active",
+      startsAt: new Date(now.getTime() - 1 * 86400000),
+      endsAt: new Date(now.getTime() + 6 * 86400000),
+    })
+    const devUser = getDevUserId()
+    await createTeamWithMembers(hackathonId, devUser, [])
+    await createPerk(hackathonId, {
+      name: "OpenAI API Credits",
+      description: "$50 in credits, already released",
+      type: "api_key",
+      code: "sk-released-example",
+      releasedAt: new Date(now.getTime() - 3600_000),
+      sortOrder: 0,
+    })
+    await createPerk(hackathonId, {
+      name: "Anthropic Credits",
+      description: "Releases in 24 hours",
+      type: "credit",
+      code: "anthropic-scheduled",
+      scheduledReleaseAt: new Date(now.getTime() + 86400000),
+      sortOrder: 1,
+    })
+    await createPerk(hackathonId, {
+      name: "Surprise Swag Coupon",
+      description: "Hidden — no schedule, no released_at",
+      type: "coupon",
+      code: "HIDDEN-SURPRISE",
+      sortOrder: 2,
+    })
+    await createPerk(hackathonId, {
+      name: "Sponsor Deck",
+      description: "Link perk, released",
+      type: "other",
+      redemptionUrl: "https://example.com/sponsor-deck.pdf",
+      releasedAt: new Date(now.getTime() - 7200_000),
+      sortOrder: 3,
+    })
+    return { hackathonId, slug, tenantId }
+  },
+
+  "attendee-winner-pending-claim": async (overrideTenantId, principalOrgId) => {
+    const tenantId = await resolveScenarioTenant(overrideTenantId, principalOrgId)
+    const db = getSupabase()
+    const now = new Date()
+    const slug = uniqueSlug("test-attendee-winner-pending-claim")
+    const hackathonId = await createTestHackathon({
+      tenantId,
+      slug,
+      name: "Winner Pending Claim",
+      status: "judging",
+      startsAt: new Date(now.getTime() - 10 * 86400000),
+      endsAt: new Date(now.getTime() - 2 * 86400000),
+      resultsPublishedAt: new Date(now.getTime() - 3600_000).toISOString(),
+    })
+    const devUser = getDevUserId()
+    const seed = getSeedUsers()
+
+    const devTeamId = await createTeamWithMembers(hackathonId, devUser, [seed[0]])
+    const devPid = await registerParticipant(hackathonId, devUser)
+    const devSubId = await createSubmission(hackathonId, devTeamId, devPid, 0)
+
+    const otherSubs: string[] = []
+    for (let i = 1; i < 4; i++) {
+      const tid = await createTeamWithMembers(hackathonId, seed[i], [])
+      const pid = await registerParticipant(hackathonId, seed[i])
+      otherSubs.push(await createSubmission(hackathonId, tid, pid, i))
+    }
+
+    const criteriaIds = await addJudgingCriteria(hackathonId)
+
+    const judgeUser = seed[4]
+    const judgePid = await registerParticipant(hackathonId, judgeUser, "judge")
+
+    const { seedJudgeDisplayProfiles } = await import("@/lib/services/judge-display")
+    await seedJudgeDisplayProfiles(hackathonId, [judgeUser], [judgePid])
+
+    const allSubs = [devSubId, ...otherSubs]
+    for (const subId of allSubs) {
+      const { data: assignment } = await db
+        .from("judge_assignments")
+        .insert({
+          hackathon_id: hackathonId,
+          judge_participant_id: judgePid,
+          submission_id: subId,
+        })
+        .select("id")
+        .single()
+
+      if (!assignment) continue
+      for (const cid of criteriaIds) {
+        const score = subId === devSubId ? 10 : Math.floor(Math.random() * 4) + 3
+        await db.from("scores").insert({
+          judge_assignment_id: assignment.id,
+          criteria_id: cid,
+          score,
+        })
+      }
+      await db
+        .from("judge_assignments")
+        .update({
+          is_complete: true,
+          completed_at: new Date().toISOString(),
+          notes: "Scored via admin scenario runner.",
+        })
+        .eq("id", assignment.id)
+    }
+
+    await db.rpc("calculate_results", { p_hackathon_id: hackathonId })
+
+    const firstCriteriaId = criteriaIds[0]
+    const prizes = [
+      { name: "Grand Prize", description: "Best overall project", value: "$10,000", type: "score" as const, rank: 1, kind: "cash", judging_style: "bucket_sort", monetary_value: 10000, currency: "USD", display_order: 0 },
+      { name: "Runner Up", description: "Second place", value: "Swag Pack", type: "score" as const, rank: 2, kind: "swag", judging_style: "bucket_sort", display_order: 1 },
+      { name: "Innovation Award", description: "Most creative solution", value: "$500 API Credits", type: "criteria" as const, criteria_id: firstCriteriaId, kind: "credit", judging_style: "judges_pick", display_order: 2 },
+    ]
+    for (const prize of prizes) {
+      await db.from("prizes").insert({ hackathon_id: hackathonId, ...prize })
+    }
+
+    const { autoAssignPrizes } = await import("@/lib/services/prizes")
+    await autoAssignPrizes(hackathonId)
+
+    const { initializeFulfillments } = await import("@/lib/services/prize-fulfillment")
+    await initializeFulfillments(hackathonId)
+
+    return { hackathonId, slug, tenantId }
   },
 }
 

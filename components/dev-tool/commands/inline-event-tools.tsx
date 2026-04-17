@@ -1,43 +1,55 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { GitBranch, Database, Trophy } from "lucide-react"
+import { useEffect, useState } from "react"
 import { Badge } from "@/components/ui/badge"
-import { cn } from "@/lib/utils"
 import type { HackathonStatus } from "@/lib/db/hackathon-types"
 import { getTimelineState } from "@/lib/utils/timeline"
 import { dispatchDevStatusChanged } from "../events"
 import type { EventContext } from "../use-event-context"
-import { EMPTY_SEED_STATUS, type SeedStatus } from "./event-shared"
-import { EventLifecycleSection } from "./event-lifecycle-section"
-import { EventSeedSection } from "./event-seed-section"
-import { EventResultsSection } from "./event-results-section"
+import {
+  EMPTY_SEED_STATUS,
+  type SeedStatus,
+} from "../tabs/event-shared"
+import { EventLifecycleSection } from "../tabs/event-lifecycle-section"
+import { EventSeedSection } from "../tabs/event-seed-section"
+import { EventResultsSection } from "../tabs/event-results-section"
+import { BackHeader } from "./inline-settings"
 
-type SubTab = "lifecycle" | "seed" | "results"
+export type EventView = "lifecycle" | "seed" | "results"
 
-const SUB_TABS: { key: SubTab; label: string; icon: typeof GitBranch }[] = [
-  { key: "lifecycle", label: "Lifecycle", icon: GitBranch },
-  { key: "seed", label: "Seed", icon: Database },
-  { key: "results", label: "Results", icon: Trophy },
-]
-
-interface EventToolsTabProps {
+interface InlineEventToolsProps {
   eventContext: EventContext
+  view: EventView
+  onBack: () => void
   onSaveState: () => void
 }
 
-export function EventToolsTab({ eventContext, onSaveState }: EventToolsTabProps) {
-  const [subTab, setSubTab] = useState<SubTab>("lifecycle")
+export function InlineEventTools({
+  eventContext,
+  view,
+  onBack,
+  onSaveState,
+}: InlineEventToolsProps) {
   const [pending, setPending] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [seedStatus, setSeedStatus] = useState<SeedStatus>(EMPTY_SEED_STATUS)
 
-  const { hackathonId, status, phase, startsAt, endsAt, registrationOpensAt, registrationClosesAt } = eventContext
+  const {
+    hackathonId,
+    status,
+    phase,
+    startsAt,
+    endsAt,
+    registrationOpensAt,
+    registrationClosesAt,
+  } = eventContext
 
   useEffect(() => {
     fetch(`/api/dev/hackathons/${hackathonId}/seed-status`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((data) => { if (data) setSeedStatus(data) })
+      .then((data) => {
+        if (data) setSeedStatus(data)
+      })
       .catch(() => {})
   }, [hackathonId])
 
@@ -92,8 +104,16 @@ export function EventToolsTab({ eventContext, onSaveState }: EventToolsTabProps)
     }
   }
 
+  const titles: Record<EventView, string> = {
+    lifecycle: "Event lifecycle",
+    seed: "Event seed data",
+    results: "Event results",
+  }
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 p-3">
+      <BackHeader onBack={onBack} title={titles[view]} />
+
       <div className="flex items-center gap-2">
         <span className="text-xs text-muted-foreground truncate">{eventContext.name}</span>
         <Badge variant={timelineState.variant} className="text-xs shrink-0">
@@ -107,28 +127,7 @@ export function EventToolsTab({ eventContext, onSaveState }: EventToolsTabProps)
         </div>
       )}
 
-      <div className="flex gap-1 border-b pb-0">
-        {SUB_TABS.map((tab) => {
-          const Icon = tab.icon
-          return (
-            <button
-              key={tab.key}
-              onClick={() => setSubTab(tab.key)}
-              className={cn(
-                "flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium transition-colors rounded-t-md -mb-px border-b-2",
-                subTab === tab.key
-                  ? "border-primary text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <Icon className="size-3" />
-              {tab.label}
-            </button>
-          )
-        })}
-      </div>
-
-      {subTab === "lifecycle" && (
+      {view === "lifecycle" && (
         <EventLifecycleSection
           hackathonId={hackathonId}
           status={status}
@@ -140,14 +139,14 @@ export function EventToolsTab({ eventContext, onSaveState }: EventToolsTabProps)
           onRefresh={refreshContext}
         />
       )}
-      {subTab === "seed" && (
+      {view === "seed" && (
         <EventSeedSection
           seedStatus={seedStatus}
           pending={pending}
           devAction={devAction}
         />
       )}
-      {subTab === "results" && (
+      {view === "results" && (
         <EventResultsSection
           seedStatus={seedStatus}
           pending={pending}

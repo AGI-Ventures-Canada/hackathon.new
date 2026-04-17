@@ -1,25 +1,31 @@
 "use client"
 
-import { useState } from "react"
-import { FlaskConical, X, Beaker, Users2, Settings2, Wrench } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { useCallback, useEffect, useState } from "react"
+import { FlaskConical, Loader2, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { cn } from "@/lib/utils"
-import { ScenariosTab } from "./tabs/scenarios-tab"
-import { PersonasTab } from "./tabs/personas-tab"
-import { EventToolsTab } from "./tabs/event-tools-tab"
-import { ConfigTab } from "./tabs/config-tab"
-import { useDevConfig } from "./use-dev-config"
+import { Button } from "@/components/ui/button"
 import type { EventContext } from "./use-event-context"
+import { useDevConfig } from "./use-dev-config"
+import { CommandPaletteList } from "./commands/command-list"
+import { ContextStrip } from "./commands/context-strip"
+import { InlineSettings } from "./commands/inline-settings"
+import { InlineEventTools, type EventView } from "./commands/inline-event-tools"
+import { buildCommands } from "./commands/registry"
+import type { ScenarioDef } from "@/lib/dev/scenarios"
 
-export type Tab = "scenarios" | "personas" | "event" | "config"
+type Persona = { key: string; name: string; configured: boolean }
 
-const TABS: { key: Tab; label: string; icon: typeof Beaker; eventOnly?: boolean }[] = [
-  { key: "scenarios", label: "Scenarios", icon: Beaker },
-  { key: "personas", label: "Personas", icon: Users2 },
-  { key: "event", label: "Event", icon: Settings2, eventOnly: true },
-  { key: "config", label: "Config", icon: Wrench },
-]
+type ActiveScenario = {
+  scenarioName: string
+  hackathonId: string
+  slug: string
+  createdAt: string
+}
+
+type View =
+  | { kind: "palette" }
+  | { kind: "settings" }
+  | { kind: "event"; view: EventView }
 
 interface DevToolPanelProps {
   eventContext: EventContext | null
@@ -27,62 +33,304 @@ interface DevToolPanelProps {
   onSaveState: () => void
 }
 
-export function DevToolPanel({ eventContext, onClose, onSaveState }: DevToolPanelProps) {
-  const [activeTab, setActiveTab] = useState<Tab>(eventContext ? "event" : "scenarios")
+export function DevToolPanel({
+  eventContext,
+  onClose,
+  onSaveState,
+}: DevToolPanelProps) {
   const { config, updateConfig, clearConfig } = useDevConfig()
+  const [view, setView] = useState<View>({ kind: "palette" })
 
-  const visibleTabs = TABS.filter((t) => !t.eventOnly || eventContext)
+  const [personas, setPersonas] = useState<Persona[]>([])
+  const [activePersona, setActivePersona] = useState<Persona | null>(null)
+  const [activeScenarios, setActiveScenarios] = useState<ActiveScenario[]>([])
+  const [currentRoles, setCurrentRoles] = useState<string[]>([])
+  const [runningId, setRunningId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch("/api/admin/scenario-personas")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.personas) {
+          const configured = data.personas.filter((p: Persona) => p.configured)
+          setPersonas(configured)
+          if (data.activePersona) {
+            const match =
+              configured.find(
+                (p: Persona) => p.key === data.activePersona
+              ) ?? null
+            setActivePersona(match)
+          }
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    fetch("/api/admin/scenario-active")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.scenarios) setActiveScenarios(data.scenarios)
+      })
+      .catch(() => {})
+  }, [])
+
+  const hackathonId = eventContext?.hackathonId ?? null
+
+  const refreshRoles = useCallback(() => {
+    if (!hackathonId) {
+      setCurrentRoles([])
+      return
+    }
+    fetch(`/api/dev/hackathons/${hackathonId}/my-roles`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        setCurrentRoles(data?.roles ?? [])
+      })
+      .catch(() => setCurrentRoles([]))
+  }, [hackathonId])
+
+  useEffect(() => {
+    refreshRoles()
+  }, [refreshRoles])
+
+  const runScenario = useCallback(
+    async (scenario: ScenarioDef) => {
+      const id = `scenario:${scenario.name}`
+      setRunningId(id)
+      setError(null)
+      try {
+        const res = await fetch(
+          `/api/admin/scenario-run/${scenario.name}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
+          }
+        )
+        if (!res.ok) {
+          const data = await res.json().catch(() => null)
+          setError(data?.error ?? "Failed to run scenario")
+          setRunningId(null)
+          return
+        }
+        const data = await res.json()
+        const redirect = scenario.defaultRoute(data.slug)
+        const personaMap: Record<string, string> = {
+          organizer: "organizer",
+          participant: "user1",
+          judge: "user1",
+        }
+        const targetRole = data.roles?.find(
+          (r: { role: string; loginUrl: string }) =>
+            r.role === scenario.defaultPersona
+        )
+        if (targetRole) {
+          window.location.assign(targetRole.loginUrl)
+          return
+        }
+        const switchRes = await fetch("/api/admin/scenario-switch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            persona: personaMap[scenario.defaultPersona] ?? "organizer",
+            redirect,
+          }),
+        })
+        if (switchRes.ok) {
+          const { loginUrl } = await switchRes.json()
+          window.location.assign(loginUrl)
+        } else {
+          window.location.assign(redirect)
+        }
+      } catch {
+        setError("Network error")
+        setRunningId(null)
+      }
+    },
+    []
+  )
+
+  const switchPersona = useCallback(async (persona: Persona) => {
+    const id = `persona:${persona.key}`
+    setRunningId(id)
+    setError(null)
+    try {
+      const res = await fetch("/api/admin/scenario-switch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          persona: persona.key,
+          redirect: window.location.pathname,
+        }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        setError(data?.error ?? "Switch failed")
+        setRunningId(null)
+        return
+      }
+      const { loginUrl } = await res.json()
+      window.location.assign(loginUrl)
+    } catch {
+      setError("Network error")
+      setRunningId(null)
+    }
+  }, [])
+
+  const assignRole = useCallback(
+    async (role: string) => {
+      if (!hackathonId) return
+      const id = `role:${role}`
+      setRunningId(id)
+      setError(null)
+      try {
+        const res = await fetch(
+          `/api/dev/hackathons/${hackathonId}/assign-role`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ role }),
+          }
+        )
+        if (!res.ok) {
+          const data = await res.json().catch(() => null)
+          setError(data?.error ?? "Failed to assign role")
+          return
+        }
+        refreshRoles()
+      } catch {
+        setError("Network error")
+      } finally {
+        setRunningId(null)
+      }
+    },
+    [hackathonId, refreshRoles]
+  )
+
+  const removeRole = useCallback(
+    async (role: string) => {
+      if (!hackathonId) return
+      const id = `role:${role}`
+      setRunningId(id)
+      setError(null)
+      try {
+        const res = await fetch(
+          `/api/dev/hackathons/${hackathonId}/remove-role`,
+          {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ role }),
+          }
+        )
+        if (!res.ok) {
+          const data = await res.json().catch(() => null)
+          setError(data?.error ?? "Failed to remove role")
+          return
+        }
+        refreshRoles()
+      } catch {
+        setError("Network error")
+      } finally {
+        setRunningId(null)
+      }
+    },
+    [hackathonId, refreshRoles]
+  )
+
+  const commands = buildCommands({
+    eventSlug: eventContext?.slug ?? null,
+    eventHackathonId: hackathonId,
+    eventName: eventContext?.name ?? null,
+    activeScenarios,
+    personas,
+    currentRoles,
+    onRunScenario: runScenario,
+    onSwitchPersona: switchPersona,
+    onAssignRole: assignRole,
+    onRemoveRole: removeRole,
+    onOpenSettings: () => setView({ kind: "settings" }),
+    onOpenEventLifecycle: () => setView({ kind: "event", view: "lifecycle" }),
+    onOpenEventSeed: () => setView({ kind: "event", view: "seed" }),
+    onOpenEventResults: () => setView({ kind: "event", view: "results" }),
+  })
+
+  const backToPalette = () => setView({ kind: "palette" })
 
   return (
-    <div className="p-3 space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <FlaskConical className="size-4 text-muted-foreground" />
-          <span className="font-semibold text-sm">Dev Tools</span>
-          {eventContext && (
-            <Badge variant="outline" className="text-[10px]">
-              {eventContext.slug}
-            </Badge>
-          )}
-        </div>
-        <Button size="sm" variant="ghost" className="size-7 p-0" onClick={onClose}>
-          <X className="size-3.5" />
-        </Button>
-      </div>
+    <div className="flex w-[460px] flex-col">
+      <Header
+        eventContext={eventContext}
+        onClose={onClose}
+        running={!!runningId}
+      />
 
-      <div className="flex gap-1 border-b pb-0">
-        {visibleTabs.map((tab) => {
-          const Icon = tab.icon
-          return (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors rounded-t-md -mb-px border-b-2",
-                activeTab === tab.key
-                  ? "border-primary text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              )}
+      {view.kind === "palette" && (
+        <>
+          <ContextStrip
+            eventContext={eventContext}
+            activePersona={activePersona}
+            currentRoles={currentRoles}
+          />
+          {error && (
+            <div
+              role="alert"
+              className="m-2 cursor-pointer rounded-md border border-destructive bg-destructive/10 px-3 py-1.5 text-xs text-destructive"
+              onClick={() => setError(null)}
             >
-              <Icon className="size-3" />
-              {tab.label}
-            </button>
-          )
-        })}
-      </div>
+              {error}
+            </div>
+          )}
+          <CommandPaletteList commands={commands} runningId={runningId} />
+        </>
+      )}
 
-      <div className="min-h-[120px]">
-        {activeTab === "scenarios" && <ScenariosTab />}
-        {activeTab === "personas" && (
-          <PersonasTab eventContext={eventContext} onSwitchTab={setActiveTab} />
+      {view.kind === "settings" && (
+        <InlineSettings
+          config={config}
+          onUpdateConfig={updateConfig}
+          onClearConfig={clearConfig}
+          onBack={backToPalette}
+        />
+      )}
+
+      {view.kind === "event" && eventContext && (
+        <InlineEventTools
+          eventContext={eventContext}
+          view={view.view}
+          onBack={backToPalette}
+          onSaveState={onSaveState}
+        />
+      )}
+    </div>
+  )
+}
+
+interface HeaderProps {
+  eventContext: EventContext | null
+  onClose: () => void
+  running: boolean
+}
+
+function Header({ eventContext, onClose, running }: HeaderProps) {
+  return (
+    <div className="flex items-center justify-between border-b px-3 py-2">
+      <div className="flex items-center gap-2">
+        <FlaskConical className="size-4 text-muted-foreground" />
+        <span className="text-sm font-semibold">Dev Tools</span>
+        {eventContext && (
+          <Badge variant="outline" className="text-[10px]">
+            {eventContext.slug}
+          </Badge>
         )}
-        {activeTab === "event" && eventContext && (
-          <EventToolsTab eventContext={eventContext} onSaveState={onSaveState} />
-        )}
-        {activeTab === "config" && (
-          <ConfigTab config={config} onUpdateConfig={updateConfig} onClearConfig={clearConfig} />
+        {running && (
+          <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
         )}
       </div>
+      <Button size="sm" variant="ghost" className="size-7 p-0" onClick={onClose}>
+        <X className="size-3.5" />
+      </Button>
     </div>
   )
 }
