@@ -2364,7 +2364,7 @@ export async function getAssignmentDetail(
     ? client.from("teams").select("name").eq("id", sub.team_id).single().then(({ data }) => data?.name ?? null)
     : Promise.resolve(null)
 
-  async function fetchCriteria(): Promise<CriteriaRow[]> {
+  const fetchCriteria = async (): Promise<CriteriaRow[]> => {
     if (ownership.prizeId) {
       const { data } = await client
         .from("judging_criteria")

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react"
 import type { AssignmentDetail } from "@/lib/services/judging"
+import { assertOkJson } from "@/lib/utils/fetch"
 
 const MAX_CACHE_SIZE = 3
 
@@ -16,7 +17,7 @@ export function usePrefetchAssignment(
 
     let cancelled = false
     fetch(`/api/public/hackathons/${hackathonSlug}/judging/assignments/${nextAssignmentId}`)
-      .then((res) => (res.ok ? res.json() : null) as Promise<AssignmentDetail | null>)
+      .then((res) => res.ok ? assertOkJson<AssignmentDetail>(res) : null)
       .then((data) => {
         if (data && !cancelled) {
           setCache((prev) => {
