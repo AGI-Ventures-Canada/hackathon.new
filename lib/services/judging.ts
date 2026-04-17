@@ -2435,7 +2435,7 @@ export async function getAssignmentDetail(
       name: c.name,
       description: c.description,
       max_score: c.max_score,
-      weight: Number(c.weight),
+      weight: Number(c.weight), // Supabase returns Postgres numeric columns as strings
       category: c.category ?? null,
       currentScore: scoreMap[c.id] ?? null,
       rubricLevels: rubricMap[c.id] ?? [],

@@ -391,6 +391,45 @@ describe("Judging Scoring Service", () => {
       expect(result).toEqual({ success: true })
     })
 
+    it("accepts score exactly at max_score", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "judging_criteria") {
+          return createChainableMock({ data: [{ id: CRITERIA_ID_1, max_score: 10 }], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await submitScores(
+        ASSIGNMENT_ID,
+        MOCK_OWNERSHIP,
+        [{ criteriaId: CRITERIA_ID_1, score: 10 }],
+        ""
+      )
+
+      expect(result).toEqual({ success: true })
+    })
+
+    it("rejects negative score", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "judging_criteria") {
+          return createChainableMock({ data: [{ id: CRITERIA_ID_1, max_score: 10 }], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await submitScores(
+        ASSIGNMENT_ID,
+        MOCK_OWNERSHIP,
+        [{ criteriaId: CRITERIA_ID_1, score: -1 }],
+        ""
+      )
+
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.code).toBe("invalid_score")
+      }
+    })
+
     it("rejects submission when assignment is already complete", async () => {
       const completeOwnership = { hackathonId: HACKATHON_ID, prizeId: PRIZE_ID, isComplete: true, submissionId: SUBMISSION_ID, notes: "" }
 

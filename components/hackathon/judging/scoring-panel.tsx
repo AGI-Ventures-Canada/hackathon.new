@@ -194,7 +194,6 @@ export function ScoringPanel({
               alt={detail.submissionTitle}
               width={1920}
               height={1080}
-              unoptimized
               className="w-full h-[180px] object-cover"
             />
             <button
@@ -215,7 +214,6 @@ export function ScoringPanel({
                 alt={detail.submissionTitle}
                 width={1920}
                 height={1080}
-                unoptimized
                 className="w-full h-auto rounded-md"
               />
             </DialogContent>
