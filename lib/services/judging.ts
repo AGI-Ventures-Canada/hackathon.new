@@ -1603,9 +1603,6 @@ export async function assertAssignmentWritable(
       .eq("id", roundId)
       .maybeSingle()
 
-    // `planned` rounds are writable so judges can pre-seed scores before the
-    // organizer promotes the round to `active`. Only rejects post-active states
-    // (e.g. `complete`, `advanced`).
     if (round && round.status !== "active" && round.status !== "planned") {
       return {
         ok: false,
