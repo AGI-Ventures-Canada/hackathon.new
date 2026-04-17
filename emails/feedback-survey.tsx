@@ -1,23 +1,21 @@
 import { Text } from "@react-email/components"
 import { OatmealLayout } from "./_components/oatmeal-layout"
 import { CTAButton } from "./_components/cta-button"
-import { buildEventUrl, fontSize, spacing } from "./_components/constants"
+import { fontSize, spacing } from "./_components/constants"
 
 interface FeedbackSurveyEmailProps {
   participantName: string
   hackathonName: string
   surveyUrl: string
-  hackathonSlug?: string
+  eventUrl?: string
 }
 
 export default function FeedbackSurveyEmail({
   participantName,
   hackathonName,
   surveyUrl,
-  hackathonSlug,
+  eventUrl,
 }: FeedbackSurveyEmailProps) {
-  const eventUrl = buildEventUrl(hackathonSlug)
-
   return (
     <OatmealLayout
       heading="Share Your Feedback"
@@ -48,5 +46,5 @@ FeedbackSurveyEmail.PreviewProps = {
   participantName: "Jordan",
   hackathonName: "AI Innovation Hackathon 2026",
   surveyUrl: "https://forms.example.com/feedback",
-  hackathonSlug: "ai-innovation-2026",
+  eventUrl: "https://getoatmeal.com/e/ai-innovation-2026",
 } satisfies FeedbackSurveyEmailProps

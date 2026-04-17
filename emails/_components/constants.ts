@@ -37,4 +37,6 @@ export const fontFamily =
 export const monoFontFamily =
   "'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', 'Courier New', monospace"
 
-export { buildEventUrl } from "@/lib/email/utils"
+export const brandUrl = "https://getoatmeal.com"
+export const supportEmail = "support@getoatmeal.com"
+

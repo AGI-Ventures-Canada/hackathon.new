@@ -1,7 +1,7 @@
 import { Text } from "@react-email/components"
 import { OatmealLayout } from "./_components/oatmeal-layout"
 import { CTAButton } from "./_components/cta-button"
-import { buildEventUrl, colors, fontSize, spacing } from "./_components/constants"
+import { colors, fontSize, spacing } from "./_components/constants"
 import { formatPrizeValue } from "./_components/format-utils"
 
 interface OrganizerClaimNotificationEmailProps {
@@ -9,7 +9,7 @@ interface OrganizerClaimNotificationEmailProps {
   prizeName: string
   hackathonName: string
   fulfillmentUrl: string | null
-  hackathonSlug?: string
+  eventUrl?: string
   prizeValue?: string | null
 }
 
@@ -18,11 +18,9 @@ export default function OrganizerClaimNotificationEmail({
   prizeName,
   hackathonName,
   fulfillmentUrl,
-  hackathonSlug,
+  eventUrl,
   prizeValue,
 }: OrganizerClaimNotificationEmailProps) {
-  const eventUrl = buildEventUrl(hackathonSlug)
-
   return (
     <OatmealLayout
       heading="Prize Claimed"
@@ -67,6 +65,6 @@ OrganizerClaimNotificationEmail.PreviewProps = {
   hackathonName: "AI Innovation Hackathon 2026",
   fulfillmentUrl:
     "https://getoatmeal.com/e/ai-innovation-2026/manage?tab=post-event",
-  hackathonSlug: "ai-innovation-2026",
+  eventUrl: "https://getoatmeal.com/e/ai-innovation-2026",
   prizeValue: "5000",
 } satisfies OrganizerClaimNotificationEmailProps

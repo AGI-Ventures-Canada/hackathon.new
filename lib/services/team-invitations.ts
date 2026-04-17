@@ -347,7 +347,7 @@ export async function getTeamWithHackathon(
     .select(`
       name,
       hackathons!inner(name, slug, starts_at, ends_at),
-      hackathon_participants(clerk_user_id)
+      hackathon_participants!hackathon_participants_team_id_fkey(clerk_user_id, role)
     `)
     .eq("id", teamId)
     .single()
@@ -357,17 +357,22 @@ export async function getTeamWithHackathon(
   }
 
   const hackathon = data.hackathons as unknown as { name: string; slug: string; starts_at: string | null; ends_at: string | null }
-  const participants = (data.hackathon_participants ?? []) as unknown as { clerk_user_id: string }[]
+  const rawParticipants = (data.hackathon_participants ?? []) as unknown as { clerk_user_id: string; role: string }[]
+  const participants = rawParticipants.filter((p) => p.role === "participant")
 
   let memberNames: string[] = []
   if (participants.length > 0) {
     try {
       const { clerkClient } = await import("@clerk/nextjs/server")
       const clerk = await clerkClient()
+      const userIds = participants.map((p) => p.clerk_user_id)
       const users = await clerk.users.getUserList({
-        userId: participants.map((p) => p.clerk_user_id),
+        userId: userIds,
         limit: 100,
       })
+      if (users.data.length === 100 && userIds.length > 100) {
+        console.warn(`[getTeamWithHackathon] Team ${teamId} has ${userIds.length} members, only first 100 names fetched from Clerk`)
+      }
       memberNames = users.data
         .map((u) => [u.firstName, u.lastName].filter(Boolean).join(" "))
         .filter((name) => name.length > 0)

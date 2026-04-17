@@ -60,6 +60,8 @@ export async function sendJudgeAddedNotification(
 export async function sendJudgeInvitationEmail(
   input: SendJudgeInvitationInput
 ): Promise<{ success: boolean }> {
+  // Guard required: acceptUrl is a functional token link that must resolve to the real app,
+  // unlike display-only event links where buildEventUrl's fallback is acceptable.
   if (!process.env.NEXT_PUBLIC_APP_URL) {
     console.error("NEXT_PUBLIC_APP_URL not set, cannot send invitation email")
     return { success: false }
@@ -79,7 +81,7 @@ export async function sendJudgeInvitationEmail(
       hackathonName: input.hackathonName,
       acceptUrl,
       expiresDate,
-      hackathonSlug: input.hackathonSlug,
+      eventUrl: buildEventUrl(input.hackathonSlug),
       hackathonStartsAt: input.hackathonStartsAt,
       hackathonEndsAt: input.hackathonEndsAt,
     })

@@ -2,7 +2,7 @@ import { Text } from "@react-email/components"
 import { OatmealLayout } from "./_components/oatmeal-layout"
 import { EventDetailBox } from "./_components/event-detail-box"
 import { CTAButton } from "./_components/cta-button"
-import { buildEventUrl, colors, fontSize, spacing } from "./_components/constants"
+import { colors, fontSize, spacing } from "./_components/constants"
 
 interface TeamInvitationEmailProps {
   inviterName: string
@@ -10,7 +10,7 @@ interface TeamInvitationEmailProps {
   hackathonName: string
   acceptUrl: string
   expiresDate: string
-  hackathonSlug?: string
+  eventUrl?: string
   hackathonStartsAt?: string | null
   hackathonEndsAt?: string | null
   teamMembers?: string[]
@@ -22,13 +22,11 @@ export default function TeamInvitationEmail({
   hackathonName,
   acceptUrl,
   expiresDate,
-  hackathonSlug,
+  eventUrl,
   hackathonStartsAt,
   hackathonEndsAt,
   teamMembers,
 }: TeamInvitationEmailProps) {
-  const eventUrl = buildEventUrl(hackathonSlug)
-
   return (
     <OatmealLayout
       heading="You're Invited to Join a Team!"
@@ -62,7 +60,10 @@ export default function TeamInvitationEmail({
             margin: `-${spacing.md} 0 ${spacing.lg} 0`,
           }}
         >
-          Already on the team: {teamMembers.join(", ")}
+          Already on the team:{" "}
+          {teamMembers.length <= 5
+            ? teamMembers.join(", ")
+            : `${teamMembers.slice(0, 5).join(", ")}, and ${teamMembers.length - 5} others`}
         </Text>
       )}
 
@@ -89,7 +90,7 @@ TeamInvitationEmail.PreviewProps = {
   hackathonName: "AI Innovation Hackathon 2026",
   acceptUrl: "https://getoatmeal.com/invite/abc123",
   expiresDate: "Friday, April 17, 2026",
-  hackathonSlug: "ai-innovation-2026",
+  eventUrl: "https://getoatmeal.com/e/ai-innovation-2026",
   hackathonStartsAt: "2026-04-20T08:30:00Z",
   hackathonEndsAt: "2026-04-22T17:00:00Z",
   teamMembers: ["Sarah Chen", "Marcus Rivera"],

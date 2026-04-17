@@ -10,7 +10,7 @@ import {
   Text,
   Link,
 } from "@react-email/components"
-import { colors, fontFamily, fontSize, spacing } from "./constants"
+import { brandUrl, colors, fontFamily, fontSize, spacing, supportEmail } from "./constants"
 
 interface OatmealLayoutProps {
   heading: string
@@ -143,7 +143,7 @@ export function OatmealLayout({
               }}
             >
               <Link
-                href="https://getoatmeal.com"
+                href={brandUrl}
                 style={{
                   color: colors.textSecondary,
                   textDecoration: "none",
@@ -161,13 +161,13 @@ export function OatmealLayout({
             >
               Questions?{" "}
               <Link
-                href="mailto:support@getoatmeal.com"
+                href={`mailto:${supportEmail}`}
                 style={{
                   color: colors.textFooter,
                   textDecoration: "underline",
                 }}
               >
-                support@getoatmeal.com
+                {supportEmail}
               </Link>
             </Text>
           </Section>

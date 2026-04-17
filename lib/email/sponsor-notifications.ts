@@ -1,5 +1,5 @@
 import { sendEmail } from "./resend"
-import { renderEmail, sanitizeTag, resolveEmailsForTenant } from "./utils"
+import { renderEmail, sanitizeTag, resolveEmailsForTenant, buildEventUrl } from "./utils"
 import SponsorClaimNotificationEmail from "@/emails/sponsor-claim-notification"
 
 export async function sendSponsorClaimNotification(params: {
@@ -29,9 +29,7 @@ export async function sendSponsorClaimNotification(params: {
     return 0
   }
 
-  const eventUrl = hackathonSlug && process.env.NEXT_PUBLIC_APP_URL
-    ? `${process.env.NEXT_PUBLIC_APP_URL}/e/${hackathonSlug}`
-    : null
+  const eventUrl = buildEventUrl(hackathonSlug) ?? null
 
   const { html, text } = await renderEmail(
     SponsorClaimNotificationEmail({

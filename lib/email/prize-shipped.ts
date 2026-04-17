@@ -1,5 +1,5 @@
 import { sendEmail } from "./resend"
-import { renderEmail, sanitizeTag } from "./utils"
+import { renderEmail, sanitizeTag, buildEventUrl } from "./utils"
 import PrizeShippedEmail from "@/emails/prize-shipped"
 
 export async function sendPrizeShippedEmail(params: {
@@ -18,7 +18,7 @@ export async function sendPrizeShippedEmail(params: {
       prizeName,
       hackathonName,
       trackingNumber,
-      hackathonSlug,
+      eventUrl: buildEventUrl(hackathonSlug),
     })
   )
 

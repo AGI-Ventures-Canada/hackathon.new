@@ -1,13 +1,13 @@
 import { Section, Text } from "@react-email/components"
 import { OatmealLayout } from "./_components/oatmeal-layout"
-import { buildEventUrl, colors, fontSize, spacing } from "./_components/constants"
+import { colors, fontSize, spacing } from "./_components/constants"
 
 interface PrizeShippedEmailProps {
   recipientName: string
   prizeName: string
   hackathonName: string
   trackingNumber: string | null
-  hackathonSlug?: string
+  eventUrl?: string
 }
 
 export default function PrizeShippedEmail({
@@ -15,10 +15,8 @@ export default function PrizeShippedEmail({
   prizeName,
   hackathonName,
   trackingNumber,
-  hackathonSlug,
+  eventUrl,
 }: PrizeShippedEmailProps) {
-  const eventUrl = buildEventUrl(hackathonSlug)
-
   return (
     <OatmealLayout
       heading="Your Prize is On Its Way!"
@@ -72,5 +70,5 @@ PrizeShippedEmail.PreviewProps = {
   prizeName: "Best AI Application",
   hackathonName: "AI Innovation Hackathon 2026",
   trackingNumber: "1Z999AA10123456784",
-  hackathonSlug: "ai-innovation-2026",
+  eventUrl: "https://getoatmeal.com/e/ai-innovation-2026",
 } satisfies PrizeShippedEmailProps
