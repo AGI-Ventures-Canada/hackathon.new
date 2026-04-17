@@ -1,6 +1,5 @@
 import type { LucideIcon } from "lucide-react"
 import {
-  Beaker,
   UserCircle2,
   UserPlus,
   GitBranch,
@@ -541,13 +540,3 @@ function groupByCategory(list: ScenarioDef[]): Record<ScenarioCategory, Scenario
   return grouped
 }
 
-export const ICON_BY_CATEGORY: Record<CommandCategory, LucideIcon> = {
-  scenario: Beaker,
-  persona: UserCircle2,
-  role: UserPlus,
-  lifecycle: GitBranch,
-  seed: Database,
-  results: Trophy,
-  event: GitBranch,
-  settings: Settings,
-}

@@ -1476,7 +1476,7 @@ describe("Judging Service", () => {
       if (!result.ok) expect(result.code).toBe("round_not_active")
     })
 
-    it("passes when everything is valid", async () => {
+    it("passes when everything is valid and returns ownership", async () => {
       setMockFromImplementation((table) => {
         if (table === "judging_rounds") {
           return createChainableMock({ data: { status: "active" }, error: null })
@@ -1486,6 +1486,9 @@ describe("Judging Service", () => {
             submission_id: "s1",
             round_id: "r1",
             hackathon_id: "h1",
+            prize_id: "p1",
+            is_complete: false,
+            notes: "partial",
             judge: { clerk_user_id: "user_123", team_id: null },
             submission: { team_id: "team-b" },
           },
@@ -1494,6 +1497,15 @@ describe("Judging Service", () => {
       })
       const result = await assertAssignmentWritable("a1", "user_123", { id: "h1", status: "judging" })
       expect(result.ok).toBe(true)
+      if (result.ok) {
+        expect(result.ownership).toEqual({
+          hackathonId: "h1",
+          prizeId: "p1",
+          isComplete: false,
+          submissionId: "s1",
+          notes: "partial",
+        })
+      }
     })
   })
 

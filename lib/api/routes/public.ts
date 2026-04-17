@@ -1221,7 +1221,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
-      const { assertAssignmentWritable, verifyAssignmentOwnership, submitScores, recalculateForAssignment } = await import("@/lib/services/judging")
+      const { assertAssignmentWritable, submitScores, recalculateForAssignment } = await import("@/lib/services/judging")
       const guard = await assertAssignmentWritable(params.assignmentId, userId, hackathon)
       if (!guard.ok) {
         return new Response(
@@ -1230,17 +1230,9 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
-      const ownerCheck = await verifyAssignmentOwnership(params.assignmentId, userId)
-      if (!ownerCheck) {
-        return new Response(
-          JSON.stringify({ error: "Assignment not found", code: "not_found" }),
-          { status: 404, headers: { "Content-Type": "application/json" } }
-        )
-      }
-
       const result = await submitScores(
         params.assignmentId,
-        ownerCheck,
+        guard.ownership,
         body.scores,
         body.notes ?? ""
       )
@@ -1482,6 +1474,13 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
+      if (!isValidUuid(params.assignmentId)) {
+        return new Response(
+          JSON.stringify({ error: "Assignment not found", code: "not_found" }),
+          { status: 404, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
       const hackathon = await getPublicHackathon(params.slug)
       if (!hackathon) {
         return new Response(
@@ -1544,6 +1543,13 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         return new Response(
           JSON.stringify({ error: "Sign in required", code: "not_authenticated" }),
           { status: 401, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
+      if (!isValidUuid(params.assignmentId)) {
+        return new Response(
+          JSON.stringify({ error: "Assignment not found", code: "not_found" }),
+          { status: 404, headers: { "Content-Type": "application/json" } }
         )
       }
 

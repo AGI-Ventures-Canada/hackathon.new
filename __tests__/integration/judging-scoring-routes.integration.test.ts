@@ -66,7 +66,8 @@ const mockVerifyAssignmentOwnership = mock(() => Promise.resolve({ hackathonId: 
 const mockRecalculateForAssignment = mock(() => Promise.resolve())
 const mockGetAssignmentDetail = mock(() => Promise.resolve(null))
 const mockSubmitScores = mock(() => Promise.resolve({ success: true }))
-const mockAssertAssignmentWritable = mock(() => Promise.resolve({ ok: true } as { ok: true } | { ok: false; code: string; status: number; error: string }))
+const mockOwnership = { hackathonId: "22222222-2222-2222-2222-222222222222", prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" }
+const mockAssertAssignmentWritable = mock(() => Promise.resolve({ ok: true, ownership: mockOwnership } as { ok: true; ownership: typeof mockOwnership } | { ok: false; code: string; status: number; error: string }))
 
 mock.module("@/lib/services/judging", () => ({
   addJudge: mock(() => Promise.resolve({ success: true })),
@@ -163,7 +164,7 @@ describe("Judging Scoring Routes", () => {
       if (hackathon.status !== "judging" && hackathon.status !== "active") {
         return { ok: false as const, code: "not_judging", status: 400, error: "Hackathon is not in judging phase" }
       }
-      return { ok: true as const }
+      return { ok: true as const, ownership: mockOwnership }
     })
 
     mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" })
@@ -737,21 +738,6 @@ describe("Judging Scoring Routes", () => {
       expect(data.code).toBe("not_judging")
     })
 
-    it("returns 404 when assignment ownership fails", async () => {
-      mockAuth.mockResolvedValue({ userId: "user_123" })
-      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
-      mockVerifyAssignmentOwnership.mockResolvedValue(false)
-
-      const res = await app.handle(
-        new Request(scoresUrl("test-hackathon", VALID_ASSIGNMENT_ID), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(validBody),
-        })
-      )
-      expect(res.status).toBe(404)
-    })
-
     it("returns 404 when assignment belongs to a different hackathon", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
@@ -803,7 +789,7 @@ describe("Judging Scoring Routes", () => {
       expect(data.code).toBe("already_complete")
     })
 
-    it("passes correct parameters to verifyAssignmentOwnership", async () => {
+    it("passes correct parameters to assertAssignmentWritable", async () => {
       mockAuth.mockResolvedValue({ userId: "user_judge" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
 
@@ -815,7 +801,22 @@ describe("Judging Scoring Routes", () => {
         })
       )
 
-      expect(mockVerifyAssignmentOwnership).toHaveBeenCalledWith(VALID_ASSIGNMENT_ID, "user_judge")
+      expect(mockAssertAssignmentWritable).toHaveBeenCalledWith(VALID_ASSIGNMENT_ID, "user_judge", mockHackathon)
+    })
+
+    it("passes ownership from guard into submitScores", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_judge" })
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+
+      await app.handle(
+        new Request(scoresUrl("test-hackathon", VALID_ASSIGNMENT_ID), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(validBody),
+        })
+      )
+
+      expect(mockSubmitScores).toHaveBeenCalledWith(VALID_ASSIGNMENT_ID, mockOwnership, validBody.scores, validBody.notes)
     })
   })
 })

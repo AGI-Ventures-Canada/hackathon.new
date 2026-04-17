@@ -1510,7 +1510,7 @@ export type AssignmentWritableErrorCode =
   | "self_judging"
 
 export type AssertAssignmentWritableResult =
-  | { ok: true }
+  | { ok: true; ownership: AssignmentOwnership }
   | { ok: false; error: string; code: AssignmentWritableErrorCode; status: number }
 
 export async function assertAssignmentWritable(
@@ -1532,7 +1532,7 @@ export async function assertAssignmentWritable(
   const { data } = await client
     .from("judge_assignments")
     .select(`
-      submission_id, round_id, hackathon_id,
+      submission_id, round_id, hackathon_id, prize_id, is_complete, notes,
       judge:hackathon_participants!judge_participant_id(clerk_user_id, team_id),
       submission:submissions!submission_id(team_id)
     `)
@@ -1596,7 +1596,17 @@ export async function assertAssignmentWritable(
     }
   }
 
-  return { ok: true }
+
+  return {
+    ok: true,
+    ownership: {
+      hackathonId: data.hackathon_id,
+      prizeId: data.prize_id ?? null,
+      isComplete: data.is_complete === true,
+      submissionId: data.submission_id,
+      notes: data.notes ?? "",
+    },
+  }
 }
 
 export async function removeJudgeFromPrize(
