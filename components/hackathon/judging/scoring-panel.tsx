@@ -38,7 +38,7 @@ export function ScoringPanel({
   prefetchedDetail,
 }: ScoringPanelProps) {
   const [detail, setDetail] = useState<AssignmentDetail | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!(prefetchedDetail && prefetchedDetail.id === assignmentId))
   const [scores, setScores] = useState<Record<string, number | null>>({})
   const [notes, setNotes] = useState("")
   const [submitting, setSubmitting] = useState(false)
