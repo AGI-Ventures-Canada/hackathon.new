@@ -439,10 +439,21 @@ export type SubmitBinaryResponseInput = {
   passed: boolean
 }
 
+export type SubmitBinaryResponsesResult =
+  | { success: true; results: BinaryResponse[] }
+  | {
+      success: false
+      error: string
+      code: "partial_save"
+      savedCount: number
+      totalCount: number
+      results: BinaryResponse[]
+    }
+
 export async function submitBinaryResponses(
   assignmentId: string,
   responses: SubmitBinaryResponseInput[]
-): Promise<BinaryResponse[]> {
+): Promise<SubmitBinaryResponsesResult> {
   const client = getSupabase() as unknown as SupabaseClient
   const now = new Date().toISOString()
 
@@ -463,12 +474,19 @@ export async function submitBinaryResponses(
 
     if (error) {
       console.error("Failed to submit binary response:", error)
-      continue
+      return {
+        success: false,
+        error: `Saved ${results.length} of ${upserts.length} responses before failing on criterion ${upsert.criteria_id}`,
+        code: "partial_save",
+        savedCount: results.length,
+        totalCount: upserts.length,
+        results,
+      }
     }
     results.push(data as unknown as BinaryResponse)
   }
 
-  return results
+  return { success: true, results }
 }
 
 export async function listBinaryResponses(assignmentId: string): Promise<BinaryResponse[]> {
@@ -503,7 +521,10 @@ export async function submitBucketSortResponse(
   const client = getSupabase() as unknown as SupabaseClient
 
   if (input.gates.length > 0) {
-    await submitBinaryResponses(assignmentId, input.gates)
+    const gatesResult = await submitBinaryResponses(assignmentId, input.gates)
+    if (!gatesResult.success) {
+      return { success: false, error: gatesResult.error, code: gatesResult.code }
+    }
   }
 
   const bucketResult = await submitBucketResponse(assignmentId, {
@@ -541,7 +562,10 @@ export async function submitGateCheckResponse(
 ): Promise<{ success: true } | { success: false; error: string; code: string }> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  await submitBinaryResponses(assignmentId, gates)
+  const gatesResult = await submitBinaryResponses(assignmentId, gates)
+  if (!gatesResult.success) {
+    return { success: false, error: gatesResult.error, code: gatesResult.code }
+  }
 
   const { error } = await client
     .from("judge_assignments")

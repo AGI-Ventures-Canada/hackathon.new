@@ -1503,6 +1503,102 @@ export async function verifyAssignmentOwnership(
   }
 }
 
+export type AssignmentWritableErrorCode =
+  | "not_found"
+  | "not_judging"
+  | "round_not_active"
+  | "self_judging"
+
+export type AssertAssignmentWritableResult =
+  | { ok: true }
+  | { ok: false; error: string; code: AssignmentWritableErrorCode; status: number }
+
+export async function assertAssignmentWritable(
+  assignmentId: string,
+  clerkUserId: string,
+  hackathon: { id: string; status: string }
+): Promise<AssertAssignmentWritableResult> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  if (hackathon.status !== "judging" && hackathon.status !== "active") {
+    return {
+      ok: false,
+      error: "Hackathon is not in judging phase",
+      code: "not_judging",
+      status: 400,
+    }
+  }
+
+  const { data } = await client
+    .from("judge_assignments")
+    .select(`
+      submission_id, round_id, hackathon_id,
+      judge:hackathon_participants!judge_participant_id(clerk_user_id, team_id),
+      submission:submissions!submission_id(team_id)
+    `)
+    .eq("id", assignmentId)
+    .maybeSingle()
+
+  if (!data) {
+    return {
+      ok: false,
+      error: "Assignment not found",
+      code: "not_found",
+      status: 404,
+    }
+  }
+
+  if (data.hackathon_id !== hackathon.id) {
+    return {
+      ok: false,
+      error: "Assignment not found",
+      code: "not_found",
+      status: 404,
+    }
+  }
+
+  const judge = data.judge as unknown as { clerk_user_id: string; team_id: string | null } | null
+  const submission = data.submission as unknown as { team_id: string | null } | null
+
+  if (judge?.clerk_user_id !== clerkUserId) {
+    return {
+      ok: false,
+      error: "Assignment not found",
+      code: "not_found",
+      status: 404,
+    }
+  }
+
+  if (judge.team_id && submission?.team_id && judge.team_id === submission.team_id) {
+    return {
+      ok: false,
+      error: "You cannot score a project from your own team",
+      code: "self_judging",
+      status: 409,
+    }
+  }
+
+  const roundId = data.round_id as string | null
+  if (roundId) {
+    const { data: round } = await client
+      .from("judging_rounds")
+      .select("status")
+      .eq("id", roundId)
+      .maybeSingle()
+
+    if (round && round.status !== "active" && round.status !== "planned") {
+      return {
+        ok: false,
+        error: "This round is no longer open for scoring",
+        code: "round_not_active",
+        status: 400,
+      }
+    }
+  }
+
+  return { ok: true }
+}
+
 export async function removeJudgeFromPrize(
   hackathonId: string,
   judgeParticipantId: string,
@@ -2184,6 +2280,7 @@ export type JudgeAssignmentForJudge = {
   prizeId: string | null
   prizeName: string | null
   judgingStyle: PrizeJudgingStyle | null
+  selfJudging: boolean
 }
 
 export async function getJudgeAssignments(
@@ -2194,13 +2291,15 @@ export async function getJudgeAssignments(
 
   const { data: participant } = await client
     .from("hackathon_participants")
-    .select("id")
+    .select("id, team_id")
     .eq("hackathon_id", hackathonId)
     .eq("clerk_user_id", clerkUserId)
     .eq("role", "judge")
     .maybeSingle()
 
   if (!participant) return []
+
+  const judgeTeamId = (participant as { team_id: string | null }).team_id
 
   const { data: assignments, error } = await client
     .from("judge_assignments")
@@ -2264,6 +2363,7 @@ export async function getJudgeAssignments(
       team_id: string | null
     }
     const pid = a.prize_id as string | null
+    const selfJudging = Boolean(judgeTeamId && sub.team_id && judgeTeamId === sub.team_id)
     return {
       id: a.id as string,
       submissionId: a.submission_id as string,
@@ -2281,6 +2381,7 @@ export async function getJudgeAssignments(
       prizeId: pid,
       prizeName: pid ? prizeMap[pid]?.name ?? null : null,
       judgingStyle: pid ? (prizeMap[pid]?.judging_style as PrizeJudgingStyle | null) : null,
+      selfJudging,
     }
   })
 }

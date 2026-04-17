@@ -6,6 +6,7 @@ import {
   createSubmission,
   addJudgingCriteria,
   assignJudges,
+  createJudgeAssignment,
   seedJudgeDisplayProfiles,
   DEV_USER_ID,
   SEED_USERS,
@@ -75,8 +76,27 @@ async function run() {
   await seedJudgeDisplayProfiles(hackathonId, judgeUsers, judgeParticipantIds)
   const assignmentIds = await assignJudges(hackathonId, judgeParticipantIds, submissions, judgeTeamIds)
 
+  const devJudgeParticipantId = judgeParticipantIds[0]
+  const devTeamId = judgeTeamIds[devJudgeParticipantId]
+  const devOwnSubmissionId = devTeamId
+    ? submissions[teams.indexOf(devTeamId)]
+    : undefined
+
+  let selfJudgingAssignmentId: string | undefined
+  if (devJudgeParticipantId && devOwnSubmissionId) {
+    selfJudgingAssignmentId = await createJudgeAssignment(
+      hackathonId,
+      devJudgeParticipantId,
+      devOwnSubmissionId
+    )
+    assignmentIds.push(selfJudgingAssignmentId)
+  }
+
   console.log(`Created 5 teams, 5 submissions, 3 judges, ${assignmentIds.length} assignments.`)
   console.log("No scores submitted yet — test the full scoring flow.")
+  if (selfJudgingAssignmentId) {
+    console.log(`Self-judging conflict assignment (should be blocked on submit): ${selfJudgingAssignmentId}`)
+  }
   printReady(SLUG)
 }
 

@@ -66,6 +66,7 @@ const mockVerifyAssignmentOwnership = mock(() => Promise.resolve({ hackathonId: 
 const mockRecalculateForAssignment = mock(() => Promise.resolve())
 const mockGetAssignmentDetail = mock(() => Promise.resolve(null))
 const mockSubmitScores = mock(() => Promise.resolve({ success: true }))
+const mockAssertAssignmentWritable = mock(() => Promise.resolve({ ok: true } as { ok: true } | { ok: false; code: string; status: number; error: string }))
 
 mock.module("@/lib/services/judging", () => ({
   addJudge: mock(() => Promise.resolve({ success: true })),
@@ -86,6 +87,7 @@ mock.module("@/lib/services/judging", () => ({
   saveNotes: mock(() => Promise.resolve(true)),
   getJudgingSetupStatus: mock(() => Promise.resolve({ hasCriteria: false, allCriteriaHaveLevels: true, judgeCount: 0, hasSubmissions: false, hasUnassignedSubmissions: false, isReady: false })),
   verifyAssignmentOwnership: mockVerifyAssignmentOwnership,
+  assertAssignmentWritable: mockAssertAssignmentWritable,
   recalculateForAssignment: mockRecalculateForAssignment,
   calculatePrizeResults: mock(() => Promise.resolve({ ok: true })),
   removeJudgeFromPrize: mock(() => Promise.resolve({ removedCount: 0 })),
@@ -156,6 +158,13 @@ describe("Judging Scoring Routes", () => {
     mockSubmitScores.mockReset()
     mockSubmitBucketSortResponse.mockReset()
     mockSubmitGateCheckResponse.mockReset()
+    mockAssertAssignmentWritable.mockReset()
+    mockAssertAssignmentWritable.mockImplementation(async (_assignmentId: string, _userId: string, hackathon: { id: string; status: string }) => {
+      if (hackathon.status !== "judging" && hackathon.status !== "active") {
+        return { ok: false as const, code: "not_judging", status: 400, error: "Hackathon is not in judging phase" }
+      }
+      return { ok: true as const }
+    })
 
     mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" })
     mockRecalculateForAssignment.mockResolvedValue(undefined)
@@ -226,7 +235,7 @@ describe("Judging Scoring Routes", () => {
     it("returns 404 when assignment ownership verification fails", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
-      mockVerifyAssignmentOwnership.mockResolvedValue(false)
+      mockAssertAssignmentWritable.mockResolvedValueOnce({ ok: false, code: "not_found", status: 404, error: "Assignment not found" })
 
       const res = await app.handle(
         new Request(bucketSortUrl("test-hackathon", VALID_ASSIGNMENT_ID), {
@@ -244,7 +253,7 @@ describe("Judging Scoring Routes", () => {
     it("returns 404 when assignment belongs to a different hackathon", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
-      mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: "99999999-9999-9999-9999-999999999999", prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" })
+      mockAssertAssignmentWritable.mockResolvedValueOnce({ ok: false, code: "not_found", status: 404, error: "Assignment not found" })
 
       const res = await app.handle(
         new Request(bucketSortUrl("test-hackathon", VALID_ASSIGNMENT_ID), {
@@ -338,10 +347,9 @@ describe("Judging Scoring Routes", () => {
       expect(mockRecalculateForAssignment).toHaveBeenCalledWith(VALID_ASSIGNMENT_ID)
     })
 
-    it("passes correct parameters to verifyAssignmentOwnership", async () => {
+    it("passes correct parameters to assertAssignmentWritable", async () => {
       mockAuth.mockResolvedValue({ userId: "user_judge" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
-      mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" })
       mockSubmitBucketSortResponse.mockResolvedValue({ success: true })
 
       await app.handle(
@@ -352,7 +360,7 @@ describe("Judging Scoring Routes", () => {
         })
       )
 
-      expect(mockVerifyAssignmentOwnership).toHaveBeenCalledWith(VALID_ASSIGNMENT_ID, "user_judge")
+      expect(mockAssertAssignmentWritable).toHaveBeenCalledWith(VALID_ASSIGNMENT_ID, "user_judge", mockHackathon)
     })
   })
 
@@ -421,7 +429,7 @@ describe("Judging Scoring Routes", () => {
     it("returns 404 when assignment ownership verification fails", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
-      mockVerifyAssignmentOwnership.mockResolvedValue(false)
+      mockAssertAssignmentWritable.mockResolvedValueOnce({ ok: false, code: "not_found", status: 404, error: "Assignment not found" })
 
       const res = await app.handle(
         new Request(gateCheckUrl("test-hackathon", VALID_ASSIGNMENT_ID), {
@@ -439,7 +447,7 @@ describe("Judging Scoring Routes", () => {
     it("returns 404 when assignment belongs to a different hackathon", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
-      mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: "99999999-9999-9999-9999-999999999999", prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" })
+      mockAssertAssignmentWritable.mockResolvedValueOnce({ ok: false, code: "not_found", status: 404, error: "Assignment not found" })
 
       const res = await app.handle(
         new Request(gateCheckUrl("test-hackathon", VALID_ASSIGNMENT_ID), {
@@ -533,10 +541,9 @@ describe("Judging Scoring Routes", () => {
       expect(mockRecalculateForAssignment).toHaveBeenCalledWith(VALID_ASSIGNMENT_ID)
     })
 
-    it("passes correct parameters to verifyAssignmentOwnership", async () => {
+    it("passes correct parameters to assertAssignmentWritable", async () => {
       mockAuth.mockResolvedValue({ userId: "user_judge" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
-      mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" })
       mockSubmitGateCheckResponse.mockResolvedValue({ success: true })
 
       await app.handle(
@@ -547,7 +554,7 @@ describe("Judging Scoring Routes", () => {
         })
       )
 
-      expect(mockVerifyAssignmentOwnership).toHaveBeenCalledWith(VALID_ASSIGNMENT_ID, "user_judge")
+      expect(mockAssertAssignmentWritable).toHaveBeenCalledWith(VALID_ASSIGNMENT_ID, "user_judge", mockHackathon)
     })
 
     it("passes gates array to submitGateCheckResponse", async () => {
@@ -748,7 +755,7 @@ describe("Judging Scoring Routes", () => {
     it("returns 404 when assignment belongs to a different hackathon", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
-      mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: "99999999-9999-9999-9999-999999999999", prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" })
+      mockAssertAssignmentWritable.mockResolvedValueOnce({ ok: false, code: "not_found", status: 404, error: "Assignment not found" })
 
       const res = await app.handle(
         new Request(scoresUrl("test-hackathon", VALID_ASSIGNMENT_ID), {
