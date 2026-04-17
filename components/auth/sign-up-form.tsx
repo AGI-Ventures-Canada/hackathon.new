@@ -19,21 +19,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { generateSlug, isValidSlugFormat } from "@/lib/utils/slug";
 
 type Step = "register" | "verify" | "create-org";
-
-function generateSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-}
-
-function isValidSlugFormat(slug: string): boolean {
-  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug);
-}
 
 export function SignUpForm({ redirectUrl }: { redirectUrl?: string }) {
   const { signUp, isLoaded, setActive } = useSignUp();

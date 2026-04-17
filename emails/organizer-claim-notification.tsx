@@ -2,12 +2,14 @@ import { Text } from "@react-email/components"
 import { OatmealLayout } from "./_components/oatmeal-layout"
 import { CTAButton } from "./_components/cta-button"
 import { colors } from "./_components/constants"
+import { formatPrizeValue } from "./_components/format-utils"
 
 interface OrganizerClaimNotificationEmailProps {
   winnerName: string
   prizeName: string
   hackathonName: string
   fulfillmentUrl: string | null
+  prizeValue?: string | null
 }
 
 export default function OrganizerClaimNotificationEmail({
@@ -15,6 +17,7 @@ export default function OrganizerClaimNotificationEmail({
   prizeName,
   hackathonName,
   fulfillmentUrl,
+  prizeValue,
 }: OrganizerClaimNotificationEmailProps) {
   return (
     <OatmealLayout
@@ -24,7 +27,7 @@ export default function OrganizerClaimNotificationEmail({
     >
       <Text style={{ fontSize: "14px", marginBottom: "16px", lineHeight: "1.6" }}>
         <strong>{winnerName}</strong> has claimed the{" "}
-        <strong>{prizeName}</strong> prize from {hackathonName}.
+        <strong>{prizeName}</strong>{prizeValue ? ` (${formatPrizeValue(prizeValue)})` : ""} prize from {hackathonName}.
       </Text>
 
       <Text
@@ -51,4 +54,5 @@ OrganizerClaimNotificationEmail.PreviewProps = {
   prizeName: "Best AI Application",
   hackathonName: "AI Innovation Hackathon 2026",
   fulfillmentUrl: "https://getoatmeal.com/e/ai-innovation-2026/manage?tab=post-event",
+  prizeValue: "5000",
 } satisfies OrganizerClaimNotificationEmailProps

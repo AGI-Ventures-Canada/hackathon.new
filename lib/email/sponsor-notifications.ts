@@ -7,8 +7,10 @@ export async function sendSponsorClaimNotification(params: {
   hackathonName: string
   winnerName: string
   sponsorTenantId: string
+  hackathonSlug?: string
+  prizeValue?: string | null
 }): Promise<number> {
-  const { prizeName, hackathonName, winnerName, sponsorTenantId } = params
+  const { prizeName, hackathonName, winnerName, sponsorTenantId, hackathonSlug, prizeValue } = params
   const { supabase: getSupabase } = await import("@/lib/db/client")
   const client = getSupabase()
 
@@ -27,11 +29,17 @@ export async function sendSponsorClaimNotification(params: {
     return 0
   }
 
+  const eventUrl = hackathonSlug && process.env.NEXT_PUBLIC_APP_URL
+    ? `${process.env.NEXT_PUBLIC_APP_URL}/e/${hackathonSlug}`
+    : null
+
   const { html, text } = await renderEmail(
     SponsorClaimNotificationEmail({
       winnerName,
       prizeName,
       hackathonName,
+      eventUrl,
+      prizeValue,
     })
   )
 
