@@ -145,9 +145,41 @@ const BANNER = `
     prizes assign <id> <pid>                 Assign prize
     prizes unassign <id> <pid> <sid>         Unassign prize
 
+  ${pc.dim("CHALLENGES")}
+    challenges list <id>                     List challenges
+    challenges create <id>                   Create (--title [--description --resources "label|url;..."])
+    challenges update <id> <cid>             Update a challenge
+    challenges delete <id> <cid>             Delete a challenge
+    challenges reorder <id> --ids id1,id2    Reorder challenges
+
+  ${pc.dim("ANNOUNCEMENTS")}
+    announcements list <id>                  List announcements
+    announcements create <id>                Create (--title --body [--priority --audience])
+    announcements update <id> <aid>          Update an announcement
+    announcements delete <id> <aid>          Delete an announcement
+    announcements publish <id> <aid>         Publish now
+    announcements schedule <id> <aid> --at   Schedule for future publish (ISO 8601)
+    announcements unpublish <id> <aid>       Unpublish an announcement
+
+  ${pc.dim("TEAMS")}
+    teams list <id>                          List teams with members
+    teams create <id>                        Create a team (--name --captain-email)
+    teams update <id> <tid>                  Update team name/mode
+    teams update-members <id> <tid>          Add/remove team members (--add a,b --remove c)
+    teams assign-room <id> <rid>             Assign team to room (--team <tid>)
+    teams unassign-room <id> <rid> <tid>     Remove team from room
+
+  ${pc.dim("SPONSORS")}
+    sponsors list <id>                       List sponsors
+    sponsors add <id>                        Add a sponsor (--name --tier --website --logo-url)
+    sponsors update <id> <sid>               Update a sponsor
+    sponsors remove <id> <sid>               Remove a sponsor
+    sponsors reorder <id> --ids id1,id2,...  Reorder sponsors
+
   ${pc.dim("PERKS")}
     perks list <id>                          List perks
     perks create <id>                        Create a perk (--name --type --sponsor-id --code --url --scheduled)
+    perks update <id> <pid>                  Update a perk
     perks delete <id> <pid>                  Delete a perk
     perks release <id> <pid>                 Release a perk now
 
@@ -176,8 +208,14 @@ const BANNER = `
     jobs result <id>           Get job result
     jobs cancel <id>           Cancel a job
 
-  ${pc.dim("SCHEDULES")}
-    schedules list             List schedules
+  ${pc.dim("SCHEDULE (event-scoped)")}
+    schedule list <id>                       List schedule items for a hackathon
+    schedule add <id>                        Add a schedule item (--title --starts-at [--ends-at --location])
+    schedule update <id> <iid>               Update a schedule item
+    schedule delete <id> <iid>               Delete a schedule item
+
+  ${pc.dim("SCHEDULES (org-level cron jobs)")}
+    schedules list             List org-level schedules
     schedules create           Create a schedule
     schedules get <id>         Get schedule details
     schedules update <id>      Update a schedule
@@ -586,6 +624,161 @@ async function main() {
         break
       }
 
+      case "challenges": {
+        const client = createAuthenticatedClient(flags)
+        switch (sub) {
+          case "list": {
+            const { runChallengesList } = await import("./commands/challenges/list.js")
+            await runChallengesList(client, rest[2], { json: flags.json })
+            break
+          }
+          case "create": {
+            const { runChallengesCreate } = await import("./commands/challenges/create.js")
+            await runChallengesCreate(client, rest[2], rest.slice(3).concat(flags.json ? ["--json"] : []))
+            break
+          }
+          case "update": {
+            const { runChallengesUpdate } = await import("./commands/challenges/update.js")
+            await runChallengesUpdate(client, rest[2], rest[3], rest.slice(4).concat(flags.json ? ["--json"] : []))
+            break
+          }
+          case "delete": {
+            const { runChallengesDelete } = await import("./commands/challenges/delete.js")
+            await runChallengesDelete(client, rest[2], rest[3], { yes: flags.yes })
+            break
+          }
+          case "reorder": {
+            const { runChallengesReorder } = await import("./commands/challenges/reorder.js")
+            await runChallengesReorder(client, rest[2], rest.slice(3))
+            break
+          }
+          default:
+            console.error(`Unknown challenges command: ${sub}`)
+            process.exit(1)
+        }
+        break
+      }
+
+      case "announcements": {
+        const client = createAuthenticatedClient(flags)
+        switch (sub) {
+          case "list": {
+            const { runAnnouncementsList } = await import("./commands/announcements/list.js")
+            await runAnnouncementsList(client, rest[2], { json: flags.json })
+            break
+          }
+          case "create": {
+            const { runAnnouncementsCreate } = await import("./commands/announcements/create.js")
+            await runAnnouncementsCreate(client, rest[2], rest.slice(3).concat(flags.json ? ["--json"] : []))
+            break
+          }
+          case "update": {
+            const { runAnnouncementsUpdate } = await import("./commands/announcements/update.js")
+            await runAnnouncementsUpdate(client, rest[2], rest[3], rest.slice(4).concat(flags.json ? ["--json"] : []))
+            break
+          }
+          case "delete": {
+            const { runAnnouncementsDelete } = await import("./commands/announcements/delete.js")
+            await runAnnouncementsDelete(client, rest[2], rest[3], { yes: flags.yes })
+            break
+          }
+          case "publish": {
+            const { runAnnouncementsPublish } = await import("./commands/announcements/publish.js")
+            await runAnnouncementsPublish(client, rest[2], rest[3], { json: flags.json })
+            break
+          }
+          case "schedule": {
+            const { runAnnouncementsSchedule } = await import("./commands/announcements/schedule.js")
+            await runAnnouncementsSchedule(client, rest[2], rest[3], rest.slice(4).concat(flags.json ? ["--json"] : []))
+            break
+          }
+          case "unpublish": {
+            const { runAnnouncementsUnpublish } = await import("./commands/announcements/unpublish.js")
+            await runAnnouncementsUnpublish(client, rest[2], rest[3], { json: flags.json })
+            break
+          }
+          default:
+            console.error(`Unknown announcements command: ${sub}`)
+            process.exit(1)
+        }
+        break
+      }
+
+      case "teams": {
+        const client = createAuthenticatedClient(flags)
+        switch (sub) {
+          case "list": {
+            const { runTeamsList } = await import("./commands/teams/list.js")
+            await runTeamsList(client, rest[2], { json: flags.json })
+            break
+          }
+          case "create": {
+            const { runTeamsCreate } = await import("./commands/teams/create.js")
+            await runTeamsCreate(client, rest[2], rest.slice(3).concat(flags.json ? ["--json"] : []))
+            break
+          }
+          case "update": {
+            const { runTeamsUpdate } = await import("./commands/teams/update.js")
+            await runTeamsUpdate(client, rest[2], rest[3], rest.slice(4).concat(flags.json ? ["--json"] : []))
+            break
+          }
+          case "update-members": {
+            const { runTeamsUpdateMembers } = await import("./commands/teams/update-members.js")
+            await runTeamsUpdateMembers(client, rest[2], rest[3], rest.slice(4))
+            break
+          }
+          case "assign-room": {
+            const { runTeamsAssignRoom } = await import("./commands/teams/assign-room.js")
+            await runTeamsAssignRoom(client, rest[2], rest[3], rest.slice(4))
+            break
+          }
+          case "unassign-room": {
+            const { runTeamsUnassignRoom } = await import("./commands/teams/unassign-room.js")
+            await runTeamsUnassignRoom(client, rest[2], rest[3], rest[4])
+            break
+          }
+          default:
+            console.error(`Unknown teams command: ${sub}`)
+            process.exit(1)
+        }
+        break
+      }
+
+      case "sponsors": {
+        const client = createAuthenticatedClient(flags)
+        switch (sub) {
+          case "list": {
+            const { runSponsorsList } = await import("./commands/sponsors/list.js")
+            await runSponsorsList(client, rest[2], { json: flags.json })
+            break
+          }
+          case "add": {
+            const { runSponsorsAdd } = await import("./commands/sponsors/add.js")
+            await runSponsorsAdd(client, rest[2], rest.slice(3).concat(flags.json ? ["--json"] : []))
+            break
+          }
+          case "update": {
+            const { runSponsorsUpdate } = await import("./commands/sponsors/update.js")
+            await runSponsorsUpdate(client, rest[2], rest[3], rest.slice(4).concat(flags.json ? ["--json"] : []))
+            break
+          }
+          case "remove": {
+            const { runSponsorsRemove } = await import("./commands/sponsors/remove.js")
+            await runSponsorsRemove(client, rest[2], rest[3], { yes: flags.yes })
+            break
+          }
+          case "reorder": {
+            const { runSponsorsReorder } = await import("./commands/sponsors/reorder.js")
+            await runSponsorsReorder(client, rest[2], rest.slice(3))
+            break
+          }
+          default:
+            console.error(`Unknown sponsors command: ${sub}`)
+            process.exit(1)
+        }
+        break
+      }
+
       case "perks": {
         const client = createAuthenticatedClient(flags)
         switch (sub) {
@@ -597,6 +790,11 @@ async function main() {
           case "create": {
             const { runPerksCreate } = await import("./commands/perks/create.js")
             await runPerksCreate(client, rest[2], rest.slice(3).concat(flags.json ? ["--json"] : []))
+            break
+          }
+          case "update": {
+            const { runPerksUpdate } = await import("./commands/perks/update.js")
+            await runPerksUpdate(client, rest[2], rest[3], rest.slice(4).concat(flags.json ? ["--json"] : []))
             break
           }
           case "delete": {
@@ -736,6 +934,36 @@ async function main() {
           }
           default:
             console.error(`Unknown jobs command: ${sub}`)
+            process.exit(1)
+        }
+        break
+      }
+
+      case "schedule": {
+        const client = createAuthenticatedClient(flags)
+        switch (sub) {
+          case "list": {
+            const { runScheduleList } = await import("./commands/schedule/list.js")
+            await runScheduleList(client, rest[2], { json: flags.json })
+            break
+          }
+          case "add": {
+            const { runScheduleAdd } = await import("./commands/schedule/add.js")
+            await runScheduleAdd(client, rest[2], rest.slice(3).concat(flags.json ? ["--json"] : []))
+            break
+          }
+          case "update": {
+            const { runScheduleUpdate } = await import("./commands/schedule/update.js")
+            await runScheduleUpdate(client, rest[2], rest[3], rest.slice(4).concat(flags.json ? ["--json"] : []))
+            break
+          }
+          case "delete": {
+            const { runScheduleDelete } = await import("./commands/schedule/delete.js")
+            await runScheduleDelete(client, rest[2], rest[3], { yes: flags.yes })
+            break
+          }
+          default:
+            console.error(`Unknown schedule command: ${sub}`)
             process.exit(1)
         }
         break
