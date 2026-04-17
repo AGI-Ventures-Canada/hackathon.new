@@ -49,6 +49,20 @@ export function DevToolPanel({
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Escape") return
+      if (view.kind !== "palette") {
+        e.preventDefault()
+        setView({ kind: "palette" })
+        return
+      }
+      onClose()
+    }
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [view.kind, onClose])
+
+  useEffect(() => {
     fetch("/api/admin/scenario-personas")
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
@@ -183,6 +197,8 @@ export function DevToolPanel({
     async (role: string) => {
       if (!hackathonId) return
       const id = `role:${role}`
+      const previous = currentRoles
+      setCurrentRoles((prev) => (prev.includes(role) ? prev : [...prev, role]))
       setRunningId(id)
       setError(null)
       try {
@@ -197,22 +213,26 @@ export function DevToolPanel({
         if (!res.ok) {
           const data = await res.json().catch(() => null)
           setError(data?.error ?? "Failed to assign role")
+          setCurrentRoles(previous)
           return
         }
         refreshRoles()
       } catch {
         setError("Network error")
+        setCurrentRoles(previous)
       } finally {
         setRunningId(null)
       }
     },
-    [hackathonId, refreshRoles]
+    [hackathonId, refreshRoles, currentRoles]
   )
 
   const removeRole = useCallback(
     async (role: string) => {
       if (!hackathonId) return
       const id = `role:${role}`
+      const previous = currentRoles
+      setCurrentRoles((prev) => prev.filter((r) => r !== role))
       setRunningId(id)
       setError(null)
       try {
@@ -227,16 +247,18 @@ export function DevToolPanel({
         if (!res.ok) {
           const data = await res.json().catch(() => null)
           setError(data?.error ?? "Failed to remove role")
+          setCurrentRoles(previous)
           return
         }
         refreshRoles()
       } catch {
         setError("Network error")
+        setCurrentRoles(previous)
       } finally {
         setRunningId(null)
       }
     },
-    [hackathonId, refreshRoles]
+    [hackathonId, refreshRoles, currentRoles]
   )
 
   const commands = buildCommands({

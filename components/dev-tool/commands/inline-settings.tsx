@@ -122,7 +122,7 @@ function StatusDot({ envSet, overrideSet }: { envSet: boolean; overrideSet: bool
   if (overrideSet)
     return (
       <span
-        className="size-2 rounded-full bg-[oklch(0.75_0.18_55)] shrink-0"
+        className="size-2 rounded-full bg-secondary shrink-0"
         title="Set via Dev Tool"
       />
     )

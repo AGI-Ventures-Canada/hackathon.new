@@ -103,7 +103,6 @@ export function DevTool() {
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape" && expanded) setExpanded(false)
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         const target = e.target as HTMLElement | null
         const inEditable =

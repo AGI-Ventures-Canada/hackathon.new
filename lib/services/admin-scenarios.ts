@@ -246,6 +246,8 @@ async function createPendingInvitation(
     expiresInHours?: number
     status?: "pending" | "accepted" | "declined" | "expired" | "cancelled"
     invitedBy?: string
+    acceptedByClerkUserId?: string
+    acceptedAt?: Date
   } = {}
 ): Promise<string> {
   const db = getSupabase()
@@ -262,6 +264,8 @@ async function createPendingInvitation(
       invited_by_clerk_user_id: opts.invitedBy ?? getSeedUsers()[0],
       status: opts.status ?? "pending",
       expires_at: expiresAt.toISOString(),
+      accepted_at: opts.acceptedAt?.toISOString() ?? null,
+      accepted_by_clerk_user_id: opts.acceptedByClerkUserId ?? null,
     })
     .select("token")
     .single()
@@ -766,7 +770,8 @@ const scenarioRunners: Record<string, (tenantId?: string, principalOrgId?: strin
     const otherCaptain = seed[0]
     const teamId = await createTeamWithMembers(hackathonId, otherCaptain, [seed[1]])
     await db.from("teams").update({ name: "The Other Captain's Team" }).eq("id", teamId)
-    await createPendingInvitation(teamId, hackathonId, "hai@agiventures.ca", {
+    const devEmail = process.env.SCENARIO_DEV_USER_EMAIL ?? "dev-user@example.com"
+    await createPendingInvitation(teamId, hackathonId, devEmail, {
       invitedBy: otherCaptain,
     })
     return { hackathonId, slug, tenantId }

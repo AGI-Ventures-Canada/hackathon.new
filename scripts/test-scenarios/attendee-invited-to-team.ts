@@ -11,7 +11,7 @@ import {
 
 const SLUG = "test-attendee-invited-to-team"
 
-const DEV_USER_EMAIL = "hai@agiventures.ca"
+const DEV_USER_EMAIL = process.env.SCENARIO_DEV_USER_EMAIL ?? "dev-user@example.com"
 
 async function run() {
   console.log("Setting up attendee-invited-to-team scenario...")

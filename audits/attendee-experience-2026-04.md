@@ -186,7 +186,7 @@ Each of these is a one-command seed — `bun run scripts/test-scenario.ts <name>
 | `attendee-invited-to-team` | Dev user has a pending invite from a different captain |
 | `attendee-solo-submitted` | `allow_solo=true`, dev user submitted a solo project |
 | `attendee-submitted-then-left` | Dev user submitted, then was removed from the team; team still has other members |
-| `attendee-announcements-audiences` | 6 announcements — one for each audience enum value |
+| `attendee-announcements-audiences` | 7 announcements — one for each audience enum value |
 | `attendee-perks-mixed` | Hackathon with released, future-scheduled, and hidden perks |
 | `attendee-winner-pending-claim` | Results published, dev user's team won 1st, claim not yet made |
 
