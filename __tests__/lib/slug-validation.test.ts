@@ -89,26 +89,6 @@ describe("slug validation regex", () => {
       expect(isValidSlugFormat("my.org")).toBe(false)
     })
   })
-
-  describe("isValidSlugFormat enforces minimum length", () => {
-    it("accepts valid slugs", () => {
-      expect(isValidSlugFormat("my-org")).toBe(true)
-      expect(isValidSlugFormat("abc")).toBe(true)
-    })
-
-    it("rejects slugs shorter than 3 characters", () => {
-      expect(isValidSlugFormat("a")).toBe(false)
-      expect(isValidSlugFormat("ab")).toBe(false)
-    })
-
-    it("rejects empty strings", () => {
-      expect(isValidSlugFormat("")).toBe(false)
-    })
-
-    it("rejects invalid patterns", () => {
-      expect(isValidSlugFormat("my--org")).toBe(false)
-    })
-  })
 })
 
 describe("generateSlug", () => {

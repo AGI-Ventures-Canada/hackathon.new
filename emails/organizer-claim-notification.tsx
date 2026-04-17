@@ -2,6 +2,7 @@ import { Text } from "@react-email/components"
 import { OatmealLayout } from "./_components/oatmeal-layout"
 import { CTAButton } from "./_components/cta-button"
 import { colors } from "./_components/constants"
+import { formatPrizeValue } from "./_components/format-utils"
 
 interface OrganizerClaimNotificationEmailProps {
   winnerName: string
@@ -9,15 +10,6 @@ interface OrganizerClaimNotificationEmailProps {
   hackathonName: string
   fulfillmentUrl: string | null
   prizeValue?: string | null
-}
-
-function formatPrizeValue(value: string): string {
-  const stripped = value.replace(/^\$/, "")
-  const num = Number(stripped.replace(/,/g, ""))
-  if (!Number.isNaN(num) && Number.isFinite(num)) {
-    return `$${num.toLocaleString("en-US")}`
-  }
-  return stripped.startsWith("$") ? stripped : `$${stripped}`
 }
 
 export default function OrganizerClaimNotificationEmail({

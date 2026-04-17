@@ -10,7 +10,6 @@ const {
   getPublicTenantBySlug,
   getPublicTenantById,
   updateTenantProfile,
-  generateSlug,
   isSlugAvailable,
   getPublicTenantWithHackathons,
   getPublicTenantWithEvents,
@@ -116,28 +115,6 @@ describe("Tenant Profiles Service", () => {
       const result = await updateTenantProfile("t1", { name: "New Name" })
 
       expect(result).toBeNull()
-    })
-  })
-
-  describe("generateSlug", () => {
-    it("generates slug from name", () => {
-      expect(generateSlug("Test Organization")).toBe("test-organization")
-    })
-
-    it("removes special characters", () => {
-      expect(generateSlug("Test & Organization!")).toBe("test-organization")
-    })
-
-    it("handles multiple spaces", () => {
-      expect(generateSlug("Test   Organization")).toBe("test-organization")
-    })
-
-    it("handles leading/trailing dashes", () => {
-      expect(generateSlug(" Test Organization ")).toBe("test-organization")
-    })
-
-    it("handles already lowercase", () => {
-      expect(generateSlug("test-org")).toBe("test-org")
     })
   })
 
