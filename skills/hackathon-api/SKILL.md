@@ -4,13 +4,21 @@ model: sonnet
 description: Interact with the Oatmeal hackathon platform directly via its REST API using curl commands. Use when the user asks to make direct API calls, test endpoints, debug API responses, or integrate with the Oatmeal API programmatically without the CLI.
 activationKeywords:
   - "hackathon api"
-  - "hackathon api"
+  - "oatmeal api"
   - "curl hackathon"
   - "api endpoint"
   - "rest api hackathon"
   - "api key hackathon"
   - "test api"
   - "api call"
+  - "import from luma"
+  - "import from url"
+  - "prize track"
+  - "prize tracks"
+  - "judging round"
+  - "announcement"
+  - "sponsor perk"
+  - "hybrid hackathon"
 ---
 
 # Hackathon API — Direct REST API Access
@@ -27,11 +35,14 @@ Interact with the Oatmeal hackathon platform directly via its REST API using `cu
 ## When to Activate
 
 - User asks to create, update, or manage a hackathon
-- User asks to add/remove judges, sponsors, or prizes
-- User asks to configure judging criteria or assignments
+- User asks to add/remove judges, sponsors, teams, or prizes
+- User asks to configure judging criteria, rounds, or prize tracks
 - User asks to calculate or publish results
 - User asks to register for a hackathon or manage submissions
-- User asks to set up webhooks or schedules
+- User asks to send/schedule announcements or email blasts
+- User asks to release sponsor perks or sponsor credits
+- User asks to import a hackathon from a Luma or external event URL
+- User asks to set up webhooks, integrations, or scheduled jobs
 - User mentions "oatmeal" in the context of hackathon management
 - User gives natural language commands like "make me a hackathon on Sunday from 7am to 9pm"
 
@@ -45,7 +56,7 @@ Interact with the Oatmeal hackathon platform directly via its REST API using `cu
 
 Before making API calls, the user needs:
 
-1. **A running Oatmeal instance** — either local (`http://localhost:3000`) or production
+1. **A running Oatmeal instance** — either local (`http://localhost:3000`) or production (`https://getoatmeal.com`)
 2. **An API key** — obtained from the dashboard at `/hackathons` > Settings > API Keys
 3. **An organization** — the user must belong to a Clerk organization
 
@@ -84,7 +95,15 @@ curl -s -H "Authorization: Bearer $HACKATHON_API_KEY" \
   "$HACKATHON_BASE_URL/api/dashboard/me" | jq .
 ```
 
-This returns the current principal info including organization details.
+## Route Namespace Guide
+
+| Namespace | Auth | Use For |
+|-----------|------|---------|
+| `/api/public/*` | None (some need Clerk session) | Browsing, registration, attendee pages |
+| `/api/dashboard/*` | API key OR Clerk session | All management operations — **use this for agents** |
+| `/api/v1/*` | API key only | Jobs, webhooks (deliberately narrow) |
+
+**Rule of thumb for agents:** Use `/api/dashboard/*` with a `Bearer sk_live_...` API key for every resource operation (create / list / update / delete). The `/api/v1/*` surface exists for stable integration primitives (jobs + webhooks + activity logs) and is not a replay of the dashboard API.
 
 ## Core Workflows
 
@@ -111,11 +130,24 @@ curl -s -X POST -H "Authorization: Bearer $HACKATHON_API_KEY" \
   }' | jq .
 ```
 
-**Date handling rules:**
-- Always convert relative dates ("this Sunday", "next Friday") to absolute ISO 8601 timestamps
-- Use the user's timezone if known, otherwise ask
-- Registration typically opens immediately and closes at or before the hackathon start time
-- Default status is `draft` — remind the user to publish when ready
+### Import from Luma (or any event URL)
+
+When users paste a Luma or event URL:
+
+```bash
+# One-step create: fetch + create
+curl -s -X POST -H "Authorization: Bearer $HACKATHON_API_KEY" \
+  -H "Content-Type: application/json" \
+  "$HACKATHON_BASE_URL/api/dashboard/import/url" \
+  -d '{"url": "https://lu.ma/abcd1234"}' | jq .
+
+# Or: preview first, edit, then create
+PREVIEW=$(curl -s -X POST -H "Content-Type: application/json" \
+  "$HACKATHON_BASE_URL/api/public/import/url" \
+  -d '{"url": "https://lu.ma/abcd1234"}' | jq .)
+
+# User reviews $PREVIEW, then POSTs to /dashboard/import/event with edits
+```
 
 ### Update Hackathon Settings
 
@@ -123,67 +155,149 @@ curl -s -X POST -H "Authorization: Bearer $HACKATHON_API_KEY" \
 curl -s -X PATCH -H "Authorization: Bearer $HACKATHON_API_KEY" \
   -H "Content-Type: application/json" \
   "$HACKATHON_BASE_URL/api/dashboard/hackathons/{HACKATHON_ID}/settings" \
-  -d '{
-    "status": "published",
-    "name": "Updated Name"
-  }' | jq .
+  -d '{"status": "published", "name": "Updated Name"}' | jq .
 ```
 
 Valid statuses: `draft`, `published`, `registration_open`, `active`, `judging`, `completed`, `archived`
 
 ### Add a Judge
 
-When users say "add this judge to my hackathon":
-
 ```bash
-# By email (sends invitation if user not found)
 curl -s -X POST -H "Authorization: Bearer $HACKATHON_API_KEY" \
   -H "Content-Type: application/json" \
   "$HACKATHON_BASE_URL/api/dashboard/hackathons/{HACKATHON_ID}/judging/judges" \
   -d '{"email": "judge@example.com"}' | jq .
 ```
 
-### Set Up Judging Criteria
+### Create a Prize (embedded criteria/buckets)
 
-```bash
-curl -s -X POST -H "Authorization: Bearer $HACKATHON_API_KEY" \
-  -H "Content-Type: application/json" \
-  "$HACKATHON_BASE_URL/api/dashboard/hackathons/{HACKATHON_ID}/judging/criteria" \
-  -d '{
-    "name": "Innovation",
-    "description": "How novel and creative is the solution?",
-    "maxScore": 10,
-    "weight": 1.0,
-    "displayOrder": 1
-  }' | jq .
-```
-
-### Create a Prize
+Every prize is a self-contained judging unit with its own style and criteria/buckets:
 
 ```bash
 curl -s -X POST -H "Authorization: Bearer $HACKATHON_API_KEY" \
   -H "Content-Type: application/json" \
   "$HACKATHON_BASE_URL/api/dashboard/hackathons/{HACKATHON_ID}/prizes" \
   -d '{
-    "name": "First Place",
-    "description": "Grand prize for the winning team",
+    "name": "Best Overall",
     "value": "$5,000",
-    "displayOrder": 1
+    "judgingStyle": "bucket_sort",
+    "buckets": [
+      {"level": 1, "label": "Not a fit"},
+      {"level": 2, "label": "Solid"},
+      {"level": 3, "label": "Excellent"}
+    ]
   }' | jq .
+```
+
+### Multi-Round Judging with Prize Tracks
+
+Prize tracks group prizes and share rounds (e.g. "Grand Prize" with screening → finals):
+
+```bash
+# Create the track
+TRACK=$(curl -s -X POST -H "Authorization: Bearer $HACKATHON_API_KEY" \
+  -H "Content-Type: application/json" \
+  "$HACKATHON_BASE_URL/api/dashboard/hackathons/{HACKATHON_ID}/prize-tracks" \
+  -d '{"name": "Grand Prize", "intent": "overall_winner", "style": "bucket_sort"}' | jq .)
+
+TRACK_ID=$(echo $TRACK | jq -r '.id')
+
+# Add a Finals round to the track (the initial round was auto-created)
+curl -s -X POST -H "Authorization: Bearer $HACKATHON_API_KEY" \
+  -H "Content-Type: application/json" \
+  "$HACKATHON_BASE_URL/api/dashboard/hackathons/{HACKATHON_ID}/prize-tracks/$TRACK_ID/rounds" \
+  -d '{"name": "Finals", "style": "subjective"}' | jq .
+
+# Once screening closes, calculate and activate the next round
+curl -s -X POST -H "Authorization: Bearer $HACKATHON_API_KEY" \
+  "$HACKATHON_BASE_URL/api/dashboard/hackathons/{HACKATHON_ID}/prize-tracks/$TRACK_ID/rounds/$ROUND_ID/calculate-results" | jq .
+
+curl -s -X POST -H "Authorization: Bearer $HACKATHON_API_KEY" \
+  "$HACKATHON_BASE_URL/api/dashboard/hackathons/{HACKATHON_ID}/prize-tracks/$TRACK_ID/rounds/$FINALS_ROUND_ID/activate" | jq .
+```
+
+### Broadcast Announcements
+
+```bash
+# Create draft
+ANN_ID=$(curl -s -X POST -H "Authorization: Bearer $HACKATHON_API_KEY" \
+  -H "Content-Type: application/json" \
+  "$HACKATHON_BASE_URL/api/dashboard/hackathons/{HACKATHON_ID}/announcements" \
+  -d '{
+    "title": "Kickoff in 15 minutes",
+    "body": "Join us in the main room at 9 AM sharp.",
+    "priority": "normal",
+    "audience": "all"
+  }' | jq -r '.id')
+
+# Publish now
+curl -s -X POST -H "Authorization: Bearer $HACKATHON_API_KEY" \
+  "$HACKATHON_BASE_URL/api/dashboard/hackathons/{HACKATHON_ID}/announcements/$ANN_ID/publish" | jq .
+
+# OR schedule for later
+curl -s -X POST -H "Authorization: Bearer $HACKATHON_API_KEY" \
+  -H "Content-Type: application/json" \
+  "$HACKATHON_BASE_URL/api/dashboard/hackathons/{HACKATHON_ID}/announcements/$ANN_ID/schedule" \
+  -d '{"publishAt": "2026-05-01T09:00:00Z"}' | jq .
+```
+
+### Sponsor Perks
+
+```bash
+# Add sponsor
+SPONSOR_ID=$(curl -s -X POST -H "Authorization: Bearer $HACKATHON_API_KEY" \
+  -H "Content-Type: application/json" \
+  "$HACKATHON_BASE_URL/api/dashboard/hackathons/{HACKATHON_ID}/sponsors" \
+  -d '{"name": "Acme Corp", "tier": "gold", "websiteUrl": "https://acme.com"}' | jq -r '.id')
+
+# Create a perk linked to the sponsor
+PERK_ID=$(curl -s -X POST -H "Authorization: Bearer $HACKATHON_API_KEY" \
+  -H "Content-Type: application/json" \
+  "$HACKATHON_BASE_URL/api/dashboard/hackathons/{HACKATHON_ID}/perks" \
+  -d "{
+    \"name\": \"Acme Cloud Credits\",
+    \"type\": \"credit\",
+    \"sponsorId\": \"$SPONSOR_ID\",
+    \"code\": \"ACME500\",
+    \"redemptionUrl\": \"https://acme.com/redeem\"
+  }" | jq -r '.id')
+
+# Release it to attendees
+curl -s -X POST -H "Authorization: Bearer $HACKATHON_API_KEY" \
+  "$HACKATHON_BASE_URL/api/dashboard/hackathons/{HACKATHON_ID}/perks/$PERK_ID/release" | jq .
+```
+
+### Teams & Rooms (Hybrid Event)
+
+```bash
+# Create team
+curl -s -X POST -H "Authorization: Bearer $HACKATHON_API_KEY" \
+  -H "Content-Type: application/json" \
+  "$HACKATHON_BASE_URL/api/dashboard/hackathons/{HACKATHON_ID}/teams" \
+  -d '{"name": "Team Rocket", "captainEmail": "ash@example.com", "mode": "in_person"}' | jq .
+
+# Add members
+curl -s -X PATCH -H "Authorization: Bearer $HACKATHON_API_KEY" \
+  -H "Content-Type: application/json" \
+  "$HACKATHON_BASE_URL/api/dashboard/hackathons/{HACKATHON_ID}/teams/{TEAM_ID}/members" \
+  -d '{"addEmails": ["bob@co.com", "carol@co.com"]}' | jq .
+
+# Assign to room
+curl -s -X POST -H "Authorization: Bearer $HACKATHON_API_KEY" \
+  -H "Content-Type: application/json" \
+  "$HACKATHON_BASE_URL/api/dashboard/hackathons/{HACKATHON_ID}/rooms/{ROOM_ID}/teams" \
+  -d '{"teamId": "{TEAM_ID}"}' | jq .
 ```
 
 ### Calculate and Publish Results
 
 ```bash
-# Calculate rankings from scores
 curl -s -X POST -H "Authorization: Bearer $HACKATHON_API_KEY" \
   "$HACKATHON_BASE_URL/api/dashboard/hackathons/{HACKATHON_ID}/results/calculate" | jq .
 
-# Review results before publishing
 curl -s -H "Authorization: Bearer $HACKATHON_API_KEY" \
   "$HACKATHON_BASE_URL/api/dashboard/hackathons/{HACKATHON_ID}/results" | jq .
 
-# Publish results (makes them public, transitions to completed)
 curl -s -X POST -H "Authorization: Bearer $HACKATHON_API_KEY" \
   "$HACKATHON_BASE_URL/api/dashboard/hackathons/{HACKATHON_ID}/results/publish" | jq .
 ```
@@ -199,24 +313,14 @@ curl -s -H "Authorization: Bearer $HACKATHON_API_KEY" \
 
 Look for the hackathon with the most recent `startsAt` date or `active`/`published` status. If ambiguous, ask the user which one they mean.
 
-## Route Namespace Guide
-
-| Namespace | Auth | Use For |
-|-----------|------|---------|
-| `/api/public/*` | None (some need Clerk session) | Browsing, registration, judging UI |
-| `/api/dashboard/*` | API key OR Clerk session | All management operations |
-| `/api/v1/*` | API key only | Jobs, webhooks (programmatic) |
-
-**For agent use, always use `/api/dashboard/*` endpoints with API key auth.** The `/api/v1/*` endpoints are for async job processing and webhook setup.
-
 ## API Key Scopes
 
 API keys have scoped permissions. Common scopes needed:
 
 | Scope | Operations |
 |-------|-----------|
-| `hackathons:read` | List/get hackathons, criteria, judges, results |
-| `hackathons:write` | Create/update hackathons, manage judging, prizes |
+| `hackathons:read` | List/get hackathons, teams, judges, prizes, tracks, rounds, results, announcements, perks, sponsors, challenges, schedule |
+| `hackathons:write` | Create/update/delete any of the above; publish/schedule announcements; release perks; advance rounds; assign judges |
 | `webhooks:read` | List webhooks |
 | `webhooks:write` | Create/delete webhooks |
 | `schedules:read` | List schedules |
@@ -238,8 +342,16 @@ Common errors:
 - `401` — Missing or invalid API key. Check `$HACKATHON_API_KEY` is set correctly.
 - `403` — API key lacks required scope. User needs to create a new key with proper permissions.
 - `404` — Resource not found. Verify the hackathon ID exists.
-- `409` — Conflict (e.g., duplicate registration, slug already taken).
+- `409` — Conflict (e.g., duplicate registration, slug already taken, round already active).
 - `422` — Validation error. Check the request body matches the expected schema.
+
+## Hackathon Lifecycle
+
+```
+draft → published → registration_open → active → judging → completed → archived
+```
+
+Transition via `PATCH /dashboard/hackathons/:id/settings` with `{"status": "<target>"}` — or use the phase-specific helper `PATCH /dashboard/hackathons/:id/phase`.
 
 ## Tips for AI Agents
 
@@ -248,8 +360,9 @@ Common errors:
 3. **Parse dates carefully** — Convert "this Sunday" to the correct ISO 8601 date using the current date context
 4. **Confirm destructive actions** — Ask the user before deleting resources or publishing results
 5. **Use jq for readability** — Pipe responses through `jq .` for formatted output
-6. **Batch operations** — When setting up a full hackathon, create all criteria, then all prizes, then add judges
+6. **Batch operations** — When setting up a full hackathon, create prizes with embedded criteria/buckets in one call rather than separate endpoints
 7. **Default to draft** — Create hackathons in draft status and let the user decide when to publish
+8. **Prefer `/dashboard/*` over `/v1/*`** — The dashboard API is the source of truth for CRUD; v1 is for jobs/webhooks only
 
 ## Full API Reference
 

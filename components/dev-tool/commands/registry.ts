@@ -53,7 +53,7 @@ export type DevCommand = {
   keywords?: string
   badge?: string
   disabled?: boolean
-  run: () => void | Promise<void>
+  run: () => void | Promise<unknown>
 }
 
 export const CATEGORY_ORDER: CommandCategory[] = [

@@ -6,15 +6,60 @@
 [![Bun](https://img.shields.io/badge/Bun-Runtime-f9f1e1?logo=bun)](https://bun.sh/)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org/)
 
-Hackathon platform for organizers, teams, and judges.
+**Oatmeal is the platform for running hackathons end-to-end — registration, teams, judging, prizes, and results.**
 
-## Stack
+Organizers launch an event in minutes, attendees form teams and submit projects, judges score with configurable rubrics, and winners are selected with transparent math. Run it in person, virtually, or both — from the dashboard, the CLI, an AI agent, or the API.
 
-- Next.js 16 + Elysia (API)
-- Clerk (auth)
-- Supabase (database)
-- Workflow DevKit (durable workflows)
-- AI SDK 6
+## What's in the box
+
+| Surface | For | Highlights |
+|---------|-----|------------|
+| **Dashboard** (`/hackathons/:id`) | Organizers, sponsors | Configure the event, invite judges, manage prizes, broadcast announcements |
+| **Public event pages** (`/e/:slug`) | Attendees, judges, visitors | Register, form teams, submit projects, score submissions, view results |
+| **CLI** (`@agi-ventures-canada/hackathon-cli`) | Power users, scripts | Manage every hackathon resource from your terminal |
+| **Skills** (`npx skills add AGI-Ventures-Canada/oatmeal`) | AI agents | Claude Code, Cursor, and others can run the event for you |
+| **Public API** (`/api/*`) | Integrations | Dashboard CRUD with API keys, stable v1 surface for jobs + webhooks |
+| **Webhooks** | Integrations | Subscribe to registration, team, submission, and judging events |
+
+## Features
+
+Major additions since 2026-02:
+
+- **Hybrid events** — in-person, virtual, or mixed. Assign in-person teams to rooms, keep virtual teams online only.
+- **Judging rounds with presets** — run multi-round tournaments (screening → semi-finals → finalists) with one-click presets including "Finalists — judges pick".
+- **Prize tracks** — group prizes into tracks (Grand Prize, Sponsor Awards, Track: AI Safety) with round-scoped advancement rules.
+- **Sponsor perks** — credits, API keys, coupons, and custom offers released on a schedule or manually to participants.
+- **Challenges** — sponsor or theme-based prompts with resources, released on the event timeline.
+- **Reminder emails** — automated nudges for registration close, submission deadlines, and judging windows.
+- **Luma import** — paste a Luma event URL and we import title, description, dates, and cover image in one click.
+- **Action items** — organizer to-do list that surfaces what still needs attention before the event starts.
+- **Mentor queue** — attendees request help, mentors triage and claim requests in real time.
+- **Announcements** — publish immediately or schedule, target specific audiences (all, teams-only, judges).
+
+## Dashboard, CLI, or API — pick your surface
+
+All three talk to the same backend. Use whichever fits the task.
+
+**Dashboard.** Fastest for most organizer work. Visual, click-driven, forgiving.
+
+**CLI.** Great for scripted setup, bulk changes, and sharing repeatable event templates.
+
+```bash
+npm install -g @agi-ventures-canada/hackathon-cli
+hackathon login
+hackathon events list
+hackathon prizes create <hackathon-id> --name "Best AI App"
+```
+
+**Skills + AI agents.** Install once in your agent; ask it to run the event.
+
+```bash
+npx skills add AGI-Ventures-Canada/oatmeal
+# In Claude Code / Cursor:
+# "Create a 48-hour AI hackathon starting next Friday with 3 tracks and a $5k grand prize."
+```
+
+**API.** Dashboard endpoints accept `Authorization: Bearer sk_live_...` — anything you can do in the UI, you can do over HTTPS. The `/api/v1/*` namespace exposes stable primitives for jobs, webhooks, and activity logs. Full reference at `/api/swagger`.
 
 ## Development
 
@@ -27,28 +72,21 @@ bun dev
 |-----|-------------|
 | http://localhost:3000 | App |
 | http://localhost:3000/docs | Documentation |
-| http://localhost:3000/api/swagger | API Reference |
-| http://localhost:3000/api/public/health | Health Check |
+| http://localhost:3000/api/swagger | API reference |
+| http://localhost:3000/api/public/health | Health check |
 
-Run tests: `bun test`
+Run tests: `bun run test`
 
-## Documentation
+### Stack
 
-Interactive documentation is available at `/docs` with:
-- Getting started guide
-- Jobs API reference
-- Webhooks guide
-- Code examples with package manager tabs
+- Next.js 16 (App Router) + React 19 + TypeScript strict
+- Elysia (API routes)
+- Clerk (auth) + Supabase (database) + Stripe (payments)
+- AI SDK 6 + Anthropic
+- Workflow DevKit (durable workflows)
+- Tailwind CSS 4 + shadcn/ui
 
-## Rules Files
-
-`CLAUDE.md` and `AGENTS.md` expose the same instructions for local development tools. In any directory that has agent guidance, one filename is a symlink to the other so different tools can read the same rules without duplicating content.
-
-Install this repo's hackathon skills with `npx skills add AGI-Ventures-Canada/oatmeal` to manage the platform from any AI coding agent (Claude Code, Cursor, etc.).
-
-Public installable skills live in `skills/`. Repo-local helper skills live in agent-specific folders and are meant to support local development inside this repository.
-
-## New Developer Setup
+### New developer setup
 
 Use Claude Code for interactive onboarding:
 
@@ -66,3 +104,20 @@ Or manually:
 5. Open http://localhost:3000
 
 See `.claude/skills/local-dev-setup.md` for detailed steps.
+
+## Rules files
+
+`CLAUDE.md` and `AGENTS.md` expose the same instructions for local development tools. In any directory that has agent guidance, one filename is a symlink to the other so different tools can read the same rules without duplicating content.
+
+Public installable skills live in `skills/` and are distributed via [skills.sh](https://skills.sh). Repo-local helper skills live in agent-specific folders and are meant to support local development inside this repository.
+
+## Documentation
+
+Interactive documentation is available at `/docs` with:
+
+- Getting started guide
+- Jobs API reference
+- Webhooks guide
+- Code examples with package manager tabs
+
+The full OpenAPI reference is at `/api/swagger`.
