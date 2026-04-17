@@ -269,6 +269,29 @@ describe("Judging Scoring Routes", () => {
       expect(data.code).toBe("not_found")
     })
 
+    it("returns 409 when judge tries to score their own team", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockAssertAssignmentWritable.mockResolvedValueOnce({
+        ok: false,
+        code: "self_judging",
+        status: 409,
+        error: "You cannot score a project from your own team",
+      })
+
+      const res = await app.handle(
+        new Request(bucketSortUrl("test-hackathon", VALID_ASSIGNMENT_ID), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(validBody),
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(409)
+      expect(data.code).toBe("self_judging")
+    })
+
     it("returns success when bucket sort submission succeeds", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
@@ -461,6 +484,29 @@ describe("Judging Scoring Routes", () => {
 
       expect(res.status).toBe(404)
       expect(data.code).toBe("not_found")
+    })
+
+    it("returns 409 when judge tries to score their own team", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockAssertAssignmentWritable.mockResolvedValueOnce({
+        ok: false,
+        code: "self_judging",
+        status: 409,
+        error: "You cannot score a project from your own team",
+      })
+
+      const res = await app.handle(
+        new Request(gateCheckUrl("test-hackathon", VALID_ASSIGNMENT_ID), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(validBody),
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(409)
+      expect(data.code).toBe("self_judging")
     })
 
     it("returns success when gate check submission succeeds", async () => {
@@ -751,6 +797,29 @@ describe("Judging Scoring Routes", () => {
         })
       )
       expect(res.status).toBe(404)
+    })
+
+    it("returns 409 when judge tries to score their own team", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockAssertAssignmentWritable.mockResolvedValueOnce({
+        ok: false,
+        code: "self_judging",
+        status: 409,
+        error: "You cannot score a project from your own team",
+      })
+
+      const res = await app.handle(
+        new Request(scoresUrl("test-hackathon", VALID_ASSIGNMENT_ID), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(validBody),
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(409)
+      expect(data.code).toBe("self_judging")
     })
 
     it("returns success and triggers recalculation", async () => {
