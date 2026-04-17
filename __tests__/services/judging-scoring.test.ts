@@ -16,24 +16,17 @@ const CRITERIA_ID_1 = "44444444-4444-4444-4444-444444444444"
 const CRITERIA_ID_2 = "55555555-5555-5555-5555-555555555555"
 const TEAM_ID = "66666666-6666-6666-6666-666666666666"
 
-const MOCK_OWNERSHIP = { hackathonId: HACKATHON_ID, prizeId: PRIZE_ID, isComplete: false }
+const SUBMISSION_ID = "sub1"
+const MOCK_OWNERSHIP = { hackathonId: HACKATHON_ID, prizeId: PRIZE_ID, isComplete: false, submissionId: SUBMISSION_ID, notes: "some notes" }
 
-function mockAssignmentRow() {
+function mockSubmissionRow() {
   return {
-    id: ASSIGNMENT_ID,
-    submission_id: "sub1",
-    hackathon_id: HACKATHON_ID,
-    prize_id: PRIZE_ID,
-    is_complete: false,
-    notes: "some notes",
-    submission: {
-      title: "My Project",
-      description: "A cool project",
-      github_url: "https://github.com/test/repo",
-      live_app_url: "https://myapp.com",
-      screenshot_url: "https://img.com/shot.png",
-      team_id: TEAM_ID,
-    },
+    title: "My Project",
+    description: "A cool project",
+    github_url: "https://github.com/test/repo",
+    live_app_url: "https://myapp.com",
+    screenshot_url: "https://img.com/shot.png",
+    team_id: TEAM_ID,
   }
 }
 
@@ -81,7 +74,7 @@ describe("Judging Scoring Service", () => {
         callIndex++
 
         if (callIndex === 1) {
-          return createChainableMock({ data: mockAssignmentRow(), error: null })
+          return createChainableMock({ data: mockSubmissionRow(), error: null })
         }
         if (table === "teams") {
           return createChainableMock({
@@ -160,7 +153,7 @@ describe("Judging Scoring Service", () => {
         callIndex++
 
         if (callIndex === 1) {
-          return createChainableMock({ data: mockAssignmentRow(), error: null })
+          return createChainableMock({ data: mockSubmissionRow(), error: null })
         }
         if (table === "teams") {
           return createChainableMock({
@@ -196,15 +189,14 @@ describe("Judging Scoring Service", () => {
     })
 
     it("returns null teamName when submission has no team", async () => {
-      const assignmentNoTeam = mockAssignmentRow()
-      assignmentNoTeam.submission.team_id = null
+      const submissionNoTeam = { ...mockSubmissionRow(), team_id: null }
 
       let callIndex = 0
       setMockFromImplementation((table) => {
         callIndex++
 
         if (callIndex === 1) {
-          return createChainableMock({ data: assignmentNoTeam, error: null })
+          return createChainableMock({ data: submissionNoTeam, error: null })
         }
         if (table === "judging_criteria") {
           return createChainableMock({ data: [], error: null })
@@ -225,7 +217,7 @@ describe("Judging Scoring Service", () => {
         callIndex++
 
         if (callIndex === 1) {
-          return createChainableMock({ data: mockAssignmentRow(), error: null })
+          return createChainableMock({ data: mockSubmissionRow(), error: null })
         }
         if (table === "teams") {
           return createChainableMock({
@@ -400,7 +392,7 @@ describe("Judging Scoring Service", () => {
     })
 
     it("rejects submission when assignment is already complete", async () => {
-      const completeOwnership = { hackathonId: HACKATHON_ID, prizeId: PRIZE_ID, isComplete: true }
+      const completeOwnership = { hackathonId: HACKATHON_ID, prizeId: PRIZE_ID, isComplete: true, submissionId: SUBMISSION_ID, notes: "" }
 
       const result = await submitScores(
         ASSIGNMENT_ID,

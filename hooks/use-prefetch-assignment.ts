@@ -16,7 +16,7 @@ export function usePrefetchAssignment(
 
     let cancelled = false
     fetch(`/api/public/hackathons/${hackathonSlug}/judging/assignments/${nextAssignmentId}`)
-      .then((res) => res.ok ? res.json() : null)
+      .then((res) => (res.ok ? res.json() : null) as Promise<AssignmentDetail | null>)
       .then((data) => {
         if (data && !cancelled) {
           setCache((prev) => {

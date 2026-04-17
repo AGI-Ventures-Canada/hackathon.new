@@ -61,7 +61,8 @@ mock.module("@/lib/services/submissions", () => ({
   getTeamMemberCount: mock(() => Promise.resolve(0)),
 }))
 
-const mockVerifyAssignmentOwnership = mock(() => Promise.resolve({ hackathonId: "22222222-2222-2222-2222-222222222222", prizeId: null, isComplete: false }))
+const VALID_SUBMISSION_ID = "33333333-3333-3333-3333-333333333333"
+const mockVerifyAssignmentOwnership = mock(() => Promise.resolve({ hackathonId: "22222222-2222-2222-2222-222222222222", prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" }))
 const mockRecalculateForAssignment = mock(() => Promise.resolve())
 
 mock.module("@/lib/services/judging", () => ({
@@ -152,7 +153,7 @@ describe("Judging Scoring Routes", () => {
     mockSubmitBucketSortResponse.mockReset()
     mockSubmitGateCheckResponse.mockReset()
 
-    mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false })
+    mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" })
     mockRecalculateForAssignment.mockResolvedValue(undefined)
   })
 
@@ -238,7 +239,7 @@ describe("Judging Scoring Routes", () => {
     it("returns 404 when assignment belongs to a different hackathon", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
-      mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: "99999999-9999-9999-9999-999999999999", prizeId: null, isComplete: false })
+      mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: "99999999-9999-9999-9999-999999999999", prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" })
 
       const res = await app.handle(
         new Request(bucketSortUrl("test-hackathon", VALID_ASSIGNMENT_ID), {
@@ -256,7 +257,7 @@ describe("Judging Scoring Routes", () => {
     it("returns success when bucket sort submission succeeds", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
-      mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false })
+      mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" })
       mockSubmitBucketSortResponse.mockResolvedValue({ success: true })
 
       const res = await app.handle(
@@ -275,7 +276,7 @@ describe("Judging Scoring Routes", () => {
     it("allows submission when hackathon status is active", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
       mockGetPublicHackathon.mockResolvedValue({ ...mockHackathon, status: "active" })
-      mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false })
+      mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" })
       mockSubmitBucketSortResponse.mockResolvedValue({ success: true })
 
       const res = await app.handle(
@@ -294,7 +295,7 @@ describe("Judging Scoring Routes", () => {
     it("returns 400 when bucket sort service returns failure", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
-      mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false })
+      mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" })
       mockSubmitBucketSortResponse.mockResolvedValue({
         success: false,
         error: "Failed to submit bucket response",
@@ -317,7 +318,7 @@ describe("Judging Scoring Routes", () => {
     it("triggers recalculation after successful submission", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
-      mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false })
+      mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" })
       mockSubmitBucketSortResponse.mockResolvedValue({ success: true })
 
       await app.handle(
@@ -335,7 +336,7 @@ describe("Judging Scoring Routes", () => {
     it("passes correct parameters to verifyAssignmentOwnership", async () => {
       mockAuth.mockResolvedValue({ userId: "user_judge" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
-      mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false })
+      mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" })
       mockSubmitBucketSortResponse.mockResolvedValue({ success: true })
 
       await app.handle(
@@ -433,7 +434,7 @@ describe("Judging Scoring Routes", () => {
     it("returns 404 when assignment belongs to a different hackathon", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
-      mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: "99999999-9999-9999-9999-999999999999", prizeId: null, isComplete: false })
+      mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: "99999999-9999-9999-9999-999999999999", prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" })
 
       const res = await app.handle(
         new Request(gateCheckUrl("test-hackathon", VALID_ASSIGNMENT_ID), {
@@ -451,7 +452,7 @@ describe("Judging Scoring Routes", () => {
     it("returns success when gate check submission succeeds", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
-      mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false })
+      mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" })
       mockSubmitGateCheckResponse.mockResolvedValue({ success: true })
 
       const res = await app.handle(
@@ -470,7 +471,7 @@ describe("Judging Scoring Routes", () => {
     it("allows submission when hackathon status is active", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
       mockGetPublicHackathon.mockResolvedValue({ ...mockHackathon, status: "active" })
-      mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false })
+      mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" })
       mockSubmitGateCheckResponse.mockResolvedValue({ success: true })
 
       const res = await app.handle(
@@ -489,7 +490,7 @@ describe("Judging Scoring Routes", () => {
     it("returns 400 when gate check service returns failure", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
-      mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false })
+      mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" })
       mockSubmitGateCheckResponse.mockResolvedValue({
         success: false,
         error: "Failed to mark assignment complete",
@@ -512,7 +513,7 @@ describe("Judging Scoring Routes", () => {
     it("triggers recalculation after successful submission", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
-      mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false })
+      mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" })
       mockSubmitGateCheckResponse.mockResolvedValue({ success: true })
 
       await app.handle(
@@ -530,7 +531,7 @@ describe("Judging Scoring Routes", () => {
     it("passes correct parameters to verifyAssignmentOwnership", async () => {
       mockAuth.mockResolvedValue({ userId: "user_judge" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
-      mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false })
+      mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" })
       mockSubmitGateCheckResponse.mockResolvedValue({ success: true })
 
       await app.handle(
@@ -547,7 +548,7 @@ describe("Judging Scoring Routes", () => {
     it("passes gates array to submitGateCheckResponse", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
-      mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false })
+      mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" })
       mockSubmitGateCheckResponse.mockResolvedValue({ success: true })
 
       await app.handle(

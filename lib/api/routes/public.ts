@@ -1171,7 +1171,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       }
 
       if (hackathon.anonymous_judging) {
-        detail.teamName = null
+        return { ...detail, teamName: null }
       }
 
       return detail

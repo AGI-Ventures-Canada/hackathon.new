@@ -1441,6 +1441,8 @@ export type AssignmentOwnership = {
   hackathonId: string
   prizeId: string | null
   isComplete: boolean
+  submissionId: string
+  notes: string
 }
 
 export async function verifyAssignmentOwnership(
@@ -1450,7 +1452,7 @@ export async function verifyAssignmentOwnership(
   const client = getSupabase() as unknown as SupabaseClient
   const { data } = await client
     .from("judge_assignments")
-    .select("judge_participant_id, hackathon_id, prize_id, is_complete, hackathon_participants!inner(clerk_user_id)")
+    .select("judge_participant_id, hackathon_id, prize_id, is_complete, submission_id, notes, hackathon_participants!inner(clerk_user_id)")
     .eq("id", assignmentId)
     .single()
 
@@ -1461,6 +1463,8 @@ export async function verifyAssignmentOwnership(
     hackathonId: data.hackathon_id,
     prizeId: data.prize_id ?? null,
     isComplete: data.is_complete === true,
+    submissionId: data.submission_id,
+    notes: data.notes ?? "",
   }
 }
 
@@ -2339,25 +2343,13 @@ export async function getAssignmentDetail(
 ): Promise<AssignmentDetail | null> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { data: assignment, error: assignmentError } = await client
-    .from("judge_assignments")
-    .select(`
-      id, submission_id, is_complete, notes,
-      submission:submissions!submission_id(title, description, github_url, live_app_url, screenshot_url, team_id)
-    `)
-    .eq("id", assignmentId)
+  const { data: sub, error: subError } = await client
+    .from("submissions")
+    .select("title, description, github_url, live_app_url, screenshot_url, team_id")
+    .eq("id", ownership.submissionId)
     .single()
 
-  if (assignmentError || !assignment) return null
-
-  const sub = assignment.submission as unknown as {
-    title: string
-    description: string | null
-    github_url: string | null
-    live_app_url: string | null
-    screenshot_url: string | null
-    team_id: string | null
-  }
+  if (subError || !sub) return null
 
   type CriteriaRow = {
     id: string
@@ -2428,16 +2420,16 @@ export async function getAssignmentDetail(
   }
 
   return {
-    id: assignment.id,
-    submissionId: assignment.submission_id,
+    id: assignmentId,
+    submissionId: ownership.submissionId,
     submissionTitle: sub.title,
     submissionDescription: sub.description,
     submissionGithubUrl: sub.github_url,
     submissionLiveAppUrl: sub.live_app_url,
     submissionScreenshotUrl: sub.screenshot_url,
     teamName,
-    isComplete: assignment.is_complete,
-    notes: assignment.notes,
+    isComplete: ownership.isComplete,
+    notes: ownership.notes,
     criteria: criteria.map((c) => ({
       id: c.id,
       name: c.name,
@@ -2492,6 +2484,9 @@ export async function submitScores(
     for (const s of scores) {
       if (!validCriteriaIds.has(s.criteriaId)) {
         return { success: false, error: "One or more criteria IDs are invalid", code: "invalid_criteria" }
+      }
+      if (s.score < 0) {
+        return { success: false, error: "Scores cannot be negative", code: "invalid_score" }
       }
       const maxScore = maxScoreMap.get(s.criteriaId)
       if (maxScore != null && s.score > maxScore) {
