@@ -125,7 +125,9 @@ export async function executeTransition(
 
   if (toStatus === "completed" || toStatus === "archived") {
     const { cancelRemindersForEntity } = await import("./smart-reminders")
-    cancelRemindersForEntity("hackathon_event", hackathonId).catch(console.error)
+    cancelRemindersForEntity("hackathon_event", hackathonId).catch((err) =>
+      console.error(`Failed to cancel pre-event reminders for hackathon ${hackathonId}:`, err)
+    )
   }
 
   return { success: true, hackathon: hackathon as unknown as Hackathon }

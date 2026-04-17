@@ -130,14 +130,11 @@ type Recipient = { email: string; name: string }
 
 async function getRecipients(
   hackathonId: string,
-  reminderType: string
+  _reminderType: string
 ): Promise<Recipient[]> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  let role = "participant"
-  if (reminderType === "registration_closing") {
-    role = "participant"
-  }
+  const role = "participant"
 
   const { data: participants } = await client
     .from("hackathon_participants")

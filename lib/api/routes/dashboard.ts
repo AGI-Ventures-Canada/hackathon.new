@@ -2211,7 +2211,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
             inviteToken: result.invitation.token,
             expiresAt: result.invitation.expires_at,
           }
-        ).catch(console.error)
+        ).catch((err) => console.error(`Failed to schedule reminders for team_invitation ${result.invitation.id} (hackathon=${body.hackathonId}):`, err))
       }
 
       await logAudit({
@@ -2303,7 +2303,9 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
     }
 
     const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
-    cancelRemindersForEntity("team_invitation", params.invitationId).catch(console.error)
+    cancelRemindersForEntity("team_invitation", params.invitationId).catch((err) =>
+      console.error(`Failed to cancel reminders for team_invitation ${params.invitationId}:`, err)
+    )
 
     await logAudit({
       principal,

@@ -1187,7 +1187,7 @@ export const dashboardJudgingRoutes = new Elysia()
             inviteToken: invitationResult.invitation.token,
             expiresAt: invitationResult.invitation.expires_at,
           }
-        ).catch(console.error)
+        ).catch((err) => console.error(`Failed to schedule reminders for judge_invitation ${invitationResult.invitation.id} (hackathon=${params.id}):`, err))
 
         logAudit({
           principal,
@@ -1283,7 +1283,9 @@ export const dashboardJudgingRoutes = new Elysia()
 
     if (result2.success) {
       const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
-      cancelRemindersForEntity("judge_invitation", params.invitationId).catch(console.error)
+      cancelRemindersForEntity("judge_invitation", params.invitationId).catch((err) =>
+        console.error(`Failed to cancel reminders for judge_invitation ${params.invitationId} (hackathon=${params.id}):`, err)
+      )
     }
 
     return { success: result2.success }

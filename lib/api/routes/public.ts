@@ -925,7 +925,9 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
 
     if (invitation) {
       const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
-      cancelRemindersForEntity("team_invitation", invitation.id).catch(console.error)
+      cancelRemindersForEntity("team_invitation", invitation.id).catch((err) =>
+        console.error(`Failed to cancel reminders for team_invitation ${invitation.id}:`, err)
+      )
     }
 
     const { getPublicHackathonById } = await import("@/lib/services/public-hackathons")
@@ -1693,7 +1695,9 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
 
     if (judgeInvitation) {
       const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
-      cancelRemindersForEntity("judge_invitation", judgeInvitation.id).catch(console.error)
+      cancelRemindersForEntity("judge_invitation", judgeInvitation.id).catch((err) =>
+        console.error(`Failed to cancel reminders for judge_invitation ${judgeInvitation.id}:`, err)
+      )
     }
 
     return { success: true, hackathonSlug: result.hackathonSlug }
@@ -1733,7 +1737,9 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     }
 
     const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
-    cancelRemindersForEntity("judge_invitation", invitation.id).catch(console.error)
+    cancelRemindersForEntity("judge_invitation", invitation.id).catch((err) =>
+      console.error(`Failed to cancel reminders for judge_invitation ${invitation.id}:`, err)
+    )
 
     return { success: true }
   }, {

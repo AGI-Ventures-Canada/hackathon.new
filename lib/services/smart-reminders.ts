@@ -205,8 +205,12 @@ export type ScheduledReminder = {
   sent_at: string | null
   cancelled_at: string | null
   metadata: Record<string, unknown>
+  fail_count: number
+  last_error: string | null
   created_at: string
 }
+
+const MAX_RETRIES = 3
 
 export type ProcessResult = {
   processed: number
@@ -227,6 +231,7 @@ export async function processPendingReminders(
     .lte("scheduled_for", now)
     .is("sent_at", null)
     .is("cancelled_at", null)
+    .lt("fail_count", MAX_RETRIES)
     .select("*")
     .limit(limit)
 
@@ -248,7 +253,19 @@ export async function processPendingReminders(
       await dispatchReminderEmail(reminder)
       result.sent++
     } catch (err) {
-      console.error(`Failed to process reminder ${reminder.id}:`, err)
+      const message = err instanceof Error ? err.message : String(err)
+      console.error(
+        `Failed to process reminder ${reminder.id} (entity=${reminder.entity_type}, entity_id=${reminder.entity_id}, hackathon=${reminder.hackathon_id}):`,
+        err
+      )
+      await client
+        .from("scheduled_reminders")
+        .update({
+          sent_at: null,
+          fail_count: reminder.fail_count + 1,
+          last_error: message,
+        })
+        .eq("id", reminder.id)
       result.errors++
     }
   }
@@ -302,6 +319,13 @@ async function validateReminderEntity(
   return false
 }
 
+function requireMeta(meta: Record<string, unknown>, ...keys: string[]): void {
+  const missing = keys.filter((k) => meta[k] == null || meta[k] === "")
+  if (missing.length > 0) {
+    throw new Error(`Missing required metadata fields: ${missing.join(", ")}`)
+  }
+}
+
 async function dispatchReminderEmail(
   reminder: ScheduledReminder
 ): Promise<void> {
@@ -311,6 +335,7 @@ async function dispatchReminderEmail(
     reminder.entity_type === "team_invitation" &&
     reminder.reminder_type === "invitation_reminder"
   ) {
+    requireMeta(meta, "email", "teamName", "hackathonName", "inviterName", "inviteToken", "expiresAt")
     const { sendTeamInvitationReminderEmail } = await import(
       "@/lib/email/team-invitations"
     )
@@ -330,6 +355,7 @@ async function dispatchReminderEmail(
     reminder.entity_type === "judge_invitation" &&
     reminder.reminder_type === "invitation_reminder"
   ) {
+    requireMeta(meta, "email", "hackathonName", "inviterName", "inviteToken", "expiresAt")
     const { sendJudgeInvitationReminderEmail } = await import(
       "@/lib/email/judge-invitations"
     )
@@ -345,6 +371,7 @@ async function dispatchReminderEmail(
   }
 
   if (reminder.entity_type === "hackathon_event") {
+    requireMeta(meta, "hackathonName", "hackathonSlug", "deadlineDate")
     const { sendPreEventReminderEmail } = await import(
       "@/lib/email/pre-event-reminders"
     )
