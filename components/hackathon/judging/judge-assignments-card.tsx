@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -8,6 +8,7 @@ import { Gavel, CheckCircle2, Circle, ChevronDown, ChevronLeft, ChevronRight, Fo
 import { getTeamSizeWarning } from "@/lib/utils/team-size"
 import { ScoringPanel } from "./scoring-panel"
 import { FocusScoringView } from "./focus-scoring-view"
+import { usePrefetchAssignment } from "@/hooks/use-prefetch-assignment"
 
 const PAGE_SIZE = 20
 
@@ -54,6 +55,17 @@ export function JudgeAssignmentsCard({
   const totalPages = Math.ceil(total / PAGE_SIZE)
   const pageAssignments = assignments.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
 
+  const nextUnscoredId = useMemo(() => {
+    if (!openAssignmentId) return null
+    const currentIdx = assignments.findIndex((a) => a.id === openAssignmentId)
+    const next = assignments.find(
+      (a, idx) => idx > currentIdx && !completedIds.has(a.id)
+    )
+    return next?.id ?? null
+  }, [openAssignmentId, assignments, completedIds])
+
+  const prefetchCache = usePrefetchAssignment(hackathonSlug, nextUnscoredId)
+
   function handleScoreSubmitted(assignmentId: string) {
     const updatedIds = new Set([...completedIds, assignmentId])
     setCompletedIds(updatedIds)
@@ -64,9 +76,9 @@ export function JudgeAssignmentsCard({
         (a, idx) => idx > currentIdx && !updatedIds.has(a.id)
       )
       if (nextUnscored) {
-        setTimeout(() => setOpenAssignmentId(nextUnscored.id), 500)
+        setOpenAssignmentId(nextUnscored.id)
       } else {
-        setTimeout(() => setOpenAssignmentId(null), 500)
+        setOpenAssignmentId(null)
       }
     }
   }
@@ -172,6 +184,7 @@ export function JudgeAssignmentsCard({
                           assignmentId={a.id}
                           onClose={() => setOpenAssignmentId(null)}
                           onScoreSubmitted={() => handleScoreSubmitted(a.id)}
+                          prefetchedDetail={prefetchCache[a.id] ?? null}
                           teamSizeWarning={teamSettings && a.teamMemberCount != null
                             ? (getTeamSizeWarning({
                                 memberCount: a.teamMemberCount,

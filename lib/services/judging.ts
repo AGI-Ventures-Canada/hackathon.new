@@ -1472,20 +1472,35 @@ export async function assignJudgeToPrize(
   return { success: true, assignedCount: newAssignments.length }
 }
 
+export type AssignmentOwnership = {
+  hackathonId: string
+  prizeId: string | null
+  isComplete: boolean
+  submissionId: string
+  notes: string
+}
+
 export async function verifyAssignmentOwnership(
   assignmentId: string,
   clerkUserId: string
-): Promise<boolean> {
+): Promise<AssignmentOwnership | false> {
   const client = getSupabase() as unknown as SupabaseClient
   const { data } = await client
     .from("judge_assignments")
-    .select("judge_participant_id, hackathon_participants!inner(clerk_user_id)")
+    .select("judge_participant_id, hackathon_id, prize_id, is_complete, submission_id, notes, hackathon_participants!inner(clerk_user_id)")
     .eq("id", assignmentId)
     .single()
 
   if (!data) return false
   const participant = data.hackathon_participants as unknown as { clerk_user_id: string }
-  return participant.clerk_user_id === clerkUserId
+  if (participant.clerk_user_id !== clerkUserId) return false
+  return {
+    hackathonId: data.hackathon_id,
+    prizeId: data.prize_id ?? null,
+    isComplete: data.is_complete === true,
+    submissionId: data.submission_id,
+    notes: data.notes ?? "",
+  }
 }
 
 export async function removeJudgeFromPrize(
@@ -2330,4 +2345,222 @@ export async function saveNotes(
   }
 
   return true
+}
+
+export type AssignmentDetailCriterion = {
+  id: string
+  name: string
+  description: string | null
+  max_score: number
+  weight: number
+  category: string | null
+  currentScore: number | null
+  rubricLevels: { id: string; level_number: number; label: string; description: string | null }[]
+}
+
+export type AssignmentDetail = {
+  id: string
+  submissionId: string
+  submissionTitle: string
+  submissionDescription: string | null
+  submissionGithubUrl: string | null
+  submissionLiveAppUrl: string | null
+  submissionScreenshotUrl: string | null
+  teamName: string | null
+  isComplete: boolean
+  notes: string
+  criteria: AssignmentDetailCriterion[]
+}
+
+export async function getAssignmentDetail(
+  assignmentId: string,
+  ownership: AssignmentOwnership
+): Promise<AssignmentDetail | null> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data: sub, error: subError } = await client
+    .from("submissions")
+    .select("title, description, github_url, live_app_url, screenshot_url, team_id")
+    .eq("id", ownership.submissionId)
+    .single()
+
+  if (subError || !sub) return null
+
+  type CriteriaRow = {
+    id: string
+    name: string
+    description: string | null
+    max_score: number
+    weight: number
+    category: string | null
+  }
+
+  const teamNamePromise = sub.team_id
+    ? client.from("teams").select("name").eq("id", sub.team_id).single().then(({ data }) => data?.name ?? null)
+    : Promise.resolve(null)
+
+  const fetchCriteria = async (): Promise<CriteriaRow[]> => {
+    if (ownership.prizeId) {
+      const { data } = await client
+        .from("judging_criteria")
+        .select("id, name, description, max_score, weight, category")
+        .eq("prize_id", ownership.prizeId)
+        .order("display_order")
+      if (data && data.length > 0) return data as CriteriaRow[]
+    }
+    const { data } = await client
+      .from("judging_criteria")
+      .select("id, name, description, max_score, weight, category")
+      .eq("hackathon_id", ownership.hackathonId)
+      .is("prize_id", null)
+      .order("display_order")
+    return (data ?? []) as CriteriaRow[]
+  }
+
+  const [teamName, criteria] = await Promise.all([teamNamePromise, fetchCriteria()])
+
+  const criteriaIds = criteria.map((c) => c.id)
+
+  const rubricMap: Record<string, { id: string; level_number: number; label: string; description: string | null }[]> = {}
+  const scoreMap: Record<string, number> = {}
+
+  if (criteriaIds.length > 0) {
+    const [levelsResult, scoresResult] = await Promise.all([
+      client
+        .from("rubric_levels")
+        .select("id, criteria_id, level_number, label, description")
+        .in("criteria_id", criteriaIds)
+        .order("level_number"),
+      client
+        .from("scores")
+        .select("criteria_id, score")
+        .eq("judge_assignment_id", assignmentId)
+        .in("criteria_id", criteriaIds),
+    ])
+
+    for (const lvl of levelsResult.data ?? []) {
+      const cid = (lvl as unknown as { criteria_id: string }).criteria_id
+      if (!rubricMap[cid]) rubricMap[cid] = []
+      rubricMap[cid].push({
+        id: lvl.id,
+        level_number: lvl.level_number,
+        label: lvl.label,
+        description: lvl.description ?? null,
+      })
+    }
+
+    for (const s of scoresResult.data ?? []) {
+      scoreMap[s.criteria_id] = s.score
+    }
+  }
+
+  return {
+    id: assignmentId,
+    submissionId: ownership.submissionId,
+    submissionTitle: sub.title,
+    submissionDescription: sub.description,
+    submissionGithubUrl: sub.github_url,
+    submissionLiveAppUrl: sub.live_app_url,
+    submissionScreenshotUrl: sub.screenshot_url,
+    teamName,
+    isComplete: ownership.isComplete,
+    notes: ownership.notes,
+    criteria: criteria.map((c) => ({
+      id: c.id,
+      name: c.name,
+      description: c.description,
+      max_score: c.max_score,
+      weight: Number(c.weight), // Supabase returns Postgres numeric columns as strings
+      category: c.category ?? null,
+      currentScore: scoreMap[c.id] ?? null,
+      rubricLevels: rubricMap[c.id] ?? [],
+    })),
+  }
+}
+
+export type SubmitScoresResult =
+  | { success: true }
+  | { success: false; error: string; code: string }
+
+export async function submitScores(
+  assignmentId: string,
+  ownership: AssignmentOwnership,
+  scores: { criteriaId: string; score: number }[],
+  notes: string
+): Promise<SubmitScoresResult> {
+  if (ownership.isComplete) {
+    return { success: false, error: "Assignment is already complete", code: "already_complete" }
+  }
+
+  const client = getSupabase() as unknown as SupabaseClient
+
+  let criteriaQuery = client
+    .from("judging_criteria")
+    .select("id, max_score")
+
+  if (ownership.prizeId) {
+    criteriaQuery = criteriaQuery.eq("prize_id", ownership.prizeId)
+  } else {
+    criteriaQuery = criteriaQuery
+      .eq("hackathon_id", ownership.hackathonId)
+      .is("prize_id", null)
+  }
+
+  const { data: criteria } = await criteriaQuery
+
+  if (scores.length === 0 && (criteria ?? []).length > 0) {
+    return { success: false, error: "Scores are required for all criteria", code: "empty_scores" }
+  }
+
+  if (scores.length > 0) {
+    const validCriteriaIds = new Set((criteria ?? []).map((c) => c.id))
+    const maxScoreMap = new Map((criteria ?? []).map((c) => [c.id, c.max_score]))
+
+    for (const s of scores) {
+      if (!validCriteriaIds.has(s.criteriaId)) {
+        return { success: false, error: "One or more criteria IDs are invalid", code: "invalid_criteria" }
+      }
+      if (s.score < 0) {
+        return { success: false, error: "Scores cannot be negative", code: "invalid_score" }
+      }
+      const maxScore = maxScoreMap.get(s.criteriaId)
+      if (maxScore != null && s.score > maxScore) {
+        return { success: false, error: `Score ${s.score} exceeds maximum ${maxScore}`, code: "score_exceeds_max" }
+      }
+    }
+  }
+
+  const rows = scores.map((s) => ({
+    judge_assignment_id: assignmentId,
+    criteria_id: s.criteriaId,
+    score: s.score,
+    updated_at: new Date().toISOString(),
+  }))
+
+  if (rows.length > 0) {
+    const { error: upsertError } = await client
+      .from("scores")
+      .upsert(rows, { onConflict: "judge_assignment_id,criteria_id" })
+
+    if (upsertError) {
+      console.error("Failed to upsert scores:", upsertError)
+      return { success: false, error: "Failed to save scores", code: "upsert_failed" }
+    }
+  }
+
+  const { error: updateError } = await client
+    .from("judge_assignments")
+    .update({
+      notes,
+      is_complete: true,
+      completed_at: new Date().toISOString(),
+    })
+    .eq("id", assignmentId)
+
+  if (updateError) {
+    console.error("Failed to mark assignment complete:", updateError)
+    return { success: false, error: "Failed to complete assignment", code: "update_failed" }
+  }
+
+  return { success: true }
 }

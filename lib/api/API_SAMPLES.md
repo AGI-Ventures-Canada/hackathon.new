@@ -300,6 +300,66 @@ Returns 404 if the event doesn't exist, is private, or the page structure has ch
 
 ---
 
+### Get assignment detail for scoring
+
+Requires Clerk session (judge must own the assignment).
+
+```bash
+curl -s "$BASE_URL/api/public/hackathons/$SLUG/judging/assignments/$ASSIGNMENT_ID" \
+  --cookie "clerk-session=..."
+```
+
+```json
+{
+  "id": "a1b2c3d4-...",
+  "submissionId": "s1s2s3s4-...",
+  "submissionTitle": "SmartRoute AI",
+  "submissionDescription": "An AI-powered route optimizer",
+  "submissionGithubUrl": "https://github.com/team/smartroute",
+  "submissionLiveAppUrl": "https://smartroute.app",
+  "submissionScreenshotUrl": null,
+  "teamName": "Team Alpha",
+  "isComplete": false,
+  "notes": "",
+  "criteria": [
+    {
+      "id": "c1c2c3c4-...",
+      "name": "Innovation",
+      "description": "How novel is the approach?",
+      "max_score": 10,
+      "weight": 2,
+      "category": "core",
+      "currentScore": null,
+      "rubricLevels": []
+    }
+  ]
+}
+```
+
+---
+
+### Submit scores for assignment
+
+Requires Clerk session (judge must own the assignment). Hackathon must be in `judging` or `active` status.
+
+```bash
+curl -s -X POST "$BASE_URL/api/public/hackathons/$SLUG/judging/assignments/$ASSIGNMENT_ID/scores" \
+  --cookie "clerk-session=..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "scores": [
+      { "criteriaId": "c1c2c3c4-...", "score": 8 }
+    ],
+    "notes": "Strong technical implementation"
+  }'
+```
+
+```json
+{ "success": true }
+```
+
+---
+
 ## Dashboard Endpoints
 
 All dashboard endpoints require an API key: `-H "Authorization: Bearer $API_KEY"`.
