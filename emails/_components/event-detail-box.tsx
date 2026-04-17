@@ -8,6 +8,11 @@ interface EventDetailBoxProps {
   location?: string | null
 }
 
+/**
+ * Formats start/end timestamps as a date-only range (no times).
+ * Pinned to UTC to prevent date-boundary drift across timezones —
+ * "Apr 20" stays "Apr 20" regardless of the recipient's locale.
+ */
 export function formatDateRange(
   startsAt: string | null | undefined,
   endsAt: string | null | undefined
