@@ -1513,6 +1513,23 @@ export type AssertAssignmentWritableResult =
   | { ok: true; ownership: AssignmentOwnership }
   | { ok: false; error: string; code: AssignmentWritableErrorCode; status: number }
 
+function toJudgeShape(value: unknown): { clerk_user_id: string; team_id: string | null } | null {
+  if (!value || typeof value !== "object") return null
+  const v = value as Record<string, unknown>
+  if (typeof v.clerk_user_id !== "string") return null
+  const teamId = v.team_id
+  if (teamId !== null && typeof teamId !== "string") return null
+  return { clerk_user_id: v.clerk_user_id, team_id: teamId as string | null }
+}
+
+function toSubmissionShape(value: unknown): { team_id: string | null } | null {
+  if (!value || typeof value !== "object") return null
+  const v = value as Record<string, unknown>
+  const teamId = v.team_id
+  if (teamId !== null && typeof teamId !== "string") return null
+  return { team_id: teamId as string | null }
+}
+
 export async function assertAssignmentWritable(
   assignmentId: string,
   clerkUserId: string,
@@ -1557,8 +1574,8 @@ export async function assertAssignmentWritable(
     }
   }
 
-  const judge = data.judge as unknown as { clerk_user_id: string; team_id: string | null } | null
-  const submission = data.submission as unknown as { team_id: string | null } | null
+  const judge = toJudgeShape(data.judge)
+  const submission = toSubmissionShape(data.submission)
 
   if (judge?.clerk_user_id !== clerkUserId) {
     return {
