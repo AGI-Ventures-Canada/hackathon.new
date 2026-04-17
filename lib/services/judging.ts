@@ -1613,7 +1613,6 @@ export async function assertAssignmentWritable(
     }
   }
 
-
   return {
     ok: true,
     ownership: {
