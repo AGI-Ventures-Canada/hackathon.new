@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import type { EventContext } from "./use-event-context"
 import { useDevConfig } from "./use-dev-config"
+import { useEventActions } from "./use-event-actions"
 import { CommandPaletteList } from "./commands/command-list"
 import { ContextStrip } from "./commands/context-strip"
 import { InlineSettings } from "./commands/inline-settings"
@@ -48,6 +49,14 @@ export function DevToolPanel({
   const [runningId, setRunningId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  const hackathonId = eventContext?.hackathonId ?? null
+
+  const refreshContext = useCallback(() => {
+    eventContext?.refetch()
+  }, [eventContext])
+
+  const eventActions = useEventActions(hackathonId, onSaveState, refreshContext)
+
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key !== "Escape") return
@@ -89,8 +98,6 @@ export function DevToolPanel({
       })
       .catch(() => {})
   }, [])
-
-  const hackathonId = eventContext?.hackathonId ?? null
 
   const refreshRoles = useCallback(() => {
     if (!hackathonId) {
@@ -261,10 +268,31 @@ export function DevToolPanel({
     [hackathonId, refreshRoles, currentRoles]
   )
 
+  const processAutoTransitions = useCallback(async () => {
+    setRunningId("lifecycle:auto-transitions")
+    setError(null)
+    try {
+      const res = await fetch("/api/dev/cron/transitions", { method: "POST" })
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        setError(data?.error ?? "Auto-transitions failed")
+        return
+      }
+      refreshContext()
+    } catch {
+      setError("Network error")
+    } finally {
+      setRunningId(null)
+    }
+  }, [refreshContext])
+
   const commands = buildCommands({
     eventSlug: eventContext?.slug ?? null,
     eventHackathonId: hackathonId,
     eventName: eventContext?.name ?? null,
+    eventStatus: eventContext?.status ?? null,
+    eventPhase: eventContext?.phase ?? null,
+    eventSeedStatus: eventActions.seedStatus,
     activeScenarios,
     personas,
     currentRoles,
@@ -272,6 +300,8 @@ export function DevToolPanel({
     onSwitchPersona: switchPersona,
     onAssignRole: assignRole,
     onRemoveRole: removeRole,
+    onEventAction: hackathonId ? eventActions.runAction : null,
+    onProcessAutoTransitions: processAutoTransitions,
     onOpenSettings: () => setView({ kind: "settings" }),
     onOpenEventLifecycle: () => setView({ kind: "event", view: "lifecycle" }),
     onOpenEventSeed: () => setView({ kind: "event", view: "seed" }),
@@ -280,12 +310,15 @@ export function DevToolPanel({
 
   const backToPalette = () => setView({ kind: "palette" })
 
+  const toastMessage = eventActions.toast ?? null
+  const running = !!runningId || !!eventActions.pending
+
   return (
-    <div className="flex w-[460px] flex-col">
+    <div className="flex w-[460px] max-w-[calc(100vw-2rem)] flex-col">
       <Header
         eventContext={eventContext}
         onClose={onClose}
-        running={!!runningId}
+        running={running}
       />
 
       {view.kind === "palette" && (
@@ -298,10 +331,15 @@ export function DevToolPanel({
           {error && (
             <div
               role="alert"
-              className="m-2 cursor-pointer rounded-md border border-destructive bg-destructive/10 px-3 py-1.5 text-xs text-destructive"
+              className="m-2 cursor-pointer rounded-md border border-destructive bg-destructive/10 px-3 py-1.5 text-xs text-destructive break-words"
               onClick={() => setError(null)}
             >
               {error}
+            </div>
+          )}
+          {toastMessage && (
+            <div className="m-2 rounded-md border bg-muted px-3 py-1.5 text-xs text-muted-foreground break-words">
+              {toastMessage}
             </div>
           )}
           <CommandPaletteList commands={commands} runningId={runningId} />
@@ -322,7 +360,7 @@ export function DevToolPanel({
           eventContext={eventContext}
           view={view.view}
           onBack={backToPalette}
-          onSaveState={onSaveState}
+          actions={eventActions}
         />
       )}
     </div>
@@ -338,19 +376,19 @@ interface HeaderProps {
 function Header({ eventContext, onClose, running }: HeaderProps) {
   return (
     <div className="flex items-center justify-between border-b px-3 py-2">
-      <div className="flex items-center gap-2">
-        <FlaskConical className="size-4 text-muted-foreground" />
-        <span className="text-sm font-semibold">Dev Tools</span>
+      <div className="flex items-center gap-2 min-w-0">
+        <FlaskConical className="size-4 shrink-0 text-muted-foreground" />
+        <span className="text-sm font-semibold shrink-0">Dev Tools</span>
         {eventContext && (
-          <Badge variant="outline" className="text-[10px]">
+          <Badge variant="outline" className="text-[10px] truncate">
             {eventContext.slug}
           </Badge>
         )}
         {running && (
-          <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
+          <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
         )}
       </div>
-      <Button size="sm" variant="ghost" className="size-7 p-0" onClick={onClose}>
+      <Button size="sm" variant="ghost" className="size-7 p-0 shrink-0" onClick={onClose}>
         <X className="size-3.5" />
       </Button>
     </div>

@@ -33,15 +33,15 @@ export function CommandPaletteList({
   const grouped = groupByCategory(commands)
 
   return (
-    <Command className="bg-transparent" shouldFilter>
+    <Command className="w-full min-w-0 bg-transparent overflow-hidden" shouldFilter>
       <CommandInput placeholder={placeholder} autoFocus={autoFocus} />
-      <CommandList className="max-h-[55vh]">
+      <CommandList className="max-h-[55vh] w-full min-w-0 overflow-x-hidden overflow-y-auto">
         <CommandEmpty>No commands match your search.</CommandEmpty>
         {CATEGORY_ORDER.map((cat) => {
           const items = grouped[cat]
           if (!items?.length) return null
           return (
-            <CommandGroup key={cat} heading={CATEGORY_HEADERS[cat]}>
+            <CommandGroup key={cat} heading={CATEGORY_HEADERS[cat]} className="w-full min-w-0">
               {items.map((cmd) => {
                 const Icon = cmd.icon
                 const isRunning = runningId === cmd.id
@@ -51,31 +51,34 @@ export function CommandPaletteList({
                     value={`${cmd.title} ${cmd.subtitle ?? ""} ${cmd.keywords ?? ""}`}
                     disabled={cmd.disabled || !!runningId}
                     onSelect={() => cmd.run()}
-                    className="flex-col items-start gap-0.5 py-2"
+                    className="flex-col items-start gap-0.5 py-2 w-full min-w-0"
                   >
-                    <div className="flex w-full items-center gap-2">
+                    <div className="flex w-full min-w-0 items-start gap-2">
                       <Icon
                         className={cn(
-                          "size-3.5 shrink-0",
+                          "size-3.5 shrink-0 mt-0.5",
                           isRunning && "animate-pulse"
                         )}
                       />
-                      <span className="flex-1 truncate text-xs font-medium">
+                      <span className="flex-1 min-w-0 text-xs font-medium break-words whitespace-normal">
                         {cmd.title}
                       </span>
                       {cmd.badge && (
-                        <Badge variant="outline" className="h-4 px-1 text-[10px]">
+                        <Badge
+                          variant="outline"
+                          className="h-4 shrink-0 px-1 text-[10px]"
+                        >
                           {cmd.badge}
                         </Badge>
                       )}
                       {isRunning && (
-                        <span className="text-[10px] text-muted-foreground">
+                        <span className="shrink-0 text-[10px] text-muted-foreground">
                           running…
                         </span>
                       )}
                     </div>
                     {cmd.subtitle && (
-                      <span className="ml-5 truncate text-[10px] text-muted-foreground">
+                      <span className="ml-5 w-[calc(100%-1.25rem)] min-w-0 text-[10px] text-muted-foreground break-words whitespace-normal">
                         {cmd.subtitle}
                       </span>
                     )}
