@@ -1188,6 +1188,11 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         })
       }
 
+      if (hasDateUpdate && !hasStatusTransition) {
+        const { reschedulePreEventReminders } = await import("@/lib/services/pre-event-reminders")
+        reschedulePreEventReminders(params.id).catch(console.error)
+      }
+
       if (hasStatusTransition) {
         const { executeTransition } = await import("@/lib/services/lifecycle")
         const triggeredBy = principal.kind === "user" ? principal.userId : principal.keyId
@@ -2169,11 +2174,12 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       const teamInfo = await getTeamWithHackathon(params.teamId)
 
       if (teamInfo) {
+        const inviterName = body.inviterName || "A team captain"
         const emailInput = {
           to: body.email,
           teamName: teamInfo.name,
           hackathonName: teamInfo.hackathon.name,
-          inviterName: body.inviterName || "A team captain",
+          inviterName,
           inviteToken: result.invitation.token,
           expiresAt: result.invitation.expires_at,
           hackathonSlug: teamInfo.hackathon.slug,
@@ -2188,6 +2194,24 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           const { sendTeamInvitationEmail } = await import("@/lib/email/team-invitations")
           sendTeamInvitationEmail(emailInput).catch(console.error)
         })
+
+        const { scheduleReminders } = await import("@/lib/services/smart-reminders")
+        scheduleReminders(
+          "team_invitation",
+          result.invitation.id,
+          body.hackathonId,
+          "invitation_reminder",
+          new Date(result.invitation.created_at),
+          new Date(result.invitation.expires_at),
+          {
+            email: body.email,
+            teamName: teamInfo.name,
+            hackathonName: teamInfo.hackathon.name,
+            inviterName,
+            inviteToken: result.invitation.token,
+            expiresAt: result.invitation.expires_at,
+          }
+        ).catch(console.error)
       }
 
       await logAudit({
@@ -2278,6 +2302,9 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       })
     }
 
+    const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
+    cancelRemindersForEntity("team_invitation", params.invitationId).catch(console.error)
+
     await logAudit({
       principal,
       action: "team_invitation.cancelled",
@@ -2347,6 +2374,9 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       expiresAt: result.invitation.expires_at,
     }).catch(console.error)
 
+    const { cancelUpcomingReminder } = await import("@/lib/services/smart-reminders")
+    cancelUpcomingReminder("team_invitation", params.invitationId).catch(console.error)
+
     await logAudit({
       principal,
       action: "team_invitation.reminded",
@@ -2358,7 +2388,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
   }, {
     detail: {
       summary: "Send team invitation reminder",
-      description: "Sends a reminder email for a pending team invitation. One reminder per invitation. Clerk-only.",
+      description: "Sends a reminder email for a pending team invitation. Clerk-only.",
     },
   })
   .use(dashboardJudgingRoutes)

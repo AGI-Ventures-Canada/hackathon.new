@@ -277,12 +277,13 @@ export function TeamManagementTab({ teamInfo, hackathonId, maxTeamSize, location
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
-                    {invitation.remindedAt || remindedIds.has(invitation.id) ? (
+                    {(invitation.remindedAt || remindedIds.has(invitation.id)) && (
                       <span className="text-xs text-muted-foreground flex items-center gap-1 px-2">
                         <Bell className="size-3" />
                         Reminded
                       </span>
-                    ) : new Date(invitation.expiresAt) > new Date() ? (
+                    )}
+                    {new Date(invitation.expiresAt) > new Date() && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -291,7 +292,7 @@ export function TeamManagementTab({ teamInfo, hackathonId, maxTeamSize, location
                         <Bell className="size-4" />
                         <span className="sr-only">Send reminder</span>
                       </Button>
-                    ) : null}
+                    )}
                     <Button
                       variant="ghost"
                       size="sm"

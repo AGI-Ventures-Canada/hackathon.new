@@ -613,17 +613,15 @@ function JudgesSection({
                       Invited
                     </Badge>
                   )}
-                  {!inv.remindedAt && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-6"
-                      onClick={() => onRemindInvitation(inv.id)}
-                    >
-                      <Bell className="size-3" />
-                      <span className="sr-only">Send reminder</span>
-                    </Button>
-                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-6"
+                    onClick={() => onRemindInvitation(inv.id)}
+                  >
+                    <Bell className="size-3" />
+                    <span className="sr-only">Send reminder</span>
+                  </Button>
                   <Button
                     variant="ghost"
                     size="icon"

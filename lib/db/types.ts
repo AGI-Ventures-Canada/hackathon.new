@@ -2165,6 +2165,56 @@ export type Database = {
           },
         ]
       }
+      scheduled_reminders: {
+        Row: {
+          cancelled_at: string | null
+          created_at: string
+          entity_id: string
+          entity_type: string
+          hackathon_id: string | null
+          id: string
+          metadata: Json | null
+          reminder_type: string
+          scheduled_for: string
+          sent_at: string | null
+          urgency: string
+        }
+        Insert: {
+          cancelled_at?: string | null
+          created_at?: string
+          entity_id: string
+          entity_type: string
+          hackathon_id?: string | null
+          id?: string
+          metadata?: Json | null
+          reminder_type: string
+          scheduled_for: string
+          sent_at?: string | null
+          urgency?: string
+        }
+        Update: {
+          cancelled_at?: string | null
+          created_at?: string
+          entity_id?: string
+          entity_type?: string
+          hackathon_id?: string | null
+          id?: string
+          metadata?: Json | null
+          reminder_type?: string
+          scheduled_for?: string
+          sent_at?: string | null
+          urgency?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scheduled_reminders_hackathon_id_fkey"
+            columns: ["hackathon_id"]
+            isOneToOne: false
+            referencedRelation: "hackathons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       schedules: {
         Row: {
           agent_id: string | null

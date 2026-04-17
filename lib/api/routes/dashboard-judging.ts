@@ -1172,6 +1172,23 @@ export const dashboardJudgingRoutes = new Elysia()
           await createJudgePendingNotification(hackathon.id, invitationResult.invitation.id, typedBody.email, inviterName)
         }
 
+        const { scheduleReminders } = await import("@/lib/services/smart-reminders")
+        scheduleReminders(
+          "judge_invitation",
+          invitationResult.invitation.id,
+          params.id,
+          "invitation_reminder",
+          new Date(invitationResult.invitation.created_at),
+          new Date(invitationResult.invitation.expires_at),
+          {
+            email: typedBody.email,
+            hackathonName: hackathon.name,
+            inviterName,
+            inviteToken: invitationResult.invitation.token,
+            expiresAt: invitationResult.invitation.expires_at,
+          }
+        ).catch(console.error)
+
         logAudit({
           principal,
           action: "judge.invited",
@@ -1264,6 +1281,11 @@ export const dashboardJudgingRoutes = new Elysia()
     const { cancelJudgeInvitation } = await import("@/lib/services/judge-invitations")
     const result2 = await cancelJudgeInvitation(params.invitationId, params.id)
 
+    if (result2.success) {
+      const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
+      cancelRemindersForEntity("judge_invitation", params.invitationId).catch(console.error)
+    }
+
     return { success: result2.success }
   }, {
     detail: { summary: "Cancel invitation", description: "Cancels a pending judge invitation." },
@@ -1319,6 +1341,9 @@ export const dashboardJudgingRoutes = new Elysia()
       expiresAt: remindResult.invitation.expires_at,
     }).catch(console.error)
 
+    const { cancelUpcomingReminder } = await import("@/lib/services/smart-reminders")
+    cancelUpcomingReminder("judge_invitation", params.invitationId).catch(console.error)
+
     await logAudit({
       principal,
       action: "judge_invitation.reminded",
@@ -1329,7 +1354,7 @@ export const dashboardJudgingRoutes = new Elysia()
 
     return { success: true }
   }, {
-    detail: { summary: "Send invitation reminder", description: "Sends a reminder email for a pending judge invitation. One reminder per invitation." },
+    detail: { summary: "Send invitation reminder", description: "Sends a reminder email for a pending judge invitation." },
   })
 
   .get("/hackathons/:id/judging/progress", async ({ principal, params }) => {

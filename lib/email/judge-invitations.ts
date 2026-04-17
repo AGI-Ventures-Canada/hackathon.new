@@ -108,6 +108,13 @@ export type SendJudgeInvitationReminderInput = {
   inviterName: string
   inviteToken: string
   expiresAt: string
+  urgency?: "low" | "medium" | "high"
+}
+
+function judgeReminderSubject(hackathonName: string, urgency: string): string {
+  if (urgency === "high") return `Last chance \u2014 invite to judge ${hackathonName} expires soon`
+  if (urgency === "medium") return `Your invite to judge ${hackathonName} expires tomorrow`
+  return `Reminder: Judge ${hackathonName}`
 }
 
 export async function sendJudgeInvitationReminderEmail(
@@ -137,9 +144,11 @@ export async function sendJudgeInvitationReminderEmail(
     })
   )
 
+  const subject = judgeReminderSubject(input.hackathonName, input.urgency ?? "low")
+
   const result = await sendEmail({
     to: input.to,
-    subject: `Reminder: Judge ${input.hackathonName}`,
+    subject,
     html,
     text,
     tags: [

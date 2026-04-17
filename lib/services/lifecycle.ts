@@ -107,6 +107,27 @@ export async function executeTransition(
     })
   }
 
+  if (
+    toStatus === "registration_open" ||
+    toStatus === "active" ||
+    toStatus === "published"
+  ) {
+    const { reschedulePreEventReminders } = await import(
+      "./pre-event-reminders"
+    )
+    reschedulePreEventReminders(hackathonId).catch((err) => {
+      console.error(
+        `Failed to schedule pre-event reminders for ${hackathonId}:`,
+        err
+      )
+    })
+  }
+
+  if (toStatus === "completed" || toStatus === "archived") {
+    const { cancelRemindersForEntity } = await import("./smart-reminders")
+    cancelRemindersForEntity("hackathon_event", hackathonId).catch(console.error)
+  }
+
   return { success: true, hackathon: hackathon as unknown as Hackathon }
 }
 

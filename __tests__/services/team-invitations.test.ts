@@ -954,7 +954,7 @@ describe("Team Invitations Service", () => {
       }
     })
 
-    it("returns already_reminded when reminder was already sent", async () => {
+    it("allows repeat reminders when already reminded", async () => {
       setMockFromImplementation(() =>
         createChainableMock({
           data: {
@@ -967,10 +967,7 @@ describe("Team Invitations Service", () => {
 
       const result = await remindTeamInvitation("11111111-1111-1111-1111-111111111111", "user_captain", "22222222-2222-2222-2222-222222222222")
 
-      expect(result.success).toBe(false)
-      if (!result.success) {
-        expect(result.code).toBe("already_reminded")
-      }
+      expect(result.success).toBe(true)
     })
   })
 })

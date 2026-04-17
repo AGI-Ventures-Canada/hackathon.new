@@ -371,21 +371,16 @@ export async function remindTeamInvitation(
     return { success: false, error: "Invitation has expired", code: "expired" }
   }
 
-  if (invitation.reminded_at) {
-    return { success: false, error: "Reminder already sent", code: "already_reminded" }
-  }
-
   const { data: updated, error: updateError } = await client
     .from("team_invitations")
     .update({ reminded_at: new Date().toISOString(), updated_at: new Date().toISOString() })
     .eq("id", invitationId)
     .eq("team_id", teamId)
-    .is("reminded_at", null)
     .select()
     .single()
 
   if (updateError || !updated) {
-    return { success: false, error: "Reminder already sent", code: "already_reminded" }
+    return { success: false, error: "Failed to update reminder status", code: "update_failed" }
   }
 
   return { success: true, invitation: updated as TeamInvitation }

@@ -67,6 +67,13 @@ export type SendTeamInvitationReminderInput = {
   inviterName: string
   inviteToken: string
   expiresAt: string
+  urgency?: "low" | "medium" | "high"
+}
+
+function teamReminderSubject(teamName: string, hackathonName: string, urgency: string): string {
+  if (urgency === "high") return `Last chance \u2014 invite to "${teamName}" expires soon`
+  if (urgency === "medium") return `Your invite to "${teamName}" expires tomorrow`
+  return `Reminder: Join "${teamName}" for ${hackathonName}`
 }
 
 export async function sendTeamInvitationReminderEmail(
@@ -97,9 +104,11 @@ export async function sendTeamInvitationReminderEmail(
     })
   )
 
+  const subject = teamReminderSubject(input.teamName, input.hackathonName, input.urgency ?? "low")
+
   const result = await sendEmail({
     to: input.to,
-    subject: `Reminder: Join "${input.teamName}" for ${input.hackathonName}`,
+    subject,
     html,
     text,
     tags: [
