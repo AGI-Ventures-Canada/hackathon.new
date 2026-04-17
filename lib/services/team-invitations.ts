@@ -337,6 +337,11 @@ interface TeamWithHackathon {
   memberNames: string[]
 }
 
+/**
+ * Fetches team info with hackathon details and participant names for invitation emails.
+ * Member names are fetched from Clerk with a hard cap of 100 (Clerk API limit).
+ * The email template caps the display at 5 names with "and N others" overflow.
+ */
 export async function getTeamWithHackathon(
   teamId: string
 ): Promise<TeamWithHackathon | null> {

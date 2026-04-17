@@ -43,7 +43,7 @@ export default function SponsorClaimNotificationEmail({
         style={{
           fontSize: fontSize.sm,
           color: colors.textMuted,
-          marginBottom: "24px",
+          marginBottom: spacing.lg,
           lineHeight: "1.5",
         }}
       >
