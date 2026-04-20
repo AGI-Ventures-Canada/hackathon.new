@@ -78,6 +78,8 @@ const groups: Group[] = [
       "__tests__/components/dashboard",
       "__tests__/components/ui",
       "__tests__/components/org",
+      "__tests__/components/dev-tool",
+      "__tests__/components/auth/dev-switch-client.test.tsx",
       "__tests__/components/install-skill-button.test.tsx",
       "__tests__/components/homepage-hero.test.tsx",
     ],

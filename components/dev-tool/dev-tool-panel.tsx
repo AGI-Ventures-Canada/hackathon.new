@@ -314,7 +314,7 @@ export function DevToolPanel({
   const running = !!runningId || !!eventActions.pending
 
   return (
-    <div className="flex w-[460px] max-w-[calc(100vw-2rem)] flex-col">
+    <div className="max-h-[70vh] w-full overflow-x-hidden overflow-y-auto">
       <Header
         eventContext={eventContext}
         onClose={onClose}

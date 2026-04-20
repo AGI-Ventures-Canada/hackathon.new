@@ -2171,8 +2171,10 @@ export type Database = {
           created_at: string
           entity_id: string
           entity_type: string
+          fail_count: number
           hackathon_id: string | null
           id: string
+          last_error: string | null
           metadata: Json | null
           reminder_type: string
           scheduled_for: string
@@ -2184,8 +2186,10 @@ export type Database = {
           created_at?: string
           entity_id: string
           entity_type: string
+          fail_count?: number
           hackathon_id?: string | null
           id?: string
+          last_error?: string | null
           metadata?: Json | null
           reminder_type: string
           scheduled_for: string
@@ -2197,8 +2201,10 @@ export type Database = {
           created_at?: string
           entity_id?: string
           entity_type?: string
+          fail_count?: number
           hackathon_id?: string | null
           id?: string
+          last_error?: string | null
           metadata?: Json | null
           reminder_type?: string
           scheduled_for?: string

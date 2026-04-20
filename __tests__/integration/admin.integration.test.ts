@@ -678,6 +678,71 @@ describe("Admin API Routes", () => {
 
       expect(res.status).toBe(403)
     })
+
+    it("falls back to SCENARIO_ORG_ID when org_id is omitted", async () => {
+      mockResolvePrincipal.mockResolvedValue(adminPrincipal)
+      process.env.SCENARIO_DEV_USER_ID = "user_organizer_test"
+      process.env.SCENARIO_ORG_ID = "org_default_scenario"
+
+      const res = await app.handle(
+        new Request("http://localhost/api/admin/scenario-switch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ persona: "organizer", redirect: "/home" }),
+        })
+      )
+      const data = await res.json()
+
+      delete process.env.SCENARIO_DEV_USER_ID
+      delete process.env.SCENARIO_ORG_ID
+      expect(res.status).toBe(200)
+      expect(data.loginUrl).toContain("&org=org_default_scenario")
+    })
+
+    it("skips org activation when org_id is explicitly null", async () => {
+      mockResolvePrincipal.mockResolvedValue(adminPrincipal)
+      process.env.SCENARIO_DEV_USER_ID = "user_organizer_test"
+      process.env.SCENARIO_ORG_ID = "org_default_scenario"
+
+      const res = await app.handle(
+        new Request("http://localhost/api/admin/scenario-switch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ persona: "organizer", redirect: "/home", org_id: null }),
+        })
+      )
+      const data = await res.json()
+
+      delete process.env.SCENARIO_DEV_USER_ID
+      delete process.env.SCENARIO_ORG_ID
+      expect(res.status).toBe(200)
+      expect(data.loginUrl).not.toContain("&org=")
+    })
+
+    it("uses explicit org_id over SCENARIO_ORG_ID fallback", async () => {
+      mockResolvePrincipal.mockResolvedValue(adminPrincipal)
+      process.env.SCENARIO_DEV_USER_ID = "user_organizer_test"
+      process.env.SCENARIO_ORG_ID = "org_default_scenario"
+
+      const res = await app.handle(
+        new Request("http://localhost/api/admin/scenario-switch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            persona: "organizer",
+            redirect: "/home",
+            org_id: "org_specific",
+          }),
+        })
+      )
+      const data = await res.json()
+
+      delete process.env.SCENARIO_DEV_USER_ID
+      delete process.env.SCENARIO_ORG_ID
+      expect(res.status).toBe(200)
+      expect(data.loginUrl).toContain("&org=org_specific")
+      expect(data.loginUrl).not.toContain("org_default_scenario")
+    })
   })
 
   describe("Per-endpoint scope enforcement", () => {
