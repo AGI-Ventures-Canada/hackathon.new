@@ -2,7 +2,7 @@
 
 import { DoorOpen, Activity } from "lucide-react"
 import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { TabsUrlSync } from "./_tabs-url-sync"
+import { TabsUrlSync } from "@/components/ui/tabs-url-sync"
 import { RoomsTab } from "./_rooms-tab"
 import { ActivityTab } from "./_activity-tab"
 

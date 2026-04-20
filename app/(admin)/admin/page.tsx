@@ -87,6 +87,20 @@ export default async function AdminOverviewPage() {
             </Link>
           </CardContent>
         </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Component library</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">Browse every UI component in one place, across categories.</p>
+            <Link
+              href="/admin/components"
+              className="mt-3 inline-block text-sm font-medium text-primary underline-offset-4 hover:underline"
+            >
+              Browse components
+            </Link>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )
