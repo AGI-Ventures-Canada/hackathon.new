@@ -208,7 +208,7 @@ export function FormsShowcase() {
               </InputGroupAddon>
               <InputGroupInput type="email" placeholder="you@example.com" />
               <InputGroupAddon align="inline-end">
-                <InputGroupText>@agiventures.ca</InputGroupText>
+                <InputGroupText>@example.com</InputGroupText>
               </InputGroupAddon>
             </InputGroup>
           </div>
