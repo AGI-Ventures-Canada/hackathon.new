@@ -120,4 +120,19 @@ describe("Judge Added Notification Email", () => {
       { name: "hackathon", value: "Test_Hackathon" },
     ])
   })
+
+  it("includes event dates in HTML when hackathonStartsAt and hackathonEndsAt are provided", async () => {
+    await sendJudgeAddedNotification({
+      to: "judge@example.com",
+      hackathonName: "Test Hackathon",
+      hackathonSlug: "test-hackathon",
+      addedByName: "Organizer",
+      hackathonStartsAt: "2026-04-20T08:30:00Z",
+      hackathonEndsAt: "2026-04-22T17:00:00Z",
+    })
+
+    const call = mockSendEmail.mock.calls[0][0] as SendEmailInput
+    expect(call.html).toContain("Apr")
+    expect(call.html).toContain("20")
+  })
 })

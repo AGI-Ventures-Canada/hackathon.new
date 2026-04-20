@@ -42,7 +42,19 @@ const mockCancelTeamInvitation = mock(() => Promise.resolve({ success: true }))
 const mockGetTeamWithHackathon = mock(() =>
   Promise.resolve({
     name: "Test Team",
-    hackathon: { name: "Test Hackathon", slug: "test-hackathon" },
+    hackathon: { name: "Test Hackathon", slug: "test-hackathon", starts_at: "2025-06-01T00:00:00Z", ends_at: "2025-06-02T00:00:00Z" },
+    memberNames: [],
+  })
+)
+const mockRemindTeamInvitation = mock(() =>
+  Promise.resolve({
+    success: true,
+    invitation: {
+      id: "inv_1",
+      email: "invitee@example.com",
+      token: "abc123",
+      expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    },
   })
 )
 
@@ -54,6 +66,7 @@ mock.module("@/lib/services/team-invitations", () => ({
   listTeamInvitations: mockListTeamInvitations,
   cancelTeamInvitation: mockCancelTeamInvitation,
   getTeamWithHackathon: mockGetTeamWithHackathon,
+  remindTeamInvitation: mockRemindTeamInvitation,
 }))
 
 const mockGetPublicHackathonById = mock(() => Promise.resolve({ slug: "test-hackathon" }))
@@ -70,9 +83,17 @@ mock.module("@/lib/services/public-hackathons", () => ({
 }))
 
 const mockSendTeamInvitationEmail = mock(() => Promise.resolve({ success: true }))
+const mockSendTeamInvitationReminderEmail = mock(() => Promise.resolve({ success: true }))
 
 mock.module("@/lib/email/team-invitations", () => ({
   sendTeamInvitationEmail: mockSendTeamInvitationEmail,
+  sendTeamInvitationReminderEmail: mockSendTeamInvitationReminderEmail,
+}))
+
+const mockResolveAdderName = mock(() => Promise.resolve("Test User"))
+
+mock.module("@/lib/auth/resolve-adder-name", () => ({
+  resolveAdderName: mockResolveAdderName,
 }))
 
 const mockWorkflowStart = mock(() => Promise.resolve({ runId: "run_1" }))
@@ -188,10 +209,28 @@ describe("Team Invitations API Routes", () => {
     mockListTeamInvitations.mockReset()
     mockCancelTeamInvitation.mockReset()
     mockGetTeamWithHackathon.mockReset()
+    mockRemindTeamInvitation.mockReset()
     mockGetPublicHackathonById.mockReset()
     mockSendTeamInvitationEmail.mockReset()
+    mockSendTeamInvitationReminderEmail.mockReset()
+    mockResolveAdderName.mockReset()
     mockLogAudit.mockReset()
     mockCheckRateLimit.mockReset()
+    mockGetTeamWithHackathon.mockResolvedValue({
+      name: "Test Team",
+      hackathon: { name: "Test Hackathon", slug: "test-hackathon" },
+    })
+    mockRemindTeamInvitation.mockResolvedValue({
+      success: true,
+      invitation: {
+        id: "inv_1",
+        email: "invitee@example.com",
+        token: "abc123",
+        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+    })
+    mockResolveAdderName.mockResolvedValue("Test User")
+    mockSendTeamInvitationReminderEmail.mockResolvedValue({ success: true })
     mockCheckRateLimit.mockReturnValue({ allowed: true, remaining: 9, resetAt: Date.now() + 60000 })
   })
 
@@ -466,7 +505,8 @@ describe("Dashboard Team Invitations Routes", () => {
 
     mockGetTeamWithHackathon.mockResolvedValue({
       name: "Test Team",
-      hackathon: { name: "Test Hackathon", slug: "test-hackathon" },
+      hackathon: { name: "Test Hackathon", slug: "test-hackathon", starts_at: "2025-06-01T00:00:00Z", ends_at: "2025-06-02T00:00:00Z" },
+      memberNames: [],
     })
 
     mockResolvePrincipal.mockResolvedValue({
@@ -638,6 +678,91 @@ describe("Dashboard Team Invitations Routes", () => {
 
       expect(res.status).toBe(400)
       expect(data.error).toBe("Only team captain can cancel")
+    })
+  })
+
+  describe("POST /api/dashboard/teams/:teamId/invitations/:invitationId/remind", () => {
+    const TEAM_ID = "11111111-1111-1111-1111-111111111111"
+    const INVITATION_ID = "22222222-2222-2222-2222-222222222222"
+    const remindUrl = `http://localhost/api/dashboard/teams/${TEAM_ID}/invitations/${INVITATION_ID}/remind`
+
+    it("returns 404 for invalid UUID params", async () => {
+      const res = await dashboardApp.handle(
+        new Request("http://localhost/api/dashboard/teams/bad-id/invitations/also-bad/remind", {
+          method: "POST",
+        })
+      )
+
+      expect(res.status).toBe(404)
+    })
+
+    it("returns 404 when team not found", async () => {
+      mockGetTeamWithHackathon.mockResolvedValue(null)
+
+      const res = await dashboardApp.handle(new Request(remindUrl, { method: "POST" }))
+      const data = await res.json()
+
+      expect(res.status).toBe(404)
+      expect(data.error).toBe("Team not found")
+    })
+
+    it("returns 429 when rate limited", async () => {
+      mockCheckRateLimit.mockReturnValue({ allowed: false, remaining: 0, resetAt: Date.now() + 60000 })
+
+      const res = await dashboardApp.handle(new Request(remindUrl, { method: "POST" }))
+
+      expect(res.status).toBe(429)
+    })
+
+    it("returns 400 when remind service fails", async () => {
+      mockRemindTeamInvitation.mockResolvedValue({
+        success: false,
+        error: "Reminder already sent",
+        code: "already_reminded",
+      })
+
+      const res = await dashboardApp.handle(new Request(remindUrl, { method: "POST" }))
+      const data = await res.json()
+
+      expect(res.status).toBe(400)
+      expect(data.error).toBe("Reminder already sent")
+      expect(data.code).toBe("already_reminded")
+    })
+
+    it("sends reminder email and logs audit on success", async () => {
+      mockRemindTeamInvitation.mockResolvedValue({
+        success: true,
+        invitation: {
+          id: INVITATION_ID,
+          email: "invitee@example.com",
+          token: "abc123",
+          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        },
+      })
+
+      const res = await dashboardApp.handle(new Request(remindUrl, { method: "POST" }))
+      const data = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(data.success).toBe(true)
+      expect(mockRemindTeamInvitation).toHaveBeenCalledWith(INVITATION_ID, "user_captain", TEAM_ID)
+      expect(mockSendTeamInvitationReminderEmail).toHaveBeenCalled()
+      expect(mockLogAudit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "team_invitation.reminded",
+          resourceType: "team_invitation",
+          resourceId: INVITATION_ID,
+        })
+      )
+    })
+
+    it("checks team existence before rate limiting", async () => {
+      mockGetTeamWithHackathon.mockResolvedValue(null)
+
+      await dashboardApp.handle(new Request(remindUrl, { method: "POST" }))
+
+      expect(mockGetTeamWithHackathon).toHaveBeenCalled()
+      expect(mockCheckRateLimit).not.toHaveBeenCalled()
     })
   })
 })

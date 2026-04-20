@@ -33,6 +33,11 @@ function eventDataToState(
       description: prize.description,
       value: prize.value,
     })) ?? [],
+    challenges: richContent?.challenges?.map((challenge) => ({
+      title: challenge.title,
+      description: challenge.description ?? null,
+      resources: challenge.resources ?? [],
+    })) ?? [],
   }
 }
 
@@ -59,6 +64,7 @@ export function EventImportEditor({
         sponsors: state.sponsors,
         rules: state.rules,
         prizes: state.prizes,
+        challenges: state.challenges,
         sourceUrl,
       }),
     })

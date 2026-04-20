@@ -1,7 +1,7 @@
 import { Text, Section } from "@react-email/components"
 import { OatmealLayout } from "./_components/oatmeal-layout"
 import { InfoBox } from "./_components/info-box"
-import { colors } from "./_components/constants"
+import { colors, fontSize, spacing, monoFontFamily } from "./_components/constants"
 
 interface AgentNotificationEmailProps {
   agentName: string
@@ -31,12 +31,18 @@ export default function AgentNotificationEmail({
       footerText="This is an automated notification from your Oatmeal agent."
     >
       <InfoBox label="Agent">
-        <Text style={{ margin: "0", fontSize: "16px", fontWeight: 600 }}>
+        <Text style={{ margin: "0", fontSize: fontSize.lg, fontWeight: 600 }}>
           {agentName}
         </Text>
       </InfoBox>
 
-      <Text style={{ fontSize: "14px", marginBottom: "24px", lineHeight: "1.6" }}>
+      <Text
+        style={{
+          fontSize: fontSize.base,
+          marginBottom: spacing.lg,
+          lineHeight: "1.6",
+        }}
+      >
         <strong>Run ID:</strong> {runId}
         <br />
         <strong>Status:</strong> {typeLabels[type]}
@@ -46,18 +52,19 @@ export default function AgentNotificationEmail({
         <Section
           style={{
             background: colors.infoBoxBg,
-            padding: "16px 20px",
-            marginBottom: "24px",
+            padding: `${spacing.md} ${spacing.lg}`,
+            marginBottom: spacing.lg,
             overflowX: "auto" as const,
+            borderRadius: "8px",
+            borderLeft: `3px solid ${colors.accent}`,
           }}
         >
           <Text
             style={{
               margin: "0 0 8px 0",
-              fontSize: "11px",
-              color: colors.textMuted,
-              textTransform: "uppercase" as const,
-              letterSpacing: "0.05em",
+              fontSize: fontSize.xs,
+              color: colors.textSecondary,
+              fontWeight: 600,
             }}
           >
             Output
@@ -66,6 +73,7 @@ export default function AgentNotificationEmail({
             style={{
               margin: "0",
               fontSize: "12px",
+              fontFamily: monoFontFamily,
               whiteSpace: "pre-wrap",
               wordBreak: "break-word" as const,
             }}
@@ -79,18 +87,19 @@ export default function AgentNotificationEmail({
         <Section
           style={{
             background: colors.infoBoxBg,
-            padding: "16px 20px",
-            marginBottom: "24px",
+            padding: `${spacing.md} ${spacing.lg}`,
+            marginBottom: spacing.lg,
             overflowX: "auto" as const,
+            borderRadius: "8px",
+            borderLeft: `3px solid ${colors.accent}`,
           }}
         >
           <Text
             style={{
               margin: "0 0 8px 0",
-              fontSize: "11px",
-              color: colors.textMuted,
-              textTransform: "uppercase" as const,
-              letterSpacing: "0.05em",
+              fontSize: fontSize.xs,
+              color: colors.textSecondary,
+              fontWeight: 600,
             }}
           >
             Error
@@ -99,6 +108,7 @@ export default function AgentNotificationEmail({
             style={{
               margin: "0",
               fontSize: "12px",
+              fontFamily: monoFontFamily,
               whiteSpace: "pre-wrap",
               wordBreak: "break-word" as const,
             }}
@@ -115,5 +125,6 @@ AgentNotificationEmail.PreviewProps = {
   agentName: "Receipt Parser",
   runId: "run_abc123def456",
   type: "completed",
-  output: "Successfully parsed 3 receipts from inbox.\nTotal: $247.83\nCategories: Office Supplies, Software, Travel",
+  output:
+    "Successfully parsed 3 receipts from inbox.\nTotal: $247.83\nCategories: Office Supplies, Software, Travel",
 } satisfies AgentNotificationEmailProps

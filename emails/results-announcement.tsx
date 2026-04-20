@@ -1,6 +1,7 @@
 import { Text } from "@react-email/components"
 import { OatmealLayout } from "./_components/oatmeal-layout"
 import { CTAButton } from "./_components/cta-button"
+import { fontSize, spacing } from "./_components/constants"
 
 interface ResultsAnnouncementEmailProps {
   participantName: string
@@ -17,12 +18,20 @@ export default function ResultsAnnouncementEmail({
     <OatmealLayout
       heading="Results Are In!"
       preview={`Results for ${hackathonName} have been published`}
-      footerText={`You\u2019re receiving this because you participated in ${hackathonName}.`}
+      footerText={`You\u2019re getting this because you took part in ${hackathonName}.`}
+      eventUrl={resultsUrl}
+      hackathonName={hackathonName}
     >
-      <Text style={{ fontSize: "14px", marginBottom: "24px", lineHeight: "1.6" }}>
+      <Text
+        style={{
+          fontSize: fontSize.base,
+          marginBottom: spacing.lg,
+          lineHeight: "1.6",
+        }}
+      >
         Hi {participantName}, the results for{" "}
-        <strong>{hackathonName}</strong> have been published! Check out how
-        everyone did.
+        <strong>{hackathonName}</strong> are out! Winners have been picked and
+        you can see all the projects.
       </Text>
 
       <CTAButton href={resultsUrl}>View Results</CTAButton>

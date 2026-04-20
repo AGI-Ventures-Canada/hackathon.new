@@ -81,6 +81,7 @@ See domain-specific CLAUDE.md files for detailed patterns:
 - `lib/sandbox/CLAUDE.md` - Daytona sandbox lifecycle, file operations
 - `lib/integrations/CLAUDE.md` - OAuth flows, token management
 - `lib/email/CLAUDE.md` - Resend email sending and receiving
+- `app/api/cron/reminders/CLAUDE.md` - Reminder system: scheduling, cron processing, cancellation
 - `supabase/CLAUDE.md` - Database development, migrations, branching
 - `scripts/CLAUDE.md` - Test scenario scripts for seeding dev database
 - `packages/cli/CLAUDE.md` - CLI package architecture, adding commands, testing
@@ -265,75 +266,57 @@ When a feature references a user by email and they don't exist in Clerk, send a 
 
 ### Optimistic Rendering
 
-**CRITICAL: Every user-initiated mutation — add, delete, toggle, reorder, assign, unassign — MUST update the UI instantly, before the network round-trip completes. Waiting for a server response is not acceptable, even for fast APIs.** Optimistic rendering is the default, not an enhancement. If you write a handler that awaits `fetch` before calling `setState` or `router.refresh()`, you wrote the wrong handler.
+**CRITICAL: Every user-initiated mutation — add, delete, toggle, reorder, assign, unassign — MUST update the UI instantly, before the network round-trip completes.** If you write a handler that awaits `fetch` before calling `setState` or `router.refresh()`, you wrote the wrong handler. Optimistic rendering is the default, not an enhancement. Never show loading spinners for operations that can be reflected instantly.
 
-This applies to **every list and every item in every list** — rounds, prizes, judges, invitations, action items, schedule items, challenges, teams, members, etc. New rows appear the frame you click "Add". Deleted rows disappear the frame you click "Delete". Nothing blocks on the network.
+#### Shared Hooks (`hooks/`)
 
-**The pattern** (non-negotiable):
-
-```tsx
-const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set())
-const [pendingItems, setPendingItems] = useState<Item[]>([])
-
-const visibleItems = useMemo(
-  () => [...items.filter((i) => !hiddenIds.has(i.id)), ...pendingItems],
-  [items, hiddenIds, pendingItems],
-)
-
-async function handleDelete(id: string) {
-  setHiddenIds((prev) => new Set(prev).add(id))  // hide INSTANTLY
-  try {
-    const res = await fetch(`/api/.../${id}`, { method: "DELETE" })
-    if (!res.ok) throw new Error("Failed")
-    router.refresh()  // eventual consistency — props will update
-  } catch (err) {
-    setHiddenIds((prev) => { const n = new Set(prev); n.delete(id); return n })  // revert
-    setError(err instanceof Error ? err.message : "Failed")
-  }
-}
-
-async function handleAdd(input: NewItem) {
-  const tempId = `pending-${Date.now()}`
-  const optimistic = { ...input, id: tempId, pending: true }
-  setPendingItems((prev) => [...prev, optimistic])  // show INSTANTLY
-  try {
-    const res = await fetch(`/api/...`, { method: "POST", body: JSON.stringify(input) })
-    if (!res.ok) throw new Error("Failed")
-    router.refresh()
-    // Clear pending when server props overtake — use useEffect with items dep to reconcile
-    setPendingItems((prev) => prev.filter((p) => p.id !== tempId))
-  } catch (err) {
-    setPendingItems((prev) => prev.filter((p) => p.id !== tempId))  // revert
-    setError(err instanceof Error ? err.message : "Failed")
-  }
-}
-```
-
-**Rules:**
-
-- **Hide/add BEFORE `await fetch`.** The first line of every mutation handler updates local state. The network call is second.
-- **Every list render must filter through the hidden set** — don't render raw props.
-- **Revert on failure** — restore the hidden/pending state and surface the error via `setError`.
-- **Keep `router.refresh()` on success** for eventual consistency — but NEVER rely on it for the initial visual update.
-- **Re-throw errors** when a handler is called by a child component that also handles errors (e.g., dialogs showing their own error state).
-- **No loading spinners on rows that disappear instantly.** If the row is gone, there's nothing to spin on.
-- **Dialogs that create items** should return the created entity via `onSuccess(item)` so the parent can add it optimistically without a round-trip wait.
-
-**Anti-patterns (REJECT in review):**
+**`useOptimisticMutation<TInput, TResponse>`** (`hooks/use-optimistic-mutation.ts`) — Core mutation hook. Lifecycle: `onOptimistic(input)` fires before API → `fn(input)` calls the API → success: `onSuccess` + `router.refresh()` → failure: `onRevert` + auto-dismiss error after 8s. Returns `{ execute, isPending, error, clearError }`. Set `refreshOnSuccess: false` to skip `router.refresh()`.
 
 ```tsx
-// ❌ WRONG — user stares at unchanged UI until fetch returns
-async function handleDelete(id: string) {
-  const res = await fetch(`/api/.../${id}`, { method: "DELETE" })
-  if (res.ok) router.refresh()
-}
-
-// ❌ WRONG — "if (res.ok)" gate means failure silently does nothing
-// ❌ WRONG — no revert, no error surfaced
-// ❌ WRONG — no optimistic hide
+const { execute: handleDelete, error } = useOptimisticMutation({
+  fn: (id: string) => fetch(`/api/items/${id}`, { method: "DELETE" }).then(assertOk),
+  onOptimistic: (id) => list.hideItem(id),
+  onRevert: (id) => list.unhideItem(id),
+})
 ```
 
-**Reference implementations:** `components/hackathon/judging/judging-setup-wizard.tsx`, `components/hackathon/judging/judging-tab-client.tsx`, `components/hackathon/judging/rounds-section.tsx`.
+**`useOptimisticList<T>`** (`hooks/use-optimistic-list.ts`) — Hidden set + pending set + local edits for lists. Pass server data as `items` prop. Returns `{ visibleItems, hideItem, unhideItem, addPendingItem, removePendingItem, setLocalEdit, clearLocalEdit }`. Auto-reconciles when `items` prop changes (after `router.refresh()`): removes pending items that now exist in server data, cleans up hidden IDs and local edits for deleted items.
+
+```tsx
+const list = useOptimisticList({ items: serverPrizes, getId: (p) => p.id })
+// list.visibleItems — render this instead of raw props
+// list.hideItem(id) — optimistic delete
+// list.addPendingItem(tempItem) — optimistic create
+// list.setLocalEdit(id, { name: "New" }) — optimistic update
+```
+
+**`assertOk`** / **`assertOkJson<T>`** (`lib/utils/fetch.ts`) — Replaces `if (!res.ok) { ... throw ... }` boilerplate.
+- `.then(assertOk)` — void return, 204-safe. Use for DELETE / fire-and-forget.
+- `.then(assertOkJson<MyType>)` — parses JSON as `T`, throws on 204. Use when you expect a response body.
+
+#### When to Use Each Pattern
+
+| Scenario | Pattern | Example |
+|----------|---------|---------|
+| Delete from a list (props-based) | `useOptimisticList` + `useOptimisticMutation` | `judging-tab-client.tsx` |
+| Delete from a list (client-fetched) | Direct `setItems` before API, revert on catch | `_rooms-tab.tsx` |
+| Create into a list | `addPendingItem` with temp ID, replace on success | `_teams-tab.tsx` |
+| Toggle a boolean field | `setLocalEdit` or direct state update before API | `schedule-list.tsx`, `_rooms-tab.tsx` |
+| Form submit (no list) | `useOptimisticMutation` with `onOptimistic` to reset form | `sponsor-form.tsx` |
+| Dialog with save | Close dialog in `onOptimistic`, fire API after | `_rooms-tab.tsx`, `add-prize-dialog.tsx` |
+| Field-level partial revert | Manual `optimisticUpdates` Map (not `useOptimisticList`) | `sponsors-edit-form.tsx` |
+| Critical multi-step ops | Keep `loading` state + spinner (transitions, email blast) | `transition-confirm-dialog.tsx` |
+
+#### Rules
+
+- **Always call `router.refresh()` after successful mutations** for eventual consistency (hooks do this by default)
+- **Close dialogs immediately** on submit — the item appearing in the list IS the success feedback. Never use `setTimeout(() => setDialogOpen(false), 800)` or `CheckCircle2` success animations
+- **Error rollback**: revert optimistic state, show inline error via `{error && <p className="text-sm text-destructive">{error}</p>}`. `useOptimisticMutation` auto-dismisses after 8 seconds
+- **Re-throw errors** when called by child components that also handle errors
+- **Keep `Loader2` spinners only** for genuinely async operations that can't be reflected instantly: file uploads, OAuth redirects, multi-step batch saves, critical state transitions
+- **Use `assertOk` / `assertOkJson<T>`** for all `fetch()` calls to eliminate `if (!res.ok)` boilerplate. Use `assertOkJson<T>` when you need the parsed body, `assertOk` for void operations. Exception: when you need the response body before deciding whether to throw (e.g., `already_claimed` error codes)
+- **For client-fetched lists** (data loaded via `useEffect` + `fetch`, not server props): apply optimistic state directly to the `useState` array, don't use `useOptimisticList`
+- **For props-based lists** (data passed from server components): use `useOptimisticList` which handles reconciliation when props change after `router.refresh()`
 
 ### Keep Seed Data in Sync
 
@@ -444,6 +427,9 @@ If `--auto-connect` targets the wrong tab, list tabs with `curl -s http://127.0.
 | `ENCRYPTION_KEY` | Encrypts CLI auth session tokens, exactly 64 hex chars (`openssl rand -hex 32`). Without it, `hackathon login` fails |
 | `SCENARIO_ORG_ID` | Clerk org ID for admin test scenarios. Required for `/admin/scenarios` |
 | `SCENARIO_DEV_USER_ID` | Clerk user ID for test scenarios. Generated by `bun run scripts/provision-test-users.ts` |
+| `SCENARIO_DEV_USER_EMAIL` | Email of the dev user. Used by attendee invite scenarios to send the invite to a claimable address. Falls back to `dev-user@example.com` if unset (un-claimable in local dev) |
+| `NEXT_PUBLIC_APP_URL` | Base URL for the app, used in email CTAs. Set to deployment URL (e.g., `https://getoatmeal.com`) |
+| `CRON_SECRET` | Bearer token for Vercel cron endpoints (`/api/cron/*`). Set automatically by Vercel, or `openssl rand -hex 32` locally |
 | `NEXT_PUBLIC_POSTHOG_KEY` | **Production only** (Vercel). Never set in `.env.local` |
 
 ### Local Supabase Port Assignments

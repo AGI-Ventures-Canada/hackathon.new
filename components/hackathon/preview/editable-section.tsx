@@ -10,6 +10,7 @@ interface EditableSectionProps {
   isEmpty?: boolean
   emptyLabel?: string
   className?: string
+  onClick?: () => void
 }
 
 export function EditableSection({
@@ -18,6 +19,7 @@ export function EditableSection({
   isEmpty = false,
   emptyLabel = "Click to add content",
   className,
+  onClick,
 }: EditableSectionProps) {
   const { isEditable, editMode, openSection } = useEdit()
 
@@ -27,7 +29,11 @@ export function EditableSection({
   }
 
   const handleClick = () => {
-    openSection(section)
+    if (onClick) {
+      onClick()
+    } else {
+      openSection(section)
+    }
   }
 
   if (isEmpty) {

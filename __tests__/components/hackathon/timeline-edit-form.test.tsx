@@ -40,7 +40,7 @@ describe("TimelineEditForm", () => {
 
   it("renders Save button disabled when no changes", () => {
     render(<TimelineEditForm initialData={baseData} />)
-    const saveButton = screen.getByText("Save")
+    const saveButton = screen.getByText("Save & exit")
     expect(saveButton.hasAttribute("disabled")).toBe(true)
   })
 
@@ -79,7 +79,7 @@ describe("TimelineEditForm", () => {
 
   it("shows keyboard shortcut hints", () => {
     render(<TimelineEditForm initialData={baseData} />)
-    expect(screen.getByText("save")).toBeTruthy()
+    expect(screen.getByText("save & exit")).toBeTruthy()
     expect(screen.getByText("save & next")).toBeTruthy()
   })
 })

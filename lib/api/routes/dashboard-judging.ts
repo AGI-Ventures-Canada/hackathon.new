@@ -2,6 +2,7 @@ import { Elysia, t } from "elysia"
 import { resolvePrincipal, requirePrincipal } from "@/lib/auth/principal"
 import { logAudit } from "@/lib/services/audit"
 import { resolveAdderName } from "@/lib/auth/resolve-adder-name"
+import { checkRateLimit, RateLimitError } from "@/lib/services/rate-limit"
 
 type CachedAuthResult = { status: "ok" } | { status: "not_found" } | { status: "not_authorized" }
 // Local-dev-only optimisation: avoids repeated checkHackathonOrganizer calls
@@ -74,13 +75,21 @@ export const dashboardJudgingRoutes = new Elysia()
         name: body.name,
         description: body.description,
         value: body.value,
-        judgingStyle: body.judgingStyle as "bucket_sort" | "gate_check" | "crowd_vote" | "judges_pick",
+        judgingStyle: body.judgingStyle as "bucket_sort" | "gate_check" | "crowd_vote" | "judges_pick" | undefined,
         roundId: body.roundId,
         assignmentMode: body.assignmentMode as "organizer_assigned" | "self_select" | undefined,
         maxPicks: body.maxPicks,
         displayOrder: body.displayOrder,
         criteria: body.criteria,
         buckets: body.buckets,
+        type: body.type as "score" | "favorite" | "crowd" | "criteria" | undefined,
+        rank: body.rank,
+        kind: body.kind,
+        monetaryValue: body.monetaryValue,
+        currency: body.currency,
+        criteriaId: body.criteriaId,
+        distributionMethod: body.distributionMethod,
+        displayValue: body.displayValue,
       })
 
       if (!createResult.success) {
@@ -106,9 +115,9 @@ export const dashboardJudgingRoutes = new Elysia()
     {
       body: t.Object({
         name: t.String({ description: "Prize name" }),
-        description: t.Optional(t.String({ description: "Prize description" })),
-        value: t.Optional(t.String({ description: "Prize value (e.g. '$5000')" })),
-        judgingStyle: t.String({ description: "bucket_sort | gate_check | crowd_vote | judges_pick" }),
+        description: t.Optional(t.Union([t.String(), t.Null()], { description: "Prize description" })),
+        value: t.Optional(t.Union([t.String(), t.Null()], { description: "Prize value (e.g. '$5000')" })),
+        judgingStyle: t.Optional(t.String({ description: "bucket_sort | gate_check | crowd_vote | judges_pick" })),
         roundId: t.Optional(t.Nullable(t.String({ description: "Round ID this prize belongs to" }))),
         assignmentMode: t.Optional(t.String({ description: "organizer_assigned | self_select" })),
         maxPicks: t.Optional(
@@ -138,11 +147,19 @@ export const dashboardJudgingRoutes = new Elysia()
             { description: "Sort groups for 'bucket_sort'. Defaults are used when omitted." }
           )
         ),
+        type: t.Optional(t.Union([t.Literal("score"), t.Literal("favorite"), t.Literal("crowd"), t.Literal("criteria")])),
+        rank: t.Optional(t.Union([t.Number(), t.Null()])),
+        kind: t.Optional(t.String()),
+        monetaryValue: t.Optional(t.Union([t.Number(), t.Null()])),
+        currency: t.Optional(t.Union([t.String(), t.Null()])),
+        criteriaId: t.Optional(t.Union([t.String(), t.Null()])),
+        distributionMethod: t.Optional(t.Union([t.String(), t.Null()])),
+        displayValue: t.Optional(t.Union([t.String(), t.Null()])),
       }),
       detail: {
         summary: "Create prize",
         description:
-          "Creates a new prize with judging style. For 'gate_check', 'criteria' must be a non-empty array. For 'bucket_sort', optional 'buckets' override the default sort groups. For 'judges_pick', 'maxPicks' sets how many picks each judge gets.",
+          "Creates a new prize. Accepts judgingStyle with criteria/buckets for judging tab, or legacy type/rank/kind fields from edit drawer.",
       },
     }
   )
@@ -200,6 +217,14 @@ export const dashboardJudgingRoutes = new Elysia()
         assignmentMode: body.assignmentMode as import("@/lib/db/hackathon-types").PrizeAssignmentMode | undefined,
         maxPicks: body.maxPicks,
         displayOrder: body.displayOrder,
+        type: body.type as "score" | "favorite" | "crowd" | "criteria" | undefined,
+        rank: body.rank,
+        kind: body.kind ?? undefined,
+        monetaryValue: body.monetaryValue,
+        currency: body.currency,
+        criteriaId: body.criteriaId,
+        distributionMethod: body.distributionMethod,
+        displayValue: body.displayValue,
       })
 
       if (!prize) {
@@ -268,6 +293,14 @@ export const dashboardJudgingRoutes = new Elysia()
             { description: "Replace all sort groups for this prize." }
           )
         ),
+        type: t.Optional(t.Union([t.Literal("score"), t.Literal("favorite"), t.Literal("crowd"), t.Literal("criteria")])),
+        rank: t.Optional(t.Union([t.Number(), t.Null()])),
+        kind: t.Optional(t.Nullable(t.String())),
+        monetaryValue: t.Optional(t.Union([t.Number(), t.Null()])),
+        currency: t.Optional(t.Nullable(t.String())),
+        criteriaId: t.Optional(t.Nullable(t.String())),
+        distributionMethod: t.Optional(t.Nullable(t.String())),
+        displayValue: t.Optional(t.Nullable(t.String())),
       }),
       detail: {
         summary: "Update prize",
@@ -575,6 +608,8 @@ export const dashboardJudgingRoutes = new Elysia()
         round1Name: body.round1Name,
         round2Name: body.round2Name,
         seedScreeningPrize: body.seedScreeningPrize,
+        prizeName: body.prizeName,
+        maxPicks: body.maxPicks,
       })
 
       if (!preset.success) {
@@ -589,7 +624,12 @@ export const dashboardJudgingRoutes = new Elysia()
     {
       body: t.Object({
         preset: t.Union(
-          [t.Literal("single"), t.Literal("shortlist"), t.Literal("threshold")],
+          [
+            t.Literal("single"),
+            t.Literal("shortlist"),
+            t.Literal("threshold"),
+            t.Literal("finalists_pick"),
+          ],
           { description: "Which starter template to use" }
         ),
         advanceTopN: t.Optional(
@@ -599,18 +639,24 @@ export const dashboardJudgingRoutes = new Elysia()
           t.Number({ description: "Required for 'threshold'. Submissions scoring this or higher move on" })
         ),
         round1Name: t.Optional(t.String({ description: "Name of the first round. Defaults per preset." })),
-        round2Name: t.Optional(t.String({ description: "Name of the second round. Ignored for 'single'." })),
+        round2Name: t.Optional(t.String({ description: "Name of the second round. Ignored for 'single' and 'finalists_pick'." })),
         seedScreeningPrize: t.Optional(
           t.Boolean({
             description:
-              "When true (default), seeds a hidden helper prize so judges have something to score in round 1. Ignored for 'single'.",
+              "When true (default), seeds a hidden helper prize so judges have something to score in round 1. Ignored for 'single' and 'finalists_pick'.",
           })
+        ),
+        prizeName: t.Optional(
+          t.String({ description: "Used by 'finalists_pick'. Name of the judges_pick prize. Defaults to 'Grand Prize'." })
+        ),
+        maxPicks: t.Optional(
+          t.Integer({ minimum: 1, maximum: 50, description: "Used by 'finalists_pick'. How many projects each judge picks (1-50). Defaults to 1." })
         ),
       }),
       detail: {
         summary: "Create a judging rounds preset",
         description:
-          "Creates a starter template of rounds in one call. 'single' creates one round. 'shortlist' creates two rounds where the top N by score advance. 'threshold' creates two rounds where everyone scoring above a bar advances. All rounds are fully editable after creation.",
+          "Creates a starter template of rounds in one call. 'single' creates one round. 'shortlist' creates two rounds where the top N by score advance. 'threshold' creates two rounds where everyone scoring above a bar advances. 'finalists_pick' creates one manual round with a judges_pick prize for vibes-based selection. All rounds are fully editable after creation.",
       },
     }
   )
@@ -942,9 +988,13 @@ export const dashboardJudgingRoutes = new Elysia()
         const hackathon = result.hackathon
 
         let judgeEmail: string | undefined
+        let judgeName: string | undefined
+        let judgeImageUrl: string | undefined
         try {
           const judgeUser = await client.users.getUser(typedBody.clerkUserId)
           judgeEmail = judgeUser.primaryEmailAddress?.emailAddress
+          judgeName = [judgeUser.firstName, judgeUser.lastName].filter(Boolean).join(" ") || judgeEmail || "Judge"
+          judgeImageUrl = judgeUser.imageUrl
         } catch {
           return new Response(JSON.stringify({ error: "Failed to look up judge info", code: "lookup_failed" }), { status: 500, headers: { "Content-Type": "application/json" } })
         }
@@ -969,6 +1019,18 @@ export const dashboardJudgingRoutes = new Elysia()
           return new Response(JSON.stringify({ error: addResult.error, code: addResult.code }), { status: 400, headers: { "Content-Type": "application/json" } })
         }
 
+        try {
+          const { createJudgeDisplayProfile } = await import("@/lib/services/judge-display")
+          await createJudgeDisplayProfile(params.id, {
+            name: judgeName!,
+            headshotUrl: judgeImageUrl,
+            clerkUserId: typedBody.clerkUserId,
+            participantId: addResult.participant.id,
+          })
+        } catch (err) {
+          console.error("Failed to create judge display profile:", err)
+        }
+
         if (judgeEmail) {
           try {
             if (hackathon.status !== "draft") {
@@ -979,6 +1041,8 @@ export const dashboardJudgingRoutes = new Elysia()
                 hackathonName: hackathon.name,
                 hackathonSlug: hackathon.slug,
                 addedByName,
+                hackathonStartsAt: hackathon.starts_at,
+                hackathonEndsAt: hackathon.ends_at,
               }).catch(console.error)
             } else {
               const addedByName = await resolveAdderName(principal, client)
@@ -1026,6 +1090,19 @@ export const dashboardJudgingRoutes = new Elysia()
             return new Response(JSON.stringify({ error: addResult.error, code: addResult.code }), { status: 400, headers: { "Content-Type": "application/json" } })
           }
 
+          try {
+            const { createJudgeDisplayProfile } = await import("@/lib/services/judge-display")
+            const displayName = [existingUser.firstName, existingUser.lastName].filter(Boolean).join(" ") || typedBody.email
+            await createJudgeDisplayProfile(params.id, {
+              name: displayName,
+              headshotUrl: existingUser.imageUrl,
+              clerkUserId: existingUser.id,
+              participantId: addResult.participant.id,
+            })
+          } catch (err) {
+            console.error("Failed to create judge display profile:", err)
+          }
+
           if (hackathon.status !== "draft") {
             const addedByName = await resolveAdderName(principal, client)
             const { sendJudgeAddedNotification } = await import("@/lib/email/judge-invitations")
@@ -1034,6 +1111,8 @@ export const dashboardJudgingRoutes = new Elysia()
               hackathonName: hackathon.name,
               hackathonSlug: hackathon.slug,
               addedByName,
+              hackathonStartsAt: hackathon.starts_at,
+              hackathonEndsAt: hackathon.ends_at,
             }).catch(console.error)
           } else {
             const addedByName = await resolveAdderName(principal, client)
@@ -1084,11 +1163,31 @@ export const dashboardJudgingRoutes = new Elysia()
             inviterName,
             inviteToken: invitationResult.invitation.token,
             expiresAt: invitationResult.invitation.expires_at,
+            hackathonSlug: hackathon.slug,
+            hackathonStartsAt: hackathon.starts_at,
+            hackathonEndsAt: hackathon.ends_at,
           }).catch(console.error)
         } else {
           const { createJudgePendingNotification } = await import("@/lib/services/judge-invitations")
           await createJudgePendingNotification(hackathon.id, invitationResult.invitation.id, typedBody.email, inviterName)
         }
+
+        const { scheduleReminders } = await import("@/lib/services/smart-reminders")
+        scheduleReminders(
+          "judge_invitation",
+          invitationResult.invitation.id,
+          params.id,
+          "invitation_reminder",
+          new Date(invitationResult.invitation.created_at),
+          new Date(invitationResult.invitation.expires_at),
+          {
+            email: typedBody.email,
+            hackathonName: hackathon.name,
+            inviterName,
+            inviteToken: invitationResult.invitation.token,
+            expiresAt: invitationResult.invitation.expires_at,
+          }
+        ).catch((err) => console.error(`Failed to schedule reminders for judge_invitation ${invitationResult.invitation.id} (hackathon=${params.id}):`, err))
 
         logAudit({
           principal,
@@ -1182,9 +1281,82 @@ export const dashboardJudgingRoutes = new Elysia()
     const { cancelJudgeInvitation } = await import("@/lib/services/judge-invitations")
     const result2 = await cancelJudgeInvitation(params.invitationId, params.id)
 
+    if (result2.success) {
+      const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
+      cancelRemindersForEntity("judge_invitation", params.invitationId).catch((err) =>
+        console.error(`Failed to cancel reminders for judge_invitation ${params.invitationId} (hackathon=${params.id}):`, err)
+      )
+    }
+
     return { success: result2.success }
   }, {
     detail: { summary: "Cancel invitation", description: "Cancels a pending judge invitation." },
+  })
+
+  .post("/hackathons/:id/judging/invitations/:invitationId/remind", async ({ principal, params }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+
+    const { isValidUuid } = await import("@/lib/utils/uuid")
+    if (!isValidUuid(params.invitationId)) {
+      return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+    }
+
+    const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+    const result = await checkHackathonOrganizer(params.id, principal.tenantId)
+
+    if (result.status === "not_found") {
+      return new Response(JSON.stringify({ error: "Hackathon not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+    }
+    if (result.status === "not_authorized") {
+      return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
+    }
+
+    const rateLimitResult = await checkRateLimit(`judge_invitation_remind:${params.id}:${params.invitationId}`, {
+      maxRequests: 5,
+      windowMs: 60_000,
+    })
+    if (!rateLimitResult.allowed) {
+      throw new RateLimitError(rateLimitResult.resetAt, rateLimitResult.remaining)
+    }
+
+    const { remindJudgeInvitation } = await import("@/lib/services/judge-invitations")
+    const remindResult = await remindJudgeInvitation(params.invitationId, params.id)
+
+    if (!remindResult.success) {
+      return new Response(JSON.stringify({ error: remindResult.error, code: remindResult.code }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
+
+    const hackathon = result.hackathon!
+    const { clerkClient } = await import("@clerk/nextjs/server")
+    const client = await clerkClient()
+    const inviterName = await resolveAdderName(principal, client)
+
+    const { sendJudgeInvitationReminderEmail } = await import("@/lib/email/judge-invitations")
+    sendJudgeInvitationReminderEmail({
+      to: remindResult.invitation.email,
+      hackathonName: hackathon.name,
+      inviterName,
+      inviteToken: remindResult.invitation.token,
+      expiresAt: remindResult.invitation.expires_at,
+    }).catch(console.error)
+
+    const { cancelUpcomingReminder } = await import("@/lib/services/smart-reminders")
+    cancelUpcomingReminder("judge_invitation", params.invitationId).catch(console.error)
+
+    await logAudit({
+      principal,
+      action: "judge_invitation.reminded",
+      resourceType: "hackathon",
+      resourceId: params.id,
+      metadata: { invitationId: params.invitationId },
+    })
+
+    return { success: true }
+  }, {
+    detail: { summary: "Send invitation reminder", description: "Sends a reminder email for a pending judge invitation." },
   })
 
   .get("/hackathons/:id/judging/progress", async ({ principal, params }) => {

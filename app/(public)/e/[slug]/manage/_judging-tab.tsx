@@ -89,6 +89,7 @@ export async function JudgingTabContent({
     email: inv.email,
     status: inv.status,
     createdAt: inv.created_at,
+    remindedAt: inv.reminded_at ?? null,
   }))
 
   return (

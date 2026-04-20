@@ -266,7 +266,8 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - status change emails", 
     expect(mockSendPendingJudgeInvitationEmails).toHaveBeenCalledWith(
       "h1",
       "Test Hackathon",
-      "Jane Doe"
+      "Jane Doe",
+      { hackathonSlug: "test-hackathon", hackathonStartsAt: null, hackathonEndsAt: null }
     )
   })
 

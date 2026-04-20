@@ -1,7 +1,8 @@
 "use client"
 
 import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { useOptimisticMutation } from "@/hooks/use-optimistic-mutation"
+import { assertOk } from "@/lib/utils/fetch"
 import {
   Table,
   TableBody,
@@ -27,22 +28,20 @@ type Props = {
 }
 
 export function ApiKeyTable({ keys }: Props) {
-  const router = useRouter()
-  const [revoking, setRevoking] = useState<string | null>(null)
+  const [optimisticRevoked, setOptimisticRevoked] = useState<Set<string>>(new Set())
 
-  async function handleRevoke(keyId: string) {
-    setRevoking(keyId)
-    try {
-      const res = await fetch(`/api/dashboard/keys/${keyId}/revoke`, {
-        method: "POST",
-      })
-      if (res.ok) {
-        router.refresh()
-      }
-    } finally {
-      setRevoking(null)
-    }
-  }
+  const { execute: handleRevoke, error: revokeError } = useOptimisticMutation({
+    fn: (keyId: string) =>
+      fetch(`/api/dashboard/keys/${keyId}/revoke`, { method: "POST" }).then(assertOk),
+    onOptimistic: (keyId) =>
+      setOptimisticRevoked((prev) => new Set(prev).add(keyId)),
+    onRevert: (keyId) =>
+      setOptimisticRevoked((prev) => {
+        const next = new Set(prev)
+        next.delete(keyId)
+        return next
+      }),
+  })
 
   if (keys.length === 0) {
     return (
@@ -54,6 +53,7 @@ export function ApiKeyTable({ keys }: Props) {
 
   return (
     <div className="overflow-x-auto">
+    {revokeError && <p className="text-sm text-destructive mb-2">{revokeError}</p>}
     <Table>
       <TableHeader>
         <TableRow>
@@ -87,14 +87,14 @@ export function ApiKeyTable({ keys }: Props) {
               {key.lastUsedAt ? formatDate(key.lastUsedAt) : "Never"}
             </TableCell>
             <TableCell>
-              {key.revokedAt ? (
+              {key.revokedAt || optimisticRevoked.has(key.id) ? (
                 <Badge variant="destructive">Revoked</Badge>
               ) : (
                 <Badge variant="default">Active</Badge>
               )}
             </TableCell>
             <TableCell>
-              {!key.revokedAt && (
+              {!key.revokedAt && !optimisticRevoked.has(key.id) && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" size="icon-sm">
@@ -105,7 +105,6 @@ export function ApiKeyTable({ keys }: Props) {
                     <DropdownMenuItem
                       className="text-destructive"
                       onClick={() => handleRevoke(key.id)}
-                      disabled={revoking === key.id}
                     >
                       <Trash2 className="size-4 mr-2" />
                       Revoke Key

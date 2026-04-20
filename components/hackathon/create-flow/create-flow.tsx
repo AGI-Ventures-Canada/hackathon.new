@@ -43,6 +43,7 @@ function buildDefaultState(): DraftState {
     sponsors: [],
     rules: null,
     prizes: [],
+    challenges: [],
   }
 }
 

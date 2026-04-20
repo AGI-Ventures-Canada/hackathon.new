@@ -8,18 +8,18 @@ export type EditSection =
   | "about"
   | "location"
   | "sponsors"
-  | "judges"
-  | "prizes"
+  | "judging"
   | "community"
   | null
 
+// "judging" is intentionally excluded — it uses a full-screen dialog
+// (JudgingSetupDialog), not the edit drawer, so it's not part of the
+// sequential "Save and Next" flow.
 export const SECTION_ORDER: Exclude<EditSection, null>[] = [
   "name",
   "dates",
   "location",
   "sponsors",
-  "judges",
-  "prizes",
   "community",
   "about",
 ]

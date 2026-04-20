@@ -1,5 +1,14 @@
 import { render } from "@react-email/components"
 
+export function buildEventUrl(slug: string, path?: string): string
+export function buildEventUrl(slug?: string, path?: string): string | undefined
+export function buildEventUrl(slug?: string, path?: string): string | undefined {
+  if (!slug) return undefined
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://getoatmeal.com"
+  const base = `${baseUrl}/e/${slug}`
+  return path ? `${base}${path}` : base
+}
+
 export function sanitizeTag(name: string): string {
   return name
     .replace(/[^a-zA-Z0-9_-]/g, "_")
@@ -15,6 +24,16 @@ export async function renderEmail(
     render(element, { plainText: true }),
   ])
   return { html, text }
+}
+
+export function formatTimeLeft(expiresAt: string): string {
+  const diff = new Date(expiresAt).getTime() - Date.now()
+  if (diff <= 0) return "less than an hour"
+  const hours = Math.floor(diff / (1000 * 60 * 60))
+  if (hours === 0) return "less than an hour"
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"}`
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+  return `${days} day${days === 1 ? "" : "s"}`
 }
 
 export async function resolveEmailsForTenant(tenant: {

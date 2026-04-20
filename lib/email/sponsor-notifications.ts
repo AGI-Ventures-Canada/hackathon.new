@@ -1,5 +1,5 @@
 import { sendEmail } from "./resend"
-import { renderEmail, sanitizeTag, resolveEmailsForTenant } from "./utils"
+import { renderEmail, sanitizeTag, resolveEmailsForTenant, buildEventUrl } from "./utils"
 import SponsorClaimNotificationEmail from "@/emails/sponsor-claim-notification"
 
 export async function sendSponsorClaimNotification(params: {
@@ -7,8 +7,10 @@ export async function sendSponsorClaimNotification(params: {
   hackathonName: string
   winnerName: string
   sponsorTenantId: string
+  hackathonSlug?: string
+  prizeValue?: string | null
 }): Promise<number> {
-  const { prizeName, hackathonName, winnerName, sponsorTenantId } = params
+  const { prizeName, hackathonName, winnerName, sponsorTenantId, hackathonSlug, prizeValue } = params
   const { supabase: getSupabase } = await import("@/lib/db/client")
   const client = getSupabase()
 
@@ -27,11 +29,15 @@ export async function sendSponsorClaimNotification(params: {
     return 0
   }
 
+  const eventUrl = buildEventUrl(hackathonSlug) ?? null
+
   const { html, text } = await renderEmail(
     SponsorClaimNotificationEmail({
       winnerName,
       prizeName,
       hackathonName,
+      eventUrl,
+      prizeValue,
     })
   )
 

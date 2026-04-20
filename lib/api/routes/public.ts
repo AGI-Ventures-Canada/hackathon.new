@@ -911,7 +911,8 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
-    const { acceptTeamInvitation } = await import("@/lib/services/team-invitations")
+    const { acceptTeamInvitation, getInvitationByToken } = await import("@/lib/services/team-invitations")
+    const invitation = await getInvitationByToken(params.token)
     const result = await acceptTeamInvitation(params.token, userId, userEmail)
 
     if (!result.success) {
@@ -919,6 +920,13 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       return new Response(
         JSON.stringify({ error: result.error, code: result.code }),
         { status: statusCode, headers: { "Content-Type": "application/json" } }
+      )
+    }
+
+    if (invitation) {
+      const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
+      cancelRemindersForEntity("team_invitation", invitation.id).catch((err) =>
+        console.error(`Failed to cancel reminders for team_invitation ${invitation.id}:`, err)
       )
     }
 
@@ -1078,6 +1086,10 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         teamMode: anonymize ? null : a.teamMode,
         isComplete: a.isComplete,
         notes: a.notes,
+        prizeId: a.prizeId,
+        prizeName: a.prizeName,
+        judgingStyle: a.judgingStyle,
+        selfJudging: a.selfJudging,
       })),
     }
   }, {
@@ -1115,6 +1127,149 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         summary: "Save judge notes",
         description: "Saves private notes for a judging assignment.",
       },
+    }
+  )
+  .get(
+    "/hackathons/:slug/judging/assignments/:assignmentId",
+    async ({ params }) => {
+      const { userId } = await auth()
+
+      if (!userId) {
+        return new Response(
+          JSON.stringify({ error: "Sign in required", code: "not_authenticated" }),
+          { status: 401, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
+      if (!isValidUuid(params.assignmentId)) {
+        return new Response(
+          JSON.stringify({ error: "Assignment not found", code: "not_found" }),
+          { status: 404, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
+      const hackathon = await getPublicHackathon(params.slug)
+      if (!hackathon) {
+        return new Response(
+          JSON.stringify({ error: "Hackathon not found" }),
+          { status: 404, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
+      if (hackathon.status !== "judging" && hackathon.status !== "active") {
+        return new Response(
+          JSON.stringify({ error: "Hackathon is not in judging phase", code: "not_judging" }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
+      const { getAssignmentDetail, verifyAssignmentOwnership } = await import("@/lib/services/judging")
+
+      const ownerCheck = await verifyAssignmentOwnership(params.assignmentId, userId)
+      if (!ownerCheck) {
+        return new Response(
+          JSON.stringify({ error: "Assignment not found", code: "not_found" }),
+          { status: 404, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
+      if (ownerCheck.hackathonId !== hackathon.id) {
+        return new Response(
+          JSON.stringify({ error: "Assignment not found", code: "not_found" }),
+          { status: 404, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
+      const detail = await getAssignmentDetail(params.assignmentId, ownerCheck)
+
+      if (!detail) {
+        return new Response(
+          JSON.stringify({ error: "Assignment not found", code: "not_found" }),
+          { status: 404, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
+      if (hackathon.anonymous_judging) {
+        return { ...detail, teamName: null }
+      }
+
+      return detail
+    },
+    {
+      detail: {
+        summary: "Get assignment detail for scoring",
+        description: "Returns full assignment details with criteria, rubric levels, and existing scores.",
+      },
+    }
+  )
+  .post(
+    "/hackathons/:slug/judging/assignments/:assignmentId/scores",
+    async ({ params, body }) => {
+      const { userId } = await auth()
+
+      if (!userId) {
+        return new Response(
+          JSON.stringify({ error: "Sign in required", code: "not_authenticated" }),
+          { status: 401, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
+      if (!isValidUuid(params.assignmentId)) {
+        return new Response(
+          JSON.stringify({ error: "Assignment not found", code: "not_found" }),
+          { status: 404, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
+      const hackathon = await getPublicHackathon(params.slug)
+      if (!hackathon) {
+        return new Response(
+          JSON.stringify({ error: "Hackathon not found" }),
+          { status: 404, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
+      const { assertAssignmentWritable, submitScores, recalculateForAssignment } = await import("@/lib/services/judging")
+      const guard = await assertAssignmentWritable(params.assignmentId, userId, hackathon)
+      if (!guard.ok) {
+        return new Response(
+          JSON.stringify({ error: guard.error, code: guard.code }),
+          { status: guard.status, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
+      const result = await submitScores(
+        params.assignmentId,
+        guard.ownership,
+        body.scores,
+        body.notes ?? ""
+      )
+
+      if (!result.success) {
+        return new Response(
+          JSON.stringify({ error: result.error, code: result.code }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
+      recalculateForAssignment(params.assignmentId).catch((err) => {
+        console.error(`[judging] auto-recalculate failed for assignment ${params.assignmentId}:`, err)
+      })
+
+      return { success: true }
+    },
+    {
+      detail: {
+        summary: "Submit scores for assignment",
+        description: "Submits rubric/criteria scores for a judging assignment and marks it complete.",
+      },
+      body: t.Object({
+        scores: t.Array(t.Object({
+          criteriaId: t.String(),
+          score: t.Number({ minimum: 0 }),
+        })),
+        notes: t.Optional(t.String()),
+      }),
     }
   )
   .get("/hackathons/:slug/judging/picks", async ({ params }) => {
@@ -1327,6 +1482,13 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
+      if (!isValidUuid(params.assignmentId)) {
+        return new Response(
+          JSON.stringify({ error: "Assignment not found", code: "not_found" }),
+          { status: 404, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
       const hackathon = await getPublicHackathon(params.slug)
       if (!hackathon) {
         return new Response(
@@ -1335,19 +1497,12 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
-      if (hackathon.status !== "judging" && hackathon.status !== "active") {
+      const { assertAssignmentWritable } = await import("@/lib/services/judging")
+      const guard = await assertAssignmentWritable(params.assignmentId, userId, hackathon)
+      if (!guard.ok) {
         return new Response(
-          JSON.stringify({ error: "Hackathon is not in judging phase", code: "not_judging" }),
-          { status: 400, headers: { "Content-Type": "application/json" } }
-        )
-      }
-
-      const { verifyAssignmentOwnership } = await import("@/lib/services/judging")
-      const ownerCheck = await verifyAssignmentOwnership(params.assignmentId, userId)
-      if (!ownerCheck) {
-        return new Response(
-          JSON.stringify({ error: "Assignment not found", code: "not_found" }),
-          { status: 404, headers: { "Content-Type": "application/json" } }
+          JSON.stringify({ error: guard.error, code: guard.code }),
+          { status: guard.status, headers: { "Content-Type": "application/json" } }
         )
       }
 
@@ -1399,6 +1554,13 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
+      if (!isValidUuid(params.assignmentId)) {
+        return new Response(
+          JSON.stringify({ error: "Assignment not found", code: "not_found" }),
+          { status: 404, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
       const hackathon = await getPublicHackathon(params.slug)
       if (!hackathon) {
         return new Response(
@@ -1407,19 +1569,12 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
-      if (hackathon.status !== "judging" && hackathon.status !== "active") {
+      const { assertAssignmentWritable } = await import("@/lib/services/judging")
+      const guard = await assertAssignmentWritable(params.assignmentId, userId, hackathon)
+      if (!guard.ok) {
         return new Response(
-          JSON.stringify({ error: "Hackathon is not in judging phase", code: "not_judging" }),
-          { status: 400, headers: { "Content-Type": "application/json" } }
-        )
-      }
-
-      const { verifyAssignmentOwnership } = await import("@/lib/services/judging")
-      const ownerCheck = await verifyAssignmentOwnership(params.assignmentId, userId)
-      if (!ownerCheck) {
-        return new Response(
-          JSON.stringify({ error: "Assignment not found", code: "not_found" }),
-          { status: 404, headers: { "Content-Type": "application/json" } }
+          JSON.stringify({ error: guard.error, code: guard.code }),
+          { status: guard.status, headers: { "Content-Type": "application/json" } }
         )
       }
 
@@ -1502,7 +1657,8 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
-    const { acceptJudgeInvitation } = await import("@/lib/services/judge-invitations")
+    const { acceptJudgeInvitation, getJudgeInvitationByToken } = await import("@/lib/services/judge-invitations")
+    const judgeInvitation = await getJudgeInvitationByToken(params.token)
     const result = await acceptJudgeInvitation(params.token, userId, userEmails)
 
     if (!result.success) {
@@ -1510,6 +1666,13 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       return new Response(
         JSON.stringify({ error: result.error, code: result.code }),
         { status: statusCode, headers: { "Content-Type": "application/json" } }
+      )
+    }
+
+    if (judgeInvitation) {
+      const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
+      cancelRemindersForEntity("judge_invitation", judgeInvitation.id).catch((err) =>
+        console.error(`Failed to cancel reminders for judge_invitation ${judgeInvitation.id}:`, err)
       )
     }
 
@@ -1548,6 +1711,11 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         { status: 400, headers: { "Content-Type": "application/json" } }
       )
     }
+
+    const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
+    cancelRemindersForEntity("judge_invitation", invitation.id).catch((err) =>
+      console.error(`Failed to cancel reminders for judge_invitation ${invitation.id}:`, err)
+    )
 
     return { success: true }
   }, {

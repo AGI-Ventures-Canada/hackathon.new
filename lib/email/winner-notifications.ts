@@ -28,7 +28,7 @@ export async function sendWinnerEmails(hackathonId: string): Promise<number> {
 
   const { data: hackathon } = await client
     .from("hackathons")
-    .select("name, slug")
+    .select("name, slug, starts_at, ends_at")
     .eq("id", hackathonId)
     .single()
 
@@ -169,6 +169,8 @@ export async function sendWinnerEmails(hackathonId: string): Promise<number> {
             resultsUrl,
             prizes,
             primaryClaimUrl,
+            hackathonStartsAt: hackathon.starts_at,
+            hackathonEndsAt: hackathon.ends_at,
           })
         )
 
@@ -205,7 +207,7 @@ export async function sendPrizeClaimEmail(
 
   const { data: hackathon } = await client
     .from("hackathons")
-    .select("name, slug")
+    .select("name, slug, starts_at, ends_at")
     .eq("id", hackathonId)
     .single()
 
@@ -283,6 +285,8 @@ export async function sendPrizeClaimEmail(
           claimUrl,
         }],
         primaryClaimUrl: claimUrl,
+        hackathonStartsAt: hackathon.starts_at,
+        hackathonEndsAt: hackathon.ends_at,
       })
     )
 

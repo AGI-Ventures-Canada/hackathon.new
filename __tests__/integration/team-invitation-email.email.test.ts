@@ -200,5 +200,30 @@ describe("Team Invitation Email", () => {
       const hackathonTag = callArgs.tags.find((t: { name: string }) => t.name === "hackathon")
       expect(hackathonTag.value).not.toContain("__")
     })
+
+    it("includes event dates in HTML when hackathonStartsAt and hackathonEndsAt are provided", async () => {
+      await sendTeamInvitationEmail({
+        ...validInput,
+        hackathonSlug: "ai-hack",
+        hackathonStartsAt: "2026-04-20T08:30:00Z",
+        hackathonEndsAt: "2026-04-22T17:00:00Z",
+      })
+
+      const callArgs = mockSendEmail.mock.calls[0][0]
+      expect(callArgs.html).toContain("Apr")
+      expect(callArgs.html).toContain("20")
+    })
+
+    it("includes team members in HTML when teamMembers are provided", async () => {
+      await sendTeamInvitationEmail({
+        ...validInput,
+        teamMembers: ["Sarah Chen", "Marcus Rivera"],
+      })
+
+      const callArgs = mockSendEmail.mock.calls[0][0]
+      expect(callArgs.html).toContain("Sarah Chen")
+      expect(callArgs.html).toContain("Marcus Rivera")
+      expect(callArgs.text).toContain("Sarah Chen")
+    })
   })
 })

@@ -2,6 +2,7 @@ import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Hackathon, HackathonParticipant } from "@/lib/db/hackathon-types"
 import { sortByStartDate } from "@/lib/utils/format"
+import { generateSlug } from "@/lib/utils/slug"
 import { clerkClient } from "@clerk/nextjs/server"
 import { trackEvent } from "@/lib/analytics/posthog"
 
@@ -129,15 +130,6 @@ export async function listJudgingHackathons(
   }
 
   return sortByStartDate(hackathons)
-}
-
-function generateSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
 }
 
 export type CreateHackathonInput = {
@@ -361,6 +353,7 @@ export type ParticipantTeamInfo = {
     email: string
     expiresAt: string
     createdAt: string
+    remindedAt: string | null
   }[]
   isCaptain: boolean
 } | null
@@ -395,7 +388,7 @@ export async function getParticipantTeamInfo(
       .order("registered_at", { ascending: true }),
     client
       .from("team_invitations")
-      .select("id, email, expires_at, created_at")
+      .select("id, email, expires_at, created_at, reminded_at")
       .eq("team_id", participant.team_id)
       .eq("status", "pending")
       .order("created_at", { ascending: false }),
@@ -443,6 +436,7 @@ export async function getParticipantTeamInfo(
     email: inv.email,
     expiresAt: inv.expires_at,
     createdAt: inv.created_at,
+    remindedAt: inv.reminded_at ?? null,
   }))
 
   return {
@@ -656,7 +650,7 @@ async function createPendingTeamWithInvite(
 ): Promise<CreateTeamResult> {
   const { data: hackathon } = await client
     .from("hackathons")
-    .select("name")
+    .select("name, slug, starts_at, ends_at")
     .eq("id", hackathonId)
     .single()
 
@@ -725,6 +719,9 @@ async function createPendingTeamWithInvite(
     inviterName,
     inviteToken: token,
     expiresAt,
+    hackathonSlug: hackathon.slug,
+    hackathonStartsAt: hackathon.starts_at,
+    hackathonEndsAt: hackathon.ends_at,
   })
 
   return { team, invited: true }

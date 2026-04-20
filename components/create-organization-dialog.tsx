@@ -13,24 +13,12 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { generateSlug, isValidSlugFormat } from "@/lib/utils/slug"
 
 interface CreateOrganizationDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSuccess?: () => void
-}
-
-function generateSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-}
-
-function isValidSlugFormat(slug: string): boolean {
-  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)
 }
 
 export function CreateOrganizationDialog({
@@ -58,6 +46,7 @@ export function CreateOrganizationDialog({
   useEffect(() => {
     if (!slug || !isValidSlugFormat(slug)) {
       setSlugAvailable(null)
+      setIsCheckingSlug(false)
       return
     }
 
@@ -66,24 +55,33 @@ export function CreateOrganizationDialog({
 
     if (debounceRef.current) clearTimeout(debounceRef.current)
 
+    const controller = new AbortController()
+
     debounceRef.current = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/dashboard/organizations/slug-available?slug=${encodeURIComponent(slug)}`)
+        const res = await fetch(
+          `/api/dashboard/organizations/slug-available?slug=${encodeURIComponent(slug)}`,
+          { signal: controller.signal }
+        )
         if (res.ok) {
           const data = await res.json()
           setSlugAvailable(data.available)
         } else {
           setSlugAvailable(null)
         }
-      } catch {
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") return
         setSlugAvailable(null)
       } finally {
-        setIsCheckingSlug(false)
+        if (!controller.signal.aborted) {
+          setIsCheckingSlug(false)
+        }
       }
     }, 400)
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
+      controller.abort()
     }
   }, [slug])
 
@@ -95,6 +93,18 @@ export function CreateOrganizationDialog({
     setError(null)
 
     try {
+      const checkRes = await fetch(
+        `/api/dashboard/organizations/slug-available?slug=${encodeURIComponent(slug)}`
+      )
+      if (checkRes.ok) {
+        const checkData = await checkRes.json()
+        if (!checkData.available) {
+          setSlugAvailable(false)
+          setError("This slug was just taken. Pick another one.")
+          return
+        }
+      }
+
       const org = await createOrganization({ name: name.trim() })
       await setActive?.({ organization: org.id })
 
@@ -105,6 +115,13 @@ export function CreateOrganizationDialog({
       })
 
       if (!res.ok) {
+        try {
+          await org.destroy()
+          await setActive?.({ organization: null })
+        } catch {
+          setError("Something went wrong and we couldn't clean up. Please contact support.")
+          return
+        }
         const data = await res.json().catch(() => ({}))
         throw new Error(data.error ?? "Failed to save organization slug")
       }
@@ -210,7 +227,7 @@ export function CreateOrganizationDialog({
                   {slugStatus === "checking" && "Checking availability..."}
                   {slugStatus === "available" && "This slug is available"}
                   {slugStatus === "taken" && "This slug is already taken"}
-                  {slugStatus === "invalid" && "Slugs can only contain lowercase letters, numbers, and hyphens"}
+                  {slugStatus === "invalid" && "At least 3 characters — lowercase letters, numbers, and hyphens only"}
                 </p>
               )}
             </div>

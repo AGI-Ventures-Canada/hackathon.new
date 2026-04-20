@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
+import { assertOk } from "@/lib/utils/fetch"
 import { useClerk } from "@clerk/nextjs"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -22,10 +23,7 @@ import {
 } from "@/components/ui/card"
 import { Sun, Moon, ImageIcon, ExternalLink, Users, CreditCard, TriangleAlert, Check, X, Loader2 } from "lucide-react"
 import { normalizeOptionalUrl, normalizeUrlFieldValue, urlInputProps } from "@/lib/utils/url"
-
-function isValidSlugFormat(s: string): boolean {
-  return s.length >= 3 && /^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(s)
-}
+import { isValidSlugFormat } from "@/lib/utils/slug"
 
 type SlugStatus = "idle" | "checking" | "available" | "taken" | "invalid"
 
@@ -72,16 +70,23 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
       return
     }
     setSlugStatus("checking")
+    const controller = new AbortController()
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/dashboard/organizations/slug-available?slug=${encodeURIComponent(slug)}`)
+        const res = await fetch(
+          `/api/dashboard/organizations/slug-available?slug=${encodeURIComponent(slug)}`,
+          { signal: controller.signal },
+        )
         const data = await res.json()
         setSlugStatus(data.available ? "available" : "taken")
       } catch {
-        setSlugStatus("idle")
+        if (!controller.signal.aborted) setSlugStatus("idle")
       }
     }, 400)
-    return () => clearTimeout(timer)
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
   }, [slug])
 
   useEffect(() => {
@@ -103,7 +108,7 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
 
     try {
       const normalizedWebsiteUrl = normalizeOptionalUrl(websiteUrl) ?? ""
-      const res = await fetch("/api/dashboard/org-profile", {
+      await fetch("/api/dashboard/org-profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -111,12 +116,7 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
           description: description || null,
           websiteUrl: normalizedWebsiteUrl || null,
         }),
-      })
-
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.error || "Failed to save profile")
-      }
+      }).then(assertOk)
 
       setWebsiteUrl(normalizedWebsiteUrl)
       lastSaved.current = { slug, description, websiteUrl: normalizedWebsiteUrl }

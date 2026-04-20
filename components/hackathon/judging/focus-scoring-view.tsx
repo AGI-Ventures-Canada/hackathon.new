@@ -1,11 +1,12 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ChevronLeft, ChevronRight, CheckCircle2 } from "lucide-react"
 import { ScoringPanel } from "./scoring-panel"
 import { getTeamSizeWarning } from "@/lib/utils/team-size"
+import { usePrefetchAssignment } from "@/hooks/use-prefetch-assignment"
 
 type TeamSettings = {
   minTeamSize: number
@@ -45,6 +46,15 @@ export function FocusScoringView({
   const current = assignments[currentIndex]
   const allDone = completed === total
 
+  const nextUnscoredId = useMemo(() => {
+    const idx = assignments.findIndex(
+      (a, i) => i > currentIndex && !completedIds.has(a.id)
+    )
+    return idx >= 0 ? assignments[idx].id : null
+  }, [currentIndex, assignments, completedIds])
+
+  const prefetchCache = usePrefetchAssignment(hackathonSlug, nextUnscoredId)
+
   const goToNext = useCallback(() => {
     if (currentIndex < total - 1) setCurrentIndex((i) => i + 1)
   }, [currentIndex, total])
@@ -74,7 +84,7 @@ export function FocusScoringView({
       (a, idx) => idx > currentIndex && !updatedIds.has(a.id)
     )
     if (nextUnscored >= 0) {
-      setTimeout(() => setCurrentIndex(nextUnscored), 600)
+      setCurrentIndex(nextUnscored)
     }
   }
 
@@ -150,6 +160,7 @@ export function FocusScoringView({
         onClose={goToNext}
         onScoreSubmitted={handleScoreSubmitted}
         cancelLabel="Skip"
+        prefetchedDetail={prefetchCache[current.id] ?? null}
         teamSizeWarning={teamSettings && current.teamMemberCount != null
           ? (getTeamSizeWarning({
               memberCount: current.teamMemberCount,

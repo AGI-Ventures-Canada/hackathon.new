@@ -157,7 +157,7 @@ export function CommunityEditForm({
       <div className="space-y-3">
         <div className="flex gap-2">
           <Button type="submit" disabled={saving || !isDirty}>
-            {saving ? "Saving..." : "Save"}
+            {saving ? "Saving..." : "Save & exit"}
           </Button>
           <Button type="button" variant="outline" onClick={closeDrawer} disabled={saving}>
             Cancel
@@ -170,7 +170,9 @@ export function CommunityEditForm({
           )}
         </div>
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <span className="inline-flex items-center gap-1"><Kbd>↵</Kbd> save</span>
+          <span className="inline-flex items-center gap-1">
+            <Kbd>↵</Kbd> save & exit
+          </span>
           <span className="inline-flex items-center gap-1">
             <KbdGroup><Kbd>⌘</Kbd><Kbd>↵</Kbd></KbdGroup> save & next
           </span>

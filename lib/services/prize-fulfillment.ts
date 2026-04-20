@@ -209,7 +209,7 @@ async function notifyWinnerOfShipment(
 
   const { data: hackathon } = await client
     .from("hackathons")
-    .select("name")
+    .select("name, slug")
     .eq("id", hackathonId)
     .single()
 
@@ -223,6 +223,7 @@ async function notifyWinnerOfShipment(
     prizeName: pa.prize.name,
     hackathonName: hackathon.name,
     trackingNumber: fulfillment.tracking_number,
+    hackathonSlug: hackathon.slug,
   })
 }
 
@@ -420,7 +421,7 @@ export async function claimPrize(
       recipient_email,
       prize_assignment:prize_assignments!prize_assignment_id(
         prize:prizes!prize_id(
-          name, kind,
+          name, kind, value,
           prize_track:prize_tracks!prize_track_id(
             sponsor:hackathon_sponsors!sponsor_id(
               sponsor_tenant_id
@@ -444,6 +445,7 @@ export async function claimPrize(
     prize: {
       name: string
       kind: string
+      value: string | null
       prize_track: { sponsor: { sponsor_tenant_id: string | null } } | null
     }
   }
@@ -515,6 +517,7 @@ export async function claimPrize(
 
   void sendClaimNotifications({
     prizeName: pa?.prize?.name ?? "Prize",
+    prizeValue: pa?.prize?.value ?? null,
     sponsorTenantId: pa?.prize?.prize_track?.sponsor?.sponsor_tenant_id ?? null,
     winnerName: data.recipientName,
     hackathonId: fulfillment.hackathon_id,
@@ -578,6 +581,7 @@ async function updateCashPrizePayment(
 
 async function sendClaimNotifications(params: {
   prizeName: string
+  prizeValue: string | null
   sponsorTenantId: string | null
   winnerName: string
   hackathonId: string
@@ -600,6 +604,8 @@ async function sendClaimNotifications(params: {
       hackathonName: hackathon.name,
       winnerName: params.winnerName,
       sponsorTenantId: params.sponsorTenantId,
+      hackathonSlug: hackathon.slug,
+      prizeValue: params.prizeValue,
     }))
   }
 
@@ -610,6 +616,7 @@ async function sendClaimNotifications(params: {
     hackathonSlug: hackathon.slug,
     winnerName: params.winnerName,
     hackathonId: params.hackathonId,
+    prizeValue: params.prizeValue,
   }))
 
   await Promise.allSettled(promises)

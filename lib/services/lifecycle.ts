@@ -90,8 +90,10 @@ export async function executeTransition(
       hackathonId,
       tenantId,
       hackathon: {
-        name: hackathon.name as string,
-        slug: hackathon.slug as string,
+        name: hackathon.name,
+        slug: hackathon.slug,
+        starts_at: hackathon.starts_at,
+        ends_at: hackathon.ends_at,
       },
       trigger,
       triggeredBy,
@@ -103,6 +105,29 @@ export async function executeTransition(
         err
       )
     })
+  }
+
+  if (
+    toStatus === "registration_open" ||
+    toStatus === "active" ||
+    toStatus === "published"
+  ) {
+    const { reschedulePreEventReminders } = await import(
+      "./pre-event-reminders"
+    )
+    reschedulePreEventReminders(hackathonId).catch((err) => {
+      console.error(
+        `Failed to schedule pre-event reminders for ${hackathonId}:`,
+        err
+      )
+    })
+  }
+
+  if (toStatus === "completed" || toStatus === "archived") {
+    const { cancelRemindersForEntity } = await import("./smart-reminders")
+    cancelRemindersForEntity("hackathon_event", hackathonId).catch((err) =>
+      console.error(`Failed to cancel pre-event reminders for hackathon ${hackathonId}:`, err)
+    )
   }
 
   return { success: true, hackathon: hackathon as unknown as Hackathon }
@@ -136,8 +161,8 @@ export async function processAutoTransitions(): Promise<AutoTransitionResult> {
     const stored = h.status as HackathonStatus
     const effective = getEffectiveStatus({
       status: stored,
-      starts_at: h.starts_at as string | null,
-      ends_at: h.ends_at as string | null,
+      starts_at: h.starts_at,
+      ends_at: h.ends_at,
     })
 
     if (effective === stored) continue

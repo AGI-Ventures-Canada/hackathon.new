@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/transitions",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/reminders",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

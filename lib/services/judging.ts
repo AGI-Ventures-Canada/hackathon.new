@@ -24,7 +24,7 @@ export type CreatePrizeInput = {
   name: string
   description?: string | null
   value?: string | null
-  judgingStyle: PrizeJudgingStyle
+  judgingStyle?: PrizeJudgingStyle
   roundId?: string | null
   assignmentMode?: PrizeAssignmentMode
   maxPicks?: number
@@ -38,6 +38,8 @@ export type CreatePrizeInput = {
   criteriaId?: string | null
   criteria?: { name: string; description?: string | null }[]
   buckets?: { level: number; label: string; description?: string | null }[]
+  distributionMethod?: string | null
+  displayValue?: string | null
 }
 
 export type UpdatePrizeInput = {
@@ -49,6 +51,14 @@ export type UpdatePrizeInput = {
   assignmentMode?: PrizeAssignmentMode
   maxPicks?: number
   displayOrder?: number
+  type?: "score" | "favorite" | "crowd" | "criteria"
+  rank?: number | null
+  kind?: string
+  monetaryValue?: number | null
+  currency?: string | null
+  criteriaId?: string | null
+  distributionMethod?: string | null
+  displayValue?: string | null
 }
 
 export type PrizeCriterion = {
@@ -173,7 +183,7 @@ export async function createPrize(
     name: input.name,
     description: input.description ?? null,
     value: input.value ?? null,
-    judging_style: input.judgingStyle,
+    judging_style: input.judgingStyle ?? null,
     round_id: safeRoundId,
     assignment_mode: input.assignmentMode ?? "organizer_assigned",
     max_picks: input.maxPicks ?? 3,
@@ -186,6 +196,8 @@ export async function createPrize(
   if (input.monetaryValue !== undefined) row.monetary_value = input.monetaryValue
   if (input.currency !== undefined) row.currency = input.currency
   if (input.criteriaId !== undefined) row.criteria_id = input.criteriaId
+  if (input.distributionMethod !== undefined) row.distribution_method = input.distributionMethod
+  if (input.displayValue !== undefined) row.display_value = input.displayValue
 
   const cleanCriteria =
     input.judgingStyle === "gate_check"
@@ -289,6 +301,14 @@ export async function updatePrize(
   if (input.assignmentMode !== undefined) updates.assignment_mode = input.assignmentMode
   if (input.maxPicks !== undefined) updates.max_picks = input.maxPicks
   if (input.displayOrder !== undefined) updates.display_order = input.displayOrder
+  if (input.type !== undefined) updates.type = input.type
+  if (input.rank !== undefined) updates.rank = input.rank
+  if (input.kind !== undefined) updates.kind = input.kind
+  if (input.monetaryValue !== undefined) updates.monetary_value = input.monetaryValue
+  if (input.currency !== undefined) updates.currency = input.currency
+  if (input.criteriaId !== undefined) updates.criteria_id = input.criteriaId
+  if (input.distributionMethod !== undefined) updates.distribution_method = input.distributionMethod
+  if (input.displayValue !== undefined) updates.display_value = input.displayValue
 
   const { data, error } = await client
     .from("prizes")
@@ -753,7 +773,7 @@ export async function deleteRound(
   return { success: true }
 }
 
-export type RoundsPresetKind = "single" | "shortlist" | "threshold"
+export type RoundsPresetKind = "single" | "shortlist" | "threshold" | "finalists_pick"
 
 export type RoundsPresetInput = {
   preset: RoundsPresetKind
@@ -762,6 +782,8 @@ export type RoundsPresetInput = {
   advanceTopN?: number
   threshold?: number
   seedScreeningPrize?: boolean
+  prizeName?: string
+  maxPicks?: number
 }
 
 export type RoundsPresetResult =
@@ -769,12 +791,14 @@ export type RoundsPresetResult =
       success: true
       roundIds: string[]
       screeningPrizeId: string | null
+      prizeId?: string | null
     }
   | { success: false; error: string }
 
 function defaultRoundName(preset: RoundsPresetKind, which: 1 | 2): string {
   if (preset === "single") return "Judging"
   if (preset === "shortlist") return which === 1 ? "Shortlist" : "Finals"
+  if (preset === "finalists_pick") return "Finals"
   return which === 1 ? "First round" : "Finals"
 }
 
@@ -882,6 +906,37 @@ export async function createRoundsPreset(
       success: true,
       roundIds: [round1.id, round2.id],
       screeningPrizeId,
+    }
+  }
+
+  if (preset === "finalists_pick") {
+    const name = (input.round1Name ?? defaultRoundName("finalists_pick", 1)).trim() || defaultRoundName("finalists_pick", 1)
+    const round = await createRound(hackathonId, {
+      name,
+      advancement: "manual",
+      advancementConfig: {},
+    })
+    if (!round) return { success: false, error: "Failed to create round" }
+
+    const prizeName = (input.prizeName ?? "Grand Prize").trim() || "Grand Prize"
+    const maxPicks = Number.isInteger(input.maxPicks) && (input.maxPicks as number) >= 1 ? (input.maxPicks as number) : 1
+    const prize = await createPrize(hackathonId, {
+      name: prizeName,
+      description: "Each judge picks their favorites. The project with the most picks wins.",
+      judgingStyle: "judges_pick",
+      roundId: round.id,
+      maxPicks,
+    })
+
+    if (!prize.success) {
+      return { success: false, error: prize.error }
+    }
+
+    return {
+      success: true,
+      roundIds: [round.id],
+      screeningPrizeId: null,
+      prizeId: prize.prize.id,
     }
   }
 
@@ -1309,6 +1364,16 @@ export async function removeJudge(
     return { success: false }
   }
 
+  const { error: displayError } = await client
+    .from("hackathon_judges_display")
+    .delete()
+    .eq("hackathon_id", hackathonId)
+    .eq("participant_id", judgeParticipantId)
+
+  if (displayError) {
+    console.error("Failed to remove judge display profile:", displayError)
+  }
+
   const { error } = await client
     .from("hackathon_participants")
     .delete()
@@ -1407,20 +1472,157 @@ export async function assignJudgeToPrize(
   return { success: true, assignedCount: newAssignments.length }
 }
 
+export type AssignmentOwnership = {
+  hackathonId: string
+  prizeId: string | null
+  isComplete: boolean
+  submissionId: string
+  notes: string
+}
+
 export async function verifyAssignmentOwnership(
   assignmentId: string,
   clerkUserId: string
-): Promise<boolean> {
+): Promise<AssignmentOwnership | false> {
   const client = getSupabase() as unknown as SupabaseClient
   const { data } = await client
     .from("judge_assignments")
-    .select("judge_participant_id, hackathon_participants!inner(clerk_user_id)")
+    .select("judge_participant_id, hackathon_id, prize_id, is_complete, submission_id, notes, hackathon_participants!inner(clerk_user_id)")
     .eq("id", assignmentId)
     .single()
 
   if (!data) return false
   const participant = data.hackathon_participants as unknown as { clerk_user_id: string }
-  return participant.clerk_user_id === clerkUserId
+  if (participant.clerk_user_id !== clerkUserId) return false
+  return {
+    hackathonId: data.hackathon_id,
+    prizeId: data.prize_id ?? null,
+    isComplete: data.is_complete === true,
+    submissionId: data.submission_id,
+    notes: data.notes ?? "",
+  }
+}
+
+export type AssignmentWritableErrorCode =
+  | "not_found"
+  | "not_judging"
+  | "round_not_active"
+  | "self_judging"
+
+export type AssertAssignmentWritableResult =
+  | { ok: true; ownership: AssignmentOwnership }
+  | { ok: false; error: string; code: AssignmentWritableErrorCode; status: number }
+
+function toJudgeShape(value: unknown): { clerk_user_id: string; team_id: string | null } | null {
+  if (!value || typeof value !== "object") return null
+  const v = value as Record<string, unknown>
+  if (typeof v.clerk_user_id !== "string") return null
+  const teamId = v.team_id
+  if (teamId !== null && typeof teamId !== "string") return null
+  return { clerk_user_id: v.clerk_user_id, team_id: teamId as string | null }
+}
+
+function toSubmissionShape(value: unknown): { team_id: string | null } | null {
+  if (!value || typeof value !== "object") return null
+  const v = value as Record<string, unknown>
+  const teamId = v.team_id
+  if (teamId !== null && typeof teamId !== "string") return null
+  return { team_id: teamId as string | null }
+}
+
+export async function assertAssignmentWritable(
+  assignmentId: string,
+  clerkUserId: string,
+  hackathon: { id: string; status: string }
+): Promise<AssertAssignmentWritableResult> {
+  const client = getSupabase()
+
+  if (hackathon.status !== "judging" && hackathon.status !== "active") {
+    return {
+      ok: false,
+      error: "Hackathon is not in judging phase",
+      code: "not_judging",
+      status: 400,
+    }
+  }
+
+  const { data } = await client
+    .from("judge_assignments")
+    .select(`
+      submission_id, round_id, hackathon_id, prize_id, is_complete, notes,
+      judge:hackathon_participants!judge_participant_id(clerk_user_id, team_id),
+      submission:submissions!submission_id(team_id)
+    `)
+    .eq("id", assignmentId)
+    .maybeSingle()
+
+  if (!data) {
+    return {
+      ok: false,
+      error: "Assignment not found",
+      code: "not_found",
+      status: 404,
+    }
+  }
+
+  if (data.hackathon_id !== hackathon.id) {
+    return {
+      ok: false,
+      error: "Assignment not found",
+      code: "not_found",
+      status: 404,
+    }
+  }
+
+  const judge = toJudgeShape(data.judge)
+  const submission = toSubmissionShape(data.submission)
+
+  if (judge?.clerk_user_id !== clerkUserId) {
+    return {
+      ok: false,
+      error: "Assignment not found",
+      code: "not_found",
+      status: 404,
+    }
+  }
+
+  if (judge.team_id && submission?.team_id && judge.team_id === submission.team_id) {
+    return {
+      ok: false,
+      error: "You cannot score a project from your own team",
+      code: "self_judging",
+      status: 409,
+    }
+  }
+
+  const roundId = data.round_id as string | null
+  if (roundId) {
+    const { data: round } = await client
+      .from("judging_rounds")
+      .select("status")
+      .eq("id", roundId)
+      .maybeSingle()
+
+    if (round && round.status !== "active" && round.status !== "planned") {
+      return {
+        ok: false,
+        error: "This round is no longer open for scoring",
+        code: "round_not_active",
+        status: 400,
+      }
+    }
+  }
+
+  return {
+    ok: true,
+    ownership: {
+      hackathonId: data.hackathon_id,
+      prizeId: data.prize_id ?? null,
+      isComplete: data.is_complete === true,
+      submissionId: data.submission_id,
+      notes: data.notes ?? "",
+    },
+  }
 }
 
 export async function removeJudgeFromPrize(
@@ -2104,6 +2306,7 @@ export type JudgeAssignmentForJudge = {
   prizeId: string | null
   prizeName: string | null
   judgingStyle: PrizeJudgingStyle | null
+  selfJudging: boolean
 }
 
 export async function getJudgeAssignments(
@@ -2114,13 +2317,15 @@ export async function getJudgeAssignments(
 
   const { data: participant } = await client
     .from("hackathon_participants")
-    .select("id")
+    .select("id, team_id")
     .eq("hackathon_id", hackathonId)
     .eq("clerk_user_id", clerkUserId)
     .eq("role", "judge")
     .maybeSingle()
 
   if (!participant) return []
+
+  const judgeTeamId = (participant as { team_id: string | null }).team_id
 
   const { data: assignments, error } = await client
     .from("judge_assignments")
@@ -2184,6 +2389,7 @@ export async function getJudgeAssignments(
       team_id: string | null
     }
     const pid = a.prize_id as string | null
+    const selfJudging = Boolean(judgeTeamId && sub.team_id && judgeTeamId === sub.team_id)
     return {
       id: a.id as string,
       submissionId: a.submission_id as string,
@@ -2201,6 +2407,7 @@ export async function getJudgeAssignments(
       prizeId: pid,
       prizeName: pid ? prizeMap[pid]?.name ?? null : null,
       judgingStyle: pid ? (prizeMap[pid]?.judging_style as PrizeJudgingStyle | null) : null,
+      selfJudging,
     }
   })
 }
@@ -2265,4 +2472,222 @@ export async function saveNotes(
   }
 
   return true
+}
+
+export type AssignmentDetailCriterion = {
+  id: string
+  name: string
+  description: string | null
+  max_score: number
+  weight: number
+  category: string | null
+  currentScore: number | null
+  rubricLevels: { id: string; level_number: number; label: string; description: string | null }[]
+}
+
+export type AssignmentDetail = {
+  id: string
+  submissionId: string
+  submissionTitle: string
+  submissionDescription: string | null
+  submissionGithubUrl: string | null
+  submissionLiveAppUrl: string | null
+  submissionScreenshotUrl: string | null
+  teamName: string | null
+  isComplete: boolean
+  notes: string
+  criteria: AssignmentDetailCriterion[]
+}
+
+export async function getAssignmentDetail(
+  assignmentId: string,
+  ownership: AssignmentOwnership
+): Promise<AssignmentDetail | null> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data: sub, error: subError } = await client
+    .from("submissions")
+    .select("title, description, github_url, live_app_url, screenshot_url, team_id")
+    .eq("id", ownership.submissionId)
+    .single()
+
+  if (subError || !sub) return null
+
+  type CriteriaRow = {
+    id: string
+    name: string
+    description: string | null
+    max_score: number
+    weight: number
+    category: string | null
+  }
+
+  const teamNamePromise = sub.team_id
+    ? client.from("teams").select("name").eq("id", sub.team_id).single().then(({ data }) => data?.name ?? null)
+    : Promise.resolve(null)
+
+  const fetchCriteria = async (): Promise<CriteriaRow[]> => {
+    if (ownership.prizeId) {
+      const { data } = await client
+        .from("judging_criteria")
+        .select("id, name, description, max_score, weight, category")
+        .eq("prize_id", ownership.prizeId)
+        .order("display_order")
+      if (data && data.length > 0) return data as CriteriaRow[]
+    }
+    const { data } = await client
+      .from("judging_criteria")
+      .select("id, name, description, max_score, weight, category")
+      .eq("hackathon_id", ownership.hackathonId)
+      .is("prize_id", null)
+      .order("display_order")
+    return (data ?? []) as CriteriaRow[]
+  }
+
+  const [teamName, criteria] = await Promise.all([teamNamePromise, fetchCriteria()])
+
+  const criteriaIds = criteria.map((c) => c.id)
+
+  const rubricMap: Record<string, { id: string; level_number: number; label: string; description: string | null }[]> = {}
+  const scoreMap: Record<string, number> = {}
+
+  if (criteriaIds.length > 0) {
+    const [levelsResult, scoresResult] = await Promise.all([
+      client
+        .from("rubric_levels")
+        .select("id, criteria_id, level_number, label, description")
+        .in("criteria_id", criteriaIds)
+        .order("level_number"),
+      client
+        .from("scores")
+        .select("criteria_id, score")
+        .eq("judge_assignment_id", assignmentId)
+        .in("criteria_id", criteriaIds),
+    ])
+
+    for (const lvl of levelsResult.data ?? []) {
+      const cid = (lvl as unknown as { criteria_id: string }).criteria_id
+      if (!rubricMap[cid]) rubricMap[cid] = []
+      rubricMap[cid].push({
+        id: lvl.id,
+        level_number: lvl.level_number,
+        label: lvl.label,
+        description: lvl.description ?? null,
+      })
+    }
+
+    for (const s of scoresResult.data ?? []) {
+      scoreMap[s.criteria_id] = s.score
+    }
+  }
+
+  return {
+    id: assignmentId,
+    submissionId: ownership.submissionId,
+    submissionTitle: sub.title,
+    submissionDescription: sub.description,
+    submissionGithubUrl: sub.github_url,
+    submissionLiveAppUrl: sub.live_app_url,
+    submissionScreenshotUrl: sub.screenshot_url,
+    teamName,
+    isComplete: ownership.isComplete,
+    notes: ownership.notes,
+    criteria: criteria.map((c) => ({
+      id: c.id,
+      name: c.name,
+      description: c.description,
+      max_score: c.max_score,
+      weight: Number(c.weight), // Supabase returns Postgres numeric columns as strings
+      category: c.category ?? null,
+      currentScore: scoreMap[c.id] ?? null,
+      rubricLevels: rubricMap[c.id] ?? [],
+    })),
+  }
+}
+
+export type SubmitScoresResult =
+  | { success: true }
+  | { success: false; error: string; code: string }
+
+export async function submitScores(
+  assignmentId: string,
+  ownership: AssignmentOwnership,
+  scores: { criteriaId: string; score: number }[],
+  notes: string
+): Promise<SubmitScoresResult> {
+  if (ownership.isComplete) {
+    return { success: false, error: "Assignment is already complete", code: "already_complete" }
+  }
+
+  const client = getSupabase() as unknown as SupabaseClient
+
+  let criteriaQuery = client
+    .from("judging_criteria")
+    .select("id, max_score")
+
+  if (ownership.prizeId) {
+    criteriaQuery = criteriaQuery.eq("prize_id", ownership.prizeId)
+  } else {
+    criteriaQuery = criteriaQuery
+      .eq("hackathon_id", ownership.hackathonId)
+      .is("prize_id", null)
+  }
+
+  const { data: criteria } = await criteriaQuery
+
+  if (scores.length === 0 && (criteria ?? []).length > 0) {
+    return { success: false, error: "Scores are required for all criteria", code: "empty_scores" }
+  }
+
+  if (scores.length > 0) {
+    const validCriteriaIds = new Set((criteria ?? []).map((c) => c.id))
+    const maxScoreMap = new Map((criteria ?? []).map((c) => [c.id, c.max_score]))
+
+    for (const s of scores) {
+      if (!validCriteriaIds.has(s.criteriaId)) {
+        return { success: false, error: "One or more criteria IDs are invalid", code: "invalid_criteria" }
+      }
+      if (s.score < 0) {
+        return { success: false, error: "Scores cannot be negative", code: "invalid_score" }
+      }
+      const maxScore = maxScoreMap.get(s.criteriaId)
+      if (maxScore != null && s.score > maxScore) {
+        return { success: false, error: `Score ${s.score} exceeds maximum ${maxScore}`, code: "score_exceeds_max" }
+      }
+    }
+  }
+
+  const rows = scores.map((s) => ({
+    judge_assignment_id: assignmentId,
+    criteria_id: s.criteriaId,
+    score: s.score,
+    updated_at: new Date().toISOString(),
+  }))
+
+  if (rows.length > 0) {
+    const { error: upsertError } = await client
+      .from("scores")
+      .upsert(rows, { onConflict: "judge_assignment_id,criteria_id" })
+
+    if (upsertError) {
+      console.error("Failed to upsert scores:", upsertError)
+      return { success: false, error: "Failed to save scores", code: "upsert_failed" }
+    }
+  }
+
+  const { error: updateError } = await client
+    .from("judge_assignments")
+    .update({
+      notes,
+      is_complete: true,
+      completed_at: new Date().toISOString(),
+    })
+    .eq("id", assignmentId)
+
+  if (updateError) {
+    console.error("Failed to mark assignment complete:", updateError)
+    return { success: false, error: "Failed to complete assignment", code: "update_failed" }
+  }
+
+  return { success: true }
 }

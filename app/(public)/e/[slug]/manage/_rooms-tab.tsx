@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { cn } from "@/lib/utils"
+import { assertOk, assertOkJson } from "@/lib/utils/fetch"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -40,8 +41,6 @@ import {
   Pause,
   Play,
   DoorOpen,
-  Loader2,
-  CheckCircle2,
   Check,
 } from "lucide-react"
 
@@ -90,18 +89,12 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
   const [roomDialogOpen, setRoomDialogOpen] = useState(false)
   const [editingRoom, setEditingRoom] = useState<Room | null>(null)
   const [roomName, setRoomName] = useState("")
-  const [saving, setSaving] = useState(false)
-  const [saveSuccess, setSaveSuccess] = useState(false)
 
   const [timerDialogOpen, setTimerDialogOpen] = useState(false)
   const [timerRoomId, setTimerRoomId] = useState<string | null>(null)
   const [timerMinutes, setTimerMinutes] = useState<number | null>(null)
   const [customMinutes, setCustomMinutes] = useState("")
   const [timerLabel, setTimerLabel] = useState("")
-  const [savingTimer, setSavingTimer] = useState(false)
-
-  const [deletingId, setDeletingId] = useState<string | null>(null)
-  const [togglingTeam, setTogglingTeam] = useState<string | null>(null)
 
   const fetchRooms = useCallback(async () => {
     try {
@@ -124,7 +117,6 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
     setEditingRoom(null)
     setRoomName("")
     setError(null)
-    setSaveSuccess(false)
     setRoomDialogOpen(true)
   }
 
@@ -132,7 +124,6 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
     setEditingRoom(room)
     setRoomName(room.name)
     setError(null)
-    setSaveSuccess(false)
     setRoomDialogOpen(true)
   }
 
@@ -162,103 +153,136 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
       return
     }
 
-    setSaving(true)
     setError(null)
+    setRoomDialogOpen(false)
 
-    try {
-      if (editingRoom) {
-        const res = await fetch(
+    if (editingRoom) {
+      const prevName = editingRoom.name
+      setRooms((prev) =>
+        prev.map((r) => (r.id === editingRoom.id ? { ...r, name: trimmed } : r))
+      )
+      try {
+        const updated = await fetch(
           `/api/dashboard/hackathons/${hackathonId}/rooms/${editingRoom.id}`,
           {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ name: trimmed }),
           }
-        )
-        if (!res.ok) throw new Error("Failed to update room")
-        const updated = await res.json()
+        ).then(assertOkJson<Room>)
         setRooms((prev) =>
           prev.map((r) => (r.id === editingRoom.id ? { ...r, ...updated } : r))
         )
-      } else {
-        const res = await fetch(
+      } catch (err) {
+        setRooms((prev) =>
+          prev.map((r) => (r.id === editingRoom.id ? { ...r, name: prevName } : r))
+        )
+        setError(err instanceof Error ? err.message : "Failed to update room")
+      }
+    } else {
+      const tempId = `temp-${crypto.randomUUID()}`
+      const tempRoom: Room = {
+        id: tempId,
+        hackathon_id: hackathonId,
+        name: trimmed,
+        display_order: rooms.length,
+        timer_ends_at: null,
+        timer_remaining_ms: null,
+        timer_label: null,
+        created_at: new Date().toISOString(),
+        teamCount: 0,
+        presentedCount: 0,
+        teams: [],
+      }
+      setRooms((prev) => [...prev, tempRoom])
+      try {
+        const created = await fetch(
           `/api/dashboard/hackathons/${hackathonId}/rooms`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ name: trimmed, displayOrder: rooms.length }),
           }
+        ).then(assertOkJson<Room>)
+        setRooms((prev) =>
+          prev.map((r) =>
+            r.id === tempId
+              ? { ...created, teamCount: 0, presentedCount: 0, teams: [] }
+              : r
+          )
         )
-        if (!res.ok) throw new Error("Failed to create room")
-        const created = await res.json()
-        setRooms((prev) => [
-          ...prev,
-          {
-            ...created,
-            teamCount: 0,
-            presentedCount: 0,
-            teams: [],
-          },
-        ])
+      } catch (err) {
+        setRooms((prev) => prev.filter((r) => r.id !== tempId))
+        setError(err instanceof Error ? err.message : "Failed to create room")
       }
-      setSaveSuccess(true)
-      setTimeout(() => setRoomDialogOpen(false), 800)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong")
-    } finally {
-      setSaving(false)
     }
   }
 
   async function handleDelete(roomId: string) {
-    setDeletingId(roomId)
+    const removed = rooms.find((r) => r.id === roomId)
+    setRooms((prev) => prev.filter((r) => r.id !== roomId))
     try {
-      const res = await fetch(
+      await fetch(
         `/api/dashboard/hackathons/${hackathonId}/rooms/${roomId}`,
         { method: "DELETE" }
-      )
-      if (!res.ok) throw new Error("Failed to delete room")
-      setRooms((prev) => prev.filter((r) => r.id !== roomId))
+      ).then(assertOk)
     } catch {
+      if (removed) setRooms((prev) => [...prev, removed])
       setError("Failed to delete room")
-    } finally {
-      setDeletingId(null)
     }
   }
 
   async function submitTimer(minutes: number) {
     if (!timerRoomId || minutes <= 0) return
 
-    setSavingTimer(true)
     setError(null)
+    const endsAt = new Date(Date.now() + minutes * 60_000).toISOString()
+    const label = timerLabel.trim() || null
+    const roomId = timerRoomId
+
+    const prev = rooms.find((r) => r.id === roomId)
+    setRooms((rs) =>
+      rs.map((r) =>
+        r.id === roomId
+          ? { ...r, timer_ends_at: endsAt, timer_remaining_ms: null, timer_label: label }
+          : r
+      )
+    )
+    setTimerDialogOpen(false)
 
     try {
-      const endsAt = new Date(Date.now() + minutes * 60_000).toISOString()
-      const res = await fetch(
-        `/api/dashboard/hackathons/${hackathonId}/rooms/${timerRoomId}/timer`,
+      const updated = await fetch(
+        `/api/dashboard/hackathons/${hackathonId}/rooms/${roomId}/timer`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             endsAt,
-            label: timerLabel.trim() || undefined,
+            label: label || undefined,
           }),
         }
-      )
-      if (!res.ok) throw new Error("Failed to set timer")
-      const updated = await res.json()
-      setRooms((prev) =>
-        prev.map((r) =>
-          r.id === timerRoomId
+      ).then(assertOkJson<{ timer_ends_at: string | null; timer_label: string | null }>)
+      setRooms((rs) =>
+        rs.map((r) =>
+          r.id === roomId
             ? { ...r, timer_ends_at: updated.timer_ends_at, timer_label: updated.timer_label }
             : r
         )
       )
-      setTimerDialogOpen(false)
     } catch (err) {
+      setRooms((rs) =>
+        rs.map((r) =>
+          r.id === roomId
+            ? {
+                ...r,
+                timer_ends_at: prev?.timer_ends_at ?? null,
+                timer_remaining_ms: prev?.timer_remaining_ms ?? null,
+                timer_label: prev?.timer_label ?? null,
+              }
+            : r
+        )
+      )
       setError(err instanceof Error ? err.message : "Failed to set timer")
-    } finally {
-      setSavingTimer(false)
     }
   }
 
@@ -273,62 +297,102 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
   }
 
   async function handleClearTimer(roomId: string) {
+    const prev = rooms.find((r) => r.id === roomId)
+    setRooms((rs) =>
+      rs.map((r) =>
+        r.id === roomId ? { ...r, timer_ends_at: null, timer_remaining_ms: null, timer_label: null } : r
+      )
+    )
     try {
-      const res = await fetch(
+      await fetch(
         `/api/dashboard/hackathons/${hackathonId}/rooms/${roomId}/timer`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({}),
         }
-      )
-      if (!res.ok) throw new Error("Failed to clear timer")
-      setRooms((prev) =>
-        prev.map((r) =>
-          r.id === roomId ? { ...r, timer_ends_at: null, timer_remaining_ms: null, timer_label: null } : r
-        )
-      )
+      ).then(assertOk)
     } catch {
+      if (prev) {
+        setRooms((rs) =>
+          rs.map((r) =>
+            r.id === roomId
+              ? { ...r, timer_ends_at: prev.timer_ends_at, timer_remaining_ms: prev.timer_remaining_ms, timer_label: prev.timer_label }
+              : r
+          )
+        )
+      }
       setError("Failed to clear timer")
     }
   }
 
   async function handlePauseTimer(roomId: string) {
+    const prev = rooms.find((r) => r.id === roomId)
+    setRooms((rs) =>
+      rs.map((r) =>
+        r.id === roomId
+          ? { ...r, timer_ends_at: null, timer_remaining_ms: r.timer_ends_at ? Math.max(0, new Date(r.timer_ends_at).getTime() - Date.now()) : r.timer_remaining_ms }
+          : r
+      )
+    )
     try {
-      const res = await fetch(
+      const updated = await fetch(
         `/api/dashboard/hackathons/${hackathonId}/rooms/${roomId}/timer/pause`,
         { method: "POST" }
-      )
-      if (!res.ok) throw new Error("Failed to pause timer")
-      const updated = await res.json()
-      setRooms((prev) =>
-        prev.map((r) =>
+      ).then(assertOkJson<{ timer_ends_at: string | null; timer_remaining_ms: number | null }>)
+      setRooms((rs) =>
+        rs.map((r) =>
           r.id === roomId
             ? { ...r, timer_ends_at: updated.timer_ends_at, timer_remaining_ms: updated.timer_remaining_ms }
             : r
         )
       )
     } catch {
+      if (prev) {
+        setRooms((rs) =>
+          rs.map((r) =>
+            r.id === roomId
+              ? { ...r, timer_ends_at: prev.timer_ends_at, timer_remaining_ms: prev.timer_remaining_ms }
+              : r
+          )
+        )
+      }
       setError("Failed to pause timer")
     }
   }
 
   async function handleResumeTimer(roomId: string) {
+    const prev = rooms.find((r) => r.id === roomId)
+    const remaining = prev?.timer_remaining_ms
+    setRooms((rs) =>
+      rs.map((r) =>
+        r.id === roomId
+          ? { ...r, timer_ends_at: remaining ? new Date(Date.now() + remaining).toISOString() : r.timer_ends_at, timer_remaining_ms: null }
+          : r
+      )
+    )
     try {
-      const res = await fetch(
+      const updated = await fetch(
         `/api/dashboard/hackathons/${hackathonId}/rooms/${roomId}/timer/resume`,
         { method: "POST" }
-      )
-      if (!res.ok) throw new Error("Failed to resume timer")
-      const updated = await res.json()
-      setRooms((prev) =>
-        prev.map((r) =>
+      ).then(assertOkJson<{ timer_ends_at: string | null; timer_remaining_ms: number | null }>)
+      setRooms((rs) =>
+        rs.map((r) =>
           r.id === roomId
             ? { ...r, timer_ends_at: updated.timer_ends_at, timer_remaining_ms: updated.timer_remaining_ms }
             : r
         )
       )
     } catch {
+      if (prev) {
+        setRooms((rs) =>
+          rs.map((r) =>
+            r.id === roomId
+              ? { ...r, timer_ends_at: prev.timer_ends_at, timer_remaining_ms: prev.timer_remaining_ms }
+              : r
+          )
+        )
+      }
       setError("Failed to resume timer")
     }
   }
@@ -338,23 +402,34 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
     teamId: string,
     presented: boolean
   ) {
-    const key = `${roomId}-${teamId}`
-    setTogglingTeam(key)
+    setRooms((prev) =>
+      prev.map((r) => {
+        if (r.id !== roomId) return r
+        const teams = r.teams.map((t) =>
+          t.team_id === teamId ? { ...t, has_presented: presented } : t
+        )
+        return {
+          ...r,
+          teams,
+          presentedCount: teams.filter((t) => t.has_presented).length,
+        }
+      })
+    )
     try {
-      const res = await fetch(
+      await fetch(
         `/api/dashboard/hackathons/${hackathonId}/rooms/${roomId}/teams/${teamId}`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ presented }),
         }
-      )
-      if (!res.ok) throw new Error("Failed to update")
+      ).then(assertOk)
+    } catch {
       setRooms((prev) =>
         prev.map((r) => {
           if (r.id !== roomId) return r
           const teams = r.teams.map((t) =>
-            t.team_id === teamId ? { ...t, has_presented: presented } : t
+            t.team_id === teamId ? { ...t, has_presented: !presented } : t
           )
           return {
             ...r,
@@ -363,22 +438,19 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
           }
         })
       )
-    } catch {
       setError("Failed to update presentation status")
-    } finally {
-      setTogglingTeam(null)
     }
   }
 
   function handleRoomKeyDown(e: React.KeyboardEvent) {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !saving) {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault()
       handleRoomSubmit(e as unknown as React.FormEvent)
     }
   }
 
   function handleTimerKeyDown(e: React.KeyboardEvent) {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !savingTimer) {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault()
       handleTimerSubmit(e as unknown as React.FormEvent)
     }
@@ -436,13 +508,8 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
                           variant="ghost"
                           size="icon-sm"
                           className="text-destructive"
-                          disabled={deletingId === room.id}
                         >
-                          {deletingId === room.id ? (
-                            <Loader2 className="size-3.5 animate-spin" />
-                          ) : (
-                            <Trash2 className="size-3.5" />
-                          )}
+                          <Trash2 className="size-3.5" />
                         </Button>
                       </AlertDialogTrigger>
                       <AlertDialogContent>
@@ -564,47 +631,41 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
 
                 {room.teams.length > 0 && (
                   <div className="space-y-1.5">
-                    {room.teams.map((team) => {
-                      const key = `${room.id}-${team.team_id}`
-                      return (
-                        <div
-                          key={team.id}
-                          className="flex items-center justify-between rounded-md bg-muted px-3 py-2"
+                    {room.teams.map((team) => (
+                      <div
+                        key={team.id}
+                        className="flex items-center justify-between rounded-md bg-muted px-3 py-2"
+                      >
+                        <span
+                          className={cn(
+                            "text-sm",
+                            team.has_presented && "text-muted-foreground"
+                          )}
                         >
-                          <span
-                            className={cn(
-                              "text-sm",
-                              team.has_presented && "text-muted-foreground"
-                            )}
-                          >
-                            {team.team_name}
-                          </span>
-                          <Button
-                            variant={team.has_presented ? "ghost" : "outline"}
-                            size="xs"
-                            disabled={togglingTeam === key}
-                            onClick={() =>
-                              handleTogglePresented(
-                                room.id,
-                                team.team_id,
-                                !team.has_presented
-                              )
-                            }
-                          >
-                            {togglingTeam === key ? (
-                              <Loader2 className="size-3 animate-spin" />
-                            ) : team.has_presented ? (
-                              <>
-                                <Check className="mr-1 size-3" />
-                                Presented
-                              </>
-                            ) : (
-                              "Mark Presented"
-                            )}
-                          </Button>
-                        </div>
-                      )
-                    })}
+                          {team.team_name}
+                        </span>
+                        <Button
+                          variant={team.has_presented ? "ghost" : "outline"}
+                          size="xs"
+                          onClick={() =>
+                            handleTogglePresented(
+                              room.id,
+                              team.team_id,
+                              !team.has_presented
+                            )
+                          }
+                        >
+                          {team.has_presented ? (
+                            <>
+                              <Check className="mr-1 size-3" />
+                              Presented
+                            </>
+                          ) : (
+                            "Mark Presented"
+                          )}
+                        </Button>
+                      </div>
+                    ))}
                   </div>
                 )}
               </CardContent>
@@ -620,51 +681,41 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
               {editingRoom ? "Edit Room" : "Create Room"}
             </DialogTitle>
           </DialogHeader>
-          {saveSuccess ? (
-            <div className="flex flex-col items-center gap-3 py-8">
-              <CheckCircle2 className="size-10 text-primary" />
-              <p className="text-sm font-medium">
-                {editingRoom ? "Room updated" : "Room created"}
-              </p>
+          <form
+            onSubmit={handleRoomSubmit}
+            onKeyDown={handleRoomKeyDown}
+            autoComplete="off"
+            className="space-y-4"
+          >
+            <div className="space-y-2">
+              <Label htmlFor="room-name">Name</Label>
+              <Input
+                id="room-name"
+                name="room-name"
+                value={roomName}
+                onChange={(e) => setRoomName(e.target.value)}
+                placeholder="e.g. Room A"
+                autoFocus
+                autoComplete="off"
+                data-1p-ignore
+                data-lpignore="true"
+                data-form-type="other"
+              />
             </div>
-          ) : (
-            <form
-              onSubmit={handleRoomSubmit}
-              onKeyDown={handleRoomKeyDown}
-              autoComplete="off"
-              className="space-y-4"
-            >
-              <div className="space-y-2">
-                <Label htmlFor="room-name">Name</Label>
-                <Input
-                  id="room-name"
-                  name="room-name"
-                  value={roomName}
-                  onChange={(e) => setRoomName(e.target.value)}
-                  placeholder="e.g. Room A"
-                  autoFocus
-                  autoComplete="off"
-                  data-1p-ignore
-                  data-lpignore="true"
-                  data-form-type="other"
-                />
-              </div>
-              {error && <p className="text-sm text-destructive">{error}</p>}
-              <div className="flex justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setRoomDialogOpen(false)}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={saving}>
-                  {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
-                  {editingRoom ? "Update" : "Create"}
-                </Button>
-              </div>
-            </form>
-          )}
+            {error && <p className="text-sm text-destructive">{error}</p>}
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setRoomDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit">
+                {editingRoom ? "Update" : "Create"}
+              </Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
 
@@ -688,7 +739,6 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
                     type="button"
                     variant={timerMinutes === preset.minutes ? "default" : "outline"}
                     size="sm"
-                    disabled={savingTimer}
                     onClick={() => {
                       setTimerMinutes(preset.minutes)
                       setCustomMinutes("")
@@ -744,10 +794,7 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={savingTimer || (!timerMinutes && !customMinutes)}>
-                {savingTimer && (
-                  <Loader2 className="mr-2 size-4 animate-spin" />
-                )}
+              <Button type="submit" disabled={!timerMinutes && !customMinutes}>
                 Start Timer
               </Button>
             </div>

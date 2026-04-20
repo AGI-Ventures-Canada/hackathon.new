@@ -2,6 +2,7 @@
 
 import { useState, useRef, useMemo } from "react"
 import { useRouter } from "next/navigation"
+import { assertOk } from "@/lib/utils/fetch"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -33,8 +34,22 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card"
-import { Trash2, Loader2, Undo2, Check, ChevronsUpDown, Trophy, Heart, Star, BarChart3 } from "lucide-react"
-import type { PrizeType, JudgingCriteria, JudgingMode } from "@/lib/db/hackathon-types"
+import {
+  Trash2,
+  Loader2,
+  Undo2,
+  Check,
+  ChevronsUpDown,
+  Trophy,
+  Heart,
+  Star,
+  BarChart3,
+} from "lucide-react"
+import type {
+  PrizeType,
+  JudgingCriteria,
+  JudgingMode,
+} from "@/lib/db/hackathon-types"
 import type { PublicPrize } from "@/lib/services/public-hackathons"
 
 type Prize = PublicPrize & {
@@ -50,13 +65,25 @@ interface PrizesEditFormProps {
   criteria?: JudgingCriteria[]
   judgingMode?: JudgingMode
   onSaveAndNext?: () => void
-  onSave?: (data: { prizes: { name: string; description: string | null; value: string | null }[] }) => Promise<boolean>
+  onSave?: (data: {
+    prizes: {
+      name: string
+      description: string | null
+      value: string | null
+    }[]
+  }) => Promise<boolean>
 }
 
 type PendingChange =
   | { type: "add"; prize: Prize; tempId: string }
   | { type: "delete"; prizeId: string; originalPrize: Prize }
-  | { type: "update"; prizeId: string; field: string; newValue: unknown; oldValue: unknown }
+  | {
+      type: "update"
+      prizeId: string
+      field: string
+      newValue: unknown
+      oldValue: unknown
+    }
 
 type PresetContext = {
   currentPrizes: Prize[]
@@ -91,7 +118,7 @@ const STATIC_PRESETS: PresetDef[] = [
       const existingRanks = new Set(
         currentPrizes
           .filter((p) => p.type === "score" && p.rank != null)
-          .map((p) => p.rank!)
+          .map((p) => p.rank!),
       )
       const podium = [
         { rank: 1, name: "1st Place" },
@@ -162,7 +189,7 @@ function getCriteriaPresets(criteria: JudgingCriteria[]): PresetDef[] {
     icon: BarChart3,
     prizes: ({ currentPrizes }) => {
       const exists = currentPrizes.some(
-        (p) => p.type === "criteria" && p.criteria_id === c.id
+        (p) => p.type === "criteria" && p.criteria_id === c.id,
       )
       if (exists) return []
       return [
@@ -186,7 +213,11 @@ const KIND_PRESETS = [
   { value: "other", label: "Other" },
 ]
 
-function getTypeInfo(type: PrizeType, judgingMode?: JudgingMode, criterionName?: string): string {
+function getTypeInfo(
+  type: PrizeType,
+  judgingMode?: JudgingMode,
+  criterionName?: string,
+): string {
   switch (type) {
     case "score":
       return "Awarded to rank #N based on overall judging scores"
@@ -232,7 +263,9 @@ export function PrizesEditForm({
         prizes = prizes.filter((p) => p.id !== change.prizeId)
       } else if (change.type === "update") {
         prizes = prizes.map((p) =>
-          p.id === change.prizeId ? { ...p, [change.field]: change.newValue } : p
+          p.id === change.prizeId
+            ? { ...p, [change.field]: change.newValue }
+            : p,
         )
       }
     }
@@ -272,18 +305,21 @@ export function PrizesEditForm({
       updated_at: new Date().toISOString(),
     }
 
-    setPendingChanges([...pendingChanges, { type: "add", prize: newPrize, tempId }])
+    setPendingChanges([
+      ...pendingChanges,
+      { type: "add", prize: newPrize, tempId },
+    ])
     setNameInput("")
   }
 
   const presetCtx: PresetContext = useMemo(
     () => ({ currentPrizes, criteria, judgingMode }),
-    [currentPrizes, criteria, judgingMode]
+    [currentPrizes, criteria, judgingMode],
   )
 
   const allPresets = useMemo(
     () => [...STATIC_PRESETS, ...getCriteriaPresets(criteria)],
-    [criteria]
+    [criteria],
   )
 
   function handleAddPreset(preset: PresetDef) {
@@ -328,7 +364,7 @@ export function PrizesEditForm({
 
   function handleDeletePrize(prizeId: string) {
     const addChange = pendingChanges.find(
-      (c) => c.type === "add" && c.tempId === prizeId
+      (c) => c.type === "add" && c.tempId === prizeId,
     )
 
     if (addChange) {
@@ -340,30 +376,31 @@ export function PrizesEditForm({
     if (!originalPrize) return
 
     const relatedChanges = pendingChanges.filter(
-      (c) => c.type === "update" && c.prizeId === prizeId
+      (c) => c.type === "update" && c.prizeId === prizeId,
     )
     const filtered = pendingChanges.filter((c) => !relatedChanges.includes(c))
-    setPendingChanges([...filtered, { type: "delete", prizeId, originalPrize }])
+    setPendingChanges([
+      ...filtered,
+      { type: "delete", prizeId, originalPrize },
+    ])
   }
 
   function handleFieldChange(prizeId: string, field: string, value: unknown) {
     const addChange = pendingChanges.find(
-      (c) => c.type === "add" && c.tempId === prizeId
+      (c) => c.type === "add" && c.tempId === prizeId,
     ) as Extract<PendingChange, { type: "add" }> | undefined
 
     if (addChange) {
       setPendingChanges(
         pendingChanges.map((c) =>
-          c === addChange
-            ? { ...c, prize: { ...c.prize, [field]: value } }
-            : c
-        )
+          c === addChange ? { ...c, prize: { ...c.prize, [field]: value } } : c,
+        ),
       )
       return
     }
 
     const existingUpdate = pendingChanges.findIndex(
-      (c) => c.type === "update" && c.prizeId === prizeId && c.field === field
+      (c) => c.type === "update" && c.prizeId === prizeId && c.field === field,
     )
 
     const original = initialPrizes.find((p) => p.id === prizeId)
@@ -373,10 +410,18 @@ export function PrizesEditForm({
 
     if (existingUpdate >= 0) {
       if (value === oldValue || (value === "" && oldValue === null)) {
-        setPendingChanges(pendingChanges.filter((_, i) => i !== existingUpdate))
+        setPendingChanges(
+          pendingChanges.filter((_, i) => i !== existingUpdate),
+        )
       } else {
         const updated = [...pendingChanges]
-        updated[existingUpdate] = { type: "update", prizeId, field, newValue: value, oldValue }
+        updated[existingUpdate] = {
+          type: "update",
+          prizeId,
+          field,
+          newValue: value,
+          oldValue,
+        }
         setPendingChanges(updated)
       }
       return
@@ -420,40 +465,29 @@ export function PrizesEditForm({
     try {
       for (const change of pendingChanges) {
         if (change.type === "add") {
-          const res = await fetch(
-            `/api/dashboard/hackathons/${hackathonId}/prizes`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                name: change.prize.name,
-                description: change.prize.description,
-                value: change.prize.value,
-                type: change.prize.type,
-                rank: change.prize.rank,
-                kind: change.prize.kind,
-                monetaryValue: change.prize.monetary_value,
-                currency: change.prize.currency,
-                distributionMethod: change.prize.distribution_method,
-                displayValue: change.prize.display_value,
-                criteriaId: change.prize.criteria_id,
-                displayOrder: change.prize.display_order,
-              }),
-            }
-          )
-          if (!res.ok) {
-            const data = await res.json()
-            throw new Error(data.error || `Failed to add ${change.prize.name}`)
-          }
+          await fetch(`/api/dashboard/hackathons/${hackathonId}/prizes`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: change.prize.name,
+              description: change.prize.description,
+              value: change.prize.value,
+              type: change.prize.type,
+              rank: change.prize.rank,
+              kind: change.prize.kind,
+              monetaryValue: change.prize.monetary_value,
+              currency: change.prize.currency,
+              distributionMethod: change.prize.distribution_method,
+              displayValue: change.prize.display_value,
+              criteriaId: change.prize.criteria_id,
+              displayOrder: change.prize.display_order,
+            }),
+          }).then(assertOk)
         } else if (change.type === "delete") {
-          const res = await fetch(
+          await fetch(
             `/api/dashboard/hackathons/${hackathonId}/prizes/${change.prizeId}`,
-            { method: "DELETE" }
-          )
-          if (!res.ok) {
-            const data = await res.json()
-            throw new Error(data.error || "Failed to remove prize")
-          }
+            { method: "DELETE" },
+          ).then(assertOk)
         } else if (change.type === "update") {
           const body: Record<string, unknown> = {}
           const fieldMap: Record<string, string> = {
@@ -470,18 +504,14 @@ export function PrizesEditForm({
           const apiField = fieldMap[change.field] ?? change.field
           body[apiField] = change.newValue ?? null
 
-          const res = await fetch(
+          await fetch(
             `/api/dashboard/hackathons/${hackathonId}/prizes/${change.prizeId}`,
             {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(body),
-            }
-          )
-          if (!res.ok) {
-            const data = await res.json()
-            throw new Error(data.error || "Failed to update prize")
-          }
+            },
+          ).then(assertOk)
         }
       }
 
@@ -526,7 +556,7 @@ export function PrizesEditForm({
 
   function isDeleted(prizeId: string) {
     return pendingChanges.some(
-      (c) => c.type === "delete" && c.prizeId === prizeId
+      (c) => c.type === "delete" && c.prizeId === prizeId,
     )
   }
 
@@ -632,14 +662,18 @@ export function PrizesEditForm({
                 <div
                   key={prize.id}
                   className={`rounded-lg border p-3 space-y-3 ${
-                    prize.id.startsWith("temp-") ? "border-dashed bg-muted/30" : ""
+                    prize.id.startsWith("temp-")
+                      ? "border-dashed bg-muted/30"
+                      : ""
                   } ${deleted ? "opacity-50" : ""}`}
                 >
                   <div className="flex items-center gap-2">
                     <div className="flex-1 min-w-0">
                       <Input
                         value={prize.name}
-                        onChange={(e) => handleFieldChange(prize.id, "name", e.target.value)}
+                        onChange={(e) =>
+                          handleFieldChange(prize.id, "name", e.target.value)
+                        }
                         placeholder="Prize name"
                         disabled={deleted}
                         className="h-8 text-sm font-medium"
@@ -663,7 +697,9 @@ export function PrizesEditForm({
 
                   <Textarea
                     value={prize.description ?? ""}
-                    onChange={(e) => handleFieldChange(prize.id, "description", e.target.value)}
+                    onChange={(e) =>
+                      handleFieldChange(prize.id, "description", e.target.value)
+                    }
                     placeholder="Description"
                     disabled={deleted}
                     rows={2}
@@ -675,23 +711,33 @@ export function PrizesEditForm({
                   />
 
                   <div className="space-y-2">
-                    <p className="text-xs font-medium text-muted-foreground">What&apos;s the prize?</p>
+                    <p className="text-xs font-medium text-muted-foreground">
+                      What&apos;s the prize?
+                    </p>
                     <KindCombobox
                       value={prize.kind}
                       onChange={(v) => handleFieldChange(prize.id, "kind", v)}
                       disabled={deleted}
                     />
-                    <Input
-                      value={prize.display_value ?? ""}
-                      onChange={(e) => handleFieldChange(prize.id, "display_value", e.target.value)}
-                      placeholder='Display value (e.g. "$5,000 USD")'
-                      disabled={deleted}
-                      className="h-8 text-sm"
-                      autoComplete="off"
-                      data-1p-ignore
-                      data-lpignore="true"
-                      data-form-type="other"
-                    />
+                    {prize.kind !== "cash" && prize.kind !== "credit" && (
+                      <Input
+                        value={prize.display_value ?? ""}
+                        onChange={(e) =>
+                          handleFieldChange(
+                            prize.id,
+                            "display_value",
+                            e.target.value,
+                          )
+                        }
+                        placeholder='Display value (e.g. "$5,000 USD")'
+                        disabled={deleted}
+                        className="h-8 text-sm"
+                        autoComplete="off"
+                        data-1p-ignore
+                        data-lpignore="true"
+                        data-form-type="other"
+                      />
+                    )}
                     {(prize.kind === "cash" || prize.kind === "credit") && (
                       <div className="grid grid-cols-2 gap-2">
                         <Input
@@ -701,7 +747,9 @@ export function PrizesEditForm({
                             handleFieldChange(
                               prize.id,
                               "monetary_value",
-                              e.target.value ? parseFloat(e.target.value) : null
+                              e.target.value
+                                ? parseFloat(e.target.value)
+                                : null,
                             )
                           }
                           placeholder="Amount"
@@ -714,7 +762,13 @@ export function PrizesEditForm({
                         />
                         <Input
                           value={prize.currency ?? "USD"}
-                          onChange={(e) => handleFieldChange(prize.id, "currency", e.target.value)}
+                          onChange={(e) =>
+                            handleFieldChange(
+                              prize.id,
+                              "currency",
+                              e.target.value,
+                            )
+                          }
                           placeholder="Currency (e.g. USD)"
                           disabled={deleted}
                           className="h-8 text-sm"
@@ -725,10 +779,19 @@ export function PrizesEditForm({
                         />
                       </div>
                     )}
-                    <div>
+                    <div className="rounded-md border border-border p-2 space-y-1.5">
+                      <p className="text-xs font-bold text-primary">
+                        Not shown to participants
+                      </p>
                       <Input
                         value={prize.distribution_method ?? ""}
-                        onChange={(e) => handleFieldChange(prize.id, "distribution_method", e.target.value)}
+                        onChange={(e) =>
+                          handleFieldChange(
+                            prize.id,
+                            "distribution_method",
+                            e.target.value,
+                          )
+                        }
                         placeholder="Distribution note (e.g. Wire to captain)"
                         disabled={deleted}
                         className="h-8 text-sm"
@@ -737,19 +800,22 @@ export function PrizesEditForm({
                         data-lpignore="true"
                         data-form-type="other"
                       />
-                      <p className="text-xs text-muted-foreground mt-0.5">Not shown to participants</p>
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <p className="text-xs font-medium text-muted-foreground">How is the winner decided?</p>
+                    <p className="text-xs font-medium text-muted-foreground">
+                      How is the winner decided?
+                    </p>
                     <div className="flex items-center gap-2 flex-wrap">
                       <Select
                         value={prize.type}
                         onValueChange={(v) => {
                           handleFieldChange(prize.id, "type", v as PrizeType)
-                          if (v !== "score") handleFieldChange(prize.id, "rank", null)
-                          if (v !== "criteria") handleFieldChange(prize.id, "criteria_id", null)
+                          if (v !== "score")
+                            handleFieldChange(prize.id, "rank", null)
+                          if (v !== "criteria")
+                            handleFieldChange(prize.id, "criteria_id", null)
                         }}
                         disabled={deleted}
                       >
@@ -758,17 +824,25 @@ export function PrizesEditForm({
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="score">Score-based</SelectItem>
-                          <SelectItem value="criteria">Best in Category</SelectItem>
-                          <SelectItem value="favorite">
-                            {judgingMode === "subjective" ? "Judge's Choice" : "Organizer's Pick"}
+                          <SelectItem value="criteria">
+                            Best in Category
                           </SelectItem>
-                          <SelectItem value="crowd">Crowd&apos;s Favorite</SelectItem>
+                          <SelectItem value="favorite">
+                            {judgingMode === "subjective"
+                              ? "Judge's Choice"
+                              : "Organizer's Pick"}
+                          </SelectItem>
+                          <SelectItem value="crowd">
+                            Crowd&apos;s Favorite
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                       {prize.type === "score" && (
                         <Select
                           value={prize.rank?.toString() ?? "1"}
-                          onValueChange={(v) => handleFieldChange(prize.id, "rank", parseInt(v))}
+                          onValueChange={(v) =>
+                            handleFieldChange(prize.id, "rank", parseInt(v))
+                          }
                           disabled={deleted}
                         >
                           <SelectTrigger className="w-20 h-8 text-xs">
@@ -786,7 +860,13 @@ export function PrizesEditForm({
                       {prize.type === "criteria" && criteria.length > 0 && (
                         <Select
                           value={prize.criteria_id ?? ""}
-                          onValueChange={(v) => handleFieldChange(prize.id, "criteria_id", v || null)}
+                          onValueChange={(v) =>
+                            handleFieldChange(
+                              prize.id,
+                              "criteria_id",
+                              v || null,
+                            )
+                          }
                           disabled={deleted}
                         >
                           <SelectTrigger className="w-44 h-8 text-xs">
@@ -826,7 +906,8 @@ export function PrizesEditForm({
               >
                 <span className="text-muted-foreground">
                   {change.type === "add" && `+ Add "${change.prize.name}"`}
-                  {change.type === "delete" && `- Remove "${change.originalPrize.name}"`}
+                  {change.type === "delete" &&
+                    `- Remove "${change.originalPrize.name}"`}
                   {change.type === "update" && `~ Update ${change.field}`}
                 </span>
                 <Button
@@ -860,7 +941,7 @@ export function PrizesEditForm({
               </Button>
               <Button type="button" onClick={handleSave} disabled={saving}>
                 {saving && <Loader2 className="size-4 mr-2 animate-spin" />}
-                Save changes
+                Save & exit
               </Button>
             </>
           ) : (
@@ -895,7 +976,8 @@ function KindCombobox({
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
 
-  const selectedLabel = KIND_PRESETS.find((k) => k.value === value)?.label ?? value
+  const selectedLabel =
+    KIND_PRESETS.find((k) => k.value === value)?.label ?? value
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -950,7 +1032,7 @@ function KindCombobox({
                   <Check
                     className={cn(
                       "mr-2 size-3",
-                      value === kind.value ? "opacity-100" : "opacity-0"
+                      value === kind.value ? "opacity-100" : "opacity-0",
                     )}
                   />
                   {kind.label}

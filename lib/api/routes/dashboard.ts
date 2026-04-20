@@ -1,5 +1,6 @@
 import { Elysia, t } from "elysia"
 import { normalizeOptionalUrl, normalizeUrl } from "@/lib/utils/url"
+import { isValidSlugFormat } from "@/lib/utils/slug"
 import { resolvePrincipal, requirePrincipal } from "@/lib/auth/principal"
 import { createApiKey, listApiKeys, revokeApiKey, getApiKeyById } from "@/lib/services/api-keys"
 import { listJobs, getJobById } from "@/lib/services/jobs"
@@ -1187,6 +1188,11 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         })
       }
 
+      if (hasDateUpdate && !hasStatusTransition) {
+        const { reschedulePreEventReminders } = await import("@/lib/services/pre-event-reminders")
+        reschedulePreEventReminders(params.id).catch(console.error)
+      }
+
       if (hasStatusTransition) {
         const { executeTransition } = await import("@/lib/services/lifecycle")
         const triggeredBy = principal.kind === "user" ? principal.userId : principal.keyId
@@ -1215,7 +1221,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           const { resolveAdderName } = await import("@/lib/auth/resolve-adder-name")
           const inviterName = await resolveAdderName(principal)
           const { sendPendingJudgeInvitationEmails } = await import("@/lib/services/judge-invitations")
-          sendPendingJudgeInvitationEmails(hackathon.id, hackathon.name, inviterName)
+          sendPendingJudgeInvitationEmails(hackathon.id, hackathon.name, inviterName, { hackathonSlug: hackathon.slug, hackathonStartsAt: hackathon.starts_at, hackathonEndsAt: hackathon.ends_at })
             .then(({ sent, total, failedEmails }) => {
               if (total === 0) return
               if (failedEmails.length > 0) {
@@ -1962,7 +1968,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       const { updateTenantProfile, isSlugAvailable } = await import("@/lib/services/tenant-profiles")
 
       if (body.slug !== undefined) {
-        if (!body.slug || !/^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(body.slug) || body.slug.length < 3) {
+        if (!body.slug || !isValidSlugFormat(body.slug)) {
           return new Response(JSON.stringify({ error: "Slug must be at least 3 characters and contain only lowercase letters, numbers, and hyphens" }), {
             status: 400,
             headers: { "Content-Type": "application/json" },
@@ -2168,13 +2174,18 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       const teamInfo = await getTeamWithHackathon(params.teamId)
 
       if (teamInfo) {
+        const inviterName = body.inviterName || "A team captain"
         const emailInput = {
           to: body.email,
           teamName: teamInfo.name,
           hackathonName: teamInfo.hackathon.name,
-          inviterName: body.inviterName || "A team captain",
+          inviterName,
           inviteToken: result.invitation.token,
           expiresAt: result.invitation.expires_at,
+          hackathonSlug: teamInfo.hackathon.slug,
+          hackathonStartsAt: teamInfo.hackathon.starts_at,
+          hackathonEndsAt: teamInfo.hackathon.ends_at,
+          teamMembers: teamInfo.memberNames,
         }
         const { start } = await import("workflow/api")
         const { sendTeamInvitationWorkflow } = await import("@/lib/workflows/team-invitations")
@@ -2183,6 +2194,24 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           const { sendTeamInvitationEmail } = await import("@/lib/email/team-invitations")
           sendTeamInvitationEmail(emailInput).catch(console.error)
         })
+
+        const { scheduleReminders } = await import("@/lib/services/smart-reminders")
+        scheduleReminders(
+          "team_invitation",
+          result.invitation.id,
+          body.hackathonId,
+          "invitation_reminder",
+          new Date(result.invitation.created_at),
+          new Date(result.invitation.expires_at),
+          {
+            email: body.email,
+            teamName: teamInfo.name,
+            hackathonName: teamInfo.hackathon.name,
+            inviterName,
+            inviteToken: result.invitation.token,
+            expiresAt: result.invitation.expires_at,
+          }
+        ).catch((err) => console.error(`Failed to schedule reminders for team_invitation ${result.invitation.id} (hackathon=${body.hackathonId}):`, err))
       }
 
       await logAudit({
@@ -2238,6 +2267,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           status: i.status,
           expiresAt: i.expires_at,
           createdAt: i.created_at,
+          remindedAt: i.reminded_at ?? null,
         })),
       }
     },
@@ -2272,6 +2302,11 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       })
     }
 
+    const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
+    cancelRemindersForEntity("team_invitation", params.invitationId).catch((err) =>
+      console.error(`Failed to cancel reminders for team_invitation ${params.invitationId}:`, err)
+    )
+
     await logAudit({
       principal,
       action: "team_invitation.cancelled",
@@ -2284,6 +2319,78 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
     detail: {
       summary: "Cancel team invitation",
       description: "Cancels a pending team invitation. Clerk-only.",
+    },
+  })
+  .post("/teams/:teamId/invitations/:invitationId/remind", async ({ principal, params }) => {
+    requirePrincipal(principal, ["user"], ["hackathons:write"])
+
+    const { isValidUuid } = await import("@/lib/utils/uuid")
+    if (!isValidUuid(params.teamId) || !isValidUuid(params.invitationId)) {
+      return new Response(JSON.stringify({ error: "Not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
+
+    const { remindTeamInvitation, getTeamWithHackathon } = await import(
+      "@/lib/services/team-invitations"
+    )
+
+    const teamInfo = await getTeamWithHackathon(params.teamId)
+    if (!teamInfo) {
+      return new Response(JSON.stringify({ error: "Team not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
+
+    const rateLimitResult = await checkRateLimit(`team_invitation_remind:${params.teamId}`, {
+      maxRequests: 5,
+      windowMs: 60_000,
+    })
+    if (!rateLimitResult.allowed) {
+      throw new RateLimitError(rateLimitResult.resetAt, rateLimitResult.remaining)
+    }
+
+    const result = await remindTeamInvitation(params.invitationId, principal.userId!, params.teamId)
+
+    if (!result.success) {
+      return new Response(JSON.stringify({ error: result.error, code: result.code }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
+
+    const { resolveAdderName } = await import("@/lib/auth/resolve-adder-name")
+    const inviterName = await resolveAdderName(principal)
+
+    const { sendTeamInvitationReminderEmail } = await import(
+      "@/lib/email/team-invitations"
+    )
+    sendTeamInvitationReminderEmail({
+      to: result.invitation.email,
+      teamName: teamInfo.name,
+      hackathonName: teamInfo.hackathon.name,
+      inviterName,
+      inviteToken: result.invitation.token,
+      expiresAt: result.invitation.expires_at,
+    }).catch(console.error)
+
+    const { cancelUpcomingReminder } = await import("@/lib/services/smart-reminders")
+    cancelUpcomingReminder("team_invitation", params.invitationId).catch(console.error)
+
+    await logAudit({
+      principal,
+      action: "team_invitation.reminded",
+      resourceType: "team_invitation",
+      resourceId: params.invitationId,
+    })
+
+    return { success: true }
+  }, {
+    detail: {
+      summary: "Send team invitation reminder",
+      description: "Sends a reminder email for a pending team invitation. Clerk-only.",
     },
   })
   .use(dashboardJudgingRoutes)

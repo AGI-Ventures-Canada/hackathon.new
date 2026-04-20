@@ -1,7 +1,8 @@
 "use client"
 
-import { Fragment, useEffect, useState } from "react"
+import { Fragment, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
+import { assertOk, assertOkJson } from "@/lib/utils/fetch"
 import {
   Loader2, Plus, Users, ChevronRight, FileText, DoorOpen, Crown, Mail, Settings2,
 } from "lucide-react"
@@ -113,16 +114,39 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
   const [teamName, setTeamName] = useState("")
   const [captainEmail, setCaptainEmail] = useState("")
-  const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [maxSize, setMaxSize] = useState(initialMax)
+  const [minSize, setMinSize] = useState(initialMin)
+  const [allowSolo, setAllowSolo] = useState(initialSolo)
+  const [savingSettings, setSavingSettings] = useState(false)
+  const [settingsError, setSettingsError] = useState<string | null>(null)
+  const tempIdCounter = useRef(0)
 
   useEffect(() => {
     if (!ctx) return
     ctx.registerTabAction("review-team-settings", () => setSettingsDialogOpen(true))
     return () => ctx.unregisterTabAction("review-team-settings")
   }, [ctx])
+
+  async function saveTeamSettings(patch: Record<string, unknown>, rollback: () => void) {
+    setSavingSettings(true)
+    setSettingsError(null)
+    try {
+      await fetch(`/api/dashboard/hackathons/${hackathonId}/settings`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      }).then(assertOk)
+      router.refresh()
+    } catch (err) {
+      rollback()
+      setSettingsError(err instanceof Error ? err.message : "Failed to save")
+    } finally {
+      setSavingSettings(false)
+    }
+  }
 
   async function fetchTeams() {
     try {
@@ -148,7 +172,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
   }, [hackathonId])
 
   function handleKeyDown(e: React.KeyboardEvent) {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !creating) {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault()
       void handleCreate(e as unknown as React.FormEvent)
     }
@@ -161,41 +185,46 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
       return
     }
 
-    setCreating(true)
+    const name = teamName.trim()
+    const email = captainEmail.trim()
+    const tempId = `temp-${++tempIdCounter.current}`
+
     setCreateError(null)
+    setDialogOpen(false)
+    setTeamName("")
+    setCaptainEmail("")
+
+    const tempTeam: Team = {
+      id: tempId,
+      name,
+      status: "active",
+      captainClerkUserId: null,
+      pendingCaptainEmail: email,
+      members: [],
+      submission: null,
+      room: null,
+    }
+    setTeams((prev) => [tempTeam, ...prev])
 
     try {
-      const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/teams`, {
+      const data = await fetch(`/api/dashboard/hackathons/${hackathonId}/teams`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: teamName.trim(),
-          captainEmail: captainEmail.trim(),
-        }),
-      })
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || "Failed to create team")
-      }
-
-      const data = await res.json()
-
-      setDialogOpen(false)
-      setTeamName("")
-      setCaptainEmail("")
-      setCreateError(null)
+        body: JSON.stringify({ name, captainEmail: email }),
+      }).then(assertOkJson<{ team?: Team; invited?: boolean }>)
 
       if (data.invited) {
-        setInviteSuccess(`Invite sent to ${captainEmail.trim()}`)
+        setInviteSuccess(`Invite sent to ${email}`)
         setTimeout(() => setInviteSuccess(null), 5000)
       }
 
       await fetchTeams()
     } catch (err) {
+      setTeams((prev) => prev.filter((t) => t.id !== tempId))
+      setTeamName(name)
+      setCaptainEmail(email)
       setCreateError(err instanceof Error ? err.message : "Failed to create team")
-    } finally {
-      setCreating(false)
+      setDialogOpen(true)
     }
   }
 
@@ -320,19 +349,11 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                   type="button"
                   variant="outline"
                   onClick={() => setDialogOpen(false)}
-                  disabled={creating}
                 >
                   Cancel
                 </Button>
-                <Button type="submit" disabled={creating}>
-                  {creating ? (
-                    <>
-                      <Loader2 className="size-4 animate-spin" />
-                      Creating...
-                    </>
-                  ) : (
-                    "Create Team"
-                  )}
+                <Button type="submit">
+                  Create Team
                 </Button>
               </div>
             </form>

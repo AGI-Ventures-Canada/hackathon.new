@@ -300,6 +300,66 @@ Returns 404 if the event doesn't exist, is private, or the page structure has ch
 
 ---
 
+### Get assignment detail for scoring
+
+Requires Clerk session (judge must own the assignment).
+
+```bash
+curl -s "$BASE_URL/api/public/hackathons/$SLUG/judging/assignments/$ASSIGNMENT_ID" \
+  --cookie "clerk-session=..."
+```
+
+```json
+{
+  "id": "a1b2c3d4-...",
+  "submissionId": "s1s2s3s4-...",
+  "submissionTitle": "SmartRoute AI",
+  "submissionDescription": "An AI-powered route optimizer",
+  "submissionGithubUrl": "https://github.com/team/smartroute",
+  "submissionLiveAppUrl": "https://smartroute.app",
+  "submissionScreenshotUrl": null,
+  "teamName": "Team Alpha",
+  "isComplete": false,
+  "notes": "",
+  "criteria": [
+    {
+      "id": "c1c2c3c4-...",
+      "name": "Innovation",
+      "description": "How novel is the approach?",
+      "max_score": 10,
+      "weight": 2,
+      "category": "core",
+      "currentScore": null,
+      "rubricLevels": []
+    }
+  ]
+}
+```
+
+---
+
+### Submit scores for assignment
+
+Requires Clerk session (judge must own the assignment). Hackathon must be in `judging` or `active` status.
+
+```bash
+curl -s -X POST "$BASE_URL/api/public/hackathons/$SLUG/judging/assignments/$ASSIGNMENT_ID/scores" \
+  --cookie "clerk-session=..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "scores": [
+      { "criteriaId": "c1c2c3c4-...", "score": 8 }
+    ],
+    "notes": "Strong technical implementation"
+  }'
+```
+
+```json
+{ "success": true }
+```
+
+---
+
 ## Dashboard Endpoints
 
 All dashboard endpoints require an API key: `-H "Authorization: Bearer $API_KEY"`.
@@ -1057,11 +1117,12 @@ curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/rounds" \
 
 #### Set up rounds from a preset
 
-Scope: `hackathons:write`. Creates a starter template of rounds. Three presets:
+Scope: `hackathons:write`. Creates a starter template of rounds. Four presets:
 
 - `single` — one round, judges score every project once
 - `shortlist` — two rounds; the top N by score move on (requires `advanceTopN`)
 - `threshold` — two rounds; everyone scoring at or above a bar moves on (requires `threshold`)
+- `finalists_pick` — one manual round with a `judges_pick` prize; judges select favorites, most picks wins (optional `prizeName`, `maxPicks`)
 
 ```bash
 # Shortlist preset: top 10 move on to finals
@@ -1075,6 +1136,12 @@ curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/rounds/preset"
   -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{ "preset": "single" }' | jq .
+
+# Finalists — judges pick by vibes (no scoring): 1 round + 1 judges_pick prize
+curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/rounds/preset" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "preset": "finalists_pick", "prizeName": "Grand Prize", "maxPicks": 1 }' | jq .
 ```
 
 **Response:**

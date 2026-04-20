@@ -41,6 +41,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { EditEmailAddressForm } from "@/components/dashboard/edit-email-address-form"
+import { assertOk } from "@/lib/utils/fetch"
 
 interface EmailAddressListProps {
   emailAddresses: EmailAddress[]
@@ -50,24 +51,32 @@ interface EmailAddressListProps {
 export function EmailAddressList({ emailAddresses, agentMap }: EmailAddressListProps) {
   const router = useRouter()
   const [deleteId, setDeleteId] = useState<string | null>(null)
-  const [deleting, setDeleting] = useState(false)
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set())
   const [editAddress, setEditAddress] = useState<EmailAddress | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+
+  const visibleAddresses = emailAddresses.filter((a) => !hiddenIds.has(a.id))
+
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const handleDelete = async () => {
     if (!deleteId) return
 
-    setDeleting(true)
+    const id = deleteId
+    setDeleteError(null)
+    setHiddenIds((prev) => new Set(prev).add(id))
+    setDeleteId(null)
+
     try {
-      const response = await fetch(`/api/dashboard/email-addresses/${deleteId}`, {
-        method: "DELETE",
+      await fetch(`/api/dashboard/email-addresses/${id}`, { method: "DELETE" }).then(assertOk)
+      router.refresh()
+    } catch (err) {
+      setHiddenIds((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
       })
-      if (response.ok) {
-        router.refresh()
-      }
-    } finally {
-      setDeleting(false)
-      setDeleteId(null)
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete email address")
     }
   }
 
@@ -77,7 +86,7 @@ export function EmailAddressList({ emailAddresses, agentMap }: EmailAddressListP
     setTimeout(() => setCopiedId(null), 2000)
   }
 
-  if (emailAddresses.length === 0) {
+  if (visibleAddresses.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center">
         <Mail className="size-12 text-muted-foreground mb-4" />
@@ -91,6 +100,9 @@ export function EmailAddressList({ emailAddresses, agentMap }: EmailAddressListP
 
   return (
     <>
+      {deleteError && (
+        <p className="text-sm text-destructive mb-2">{deleteError}</p>
+      )}
       <Table>
         <TableHeader>
           <TableRow>
@@ -102,7 +114,7 @@ export function EmailAddressList({ emailAddresses, agentMap }: EmailAddressListP
           </TableRow>
         </TableHeader>
         <TableBody>
-          {emailAddresses.map((address) => (
+          {visibleAddresses.map((address) => (
             <TableRow key={address.id}>
               <TableCell>
                 <div className="flex items-center gap-2">
@@ -184,13 +196,12 @@ export function EmailAddressList({ emailAddresses, agentMap }: EmailAddressListP
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
-              disabled={deleting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {deleting ? "Deleting..." : "Delete"}
+              Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

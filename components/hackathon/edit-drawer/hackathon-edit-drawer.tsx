@@ -14,8 +14,6 @@ import { NameEditForm } from "./name-edit-form"
 
 import { LocationEditForm } from "./location-edit-form"
 import { SponsorsEditForm } from "./sponsors-edit-form"
-import { JudgesEditForm } from "./judges-edit-form"
-import { PrizesEditForm } from "./prizes-edit-form"
 import { CommunityEditForm } from "./community-edit-form"
 import type { PublicHackathon } from "@/lib/services/public-hackathons"
 
@@ -44,13 +42,9 @@ const sectionMeta: Record<Exclude<EditSection, null>, { title: string; descripti
     title: "Manage Sponsors",
     description: "Add or remove hackathon sponsors",
   },
-  judges: {
-    title: "Manage Judges",
-    description: "Add or remove hackathon judges",
-  },
-  prizes: {
-    title: "Manage Prizes",
-    description: "Add or remove hackathon prizes",
+  judging: {
+    title: "Judging Setup",
+    description: "Manage judges and prizes",
   },
   community: {
     title: "Community Link",
@@ -149,22 +143,6 @@ export function HackathonEditDrawer({ hackathon }: HackathonEditDrawerProps) {
             <SponsorsEditForm
               hackathonId={hackathon.id}
               initialSponsors={hackathon.sponsors}
-              onSaveAndNext={handleSaveAndNext}
-            />
-          )}
-
-          {activeSection === "judges" && (
-            <JudgesEditForm
-              hackathonId={hackathon.id}
-              initialJudges={hackathon.judges}
-              onSaveAndNext={handleSaveAndNext}
-            />
-          )}
-
-          {activeSection === "prizes" && (
-            <PrizesEditForm
-              hackathonId={hackathon.id}
-              initialPrizes={hackathon.prizes}
               onSaveAndNext={handleSaveAndNext}
             />
           )}

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "bun:test"
+import { describe, it, expect, beforeEach, mock } from "bun:test"
 import {
   createChainableMock,
   resetSupabaseMocks,
@@ -19,6 +19,7 @@ const {
   listPrizes,
   replacePrizeCriteria,
   createRoundsPreset,
+  assertAssignmentWritable,
 } = await import("@/lib/services/judging")
 
 describe("Judging Service", () => {
@@ -286,6 +287,31 @@ describe("Judging Service", () => {
       const result = await removeJudge("h1", "j1")
 
       expect(result.success).toBe(false)
+    })
+
+    it("succeeds even when hackathon_judges_display deletion fails", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "judge_assignments") {
+          return createChainableMock({ data: null, error: null })
+        }
+        if (table === "hackathon_judges_display") {
+          return createChainableMock({
+            data: null,
+            error: { message: "Display delete failed" },
+          })
+        }
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: null, error: null })
+        }
+        if (table === "hackathon_results") {
+          return createChainableMock({ data: [], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await removeJudge("h1", "j1")
+
+      expect(result.success).toBe(true)
     })
   })
 
@@ -1191,6 +1217,294 @@ describe("Judging Service", () => {
       expect(result.success).toBe(true)
       if (result.success) {
         expect(result.screeningPrizeId).toBeNull()
+      }
+    })
+
+    it("creates one manual round + judges_pick prize for preset 'finalists_pick'", async () => {
+      let roundInsertPayload: Record<string, unknown> | null = null
+      let prizeInsertPayload: Record<string, unknown> | null = null
+      setMockFromImplementation((table: string) => {
+        if (table === "judging_rounds") {
+          const chain = createChainableMock({
+            data: { id: "round-1", display_order: 0 },
+            error: null,
+          })
+          chain.insert = mock((payload: unknown) => {
+            roundInsertPayload = Array.isArray(payload)
+              ? (payload[0] as Record<string, unknown>)
+              : (payload as Record<string, unknown>)
+            return chain
+          }) as typeof chain.insert
+          return chain
+        }
+        if (table === "prizes") {
+          const chain = createChainableMock({
+            data: { id: "prize-1" },
+            error: null,
+          })
+          chain.insert = mock((payload: unknown) => {
+            prizeInsertPayload = Array.isArray(payload)
+              ? (payload[0] as Record<string, unknown>)
+              : (payload as Record<string, unknown>)
+            return chain
+          }) as typeof chain.insert
+          return chain
+        }
+        return createChainableMock({ data: [], error: null })
+      })
+
+      const result = await createRoundsPreset("h1", {
+        preset: "finalists_pick",
+        prizeName: "Best Overall",
+        maxPicks: 2,
+      })
+
+      expect(result.success).toBe(true)
+      if (result.success) {
+        expect(result.roundIds.length).toBe(1)
+        expect(result.screeningPrizeId).toBeNull()
+        expect(result.prizeId).toBe("prize-1")
+      }
+      expect(roundInsertPayload).not.toBeNull()
+      expect(roundInsertPayload!.advancement).toBe("manual")
+      expect(roundInsertPayload!.name).toBe("Finals")
+      expect(prizeInsertPayload).not.toBeNull()
+      expect(prizeInsertPayload!.judging_style).toBe("judges_pick")
+      expect(prizeInsertPayload!.round_id).toBe("round-1")
+      expect(prizeInsertPayload!.max_picks).toBe(2)
+      expect(prizeInsertPayload!.name).toBe("Best Overall")
+    })
+
+    it("defaults 'finalists_pick' prize name and max picks", async () => {
+      let prizeInsertPayload: Record<string, unknown> | null = null
+      setMockFromImplementation((table: string) => {
+        if (table === "judging_rounds") {
+          return createChainableMock({ data: { id: "round-1", display_order: 0 }, error: null })
+        }
+        if (table === "prizes") {
+          const chain = createChainableMock({
+            data: { id: "prize-1" },
+            error: null,
+          })
+          chain.insert = mock((payload: unknown) => {
+            prizeInsertPayload = Array.isArray(payload)
+              ? (payload[0] as Record<string, unknown>)
+              : (payload as Record<string, unknown>)
+            return chain
+          }) as typeof chain.insert
+          return chain
+        }
+        return createChainableMock({ data: [], error: null })
+      })
+
+      const result = await createRoundsPreset("h1", { preset: "finalists_pick" })
+
+      expect(result.success).toBe(true)
+      expect(prizeInsertPayload).not.toBeNull()
+      expect(prizeInsertPayload!.name).toBe("Grand Prize")
+      expect(prizeInsertPayload!.max_picks).toBe(1)
+    })
+  })
+
+  describe("getJudgeAssignments — selfJudging flag", () => {
+    it("flags assignments as self-judging when judge and submission share a team", async () => {
+      let foundParticipant = false
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants" && !foundParticipant) {
+          foundParticipant = true
+          return createChainableMock({
+            data: { id: "j1", team_id: "team-shared" },
+            error: null,
+          })
+        }
+        if (table === "judge_assignments") {
+          return createChainableMock({
+            data: [
+              {
+                id: "a1",
+                submission_id: "s1",
+                is_complete: false,
+                notes: "",
+                prize_id: null,
+                submission: {
+                  title: "Project",
+                  description: null,
+                  github_url: null,
+                  live_app_url: null,
+                  screenshot_url: null,
+                  team_id: "team-shared",
+                },
+              },
+            ],
+            error: null,
+          })
+        }
+        if (table === "teams") {
+          return createChainableMock({ data: [{ id: "team-shared", name: "Same" }], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await getJudgeAssignments("h1", "user_123")
+      expect(result).toHaveLength(1)
+      expect(result[0].selfJudging).toBe(true)
+    })
+
+    it("does not flag self-judging when teams differ", async () => {
+      let foundParticipant = false
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants" && !foundParticipant) {
+          foundParticipant = true
+          return createChainableMock({ data: { id: "j1", team_id: "team-a" }, error: null })
+        }
+        if (table === "judge_assignments") {
+          return createChainableMock({
+            data: [
+              {
+                id: "a1",
+                submission_id: "s1",
+                is_complete: false,
+                notes: "",
+                prize_id: null,
+                submission: {
+                  title: "P",
+                  description: null,
+                  github_url: null,
+                  live_app_url: null,
+                  screenshot_url: null,
+                  team_id: "team-b",
+                },
+              },
+            ],
+            error: null,
+          })
+        }
+        if (table === "teams") {
+          return createChainableMock({ data: [{ id: "team-b", name: "B" }], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await getJudgeAssignments("h1", "user_123")
+      expect(result[0].selfJudging).toBe(false)
+    })
+  })
+
+  describe("assertAssignmentWritable", () => {
+    it("rejects when hackathon is not in judging or active phase", async () => {
+      const result = await assertAssignmentWritable("a1", "user_123", { id: "h1", status: "results-ready" })
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.code).toBe("not_judging")
+    })
+
+    it("returns not_found when assignment does not exist", async () => {
+      setMockFromImplementation(() => createChainableMock({ data: null, error: null }))
+      const result = await assertAssignmentWritable("a1", "user_123", { id: "h1", status: "judging" })
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.code).toBe("not_found")
+    })
+
+    it("returns not_found when assignment belongs to different hackathon", async () => {
+      setMockFromImplementation(() => createChainableMock({
+        data: {
+          submission_id: "s1",
+          round_id: null,
+          hackathon_id: "other-hackathon",
+          judge: { clerk_user_id: "user_123", team_id: null },
+          submission: { team_id: null },
+        },
+        error: null,
+      }))
+      const result = await assertAssignmentWritable("a1", "user_123", { id: "h1", status: "judging" })
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.code).toBe("not_found")
+    })
+
+    it("returns not_found when user is not the owner", async () => {
+      setMockFromImplementation(() => createChainableMock({
+        data: {
+          submission_id: "s1",
+          round_id: null,
+          hackathon_id: "h1",
+          judge: { clerk_user_id: "different_user", team_id: null },
+          submission: { team_id: null },
+        },
+        error: null,
+      }))
+      const result = await assertAssignmentWritable("a1", "user_123", { id: "h1", status: "judging" })
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.code).toBe("not_found")
+    })
+
+    it("returns self_judging when judge and submission share a team", async () => {
+      setMockFromImplementation(() => createChainableMock({
+        data: {
+          submission_id: "s1",
+          round_id: null,
+          hackathon_id: "h1",
+          judge: { clerk_user_id: "user_123", team_id: "team-a" },
+          submission: { team_id: "team-a" },
+        },
+        error: null,
+      }))
+      const result = await assertAssignmentWritable("a1", "user_123", { id: "h1", status: "judging" })
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.code).toBe("self_judging")
+        expect(result.status).toBe(409)
+      }
+    })
+
+    it("rejects when round status is complete or advanced", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "judging_rounds") {
+          return createChainableMock({ data: { status: "complete" }, error: null })
+        }
+        return createChainableMock({
+          data: {
+            submission_id: "s1",
+            round_id: "r1",
+            hackathon_id: "h1",
+            judge: { clerk_user_id: "user_123", team_id: null },
+            submission: { team_id: "team-b" },
+          },
+          error: null,
+        })
+      })
+      const result = await assertAssignmentWritable("a1", "user_123", { id: "h1", status: "judging" })
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.code).toBe("round_not_active")
+    })
+
+    it("passes when everything is valid and returns ownership", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "judging_rounds") {
+          return createChainableMock({ data: { status: "active" }, error: null })
+        }
+        return createChainableMock({
+          data: {
+            submission_id: "s1",
+            round_id: "r1",
+            hackathon_id: "h1",
+            prize_id: "p1",
+            is_complete: false,
+            notes: "partial",
+            judge: { clerk_user_id: "user_123", team_id: null },
+            submission: { team_id: "team-b" },
+          },
+          error: null,
+        })
+      })
+      const result = await assertAssignmentWritable("a1", "user_123", { id: "h1", status: "judging" })
+      expect(result.ok).toBe(true)
+      if (result.ok) {
+        expect(result.ownership).toEqual({
+          hackathonId: "h1",
+          prizeId: "p1",
+          isComplete: false,
+          submissionId: "s1",
+          notes: "partial",
+        })
       }
     })
   })

@@ -21,6 +21,16 @@ Requires `bun dev` or local Supabase to be running.
 | `judging` | judging | 5 teams, 3 judges, no scores yet |
 | `judging-in-progress` | judging | ~60% of assignments scored |
 | `results-ready` | judging | All scored, results calculated, 3 prizes defined |
+| `attendee-captain-pending-invite` | active | Captain with a pending invite to an unknown email |
+| `attendee-invite-expired` | active | Captain with an invite that expired 8 days ago |
+| `attendee-invite-declined` | active | Captain with a declined invite record |
+| `attendee-team-at-capacity` | active | Captain of a max-size team with an extra pending invite |
+| `attendee-invited-to-team` | active | Dev user has a pending invite from another captain |
+| `attendee-solo-submitted` | active | Dev user registered solo and submitted |
+| `attendee-submitted-then-left` | active | Dev user submitted, then left team (others remain) |
+| `attendee-announcements-audiences` | active | 7 announcements, one per audience enum value (repros broken audience filter) |
+| `attendee-perks-mixed` | active | Released, scheduled-future, and hidden perks |
+| `attendee-winner-pending-claim` | judging | Results published, dev user's team won 1st place |
 
 ## File Structure
 
@@ -35,7 +45,17 @@ scripts/
     ├── submitted.ts
     ├── judging.ts
     ├── judging-in-progress.ts
-    └── results-ready.ts
+    ├── results-ready.ts
+    ├── attendee-captain-pending-invite.ts
+    ├── attendee-invite-expired.ts
+    ├── attendee-invite-declined.ts
+    ├── attendee-team-at-capacity.ts
+    ├── attendee-invited-to-team.ts
+    ├── attendee-solo-submitted.ts
+    ├── attendee-submitted-then-left.ts
+    ├── attendee-announcements-audiences.ts
+    ├── attendee-perks-mixed.ts
+    └── attendee-winner-pending-claim.ts
 ```
 
 ## _helpers.ts

@@ -9,22 +9,30 @@ Tools for testing the hackathon lifecycle. Available in development (no auth) an
 | `lib/api/routes/dev.ts` | Elysia API endpoints (`/api/dev/hackathons/:id/*`) |
 | `lib/dev/scenarios.ts` | Centralized scenario registry (single source of truth) |
 | `lib/dev/test-personas.ts` | Test persona definitions and lookup |
-| `components/dev-tool/dev-tool.tsx` | Global floating dev tools panel (root component) |
-| `components/dev-tool/dev-tool-panel.tsx` | Tabbed panel container |
-| `components/dev-tool/tabs/scenarios-tab.tsx` | Scenario quick-launch tab |
-| `components/dev-tool/tabs/personas-tab.tsx` | Persona switcher tab |
-| `components/dev-tool/tabs/event-tools-tab.tsx` | Event-specific tools tab |
+| `components/dev-tool/dev-tool.tsx` | Global floating dev tools button (root component) |
+| `components/dev-tool/dev-tool-panel.tsx` | Command-palette panel container |
+| `components/dev-tool/commands/registry.ts` | Builds the unified command list (scenarios, personas, roles, event actions, settings) |
+| `components/dev-tool/commands/command-list.tsx` | Searchable/grouped command list (shadcn `Command` primitive) |
+| `components/dev-tool/commands/context-strip.tsx` | Pinned chips (event / status / you / roles) |
+| `components/dev-tool/commands/inline-settings.tsx` | Inline Org ID / Dev User ID / Test Users editors |
+| `components/dev-tool/commands/inline-event-tools.tsx` | Sub-view for event lifecycle / seed / results |
+| `components/dev-tool/tabs/event-lifecycle-section.tsx` | Event transition controls (reused inside inline-event-tools) |
+| `components/dev-tool/tabs/event-seed-section.tsx` | Seed-data controls (reused) |
+| `components/dev-tool/tabs/event-results-section.tsx` | Results controls (reused) |
 | `components/dev-tool/use-event-context.ts` | Hook for detecting event page context |
 
 ## Architecture
 
-The Dev Tool is a single client component mounted in `app/layout.tsx` when `NODE_ENV === "development"` or `ADMIN_ENABLED === "true"`. In non-dev environments, the component checks Clerk session metadata for `admin: true` before rendering. It provides three tabs:
+The Dev Tool is a single client component mounted in `app/layout.tsx` when `NODE_ENV === "development"` or `ADMIN_ENABLED === "true"`. In non-dev environments, the component checks Clerk session metadata for `admin: true` before rendering.
 
-1. **Scenarios** — Run test scenarios from anywhere, with one-click launch that creates the scenario, switches persona, and navigates to the appropriate page
-2. **Personas** — Switch between test personas (organizer, test users). Shows role badges when inside an event
-3. **Event** — Event-specific tools (status, phase, timeline, seed data). Only visible when on `/e/[slug]/*` routes
+The opened panel is a **searchable command palette** (not tabs). Top-to-bottom:
 
-The component detects event context by parsing `usePathname()` for `/e/[slug]` and fetching hackathon data via `GET /api/dev/hackathons/by-slug/:slug`.
+1. **Header** — Dev Tools title, current event slug badge, running spinner, close button
+2. **Context strip** — Pinned chips showing event, status, active persona, current roles
+3. **Search input** — Fuzzy matches over command title / subtitle / keywords (autofocused)
+4. **Grouped results** — Jump to state (scenarios) · Switch persona · Assign role (event-only) · Event actions (event-only) · Settings
+
+Selecting a command runs it directly (scenario launch, persona switch, role assign) or opens a sub-view (settings editor, event lifecycle/seed/results). `Cmd/Ctrl+K` toggles the panel from anywhere. The component detects event context by parsing `usePathname()` for `/e/[slug]` and fetching hackathon data via `GET /api/dev/hackathons/by-slug/:slug`.
 
 ## Scenario Registry
 
@@ -37,7 +45,7 @@ All scenarios are defined once in `lib/dev/scenarios.ts`:
 Consumers:
 - `lib/services/admin-scenarios.ts` — admin API scenario runners
 - `scripts/test-scenario.ts` — CLI scenario entry point
-- `components/dev-tool/tabs/scenarios-tab.tsx` — Dev Tool UI
+- `components/dev-tool/commands/registry.ts` — Dev Tool command palette
 
 ## Adding a New Dev Tool Action
 
@@ -65,9 +73,9 @@ Patterns:
 - Use `ensureParticipant(db, hackathonId, clerkUserId, role?)` to upsert seed users as participants
 - Keep dynamic imports for services (`await import(...)`) to avoid circular deps
 
-### 2. Add the UI button in `event-tools-tab.tsx`
+### 2. Add the UI button inside the relevant section
 
-Add a `<SeedButton>` inside the Seed Data grid:
+Event-scoped seed actions live in `components/dev-tool/tabs/event-seed-section.tsx`. Add a `<SeedButton>`:
 
 ```tsx
 <SeedButton
@@ -78,11 +86,13 @@ Add a `<SeedButton>` inside the Seed Data grid:
 />
 ```
 
-The `devAction()` helper handles fetch, sessionStorage save, and page reload automatically.
+The `devAction()` helper (from the parent `InlineEventTools`) handles fetch, sessionStorage save, and page reload automatically.
+
+For non-event actions (e.g., global dev utilities), add an entry in `components/dev-tool/commands/registry.ts` so it shows up in the palette directly.
 
 ### 3. Add the icon import
 
-Icons come from `lucide-react`. Add to the import at the top of `event-tools-tab.tsx`.
+Icons come from `lucide-react`. Add to the import at the top of the section file you edited.
 
 ## Adding a New Scenario
 
