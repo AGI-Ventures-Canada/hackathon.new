@@ -51,7 +51,15 @@ jobs:
           cd packages/cli
           PKG_NAME=$(node -p "require('./package.json').name")
           PKG_VERSION=$(node -p "require('./package.json').version")
-          NPM_VERSION=$(npm view "$PKG_NAME" version 2>/dev/null || echo "0.0.0")
+          NPM_OUTPUT=$(npm view "$PKG_NAME" version 2>&1) || {
+            if echo "$NPM_OUTPUT" | grep -q "E404"; then
+              NPM_OUTPUT="0.0.0"
+            else
+              echo "npm view failed: $NPM_OUTPUT"
+              exit 1
+            fi
+          }
+          NPM_VERSION="$NPM_OUTPUT"
           IFS='.' read -r NPM_MAJOR NPM_MINOR NPM_PATCH <<< "$NPM_VERSION"
           NPM_NEXT="$NPM_MAJOR.$NPM_MINOR.$((NPM_PATCH + 1))"
           NEW_VERSION=$(printf '%s\n%s' "$PKG_VERSION" "$NPM_NEXT" | sort -V | tail -1)
@@ -102,8 +110,11 @@ jobs:
             git commit -m "chore(cli): bump version to ${{ steps.version.outputs.version }}"
             git push origin main
           fi
-          git tag "cli-v${{ steps.version.outputs.version }}"
-          git push origin "cli-v${{ steps.version.outputs.version }}"
+          TAG="cli-v${{ steps.version.outputs.version }}"
+          if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi
 
       - name: Create GitHub Release
         if: "startsWith(github.ref, 'refs/tags/cli-v') || steps.changes.outputs.changed == 'true'"
