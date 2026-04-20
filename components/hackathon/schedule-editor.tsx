@@ -148,7 +148,9 @@ function groupByDateAndTime(items: ScheduleItemData[]): DateGroup[] {
     .map(([dateKey, { dateLabel, timeMap }]) => ({
       dateKey,
       dateLabel,
-      timeGroups: [...timeMap.entries()].map(([timeKey, items]) => ({ timeKey, items })),
+      timeGroups: [...timeMap.entries()]
+        .map(([timeKey, items]) => ({ timeKey, items }))
+        .sort((a, b) => a.items[0].starts_at.localeCompare(b.items[0].starts_at)),
     }))
 }
 
