@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils"
 import { DevToolPanel } from "./dev-tool-panel"
 import { useEventContext } from "./use-event-context"
 
-const EDGE_MARGIN = 16
+const EDGE_MARGIN = 24
 const SNAP_TRANSITION = "all 200ms cubic-bezier(0.25, 1, 0.5, 1)"
 const DRAG_THRESHOLD = 8
 const BUTTON_SIZE = 44
@@ -207,7 +207,7 @@ export function DevTool() {
         <div
           ref={panelRef}
           className={cn(
-            "rounded-lg border border-dashed bg-card shadow-xl animate-in fade-in zoom-in-95 duration-150 w-[460px] max-h-[70vh] overflow-y-auto",
+            "rounded-lg border border-dashed bg-card shadow-xl animate-in fade-in zoom-in-95 duration-150 w-[460px] max-w-[calc(100vw-2rem)] overflow-hidden",
             panelOrigin
           )}
           style={{
