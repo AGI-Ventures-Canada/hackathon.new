@@ -1075,18 +1075,12 @@ function buildDevSwitchUrl(token: string, redirect: string, orgId: string | null
 
 async function getTenantClerkOrgId(hackathonId: string): Promise<string | null> {
   const db = getSupabase()
-  const { data: hackathon } = await db
+  const { data } = await db
     .from("hackathons")
-    .select("tenant_id")
+    .select("tenants!inner(clerk_org_id)")
     .eq("id", hackathonId)
     .maybeSingle()
-  if (!hackathon?.tenant_id) return null
-  const { data: tenant } = await db
-    .from("tenants")
-    .select("clerk_org_id")
-    .eq("id", hackathon.tenant_id)
-    .maybeSingle()
-  return tenant?.clerk_org_id ?? null
+  return data?.tenants?.clerk_org_id ?? null
 }
 
 export async function generateRoleTokens(hackathonId: string, slug: string): Promise<RoleCard[]> {

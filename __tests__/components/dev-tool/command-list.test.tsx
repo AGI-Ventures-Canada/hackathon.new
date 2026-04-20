@@ -122,5 +122,29 @@ describe("CommandPaletteList", () => {
         expect(screen.queryByRole("button", { name: /Jump to state/ })).toBeNull()
       })
     })
+
+    it("searches across all categories from tab view, even when active tab would have hidden them", async () => {
+      render(<CommandPaletteList commands={commands} runningId={null} />)
+      fireEvent.click(screen.getByRole("button", { name: "Tab view" }))
+      await waitFor(() => {
+        expect(screen.getByText("Pre-registration")).toBeDefined()
+        expect(screen.queryByText("Switch to judge")).toBeNull()
+        expect(screen.queryByText("Go live")).toBeNull()
+      })
+      fireEvent.change(screen.getByPlaceholderText("Search commands, scenarios, settings..."), {
+        target: { value: "judge" },
+      })
+      await waitFor(() => {
+        expect(screen.getByText("Switch to judge")).toBeDefined()
+        expect(screen.queryByText("Pre-registration")).toBeNull()
+      })
+      fireEvent.change(screen.getByPlaceholderText("Search commands, scenarios, settings..."), {
+        target: { value: "live" },
+      })
+      await waitFor(() => {
+        expect(screen.getByText("Go live")).toBeDefined()
+        expect(screen.queryByText("Pre-registration")).toBeNull()
+      })
+    })
   })
 })
