@@ -349,7 +349,8 @@ export const adminRoutes = new Elysia({ prefix: "/admin" })
         expiresInSeconds: 300,
       })
 
-      const orgId = body.org_id ?? process.env.SCENARIO_ORG_ID ?? null
+      const orgId =
+        body.org_id !== undefined ? body.org_id : (process.env.SCENARIO_ORG_ID ?? null)
       const base = `/dev-switch?token=${token.token}&redirect=${encodeURIComponent(safeRedirectUrl(body.redirect))}`
       const loginUrl = orgId ? `${base}&org=${encodeURIComponent(orgId)}` : base
 
@@ -359,11 +360,11 @@ export const adminRoutes = new Elysia({ prefix: "/admin" })
       body: t.Object({
         persona: t.Union([t.Literal("organizer"), t.Literal("user1"), t.Literal("user2"), t.Literal("user3"), t.Literal("user4"), t.Literal("user5")], { description: "Persona key" }),
         redirect: t.Optional(t.String({ description: "Path to redirect to after sign-in" })),
-        org_id: t.Optional(t.String({ description: "Clerk org ID to activate after sign-in" })),
+        org_id: t.Optional(t.Union([t.Null(), t.String()], { description: "Clerk org ID to activate after sign-in. Pass null to explicitly skip org activation. Omit to fall back to SCENARIO_ORG_ID." })),
       }),
       detail: {
         summary: "Switch to test persona",
-        description: "Generate a sign-in token for a test persona and return a login URL. Admin-only, dev/staging only.",
+        description: "Generate a sign-in token for a test persona and return a login URL. Admin-only, dev/staging only. Org activation precedence: explicit body.org_id (including null) > SCENARIO_ORG_ID env > none.",
       },
     }
   )

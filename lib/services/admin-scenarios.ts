@@ -1075,17 +1075,17 @@ function buildDevSwitchUrl(token: string, redirect: string, orgId: string | null
 
 async function getTenantClerkOrgId(hackathonId: string): Promise<string | null> {
   const db = getSupabase()
-  const { data } = await db
+  const { data: hackathon } = await db
     .from("hackathons")
-    .select("tenant_id, tenants(clerk_org_id)")
+    .select("tenant_id")
     .eq("id", hackathonId)
     .maybeSingle()
-  const tenantsJoin = data?.tenants as
-    | { clerk_org_id: string | null }
-    | { clerk_org_id: string | null }[]
-    | null
-    | undefined
-  const tenant = Array.isArray(tenantsJoin) ? tenantsJoin[0] : tenantsJoin
+  if (!hackathon?.tenant_id) return null
+  const { data: tenant } = await db
+    .from("tenants")
+    .select("clerk_org_id")
+    .eq("id", hackathon.tenant_id)
+    .maybeSingle()
   return tenant?.clerk_org_id ?? null
 }
 

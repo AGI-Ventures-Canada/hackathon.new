@@ -1,4 +1,4 @@
-import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test"
+import { describe, it, expect, mock, afterEach } from "bun:test"
 import { render, screen, cleanup, fireEvent, waitFor, within } from "@testing-library/react"
 import { UserCircle2, Rocket } from "lucide-react"
 
@@ -21,10 +21,6 @@ const commands: DevCommand[] = [
   makeCommand({ id: "persona-1", category: "persona", title: "Switch to judge" }),
   makeCommand({ id: "lifecycle-1", category: "lifecycle", title: "Go live", icon: Rocket }),
 ]
-
-beforeEach(() => {
-  // no-op: component is self-contained
-})
 
 afterEach(() => {
   cleanup()
