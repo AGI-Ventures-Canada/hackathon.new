@@ -349,14 +349,17 @@ export const adminRoutes = new Elysia({ prefix: "/admin" })
         expiresInSeconds: 300,
       })
 
-      return {
-        loginUrl: `/dev-switch?token=${token.token}&redirect=${encodeURIComponent(safeRedirectUrl(body.redirect))}`,
-      }
+      const orgId = body.org_id ?? process.env.SCENARIO_ORG_ID ?? null
+      const base = `/dev-switch?token=${token.token}&redirect=${encodeURIComponent(safeRedirectUrl(body.redirect))}`
+      const loginUrl = orgId ? `${base}&org=${encodeURIComponent(orgId)}` : base
+
+      return { loginUrl }
     },
     {
       body: t.Object({
         persona: t.Union([t.Literal("organizer"), t.Literal("user1"), t.Literal("user2"), t.Literal("user3"), t.Literal("user4"), t.Literal("user5")], { description: "Persona key" }),
         redirect: t.Optional(t.String({ description: "Path to redirect to after sign-in" })),
+        org_id: t.Optional(t.String({ description: "Clerk org ID to activate after sign-in" })),
       }),
       detail: {
         summary: "Switch to test persona",
