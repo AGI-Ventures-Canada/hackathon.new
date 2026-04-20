@@ -142,20 +142,18 @@ export function CommandPaletteList({
             const isActive = cat === effectiveActive
             const count = grouped[cat]?.length ?? 0
             return (
-              <button
+              <Button
                 key={cat}
                 type="button"
+                variant={isActive ? "default" : "ghost"}
+                size="xs"
+                aria-pressed={isActive}
                 onClick={() => setActiveCategory(cat)}
-                className={cn(
-                  "shrink-0 rounded-md px-2 py-1 text-[11px] font-medium transition-colors",
-                  isActive
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                )}
+                className="shrink-0 text-[11px]"
               >
                 {CATEGORY_HEADERS[cat]}
                 <span className="ml-1 opacity-60">{count}</span>
-              </button>
+              </Button>
             )
           })}
         </div>
