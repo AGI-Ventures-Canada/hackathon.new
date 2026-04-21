@@ -73,13 +73,13 @@ export function AdvancedShowcase() {
         title="Optimized image"
         description="A wrapper around next/image that skips optimization for local dev URLs."
       >
-        <div className="relative h-48 w-full max-w-md overflow-hidden rounded-none border">
+        <div className="relative h-48 w-full max-w-md overflow-hidden rounded-none border bg-muted">
           <OptimizedImage
-            src="https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=640"
-            alt="Office desk"
+            src="/globe.svg"
+            alt="Globe"
             fill
             sizes="(max-width: 768px) 100vw, 400px"
-            className="object-cover"
+            className="object-contain p-8"
           />
         </div>
       </ShowcaseSection>

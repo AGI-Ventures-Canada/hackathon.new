@@ -40,7 +40,7 @@ export function TabsUrlSync({
         router.replace(`${pathname}?${params.toString()}`, { scroll: false })
       })
     },
-    [paramKey, searchParams, router, pathname, startTransition],
+    [paramKey, searchParams, router, pathname],
   )
 
   return (

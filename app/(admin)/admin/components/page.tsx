@@ -1,3 +1,4 @@
+import { Suspense } from "react"
 import { ShowcaseShell } from "./showcase-shell"
 
 const VALID_TABS = ["core", "forms", "overlays", "data", "dates", "nav", "advanced"]
@@ -18,7 +19,9 @@ export default async function ComponentsPage({
           Every piece we use, in one place. Poke at them to see how they behave.
         </p>
       </div>
-      <ShowcaseShell value={active} />
+      <Suspense fallback={null}>
+        <ShowcaseShell value={active} />
+      </Suspense>
     </div>
   )
 }
