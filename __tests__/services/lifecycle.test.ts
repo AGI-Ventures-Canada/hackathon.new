@@ -10,6 +10,16 @@ mock.module("@/lib/services/notification-dispatcher", () => ({
   dispatchTransitionNotifications: mockDispatch,
 }))
 
+const mockReleaseChallenges = mock(() => Promise.resolve(true))
+mock.module("@/lib/services/challenges", () => ({
+  releaseChallenges: mockReleaseChallenges,
+}))
+
+const mockGetTriggerItem = mock(() => Promise.resolve(null))
+mock.module("@/lib/services/schedule-items", () => ({
+  getTriggerItem: mockGetTriggerItem,
+}))
+
 const { executeTransition, processAutoTransitions } = await import(
   "@/lib/services/lifecycle"
 )
@@ -18,6 +28,9 @@ describe("Lifecycle Service", () => {
   beforeEach(() => {
     resetSupabaseMocks()
     mockDispatch.mockClear()
+    mockReleaseChallenges.mockClear()
+    mockGetTriggerItem.mockClear()
+    mockGetTriggerItem.mockResolvedValue(null)
   })
 
   describe("executeTransition", () => {
@@ -143,6 +156,80 @@ describe("Lifecycle Service", () => {
       expect(mockDispatch).toHaveBeenCalledTimes(1)
       const call = mockDispatch.mock.calls[0][0] as { type: string }
       expect(call.type).toBe("hackathon_started")
+    })
+
+    it("auto-releases challenges when transitioning to active with a challenge_release schedule item", async () => {
+      const hackathon = {
+        id: "h1",
+        tenant_id: "t1",
+        name: "Test Hack",
+        slug: "test-hack",
+        status: "active",
+      }
+
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_transitions") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "hackathons") {
+          return createChainableMock({ data: hackathon, error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      mockGetTriggerItem.mockResolvedValue({
+        id: "item-1",
+        trigger_type: "challenge_release",
+        starts_at: "2026-04-10T09:00:00Z",
+      })
+
+      const result = await executeTransition({
+        hackathonId: "h1",
+        tenantId: "t1",
+        fromStatus: "registration_open",
+        toStatus: "active",
+        trigger: "manual",
+        triggeredBy: "user1",
+      })
+
+      expect(result.success).toBe(true)
+      expect(mockGetTriggerItem).toHaveBeenCalledWith("h1", "challenge_release")
+      expect(mockReleaseChallenges).toHaveBeenCalledWith("h1", "t1")
+    })
+
+    it("does not release challenges when no challenge_release schedule item exists", async () => {
+      const hackathon = {
+        id: "h1",
+        tenant_id: "t1",
+        name: "Test Hack",
+        slug: "test-hack",
+        status: "active",
+      }
+
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_transitions") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "hackathons") {
+          return createChainableMock({ data: hackathon, error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      mockGetTriggerItem.mockResolvedValue(null)
+
+      const result = await executeTransition({
+        hackathonId: "h1",
+        tenantId: "t1",
+        fromStatus: "registration_open",
+        toStatus: "active",
+        trigger: "manual",
+        triggeredBy: "user1",
+      })
+
+      expect(result.success).toBe(true)
+      expect(mockGetTriggerItem).toHaveBeenCalledWith("h1", "challenge_release")
+      expect(mockReleaseChallenges).not.toHaveBeenCalled()
     })
 
     it("fails when status has already changed (optimistic lock)", async () => {
