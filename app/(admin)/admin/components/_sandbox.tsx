@@ -30,9 +30,7 @@ export function SandboxProvider({
   const record = useCallback((label: string) => {
     const entry: SandboxEvent = { id: Date.now() + Math.random(), label, at: Date.now() }
     setEvents((prev) => [entry, ...prev].slice(0, 10))
-    if (typeof window !== "undefined") {
-      console.info("[sandbox]", label)
-    }
+    console.info("[sandbox]", label)
   }, [])
 
   return (
@@ -49,17 +47,14 @@ export function useSandbox() {
   return ctx
 }
 
-export function useSandboxHandler<TArgs extends unknown[]>(
-  label: string,
-  opts?: { response?: unknown },
-) {
+export function useSandboxHandler<TArgs extends unknown[]>(label: string) {
   const { record } = useSandbox()
   return useCallback(
     async (...args: TArgs) => {
       record(`${label} ${args.length ? JSON.stringify(args).slice(0, 180) : ""}`.trim())
-      return opts?.response ?? true
+      return true
     },
-    [label, opts, record],
+    [label, record],
   )
 }
 

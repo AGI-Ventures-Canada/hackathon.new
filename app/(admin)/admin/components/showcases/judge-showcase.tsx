@@ -22,7 +22,7 @@ const SECTIONS = [
 ]
 
 export function JudgeShowcase({ data }: { data: ShowcaseData }) {
-  const { record: _record } = useSandbox()
+  const { record: record } = useSandbox()
   const { hackathon } = data
 
   const mockRounds: RoundData[] = [
@@ -116,7 +116,7 @@ export function JudgeShowcase({ data }: { data: ShowcaseData }) {
           hackathonSlug={hackathon.slug}
           assignments={focusAssignments}
           initialCompletedIds={new Set(focusAssignments.filter((a) => a.isComplete).map((a) => a.id))}
-          onScoreSubmitted={(id) => _record(`Score submitted for ${id}`)}
+          onScoreSubmitted={(id) => record(`Score submitted for ${id}`)}
           teamSettings={{ minTeamSize: hackathon.min_team_size, allowSolo: hackathon.allow_solo }}
         />
       </ShowcaseSection>

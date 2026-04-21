@@ -4,7 +4,7 @@ import { resetComponentMocks } from "../../lib/component-mocks"
 import type { SponsorTier } from "@/lib/db/hackathon-types"
 
 const { SponsoringDashboard } = await import(
-  "@/app/(dashboard)/home/sponsoring/sponsoring-dashboard"
+  "@/components/hackathon/sponsoring-dashboard"
 )
 
 beforeEach(() => {

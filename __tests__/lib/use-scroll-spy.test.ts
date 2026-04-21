@@ -52,7 +52,6 @@ function addSection(id: string, top = 0): HTMLElement {
   el.id = id
   Object.defineProperty(el, "id", { value: id, writable: false })
   document.body.appendChild(el)
-  // Provide a stable getBoundingClientRect for sort ordering
   el.getBoundingClientRect = () =>
     ({
       top,

@@ -14,7 +14,7 @@ import { SponsorCard } from "@/components/hackathon/sponsor-card"
 import { SponsorSection } from "@/components/hackathon/sponsor-section"
 import { SponsorFulfillmentView } from "@/components/hackathon/prizes/sponsor-fulfillment-view"
 import { SponsorLogoUpload } from "@/components/hackathon/edit-drawer/sponsor-logo-upload"
-import { SponsoringDashboard } from "@/app/(dashboard)/home/sponsoring/sponsoring-dashboard"
+import { SponsoringDashboard } from "@/components/hackathon/sponsoring-dashboard"
 
 const SECTIONS = [
   { id: "sponsor-card", label: "Sponsor card" },

@@ -3,7 +3,7 @@ import { redirect } from "next/navigation"
 import { resolvePageTenant } from "@/lib/services/tenants"
 import { listSponsoredHackathons } from "@/lib/services/hackathons"
 import { getSponsorshipDetails } from "@/lib/services/persona-stats"
-import { SponsoringDashboard } from "./sponsoring-dashboard"
+import { SponsoringDashboard } from "@/components/hackathon/sponsoring-dashboard"
 
 export default async function SponsoringPage() {
   const { userId } = await auth()
