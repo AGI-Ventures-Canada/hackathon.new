@@ -123,6 +123,20 @@ export async function executeTransition(
     })
   }
 
+  if (toStatus === "active") {
+    const { releaseChallenges } = await import("./challenges")
+    const { getTriggerItem } = await import("./schedule-items")
+    const triggerItem = await getTriggerItem(hackathonId, "challenge_release")
+    if (triggerItem) {
+      releaseChallenges(hackathonId, tenantId).catch((err) => {
+        console.error(
+          `Failed to auto-release challenges for ${hackathonId}:`,
+          err
+        )
+      })
+    }
+  }
+
   if (toStatus === "completed" || toStatus === "archived") {
     const { cancelRemindersForEntity } = await import("./smart-reminders")
     cancelRemindersForEntity("hackathon_event", hackathonId).catch((err) =>
