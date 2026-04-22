@@ -22,6 +22,7 @@ const RADIX_ISOLATED_TESTS = [
   "__tests__/components/hackathon/submission-button.test.tsx",
   "__tests__/components/hackathon/prizes-manager.test.tsx",
   "__tests__/components/ui/markdown-editor.test.tsx",
+  "__tests__/components/ui/tabs-url-sync.test.tsx",
   "__tests__/components/org/org-event-tabs.test.tsx",
   "__tests__/components/dashboard/api-key-create-dialog.test.tsx",
 ]

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react"
 import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { TabsUrlSync } from "./_tabs-url-sync"
+import { TabsUrlSync } from "@/components/ui/tabs-url-sync"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
