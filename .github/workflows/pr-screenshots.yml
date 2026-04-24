@@ -3,6 +3,17 @@ name: PR Screenshots
 on:
   deployment_status:
 
+env:
+  # Centralised so model bumps are a single-line edit.
+  ANTHROPIC_MODEL: "claude-haiku-4-5-20251001"
+
+# Serialise concurrent runs per deployment ref: deployment_status can fire
+# repeatedly during rapid pushes, and two jobs racing over the same release
+# tag and PR comment marker would duplicate assets or corrupt the comment.
+concurrency:
+  group: pr-screenshots-${{ github.event.deployment.ref }}
+  cancel-in-progress: false
+
 jobs:
   screenshots:
     # Restrict to deployments on the canonical repo: deployment_status also
@@ -192,8 +203,9 @@ jobs:
             --arg routes "$ROUTES" \
             --arg slug "${EVENT_SLUG:-none}" \
             --arg auth "$AUTHENTICATED" \
+            --arg model "${ANTHROPIC_MODEL}" \
             '{
-              model: "claude-haiku-4-5-20251001",
+              model: $model,
               max_tokens: 1024,
               messages: [{
                 role: "user",
@@ -246,8 +258,9 @@ jobs:
           echo "$TARGETS" | jq -r '.[] | "\(.path)\t\(.name)"' | while IFS=$'\t' read -r path name; do
             safe_name=$(echo "$name" | tr -cd 'a-zA-Z0-9_-')
             # Allowlist: strip query/fragment, then restrict to URL-safe characters
-            # to block `../`, shell metacharacters, and other LLM-supplied junk
-            safe_path=$(echo "$path" | sed 's/[?#].*//' | tr -cd 'a-zA-Z0-9/_-')
+            # to block `../`, shell metacharacters, and other LLM-supplied junk.
+            # Dot is included because slugs like /e/my.event are legal path segments.
+            safe_path=$(echo "$path" | sed 's/[?#].*//' | tr -cd 'a-zA-Z0-9./_-')
             echo "Capturing ${safe_path} as ${safe_name}..."
             capture "${PREVIEW_URL}${safe_path}" "$safe_name" || echo "::warning::Failed to capture ${safe_path}"
           done
