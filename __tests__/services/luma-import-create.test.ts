@@ -3,6 +3,7 @@ import {
   createChainableMock,
   resetSupabaseMocks,
   setMockFromImplementation,
+  setMockRpcImplementation,
   mockFrom,
   mockRpc,
 } from "../lib/supabase-mock"
@@ -44,7 +45,27 @@ mock.module("@/lib/db/client", () => ({
   }),
 }))
 
-const { createHackathonFromImport, createPrizesFromImport, createChallengesFromImport } = await import("@/lib/services/luma-import-create")
+const mockExtractExternalEventData = mock(() => Promise.resolve(null as unknown))
+const mockExtractExternalRichContent = mock(() => Promise.resolve(null as unknown))
+mock.module("@/lib/services/external-import", () => ({
+  extractExternalEventData: mockExtractExternalEventData,
+  extractExternalRichContent: mockExtractExternalRichContent,
+  isLumaUrl: (input: string) => {
+    try {
+      const { hostname } = new URL(input.startsWith("http") ? input : `https://${input}`)
+      return hostname === "luma.com" || hostname === "www.luma.com" || hostname === "lu.ma" || hostname === "www.lu.ma"
+    } catch {
+      return false
+    }
+  },
+}))
+
+const {
+  createHackathonFromImport,
+  createPrizesFromImport,
+  createChallengesFromImport,
+  importTranslationVariants,
+} = await import("@/lib/services/luma-import-create")
 
 describe("createHackathonFromImport", () => {
   beforeEach(() => {
@@ -350,5 +371,266 @@ describe("createChallengesFromImport", () => {
     await createChallengesFromImport("h1", "tenant-1", [])
 
     expect(challengesChain.insert).not.toHaveBeenCalled()
+  })
+})
+
+describe("importTranslationVariants", () => {
+  const primary = {
+    name: "AGI Montreal",
+    description: "Build stuff.",
+    rules: "Be nice.",
+    location_name: "Montreal",
+    community_label: null,
+  }
+
+  type RpcCall = { fn: string; params: Record<string, unknown> }
+  let rpcCalls: RpcCall[]
+
+  function captureRpc() {
+    rpcCalls = []
+    setMockRpcImplementation((fn, params) => {
+      rpcCalls.push({ fn, params: params as Record<string, unknown> })
+      return Promise.resolve({ data: null, error: null })
+    })
+    setMockFromImplementation(() => createChainableMock({ data: null, error: null }))
+  }
+
+  beforeEach(() => {
+    resetSupabaseMocks()
+    mockExtractExternalEventData.mockReset()
+    mockExtractExternalRichContent.mockReset()
+    mockExtractExternalEventData.mockImplementation(() => Promise.resolve(null))
+    mockExtractExternalRichContent.mockImplementation(() => Promise.resolve(null))
+    captureRpc()
+  })
+
+  it("no-op when translationLinks is empty", async () => {
+    await importTranslationVariants({
+      hackathonId: "h1",
+      tenantId: "t1",
+      primaryLocale: "en",
+      primary,
+      translationLinks: [],
+    })
+
+    expect(mockExtractExternalEventData).not.toHaveBeenCalled()
+    expect(rpcCalls).toHaveLength(0)
+  })
+
+  it("calls the upsert RPC per locale with tenant scoping", async () => {
+    mockExtractExternalEventData.mockImplementationOnce(() =>
+      Promise.resolve({
+        name: "Hackathon IA de Montréal",
+        description: "Construisez des trucs.",
+        startsAt: null,
+        endsAt: null,
+        locationType: null,
+        locationName: "Montréal",
+        locationUrl: null,
+        imageUrl: null,
+        language: "fr",
+      })
+    )
+    mockExtractExternalRichContent.mockImplementationOnce(() =>
+      Promise.resolve({
+        sponsors: [],
+        rules: "Soyez gentils.",
+        prizes: [],
+        challenges: [],
+        translationLinks: [],
+        cleanedDescription: "Construisez des trucs.",
+      })
+    )
+
+    await importTranslationVariants({
+      hackathonId: "h1",
+      tenantId: "t1",
+      primaryLocale: "en",
+      primary,
+      translationLinks: [{ url: "https://luma.com/fr", languageCode: "fr" }],
+    })
+
+    expect(rpcCalls).toHaveLength(1)
+    expect(rpcCalls[0].fn).toBe("upsert_hackathon_translation")
+    expect(rpcCalls[0].params).toEqual({
+      p_hackathon_id: "h1",
+      p_tenant_id: "t1",
+      p_locale: "fr",
+      p_fields: {
+        name: "Hackathon IA de Montréal",
+        description: "Construisez des trucs.",
+        rules: "Soyez gentils.",
+        location_name: "Montréal",
+      },
+    })
+  })
+
+  it("omits name when variant title is a suffix variant of primary", async () => {
+    mockExtractExternalEventData.mockImplementationOnce(() =>
+      Promise.resolve({
+        name: "AGI Montreal - FR",
+        description: "Construisez des trucs.",
+        startsAt: null,
+        endsAt: null,
+        locationType: null,
+        locationName: null,
+        locationUrl: null,
+        imageUrl: null,
+        language: "fr",
+      })
+    )
+
+    await importTranslationVariants({
+      hackathonId: "h1",
+      tenantId: "t1",
+      primaryLocale: "en",
+      primary,
+      translationLinks: [{ url: "https://luma.com/fr", languageCode: "fr" }],
+    })
+
+    const fields = rpcCalls[0].params.p_fields as Record<string, unknown>
+    expect(fields.name).toBeUndefined()
+    expect(fields.description).toBe("Construisez des trucs.")
+  })
+
+  it("prefers cleanedDescription over eventData.description for variants", async () => {
+    mockExtractExternalEventData.mockImplementationOnce(() =>
+      Promise.resolve({
+        name: "Hackathon IA de Montréal",
+        description: "Construisez des trucs. Pour la version anglaise cliquez ici.",
+        startsAt: null,
+        endsAt: null,
+        locationType: null,
+        locationName: null,
+        locationUrl: null,
+        imageUrl: null,
+        language: "fr",
+      })
+    )
+    mockExtractExternalRichContent.mockImplementationOnce(() =>
+      Promise.resolve({
+        sponsors: [],
+        rules: null,
+        prizes: [],
+        challenges: [],
+        translationLinks: [],
+        cleanedDescription: "Construisez des trucs.",
+      })
+    )
+
+    await importTranslationVariants({
+      hackathonId: "h1",
+      tenantId: "t1",
+      primaryLocale: "en",
+      primary,
+      translationLinks: [{ url: "https://luma.com/fr", languageCode: "fr" }],
+    })
+
+    const fields = rpcCalls[0].params.p_fields as Record<string, unknown>
+    expect(fields.description).toBe("Construisez des trucs.")
+  })
+
+  it("skips variant whose detected locale equals the primary locale", async () => {
+    mockExtractExternalEventData.mockImplementationOnce(() =>
+      Promise.resolve({
+        name: "Same language",
+        description: "x",
+        startsAt: null,
+        endsAt: null,
+        locationType: null,
+        locationName: null,
+        locationUrl: null,
+        imageUrl: null,
+        language: "en",
+      })
+    )
+
+    await importTranslationVariants({
+      hackathonId: "h1",
+      tenantId: "t1",
+      primaryLocale: "en",
+      primary,
+      translationLinks: [{ url: "https://luma.com/en2", languageCode: "en" }],
+    })
+
+    expect(rpcCalls).toHaveLength(0)
+  })
+
+  it("skips unsafe URLs and non-Luma URLs without fetching", async () => {
+    await importTranslationVariants({
+      hackathonId: "h1",
+      tenantId: "t1",
+      primaryLocale: "en",
+      primary,
+      translationLinks: [
+        { url: "http://169.254.169.254/metadata", languageCode: "fr" },
+        { url: "https://evil.example.com/page", languageCode: "fr" },
+      ],
+    })
+
+    expect(mockExtractExternalEventData).not.toHaveBeenCalled()
+    expect(rpcCalls).toHaveLength(0)
+  })
+
+  it("dedupes variants by normalized URL", async () => {
+    mockExtractExternalEventData.mockImplementation(() =>
+      Promise.resolve({
+        name: "Foo FR",
+        description: "fr",
+        startsAt: null,
+        endsAt: null,
+        locationType: null,
+        locationName: null,
+        locationUrl: null,
+        imageUrl: null,
+        language: "fr",
+      })
+    )
+    mockExtractExternalRichContent.mockImplementation(() => Promise.resolve(null))
+
+    await importTranslationVariants({
+      hackathonId: "h1",
+      tenantId: "t1",
+      primaryLocale: "en",
+      primary,
+      translationLinks: [
+        { url: "https://luma.com/fr", languageCode: "fr" },
+        { url: "https://luma.com/fr", languageCode: "fr" },
+      ],
+    })
+
+    expect(mockExtractExternalEventData).toHaveBeenCalledTimes(1)
+  })
+
+  it("continues past a failing variant fetch", async () => {
+    mockExtractExternalEventData.mockImplementationOnce(() => Promise.reject(new Error("boom")))
+    mockExtractExternalEventData.mockImplementationOnce(() =>
+      Promise.resolve({
+        name: "Evento en español",
+        description: "Hola",
+        startsAt: null,
+        endsAt: null,
+        locationType: null,
+        locationName: null,
+        locationUrl: null,
+        imageUrl: null,
+        language: "es",
+      })
+    )
+    mockExtractExternalRichContent.mockImplementation(() => Promise.resolve(null))
+
+    await importTranslationVariants({
+      hackathonId: "h1",
+      tenantId: "t1",
+      primaryLocale: "en",
+      primary,
+      translationLinks: [
+        { url: "https://luma.com/bad", languageCode: "fr" },
+        { url: "https://luma.com/es", languageCode: "es" },
+      ],
+    })
+
+    expect(rpcCalls).toHaveLength(1)
+    expect(rpcCalls[0].params.p_locale).toBe("es")
   })
 })

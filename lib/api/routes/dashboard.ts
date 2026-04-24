@@ -12,6 +12,7 @@ import { dashboardJudgeDisplayRoutes } from "./dashboard-judge-display"
 import { dashboardPostEventRoutes } from "./dashboard-post-event"
 import { dashboardSponsorFulfillmentRoutes } from "./dashboard-sponsor-fulfillments"
 import { getEffectiveStatus } from "@/lib/utils/timeline"
+import { normalizeLocale } from "@/lib/utils/language"
 import type { Scope } from "@/lib/auth/types"
 import { ALL_SCOPES } from "@/lib/auth/types"
 import type { WebhookEvent, SponsorTier } from "@/lib/db/hackathon-types"
@@ -1098,7 +1099,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
 
       let previousStatus: string | undefined
       let currentHackathon: import("@/lib/db/hackathon-types").Hackathon | undefined
-      if (hasDateUpdate || isStatusChange) {
+      if (hasDateUpdate || isStatusChange || body.locale !== undefined) {
         const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
         const check = await checkHackathonOrganizer(params.id, principal.tenantId)
         if (check.status === "not_found") {
@@ -1144,9 +1145,68 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         body.maxTeamSize !== undefined || body.allowSolo !== undefined ||
         body.communityUrl !== undefined || body.communityLabel !== undefined
 
+      const primaryLocale = currentHackathon?.default_locale ?? "en"
+      const normalizedLocale = body.locale ? normalizeLocale(body.locale) : null
+      const translationLocale =
+        normalizedLocale && normalizedLocale !== primaryLocale ? normalizedLocale : null
+
       let hackathon: import("@/lib/db/hackathon-types").Hackathon | null
       if (hasStatusTransition && !hasOtherFields) {
         hackathon = currentHackathon!
+      } else if (translationLocale) {
+        const { updateHackathonTranslation, updateHackathonSettings } = await import(
+          "@/lib/services/public-hackathons"
+        )
+
+        const nonTranslatable = {
+          bannerUrl: body.bannerUrl,
+          startsAt: body.startsAt,
+          endsAt: body.endsAt,
+          status: hasStatusTransition ? undefined : body.status as "draft" | "published" | "registration_open" | "active" | "judging" | "completed" | "archived" | undefined,
+          anonymousJudging: body.anonymousJudging,
+          judgingMode: body.judgingMode as "points" | "subjective" | "rubric" | undefined,
+          locationType: body.locationType as "in_person" | "virtual" | "hybrid" | null | undefined,
+          locationUrl: normalizeOptionalUrl(body.locationUrl),
+          locationLatitude: body.locationLatitude,
+          locationLongitude: body.locationLongitude,
+          requireLocationVerification: body.requireLocationVerification,
+          maxParticipants: body.maxParticipants,
+          minTeamSize: body.minTeamSize,
+          maxTeamSize: body.maxTeamSize,
+          allowSolo: body.allowSolo,
+          communityUrl: normalizeOptionalUrl(body.communityUrl),
+        }
+
+        const translatable: Parameters<typeof updateHackathonTranslation>[3] = {}
+        if (body.name !== undefined) translatable.name = body.name
+        if (body.description !== undefined) translatable.description = body.description
+        if (body.rules !== undefined) translatable.rules = body.rules
+        if (body.locationName !== undefined) translatable.location_name = body.locationName
+        if (body.communityLabel !== undefined) translatable.community_label = body.communityLabel
+
+        if (Object.keys(translatable).length > 0) {
+          const translationResult = await updateHackathonTranslation(params.id, principal.tenantId, translationLocale, translatable)
+          if (!translationResult) {
+            return new Response(JSON.stringify({ error: "Failed to update translation" }), {
+              status: 500,
+              headers: { "Content-Type": "application/json" },
+            })
+          }
+          hackathon = translationResult
+        } else {
+          hackathon = currentHackathon ?? null
+        }
+
+        if (Object.values(nonTranslatable).some((v) => v !== undefined)) {
+          const settingsResult = await updateHackathonSettings(params.id, principal.tenantId, nonTranslatable)
+          if (!settingsResult) {
+            return new Response(JSON.stringify({ error: "Failed to update settings" }), {
+              status: 500,
+              headers: { "Content-Type": "application/json" },
+            })
+          }
+          hackathon = settingsResult
+        }
       } else {
         const { updateHackathonSettings } = await import("@/lib/services/public-hackathons")
         hackathon = await updateHackathonSettings(params.id, principal.tenantId, {
@@ -1360,6 +1420,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         allowSolo: t.Optional(t.Boolean()),
         communityUrl: t.Optional(t.Union([t.String(), t.Null()])),
         communityLabel: t.Optional(t.Union([t.String(), t.Null()])),
+        locale: t.Optional(t.String({ minLength: 1 })),
       }),
     }
   )

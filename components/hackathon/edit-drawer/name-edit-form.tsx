@@ -19,9 +19,10 @@ interface NameEditFormProps {
   onSaveAndNext?: () => void
   onSave?: (data: { name: string }) => Promise<boolean>
   onCancel?: () => void
+  locale?: string | null
 }
 
-export function NameEditForm({ hackathonId, initialName, onSaveAndNext, onSave, onCancel }: NameEditFormProps) {
+export function NameEditForm({ hackathonId, initialName, onSaveAndNext, onSave, onCancel, locale }: NameEditFormProps) {
   const router = useRouter()
   const editContext = useEditOptional()
   const closeDrawer = onCancel ?? editContext?.closeDrawer ?? (() => {})
@@ -48,7 +49,7 @@ export function NameEditForm({ hackathonId, initialName, onSaveAndNext, onSave, 
       const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/settings`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, ...(locale ? { locale } : {}) }),
       })
 
       if (!res.ok) {

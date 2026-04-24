@@ -11,6 +11,7 @@ import type {
 import { RegistrationButton } from "./registration-button";
 import { SubmissionButton } from "./submission-button";
 import { CountdownBadge } from "./countdown-badge";
+import { LanguageToggle } from "./language-toggle";
 import { getTimelineState } from "@/lib/utils/timeline";
 import { formatDateRange } from "@/lib/utils/format";
 
@@ -57,6 +58,8 @@ interface EventHeroProps {
   statusSlot?: React.ReactNode;
   bannerSlot?: React.ReactNode;
   orgNameWrapper?: (orgName: React.ReactNode) => React.ReactNode;
+  availableLocales?: string[];
+  currentLocale?: string;
 }
 
 function formatTimeRange(
@@ -189,6 +192,8 @@ export function EventHero({
   statusSlot,
   bannerSlot,
   orgNameWrapper,
+  availableLocales,
+  currentLocale,
 }: EventHeroProps) {
   const durationInfo = getDurationInfo(startsAt, endsAt);
   const timeRange = formatTimeRange(startsAt, endsAt);
@@ -263,6 +268,9 @@ export function EventHero({
   const contentColumn = (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2 flex-wrap">
+        {availableLocales && availableLocales.length > 1 && currentLocale && (
+          <LanguageToggle locales={availableLocales} current={currentLocale} />
+        )}
         {showCountdown ? (
           <CountdownBadge startsAt={startsAt!} />
         ) : (

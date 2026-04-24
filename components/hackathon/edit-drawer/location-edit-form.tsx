@@ -41,9 +41,10 @@ interface LocationEditFormProps {
     requireLocationVerification?: boolean
   }) => Promise<boolean>
   onCancel?: () => void
+  locale?: string | null
 }
 
-export function LocationEditForm({ hackathonId, initialData, onSaveAndNext, onSave, onCancel }: LocationEditFormProps) {
+export function LocationEditForm({ hackathonId, initialData, onSaveAndNext, onSave, onCancel, locale }: LocationEditFormProps) {
   const router = useRouter()
   const editContext = useEditOptional()
   const closeDrawer = onCancel ?? editContext?.closeDrawer ?? (() => {})
@@ -102,6 +103,7 @@ export function LocationEditForm({ hackathonId, initialData, onSaveAndNext, onSa
           locationLatitude,
           locationLongitude,
           requireLocationVerification,
+          ...(locale ? { locale } : {}),
         }),
       })
 

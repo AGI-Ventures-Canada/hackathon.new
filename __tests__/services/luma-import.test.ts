@@ -3,7 +3,9 @@ import { describe, it, expect, beforeEach, mock } from "bun:test"
 const mockFetch = mock(() => Promise.resolve(new Response("")))
 globalThis.fetch = mockFetch as unknown as typeof fetch
 
-const { extractLumaEventData, normalizeEventDate } = await import("@/lib/services/luma-import")
+const { extractLumaEventData, normalizeEventDate, parseTranslationLinksFromHtml } = await import(
+  "@/lib/services/luma-import"
+)
 
 const MOCK_HTML_WITH_JSONLD = `
 <html><head>
@@ -85,7 +87,10 @@ describe("extractLumaEventData", () => {
     mockFetch.mockResolvedValueOnce(new Response(MOCK_HTML_WITH_JSONLD, { status: 200 }))
 
     await extractLumaEventData("my-hackathon")
-    expect(mockFetch).toHaveBeenCalledWith("https://luma.com/my-hackathon")
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://luma.com/my-hackathon",
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    )
   })
 
   it("returns null when fetch fails", async () => {
@@ -284,5 +289,43 @@ describe("extractLumaEventData", () => {
 
     const result = await extractLumaEventData("url-event")
     expect(result!.locationUrl).toBe("https://maps.google.com/some-place")
+  })
+})
+
+describe("parseTranslationLinksFromHtml", () => {
+  it("detects a French cross-link from typical Luma body HTML", () => {
+    const html = `<p>About Build OS26</p><p><em>(For the french version, </em><em><a href="https://luma.com/blntxcm9" target="_blank" rel="nofollow noopener">click here</a></em><em>)</em></p>`
+    const links = parseTranslationLinksFromHtml(html, "2pvpyrya")
+    expect(links).toEqual([{ url: "https://luma.com/blntxcm9", languageCode: "fr" }])
+  })
+
+  it("detects French via 'Version française' phrasing", () => {
+    const html = `<p>Version française disponible <a href="https://lu.ma/abc123">ici</a></p>`
+    const links = parseTranslationLinksFromHtml(html, "en-slug")
+    expect(links[0]?.languageCode).toBe("fr")
+  })
+
+  it("detects language when the keyword follows the link text", () => {
+    const html = `<p><a href="https://luma.com/xyz123">Click here</a> for the French version →</p>`
+    const links = parseTranslationLinksFromHtml(html, "primary")
+    expect(links).toEqual([{ url: "https://luma.com/xyz123", languageCode: "fr" }])
+  })
+
+  it("skips self-referencing anchors", () => {
+    const html = `<a href="https://luma.com/self">French version</a><a href="https://luma.com/other">French</a>`
+    const links = parseTranslationLinksFromHtml(html, "self")
+    expect(links.map((l) => l.url)).toEqual(["https://luma.com/other"])
+  })
+
+  it("skips anchors without a language keyword nearby", () => {
+    const html = `<a href="https://luma.com/abc123">Some unrelated event</a>`
+    const links = parseTranslationLinksFromHtml(html, "primary")
+    expect(links).toEqual([])
+  })
+
+  it("dedupes repeated anchors to the same URL", () => {
+    const html = `<p>French: <a href="https://luma.com/xyz123">here</a></p><p>Version française: <a href="https://luma.com/xyz123">here</a></p>`
+    const links = parseTranslationLinksFromHtml(html, "primary")
+    expect(links).toEqual([{ url: "https://luma.com/xyz123", languageCode: "fr" }])
   })
 })

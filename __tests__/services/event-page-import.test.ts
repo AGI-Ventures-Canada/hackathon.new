@@ -56,7 +56,8 @@ describe("extractEventPageData", () => {
       locationName: "Invest Ottawa (7 Bayview Station Road, Ottawa, ON)",
       locationUrl: null,
       imageUrl: "https://img.evbuc.com/test.png",
-    })
+      language: null,
+      translationLinks: [],    })
   })
 
   it("falls back to event metadata when JSON-LD is missing", async () => {
@@ -83,6 +84,7 @@ describe("extractEventPageData", () => {
       locationName: "Ottawa, ON",
       locationUrl: null,
       imageUrl: "https://example.com/banner.png",
-    })
+      language: null,
+      translationLinks: [],    })
   })
 })
