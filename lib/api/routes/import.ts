@@ -100,7 +100,7 @@ export const dashboardImportRoutes = new Elysia({ prefix: "/dashboard/import" })
       }
 
       if (body.translationLinks?.length) {
-        await importTranslationVariants({
+        importTranslationVariants({
           hackathonId: hackathon.id,
           primaryLocale: hackathon.default_locale ?? "en",
           primary: {
@@ -111,7 +111,7 @@ export const dashboardImportRoutes = new Elysia({ prefix: "/dashboard/import" })
             community_label: null,
           },
           translationLinks: body.translationLinks,
-        })
+        }).catch(console.error)
       }
 
       const source = body.sourceUrl && isLumaUrl(body.sourceUrl) ? "luma_import" : "event_page_import"
@@ -256,7 +256,7 @@ export const dashboardImportRoutes = new Elysia({ prefix: "/dashboard/import" })
       }
 
       if (mergedTranslationLinks.length) {
-        await importTranslationVariants({
+        importTranslationVariants({
           hackathonId: hackathon.id,
           primaryLocale: hackathon.default_locale ?? "en",
           primary: {
@@ -267,7 +267,7 @@ export const dashboardImportRoutes = new Elysia({ prefix: "/dashboard/import" })
             community_label: null,
           },
           translationLinks: mergedTranslationLinks,
-        })
+        }).catch(console.error)
       }
 
       const source = isLumaUrl(url) ? "luma_import" : "event_page_import"

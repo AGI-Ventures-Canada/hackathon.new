@@ -1199,7 +1199,13 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
 
         if (Object.values(nonTranslatable).some((v) => v !== undefined)) {
           const settingsResult = await updateHackathonSettings(params.id, principal.tenantId, nonTranslatable)
-          if (settingsResult) hackathon = settingsResult
+          if (!settingsResult) {
+            return new Response(JSON.stringify({ error: "Failed to update settings" }), {
+              status: 500,
+              headers: { "Content-Type": "application/json" },
+            })
+          }
+          hackathon = settingsResult
         }
       } else {
         const { updateHackathonSettings } = await import("@/lib/services/public-hackathons")
