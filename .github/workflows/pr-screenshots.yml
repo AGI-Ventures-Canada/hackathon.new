@@ -63,8 +63,12 @@ jobs:
 
       - name: Install agent-browser
         if: steps.check.outputs.skip != 'true'
+        env:
+          # Pin so a breaking release cannot silently break screenshot capture.
+          # Bump intentionally after verifying locally.
+          AGENT_BROWSER_VERSION: "0.26.0"
         run: |
-          bun install -g agent-browser
+          bun install -g "agent-browser@${AGENT_BROWSER_VERSION}"
           agent-browser install
 
       - name: Authenticate via Clerk sign-in token
