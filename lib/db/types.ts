@@ -890,6 +890,7 @@ export type Database = {
           community_label: string | null
           community_url: string | null
           created_at: string
+          default_locale: string | null
           description: string | null
           ends_at: string | null
           feedback_survey_sent_at: string | null
@@ -918,6 +919,7 @@ export type Database = {
           starts_at: string | null
           status: Database["public"]["Enums"]["hackathon_status"]
           tenant_id: string
+          translations: Json | null
           updated_at: string
           winner_emails_sent_at: string | null
         }
@@ -929,6 +931,7 @@ export type Database = {
           community_label?: string | null
           community_url?: string | null
           created_at?: string
+          default_locale?: string | null
           description?: string | null
           ends_at?: string | null
           feedback_survey_sent_at?: string | null
@@ -957,6 +960,7 @@ export type Database = {
           starts_at?: string | null
           status?: Database["public"]["Enums"]["hackathon_status"]
           tenant_id: string
+          translations?: Json | null
           updated_at?: string
           winner_emails_sent_at?: string | null
         }
@@ -968,6 +972,7 @@ export type Database = {
           community_label?: string | null
           community_url?: string | null
           created_at?: string
+          default_locale?: string | null
           description?: string | null
           ends_at?: string | null
           feedback_survey_sent_at?: string | null
@@ -996,6 +1001,7 @@ export type Database = {
           starts_at?: string | null
           status?: Database["public"]["Enums"]["hackathon_status"]
           tenant_id?: string
+          translations?: Json | null
           updated_at?: string
           winner_emails_sent_at?: string | null
         }

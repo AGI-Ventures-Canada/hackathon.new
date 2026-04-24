@@ -1,5 +1,6 @@
 import { cache } from "react"
 import { normalizeUrl } from "@/lib/utils/url"
+import { normalizeLocale } from "@/lib/utils/language"
 
 export type EventPageData = {
   name: string
@@ -10,6 +11,8 @@ export type EventPageData = {
   locationName: string | null
   locationUrl: string | null
   imageUrl: string | null
+  language: string | null
+  translationLinks: { url: string; languageCode: string }[]
 }
 
 const ATTENDANCE_MODE_MAP: Record<string, "in_person" | "virtual"> = {
@@ -133,6 +136,8 @@ function mapEventNode(event: Record<string, unknown>): EventPageData | null {
       ? getString(location?.url)
       : getString(location?.url),
     imageUrl: getImageUrl(event.image),
+    language: normalizeLocale(getString(event.inLanguage)),
+    translationLinks: [],
   }
 }
 
@@ -145,6 +150,7 @@ function parseMetaFallback(html: string): EventPageData | null {
   }
 
   const locationText = getMetaContent(html, "name", "twitter:data1")
+  const htmlLang = html.match(/<html[^>]*\blang=["']([^"']+)["']/i)?.[1] ?? null
 
   return {
     name,
@@ -155,6 +161,8 @@ function parseMetaFallback(html: string): EventPageData | null {
     locationName: locationText,
     locationUrl: null,
     imageUrl: getMetaContent(html, "property", "og:image") ?? getMetaContent(html, "name", "twitter:image"),
+    language: normalizeLocale(htmlLang),
+    translationLinks: [],
   }
 }
 

@@ -91,6 +91,8 @@ function stateToHackathon(state: DraftState): PublicHackathon {
     perks_none: false,
     community_url: null,
     community_label: null,
+    translations: null,
+    default_locale: null,
     banner_url: state.imageUrl,
     location_type: state.locationType,
     location_name: state.locationName,

@@ -67,6 +67,32 @@ const EventPageRichContentSchema = z.object({
       })
     )
     .describe("List of challenges, tracks, or themes that describe what participants should build"),
+
+  translationLinks: z
+    .array(
+      z.object({
+        url: z
+          .string()
+          .describe(
+            "Absolute URL (must start with https://luma.com/ or https://lu.ma/) pointing to a different-language version of THIS same event"
+          ),
+        languageCode: z
+          .string()
+          .describe(
+            "ISO 639-1 code (two lowercase letters like 'fr', 'es', 'ja') for the LINKED page's language, inferred from surrounding context"
+          ),
+      })
+    )
+    .describe(
+      "Other-language versions of the same event cross-linked from this page. Look for phrases like 'For the French version, click here' or 'Version française', with an accompanying URL. Empty array if none."
+    ),
+
+  cleanedDescription: z
+    .string()
+    .nullable()
+    .describe(
+      "The main event description with any 'click here for the X version' pointer sentences removed, so it reads cleanly for this one language. null if the original description contained no such pointers or couldn't be cleaned."
+    ),
 })
 
 export type EventPageRichContent = z.infer<typeof EventPageRichContentSchema>
@@ -113,8 +139,10 @@ Only extract information that is explicitly present in the content. Do not infer
 - For rules: Look for ANY content that describes what participants must follow — this includes sections labeled "Rules", "Guidelines", "Code of Conduct", "Requirements", but ALSO FAQ answers that contain team size limits, tool usage policies, eligibility criteria, format requirements (in-person vs virtual), what to bring, and participation guidelines. Combine all rule-like content into a single coherent text.
 - For prizes: Look for sections labeled "Prizes", "Awards", or "Rewards" that describe monetary or material awards. Extract the award itself — not the track it belongs to.
 - For challenges: Look for sections labeled "Challenges", "Tracks", "Themes", "Problem Statements", or category buckets that describe what participants should build or solve. Extract the track name, a description of the problem/goal, and any resource links mentioned alongside it (API docs, datasets, starter repos, sponsor APIs). When a page lists tracks with their own prizes, extract BOTH a challenge (for the track/theme) AND a prize (for the associated award) — use the track name in the prize description to link them.
+- For translationLinks: Look for explicit mentions of a different-language version of THIS SAME event, typically phrased as "For the French version, click here", "Version française", "English version", "Cliquez ici pour la version anglaise", or similar. Each entry must have (1) an absolute luma.com/lu.ma URL and (2) the ISO 639-1 code of the language THAT LINKED PAGE is written in. Do NOT include links to unrelated events, sponsor pages, general website links, or the current page itself.
+- For cleanedDescription: If translationLinks is non-empty, return the event's main description with ALL pointer sentences like "(For the French version, click here)" or "Version française ici: ..." removed. CRITICAL: preserve the ORIGINAL LANGUAGE of the page exactly — do NOT translate into another language. If the page is in French, return French text; if it is in Japanese, return Japanese. Only remove the pointer sentence(s); keep every other character verbatim. If translationLinks is empty, return null.
 
-If a section is not present in the content, return an empty array for sponsors/prizes/challenges and null for rules.
+If a section is not present in the content, return an empty array for sponsors/prizes/challenges/translationLinks and null for rules/cleanedDescription.
 
 Page content:
 ${rawContent}`,

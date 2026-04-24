@@ -22,9 +22,10 @@ interface AboutEditFormProps {
   onSaveAndNext?: () => void
   onSave?: (data: { description: string | null }) => Promise<boolean>
   onCancel?: () => void
+  locale?: string | null
 }
 
-export function AboutEditForm({ hackathonId, initialData, onSaveAndNext, onSave, onCancel }: AboutEditFormProps) {
+export function AboutEditForm({ hackathonId, initialData, onSaveAndNext, onSave, onCancel, locale }: AboutEditFormProps) {
   const router = useRouter()
   const editContext = useEditOptional()
   const closeDrawer = onCancel ?? editContext?.closeDrawer ?? (() => {})
@@ -53,6 +54,7 @@ export function AboutEditForm({ hackathonId, initialData, onSaveAndNext, onSave,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           description: description || null,
+          ...(locale ? { locale } : {}),
         }),
       })
 

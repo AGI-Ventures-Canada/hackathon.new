@@ -8,13 +8,20 @@ import { HackathonPreviewClient } from "@/components/hackathon/preview/hackathon
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Eye, Clock } from "lucide-react"
 import type { Metadata } from "next"
+import {
+  applyHackathonTranslation,
+  availableLocales,
+  normalizeLocale,
+} from "@/lib/utils/language"
 
 type PageProps = {
   params: Promise<{ slug: string }>
+  searchParams: Promise<{ lang?: string }>
 }
 
-export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+export async function generateMetadata({ params, searchParams }: PageProps): Promise<Metadata> {
   const { slug } = await params
+  const { lang } = await searchParams
   const hackathon = await getPublicHackathon(slug, { includeUnpublished: true })
 
   if (!hackathon) {
@@ -23,21 +30,32 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     }
   }
 
+  const locales = availableLocales(hackathon)
+  const requested = normalizeLocale(lang ?? null)
+  const currentLocale = requested && locales.includes(requested) ? requested : locales[0]
+  const translated = applyHackathonTranslation(hackathon, currentLocale)
+
   return {
-    title: `${hackathon.name} | Oatmeal`,
-    description: hackathon.description || `Join ${hackathon.name} hackathon`,
+    title: `${translated.name} | Oatmeal`,
+    description: translated.description || `Join ${translated.name} hackathon`,
   }
 }
 
-export default async function EventPage({ params }: PageProps) {
+export default async function EventPage({ params, searchParams }: PageProps) {
   const { slug } = await params
+  const { lang } = await searchParams
   const { orgId, userId } = await auth()
 
-  const hackathon = await getPublicHackathon(slug, { includeUnpublished: true })
+  const rawHackathon = await getPublicHackathon(slug, { includeUnpublished: true })
 
-  if (!hackathon) {
+  if (!rawHackathon) {
     notFound()
   }
+
+  const locales = availableLocales(rawHackathon)
+  const requested = normalizeLocale(lang ?? null)
+  const currentLocale = requested && locales.includes(requested) ? requested : locales[0]
+  const hackathon = applyHackathonTranslation(rawHackathon, currentLocale)
 
   const isPublished = PUBLISHED_STATUSES.includes(hackathon.status)
   let isPreview = false
@@ -192,6 +210,8 @@ export default async function EventPage({ params }: PageProps) {
         challenges={challenges}
         viewerPerks={viewerPerks}
         currentUserId={userId}
+        availableLocales={locales}
+        currentLocale={currentLocale}
       />
     </div>
   )

@@ -393,6 +393,69 @@ export async function updateHackathonSettings(
   return data as unknown as Hackathon
 }
 
+export async function updateHackathonTranslation(
+  hackathonId: string,
+  tenantId: string,
+  locale: string,
+  fields: {
+    name?: string | null
+    description?: string | null
+    rules?: string | null
+    location_name?: string | null
+    community_label?: string | null
+  }
+): Promise<Hackathon | null> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data: current, error: fetchErr } = await client
+    .from("hackathons")
+    .select("translations")
+    .eq("id", hackathonId)
+    .eq("tenant_id", tenantId)
+    .single()
+
+  if (fetchErr || !current) {
+    console.error("Failed to fetch hackathon for translation update:", fetchErr)
+    return null
+  }
+
+  const existing = ((current as { translations: Record<string, Record<string, string>> | null }).translations ?? {}) as Record<string, Record<string, string>>
+  const perLocale = { ...(existing[locale] ?? {}) }
+
+  for (const [key, value] of Object.entries(fields)) {
+    if (value === undefined) continue
+    if (value === null || value.trim().length === 0) {
+      delete perLocale[key]
+    } else {
+      perLocale[key] = value.trim()
+    }
+  }
+
+  const nextTranslations: Record<string, Record<string, string>> = { ...existing }
+  if (Object.keys(perLocale).length === 0) {
+    delete nextTranslations[locale]
+  } else {
+    nextTranslations[locale] = perLocale
+  }
+
+  const translationsValue = Object.keys(nextTranslations).length > 0 ? nextTranslations : null
+
+  const { data, error } = await client
+    .from("hackathons")
+    .update({ translations: translationsValue })
+    .eq("id", hackathonId)
+    .eq("tenant_id", tenantId)
+    .select()
+    .single()
+
+  if (error) {
+    console.error("Failed to update hackathon translation:", error)
+    return null
+  }
+
+  return data as unknown as Hackathon
+}
+
 export async function deleteHackathon(
   hackathonId: string,
   tenantId: string

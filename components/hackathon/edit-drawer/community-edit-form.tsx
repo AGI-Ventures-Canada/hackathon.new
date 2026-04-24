@@ -17,6 +17,7 @@ interface CommunityEditFormProps {
   onSaveAndNext?: () => void
   onSave?: (data: { communityUrl: string | null; communityLabel: string | null }) => Promise<boolean>
   onCancel?: () => void
+  locale?: string | null
 }
 
 export function CommunityEditForm({
@@ -26,6 +27,7 @@ export function CommunityEditForm({
   onSaveAndNext,
   onSave,
   onCancel,
+  locale,
 }: CommunityEditFormProps) {
   const router = useRouter()
   const editContext = useEditOptional()
@@ -63,7 +65,7 @@ export function CommunityEditForm({
       const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/settings`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ ...payload, ...(locale ? { locale } : {}) }),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))

@@ -34,7 +34,8 @@ describe("POST /api/public/import/url", () => {
       locationName: "San Francisco",
       locationUrl: null,
       imageUrl: "https://images.lumacdn.com/test.png",
-    })
+      language: null,
+      translationLinks: [],    })
 
     const res = await api.handle(
       new Request("http://localhost/api/public/import/url", {
@@ -60,7 +61,8 @@ describe("POST /api/public/import/url", () => {
       locationName: null,
       locationUrl: null,
       imageUrl: null,
-    })
+      language: null,
+      translationLinks: [],    })
 
     const res = await api.handle(
       new Request("http://localhost/api/public/import/url", {

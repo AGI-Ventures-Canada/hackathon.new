@@ -3,10 +3,16 @@ import { downloadAndUploadBanner } from "@/lib/services/storage"
 import { addSponsor } from "@/lib/services/sponsors"
 import { createPrize } from "@/lib/services/prizes"
 import { createChallenge } from "@/lib/services/challenges"
-import { normalizeUrl } from "@/lib/utils/url"
+import { extractExternalEventData, extractExternalRichContent, isLumaUrl } from "@/lib/services/external-import"
+import { normalizeUrl, isSafeExternalUrl } from "@/lib/utils/url"
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Hackathon, SponsorTier } from "@/lib/db/hackathon-types"
+import {
+  buildTranslationRecord,
+  normalizeLocale,
+  type HackathonTranslations,
+} from "@/lib/utils/language"
 
 export type ImportHackathonInput = {
   name: string
@@ -20,6 +26,12 @@ export type ImportHackathonInput = {
   locationUrl: string | null
   imageUrl: string | null
   rules?: string | null
+  defaultLocale?: string | null
+}
+
+export type TranslationLinkInput = {
+  url: string
+  languageCode: string
 }
 
 export async function createHackathonFromImport(
@@ -48,6 +60,7 @@ export async function createHackathonFromImport(
       location_url: input.locationUrl,
       banner_url: bannerResult?.url ?? null,
       rules: input.rules ?? null,
+      default_locale: normalizeLocale(input.defaultLocale ?? null) ?? "en",
     })
     .eq("id", hackathon.id)
 
@@ -56,6 +69,99 @@ export async function createHackathonFromImport(
   }
 
   return { ...hackathon, banner_url: bannerResult?.url ?? null } as Hackathon
+}
+
+type TranslationPrimary = {
+  name: string
+  description: string | null
+  rules: string | null
+  location_name: string | null
+  community_label: string | null
+}
+
+const MAX_TRANSLATION_LINKS = 10
+
+export async function importTranslationVariants({
+  hackathonId,
+  primaryLocale,
+  primary,
+  translationLinks,
+}: {
+  hackathonId: string
+  primaryLocale: string
+  primary: TranslationPrimary
+  translationLinks: TranslationLinkInput[]
+}): Promise<void> {
+  if (!translationLinks.length) return
+
+  const seen = new Set<string>()
+  const safeLinks: TranslationLinkInput[] = []
+  for (const link of translationLinks) {
+    if (safeLinks.length >= MAX_TRANSLATION_LINKS) break
+    const url = normalizeUrl(link.url)
+    if (seen.has(url)) continue
+    if (!isSafeExternalUrl(url)) continue
+    if (!isLumaUrl(url)) continue
+    seen.add(url)
+    safeLinks.push({ url, languageCode: link.languageCode })
+  }
+
+  if (!safeLinks.length) return
+
+  const translations: HackathonTranslations = {}
+
+  // One hop only: never follow translationLinks returned by a variant fetch.
+  // Variants cross-link back to the primary (A→B→A), and loops would cost LLM + Tavily quota.
+  for (const link of safeLinks) {
+    const url = link.url
+    try {
+      const [eventData, richContent] = await Promise.all([
+        extractExternalEventData(url),
+        extractExternalRichContent(url),
+      ])
+
+      if (!eventData) {
+        console.warn(`Translation variant ${url} returned no event data; skipping.`)
+        continue
+      }
+
+      const variantLocale =
+        normalizeLocale(link.languageCode) ??
+        normalizeLocale(eventData.language) ??
+        null
+
+      if (!variantLocale || variantLocale === primaryLocale) continue
+
+      const record = buildTranslationRecord({
+        primary,
+        variant: {
+          name: eventData.name,
+          description: eventData.description ?? richContent?.cleanedDescription ?? null,
+          rules: richContent?.rules ?? null,
+          location_name: eventData.locationName,
+          community_label: null,
+        },
+      })
+
+      if (Object.keys(record).length > 0) {
+        translations[variantLocale] = record
+      }
+    } catch (err) {
+      console.error(`Failed to fetch translation variant ${url}:`, err)
+    }
+  }
+
+  if (!Object.keys(translations).length) return
+
+  const client = getSupabase() as unknown as SupabaseClient
+  const { error } = await client
+    .from("hackathons")
+    .update({ translations })
+    .eq("id", hackathonId)
+
+  if (error) {
+    console.error("Failed to write translations:", error)
+  }
 }
 
 const VALID_TIERS = new Set<string>(["gold", "silver", "bronze", "custom", "none"])

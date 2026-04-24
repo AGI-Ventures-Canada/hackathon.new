@@ -19,7 +19,7 @@ function eventDataToState(
 ): DraftState {
   return {
     name: eventData.name,
-    description: eventData.description,
+    description: richContent?.cleanedDescription ?? eventData.description,
     startsAt: eventData.startsAt,
     endsAt: eventData.endsAt,
     locationType: eventData.locationType,
@@ -66,6 +66,11 @@ export function EventImportEditor({
         prizes: state.prizes,
         challenges: state.challenges,
         sourceUrl,
+        defaultLocale: eventData.language ?? null,
+        translationLinks: [
+          ...(eventData.translationLinks ?? []),
+          ...(richContent?.translationLinks ?? []),
+        ],
       }),
     })
 
@@ -75,7 +80,7 @@ export function EventImportEditor({
     }
 
     return res.json()
-  }, [submitPath, sourceUrl])
+  }, [submitPath, sourceUrl, eventData.language, eventData.translationLinks, richContent?.translationLinks])
 
   return (
     <HackathonDraftEditor

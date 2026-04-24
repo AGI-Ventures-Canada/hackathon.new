@@ -217,12 +217,16 @@ describe("POST /api/dashboard/import/url (create from URL)", () => {
       locationName: "San Francisco",
       locationUrl: null,
       imageUrl: "https://images.lumacdn.com/test.png",
-    })
+      language: null,
+      translationLinks: [],    })
 
     mockExtractLumaRichContent.mockResolvedValueOnce({
       sponsors: [{ name: "OpenAI", tier: "gold" }],
       rules: "Bring your laptop.",
       prizes: [{ name: "Grand Prize", description: null, value: "$5,000" }],
+      challenges: [],
+      translationLinks: [],
+      cleanedDescription: null,
     })
 
     mockCreateHackathonFromImport.mockResolvedValueOnce({
@@ -256,6 +260,7 @@ describe("POST /api/dashboard/import/url (create from URL)", () => {
       locationUrl: null,
       imageUrl: "https://images.lumacdn.com/test.png",
       rules: "Bring your laptop.",
+      defaultLocale: null,
     })
     expect(mockCreateSponsorsFromImport).toHaveBeenCalledWith("h2", [
       { name: "OpenAI", tier: "gold" },
@@ -281,12 +286,16 @@ describe("POST /api/dashboard/import/url (create from URL)", () => {
       locationName: null,
       locationUrl: "https://devpost.com/hackathon",
       imageUrl: "https://devpost.com/banner.png",
-    })
+      language: null,
+      translationLinks: [],    })
 
     mockExtractEventPageRichContent.mockResolvedValueOnce({
       sponsors: [{ name: "Stripe", tier: "gold" }],
       rules: "Teams of 1-4. No pre-built projects.",
       prizes: [{ name: "Best Overall", description: null, value: "$10,000" }],
+      challenges: [],
+      translationLinks: [],
+      cleanedDescription: null,
     })
 
     mockCreateHackathonFromImport.mockResolvedValueOnce({
@@ -324,6 +333,7 @@ describe("POST /api/dashboard/import/url (create from URL)", () => {
       locationUrl: "https://devpost.com/hackathon",
       imageUrl: "https://devpost.com/banner.png",
       rules: "Teams of 1-4. No pre-built projects.",
+      defaultLocale: null,
     })
     expect(mockCreateSponsorsFromImport).toHaveBeenCalledWith("h-devpost", [
       { name: "Stripe", tier: "gold" },
@@ -388,7 +398,8 @@ describe("POST /api/public/import/url (validation, no auth)", () => {
       locationName: null,
       locationUrl: null,
       imageUrl: null,
-    })
+      language: null,
+      translationLinks: [],    })
 
     const res = await api.handle(
       new Request("http://localhost/api/public/import/url", {
@@ -413,7 +424,8 @@ describe("POST /api/public/import/url (validation, no auth)", () => {
       locationName: "San Francisco",
       locationUrl: null,
       imageUrl: null,
-    })
+      language: null,
+      translationLinks: [],    })
 
     const res = await api.handle(
       new Request("http://localhost/api/public/import/url", {

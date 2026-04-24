@@ -7,7 +7,7 @@ import {
   mockMultiTableQuery,
 } from "../lib/supabase-mock"
 
-const { getPublicHackathon, listPublicHackathons, getHackathonByIdForOrganizer, checkHackathonOrganizer, updateHackathonSettings, deleteHackathon } = await import(
+const { getPublicHackathon, listPublicHackathons, getHackathonByIdForOrganizer, checkHackathonOrganizer, updateHackathonSettings, updateHackathonTranslation, deleteHackathon } = await import(
   "@/lib/services/public-hackathons"
 )
 
@@ -377,6 +377,85 @@ describe("Public Hackathons Service", () => {
 
       expect(chain.eq).toHaveBeenCalledWith("id", "h1")
       expect(chain.eq).toHaveBeenCalledWith("tenant_id", "t1")
+    })
+  })
+
+  describe("updateHackathonTranslation", () => {
+    function setupSelectThenUpdate(existingTranslations: Record<string, Record<string, string>> | null) {
+      const selectChain = createChainableMock({ data: { translations: existingTranslations }, error: null })
+      const updateChain = createChainableMock({ data: { ...mockHackathon, translations: existingTranslations }, error: null })
+      let call = 0
+      setMockFromImplementation(() => (++call === 1 ? selectChain : updateChain))
+      return { selectChain, updateChain }
+    }
+
+    it("seeds a new locale when none exists", async () => {
+      const { updateChain } = setupSelectThenUpdate(null)
+
+      await updateHackathonTranslation("h1", "t1", "fr", {
+        name: "Nom en français",
+        description: "Description en français",
+      })
+
+      expect(updateChain.update).toHaveBeenCalledWith({
+        translations: { fr: { name: "Nom en français", description: "Description en français" } },
+      })
+    })
+
+    it("merges new fields into an existing locale", async () => {
+      const { updateChain } = setupSelectThenUpdate({ fr: { name: "Ancien nom" } })
+
+      await updateHackathonTranslation("h1", "t1", "fr", {
+        description: "Nouvelle description",
+      })
+
+      expect(updateChain.update).toHaveBeenCalledWith({
+        translations: { fr: { name: "Ancien nom", description: "Nouvelle description" } },
+      })
+    })
+
+    it("removes a field when set to null or empty", async () => {
+      const { updateChain } = setupSelectThenUpdate({ fr: { name: "x", description: "y" } })
+
+      await updateHackathonTranslation("h1", "t1", "fr", { description: null })
+
+      expect(updateChain.update).toHaveBeenCalledWith({
+        translations: { fr: { name: "x" } },
+      })
+    })
+
+    it("drops the locale entirely when it ends up empty", async () => {
+      const { updateChain } = setupSelectThenUpdate({ fr: { description: "y" }, es: { name: "z" } })
+
+      await updateHackathonTranslation("h1", "t1", "fr", { description: null })
+
+      expect(updateChain.update).toHaveBeenCalledWith({
+        translations: { es: { name: "z" } },
+      })
+    })
+
+    it("sets translations to null when removing the last locale", async () => {
+      const { updateChain } = setupSelectThenUpdate({ fr: { description: "y" } })
+
+      await updateHackathonTranslation("h1", "t1", "fr", { description: null })
+
+      expect(updateChain.update).toHaveBeenCalledWith({ translations: null })
+    })
+
+    it("does not mutate other locales when updating one", async () => {
+      const { updateChain } = setupSelectThenUpdate({
+        fr: { name: "Nom fr" },
+        es: { name: "Nombre es" },
+      })
+
+      await updateHackathonTranslation("h1", "t1", "fr", { description: "Nouvelle" })
+
+      expect(updateChain.update).toHaveBeenCalledWith({
+        translations: {
+          fr: { name: "Nom fr", description: "Nouvelle" },
+          es: { name: "Nombre es" },
+        },
+      })
     })
   })
 })
