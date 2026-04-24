@@ -66,6 +66,9 @@ docs/
 .claude/scheduled_tasks.lock
 .claude/launch.json
 
+# Local browser auth session (cookies, JWTs, chrome profile)
+.auth/
+
 # Superset worktrees
 .superset/
 
