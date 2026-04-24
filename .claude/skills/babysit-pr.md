@@ -1,7 +1,9 @@
 ---
 name: babysit-pr
 description: Babysit every open PR authored by the current GitHub user. Wait for the claude[bot] reviewer and CI to run, address all actionable feedback, commit and push fixes, and loop every 5 minutes until the PR is clean — then post a GitHub comment tagging the author so they get a push notification. Use after creating a new PR, or when the user says "babysit my PRs", "address my PR feedback", "fix the review bot comments", or similar.
-allowed-tools: Read, Edit, Write, Glob, Grep, Bash(gh:*), Bash(git:*), Bash(bun:*), Bash(bunx:*), Bash(jq:*), Bash(awk:*), Bash(sort:*), Bash(uniq:*), Bash(wc:*), ScheduleWakeup, Skill
+allowed-tools: Read Edit Write Glob Grep Bash(gh:*) Bash(git:*) Bash(bun:*) Bash(bunx:*) Bash(jq:*) Bash(awk:*) Bash(sort:*) Bash(uniq:*) Bash(wc:*) ScheduleWakeup Skill
+metadata:
+  internal: true
 ---
 
 # Babysit PR
