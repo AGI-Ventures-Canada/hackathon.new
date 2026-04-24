@@ -86,3 +86,6 @@ supabase/.temp
 
 # email screenshots
 .github/email-screenshots/
+
+# agent-browser auth state (contains session tokens)
+.auth/
