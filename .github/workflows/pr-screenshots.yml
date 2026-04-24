@@ -34,7 +34,8 @@ jobs:
             PR_NUMBER=$(gh pr list --state open --json number,headRefOid \
               --jq ".[] | select(.headRefOid == \"${SAFE_SHA}\") | .number" | head -1)
           fi
-          if [ -z "$PR_NUMBER" ]; then
+          # Guard: PR_NUMBER must be numeric before it flows into session names, API paths, and release tags
+          if ! [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
             echo "::debug::No open PR found for ref=${DEPLOY_REF} sha=${DEPLOY_SHA}"
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
@@ -231,7 +232,9 @@ jobs:
 
           echo "$TARGETS" | jq -r '.[] | "\(.path)\t\(.name)"' | while IFS=$'\t' read -r path name; do
             safe_name=$(echo "$name" | tr -cd 'a-zA-Z0-9_-')
-            safe_path=$(echo "$path" | sed 's/[?#].*//')
+            # Allowlist: strip query/fragment, then restrict to URL-safe characters
+            # to block `../`, shell metacharacters, and other LLM-supplied junk
+            safe_path=$(echo "$path" | sed 's/[?#].*//' | tr -cd 'a-zA-Z0-9/_-')
             echo "Capturing ${safe_path} as ${safe_name}..."
             capture "${PREVIEW_URL}${safe_path}" "$safe_name" || echo "::warning::Failed to capture ${safe_path}"
           done
@@ -240,7 +243,11 @@ jobs:
         if: always()
         env:
           PR_NUMBER: ${{ steps.check.outputs.pr_number }}
-        run: agent-browser --session "pr-${PR_NUMBER}" close >/dev/null 2>&1 || true
+        run: |
+          # When skip=true (no PR matched, no frontend changes), PR_NUMBER is
+          # empty and there is no session to close.
+          [ -n "$PR_NUMBER" ] || exit 0
+          agent-browser --session "pr-${PR_NUMBER}" close >/dev/null 2>&1 || true
 
       - name: Upload and comment on PR
         if: steps.check.outputs.skip != 'true'
