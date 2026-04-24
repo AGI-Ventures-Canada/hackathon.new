@@ -85,6 +85,9 @@ supabase/.temp
 .env.local.production
 .playwright-mcp/
 
+# agent-browser session data
+.auth/
+
 /tmp
 
 # email screenshots

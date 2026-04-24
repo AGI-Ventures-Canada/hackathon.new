@@ -1,4 +1,3 @@
-import { Suspense } from "react"
 import { listFulfillments, getFulfillmentSummary } from "@/lib/services/prize-fulfillment"
 import { listReminders } from "@/lib/services/post-event-reminders"
 import { PrizeFulfillmentTracker } from "@/components/hackathon/prizes/prize-fulfillment-tracker"
