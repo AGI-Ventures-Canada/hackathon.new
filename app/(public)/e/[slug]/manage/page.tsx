@@ -7,7 +7,6 @@ import { countJudges, getJudgingProgress, listPrizes, listRounds } from "@/lib/s
 import { countPendingJudgeInvitations } from "@/lib/services/judge-invitations"
 import { countJudgeDisplayProfiles } from "@/lib/services/judge-display"
 import { getManageOverviewStats } from "@/lib/services/manage-overview"
-import { listAnnouncements } from "@/lib/services/announcements"
 import { listChallenges } from "@/lib/services/challenges"
 import { listPerks } from "@/lib/services/perks"
 import { listScheduleItems, getSubmissionDeadline } from "@/lib/services/schedule-items"
@@ -61,7 +60,6 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     judgeDisplayCount,
     judgeCount,
     overviewStats,
-    announcements,
     scheduleItems,
     submissionDeadline,
     pendingJudgeInvitationCount,
@@ -75,7 +73,6 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     countJudgeDisplayProfiles(hackathon.id),
     countJudges(hackathon.id),
     getManageOverviewStats(hackathon.id),
-    listAnnouncements(hackathon.id),
     listScheduleItems(hackathon.id),
     getSubmissionDeadline(hackathon.id),
     countPendingJudgeInvitations(hackathon.id),

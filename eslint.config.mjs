@@ -44,6 +44,8 @@ const eslintConfig = defineConfig([
     "app/.well-known/workflow/**",
     // Claude Code worktrees (isolated branch copies)
     ".claude/worktrees/**",
+    // agent-browser session data (Chrome profile, extensions)
+    ".auth/**",
   ]),
 ]);
 
