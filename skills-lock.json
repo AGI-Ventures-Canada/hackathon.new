@@ -45,26 +45,6 @@
       "source": "clerk/skills",
       "sourceType": "github",
       "computedHash": "6a13eea450dda0b57edc358970f53c55ad7a2eb237d31decbc38e312555ddac5"
-    },
-    "hackathon-api": {
-      "source": "AGI-Ventures-Canada/hackathon-skills",
-      "sourceType": "github",
-      "computedHash": "f88b22baca8a0c46e67ea9dbd49b559ab8291a259fe568277b29472adf5da3ec"
-    },
-    "hackathon-attendee": {
-      "source": "AGI-Ventures-Canada/hackathon-skills",
-      "sourceType": "github",
-      "computedHash": "b57724ce65ecfe438113ea58e85e29eaa8a0f76d9a653841d6efee47dd9d73ed"
-    },
-    "hackathon-cli": {
-      "source": "AGI-Ventures-Canada/hackathon-skills",
-      "sourceType": "github",
-      "computedHash": "a6986288254398ab23d6911e7a397d6cafd148bcdecfbc3ed2c44accd7bb9ec5"
-    },
-    "hackathon-organizer": {
-      "source": "AGI-Ventures-Canada/hackathon-skills",
-      "sourceType": "github",
-      "computedHash": "c4b9decb71ea8618f149be38f3d0b535ea9f1fc05059336eba14f86e5d3c26c9"
     }
   }
 }
