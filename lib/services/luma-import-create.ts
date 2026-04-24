@@ -134,7 +134,7 @@ export async function importTranslationVariants({
         primary,
         variant: {
           name: eventData.name,
-          description: eventData.description ?? richContent?.cleanedDescription ?? null,
+          description: richContent?.cleanedDescription ?? eventData.description ?? null,
           rules: richContent?.rules ?? null,
           location_name: eventData.locationName,
           community_label: null,

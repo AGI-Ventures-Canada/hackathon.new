@@ -38,7 +38,6 @@ export function LanguageToggle({ locales, current }: LanguageToggleProps) {
           variant={locale === current ? "default" : "outline"}
           aria-pressed={locale === current}
           onClick={() => handleSelect(locale)}
-          className="h-6 px-2 text-xs"
         >
           {LANGUAGE_LABELS[locale] ?? locale.toUpperCase()}
         </Button>

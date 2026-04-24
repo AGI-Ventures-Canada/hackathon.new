@@ -482,6 +482,45 @@ describe("importTranslationVariants", () => {
     expect((payload as { translations: Record<string, Record<string, unknown>> }).translations.fr.description).toBe("Construisez des trucs.")
   })
 
+  it("prefers cleanedDescription over eventData.description for variants", async () => {
+    mockExtractExternalEventData.mockImplementationOnce(() =>
+      Promise.resolve({
+        name: "Hackathon IA de Montréal",
+        description: "Construisez des trucs. Pour la version anglaise cliquez ici.",
+        startsAt: null,
+        endsAt: null,
+        locationType: null,
+        locationName: null,
+        locationUrl: null,
+        imageUrl: null,
+        language: "fr",
+      })
+    )
+    mockExtractExternalRichContent.mockImplementationOnce(() =>
+      Promise.resolve({
+        sponsors: [],
+        rules: null,
+        prizes: [],
+        challenges: [],
+        translationLinks: [],
+        cleanedDescription: "Construisez des trucs.",
+      })
+    )
+
+    const updateChain = setupUpdateChain()
+
+    await importTranslationVariants({
+      hackathonId: "h1",
+      primaryLocale: "en",
+      primary,
+      translationLinks: [{ url: "https://luma.com/fr", languageCode: "fr" }],
+    })
+
+    const [[payload]] = updateChain.update.mock.calls
+    expect((payload as { translations: Record<string, Record<string, unknown>> }).translations.fr.description)
+      .toBe("Construisez des trucs.")
+  })
+
   it("skips variant whose detected locale equals the primary locale", async () => {
     mockExtractExternalEventData.mockImplementationOnce(() =>
       Promise.resolve({
