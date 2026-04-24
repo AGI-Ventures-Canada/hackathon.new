@@ -51,10 +51,13 @@ export default async function EventImportPage({ searchParams }: PageProps) {
     notFound()
   }
 
-  const [eventData, richContent] = await Promise.all([
-    ttlCache(`import:data:${normalizedUrl}`, () => extractExternalEventData(normalizedUrl)),
-    ttlCache(`import:rich:${normalizedUrl}`, () => extractExternalRichContent(normalizedUrl)),
-  ])
+  const eventData = await ttlCache(`import:data:${normalizedUrl}`, () =>
+    extractExternalEventData(normalizedUrl)
+  )
+
+  const richContent = await ttlCache(`import:rich:${normalizedUrl}`, () =>
+    extractExternalRichContent(normalizedUrl, { eventStartsAt: eventData?.startsAt ?? null })
+  )
 
   if (!eventData) {
     return (

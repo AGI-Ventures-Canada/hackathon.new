@@ -3,7 +3,9 @@ import { downloadAndUploadBanner } from "@/lib/services/storage"
 import { addSponsor } from "@/lib/services/sponsors"
 import { createPrize } from "@/lib/services/prizes"
 import { createChallenge } from "@/lib/services/challenges"
+import { createScheduleItem } from "@/lib/services/schedule-items"
 import { extractExternalEventData, extractExternalRichContent, isLumaUrl } from "@/lib/services/external-import"
+import { anchorAgendaTimestamp, composeAgendaDescription } from "@/lib/utils/agenda"
 import { normalizeUrl, isSafeExternalUrl } from "@/lib/utils/url"
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
@@ -219,5 +221,91 @@ export async function createChallengesFromImport(
       description: c.description ?? null,
       resources: cleanedResources,
     })
+  }
+}
+
+export type ImportedAgendaItem = {
+  title: string
+  description?: string | null
+  startsAt?: string | null
+  endsAt?: string | null
+  location?: string | null
+  speakers?: string[]
+}
+
+type UsableAgendaItem = ImportedAgendaItem & { startsAt: string; title: string }
+
+const MAX_AGENDA_ITEMS = 50
+const MAX_AGENDA_TITLE_LEN = 200
+
+function pickUsable(
+  items: ImportedAgendaItem[],
+  eventStartsAt: string | null
+): UsableAgendaItem[] {
+  const usable: UsableAgendaItem[] = []
+  for (const item of items) {
+    if (usable.length >= MAX_AGENDA_ITEMS) break
+    const startsAt = anchorAgendaTimestamp(item.startsAt?.trim() || null, eventStartsAt)
+    const title = item.title?.trim()
+    if (!startsAt || !title) continue
+    const endsAt = anchorAgendaTimestamp(item.endsAt?.trim() || null, eventStartsAt)
+    usable.push({
+      ...item,
+      startsAt,
+      endsAt,
+      title: title.slice(0, MAX_AGENDA_TITLE_LEN),
+    })
+  }
+  if (usable.length < items.length) {
+    console.warn(
+      `Dropped ${items.length - usable.length} of ${items.length} imported agenda items missing title or startsAt`
+    )
+  }
+  return usable
+}
+
+// Inserts imported agenda items into hackathon_schedule_items, then clears the
+// four auto-seeded non-trigger defaults only if every insert succeeded. The
+// two trigger items (challenge_release, submission_deadline) are never touched.
+// On partial failure, the defaults are left in place so the schedule is never
+// empty.
+//
+// Items whose extracted date is far from the event's start date (Claude's
+// common "1970-01-01" or "2026-01-01" fallback when the page only showed a
+// time of day) are anchored to the event's start date, preserving the time of
+// day and timezone offset.
+export async function createAgendaFromImport(
+  hackathonId: string,
+  items: ImportedAgendaItem[],
+  eventStartsAt: string | null = null
+): Promise<void> {
+  const usable = pickUsable(items, eventStartsAt)
+  if (!usable.length) return
+
+  const insertedIds: string[] = []
+  for (let i = 0; i < usable.length; i++) {
+    const item = usable[i]
+    const created = await createScheduleItem(hackathonId, {
+      title: item.title,
+      description: composeAgendaDescription(item.speakers, item.description) ?? undefined,
+      startsAt: item.startsAt,
+      endsAt: item.endsAt ?? undefined,
+      location: item.location?.trim() || undefined,
+      sortOrder: i,
+    })
+    if (!created) return
+    insertedIds.push(created.id)
+  }
+
+  const client = getSupabase() as unknown as SupabaseClient
+  const { error: deleteError } = await client
+    .from("hackathon_schedule_items")
+    .delete()
+    .eq("hackathon_id", hackathonId)
+    .is("trigger_type", null)
+    .not("id", "in", `(${insertedIds.join(",")})`)
+
+  if (deleteError) {
+    console.error("Failed to clear default agenda items after import:", deleteError)
   }
 }

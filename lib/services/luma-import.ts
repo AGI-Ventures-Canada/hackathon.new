@@ -18,13 +18,13 @@ export function normalizeEventDate(isoString: string | null): string | null {
   if (!isoString) return null
 
   const match = isoString.match(
-    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-]\d{2}:?\d{2})?/
   )
   if (!match) return isoString
 
-  const [, year, month, day, hour, minute, second] = match
+  const [, year, month, day, hour, minute, second, offset] = match
 
-  return `${year}-${month}-${day}T${hour}:${minute}:${second}`
+  return `${year}-${month}-${day}T${hour}:${minute}:${second}${offset ?? ""}`
 }
 
 const ATTENDANCE_MODE_MAP: Record<string, "in_person" | "virtual"> = {

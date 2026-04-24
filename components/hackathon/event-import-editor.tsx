@@ -38,6 +38,14 @@ function eventDataToState(
       description: challenge.description ?? null,
       resources: challenge.resources ?? [],
     })) ?? [],
+    agendaItems: richContent?.agendaItems?.map((item) => ({
+      title: item.title,
+      description: item.description ?? null,
+      startsAt: item.startsAt ?? null,
+      endsAt: item.endsAt ?? null,
+      location: item.location ?? null,
+      speakers: item.speakers ?? [],
+    })) ?? [],
   }
 }
 
@@ -65,6 +73,7 @@ export function EventImportEditor({
         rules: state.rules,
         prizes: state.prizes,
         challenges: state.challenges,
+        agendaItems: state.agendaItems,
         sourceUrl,
         defaultLocale: eventData.language ?? null,
         translationLinks: [
