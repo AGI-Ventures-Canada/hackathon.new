@@ -3,6 +3,7 @@ import {
   createChainableMock,
   resetSupabaseMocks,
   setMockFromImplementation,
+  setMockRpcImplementation,
   mockFrom,
   mockRpc,
 } from "../lib/supabase-mock"
@@ -382,10 +383,16 @@ describe("importTranslationVariants", () => {
     community_label: null,
   }
 
-  function setupUpdateChain() {
-    const updateChain = createChainableMock({ data: null, error: null })
-    setMockFromImplementation(() => updateChain)
-    return updateChain
+  type RpcCall = { fn: string; params: Record<string, unknown> }
+  let rpcCalls: RpcCall[]
+
+  function captureRpc() {
+    rpcCalls = []
+    setMockRpcImplementation((fn, params) => {
+      rpcCalls.push({ fn, params: params as Record<string, unknown> })
+      return Promise.resolve({ data: null, error: null })
+    })
+    setMockFromImplementation(() => createChainableMock({ data: null, error: null }))
   }
 
   beforeEach(() => {
@@ -394,20 +401,23 @@ describe("importTranslationVariants", () => {
     mockExtractExternalRichContent.mockReset()
     mockExtractExternalEventData.mockImplementation(() => Promise.resolve(null))
     mockExtractExternalRichContent.mockImplementation(() => Promise.resolve(null))
+    captureRpc()
   })
 
   it("no-op when translationLinks is empty", async () => {
     await importTranslationVariants({
       hackathonId: "h1",
+      tenantId: "t1",
       primaryLocale: "en",
       primary,
       translationLinks: [],
     })
 
     expect(mockExtractExternalEventData).not.toHaveBeenCalled()
+    expect(rpcCalls).toHaveLength(0)
   })
 
-  it("writes a translations JSONB with differing fields for each locale", async () => {
+  it("calls the upsert RPC per locale with tenant scoping", async () => {
     mockExtractExternalEventData.mockImplementationOnce(() =>
       Promise.resolve({
         name: "Hackathon IA de Montréal",
@@ -432,23 +442,25 @@ describe("importTranslationVariants", () => {
       })
     )
 
-    const updateChain = setupUpdateChain()
-
     await importTranslationVariants({
       hackathonId: "h1",
+      tenantId: "t1",
       primaryLocale: "en",
       primary,
       translationLinks: [{ url: "https://luma.com/fr", languageCode: "fr" }],
     })
 
-    expect(updateChain.update).toHaveBeenCalledWith({
-      translations: {
-        fr: {
-          name: "Hackathon IA de Montréal",
-          description: "Construisez des trucs.",
-          rules: "Soyez gentils.",
-          location_name: "Montréal",
-        },
+    expect(rpcCalls).toHaveLength(1)
+    expect(rpcCalls[0].fn).toBe("upsert_hackathon_translation")
+    expect(rpcCalls[0].params).toEqual({
+      p_hackathon_id: "h1",
+      p_tenant_id: "t1",
+      p_locale: "fr",
+      p_fields: {
+        name: "Hackathon IA de Montréal",
+        description: "Construisez des trucs.",
+        rules: "Soyez gentils.",
+        location_name: "Montréal",
       },
     })
   })
@@ -468,18 +480,17 @@ describe("importTranslationVariants", () => {
       })
     )
 
-    const updateChain = setupUpdateChain()
-
     await importTranslationVariants({
       hackathonId: "h1",
+      tenantId: "t1",
       primaryLocale: "en",
       primary,
       translationLinks: [{ url: "https://luma.com/fr", languageCode: "fr" }],
     })
 
-    const [[payload]] = updateChain.update.mock.calls
-    expect((payload as { translations: Record<string, Record<string, unknown>> }).translations.fr.name).toBeUndefined()
-    expect((payload as { translations: Record<string, Record<string, unknown>> }).translations.fr.description).toBe("Construisez des trucs.")
+    const fields = rpcCalls[0].params.p_fields as Record<string, unknown>
+    expect(fields.name).toBeUndefined()
+    expect(fields.description).toBe("Construisez des trucs.")
   })
 
   it("prefers cleanedDescription over eventData.description for variants", async () => {
@@ -507,18 +518,16 @@ describe("importTranslationVariants", () => {
       })
     )
 
-    const updateChain = setupUpdateChain()
-
     await importTranslationVariants({
       hackathonId: "h1",
+      tenantId: "t1",
       primaryLocale: "en",
       primary,
       translationLinks: [{ url: "https://luma.com/fr", languageCode: "fr" }],
     })
 
-    const [[payload]] = updateChain.update.mock.calls
-    expect((payload as { translations: Record<string, Record<string, unknown>> }).translations.fr.description)
-      .toBe("Construisez des trucs.")
+    const fields = rpcCalls[0].params.p_fields as Record<string, unknown>
+    expect(fields.description).toBe("Construisez des trucs.")
   })
 
   it("skips variant whose detected locale equals the primary locale", async () => {
@@ -536,25 +545,21 @@ describe("importTranslationVariants", () => {
       })
     )
 
-    const updateChain = createChainableMock({ data: null, error: null })
-    setMockFromImplementation(() => updateChain)
-
     await importTranslationVariants({
       hackathonId: "h1",
+      tenantId: "t1",
       primaryLocale: "en",
       primary,
       translationLinks: [{ url: "https://luma.com/en2", languageCode: "en" }],
     })
 
-    expect(updateChain.update).not.toHaveBeenCalled()
+    expect(rpcCalls).toHaveLength(0)
   })
 
   it("skips unsafe URLs and non-Luma URLs without fetching", async () => {
-    const updateChain = createChainableMock({ data: null, error: null })
-    setMockFromImplementation(() => updateChain)
-
     await importTranslationVariants({
       hackathonId: "h1",
+      tenantId: "t1",
       primaryLocale: "en",
       primary,
       translationLinks: [
@@ -564,7 +569,7 @@ describe("importTranslationVariants", () => {
     })
 
     expect(mockExtractExternalEventData).not.toHaveBeenCalled()
-    expect(updateChain.update).not.toHaveBeenCalled()
+    expect(rpcCalls).toHaveLength(0)
   })
 
   it("dedupes variants by normalized URL", async () => {
@@ -583,10 +588,9 @@ describe("importTranslationVariants", () => {
     )
     mockExtractExternalRichContent.mockImplementation(() => Promise.resolve(null))
 
-    setupUpdateChain()
-
     await importTranslationVariants({
       hackathonId: "h1",
+      tenantId: "t1",
       primaryLocale: "en",
       primary,
       translationLinks: [
@@ -615,10 +619,9 @@ describe("importTranslationVariants", () => {
     )
     mockExtractExternalRichContent.mockImplementation(() => Promise.resolve(null))
 
-    const updateChain = setupUpdateChain()
-
     await importTranslationVariants({
       hackathonId: "h1",
+      tenantId: "t1",
       primaryLocale: "en",
       primary,
       translationLinks: [
@@ -627,8 +630,7 @@ describe("importTranslationVariants", () => {
       ],
     })
 
-    expect(updateChain.update).toHaveBeenCalledTimes(1)
-    const [[payload]] = updateChain.update.mock.calls
-    expect(Object.keys((payload as { translations: Record<string, unknown> }).translations)).toEqual(["es"])
+    expect(rpcCalls).toHaveLength(1)
+    expect(rpcCalls[0].params.p_locale).toBe("es")
   })
 })

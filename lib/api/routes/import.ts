@@ -102,6 +102,7 @@ export const dashboardImportRoutes = new Elysia({ prefix: "/dashboard/import" })
       if (body.translationLinks?.length) {
         importTranslationVariants({
           hackathonId: hackathon.id,
+          tenantId: principal.tenantId,
           primaryLocale: hackathon.default_locale ?? "en",
           primary: {
             name: body.name,
@@ -258,6 +259,7 @@ export const dashboardImportRoutes = new Elysia({ prefix: "/dashboard/import" })
       if (mergedTranslationLinks.length) {
         importTranslationVariants({
           hackathonId: hackathon.id,
+          tenantId: principal.tenantId,
           primaryLocale: hackathon.default_locale ?? "en",
           primary: {
             name: primaryName,

@@ -83,11 +83,13 @@ const MAX_TRANSLATION_LINKS = 10
 
 export async function importTranslationVariants({
   hackathonId,
+  tenantId,
   primaryLocale,
   primary,
   translationLinks,
 }: {
   hackathonId: string
+  tenantId: string
   primaryLocale: string
   primary: TranslationPrimary
   translationLinks: TranslationLinkInput[]
@@ -152,13 +154,16 @@ export async function importTranslationVariants({
   if (!Object.keys(translations).length) return
 
   const client = getSupabase() as unknown as SupabaseClient
-  const { error } = await client
-    .from("hackathons")
-    .update({ translations })
-    .eq("id", hackathonId)
-
-  if (error) {
-    console.error("Failed to write translations:", error)
+  for (const [locale, record] of Object.entries(translations)) {
+    const { error } = await client.rpc("upsert_hackathon_translation", {
+      p_hackathon_id: hackathonId,
+      p_tenant_id: tenantId,
+      p_locale: locale,
+      p_fields: record,
+    })
+    if (error) {
+      console.error(`Failed to write translation for locale ${locale}:`, error)
+    }
   }
 }
 
