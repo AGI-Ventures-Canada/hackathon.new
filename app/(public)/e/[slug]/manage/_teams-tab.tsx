@@ -123,24 +123,6 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
     return () => ctx.unregisterTabAction("review-team-settings")
   }, [ctx])
 
-  async function saveTeamSettings(patch: Record<string, unknown>, rollback: () => void) {
-    setSavingSettings(true)
-    setSettingsError(null)
-    try {
-      await fetch(`/api/dashboard/hackathons/${hackathonId}/settings`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
-      }).then(assertOk)
-      router.refresh()
-    } catch (err) {
-      rollback()
-      setSettingsError(err instanceof Error ? err.message : "Failed to save")
-    } finally {
-      setSavingSettings(false)
-    }
-  }
-
   async function fetchTeams() {
     try {
       setLoading(true)
