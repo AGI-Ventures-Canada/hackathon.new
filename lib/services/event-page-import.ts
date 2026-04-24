@@ -51,6 +51,7 @@ export const extractEventPageData = cache(async function extractEventPageData(
       headers: {
         "User-Agent": "Mozilla/5.0 (compatible; OatmealBot/1.0; +https://oatmeal.sh)",
       },
+      signal: AbortSignal.timeout(8000),
     })
   } catch (err) {
     console.error(`Failed to fetch event page from ${url}:`, err)

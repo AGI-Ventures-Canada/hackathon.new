@@ -87,7 +87,10 @@ describe("extractLumaEventData", () => {
     mockFetch.mockResolvedValueOnce(new Response(MOCK_HTML_WITH_JSONLD, { status: 200 }))
 
     await extractLumaEventData("my-hackathon")
-    expect(mockFetch).toHaveBeenCalledWith("https://luma.com/my-hackathon")
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://luma.com/my-hackathon",
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    )
   })
 
   it("returns null when fetch fails", async () => {

@@ -407,53 +407,28 @@ export async function updateHackathonTranslation(
 ): Promise<Hackathon | null> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { data: current, error: fetchErr } = await client
-    .from("hackathons")
-    .select("translations")
-    .eq("id", hackathonId)
-    .eq("tenant_id", tenantId)
-    .single()
-
-  if (fetchErr || !current) {
-    console.error("Failed to fetch hackathon for translation update:", fetchErr)
-    return null
-  }
-
-  const existing = ((current as { translations: Record<string, Record<string, string>> | null }).translations ?? {}) as Record<string, Record<string, string>>
-  const perLocale = { ...(existing[locale] ?? {}) }
-
+  const payload: Record<string, string | null> = {}
   for (const [key, value] of Object.entries(fields)) {
     if (value === undefined) continue
-    if (value === null || value.trim().length === 0) {
-      delete perLocale[key]
-    } else {
-      perLocale[key] = value.trim()
-    }
+    payload[key] = value
   }
 
-  const nextTranslations: Record<string, Record<string, string>> = { ...existing }
-  if (Object.keys(perLocale).length === 0) {
-    delete nextTranslations[locale]
-  } else {
-    nextTranslations[locale] = perLocale
-  }
-
-  const translationsValue = Object.keys(nextTranslations).length > 0 ? nextTranslations : null
-
-  const { data, error } = await client
-    .from("hackathons")
-    .update({ translations: translationsValue })
-    .eq("id", hackathonId)
-    .eq("tenant_id", tenantId)
-    .select()
-    .single()
+  const { data, error } = await client.rpc("upsert_hackathon_translation", {
+    p_hackathon_id: hackathonId,
+    p_tenant_id: tenantId,
+    p_locale: locale,
+    p_fields: payload,
+  })
 
   if (error) {
     console.error("Failed to update hackathon translation:", error)
     return null
   }
 
-  return data as unknown as Hackathon
+  const rows = Array.isArray(data) ? data : data ? [data] : []
+  if (rows.length === 0) return null
+
+  return rows[0] as unknown as Hackathon
 }
 
 export async function deleteHackathon(

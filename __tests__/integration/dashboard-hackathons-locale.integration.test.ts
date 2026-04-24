@@ -276,4 +276,13 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - locale branch", () => {
     expect(mockUpdateHackathonTranslation).not.toHaveBeenCalled()
     expect(mockUpdateHackathonSettings).not.toHaveBeenCalled()
   })
+
+  it("returns 500 when the translation write fails after the organizer check passes", async () => {
+    mockUpdateHackathonTranslation.mockResolvedValueOnce(null as never)
+
+    const res = await patchSettings({ locale: "fr", name: "Bonjour" })
+    expect(res.status).toBe(500)
+    const body = await res.json()
+    expect(body.error).toBe("Failed to update translation")
+  })
 })

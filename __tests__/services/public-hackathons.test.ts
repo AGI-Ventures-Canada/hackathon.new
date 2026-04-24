@@ -4,6 +4,7 @@ import {
   createChainableMock,
   resetSupabaseMocks,
   setMockFromImplementation,
+  setMockRpcImplementation,
   mockMultiTableQuery,
 } from "../lib/supabase-mock"
 
@@ -381,81 +382,73 @@ describe("Public Hackathons Service", () => {
   })
 
   describe("updateHackathonTranslation", () => {
-    function setupSelectThenUpdate(existingTranslations: Record<string, Record<string, string>> | null) {
-      const selectChain = createChainableMock({ data: { translations: existingTranslations }, error: null })
-      const updateChain = createChainableMock({ data: { ...mockHackathon, translations: existingTranslations }, error: null })
-      let call = 0
-      setMockFromImplementation(() => (++call === 1 ? selectChain : updateChain))
-      return { selectChain, updateChain }
-    }
+    it("calls the upsert RPC with the provided fields and returns the updated row", async () => {
+      const updatedRow = { ...mockHackathon, translations: { fr: { name: "Nom" } } }
+      const rpcCalls: { fn: string; params: unknown }[] = []
+      setMockRpcImplementation((fn, params) => {
+        rpcCalls.push({ fn, params })
+        return Promise.resolve({ data: [updatedRow], error: null })
+      })
 
-    it("seeds a new locale when none exists", async () => {
-      const { updateChain } = setupSelectThenUpdate(null)
+      const result = await updateHackathonTranslation("h1", "t1", "fr", {
+        name: "Nom",
+        description: "Description",
+      })
+
+      expect(result).toEqual(updatedRow as unknown as Hackathon)
+      expect(rpcCalls).toHaveLength(1)
+      expect(rpcCalls[0].fn).toBe("upsert_hackathon_translation")
+      expect(rpcCalls[0].params).toEqual({
+        p_hackathon_id: "h1",
+        p_tenant_id: "t1",
+        p_locale: "fr",
+        p_fields: { name: "Nom", description: "Description" },
+      })
+    })
+
+    it("forwards null values so the RPC can delete that field", async () => {
+      const rpcCalls: { params: unknown }[] = []
+      setMockRpcImplementation((_fn, params) => {
+        rpcCalls.push({ params })
+        return Promise.resolve({ data: [mockHackathon], error: null })
+      })
+
+      await updateHackathonTranslation("h1", "t1", "fr", { description: null })
+
+      expect((rpcCalls[0].params as { p_fields: unknown }).p_fields).toEqual({ description: null })
+    })
+
+    it("skips undefined fields", async () => {
+      const rpcCalls: { params: unknown }[] = []
+      setMockRpcImplementation((_fn, params) => {
+        rpcCalls.push({ params })
+        return Promise.resolve({ data: [mockHackathon], error: null })
+      })
 
       await updateHackathonTranslation("h1", "t1", "fr", {
-        name: "Nom en français",
-        description: "Description en français",
+        name: "Nom",
+        description: undefined,
       })
 
-      expect(updateChain.update).toHaveBeenCalledWith({
-        translations: { fr: { name: "Nom en français", description: "Description en français" } },
-      })
-    })
-
-    it("merges new fields into an existing locale", async () => {
-      const { updateChain } = setupSelectThenUpdate({ fr: { name: "Ancien nom" } })
-
-      await updateHackathonTranslation("h1", "t1", "fr", {
-        description: "Nouvelle description",
-      })
-
-      expect(updateChain.update).toHaveBeenCalledWith({
-        translations: { fr: { name: "Ancien nom", description: "Nouvelle description" } },
+      expect((rpcCalls[0].params as { p_fields: Record<string, unknown> }).p_fields).toEqual({
+        name: "Nom",
       })
     })
 
-    it("removes a field when set to null or empty", async () => {
-      const { updateChain } = setupSelectThenUpdate({ fr: { name: "x", description: "y" } })
+    it("returns null when the RPC returns an error", async () => {
+      setMockRpcImplementation(() =>
+        Promise.resolve({ data: null, error: { message: "db error" } })
+      )
 
-      await updateHackathonTranslation("h1", "t1", "fr", { description: null })
-
-      expect(updateChain.update).toHaveBeenCalledWith({
-        translations: { fr: { name: "x" } },
-      })
+      const result = await updateHackathonTranslation("h1", "t1", "fr", { name: "Nom" })
+      expect(result).toBeNull()
     })
 
-    it("drops the locale entirely when it ends up empty", async () => {
-      const { updateChain } = setupSelectThenUpdate({ fr: { description: "y" }, es: { name: "z" } })
+    it("returns null when the RPC yields no rows", async () => {
+      setMockRpcImplementation(() => Promise.resolve({ data: [], error: null }))
 
-      await updateHackathonTranslation("h1", "t1", "fr", { description: null })
-
-      expect(updateChain.update).toHaveBeenCalledWith({
-        translations: { es: { name: "z" } },
-      })
-    })
-
-    it("sets translations to null when removing the last locale", async () => {
-      const { updateChain } = setupSelectThenUpdate({ fr: { description: "y" } })
-
-      await updateHackathonTranslation("h1", "t1", "fr", { description: null })
-
-      expect(updateChain.update).toHaveBeenCalledWith({ translations: null })
-    })
-
-    it("does not mutate other locales when updating one", async () => {
-      const { updateChain } = setupSelectThenUpdate({
-        fr: { name: "Nom fr" },
-        es: { name: "Nombre es" },
-      })
-
-      await updateHackathonTranslation("h1", "t1", "fr", { description: "Nouvelle" })
-
-      expect(updateChain.update).toHaveBeenCalledWith({
-        translations: {
-          fr: { name: "Nom fr", description: "Nouvelle" },
-          es: { name: "Nombre es" },
-        },
-      })
+      const result = await updateHackathonTranslation("h1", "t1", "fr", { name: "Nom" })
+      expect(result).toBeNull()
     })
   })
 })

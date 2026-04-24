@@ -1,5 +1,5 @@
 import { cache } from "react"
-import { normalizeLocale } from "@/lib/utils/language"
+import { LANGUAGE_NAMES, normalizeLocale } from "@/lib/utils/language"
 
 export type LumaEventData = {
   name: string
@@ -40,7 +40,7 @@ export const extractLumaEventData = cache(async function extractLumaEventData(
 
   let response: Response
   try {
-    response = await fetch(url)
+    response = await fetch(url, { signal: AbortSignal.timeout(8000) })
   } catch (err) {
     console.error(`Failed to fetch Luma event from ${url}:`, err)
     return null
@@ -181,17 +181,25 @@ function matchMeta(html: string, property: string): string | null {
   return (m?.[1] ?? m?.[2] ?? null)?.trim() || null
 }
 
-const LANGUAGE_KEYWORD_TO_CODE: { keywords: RegExp; code: string }[] = [
-  { keywords: /\b(french|français|francais|french\s*version|version\s*française|version\s*francaise)\b/i, code: "fr" },
-  { keywords: /\b(english|anglais|english\s*version|version\s*anglaise)\b/i, code: "en" },
-  { keywords: /\b(spanish|español|espanol|versión\s*española|version\s*espagnole)\b/i, code: "es" },
-  { keywords: /\b(portuguese|português|portugues|versão\s*portuguesa)\b/i, code: "pt" },
-  { keywords: /\b(german|deutsch|deutsche\s*version)\b/i, code: "de" },
-  { keywords: /\b(italian|italiano|versione\s*italiana)\b/i, code: "it" },
-  { keywords: /\b(japanese|日本語)\b/i, code: "ja" },
-  { keywords: /\b(korean|한국어)\b/i, code: "ko" },
-  { keywords: /\b(chinese|中文|mandarin)\b/i, code: "zh" },
-]
+const VERSION_MODIFIERS: Record<string, string[]> = {
+  fr: ["french\\s*version", "version\\s*française", "version\\s*francaise"],
+  en: ["english\\s*version", "version\\s*anglaise"],
+  es: ["versión\\s*española", "version\\s*espagnole"],
+  pt: ["versão\\s*portuguesa"],
+  de: ["deutsche\\s*version"],
+  it: ["versione\\s*italiana"],
+}
+
+const KEYWORD_MATCH_ORDER = ["fr", "en", "es", "pt", "de", "it", "ja", "ko", "zh"] as const
+
+const LANGUAGE_KEYWORD_TO_CODE: { keywords: RegExp; code: string }[] = KEYWORD_MATCH_ORDER.map(
+  (code) => {
+    const names = LANGUAGE_NAMES[code] ?? []
+    const escapedNames = names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    const alternatives = [...escapedNames, ...(VERSION_MODIFIERS[code] ?? [])].join("|")
+    return { keywords: new RegExp(`\\b(${alternatives})\\b`, "i"), code }
+  }
+)
 
 export function parseTranslationLinksFromHtml(
   html: string,

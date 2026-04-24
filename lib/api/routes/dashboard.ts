@@ -1188,9 +1188,18 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         if (body.locationName !== undefined) translatable.location_name = body.locationName
         if (body.communityLabel !== undefined) translatable.community_label = body.communityLabel
 
-        hackathon = Object.keys(translatable).length > 0
-          ? await updateHackathonTranslation(params.id, principal.tenantId, translationLocale, translatable)
-          : currentHackathon ?? null
+        if (Object.keys(translatable).length > 0) {
+          const translationResult = await updateHackathonTranslation(params.id, principal.tenantId, translationLocale, translatable)
+          if (!translationResult) {
+            return new Response(JSON.stringify({ error: "Failed to update translation" }), {
+              status: 500,
+              headers: { "Content-Type": "application/json" },
+            })
+          }
+          hackathon = translationResult
+        } else {
+          hackathon = currentHackathon ?? null
+        }
       } else {
         const { updateHackathonSettings } = await import("@/lib/services/public-hackathons")
         hackathon = await updateHackathonSettings(params.id, principal.tenantId, {

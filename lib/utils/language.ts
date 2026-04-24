@@ -28,31 +28,25 @@ export const LANGUAGE_LABELS: Record<string, string> = {
   hi: "हिन्दी",
 }
 
-const NAME_TO_CODE: Record<string, string> = {
-  english: "en",
-  anglais: "en",
-  french: "fr",
-  français: "fr",
-  francais: "fr",
-  spanish: "es",
-  español: "es",
-  espanol: "es",
-  portuguese: "pt",
-  português: "pt",
-  portugues: "pt",
-  german: "de",
-  deutsch: "de",
-  italian: "it",
-  italiano: "it",
-  japanese: "ja",
-  korean: "ko",
-  chinese: "zh",
-  mandarin: "zh",
-  arabic: "ar",
-  russian: "ru",
-  dutch: "nl",
-  hindi: "hi",
+export const LANGUAGE_NAMES: Record<string, readonly string[]> = {
+  en: ["english", "anglais"],
+  fr: ["french", "français", "francais"],
+  es: ["spanish", "español", "espanol"],
+  pt: ["portuguese", "português", "portugues"],
+  de: ["german", "deutsch"],
+  it: ["italian", "italiano"],
+  ja: ["japanese", "日本語"],
+  ko: ["korean", "한국어"],
+  zh: ["chinese", "mandarin", "中文"],
+  ar: ["arabic"],
+  ru: ["russian"],
+  nl: ["dutch"],
+  hi: ["hindi"],
 }
+
+const NAME_TO_CODE: Record<string, string> = Object.fromEntries(
+  Object.entries(LANGUAGE_NAMES).flatMap(([code, names]) => names.map((name) => [name, code]))
+)
 
 export function normalizeLocale(raw: string | null | undefined): string | null {
   if (!raw) return null
