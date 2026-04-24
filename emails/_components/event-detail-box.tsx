@@ -36,6 +36,9 @@ export function formatDateRange(
   const sameMonth = sameYear && start.getUTCMonth() === end.getUTCMonth()
 
   if (sameMonth) {
+    if (start.getUTCDate() === end.getUTCDate()) {
+      return formatDate(start)
+    }
     return `${start.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })} \u2013 ${end.toLocaleDateString("en-US", { day: "numeric", timeZone: "UTC" })}, ${end.getUTCFullYear()}`
   }
 
