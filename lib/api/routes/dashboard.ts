@@ -1177,10 +1177,6 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           communityUrl: normalizeOptionalUrl(body.communityUrl),
         }
 
-        if (Object.values(nonTranslatable).some((v) => v !== undefined)) {
-          await updateHackathonSettings(params.id, principal.tenantId, nonTranslatable)
-        }
-
         const translatable: Parameters<typeof updateHackathonTranslation>[3] = {}
         if (body.name !== undefined) translatable.name = body.name
         if (body.description !== undefined) translatable.description = body.description
@@ -1199,6 +1195,11 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           hackathon = translationResult
         } else {
           hackathon = currentHackathon ?? null
+        }
+
+        if (Object.values(nonTranslatable).some((v) => v !== undefined)) {
+          const settingsResult = await updateHackathonSettings(params.id, principal.tenantId, nonTranslatable)
+          if (settingsResult) hackathon = settingsResult
         }
       } else {
         const { updateHackathonSettings } = await import("@/lib/services/public-hackathons")

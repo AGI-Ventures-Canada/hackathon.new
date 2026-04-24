@@ -2,7 +2,7 @@ import { describe, expect, it, mock, beforeEach } from "bun:test"
 import { Elysia } from "elysia"
 
 const mockHackathonResponse = {
-  id: "h1",
+  id: "11111111-1111-1111-1111-111111111111",
   name: "Test Hackathon",
   slug: "test-hackathon",
   description: null,
@@ -160,7 +160,7 @@ const app = new Elysia({ prefix: "/api" })
 
 const mockUserPrincipal = {
   kind: "user" as const,
-  tenantId: "tenant-123",
+  tenantId: "22222222-2222-2222-2222-222222222222",
   userId: "user-456",
   orgId: "org-789",
   orgRole: "org:admin",
@@ -169,7 +169,7 @@ const mockUserPrincipal = {
 
 function patchSettings(body: Record<string, unknown>) {
   return app.handle(
-    new Request("http://localhost/api/dashboard/hackathons/h1/settings", {
+    new Request("http://localhost/api/dashboard/hackathons/11111111-1111-1111-1111-111111111111/settings", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -199,8 +199,8 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - locale branch", () => {
 
     expect(mockUpdateHackathonTranslation).toHaveBeenCalledTimes(1)
     expect(mockUpdateHackathonTranslation).toHaveBeenCalledWith(
-      "h1",
-      "tenant-123",
+      "11111111-1111-1111-1111-111111111111",
+      "22222222-2222-2222-2222-222222222222",
       "fr",
       expect.objectContaining({ name: "Bonjour", description: "French desc" })
     )
@@ -212,8 +212,8 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - locale branch", () => {
     expect(res.status).toBe(200)
 
     expect(mockUpdateHackathonTranslation).toHaveBeenCalledWith(
-      "h1",
-      "tenant-123",
+      "11111111-1111-1111-1111-111111111111",
+      "22222222-2222-2222-2222-222222222222",
       "fr",
       expect.objectContaining({ name: "Bonjour" })
     )
@@ -225,8 +225,8 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - locale branch", () => {
 
     expect(mockUpdateHackathonTranslation).not.toHaveBeenCalled()
     expect(mockUpdateHackathonSettings).toHaveBeenCalledWith(
-      "h1",
-      "tenant-123",
+      "11111111-1111-1111-1111-111111111111",
+      "22222222-2222-2222-2222-222222222222",
       expect.objectContaining({ name: "Hello" })
     )
   })
@@ -237,8 +237,8 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - locale branch", () => {
 
     expect(mockUpdateHackathonTranslation).not.toHaveBeenCalled()
     expect(mockUpdateHackathonSettings).toHaveBeenCalledWith(
-      "h1",
-      "tenant-123",
+      "11111111-1111-1111-1111-111111111111",
+      "22222222-2222-2222-2222-222222222222",
       expect.objectContaining({ name: "Hello" })
     )
   })
@@ -253,8 +253,8 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - locale branch", () => {
     expect(res.status).toBe(200)
 
     expect(mockUpdateHackathonTranslation).toHaveBeenCalledWith(
-      "h1",
-      "tenant-123",
+      "11111111-1111-1111-1111-111111111111",
+      "22222222-2222-2222-2222-222222222222",
       "fr",
       expect.objectContaining({ name: "Bonjour" })
     )

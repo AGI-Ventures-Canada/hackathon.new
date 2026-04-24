@@ -106,6 +106,8 @@ type ProseMirrorNode = {
   marks?: { type?: string }[]
 }
 
+// Reads Luma's undocumented __NEXT_DATA__ SSR payload. Degrades to the
+// JSON-LD description when the shape changes upstream.
 function extractDescriptionFromNextData(html: string): string | null {
   const match = html.match(/<script\s+id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/)
   if (!match) return null
@@ -217,7 +219,11 @@ export function parseTranslationLinksFromHtml(
     if (slug === currentSlug) continue
 
     const idx = match.index ?? 0
-    const windowText = stripHtmlTags(html.slice(Math.max(0, idx - 200), idx))
+    const anchorEnd = html.indexOf("</a>", idx + match[0].length)
+    const afterStart = anchorEnd >= 0 ? anchorEnd + 4 : idx + match[0].length
+    const before = stripHtmlTags(html.slice(Math.max(0, idx - 200), idx))
+    const after = stripHtmlTags(html.slice(afterStart, afterStart + 200))
+    const windowText = `${before} ${after}`
     let detected: string | null = null
     for (const { keywords, code } of LANGUAGE_KEYWORD_TO_CODE) {
       if (keywords.test(windowText)) {

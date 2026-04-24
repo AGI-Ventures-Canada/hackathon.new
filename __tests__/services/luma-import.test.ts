@@ -305,6 +305,12 @@ describe("parseTranslationLinksFromHtml", () => {
     expect(links[0]?.languageCode).toBe("fr")
   })
 
+  it("detects language when the keyword follows the link text", () => {
+    const html = `<p><a href="https://luma.com/xyz123">Click here</a> for the French version →</p>`
+    const links = parseTranslationLinksFromHtml(html, "primary")
+    expect(links).toEqual([{ url: "https://luma.com/xyz123", languageCode: "fr" }])
+  })
+
   it("skips self-referencing anchors", () => {
     const html = `<a href="https://luma.com/self">French version</a><a href="https://luma.com/other">French</a>`
     const links = parseTranslationLinksFromHtml(html, "self")
