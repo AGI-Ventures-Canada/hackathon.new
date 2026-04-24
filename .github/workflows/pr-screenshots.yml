@@ -5,9 +5,13 @@ on:
 
 jobs:
   screenshots:
+    # Restrict to deployments on the canonical repo: deployment_status also
+    # fires for fork deployments, which can still exercise GITHUB_TOKEN's
+    # contents:write / pull-requests:write scopes even when secrets degrade.
     if: >-
       github.event.deployment_status.state == 'success' &&
-      github.event.deployment.environment == 'Preview'
+      github.event.deployment.environment == 'Preview' &&
+      github.repository == 'AGI-Ventures-Canada/oatmeal'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
