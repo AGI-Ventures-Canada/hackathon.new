@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { href: "/admin", label: "Overview", exact: true },
   { href: "/admin/hackathons", label: "Hackathons" },
   { href: "/admin/scenarios", label: "Scenarios" },
+  { href: "/admin/components", label: "Components" },
 ]
 
 export function AdminNav() {

@@ -1,8 +1,7 @@
 "use client"
 
 import { Fragment, useEffect, useRef, useState } from "react"
-import { useRouter } from "next/navigation"
-import { assertOk, assertOkJson } from "@/lib/utils/fetch"
+import { assertOkJson } from "@/lib/utils/fetch"
 import {
   Loader2, Plus, Users, ChevronRight, FileText, DoorOpen, Crown, Mail, Settings2,
 } from "lucide-react"
@@ -105,7 +104,6 @@ type TeamsTabProps = {
 }
 
 export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: initialMin, allowSolo: initialSolo }: TeamsTabProps) {
-  const router = useRouter()
   const ctx = useActionItemsOptional()
   const [teams, setTeams] = useState<Team[]>([])
   const [loading, setLoading] = useState(true)
@@ -117,11 +115,6 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
   const [createError, setCreateError] = useState<string | null>(null)
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [maxSize, setMaxSize] = useState(initialMax)
-  const [minSize, setMinSize] = useState(initialMin)
-  const [allowSolo, setAllowSolo] = useState(initialSolo)
-  const [savingSettings, setSavingSettings] = useState(false)
-  const [settingsError, setSettingsError] = useState<string | null>(null)
   const tempIdCounter = useRef(0)
 
   useEffect(() => {

@@ -1068,6 +1068,21 @@ export type RoleCard = {
   directUrl: string
 }
 
+function buildDevSwitchUrl(token: string, redirect: string, orgId: string | null): string {
+  const base = `/dev-switch?token=${token}&redirect=${encodeURIComponent(redirect)}`
+  return orgId ? `${base}&org=${encodeURIComponent(orgId)}` : base
+}
+
+async function getTenantClerkOrgId(hackathonId: string): Promise<string | null> {
+  const db = getSupabase()
+  const { data } = await db
+    .from("hackathons")
+    .select("tenants!inner(clerk_org_id)")
+    .eq("id", hackathonId)
+    .maybeSingle()
+  return data?.tenants?.clerk_org_id ?? null
+}
+
 export async function generateRoleTokens(hackathonId: string, slug: string): Promise<RoleCard[]> {
   const db = getSupabase()
 
@@ -1079,6 +1094,7 @@ export async function generateRoleTokens(hackathonId: string, slug: string): Pro
   if (!participants?.length) return []
 
   const organizerUserId = getPersonaUserId("organizer")
+  const clerkOrgId = await getTenantClerkOrgId(hackathonId)
   const { clerkClient } = await import("@clerk/nextjs/server")
   const clerk = await clerkClient()
 
@@ -1096,7 +1112,7 @@ export async function generateRoleTokens(hackathonId: string, slug: string): Pro
         expiresInSeconds: 300,
       })
       const directUrl = p.role === "judge" ? `/e/${slug}/judge` : `/e/${slug}`
-      const loginUrl = `/dev-switch?token=${token.token}&redirect=${encodeURIComponent(directUrl)}`
+      const loginUrl = buildDevSwitchUrl(token.token, directUrl, null)
       return { personaKey: persona.key, name: persona.name, role: p.role, loginUrl, directUrl }
     })
   )
@@ -1113,7 +1129,7 @@ export async function generateRoleTokens(hackathonId: string, slug: string): Pro
         personaKey: persona.key,
         name: persona.name,
         role: "organizer",
-        loginUrl: `/dev-switch?token=${token.token}&redirect=${encodeURIComponent(directUrl)}`,
+        loginUrl: buildDevSwitchUrl(token.token, directUrl, clerkOrgId),
         directUrl,
       })
     }

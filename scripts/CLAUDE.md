@@ -1,8 +1,53 @@
 # scripts/CLAUDE.md
 
-Test scenario scripts for seeding the local database with hackathons at specific lifecycle stages.
+Developer scripts for this repo. Currently:
 
-## Usage
+- [browser.sh](browser.sh) — `bun run browser` wrapper for `agent-browser` against local dev
+- [test-scenario.ts](test-scenario.ts) — seeds the local DB with hackathons at specific lifecycle stages
+
+---
+
+## browser.sh
+
+Wrapper for `agent-browser` that handles the full startup sequence for local UI verification. Use it via `bun run browser` — never invoke `scripts/browser.sh` directly in docs or CI.
+
+```bash
+bun run browser                 # opens http://localhost:3000/home
+bun run browser /hackathons     # any path
+bun run browser --refresh-auth  # re-save auth from side Chrome profile
+bun run browser --close         # close the oatmeal agent-browser session
+bun run browser --quit-chrome   # also quit the side Chrome instance
+```
+
+### What it does
+
+1. Verifies dev server is reachable at `localhost:3000` (prompts `bun dev` if not).
+2. Launches a **dedicated side Chrome instance** with its own profile at `.auth/chrome-profile/` and `--remote-debugging-port=9222`. Your main Chrome window is never touched.
+3. On first run, opens the side window so you can sign in once — auth persists in the profile for future runs.
+4. Saves auth state to `.auth/auth.json` (first run or `--refresh-auth`) via `agent-browser --auto-connect state save`.
+5. Closes any stale `oatmeal` session, opens the target path with `--state`, waits for `networkidle`, prints a snapshot.
+
+### Environment overrides
+
+| Var | Default | Purpose |
+|-----|---------|---------|
+| `OATMEAL_BASE_URL` | `http://localhost:3000` | Change base URL (e.g., preview deploy) |
+| `CHROME_DEBUG_PORT` | `9222` | Alternate debug port for the side Chrome |
+| `CHROME_APP` | `/Applications/Google Chrome.app` | Path to Chrome.app |
+| `CHROME_PROFILE_DIR` | `$PWD/.auth/chrome-profile` | Location of the dedicated profile |
+
+### Notes
+
+- `.auth/` is gitignored. It holds the signed-in Chrome profile and a plaintext `auth.json` — delete it to clear the session.
+- Full agent-browser reference: [.agents/skills/agent-browser/](../.agents/skills/agent-browser/) (see `references/oatmeal-shortcut.md`).
+
+---
+
+## test-scenario.ts
+
+Seeds the local database with hackathons at specific lifecycle stages.
+
+### Usage
 
 ```bash
 bun run scripts/test-scenario.ts <scenario>
@@ -10,7 +55,7 @@ bun run scripts/test-scenario.ts <scenario>
 
 Requires `bun dev` or local Supabase to be running.
 
-## Available Scenarios
+### Available Scenarios
 
 | Scenario | Status | Dev User State |
 |----------|--------|----------------|
@@ -32,7 +77,7 @@ Requires `bun dev` or local Supabase to be running.
 | `attendee-perks-mixed` | active | Released, scheduled-future, and hidden perks |
 | `attendee-winner-pending-claim` | judging | Results published, dev user's team won 1st place |
 
-## File Structure
+### File Structure
 
 ```
 scripts/
@@ -58,18 +103,18 @@ scripts/
     └── attendee-winner-pending-claim.ts
 ```
 
-## _helpers.ts
+### _helpers.ts
 
 Shared utilities for all scenarios:
 
-### Constants
+#### Constants
 
 - `DEV_USER_ID` - Clerk user ID for the local dev account
 - `SEED_USERS` - Array of 5 fake user IDs for test participants
 - `SUBMISSION_DATA` - 5 sample project titles/descriptions
 - `CRITERIA_PRESETS` - Default judging criteria (Innovation, Technical Execution, Presentation)
 
-### Functions
+#### Functions
 
 | Function | Purpose |
 |----------|---------|
@@ -84,7 +129,7 @@ Shared utilities for all scenarios:
 | `submitRandomScores(assignmentId, criteriaIds)` | Submits random scores 3-10 for all criteria |
 | `printReady(slug, hackathonId?)` | Prints URLs to access the seeded hackathon |
 
-## Adding a New Scenario
+### Adding a New Scenario
 
 1. Create `scripts/test-scenarios/<name>.ts`
 2. Import helpers from `./_helpers`
@@ -93,7 +138,7 @@ Shared utilities for all scenarios:
 5. Call `printReady(SLUG)` at the end
 6. Add the scenario name to the `scenarios` array in `test-scenario.ts`
 
-### Template
+#### Template
 
 ```typescript
 import {
@@ -131,7 +176,7 @@ async function run() {
 run().catch(console.error)
 ```
 
-## Required Environment Variables
+### Required Environment Variables
 
 The admin scenario runner (UI at `/admin/scenarios`, API at `/api/admin/scenario-run/:name`) requires:
 
@@ -142,7 +187,7 @@ The admin scenario runner (UI at `/admin/scenarios`, API at `/api/admin/scenario
 
 These are separate from the legacy CLI scripts in this directory, which resolve the dev user tenant via Supabase directly.
 
-## Notes
+### Notes
 
 - Each scenario prompts for an optional organizer tenant_id (press Enter for default dev user tenant)
 - Each scenario deletes any existing hackathon with the same slug before creating

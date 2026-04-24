@@ -406,7 +406,19 @@ Conventional Commits: `<type>(<scope>): <subject>` — imperative present tense,
 
 **CRITICAL: For any UI change, verify in the browser with `agent-browser` before considering done.**
 
-Connect to the user's Chrome (`--remote-debugging-port=9222`):
+**Preferred: `bun run browser`** — wraps the full startup sequence (launches a side Chrome profile, saves auth, opens target, snapshots). See [scripts/browser.sh](scripts/browser.sh).
+
+```bash
+bun run browser                 # opens /home
+bun run browser /hackathons     # any path
+bun run browser --refresh-auth  # re-save auth from side Chrome
+bun run browser --close         # close the agent-browser session
+bun run browser --quit-chrome   # also quit the side Chrome instance
+```
+
+The script launches a dedicated Chrome instance with its own profile at `.auth/chrome-profile/` (gitignored) and `--remote-debugging-port=9222`. Your main Chrome window is never touched. First run opens the side window so you can sign in once; auth persists in the profile for every future run.
+
+**Raw commands** (when the wrapper doesn't fit — different session, non-localhost URL, etc.):
 
 ```bash
 agent-browser --auto-connect --session oatmeal open http://localhost:3000

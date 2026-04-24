@@ -66,6 +66,9 @@ docs/
 .claude/scheduled_tasks.lock
 .claude/launch.json
 
+# Local browser auth session (cookies, JWTs, chrome profile)
+.auth/
+
 # Superset worktrees
 .superset/
 
@@ -82,7 +85,13 @@ supabase/.temp
 .env.local.production
 .playwright-mcp/
 
+# agent-browser session data
+.auth/
+
 /tmp
 
 # email screenshots
 .github/email-screenshots/
+
+# agent-browser auth state (contains session tokens)
+.auth/

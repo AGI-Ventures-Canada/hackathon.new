@@ -8,6 +8,10 @@ allowed-tools: Bash(npx agent-browser:*), Bash(agent-browser:*)
 
 The CLI uses Chrome/Chromium via CDP directly. Install via `npm i -g agent-browser`, `brew install agent-browser`, or `cargo install agent-browser`. Run `agent-browser install` to download Chrome. Existing Chrome, Brave, Playwright, and Puppeteer installations are detected automatically. Run `agent-browser upgrade` to update to the latest version.
 
+## Project Shortcut (Oatmeal)
+
+For local Oatmeal dev, use `bun run browser` — see [references/oatmeal-shortcut.md](references/oatmeal-shortcut.md). Fall back to the raw commands below when the wrapper doesn't fit.
+
 ## Core Workflow
 
 Every browser automation follows this pattern:
@@ -702,6 +706,7 @@ Priority (lowest to highest): `~/.agent-browser/config.json` < `./agent-browser.
 | [references/video-recording.md](references/video-recording.md)       | Recording workflows for debugging and documentation       |
 | [references/profiling.md](references/profiling.md)                   | Chrome DevTools profiling for performance analysis        |
 | [references/proxy-support.md](references/proxy-support.md)           | Proxy configuration, geo-testing, rotating proxies        |
+| [references/oatmeal-shortcut.md](references/oatmeal-shortcut.md)     | Oatmeal `bun run browser` wrapper script                  |
 
 ## Cloud Providers
 
