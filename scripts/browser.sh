@@ -1,21 +1,28 @@
 #!/usr/bin/env bash
 # Launch agent-browser against local dev with your real Chrome auth state.
-#
-# Usage:
-#   ./scripts/browser.sh [path]         # e.g. ./scripts/browser.sh /home
-#   ./scripts/browser.sh --refresh-auth # re-save auth from side Chrome
-#   ./scripts/browser.sh --close        # close the oatmeal session
-#   ./scripts/browser.sh --quit-chrome  # also quit the side Chrome instance
-#
-# How it works:
-#   Launches a second Chrome instance with a dedicated profile at
-#   .auth/chrome-profile/ and --remote-debugging-port=9222, leaving your
-#   main Chrome window untouched. First run: sign in once in the side
-#   window. Auth persists in that profile for every future run.
-#
-# Prereq: dev server running (bun dev).
+# macOS-only: uses `open -na` and the default Chrome.app path.
 
 set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Launch agent-browser against local dev with your real Chrome auth state.
+
+Usage:
+  ./scripts/browser.sh [path]         # e.g. ./scripts/browser.sh /home
+  ./scripts/browser.sh --refresh-auth # re-save auth from side Chrome
+  ./scripts/browser.sh --close        # close the oatmeal session
+  ./scripts/browser.sh --quit-chrome  # also quit the side Chrome instance
+
+How it works:
+  Launches a second Chrome instance with a dedicated profile at
+  .auth/chrome-profile/ and --remote-debugging-port=9222, leaving your
+  main Chrome window untouched. First run: sign in once in the side
+  window. Auth persists in that profile for every future run.
+
+Prereq: dev server running (bun dev).
+USAGE
+}
 
 SESSION="oatmeal"
 BASE_URL="${OATMEAL_BASE_URL:-http://localhost:3000}"
@@ -42,7 +49,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     -h|--help)
-      sed -n '2,17p' "$0"
+      usage
       exit 0
       ;;
     *)
