@@ -36,6 +36,15 @@ describe("formatDateRange", () => {
     expect(result).toContain("2026")
   })
 
+  it("formats single-day range (same start and end date) without a dash", () => {
+    const result = formatDateRange("2026-05-14T09:00:00Z", "2026-05-14T19:00:00Z")
+    expect(result).toContain("May")
+    expect(result).toContain("14")
+    expect(result).toContain("2026")
+    expect(result).not.toContain("–")
+    expect(result.match(/14/g)?.length).toBe(1)
+  })
+
   it("formats same-month range with compact format", () => {
     const result = formatDateRange("2026-03-10T00:00:00Z", "2026-03-15T00:00:00Z")
     expect(result).toContain("Mar")

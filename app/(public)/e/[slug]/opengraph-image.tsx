@@ -45,9 +45,21 @@ export default async function Image({ params }: Props) {
     })
   }
 
+  const isSameDay = (a: string, b: string) => {
+    const d1 = new Date(a)
+    const d2 = new Date(b)
+    return (
+      d1.getFullYear() === d2.getFullYear() &&
+      d1.getMonth() === d2.getMonth() &&
+      d1.getDate() === d2.getDate()
+    )
+  }
+
   const dateRange = hackathon.starts_at
     ? hackathon.ends_at
-      ? `${formatDate(hackathon.starts_at)} - ${formatDate(hackathon.ends_at)}`
+      ? isSameDay(hackathon.starts_at, hackathon.ends_at)
+        ? formatDate(hackathon.starts_at)
+        : `${formatDate(hackathon.starts_at)} - ${formatDate(hackathon.ends_at)}`
       : formatDate(hackathon.starts_at)
     : "Dates TBD"
 

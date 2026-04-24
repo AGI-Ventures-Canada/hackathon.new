@@ -17,6 +17,14 @@ describe("formatDateRange", () => {
     expect(result).toContain("2026")
   })
 
+  it("formats single-day range (same UTC day) without a dash", () => {
+    const result = formatDateRange("2026-05-14T09:00:00Z", "2026-05-14T19:00:00Z")
+    expect(result).toContain("May")
+    expect(result).toContain("14")
+    expect(result).toContain("2026")
+    expect(result).not.toContain("–")
+  })
+
   it("formats same-month range as compact", () => {
     const result = formatDateRange("2026-04-20T08:30:00Z", "2026-04-22T17:00:00Z")
     expect(result).toContain("Apr")
