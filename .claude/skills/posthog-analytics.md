@@ -1,7 +1,9 @@
 ---
 name: posthog-analytics
 description: PostHog analytics setup, patterns, and troubleshooting for the Oatmeal platform. Use when debugging missing PostHog events, adding new tracked events, modifying the /t proxy, or troubleshooting analytics on production.
-allowed-tools: Read, Glob, Grep, Bash(curl:*), Bash(vercel:*), Bash(git:*), Bash(bun:*), Write, Edit
+allowed-tools: Read Glob Grep Bash(curl:*) Bash(vercel:*) Bash(git:*) Bash(bun:*) Write Edit
+metadata:
+  internal: true
 ---
 
 # PostHog Analytics

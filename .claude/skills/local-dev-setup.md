@@ -1,7 +1,9 @@
 ---
 name: local-dev-setup
 description: Helps set up local development environment for the Oatmeal project. Use when someone asks how to run the project locally, set up local database, start local Supabase, configure .env or environment variables, get env keys, run dev server, install dependencies, or troubleshoot local setup issues.
-allowed-tools: Read, Glob, Bash(bun:*), Bash(bunx:*), Bash(supabase:*), Bash(git:*), Bash(which:*), Bash(brew:*), Bash(node:*), Bash(npx:*), Bash(docker:*), Bash(curl:*), Bash(open:*), Bash(cat:*), Bash(cp:*), Bash(ls:*), Bash(lsof:*), Bash(kill:*), Bash(rm:*)
+allowed-tools: Read Glob Bash(bun:*) Bash(bunx:*) Bash(supabase:*) Bash(git:*) Bash(which:*) Bash(brew:*) Bash(node:*) Bash(npx:*) Bash(docker:*) Bash(curl:*) Bash(open:*) Bash(cat:*) Bash(cp:*) Bash(ls:*) Bash(lsof:*) Bash(kill:*) Bash(rm:-rf node_modules*)
+metadata:
+  internal: true
 ---
 
 # Developer Onboarding
