@@ -1,16 +1,9 @@
 ---
 name: hackathon-organizer
-model: sonnet
-description: Best practices, tips, and tricks for organizing successful hackathons. Use when someone asks how to plan, run, or improve a hackathon as an organizer — covering timelines, sponsors, judging, logistics, prizes, and post-event follow-up.
-activationKeywords:
-  - "organize a hackathon"
-  - "plan a hackathon"
-  - "hackathon organizing tips"
-  - "how to run a hackathon"
-  - "hackathon logistics"
-  - "hackathon sponsor"
-  - "hackathon judging setup"
-  - "hackathon best practices organizer"
+description: Best practices, tips, and tricks for organizing successful hackathons. Use when someone asks how to plan, run, or improve a hackathon as an organizer — covering timelines, venues, logistics, sponsor outreach, judging setup, prize strategy, and post-event follow-up. Activates on phrases like "organize a hackathon", "plan a hackathon", "how to run a hackathon", or any hackathon-organizing question.
+allowed-tools: Read
+metadata:
+  model: sonnet
 ---
 
 # Hackathon Organizer — Tips & Best Practices
