@@ -257,23 +257,20 @@ function pickUsable(
     })
   }
   if (usable.length < items.length) {
-    console.warn(
-      `Dropped ${items.length - usable.length} of ${items.length} imported agenda items missing title or startsAt`
-    )
+    const dropped = items.length - usable.length
+    const capped = Math.max(0, items.length - MAX_AGENDA_ITEMS)
+    const reason =
+      capped >= dropped
+        ? `exceeded ${MAX_AGENDA_ITEMS}-item cap`
+        : capped > 0
+          ? `${capped} over cap, ${dropped - capped} missing title or startsAt`
+          : "missing title or startsAt"
+    console.warn(`Dropped ${dropped} of ${items.length} imported agenda items (${reason})`)
   }
   return usable
 }
 
-// Inserts imported agenda items into hackathon_schedule_items, then clears the
-// four auto-seeded non-trigger defaults only if every insert succeeded. The
-// two trigger items (challenge_release, submission_deadline) are never touched.
-// On partial failure, the defaults are left in place so the schedule is never
-// empty.
-//
-// Items whose extracted date is far from the event's start date (Claude's
-// common "1970-01-01" or "2026-01-01" fallback when the page only showed a
-// time of day) are anchored to the event's start date, preserving the time of
-// day and timezone offset.
+// On partial insert failure the auto-seeded defaults are left so the schedule never goes empty; trigger items are never touched.
 export async function createAgendaFromImport(
   hackathonId: string,
   items: ImportedAgendaItem[],
