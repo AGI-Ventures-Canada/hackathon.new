@@ -68,7 +68,7 @@ wait_for_debug_port() {
   while (( attempts < 30 )); do
     if debug_port_open; then return 0; fi
     sleep 0.5
-    ((attempts++))
+    attempts=$(( attempts + 1 ))
   done
   return 1
 }
