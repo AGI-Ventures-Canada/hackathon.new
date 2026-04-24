@@ -38,7 +38,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { TabsUrlSync } from "@/app/(public)/e/[slug]/manage/_tabs-url-sync"
+import { TabsUrlSync } from "@/components/ui/tabs-url-sync"
 import { JudgingSetupWizard } from "./judging-setup-wizard"
 import type { ManageJtab } from "@/lib/utils/manage-tabs"
 import {

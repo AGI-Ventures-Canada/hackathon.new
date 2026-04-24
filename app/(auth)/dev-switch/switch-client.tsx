@@ -1,27 +1,35 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { useSignIn, useClerk } from "@clerk/nextjs"
+import { useEffect, useRef, useState } from "react"
+import { useSignIn, useUser, useClerk } from "@clerk/nextjs"
 import { Loader2 } from "lucide-react"
 import Link from "next/link"
 
 export function DevSwitchClient({
   token,
   redirect,
+  org,
 }: {
   token: string
   redirect: string
+  org: string | null
 }) {
-  const { signIn, isLoaded, setActive } = useSignIn()
+  const { signIn, isLoaded: signInLoaded, setActive } = useSignIn()
+  const { isSignedIn, isLoaded: userLoaded } = useUser()
   const { signOut } = useClerk()
   const [error, setError] = useState<string | null>(null)
+  const started = useRef(false)
 
   useEffect(() => {
-    if (!isLoaded || !signIn) return
+    if (!signInLoaded || !userLoaded || !signIn) return
+    if (started.current) return
+    started.current = true
 
     async function doSwitch() {
       try {
-        await signOut()
+        if (isSignedIn) {
+          await signOut()
+        }
 
         const result = await signIn!.create({
           strategy: "ticket",
@@ -29,7 +37,10 @@ export function DevSwitchClient({
         })
 
         if (result.status === "complete") {
-          await setActive!({ session: result.createdSessionId })
+          await setActive!({
+            session: result.createdSessionId,
+            ...(org ? { organization: org } : {}),
+          })
           window.location.replace(redirect)
         } else {
           setError(`Unexpected sign-in status: ${result.status}`)
@@ -41,7 +52,7 @@ export function DevSwitchClient({
     }
 
     doSwitch()
-  }, [isLoaded, signIn, signOut, token, redirect, setActive])
+  }, [signInLoaded, userLoaded, signIn, isSignedIn, signOut, token, redirect, org, setActive])
 
   if (error) {
     return (

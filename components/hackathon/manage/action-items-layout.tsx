@@ -1,6 +1,6 @@
 "use client"
 
-import { useOptimisticTab } from "@/app/(public)/e/[slug]/manage/_tabs-url-sync"
+import { useOptimisticTab } from "@/components/ui/tabs-url-sync"
 import { ActionItemsPanel } from "./action-items-panel"
 
 export function ActionItemsLayout({ children }: { children: React.ReactNode }) {

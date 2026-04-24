@@ -7,7 +7,6 @@ import { countJudges, getJudgingProgress, listPrizes, listRounds } from "@/lib/s
 import { countPendingJudgeInvitations } from "@/lib/services/judge-invitations"
 import { countJudgeDisplayProfiles } from "@/lib/services/judge-display"
 import { getManageOverviewStats } from "@/lib/services/manage-overview"
-import { listAnnouncements } from "@/lib/services/announcements"
 import { listChallenges } from "@/lib/services/challenges"
 import { listPerks } from "@/lib/services/perks"
 import { listScheduleItems, getSubmissionDeadline } from "@/lib/services/schedule-items"
@@ -27,7 +26,7 @@ import { ChallengesTab } from "@/components/hackathon/manage/challenges-tab"
 import { PerksTab } from "@/components/hackathon/manage/perks-tab"
 import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { TabCount } from "@/components/ui/tab-count"
-import { TabsUrlSync } from "./_tabs-url-sync"
+import { TabsUrlSync } from "@/components/ui/tabs-url-sync"
 import { JudgingTabContent } from "./_judging-tab"
 import { PostEventTabContent } from "./_post-event-tab"
 import { EventTabContent } from "./_event-tab"
@@ -61,7 +60,6 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     judgeDisplayCount,
     judgeCount,
     overviewStats,
-    announcements,
     scheduleItems,
     submissionDeadline,
     pendingJudgeInvitationCount,
@@ -75,7 +73,6 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     countJudgeDisplayProfiles(hackathon.id),
     countJudges(hackathon.id),
     getManageOverviewStats(hackathon.id),
-    listAnnouncements(hackathon.id),
     listScheduleItems(hackathon.id),
     getSubmissionDeadline(hackathon.id),
     countPendingJudgeInvitations(hackathon.id),

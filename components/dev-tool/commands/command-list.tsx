@@ -1,7 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
+import { LayoutGrid, List } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import {
   Command,
   CommandEmpty,
@@ -18,6 +20,8 @@ import {
   type DevCommand,
 } from "./registry"
 
+type ViewMode = "list" | "tabs"
+
 interface CommandPaletteListProps {
   commands: DevCommand[]
   runningId: string | null
@@ -32,8 +36,22 @@ export function CommandPaletteList({
   autoFocus = true,
 }: CommandPaletteListProps) {
   const [query, setQuery] = useState("")
+  const [viewMode, setViewMode] = useState<ViewMode>("list")
   const grouped = groupByCategory(commands)
   const isSearching = query.trim().length > 0
+
+  const availableCategories = useMemo(
+    () => CATEGORY_ORDER.filter((cat) => (grouped[cat]?.length ?? 0) > 0),
+    [grouped]
+  )
+
+  const [activeCategory, setActiveCategory] = useState<CommandCategory | null>(
+    null
+  )
+  const effectiveActive: CommandCategory | null =
+    activeCategory && availableCategories.includes(activeCategory)
+      ? activeCategory
+      : (availableCategories[0] ?? null)
 
   const renderItem = (cmd: DevCommand) => {
     const Icon = cmd.icon
@@ -76,17 +94,84 @@ export function CommandPaletteList({
     )
   }
 
+  const tabCommands =
+    viewMode === "tabs" && effectiveActive && !isSearching
+      ? (grouped[effectiveActive] ?? [])
+      : commands
+
   return (
     <Command className="w-full min-w-0 bg-transparent overflow-hidden" shouldFilter>
+      <div className="flex items-center justify-end gap-1 border-b px-2 py-1">
+        <span className="mr-auto text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          View
+        </span>
+        <div className="flex shrink-0 items-center gap-0.5 rounded-md border bg-muted p-0.5">
+          <Button
+            type="button"
+            variant={viewMode === "list" ? "secondary" : "ghost"}
+            size="sm"
+            aria-label="List view"
+            aria-pressed={viewMode === "list"}
+            onClick={() => setViewMode("list")}
+            className="size-6 p-0"
+          >
+            <List className="size-3.5" />
+          </Button>
+          <Button
+            type="button"
+            variant={viewMode === "tabs" ? "secondary" : "ghost"}
+            size="sm"
+            aria-label="Tab view"
+            aria-pressed={viewMode === "tabs"}
+            onClick={() => setViewMode("tabs")}
+            className="size-6 p-0"
+          >
+            <LayoutGrid className="size-3.5" />
+          </Button>
+        </div>
+      </div>
       <CommandInput
         placeholder={placeholder}
         autoFocus={autoFocus}
         value={query}
         onValueChange={setQuery}
       />
-      <CommandList className="max-h-[55vh] w-full min-w-0 overflow-x-hidden overflow-y-auto">
+      {viewMode === "tabs" && !isSearching && availableCategories.length > 0 && (
+        <div className="flex gap-1 overflow-x-auto border-b px-2 py-1.5">
+          {availableCategories.map((cat) => {
+            const isActive = cat === effectiveActive
+            const count = grouped[cat]?.length ?? 0
+            return (
+              <Button
+                key={cat}
+                type="button"
+                variant={isActive ? "default" : "ghost"}
+                size="xs"
+                aria-pressed={isActive}
+                onClick={() => setActiveCategory(cat)}
+                className="shrink-0 text-[11px]"
+              >
+                {CATEGORY_HEADERS[cat]}
+                <span className="ml-1 opacity-60">{count}</span>
+              </Button>
+            )
+          })}
+        </div>
+      )}
+      <CommandList className="max-h-none w-full min-w-0 overflow-visible">
         <CommandEmpty>No commands match your search.</CommandEmpty>
-        {isSearching ? (
+        {viewMode === "tabs" ? (
+          <CommandGroup
+            className="w-full min-w-0"
+            heading={
+              !isSearching && effectiveActive
+                ? CATEGORY_HEADERS[effectiveActive]
+                : undefined
+            }
+          >
+            {tabCommands.map(renderItem)}
+          </CommandGroup>
+        ) : isSearching ? (
           <CommandGroup className="w-full min-w-0">
             {commands.map(renderItem)}
           </CommandGroup>
