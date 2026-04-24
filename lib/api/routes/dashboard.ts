@@ -12,6 +12,7 @@ import { dashboardJudgeDisplayRoutes } from "./dashboard-judge-display"
 import { dashboardPostEventRoutes } from "./dashboard-post-event"
 import { dashboardSponsorFulfillmentRoutes } from "./dashboard-sponsor-fulfillments"
 import { getEffectiveStatus } from "@/lib/utils/timeline"
+import { normalizeLocale } from "@/lib/utils/language"
 import type { Scope } from "@/lib/auth/types"
 import { ALL_SCOPES } from "@/lib/auth/types"
 import type { WebhookEvent, SponsorTier } from "@/lib/db/hackathon-types"
@@ -1145,8 +1146,9 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         body.communityUrl !== undefined || body.communityLabel !== undefined
 
       const primaryLocale = currentHackathon?.default_locale ?? "en"
+      const normalizedLocale = body.locale ? normalizeLocale(body.locale) : null
       const translationLocale =
-        body.locale && body.locale.trim() && body.locale !== primaryLocale ? body.locale : null
+        normalizedLocale && normalizedLocale !== primaryLocale ? normalizedLocale : null
 
       let hackathon: import("@/lib/db/hackathon-types").Hackathon | null
       if (hasStatusTransition && !hasOtherFields) {
@@ -1402,7 +1404,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         allowSolo: t.Optional(t.Boolean()),
         communityUrl: t.Optional(t.Union([t.String(), t.Null()])),
         communityLabel: t.Optional(t.Union([t.String(), t.Null()])),
-        locale: t.Optional(t.String()),
+        locale: t.Optional(t.String({ minLength: 1 })),
       }),
     }
   )

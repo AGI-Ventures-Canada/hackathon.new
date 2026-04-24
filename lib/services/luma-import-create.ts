@@ -110,8 +110,6 @@ export async function importTranslationVariants({
 
   const translations: HackathonTranslations = {}
 
-  // One hop only: never follow translationLinks returned by a variant fetch.
-  // Variants cross-link back to the primary (A→B→A), and loops would cost LLM + Tavily quota.
   for (const link of safeLinks) {
     const url = link.url
     try {
