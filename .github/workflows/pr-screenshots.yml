@@ -276,7 +276,7 @@ jobs:
           [ -n "$PR_NUMBER" ] || exit 0
           agent-browser --session "pr-${PR_NUMBER}" close >/dev/null 2>&1 || true
 
-      - name: Upload and comment on PR
+      - name: Upload and append screenshots to PR description
         if: steps.check.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -310,42 +310,65 @@ jobs:
             done
           fi
 
-          # Upload assets and build comment via temp file
-          BODY_FILE="$DIR/comment.md"
-          cat > "$BODY_FILE" <<COMMENT_EOF
+          # Build the screenshots section. Start/end HTML markers let us
+          # replace it idempotently on re-runs without clobbering the rest
+          # of the PR description.
+          SECTION_FILE="$DIR/section.md"
+          cat > "$SECTION_FILE" <<SECTION_EOF
           <!-- pr-screenshots -->
           ## Screenshots
 
           Auto-captured from Vercel preview for \`${SAFE_REF}\`.
-          COMMENT_EOF
+          SECTION_EOF
 
           for img in "${IMAGES[@]}"; do
             filename=$(basename "$img")
             name="${filename%.*}"
             gh release upload "$TAG" "$img" --clobber || continue
             URL="https://github.com/${REPO}/releases/download/${TAG}/${filename}"
-            cat >> "$BODY_FILE" <<IMG_EOF
+            cat >> "$SECTION_FILE" <<IMG_EOF
 
           ### ${name}
           ![${name}](${URL})
           IMG_EOF
           done
 
+          printf '\n<!-- /pr-screenshots -->\n' >> "$SECTION_FILE"
+
           # Strip leading whitespace from YAML indentation
-          BODY=$(sed 's/^[[:space:]]*//' "$BODY_FILE")
+          SECTION=$(sed 's/^[[:space:]]*//' "$SECTION_FILE")
 
-          # Post or update PR comment (idempotent via HTML marker)
-          MARKER="<!-- pr-screenshots -->"
-          EXISTING_ID=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" \
-            --field per_page=100 \
-            --jq ".[] | select(.body | contains(\"${MARKER}\")) | .id" 2>/dev/null | head -1 || true)
+          # Fetch current PR body, strip any existing screenshots block
+          # (bracketed by markers), then append the fresh section.
+          CURRENT_BODY=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}" --jq '.body // ""')
 
-          BODY_JSON=$(jq -n --arg body "$BODY" '{"body": $body}')
+          STRIPPED=$(printf '%s' "$CURRENT_BODY" | awk '
+            /<!-- pr-screenshots -->/ { skip = 1; next }
+            /<!-- \/pr-screenshots -->/ { skip = 0; next }
+            !skip
+          ')
 
-          if [ -n "$EXISTING_ID" ]; then
-            echo "$BODY_JSON" | gh api "repos/${REPO}/issues/comments/${EXISTING_ID}" \
-              -X PATCH --input - 2>/dev/null
+          # Trim trailing blank lines so we get a single consistent gap
+          # before the appended section.
+          STRIPPED=$(printf '%s' "$STRIPPED" | sed -e :a -e '/^$/{$d;N;ba' -e '}')
+
+          if [ -n "$STRIPPED" ]; then
+            NEW_BODY=$(printf '%s\n\n%s' "$STRIPPED" "$SECTION")
           else
-            echo "$BODY_JSON" | gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" \
-              -X POST --input - 2>/dev/null
+            NEW_BODY="$SECTION"
           fi
+
+          BODY_JSON=$(jq -n --arg body "$NEW_BODY" '{"body": $body}')
+
+          echo "$BODY_JSON" | gh api "repos/${REPO}/pulls/${PR_NUMBER}" \
+            -X PATCH --input -
+
+          # Clean up any legacy bot comments left over from the previous
+          # comment-based approach. Safe to run every time: the query
+          # returns nothing once a PR has already been migrated.
+          gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" \
+            --field per_page=100 \
+            --jq '.[] | select(.body | contains("<!-- pr-screenshots -->")) | .id' 2>/dev/null \
+            | while read -r cid; do
+                [ -n "$cid" ] && gh api "repos/${REPO}/issues/comments/${cid}" -X DELETE 2>/dev/null || true
+              done
