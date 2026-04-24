@@ -11,7 +11,7 @@ if (!supabaseUrl || !supabaseServiceKey) {
 
 export const supabase: SupabaseClient = createClient(supabaseUrl, supabaseServiceKey)
 
-export const DEV_USER_ID = "user_38vEFI8UesKwM07qIuFNqEzFavS"
+export const DEV_USER_ID = process.env.SCENARIO_DEV_USER_ID ?? "user_38vEFI8UesKwM07qIuFNqEzFavS"
 
 export async function promptForOptionalTenantId(): Promise<string | undefined> {
   const rl = readline.createInterface({
