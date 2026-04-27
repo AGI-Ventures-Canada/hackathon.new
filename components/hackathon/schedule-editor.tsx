@@ -203,7 +203,18 @@ export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challe
         trigger_type: "event_start",
       })
     }
-    if (hackathonEndsAt && hackathonStatus !== "completed" && hackathonStatus !== "archived") {
+    const endsAtMs = hackathonEndsAt ? new Date(hackathonEndsAt).getTime() : null
+    const submissionDeadlineAtEnd =
+      endsAtMs !== null &&
+      base.some(
+        (i) => i.trigger_type === "submission_deadline" && new Date(i.starts_at).getTime() === endsAtMs,
+      )
+    if (
+      hackathonEndsAt &&
+      hackathonStatus !== "completed" &&
+      hackathonStatus !== "archived" &&
+      !submissionDeadlineAtEnd
+    ) {
       virtual.push({
         id: VIRTUAL_ID_EVENT_END,
         title: "Event ends",

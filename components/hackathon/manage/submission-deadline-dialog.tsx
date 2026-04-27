@@ -92,7 +92,7 @@ export const SubmissionDeadlineDialog = forwardRef<SubmissionDeadlineDialogHandl
             className="space-y-4"
           >
               <p className="text-sm text-muted-foreground">
-                When this time arrives, submissions are locked and the judging phase begins. Participants can no longer submit or edit projects after this point.
+                When this time arrives, submissions are locked and the judging phase begins. Participants can no longer submit or edit projects after this point. By default this matches your event end time — only change it if you want submissions to close at a different time.
               </p>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">

@@ -18,9 +18,6 @@ export function buildGhostItems(startsAt: string, endsAt: string): GhostItem[] {
     return new Date(base.getTime() + minutes * 60_000).toISOString()
   }
 
-  const durationMs = end.getTime() - start.getTime()
-  const submissionCloseTime = durationMs >= 60 * 60_000 ? offset(end, -60) : end.toISOString()
-
   return [
     {
       title: "Opening Kickoff",
@@ -42,8 +39,8 @@ export function buildGhostItems(startsAt: string, endsAt: string): GhostItem[] {
     },
     {
       title: "Submissions Close & Judging Starts",
-      startsAt: submissionCloseTime,
-      endsAt: submissionCloseTime,
+      startsAt: end.toISOString(),
+      endsAt: end.toISOString(),
       triggerType: "submission_deadline",
     },
     {

@@ -35,10 +35,10 @@ describe("buildGhostItems", () => {
     expect(challenge?.startsAt).toBe("2026-04-10T09:00:00.000Z")
   })
 
-  it("defaults submissions close to ends_at - 1h", () => {
+  it("defaults submissions close to ends_at", () => {
     const items = buildGhostItems("2026-04-10T09:00:00Z", "2026-04-10T18:00:00Z")
     const submission = items.find((i) => i.title === "Submissions Close & Judging Starts")
-    expect(submission?.startsAt).toBe("2026-04-10T17:00:00.000Z")
+    expect(submission?.startsAt).toBe("2026-04-10T18:00:00.000Z")
   })
 })
 
