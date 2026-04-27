@@ -98,7 +98,6 @@ export function AssignJudgesDialog({
 
     setLocalOverrides((prev) => new Map(prev).set(judge.participantId, newState))
     setToggling((prev) => new Set(prev).add(judge.participantId))
-    hasChanges.current = true
 
     try {
       if (wasAssigned) {
