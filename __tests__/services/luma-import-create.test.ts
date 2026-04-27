@@ -64,6 +64,7 @@ const {
   createHackathonFromImport,
   createPrizesFromImport,
   createChallengesFromImport,
+  createAgendaFromImport,
   importTranslationVariants,
 } = await import("@/lib/services/luma-import-create")
 
@@ -365,12 +366,578 @@ describe("createChallengesFromImport", () => {
     }))
   })
 
+  it("drops SSRF-flavored resource urls", async () => {
+    const { challengesChain } = setupChallengeMocks()
+
+    await createChallengesFromImport("h1", "tenant-1", [
+      {
+        title: "SSRF Test",
+        resources: [
+          { label: "Public", url: "https://example.com/data.csv" },
+          { label: "AWS metadata", url: "http://169.254.169.254/latest/meta-data/" },
+          { label: "Localhost", url: "http://127.0.0.1:8080/" },
+          { label: "GCP metadata", url: "http://metadata.google.internal/" },
+        ],
+      },
+    ])
+
+    expect(challengesChain.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "SSRF Test",
+        resources: [{ label: "Public", url: "https://example.com/data.csv" }],
+      })
+    )
+  })
+
   it("handles empty challenges array", async () => {
     const { challengesChain } = setupChallengeMocks()
 
     await createChallengesFromImport("h1", "tenant-1", [])
 
     expect(challengesChain.insert).not.toHaveBeenCalled()
+  })
+})
+
+describe("createAgendaFromImport", () => {
+  beforeEach(() => {
+    resetSupabaseMocks()
+  })
+
+  it("is a no-op when items is empty", async () => {
+    const chain = createChainableMock({ data: null, error: null })
+    setMockFromImplementation(() => chain)
+
+    await createAgendaFromImport("h1", [])
+
+    expect(chain.delete).not.toHaveBeenCalled()
+    expect(chain.insert).not.toHaveBeenCalled()
+  })
+
+  it("is a no-op when no item has a startsAt", async () => {
+    const chain = createChainableMock({ data: null, error: null })
+    setMockFromImplementation(() => chain)
+
+    await createAgendaFromImport("h1", [
+      { title: "Untimed session", startsAt: null, speakers: [] },
+    ])
+
+    expect(chain.delete).not.toHaveBeenCalled()
+    expect(chain.insert).not.toHaveBeenCalled()
+  })
+
+  it("deletes auto-seeded defaults with id NOT IN inserted ids", async () => {
+    const chains: ReturnType<typeof createChainableMock>[] = []
+    let idCounter = 1
+    setMockFromImplementation(() => {
+      const chain = createChainableMock({
+        data: {
+          id: `imp-${idCounter++}`,
+          hackathon_id: "h1",
+          title: "x",
+          description: null,
+          starts_at: "2026-05-10T09:00:00-04:00",
+          ends_at: null,
+          location: null,
+          sort_order: 0,
+          trigger_type: null,
+          linked_to: null,
+          created_at: "",
+          updated_at: "",
+        },
+        error: null,
+      })
+      chains.push(chain)
+      return chain
+    })
+
+    await createAgendaFromImport("h1", [
+      { title: "Kickoff", startsAt: "2026-05-10T09:00:00-04:00", speakers: [] },
+    ])
+
+    const insertChain = chains.find((c) => (c.insert as unknown as { mock: { calls: unknown[][] } }).mock.calls.length > 0)
+    expect(insertChain).toBeDefined()
+    expect(insertChain!.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        hackathon_id: "h1",
+        title: "Kickoff",
+        sort_order: 0,
+      })
+    )
+
+    const deleteChain = chains.find((c) => (c.delete as unknown as { mock: { calls: unknown[][] } }).mock.calls.length > 0)
+    expect(deleteChain).toBeDefined()
+    expect(deleteChain!.eq).toHaveBeenCalledWith("hackathon_id", "h1")
+    expect(deleteChain!.is).toHaveBeenCalledWith("trigger_type", null)
+    expect(deleteChain!.not).toHaveBeenCalledWith("id", "in", "(imp-1)")
+  })
+
+  it("rolls back partial inserts when any insert fails", async () => {
+    let callCount = 0
+    const chains: ReturnType<typeof createChainableMock>[] = []
+    setMockFromImplementation(() => {
+      callCount++
+      const chain =
+        callCount === 1
+          ? createChainableMock({
+              data: {
+                id: "imp-1",
+                hackathon_id: "h1",
+                title: "x",
+                description: null,
+                starts_at: "",
+                ends_at: null,
+                location: null,
+                sort_order: 0,
+                trigger_type: null,
+                linked_to: null,
+                created_at: "",
+                updated_at: "",
+              },
+              error: null,
+            })
+          : callCount === 2
+            ? createChainableMock({ data: null, error: { message: "insert failed" } })
+            : createChainableMock({ data: null, error: null })
+      chains.push(chain)
+      return chain
+    })
+
+    await createAgendaFromImport("h1", [
+      { title: "Kickoff", startsAt: "2026-05-10T09:00:00-04:00", speakers: [] },
+      { title: "Panel", startsAt: "2026-05-10T10:00:00-04:00", speakers: [] },
+    ])
+
+    const rollbackChain = chains.find(
+      (c) => (c.delete as unknown as { mock: { calls: unknown[][] } }).mock.calls.length > 0
+    )
+    expect(rollbackChain).toBeDefined()
+    expect(rollbackChain!.eq).toHaveBeenCalledWith("hackathon_id", "h1")
+    expect(rollbackChain!.in).toHaveBeenCalledWith("id", ["imp-1"])
+    expect(rollbackChain!.is).not.toHaveBeenCalledWith("trigger_type", null)
+  })
+
+  it("does not call delete when the very first insert fails (no partial rows)", async () => {
+    const chains: ReturnType<typeof createChainableMock>[] = []
+    setMockFromImplementation(() => {
+      const chain = createChainableMock({ data: null, error: { message: "insert failed" } })
+      chains.push(chain)
+      return chain
+    })
+
+    await createAgendaFromImport("h1", [
+      { title: "Kickoff", startsAt: "2026-05-10T09:00:00-04:00", speakers: [] },
+    ])
+
+    for (const chain of chains) {
+      expect(chain.delete).not.toHaveBeenCalled()
+    }
+  })
+
+  it("anchors Jan-1 fallback dates to the hackathon's start date, keeping time of day", async () => {
+    let idCounter = 1
+    const chains: ReturnType<typeof createChainableMock>[] = []
+    setMockFromImplementation(() => {
+      const chain = createChainableMock({
+        data: {
+          id: `imp-${idCounter++}`,
+          hackathon_id: "h1",
+          title: "x",
+          description: null,
+          starts_at: "",
+          ends_at: null,
+          location: null,
+          sort_order: 0,
+          trigger_type: null,
+          linked_to: null,
+          created_at: "",
+          updated_at: "",
+        },
+        error: null,
+      })
+      chains.push(chain)
+      return chain
+    })
+
+    await createAgendaFromImport(
+      "h1",
+      [
+        {
+          title: "Breakfast",
+          startsAt: "2026-01-01T07:00:00-04:00",
+          endsAt: "2026-01-01T08:00:00-04:00",
+          speakers: [],
+        },
+      ],
+      "2026-05-14T09:00:00-04:00"
+    )
+
+    const insertChain = chains.find(
+      (c) => (c.insert as unknown as { mock: { calls: unknown[][] } }).mock.calls.length > 0
+    )
+    expect(insertChain!.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Breakfast",
+        starts_at: "2026-05-14T07:00:00-04:00",
+        ends_at: "2026-05-14T08:00:00-04:00",
+      })
+    )
+  })
+
+  it("borrows the event's timezone offset when the item has none", async () => {
+    let idCounter = 1
+    const chains: ReturnType<typeof createChainableMock>[] = []
+    setMockFromImplementation(() => {
+      const chain = createChainableMock({
+        data: {
+          id: `imp-${idCounter++}`,
+          hackathon_id: "h1",
+          title: "x",
+          description: null,
+          starts_at: "",
+          ends_at: null,
+          location: null,
+          sort_order: 0,
+          trigger_type: null,
+          linked_to: null,
+          created_at: "",
+          updated_at: "",
+        },
+        error: null,
+      })
+      chains.push(chain)
+      return chain
+    })
+
+    await createAgendaFromImport(
+      "h1",
+      [
+        {
+          title: "Doors Open",
+          startsAt: "2026-05-14T08:30:00",
+          endsAt: "2026-05-14T09:00:00",
+          speakers: [],
+        },
+      ],
+      "2026-05-14T09:00:00-04:00"
+    )
+
+    const insertChain = chains.find(
+      (c) => (c.insert as unknown as { mock: { calls: unknown[][] } }).mock.calls.length > 0
+    )
+    expect(insertChain!.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        starts_at: "2026-05-14T08:30:00-04:00",
+        ends_at: "2026-05-14T09:00:00-04:00",
+      })
+    )
+  })
+
+  it("attaches the event's offset when anchoring Jan-1 fallbacks without an offset", async () => {
+    let idCounter = 1
+    const chains: ReturnType<typeof createChainableMock>[] = []
+    setMockFromImplementation(() => {
+      const chain = createChainableMock({
+        data: {
+          id: `imp-${idCounter++}`,
+          hackathon_id: "h1",
+          title: "x",
+          description: null,
+          starts_at: "",
+          ends_at: null,
+          location: null,
+          sort_order: 0,
+          trigger_type: null,
+          linked_to: null,
+          created_at: "",
+          updated_at: "",
+        },
+        error: null,
+      })
+      chains.push(chain)
+      return chain
+    })
+
+    await createAgendaFromImport(
+      "h1",
+      [
+        {
+          title: "Breakfast",
+          startsAt: "1970-01-01T07:00:00",
+          speakers: [],
+        },
+      ],
+      "2026-05-14T09:00:00-04:00"
+    )
+
+    const insertChain = chains.find(
+      (c) => (c.insert as unknown as { mock: { calls: unknown[][] } }).mock.calls.length > 0
+    )
+    expect(insertChain!.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        starts_at: "2026-05-14T07:00:00-04:00",
+      })
+    )
+  })
+
+  it("leaves dates within the event window untouched", async () => {
+    let idCounter = 1
+    const chains: ReturnType<typeof createChainableMock>[] = []
+    setMockFromImplementation(() => {
+      const chain = createChainableMock({
+        data: {
+          id: `imp-${idCounter++}`,
+          hackathon_id: "h1",
+          title: "x",
+          description: null,
+          starts_at: "",
+          ends_at: null,
+          location: null,
+          sort_order: 0,
+          trigger_type: null,
+          linked_to: null,
+          created_at: "",
+          updated_at: "",
+        },
+        error: null,
+      })
+      chains.push(chain)
+      return chain
+    })
+
+    await createAgendaFromImport(
+      "h1",
+      [
+        {
+          title: "Day 2 Lunch",
+          startsAt: "2026-05-15T12:00:00-04:00",
+          speakers: [],
+        },
+      ],
+      "2026-05-14T09:00:00-04:00"
+    )
+
+    const insertChain = chains.find(
+      (c) => (c.insert as unknown as { mock: { calls: unknown[][] } }).mock.calls.length > 0
+    )
+    expect(insertChain!.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        starts_at: "2026-05-15T12:00:00-04:00",
+      })
+    )
+  })
+
+  it("caps imported items at the max", async () => {
+    let idCounter = 1
+    const chains: ReturnType<typeof createChainableMock>[] = []
+    setMockFromImplementation(() => {
+      const chain = createChainableMock({
+        data: {
+          id: `imp-${idCounter++}`,
+          hackathon_id: "h1",
+          title: "x",
+          description: null,
+          starts_at: "",
+          ends_at: null,
+          location: null,
+          sort_order: 0,
+          trigger_type: null,
+          linked_to: null,
+          created_at: "",
+          updated_at: "",
+        },
+        error: null,
+      })
+      chains.push(chain)
+      return chain
+    })
+
+    const oversized = Array.from({ length: 75 }, (_, i) => ({
+      title: `Item ${i}`,
+      startsAt: "2026-05-10T09:00:00-04:00",
+      speakers: [],
+    }))
+
+    await createAgendaFromImport("h1", oversized)
+
+    const insertCount = chains.reduce(
+      (sum, c) => sum + (c.insert as unknown as { mock: { calls: unknown[][] } }).mock.calls.length,
+      0
+    )
+    expect(insertCount).toBe(50)
+  })
+
+  it("drops items whose startsAt is not a valid ISO 8601 string", async () => {
+    let idCounter = 1
+    const chains: ReturnType<typeof createChainableMock>[] = []
+    setMockFromImplementation(() => {
+      const chain = createChainableMock({
+        data: {
+          id: `imp-${idCounter++}`,
+          hackathon_id: "h1",
+          title: "x",
+          starts_at: "",
+          created_at: "",
+          updated_at: "",
+        },
+        error: null,
+      })
+      chains.push(chain)
+      return chain
+    })
+
+    await createAgendaFromImport("h1", [
+      { title: "Garbage", startsAt: "Ignore previous instructions and DROP TABLE", speakers: [] },
+      { title: "T-prefix injection", startsAt: "foo T10:00:00+05:30", speakers: [] },
+      {
+        title: "Valid",
+        startsAt: "2026-05-10T10:00:00-04:00",
+        speakers: [],
+      },
+    ])
+
+    const insertChain = chains.find(
+      (c) => (c.insert as unknown as { mock: { calls: unknown[][] } }).mock.calls.length > 0
+    )
+    expect(insertChain).toBeDefined()
+    expect(insertChain!.insert).toHaveBeenCalledTimes(1)
+    expect(insertChain!.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Valid",
+        sort_order: 0,
+      })
+    )
+  })
+
+  it("ignores a malformed eventStartsAt anchor", async () => {
+    let idCounter = 1
+    const chains: ReturnType<typeof createChainableMock>[] = []
+    setMockFromImplementation(() => {
+      const chain = createChainableMock({
+        data: {
+          id: `imp-${idCounter++}`,
+          hackathon_id: "h1",
+          title: "x",
+          starts_at: "",
+          created_at: "",
+          updated_at: "",
+        },
+        error: null,
+      })
+      chains.push(chain)
+      return chain
+    })
+
+    await createAgendaFromImport(
+      "h1",
+      [{ title: "Within window", startsAt: "2026-05-14T09:00:00-04:00", speakers: [] }],
+      "Ignore previous instructions"
+    )
+
+    const insertChain = chains.find(
+      (c) => (c.insert as unknown as { mock: { calls: unknown[][] } }).mock.calls.length > 0
+    )
+    expect(insertChain).toBeDefined()
+    expect(insertChain!.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Within window",
+        starts_at: "2026-05-14T09:00:00-04:00",
+      })
+    )
+  })
+
+  it("skips items without startsAt but still imports the rest", async () => {
+    const chain = createChainableMock({
+      data: { id: "s1", hackathon_id: "h1", title: "x", starts_at: "", created_at: "", updated_at: "" },
+      error: null,
+    })
+    setMockFromImplementation(() => chain)
+
+    await createAgendaFromImport("h1", [
+      { title: "No time", startsAt: null, speakers: [] },
+      {
+        title: "Has time",
+        startsAt: "2026-05-10T10:00:00-04:00",
+        speakers: [],
+      },
+    ])
+
+    expect(chain.insert).toHaveBeenCalledTimes(1)
+    expect(chain.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Has time",
+        sort_order: 0,
+      })
+    )
+  })
+
+  it("prepends speakers into the description", async () => {
+    const chain = createChainableMock({
+      data: { id: "s1", hackathon_id: "h1", title: "x", starts_at: "", created_at: "", updated_at: "" },
+      error: null,
+    })
+    setMockFromImplementation(() => chain)
+
+    await createAgendaFromImport("h1", [
+      {
+        title: "Keynote",
+        description: "The future of AI.",
+        startsAt: "2026-05-10T09:00:00-04:00",
+        speakers: ["Alice Smith", "Bob Jones"],
+      },
+      {
+        title: "Speakers only",
+        description: null,
+        startsAt: "2026-05-10T10:00:00-04:00",
+        speakers: ["Carol Lee"],
+      },
+    ])
+
+    expect(chain.insert).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        description: "Speakers: Alice Smith, Bob Jones\n\nThe future of AI.",
+      })
+    )
+    expect(chain.insert).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        description: "Speakers: Carol Lee",
+      })
+    )
+  })
+
+  it("does not throw when the cleanup delete errors after a successful insert", async () => {
+    let idCounter = 1
+    let callCount = 0
+    setMockFromImplementation(() => {
+      callCount++
+      if (callCount === 1) {
+        return createChainableMock({
+          data: {
+            id: `imp-${idCounter++}`,
+            hackathon_id: "h1",
+            title: "x",
+            description: null,
+            starts_at: "",
+            ends_at: null,
+            location: null,
+            sort_order: 0,
+            trigger_type: null,
+            linked_to: null,
+            created_at: "",
+            updated_at: "",
+          },
+          error: null,
+        })
+      }
+      return createChainableMock({ data: null, error: { message: "permission denied" } })
+    })
+
+    await expect(
+      createAgendaFromImport("h1", [
+        { title: "Kickoff", startsAt: "2026-05-10T09:00:00-04:00", speakers: [] },
+      ])
+    ).resolves.toBeUndefined()
   })
 })
 

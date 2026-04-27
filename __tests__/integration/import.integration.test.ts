@@ -6,8 +6,10 @@ mock.module("@/lib/services/luma-import", () => ({
   extractLumaEventData: mockExtractLumaEventData,
   normalizeEventDate: (s: string | null) => {
     if (!s) return null
-    const match = s.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/)
-    return match ? match[1] : s
+    const match = s.match(
+      /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.\d+)?(Z|[+-]\d{2}:?\d{2})?/
+    )
+    return match ? `${match[1]}${match[2] ?? ""}` : s
   },
 }))
 
