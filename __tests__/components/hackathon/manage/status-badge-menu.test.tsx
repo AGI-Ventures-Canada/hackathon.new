@@ -57,6 +57,26 @@ describe("StatusBadgeMenu", () => {
     expect(screen.getByText("Completed")).toBeDefined()
   })
 
+  it("renders 'Draft' when context status is draft", () => {
+    mockContext = {
+      hackathonStatus: "draft",
+      hackathonPhase: null,
+      triggerTransition: () => {},
+    }
+    render(<StatusBadgeMenu />)
+    expect(screen.getByText("Draft")).toBeDefined()
+  })
+
+  it("renders 'Judging' when context status is judging", () => {
+    mockContext = {
+      hackathonStatus: "judging",
+      hackathonPhase: null,
+      triggerTransition: () => {},
+    }
+    render(<StatusBadgeMenu />)
+    expect(screen.getByText("Judging")).toBeDefined()
+  })
+
   it("includes phase suffix when a phase is set", () => {
     mockContext = {
       hackathonStatus: "active",
