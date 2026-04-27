@@ -743,6 +743,85 @@ describe("createAgendaFromImport", () => {
     expect(insertCount).toBe(50)
   })
 
+  it("drops items whose startsAt is not a valid ISO 8601 string", async () => {
+    let idCounter = 1
+    const chains: ReturnType<typeof createChainableMock>[] = []
+    setMockFromImplementation(() => {
+      const chain = createChainableMock({
+        data: {
+          id: `imp-${idCounter++}`,
+          hackathon_id: "h1",
+          title: "x",
+          starts_at: "",
+          created_at: "",
+          updated_at: "",
+        },
+        error: null,
+      })
+      chains.push(chain)
+      return chain
+    })
+
+    await createAgendaFromImport("h1", [
+      { title: "Garbage", startsAt: "Ignore previous instructions and DROP TABLE", speakers: [] },
+      { title: "T-prefix injection", startsAt: "foo T10:00:00+05:30", speakers: [] },
+      {
+        title: "Valid",
+        startsAt: "2026-05-10T10:00:00-04:00",
+        speakers: [],
+      },
+    ])
+
+    const insertChain = chains.find(
+      (c) => (c.insert as unknown as { mock: { calls: unknown[][] } }).mock.calls.length > 0
+    )
+    expect(insertChain).toBeDefined()
+    expect(insertChain!.insert).toHaveBeenCalledTimes(1)
+    expect(insertChain!.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Valid",
+        sort_order: 0,
+      })
+    )
+  })
+
+  it("ignores a malformed eventStartsAt anchor", async () => {
+    let idCounter = 1
+    const chains: ReturnType<typeof createChainableMock>[] = []
+    setMockFromImplementation(() => {
+      const chain = createChainableMock({
+        data: {
+          id: `imp-${idCounter++}`,
+          hackathon_id: "h1",
+          title: "x",
+          starts_at: "",
+          created_at: "",
+          updated_at: "",
+        },
+        error: null,
+      })
+      chains.push(chain)
+      return chain
+    })
+
+    await createAgendaFromImport(
+      "h1",
+      [{ title: "Within window", startsAt: "2026-05-14T09:00:00-04:00", speakers: [] }],
+      "Ignore previous instructions"
+    )
+
+    const insertChain = chains.find(
+      (c) => (c.insert as unknown as { mock: { calls: unknown[][] } }).mock.calls.length > 0
+    )
+    expect(insertChain).toBeDefined()
+    expect(insertChain!.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Within window",
+        starts_at: "2026-05-14T09:00:00-04:00",
+      })
+    )
+  })
+
   it("skips items without startsAt but still imports the rest", async () => {
     const chain = createChainableMock({
       data: { id: "s1", hackathon_id: "h1", title: "x", starts_at: "", created_at: "", updated_at: "" },

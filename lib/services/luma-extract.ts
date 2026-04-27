@@ -3,6 +3,7 @@ import { generateObject } from "ai"
 import { anthropic } from "@/lib/ai/anthropic"
 import { z } from "zod"
 import { normalizeUrl } from "@/lib/utils/url"
+import { sanitizeIsoTimestamp } from "@/lib/utils/timestamp"
 
 const EventPageRichContentSchema = z.object({
   sponsors: z
@@ -141,17 +142,6 @@ export type LumaRichContent = EventPageRichContent
 
 export type ExtractRichContentOptions = {
   eventStartsAt?: string | null
-}
-
-const ISO_TIMESTAMP_PATTERN =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/
-
-function sanitizeIsoTimestamp(value: string | null | undefined): string | null {
-  const trimmed = value?.trim()
-  if (!trimmed) return null
-  if (!ISO_TIMESTAMP_PATTERN.test(trimmed)) return null
-  if (Number.isNaN(Date.parse(trimmed))) return null
-  return trimmed
 }
 
 export async function extractEventPageRichContent(

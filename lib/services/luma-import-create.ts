@@ -6,6 +6,7 @@ import { createChallenge } from "@/lib/services/challenges"
 import { createScheduleItem } from "@/lib/services/schedule-items"
 import { extractExternalEventData, extractExternalRichContent, isLumaUrl } from "@/lib/services/external-import"
 import { anchorAgendaTimestamp, composeAgendaDescription } from "@/lib/utils/agenda"
+import { sanitizeIsoTimestamp } from "@/lib/utils/timestamp"
 import { normalizeUrl, isSafeExternalUrl } from "@/lib/utils/url"
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
@@ -242,13 +243,14 @@ function pickUsable(
   items: ImportedAgendaItem[],
   eventStartsAt: string | null
 ): UsableAgendaItem[] {
+  const safeEventStartsAt = sanitizeIsoTimestamp(eventStartsAt)
   const usable: UsableAgendaItem[] = []
   for (const item of items) {
     if (usable.length >= MAX_AGENDA_ITEMS) break
-    const startsAt = anchorAgendaTimestamp(item.startsAt?.trim() || null, eventStartsAt)
+    const startsAt = anchorAgendaTimestamp(sanitizeIsoTimestamp(item.startsAt), safeEventStartsAt)
     const title = item.title?.trim()
     if (!startsAt || !title) continue
-    const endsAt = anchorAgendaTimestamp(item.endsAt?.trim() || null, eventStartsAt)
+    const endsAt = anchorAgendaTimestamp(sanitizeIsoTimestamp(item.endsAt), safeEventStartsAt)
     usable.push({
       ...item,
       startsAt,
@@ -271,7 +273,6 @@ function pickUsable(
   return usable
 }
 
-// On partial insert failure the partial rows are rolled back so the auto-seeded defaults stand alone; trigger items are never touched.
 export async function createAgendaFromImport(
   hackathonId: string,
   items: ImportedAgendaItem[],

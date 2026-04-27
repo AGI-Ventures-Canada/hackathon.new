@@ -14,7 +14,8 @@ export function composeAgendaDescription(
 }
 
 const ANCHOR_WINDOW_DAYS = 30
-const ISO_TIME_PATTERN = /T(\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)(Z|[+-]\d{2}:?\d{2})?$/
+const ISO_TIME_PATTERN =
+  /^\d{4}-\d{2}-\d{2}T(\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)(Z|[+-]\d{2}:?\d{2})?$/
 const ISO_DATE_PATTERN = /^(\d{4}-\d{2}-\d{2})/
 const ISO_OFFSET_PATTERN = /(Z|[+-]\d{2}:?\d{2})$/
 
