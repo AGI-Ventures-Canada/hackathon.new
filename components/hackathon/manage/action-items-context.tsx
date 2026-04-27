@@ -197,6 +197,9 @@ export function ActionItemsProvider({
   // Use poll data only when it was fetched against the current server render —
   // if the server fingerprint has since changed (e.g. router.refresh() returned),
   // the poll snapshot is stale and we fall back to server props.
+  // The fingerprint is captured when pollData arrives (via the effect above), not
+  // when the poll request was dispatched, so a refresh that lands between dispatch
+  // and arrival still invalidates the poll on the next render.
   const isPollFresh = !!pollData && pollFingerprint === serverFingerprint;
 
   const actionItems = isPollFresh && pollData

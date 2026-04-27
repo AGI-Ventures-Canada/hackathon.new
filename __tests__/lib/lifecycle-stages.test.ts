@@ -137,12 +137,44 @@ describe("buildHackathonFingerprint", () => {
       startsAt: null,
       endsAt: null,
     })
-    expect(a).toBe("active|build|||")
+    expect(a).toBe("active|build|||[]")
   })
 
   it("treats null phase as empty string", () => {
     const a = buildHackathonFingerprint({ ...baseArgs, phase: null })
-    expect(a).toBe(`active||${baseArgs.startsAt}|${baseArgs.endsAt}|`)
+    expect(a).toBe(`active||${baseArgs.startsAt}|${baseArgs.endsAt}|[]`)
+  })
+
+  it("does not collide when an action item id contains the fingerprint separator", () => {
+    const a = buildHackathonFingerprint({
+      ...baseArgs,
+      actionItems: [
+        {
+          id: "weird|id",
+          label: "Weird",
+          severity: "info",
+          close: { kind: "auto", isComplete: false },
+        },
+      ],
+    })
+    const b = buildHackathonFingerprint({
+      ...baseArgs,
+      actionItems: [
+        {
+          id: "weird",
+          label: "Weird",
+          severity: "info",
+          close: { kind: "auto", isComplete: false },
+        },
+        {
+          id: "id",
+          label: "Id",
+          severity: "info",
+          close: { kind: "auto", isComplete: false },
+        },
+      ],
+    })
+    expect(a).not.toBe(b)
   })
 })
 

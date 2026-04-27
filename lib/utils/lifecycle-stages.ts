@@ -135,14 +135,18 @@ export function buildHackathonFingerprint(args: {
   endsAt: string | null
   actionItems: ActionItem[]
 }): string {
+  const actionItemsKey = JSON.stringify(
+    args.actionItems.map((i) => [
+      i.id,
+      i.close.kind === "auto" ? i.close.isComplete : null,
+    ]),
+  )
   return [
     args.status,
     args.phase ?? "",
     args.startsAt ?? "",
     args.endsAt ?? "",
-    args.actionItems
-      .map((i) => `${i.id}:${i.close.kind === "auto" ? i.close.isComplete : ""}`)
-      .join(","),
+    actionItemsKey,
   ].join("|")
 }
 
@@ -151,9 +155,10 @@ const ACTIVE_REOPEN_EXTENSION_MS = 60 * 60 * 1000
 export function buildStatusTransitionBody(
   targetStage: StageKey,
   endsAt: string | null | undefined,
-): Record<string, unknown> {
-  const dbStatus = targetStage === "published" ? "registration_open" : targetStage
-  const body: Record<string, unknown> = { status: dbStatus }
+): { status: HackathonStatus; endsAt?: string } {
+  const dbStatus: HackathonStatus =
+    targetStage === "published" ? "registration_open" : targetStage
+  const body: { status: HackathonStatus; endsAt?: string } = { status: dbStatus }
   const now = Date.now()
 
   if (targetStage === "judging") {
