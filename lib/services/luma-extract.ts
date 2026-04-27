@@ -143,6 +143,17 @@ export type ExtractRichContentOptions = {
   eventStartsAt?: string | null
 }
 
+const ISO_TIMESTAMP_PATTERN =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/
+
+function sanitizeIsoTimestamp(value: string | null | undefined): string | null {
+  const trimmed = value?.trim()
+  if (!trimmed) return null
+  if (!ISO_TIMESTAMP_PATTERN.test(trimmed)) return null
+  if (Number.isNaN(Date.parse(trimmed))) return null
+  return trimmed
+}
+
 export async function extractEventPageRichContent(
   inputUrl: string,
   options: ExtractRichContentOptions = {}
@@ -154,7 +165,7 @@ export async function extractEventPageRichContent(
   }
 
   const url = normalizeUrl(inputUrl)
-  const eventStartsAt = options.eventStartsAt?.trim() || null
+  const eventStartsAt = sanitizeIsoTimestamp(options.eventStartsAt)
   const anchorLine = eventStartsAt
     ? `\nThe event's known start timestamp is ${eventStartsAt}. Use this as the anchor for any agenda times that appear on the page without a date — emit the agenda item with this date (and the same timezone offset). For multi-day events, increment the date relative to this anchor based on "Day 2", "Day 3", or explicit dates on the page.\n`
     : ""

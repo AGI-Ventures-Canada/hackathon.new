@@ -448,7 +448,7 @@ describe("createAgendaFromImport", () => {
     expect(deleteChain!.not).toHaveBeenCalledWith("id", "in", "(imp-1)")
   })
 
-  it("leaves defaults in place when any insert fails", async () => {
+  it("rolls back partial inserts when any insert fails", async () => {
     let callCount = 0
     const chains: ReturnType<typeof createChainableMock>[] = []
     setMockFromImplementation(() => {
@@ -472,7 +472,9 @@ describe("createAgendaFromImport", () => {
               },
               error: null,
             })
-          : createChainableMock({ data: null, error: { message: "insert failed" } })
+          : callCount === 2
+            ? createChainableMock({ data: null, error: { message: "insert failed" } })
+            : createChainableMock({ data: null, error: null })
       chains.push(chain)
       return chain
     })
@@ -480,6 +482,27 @@ describe("createAgendaFromImport", () => {
     await createAgendaFromImport("h1", [
       { title: "Kickoff", startsAt: "2026-05-10T09:00:00-04:00", speakers: [] },
       { title: "Panel", startsAt: "2026-05-10T10:00:00-04:00", speakers: [] },
+    ])
+
+    const rollbackChain = chains.find(
+      (c) => (c.delete as unknown as { mock: { calls: unknown[][] } }).mock.calls.length > 0
+    )
+    expect(rollbackChain).toBeDefined()
+    expect(rollbackChain!.eq).toHaveBeenCalledWith("hackathon_id", "h1")
+    expect(rollbackChain!.in).toHaveBeenCalledWith("id", ["imp-1"])
+    expect(rollbackChain!.is).not.toHaveBeenCalledWith("trigger_type", null)
+  })
+
+  it("does not call delete when the very first insert fails (no partial rows)", async () => {
+    const chains: ReturnType<typeof createChainableMock>[] = []
+    setMockFromImplementation(() => {
+      const chain = createChainableMock({ data: null, error: { message: "insert failed" } })
+      chains.push(chain)
+      return chain
+    })
+
+    await createAgendaFromImport("h1", [
+      { title: "Kickoff", startsAt: "2026-05-10T09:00:00-04:00", speakers: [] },
     ])
 
     for (const chain of chains) {

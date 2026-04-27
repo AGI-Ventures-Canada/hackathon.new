@@ -256,21 +256,22 @@ function pickUsable(
       title: title.slice(0, MAX_AGENDA_TITLE_LEN),
     })
   }
-  if (usable.length < items.length) {
-    const dropped = items.length - usable.length
-    const capped = Math.max(0, items.length - MAX_AGENDA_ITEMS)
+  const dropped = items.length - usable.length
+  if (dropped > 0) {
+    const overCap = Math.max(0, items.length - MAX_AGENDA_ITEMS)
+    const invalid = dropped - overCap
     const reason =
-      capped >= dropped
-        ? `exceeded ${MAX_AGENDA_ITEMS}-item cap`
-        : capped > 0
-          ? `${capped} over cap, ${dropped - capped} missing title or startsAt`
+      overCap > 0 && invalid > 0
+        ? `${overCap} over cap, ${invalid} missing title or startsAt`
+        : overCap > 0
+          ? `exceeded ${MAX_AGENDA_ITEMS}-item cap`
           : "missing title or startsAt"
     console.warn(`Dropped ${dropped} of ${items.length} imported agenda items (${reason})`)
   }
   return usable
 }
 
-// On partial insert failure the auto-seeded defaults are left so the schedule never goes empty; trigger items are never touched.
+// On partial insert failure the partial rows are rolled back so the auto-seeded defaults stand alone; trigger items are never touched.
 export async function createAgendaFromImport(
   hackathonId: string,
   items: ImportedAgendaItem[],
@@ -279,6 +280,7 @@ export async function createAgendaFromImport(
   const usable = pickUsable(items, eventStartsAt)
   if (!usable.length) return
 
+  const client = getSupabase() as unknown as SupabaseClient
   const insertedIds: string[] = []
   for (let i = 0; i < usable.length; i++) {
     const item = usable[i]
@@ -290,11 +292,28 @@ export async function createAgendaFromImport(
       location: item.location?.trim() || undefined,
       sortOrder: i,
     })
-    if (!created) return
+    if (!created) {
+      console.warn(
+        `Agenda import failed at item ${i + 1} of ${usable.length} for hackathon ${hackathonId}; rolling back ${insertedIds.length} partial inserts`
+      )
+      if (insertedIds.length > 0) {
+        const { error: rollbackError } = await client
+          .from("hackathon_schedule_items")
+          .delete()
+          .eq("hackathon_id", hackathonId)
+          .in("id", insertedIds)
+        if (rollbackError) {
+          console.error(
+            `Failed to roll back partial agenda inserts for hackathon ${hackathonId}:`,
+            rollbackError
+          )
+        }
+      }
+      return
+    }
     insertedIds.push(created.id)
   }
 
-  const client = getSupabase() as unknown as SupabaseClient
   const { error: deleteError } = await client
     .from("hackathon_schedule_items")
     .delete()
