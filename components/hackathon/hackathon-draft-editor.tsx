@@ -266,6 +266,7 @@ export function HackathonDraftEditor({
   )
 
   const draftScheduleItems: ScheduleItem[] = useMemo(() => {
+    const now = new Date().toISOString()
     const out: ScheduleItem[] = []
     for (const item of state.agendaItems ?? []) {
       const startsAt = anchorAgendaTimestamp(item.startsAt?.trim() || null, state.startsAt)
@@ -282,8 +283,8 @@ export function HackathonDraftEditor({
         sort_order: out.length,
         trigger_type: null,
         linked_to: null,
-        created_at: "draft",
-        updated_at: "draft",
+        created_at: now,
+        updated_at: now,
       })
     }
     return out
