@@ -98,6 +98,7 @@ export function AssignJudgesDialog({
 
     setLocalOverrides((prev) => new Map(prev).set(judge.participantId, newState))
     setToggling((prev) => new Set(prev).add(judge.participantId))
+    hasChanges.current = true
 
     try {
       if (wasAssigned) {
@@ -105,7 +106,6 @@ export function AssignJudgesDialog({
       } else {
         await onAssignJudge(prizeId, judge.participantId)
       }
-      hasChanges.current = true
     } catch {
       setLocalOverrides((prev) => {
         const next = new Map(prev)

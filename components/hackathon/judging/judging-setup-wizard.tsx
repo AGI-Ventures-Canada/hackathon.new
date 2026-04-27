@@ -124,6 +124,7 @@ export function JudgingSetupWizard({
   const [hiddenJudgeIds, setHiddenJudgeIds] = useState<Set<string>>(new Set())
   const [hiddenInvitationIds, setHiddenInvitationIds] = useState<Set<string>>(new Set())
   const [hiddenPrizeJudges, setHiddenPrizeJudges] = useState<Set<string>>(new Set())
+  const [addedPrizeJudges, setAddedPrizeJudges] = useState<Set<string>>(new Set())
 
   const [pendingPrizes, setPendingPrizes] = useState<WizardPrize[]>([])
   const [pendingRounds, setPendingRounds] = useState<RoundData[]>([])
@@ -146,6 +147,29 @@ export function JudgingSetupWizard({
     const ids = new Set(pendingInvitations.map((i) => i.id))
     setPendingInvites((prev) => prev.filter((i) => !ids.has(i.id)))
   }, [pendingInvitations])
+
+  useEffect(() => {
+    setAddedPrizeJudges((prev) => {
+      if (prev.size === 0) return prev
+      const next = new Set<string>()
+      for (const key of prev) {
+        const [pid, jid] = key.split(":")
+        const judge = judges.find((j) => j.participantId === jid)
+        if (judge && !judge.prizeIds.includes(pid)) next.add(key)
+      }
+      return next.size === prev.size ? prev : next
+    })
+    setHiddenPrizeJudges((prev) => {
+      if (prev.size === 0) return prev
+      const next = new Set<string>()
+      for (const key of prev) {
+        const [pid, jid] = key.split(":")
+        const judge = judges.find((j) => j.participantId === jid)
+        if (judge && judge.prizeIds.includes(pid)) next.add(key)
+      }
+      return next.size === prev.size ? prev : next
+    })
+  }, [judges])
 
   const visiblePrizes = useMemo(
     () =>
@@ -171,13 +195,23 @@ export function JudgingSetupWizard({
             !hiddenJudgeIds.has(j.participantId) &&
             arr.findIndex((x) => x.participantId === j.participantId) === idx,
         )
-        .map((j) => ({
-          ...j,
-          prizeIds: j.prizeIds.filter(
+        .map((j) => {
+          const serverPrizeIds = j.prizeIds.filter(
             (pid) => !hiddenPrizeJudges.has(`${pid}:${j.participantId}`),
-          ),
-        })),
-    [judges, pendingJudges, hiddenJudgeIds, hiddenPrizeJudges],
+          )
+          const addedPrizeIds: string[] = []
+          for (const key of addedPrizeJudges) {
+            const [pid, jid] = key.split(":")
+            if (jid === j.participantId && !serverPrizeIds.includes(pid)) {
+              addedPrizeIds.push(pid)
+            }
+          }
+          return {
+            ...j,
+            prizeIds: addedPrizeIds.length === 0 ? serverPrizeIds : [...serverPrizeIds, ...addedPrizeIds],
+          }
+        }),
+    [judges, pendingJudges, hiddenJudgeIds, hiddenPrizeJudges, addedPrizeJudges],
   )
   const visibleInvitations = useMemo(
     () =>
@@ -385,16 +419,40 @@ export function JudgingSetupWizard({
   }
 
   async function assignJudgeToPrize(prizeId: string, judgeParticipantId: string) {
-    await fetch(`/api/dashboard/hackathons/${hackathonId}/prizes/${prizeId}/assign-judge`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ judgeParticipantId }),
-    }).then(assertOk)
+    const key = `${prizeId}:${judgeParticipantId}`
+    setAddedPrizeJudges((prev) => new Set(prev).add(key))
+    setHiddenPrizeJudges((prev) => {
+      if (!prev.has(key)) return prev
+      const next = new Set(prev)
+      next.delete(key)
+      return next
+    })
+    try {
+      await fetch(`/api/dashboard/hackathons/${hackathonId}/prizes/${prizeId}/assign-judge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ judgeParticipantId }),
+      }).then(assertOk)
+      refresh()
+    } catch (err) {
+      setAddedPrizeJudges((prev) => {
+        const next = new Set(prev)
+        next.delete(key)
+        return next
+      })
+      throw err
+    }
   }
 
   async function unassignJudgeFromPrize(prizeId: string, judgeParticipantId: string) {
     const key = `${prizeId}:${judgeParticipantId}`
     setHiddenPrizeJudges((prev) => new Set(prev).add(key))
+    setAddedPrizeJudges((prev) => {
+      if (!prev.has(key)) return prev
+      const next = new Set(prev)
+      next.delete(key)
+      return next
+    })
     try {
       await fetch(`/api/dashboard/hackathons/${hackathonId}/prizes/${prizeId}/judges/${judgeParticipantId}`, {
         method: "DELETE",

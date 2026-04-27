@@ -218,16 +218,50 @@ export function JudgingTabClient({
   const judgesList = useOptimisticList({ items: initialJudges, getId: (j) => j.participantId })
   const invitationsList = useOptimisticList({ items: initialInvitations, getId: (i) => i.id })
   const [hiddenPrizeJudges, setHiddenPrizeJudges] = useState<Set<string>>(new Set())
+  const [addedPrizeJudges, setAddedPrizeJudges] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    setAddedPrizeJudges((prev) => {
+      if (prev.size === 0) return prev
+      const next = new Set<string>()
+      for (const key of prev) {
+        const [pid, jid] = key.split(":")
+        const judge = judgesList.visibleItems.find((j) => j.participantId === jid)
+        if (judge && !judge.prizeIds.includes(pid)) next.add(key)
+      }
+      return next.size === prev.size ? prev : next
+    })
+    setHiddenPrizeJudges((prev) => {
+      if (prev.size === 0) return prev
+      const next = new Set<string>()
+      for (const key of prev) {
+        const [pid, jid] = key.split(":")
+        const judge = judgesList.visibleItems.find((j) => j.participantId === jid)
+        if (judge && judge.prizeIds.includes(pid)) next.add(key)
+      }
+      return next.size === prev.size ? prev : next
+    })
+  }, [judgesList.visibleItems])
 
   const judges = useMemo(
     () =>
-      judgesList.visibleItems.map((j) => ({
-        ...j,
-        prizeIds: j.prizeIds.filter(
+      judgesList.visibleItems.map((j) => {
+        const serverPrizeIds = j.prizeIds.filter(
           (pid) => !hiddenPrizeJudges.has(`${pid}:${j.participantId}`)
-        ),
-      })),
-    [judgesList.visibleItems, hiddenPrizeJudges]
+        )
+        const addedPrizeIds: string[] = []
+        for (const key of addedPrizeJudges) {
+          const [pid, jid] = key.split(":")
+          if (jid === j.participantId && !serverPrizeIds.includes(pid)) {
+            addedPrizeIds.push(pid)
+          }
+        }
+        return {
+          ...j,
+          prizeIds: addedPrizeIds.length === 0 ? serverPrizeIds : [...serverPrizeIds, ...addedPrizeIds],
+        }
+      }),
+    [judgesList.visibleItems, hiddenPrizeJudges, addedPrizeJudges]
   )
   const prizes = prizesList.visibleItems
   const invitations = invitationsList.visibleItems
@@ -307,16 +341,40 @@ export function JudgingTabClient({
   })
 
   async function assignJudgeToPrize(prizeId: string, judgeParticipantId: string) {
-    await fetch(`${base}/prizes/${prizeId}/assign-judge`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ judgeParticipantId }),
-    }).then(assertOk)
+    const key = `${prizeId}:${judgeParticipantId}`
+    setAddedPrizeJudges((prev) => new Set(prev).add(key))
+    setHiddenPrizeJudges((prev) => {
+      if (!prev.has(key)) return prev
+      const next = new Set(prev)
+      next.delete(key)
+      return next
+    })
+    try {
+      await fetch(`${base}/prizes/${prizeId}/assign-judge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ judgeParticipantId }),
+      }).then(assertOk)
+      router.refresh()
+    } catch (err) {
+      setAddedPrizeJudges((prev) => {
+        const next = new Set(prev)
+        next.delete(key)
+        return next
+      })
+      throw err
+    }
   }
 
   async function unassignJudgeFromPrize(prizeId: string, judgeParticipantId: string) {
     const key = `${prizeId}:${judgeParticipantId}`
     setHiddenPrizeJudges((prev) => new Set(prev).add(key))
+    setAddedPrizeJudges((prev) => {
+      if (!prev.has(key)) return prev
+      const next = new Set(prev)
+      next.delete(key)
+      return next
+    })
     try {
       await fetch(`${base}/prizes/${prizeId}/judges/${judgeParticipantId}`, {
         method: "DELETE",
