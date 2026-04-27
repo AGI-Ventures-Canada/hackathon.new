@@ -7,6 +7,20 @@ type JudgeWithPrizeIds = {
   prizeIds: string[]
 }
 
+const KEY_DELIMITER = ":"
+
+function makeKey(prizeId: string, judgeParticipantId: string) {
+  return `${prizeId}${KEY_DELIMITER}${judgeParticipantId}`
+}
+
+function parseKey(key: string): { prizeId: string; judgeParticipantId: string } {
+  const idx = key.indexOf(KEY_DELIMITER)
+  return {
+    prizeId: key.slice(0, idx),
+    judgeParticipantId: key.slice(idx + KEY_DELIMITER.length),
+  }
+}
+
 export function usePrizeJudgeAssignments<T extends JudgeWithPrizeIds>({
   hackathonId,
   judges,
@@ -25,9 +39,9 @@ export function usePrizeJudgeAssignments<T extends JudgeWithPrizeIds>({
     if (addedPrizeJudges.size > 0) {
       const next = new Set<string>()
       for (const key of addedPrizeJudges) {
-        const [pid, jid] = key.split(":")
-        const judge = judges.find((j) => j.participantId === jid)
-        if (judge && !judge.prizeIds.includes(pid)) next.add(key)
+        const { prizeId, judgeParticipantId } = parseKey(key)
+        const judge = judges.find((j) => j.participantId === judgeParticipantId)
+        if (judge && !judge.prizeIds.includes(prizeId)) next.add(key)
       }
       if (next.size !== addedPrizeJudges.size) setAddedPrizeJudges(next)
     }
@@ -35,9 +49,9 @@ export function usePrizeJudgeAssignments<T extends JudgeWithPrizeIds>({
     if (hiddenPrizeJudges.size > 0) {
       const next = new Set<string>()
       for (const key of hiddenPrizeJudges) {
-        const [pid, jid] = key.split(":")
-        const judge = judges.find((j) => j.participantId === jid)
-        if (judge && judge.prizeIds.includes(pid)) next.add(key)
+        const { prizeId, judgeParticipantId } = parseKey(key)
+        const judge = judges.find((j) => j.participantId === judgeParticipantId)
+        if (judge && judge.prizeIds.includes(prizeId)) next.add(key)
       }
       if (next.size !== hiddenPrizeJudges.size) setHiddenPrizeJudges(next)
     }
@@ -47,13 +61,16 @@ export function usePrizeJudgeAssignments<T extends JudgeWithPrizeIds>({
     () =>
       judges.map((j) => {
         const serverPrizeIds = j.prizeIds.filter(
-          (pid) => !hiddenPrizeJudges.has(`${pid}:${j.participantId}`),
+          (pid) => !hiddenPrizeJudges.has(makeKey(pid, j.participantId)),
         )
         const addedPrizeIds: string[] = []
         for (const key of addedPrizeJudges) {
-          const [pid, jid] = key.split(":")
-          if (jid === j.participantId && !serverPrizeIds.includes(pid)) {
-            addedPrizeIds.push(pid)
+          const { prizeId, judgeParticipantId } = parseKey(key)
+          if (
+            judgeParticipantId === j.participantId &&
+            !serverPrizeIds.includes(prizeId)
+          ) {
+            addedPrizeIds.push(prizeId)
           }
         }
         return {
@@ -68,7 +85,7 @@ export function usePrizeJudgeAssignments<T extends JudgeWithPrizeIds>({
   )
 
   async function assignJudgeToPrize(prizeId: string, judgeParticipantId: string) {
-    const key = `${prizeId}:${judgeParticipantId}`
+    const key = makeKey(prizeId, judgeParticipantId)
     setAddedPrizeJudges((prev) => new Set(prev).add(key))
     setHiddenPrizeJudges((prev) => {
       if (!prev.has(key)) return prev
@@ -97,7 +114,7 @@ export function usePrizeJudgeAssignments<T extends JudgeWithPrizeIds>({
   }
 
   async function unassignJudgeFromPrize(prizeId: string, judgeParticipantId: string) {
-    const key = `${prizeId}:${judgeParticipantId}`
+    const key = makeKey(prizeId, judgeParticipantId)
     setHiddenPrizeJudges((prev) => new Set(prev).add(key))
     setAddedPrizeJudges((prev) => {
       if (!prev.has(key)) return prev
