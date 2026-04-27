@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { useActionItems } from "./action-items-context"
 import { isCompleted } from "@/lib/utils/organizer-actions"
-import { getTransitionConfirmation } from "@/lib/utils/lifecycle-stages"
+import { getTransitionConfirmation, type StageKey } from "@/lib/utils/lifecycle-stages"
 import type { HackathonStatus } from "@/lib/db/hackathon-types"
 
 export type TransitionConfirmDialogHandle = {
@@ -33,7 +33,7 @@ type Props = {
 export const TransitionConfirmDialog = forwardRef<TransitionConfirmDialogHandle, Props>(
   function TransitionConfirmDialog({ hackathonId, status, endsAt, onTransitioned }, ref) {
     const router = useRouter()
-    const { activeItems } = useActionItems()
+    const { activeItems, setOptimisticStage } = useActionItems()
     const [pendingTarget, setPendingTarget] = useState<string | null>(null)
     const [updating, setUpdating] = useState(false)
     const [error, setError] = useState<string | null>(null)
@@ -58,6 +58,7 @@ export const TransitionConfirmDialog = forwardRef<TransitionConfirmDialogHandle,
       if (!pendingTarget) return
       setUpdating(true)
       setError(null)
+      setOptimisticStage(pendingTarget as StageKey)
 
       try {
         if (pendingTarget === "completed") {
@@ -121,6 +122,11 @@ export const TransitionConfirmDialog = forwardRef<TransitionConfirmDialogHandle,
             body.endsAt = new Date().toISOString()
           }
         }
+        if (pendingTarget === "active") {
+          if (endsAt && new Date(endsAt) <= new Date()) {
+            body.endsAt = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+          }
+        }
 
         await fetch(
           `/api/dashboard/hackathons/${hackathonId}/settings`,
@@ -134,6 +140,7 @@ export const TransitionConfirmDialog = forwardRef<TransitionConfirmDialogHandle,
         router.refresh()
         closeDialog()
       } catch (err) {
+        setOptimisticStage(null)
         setError(err instanceof Error ? err.message : "Something went wrong")
       } finally {
         setUpdating(false)

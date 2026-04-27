@@ -26,7 +26,7 @@ export async function executePoll(
   try {
     const res = await fetch(
       `/api/dashboard/hackathons/${hackathonId}/action-items-poll`,
-      { signal }
+      { signal, cache: "no-store" }
     )
     if (!res.ok) {
       const failCount = state.failCount + 1

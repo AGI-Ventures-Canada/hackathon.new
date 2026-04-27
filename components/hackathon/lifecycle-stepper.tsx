@@ -42,6 +42,7 @@ import {
   resolveStageIndex as resolvePhaseIndex,
   type StageKey as PhaseKey,
 } from "@/lib/utils/lifecycle-stages"
+import { useActionItemsOptional } from "@/components/hackathon/manage/action-items-context"
 import type { DevStatusDetail } from "@/components/dev-tool/events"
 
 interface LifecycleStepperProps {
@@ -104,6 +105,7 @@ export function LifecycleStepper({
 }: LifecycleStepperProps) {
   const router = useRouter()
   const isMobile = useIsMobile()
+  const actionItems = useActionItemsOptional()
   const [currentStatus, setCurrentStatus] = useState(status)
   const [updating, setUpdating] = useState(false)
   const [pendingTarget, setPendingTarget] = useState<PhaseKey | null>(null)
@@ -136,6 +138,7 @@ export function LifecycleStepper({
     const dbStatus = newStatus === "published" ? "registration_open" : newStatus
 
     setUpdating(true)
+    actionItems?.setOptimisticStage(newStatus)
     try {
       if (newStatus === "completed") {
         const calcRes = await fetch(
@@ -190,6 +193,11 @@ export function LifecycleStepper({
       if (newStatus === "judging") {
         if (!endsAt || new Date(endsAt) > new Date()) body.endsAt = now
       }
+      if (newStatus === "active") {
+        if (endsAt && new Date(endsAt) <= new Date()) {
+          body.endsAt = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+        }
+      }
 
       const res = await fetch(
         `/api/dashboard/hackathons/${hackathonId}/settings`,
@@ -203,7 +211,7 @@ export function LifecycleStepper({
       setCurrentStatus(newStatus)
       router.refresh()
     } catch {
-      // keep current status on failure
+      actionItems?.setOptimisticStage(null)
     } finally {
       setUpdating(false)
       setPendingTarget(null)
