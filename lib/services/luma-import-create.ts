@@ -215,7 +215,7 @@ export async function createChallengesFromImport(
   for (const c of challenges) {
     const cleanedResources = (c.resources ?? [])
       .map((r) => ({ label: r.label?.trim() ?? "", url: normalizeUrl(r.url?.trim() ?? "") }))
-      .filter((r) => r.url.length > 0)
+      .filter((r) => r.url.length > 0 && isSafeExternalUrl(r.url))
 
     await createChallenge(hackathonId, tenantId, {
       title: c.title,

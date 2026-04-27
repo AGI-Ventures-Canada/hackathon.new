@@ -77,4 +77,53 @@ describe("ttlCache", () => {
 
     expect(fn).toHaveBeenCalledTimes(2)
   })
+
+  it("dedupes in-flight requests with the same key", async () => {
+    let resolveFn: ((v: string) => void) | undefined
+    const fn = mock(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveFn = resolve
+        })
+    )
+    const key = `test-inflight-${Date.now()}`
+
+    const first = ttlCache(key, fn)
+    const second = ttlCache(key, fn)
+    const third = ttlCache(key, fn)
+
+    expect(fn).toHaveBeenCalledTimes(1)
+
+    resolveFn!("shared")
+    const [a, b, c] = await Promise.all([first, second, third])
+    expect(a).toBe("shared")
+    expect(b).toBe("shared")
+    expect(c).toBe("shared")
+    expect(fn).toHaveBeenCalledTimes(1)
+  })
+
+  it("releases the in-flight slot after the fetch resolves", async () => {
+    const fn = mock(() => Promise.resolve("v"))
+    const key = `test-inflight-release-${Date.now()}`
+
+    await ttlCache(key, fn, 1)
+    await new Promise((r) => setTimeout(r, 10))
+    await ttlCache(key, fn, 1)
+
+    expect(fn).toHaveBeenCalledTimes(2)
+  })
+
+  it("releases the in-flight slot when the fetch rejects so the next caller can retry", async () => {
+    let attempts = 0
+    const fn = mock(() => {
+      attempts++
+      if (attempts === 1) return Promise.reject(new Error("transient"))
+      return Promise.resolve("ok")
+    })
+    const key = `test-inflight-error-${Date.now()}`
+
+    await expect(ttlCache(key, fn)).rejects.toThrow("transient")
+    await expect(ttlCache(key, fn)).resolves.toBe("ok")
+    expect(fn).toHaveBeenCalledTimes(2)
+  })
 })

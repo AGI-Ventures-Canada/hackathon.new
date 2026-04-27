@@ -366,6 +366,29 @@ describe("createChallengesFromImport", () => {
     }))
   })
 
+  it("drops SSRF-flavored resource urls", async () => {
+    const { challengesChain } = setupChallengeMocks()
+
+    await createChallengesFromImport("h1", "tenant-1", [
+      {
+        title: "SSRF Test",
+        resources: [
+          { label: "Public", url: "https://example.com/data.csv" },
+          { label: "AWS metadata", url: "http://169.254.169.254/latest/meta-data/" },
+          { label: "Localhost", url: "http://127.0.0.1:8080/" },
+          { label: "GCP metadata", url: "http://metadata.google.internal/" },
+        ],
+      },
+    ])
+
+    expect(challengesChain.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "SSRF Test",
+        resources: [{ label: "Public", url: "https://example.com/data.csv" }],
+      })
+    )
+  })
+
   it("handles empty challenges array", async () => {
     const { challengesChain } = setupChallengeMocks()
 
