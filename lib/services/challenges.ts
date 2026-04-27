@@ -347,8 +347,6 @@ export async function processScheduledChallengeReleases(): Promise<ScheduledChal
 
   const nowIso = new Date().toISOString()
   for (const item of items) {
-    // Only fire for items the organizer explicitly unlinked from event start.
-    // event_start-linked items release via the lifecycle transition path.
     if (item.linked_to !== null) continue
     if (typeof item.starts_at !== "string" || item.starts_at > nowIso) continue
 

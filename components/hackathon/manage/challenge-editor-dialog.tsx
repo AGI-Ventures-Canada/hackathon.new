@@ -298,10 +298,11 @@ export function ChallengeEditorDialog({
                     onChange={setCustomReleaseAt}
                     placeholder="Pick a release time"
                     minDate={startsAtDate ?? undefined}
+                    maxDate={endsAtDate ?? undefined}
                   />
-                  {startsAtDate && endsAtDate && (
+                  {hackathonStartsAt && hackathonEndsAt && (
                     <p className="text-xs text-muted-foreground">
-                      Pick any time between {formatBound(startsAtDate.toISOString())} and {formatBound(endsAtDate.toISOString())}.
+                      Pick any time between {formatBound(hackathonStartsAt)} and {formatBound(hackathonEndsAt)}.
                     </p>
                   )}
                   {customReleaseError && (

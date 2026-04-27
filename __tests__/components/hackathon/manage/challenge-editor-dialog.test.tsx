@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test"
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { resetComponentMocks, setRouter } from "../../../lib/component-mocks"
 
 const mockRefresh = mock(() => {})
@@ -11,6 +11,18 @@ const mockFetch = mock(() =>
     })
   )
 )
+
+let pickerOnChange: ((value: Date | null) => void) | null = null
+mock.module("@/components/ui/date-time-picker", () => ({
+  DateTimePicker: ({ value, onChange, id }: { value: Date | null; onChange: (v: Date | null) => void; id?: string }) => {
+    pickerOnChange = onChange
+    return (
+      <button type="button" data-testid="date-time-picker" id={id}>
+        {value ? value.toISOString() : "no-date"}
+      </button>
+    )
+  },
+}))
 
 const { ChallengeEditorDialog } = await import("@/components/hackathon/manage/challenge-editor-dialog")
 
@@ -54,6 +66,7 @@ beforeEach(() => {
   setRouter({ refresh: mockRefresh })
   mockRefresh.mockClear()
   mockFetch.mockClear()
+  pickerOnChange = null
   mockFetch.mockImplementation(() =>
     Promise.resolve(
       new Response(JSON.stringify({ challenge: { id: "c1", hackathonId: "h1", title: "X", description: null, resources: [], sortOrder: 0, createdAt: "", updatedAt: "" } }), {
@@ -127,6 +140,37 @@ describe("ChallengeEditorDialog release timing", () => {
     })
     const url = mockFetch.mock.calls[0][0] as string
     expect(url).toBe("/api/dashboard/hackathons/h1/challenges")
+  })
+
+  it("saves the challenge AND patches the schedule item when the custom time changes", async () => {
+    const initialCustomIso = "2030-06-01T18:00:00.000Z"
+    const newCustomIso = "2030-06-02T10:30:00.000Z"
+    renderDialog({
+      releaseScheduleItem: {
+        ...baseTriggerItem,
+        linked_to: null,
+        starts_at: initialCustomIso,
+      },
+    })
+    const dialog = screen.getByRole("dialog")
+    fireEvent.change(within(dialog).getByLabelText("Title"), { target: { value: "Theme" } })
+
+    expect(pickerOnChange).not.toBeNull()
+    act(() => {
+      pickerOnChange!(new Date(newCustomIso))
+    })
+
+    fireEvent.click(within(dialog).getByRole("button", { name: /Save challenge/ }))
+
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledTimes(2)
+    })
+    const patchUrl = mockFetch.mock.calls[1][0] as string
+    const patchInit = mockFetch.mock.calls[1][1] as RequestInit
+    expect(patchUrl).toBe("/api/dashboard/hackathons/h1/schedule/schedule-1")
+    expect(patchInit.method).toBe("PATCH")
+    const body = JSON.parse(patchInit.body as string)
+    expect(body).toEqual({ startsAt: newCustomIso, linkedTo: null })
   })
 
   it("saves the challenge AND patches the schedule item when toggle changes from custom to auto", async () => {
