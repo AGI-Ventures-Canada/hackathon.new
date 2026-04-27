@@ -142,19 +142,26 @@ export function ChallengeEditorDialog({
       const data = (await res.json()) as { challenge: Challenge }
 
       if (!alreadyReleased && releaseScheduleItem) {
-        const nextLinkedTo = autoRelease ? "event_start" : null
-        const nextStartsAt = autoRelease ? hackathonStartsAt : customReleaseAt?.toISOString() ?? null
         const linkedChanged = autoRelease !== initialAutoRelease
-        const startsChanged =
-          !autoRelease && nextStartsAt !== initialCustomReleaseIso
+        const customStartsAt = customReleaseAt?.toISOString() ?? null
+        const startsChanged = !autoRelease && customStartsAt !== initialCustomReleaseIso
 
-        if (nextStartsAt && (linkedChanged || startsChanged)) {
+        if (linkedChanged || startsChanged) {
+          const patchBody: { startsAt?: string; linkedTo: "event_start" | null } = {
+            linkedTo: autoRelease ? "event_start" : null,
+          }
+          if (autoRelease && hackathonStartsAt) {
+            patchBody.startsAt = hackathonStartsAt
+          } else if (!autoRelease && customStartsAt) {
+            patchBody.startsAt = customStartsAt
+          }
+
           await fetch(
             `/api/dashboard/hackathons/${hackathonId}/schedule/${releaseScheduleItem.id}`,
             {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ startsAt: nextStartsAt, linkedTo: nextLinkedTo }),
+              body: JSON.stringify(patchBody),
             },
           ).then(assertOk)
         }
@@ -261,7 +268,7 @@ export function ChallengeEditorDialog({
             )}
           </div>
 
-          {!alreadyReleased && (
+          {!alreadyReleased && releaseScheduleItem && (
             <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-0.5">

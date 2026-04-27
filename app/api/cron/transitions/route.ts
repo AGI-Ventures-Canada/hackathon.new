@@ -12,5 +12,5 @@ export async function GET(request: Request) {
 
   const transitions = await processAutoTransitions()
   const releases = await processScheduledChallengeReleases()
-  return Response.json({ ...transitions, scheduledChallengeReleases: releases })
+  return Response.json({ transitions, scheduledChallengeReleases: releases })
 }
