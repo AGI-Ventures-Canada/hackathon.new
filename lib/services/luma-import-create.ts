@@ -315,7 +315,7 @@ export async function createAgendaFromImport(
     insertedIds.push(created.id)
   }
 
-  // insertedIds are DB-generated UUIDs from createScheduleItem above — never user input — so direct interpolation here is safe.
+  // insertedIds are DB-generated UUIDs, never user input.
   const { error: deleteError } = await client
     .from("hackathon_schedule_items")
     .delete()

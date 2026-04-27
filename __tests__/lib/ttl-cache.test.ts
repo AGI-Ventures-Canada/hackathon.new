@@ -52,4 +52,29 @@ describe("ttlCache", () => {
 
     expect(fn).toHaveBeenCalledTimes(1)
   })
+
+  it("evicts the oldest entry when the cache is full", async () => {
+    const prefix = `test-evict-${Date.now()}`
+    const sentinelKey = `${prefix}-sentinel`
+    const sentinelFn = mock(() => Promise.resolve("sentinel"))
+    await ttlCache(sentinelKey, sentinelFn)
+
+    for (let i = 0; i < 600; i++) {
+      await ttlCache(`${prefix}-${i}`, () => Promise.resolve(i))
+    }
+
+    await ttlCache(sentinelKey, sentinelFn)
+    expect(sentinelFn).toHaveBeenCalledTimes(2)
+  })
+
+  it("expires entries pushed past TTL even before the cap is hit", async () => {
+    const fn = mock(() => Promise.resolve("v1"))
+    const key = `test-evict-expired-${Date.now()}`
+
+    await ttlCache(key, fn, 1)
+    await new Promise((r) => setTimeout(r, 10))
+    await ttlCache(key, fn, 1)
+
+    expect(fn).toHaveBeenCalledTimes(2)
+  })
 })
