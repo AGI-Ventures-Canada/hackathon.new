@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { assertOk } from "@/lib/utils/fetch"
 
@@ -84,59 +84,65 @@ export function usePrizeJudgeAssignments<T extends JudgeWithPrizeIds>({
     [judges, hiddenPrizeJudges, addedPrizeJudges],
   )
 
-  async function assignJudgeToPrize(prizeId: string, judgeParticipantId: string) {
-    const key = makeKey(prizeId, judgeParticipantId)
-    setAddedPrizeJudges((prev) => new Set(prev).add(key))
-    setHiddenPrizeJudges((prev) => {
-      if (!prev.has(key)) return prev
-      const next = new Set(prev)
-      next.delete(key)
-      return next
-    })
-    try {
-      await fetch(
-        `/api/dashboard/hackathons/${hackathonId}/prizes/${prizeId}/assign-judge`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ judgeParticipantId }),
-        },
-      ).then(assertOk)
-      router.refresh()
-    } catch (err) {
-      setAddedPrizeJudges((prev) => {
-        const next = new Set(prev)
-        next.delete(key)
-        return next
-      })
-      throw err
-    }
-  }
-
-  async function unassignJudgeFromPrize(prizeId: string, judgeParticipantId: string) {
-    const key = makeKey(prizeId, judgeParticipantId)
-    setHiddenPrizeJudges((prev) => new Set(prev).add(key))
-    setAddedPrizeJudges((prev) => {
-      if (!prev.has(key)) return prev
-      const next = new Set(prev)
-      next.delete(key)
-      return next
-    })
-    try {
-      await fetch(
-        `/api/dashboard/hackathons/${hackathonId}/prizes/${prizeId}/judges/${judgeParticipantId}`,
-        { method: "DELETE" },
-      ).then(assertOk)
-      router.refresh()
-    } catch (err) {
+  const assignJudgeToPrize = useCallback(
+    async (prizeId: string, judgeParticipantId: string) => {
+      const key = makeKey(prizeId, judgeParticipantId)
+      setAddedPrizeJudges((prev) => new Set(prev).add(key))
       setHiddenPrizeJudges((prev) => {
+        if (!prev.has(key)) return prev
         const next = new Set(prev)
         next.delete(key)
         return next
       })
-      throw err
-    }
-  }
+      try {
+        await fetch(
+          `/api/dashboard/hackathons/${hackathonId}/prizes/${prizeId}/assign-judge`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ judgeParticipantId }),
+          },
+        ).then(assertOk)
+        router.refresh()
+      } catch (err) {
+        setAddedPrizeJudges((prev) => {
+          const next = new Set(prev)
+          next.delete(key)
+          return next
+        })
+        throw err
+      }
+    },
+    [hackathonId, router],
+  )
+
+  const unassignJudgeFromPrize = useCallback(
+    async (prizeId: string, judgeParticipantId: string) => {
+      const key = makeKey(prizeId, judgeParticipantId)
+      setHiddenPrizeJudges((prev) => new Set(prev).add(key))
+      setAddedPrizeJudges((prev) => {
+        if (!prev.has(key)) return prev
+        const next = new Set(prev)
+        next.delete(key)
+        return next
+      })
+      try {
+        await fetch(
+          `/api/dashboard/hackathons/${hackathonId}/prizes/${prizeId}/judges/${judgeParticipantId}`,
+          { method: "DELETE" },
+        ).then(assertOk)
+        router.refresh()
+      } catch (err) {
+        setHiddenPrizeJudges((prev) => {
+          const next = new Set(prev)
+          next.delete(key)
+          return next
+        })
+        throw err
+      }
+    },
+    [hackathonId, router],
+  )
 
   return { optimisticJudges, assignJudgeToPrize, unassignJudgeFromPrize }
 }

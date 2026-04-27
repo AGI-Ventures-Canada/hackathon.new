@@ -164,6 +164,10 @@ interface JudgingTabClientProps {
   activeJtab: ManageJtab
 }
 
+const getPrizeId = (p: PrizeData) => p.id
+const getJudgeParticipantId = (j: JudgeData) => j.participantId
+const getInvitationId = (i: InvitationData) => i.id
+
 const STYLE_META: Record<string, { label: string; icon: typeof Trophy; color: string }> = {
   bucket_sort: { label: "Bucket Sort", icon: ArrowUpDown, color: "bg-blue-500/10 text-blue-700 dark:text-blue-400" },
   gate_check: { label: "Gate Check", icon: ListChecks, color: "bg-amber-500/10 text-amber-700 dark:text-amber-400" },
@@ -215,9 +219,9 @@ export function JudgingTabClient({
 
   const base = `/api/dashboard/hackathons/${hackathonId}`
 
-  const prizesList = useOptimisticList({ items: initialPrizes, getId: (p) => p.id })
-  const judgesList = useOptimisticList({ items: initialJudges, getId: (j) => j.participantId })
-  const invitationsList = useOptimisticList({ items: initialInvitations, getId: (i) => i.id })
+  const prizesList = useOptimisticList({ items: initialPrizes, getId: getPrizeId })
+  const judgesList = useOptimisticList({ items: initialJudges, getId: getJudgeParticipantId })
+  const invitationsList = useOptimisticList({ items: initialInvitations, getId: getInvitationId })
 
   const {
     optimisticJudges: judges,
