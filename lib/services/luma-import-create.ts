@@ -315,6 +315,8 @@ export async function createAgendaFromImport(
     insertedIds.push(created.id)
   }
 
+  if (!insertedIds.length) return
+
   // insertedIds are DB-generated UUIDs, never user input.
   const { error: deleteError } = await client
     .from("hackathon_schedule_items")
