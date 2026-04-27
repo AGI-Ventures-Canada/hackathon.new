@@ -115,42 +115,51 @@ export async function importTranslationVariants({
 
   const translations: HackathonTranslations = {}
 
-  for (const link of safeLinks) {
-    const url = link.url
-    try {
+  const variantResults = await Promise.allSettled(
+    safeLinks.map(async (link) => {
+      const url = link.url
       const [eventData, richContent] = await Promise.all([
         extractExternalEventData(url),
         extractExternalRichContent(url),
       ])
+      return { link, eventData, richContent }
+    })
+  )
 
-      if (!eventData) {
-        console.warn(`Translation variant ${url} returned no event data; skipping.`)
-        continue
-      }
+  for (let i = 0; i < variantResults.length; i++) {
+    const result = variantResults[i]
+    const url = safeLinks[i].url
+    if (result.status === "rejected") {
+      console.error(`Failed to fetch translation variant ${url}:`, result.reason)
+      continue
+    }
 
-      const variantLocale =
-        normalizeLocale(link.languageCode) ??
-        normalizeLocale(eventData.language) ??
-        null
+    const { link, eventData, richContent } = result.value
+    if (!eventData) {
+      console.warn(`Translation variant ${url} returned no event data; skipping.`)
+      continue
+    }
 
-      if (!variantLocale || variantLocale === primaryLocale) continue
+    const variantLocale =
+      normalizeLocale(link.languageCode) ??
+      normalizeLocale(eventData.language) ??
+      null
 
-      const record = buildTranslationRecord({
-        primary,
-        variant: {
-          name: eventData.name,
-          description: richContent?.cleanedDescription ?? eventData.description ?? null,
-          rules: richContent?.rules ?? null,
-          location_name: eventData.locationName,
-          community_label: null,
-        },
-      })
+    if (!variantLocale || variantLocale === primaryLocale) continue
 
-      if (Object.keys(record).length > 0) {
-        translations[variantLocale] = record
-      }
-    } catch (err) {
-      console.error(`Failed to fetch translation variant ${url}:`, err)
+    const record = buildTranslationRecord({
+      primary,
+      variant: {
+        name: eventData.name,
+        description: richContent?.cleanedDescription ?? eventData.description ?? null,
+        rules: richContent?.rules ?? null,
+        location_name: eventData.locationName,
+        community_label: null,
+      },
+    })
+
+    if (Object.keys(record).length > 0) {
+      translations[variantLocale] = record
     }
   }
 
