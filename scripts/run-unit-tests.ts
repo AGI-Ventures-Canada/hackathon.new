@@ -18,10 +18,6 @@ const STORAGE_MOCK_ISOLATED_TESTS = [
 ]
 const storageMockSet = new Set(STORAGE_MOCK_ISOLATED_TESTS)
 
-// luma-extract mocks @tavily/core via mock.module. If any test in the same
-// process loads @/lib/api first, lib/api/routes/import.ts → external-import
-// → luma-extract → @tavily/core gets cached as the real module before the
-// mock can register, and the mock no-ops. Run it in its own process.
 const TAVILY_MOCK_ISOLATED_TESTS = [
   "__tests__/services/luma-extract.test.ts",
 ]
