@@ -1,4 +1,5 @@
 import { processAutoTransitions } from "@/lib/services/lifecycle"
+import { processScheduledChallengeReleases } from "@/lib/services/challenges"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
@@ -9,6 +10,7 @@ export async function GET(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const result = await processAutoTransitions()
-  return Response.json(result)
+  const transitions = await processAutoTransitions()
+  const releases = await processScheduledChallengeReleases()
+  return Response.json({ ...transitions, scheduledChallengeReleases: releases })
 }

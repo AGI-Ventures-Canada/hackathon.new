@@ -16,6 +16,7 @@ const {
   deleteChallenge,
   reorderChallenges,
   releaseChallenges,
+  processScheduledChallengeReleases,
   tagSubmissionChallenges,
   getSubmissionChallengeIds,
   listChallengeIdsForSubmissions,
@@ -362,6 +363,143 @@ describe("Challenges Service", () => {
       const result = await releaseChallenges(hackathonId, tenantId)
 
       expect(result).toBe(false)
+    })
+  })
+
+  describe("processScheduledChallengeReleases", () => {
+    it("returns empty result when no active hackathons need release", async () => {
+      mockTableQuery("hackathons", mockSuccess([]))
+
+      const result = await processScheduledChallengeReleases()
+
+      expect(result.processed).toBe(0)
+      expect(result.releases).toEqual([])
+      expect(result.errors).toEqual([])
+    })
+
+    it("reports DB error when fetching hackathons fails", async () => {
+      mockTableQuery("hackathons", mockError("Connection failed"))
+
+      const result = await processScheduledChallengeReleases()
+
+      expect(result.processed).toBe(0)
+      expect(result.errors).toHaveLength(1)
+      expect(result.errors[0]).toContain("Connection failed")
+    })
+
+    it("releases when trigger item has custom time in the past", async () => {
+      const past = new Date(Date.now() - 60_000).toISOString()
+
+      let hackathonCalls = 0
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          hackathonCalls++
+          if (hackathonCalls === 1) {
+            return createChainableMock({
+              data: [{ id: hackathonId, tenant_id: tenantId }],
+              error: null,
+            })
+          }
+          return createChainableMock({
+            data: { challenge_released_at: null },
+            error: null,
+          })
+        }
+        if (table === "hackathon_schedule_items") {
+          return createChainableMock({
+            data: [
+              { hackathon_id: hackathonId, starts_at: past, linked_to: null },
+            ],
+            error: null,
+          })
+        }
+        if (table === "challenges") {
+          return createChainableMock({ data: null, error: null, count: 1 })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await processScheduledChallengeReleases()
+
+      expect(result.processed).toBe(1)
+      expect(result.releases).toEqual([{ hackathonId }])
+    })
+
+    it("skips hackathons where the trigger item is still linked to event_start", async () => {
+      const past = new Date(Date.now() - 60_000).toISOString()
+
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: [{ id: hackathonId, tenant_id: tenantId }],
+            error: null,
+          })
+        }
+        if (table === "hackathon_schedule_items") {
+          return createChainableMock({
+            data: [
+              {
+                hackathon_id: hackathonId,
+                starts_at: past,
+                linked_to: "event_start",
+              },
+            ],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await processScheduledChallengeReleases()
+
+      expect(result.processed).toBe(0)
+      expect(result.releases).toEqual([])
+    })
+
+    it("skips hackathons with a custom time still in the future", async () => {
+      const future = new Date(Date.now() + 60 * 60_000).toISOString()
+
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: [{ id: hackathonId, tenant_id: tenantId }],
+            error: null,
+          })
+        }
+        if (table === "hackathon_schedule_items") {
+          return createChainableMock({
+            data: [
+              { hackathon_id: hackathonId, starts_at: future, linked_to: null },
+            ],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await processScheduledChallengeReleases()
+
+      expect(result.processed).toBe(0)
+      expect(result.releases).toEqual([])
+    })
+
+    it("skips when no schedule items match", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: [{ id: hackathonId, tenant_id: tenantId }],
+            error: null,
+          })
+        }
+        if (table === "hackathon_schedule_items") {
+          return createChainableMock({ data: [], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await processScheduledChallengeReleases()
+
+      expect(result.processed).toBe(0)
     })
   })
 
