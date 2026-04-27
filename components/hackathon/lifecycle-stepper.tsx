@@ -136,8 +136,8 @@ export function LifecycleStepper({
 
   async function commitStatusChange(newStatus: PhaseKey) {
     setUpdating(true)
-    actionItems?.setOptimisticStage(newStatus)
     try {
+      actionItems?.setOptimisticStage(newStatus)
       if (newStatus === "completed") {
         const calcRes = await fetch(
           `/api/dashboard/hackathons/${hackathonId}/results/calculate`,
