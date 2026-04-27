@@ -19,6 +19,7 @@ import { isCompleted } from "@/lib/utils/organizer-actions"
 import {
   buildStatusTransitionBody,
   getTransitionConfirmation,
+  isStageKey,
   type StageKey,
 } from "@/lib/utils/lifecycle-stages"
 import type { HackathonStatus } from "@/lib/db/hackathon-types"
@@ -38,7 +39,7 @@ export const TransitionConfirmDialog = forwardRef<TransitionConfirmDialogHandle,
   function TransitionConfirmDialog({ hackathonId, status, endsAt, onTransitioned }, ref) {
     const router = useRouter()
     const { activeItems, setOptimisticStage } = useActionItems()
-    const [pendingTarget, setPendingTarget] = useState<string | null>(null)
+    const [pendingTarget, setPendingTarget] = useState<StageKey | null>(null)
     const [updating, setUpdating] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
@@ -48,6 +49,7 @@ export const TransitionConfirmDialog = forwardRef<TransitionConfirmDialogHandle,
 
     useImperativeHandle(ref, () => ({
       openTransitionDialog(targetStatus: string) {
+        if (!isStageKey(targetStatus)) return
         setError(null)
         setPendingTarget(targetStatus)
       },
@@ -62,7 +64,7 @@ export const TransitionConfirmDialog = forwardRef<TransitionConfirmDialogHandle,
       if (!pendingTarget) return
       setUpdating(true)
       setError(null)
-      setOptimisticStage(pendingTarget as StageKey)
+      setOptimisticStage(pendingTarget)
 
       try {
         if (pendingTarget === "completed") {
@@ -118,7 +120,7 @@ export const TransitionConfirmDialog = forwardRef<TransitionConfirmDialogHandle,
           )
         }
 
-        const body = buildStatusTransitionBody(pendingTarget as StageKey, endsAt)
+        const body = buildStatusTransitionBody(pendingTarget, endsAt)
 
         await fetch(
           `/api/dashboard/hackathons/${hackathonId}/settings`,

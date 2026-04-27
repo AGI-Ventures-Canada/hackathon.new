@@ -12,6 +12,10 @@ export const LIFECYCLE_STAGES = [
 
 export type StageKey = (typeof LIFECYCLE_STAGES)[number]["key"]
 
+export function isStageKey(value: string): value is StageKey {
+  return LIFECYCLE_STAGES.some((s) => s.key === value)
+}
+
 export const PHASE_LABELS: Record<HackathonPhase, string> = {
   build: "Building",
   submission_open: "Submissions Open",
