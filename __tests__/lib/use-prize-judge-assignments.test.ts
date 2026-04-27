@@ -228,6 +228,56 @@ describe("usePrizeJudgeAssignments", () => {
     expect(result.current.optimisticJudges[0].prizeIds).toEqual([])
   })
 
+  it("restores the optimistic add when unassign fails after a pending assign", async () => {
+    let callCount = 0
+    mockFetch.mockImplementation(() => {
+      callCount++
+      return Promise.resolve(callCount === 1 ? ok() : fail())
+    })
+
+    const { result } = setup([judge("j1", [])])
+
+    await act(() => result.current.assignJudgeToPrize("p1", "j1"))
+    expect(result.current.optimisticJudges[0].prizeIds).toEqual(["p1"])
+
+    let caught: unknown
+    await act(async () => {
+      try {
+        await result.current.unassignJudgeFromPrize("p1", "j1")
+      } catch (err) {
+        caught = err
+      }
+    })
+
+    expect(caught).toBeInstanceOf(Error)
+    expect(result.current.optimisticJudges[0].prizeIds).toEqual(["p1"])
+  })
+
+  it("restores the optimistic hide when assign fails after a pending unassign", async () => {
+    let callCount = 0
+    mockFetch.mockImplementation(() => {
+      callCount++
+      return Promise.resolve(callCount === 1 ? ok() : fail())
+    })
+
+    const { result } = setup([judge("j1", ["p1"])])
+
+    await act(() => result.current.unassignJudgeFromPrize("p1", "j1"))
+    expect(result.current.optimisticJudges[0].prizeIds).toEqual([])
+
+    let caught: unknown
+    await act(async () => {
+      try {
+        await result.current.assignJudgeToPrize("p1", "j1")
+      } catch (err) {
+        caught = err
+      }
+    })
+
+    expect(caught).toBeInstanceOf(Error)
+    expect(result.current.optimisticJudges[0].prizeIds).toEqual([])
+  })
+
   it("preserves non-prize fields on each judge", () => {
     const { result } = setup([judge("j1", ["p1"])])
     expect(result.current.optimisticJudges[0].displayName).toBe("Judge j1")

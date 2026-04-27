@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { assertOk } from "@/lib/utils/fetch"
 
@@ -31,6 +31,14 @@ export function usePrizeJudgeAssignments<T extends JudgeWithPrizeIds>({
   const router = useRouter()
   const [addedPrizeJudges, setAddedPrizeJudges] = useState<Set<string>>(new Set())
   const [hiddenPrizeJudges, setHiddenPrizeJudges] = useState<Set<string>>(new Set())
+  const addedRef = useRef(addedPrizeJudges)
+  const hiddenRef = useRef(hiddenPrizeJudges)
+  useEffect(() => {
+    addedRef.current = addedPrizeJudges
+  }, [addedPrizeJudges])
+  useEffect(() => {
+    hiddenRef.current = hiddenPrizeJudges
+  }, [hiddenPrizeJudges])
   const [prevJudges, setPrevJudges] = useState(judges)
 
   if (judges !== prevJudges) {
@@ -87,13 +95,15 @@ export function usePrizeJudgeAssignments<T extends JudgeWithPrizeIds>({
   const assignJudgeToPrize = useCallback(
     async (prizeId: string, judgeParticipantId: string) => {
       const key = makeKey(prizeId, judgeParticipantId)
+      const wasHidden = hiddenRef.current.has(key)
       setAddedPrizeJudges((prev) => new Set(prev).add(key))
-      setHiddenPrizeJudges((prev) => {
-        if (!prev.has(key)) return prev
-        const next = new Set(prev)
-        next.delete(key)
-        return next
-      })
+      if (wasHidden) {
+        setHiddenPrizeJudges((prev) => {
+          const next = new Set(prev)
+          next.delete(key)
+          return next
+        })
+      }
       try {
         await fetch(
           `/api/dashboard/hackathons/${hackathonId}/prizes/${prizeId}/assign-judge`,
@@ -110,6 +120,9 @@ export function usePrizeJudgeAssignments<T extends JudgeWithPrizeIds>({
           next.delete(key)
           return next
         })
+        if (wasHidden) {
+          setHiddenPrizeJudges((prev) => new Set(prev).add(key))
+        }
         throw err
       }
     },
@@ -119,13 +132,15 @@ export function usePrizeJudgeAssignments<T extends JudgeWithPrizeIds>({
   const unassignJudgeFromPrize = useCallback(
     async (prizeId: string, judgeParticipantId: string) => {
       const key = makeKey(prizeId, judgeParticipantId)
+      const wasAdded = addedRef.current.has(key)
       setHiddenPrizeJudges((prev) => new Set(prev).add(key))
-      setAddedPrizeJudges((prev) => {
-        if (!prev.has(key)) return prev
-        const next = new Set(prev)
-        next.delete(key)
-        return next
-      })
+      if (wasAdded) {
+        setAddedPrizeJudges((prev) => {
+          const next = new Set(prev)
+          next.delete(key)
+          return next
+        })
+      }
       try {
         await fetch(
           `/api/dashboard/hackathons/${hackathonId}/prizes/${prizeId}/judges/${judgeParticipantId}`,
@@ -138,6 +153,9 @@ export function usePrizeJudgeAssignments<T extends JudgeWithPrizeIds>({
           next.delete(key)
           return next
         })
+        if (wasAdded) {
+          setAddedPrizeJudges((prev) => new Set(prev).add(key))
+        }
         throw err
       }
     },
