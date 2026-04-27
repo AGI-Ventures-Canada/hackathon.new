@@ -5,7 +5,9 @@ import { Loader2, Plus, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
+import { DateTimePicker } from "@/components/ui/date-time-picker"
 import {
   Dialog,
   DialogContent,
@@ -14,7 +16,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { normalizeUrl } from "@/lib/utils/url"
+import { assertOk } from "@/lib/utils/fetch"
 import type { Challenge, ChallengeResource } from "@/lib/services/challenges"
+import type { ScheduleItem } from "@/lib/services/schedule-items"
 
 type Props = {
   open: boolean
@@ -22,12 +26,40 @@ type Props = {
   hackathonId: string
   challenge: Challenge | null
   onSaved: (challenge: Challenge) => void
+  releaseScheduleItem: ScheduleItem | null
+  hackathonStartsAt: string | null
+  hackathonEndsAt: string | null
+  alreadyReleased: boolean
 }
 
-export function ChallengeEditorDialog({ open, onOpenChange, hackathonId, challenge, onSaved }: Props) {
+function formatBound(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  })
+}
+
+export function ChallengeEditorDialog({
+  open,
+  onOpenChange,
+  hackathonId,
+  challenge,
+  onSaved,
+  releaseScheduleItem,
+  hackathonStartsAt,
+  hackathonEndsAt,
+  alreadyReleased,
+}: Props) {
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
   const [resources, setResources] = useState<ChallengeResource[]>([])
+  const [autoRelease, setAutoRelease] = useState(true)
+  const [customReleaseAt, setCustomReleaseAt] = useState<Date | null>(null)
+  const [initialAutoRelease, setInitialAutoRelease] = useState(true)
+  const [initialCustomReleaseIso, setInitialCustomReleaseIso] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -37,7 +69,31 @@ export function ChallengeEditorDialog({ open, onOpenChange, hackathonId, challen
     setDescription(challenge?.description ?? "")
     setResources(challenge?.resources ?? [])
     setError(null)
-  }, [open, challenge])
+
+    const initialAuto = releaseScheduleItem?.linked_to === "event_start" || !releaseScheduleItem
+    const initialIso = releaseScheduleItem?.starts_at ?? null
+    setAutoRelease(initialAuto)
+    setCustomReleaseAt(initialAuto ? null : initialIso ? new Date(initialIso) : null)
+    setInitialAutoRelease(initialAuto)
+    setInitialCustomReleaseIso(initialAuto ? null : initialIso)
+  }, [open, challenge, releaseScheduleItem])
+
+  const startsAtDate = hackathonStartsAt ? new Date(hackathonStartsAt) : null
+  const endsAtDate = hackathonEndsAt ? new Date(hackathonEndsAt) : null
+
+  const customReleaseError = (() => {
+    if (autoRelease) return null
+    if (!customReleaseAt) return null
+    if (startsAtDate && customReleaseAt < startsAtDate) {
+      return "Pick a time on or after the event starts."
+    }
+    if (endsAtDate && customReleaseAt > endsAtDate) {
+      return "Pick a time on or before the event ends."
+    }
+    return null
+  })()
+
+  const releaseTimingValid = autoRelease || (customReleaseAt !== null && customReleaseError === null)
 
   function updateResource(index: number, patch: Partial<ChallengeResource>) {
     setResources((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)))
@@ -53,9 +109,36 @@ export function ChallengeEditorDialog({ open, onOpenChange, hackathonId, challen
 
   async function handleSave() {
     if (!title.trim()) return
+    if (!releaseTimingValid) return
     setSaving(true)
     setError(null)
     try {
+      if (!alreadyReleased && releaseScheduleItem) {
+        const linkedChanged = autoRelease !== initialAutoRelease
+        const customStartsAt = customReleaseAt?.toISOString() ?? null
+        const startsChanged = !autoRelease && customStartsAt !== initialCustomReleaseIso
+
+        if (linkedChanged || startsChanged) {
+          const patchBody: { startsAt?: string; linkedTo: "event_start" | null } = {
+            linkedTo: autoRelease ? "event_start" : null,
+          }
+          if (autoRelease) {
+            patchBody.startsAt = hackathonStartsAt ?? releaseScheduleItem.starts_at
+          } else if (customStartsAt) {
+            patchBody.startsAt = customStartsAt
+          }
+
+          await fetch(
+            `/api/dashboard/hackathons/${hackathonId}/schedule/${releaseScheduleItem.id}`,
+            {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(patchBody),
+            },
+          ).then(assertOk)
+        }
+      }
+
       const cleanedResources = resources
         .map((r) => ({ label: r.label.trim(), url: normalizeUrl(r.url.trim()) }))
         .filter((r) => r.url.length > 0)
@@ -83,6 +166,7 @@ export function ChallengeEditorDialog({ open, onOpenChange, hackathonId, challen
       }
 
       const data = (await res.json()) as { challenge: Challenge }
+
       onSaved(data.challenge)
       onOpenChange(false)
     } catch (err) {
@@ -184,13 +268,61 @@ export function ChallengeEditorDialog({ open, onOpenChange, hackathonId, challen
             )}
           </div>
 
+          {!alreadyReleased && releaseScheduleItem && (
+            <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-0.5">
+                  <Label htmlFor="challenge-auto-release" className="text-sm font-medium">
+                    Release when the event goes live
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    {autoRelease
+                      ? "Challenges unlock the moment your hackathon starts."
+                      : "Pick the exact time during the event when challenges unlock."}
+                  </p>
+                </div>
+                <Switch
+                  id="challenge-auto-release"
+                  checked={autoRelease}
+                  onCheckedChange={setAutoRelease}
+                />
+              </div>
+              {!autoRelease && (
+                <div className="space-y-1">
+                  <Label htmlFor="challenge-release-at" className="text-xs">
+                    Release time
+                  </Label>
+                  <DateTimePicker
+                    id="challenge-release-at"
+                    value={customReleaseAt}
+                    onChange={setCustomReleaseAt}
+                    placeholder="Pick a release time"
+                    minDate={startsAtDate ?? undefined}
+                    maxDate={endsAtDate ?? undefined}
+                  />
+                  {hackathonStartsAt && hackathonEndsAt && (
+                    <p className="text-xs text-muted-foreground">
+                      Pick any time between {formatBound(hackathonStartsAt)} and {formatBound(hackathonEndsAt)}.
+                    </p>
+                  )}
+                  {customReleaseError && (
+                    <p className="text-destructive text-xs">{customReleaseError}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {error && <p className="text-destructive text-xs">{error}</p>}
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
               Cancel
             </Button>
-            <Button type="submit" disabled={saving || !title.trim()}>
+            <Button
+              type="submit"
+              disabled={saving || !title.trim() || !releaseTimingValid}
+            >
               {saving && <Loader2 className="animate-spin" />}
               Save challenge
             </Button>

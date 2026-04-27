@@ -17,11 +17,15 @@ import {
 } from "@/components/ui/alert-dialog"
 import { ChallengeEditorDialog } from "./challenge-editor-dialog"
 import type { Challenge } from "@/lib/services/challenges"
+import type { ScheduleItem } from "@/lib/services/schedule-items"
 
 type Props = {
   hackathonId: string
   initialChallenges: Challenge[]
   releasedAt: string | null
+  releaseScheduleItem: ScheduleItem | null
+  hackathonStartsAt: string | null
+  hackathonEndsAt: string | null
 }
 
 function formatDate(dateStr: string): string {
@@ -33,7 +37,14 @@ function formatDate(dateStr: string): string {
   })
 }
 
-export function ChallengesTab({ hackathonId, initialChallenges, releasedAt: initialReleasedAt }: Props) {
+export function ChallengesTab({
+  hackathonId,
+  initialChallenges,
+  releasedAt: initialReleasedAt,
+  releaseScheduleItem,
+  hackathonStartsAt,
+  hackathonEndsAt,
+}: Props) {
   const router = useRouter()
   const [challenges, setChallenges] = useState<Challenge[]>(initialChallenges)
   const [releasedAt, setReleasedAt] = useState<string | null>(initialReleasedAt)
@@ -219,6 +230,10 @@ export function ChallengesTab({ hackathonId, initialChallenges, releasedAt: init
         hackathonId={hackathonId}
         challenge={editing}
         onSaved={handleSaved}
+        releaseScheduleItem={releaseScheduleItem}
+        hackathonStartsAt={hackathonStartsAt}
+        hackathonEndsAt={hackathonEndsAt}
+        alreadyReleased={!!releasedAt}
       />
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>

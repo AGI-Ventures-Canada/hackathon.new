@@ -301,6 +301,75 @@ export async function releaseChallenges(
   return true
 }
 
+export type ScheduledChallengeReleaseResult = {
+  processed: number
+  releases: Array<{ hackathonId: string }>
+  errors: string[]
+}
+
+export async function processScheduledChallengeReleases(): Promise<ScheduledChallengeReleaseResult> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const result: ScheduledChallengeReleaseResult = {
+    processed: 0,
+    releases: [],
+    errors: [],
+  }
+
+  const { data: hackathons, error: hackErr } = await client
+    .from("hackathons")
+    .select("id, tenant_id")
+    .eq("status", "active")
+    .is("challenge_released_at", null)
+
+  if (hackErr) {
+    result.errors.push(`Failed to fetch active hackathons: ${hackErr.message}`)
+    return result
+  }
+  if (!hackathons || hackathons.length === 0) return result
+
+  const hackathonIds = hackathons.map((h) => h.id as string)
+  const tenantById = new Map<string, string>(
+    hackathons.map((h) => [h.id as string, h.tenant_id as string]),
+  )
+
+  const { data: items, error: itemsErr } = await client
+    .from("hackathon_schedule_items")
+    .select("hackathon_id, starts_at, linked_to")
+    .in("hackathon_id", hackathonIds)
+    .eq("trigger_type", "challenge_release")
+
+  if (itemsErr) {
+    result.errors.push(`Failed to fetch challenge_release items: ${itemsErr.message}`)
+    return result
+  }
+  if (!items || items.length === 0) return result
+
+  const nowIso = new Date().toISOString()
+  for (const item of items) {
+    if (item.linked_to !== null) continue
+    if (typeof item.starts_at !== "string" || item.starts_at > nowIso) continue
+
+    const hackathonId = item.hackathon_id as string
+    const tenantId = tenantById.get(hackathonId)
+    if (!tenantId) continue
+
+    try {
+      const released = await releaseChallenges(hackathonId, tenantId)
+      if (released) {
+        result.processed++
+        result.releases.push({ hackathonId })
+      }
+    } catch (err) {
+      result.errors.push(
+        `Failed to release challenges for ${hackathonId}: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+  }
+
+  return result
+}
+
 export async function getSubmissionChallengeIds(submissionId: string): Promise<string[]> {
   const client = getSupabase() as unknown as SupabaseClient
 
