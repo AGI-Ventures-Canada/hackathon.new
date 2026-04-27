@@ -3,7 +3,9 @@ import { describe, it, expect, beforeEach, mock } from "bun:test"
 const mockFetch = mock(() => Promise.resolve(new Response("")))
 globalThis.fetch = mockFetch as unknown as typeof fetch
 
-const { extractLumaEventData, normalizeEventDate } = await import("@/lib/services/luma-import")
+const { extractLumaEventData, normalizeEventDate, parseTranslationLinksFromHtml } = await import(
+  "@/lib/services/luma-import"
+)
 
 const MOCK_HTML_WITH_JSONLD = `
 <html><head>
@@ -28,16 +30,16 @@ const MOCK_HTML_WITH_JSONLD = `
 `
 
 describe("normalizeEventDate", () => {
-  it("strips timezone offset and preserves wall-clock time", () => {
-    expect(normalizeEventDate("2026-03-15T09:00:00.000-08:00")).toBe("2026-03-15T09:00:00")
+  it("drops milliseconds but preserves negative timezone offset", () => {
+    expect(normalizeEventDate("2026-03-15T09:00:00.000-08:00")).toBe("2026-03-15T09:00:00-08:00")
   })
 
-  it("strips positive timezone offset", () => {
-    expect(normalizeEventDate("2022-06-27T18:30:00.000+04:00")).toBe("2022-06-27T18:30:00")
+  it("drops milliseconds but preserves positive timezone offset", () => {
+    expect(normalizeEventDate("2022-06-27T18:30:00.000+04:00")).toBe("2022-06-27T18:30:00+04:00")
   })
 
-  it("strips Z suffix from UTC string", () => {
-    expect(normalizeEventDate("2026-01-01T00:00:00.000Z")).toBe("2026-01-01T00:00:00")
+  it("preserves the Z suffix on a UTC string", () => {
+    expect(normalizeEventDate("2026-01-01T00:00:00.000Z")).toBe("2026-01-01T00:00:00Z")
   })
 
   it("returns null for null input", () => {
@@ -49,16 +51,17 @@ describe("normalizeEventDate", () => {
   })
 
   it("handles string without milliseconds", () => {
-    expect(normalizeEventDate("2026-07-04T14:30:00-05:00")).toBe("2026-07-04T14:30:00")
+    expect(normalizeEventDate("2026-07-04T14:30:00-05:00")).toBe("2026-07-04T14:30:00-05:00")
   })
 
-  it("produces consistent output regardless of runtime timezone", () => {
+  it("returns offsetless when the source has no offset", () => {
+    expect(normalizeEventDate("2026-03-15T09:00:00")).toBe("2026-03-15T09:00:00")
+  })
+
+  it("preserves the offset so the absolute instant is unambiguous", () => {
     const input = "2026-03-15T09:00:00.000-08:00"
     const result = normalizeEventDate(input)
-    const d = new Date(result!)
-    expect(d.getHours()).toBe(9)
-    expect(d.getMinutes()).toBe(0)
-    expect(d.getDate()).toBe(15)
+    expect(new Date(result!).toISOString()).toBe("2026-03-15T17:00:00.000Z")
   })
 })
 
@@ -74,8 +77,8 @@ describe("extractLumaEventData", () => {
     expect(result).not.toBeNull()
     expect(result!.name).toBe("Test Hackathon")
     expect(result!.description).toBe("A test event description")
-    expect(result!.startsAt).toBe("2026-03-15T09:00:00")
-    expect(result!.endsAt).toBe("2026-03-16T17:00:00")
+    expect(result!.startsAt).toBe("2026-03-15T09:00:00-08:00")
+    expect(result!.endsAt).toBe("2026-03-16T17:00:00-08:00")
     expect(result!.locationType).toBe("in_person")
     expect(result!.locationName).toBe("San Francisco, California")
     expect(result!.imageUrl).toBe("https://images.lumacdn.com/test-image.png")
@@ -85,7 +88,10 @@ describe("extractLumaEventData", () => {
     mockFetch.mockResolvedValueOnce(new Response(MOCK_HTML_WITH_JSONLD, { status: 200 }))
 
     await extractLumaEventData("my-hackathon")
-    expect(mockFetch).toHaveBeenCalledWith("https://luma.com/my-hackathon")
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://luma.com/my-hackathon",
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    )
   })
 
   it("returns null when fetch fails", async () => {
@@ -284,5 +290,43 @@ describe("extractLumaEventData", () => {
 
     const result = await extractLumaEventData("url-event")
     expect(result!.locationUrl).toBe("https://maps.google.com/some-place")
+  })
+})
+
+describe("parseTranslationLinksFromHtml", () => {
+  it("detects a French cross-link from typical Luma body HTML", () => {
+    const html = `<p>About Build OS26</p><p><em>(For the french version, </em><em><a href="https://luma.com/blntxcm9" target="_blank" rel="nofollow noopener">click here</a></em><em>)</em></p>`
+    const links = parseTranslationLinksFromHtml(html, "2pvpyrya")
+    expect(links).toEqual([{ url: "https://luma.com/blntxcm9", languageCode: "fr" }])
+  })
+
+  it("detects French via 'Version française' phrasing", () => {
+    const html = `<p>Version française disponible <a href="https://lu.ma/abc123">ici</a></p>`
+    const links = parseTranslationLinksFromHtml(html, "en-slug")
+    expect(links[0]?.languageCode).toBe("fr")
+  })
+
+  it("detects language when the keyword follows the link text", () => {
+    const html = `<p><a href="https://luma.com/xyz123">Click here</a> for the French version →</p>`
+    const links = parseTranslationLinksFromHtml(html, "primary")
+    expect(links).toEqual([{ url: "https://luma.com/xyz123", languageCode: "fr" }])
+  })
+
+  it("skips self-referencing anchors", () => {
+    const html = `<a href="https://luma.com/self">French version</a><a href="https://luma.com/other">French</a>`
+    const links = parseTranslationLinksFromHtml(html, "self")
+    expect(links.map((l) => l.url)).toEqual(["https://luma.com/other"])
+  })
+
+  it("skips anchors without a language keyword nearby", () => {
+    const html = `<a href="https://luma.com/abc123">Some unrelated event</a>`
+    const links = parseTranslationLinksFromHtml(html, "primary")
+    expect(links).toEqual([])
+  })
+
+  it("dedupes repeated anchors to the same URL", () => {
+    const html = `<p>French: <a href="https://luma.com/xyz123">here</a></p><p>Version française: <a href="https://luma.com/xyz123">here</a></p>`
+    const links = parseTranslationLinksFromHtml(html, "primary")
+    expect(links).toEqual([{ url: "https://luma.com/xyz123", languageCode: "fr" }])
   })
 })

@@ -4,6 +4,21 @@ import { logAudit } from "@/lib/services/audit"
 import { normalizeUrl, isSafeExternalUrl } from "@/lib/utils/url"
 import { extractExternalEventData, extractExternalRichContent, isLumaUrl } from "@/lib/services/external-import"
 
+function mergeTranslationLinks(
+  a: { url: string; languageCode: string }[],
+  b: { url: string; languageCode: string }[]
+): { url: string; languageCode: string }[] {
+  const seen = new Set<string>()
+  const out: { url: string; languageCode: string }[] = []
+  for (const link of [...a, ...b]) {
+    const key = normalizeUrl(link.url)
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({ url: key, languageCode: link.languageCode })
+  }
+  return out
+}
+
 export const importRoutes = new Elysia({ prefix: "/public/import" })
   .post(
     "/url",
@@ -46,7 +61,9 @@ export const dashboardImportRoutes = new Elysia({ prefix: "/dashboard/import" })
     async ({ principal, body, set }) => {
       requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
 
-      const { createHackathonFromImport } = await import("@/lib/services/luma-import-create")
+      const { createHackathonFromImport, importTranslationVariants } = await import(
+        "@/lib/services/luma-import-create"
+      )
       const hackathon = await createHackathonFromImport(principal.tenantId, {
         name: body.name,
         description: body.description ?? null,
@@ -59,6 +76,7 @@ export const dashboardImportRoutes = new Elysia({ prefix: "/dashboard/import" })
         locationUrl: body.locationUrl ?? null,
         imageUrl: body.imageUrl ?? null,
         rules: body.rules ?? null,
+        defaultLocale: body.defaultLocale ?? null,
       })
 
       if (!hackathon) {
@@ -79,6 +97,27 @@ export const dashboardImportRoutes = new Elysia({ prefix: "/dashboard/import" })
       if (body.challenges?.length) {
         const { createChallengesFromImport } = await import("@/lib/services/luma-import-create")
         await createChallengesFromImport(hackathon.id, principal.tenantId, body.challenges)
+      }
+
+      if (body.agendaItems?.length) {
+        const { createAgendaFromImport } = await import("@/lib/services/luma-import-create")
+        await createAgendaFromImport(hackathon.id, body.agendaItems, body.startsAt ?? null)
+      }
+
+      if (body.translationLinks?.length) {
+        importTranslationVariants({
+          hackathonId: hackathon.id,
+          tenantId: principal.tenantId,
+          primaryLocale: hackathon.default_locale ?? "en",
+          primary: {
+            name: body.name,
+            description: body.description ?? null,
+            rules: body.rules ?? null,
+            location_name: body.locationName ?? null,
+            community_label: null,
+          },
+          translationLinks: body.translationLinks,
+        }).catch(console.error)
       }
 
       const source = body.sourceUrl && isLumaUrl(body.sourceUrl) ? "luma_import" : "event_page_import"
@@ -107,7 +146,7 @@ export const dashboardImportRoutes = new Elysia({ prefix: "/dashboard/import" })
     {
       detail: {
         summary: "Create hackathon from imported event data",
-        description: "Creates a new hackathon from structured event data (Luma or any external source). Pass sourceUrl to preserve import attribution. Requires hackathons:write scope.",
+        description: "Creates a new hackathon from structured event data (Luma or any external source). Pass sourceUrl to preserve import attribution. Pass agendaItems to populate the schedule — importing a non-empty agenda replaces the auto-seeded default sessions (trigger items like challenge_release and submission_deadline are preserved). Requires hackathons:write scope.",
         tags: ["dashboard"],
       },
       body: t.Object({
@@ -139,7 +178,32 @@ export const dashboardImportRoutes = new Elysia({ prefix: "/dashboard/import" })
             url: t.String(),
           }))),
         }))),
+        agendaItems: t.Optional(t.Array(t.Object({
+          title: t.String({ minLength: 1 }),
+          description: t.Optional(t.Union([t.String(), t.Null()])),
+          startsAt: t.Optional(t.Union([
+            t.String({
+              pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d+)?)?(Z|[+-]\\d{2}:?\\d{2})?$",
+              description: "ISO 8601 timestamp (e.g. 2026-05-14T09:00:00-04:00). Must include date and time; offset is optional.",
+            }),
+            t.Null(),
+          ])),
+          endsAt: t.Optional(t.Union([
+            t.String({
+              pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d+)?)?(Z|[+-]\\d{2}:?\\d{2})?$",
+              description: "ISO 8601 timestamp. Same format as startsAt.",
+            }),
+            t.Null(),
+          ])),
+          location: t.Optional(t.Union([t.String(), t.Null()])),
+          speakers: t.Optional(t.Array(t.String())),
+        }))),
         sourceUrl: t.Optional(t.Union([t.String(), t.Null()])),
+        defaultLocale: t.Optional(t.Union([t.String(), t.Null()])),
+        translationLinks: t.Optional(t.Array(t.Object({
+          url: t.String({ minLength: 1 }),
+          languageCode: t.String({ minLength: 1 }),
+        }), { maxItems: 10 })),
       }),
     }
   )
@@ -155,20 +219,39 @@ export const dashboardImportRoutes = new Elysia({ prefix: "/dashboard/import" })
         return { error: "Invalid or disallowed URL" }
       }
 
-      const [eventData, richContent] = await Promise.all([
-        extractExternalEventData(url),
-        extractExternalRichContent(url),
-      ])
+      const eventData = await extractExternalEventData(url)
 
       if (!eventData) {
         set.status = 404
         return { error: "Could not extract event data from the provided URL" }
       }
 
-      const { createHackathonFromImport } = await import("@/lib/services/luma-import-create")
+      const richContent = await extractExternalRichContent(url, {
+        eventStartsAt: eventData.startsAt ?? null,
+      })
+
+      const mergedTranslationLinks = mergeTranslationLinks(
+        eventData.translationLinks,
+        richContent?.translationLinks ?? []
+      )
+
+      const primaryLocale =
+        eventData.language ??
+        (mergedTranslationLinks.length ? "en" : null) ??
+        null
+
+      const primaryName = body.name?.trim() || eventData.name
+      const primaryDescription =
+        body.description?.trim() ||
+        richContent?.cleanedDescription ||
+        eventData.description
+
+      const { createHackathonFromImport, importTranslationVariants } = await import(
+        "@/lib/services/luma-import-create"
+      )
       const hackathon = await createHackathonFromImport(principal.tenantId, {
-        name: body.name?.trim() || eventData.name,
-        description: body.description?.trim() || eventData.description,
+        name: primaryName,
+        description: primaryDescription,
         startsAt: eventData.startsAt,
         endsAt: eventData.endsAt,
         locationType: eventData.locationType,
@@ -176,6 +259,7 @@ export const dashboardImportRoutes = new Elysia({ prefix: "/dashboard/import" })
         locationUrl: eventData.locationUrl,
         imageUrl: eventData.imageUrl,
         rules: richContent?.rules ?? null,
+        defaultLocale: primaryLocale,
       })
 
       if (!hackathon) {
@@ -196,6 +280,27 @@ export const dashboardImportRoutes = new Elysia({ prefix: "/dashboard/import" })
       if (richContent?.challenges?.length) {
         const { createChallengesFromImport } = await import("@/lib/services/luma-import-create")
         await createChallengesFromImport(hackathon.id, principal.tenantId, richContent.challenges)
+      }
+
+      if (richContent?.agendaItems?.length) {
+        const { createAgendaFromImport } = await import("@/lib/services/luma-import-create")
+        await createAgendaFromImport(hackathon.id, richContent.agendaItems, eventData.startsAt)
+      }
+
+      if (mergedTranslationLinks.length) {
+        importTranslationVariants({
+          hackathonId: hackathon.id,
+          tenantId: principal.tenantId,
+          primaryLocale: hackathon.default_locale ?? "en",
+          primary: {
+            name: primaryName,
+            description: primaryDescription,
+            rules: richContent?.rules ?? null,
+            location_name: eventData.locationName,
+            community_label: null,
+          },
+          translationLinks: mergedTranslationLinks,
+        }).catch(console.error)
       }
 
       const source = isLumaUrl(url) ? "luma_import" : "event_page_import"

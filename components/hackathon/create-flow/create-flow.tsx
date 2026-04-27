@@ -44,6 +44,7 @@ function buildDefaultState(): DraftState {
     rules: null,
     prizes: [],
     challenges: [],
+    agendaItems: [],
   }
 }
 

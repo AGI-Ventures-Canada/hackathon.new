@@ -393,6 +393,44 @@ export async function updateHackathonSettings(
   return data as unknown as Hackathon
 }
 
+export async function updateHackathonTranslation(
+  hackathonId: string,
+  tenantId: string,
+  locale: string,
+  fields: {
+    name?: string | null
+    description?: string | null
+    rules?: string | null
+    location_name?: string | null
+    community_label?: string | null
+  }
+): Promise<Hackathon | null> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const payload: Record<string, string | null> = {}
+  for (const [key, value] of Object.entries(fields)) {
+    if (value === undefined) continue
+    payload[key] = value
+  }
+
+  const { data, error } = await client.rpc("upsert_hackathon_translation", {
+    p_hackathon_id: hackathonId,
+    p_tenant_id: tenantId,
+    p_locale: locale,
+    p_fields: payload,
+  })
+
+  if (error) {
+    console.error("Failed to update hackathon translation:", error)
+    return null
+  }
+
+  const rows = Array.isArray(data) ? data : data ? [data] : []
+  if (rows.length === 0) return null
+
+  return rows[0] as unknown as Hackathon
+}
+
 export async function deleteHackathon(
   hackathonId: string,
   tenantId: string

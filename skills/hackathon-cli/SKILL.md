@@ -1,27 +1,9 @@
 ---
 name: hackathon-cli
-model: sonnet
-description: Use the hackathon CLI tool to manage hackathons from the terminal. Use when the user asks to create hackathons, add judges, manage prizes, prize tracks, sponsors, teams, announcements, challenges, schedule items, or perform hackathon management tasks using the hackathon command-line tool.
-activationKeywords:
-  - "hackathon cli"
-  - "hackathon command"
-  - "create a hackathon"
-  - "make a hackathon"
-  - "add a judge"
-  - "set up judging"
-  - "add a prize"
-  - "publish results"
-  - "manage hackathon"
-  - "hackathon on"
-  - "import from luma"
-  - "import luma event"
-  - "add sponsor"
-  - "prize track"
-  - "send announcement"
-  - "broadcast"
-  - "add challenge"
-  - "release perk"
-  - "assign team to room"
+description: Use the hackathon CLI tool to manage hackathons from the terminal. Use when the user asks to create hackathons, add judges, manage prizes, prize tracks, sponsors, teams, announcements, challenges, schedule items, release perks, assign teams to rooms, import from Luma, broadcast messages, or publish results using the `hackathon` command-line tool — including phrasings like "make a hackathon on Sunday", "set up judging", "add a sponsor", or any hackathon management task in the terminal.
+allowed-tools: Read Bash(hackathon:*) Bash(bun:*) Bash(npm:*) Bash(npx:*)
+metadata:
+  model: sonnet
 ---
 
 # Hackathon CLI — Oatmeal Command-Line Tool

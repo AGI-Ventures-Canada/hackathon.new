@@ -424,14 +424,14 @@ Save the returned `id` — you'll need it for all subsequent management calls.
 
 ---
 
-#### Create from Luma event
+#### Create from imported event data
 
 Scope: `hackathons:write`
 
-Imports a Luma event and creates a fully configured hackathon with banner image.
+Creates a fully configured hackathon from structured event data (Luma or any external source), including banner image, sponsors, prizes, challenges, and agenda.
 
 ```bash
-curl -s -X POST "$BASE_URL/api/dashboard/import/luma" \
+curl -s -X POST "$BASE_URL/api/dashboard/import/event" \
   -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -449,6 +449,16 @@ curl -s -X POST "$BASE_URL/api/dashboard/import/luma" \
         "resources": [
           { "label": "Sample dataset", "url": "https://example.com/dataset.csv" }
         ]
+      }
+    ],
+    "agendaItems": [
+      {
+        "title": "Opening Keynote",
+        "description": "The state of AI agents",
+        "startsAt": "2026-02-27T09:30:00-08:00",
+        "endsAt": "2026-02-27T10:00:00-08:00",
+        "location": "Main Hall",
+        "speakers": ["Jane Smith"]
       }
     ]
   }' | jq .
@@ -470,6 +480,7 @@ curl -s -X POST "$BASE_URL/api/dashboard/import/luma" \
 | `rules` | No | Combined event rules / code of conduct |
 | `prizes` | No | Array of `{ name, description?, value? }` |
 | `challenges` | No | Array of `{ title, description?, resources? }` — tracks/themes participants build for |
+| `agendaItems` | No | Array of `{ title, startsAt, description?, endsAt?, location?, speakers? }`. Passing a non-empty agenda replaces the auto-seeded default sessions (trigger items like `challenge_release` and `submission_deadline` are preserved). Items without `startsAt` are skipped. |
 
 **Response:**
 

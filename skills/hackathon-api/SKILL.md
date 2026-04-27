@@ -1,24 +1,9 @@
 ---
 name: hackathon-api
-model: sonnet
-description: Interact with the Oatmeal hackathon platform directly via its REST API using curl commands. Use when the user asks to make direct API calls, test endpoints, debug API responses, or integrate with the Oatmeal API programmatically without the CLI.
-activationKeywords:
-  - "hackathon api"
-  - "oatmeal api"
-  - "curl hackathon"
-  - "api endpoint"
-  - "rest api hackathon"
-  - "api key hackathon"
-  - "test api"
-  - "api call"
-  - "import from luma"
-  - "import from url"
-  - "prize track"
-  - "prize tracks"
-  - "judging round"
-  - "announcement"
-  - "sponsor perk"
-  - "hybrid hackathon"
+description: Interact with the Oatmeal hackathon platform directly via its REST API using curl commands. Use when the user asks to make direct API calls, test endpoints, debug API responses, call the Oatmeal API programmatically, import from Luma via URL, configure prize tracks or judging rounds, send announcements, release sponsor perks, or run a hybrid hackathon — including phrasings like "curl the hackathon API", "test api", or when the user mentions `oatmeal` in a hackathon-management context.
+allowed-tools: Read Bash(curl:*) Bash(jq:*) Bash(export:*)
+metadata:
+  model: sonnet
 ---
 
 # Hackathon API — Direct REST API Access

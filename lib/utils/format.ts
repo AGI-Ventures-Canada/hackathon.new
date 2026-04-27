@@ -29,6 +29,9 @@ export function formatDateRange(
     start.getFullYear() === end.getFullYear() &&
     start.getMonth() === end.getMonth()
   ) {
+    if (start.getDate() === end.getDate()) {
+      return start.toLocaleDateString("en-US", opts)
+    }
     return `${start.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${end.getDate()}, ${end.getFullYear()}`
   }
 

@@ -1,16 +1,9 @@
 ---
 name: hackathon-attendee
-model: sonnet
-description: Best practices, tips, and tricks for hackathon participants. Use when someone asks how to prepare for, compete in, or make the most of a hackathon as an attendee — covering preparation, ideation, building, presenting, and networking.
-activationKeywords:
-  - "attending a hackathon"
-  - "hackathon tips"
-  - "how to win a hackathon"
-  - "first hackathon"
-  - "hackathon preparation"
-  - "hackathon project ideas"
-  - "hackathon demo tips"
-  - "hackathon attendee"
+description: Best practices, tips, and tricks for hackathon participants. Use when someone asks how to prepare for, compete in, or make the most of a hackathon as an attendee — covering preparation, team formation, ideation, building, time management, presenting, demoing, and networking. Activates on phrases like "attending a hackathon", "first hackathon", "how to win a hackathon", "hackathon project ideas", or "hackathon demo tips".
+allowed-tools: Read
+metadata:
+  model: sonnet
 ---
 
 # Hackathon Attendee — Tips & Best Practices

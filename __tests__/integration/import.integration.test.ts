@@ -6,8 +6,10 @@ mock.module("@/lib/services/luma-import", () => ({
   extractLumaEventData: mockExtractLumaEventData,
   normalizeEventDate: (s: string | null) => {
     if (!s) return null
-    const match = s.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/)
-    return match ? match[1] : s
+    const match = s.match(
+      /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.\d+)?(Z|[+-]\d{2}:?\d{2})?/
+    )
+    return match ? `${match[1]}${match[2] ?? ""}` : s
   },
 }))
 
@@ -34,7 +36,8 @@ describe("POST /api/public/import/url", () => {
       locationName: "San Francisco",
       locationUrl: null,
       imageUrl: "https://images.lumacdn.com/test.png",
-    })
+      language: null,
+      translationLinks: [],    })
 
     const res = await api.handle(
       new Request("http://localhost/api/public/import/url", {
@@ -60,7 +63,8 @@ describe("POST /api/public/import/url", () => {
       locationName: null,
       locationUrl: null,
       imageUrl: null,
-    })
+      language: null,
+      translationLinks: [],    })
 
     const res = await api.handle(
       new Request("http://localhost/api/public/import/url", {

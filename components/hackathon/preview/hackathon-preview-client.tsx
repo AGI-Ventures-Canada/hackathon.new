@@ -65,6 +65,8 @@ interface HackathonPreviewClientProps {
   challenges?: Challenge[]
   viewerPerks?: Perk[]
   currentUserId?: string | null
+  availableLocales?: string[]
+  currentLocale?: string
   onFormSave?: (data: Record<string, unknown>) => Promise<boolean>
   onBannerChange?: (imageUrl: string | null) => void | Promise<void>
   onAuthRequired?: () => void
@@ -86,12 +88,17 @@ function HackathonPreviewContent({
   challenges = [],
   viewerPerks = [],
   currentUserId = null,
+  availableLocales,
+  currentLocale,
   onFormSave,
   onBannerChange,
   onAuthRequired,
 }: Omit<HackathonPreviewClientProps, "isEditable">) {
   const { isEditable, editMode, activeSection, openSection, closeDrawer } = useEdit()
   const router = useRouter()
+  const primaryLocale = hackathon.default_locale ?? "en"
+  const translationLocale =
+    currentLocale && currentLocale !== primaryLocale ? currentLocale : null
   const [cancellingId, setCancellingId] = useState<string | null>(null)
   const [remindedIds, setRemindedIds] = useState<Set<string>>(new Set())
   const [isRegistered, setIsRegistered] = useState(initialIsRegistered)
@@ -485,6 +492,7 @@ function HackathonPreviewContent({
         initialLabel={hackathon.community_label}
         onSaveAndNext={() => handleSaveAndNext("community")}
         onSave={onFormSave ? (data) => onFormSave(data) : undefined}
+        locale={translationLocale}
       />
     </div>
   ) : (() => {
@@ -633,6 +641,7 @@ function HackathonPreviewContent({
                     initialData={{ description: hackathon.description }}
                     onSaveAndNext={() => handleSaveAndNext("about")}
                     onSave={onFormSave ? (data) => onFormSave(data) : undefined}
+                    locale={translationLocale}
                   />
                 </div>
               ) : (
@@ -746,6 +755,7 @@ function HackathonPreviewContent({
           initialName={hackathon.name}
           onSaveAndNext={() => handleSaveAndNext("name")}
           onSave={onFormSave ? (data) => onFormSave(data) : undefined}
+          locale={translationLocale}
         />
       ) : undefined}
       datesEditSlot={isEditable && editMode && activeSection === "dates" ? (
@@ -772,6 +782,7 @@ function HackathonPreviewContent({
           }}
           onSaveAndNext={() => handleSaveAndNext("location")}
           onSave={onFormSave ? (data) => onFormSave(data) : undefined}
+          locale={translationLocale}
         />
       ) : undefined}
       isRegistered={isRegistered}
@@ -785,6 +796,8 @@ function HackathonPreviewContent({
         ? (name) => <OrganizerLogoPrompt>{name}</OrganizerLogoPrompt>
         : undefined
       }
+      availableLocales={availableLocales}
+      currentLocale={currentLocale}
       registrationProps={(isEditable && editMode) ? undefined : isJudge ? undefined : {
         hackathonSlug: hackathon.slug,
         status: hackathon.status,
@@ -837,6 +850,8 @@ export function HackathonPreviewClient({
   challenges,
   viewerPerks,
   currentUserId,
+  availableLocales,
+  currentLocale,
   onFormSave,
   onBannerChange,
   onAuthRequired,
@@ -859,6 +874,8 @@ export function HackathonPreviewClient({
         challenges={challenges}
         viewerPerks={viewerPerks}
         currentUserId={currentUserId}
+        availableLocales={availableLocales}
+        currentLocale={currentLocale}
         onFormSave={onFormSave}
         onBannerChange={onBannerChange}
         onAuthRequired={onAuthRequired}

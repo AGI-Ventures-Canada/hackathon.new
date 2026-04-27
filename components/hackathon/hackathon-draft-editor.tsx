@@ -11,6 +11,8 @@ import { Check, Copy, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { PublicHackathon } from "@/lib/services/public-hackathons"
 import type { Challenge } from "@/lib/services/challenges"
+import type { ScheduleItem } from "@/lib/services/schedule-items"
+import { anchorAgendaTimestamp, composeAgendaDescription } from "@/lib/utils/agenda"
 
 export const STORAGE_EXPIRY_MS = 24 * 60 * 60 * 1000
 
@@ -36,6 +38,15 @@ export type DraftChallenge = {
   resources: DraftChallengeResource[]
 }
 
+export type DraftAgendaItem = {
+  title: string
+  description: string | null
+  startsAt: string | null
+  endsAt: string | null
+  location: string | null
+  speakers: string[]
+}
+
 export type DraftState = {
   name: string
   description: string | null
@@ -49,6 +60,7 @@ export type DraftState = {
   rules: string | null
   prizes: DraftPrize[]
   challenges: DraftChallenge[]
+  agendaItems: DraftAgendaItem[]
 }
 
 type HackathonDraftEditorProps = {
@@ -91,6 +103,8 @@ function stateToHackathon(state: DraftState): PublicHackathon {
     perks_none: false,
     community_url: null,
     community_label: null,
+    translations: null,
+    default_locale: null,
     banner_url: state.imageUrl,
     location_type: state.locationType,
     location_name: state.locationName,
@@ -165,7 +179,9 @@ export function loadSavedState(storageKey: string, sourceUrl?: string): DraftSta
       return null
     }
     const state = parsed.state ?? null
-    return state ? { ...state, challenges: state.challenges ?? [] } : null
+    return state
+      ? { ...state, challenges: state.challenges ?? [], agendaItems: state.agendaItems ?? [] }
+      : null
   } catch {
     localStorage.removeItem(storageKey)
     return null
@@ -249,6 +265,31 @@ export function HackathonDraftEditor({
     [state.challenges]
   )
 
+  const draftScheduleItems: ScheduleItem[] = useMemo(() => {
+    const now = new Date().toISOString()
+    const out: ScheduleItem[] = []
+    for (const item of state.agendaItems ?? []) {
+      const startsAt = anchorAgendaTimestamp(item.startsAt?.trim() || null, state.startsAt)
+      const title = item.title?.trim()
+      if (!startsAt || !title) continue
+      out.push({
+        id: `draft-${out.length}`,
+        hackathon_id: "draft",
+        title,
+        description: composeAgendaDescription(item.speakers, item.description),
+        starts_at: startsAt,
+        ends_at: anchorAgendaTimestamp(item.endsAt?.trim() || null, state.startsAt),
+        location: item.location,
+        sort_order: out.length,
+        trigger_type: null,
+        linked_to: null,
+        created_at: now,
+        updated_at: now,
+      })
+    }
+    return out
+  }, [state.agendaItems, state.startsAt])
+
   const doSubmit = useCallback(async () => {
     setIsSubmitting(true)
     setError(null)
@@ -301,6 +342,7 @@ export function HackathonDraftEditor({
       if ("sponsors" in data) next.sponsors = data.sponsors as DraftSponsor[]
       if ("prizes" in data) next.prizes = data.prizes as DraftPrize[]
       if ("challenges" in data) next.challenges = data.challenges as DraftChallenge[]
+      if ("agendaItems" in data) next.agendaItems = data.agendaItems as DraftAgendaItem[]
       return next
     })
     return true
@@ -331,6 +373,7 @@ export function HackathonDraftEditor({
       <HackathonPreviewClient
         hackathon={hackathon}
         challenges={draftChallenges}
+        scheduleItems={draftScheduleItems}
         isEditable={true}
         onFormSave={handleFormSave}
         onBannerChange={(imageUrl) => {

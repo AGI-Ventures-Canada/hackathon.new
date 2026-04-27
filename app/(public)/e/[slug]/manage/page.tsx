@@ -13,6 +13,7 @@ import { listScheduleItems, getSubmissionDeadline } from "@/lib/services/schedul
 import { getOrganizerActionItems } from "@/lib/utils/organizer-actions"
 import { VALID_TABS, VALID_ETABS, VALID_MTABS, VALID_JTABS, VALID_PTABS, DEFAULT_TAB, DEFAULT_MTAB, DEFAULT_JTAB, DEFAULT_PTAB, resolveTab } from "@/lib/utils/manage-tabs"
 import { HackathonPreviewClient } from "@/components/hackathon/preview/hackathon-preview-client"
+import { applyHackathonTranslation, availableLocales, normalizeLocale } from "@/lib/utils/language"
 import { HackathonPageActions } from "@/components/hackathon/hackathon-page-actions"
 import { LifecycleStepper } from "@/components/hackathon/lifecycle-stepper"
 import { OrganizerOverview } from "@/components/hackathon/organizer-overview"
@@ -35,7 +36,7 @@ import { TeamsTab } from "./_teams-tab"
 
 type PageProps = {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ tab?: string; etab?: string; mtab?: string; jtab?: string; ptab?: string }>
+  searchParams: Promise<{ tab?: string; etab?: string; mtab?: string; jtab?: string; ptab?: string; lang?: string }>
 }
 
 function TabLoadingSkeleton() {
@@ -44,14 +45,18 @@ function TabLoadingSkeleton() {
 
 export default async function ManagePage({ params, searchParams }: PageProps) {
   const { slug } = await params
-  const { tab, etab, mtab, jtab, ptab } = await searchParams
+  const { tab, etab, mtab, jtab, ptab, lang } = await searchParams
   const [{ userId }, result] = await Promise.all([auth(), getManageHackathon(slug)])
 
   if (!result.ok) {
     notFound()
   }
 
-  const { hackathon } = result
+  const { hackathon: rawHackathon } = result
+  const locales = availableLocales(rawHackathon)
+  const requestedLocale = normalizeLocale(lang ?? null)
+  const currentLocale = requestedLocale && locales.includes(requestedLocale) ? requestedLocale : locales[0]
+  const hackathon = applyHackathonTranslation(rawHackathon, currentLocale)
 
   const [
     submissions,
@@ -265,7 +270,13 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
 
             <TabsContent value="edit" forceMount className="data-[state=inactive]:hidden">
               <div className="rounded-lg border overflow-hidden">
-                <HackathonPreviewClient hackathon={hackathon} isEditable={true} currentUserId={userId} />
+                <HackathonPreviewClient
+                  hackathon={hackathon}
+                  isEditable={true}
+                  currentUserId={userId}
+                  availableLocales={locales}
+                  currentLocale={currentLocale}
+                />
               </div>
             </TabsContent>
 

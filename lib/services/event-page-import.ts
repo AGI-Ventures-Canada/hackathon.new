@@ -1,5 +1,6 @@
 import { cache } from "react"
 import { normalizeUrl } from "@/lib/utils/url"
+import { normalizeLocale } from "@/lib/utils/language"
 
 export type EventPageData = {
   name: string
@@ -10,6 +11,8 @@ export type EventPageData = {
   locationName: string | null
   locationUrl: string | null
   imageUrl: string | null
+  language: string | null
+  translationLinks: { url: string; languageCode: string }[]
 }
 
 const ATTENDANCE_MODE_MAP: Record<string, "in_person" | "virtual"> = {
@@ -28,13 +31,13 @@ export function normalizeEventDate(isoString: string | null): string | null {
   if (!isoString) return null
 
   const match = isoString.match(
-    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-]\d{2}:?\d{2})?/
   )
   if (!match) return isoString
 
-  const [, year, month, day, hour, minute, second] = match
+  const [, year, month, day, hour, minute, second, offset] = match
 
-  return `${year}-${month}-${day}T${hour}:${minute}:${second}`
+  return `${year}-${month}-${day}T${hour}:${minute}:${second}${offset ?? ""}`
 }
 
 export const extractEventPageData = cache(async function extractEventPageData(
@@ -48,6 +51,7 @@ export const extractEventPageData = cache(async function extractEventPageData(
       headers: {
         "User-Agent": "Mozilla/5.0 (compatible; OatmealBot/1.0; +https://oatmeal.sh)",
       },
+      signal: AbortSignal.timeout(8000),
     })
   } catch (err) {
     console.error(`Failed to fetch event page from ${url}:`, err)
@@ -133,6 +137,8 @@ function mapEventNode(event: Record<string, unknown>): EventPageData | null {
       ? getString(location?.url)
       : getString(location?.url),
     imageUrl: getImageUrl(event.image),
+    language: normalizeLocale(getString(event.inLanguage)),
+    translationLinks: [],
   }
 }
 
@@ -145,6 +151,7 @@ function parseMetaFallback(html: string): EventPageData | null {
   }
 
   const locationText = getMetaContent(html, "name", "twitter:data1")
+  const htmlLang = html.match(/<html[^>]*\blang=["']([^"']+)["']/i)?.[1] ?? null
 
   return {
     name,
@@ -155,6 +162,8 @@ function parseMetaFallback(html: string): EventPageData | null {
     locationName: locationText,
     locationUrl: null,
     imageUrl: getMetaContent(html, "property", "og:image") ?? getMetaContent(html, "name", "twitter:image"),
+    language: normalizeLocale(htmlLang),
+    translationLinks: [],
   }
 }
 

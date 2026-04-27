@@ -61,6 +61,8 @@ export const mockHackathon: Hackathon = {
   perks_none: false,
   community_url: "https://discord.gg/example",
   community_label: "Discord",
+  translations: null,
+  default_locale: null,
   metadata: {},
   created_at: iso(now),
   updated_at: iso(now),

@@ -890,6 +890,7 @@ export type Database = {
           community_label: string | null
           community_url: string | null
           created_at: string
+          default_locale: string | null
           description: string | null
           ends_at: string | null
           feedback_survey_sent_at: string | null
@@ -918,6 +919,7 @@ export type Database = {
           starts_at: string | null
           status: Database["public"]["Enums"]["hackathon_status"]
           tenant_id: string
+          translations: Json | null
           updated_at: string
           winner_emails_sent_at: string | null
         }
@@ -929,6 +931,7 @@ export type Database = {
           community_label?: string | null
           community_url?: string | null
           created_at?: string
+          default_locale?: string | null
           description?: string | null
           ends_at?: string | null
           feedback_survey_sent_at?: string | null
@@ -957,6 +960,7 @@ export type Database = {
           starts_at?: string | null
           status?: Database["public"]["Enums"]["hackathon_status"]
           tenant_id: string
+          translations?: Json | null
           updated_at?: string
           winner_emails_sent_at?: string | null
         }
@@ -968,6 +972,7 @@ export type Database = {
           community_label?: string | null
           community_url?: string | null
           created_at?: string
+          default_locale?: string | null
           description?: string | null
           ends_at?: string | null
           feedback_survey_sent_at?: string | null
@@ -996,6 +1001,7 @@ export type Database = {
           starts_at?: string | null
           status?: Database["public"]["Enums"]["hackathon_status"]
           tenant_id?: string
+          translations?: Json | null
           updated_at?: string
           winner_emails_sent_at?: string | null
         }
@@ -2984,6 +2990,61 @@ export type Database = {
           error_message: string
           success: boolean
         }[]
+      }
+      upsert_hackathon_translation: {
+        Args: {
+          p_fields: Json
+          p_hackathon_id: string
+          p_locale: string
+          p_tenant_id: string
+        }
+        Returns: {
+          allow_solo: boolean | null
+          anonymous_judging: boolean
+          banner_url: string | null
+          challenge_released_at: string | null
+          community_label: string | null
+          community_url: string | null
+          created_at: string
+          default_locale: string | null
+          description: string | null
+          ends_at: string | null
+          feedback_survey_sent_at: string | null
+          feedback_survey_url: string | null
+          id: string
+          judging_mode: Database["public"]["Enums"]["judging_mode"] | null
+          location_latitude: number | null
+          location_longitude: number | null
+          location_name: string | null
+          location_type: Database["public"]["Enums"]["location_type"] | null
+          location_url: string | null
+          max_participants: number | null
+          max_team_size: number | null
+          metadata: Json | null
+          min_team_size: number | null
+          name: string
+          perks_none: boolean
+          phase: Database["public"]["Enums"]["hackathon_phase"] | null
+          registration_closes_at: string | null
+          registration_opens_at: string | null
+          require_location_verification: boolean
+          results_announcement_sent_at: string | null
+          results_published_at: string | null
+          rules: string | null
+          slug: string
+          starts_at: string | null
+          status: Database["public"]["Enums"]["hackathon_status"]
+          tenant_id: string
+          translations: Json | null
+          updated_at: string
+          winner_emails_sent_at: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "hackathons"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
     }
     Enums: {

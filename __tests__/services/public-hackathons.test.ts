@@ -4,10 +4,11 @@ import {
   createChainableMock,
   resetSupabaseMocks,
   setMockFromImplementation,
+  setMockRpcImplementation,
   mockMultiTableQuery,
 } from "../lib/supabase-mock"
 
-const { getPublicHackathon, listPublicHackathons, getHackathonByIdForOrganizer, checkHackathonOrganizer, updateHackathonSettings, deleteHackathon } = await import(
+const { getPublicHackathon, listPublicHackathons, getHackathonByIdForOrganizer, checkHackathonOrganizer, updateHackathonSettings, updateHackathonTranslation, deleteHackathon } = await import(
   "@/lib/services/public-hackathons"
 )
 
@@ -377,6 +378,77 @@ describe("Public Hackathons Service", () => {
 
       expect(chain.eq).toHaveBeenCalledWith("id", "h1")
       expect(chain.eq).toHaveBeenCalledWith("tenant_id", "t1")
+    })
+  })
+
+  describe("updateHackathonTranslation", () => {
+    it("calls the upsert RPC with the provided fields and returns the updated row", async () => {
+      const updatedRow = { ...mockHackathon, translations: { fr: { name: "Nom" } } }
+      const rpcCalls: { fn: string; params: unknown }[] = []
+      setMockRpcImplementation((fn, params) => {
+        rpcCalls.push({ fn, params })
+        return Promise.resolve({ data: [updatedRow], error: null })
+      })
+
+      const result = await updateHackathonTranslation("h1", "t1", "fr", {
+        name: "Nom",
+        description: "Description",
+      })
+
+      expect(result).toEqual(updatedRow as unknown as Hackathon)
+      expect(rpcCalls).toHaveLength(1)
+      expect(rpcCalls[0].fn).toBe("upsert_hackathon_translation")
+      expect(rpcCalls[0].params).toEqual({
+        p_hackathon_id: "h1",
+        p_tenant_id: "t1",
+        p_locale: "fr",
+        p_fields: { name: "Nom", description: "Description" },
+      })
+    })
+
+    it("forwards null values so the RPC can delete that field", async () => {
+      const rpcCalls: { params: unknown }[] = []
+      setMockRpcImplementation((_fn, params) => {
+        rpcCalls.push({ params })
+        return Promise.resolve({ data: [mockHackathon], error: null })
+      })
+
+      await updateHackathonTranslation("h1", "t1", "fr", { description: null })
+
+      expect((rpcCalls[0].params as { p_fields: unknown }).p_fields).toEqual({ description: null })
+    })
+
+    it("skips undefined fields", async () => {
+      const rpcCalls: { params: unknown }[] = []
+      setMockRpcImplementation((_fn, params) => {
+        rpcCalls.push({ params })
+        return Promise.resolve({ data: [mockHackathon], error: null })
+      })
+
+      await updateHackathonTranslation("h1", "t1", "fr", {
+        name: "Nom",
+        description: undefined,
+      })
+
+      expect((rpcCalls[0].params as { p_fields: Record<string, unknown> }).p_fields).toEqual({
+        name: "Nom",
+      })
+    })
+
+    it("returns null when the RPC returns an error", async () => {
+      setMockRpcImplementation(() =>
+        Promise.resolve({ data: null, error: { message: "db error" } })
+      )
+
+      const result = await updateHackathonTranslation("h1", "t1", "fr", { name: "Nom" })
+      expect(result).toBeNull()
+    })
+
+    it("returns null when the RPC yields no rows", async () => {
+      setMockRpcImplementation(() => Promise.resolve({ data: [], error: null }))
+
+      const result = await updateHackathonTranslation("h1", "t1", "fr", { name: "Nom" })
+      expect(result).toBeNull()
     })
   })
 })
