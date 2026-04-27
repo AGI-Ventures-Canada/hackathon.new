@@ -188,6 +188,9 @@ export function LifecycleStepper({
       }
 
       const body = buildStatusTransitionBody(newStatus, endsAt)
+      if (newStatus === "active" && endsAt && new Date(endsAt) <= new Date()) {
+        body.endsAt = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+      }
 
       const res = await fetch(
         `/api/dashboard/hackathons/${hackathonId}/settings`,

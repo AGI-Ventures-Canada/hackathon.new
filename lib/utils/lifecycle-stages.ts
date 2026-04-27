@@ -114,8 +114,6 @@ export function getTransitionConfirmation(from: HackathonStatus, to: string) {
   }
 }
 
-const ACTIVE_REOPEN_EXTENSION_MS = 60 * 60 * 1000
-
 export function applyOptimisticStage(
   baseStatus: HackathonStatus,
   optimisticStage: StageKey | null,
@@ -154,16 +152,10 @@ export function buildStatusTransitionBody(
 ): Record<string, unknown> {
   const dbStatus = targetStage === "published" ? "registration_open" : targetStage
   const body: Record<string, unknown> = { status: dbStatus }
-  const now = Date.now()
 
   if (targetStage === "judging") {
-    if (!endsAt || new Date(endsAt).getTime() > now) {
-      body.endsAt = new Date(now).toISOString()
-    }
-  }
-  if (targetStage === "active") {
-    if (endsAt && new Date(endsAt).getTime() <= now) {
-      body.endsAt = new Date(now + ACTIVE_REOPEN_EXTENSION_MS).toISOString()
+    if (!endsAt || new Date(endsAt).getTime() > Date.now()) {
+      body.endsAt = new Date().toISOString()
     }
   }
 

@@ -187,33 +187,11 @@ describe("buildStatusTransitionBody", () => {
     })
   })
 
-  describe("active transition endsAt handling", () => {
-    it("extends endsAt by one hour when endsAt is in the past", () => {
-      const past = new Date(Date.now() - 60 * 60 * 1000).toISOString()
-      const before = Date.now()
-      const body = buildStatusTransitionBody("active", past)
-      const after = Date.now()
-      const ms = new Date(body.endsAt as string).getTime()
-      expect(ms).toBeGreaterThanOrEqual(before + 60 * 60 * 1000)
-      expect(ms).toBeLessThanOrEqual(after + 60 * 60 * 1000)
-    })
-
-    it("does not modify endsAt when it is in the future", () => {
-      const future = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-      const body = buildStatusTransitionBody("active", future)
-      expect(body.endsAt).toBeUndefined()
-    })
-
-    it("does not set endsAt when endsAt is null", () => {
-      const body = buildStatusTransitionBody("active", null)
-      expect(body.endsAt).toBeUndefined()
-    })
-  })
-
-  it("does not touch endsAt for non-judging/non-active transitions", () => {
+  it("does not touch endsAt for non-judging transitions", () => {
     const past = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
     expect(buildStatusTransitionBody("draft", past).endsAt).toBeUndefined()
     expect(buildStatusTransitionBody("published", past).endsAt).toBeUndefined()
+    expect(buildStatusTransitionBody("active", past).endsAt).toBeUndefined()
     expect(buildStatusTransitionBody("completed", past).endsAt).toBeUndefined()
   })
 })

@@ -194,6 +194,9 @@ export function ActionItemsProvider({
   useEffect(() => {
     if (pollData) setPollFingerprint(serverFingerprintRef.current);
   }, [pollData]);
+  // Use poll data only when it was fetched against the current server render —
+  // if the server fingerprint has since changed (e.g. router.refresh() returned),
+  // the poll snapshot is stale and we fall back to server props.
   const isPollFresh = !!pollData && pollFingerprint === serverFingerprint;
 
   const actionItems = isPollFresh && pollData
