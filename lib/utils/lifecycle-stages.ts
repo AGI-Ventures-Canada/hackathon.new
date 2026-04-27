@@ -1,5 +1,6 @@
 import { EyeOff, Globe, Zap, Lock, Trophy } from "lucide-react"
 import type { HackathonStatus, HackathonPhase } from "@/lib/db/hackathon-types"
+import type { ActionItem } from "@/lib/utils/organizer-actions"
 
 export const LIFECYCLE_STAGES = [
   { key: "draft", label: "Draft", icon: EyeOff, badgeVariant: "secondary" },
@@ -107,4 +108,60 @@ export function getTransitionConfirmation(from: HackathonStatus, to: string) {
     title: `Switch to ${to}?`,
     description: `This will change the hackathon status to "${to}".`,
   }
+}
+
+const ACTIVE_REOPEN_EXTENSION_MS = 60 * 60 * 1000
+
+export function applyOptimisticStage(
+  baseStatus: HackathonStatus,
+  optimisticStage: StageKey | null,
+): HackathonStatus {
+  return optimisticStage ?? baseStatus
+}
+
+export function shouldClearOptimisticStage(
+  baseStatus: HackathonStatus,
+  optimisticStage: StageKey | null,
+): boolean {
+  return !!optimisticStage && stageKeyForStatus(baseStatus) === optimisticStage
+}
+
+export function buildHackathonFingerprint(args: {
+  status: HackathonStatus
+  phase: HackathonPhase | null
+  startsAt: string | null
+  endsAt: string | null
+  actionItems: ActionItem[]
+}): string {
+  return [
+    args.status,
+    args.phase ?? "",
+    args.startsAt ?? "",
+    args.endsAt ?? "",
+    args.actionItems
+      .map((i) => `${i.id}:${i.close.kind === "auto" ? i.close.isComplete : ""}`)
+      .join(","),
+  ].join("|")
+}
+
+export function buildStatusTransitionBody(
+  targetStage: StageKey,
+  endsAt: string | null | undefined,
+): Record<string, unknown> {
+  const dbStatus = targetStage === "published" ? "registration_open" : targetStage
+  const body: Record<string, unknown> = { status: dbStatus }
+  const now = Date.now()
+
+  if (targetStage === "judging") {
+    if (!endsAt || new Date(endsAt).getTime() > now) {
+      body.endsAt = new Date(now).toISOString()
+    }
+  }
+  if (targetStage === "active") {
+    if (endsAt && new Date(endsAt).getTime() <= now) {
+      body.endsAt = new Date(now + ACTIVE_REOPEN_EXTENSION_MS).toISOString()
+    }
+  }
+
+  return body
 }

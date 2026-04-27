@@ -20,7 +20,12 @@ import {
 import type { HackathonStatus, HackathonPhase } from "@/lib/db/hackathon-types";
 import { useOrganizerPoll } from "@/hooks/use-organizer-poll";
 import { getEffectiveStatus } from "@/lib/utils/timeline";
-import { stageKeyForStatus, type StageKey } from "@/lib/utils/lifecycle-stages";
+import {
+  applyOptimisticStage,
+  buildHackathonFingerprint,
+  shouldClearOptimisticStage,
+  type StageKey,
+} from "@/lib/utils/lifecycle-stages";
 import {
   Dialog,
   DialogContent,
@@ -164,15 +169,13 @@ export function ActionItemsProvider({
 
   const serverFingerprint = useMemo(
     () =>
-      [
-        serverStatus,
-        serverPhase ?? "",
-        serverStartsAt ?? "",
-        serverEndsAt ?? "",
-        serverActionItems
-          .map((i) => `${i.id}:${i.close.kind === "auto" ? i.close.isComplete : ""}`)
-          .join(","),
-      ].join("|"),
+      buildHackathonFingerprint({
+        status: serverStatus,
+        phase: serverPhase,
+        startsAt: serverStartsAt,
+        endsAt: serverEndsAt,
+        actionItems: serverActionItems,
+      }),
     [serverStatus, serverPhase, serverStartsAt, serverEndsAt, serverActionItems],
   );
   const prevFingerprintRef = useRef(serverFingerprint);
@@ -214,13 +217,11 @@ export function ActionItemsProvider({
   });
   const [optimisticStage, setOptimisticStage] = useState<StageKey | null>(null);
   useEffect(() => {
-    if (optimisticStage && stageKeyForStatus(baseEffectiveStatus) === optimisticStage) {
+    if (shouldClearOptimisticStage(baseEffectiveStatus, optimisticStage)) {
       setOptimisticStage(null);
     }
   }, [baseEffectiveStatus, optimisticStage]);
-  const effectiveStatus = optimisticStage
-    ? (optimisticStage as HackathonStatus)
-    : baseEffectiveStatus;
+  const effectiveStatus = applyOptimisticStage(baseEffectiveStatus, optimisticStage);
 
   const [completedIds, setCompletedIds] = useState<Set<string>>(() => {
     if (typeof window === "undefined") return new Set<string>();

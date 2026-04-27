@@ -16,7 +16,11 @@ import {
 } from "@/components/ui/alert-dialog"
 import { useActionItems } from "./action-items-context"
 import { isCompleted } from "@/lib/utils/organizer-actions"
-import { getTransitionConfirmation, type StageKey } from "@/lib/utils/lifecycle-stages"
+import {
+  buildStatusTransitionBody,
+  getTransitionConfirmation,
+  type StageKey,
+} from "@/lib/utils/lifecycle-stages"
 import type { HackathonStatus } from "@/lib/db/hackathon-types"
 
 export type TransitionConfirmDialogHandle = {
@@ -114,19 +118,7 @@ export const TransitionConfirmDialog = forwardRef<TransitionConfirmDialogHandle,
           )
         }
 
-        const dbStatus = pendingTarget === "published" ? "registration_open" : pendingTarget
-        const body: Record<string, unknown> = { status: dbStatus }
-
-        if (pendingTarget === "judging") {
-          if (!endsAt || new Date(endsAt) > new Date()) {
-            body.endsAt = new Date().toISOString()
-          }
-        }
-        if (pendingTarget === "active") {
-          if (endsAt && new Date(endsAt) <= new Date()) {
-            body.endsAt = new Date(Date.now() + 60 * 60 * 1000).toISOString()
-          }
-        }
+        const body = buildStatusTransitionBody(pendingTarget as StageKey, endsAt)
 
         await fetch(
           `/api/dashboard/hackathons/${hackathonId}/settings`,
