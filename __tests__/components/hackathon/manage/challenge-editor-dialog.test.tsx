@@ -165,10 +165,12 @@ describe("ChallengeEditorDialog release timing", () => {
     await waitFor(() => {
       expect(mockFetch).toHaveBeenCalledTimes(2)
     })
-    const patchUrl = mockFetch.mock.calls[1][0] as string
-    const patchInit = mockFetch.mock.calls[1][1] as RequestInit
+    const patchUrl = mockFetch.mock.calls[0][0] as string
+    const patchInit = mockFetch.mock.calls[0][1] as RequestInit
+    const challengeUrl = mockFetch.mock.calls[1][0] as string
     expect(patchUrl).toBe("/api/dashboard/hackathons/h1/schedule/schedule-1")
     expect(patchInit.method).toBe("PATCH")
+    expect(challengeUrl).toBe("/api/dashboard/hackathons/h1/challenges")
     const body = JSON.parse(patchInit.body as string)
     expect(body).toEqual({ startsAt: newCustomIso, linkedTo: null })
   })
@@ -189,13 +191,28 @@ describe("ChallengeEditorDialog release timing", () => {
     await waitFor(() => {
       expect(mockFetch).toHaveBeenCalledTimes(2)
     })
-    const challengeUrl = mockFetch.mock.calls[0][0] as string
-    const patchUrl = mockFetch.mock.calls[1][0] as string
-    const patchInit = mockFetch.mock.calls[1][1] as RequestInit
-    expect(challengeUrl).toBe("/api/dashboard/hackathons/h1/challenges")
+    const patchUrl = mockFetch.mock.calls[0][0] as string
+    const patchInit = mockFetch.mock.calls[0][1] as RequestInit
+    const challengeUrl = mockFetch.mock.calls[1][0] as string
     expect(patchUrl).toBe("/api/dashboard/hackathons/h1/schedule/schedule-1")
     expect(patchInit.method).toBe("PATCH")
+    expect(challengeUrl).toBe("/api/dashboard/hackathons/h1/challenges")
     const body = JSON.parse(patchInit.body as string)
     expect(body).toEqual({ startsAt: eventStartIso, linkedTo: "event_start" })
+  })
+
+  it("hides the release section and saves only the challenge when releaseScheduleItem is null", async () => {
+    renderDialog({ releaseScheduleItem: null })
+    const dialog = screen.getByRole("dialog")
+    expect(within(dialog).queryByText("Release when the event goes live")).toBeNull()
+
+    fireEvent.change(within(dialog).getByLabelText("Title"), { target: { value: "Theme" } })
+    fireEvent.click(within(dialog).getByRole("button", { name: /Save challenge/ }))
+
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+    })
+    const url = mockFetch.mock.calls[0][0] as string
+    expect(url).toBe("/api/dashboard/hackathons/h1/challenges")
   })
 })

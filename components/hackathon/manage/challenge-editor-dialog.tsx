@@ -113,6 +113,32 @@ export function ChallengeEditorDialog({
     setSaving(true)
     setError(null)
     try {
+      if (!alreadyReleased && releaseScheduleItem) {
+        const linkedChanged = autoRelease !== initialAutoRelease
+        const customStartsAt = customReleaseAt?.toISOString() ?? null
+        const startsChanged = !autoRelease && customStartsAt !== initialCustomReleaseIso
+
+        if (linkedChanged || startsChanged) {
+          const patchBody: { startsAt?: string; linkedTo: "event_start" | null } = {
+            linkedTo: autoRelease ? "event_start" : null,
+          }
+          if (autoRelease && hackathonStartsAt) {
+            patchBody.startsAt = hackathonStartsAt
+          } else if (!autoRelease && customStartsAt) {
+            patchBody.startsAt = customStartsAt
+          }
+
+          await fetch(
+            `/api/dashboard/hackathons/${hackathonId}/schedule/${releaseScheduleItem.id}`,
+            {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(patchBody),
+            },
+          ).then(assertOk)
+        }
+      }
+
       const cleanedResources = resources
         .map((r) => ({ label: r.label.trim(), url: normalizeUrl(r.url.trim()) }))
         .filter((r) => r.url.length > 0)
@@ -140,32 +166,6 @@ export function ChallengeEditorDialog({
       }
 
       const data = (await res.json()) as { challenge: Challenge }
-
-      if (!alreadyReleased && releaseScheduleItem) {
-        const linkedChanged = autoRelease !== initialAutoRelease
-        const customStartsAt = customReleaseAt?.toISOString() ?? null
-        const startsChanged = !autoRelease && customStartsAt !== initialCustomReleaseIso
-
-        if (linkedChanged || startsChanged) {
-          const patchBody: { startsAt?: string; linkedTo: "event_start" | null } = {
-            linkedTo: autoRelease ? "event_start" : null,
-          }
-          if (autoRelease && hackathonStartsAt) {
-            patchBody.startsAt = hackathonStartsAt
-          } else if (!autoRelease && customStartsAt) {
-            patchBody.startsAt = customStartsAt
-          }
-
-          await fetch(
-            `/api/dashboard/hackathons/${hackathonId}/schedule/${releaseScheduleItem.id}`,
-            {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(patchBody),
-            },
-          ).then(assertOk)
-        }
-      }
 
       onSaved(data.challenge)
       onOpenChange(false)
