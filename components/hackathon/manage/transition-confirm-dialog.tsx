@@ -16,7 +16,12 @@ import {
 } from "@/components/ui/alert-dialog"
 import { useActionItems } from "./action-items-context"
 import { isCompleted } from "@/lib/utils/organizer-actions"
-import { getTransitionConfirmation } from "@/lib/utils/lifecycle-stages"
+import {
+  buildStatusTransitionBody,
+  getTransitionConfirmation,
+  isStageKey,
+  type StageKey,
+} from "@/lib/utils/lifecycle-stages"
 import type { HackathonStatus } from "@/lib/db/hackathon-types"
 
 export type TransitionConfirmDialogHandle = {
@@ -33,8 +38,8 @@ type Props = {
 export const TransitionConfirmDialog = forwardRef<TransitionConfirmDialogHandle, Props>(
   function TransitionConfirmDialog({ hackathonId, status, endsAt, onTransitioned }, ref) {
     const router = useRouter()
-    const { activeItems } = useActionItems()
-    const [pendingTarget, setPendingTarget] = useState<string | null>(null)
+    const { activeItems, setOptimisticStage } = useActionItems()
+    const [pendingTarget, setPendingTarget] = useState<StageKey | null>(null)
     const [updating, setUpdating] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
@@ -44,6 +49,7 @@ export const TransitionConfirmDialog = forwardRef<TransitionConfirmDialogHandle,
 
     useImperativeHandle(ref, () => ({
       openTransitionDialog(targetStatus: string) {
+        if (!isStageKey(targetStatus)) return
         setError(null)
         setPendingTarget(targetStatus)
       },
@@ -58,6 +64,7 @@ export const TransitionConfirmDialog = forwardRef<TransitionConfirmDialogHandle,
       if (!pendingTarget) return
       setUpdating(true)
       setError(null)
+      setOptimisticStage(pendingTarget)
 
       try {
         if (pendingTarget === "completed") {
@@ -113,14 +120,7 @@ export const TransitionConfirmDialog = forwardRef<TransitionConfirmDialogHandle,
           )
         }
 
-        const dbStatus = pendingTarget === "published" ? "registration_open" : pendingTarget
-        const body: Record<string, unknown> = { status: dbStatus }
-
-        if (pendingTarget === "judging") {
-          if (!endsAt || new Date(endsAt) > new Date()) {
-            body.endsAt = new Date().toISOString()
-          }
-        }
+        const body = buildStatusTransitionBody(pendingTarget, endsAt)
 
         await fetch(
           `/api/dashboard/hackathons/${hackathonId}/settings`,
@@ -134,6 +134,7 @@ export const TransitionConfirmDialog = forwardRef<TransitionConfirmDialogHandle,
         router.refresh()
         closeDialog()
       } catch (err) {
+        setOptimisticStage(null)
         setError(err instanceof Error ? err.message : "Something went wrong")
       } finally {
         setUpdating(false)
