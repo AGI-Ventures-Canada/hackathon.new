@@ -18,6 +18,11 @@ const STORAGE_MOCK_ISOLATED_TESTS = [
 ]
 const storageMockSet = new Set(STORAGE_MOCK_ISOLATED_TESTS)
 
+const TAVILY_MOCK_ISOLATED_TESTS = [
+  "__tests__/services/luma-extract.test.ts",
+]
+const tavilyMockSet = new Set(TAVILY_MOCK_ISOLATED_TESTS)
+
 const RADIX_ISOLATED_TESTS = [
   "__tests__/components/hackathon/submission-button.test.tsx",
   "__tests__/components/hackathon/prizes-manager.test.tsx",
@@ -54,7 +59,16 @@ const groups: Group[] = [
   {
     name: "api + lib + services",
     args: ["__tests__/api", "__tests__/lib/*.test.ts", "__tests__/services"],
-    exclude: new Set([...encryptionMockSet, ...serviceMockSet, ...storageMockSet]),
+    exclude: new Set([
+      ...encryptionMockSet,
+      ...serviceMockSet,
+      ...storageMockSet,
+      ...tavilyMockSet,
+    ]),
+  },
+  {
+    name: "services (tavily-mock isolated: luma-extract)",
+    args: TAVILY_MOCK_ISOLATED_TESTS,
   },
   {
     name: "services (encryption-mock isolated)",
