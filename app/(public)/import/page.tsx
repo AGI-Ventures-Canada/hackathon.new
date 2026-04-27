@@ -55,7 +55,8 @@ export default async function EventImportPage({ searchParams }: PageProps) {
     extractExternalEventData(normalizedUrl)
   )
 
-  const richContent = await ttlCache(`import:rich:${normalizedUrl}`, () =>
+  const richCacheKey = `import:rich:${normalizedUrl}:${eventData?.startsAt ?? ""}`
+  const richContent = await ttlCache(richCacheKey, () =>
     extractExternalRichContent(normalizedUrl, { eventStartsAt: eventData?.startsAt ?? null })
   )
 
