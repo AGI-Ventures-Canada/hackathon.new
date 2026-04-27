@@ -122,9 +122,9 @@ export function ChallengeEditorDialog({
           const patchBody: { startsAt?: string; linkedTo: "event_start" | null } = {
             linkedTo: autoRelease ? "event_start" : null,
           }
-          if (autoRelease && hackathonStartsAt) {
-            patchBody.startsAt = hackathonStartsAt
-          } else if (!autoRelease && customStartsAt) {
+          if (autoRelease) {
+            patchBody.startsAt = hackathonStartsAt ?? releaseScheduleItem.starts_at
+          } else if (customStartsAt) {
             patchBody.startsAt = customStartsAt
           }
 
