@@ -128,11 +128,11 @@ export async function executeTransition(
     const { getTriggerItem } = await import("./schedule-items")
     const triggerItem = await getTriggerItem(hackathonId, "challenge_release")
     if (triggerItem) {
-      const noSpecificTime = triggerItem.linked_to === "event_start"
-      const specificTimePassed =
+      const linkedToEventStart = triggerItem.linked_to === "event_start"
+      const customTimePassed =
         triggerItem.linked_to === null &&
         triggerItem.starts_at <= new Date().toISOString()
-      if (noSpecificTime || specificTimePassed) {
+      if (linkedToEventStart || customTimePassed) {
         releaseChallenges(hackathonId, tenantId).catch((err) => {
           console.error(
             `Failed to auto-release challenges for ${hackathonId}:`,

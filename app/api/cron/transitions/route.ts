@@ -10,7 +10,18 @@ export async function GET(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const transitions = await processAutoTransitions()
-  const releases = await processScheduledChallengeReleases()
-  return Response.json({ transitions, scheduledChallengeReleases: releases })
+  const [transitionsResult, releasesResult] = await Promise.allSettled([
+    processAutoTransitions(),
+    processScheduledChallengeReleases(),
+  ])
+  return Response.json({
+    transitions:
+      transitionsResult.status === "fulfilled"
+        ? transitionsResult.value
+        : { error: String(transitionsResult.reason) },
+    scheduledChallengeReleases:
+      releasesResult.status === "fulfilled"
+        ? releasesResult.value
+        : { error: String(releasesResult.reason) },
+  })
 }
