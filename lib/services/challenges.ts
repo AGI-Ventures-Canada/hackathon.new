@@ -354,10 +354,16 @@ export async function processScheduledChallengeReleases(): Promise<ScheduledChal
     const tenantId = tenantById.get(hackathonId)
     if (!tenantId) continue
 
-    const released = await releaseChallenges(hackathonId, tenantId)
-    if (released) {
-      result.processed++
-      result.releases.push({ hackathonId })
+    try {
+      const released = await releaseChallenges(hackathonId, tenantId)
+      if (released) {
+        result.processed++
+        result.releases.push({ hackathonId })
+      }
+    } catch (err) {
+      result.errors.push(
+        `Failed to release challenges for ${hackathonId}: ${err instanceof Error ? err.message : String(err)}`,
+      )
     }
   }
 

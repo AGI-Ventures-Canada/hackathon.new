@@ -483,6 +483,56 @@ describe("Challenges Service", () => {
       expect(result.releases).toEqual([])
     })
 
+    it("isolates errors per hackathon and continues processing others", async () => {
+      const past = new Date(Date.now() - 60_000).toISOString()
+      const otherId = "55555555-5555-5555-5555-555555555555"
+      const otherTenant = "66666666-6666-6666-6666-666666666666"
+
+      let hackathonCalls = 0
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          hackathonCalls++
+          if (hackathonCalls === 1) {
+            return createChainableMock({
+              data: [
+                { id: hackathonId, tenant_id: tenantId },
+                { id: otherId, tenant_id: otherTenant },
+              ],
+              error: null,
+            })
+          }
+          if (hackathonCalls === 2) {
+            throw new Error("simulated DB blow-up")
+          }
+          return createChainableMock({
+            data: { challenge_released_at: null },
+            error: null,
+          })
+        }
+        if (table === "hackathon_schedule_items") {
+          return createChainableMock({
+            data: [
+              { hackathon_id: hackathonId, starts_at: past, linked_to: null },
+              { hackathon_id: otherId, starts_at: past, linked_to: null },
+            ],
+            error: null,
+          })
+        }
+        if (table === "challenges") {
+          return createChainableMock({ data: null, error: null, count: 1 })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await processScheduledChallengeReleases()
+
+      expect(result.processed).toBe(1)
+      expect(result.releases).toEqual([{ hackathonId: otherId }])
+      expect(result.errors).toHaveLength(1)
+      expect(result.errors[0]).toContain(hackathonId)
+      expect(result.errors[0]).toContain("simulated DB blow-up")
+    })
+
     it("skips when no schedule items match", async () => {
       setMockFromImplementation((table) => {
         if (table === "hackathons") {
