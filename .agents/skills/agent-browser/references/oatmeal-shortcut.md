@@ -47,6 +47,48 @@ Use raw `agent-browser` calls when the wrapper doesn't fit:
 | `CHROME_APP` | `/Applications/Google Chrome.app` | Path to Chrome.app if installed elsewhere |
 | `CHROME_PROFILE_DIR` | `$PWD/.auth/chrome-profile` | Location of the dedicated profile dir |
 
+## Testing `/manage` Routes — Active Clerk Organization Matters
+
+Oatmeal's `/e/<slug>/manage` route returns **404** if the signed-in user's active Clerk organization doesn't match the hackathon's organizer tenant. The check (in `lib/services/manage-hackathon.ts`) is:
+
+- If `orgId !== null` (user has an active org), the hackathon's `tenant.clerk_org_id` must equal `orgId`.
+- If `orgId === null` (Personal Workspace), the hackathon's `tenant.clerk_user_id` must equal `userId`.
+
+So even if the user owns the event under their personal account, manage will 404 while they're switched into an org context — and vice versa.
+
+### Verify the active context before navigating to `/manage`
+
+```bash
+agent-browser --session oatmeal eval 'JSON.stringify({user: window.Clerk?.user?.id, org: window.Clerk?.organization?.id ?? null})'
+```
+
+Then look up the event's organizer in Supabase to compare:
+
+```bash
+bun -e 'import {createClient} from "@supabase/supabase-js"; const s = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!); const {data} = await s.from("hackathons").select("slug, organizer:tenants!tenant_id(name, clerk_user_id, clerk_org_id)").eq("slug", "<slug>").single(); console.log(JSON.stringify(data, null, 2))'
+```
+
+### Switch the active org programmatically
+
+If the active org doesn't match, switch via Clerk's JS API rather than clicking through the UI:
+
+```bash
+# Switch to a specific org (use the clerk_org_id from the query above)
+agent-browser --session oatmeal eval 'window.Clerk.setActive({organization: "org_3998CZRtAOrKPFpY9g5RBuUN3Py"})'
+
+# Switch to Personal Workspace
+agent-browser --session oatmeal eval 'window.Clerk.setActive({organization: null})'
+
+# Re-open the manage page after switching
+bun run browser "/e/<slug>/manage?tab=judging"
+```
+
+`setActive` updates the session cookie that Next.js's `auth()` reads on the server, so the next page navigation sees the new org context.
+
+### Quick path: seed a scenario tied to your account
+
+`scripts/test-scenario.ts` seeds hackathons under the tenant identified by `SCENARIO_DEV_USER_ID` / `SCENARIO_ORG_ID` in `.env.local`. If you're signed in as that user and switched to that org (or Personal Workspace, if `SCENARIO_ORG_ID` is unset), `/manage` will work without any context switching.
+
 ## Auth File & Profile Security
 
 - `.auth/chrome-profile/` holds the full signed-in Chrome profile (cookies, session, extensions).

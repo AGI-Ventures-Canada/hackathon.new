@@ -12,6 +12,8 @@ The CLI uses Chrome/Chromium via CDP directly. Install via `npm i -g agent-brows
 
 For local Oatmeal dev, use `bun run browser` — see [references/oatmeal-shortcut.md](references/oatmeal-shortcut.md). Fall back to the raw commands below when the wrapper doesn't fit.
 
+**Testing `/manage` routes:** the page 404s if the signed-in user's active Clerk organization doesn't match the hackathon's organizer tenant. Always verify and switch the active org *before* navigating to `/e/<slug>/manage` — see [references/oatmeal-shortcut.md](references/oatmeal-shortcut.md#testing-manage-routes--active-clerk-organization-matters) for the exact commands.
+
 ## Core Workflow
 
 Every browser automation follows this pattern:
