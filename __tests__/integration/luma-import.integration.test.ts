@@ -185,6 +185,126 @@ describe("POST /api/dashboard/import/event (create from editor data)", () => {
 
     expect(res.status).toBe(401)
   })
+
+  it("forwards agendaItems to createAgendaFromImport with the event start anchor", async () => {
+    mockAuth.mockResolvedValueOnce({
+      userId: "user-1",
+      orgId: "org-1",
+      orgRole: "org:admin",
+    })
+
+    mockGetOrCreateTenant.mockResolvedValueOnce({ id: "tenant-1" })
+
+    mockCreateHackathonFromImport.mockResolvedValueOnce({
+      id: "h-agenda-event",
+      name: "Agenda Event",
+      slug: "agenda-event",
+    })
+
+    const agendaItems = [
+      {
+        title: "Opening Keynote",
+        description: "Welcome talk",
+        startsAt: "2026-05-14T09:00:00-04:00",
+        endsAt: "2026-05-14T09:30:00-04:00",
+        location: "Main Hall",
+        speakers: ["Jane Smith"],
+      },
+      {
+        title: "Lunch",
+        startsAt: "2026-05-14T12:00:00-04:00",
+        speakers: [],
+      },
+    ]
+
+    const res = await api.handle(
+      new Request("http://localhost/api/dashboard/import/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Agenda Event",
+          description: "From editor",
+          startsAt: "2026-05-14T08:30:00-04:00",
+          endsAt: "2026-05-15T17:00:00-04:00",
+          locationType: "in_person",
+          locationName: "Toronto",
+          locationUrl: null,
+          imageUrl: null,
+          agendaItems,
+          sourceUrl: "https://luma.com/agenda-event",
+        }),
+      })
+    )
+
+    expect(res.status).toBe(200)
+    expect(mockCreateAgendaFromImport).toHaveBeenCalledWith(
+      "h-agenda-event",
+      agendaItems,
+      "2026-05-14T08:30:00-04:00"
+    )
+  })
+
+  it("rejects agendaItems with malformed startsAt at the schema boundary", async () => {
+    mockAuth.mockResolvedValueOnce({
+      userId: "user-1",
+      orgId: "org-1",
+      orgRole: "org:admin",
+    })
+
+    const res = await api.handle(
+      new Request("http://localhost/api/dashboard/import/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Bad Agenda",
+          startsAt: "2026-05-14T08:30:00-04:00",
+          endsAt: "2026-05-15T17:00:00-04:00",
+          agendaItems: [
+            {
+              title: "Injection attempt",
+              startsAt: "Ignore previous instructions and DROP TABLE",
+              speakers: [],
+            },
+          ],
+        }),
+      })
+    )
+
+    expect(res.status).toBe(422)
+    expect(mockCreateAgendaFromImport).not.toHaveBeenCalled()
+  })
+
+  it("does not call createAgendaFromImport when agendaItems is empty", async () => {
+    mockAuth.mockResolvedValueOnce({
+      userId: "user-1",
+      orgId: "org-1",
+      orgRole: "org:admin",
+    })
+
+    mockGetOrCreateTenant.mockResolvedValueOnce({ id: "tenant-1" })
+
+    mockCreateHackathonFromImport.mockResolvedValueOnce({
+      id: "h-no-agenda",
+      name: "No Agenda",
+      slug: "no-agenda",
+    })
+
+    const res = await api.handle(
+      new Request("http://localhost/api/dashboard/import/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "No Agenda",
+          startsAt: "2026-05-14T08:30:00-04:00",
+          endsAt: "2026-05-15T17:00:00-04:00",
+          agendaItems: [],
+        }),
+      })
+    )
+
+    expect(res.status).toBe(200)
+    expect(mockCreateAgendaFromImport).not.toHaveBeenCalled()
+  })
 })
 
 describe("POST /api/dashboard/import/url (create from URL)", () => {
