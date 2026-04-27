@@ -181,8 +181,20 @@ export const dashboardImportRoutes = new Elysia({ prefix: "/dashboard/import" })
         agendaItems: t.Optional(t.Array(t.Object({
           title: t.String({ minLength: 1 }),
           description: t.Optional(t.Union([t.String(), t.Null()])),
-          startsAt: t.Optional(t.Union([t.String(), t.Null()])),
-          endsAt: t.Optional(t.Union([t.String(), t.Null()])),
+          startsAt: t.Optional(t.Union([
+            t.String({
+              pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d+)?)?(Z|[+-]\\d{2}:?\\d{2})?$",
+              description: "ISO 8601 timestamp (e.g. 2026-05-14T09:00:00-04:00). Must include date and time; offset is optional.",
+            }),
+            t.Null(),
+          ])),
+          endsAt: t.Optional(t.Union([
+            t.String({
+              pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d+)?)?(Z|[+-]\\d{2}:?\\d{2})?$",
+              description: "ISO 8601 timestamp. Same format as startsAt.",
+            }),
+            t.Null(),
+          ])),
           location: t.Optional(t.Union([t.String(), t.Null()])),
           speakers: t.Optional(t.Array(t.String())),
         }))),

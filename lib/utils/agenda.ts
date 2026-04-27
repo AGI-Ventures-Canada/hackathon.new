@@ -25,7 +25,6 @@ function extractOffset(iso: string | null | undefined): string | null {
   return m?.[1] ?? null
 }
 
-// Re-anchor LLM-emitted dates >30 days off (1970/2026 fallbacks) and borrow the event's tz offset when the item has none.
 export function anchorAgendaTimestamp(
   itemIso: string | null | undefined,
   eventStartsAt: string | null | undefined
