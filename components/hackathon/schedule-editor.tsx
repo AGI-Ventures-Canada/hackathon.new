@@ -203,11 +203,12 @@ export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challe
         trigger_type: "event_start",
       })
     }
-    const endsAtMs = hackathonEndsAt ? new Date(hackathonEndsAt).getTime() : null
+    const toSeconds = (iso: string) => Math.floor(new Date(iso).getTime() / 1000)
+    const endsAtSec = hackathonEndsAt ? toSeconds(hackathonEndsAt) : null
     const submissionDeadlineAtEnd =
-      endsAtMs !== null &&
+      endsAtSec !== null &&
       base.some(
-        (i) => i.trigger_type === "submission_deadline" && new Date(i.starts_at).getTime() === endsAtMs,
+        (i) => i.trigger_type === "submission_deadline" && toSeconds(i.starts_at) === endsAtSec,
       )
     if (
       hackathonEndsAt &&
