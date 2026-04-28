@@ -84,28 +84,52 @@ describe("extractLumaEventData", () => {
     expect(result!.imageUrl).toBe("https://images.lumacdn.com/test-image.png")
   })
 
-  it("uses canonical Luma API times when available", async () => {
+  it("uses canonical Luma page data times when available", async () => {
+    const nextDataPayload = {
+      props: {
+        pageProps: {
+          initialData: {
+            data: {
+              start_at: "2026-05-14T13:00:00.000Z",
+              end_at: "2026-05-14T18:00:00.000Z",
+              description_mirror: {
+                type: "doc",
+                content: [
+                  {
+                    type: "paragraph",
+                    content: [{ type: "text", text: "Build with people who love local apps." }],
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+    }
     const offsetlessHtml = MOCK_HTML_WITH_JSONLD
+      .replace("Test Hackathon", "Build OS26")
+      .replace("A test event description", "Fallback event description")
       .replace("2026-03-15T09:00:00.000-08:00", "2026-05-14T09:00:00")
       .replace("2026-03-16T17:00:00.000-08:00", "2026-05-14T14:00:00")
-
-    mockFetch
-      .mockResolvedValueOnce(new Response(offsetlessHtml, { status: 200 }))
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({
-          name: "Build OS26",
-          start_at: "2026-05-14T13:00:00.000Z",
-          end_at: "2026-05-14T18:00:00.000Z",
-          timezone: "America/Toronto",
-        }), { status: 200 })
+      .replace(
+        "</head>",
+        `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify(nextDataPayload)}</script></head>`
       )
+
+    mockFetch.mockResolvedValueOnce(new Response(offsetlessHtml, { status: 200 }))
 
     const result = await extractLumaEventData("2pvpyrya")
 
     expect(result).not.toBeNull()
     expect(result!.name).toBe("Build OS26")
+    expect(result!.description).toBe("Build with people who love local apps.")
     expect(result!.startsAt).toBe("2026-05-14T13:00:00Z")
     expect(result!.endsAt).toBe("2026-05-14T18:00:00Z")
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://luma.com/2pvpyrya",
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    )
   })
 
   it("fetches from https://luma.com/{slug}", async () => {
