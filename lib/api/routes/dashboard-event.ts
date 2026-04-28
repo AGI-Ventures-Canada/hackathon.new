@@ -484,6 +484,12 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     const created = await createChallenge(params.id, principal.tenantId, b)
     if (!created) { set.status = 400; return { error: "Failed to create challenge" } }
     await logAudit({ principal, action: "challenge.created", resourceType: "challenge", resourceId: created.id, metadata: { hackathonId: params.id, title: b.title } })
+
+    const { maybeReleaseChallengesForPublishLink } = await import("@/lib/services/challenges")
+    maybeReleaseChallengesForPublishLink(params.id, principal.tenantId).catch((err) =>
+      console.error(`Failed to release challenges for ${params.id}:`, err),
+    )
+
     return { challenge: created }
   }, {
     body: t.Object({
@@ -795,12 +801,19 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     if (!isValidUuid(params.itemId)) { set.status = 400; return { error: "Invalid schedule item ID" } }
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if (authErr) return authErr
-    const item = await updateScheduleItem(params.itemId, params.id, body as { title?: string; startsAt?: string; description?: string | null; endsAt?: string | null; location?: string | null; sortOrder?: number; linkedTo?: "event_start" | "event_end" | null })
+    const item = await updateScheduleItem(params.itemId, params.id, body as { title?: string; startsAt?: string; description?: string | null; endsAt?: string | null; location?: string | null; sortOrder?: number; linkedTo?: "event_start" | "event_end" | "event_publish" | null })
     if (!item) { set.status = 400; return { error: "Failed to update schedule item" } }
     await logAudit({ principal, action: "schedule_item.updated", resourceType: "schedule_item", resourceId: params.itemId, metadata: { hackathonId: params.id } })
+
+    if (item.trigger_type === "challenge_release") {
+      const { maybeReleaseChallengesForPublishLink } = await import("@/lib/services/challenges")
+      maybeReleaseChallengesForPublishLink(params.id, principal.tenantId).catch((err) =>
+        console.error(`Failed to release challenges for ${params.id}:`, err),
+      )
+    }
     return item
   }, {
-    body: t.Object({ title: t.Optional(t.String()), startsAt: t.Optional(t.String()), description: t.Optional(t.String()), endsAt: t.Optional(t.String()), location: t.Optional(t.String()), sortOrder: t.Optional(t.Number()), linkedTo: t.Optional(t.Union([t.Literal("event_start"), t.Literal("event_end"), t.Null()])) }),
+    body: t.Object({ title: t.Optional(t.String()), startsAt: t.Optional(t.String()), description: t.Optional(t.String()), endsAt: t.Optional(t.String()), location: t.Optional(t.String()), sortOrder: t.Optional(t.Number()), linkedTo: t.Optional(t.Union([t.Literal("event_start"), t.Literal("event_end"), t.Literal("event_publish"), t.Null()])) }),
     detail: { summary: "Update schedule item" },
   })
   .delete("/hackathons/:id/schedule/:itemId", async ({ params, principal, set }) => {

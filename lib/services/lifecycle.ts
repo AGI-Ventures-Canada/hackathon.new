@@ -123,16 +123,23 @@ export async function executeTransition(
     })
   }
 
-  if (toStatus === "active") {
+  if (
+    toStatus === "published" ||
+    toStatus === "registration_open" ||
+    toStatus === "active"
+  ) {
     const { releaseChallenges } = await import("./challenges")
     const { getTriggerItem } = await import("./schedule-items")
     const triggerItem = await getTriggerItem(hackathonId, "challenge_release")
     if (triggerItem) {
-      const linkedToEventStart = triggerItem.linked_to === "event_start"
+      const linkedToEventPublish = triggerItem.linked_to === "event_publish"
+      const linkedToEventStart =
+        toStatus === "active" && triggerItem.linked_to === "event_start"
       const customTimePassed =
+        toStatus === "active" &&
         triggerItem.linked_to === null &&
         triggerItem.starts_at <= new Date().toISOString()
-      if (linkedToEventStart || customTimePassed) {
+      if (linkedToEventPublish || linkedToEventStart || customTimePassed) {
         releaseChallenges(hackathonId, tenantId).catch((err) => {
           console.error(
             `Failed to auto-release challenges for ${hackathonId}:`,

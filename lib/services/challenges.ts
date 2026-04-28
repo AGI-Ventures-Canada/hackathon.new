@@ -301,6 +301,35 @@ export async function releaseChallenges(
   return true
 }
 
+export async function maybeReleaseChallengesForPublishLink(
+  hackathonId: string,
+  tenantId: string,
+): Promise<boolean> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data: hackathon, error } = await client
+    .from("hackathons")
+    .select("status, challenge_released_at")
+    .eq("id", hackathonId)
+    .eq("tenant_id", tenantId)
+    .single()
+
+  if (error || !hackathon) return false
+  if (hackathon.challenge_released_at) return false
+  if (hackathon.status === "draft") return false
+
+  const { data: triggerItem } = await client
+    .from("hackathon_schedule_items")
+    .select("linked_to")
+    .eq("hackathon_id", hackathonId)
+    .eq("trigger_type", "challenge_release")
+    .maybeSingle()
+
+  if (triggerItem?.linked_to !== "event_publish") return false
+
+  return await releaseChallenges(hackathonId, tenantId)
+}
+
 export type ScheduledChallengeReleaseResult = {
   processed: number
   releases: Array<{ hackathonId: string }>

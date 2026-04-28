@@ -363,6 +363,7 @@ export function OrganizerShowcase({ data }: { data: ShowcaseData }) {
             releaseScheduleItem={null}
             hackathonStartsAt={hackathon.starts_at}
             hackathonEndsAt={hackathon.ends_at}
+            hackathonStatus={hackathon.status}
             alreadyReleased={!!hackathon.challenge_released_at}
           />
         </ShowcaseStack>
