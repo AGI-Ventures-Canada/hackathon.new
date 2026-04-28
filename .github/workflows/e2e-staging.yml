@@ -8,7 +8,6 @@ on:
 permissions:
   contents: read
   issues: write
-  id-token: write
 
 jobs:
   e2e:
@@ -42,11 +41,11 @@ jobs:
         run: bunx playwright install --with-deps chromium
 
       - name: Run Claude E2E
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@a8f63f1ee54fa0b9d1af46ce9ffb9f676e1ed6ff # v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: |
-            --model claude-opus-4-5-20251101
+            --model claude-opus-4-7
             --allowedTools Bash,Read,Write,Edit,Glob,Grep,WebFetch
           prompt: |
             You are running the daily E2E smoke test of Oatmeal staging from a GitHub Actions runner.
@@ -63,7 +62,7 @@ jobs:
             Read root `CLAUDE.md` plus relevant nested `CLAUDE.md` files for the surfaces you exercise (especially `app/`, `lib/api/`, `components/hackathon/`).
 
             **Browser automation:**
-            - First try `agent-browser` per the project's "Browser Verification" section. Install via `npm i -g agent-browser` or `bunx agent-browser` if not present. Use `--session oatmeal-e2e`.
+            - First try `agent-browser` per the project's "Browser Verification" section. Run via `bunx agent-browser` (this project is bun-only — do NOT use `npm` or `npx`). Use `--session oatmeal-e2e`.
             - Fallback: drive Chromium directly via Playwright (already installed) with a small Node/TS script.
 
             **Run ID:** `RUN_ID=$(date -u +%Y%m%d-%H%M)` — use everywhere below.
@@ -147,7 +146,7 @@ jobs:
             Then **stop the entire run immediately** (still run cleanup below).
 
             **Cleanup (always run, regardless of pass/fail/cap):**
-            Sign in as organizer if not already, and delete the hackathon `claude-e2e-$RUN_ID` from the organizer dashboard. If the delete UI is itself broken, file an issue for it (counts toward cap) and move on.
+            Sign in as organizer if not already, and delete the hackathon `claude-e2e-$RUN_ID` from the organizer dashboard. If the delete UI is itself broken AND the issue cap has not been reached, file an issue for it (counts toward cap) and move on. If the delete fails AND the cap has already been reached (so a new issue cannot be filed), log the failure prominently in the final summary so stale `claude-e2e-*` hackathons accumulating in staging are visible to whoever reads the run output. Never silently skip a cleanup failure.
 
             **Stop conditions:**
             - All 6 personas attempted, OR
