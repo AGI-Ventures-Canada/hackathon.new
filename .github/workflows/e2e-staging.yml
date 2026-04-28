@@ -9,6 +9,10 @@ permissions:
   contents: read
   issues: write
 
+concurrency:
+  group: e2e-staging
+  cancel-in-progress: false
+
 jobs:
   e2e:
     name: Daily persona walk
@@ -37,15 +41,17 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Install Chromium for Playwright
-        run: bunx playwright install --with-deps chromium
+      - name: Install Playwright + Chromium
+        run: |
+          bun add -d playwright
+          bunx playwright install --with-deps chromium
 
       - name: Run Claude E2E
         uses: anthropics/claude-code-action@a8f63f1ee54fa0b9d1af46ce9ffb9f676e1ed6ff # v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: |
-            --model claude-opus-4-7
+            --model claude-sonnet-4-6
             --allowedTools Bash,Read,Write,Edit,Glob,Grep,WebFetch
           prompt: |
             You are running the daily E2E smoke test of Oatmeal staging from a GitHub Actions runner.
@@ -61,9 +67,7 @@ jobs:
 
             Read root `CLAUDE.md` plus relevant nested `CLAUDE.md` files for the surfaces you exercise (especially `app/`, `lib/api/`, `components/hackathon/`).
 
-            **Browser automation:**
-            - First try `agent-browser` per the project's "Browser Verification" section. Run via `bunx agent-browser` (this project is bun-only — do NOT use `npm` or `npx`). Use `--session oatmeal-e2e`.
-            - Fallback: drive Chromium directly via Playwright (already installed) with a small Node/TS script.
+            **Browser automation:** drive Chromium directly via Playwright. The workflow step has already installed `playwright` as a dev dep AND downloaded the Chromium binary. Write a small TypeScript driver script that does `import { chromium } from "playwright"` and run it with `bun /tmp/driver.ts` (or wherever you put it). Do NOT attempt to install or invoke `agent-browser` — it is not distributed as an npm/bun package and the project's local `bun run browser` wrapper relies on a side Chrome profile that does not exist in CI.
 
             **Run ID:** `RUN_ID=$(date -u +%Y%m%d-%H%M)` — use everywhere below.
 
@@ -103,7 +107,7 @@ jobs:
 
             6. **Member** — accept invite, sign up, land on team page.
 
-            Screenshot at each persona's primary surface to `/tmp/<persona>-$RUN_ID.png`.
+            Screenshot at each persona's primary surface to `/tmp/<persona>-$RUN_ID.png` (use Playwright's `page.screenshot({ path: ... })`).
 
             **Failure handling:**
             - On any failure (page error, broken UI, console error blocking a primary action, network 5xx on a primary endpoint), retry up to 2 more times after a fresh page load.
@@ -138,9 +142,14 @@ jobs:
             **Hard cap — 10 issues per run:**
             Maintain `ISSUES_FILED` counter. Increment after each successful `gh issue create`.
 
-            If a failure would push you to file an 11th: **DO NOT FILE IT.** Find the most recent issue you created in this run:
+            If a failure would push you to file an 11th: **DO NOT FILE IT.** Find the most recent issue you created in this run by sorting in jq (do not rely on search-string sort qualifiers — they are inconsistently honored):
             ```bash
-            LAST_ISSUE=$(gh issue list --search "[claude-e2e] in:title author:@me sort:created-desc" --limit 1 --json number --jq '.[0].number')
+            LAST_ISSUE=$(gh issue list \
+              --search "[claude-e2e] in:title author:@me" \
+              --state all \
+              --limit 100 \
+              --json number,createdAt \
+              --jq 'sort_by(.createdAt) | reverse | .[0].number')
             gh issue comment $LAST_ISSUE --body "@alex-agiventures — hit the 10-issue cap during this E2E run. Stopping further testing for today. Additional failures observed in run $RUN_ID but not filed."
             ```
             Then **stop the entire run immediately** (still run cleanup below).
