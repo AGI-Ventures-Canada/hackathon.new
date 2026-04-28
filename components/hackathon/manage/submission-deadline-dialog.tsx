@@ -57,6 +57,7 @@ export const SubmissionDeadlineDialog = forwardRef<SubmissionDeadlineDialogHandl
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             startsAt: time,
+            endsAt: time,
             linkedTo: linkedToEventEnd ? "event_end" : null,
           }),
         }).then(assertOk)
@@ -92,7 +93,10 @@ export const SubmissionDeadlineDialog = forwardRef<SubmissionDeadlineDialogHandl
             className="space-y-4"
           >
               <p className="text-sm text-muted-foreground">
-                When this time arrives, submissions are locked and the judging phase begins. Participants can no longer submit or edit projects after this point. By default this matches your event end time — only change it if you want submissions to close at a different time.
+                When this time arrives, submissions lock and judging begins. Participants can&apos;t submit or edit projects after this point.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                By default this matches your event end time. Change it only if submissions should close at a different time.
               </p>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">

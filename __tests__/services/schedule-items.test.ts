@@ -237,4 +237,11 @@ describe("buildDefaultAgendaItems", () => {
     expect(deadline?.startsAt).toBe("2026-04-10T18:00:00.000Z")
     expect(deadline?.endsAt).toBe("2026-04-10T18:00:00.000Z")
   })
+
+  it("still sets submission deadline to ends_at for short (sub-hour) events", () => {
+    const items = buildDefaultAgendaItems("2026-04-10T09:00:00Z", "2026-04-10T09:30:00Z")
+    const deadline = items.find((i) => i.triggerType === "submission_deadline")
+    expect(deadline?.startsAt).toBe("2026-04-10T09:30:00.000Z")
+    expect(deadline?.endsAt).toBe("2026-04-10T09:30:00.000Z")
+  })
 })
