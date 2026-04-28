@@ -41,10 +41,8 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Install Playwright + Chromium
-        run: |
-          bun add -d playwright
-          bunx playwright install --with-deps chromium
+      - name: Install Chromium for Playwright
+        run: bunx playwright install --with-deps chromium
 
       - name: Run Claude E2E
         uses: anthropics/claude-code-action@a8f63f1ee54fa0b9d1af46ce9ffb9f676e1ed6ff # v1
@@ -67,7 +65,7 @@ jobs:
 
             Read root `CLAUDE.md` plus relevant nested `CLAUDE.md` files for the surfaces you exercise (especially `app/`, `lib/api/`, `components/hackathon/`).
 
-            **Browser automation:** drive Chromium directly via Playwright. The workflow step has already installed `playwright` as a dev dep AND downloaded the Chromium binary. Write a small TypeScript driver script that does `import { chromium } from "playwright"` and run it with `bun /tmp/driver.ts` (or wherever you put it). Do NOT attempt to install or invoke `agent-browser` — it is not distributed as an npm/bun package and the project's local `bun run browser` wrapper relies on a side Chrome profile that does not exist in CI.
+            **Browser automation:** drive Chromium directly via Playwright. `playwright` is already in the project's devDependencies (so `import { chromium } from "playwright"` resolves). The workflow has already downloaded the Chromium binary via `bunx playwright install`. Write a small TypeScript driver script that imports playwright, run it with `bun /tmp/driver.ts` (or wherever you put it). Do NOT attempt to install or invoke `agent-browser` — it is not distributed as an npm/bun package and the project's local `bun run browser` wrapper relies on a side Chrome profile that does not exist in CI.
 
             **Run ID:** `RUN_ID=$(date -u +%Y%m%d-%H%M)` — use everywhere below.
 
@@ -78,6 +76,13 @@ jobs:
               -H "Content-Type: application/json" | jq -r '.token')
             ```
             Append `?__clerk_testing_token=$CLERK_TESTING_TOKEN` (or `&...`) to every staging URL navigation to bypass Clerk bot detection. Re-mint on 401. Reference: https://clerk.com/docs/testing/overview
+
+            **Step 0.5 — Organizer Clerk-org provisioning:**
+            Organizers in this app are scoped to a Clerk organization. Before signing in as the organizer, use the Clerk Backend API to verify `claude-e2e-organizer+clerk_test@example.com` exists and belongs to at least one Clerk organization on the staging instance:
+            - Look up the user: `GET https://api.clerk.com/v1/users?email_address=claude-e2e-organizer%2Bclerk_test%40example.com` (Bearer `$CLERK_SECRET_KEY`).
+            - List their org memberships: `GET https://api.clerk.com/v1/users/<user_id>/organization_memberships`.
+            - If the user does not exist, sign them up first via the staging UI; if they have zero memberships, create an org and add them via Clerk's `POST /v1/organizations` and `POST /v1/organizations/<org_id>/memberships` endpoints (role `org:admin`). Name the org `Claude E2E Org` (idempotent — reuse if it already exists).
+            If this step fails, treat it as a blocker per the stop conditions and file a single blocker issue rather than letting hackathon creation fail silently downstream.
 
             **Test identities** (Clerk test mode `+clerk_test` pattern; verification code `424242`; phone `+15555550100`):
             - Organizer: `claude-e2e-organizer+clerk_test@example.com`
@@ -131,7 +136,7 @@ jobs:
               - Console errors: <relevant lines>
               - Network errors: <relevant lines>
               - URL: <url>
-              - Screenshot path: <path>
+              - Screenshot: `<persona>-<RUN_ID>.png` — download from the workflow run's `e2e-screenshots-<run_id>` artifact (link in the Actions run)
 
               ---
               Created by automated E2E run on <UTC timestamp>
@@ -160,7 +165,7 @@ jobs:
             **Stop conditions:**
             - All 6 personas attempted, OR
             - 10-issue cap reached, OR
-            - `agent-browser` AND Playwright both broken, Clerk token mint fails, or organizer sign-in fundamentally broken — file ONE blocker issue and stop.
+            - Playwright broken, Clerk token mint fails, or organizer sign-in fundamentally broken — file ONE blocker issue and stop.
 
             **Final summary (always print):**
             - Run ID
@@ -171,3 +176,12 @@ jobs:
         env:
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload E2E screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots-${{ github.run_id }}
+          path: /tmp/*.png
+          retention-days: 7
+          if-no-files-found: ignore
