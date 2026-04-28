@@ -43,30 +43,27 @@ export const SubmissionDeadlineDialog = forwardRef<SubmissionDeadlineDialogHandl
       setOpen(true)
     }
 
-    const [saving, setSaving] = useState(false)
-
     async function handleSave() {
       if (!deadlineItem) return
       const time = linkedToEventEnd && endsAt ? endsAt : deadlineAt?.toISOString()
       if (!time) return
       setError(null)
-      setSaving(true)
+      setOpen(false)
       try {
         await fetch(`/api/dashboard/hackathons/${hackathonId}/schedule/${deadlineItem.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             startsAt: time,
+            endsAt: time,
             linkedTo: linkedToEventEnd ? "event_end" : null,
           }),
         }).then(assertOk)
-        setOpen(false)
         router.refresh()
         onSaved?.()
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to save")
-      } finally {
-        setSaving(false)
+        setOpen(true)
       }
     }
 
@@ -92,7 +89,10 @@ export const SubmissionDeadlineDialog = forwardRef<SubmissionDeadlineDialogHandl
             className="space-y-4"
           >
               <p className="text-sm text-muted-foreground">
-                When this time arrives, submissions are locked and the judging phase begins. Participants can no longer submit or edit projects after this point.
+                When this time arrives, submissions lock and judging begins. Participants can&apos;t submit or edit projects after this point.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                By default this matches your event end time. Change it only if submissions should close at a different time.
               </p>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
@@ -124,10 +124,10 @@ export const SubmissionDeadlineDialog = forwardRef<SubmissionDeadlineDialogHandl
               {error && <p className="text-destructive text-xs">{error}</p>}
               <Button
                 type="submit"
-                disabled={saving || (!linkedToEventEnd && !deadlineAt)}
+                disabled={!linkedToEventEnd && !deadlineAt}
                 className="w-full"
               >
-                {saving ? "Saving..." : "Save"}
+                Save
               </Button>
             </form>
         </DialogContent>

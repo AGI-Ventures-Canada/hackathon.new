@@ -148,14 +148,11 @@ export function buildDefaultAgendaItems(startsAt: string | null, endsAt: string 
     return new Date(base.getTime() + minutes * 60_000).toISOString()
   }
 
-  const durationMs = end.getTime() - start.getTime()
-  const submissionCloseTime = durationMs >= 60 * 60_000 ? offset(end, -60) : end.toISOString()
-
   return [
     { title: "Opening Kickoff", startsAt: start.toISOString(), endsAt: offset(start, 30) },
     { title: "Challenge Release", startsAt: start.toISOString(), endsAt: start.toISOString(), triggerType: "challenge_release" },
     { title: "Hacking Begins", startsAt: offset(start, 30), endsAt: offset(start, 60) },
-    { title: "Submissions Close & Judging Starts", startsAt: submissionCloseTime, endsAt: submissionCloseTime, triggerType: "submission_deadline" },
+    { title: "Submissions Close & Judging Starts", startsAt: end.toISOString(), endsAt: end.toISOString(), triggerType: "submission_deadline" },
     { title: "Presentations", startsAt: offset(end, -30), endsAt: end.toISOString() },
     { title: "Awards Ceremony", startsAt: end.toISOString(), endsAt: offset(end, 30) },
   ]
