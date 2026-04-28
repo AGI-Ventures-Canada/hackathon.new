@@ -90,12 +90,17 @@ begin
 end;
 $$ language plpgsql;
 
--- Backfill: shift any submission_deadline still at the seeded ends_at - 60m
--- default to ends_at. Customized rows (linked_to = null) are untouched.
+-- Backfill: align every event_end-linked submission deadline with ends_at.
+-- linked_to = 'event_end' is the invariant that "this deadline tracks the
+-- hackathon end" — so any drift (e.g. from prior seeded -60m defaults, or
+-- from manual writes that bypassed the propagation trigger) is unintended
+-- and gets pulled back here. Customized deadlines have linked_to = null
+-- (set by submission-deadline-dialog.tsx when the user picks a custom time)
+-- and are intentionally untouched.
 update hackathon_schedule_items si
 set starts_at = h.ends_at, ends_at = h.ends_at, updated_at = now()
 from hackathons h
 where si.hackathon_id = h.id
   and si.trigger_type = 'submission_deadline'
   and si.linked_to    = 'event_end'
-  and si.starts_at    = h.ends_at - interval '60 minutes';
+  and si.starts_at   != h.ends_at;
