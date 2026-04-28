@@ -45,14 +45,10 @@ begin
       where hackathon_id = NEW.id
         and linked_to = 'event_end';
     else
-      -- First time setting ends_at: drop the seeded event_end-linked rows
-      -- and re-insert with correct times. The DELETE only touches
-      -- linked_to = 'event_end' rows, so a user-customized submission
-      -- deadline (linked_to = null, set via the dialog's "Use custom time"
-      -- branch) survives. The on-conflict-skip on submission_deadline below
-      -- then preserves that customization rather than overwriting it. The
-      -- hackathon will not have an event_end-linked deadline in that case
-      -- — which is the user's intent: they opted out of auto-tracking.
+      -- First time setting ends_at: re-seed event_end-linked rows. A
+      -- user-customized deadline (linked_to = null) survives the DELETE
+      -- and trips the on-conflict-skip on the INSERT below — preserved
+      -- intentionally, since linked_to = null means "don't auto-track".
       delete from hackathon_schedule_items
       where hackathon_id = NEW.id and linked_to = 'event_end';
 
