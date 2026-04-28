@@ -1,0 +1,165 @@
+name: E2E Test (Staging)
+
+on:
+  schedule:
+    - cron: "0 10 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  id-token: write
+
+jobs:
+  e2e:
+    name: Daily persona walk
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.6"
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Install Chromium for Playwright
+        run: bunx playwright install --with-deps chromium
+
+      - name: Run Claude E2E
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: |
+            --model claude-opus-4-5-20251101
+            --allowedTools Bash,Read,Write,Edit,Glob,Grep,WebFetch
+          prompt: |
+            You are running the daily E2E smoke test of Oatmeal staging from a GitHub Actions runner.
+
+            **Environment:**
+            - Ubuntu runner, full network egress, no sandbox allowlist.
+            - Bun, Node 20, Chromium-via-Playwright already installed.
+            - `gh` CLI preinstalled and auto-authed via `$GH_TOKEN`.
+            - `$CLERK_SECRET_KEY` is set as an env var.
+            - Repo is checked out at `$GITHUB_WORKSPACE`.
+
+            **Target:** https://staging.getoatmeal.com
+
+            Read root `CLAUDE.md` plus relevant nested `CLAUDE.md` files for the surfaces you exercise (especially `app/`, `lib/api/`, `components/hackathon/`).
+
+            **Browser automation:**
+            - First try `agent-browser` per the project's "Browser Verification" section. Install via `npm i -g agent-browser` or `bunx agent-browser` if not present. Use `--session oatmeal-e2e`.
+            - Fallback: drive Chromium directly via Playwright (already installed) with a small Node/TS script.
+
+            **Run ID:** `RUN_ID=$(date -u +%Y%m%d-%H%M)` — use everywhere below.
+
+            **Step 0 — Mint a Clerk testing token:**
+            ```bash
+            CLERK_TESTING_TOKEN=$(curl -s -X POST https://api.clerk.com/v1/testing_tokens \
+              -H "Authorization: Bearer $CLERK_SECRET_KEY" \
+              -H "Content-Type: application/json" | jq -r '.token')
+            ```
+            Append `?__clerk_testing_token=$CLERK_TESTING_TOKEN` (or `&...`) to every staging URL navigation to bypass Clerk bot detection. Re-mint on 401. Reference: https://clerk.com/docs/testing/overview
+
+            **Test identities** (Clerk test mode `+clerk_test` pattern; verification code `424242`; phone `+15555550100`):
+            - Organizer: `claude-e2e-organizer+clerk_test@example.com`
+            - Sponsor:   `claude-e2e-sponsor+clerk_test@example.com`
+            - Judge:     `claude-e2e-judge+clerk_test@example.com`
+            - Captain:   `claude-e2e-captain+clerk_test@example.com`
+            - Member:    `claude-e2e-member+clerk_test@example.com`
+
+            **Personas (run sequentially — each enables the next):**
+
+            1. **Public visitor** — find an existing public hackathon (browse `/e` or home). Verify landing renders: hero, schedule, prizes, sponsors, judges. No JS errors blocking primary actions.
+
+            2. **Organizer** — sign in/up. Create a new hackathon end-to-end:
+               - Title: `Claude E2E Run $RUN_ID`
+               - Slug:  `claude-e2e-$RUN_ID`
+               - Sensible date defaults per `CLAUDE.md` "Date/Time Defaults".
+               - At least one prize, one schedule item, one sponsor placeholder.
+               - Invite the judge and sponsor emails above.
+               - Publish / go live.
+               Walk every dashboard tab (overview, teams, schedule, sponsors, judges, announcements, scoring); verify each renders. Try one optimistic mutation (toggle a schedule item, add+remove a sponsor placeholder).
+
+            3. **Sponsor** — find invite (organizer dashboard "pending invites" or Clerk Backend API). Sign up. Verify branding edit form loads, save a small change.
+
+            4. **Judge** — same invite pattern. Sign up. Open the judging surface for this hackathon. Verify scoring UI loads.
+
+            5. **Captain** — open `/e/claude-e2e-$RUN_ID`, register, create a team, invite the member email above.
+
+            6. **Member** — accept invite, sign up, land on team page.
+
+            Screenshot at each persona's primary surface to `/tmp/<persona>-$RUN_ID.png`.
+
+            **Failure handling:**
+            - On any failure (page error, broken UI, console error blocking a primary action, network 5xx on a primary endpoint), retry up to 2 more times after a fresh page load.
+            - Only file an issue if the failure reproduces. Transient one-offs: log in run summary, do not file.
+
+            **Issue filing — `gh issue create` against `AGI-Ventures-Canada/oatmeal`:**
+            - **Title:** `[claude-e2e] <persona>: <one-line failure>`
+            - **Body:**
+              ```
+              ## What happened
+              <user-visible failure>
+
+              ## Persona / flow
+              <persona> — step <N>: <what was being attempted>
+
+              ## Reproduction
+              1. ...
+              2. ...
+
+              ## Evidence
+              - Console errors: <relevant lines>
+              - Network errors: <relevant lines>
+              - URL: <url>
+              - Screenshot path: <path>
+
+              ---
+              Created by automated E2E run on <UTC timestamp>
+              Run ID: <RUN_ID>
+              ```
+            - Try labels `bug` and `e2e`. Drop silently if they don't exist.
+
+            **Hard cap — 10 issues per run:**
+            Maintain `ISSUES_FILED` counter. Increment after each successful `gh issue create`.
+
+            If a failure would push you to file an 11th: **DO NOT FILE IT.** Find the most recent issue you created in this run:
+            ```bash
+            LAST_ISSUE=$(gh issue list --search "[claude-e2e] in:title author:@me sort:created-desc" --limit 1 --json number --jq '.[0].number')
+            gh issue comment $LAST_ISSUE --body "@alex-agiventures — hit the 10-issue cap during this E2E run. Stopping further testing for today. Additional failures observed in run $RUN_ID but not filed."
+            ```
+            Then **stop the entire run immediately** (still run cleanup below).
+
+            **Cleanup (always run, regardless of pass/fail/cap):**
+            Sign in as organizer if not already, and delete the hackathon `claude-e2e-$RUN_ID` from the organizer dashboard. If the delete UI is itself broken, file an issue for it (counts toward cap) and move on.
+
+            **Stop conditions:**
+            - All 6 personas attempted, OR
+            - 10-issue cap reached, OR
+            - `agent-browser` AND Playwright both broken, Clerk token mint fails, or organizer sign-in fundamentally broken — file ONE blocker issue and stop.
+
+            **Final summary (always print):**
+            - Run ID
+            - Per-persona pass/fail with one-line note
+            - Hackathon slug created + cleanup status
+            - Issues filed (count + numbers + URLs)
+            - Total runtime
+        env:
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
