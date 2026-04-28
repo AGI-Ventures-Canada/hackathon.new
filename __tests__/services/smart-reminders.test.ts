@@ -20,6 +20,10 @@ function daysFromNow(days: number): Date {
   return new Date(Date.now() + days * DAY)
 }
 
+function daysAfter(date: Date, days: number): Date {
+  return new Date(date.getTime() + days * DAY)
+}
+
 describe("computeReminderSchedule", () => {
   describe("Tier 1: Short-notice (< 2 days)", () => {
     it("returns 2 reminders for a 24-hour window", () => {
@@ -57,8 +61,8 @@ describe("computeReminderSchedule", () => {
 
   describe("Tier 2: Typical invitations (2-7 days)", () => {
     it("returns 3 reminders for a 7-day window", () => {
-      const created = new Date()
-      const deadline = daysFromNow(7)
+      const created = new Date(Date.now() - HOUR)
+      const deadline = daysAfter(created, 7)
       const schedule = computeReminderSchedule(created, deadline)
 
       expect(schedule.length).toBe(3)
@@ -215,8 +219,8 @@ describe("scheduleReminders", () => {
       return createChainableMock({ data: null, error: null })
     })
 
-    const created = new Date()
-    const deadline = new Date(Date.now() + 7 * DAY)
+    const created = new Date(Date.now() - HOUR)
+    const deadline = daysAfter(created, 7)
 
     const count = await scheduleReminders(
       "team_invitation",
