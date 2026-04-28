@@ -112,4 +112,4 @@ where si.hackathon_id = h.id
   and si.trigger_type = 'submission_deadline'
   and si.linked_to    = 'event_end'
   and h.ends_at      is not null
-  and si.starts_at   != h.ends_at;
+  and (si.starts_at != h.ends_at or si.ends_at is distinct from h.ends_at);
