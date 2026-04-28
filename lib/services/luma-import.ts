@@ -33,33 +33,143 @@ const ATTENDANCE_MODE_MAP: Record<string, "in_person" | "virtual"> = {
   "https://schema.org/MixedEventAttendanceMode": "in_person",
 }
 
+type LumaApiEventData = Partial<
+  Omit<LumaEventData, "translationLinks" | "language" | "locationType" | "locationUrl">
+> & {
+  locationType?: "in_person" | "virtual" | null
+  locationUrl?: string | null
+}
+
 export const extractLumaEventData = cache(async function extractLumaEventData(
   slug: string
 ): Promise<LumaEventData | null> {
   const url = `https://luma.com/${slug}`
+  const pageRequest = fetch(url, { signal: AbortSignal.timeout(8000) })
+  const apiDataPromise = fetchLumaApiEventData(slug)
+
+  let response: Response
+  try {
+    response = await pageRequest
+  } catch (err) {
+    console.error(`Failed to fetch Luma event from ${url}:`, err)
+    const apiData = await apiDataPromise
+    return apiData ? lumaApiDataToEventData(apiData) : null
+  }
+
+  if (!response.ok) {
+    const apiData = await apiDataPromise
+    return apiData ? lumaApiDataToEventData(apiData) : null
+  }
+
+  const html = await response.text()
+  const data = parseJsonLd(html) ?? parseOgMetaFallback(html)
+  const apiData = await apiDataPromise
+  if (!data) return apiData ? lumaApiDataToEventData(apiData) : null
+
+  const richDescription = extractDescriptionFromNextData(html)
+
+  return {
+    name: apiData?.name ?? data.name,
+    description: richDescription ?? data.description ?? apiData?.description ?? null,
+    startsAt: apiData?.startsAt ?? data.startsAt,
+    endsAt: apiData?.endsAt ?? data.endsAt,
+    locationType: data.locationType ?? apiData?.locationType ?? null,
+    locationName: data.locationName ?? apiData?.locationName ?? null,
+    locationUrl: data.locationUrl ?? apiData?.locationUrl ?? null,
+    imageUrl: data.imageUrl ?? apiData?.imageUrl ?? null,
+    language: data.language,
+    translationLinks: parseTranslationLinksFromHtml(html, slug),
+  }
+})
+
+async function fetchLumaApiEventData(slug: string): Promise<LumaApiEventData | null> {
+  const url = `https://api.lu.ma/event/get?event_api_id=${encodeURIComponent(slug)}`
 
   let response: Response
   try {
     response = await fetch(url, { signal: AbortSignal.timeout(8000) })
-  } catch (err) {
-    console.error(`Failed to fetch Luma event from ${url}:`, err)
+  } catch {
     return null
   }
 
   if (!response.ok) return null
 
-  const html = await response.text()
-  const data = parseJsonLd(html) ?? parseOgMetaFallback(html)
-  if (!data) return null
+  let payload: unknown
+  try {
+    payload = await response.json()
+  } catch {
+    return null
+  }
 
-  const richDescription = extractDescriptionFromNextData(html)
+  return parseLumaApiEventData(payload)
+}
+
+function lumaApiDataToEventData(data: LumaApiEventData): LumaEventData | null {
+  if (!data.name) return null
 
   return {
-    ...data,
-    description: richDescription ?? data.description,
-    translationLinks: parseTranslationLinksFromHtml(html, slug),
+    name: data.name,
+    description: data.description ?? null,
+    startsAt: data.startsAt ?? null,
+    endsAt: data.endsAt ?? null,
+    locationType: data.locationType ?? null,
+    locationName: data.locationName ?? null,
+    locationUrl: data.locationUrl ?? null,
+    imageUrl: data.imageUrl ?? null,
+    language: null,
+    translationLinks: [],
   }
-})
+}
+
+function parseLumaApiEventData(payload: unknown): LumaApiEventData | null {
+  const root = asRecord(payload)
+  const event = asRecord(root?.event) ?? root
+  if (!event) return null
+
+  const name = getString(event.name)
+  const startsAt = normalizeEventDate(getString(event.start_at))
+  const endsAt = normalizeEventDate(getString(event.end_at))
+  const cover = asRecord(event.cover)
+  const imageUrl =
+    getString(event.cover_url) ??
+    getString(event.cover_image_url) ??
+    getString(cover?.url)
+  const description =
+    getString(event.description) ??
+    getString(event.description_md)
+  const meetingUrl = getString(event.meeting_url)
+  const geoAddress =
+    asRecord(event.geo_address_info) ??
+    asRecord(event.geo_address_json) ??
+    asRecord(event.geo_address)
+  const locationName =
+    getString(geoAddress?.full_address) ??
+    getString(geoAddress?.description) ??
+    getString(event.location_name)
+
+  if (!name && !startsAt && !endsAt) return null
+
+  return {
+    name: name ?? undefined,
+    description,
+    startsAt,
+    endsAt,
+    locationType: meetingUrl ? "virtual" : locationName ? "in_person" : null,
+    locationName,
+    locationUrl: meetingUrl,
+    imageUrl,
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
+function getString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null
+}
 
 function parseJsonLd(html: string): LumaEventData | null {
   const jsonLdMatch = html.match(

@@ -84,6 +84,30 @@ describe("extractLumaEventData", () => {
     expect(result!.imageUrl).toBe("https://images.lumacdn.com/test-image.png")
   })
 
+  it("uses canonical Luma API times when available", async () => {
+    const offsetlessHtml = MOCK_HTML_WITH_JSONLD
+      .replace("2026-03-15T09:00:00.000-08:00", "2026-05-14T09:00:00")
+      .replace("2026-03-16T17:00:00.000-08:00", "2026-05-14T14:00:00")
+
+    mockFetch
+      .mockResolvedValueOnce(new Response(offsetlessHtml, { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({
+          name: "Build OS26",
+          start_at: "2026-05-14T13:00:00.000Z",
+          end_at: "2026-05-14T18:00:00.000Z",
+          timezone: "America/Toronto",
+        }), { status: 200 })
+      )
+
+    const result = await extractLumaEventData("2pvpyrya")
+
+    expect(result).not.toBeNull()
+    expect(result!.name).toBe("Build OS26")
+    expect(result!.startsAt).toBe("2026-05-14T13:00:00Z")
+    expect(result!.endsAt).toBe("2026-05-14T18:00:00Z")
+  })
+
   it("fetches from https://luma.com/{slug}", async () => {
     mockFetch.mockResolvedValueOnce(new Response(MOCK_HTML_WITH_JSONLD, { status: 200 }))
 
