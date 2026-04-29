@@ -316,7 +316,7 @@ export async function maybeReleaseChallengesForPublishLink(
 
   if (error || !hackathon) return false
   if (hackathon.challenge_released_at) return false
-  if (hackathon.status === "draft") return false
+  if (hackathon.status !== "published") return false
 
   const { data: triggerItem } = await client
     .from("hackathon_schedule_items")

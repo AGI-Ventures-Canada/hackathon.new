@@ -316,7 +316,9 @@ export function ChallengeEditorDialog({
                     <p className="text-xs text-muted-foreground">
                       {hackathonStatus === "draft"
                         ? "Challenges unlock as soon as you publish the event."
-                        : "Your event is already published — saving will unlock challenges right away."}
+                        : hackathonStatus === "published"
+                          ? "Your event is already published — saving will unlock challenges right away."
+                          : "Your event is past publishing — pick another option to auto-release."}
                     </p>
                   </div>
                 </div>

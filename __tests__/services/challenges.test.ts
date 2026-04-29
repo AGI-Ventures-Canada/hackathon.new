@@ -390,6 +390,17 @@ describe("Challenges Service", () => {
       expect(result).toBe(false)
     })
 
+    it("returns false when hackathon is past published (e.g. active)", async () => {
+      mockTableQuery(
+        "hackathons",
+        mockSuccess({ status: "active", challenge_released_at: null }),
+      )
+
+      const result = await maybeReleaseChallengesForPublishLink(hackathonId, tenantId)
+
+      expect(result).toBe(false)
+    })
+
     it("returns false when trigger item is not linked to event_publish", async () => {
       setMockFromImplementation((table) => {
         if (table === "hackathons") {

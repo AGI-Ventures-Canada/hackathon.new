@@ -150,6 +150,28 @@ describe("ChallengeEditorDialog release timing", () => {
     expect(within(dialog).getByText("Release time")).toBeDefined()
   })
 
+  it("shows draft-specific copy for the publish option when event is in draft", () => {
+    renderDialog({ hackathonStatus: "draft" })
+    const dialog = screen.getByRole("dialog")
+    expect(within(dialog).getByText("Challenges unlock as soon as you publish the event.")).toBeDefined()
+  })
+
+  it("shows already-published copy for the publish option when event is published", () => {
+    renderDialog({ hackathonStatus: "published" })
+    const dialog = screen.getByRole("dialog")
+    expect(
+      within(dialog).getByText("Your event is already published — saving will unlock challenges right away."),
+    ).toBeDefined()
+  })
+
+  it("shows past-publish copy for the publish option when event is past publishing", () => {
+    renderDialog({ hackathonStatus: "active" })
+    const dialog = screen.getByRole("dialog")
+    expect(
+      within(dialog).getByText("Your event is past publishing — pick another option to auto-release."),
+    ).toBeDefined()
+  })
+
   it("starts with publish selected when item is linked to event_publish", () => {
     renderDialog({
       releaseScheduleItem: {
