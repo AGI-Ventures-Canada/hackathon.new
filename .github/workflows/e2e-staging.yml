@@ -70,6 +70,11 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      # `playwright` is a project devDependency for CI use ONLY (this
+      # workflow). The npm package ships with every `bun install`
+      # (~10 MB), but the heavy ~100 MB browser binaries are downloaded
+      # only here — local devs never pay that cost unless they
+      # explicitly run `bunx playwright install`.
       - name: Install Chromium for Playwright
         run: bunx playwright install --with-deps chromium
 
