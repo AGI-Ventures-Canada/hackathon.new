@@ -1,16 +1,14 @@
 "use client"
 
-import { useSyncExternalStore } from "react"
 import { CircleCheck } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Progress } from "@/components/ui/progress"
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion"
 import { SEVERITY_GROUP_LABEL, type ActionSeverity } from "@/lib/utils/organizer-actions"
+import { useIsClient } from "@/hooks/use-is-client"
 import { useActionItems } from "./action-items-context"
 import { ActionItemRow } from "./action-item-row"
 import { AddItemInput } from "./add-item-input"
-
-const emptySubscribe = () => () => {}
 
 const groupOrder: ActionSeverity[] = ["urgent", "warning", "scheduled", "info"]
 
@@ -23,7 +21,7 @@ const groupColor: Record<ActionSeverity, string> = {
 
 export function ActionItemsTab() {
   const { activeItems, completedItems, addCustomItem, remainingCount, totalCount } = useActionItems()
-  const isClient = useSyncExternalStore(emptySubscribe, () => true, () => false)
+  const isClient = useIsClient()
 
   const transitionItems = activeItems.filter((i) => i.close.kind === "transition")
   const regularItems = activeItems.filter((i) => i.close.kind !== "transition")
