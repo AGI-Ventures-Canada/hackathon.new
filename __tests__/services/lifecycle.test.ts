@@ -198,6 +198,45 @@ describe("Lifecycle Service", () => {
       expect(mockReleaseChallenges).toHaveBeenCalledWith("h1", "t1")
     })
 
+    it("auto-releases challenges on active transition with linked_to event_publish (covers skipped-published path)", async () => {
+      const hackathon = {
+        id: "h1",
+        tenant_id: "t1",
+        name: "Test Hack",
+        slug: "test-hack",
+        status: "active",
+      }
+
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_transitions") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "hackathons") {
+          return createChainableMock({ data: hackathon, error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      mockGetTriggerItem.mockResolvedValue({
+        id: "item-1",
+        trigger_type: "challenge_release",
+        starts_at: "2026-04-10T09:00:00Z",
+        linked_to: "event_publish",
+      })
+
+      const result = await executeTransition({
+        hackathonId: "h1",
+        tenantId: "t1",
+        fromStatus: "registration_open",
+        toStatus: "active",
+        trigger: "manual",
+        triggeredBy: "user1",
+      })
+
+      expect(result.success).toBe(true)
+      expect(mockReleaseChallenges).toHaveBeenCalledWith("h1", "t1")
+    })
+
     it("auto-releases challenges when transitioning to published with linked_to event_publish", async () => {
       const hackathon = {
         id: "h1",

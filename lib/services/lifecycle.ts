@@ -129,7 +129,8 @@ export async function executeTransition(
     const triggerItem = await getTriggerItem(hackathonId, "challenge_release")
     if (triggerItem) {
       const linkedToEventPublish =
-        toStatus === "published" && triggerItem.linked_to === "event_publish"
+        (toStatus === "published" || toStatus === "active") &&
+        triggerItem.linked_to === "event_publish"
       const linkedToEventStart =
         toStatus === "active" && triggerItem.linked_to === "event_start"
       const customTimePassed =
