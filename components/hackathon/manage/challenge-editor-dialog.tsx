@@ -15,6 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { cn } from "@/lib/utils"
 import { normalizeUrl } from "@/lib/utils/url"
 import { assertOk } from "@/lib/utils/fetch"
 import type { Challenge, ChallengeResource } from "@/lib/services/challenges"
@@ -321,7 +322,7 @@ export function ChallengeEditorDialog({
                   <div className="space-y-0.5">
                     <Label
                       htmlFor="challenge-release-publish"
-                      className={`text-sm font-medium ${publishOptionDisabled ? "text-muted-foreground" : ""}`}
+                      className={cn("text-sm font-medium", publishOptionDisabled && "text-muted-foreground")}
                     >
                       Release when you publish the event
                     </Label>
