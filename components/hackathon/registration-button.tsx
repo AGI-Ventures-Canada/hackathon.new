@@ -131,7 +131,7 @@ export function RegistrationButton({
     return (
       <Button asChild size="lg">
         <Link href={`/sign-in?redirect_url=${encodeURIComponent(pathname)}`}>
-          Register
+          Register to Attend
         </Link>
       </Button>
     )
