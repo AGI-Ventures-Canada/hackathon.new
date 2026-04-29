@@ -301,7 +301,10 @@ function HackathonPreviewContent({
         <div className="space-y-1 pl-1">
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-muted-foreground">
-              {teamInfo.members.length + teamInfo.pendingInvitations.length} / {hackathon.max_team_size} members
+              {teamInfo.members.length} / {hackathon.max_team_size} members
+              {teamInfo.pendingInvitations.length > 0 && (
+                <> &middot; {teamInfo.pendingInvitations.length} pending</>
+              )}
             </span>
           </div>
           {(() => {

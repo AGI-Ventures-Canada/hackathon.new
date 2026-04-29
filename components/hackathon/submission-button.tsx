@@ -648,7 +648,7 @@ export function SubmissionButton({
 
               {currentStep === 4 && (
                 <Field>
-                  <FieldLabel>Screenshots</FieldLabel>
+                  <FieldLabel>Screenshots <span className="text-muted-foreground font-normal">(optional)</span></FieldLabel>
                   <FieldDescription className="mb-2">
                     Add one screenshot of your project in action. No external art, logos, or promotional graphics.
                   </FieldDescription>
