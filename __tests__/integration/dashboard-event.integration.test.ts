@@ -587,6 +587,59 @@ describe("Dashboard Event Routes Integration Tests", () => {
       expect(res.status).toBe(400)
       expect(data.error).toBe("Invalid schedule item ID")
     })
+
+    it("accepts event_publish on the challenge_release trigger item", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockGetTriggerItem.mockResolvedValue({ id: itemId, trigger_type: "challenge_release" })
+      mockUpdateScheduleItem.mockResolvedValue({ id: itemId, trigger_type: "challenge_release", linked_to: "event_publish" })
+
+      const res = await app.handle(
+        new Request(`${baseUrl}/schedule/${itemId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ linkedTo: "event_publish" }),
+        })
+      )
+
+      expect(res.status).toBe(200)
+      expect(mockGetTriggerItem).toHaveBeenCalledWith(hackathonId, "challenge_release")
+      expect(mockUpdateScheduleItem).toHaveBeenCalled()
+    })
+
+    it("rejects event_publish on a non-challenge_release item", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockGetTriggerItem.mockResolvedValue({ id: "different-trigger-id", trigger_type: "challenge_release" })
+
+      const res = await app.handle(
+        new Request(`${baseUrl}/schedule/${itemId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ linkedTo: "event_publish" }),
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(400)
+      expect(data.error).toBe("event_publish link is only valid on challenge_release items")
+      expect(mockUpdateScheduleItem).not.toHaveBeenCalled()
+    })
+
+    it("rejects event_publish when no challenge_release trigger item exists", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockGetTriggerItem.mockResolvedValue(null)
+
+      const res = await app.handle(
+        new Request(`${baseUrl}/schedule/${itemId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ linkedTo: "event_publish" }),
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(400)
+      expect(data.error).toBe("event_publish link is only valid on challenge_release items")
+    })
   })
 
   describe("DELETE /api/dashboard/hackathons/:id/schedule/:itemId", () => {
