@@ -16,10 +16,34 @@ concurrency:
 jobs:
   e2e:
     name: Daily persona walk
-    runs-on: ubuntu-latest
+    # Pin the runner image. `ubuntu-latest` drifts whenever GitHub
+    # rolls the default forward and can silently break Playwright /
+    # Bun installs. Bump deliberately when validating a new image.
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
 
     steps:
+      - name: Verify required secrets and variables
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          E2E_FALLBACK_PING: ${{ vars.E2E_FALLBACK_PING }}
+        run: |
+          missing=()
+          [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ] && missing+=("secret CLAUDE_CODE_OAUTH_TOKEN")
+          [ -z "$CLERK_SECRET_KEY" ] && missing+=("secret CLERK_SECRET_KEY")
+          [ -z "$E2E_FALLBACK_PING" ] && missing+=("variable E2E_FALLBACK_PING")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing required configuration: ${missing[*]}"
+            echo "Set secrets at:   Settings → Secrets and variables → Actions → Secrets"
+            echo "Set variables at: Settings → Secrets and variables → Actions → Variables"
+            echo "  - CLAUDE_CODE_OAUTH_TOKEN: OAuth token for the Claude Code GitHub Action"
+            echo "  - CLERK_SECRET_KEY:        Staging Clerk test-mode key (sk_test_...)"
+            echo "  - E2E_FALLBACK_PING:       GitHub handle to ping when the issue cap is hit and"
+            echo "                             github.actor resolves to a bot/empty value"
+            exit 1
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -199,10 +223,12 @@ jobs:
           # 10-issue cap is hit; if it's a bot account, the agent falls
           # back to a hardcoded human owner.
           GITHUB_ACTOR: ${{ github.actor }}
-          # Override at repo level via Settings → Secrets and variables →
-          # Actions → Variables → New repository variable
-          # `E2E_FALLBACK_PING`. Defaults to alex-agiventures.
-          FALLBACK_PING: ${{ vars.E2E_FALLBACK_PING || 'alex-agiventures' }}
+          # REQUIRED repo variable, validated by the preflight step above.
+          # Set at Settings → Secrets and variables → Actions → Variables
+          # → New repository variable `E2E_FALLBACK_PING` (a GitHub
+          # handle, no `@` prefix). Used when github.actor is empty or a
+          # bot account.
+          FALLBACK_PING: ${{ vars.E2E_FALLBACK_PING }}
 
       - name: Upload E2E screenshots
         if: always()
