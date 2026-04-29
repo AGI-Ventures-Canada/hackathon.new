@@ -682,4 +682,33 @@ describe("Dashboard Event Routes Integration Tests", () => {
       expect(data.error).toBe("Invalid schedule item ID")
     })
   })
+
+  describe("POST /api/dashboard/hackathons/:id/challenges", () => {
+    it("fires maybeReleaseChallengesForPublishLink after a successful create", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      const challengesModule = await import("@/lib/services/challenges")
+      const mockCreate = challengesModule.createChallenge as unknown as ReturnType<typeof mock>
+      mockCreate.mockResolvedValueOnce({
+        id: "c1",
+        hackathonId,
+        title: "Build something",
+        description: null,
+        resources: [],
+        sortOrder: 0,
+        createdAt: "2026-04-28T00:00:00Z",
+        updatedAt: "2026-04-28T00:00:00Z",
+      })
+
+      const res = await app.handle(
+        new Request(`${baseUrl}/challenges`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Build something" }),
+        })
+      )
+
+      expect(res.status).toBe(200)
+      expect(mockMaybeReleaseChallengesForPublishLink).toHaveBeenCalledWith(hackathonId, "tenant-123")
+    })
+  })
 })
