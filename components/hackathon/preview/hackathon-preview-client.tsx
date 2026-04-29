@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { useIsClient } from "@/hooks/use-is-client"
 import { useRouter } from "next/navigation"
 import { useOptimisticMutation } from "@/hooks/use-optimistic-mutation"
 import { assertOk } from "@/lib/utils/fetch"
@@ -73,8 +74,6 @@ interface HackathonPreviewClientProps {
   onAuthRequired?: () => void
 }
 
-const emptySubscribe = () => () => {}
-
 function HackathonPreviewContent({
   hackathon,
   isRegistered: initialIsRegistered = false,
@@ -99,11 +98,7 @@ function HackathonPreviewContent({
 }: Omit<HackathonPreviewClientProps, "isEditable">) {
   const { isEditable, editMode, activeSection, openSection, closeDrawer } = useEdit()
   const router = useRouter()
-  const isClient = useSyncExternalStore(
-    emptySubscribe,
-    () => true,
-    () => false,
-  )
+  const isClient = useIsClient()
   const origin = isClient ? window.location.origin : ""
   const primaryLocale = hackathon.default_locale ?? "en"
   const translationLocale =

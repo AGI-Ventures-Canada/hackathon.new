@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect, useSyncExternalStore } from "react"
+import { useState, useEffect } from "react"
+import { useIsClient } from "@/hooks/use-is-client"
 import { useRouter } from "next/navigation"
 import { useOptimisticList } from "@/hooks/use-optimistic-list"
 import { useOptimisticMutation } from "@/hooks/use-optimistic-mutation"
@@ -76,8 +77,6 @@ import { JudgePill } from "./judge-pill"
 import { RoundsSection } from "./rounds-section"
 import type { RoundData } from "./rounds-types"
 
-const emptySubscribe = () => () => {}
-
 type TeamMode = "in_person" | "virtual"
 
 type ModeFilter = "all" | "in_person" | "virtual"
@@ -138,7 +137,7 @@ type InvitationData = {
   status: string
   createdAt: string
   remindedAt: string | null
-  token: string
+  token: string | null
 }
 
 type ResultData = {
@@ -521,11 +520,7 @@ function JudgesSection({
   onCancelInvitation: (id: string) => void
   onRemindInvitation: (id: string) => void
 }) {
-  const isClient = useSyncExternalStore(
-    emptySubscribe,
-    () => true,
-    () => false,
-  )
+  const isClient = useIsClient()
   const origin = isClient ? window.location.origin : ""
 
   return (
@@ -599,20 +594,24 @@ function JudgesSection({
                       Invited
                     </Badge>
                   )}
-                  <a
-                    href={`${origin}/judge-invite/${inv.token}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center text-muted-foreground hover:text-foreground"
-                  >
-                    <ExternalLink className="size-3.5" />
-                    <span className="sr-only">Open invite link</span>
-                  </a>
-                  <CopyButton
-                    value={`${origin}/judge-invite/${inv.token}`}
-                    size="icon"
-                    className="size-6"
-                  />
+                  {inv.token && (
+                    <>
+                      <a
+                        href={`${origin}/judge-invite/${inv.token}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center text-muted-foreground hover:text-foreground"
+                      >
+                        <ExternalLink className="size-3.5" />
+                        <span className="sr-only">Open invite link</span>
+                      </a>
+                      <CopyButton
+                        value={`${origin}/judge-invite/${inv.token}`}
+                        size="icon"
+                        className="size-6"
+                      />
+                    </>
+                  )}
                   <Button
                     variant="ghost"
                     size="icon"
