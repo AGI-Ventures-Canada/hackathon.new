@@ -396,7 +396,7 @@ describe("Challenges Service", () => {
       expect(result).toBe(false)
     })
 
-    it("returns false when hackathon is in registration_open (publish hasn't happened yet)", async () => {
+    it("returns false when hackathon is in registration_open (not yet published)", async () => {
       mockTableQuery(
         "hackathon_schedule_items",
         mockSuccess({
