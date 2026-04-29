@@ -29,20 +29,24 @@ jobs:
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
           E2E_FALLBACK_PING: ${{ vars.E2E_FALLBACK_PING }}
         run: |
           missing=()
           [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ] && missing+=("secret CLAUDE_CODE_OAUTH_TOKEN")
           [ -z "$CLERK_SECRET_KEY" ] && missing+=("secret CLERK_SECRET_KEY")
+          [ -z "$VERCEL_AUTOMATION_BYPASS_SECRET" ] && missing+=("secret VERCEL_AUTOMATION_BYPASS_SECRET")
           [ -z "$E2E_FALLBACK_PING" ] && missing+=("variable E2E_FALLBACK_PING")
           if [ ${#missing[@]} -gt 0 ]; then
             echo "::error::Missing required configuration: ${missing[*]}"
             echo "Set secrets at:   Settings → Secrets and variables → Actions → Secrets"
             echo "Set variables at: Settings → Secrets and variables → Actions → Variables"
-            echo "  - CLAUDE_CODE_OAUTH_TOKEN: OAuth token for the Claude Code GitHub Action"
-            echo "  - CLERK_SECRET_KEY:        Staging Clerk test-mode key (sk_test_...)"
-            echo "  - E2E_FALLBACK_PING:       GitHub handle to ping when the issue cap is hit and"
-            echo "                             github.actor resolves to a bot/empty value"
+            echo "  - CLAUDE_CODE_OAUTH_TOKEN:           OAuth token for the Claude Code GitHub Action"
+            echo "  - CLERK_SECRET_KEY:                  Staging Clerk test-mode key (sk_test_...)"
+            echo "  - VERCEL_AUTOMATION_BYPASS_SECRET:   Bypass for Vercel deployment protection on"
+            echo "                                       staging (sent as x-vercel-protection-bypass)"
+            echo "  - E2E_FALLBACK_PING:                 GitHub handle to ping when the issue cap is"
+            echo "                                       hit and github.actor resolves to a bot/empty"
             exit 1
           fi
 
@@ -109,6 +113,17 @@ jobs:
             Read root `CLAUDE.md` plus relevant nested `CLAUDE.md` files for the surfaces you exercise (especially `app/`, `lib/api/`, `components/hackathon/`).
 
             **Browser automation:** drive Chromium directly via Playwright. `playwright` is already in the project's devDependencies (so `import { chromium } from "playwright"` resolves). The workflow has already downloaded the Chromium binary via `bunx playwright install`. Write a small TypeScript driver script that imports playwright, run it with `bun /tmp/driver.ts` (or wherever you put it). Do NOT attempt to install or invoke `agent-browser` — it is not distributed as an npm/bun package and the project's local `bun run browser` wrapper relies on a side Chrome profile that does not exist in CI.
+
+            **Vercel deployment-protection bypass (REQUIRED):** `staging.getoatmeal.com` sits behind Vercel's deployment protection. Every request must carry the bypass header `x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET`, otherwise Vercel returns its auth wall before the app ever runs. In your Playwright driver, set the header on the browser context so it applies to every request, including XHRs and fetches:
+            ```ts
+            const context = await browser.newContext({
+              extraHTTPHeaders: {
+                "x-vercel-protection-bypass": process.env.VERCEL_AUTOMATION_BYPASS_SECRET!,
+                "x-vercel-set-bypass-cookie": "true"
+              }
+            });
+            ```
+            The `x-vercel-set-bypass-cookie` makes Vercel set a session cookie on first response, so subsequent requests in the same context don't have to re-evaluate the bypass. If you create multiple contexts (e.g. switching personas via fresh sessions), set these headers on every one. If you ever see a Vercel auth page in a screenshot, that's a signal the header is missing on that context.
 
             **Run ID:** `RUN_ID=$(date -u +%Y%m%d-%H%M)` — use everywhere below.
 
@@ -232,6 +247,7 @@ jobs:
             - Total runtime
         env:
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # `github.actor` is whoever triggered this run. For schedule
           # events it falls back to the last pusher of the workflow file.
@@ -274,7 +290,16 @@ jobs:
 
             **Steps:**
             1. Mint a Clerk testing token via `POST https://api.clerk.com/v1/testing_tokens` with `Authorization: Bearer $CLERK_SECRET_KEY`. Append `?__clerk_testing_token=<token>` to all browser nav.
-            2. Drive Chromium via Playwright (`import { chromium } from "playwright"`); Chromium is preinstalled by the workflow.
+            2. Drive Chromium via Playwright (`import { chromium } from "playwright"`); Chromium is preinstalled by the workflow. Set the Vercel bypass headers on the browser context so staging is reachable:
+               ```ts
+               const context = await browser.newContext({
+                 extraHTTPHeaders: {
+                   "x-vercel-protection-bypass": process.env.VERCEL_AUTOMATION_BYPASS_SECRET!,
+                   "x-vercel-set-bypass-cookie": "true"
+                 }
+               });
+               ```
+               Without these headers Vercel will return its deployment-protection wall before the app loads.
             3. Sign in as `claude-e2e-organizer+clerk_test@example.com` (test mode, code `424242`).
             4. List the organizer's hackathons (browse `/hackathons` or use the app's hackathon list view).
             5. For each hackathon whose slug begins with `claude-e2e-`, delete it via the dashboard.
@@ -286,6 +311,7 @@ jobs:
             If sign-in itself fails, exit with `cleanup: sign-in failed — <reason>` and stop. Do not retry indefinitely.
         env:
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload E2E screenshots
