@@ -368,22 +368,44 @@ describe("Challenges Service", () => {
   })
 
   describe("maybeReleaseChallengesForPublishLink", () => {
-    it("returns false when challenges are already released", async () => {
-      mockTableQuery(
-        "hackathons",
-        mockSuccess({ status: "published", challenge_released_at: "2026-04-28T00:00:00Z" }),
-      )
+    it("returns true (idempotent) when challenges are already released", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_schedule_items") {
+          return createChainableMock({
+            data: { linked_to: "event_publish" },
+            error: null,
+          })
+        }
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: { status: "published", challenge_released_at: "2026-04-28T00:00:00Z" },
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
 
       const result = await maybeReleaseChallengesForPublishLink(hackathonId, tenantId)
 
-      expect(result).toBe(false)
+      expect(result).toBe(true)
     })
 
     it("returns false when hackathon is in draft status", async () => {
-      mockTableQuery(
-        "hackathons",
-        mockSuccess({ status: "draft", challenge_released_at: null }),
-      )
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_schedule_items") {
+          return createChainableMock({
+            data: { linked_to: "event_publish" },
+            error: null,
+          })
+        }
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: { status: "draft", challenge_released_at: null },
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
 
       const result = await maybeReleaseChallengesForPublishLink(hackathonId, tenantId)
 
@@ -391,10 +413,21 @@ describe("Challenges Service", () => {
     })
 
     it("returns false when hackathon is past published (e.g. active)", async () => {
-      mockTableQuery(
-        "hackathons",
-        mockSuccess({ status: "active", challenge_released_at: null }),
-      )
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_schedule_items") {
+          return createChainableMock({
+            data: { linked_to: "event_publish" },
+            error: null,
+          })
+        }
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: { status: "active", challenge_released_at: null },
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
 
       const result = await maybeReleaseChallengesForPublishLink(hackathonId, tenantId)
 
@@ -402,21 +435,10 @@ describe("Challenges Service", () => {
     })
 
     it("returns false when trigger item is not linked to event_publish", async () => {
-      setMockFromImplementation((table) => {
-        if (table === "hackathons") {
-          return createChainableMock({
-            data: { status: "published", challenge_released_at: null },
-            error: null,
-          })
-        }
-        if (table === "hackathon_schedule_items") {
-          return createChainableMock({
-            data: { linked_to: "event_start" },
-            error: null,
-          })
-        }
-        return createChainableMock({ data: null, error: null })
-      })
+      mockTableQuery(
+        "hackathon_schedule_items",
+        mockSuccess({ linked_to: "event_start" }),
+      )
 
       const result = await maybeReleaseChallengesForPublishLink(hackathonId, tenantId)
 
@@ -424,18 +446,7 @@ describe("Challenges Service", () => {
     })
 
     it("returns false when no trigger item exists", async () => {
-      setMockFromImplementation((table) => {
-        if (table === "hackathons") {
-          return createChainableMock({
-            data: { status: "published", challenge_released_at: null },
-            error: null,
-          })
-        }
-        if (table === "hackathon_schedule_items") {
-          return createChainableMock({ data: null, error: null })
-        }
-        return createChainableMock({ data: null, error: null })
-      })
+      mockTableQuery("hackathon_schedule_items", mockSuccess(null))
 
       const result = await maybeReleaseChallengesForPublishLink(hackathonId, tenantId)
 
