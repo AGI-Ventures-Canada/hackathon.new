@@ -257,9 +257,11 @@ jobs:
         uses: anthropics/claude-code-action@a8f63f1ee54fa0b9d1af46ce9ffb9f676e1ed6ff # v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # WebFetch is included so cleanup can re-read Clerk's testing-token
+          # docs if the mint behavior changes — same reason the main step has it.
           claude_args: |
             --model claude-sonnet-4-6
-            --allowedTools Bash,Read,Write,Edit,Glob,Grep
+            --allowedTools Bash,Read,Write,Edit,Glob,Grep,WebFetch
           prompt: |
             You are running a best-effort cleanup pass against https://staging.getoatmeal.com.
 
