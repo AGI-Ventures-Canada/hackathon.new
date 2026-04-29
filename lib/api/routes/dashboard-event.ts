@@ -813,7 +813,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     if (!item) { set.status = 400; return { error: "Failed to update schedule item" } }
     await logAudit({ principal, action: "schedule_item.updated", resourceType: "schedule_item", resourceId: params.itemId, metadata: { hackathonId: params.id } })
 
-    if (b.linkedTo === "event_publish" && item.trigger_type === "challenge_release") {
+    if (b.linkedTo === "event_publish") {
       maybeReleaseChallengesForPublishLink(params.id, principal.tenantId).catch((err) =>
         console.error(`Failed to release challenges for ${params.id}:`, err),
       )
