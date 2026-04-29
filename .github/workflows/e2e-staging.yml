@@ -144,7 +144,6 @@ jobs:
 
             **Test identities** (Clerk test mode `+clerk_test` pattern; verification code `424242`; phone `+15555550100`):
             - Organizer: `claude-e2e-organizer+clerk_test@example.com`
-            - Sponsor:   `claude-e2e-sponsor+clerk_test@example.com`
             - Judge:     `claude-e2e-judge+clerk_test@example.com`
             - Captain:   `claude-e2e-captain+clerk_test@example.com`
             - Member:    `claude-e2e-member+clerk_test@example.com`
@@ -158,23 +157,21 @@ jobs:
                - Slug:  `claude-e2e-$RUN_ID`
                - Sensible date defaults per `CLAUDE.md` "Date/Time Defaults".
                - At least one prize, one schedule item, one sponsor placeholder.
-               - Invite the judge and sponsor emails above.
+               - Invite the judge email above.
                - Publish / go live.
                Walk every dashboard tab (overview, teams, schedule, sponsors, judges, announcements, scoring); verify each renders. Try one optimistic mutation (toggle a schedule item, add+remove a sponsor placeholder).
 
             **Note on invite-link retrieval (no email inbox in CI):**
-            App-level invites (sponsor, judge, member) are stored in the Supabase `team_invitations`-style tables and surface a one-time URL of the form `/invite/<token>`. There is no mailbox on the runner, so you must extract the URL from the inviter's UI BEFORE signing them out:
-            - **From the organizer dashboard:** the "pending invites" / "judges" / "sponsors" tab should expose each pending invite row with either a visible URL or a copy-link button. Use Playwright to read the `href` of the copy-link element or grab the text content.
-            - **From the captain's team page:** the team management view shows pending member invites with the same URL pattern.
-            Save the invite URL to a shell variable (e.g. `JUDGE_INVITE_URL=...`) the moment you have it. Sign out the inviter, then have the next persona navigate directly to that URL — append `?__clerk_testing_token=$CLERK_TESTING_TOKEN` for bot detection. If the invite UI does not surface a URL, that is itself a bug worth filing as `[claude-e2e] <inviter-persona>: invite link not reachable from <surface>` and counts toward the cap.
+            Judge and team-member invites are stored in Supabase `*_invitations` tables and surface as URLs `/judge-invite/<token>` and `/invite/<token>` respectively. There is no mailbox on the runner, so extract the URL from the inviter's UI BEFORE signing them out. Each pending-invite row exposes the URL on a real `<a>` tag (and a copy-link button) — read the `href` directly:
+            - **Judge URL** (organizer's "Judges" tab): `await page.locator('a[href*="/judge-invite/"]').first().getAttribute('href')`
+            - **Member URL** (captain's team page): `await page.locator('a[href*="/invite/"]').first().getAttribute('href')`
+            Save the invite URL to a shell variable (e.g. `JUDGE_INVITE_URL=...`) the moment you have it. Sign out the inviter, then have the next persona navigate directly to that URL — append `?__clerk_testing_token=$CLERK_TESTING_TOKEN` for bot detection. If the locator returns no element, that is itself a bug worth filing as `[claude-e2e] <inviter-persona>: invite link not reachable from <surface>` and counts toward the cap.
 
-            3. **Sponsor** — capture invite URL from the organizer's "Sponsors" / "Pending invites" tab BEFORE signing out the organizer. Sign out. Open the captured invite URL, sign up via test mode. Verify the sponsor dashboard, branding edit form, save a small change.
+            3. **Judge** — capture invite URL from the organizer's "Judges" tab BEFORE signing out the organizer. Sign out. Open the captured invite URL, sign up via test mode. Open the judging surface, verify scoring UI loads.
 
-            4. **Judge** — capture invite URL from the organizer's "Judges" tab BEFORE signing out the organizer (you'll do this in the same organizer session as Sponsor — capture both invite URLs at once). Sign out. Open the captured invite URL, sign up. Open the judging surface, verify scoring UI loads.
+            4. **Captain** — open `/e/claude-e2e-$RUN_ID`, register, create a team, invite the member email above. Capture the member-invite URL from the team page BEFORE signing out the captain.
 
-            5. **Captain** — open `/e/claude-e2e-$RUN_ID`, register, create a team, invite the member email above. Capture the member-invite URL from the team page BEFORE signing out the captain.
-
-            6. **Member** — open the captured member-invite URL (DO NOT rely on email — the runner has no mailbox), sign up via test mode, land on team page.
+            5. **Member** — open the captured member-invite URL (DO NOT rely on email — the runner has no mailbox), sign up via test mode, land on team page.
 
             Screenshot at each persona's primary surface to `/tmp/<persona>-$RUN_ID.png` (use Playwright's `page.screenshot({ path: ... })`).
 
@@ -235,7 +232,7 @@ jobs:
             Sign in as organizer if not already, and delete the hackathon `claude-e2e-$RUN_ID` from the organizer dashboard. If the delete UI is itself broken AND the issue cap has not been reached, file an issue for it (counts toward cap) and move on. If the delete fails AND the cap has already been reached (so a new issue cannot be filed), log the failure prominently in the final summary so stale `claude-e2e-*` hackathons accumulating in staging are visible to whoever reads the run output. Never silently skip a cleanup failure.
 
             **Stop conditions:**
-            - All 6 personas attempted, OR
+            - All 5 personas attempted, OR
             - 10-issue cap reached, OR
             - Playwright broken, Clerk token mint fails, or organizer sign-in fundamentally broken — file ONE blocker issue and stop.
 

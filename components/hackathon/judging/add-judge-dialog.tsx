@@ -31,7 +31,7 @@ type SearchUser = {
 
 export type AddJudgeResult =
   | { type: "judge"; participantId: string; clerkUserId: string; displayName: string; email: string | null; imageUrl: string | null }
-  | { type: "invitation"; id: string; email: string }
+  | { type: "invitation"; id: string; email: string; token: string }
 
 interface AddJudgeDialogProps {
   hackathonId: string
@@ -218,7 +218,7 @@ export function AddJudgeDialog({
       }
       const data = await res.json()
       if (data.invitation) {
-        onSuccess?.({ type: "invitation", id: data.invitation.id, email })
+        onSuccess?.({ type: "invitation", id: data.invitation.id, email, token: data.invitation.token })
       } else {
         onSuccess?.({
           type: "judge",

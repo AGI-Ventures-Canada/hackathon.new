@@ -1197,7 +1197,13 @@ export const dashboardJudgingRoutes = new Elysia()
           metadata: { email: typedBody.email },
         })
 
-        return { invitation: { id: invitationResult.invitation.id, email: typedBody.email } }
+        return {
+          invitation: {
+            id: invitationResult.invitation.id,
+            email: typedBody.email,
+            token: invitationResult.invitation.token,
+          },
+        }
       }
 
       return new Response(JSON.stringify({ error: "Must provide clerkUserId or email" }), { status: 400, headers: { "Content-Type": "application/json" } })

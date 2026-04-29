@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useSyncExternalStore } from "react"
 import { useRouter } from "next/navigation"
 import { useOptimisticList } from "@/hooks/use-optimistic-list"
 import { useOptimisticMutation } from "@/hooks/use-optimistic-mutation"
@@ -39,6 +39,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { CopyButton } from "@/components/ui/copy-button"
 import { TabsUrlSync } from "@/components/ui/tabs-url-sync"
 import { JudgingSetupWizard } from "./judging-setup-wizard"
 import type { ManageJtab } from "@/lib/utils/manage-tabs"
@@ -64,6 +65,7 @@ import {
   X,
   MapPin,
   Bell,
+  ExternalLink,
 } from "lucide-react"
 import { useActionItemsOptional } from "@/components/hackathon/manage/action-items-context"
 import { AddJudgeDialog, type AddJudgeResult } from "./add-judge-dialog"
@@ -73,6 +75,8 @@ import { AssignJudgesDialog } from "./assign-judges-dialog"
 import { JudgePill } from "./judge-pill"
 import { RoundsSection } from "./rounds-section"
 import type { RoundData } from "./rounds-types"
+
+const emptySubscribe = () => () => {}
 
 type TeamMode = "in_person" | "virtual"
 
@@ -134,6 +138,7 @@ type InvitationData = {
   status: string
   createdAt: string
   remindedAt: string | null
+  token: string
 }
 
 type ResultData = {
@@ -475,6 +480,7 @@ export function JudgingTabClient({
               status: "pending",
               createdAt: new Date().toISOString(),
               remindedAt: null,
+              token: result.token,
             })
           }
           router.refresh()
@@ -515,6 +521,13 @@ function JudgesSection({
   onCancelInvitation: (id: string) => void
   onRemindInvitation: (id: string) => void
 }) {
+  const isClient = useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false,
+  )
+  const origin = isClient ? window.location.origin : ""
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
@@ -586,6 +599,20 @@ function JudgesSection({
                       Invited
                     </Badge>
                   )}
+                  <a
+                    href={`${origin}/judge-invite/${inv.token}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center text-muted-foreground hover:text-foreground"
+                  >
+                    <ExternalLink className="size-3.5" />
+                    <span className="sr-only">Open invite link</span>
+                  </a>
+                  <CopyButton
+                    value={`${origin}/judge-invite/${inv.token}`}
+                    size="icon"
+                    className="size-6"
+                  />
                   <Button
                     variant="ghost"
                     size="icon"

@@ -354,6 +354,7 @@ export type ParticipantTeamInfo = {
     expiresAt: string
     createdAt: string
     remindedAt: string | null
+    token: string | null
   }[]
   isCaptain: boolean
 } | null
@@ -388,7 +389,7 @@ export async function getParticipantTeamInfo(
       .order("registered_at", { ascending: true }),
     client
       .from("team_invitations")
-      .select("id, email, expires_at, created_at, reminded_at")
+      .select("id, email, expires_at, created_at, reminded_at, token")
       .eq("team_id", participant.team_id)
       .eq("status", "pending")
       .order("created_at", { ascending: false }),
@@ -431,12 +432,14 @@ export async function getParticipantTeamInfo(
     registeredAt: m.registered_at,
   }))
 
+  const isCaptain = team.captain_clerk_user_id === clerkUserId
   const pendingInvitations = (invitationsResult.data ?? []).map((inv) => ({
     id: inv.id,
     email: inv.email,
     expiresAt: inv.expires_at,
     createdAt: inv.created_at,
     remindedAt: inv.reminded_at ?? null,
+    token: isCaptain ? inv.token : null,
   }))
 
   return {
@@ -450,7 +453,7 @@ export async function getParticipantTeamInfo(
     },
     members,
     pendingInvitations,
-    isCaptain: team.captain_clerk_user_id === clerkUserId,
+    isCaptain,
   }
 }
 

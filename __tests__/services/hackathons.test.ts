@@ -578,6 +578,120 @@ describe("Hackathons Service", () => {
       expect(result!.members[0].displayName).toBe("Alex Smith")
     })
 
+    it("exposes pending invitation tokens to the captain", async () => {
+      const participantsCalls = { count: 0 }
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants") {
+          participantsCalls.count++
+          if (participantsCalls.count === 1) {
+            return createChainableMock({ data: { team_id: "team_1" }, error: null })
+          }
+          return createChainableMock({
+            data: [{ clerk_user_id: "user_captain", role: "participant", registered_at: "2026-01-01T00:00:00Z" }],
+            error: null,
+          })
+        }
+        if (table === "teams") {
+          return createChainableMock({
+            data: { id: "team_1", name: "Test Team", status: "forming", invite_code: "abc123", captain_clerk_user_id: "user_captain" },
+            error: null,
+          })
+        }
+        if (table === "team_invitations") {
+          return createChainableMock({
+            data: [
+              {
+                id: "inv_1",
+                email: "newbie@example.com",
+                expires_at: "2026-12-31T00:00:00Z",
+                created_at: "2026-04-01T00:00:00Z",
+                reminded_at: null,
+                token: "secret-token-abc",
+              },
+            ],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      mockClerkClient.mockResolvedValueOnce({
+        users: {
+          getUserList: () =>
+            Promise.resolve({
+              data: [
+                {
+                  id: "user_captain",
+                  firstName: "Alex",
+                  lastName: "Smith",
+                  username: null,
+                  emailAddresses: [{ emailAddress: "alex@example.com" }],
+                },
+              ],
+            }),
+        },
+      })
+
+      const result = await getParticipantTeamInfo("h1", "user_captain")
+      expect(result).not.toBeNull()
+      expect(result!.pendingInvitations).toHaveLength(1)
+      expect(result!.pendingInvitations[0].token).toBe("secret-token-abc")
+      expect(result!.pendingInvitations[0].email).toBe("newbie@example.com")
+    })
+
+    it("hides pending invitation tokens from non-captain teammates", async () => {
+      const participantsCalls = { count: 0 }
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants") {
+          participantsCalls.count++
+          if (participantsCalls.count === 1) {
+            return createChainableMock({ data: { team_id: "team_1" }, error: null })
+          }
+          return createChainableMock({
+            data: [
+              { clerk_user_id: "user_captain", role: "participant", registered_at: "2026-01-01T00:00:00Z" },
+              { clerk_user_id: "user_member", role: "participant", registered_at: "2026-01-02T00:00:00Z" },
+            ],
+            error: null,
+          })
+        }
+        if (table === "teams") {
+          return createChainableMock({
+            data: { id: "team_1", name: "Test Team", status: "forming", invite_code: "abc123", captain_clerk_user_id: "user_captain" },
+            error: null,
+          })
+        }
+        if (table === "team_invitations") {
+          return createChainableMock({
+            data: [
+              {
+                id: "inv_1",
+                email: "newbie@example.com",
+                expires_at: "2026-12-31T00:00:00Z",
+                created_at: "2026-04-01T00:00:00Z",
+                reminded_at: null,
+                token: "secret-token-abc",
+              },
+            ],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      mockClerkClient.mockResolvedValueOnce({
+        users: {
+          getUserList: () => Promise.resolve({ data: [] }),
+        },
+      })
+
+      const result = await getParticipantTeamInfo("h1", "user_member")
+      expect(result).not.toBeNull()
+      expect(result!.isCaptain).toBe(false)
+      expect(result!.pendingInvitations).toHaveLength(1)
+      expect(result!.pendingInvitations[0].token).toBeNull()
+    })
+
     it("sets email to null when Clerk call fails", async () => {
       const participantsCalls = { count: 0 }
       setMockFromImplementation((table) => {
