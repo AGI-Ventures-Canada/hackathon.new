@@ -486,9 +486,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     if (!created) { set.status = 400; return { error: "Failed to create challenge" } }
     await logAudit({ principal, action: "challenge.created", resourceType: "challenge", resourceId: created.id, metadata: { hackathonId: params.id, title: b.title } })
 
-    maybeReleaseChallengesForPublishLink(params.id, principal.tenantId).catch((err) =>
-      console.error(`Failed to release challenges for ${params.id}:`, err),
-    )
+    await maybeReleaseChallengesForPublishLink(params.id, principal.tenantId)
 
     return { challenge: created }
   }, {
@@ -814,9 +812,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     await logAudit({ principal, action: "schedule_item.updated", resourceType: "schedule_item", resourceId: params.itemId, metadata: { hackathonId: params.id } })
 
     if (b.linkedTo === "event_publish") {
-      maybeReleaseChallengesForPublishLink(params.id, principal.tenantId).catch((err) =>
-        console.error(`Failed to release challenges for ${params.id}:`, err),
-      )
+      await maybeReleaseChallengesForPublishLink(params.id, principal.tenantId)
     }
     return item
   }, {

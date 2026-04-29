@@ -106,13 +106,13 @@ export function ChallengeEditorDialog({
     return null
   })()
 
-  const publishOptionDisabled =
+  const isPastPublishing =
     hackathonStatus !== "draft" &&
     hackathonStatus !== "published" &&
     hackathonStatus !== "registration_open"
 
   const releaseTimingValid =
-    !(releaseMode === "publish" && publishOptionDisabled) &&
+    !(releaseMode === "publish" && isPastPublishing) &&
     (releaseMode !== "custom" || (customReleaseAt !== null && customReleaseError === null))
 
   function updateResource(index: number, patch: Partial<ChallengeResource>) {
@@ -319,19 +319,19 @@ export function ChallengeEditorDialog({
                     value="publish"
                     id="challenge-release-publish"
                     className="mt-0.5"
-                    disabled={publishOptionDisabled}
+                    disabled={isPastPublishing}
                   />
                   <div className="space-y-0.5">
                     <Label
                       htmlFor="challenge-release-publish"
-                      className={cn("text-sm font-medium", publishOptionDisabled && "text-muted-foreground")}
+                      className={cn("text-sm font-medium", isPastPublishing && "text-muted-foreground")}
                     >
                       Release when you publish the event
                     </Label>
                     <p className="text-xs text-muted-foreground">
                       {hackathonStatus === "published"
                         ? "Your event is already published — saving will unlock challenges right away."
-                        : publishOptionDisabled
+                        : isPastPublishing
                           ? "Your event is past publishing — pick another option to auto-release."
                           : "Challenges unlock as soon as you publish the event."}
                     </p>
