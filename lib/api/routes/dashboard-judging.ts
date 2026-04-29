@@ -1167,9 +1167,6 @@ export const dashboardJudgingRoutes = new Elysia()
             hackathonStartsAt: hackathon.starts_at,
             hackathonEndsAt: hackathon.ends_at,
           }).catch(console.error)
-        } else {
-          const { createJudgePendingNotification } = await import("@/lib/services/judge-invitations")
-          await createJudgePendingNotification(hackathon.id, invitationResult.invitation.id, typedBody.email, inviterName)
         }
 
         const { scheduleReminders } = await import("@/lib/services/smart-reminders")

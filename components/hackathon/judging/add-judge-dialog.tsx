@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useRef, useCallback } from "react"
+import { assertOkJson } from "@/lib/utils/fetch"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -14,7 +15,6 @@ import {
 } from "@/components/ui/dialog"
 import {
   Loader2,
-  CheckCircle2,
   UserPlus,
   Search,
   Mail,
@@ -51,7 +51,6 @@ export function AddJudgeDialog({
   const [searching, setSearching] = useState(false)
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState<string | null>(null)
   const [showInviteForm, setShowInviteForm] = useState(false)
   const [inviteEmail, setInviteEmail] = useState("")
   const abortRef = useRef<AbortController | null>(null)
@@ -64,7 +63,6 @@ export function AddJudgeDialog({
     setSearchQuery("")
     setSearchResults([])
     setError(null)
-    setSuccess(null)
     setShowInviteForm(false)
     setInviteEmail("")
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -107,7 +105,6 @@ export function AddJudgeDialog({
     (query: string) => {
       setSearchQuery(query)
       setError(null)
-      setSuccess(null)
       if (debounceRef.current) clearTimeout(debounceRef.current)
       abortRef.current?.abort()
 
@@ -169,18 +166,16 @@ export function AddJudgeDialog({
   async function handleAddFromSearch(user: SearchUser) {
     setAdding(true)
     setError(null)
+    const savedQuery = searchQuery
+    const savedResults = searchResults
+    handleOpenChange(false)
 
     try {
-      const res = await fetch(`${base}/judges`, {
+      const data = await fetch(`${base}/judges`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ clerkUserId: user.id }),
-      })
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.error || "Failed to add judge")
-      }
-      const data = await res.json()
+      }).then(assertOkJson<{ participant: { id: string; clerkUserId?: string } }>)
       onSuccess?.({
         type: "judge",
         participantId: data.participant.id,
@@ -189,10 +184,11 @@ export function AddJudgeDialog({
         email: user.email,
         imageUrl: user.imageUrl,
       })
-      setSuccess(`${getDisplayName(user)} added as judge`)
-      setTimeout(() => handleOpenChange(false), 800)
     } catch (err) {
+      setSearchQuery(savedQuery)
+      setSearchResults(savedResults)
       setError(err instanceof Error ? err.message : "Something went wrong")
+      onOpenChange(true)
     } finally {
       setAdding(false)
     }
@@ -205,36 +201,37 @@ export function AddJudgeDialog({
 
     setAdding(true)
     setError(null)
+    const savedEmail = email
+    handleOpenChange(false)
 
     try {
-      const res = await fetch(`${base}/judges`, {
+      const data = await fetch(`${base}/judges`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
-      })
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.error || "Failed to invite judge")
-      }
-      const data = await res.json()
+      }).then(
+        assertOkJson<{
+          invitation?: { id: string; token: string }
+          participant?: { id: string; clerkUserId: string }
+        }>
+      )
       if (data.invitation) {
-        onSuccess?.({ type: "invitation", id: data.invitation.id, email, token: data.invitation.token })
-      } else {
+        onSuccess?.({ type: "invitation", id: data.invitation.id, email: savedEmail, token: data.invitation.token })
+      } else if (data.participant) {
         onSuccess?.({
           type: "judge",
           participantId: data.participant.id,
           clerkUserId: data.participant.clerkUserId,
-          displayName: email,
-          email,
+          displayName: savedEmail,
+          email: savedEmail,
           imageUrl: null,
         })
       }
-      setSuccess(
-        data.invitation ? `Invitation sent to ${email}` : `${email} added as judge`
-      )
-      setTimeout(() => handleOpenChange(false), 800)
     } catch (err) {
+      setInviteEmail(savedEmail)
+      setShowInviteForm(true)
       setError(err instanceof Error ? err.message : "Something went wrong")
+      onOpenChange(true)
     } finally {
       setAdding(false)
     }
@@ -257,13 +254,7 @@ export function AddJudgeDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {success ? (
-          <div className="flex flex-col items-center gap-3 py-8">
-            <CheckCircle2 className="size-10 text-primary" />
-            <p className="text-sm font-medium">{success}</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
+        <div className="space-y-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
               <Input
@@ -392,7 +383,6 @@ export function AddJudgeDialog({
               )}
             </div>
           </div>
-        )}
       </DialogContent>
     </Dialog>
   )
