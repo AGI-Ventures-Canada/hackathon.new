@@ -801,7 +801,16 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     if (!isValidUuid(params.itemId)) { set.status = 400; return { error: "Invalid schedule item ID" } }
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if (authErr) return authErr
-    const item = await updateScheduleItem(params.itemId, params.id, body as { title?: string; startsAt?: string; description?: string | null; endsAt?: string | null; location?: string | null; sortOrder?: number; linkedTo?: "event_start" | "event_end" | "event_publish" | null })
+    const b = body as { title?: string; startsAt?: string; description?: string | null; endsAt?: string | null; location?: string | null; sortOrder?: number; linkedTo?: "event_start" | "event_end" | "event_publish" | null }
+    if (b.linkedTo === "event_publish") {
+      const existingItems = await listScheduleItems(params.id)
+      const existing = existingItems.find((i) => i.id === params.itemId)
+      if (existing?.trigger_type !== "challenge_release") {
+        set.status = 400
+        return { error: "event_publish link is only valid on challenge_release items" }
+      }
+    }
+    const item = await updateScheduleItem(params.itemId, params.id, b)
     if (!item) { set.status = 400; return { error: "Failed to update schedule item" } }
     await logAudit({ principal, action: "schedule_item.updated", resourceType: "schedule_item", resourceId: params.itemId, metadata: { hackathonId: params.id } })
 

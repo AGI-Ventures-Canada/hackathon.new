@@ -315,23 +315,18 @@ export async function maybeReleaseChallengesForPublishLink(
 ): Promise<boolean> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { data: triggerItem } = await client
+  const { data: row } = await client
     .from("hackathon_schedule_items")
-    .select("linked_to")
+    .select("linked_to, hackathons!inner(tenant_id, status, challenge_released_at)")
     .eq("hackathon_id", hackathonId)
     .eq("trigger_type", "challenge_release")
+    .eq("hackathons.tenant_id", tenantId)
     .maybeSingle()
 
-  if (triggerItem?.linked_to !== "event_publish") return false
+  if (!row || row.linked_to !== "event_publish") return false
 
-  const { data: hackathon, error } = await client
-    .from("hackathons")
-    .select("status, challenge_released_at")
-    .eq("id", hackathonId)
-    .eq("tenant_id", tenantId)
-    .single()
-
-  if (error || !hackathon) return false
+  const hackathon = Array.isArray(row.hackathons) ? row.hackathons[0] : row.hackathons
+  if (!hackathon) return false
   if (hackathon.challenge_released_at) return true
   if (hackathon.status !== "published") return false
 
