@@ -65,6 +65,7 @@ docs/
 .claude/worktrees/
 .claude/scheduled_tasks.lock
 .claude/launch.json
+.claude/plans/
 
 # Local browser auth session (cookies, JWTs, chrome profile)
 .auth/

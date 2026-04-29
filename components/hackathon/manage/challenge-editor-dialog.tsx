@@ -5,7 +5,13 @@ import { Loader2, Plus, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { DateTimePicker } from "@/components/ui/date-time-picker"
 import {
@@ -19,6 +25,9 @@ import { normalizeUrl } from "@/lib/utils/url"
 import { assertOk } from "@/lib/utils/fetch"
 import type { Challenge, ChallengeResource } from "@/lib/services/challenges"
 import type { ScheduleItem } from "@/lib/services/schedule-items"
+import type { HackathonStatus } from "@/lib/db/hackathon-types"
+
+type ReleaseMode = "live" | "publish" | "custom"
 
 type Props = {
   open: boolean
@@ -29,6 +38,7 @@ type Props = {
   releaseScheduleItem: ScheduleItem | null
   hackathonStartsAt: string | null
   hackathonEndsAt: string | null
+  hackathonStatus: HackathonStatus
   alreadyReleased: boolean
 }
 
@@ -51,14 +61,15 @@ export function ChallengeEditorDialog({
   releaseScheduleItem,
   hackathonStartsAt,
   hackathonEndsAt,
+  hackathonStatus,
   alreadyReleased,
 }: Props) {
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
   const [resources, setResources] = useState<ChallengeResource[]>([])
-  const [autoRelease, setAutoRelease] = useState(true)
+  const [releaseMode, setReleaseMode] = useState<ReleaseMode>("live")
   const [customReleaseAt, setCustomReleaseAt] = useState<Date | null>(null)
-  const [initialAutoRelease, setInitialAutoRelease] = useState(true)
+  const [initialReleaseMode, setInitialReleaseMode] = useState<ReleaseMode>("live")
   const [initialCustomReleaseIso, setInitialCustomReleaseIso] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -70,19 +81,26 @@ export function ChallengeEditorDialog({
     setResources(challenge?.resources ?? [])
     setError(null)
 
-    const initialAuto = releaseScheduleItem?.linked_to === "event_start" || !releaseScheduleItem
+    const linkedTo = releaseScheduleItem?.linked_to ?? null
+    const initialMode: ReleaseMode = !releaseScheduleItem
+      ? "live"
+      : linkedTo === "event_publish"
+        ? "publish"
+        : linkedTo === "event_start"
+          ? "live"
+          : "custom"
     const initialIso = releaseScheduleItem?.starts_at ?? null
-    setAutoRelease(initialAuto)
-    setCustomReleaseAt(initialAuto ? null : initialIso ? new Date(initialIso) : null)
-    setInitialAutoRelease(initialAuto)
-    setInitialCustomReleaseIso(initialAuto ? null : initialIso)
+    setReleaseMode(initialMode)
+    setCustomReleaseAt(initialMode === "custom" && initialIso ? new Date(initialIso) : null)
+    setInitialReleaseMode(initialMode)
+    setInitialCustomReleaseIso(initialMode === "custom" ? initialIso : null)
   }, [open, challenge, releaseScheduleItem])
 
   const startsAtDate = hackathonStartsAt ? new Date(hackathonStartsAt) : null
   const endsAtDate = hackathonEndsAt ? new Date(hackathonEndsAt) : null
 
   const customReleaseError = (() => {
-    if (autoRelease) return null
+    if (releaseMode !== "custom") return null
     if (!customReleaseAt) return null
     if (startsAtDate && customReleaseAt < startsAtDate) {
       return "Pick a time on or after the event starts."
@@ -93,7 +111,14 @@ export function ChallengeEditorDialog({
     return null
   })()
 
-  const releaseTimingValid = autoRelease || (customReleaseAt !== null && customReleaseError === null)
+  const isPastPublishing =
+    hackathonStatus !== "draft" &&
+    hackathonStatus !== "published" &&
+    hackathonStatus !== "registration_open"
+
+  const releaseTimingValid =
+    !(releaseMode === "publish" && isPastPublishing) &&
+    (releaseMode !== "custom" || (customReleaseAt !== null && customReleaseError === null))
 
   function updateResource(index: number, patch: Partial<ChallengeResource>) {
     setResources((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)))
@@ -114,17 +139,24 @@ export function ChallengeEditorDialog({
     setError(null)
     try {
       if (!alreadyReleased && releaseScheduleItem) {
-        const linkedChanged = autoRelease !== initialAutoRelease
+        const modeChanged = releaseMode !== initialReleaseMode
         const customStartsAt = customReleaseAt?.toISOString() ?? null
-        const startsChanged = !autoRelease && customStartsAt !== initialCustomReleaseIso
+        const startsChanged =
+          releaseMode === "custom" && customStartsAt !== initialCustomReleaseIso
 
-        if (linkedChanged || startsChanged) {
-          const patchBody: { startsAt?: string; linkedTo: "event_start" | null } = {
-            linkedTo: autoRelease ? "event_start" : null,
+        if (modeChanged || startsChanged) {
+          const linkedTo: "event_start" | "event_publish" | null =
+            releaseMode === "live"
+              ? "event_start"
+              : releaseMode === "publish"
+                ? "event_publish"
+                : null
+          const patchBody: { startsAt?: string; linkedTo: typeof linkedTo } = {
+            linkedTo,
           }
-          if (autoRelease) {
+          if (releaseMode === "live") {
             patchBody.startsAt = hackathonStartsAt ?? releaseScheduleItem.starts_at
-          } else if (customStartsAt) {
+          } else if (releaseMode === "custom" && customStartsAt) {
             patchBody.startsAt = customStartsAt
           }
 
@@ -270,24 +302,36 @@ export function ChallengeEditorDialog({
 
           {!alreadyReleased && releaseScheduleItem && (
             <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="space-y-0.5">
-                  <Label htmlFor="challenge-auto-release" className="text-sm font-medium">
-                    Release when the event goes live
-                  </Label>
-                  <p className="text-xs text-muted-foreground">
-                    {autoRelease
-                      ? "Challenges unlock the moment your hackathon starts."
-                      : "Pick the exact time during the event when challenges unlock."}
-                  </p>
-                </div>
-                <Switch
-                  id="challenge-auto-release"
-                  checked={autoRelease}
-                  onCheckedChange={setAutoRelease}
-                />
-              </div>
-              {!autoRelease && (
+              <Label htmlFor="challenge-release-mode" className="text-sm font-medium">
+                When should challenges unlock?
+              </Label>
+              <Select
+                value={releaseMode}
+                onValueChange={(value) => setReleaseMode(value as ReleaseMode)}
+              >
+                <SelectTrigger id="challenge-release-mode" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent position="popper" sideOffset={4}>
+                  <SelectItem value="live">Release when the event goes live</SelectItem>
+                  <SelectItem value="publish" disabled={isPastPublishing}>
+                    Release when you publish the event
+                  </SelectItem>
+                  <SelectItem value="custom">Release at a custom time</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {releaseMode === "live"
+                  ? "Challenges unlock the moment your hackathon starts."
+                  : releaseMode === "publish"
+                    ? hackathonStatus === "published"
+                      ? "Your event is already published — saving will unlock challenges right away."
+                      : isPastPublishing
+                        ? "Your event is past publishing — pick another option to auto-release."
+                        : "Challenges unlock as soon as you publish the event."
+                    : "Pick the exact moment challenges unlock."}
+              </p>
+              {releaseMode === "custom" && (
                 <div className="space-y-1">
                   <Label htmlFor="challenge-release-at" className="text-xs">
                     Release time

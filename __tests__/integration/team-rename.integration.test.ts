@@ -122,6 +122,7 @@ mock.module("@/lib/services/schedule-items", () => ({
   createScheduleItem: mock(() => Promise.resolve(null)),
   updateScheduleItem: mock(() => Promise.resolve(null)),
   deleteScheduleItem: mock(() => Promise.resolve(false)),
+  getTriggerItem: mock(() => Promise.resolve(null)),
 }))
 
 mock.module("@/lib/services/judging-rounds", () => ({

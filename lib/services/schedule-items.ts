@@ -11,7 +11,7 @@ export type ScheduleItem = {
   location: string | null
   sort_order: number
   trigger_type: "challenge_release" | "submission_deadline" | null
-  linked_to: "event_start" | "event_end" | null
+  linked_to: "event_start" | "event_end" | "event_publish" | null
   created_at: string
   updated_at: string
 }
@@ -33,7 +33,7 @@ export type UpdateScheduleItemInput = {
   endsAt?: string | null
   location?: string | null
   sortOrder?: number
-  linkedTo?: "event_start" | "event_end" | null
+  linkedTo?: "event_start" | "event_end" | "event_publish" | null
 }
 
 export async function listScheduleItems(hackathonId: string): Promise<ScheduleItem[]> {

@@ -1387,6 +1387,15 @@ curl -s -X DELETE "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/schedule/$IT
   -H "Authorization: Bearer $API_KEY"
 ```
 
+The `linkedTo` field on `PATCH` controls how the item is bound to the hackathon timeline:
+
+| Value | Effect |
+|-------|--------|
+| `event_start` | `starts_at` stays in sync with the hackathon's start time |
+| `event_end` | `starts_at` stays in sync with the hackathon's end time |
+| `event_publish` | Status-only link (no time sync). For `challenge_release` items, fires the release when the hackathon transitions to `published` |
+| `null` | Item uses its own `starts_at` value |
+
 ---
 
 ### Organization Profile

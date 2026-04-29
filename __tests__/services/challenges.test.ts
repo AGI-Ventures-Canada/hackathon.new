@@ -16,6 +16,7 @@ const {
   deleteChallenge,
   reorderChallenges,
   releaseChallenges,
+  maybeReleaseChallengesForPublishLink,
   processScheduledChallengeReleases,
   tagSubmissionChallenges,
   getSubmissionChallengeIds,
@@ -363,6 +364,108 @@ describe("Challenges Service", () => {
       const result = await releaseChallenges(hackathonId, tenantId)
 
       expect(result).toBe(false)
+    })
+  })
+
+  describe("maybeReleaseChallengesForPublishLink", () => {
+    it("returns true (idempotent) when challenges are already released", async () => {
+      mockTableQuery(
+        "hackathon_schedule_items",
+        mockSuccess({
+          linked_to: "event_publish",
+          hackathons: { tenant_id: tenantId, status: "published", challenge_released_at: "2026-04-28T00:00:00Z" },
+        }),
+      )
+
+      const result = await maybeReleaseChallengesForPublishLink(hackathonId, tenantId)
+
+      expect(result).toBe(true)
+    })
+
+    it("returns false when hackathon is in draft status", async () => {
+      mockTableQuery(
+        "hackathon_schedule_items",
+        mockSuccess({
+          linked_to: "event_publish",
+          hackathons: { tenant_id: tenantId, status: "draft", challenge_released_at: null },
+        }),
+      )
+
+      const result = await maybeReleaseChallengesForPublishLink(hackathonId, tenantId)
+
+      expect(result).toBe(false)
+    })
+
+    it("returns false when hackathon is in registration_open (not yet published)", async () => {
+      mockTableQuery(
+        "hackathon_schedule_items",
+        mockSuccess({
+          linked_to: "event_publish",
+          hackathons: { tenant_id: tenantId, status: "registration_open", challenge_released_at: null },
+        }),
+      )
+
+      const result = await maybeReleaseChallengesForPublishLink(hackathonId, tenantId)
+
+      expect(result).toBe(false)
+    })
+
+    it("returns false when hackathon is past published (e.g. active)", async () => {
+      mockTableQuery(
+        "hackathon_schedule_items",
+        mockSuccess({
+          linked_to: "event_publish",
+          hackathons: { tenant_id: tenantId, status: "active", challenge_released_at: null },
+        }),
+      )
+
+      const result = await maybeReleaseChallengesForPublishLink(hackathonId, tenantId)
+
+      expect(result).toBe(false)
+    })
+
+    it("returns false when trigger item is not linked to event_publish", async () => {
+      mockTableQuery(
+        "hackathon_schedule_items",
+        mockSuccess({
+          linked_to: "event_start",
+          hackathons: { tenant_id: tenantId, status: "published", challenge_released_at: null },
+        }),
+      )
+
+      const result = await maybeReleaseChallengesForPublishLink(hackathonId, tenantId)
+
+      expect(result).toBe(false)
+    })
+
+    it("returns false when join finds no row (e.g. wrong tenant or no trigger item)", async () => {
+      mockTableQuery("hackathon_schedule_items", mockSuccess(null))
+
+      const result = await maybeReleaseChallengesForPublishLink(hackathonId, tenantId)
+
+      expect(result).toBe(false)
+    })
+
+    it("releases challenges when published with linked_to=event_publish and challenges exist", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_schedule_items") {
+          return createChainableMock({
+            data: {
+              linked_to: "event_publish",
+              hackathons: { tenant_id: tenantId, status: "published", challenge_released_at: null },
+            },
+            error: null,
+          })
+        }
+        if (table === "challenges") {
+          return createChainableMock({ data: null, error: null, count: 1 })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await maybeReleaseChallengesForPublishLink(hackathonId, tenantId)
+
+      expect(result).toBe(true)
     })
   })
 

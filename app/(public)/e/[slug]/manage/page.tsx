@@ -258,6 +258,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
                 releaseScheduleItem={challengeReleaseItem ?? null}
                 hackathonStartsAt={hackathon.starts_at}
                 hackathonEndsAt={hackathon.ends_at}
+                hackathonStatus={hackathon.status}
               />
             </TabsContent>
 

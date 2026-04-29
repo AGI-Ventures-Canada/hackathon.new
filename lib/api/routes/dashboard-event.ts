@@ -7,7 +7,7 @@ import { setPhase } from "@/lib/services/phases"
 import { listRooms, createRoom, updateRoom, deleteRoom, addTeamToRoom, removeTeamFromRoom, togglePresented, setRoomTimer, clearRoomTimer, pauseRoomTimer, resumeRoomTimer } from "@/lib/services/rooms"
 import { listCategories, createCategory, updateCategory, deleteCategory } from "@/lib/services/categories"
 import { listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, publishAnnouncement, unpublishAnnouncement, scheduleAnnouncement, type CreateAnnouncementInput, type UpdateAnnouncementInput } from "@/lib/services/announcements"
-import { listScheduleItems, createScheduleItem, updateScheduleItem, deleteScheduleItem } from "@/lib/services/schedule-items"
+import { listScheduleItems, createScheduleItem, updateScheduleItem, deleteScheduleItem, getTriggerItem } from "@/lib/services/schedule-items"
 import { listTeamsWithMembers, createTeamWithMembers, modifyTeamMembers, bulkAssignTeams } from "@/lib/services/hackathons"
 import { listRounds, createRound, updateRound, deleteRound, activateRound } from "@/lib/services/judging-rounds"
 import { listSocialSubmissions, reviewSocialSubmission } from "@/lib/services/social-submissions"
@@ -19,6 +19,7 @@ import {
   deleteChallenge,
   reorderChallenges,
   releaseChallenges,
+  maybeReleaseChallengesForPublishLink,
 } from "@/lib/services/challenges"
 import {
   listPerks,
@@ -484,6 +485,9 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     const created = await createChallenge(params.id, principal.tenantId, b)
     if (!created) { set.status = 400; return { error: "Failed to create challenge" } }
     await logAudit({ principal, action: "challenge.created", resourceType: "challenge", resourceId: created.id, metadata: { hackathonId: params.id, title: b.title } })
+
+    await maybeReleaseChallengesForPublishLink(params.id, principal.tenantId)
+
     return { challenge: created }
   }, {
     body: t.Object({
@@ -795,12 +799,24 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     if (!isValidUuid(params.itemId)) { set.status = 400; return { error: "Invalid schedule item ID" } }
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if (authErr) return authErr
-    const item = await updateScheduleItem(params.itemId, params.id, body as { title?: string; startsAt?: string; description?: string | null; endsAt?: string | null; location?: string | null; sortOrder?: number; linkedTo?: "event_start" | "event_end" | null })
+    const b = body as { title?: string; startsAt?: string; description?: string | null; endsAt?: string | null; location?: string | null; sortOrder?: number; linkedTo?: "event_start" | "event_end" | "event_publish" | null }
+    if (b.linkedTo === "event_publish") {
+      const triggerItem = await getTriggerItem(params.id, "challenge_release")
+      if (triggerItem?.id !== params.itemId) {
+        set.status = 400
+        return { error: "event_publish link is only valid on challenge_release items" }
+      }
+    }
+    const item = await updateScheduleItem(params.itemId, params.id, b)
     if (!item) { set.status = 400; return { error: "Failed to update schedule item" } }
     await logAudit({ principal, action: "schedule_item.updated", resourceType: "schedule_item", resourceId: params.itemId, metadata: { hackathonId: params.id } })
+
+    if (b.linkedTo === "event_publish") {
+      await maybeReleaseChallengesForPublishLink(params.id, principal.tenantId)
+    }
     return item
   }, {
-    body: t.Object({ title: t.Optional(t.String()), startsAt: t.Optional(t.String()), description: t.Optional(t.String()), endsAt: t.Optional(t.String()), location: t.Optional(t.String()), sortOrder: t.Optional(t.Number()), linkedTo: t.Optional(t.Union([t.Literal("event_start"), t.Literal("event_end"), t.Null()])) }),
+    body: t.Object({ title: t.Optional(t.String()), startsAt: t.Optional(t.String()), description: t.Optional(t.String()), endsAt: t.Optional(t.String()), location: t.Optional(t.String()), sortOrder: t.Optional(t.Number()), linkedTo: t.Optional(t.Union([t.Literal("event_start"), t.Literal("event_end"), t.Literal("event_publish"), t.Null()])) }),
     detail: { summary: "Update schedule item" },
   })
   .delete("/hackathons/:id/schedule/:itemId", async ({ params, principal, set }) => {

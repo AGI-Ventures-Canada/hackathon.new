@@ -18,6 +18,7 @@ import {
 import { ChallengeEditorDialog } from "./challenge-editor-dialog"
 import type { Challenge } from "@/lib/services/challenges"
 import type { ScheduleItem } from "@/lib/services/schedule-items"
+import type { HackathonStatus } from "@/lib/db/hackathon-types"
 
 type Props = {
   hackathonId: string
@@ -26,6 +27,7 @@ type Props = {
   releaseScheduleItem: ScheduleItem | null
   hackathonStartsAt: string | null
   hackathonEndsAt: string | null
+  hackathonStatus: HackathonStatus
 }
 
 function formatDate(dateStr: string): string {
@@ -44,6 +46,7 @@ export function ChallengesTab({
   releaseScheduleItem,
   hackathonStartsAt,
   hackathonEndsAt,
+  hackathonStatus,
 }: Props) {
   const router = useRouter()
   const [challenges, setChallenges] = useState<Challenge[]>(initialChallenges)
@@ -233,6 +236,7 @@ export function ChallengesTab({
         releaseScheduleItem={releaseScheduleItem}
         hackathonStartsAt={hackathonStartsAt}
         hackathonEndsAt={hackathonEndsAt}
+        hackathonStatus={hackathonStatus}
         alreadyReleased={!!releasedAt}
       />
 

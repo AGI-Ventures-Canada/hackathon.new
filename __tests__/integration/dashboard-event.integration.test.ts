@@ -26,12 +26,26 @@ const mockListScheduleItems = mock(() => Promise.resolve([]))
 const mockCreateScheduleItem = mock(() => Promise.resolve(null))
 const mockUpdateScheduleItem = mock(() => Promise.resolve(null))
 const mockDeleteScheduleItem = mock(() => Promise.resolve(false))
+const mockGetTriggerItem = mock(() => Promise.resolve(null))
 
 mock.module("@/lib/services/schedule-items", () => ({
   listScheduleItems: mockListScheduleItems,
   createScheduleItem: mockCreateScheduleItem,
   updateScheduleItem: mockUpdateScheduleItem,
   deleteScheduleItem: mockDeleteScheduleItem,
+  getTriggerItem: mockGetTriggerItem,
+}))
+
+const mockMaybeReleaseChallengesForPublishLink = mock(() => Promise.resolve(false))
+
+mock.module("@/lib/services/challenges", () => ({
+  listChallenges: mock(() => Promise.resolve([])),
+  createChallenge: mock(() => Promise.resolve(null)),
+  updateChallenge: mock(() => Promise.resolve(null)),
+  deleteChallenge: mock(() => Promise.resolve(false)),
+  reorderChallenges: mock(() => Promise.resolve(false)),
+  releaseChallenges: mock(() => Promise.resolve(false)),
+  maybeReleaseChallengesForPublishLink: mockMaybeReleaseChallengesForPublishLink,
 }))
 
 mock.module("@/lib/services/phases", () => ({
@@ -135,6 +149,8 @@ describe("Dashboard Event Routes Integration Tests", () => {
     mockCreateScheduleItem.mockReset()
     mockUpdateScheduleItem.mockReset()
     mockDeleteScheduleItem.mockReset()
+    mockGetTriggerItem.mockReset()
+    mockMaybeReleaseChallengesForPublishLink.mockReset()
 
     mockSetPhase.mockResolvedValue({ success: true })
     mockCheckHackathonOrganizer.mockResolvedValue({
@@ -584,6 +600,59 @@ describe("Dashboard Event Routes Integration Tests", () => {
       expect(res.status).toBe(400)
       expect(data.error).toBe("Invalid schedule item ID")
     })
+
+    it("accepts event_publish on the challenge_release trigger item", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockGetTriggerItem.mockResolvedValue({ id: itemId, trigger_type: "challenge_release" })
+      mockUpdateScheduleItem.mockResolvedValue({ id: itemId, trigger_type: "challenge_release", linked_to: "event_publish" })
+
+      const res = await app.handle(
+        new Request(`${baseUrl}/schedule/${itemId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ linkedTo: "event_publish" }),
+        })
+      )
+
+      expect(res.status).toBe(200)
+      expect(mockGetTriggerItem).toHaveBeenCalledWith(hackathonId, "challenge_release")
+      expect(mockUpdateScheduleItem).toHaveBeenCalled()
+    })
+
+    it("rejects event_publish on a non-challenge_release item", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockGetTriggerItem.mockResolvedValue({ id: "different-trigger-id", trigger_type: "challenge_release" })
+
+      const res = await app.handle(
+        new Request(`${baseUrl}/schedule/${itemId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ linkedTo: "event_publish" }),
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(400)
+      expect(data.error).toBe("event_publish link is only valid on challenge_release items")
+      expect(mockUpdateScheduleItem).not.toHaveBeenCalled()
+    })
+
+    it("rejects event_publish when no challenge_release trigger item exists", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockGetTriggerItem.mockResolvedValue(null)
+
+      const res = await app.handle(
+        new Request(`${baseUrl}/schedule/${itemId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ linkedTo: "event_publish" }),
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(400)
+      expect(data.error).toBe("event_publish link is only valid on challenge_release items")
+    })
   })
 
   describe("DELETE /api/dashboard/hackathons/:id/schedule/:itemId", () => {
@@ -611,6 +680,35 @@ describe("Dashboard Event Routes Integration Tests", () => {
 
       expect(res.status).toBe(400)
       expect(data.error).toBe("Invalid schedule item ID")
+    })
+  })
+
+  describe("POST /api/dashboard/hackathons/:id/challenges", () => {
+    it("fires maybeReleaseChallengesForPublishLink after a successful create", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      const challengesModule = await import("@/lib/services/challenges")
+      const mockCreate = challengesModule.createChallenge as unknown as ReturnType<typeof mock>
+      mockCreate.mockResolvedValueOnce({
+        id: "c1",
+        hackathonId,
+        title: "Build something",
+        description: null,
+        resources: [],
+        sortOrder: 0,
+        createdAt: "2026-04-28T00:00:00Z",
+        updatedAt: "2026-04-28T00:00:00Z",
+      })
+
+      const res = await app.handle(
+        new Request(`${baseUrl}/challenges`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Build something" }),
+        })
+      )
+
+      expect(res.status).toBe(200)
+      expect(mockMaybeReleaseChallengesForPublishLink).toHaveBeenCalledWith(hackathonId, "tenant-123")
     })
   })
 })
