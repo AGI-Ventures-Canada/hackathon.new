@@ -238,6 +238,45 @@ describe("Lifecycle Service", () => {
       expect(mockReleaseChallenges).toHaveBeenCalledWith("h1", "t1")
     })
 
+    it("does NOT release challenges when transitioning to registration_open with linked_to event_publish", async () => {
+      const hackathon = {
+        id: "h1",
+        tenant_id: "t1",
+        name: "Test Hack",
+        slug: "test-hack",
+        status: "registration_open",
+      }
+
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_transitions") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "hackathons") {
+          return createChainableMock({ data: hackathon, error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      mockGetTriggerItem.mockResolvedValue({
+        id: "item-1",
+        trigger_type: "challenge_release",
+        starts_at: "2026-04-10T09:00:00Z",
+        linked_to: "event_publish",
+      })
+
+      const result = await executeTransition({
+        hackathonId: "h1",
+        tenantId: "t1",
+        fromStatus: "draft",
+        toStatus: "registration_open",
+        trigger: "manual",
+        triggeredBy: "user1",
+      })
+
+      expect(result.success).toBe(true)
+      expect(mockReleaseChallenges).not.toHaveBeenCalled()
+    })
+
     it("does NOT release challenges when transitioning to published with linked_to event_start", async () => {
       const hackathon = {
         id: "h1",

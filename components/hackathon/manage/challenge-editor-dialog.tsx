@@ -5,7 +5,7 @@ import { Loader2, Plus, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Textarea } from "@/components/ui/textarea"
 import { DateTimePicker } from "@/components/ui/date-time-picker"
 import {
@@ -142,9 +142,9 @@ export function ChallengeEditorDialog({
           const patchBody: { startsAt?: string; linkedTo: typeof linkedTo } = {
             linkedTo,
           }
-          if (releaseMode === "live" || releaseMode === "publish") {
+          if (releaseMode === "live") {
             patchBody.startsAt = hackathonStartsAt ?? releaseScheduleItem.starts_at
-          } else if (customStartsAt) {
+          } else if (releaseMode === "custom" && customStartsAt) {
             patchBody.startsAt = customStartsAt
           }
 
@@ -290,40 +290,50 @@ export function ChallengeEditorDialog({
 
           {!alreadyReleased && releaseScheduleItem && (
             <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="space-y-0.5">
-                  <Label htmlFor="challenge-auto-release" className="text-sm font-medium">
-                    Release when the event goes live
-                  </Label>
-                  <p className="text-xs text-muted-foreground">
-                    Challenges unlock the moment your hackathon starts.
-                  </p>
+              <Label className="text-sm font-medium">When should challenges unlock?</Label>
+              <RadioGroup
+                value={releaseMode}
+                onValueChange={(value) => setReleaseMode(value as ReleaseMode)}
+                className="gap-3"
+              >
+                <div className="flex items-start gap-3">
+                  <RadioGroupItem value="live" id="challenge-release-live" className="mt-0.5" />
+                  <div className="space-y-0.5">
+                    <Label htmlFor="challenge-release-live" className="text-sm font-medium">
+                      Release when the event goes live
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Challenges unlock the moment your hackathon starts.
+                    </p>
+                  </div>
                 </div>
-                <Switch
-                  id="challenge-auto-release"
-                  checked={releaseMode === "live"}
-                  onCheckedChange={(checked) => setReleaseMode(checked ? "live" : "custom")}
-                />
-              </div>
-              <div className="flex items-start justify-between gap-3">
-                <div className="space-y-0.5">
-                  <Label htmlFor="challenge-publish-release" className="text-sm font-medium">
-                    Release when you publish the event
-                  </Label>
-                  <p className="text-xs text-muted-foreground">
-                    {hackathonStatus === "draft"
-                      ? "Challenges unlock as soon as you publish the event."
-                      : "Your event is already published — saving will unlock challenges right away."}
-                  </p>
+                <div className="flex items-start gap-3">
+                  <RadioGroupItem value="publish" id="challenge-release-publish" className="mt-0.5" />
+                  <div className="space-y-0.5">
+                    <Label htmlFor="challenge-release-publish" className="text-sm font-medium">
+                      Release when you publish the event
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      {hackathonStatus === "draft"
+                        ? "Challenges unlock as soon as you publish the event."
+                        : "Your event is already published — saving will unlock challenges right away."}
+                    </p>
+                  </div>
                 </div>
-                <Switch
-                  id="challenge-publish-release"
-                  checked={releaseMode === "publish"}
-                  onCheckedChange={(checked) => setReleaseMode(checked ? "publish" : "custom")}
-                />
-              </div>
+                <div className="flex items-start gap-3">
+                  <RadioGroupItem value="custom" id="challenge-release-custom" className="mt-0.5" />
+                  <div className="flex-1 space-y-0.5">
+                    <Label htmlFor="challenge-release-custom" className="text-sm font-medium">
+                      Release at a custom time
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Pick the exact moment challenges unlock.
+                    </p>
+                  </div>
+                </div>
+              </RadioGroup>
               {releaseMode === "custom" && (
-                <div className="space-y-1">
+                <div className="space-y-1 pl-7">
                   <Label htmlFor="challenge-release-at" className="text-xs">
                     Release time
                   </Label>

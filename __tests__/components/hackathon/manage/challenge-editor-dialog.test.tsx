@@ -84,14 +84,16 @@ afterEach(() => {
 })
 
 describe("ChallengeEditorDialog release timing", () => {
-  it("shows the auto-release toggle on by default when item is linked to event start", () => {
+  it("selects the live option by default when item is linked to event start", () => {
     renderDialog()
     const dialog = screen.getByRole("dialog")
     expect(within(dialog).getByText("Release when the event goes live")).toBeDefined()
-    const liveToggle = within(dialog).getByLabelText("Release when the event goes live")
-    const publishToggle = within(dialog).getByLabelText("Release when you publish the event")
-    expect(liveToggle.getAttribute("aria-checked")).toBe("true")
-    expect(publishToggle.getAttribute("aria-checked")).toBe("false")
+    const liveOption = within(dialog).getByLabelText("Release when the event goes live")
+    const publishOption = within(dialog).getByLabelText("Release when you publish the event")
+    const customOption = within(dialog).getByLabelText("Release at a custom time")
+    expect(liveOption.getAttribute("aria-checked")).toBe("true")
+    expect(publishOption.getAttribute("aria-checked")).toBe("false")
+    expect(customOption.getAttribute("aria-checked")).toBe("false")
     expect(within(dialog).queryByLabelText("Release time")).toBeNull()
   })
 
@@ -101,36 +103,36 @@ describe("ChallengeEditorDialog release timing", () => {
     expect(within(dialog).queryByText("Release when the event goes live")).toBeNull()
   })
 
-  it("shows the date picker and bound message when both toggles are off", () => {
+  it("shows the date picker and bound message when custom is selected", () => {
     renderDialog()
     const dialog = screen.getByRole("dialog")
-    fireEvent.click(within(dialog).getByLabelText("Release when the event goes live"))
+    fireEvent.click(within(dialog).getByLabelText("Release at a custom time"))
     expect(within(dialog).getByText("Release time")).toBeDefined()
     expect(within(dialog).getByText(/Pick any time between/)).toBeDefined()
   })
 
-  it("turning on publish toggle turns off live toggle", () => {
+  it("selecting publish deselects live", () => {
     renderDialog()
     const dialog = screen.getByRole("dialog")
-    const liveToggle = within(dialog).getByLabelText("Release when the event goes live")
-    const publishToggle = within(dialog).getByLabelText("Release when you publish the event")
-    expect(liveToggle.getAttribute("aria-checked")).toBe("true")
-    fireEvent.click(publishToggle)
-    expect(liveToggle.getAttribute("aria-checked")).toBe("false")
-    expect(publishToggle.getAttribute("aria-checked")).toBe("true")
+    const liveOption = within(dialog).getByLabelText("Release when the event goes live")
+    const publishOption = within(dialog).getByLabelText("Release when you publish the event")
+    expect(liveOption.getAttribute("aria-checked")).toBe("true")
+    fireEvent.click(publishOption)
+    expect(liveOption.getAttribute("aria-checked")).toBe("false")
+    expect(publishOption.getAttribute("aria-checked")).toBe("true")
     expect(within(dialog).queryByText("Release time")).toBeNull()
   })
 
-  it("disables save when both toggles are off without a custom time selected", () => {
+  it("disables save when custom is selected without a time", () => {
     renderDialog()
     const dialog = screen.getByRole("dialog")
     fireEvent.change(within(dialog).getByLabelText("Title"), { target: { value: "My challenge" } })
-    fireEvent.click(within(dialog).getByLabelText("Release when the event goes live"))
+    fireEvent.click(within(dialog).getByLabelText("Release at a custom time"))
     const submit = within(dialog).getByRole("button", { name: /Save challenge/ })
     expect((submit as HTMLButtonElement).disabled).toBe(true)
   })
 
-  it("starts with both toggles off when item is unlinked", () => {
+  it("starts in custom mode when item is unlinked", () => {
     renderDialog({
       releaseScheduleItem: {
         ...baseTriggerItem,
@@ -139,14 +141,16 @@ describe("ChallengeEditorDialog release timing", () => {
       },
     })
     const dialog = screen.getByRole("dialog")
-    const liveToggle = within(dialog).getByLabelText("Release when the event goes live")
-    const publishToggle = within(dialog).getByLabelText("Release when you publish the event")
-    expect(liveToggle.getAttribute("aria-checked")).toBe("false")
-    expect(publishToggle.getAttribute("aria-checked")).toBe("false")
+    const liveOption = within(dialog).getByLabelText("Release when the event goes live")
+    const publishOption = within(dialog).getByLabelText("Release when you publish the event")
+    const customOption = within(dialog).getByLabelText("Release at a custom time")
+    expect(liveOption.getAttribute("aria-checked")).toBe("false")
+    expect(publishOption.getAttribute("aria-checked")).toBe("false")
+    expect(customOption.getAttribute("aria-checked")).toBe("true")
     expect(within(dialog).getByText("Release time")).toBeDefined()
   })
 
-  it("starts with publish toggle on when item is linked to event_publish", () => {
+  it("starts with publish selected when item is linked to event_publish", () => {
     renderDialog({
       releaseScheduleItem: {
         ...baseTriggerItem,
@@ -154,10 +158,10 @@ describe("ChallengeEditorDialog release timing", () => {
       },
     })
     const dialog = screen.getByRole("dialog")
-    const liveToggle = within(dialog).getByLabelText("Release when the event goes live")
-    const publishToggle = within(dialog).getByLabelText("Release when you publish the event")
-    expect(liveToggle.getAttribute("aria-checked")).toBe("false")
-    expect(publishToggle.getAttribute("aria-checked")).toBe("true")
+    const liveOption = within(dialog).getByLabelText("Release when the event goes live")
+    const publishOption = within(dialog).getByLabelText("Release when you publish the event")
+    expect(liveOption.getAttribute("aria-checked")).toBe("false")
+    expect(publishOption.getAttribute("aria-checked")).toBe("true")
   })
 
   it("saves only the challenge when release timing is unchanged", async () => {
@@ -206,7 +210,7 @@ describe("ChallengeEditorDialog release timing", () => {
     expect(body).toEqual({ startsAt: newCustomIso, linkedTo: null })
   })
 
-  it("saves the challenge AND patches the schedule item when toggle changes from custom to live", async () => {
+  it("saves the challenge AND patches the schedule item when changing from custom to live", async () => {
     renderDialog({
       releaseScheduleItem: {
         ...baseTriggerItem,
@@ -232,7 +236,7 @@ describe("ChallengeEditorDialog release timing", () => {
     expect(body).toEqual({ startsAt: eventStartIso, linkedTo: "event_start" })
   })
 
-  it("saves the challenge AND patches the schedule item with event_publish when publish toggle turned on", async () => {
+  it("saves the challenge AND patches the schedule item with event_publish (no startsAt) when publish is selected", async () => {
     renderDialog()
     const dialog = screen.getByRole("dialog")
     fireEvent.change(within(dialog).getByLabelText("Title"), { target: { value: "Theme" } })
@@ -247,7 +251,7 @@ describe("ChallengeEditorDialog release timing", () => {
     expect(patchUrl).toBe("/api/dashboard/hackathons/h1/schedule/schedule-1")
     expect(patchInit.method).toBe("PATCH")
     const body = JSON.parse(patchInit.body as string)
-    expect(body).toEqual({ startsAt: eventStartIso, linkedTo: "event_publish" })
+    expect(body).toEqual({ linkedTo: "event_publish" })
   })
 
   it("hides the release section and saves only the challenge when releaseScheduleItem is null", async () => {
