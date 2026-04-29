@@ -92,7 +92,6 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.1",
     "happy-dom": "^20.1.0",
-    "playwright": "^1.59.1",
     "react-email": "^5.2.10",
     "tailwindcss": "^4",
     "typescript": "^5"
