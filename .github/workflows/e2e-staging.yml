@@ -1,0 +1,298 @@
+name: E2E Test (Staging)
+
+on:
+  schedule:
+    - cron: "0 10 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: e2e-staging
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    name: Daily persona walk
+    # Pin the runner image. `ubuntu-latest` drifts whenever GitHub
+    # rolls the default forward and can silently break Playwright /
+    # Bun installs. Bump deliberately when validating a new image.
+    runs-on: ubuntu-24.04
+    # Budget: ~55 min for the main persona walk + ~15 min for the
+    # always-run cleanup step + ~5 min setup buffer.
+    timeout-minutes: 75
+
+    steps:
+      - name: Verify required secrets and variables
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          E2E_FALLBACK_PING: ${{ vars.E2E_FALLBACK_PING }}
+        run: |
+          missing=()
+          [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ] && missing+=("secret CLAUDE_CODE_OAUTH_TOKEN")
+          [ -z "$CLERK_SECRET_KEY" ] && missing+=("secret CLERK_SECRET_KEY")
+          [ -z "$E2E_FALLBACK_PING" ] && missing+=("variable E2E_FALLBACK_PING")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing required configuration: ${missing[*]}"
+            echo "Set secrets at:   Settings → Secrets and variables → Actions → Secrets"
+            echo "Set variables at: Settings → Secrets and variables → Actions → Variables"
+            echo "  - CLAUDE_CODE_OAUTH_TOKEN: OAuth token for the Claude Code GitHub Action"
+            echo "  - CLERK_SECRET_KEY:        Staging Clerk test-mode key (sk_test_...)"
+            echo "  - E2E_FALLBACK_PING:       GitHub handle to ping when the issue cap is hit and"
+            echo "                             github.actor resolves to a bot/empty value"
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          # Keep this in sync with bun.lock + the bun-version pinned in
+          # .github/workflows/ci.yml. No packageManager/engines.bun
+          # field in package.json yet — bump here when you bump there.
+          bun-version: "1.3.6"
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # `playwright` is a project devDependency for CI use ONLY (this
+      # workflow). The npm package ships with every `bun install`
+      # (~10 MB), but the heavy ~100 MB browser binaries are downloaded
+      # only here — local devs never pay that cost unless they
+      # explicitly run `bunx playwright install`.
+      - name: Install Chromium for Playwright
+        run: bunx playwright install --with-deps chromium
+
+      - name: Run Claude E2E
+        # Bounded so the cleanup step below still has room to run if
+        # the main persona walk goes long.
+        timeout-minutes: 55
+        uses: anthropics/claude-code-action@a8f63f1ee54fa0b9d1af46ce9ffb9f676e1ed6ff # v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Tool rationale:
+          #   Bash         — gh, curl (Clerk API), bun (Playwright driver), screenshot uploads
+          #   Read         — read CLAUDE.md and source files for persona-flow context
+          #   Write/Edit   — author and iterate the Playwright driver TS script in /tmp
+          #   Glob/Grep    — locate components/routes referenced by personas
+          #   WebFetch     — read Clerk API docs if testing-token mint behavior changes
+          claude_args: |
+            --model claude-sonnet-4-6
+            --allowedTools Bash,Read,Write,Edit,Glob,Grep,WebFetch
+          prompt: |
+            You are running the daily E2E smoke test of Oatmeal staging from a GitHub Actions runner.
+
+            **Environment:**
+            - Ubuntu runner, full network egress, no sandbox allowlist.
+            - Bun, Node 20, Chromium-via-Playwright already installed.
+            - `gh` CLI preinstalled and auto-authed via `$GH_TOKEN`.
+            - `$CLERK_SECRET_KEY` is set as an env var.
+            - Repo is checked out at `$GITHUB_WORKSPACE`.
+
+            **Target:** https://staging.getoatmeal.com
+
+            Read root `CLAUDE.md` plus relevant nested `CLAUDE.md` files for the surfaces you exercise (especially `app/`, `lib/api/`, `components/hackathon/`).
+
+            **Browser automation:** drive Chromium directly via Playwright. `playwright` is already in the project's devDependencies (so `import { chromium } from "playwright"` resolves). The workflow has already downloaded the Chromium binary via `bunx playwright install`. Write a small TypeScript driver script that imports playwright, run it with `bun /tmp/driver.ts` (or wherever you put it). Do NOT attempt to install or invoke `agent-browser` — it is not distributed as an npm/bun package and the project's local `bun run browser` wrapper relies on a side Chrome profile that does not exist in CI.
+
+            **Run ID:** `RUN_ID=$(date -u +%Y%m%d-%H%M)` — use everywhere below.
+
+            **Step 0 — Mint a Clerk testing token:**
+            ```bash
+            CLERK_TESTING_TOKEN=$(curl -s -X POST https://api.clerk.com/v1/testing_tokens \
+              -H "Authorization: Bearer $CLERK_SECRET_KEY" \
+              -H "Content-Type: application/json" | jq -r '.token')
+            ```
+            Append `?__clerk_testing_token=$CLERK_TESTING_TOKEN` (or `&...`) to every staging URL navigation to bypass Clerk bot detection. Re-mint on 401. Reference: https://clerk.com/docs/testing/overview
+
+            **Step 0.5 — Organizer Clerk-org provisioning:**
+            Organizers in this app are scoped to a Clerk organization. Before signing in as the organizer, use the Clerk Backend API to verify `claude-e2e-organizer+clerk_test@example.com` exists and belongs to at least one Clerk organization on the staging instance:
+            - Look up the user: `GET https://api.clerk.com/v1/users?email_address=claude-e2e-organizer%2Bclerk_test%40example.com` (Bearer `$CLERK_SECRET_KEY`).
+            - List their org memberships: `GET https://api.clerk.com/v1/users/<user_id>/organization_memberships`.
+            - If the user does not exist, sign them up first via the staging UI; if they have zero memberships, create an org and add them via Clerk's `POST /v1/organizations` and `POST /v1/organizations/<org_id>/memberships` endpoints (role `org:admin`). Name the org `Claude E2E Org` (idempotent — reuse if it already exists).
+            If this step fails, treat it as a blocker per the stop conditions and file a single blocker issue rather than letting hackathon creation fail silently downstream.
+
+            **Test identities** (Clerk test mode `+clerk_test` pattern; verification code `424242`; phone `+15555550100`):
+            - Organizer: `claude-e2e-organizer+clerk_test@example.com`
+            - Sponsor:   `claude-e2e-sponsor+clerk_test@example.com`
+            - Judge:     `claude-e2e-judge+clerk_test@example.com`
+            - Captain:   `claude-e2e-captain+clerk_test@example.com`
+            - Member:    `claude-e2e-member+clerk_test@example.com`
+
+            **Personas (run sequentially — each enables the next):**
+
+            1. **Public visitor** — find an existing public hackathon (browse `/e` or home). Verify landing renders: hero, schedule, prizes, sponsors, judges. No JS errors blocking primary actions.
+
+            2. **Organizer** — sign in/up. Create a new hackathon end-to-end:
+               - Title: `Claude E2E Run $RUN_ID`
+               - Slug:  `claude-e2e-$RUN_ID`
+               - Sensible date defaults per `CLAUDE.md` "Date/Time Defaults".
+               - At least one prize, one schedule item, one sponsor placeholder.
+               - Invite the judge and sponsor emails above.
+               - Publish / go live.
+               Walk every dashboard tab (overview, teams, schedule, sponsors, judges, announcements, scoring); verify each renders. Try one optimistic mutation (toggle a schedule item, add+remove a sponsor placeholder).
+
+            **Note on invite-link retrieval (no email inbox in CI):**
+            App-level invites (sponsor, judge, member) are stored in the Supabase `team_invitations`-style tables and surface a one-time URL of the form `/invite/<token>`. There is no mailbox on the runner, so you must extract the URL from the inviter's UI BEFORE signing them out:
+            - **From the organizer dashboard:** the "pending invites" / "judges" / "sponsors" tab should expose each pending invite row with either a visible URL or a copy-link button. Use Playwright to read the `href` of the copy-link element or grab the text content.
+            - **From the captain's team page:** the team management view shows pending member invites with the same URL pattern.
+            Save the invite URL to a shell variable (e.g. `JUDGE_INVITE_URL=...`) the moment you have it. Sign out the inviter, then have the next persona navigate directly to that URL — append `?__clerk_testing_token=$CLERK_TESTING_TOKEN` for bot detection. If the invite UI does not surface a URL, that is itself a bug worth filing as `[claude-e2e] <inviter-persona>: invite link not reachable from <surface>` and counts toward the cap.
+
+            3. **Sponsor** — capture invite URL from the organizer's "Sponsors" / "Pending invites" tab BEFORE signing out the organizer. Sign out. Open the captured invite URL, sign up via test mode. Verify the sponsor dashboard, branding edit form, save a small change.
+
+            4. **Judge** — capture invite URL from the organizer's "Judges" tab BEFORE signing out the organizer (you'll do this in the same organizer session as Sponsor — capture both invite URLs at once). Sign out. Open the captured invite URL, sign up. Open the judging surface, verify scoring UI loads.
+
+            5. **Captain** — open `/e/claude-e2e-$RUN_ID`, register, create a team, invite the member email above. Capture the member-invite URL from the team page BEFORE signing out the captain.
+
+            6. **Member** — open the captured member-invite URL (DO NOT rely on email — the runner has no mailbox), sign up via test mode, land on team page.
+
+            Screenshot at each persona's primary surface to `/tmp/<persona>-$RUN_ID.png` (use Playwright's `page.screenshot({ path: ... })`).
+
+            **Failure handling:**
+            - On any failure (page error, broken UI, console error blocking a primary action, network 5xx on a primary endpoint), retry up to 2 more times after a fresh page load.
+            - Only file an issue if the failure reproduces. Transient one-offs: log in run summary, do not file.
+
+            **Issue filing — `gh issue create` against `AGI-Ventures-Canada/oatmeal`:**
+            - **Title:** `[claude-e2e] <persona>: <one-line failure>`
+            - **Body:**
+              ```
+              ## What happened
+              <user-visible failure>
+
+              ## Persona / flow
+              <persona> — step <N>: <what was being attempted>
+
+              ## Reproduction
+              1. ...
+              2. ...
+
+              ## Evidence
+              - Console errors: <relevant lines>
+              - Network errors: <relevant lines>
+              - URL: <url>
+              - Screenshot: `<persona>-<RUN_ID>.png` — download from the workflow run's `e2e-screenshots-<run_id>` artifact (link in the Actions run)
+
+              ---
+              Created by automated E2E run on <UTC timestamp>
+              Run ID: <RUN_ID>
+              ```
+            - Try labels `bug` and `e2e`. Drop silently if they don't exist.
+
+            **Hard cap — 10 issues per run:**
+            Maintain `ISSUES_FILED` counter. Increment after each successful `gh issue create`.
+
+            If a failure would push you to file an 11th: **DO NOT FILE IT.** First decide who to ping:
+            ```bash
+            # Use the workflow's triggering actor unless it looks like a bot.
+            PING="$GITHUB_ACTOR"
+            case "$PING" in
+              ""|claude|*"[bot]"|*-bot|github-actions) PING="$FALLBACK_PING" ;;
+            esac
+            ```
+            Then find the most recent issue you created in this run by sorting in jq (do not rely on search-string sort qualifiers — they are inconsistently honored):
+            ```bash
+            LAST_ISSUE=$(gh issue list \
+              --search "[claude-e2e] in:title author:@me" \
+              --state all \
+              --limit 100 \
+              --json number,createdAt \
+              --jq 'sort_by(.createdAt) | reverse | .[0].number')
+            gh issue comment $LAST_ISSUE --body "@$PING — hit the 10-issue cap during this E2E run. Stopping further testing for today. Additional failures observed in run $RUN_ID but not filed."
+            ```
+            Then **stop the entire run immediately** (still run cleanup below).
+
+            **Cleanup (always run, regardless of pass/fail/cap):**
+            Sign in as organizer if not already, and delete the hackathon `claude-e2e-$RUN_ID` from the organizer dashboard. If the delete UI is itself broken AND the issue cap has not been reached, file an issue for it (counts toward cap) and move on. If the delete fails AND the cap has already been reached (so a new issue cannot be filed), log the failure prominently in the final summary so stale `claude-e2e-*` hackathons accumulating in staging are visible to whoever reads the run output. Never silently skip a cleanup failure.
+
+            **Stop conditions:**
+            - All 6 personas attempted, OR
+            - 10-issue cap reached, OR
+            - Playwright broken, Clerk token mint fails, or organizer sign-in fundamentally broken — file ONE blocker issue and stop.
+
+            **Final summary (always print):**
+            - Run ID
+            - Per-persona pass/fail with one-line note
+            - Hackathon slug created + cleanup status
+            - Issues filed (count + numbers + URLs)
+            - Total runtime
+        env:
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # `github.actor` is whoever triggered this run. For schedule
+          # events it falls back to the last pusher of the workflow file.
+          # The prompt uses this to decide who to @-ping when the
+          # 10-issue cap is hit; if it's a bot account, the agent falls
+          # back to a hardcoded human owner.
+          GITHUB_ACTOR: ${{ github.actor }}
+          # REQUIRED repo variable, validated by the preflight step above.
+          # Set at Settings → Secrets and variables → Actions → Variables
+          # → New repository variable `E2E_FALLBACK_PING` (a GitHub
+          # handle, no `@` prefix). Used when github.actor is empty or a
+          # bot account.
+          FALLBACK_PING: ${{ vars.E2E_FALLBACK_PING }}
+
+      # Safety-net cleanup: runs even if the main step timed out, errored,
+      # or hit the issue cap before reaching its in-prompt cleanup phase.
+      # Sweeps ALL claude-e2e-* hackathons owned by the test organizer,
+      # not just this run's RUN_ID, so straggler hackathons from previous
+      # broken runs also get tidied up.
+      - name: Best-effort cleanup of stale test hackathons
+        if: always()
+        timeout-minutes: 15
+        uses: anthropics/claude-code-action@a8f63f1ee54fa0b9d1af46ce9ffb9f676e1ed6ff # v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # WebFetch is included so cleanup can re-read Clerk's testing-token
+          # docs if the mint behavior changes — same reason the main step has it.
+          claude_args: |
+            --model claude-sonnet-4-6
+            --allowedTools Bash,Read,Write,Edit,Glob,Grep,WebFetch
+          prompt: |
+            You are running a best-effort cleanup pass against https://staging.getoatmeal.com.
+
+            **Goal:** delete every hackathon whose slug starts with `claude-e2e-` that is owned by the organizer test identity. This catches stragglers from runs whose in-prompt cleanup did not execute (timeouts, crashes, cap-stops).
+
+            **Scope:**
+            - Do NOT run any persona flows.
+            - Do NOT file GitHub issues from this step (cleanup failures are reported in workflow output only — they will be visible in the run summary, not as new issues).
+            - Be lean: the timeout is 15 minutes.
+
+            **Steps:**
+            1. Mint a Clerk testing token via `POST https://api.clerk.com/v1/testing_tokens` with `Authorization: Bearer $CLERK_SECRET_KEY`. Append `?__clerk_testing_token=<token>` to all browser nav.
+            2. Drive Chromium via Playwright (`import { chromium } from "playwright"`); Chromium is preinstalled by the workflow.
+            3. Sign in as `claude-e2e-organizer+clerk_test@example.com` (test mode, code `424242`).
+            4. List the organizer's hackathons (browse `/hackathons` or use the app's hackathon list view).
+            5. For each hackathon whose slug begins with `claude-e2e-`, delete it via the dashboard.
+            6. Print a final summary line:
+               - `cleanup: deleted N hackathon(s): <comma-separated slugs>`, OR
+               - `cleanup: no stale hackathons found`, OR
+               - `cleanup: failed to delete <slug> — <reason>` for each failure.
+
+            If sign-in itself fails, exit with `cleanup: sign-in failed — <reason>` and stop. Do not retry indefinitely.
+        env:
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload E2E screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: e2e-screenshots-${{ github.run_id }}
+          path: /tmp/*.png
+          retention-days: 7
+          if-no-files-found: ignore
