@@ -51,6 +51,12 @@ jobs:
         uses: anthropics/claude-code-action@a8f63f1ee54fa0b9d1af46ce9ffb9f676e1ed6ff # v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Tool rationale:
+          #   Bash         — gh, curl (Clerk API), bun (Playwright driver), screenshot uploads
+          #   Read         — read CLAUDE.md and source files for persona-flow context
+          #   Write/Edit   — author and iterate the Playwright driver TS script in /tmp
+          #   Glob/Grep    — locate components/routes referenced by personas
+          #   WebFetch     — read Clerk API docs if testing-token mint behavior changes
           claude_args: |
             --model claude-sonnet-4-6
             --allowedTools Bash,Read,Write,Edit,Glob,Grep,WebFetch
@@ -193,7 +199,10 @@ jobs:
           # 10-issue cap is hit; if it's a bot account, the agent falls
           # back to a hardcoded human owner.
           GITHUB_ACTOR: ${{ github.actor }}
-          FALLBACK_PING: alex-agiventures
+          # Override at repo level via Settings → Secrets and variables →
+          # Actions → Variables → New repository variable
+          # `E2E_FALLBACK_PING`. Defaults to alex-agiventures.
+          FALLBACK_PING: ${{ vars.E2E_FALLBACK_PING || 'alex-agiventures' }}
 
       - name: Upload E2E screenshots
         if: always()

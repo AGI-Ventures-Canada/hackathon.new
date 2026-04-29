@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Hackathon platform",
   "private": true,
+  "//": "devDependencies notes — `playwright` is CI-only, used by .github/workflows/e2e-staging.yml. The npm package itself (~10MB) ships with every `bun install`, but Chromium browser binaries are downloaded only in CI via `bunx playwright install --with-deps chromium` — local devs do NOT pay the ~100MB browser cost unless they run that command themselves.",
   "scripts": {
     "predev": "./scripts/setup-local-db.sh",
     "dev": "next dev",
