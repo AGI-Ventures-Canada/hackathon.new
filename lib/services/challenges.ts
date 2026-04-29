@@ -329,6 +329,7 @@ export async function maybeReleaseChallengesForPublishLink(
   }
   if (!row || row.linked_to !== "event_publish") return false
 
+  // Supabase types the `hackathons!inner(...)` relation as an array even though PostgREST returns a single object for many-to-one.
   const hackathon = row.hackathons as unknown as { status: string; challenge_released_at: string | null }
   if (hackathon.challenge_released_at) return true
   if (hackathon.status !== "published") return false

@@ -107,7 +107,9 @@ export function ChallengeEditorDialog({
   })()
 
   const publishOptionDisabled =
-    hackathonStatus !== "draft" && hackathonStatus !== "published"
+    hackathonStatus !== "draft" &&
+    hackathonStatus !== "published" &&
+    hackathonStatus !== "registration_open"
 
   const releaseTimingValid =
     !(releaseMode === "publish" && publishOptionDisabled) &&
@@ -327,11 +329,11 @@ export function ChallengeEditorDialog({
                       Release when you publish the event
                     </Label>
                     <p className="text-xs text-muted-foreground">
-                      {hackathonStatus === "draft"
-                        ? "Challenges unlock as soon as you publish the event."
-                        : hackathonStatus === "published"
-                          ? "Your event is already published — saving will unlock challenges right away."
-                          : "Your event is past publishing — pick another option to auto-release."}
+                      {hackathonStatus === "published"
+                        ? "Your event is already published — saving will unlock challenges right away."
+                        : publishOptionDisabled
+                          ? "Your event is past publishing — pick another option to auto-release."
+                          : "Challenges unlock as soon as you publish the event."}
                     </p>
                   </div>
                 </div>

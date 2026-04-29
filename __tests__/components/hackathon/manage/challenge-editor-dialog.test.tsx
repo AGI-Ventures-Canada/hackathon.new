@@ -172,6 +172,14 @@ describe("ChallengeEditorDialog release timing", () => {
     ).toBeDefined()
   })
 
+  it("keeps publish option enabled with draft-style copy when status is registration_open", () => {
+    renderDialog({ hackathonStatus: "registration_open" })
+    const dialog = screen.getByRole("dialog")
+    const publishOption = within(dialog).getByLabelText("Release when you publish the event")
+    expect(publishOption.hasAttribute("disabled") || publishOption.getAttribute("aria-disabled") === "true").toBe(false)
+    expect(within(dialog).getByText("Challenges unlock as soon as you publish the event.")).toBeDefined()
+  })
+
   it("disables the publish option when event is past publishing", () => {
     renderDialog({ hackathonStatus: "active" })
     const dialog = screen.getByRole("dialog")
