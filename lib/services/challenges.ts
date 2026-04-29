@@ -253,26 +253,11 @@ export async function reorderChallenges(
   return true
 }
 
-export async function releaseChallenges(
+async function releaseChallengesIfAny(
+  client: SupabaseClient,
   hackathonId: string,
   tenantId: string,
 ): Promise<boolean> {
-  const client = getSupabase() as unknown as SupabaseClient
-
-  const { data: hackathon, error: fetchErr } = await client
-    .from("hackathons")
-    .select("challenge_released_at")
-    .eq("id", hackathonId)
-    .eq("tenant_id", tenantId)
-    .single()
-
-  if (fetchErr || !hackathon) {
-    console.error("Failed to fetch hackathon for challenge release:", fetchErr)
-    return false
-  }
-
-  if (hackathon.challenge_released_at) return true
-
   const { count, error: countErr } = await client
     .from("challenges")
     .select("id", { count: "exact", head: true })
@@ -301,6 +286,29 @@ export async function releaseChallenges(
   return true
 }
 
+export async function releaseChallenges(
+  hackathonId: string,
+  tenantId: string,
+): Promise<boolean> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data: hackathon, error: fetchErr } = await client
+    .from("hackathons")
+    .select("challenge_released_at")
+    .eq("id", hackathonId)
+    .eq("tenant_id", tenantId)
+    .single()
+
+  if (fetchErr || !hackathon) {
+    console.error("Failed to fetch hackathon for challenge release:", fetchErr)
+    return false
+  }
+
+  if (hackathon.challenge_released_at) return true
+
+  return releaseChallengesIfAny(client, hackathonId, tenantId)
+}
+
 export async function maybeReleaseChallengesForPublishLink(
   hackathonId: string,
   tenantId: string,
@@ -327,7 +335,7 @@ export async function maybeReleaseChallengesForPublishLink(
 
   if (triggerItem?.linked_to !== "event_publish") return false
 
-  return await releaseChallenges(hackathonId, tenantId)
+  return releaseChallengesIfAny(client, hackathonId, tenantId)
 }
 
 export type ScheduledChallengeReleaseResult = {
