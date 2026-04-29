@@ -26,12 +26,14 @@ const mockListScheduleItems = mock(() => Promise.resolve([]))
 const mockCreateScheduleItem = mock(() => Promise.resolve(null))
 const mockUpdateScheduleItem = mock(() => Promise.resolve(null))
 const mockDeleteScheduleItem = mock(() => Promise.resolve(false))
+const mockGetTriggerItem = mock(() => Promise.resolve(null))
 
 mock.module("@/lib/services/schedule-items", () => ({
   listScheduleItems: mockListScheduleItems,
   createScheduleItem: mockCreateScheduleItem,
   updateScheduleItem: mockUpdateScheduleItem,
   deleteScheduleItem: mockDeleteScheduleItem,
+  getTriggerItem: mockGetTriggerItem,
 }))
 
 mock.module("@/lib/services/phases", () => ({
@@ -135,6 +137,7 @@ describe("Dashboard Event Routes Integration Tests", () => {
     mockCreateScheduleItem.mockReset()
     mockUpdateScheduleItem.mockReset()
     mockDeleteScheduleItem.mockReset()
+    mockGetTriggerItem.mockReset()
 
     mockSetPhase.mockResolvedValue({ success: true })
     mockCheckHackathonOrganizer.mockResolvedValue({

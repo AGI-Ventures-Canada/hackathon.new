@@ -315,7 +315,7 @@ export async function maybeReleaseChallengesForPublishLink(
 ): Promise<boolean> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { data: row } = await client
+  const { data: row, error: fetchErr } = await client
     .from("hackathon_schedule_items")
     .select("linked_to, hackathons!inner(tenant_id, status, challenge_released_at)")
     .eq("hackathon_id", hackathonId)
@@ -323,6 +323,10 @@ export async function maybeReleaseChallengesForPublishLink(
     .eq("hackathons.tenant_id", tenantId)
     .maybeSingle()
 
+  if (fetchErr) {
+    console.error("Failed to fetch trigger item for publish-link release:", fetchErr)
+    return false
+  }
   if (!row || row.linked_to !== "event_publish") return false
 
   const hackathon = Array.isArray(row.hackathons) ? row.hackathons[0] : row.hackathons

@@ -7,7 +7,7 @@ import { setPhase } from "@/lib/services/phases"
 import { listRooms, createRoom, updateRoom, deleteRoom, addTeamToRoom, removeTeamFromRoom, togglePresented, setRoomTimer, clearRoomTimer, pauseRoomTimer, resumeRoomTimer } from "@/lib/services/rooms"
 import { listCategories, createCategory, updateCategory, deleteCategory } from "@/lib/services/categories"
 import { listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, publishAnnouncement, unpublishAnnouncement, scheduleAnnouncement, type CreateAnnouncementInput, type UpdateAnnouncementInput } from "@/lib/services/announcements"
-import { listScheduleItems, createScheduleItem, updateScheduleItem, deleteScheduleItem } from "@/lib/services/schedule-items"
+import { listScheduleItems, createScheduleItem, updateScheduleItem, deleteScheduleItem, getTriggerItem } from "@/lib/services/schedule-items"
 import { listTeamsWithMembers, createTeamWithMembers, modifyTeamMembers, bulkAssignTeams } from "@/lib/services/hackathons"
 import { listRounds, createRound, updateRound, deleteRound, activateRound } from "@/lib/services/judging-rounds"
 import { listSocialSubmissions, reviewSocialSubmission } from "@/lib/services/social-submissions"
@@ -803,9 +803,8 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     if (authErr) return authErr
     const b = body as { title?: string; startsAt?: string; description?: string | null; endsAt?: string | null; location?: string | null; sortOrder?: number; linkedTo?: "event_start" | "event_end" | "event_publish" | null }
     if (b.linkedTo === "event_publish") {
-      const existingItems = await listScheduleItems(params.id)
-      const existing = existingItems.find((i) => i.id === params.itemId)
-      if (existing?.trigger_type !== "challenge_release") {
+      const triggerItem = await getTriggerItem(params.id, "challenge_release")
+      if (triggerItem?.id !== params.itemId) {
         set.status = 400
         return { error: "event_publish link is only valid on challenge_release items" }
       }
