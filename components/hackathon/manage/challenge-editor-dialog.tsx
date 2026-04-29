@@ -5,7 +5,13 @@ import { Loader2, Plus, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { DateTimePicker } from "@/components/ui/date-time-picker"
 import {
@@ -15,7 +21,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { cn } from "@/lib/utils"
 import { normalizeUrl } from "@/lib/utils/url"
 import { assertOk } from "@/lib/utils/fetch"
 import type { Challenge, ChallengeResource } from "@/lib/services/challenges"
@@ -297,60 +302,37 @@ export function ChallengeEditorDialog({
 
           {!alreadyReleased && releaseScheduleItem && (
             <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
-              <Label className="text-sm font-medium">When should challenges unlock?</Label>
-              <RadioGroup
+              <Label htmlFor="challenge-release-mode" className="text-sm font-medium">
+                When should challenges unlock?
+              </Label>
+              <Select
                 value={releaseMode}
                 onValueChange={(value) => setReleaseMode(value as ReleaseMode)}
-                className="gap-3"
               >
-                <div className="flex items-start gap-3">
-                  <RadioGroupItem value="live" id="challenge-release-live" className="mt-0.5" />
-                  <div className="space-y-0.5">
-                    <Label htmlFor="challenge-release-live" className="text-sm font-medium">
-                      Release when the event goes live
-                    </Label>
-                    <p className="text-xs text-muted-foreground">
-                      Challenges unlock the moment your hackathon starts.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <RadioGroupItem
-                    value="publish"
-                    id="challenge-release-publish"
-                    className="mt-0.5"
-                    disabled={isPastPublishing}
-                  />
-                  <div className="space-y-0.5">
-                    <Label
-                      htmlFor="challenge-release-publish"
-                      className={cn("text-sm font-medium", isPastPublishing && "text-muted-foreground")}
-                    >
-                      Release when you publish the event
-                    </Label>
-                    <p className="text-xs text-muted-foreground">
-                      {hackathonStatus === "published"
-                        ? "Your event is already published — saving will unlock challenges right away."
-                        : isPastPublishing
-                          ? "Your event is past publishing — pick another option to auto-release."
-                          : "Challenges unlock as soon as you publish the event."}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <RadioGroupItem value="custom" id="challenge-release-custom" className="mt-0.5" />
-                  <div className="flex-1 space-y-0.5">
-                    <Label htmlFor="challenge-release-custom" className="text-sm font-medium">
-                      Release at a custom time
-                    </Label>
-                    <p className="text-xs text-muted-foreground">
-                      Pick the exact moment challenges unlock.
-                    </p>
-                  </div>
-                </div>
-              </RadioGroup>
+                <SelectTrigger id="challenge-release-mode" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent position="popper" sideOffset={4}>
+                  <SelectItem value="live">Release when the event goes live</SelectItem>
+                  <SelectItem value="publish" disabled={isPastPublishing}>
+                    Release when you publish the event
+                  </SelectItem>
+                  <SelectItem value="custom">Release at a custom time</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {releaseMode === "live"
+                  ? "Challenges unlock the moment your hackathon starts."
+                  : releaseMode === "publish"
+                    ? hackathonStatus === "published"
+                      ? "Your event is already published — saving will unlock challenges right away."
+                      : isPastPublishing
+                        ? "Your event is past publishing — pick another option to auto-release."
+                        : "Challenges unlock as soon as you publish the event."
+                    : "Pick the exact moment challenges unlock."}
+              </p>
               {releaseMode === "custom" && (
-                <div className="space-y-1 pl-7">
+                <div className="space-y-1">
                   <Label htmlFor="challenge-release-at" className="text-xs">
                     Release time
                   </Label>
