@@ -274,6 +274,7 @@ describe("Lifecycle Service", () => {
       })
 
       expect(result.success).toBe(true)
+      expect(mockGetTriggerItem).not.toHaveBeenCalled()
       expect(mockReleaseChallenges).not.toHaveBeenCalled()
     })
 

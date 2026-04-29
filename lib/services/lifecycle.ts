@@ -123,11 +123,7 @@ export async function executeTransition(
     })
   }
 
-  if (
-    toStatus === "published" ||
-    toStatus === "registration_open" ||
-    toStatus === "active"
-  ) {
+  if (toStatus === "published" || toStatus === "active") {
     const { releaseChallenges } = await import("./challenges")
     const { getTriggerItem } = await import("./schedule-items")
     const triggerItem = await getTriggerItem(hackathonId, "challenge_release")
