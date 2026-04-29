@@ -172,6 +172,27 @@ describe("ChallengeEditorDialog release timing", () => {
     ).toBeDefined()
   })
 
+  it("disables the publish option when event is past publishing", () => {
+    renderDialog({ hackathonStatus: "active" })
+    const dialog = screen.getByRole("dialog")
+    const publishOption = within(dialog).getByLabelText("Release when you publish the event")
+    expect(publishOption.hasAttribute("disabled") || publishOption.getAttribute("aria-disabled") === "true").toBe(true)
+  })
+
+  it("blocks save when publish is selected on a past-publish event", () => {
+    renderDialog({
+      hackathonStatus: "active",
+      releaseScheduleItem: {
+        ...baseTriggerItem,
+        linked_to: "event_publish",
+      },
+    })
+    const dialog = screen.getByRole("dialog")
+    fireEvent.change(within(dialog).getByLabelText("Title"), { target: { value: "My challenge" } })
+    const submit = within(dialog).getByRole("button", { name: /Save challenge/ })
+    expect((submit as HTMLButtonElement).disabled).toBe(true)
+  })
+
   it("starts with publish selected when item is linked to event_publish", () => {
     renderDialog({
       releaseScheduleItem: {

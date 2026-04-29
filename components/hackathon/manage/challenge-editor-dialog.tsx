@@ -105,8 +105,12 @@ export function ChallengeEditorDialog({
     return null
   })()
 
+  const publishOptionDisabled =
+    hackathonStatus !== "draft" && hackathonStatus !== "published"
+
   const releaseTimingValid =
-    releaseMode !== "custom" || (customReleaseAt !== null && customReleaseError === null)
+    !(releaseMode === "publish" && publishOptionDisabled) &&
+    (releaseMode !== "custom" || (customReleaseAt !== null && customReleaseError === null))
 
   function updateResource(index: number, patch: Partial<ChallengeResource>) {
     setResources((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)))
@@ -308,9 +312,17 @@ export function ChallengeEditorDialog({
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
-                  <RadioGroupItem value="publish" id="challenge-release-publish" className="mt-0.5" />
+                  <RadioGroupItem
+                    value="publish"
+                    id="challenge-release-publish"
+                    className="mt-0.5"
+                    disabled={publishOptionDisabled}
+                  />
                   <div className="space-y-0.5">
-                    <Label htmlFor="challenge-release-publish" className="text-sm font-medium">
+                    <Label
+                      htmlFor="challenge-release-publish"
+                      className={`text-sm font-medium ${publishOptionDisabled ? "text-muted-foreground" : ""}`}
+                    >
                       Release when you publish the event
                     </Label>
                     <p className="text-xs text-muted-foreground">
