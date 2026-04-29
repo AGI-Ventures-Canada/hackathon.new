@@ -36,6 +36,18 @@ mock.module("@/lib/services/schedule-items", () => ({
   getTriggerItem: mockGetTriggerItem,
 }))
 
+const mockMaybeReleaseChallengesForPublishLink = mock(() => Promise.resolve(false))
+
+mock.module("@/lib/services/challenges", () => ({
+  listChallenges: mock(() => Promise.resolve([])),
+  createChallenge: mock(() => Promise.resolve(null)),
+  updateChallenge: mock(() => Promise.resolve(null)),
+  deleteChallenge: mock(() => Promise.resolve(false)),
+  reorderChallenges: mock(() => Promise.resolve(false)),
+  releaseChallenges: mock(() => Promise.resolve(false)),
+  maybeReleaseChallengesForPublishLink: mockMaybeReleaseChallengesForPublishLink,
+}))
+
 mock.module("@/lib/services/phases", () => ({
   getPhasesForStatus: (status: string) => {
     if (status === "active") return ["build", "submission_open"]
@@ -138,6 +150,7 @@ describe("Dashboard Event Routes Integration Tests", () => {
     mockUpdateScheduleItem.mockReset()
     mockDeleteScheduleItem.mockReset()
     mockGetTriggerItem.mockReset()
+    mockMaybeReleaseChallengesForPublishLink.mockReset()
 
     mockSetPhase.mockResolvedValue({ success: true })
     mockCheckHackathonOrganizer.mockResolvedValue({
