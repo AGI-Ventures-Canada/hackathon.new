@@ -79,7 +79,17 @@ function formatTimeRange(
   const startTime = start.toLocaleTimeString("en-US", timeFormat);
   const endTime = end.toLocaleTimeString("en-US", timeFormat);
 
-  return `${startTime} - ${endTime}`;
+  const sameDay =
+    start.getFullYear() === end.getFullYear() &&
+    start.getMonth() === end.getMonth() &&
+    start.getDate() === end.getDate();
+
+  if (sameDay) {
+    if (startTime === endTime) return null;
+    return `${startTime} - ${endTime}`;
+  }
+
+  return `Starts ${startTime}`;
 }
 
 interface DurationInfo {
