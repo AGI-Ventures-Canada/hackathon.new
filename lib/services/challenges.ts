@@ -331,7 +331,7 @@ export async function maybeReleaseChallengesForPublishLink(
 
   const hackathon = row.hackathons as unknown as { status: string; challenge_released_at: string | null }
   if (hackathon.challenge_released_at) return true
-  if (hackathon.status === "draft") return false
+  if (hackathon.status !== "published") return false
 
   return releaseChallengesIfAny(client, hackathonId, tenantId)
 }
