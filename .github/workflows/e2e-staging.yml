@@ -269,7 +269,7 @@ jobs:
       # broken runs also get tidied up.
       - name: Best-effort cleanup of stale test hackathons
         if: always()
-        timeout-minutes: 15
+        timeout-minutes: 20
         uses: anthropics/claude-code-action@a8f63f1ee54fa0b9d1af46ce9ffb9f676e1ed6ff # v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -286,7 +286,7 @@ jobs:
             **Scope:**
             - Do NOT run any persona flows.
             - Do NOT file GitHub issues from this step (cleanup failures are reported in workflow output only — they will be visible in the run summary, not as new issues).
-            - Be lean: the timeout is 15 minutes.
+            - Be lean: the timeout is 20 minutes.
 
             **Steps:**
             1. Mint a Clerk testing token via `POST https://api.clerk.com/v1/testing_tokens` with `Authorization: Bearer $CLERK_SECRET_KEY`. Append `?__clerk_testing_token=<token>` to all browser nav.
