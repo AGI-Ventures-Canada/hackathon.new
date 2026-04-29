@@ -329,8 +329,7 @@ export async function maybeReleaseChallengesForPublishLink(
   }
   if (!row || row.linked_to !== "event_publish") return false
 
-  const hackathon = Array.isArray(row.hackathons) ? row.hackathons[0] : row.hackathons
-  if (!hackathon) return false
+  const hackathon = row.hackathons as unknown as { status: string; challenge_released_at: string | null }
   if (hackathon.challenge_released_at) return true
   if (hackathon.status !== "published") return false
 
