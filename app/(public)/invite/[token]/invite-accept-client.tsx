@@ -207,10 +207,18 @@ export function InviteAcceptClient({
           </>
         ) : (
           <>
-            <SignInButton mode="modal" forceRedirectUrl={`/invite/${token}`}>
+            <SignInButton
+              mode="modal"
+              forceRedirectUrl={`/invite/${token}`}
+              initialValues={{ emailAddress: invitation.email }}
+            >
               <Button className="w-full">Sign In to Accept</Button>
             </SignInButton>
-            <SignUpButton mode="modal" forceRedirectUrl={`/invite/${token}`}>
+            <SignUpButton
+              mode="modal"
+              forceRedirectUrl={`/invite/${token}`}
+              initialValues={{ emailAddress: invitation.email }}
+            >
               <Button variant="outline" className="w-full">
                 Create Account
               </Button>
