@@ -210,7 +210,9 @@ describe("getOrganizerActionItems", () => {
         startsAt: soon,
       }))
 
-      expect(items.find((i) => i.id === "starting-soon")).toBeDefined()
+      const item = items.find((i) => i.id === "starting-soon")
+      expect(item).toBeDefined()
+      expect(item?.close.kind).toBe("dismiss")
     })
 
     it("does not show starting soon for distant events", () => {
