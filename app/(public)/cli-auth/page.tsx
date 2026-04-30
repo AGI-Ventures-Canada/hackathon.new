@@ -1,11 +1,10 @@
 import { auth } from "@clerk/nextjs/server"
-import { OrganizationList } from "@clerk/nextjs"
 import { headers } from "next/headers"
-import Link from "next/link"
 import { redirect } from "next/navigation"
 import { CliAuthClient } from "@/components/cli-auth/cli-auth-client"
+import { CliAuthOrgGate } from "@/components/cli-auth/cli-auth-org-gate"
 import { completeCliAuthSession } from "@/lib/services/cli-auth"
-import { getOrCreateTenant, getOrCreatePersonalTenant } from "@/lib/services/tenants"
+import { getOrCreateTenant } from "@/lib/services/tenants"
 import { logAudit } from "@/lib/services/audit"
 import type { Metadata } from "next"
 
@@ -15,11 +14,11 @@ export const metadata: Metadata = {
 }
 
 type PageProps = {
-  searchParams: Promise<{ token?: string; personal?: string }>
+  searchParams: Promise<{ token?: string }>
 }
 
 export default async function CliAuthPage({ searchParams }: PageProps) {
-  const { token, personal } = await searchParams
+  const { token } = await searchParams
 
   if (!token || token.length < 32) {
     return (
@@ -37,35 +36,17 @@ export default async function CliAuthPage({ searchParams }: PageProps) {
   }
 
   const returnUrl = `/cli-auth?token=${encodeURIComponent(token)}`
-  const personalUrl = `${returnUrl}&personal=1`
 
   const { userId, orgId } = await auth()
 
   if (!userId) {
-    redirect(
-      `/sign-in?redirect_url=${encodeURIComponent(personal === "1" ? personalUrl : returnUrl)}`
-    )
+    redirect(`/sign-in?redirect_url=${encodeURIComponent(returnUrl)}`)
   }
 
-  if (!orgId && personal !== "1") {
+  if (!orgId) {
     return (
       <div className="min-h-[calc(100vh-80px)] flex items-center justify-center p-4">
-        <div className="flex max-w-md flex-col items-center space-y-6 text-center">
-          <div>
-            <h1 className="text-2xl font-bold mb-2">Pick a workspace</h1>
-            <p className="text-muted-foreground">
-              The CLI will create events in the workspace you pick here.
-            </p>
-          </div>
-          <OrganizationList
-            afterCreateOrganizationUrl={returnUrl}
-            afterSelectOrganizationUrl={returnUrl}
-            afterSelectPersonalUrl={personalUrl}
-          />
-          <Link href={personalUrl} className="text-sm text-muted-foreground underline">
-            Use my personal workspace
-          </Link>
-        </div>
+        <CliAuthOrgGate />
       </div>
     )
   }
@@ -73,12 +54,7 @@ export default async function CliAuthPage({ searchParams }: PageProps) {
   const headersList = await headers()
   const hostname = headersList.get("host")?.split(":")[0]
 
-  let tenant
-  if (orgId) {
-    tenant = await getOrCreateTenant(orgId)
-  } else {
-    tenant = await getOrCreatePersonalTenant(userId)
-  }
+  const tenant = await getOrCreateTenant(orgId)
 
   let result: { success: boolean; error?: string }
   if (!tenant) {
