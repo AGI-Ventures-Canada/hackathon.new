@@ -312,6 +312,9 @@ describe("getOrganizerActionItems", () => {
     })
 
     it("marks all auto-close items completed when everything is set up", () => {
+      const startsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+      const endsAt = new Date(Date.now() + 8 * 24 * 60 * 60 * 1000).toISOString()
+
       const items = getOrganizerActionItems(makeInput({
         status: "active",
         challengeReleased: true,
@@ -321,8 +324,8 @@ describe("getOrganizerActionItems", () => {
         submissionCount: 10,
         description: "A hackathon",
         bannerUrl: "https://example.com/banner.png",
-        startsAt: "2026-05-01T00:00:00Z",
-        endsAt: "2026-05-02T00:00:00Z",
+        startsAt,
+        endsAt,
         locationType: "virtual",
         prizeCount: 2,
         judgeDisplayCount: 3,
