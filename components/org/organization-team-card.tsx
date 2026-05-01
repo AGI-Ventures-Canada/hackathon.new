@@ -71,6 +71,7 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
   timeZone: "UTC",
 })
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 function formatDate(value: string): string {
   const date = new Date(value)
@@ -134,6 +135,11 @@ export function OrganizationTeamCard({
     event.preventDefault()
     const inviteEmail = email.trim().toLowerCase()
     if (!inviteEmail) {
+      return
+    }
+    if (!EMAIL_RE.test(inviteEmail)) {
+      setError("Enter a valid email.")
+      setEmail(inviteEmail)
       return
     }
 
@@ -223,16 +229,18 @@ export function OrganizationTeamCard({
               Invite people and see who can help run this org.
             </CardDescription>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => openOrganizationProfile()}
-          >
-            <CreditCard className="size-4" />
-            <span>Billing</span>
-            <ExternalLink className="size-3" />
-          </Button>
+          {hasOrganization && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => openOrganizationProfile({ afterLeaveOrganizationUrl: "/onboarding" })}
+            >
+              <CreditCard className="size-4" />
+              <span>Billing</span>
+              <ExternalLink className="size-3" />
+            </Button>
+          )}
         </div>
       </CardHeader>
       <CardContent className="space-y-6">

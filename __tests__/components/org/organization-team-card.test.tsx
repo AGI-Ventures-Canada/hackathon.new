@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test"
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { OrganizationTeamCard } from "@/components/org/organization-team-card"
 import { resetComponentMocks, setRouter } from "../../lib/component-mocks"
 import type { OrganizationInvitation, OrganizationMember } from "@/lib/services/organization-members"
 
 const mockRefresh = mock(() => {})
+const originalFetch = globalThis.fetch
 
 const members: OrganizationMember[] = [
   {
@@ -51,6 +52,7 @@ describe("OrganizationTeamCard", () => {
 
   afterEach(() => {
     cleanup()
+    globalThis.fetch = originalFetch
   })
 
   it("renders people and pending invites", () => {
@@ -148,5 +150,31 @@ describe("OrganizationTeamCard", () => {
     expect(screen.getByText("We couldn't load team details. Refresh the page to try again.")).toBeDefined()
     expect(screen.queryByText("No one is in this org yet.")).toBeNull()
     expect(screen.queryByText("No pending invites.")).toBeNull()
+  })
+
+  it("rejects invalid invite emails before adding them", () => {
+    const mockFetch = mock(() => Promise.resolve(new Response("{}")))
+    globalThis.fetch = mockFetch as unknown as typeof fetch
+
+    render(
+      <OrganizationTeamCard
+        initialMembers={members}
+        initialInvitations={invitations}
+        memberCount={members.length}
+        invitationCount={invitations.length}
+        loadError={null}
+        currentUserId="user_1"
+        canManage
+        hasOrganization
+      />
+    )
+
+    const input = screen.getByPlaceholderText("teammate@example.com") as HTMLInputElement
+    fireEvent.change(input, { target: { value: "not-an-email" } })
+    fireEvent.submit(input.closest("form")!)
+
+    expect(screen.getByText("Enter a valid email.")).toBeDefined()
+    expect(screen.queryByText("not-an-email")).toBeNull()
+    expect(mockFetch).not.toHaveBeenCalled()
   })
 })
