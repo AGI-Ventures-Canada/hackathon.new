@@ -5,6 +5,7 @@ import {
   resetSupabaseMocks,
   setMockFromImplementation,
   setMockRpcImplementation,
+  setMockSupabaseImplementation,
   mockMultiTableQuery,
 } from "../lib/supabase-mock"
 
@@ -113,6 +114,16 @@ describe("Public Hackathons Service", () => {
         error: { message: "DB error" },
       })
       setMockFromImplementation(() => chain)
+
+      const result = await listPublicHackathons()
+
+      expect(result).toEqual({ hackathons: [], total: 0 })
+    })
+
+    it("returns empty array when Supabase credentials are missing", async () => {
+      setMockSupabaseImplementation(() => {
+        throw new Error("Missing Supabase credentials")
+      })
 
       const result = await listPublicHackathons()
 

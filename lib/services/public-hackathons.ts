@@ -121,7 +121,18 @@ type HackathonWithOrganizer = Hackathon & {
 export async function listPublicHackathons(
   options?: { search?: string; page?: number; limit?: number }
 ): Promise<{ hackathons: HackathonWithOrganizer[]; total: number }> {
-  const client = getSupabase() as unknown as SupabaseClient
+  let client: SupabaseClient
+  try {
+    client = getSupabase() as unknown as SupabaseClient
+  } catch (error) {
+    if (error instanceof Error && error.message === "Missing Supabase credentials") {
+      console.warn("Supabase credentials are missing; public hackathon list is unavailable.")
+    } else {
+      console.error("Failed to list public hackathons:", error)
+    }
+    return { hackathons: [], total: 0 }
+  }
+
   const page = options?.page ?? 1
   const limit = options?.limit ?? 9
   const offset = (page - 1) * limit

@@ -95,9 +95,19 @@ export interface ChainableMock {
 let currentFromImpl: (table: string) => ChainableMock = () => createChainableMock({ data: null, error: null })
 let currentRpcImpl: (fn: string, params: unknown) => Promise<ChainableResult> = () =>
   Promise.resolve({ data: null, error: null })
+type SupabaseMockClient = {
+  from: (table: string) => ChainableMock
+  rpc: (fn: string, params: unknown) => Promise<ChainableResult>
+}
+
+let currentSupabaseImpl: () => SupabaseMockClient = () => ({
+  from: (table: string) => mockFrom(table),
+  rpc: (fn: string, params: unknown) => mockRpc(fn, params),
+})
 
 export const mockFrom = mock((table: string) => currentFromImpl(table))
 export const mockRpc = mock((fn: string, params: unknown) => currentRpcImpl(fn, params))
+export const mockSupabase = mock(() => currentSupabaseImpl())
 
 export function setMockFromImplementation(impl: (table: string) => ChainableMock) {
   currentFromImpl = impl
@@ -107,6 +117,10 @@ export function setMockRpcImplementation(
   impl: (fn: string, params: unknown) => Promise<ChainableResult>
 ) {
   currentRpcImpl = impl
+}
+
+export function setMockSupabaseImplementation(impl: () => SupabaseMockClient) {
+  currentSupabaseImpl = impl
 }
 
 export function createChainableMock<T = unknown>(resolvedValue: ChainableResult<T>): ChainableMock {
@@ -141,8 +155,13 @@ export function createChainableMock<T = unknown>(resolvedValue: ChainableResult<
 export function resetSupabaseMocks() {
   mockFrom.mockClear()
   mockRpc.mockClear()
+  mockSupabase.mockClear()
   currentFromImpl = () => createChainableMock({ data: null, error: null })
   currentRpcImpl = () => Promise.resolve({ data: null, error: null })
+  currentSupabaseImpl = () => ({
+    from: (table: string) => mockFrom(table),
+    rpc: (fn: string, params: unknown) => mockRpc(fn, params),
+  })
 }
 
 /**
@@ -216,8 +235,5 @@ export function resetAllMocks() {
 }
 
 mock.module("@/lib/db/client", () => ({
-  supabase: () => ({
-    from: (table: string) => mockFrom(table),
-    rpc: (fn: string, params: unknown) => mockRpc(fn, params),
-  }),
+  supabase: mockSupabase,
 }))
