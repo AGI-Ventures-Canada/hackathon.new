@@ -1439,6 +1439,28 @@ curl -s -X DELETE "$BASE_URL/api/dashboard/logo/light" \
 
 ---
 
+#### Manage organization people
+
+These routes are used by the settings page and require a Clerk browser session for the active organization.
+
+```bash
+# List people and pending invites
+curl -s "$BASE_URL/api/dashboard/organization-members" | jq .
+
+# Invite someone
+curl -s -X POST "$BASE_URL/api/dashboard/organization-members/invitations" \
+  -H "Content-Type: application/json" \
+  -d '{ "email": "teammate@example.com", "role": "org:member" }' | jq .
+
+# Cancel a pending invite
+curl -s -X DELETE "$BASE_URL/api/dashboard/organization-members/invitations/$INVITATION_ID"
+
+# Remove a person
+curl -s -X DELETE "$BASE_URL/api/dashboard/organization-members/$USER_ID"
+```
+
+---
+
 ### Webhooks
 
 Scope: `webhooks:read` / `webhooks:write`

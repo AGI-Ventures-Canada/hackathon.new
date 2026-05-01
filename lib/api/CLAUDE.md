@@ -30,6 +30,7 @@ The handler calls bare `supabase()` (anon key) rather than the service-role clie
 - `/credentials/*` - Contains sensitive secrets
 - `/hackathons/participating`, `/hackathons/sponsored` - User-specific views
 - `/organizations/search` - User-specific search
+- `/organization-members*` - Clerk organization membership management
 
 ## Error Handling
 

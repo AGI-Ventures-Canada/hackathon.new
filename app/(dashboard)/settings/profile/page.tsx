@@ -1,5 +1,7 @@
+import { auth } from "@clerk/nextjs/server"
 import { resolvePageTenant } from "@/lib/services/tenants"
 import { getPublicTenantById } from "@/lib/services/tenant-profiles"
+import { listOrganizationPeople } from "@/lib/services/organization-members"
 import {
   Card,
   CardContent,
@@ -8,11 +10,21 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { PageHeader } from "@/components/page-header"
-import { ProfileForm, ClerkSettingsCard } from "./profile-form"
+import { OrganizationTeamCard } from "@/components/org/organization-team-card"
+import { ProfileForm } from "./profile-form"
 
 export default async function SettingsProfilePage() {
   const tenant = await resolvePageTenant()
   const profile = await getPublicTenantById(tenant.id)
+  const { userId, orgRole } = await auth()
+  const people = tenant.clerk_org_id
+    ? await listOrganizationPeople(tenant.clerk_org_id).catch(() => ({
+        members: [],
+        invitations: [],
+        memberCount: 0,
+        invitationCount: 0,
+      }))
+    : { members: [], invitations: [], memberCount: 0, invitationCount: 0 }
 
   if (!profile) {
     return (
@@ -53,7 +65,13 @@ export default async function SettingsProfilePage() {
         </CardContent>
       </Card>
 
-      <ClerkSettingsCard />
+      <OrganizationTeamCard
+        initialMembers={people.members}
+        initialInvitations={people.invitations}
+        currentUserId={userId}
+        canManage={tenant.clerk_org_id !== null && orgRole === "org:admin"}
+        hasOrganization={tenant.clerk_org_id !== null}
+      />
     </div>
   )
 }

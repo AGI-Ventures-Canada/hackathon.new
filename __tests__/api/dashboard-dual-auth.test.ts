@@ -278,6 +278,18 @@ describe("Dashboard Dual-Auth - requirePrincipal", () => {
         requirePrincipal(mockUserPrincipal, ["user"], ["keys:read"])
       }).not.toThrow()
     })
+
+    it("GET /organization-members - rejects API key auth", () => {
+      expect(() => {
+        requirePrincipal(mockApiKeyPrincipal, ["user"], ["org:read"])
+      }).toThrow(AuthError)
+    })
+
+    it("POST /organization-members/invitations - accepts Clerk admins", () => {
+      expect(() => {
+        requirePrincipal(mockUserPrincipal, ["user"], ["org:write"])
+      }).not.toThrow()
+    })
   })
 })
 
@@ -322,6 +334,10 @@ describe("Dashboard Route Scope Requirements", () => {
     { path: "/dashboard/credentials", method: "POST", scopes: [] },
     { path: "/dashboard/credentials/:provider", method: "PATCH", scopes: [] },
     { path: "/dashboard/credentials/:provider", method: "DELETE", scopes: [] },
+    { path: "/dashboard/organization-members", method: "GET", scopes: ["org:read"] },
+    { path: "/dashboard/organization-members/invitations", method: "POST", scopes: ["org:write"] },
+    { path: "/dashboard/organization-members/invitations/:invitationId", method: "DELETE", scopes: ["org:write"] },
+    { path: "/dashboard/organization-members/:userId", method: "DELETE", scopes: ["org:write"] },
   ]
 
   it("dual-auth routes have correct scope mappings", () => {
@@ -332,7 +348,7 @@ describe("Dashboard Route Scope Requirements", () => {
   })
 
   it("clerk-only routes are security-sensitive", () => {
-    const sensitivePatterns = ["/keys", "/integrations", "/credentials"]
+    const sensitivePatterns = ["/keys", "/integrations", "/credentials", "/organization-members"]
 
     for (const route of clerkOnlyRoutes) {
       const isSensitive = sensitivePatterns.some((p) => route.path.includes(p))
