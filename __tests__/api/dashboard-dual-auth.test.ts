@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import type { Principal, UserPrincipal, ApiKeyPrincipal } from "@/lib/auth/types"
 import { DEFAULT_API_KEY_SCOPES, ALL_SCOPES } from "@/lib/auth/types"
-import { requirePrincipal, AuthError } from "@/lib/auth/principal"
+import { requireOrganizationAdminPrincipal, requirePrincipal, AuthError } from "@/lib/auth/principal"
 
 const mockUserPrincipal: UserPrincipal = {
   kind: "user",
@@ -287,8 +287,19 @@ describe("Dashboard Dual-Auth - requirePrincipal", () => {
 
     it("POST /organization-members/invitations - accepts Clerk admins", () => {
       expect(() => {
-        requirePrincipal(mockUserPrincipal, ["user"], ["org:write"])
+        requireOrganizationAdminPrincipal(mockUserPrincipal)
       }).not.toThrow()
+    })
+
+    it("POST /organization-members/invitations - rejects org members even with org:write", () => {
+      const memberWithWrite: UserPrincipal = {
+        ...mockUserPrincipal,
+        orgRole: "org:member",
+      }
+
+      expect(() => {
+        requireOrganizationAdminPrincipal(memberWithWrite)
+      }).toThrow(AuthError)
     })
   })
 })
