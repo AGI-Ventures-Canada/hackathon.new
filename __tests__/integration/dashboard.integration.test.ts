@@ -157,6 +157,28 @@ describe("Dashboard Routes Integration Tests", () => {
     })
   })
 
+  describe("POST /api/dashboard/organization-members/invitations", () => {
+    it("rejects org members even if they reach the write route", async () => {
+      mockResolvePrincipal.mockResolvedValue({
+        ...mockUserPrincipal,
+        orgRole: "org:member",
+        scopes: [...mockUserPrincipal.scopes, "org:write"],
+      })
+
+      const res = await app.handle(
+        new Request("http://localhost/api/dashboard/organization-members/invitations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: "teammate@example.com", role: "org:member" }),
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(403)
+      expect(data.error).toBe("Only org admins can manage people.")
+    })
+  })
+
   describe("GET /api/dashboard/keys", () => {
     it("rejects unauthenticated requests", async () => {
       mockResolvePrincipal.mockResolvedValue({ kind: "anon" })
@@ -360,4 +382,3 @@ describe("Dashboard Routes Integration Tests", () => {
     })
   })
 })
-
