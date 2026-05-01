@@ -13,6 +13,39 @@ const mockGetApiKeyById = mock(() => Promise.resolve(null))
 const mockListJobs = mock(() => Promise.resolve([]))
 const mockGetJobById = mock(() => Promise.resolve(null))
 const mockLogAudit = mock(() => Promise.resolve(null))
+const mockListOrganizationPeople = mock(() =>
+  Promise.resolve({
+    members: [],
+    invitations: [],
+    memberCount: 0,
+    invitationCount: 0,
+  })
+)
+const mockInviteOrganizationMember = mock(() =>
+  Promise.resolve({
+    id: "orginv_1",
+    email: "teammate@example.com",
+    role: "org:member",
+    status: "pending",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    expiresAt: null,
+    url: null,
+  })
+)
+const mockRevokeOrganizationMemberInvitation = mock(() =>
+  Promise.resolve({
+    id: "orginv_1",
+    email: "teammate@example.com",
+    role: "org:member",
+    status: "revoked",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    expiresAt: null,
+    url: null,
+  })
+)
+const mockRemoveOrganizationMember = mock(() => Promise.resolve())
 
 mock.module("@/lib/services/api-keys", () => ({
   listApiKeys: mockListApiKeys,
@@ -33,6 +66,20 @@ mock.module("@/lib/services/jobs", () => ({
 mock.module("@/lib/services/audit", () => ({
   logAudit: mockLogAudit,
   listAllAuditLogs: mock(() => Promise.resolve({ logs: [], total: 0 })),
+}))
+
+mock.module("@/lib/services/organization-members", () => ({
+  getClerkErrorMessage: (error: unknown, fallback: string) =>
+    error instanceof Error ? error.message : fallback,
+  inviteOrganizationMember: mockInviteOrganizationMember,
+  isOrganizationMemberRole: (role: string) => role === "org:member" || role === "org:admin",
+  listOrganizationPeople: mockListOrganizationPeople,
+  normalizeOrganizationInviteEmail: (email: string) => {
+    const normalized = email.trim().toLowerCase()
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized) ? normalized : null
+  },
+  removeOrganizationMember: mockRemoveOrganizationMember,
+  revokeOrganizationMemberInvitation: mockRevokeOrganizationMemberInvitation,
 }))
 
 const mockResolvePrincipal = mock(() =>
@@ -116,6 +163,10 @@ describe("Dashboard Routes Integration Tests", () => {
     mockListJobs.mockReset()
     mockGetJobById.mockReset()
     mockLogAudit.mockReset()
+    mockListOrganizationPeople.mockReset()
+    mockInviteOrganizationMember.mockReset()
+    mockRevokeOrganizationMemberInvitation.mockReset()
+    mockRemoveOrganizationMember.mockReset()
   })
 
   describe("GET /api/dashboard/me", () => {
@@ -154,6 +205,60 @@ describe("Dashboard Routes Integration Tests", () => {
       expect(data.tenantId).toBe("tenant-123")
       expect(data.keyId).toBe("key-456")
       expect(data).not.toHaveProperty("userId")
+    })
+  })
+
+  describe("GET /api/dashboard/organization-members", () => {
+    it("asks users to switch to an organization", async () => {
+      mockResolvePrincipal.mockResolvedValue({
+        ...mockUserPrincipal,
+        orgId: null,
+        orgRole: null,
+        scopes: [...mockUserPrincipal.scopes, "org:read"],
+      })
+
+      const res = await app.handle(
+        new Request("http://localhost/api/dashboard/organization-members")
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(400)
+      expect(data.error).toBe("Switch to an organization to see people.")
+      expect(mockListOrganizationPeople).not.toHaveBeenCalled()
+    })
+
+    it("lists organization people for an active org", async () => {
+      mockResolvePrincipal.mockResolvedValue({
+        ...mockUserPrincipal,
+        scopes: [...mockUserPrincipal.scopes, "org:read"],
+      })
+      mockListOrganizationPeople.mockResolvedValue({
+        members: [
+          {
+            id: "orgmem_1",
+            userId: "user_456",
+            name: "Ada Lovelace",
+            email: "ada@example.com",
+            imageUrl: null,
+            role: "org:admin",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+        ],
+        invitations: [],
+        memberCount: 1,
+        invitationCount: 0,
+      })
+
+      const res = await app.handle(
+        new Request("http://localhost/api/dashboard/organization-members")
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(data.memberCount).toBe(1)
+      expect(data.members[0].email).toBe("ada@example.com")
+      expect(mockListOrganizationPeople).toHaveBeenCalledWith("org-789")
     })
   })
 
@@ -197,6 +302,172 @@ describe("Dashboard Routes Integration Tests", () => {
 
       expect(res.status).toBe(403)
       expect(data.error).toBe("Only org admins can manage people.")
+    })
+  })
+
+  describe("DELETE /api/dashboard/organization-members/invitations/:invitationId", () => {
+    it("asks users to switch to an organization before checking admin role", async () => {
+      mockResolvePrincipal.mockResolvedValue({
+        ...mockUserPrincipal,
+        orgId: null,
+        orgRole: null,
+        scopes: [...mockUserPrincipal.scopes, "org:write"],
+      })
+
+      const res = await app.handle(
+        new Request("http://localhost/api/dashboard/organization-members/invitations/orginv_1", {
+          method: "DELETE",
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(400)
+      expect(data.error).toBe("Switch to an organization to cancel invites.")
+      expect(mockRevokeOrganizationMemberInvitation).not.toHaveBeenCalled()
+    })
+
+    it("rejects org members even if they reach the write route", async () => {
+      mockResolvePrincipal.mockResolvedValue({
+        ...mockUserPrincipal,
+        orgRole: "org:member",
+        scopes: [...mockUserPrincipal.scopes, "org:write"],
+      })
+
+      const res = await app.handle(
+        new Request("http://localhost/api/dashboard/organization-members/invitations/orginv_1", {
+          method: "DELETE",
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(403)
+      expect(data.error).toBe("Only org admins can manage people.")
+      expect(mockRevokeOrganizationMemberInvitation).not.toHaveBeenCalled()
+    })
+
+    it("cancels an invitation for org admins", async () => {
+      mockResolvePrincipal.mockResolvedValue({
+        ...mockUserPrincipal,
+        scopes: [...mockUserPrincipal.scopes, "org:write"],
+      })
+      mockRevokeOrganizationMemberInvitation.mockResolvedValue({
+        id: "orginv_1",
+        email: "teammate@example.com",
+        role: "org:member",
+        status: "revoked",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        expiresAt: null,
+        url: null,
+      })
+
+      const res = await app.handle(
+        new Request("http://localhost/api/dashboard/organization-members/invitations/orginv_1", {
+          method: "DELETE",
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(data.success).toBe(true)
+      expect(mockRevokeOrganizationMemberInvitation).toHaveBeenCalledWith({
+        organizationId: "org-789",
+        invitationId: "orginv_1",
+        requestingUserId: "user-456",
+      })
+      expect(mockLogAudit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "org_invitation.cancelled",
+          resourceId: "orginv_1",
+        })
+      )
+    })
+  })
+
+  describe("DELETE /api/dashboard/organization-members/:userId", () => {
+    it("asks users to switch to an organization before checking admin role", async () => {
+      mockResolvePrincipal.mockResolvedValue({
+        ...mockUserPrincipal,
+        orgId: null,
+        orgRole: null,
+        scopes: [...mockUserPrincipal.scopes, "org:write"],
+      })
+
+      const res = await app.handle(
+        new Request("http://localhost/api/dashboard/organization-members/user-999", {
+          method: "DELETE",
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(400)
+      expect(data.error).toBe("Switch to an organization to remove people.")
+      expect(mockRemoveOrganizationMember).not.toHaveBeenCalled()
+    })
+
+    it("rejects org members even if they reach the write route", async () => {
+      mockResolvePrincipal.mockResolvedValue({
+        ...mockUserPrincipal,
+        orgRole: "org:member",
+        scopes: [...mockUserPrincipal.scopes, "org:write"],
+      })
+
+      const res = await app.handle(
+        new Request("http://localhost/api/dashboard/organization-members/user-999", {
+          method: "DELETE",
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(403)
+      expect(data.error).toBe("Only org admins can manage people.")
+      expect(mockRemoveOrganizationMember).not.toHaveBeenCalled()
+    })
+
+    it("prevents org admins from removing themselves", async () => {
+      mockResolvePrincipal.mockResolvedValue({
+        ...mockUserPrincipal,
+        scopes: [...mockUserPrincipal.scopes, "org:write"],
+      })
+
+      const res = await app.handle(
+        new Request("http://localhost/api/dashboard/organization-members/user-456", {
+          method: "DELETE",
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(400)
+      expect(data.error).toBe("You can't remove yourself.")
+      expect(mockRemoveOrganizationMember).not.toHaveBeenCalled()
+    })
+
+    it("removes an organization member for org admins", async () => {
+      mockResolvePrincipal.mockResolvedValue({
+        ...mockUserPrincipal,
+        scopes: [...mockUserPrincipal.scopes, "org:write"],
+      })
+      mockRemoveOrganizationMember.mockResolvedValue(undefined)
+
+      const res = await app.handle(
+        new Request("http://localhost/api/dashboard/organization-members/user-999", {
+          method: "DELETE",
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(data.success).toBe(true)
+      expect(mockRemoveOrganizationMember).toHaveBeenCalledWith({
+        organizationId: "org-789",
+        userId: "user-999",
+      })
+      expect(mockLogAudit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "org_member.removed",
+          resourceId: "user-999",
+        })
+      )
     })
   })
 
