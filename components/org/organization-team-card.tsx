@@ -3,7 +3,16 @@
 import { useState, type FormEvent, type KeyboardEvent } from "react"
 import { useRouter } from "next/navigation"
 import { useClerk } from "@clerk/nextjs"
-import { CreditCard, ExternalLink, Mail, Trash2, UserMinus, UserPlus, Users } from "lucide-react"
+import {
+  CreditCard,
+  ExternalLink,
+  Mail,
+  Trash2,
+  TriangleAlert,
+  UserMinus,
+  UserPlus,
+  Users,
+} from "lucide-react"
 import { assertOk, assertOkJson } from "@/lib/utils/fetch"
 import type {
   OrganizationInvitation,
@@ -44,6 +53,9 @@ import { Separator } from "@/components/ui/separator"
 type OrganizationTeamCardProps = {
   initialMembers: OrganizationMember[]
   initialInvitations: OrganizationInvitation[]
+  memberCount: number
+  invitationCount: number
+  loadError: string | null
   currentUserId: string | null
   canManage: boolean
   hasOrganization: boolean
@@ -95,6 +107,9 @@ function sortMembers(members: OrganizationMember[]): OrganizationMember[] {
 export function OrganizationTeamCard({
   initialMembers,
   initialInvitations,
+  memberCount,
+  invitationCount,
+  loadError,
   currentUserId,
   canManage,
   hasOrganization,
@@ -103,9 +118,17 @@ export function OrganizationTeamCard({
   const { openOrganizationProfile } = useClerk()
   const [members, setMembers] = useState(() => sortMembers(initialMembers))
   const [invitations, setInvitations] = useState(() => sortInvitations(initialInvitations))
+  const [totalMemberCount, setTotalMemberCount] = useState(() =>
+    Math.max(memberCount, initialMembers.length)
+  )
+  const [totalInvitationCount, setTotalInvitationCount] = useState(() =>
+    Math.max(invitationCount, initialInvitations.length)
+  )
   const [email, setEmail] = useState("")
   const [role, setRole] = useState<OrganizationMemberRole>("org:member")
   const [error, setError] = useState<string | null>(null)
+  const hiddenMemberCount = Math.max(0, totalMemberCount - members.length)
+  const hiddenInvitationCount = Math.max(0, totalInvitationCount - invitations.length)
 
   async function handleInviteSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -128,6 +151,7 @@ export function OrganizationTeamCard({
     setError(null)
     setEmail("")
     setInvitations((current) => sortInvitations([tempInvitation, ...current]))
+    setTotalInvitationCount((count) => count + 1)
 
     try {
       const data = await fetch("/api/dashboard/organization-members/invitations", {
@@ -142,6 +166,7 @@ export function OrganizationTeamCard({
       router.refresh()
     } catch (err) {
       setInvitations((current) => current.filter((invite) => invite.id !== tempInvitation.id))
+      setTotalInvitationCount((count) => Math.max(0, count - 1))
       setEmail(inviteEmail)
       setError(err instanceof Error ? err.message : "Could not send invite.")
     }
@@ -157,6 +182,7 @@ export function OrganizationTeamCard({
   async function handleCancelInvitation(invitation: OrganizationInvitation) {
     setError(null)
     setInvitations((current) => current.filter((item) => item.id !== invitation.id))
+    setTotalInvitationCount((count) => Math.max(0, count - 1))
 
     try {
       await fetch(`/api/dashboard/organization-members/invitations/${encodeURIComponent(invitation.id)}`, {
@@ -165,6 +191,7 @@ export function OrganizationTeamCard({
       router.refresh()
     } catch (err) {
       setInvitations((current) => sortInvitations([invitation, ...current]))
+      setTotalInvitationCount((count) => count + 1)
       setError(err instanceof Error ? err.message : "Could not cancel invite.")
     }
   }
@@ -172,6 +199,7 @@ export function OrganizationTeamCard({
   async function handleRemoveMember(member: OrganizationMember) {
     setError(null)
     setMembers((current) => current.filter((item) => item.userId !== member.userId))
+    setTotalMemberCount((count) => Math.max(0, count - 1))
 
     try {
       await fetch(`/api/dashboard/organization-members/${encodeURIComponent(member.userId)}`, {
@@ -180,6 +208,7 @@ export function OrganizationTeamCard({
       router.refresh()
     } catch (err) {
       setMembers((current) => sortMembers([member, ...current]))
+      setTotalMemberCount((count) => count + 1)
       setError(err instanceof Error ? err.message : "Could not remove this person.")
     }
   }
@@ -256,18 +285,30 @@ export function OrganizationTeamCard({
           </p>
         )}
 
+        {loadError && (
+          <div className="flex items-start gap-2 text-sm text-destructive">
+            <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+            <p>{loadError}</p>
+          </div>
+        )}
+
         {error && <p className="text-sm text-destructive">{error}</p>}
 
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <Users className="size-4 text-muted-foreground" />
             <h3 className="text-sm font-medium">People</h3>
-            <Badge variant="count">{members.length}</Badge>
+            <Badge variant="count">{totalMemberCount}</Badge>
           </div>
+          {hiddenMemberCount > 0 && (
+            <p className="text-sm text-muted-foreground">
+              Showing {members.length} of {totalMemberCount} people.
+            </p>
+          )}
 
-          {members.length === 0 ? (
+          {members.length === 0 && !loadError ? (
             <p className="text-sm text-muted-foreground">No one is in this org yet.</p>
-          ) : (
+          ) : members.length > 0 ? (
             <div className="divide-y border">
               {members.map((member) => {
                 const isCurrentUser = member.userId === currentUserId
@@ -329,7 +370,7 @@ export function OrganizationTeamCard({
                 )
               })}
             </div>
-          )}
+          ) : null}
         </div>
 
         <Separator />
@@ -338,12 +379,17 @@ export function OrganizationTeamCard({
           <div className="flex items-center gap-2">
             <Mail className="size-4 text-muted-foreground" />
             <h3 className="text-sm font-medium">Pending invites</h3>
-            <Badge variant="count">{invitations.length}</Badge>
+            <Badge variant="count">{totalInvitationCount}</Badge>
           </div>
+          {hiddenInvitationCount > 0 && (
+            <p className="text-sm text-muted-foreground">
+              Showing {invitations.length} of {totalInvitationCount} pending invites.
+            </p>
+          )}
 
-          {invitations.length === 0 ? (
+          {invitations.length === 0 && !loadError ? (
             <p className="text-sm text-muted-foreground">No pending invites.</p>
-          ) : (
+          ) : invitations.length > 0 ? (
             <div className="divide-y border">
               {invitations.map((invitation) => {
                 const isSending = invitation.id.startsWith("temp-")
@@ -382,7 +428,7 @@ export function OrganizationTeamCard({
                 )
               })}
             </div>
-          )}
+          ) : null}
         </div>
       </CardContent>
     </Card>
