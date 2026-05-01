@@ -109,7 +109,45 @@ describe("Organization members service", () => {
     })
   })
 
+  it("warns when the Clerk people list is truncated", async () => {
+    const warnSpy = mock(() => {})
+    const originalWarn = console.warn
+    console.warn = warnSpy
+    const getOrganizationMembershipList = mock(() =>
+      Promise.resolve({
+        totalCount: 101,
+        data: [],
+      })
+    )
+    const getOrganizationInvitationList = mock(() =>
+      Promise.resolve({
+        totalCount: 0,
+        data: [],
+      })
+    )
+
+    setMockOrganizations({
+      getOrganizationMembershipList,
+      getOrganizationInvitationList,
+    })
+
+    try {
+      await listOrganizationPeople("org_1")
+      expect(warnSpy).toHaveBeenCalledWith("Organization people list was truncated.", {
+        organizationId: "org_1",
+        memberCount: 101,
+        invitationCount: 0,
+        visibleMemberCount: 0,
+        visibleInvitationCount: 0,
+      })
+    } finally {
+      console.warn = originalWarn
+    }
+  })
+
   it("creates an organization invite", async () => {
+    const previousAppUrl = process.env.NEXT_PUBLIC_APP_URL
+    process.env.NEXT_PUBLIC_APP_URL = "https://app.example"
     const createOrganizationInvitation = mock(() =>
       Promise.resolve({
         id: "orginv_2",
@@ -126,21 +164,29 @@ describe("Organization members service", () => {
 
     setMockOrganizations({ createOrganizationInvitation })
 
-    const invitation = await inviteOrganizationMember({
-      organizationId: "org_1",
-      inviterUserId: "user_admin",
-      email: "new@example.com",
-      role: "org:member",
-    })
+    try {
+      const invitation = await inviteOrganizationMember({
+        organizationId: "org_1",
+        inviterUserId: "user_admin",
+        email: "new@example.com",
+        role: "org:member",
+      })
 
-    expect(createOrganizationInvitation).toHaveBeenCalledWith({
-      organizationId: "org_1",
-      inviterUserId: "user_admin",
-      emailAddress: "new@example.com",
-      role: "org:member",
-      redirectUrl: "/home",
-    })
-    expect(invitation.email).toBe("new@example.com")
+      expect(createOrganizationInvitation).toHaveBeenCalledWith({
+        organizationId: "org_1",
+        inviterUserId: "user_admin",
+        emailAddress: "new@example.com",
+        role: "org:member",
+        redirectUrl: "https://app.example/home",
+      })
+      expect(invitation.email).toBe("new@example.com")
+    } finally {
+      if (previousAppUrl === undefined) {
+        delete process.env.NEXT_PUBLIC_APP_URL
+      } else {
+        process.env.NEXT_PUBLIC_APP_URL = previousAppUrl
+      }
+    }
   })
 
   it("revokes a pending invite", async () => {

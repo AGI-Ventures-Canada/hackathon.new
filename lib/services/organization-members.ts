@@ -133,6 +133,11 @@ function formatInvitation(invitation: ClerkOrganizationInvitationResource): Orga
   }
 }
 
+function getOrganizationInviteRedirectUrl(): string {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://getoatmeal.com"
+  return new URL("/home", appUrl).toString()
+}
+
 export async function listOrganizationPeople(organizationId: string): Promise<OrganizationPeople> {
   const client = await clerkClient()
   const [membersResponse, invitationsResponse] = await Promise.all([
@@ -150,12 +155,24 @@ export async function listOrganizationPeople(organizationId: string): Promise<Or
 
   const members = (membersResponse.data as ClerkOrganizationMembershipResource[]).map(formatMember)
   const invitations = (invitationsResponse.data as ClerkOrganizationInvitationResource[]).map(formatInvitation)
+  const memberCount = membersResponse.totalCount ?? members.length
+  const invitationCount = invitationsResponse.totalCount ?? invitations.length
+
+  if (memberCount > members.length || invitationCount > invitations.length) {
+    console.warn("Organization people list was truncated.", {
+      organizationId,
+      memberCount,
+      invitationCount,
+      visibleMemberCount: members.length,
+      visibleInvitationCount: invitations.length,
+    })
+  }
 
   return {
     members,
     invitations,
-    memberCount: membersResponse.totalCount ?? members.length,
-    invitationCount: invitationsResponse.totalCount ?? invitations.length,
+    memberCount,
+    invitationCount,
   }
 }
 
@@ -171,7 +188,7 @@ export async function inviteOrganizationMember(input: {
     inviterUserId: input.inviterUserId,
     emailAddress: input.email,
     role: input.role,
-    redirectUrl: "/home",
+    redirectUrl: getOrganizationInviteRedirectUrl(),
   })
 
   return formatInvitation(invitation as ClerkOrganizationInvitationResource)
