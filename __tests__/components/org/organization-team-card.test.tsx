@@ -102,5 +102,6 @@ describe("OrganizationTeamCard", () => {
     expect(screen.getByText("Switch to an organization to invite people.")).toBeDefined()
     expect(screen.getByText("No one is in this org yet.")).toBeDefined()
     expect(screen.getByText("No pending invites.")).toBeDefined()
+    expect(screen.queryByRole("button", { name: /billing/i })).toBeNull()
   })
 })

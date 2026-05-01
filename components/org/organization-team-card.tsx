@@ -194,16 +194,18 @@ export function OrganizationTeamCard({
               Invite people and see who can help run this org.
             </CardDescription>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => openOrganizationProfile()}
-          >
-            <CreditCard className="size-4" />
-            <span>Billing</span>
-            <ExternalLink className="size-3" />
-          </Button>
+          {hasOrganization && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => openOrganizationProfile()}
+            >
+              <CreditCard className="size-4" />
+              <span>Billing</span>
+              <ExternalLink className="size-3" />
+            </Button>
+          )}
         </div>
       </CardHeader>
       <CardContent className="space-y-6">

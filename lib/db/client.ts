@@ -3,6 +3,13 @@ import type { Database } from "./types"
 
 let _supabase: SupabaseClient<Database> | null = null
 
+export class MissingSupabaseCredentialsError extends Error {
+  constructor() {
+    super("Missing Supabase credentials")
+    this.name = "MissingSupabaseCredentialsError"
+  }
+}
+
 export function getSupabaseClient(): SupabaseClient<Database> {
   if (_supabase) return _supabase
 
@@ -10,7 +17,7 @@ export function getSupabaseClient(): SupabaseClient<Database> {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
 
   if (!url || !key) {
-    throw new Error("Missing Supabase credentials")
+    throw new MissingSupabaseCredentialsError()
   }
 
   _supabase = createClient<Database>(url, key)

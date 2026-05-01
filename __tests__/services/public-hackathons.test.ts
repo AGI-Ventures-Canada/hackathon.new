@@ -12,6 +12,7 @@ import {
 const { getPublicHackathon, listPublicHackathons, getHackathonByIdForOrganizer, checkHackathonOrganizer, updateHackathonSettings, updateHackathonTranslation, deleteHackathon } = await import(
   "@/lib/services/public-hackathons"
 )
+const { MissingSupabaseCredentialsError } = await import("@/lib/db/client")
 
 const mockHackathon: Hackathon = {
   id: "11111111-1111-1111-1111-111111111111",
@@ -122,7 +123,7 @@ describe("Public Hackathons Service", () => {
 
     it("returns empty array when Supabase credentials are missing", async () => {
       setMockSupabaseImplementation(() => {
-        throw new Error("Missing Supabase credentials")
+        throw new MissingSupabaseCredentialsError()
       })
 
       const result = await listPublicHackathons()

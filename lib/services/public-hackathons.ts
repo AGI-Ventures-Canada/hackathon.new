@@ -1,4 +1,4 @@
-import { supabase as getSupabase } from "@/lib/db/client"
+import { MissingSupabaseCredentialsError, supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Hackathon, TenantProfile, HackathonSponsor, HackathonStatus, HackathonJudgeDisplay, Prize, JudgingMode } from "@/lib/db/hackathon-types"
 
@@ -125,7 +125,7 @@ export async function listPublicHackathons(
   try {
     client = getSupabase() as unknown as SupabaseClient
   } catch (error) {
-    if (error instanceof Error && error.message === "Missing Supabase credentials") {
+    if (error instanceof MissingSupabaseCredentialsError) {
       console.warn("Supabase credentials are missing; public hackathon list is unavailable.")
     } else {
       console.error("Failed to list public hackathons:", error)

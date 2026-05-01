@@ -42,6 +42,13 @@
  */
 import { mock } from "bun:test"
 
+export class MissingSupabaseCredentialsError extends Error {
+  constructor() {
+    super("Missing Supabase credentials")
+    this.name = "MissingSupabaseCredentialsError"
+  }
+}
+
 export const mockAuth = mock(() =>
   Promise.resolve({ userId: null, orgId: null, orgRole: null })
 )
@@ -235,5 +242,6 @@ export function resetAllMocks() {
 }
 
 mock.module("@/lib/db/client", () => ({
+  MissingSupabaseCredentialsError,
   supabase: mockSupabase,
 }))
