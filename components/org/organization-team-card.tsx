@@ -230,7 +230,7 @@ export function OrganizationTeamCard({
               />
             </div>
             <Select value={role} onValueChange={(value) => setRole(value as OrganizationMemberRole)}>
-              <SelectTrigger>
+              <SelectTrigger className="w-full sm:w-36">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
