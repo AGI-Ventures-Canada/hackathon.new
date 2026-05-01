@@ -13,12 +13,12 @@ import { dashboardPostEventRoutes } from "./dashboard-post-event"
 import { dashboardSponsorFulfillmentRoutes } from "./dashboard-sponsor-fulfillments"
 import { getEffectiveStatus } from "@/lib/utils/timeline"
 import { normalizeLocale } from "@/lib/utils/language"
-import type { Principal, Scope } from "@/lib/auth/types"
+import type { Scope, UserPrincipal } from "@/lib/auth/types"
 import { ALL_SCOPES } from "@/lib/auth/types"
 import type { WebhookEvent, SponsorTier } from "@/lib/db/hackathon-types"
 
-function organizationAdminError(principal: Principal): Response | null {
-  if (principal.kind === "user" && principal.orgRole === "org:admin") {
+function organizationAdminError(principal: UserPrincipal): Response | null {
+  if (principal.orgRole === "org:admin") {
     return null
   }
 

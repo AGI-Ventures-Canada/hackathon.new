@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server"
 import { supabase as getSupabase } from "@/lib/db/client"
-import type { AdminPrincipal, ApiKeyPrincipal, Principal, PrincipalKindMap, Scope, UserPrincipal } from "./types"
+import type { AdminPrincipal, ApiKeyPrincipal, Principal, PrincipalKindMap, Scope } from "./types"
 import { ADMIN_SCOPES, scopesForRole } from "./types"
 import { verifyApiKey } from "@/lib/services/api-keys"
 import { getOrCreateTenant, getOrCreatePersonalTenant } from "@/lib/services/tenants"
@@ -156,13 +156,5 @@ export function requirePrincipal<K extends Exclude<Principal["kind"], "anon">>(
     if (!principal.scopes.includes(scope)) {
       throw new AuthError(`Missing required scope: ${scope}`, 403)
     }
-  }
-}
-
-export function requireOrganizationAdminPrincipal(principal: Principal): asserts principal is UserPrincipal {
-  requirePrincipal(principal, ["user"], ["org:write"])
-
-  if (principal.kind !== "user" || principal.orgRole !== "org:admin") {
-    throw new AuthError("Forbidden", 403)
   }
 }
