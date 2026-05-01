@@ -13,9 +13,20 @@ import { dashboardPostEventRoutes } from "./dashboard-post-event"
 import { dashboardSponsorFulfillmentRoutes } from "./dashboard-sponsor-fulfillments"
 import { getEffectiveStatus } from "@/lib/utils/timeline"
 import { normalizeLocale } from "@/lib/utils/language"
-import type { Scope } from "@/lib/auth/types"
+import type { Principal, Scope } from "@/lib/auth/types"
 import { ALL_SCOPES } from "@/lib/auth/types"
 import type { WebhookEvent, SponsorTier } from "@/lib/db/hackathon-types"
+
+function organizationAdminError(principal: Principal): Response | null {
+  if (principal.kind === "user" && principal.orgRole === "org:admin") {
+    return null
+  }
+
+  return new Response(JSON.stringify({ error: "Only org admins can manage people." }), {
+    status: 403,
+    headers: { "Content-Type": "application/json" },
+  })
+}
 
 export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
   .derive(async ({ request }) => {
@@ -155,6 +166,8 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
     "/organization-members/invitations",
     async ({ principal, body }) => {
       requirePrincipal(principal, ["user"], ["org:write"])
+      const adminError = organizationAdminError(principal)
+      if (adminError) return adminError
 
       if (!principal.orgId) {
         return new Response(JSON.stringify({ error: "Switch to an organization to invite people." }), {
@@ -233,6 +246,8 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
     "/organization-members/invitations/:invitationId",
     async ({ principal, params }) => {
       requirePrincipal(principal, ["user"], ["org:write"])
+      const adminError = organizationAdminError(principal)
+      if (adminError) return adminError
 
       if (!principal.orgId) {
         return new Response(JSON.stringify({ error: "Switch to an organization to cancel invites." }), {
@@ -279,6 +294,8 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
     "/organization-members/:userId",
     async ({ principal, params }) => {
       requirePrincipal(principal, ["user"], ["org:write"])
+      const adminError = organizationAdminError(principal)
+      if (adminError) return adminError
 
       if (!principal.orgId) {
         return new Response(JSON.stringify({ error: "Switch to an organization to remove people." }), {

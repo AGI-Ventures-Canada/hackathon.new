@@ -225,7 +225,6 @@ export function OrganizationTeamCard({
                 autoComplete="off"
                 autoCapitalize="none"
                 spellCheck={false}
-                autoFocus
                 data-1p-ignore
                 data-lpignore="true"
                 data-form-type="other"
