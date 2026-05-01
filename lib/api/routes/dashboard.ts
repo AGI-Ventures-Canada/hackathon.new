@@ -166,8 +166,6 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
     "/organization-members/invitations",
     async ({ principal, body }) => {
       requirePrincipal(principal, ["user"], ["org:write"])
-      const adminError = organizationAdminError(principal)
-      if (adminError) return adminError
 
       if (!principal.orgId) {
         return new Response(JSON.stringify({ error: "Switch to an organization to invite people." }), {
@@ -175,6 +173,9 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           headers: { "Content-Type": "application/json" },
         })
       }
+
+      const adminError = organizationAdminError(principal)
+      if (adminError) return adminError
 
       const rateLimitResult = await checkRateLimit(`org_invitation:${principal.orgId}`, {
         maxRequests: 20,
@@ -246,8 +247,6 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
     "/organization-members/invitations/:invitationId",
     async ({ principal, params }) => {
       requirePrincipal(principal, ["user"], ["org:write"])
-      const adminError = organizationAdminError(principal)
-      if (adminError) return adminError
 
       if (!principal.orgId) {
         return new Response(JSON.stringify({ error: "Switch to an organization to cancel invites." }), {
@@ -255,6 +254,9 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           headers: { "Content-Type": "application/json" },
         })
       }
+
+      const adminError = organizationAdminError(principal)
+      if (adminError) return adminError
 
       const { getClerkErrorMessage, revokeOrganizationMemberInvitation } = await import(
         "@/lib/services/organization-members"
@@ -294,8 +296,6 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
     "/organization-members/:userId",
     async ({ principal, params }) => {
       requirePrincipal(principal, ["user"], ["org:write"])
-      const adminError = organizationAdminError(principal)
-      if (adminError) return adminError
 
       if (!principal.orgId) {
         return new Response(JSON.stringify({ error: "Switch to an organization to remove people." }), {
@@ -303,6 +303,9 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           headers: { "Content-Type": "application/json" },
         })
       }
+
+      const adminError = organizationAdminError(principal)
+      if (adminError) return adminError
 
       if (params.userId === principal.userId) {
         return new Response(JSON.stringify({ error: "You can't remove yourself." }), {
