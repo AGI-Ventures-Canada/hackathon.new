@@ -228,7 +228,7 @@ export function OrganizationTeamCard({
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => openOrganizationProfile()}
+              onClick={() => openOrganizationProfile({ afterLeaveOrganizationUrl: "/onboarding" })}
             >
               <CreditCard className="size-4" />
               <span>Billing</span>

@@ -195,7 +195,7 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
             variant="link"
             size="sm"
             className="h-auto p-0 text-xs"
-            onClick={() => openOrganizationProfile()}
+            onClick={() => openOrganizationProfile({ afterLeaveOrganizationUrl: "/onboarding" })}
           >
             Edit in Clerk
             <ExternalLink className="size-3 ml-1" />
