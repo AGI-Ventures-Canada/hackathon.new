@@ -41,13 +41,9 @@
  * them together causes mock isolation failures.
  */
 import { mock } from "bun:test"
+import { MissingSupabaseCredentialsError } from "@/lib/db/client"
 
-export class MissingSupabaseCredentialsError extends Error {
-  constructor() {
-    super("Missing Supabase credentials")
-    this.name = "MissingSupabaseCredentialsError"
-  }
-}
+export { MissingSupabaseCredentialsError }
 
 export const mockAuth = mock(() =>
   Promise.resolve({ userId: null, orgId: null, orgRole: null })
