@@ -1,7 +1,10 @@
 import { auth } from "@clerk/nextjs/server"
 import { resolvePageTenant } from "@/lib/services/tenants"
 import { getPublicTenantById } from "@/lib/services/tenant-profiles"
-import { listOrganizationPeople } from "@/lib/services/organization-members"
+import {
+  listOrganizationPeople,
+  type OrganizationPeople,
+} from "@/lib/services/organization-members"
 import {
   Card,
   CardContent,
@@ -13,18 +16,41 @@ import { PageHeader } from "@/components/page-header"
 import { OrganizationTeamCard } from "@/components/org/organization-team-card"
 import { ProfileForm } from "./profile-form"
 
+type OrganizationPeopleState = OrganizationPeople & {
+  loadError: string | null
+}
+
+const emptyOrganizationPeople: OrganizationPeople = {
+  members: [],
+  invitations: [],
+  memberCount: 0,
+  invitationCount: 0,
+}
+
+async function getOrganizationPeople(
+  organizationId: string | null
+): Promise<OrganizationPeopleState> {
+  if (!organizationId) {
+    return { ...emptyOrganizationPeople, loadError: null }
+  }
+
+  try {
+    const people = await listOrganizationPeople(organizationId)
+    return { ...people, loadError: null }
+  } catch (error) {
+    console.error("Failed to load organization people.", { organizationId, error })
+    return {
+      ...emptyOrganizationPeople,
+      loadError: "We couldn't load team details. Refresh the page to try again.",
+    }
+  }
+}
+
 export default async function SettingsProfilePage() {
   const tenant = await resolvePageTenant()
   const profile = await getPublicTenantById(tenant.id)
   const { userId, orgRole } = await auth()
-  const people = tenant.clerk_org_id
-    ? await listOrganizationPeople(tenant.clerk_org_id).catch(() => ({
-        members: [],
-        invitations: [],
-        memberCount: 0,
-        invitationCount: 0,
-      }))
-    : { members: [], invitations: [], memberCount: 0, invitationCount: 0 }
+  const people = await getOrganizationPeople(tenant.clerk_org_id)
 
   if (!profile) {
     return (
@@ -36,6 +62,15 @@ export default async function SettingsProfilePage() {
       </div>
     )
   }
+
+  const teamCardKey = [
+    tenant.clerk_org_id ?? "personal",
+    people.loadError ? "error" : "loaded",
+    people.memberCount,
+    people.invitationCount,
+    people.members.map((member) => member.userId).join(","),
+    people.invitations.map((invitation) => invitation.id).join(","),
+  ].join(":")
 
   return (
     <div className="space-y-6">
@@ -66,8 +101,12 @@ export default async function SettingsProfilePage() {
       </Card>
 
       <OrganizationTeamCard
+        key={teamCardKey}
         initialMembers={people.members}
         initialInvitations={people.invitations}
+        memberCount={people.memberCount}
+        invitationCount={people.invitationCount}
+        loadError={people.loadError}
         currentUserId={userId}
         canManage={tenant.clerk_org_id !== null && orgRole === "org:admin"}
         hasOrganization={tenant.clerk_org_id !== null}

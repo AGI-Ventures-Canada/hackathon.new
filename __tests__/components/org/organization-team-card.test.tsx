@@ -58,6 +58,9 @@ describe("OrganizationTeamCard", () => {
       <OrganizationTeamCard
         initialMembers={members}
         initialInvitations={invitations}
+        memberCount={members.length}
+        invitationCount={invitations.length}
+        loadError={null}
         currentUserId="user_1"
         canManage
         hasOrganization
@@ -77,6 +80,9 @@ describe("OrganizationTeamCard", () => {
       <OrganizationTeamCard
         initialMembers={members}
         initialInvitations={invitations}
+        memberCount={members.length}
+        invitationCount={invitations.length}
+        loadError={null}
         currentUserId="user_2"
         canManage={false}
         hasOrganization
@@ -93,6 +99,9 @@ describe("OrganizationTeamCard", () => {
       <OrganizationTeamCard
         initialMembers={[]}
         initialInvitations={[]}
+        memberCount={0}
+        invitationCount={0}
+        loadError={null}
         currentUserId="user_1"
         canManage={false}
         hasOrganization={false}
@@ -103,5 +112,42 @@ describe("OrganizationTeamCard", () => {
     expect(screen.getByText("No one is in this org yet.")).toBeDefined()
     expect(screen.getByText("No pending invites.")).toBeDefined()
     expect(screen.queryByRole("button", { name: /billing/i })).toBeNull()
+  })
+
+  it("shows when team results are truncated", () => {
+    render(
+      <OrganizationTeamCard
+        initialMembers={members.slice(0, 1)}
+        initialInvitations={invitations}
+        memberCount={3}
+        invitationCount={2}
+        loadError={null}
+        currentUserId="user_1"
+        canManage
+        hasOrganization
+      />
+    )
+
+    expect(screen.getByText("Showing 1 of 3 people.")).toBeDefined()
+    expect(screen.getByText("Showing 1 of 2 pending invites.")).toBeDefined()
+  })
+
+  it("shows a load error instead of empty team states", () => {
+    render(
+      <OrganizationTeamCard
+        initialMembers={[]}
+        initialInvitations={[]}
+        memberCount={0}
+        invitationCount={0}
+        loadError="We couldn't load team details. Refresh the page to try again."
+        currentUserId="user_1"
+        canManage
+        hasOrganization
+      />
+    )
+
+    expect(screen.getByText("We couldn't load team details. Refresh the page to try again.")).toBeDefined()
+    expect(screen.queryByText("No one is in this org yet.")).toBeNull()
+    expect(screen.queryByText("No pending invites.")).toBeNull()
   })
 })
