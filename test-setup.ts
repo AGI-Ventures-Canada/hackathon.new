@@ -40,6 +40,7 @@ g.__clerkState = {
   memberships: [] as Array<{ organization: { id: string; name: string; imageUrl: string | null } }>,
   setActive: mock(() => Promise.resolve()),
   openUserProfile: mock(() => {}),
+  openOrganizationProfile: mock(() => {}),
   signOut: mock(() => Promise.resolve()),
   client: null as unknown,
   signInLoaded: false,
@@ -55,7 +56,7 @@ g.__clerkState = {
 mock.module("@clerk/nextjs", () => ({
   useAuth: () => ({ isSignedIn: g.__clerkState.isSignedIn, isLoaded: g.__clerkState.isLoaded, userId: g.__clerkState.userId }),
   useUser: () => ({ isLoaded: g.__clerkState.isLoaded, isSignedIn: g.__clerkState.isSignedIn, user: g.__clerkState.isSignedIn ? g.__clerkState.user : null }),
-  useClerk: () => ({ openUserProfile: g.__clerkState.openUserProfile, signOut: g.__clerkState.signOut, client: g.__clerkState.client, setActive: g.__clerkState.signInSetActive }),
+  useClerk: () => ({ openUserProfile: g.__clerkState.openUserProfile, openOrganizationProfile: g.__clerkState.openOrganizationProfile, signOut: g.__clerkState.signOut, client: g.__clerkState.client, setActive: g.__clerkState.signInSetActive }),
   useOrganization: () => ({ organization: g.__clerkState.organization, isLoaded: g.__clerkState.isLoaded }),
   useOrganizationList: () => ({
     userMemberships: { data: g.__clerkState.memberships },
