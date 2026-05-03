@@ -21,6 +21,7 @@ export function resetClerkState() {
   clerkState.memberships = []
   clerkState.setActive.mockClear()
   clerkState.openUserProfile.mockClear()
+  clerkState.openOrganizationProfile.mockClear()
   clerkState.signOut.mockClear()
   clerkState.client = null
   clerkState.signInLoaded = false
@@ -46,6 +47,7 @@ export const clerkMock = {
   }),
   useClerk: () => ({
     openUserProfile: clerkState.openUserProfile,
+    openOrganizationProfile: clerkState.openOrganizationProfile,
     signOut: clerkState.signOut,
     client: clerkState.client,
     setActive: clerkState.signInSetActive,

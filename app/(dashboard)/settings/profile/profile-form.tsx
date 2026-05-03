@@ -14,14 +14,7 @@ import {
   FieldGroup,
 } from "@/components/ui/field"
 import { LogoUploadModal } from "@/components/org/logo-upload-modal"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import { Sun, Moon, ImageIcon, ExternalLink, Users, CreditCard, TriangleAlert, Check, X, Loader2 } from "lucide-react"
+import { Sun, Moon, ImageIcon, ExternalLink, TriangleAlert, Check, X, Loader2 } from "lucide-react"
 import { normalizeOptionalUrl, normalizeUrlFieldValue, urlInputProps } from "@/lib/utils/url"
 import { isValidSlugFormat } from "@/lib/utils/slug"
 
@@ -202,7 +195,7 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
             variant="link"
             size="sm"
             className="h-auto p-0 text-xs"
-            onClick={() => openOrganizationProfile()}
+            onClick={() => openOrganizationProfile({ afterLeaveOrganizationUrl: "/onboarding" })}
           >
             Edit in Clerk
             <ExternalLink className="size-3 ml-1" />
@@ -279,40 +272,5 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
         )}
       </div>
     </FieldGroup>
-  )
-}
-
-export function ClerkSettingsCard() {
-  const { openOrganizationProfile } = useClerk()
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Team & Billing</CardTitle>
-        <CardDescription>
-          Manage members, invitations, and billing through Clerk
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => openOrganizationProfile({ afterLeaveOrganizationUrl: "/onboarding" })}
-          >
-            <Users className="size-4 mr-2" />
-            Manage Members
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => openOrganizationProfile()}
-          >
-            <CreditCard className="size-4 mr-2" />
-            Billing & Plans
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
   )
 }
