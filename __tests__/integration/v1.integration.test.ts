@@ -8,6 +8,8 @@ const mockLogAudit = mock(() => Promise.resolve(null))
 const mockListWebhooks = mock(() => Promise.resolve([]))
 const mockCreateWebhook = mock(() => Promise.resolve(null))
 const mockDeleteWebhook = mock(() => Promise.resolve(false))
+const mockGetTenantById = mock(() => Promise.resolve(null))
+const mockGetApiKeyById = mock(() => Promise.resolve(null))
 
 const mockListJobs = mock(() => Promise.resolve([]))
 const mockUpdateJobStatus = mock(() => Promise.resolve(null))
@@ -30,6 +32,14 @@ mock.module("@/lib/services/webhooks", () => ({
   listWebhooks: mockListWebhooks,
   createWebhook: mockCreateWebhook,
   deleteWebhook: mockDeleteWebhook,
+}))
+
+mock.module("@/lib/services/tenants", () => ({
+  getTenantById: mockGetTenantById,
+}))
+
+mock.module("@/lib/services/api-keys", () => ({
+  getApiKeyById: mockGetApiKeyById,
 }))
 
 const mockResolvePrincipal = mock(() =>
@@ -122,6 +132,8 @@ describe("V1 API Routes Integration Tests", () => {
     mockListWebhooks.mockReset()
     mockCreateWebhook.mockReset()
     mockDeleteWebhook.mockReset()
+    mockGetTenantById.mockReset()
+    mockGetApiKeyById.mockReset()
   })
 
   describe("GET /api/v1/whoami", () => {
@@ -139,13 +151,27 @@ describe("V1 API Routes Integration Tests", () => {
 
     it("returns key info for API key principal", async () => {
       mockResolvePrincipal.mockResolvedValue(mockApiKeyPrincipal)
+      mockGetTenantById.mockResolvedValue({
+        id: "tenant-123",
+        name: "Acme Labs",
+        slug: "acme-labs",
+        clerk_org_id: "org_123",
+      })
+      mockGetApiKeyById.mockResolvedValue({
+        id: "key-456",
+        name: "CLI key",
+      })
 
       const res = await app.handle(new Request("http://localhost/api/v1/whoami"))
       const data = await res.json()
 
       expect(res.status).toBe(200)
       expect(data.tenantId).toBe("tenant-123")
+      expect(data.tenantName).toBe("Acme Labs")
+      expect(data.tenantSlug).toBe("acme-labs")
+      expect(data.tenantType).toBe("organization")
       expect(data.keyId).toBe("key-456")
+      expect(data.keyName).toBe("CLI key")
       expect(data.scopes).toContain("hackathons:write")
     })
   })

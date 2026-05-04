@@ -1550,7 +1550,15 @@ curl -s "$BASE_URL/api/v1/whoami" \
 **Response:**
 
 ```json
-{ "tenantId": "uuid", "keyId": "uuid", "scopes": ["hackathons:read", "hackathons:write"] }
+{
+  "tenantId": "uuid",
+  "tenantName": "Acme Labs",
+  "tenantSlug": "acme-labs",
+  "tenantType": "organization",
+  "keyId": "uuid",
+  "keyName": "Oatmeal CLI (localhost, 2026-05-04)",
+  "scopes": ["hackathons:read", "hackathons:write"]
+}
 ```
 
 ---

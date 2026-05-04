@@ -5,6 +5,7 @@ import { OatmealClient } from "../client.js"
 import { loadConfig, saveConfig } from "../config.js"
 import { AUTH_TIMEOUT_MS, DEFAULT_BASE_URL, POLL_INTERVAL_MS } from "../constants.js"
 import type { CliConfig, WhoAmIResponse } from "../types.js"
+import { formatWorkspace } from "../workspace.js"
 
 interface LoginOptions {
   apiKey?: string
@@ -147,6 +148,8 @@ async function validateAndSaveKey(apiKey: string, baseUrl: string): Promise<void
       apiKey,
       baseUrl,
       tenantId: whoami.tenantId,
+      tenantName: whoami.tenantName ?? null,
+      tenantType: whoami.tenantType ?? null,
       keyId: whoami.keyId,
       scopes: whoami.scopes,
     }
@@ -154,7 +157,7 @@ async function validateAndSaveKey(apiKey: string, baseUrl: string): Promise<void
     saveConfig(config)
 
     p.log.success(`Logged in! Key saved to ~/.hackathon/config.json`)
-    p.log.info(`Tenant: ${whoami.tenantId}`)
+    p.log.info(`Workspace: ${formatWorkspace(whoami)}`)
     p.log.info(`Scopes: ${whoami.scopes.join(", ")}`)
   } catch (error) {
     spinner.stop("Validation failed.")
