@@ -103,7 +103,7 @@ Or manually:
 4. `bun dev` (auto-starts local Supabase)
 5. Open http://localhost:3000
 
-See `.claude/skills/local-dev-setup.md` for detailed steps.
+See `.claude/skills/local-dev-setup/SKILL.md` for detailed steps.
 
 ## Rules files
 
