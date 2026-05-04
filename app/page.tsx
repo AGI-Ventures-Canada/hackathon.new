@@ -2,9 +2,7 @@ import { auth } from "@clerk/nextjs/server"
 import { redirect } from "next/navigation"
 import { HeaderLogo } from "@/components/public/header-logo"
 import { HeaderAuth } from "@/components/public/header-auth"
-import { HackathonCard } from "@/components/hackathon/hackathon-card"
 import { HomepageHero } from "@/components/homepage-hero"
-import { listPublicHackathons } from "@/lib/services/public-hackathons"
 
 export default async function Home() {
   const { userId } = await auth()
@@ -12,8 +10,6 @@ export default async function Home() {
   if (userId) {
     redirect("/home")
   }
-
-  const { hackathons } = await listPublicHackathons()
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -29,24 +25,6 @@ export default async function Home() {
       </header>
       <main className="flex-1">
         <HomepageHero />
-        <section className="container mx-auto px-4 pb-16">
-          {hackathons.length > 0 ? (
-            <>
-              <h2 className="text-lg font-semibold text-foreground mb-6">
-                Upcoming events
-              </h2>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {hackathons.map((h) => (
-                  <HackathonCard key={h.id} hackathon={h} href={`/e/${h.slug}`} />
-                ))}
-              </div>
-            </>
-          ) : (
-            <p className="text-center text-muted-foreground">
-              No hackathons yet. Check back soon!
-            </p>
-          )}
-        </section>
       </main>
     </div>
   )
