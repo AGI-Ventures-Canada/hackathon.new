@@ -2,15 +2,20 @@ export interface CliConfig {
   apiKey: string
   baseUrl: string
   tenantId?: string
+  tenantName?: string | null
+  tenantType?: "organization" | "personal" | null
   keyId?: string
   scopes?: string[]
 }
 
 export interface WhoAmIResponse {
   tenantId: string
+  tenantName?: string | null
+  tenantSlug?: string | null
+  tenantType?: "organization" | "personal" | null
   keyId: string
   scopes: string[]
-  keyName: string
+  keyName?: string | null
 }
 
 export interface Hackathon {

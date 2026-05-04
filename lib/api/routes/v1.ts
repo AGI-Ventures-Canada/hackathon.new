@@ -33,9 +33,22 @@ export const v1Routes = new Elysia({ prefix: "/v1", tags: ["v1"] })
       throw new RateLimitError(rateLimit.resetAt, rateLimit.remaining)
     }
 
+    const [{ getTenantById }, { getApiKeyById }] = await Promise.all([
+      import("@/lib/services/tenants"),
+      import("@/lib/services/api-keys"),
+    ])
+    const [tenant, apiKey] = await Promise.all([
+      getTenantById(principal.tenantId),
+      getApiKeyById(principal.keyId, principal.tenantId),
+    ])
+
     return {
       tenantId: principal.tenantId,
+      tenantName: tenant?.name ?? null,
+      tenantSlug: tenant?.slug ?? null,
+      tenantType: tenant ? (tenant.clerk_org_id ? "organization" : "personal") : null,
       keyId: principal.keyId,
+      keyName: apiKey?.name ?? null,
       scopes: principal.scopes,
     }
   }, {

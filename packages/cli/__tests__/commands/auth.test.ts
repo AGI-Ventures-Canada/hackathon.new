@@ -70,6 +70,9 @@ describe("whoami", () => {
       new Response(
         JSON.stringify({
           tenantId: "t1",
+          tenantName: "Acme Labs",
+          tenantSlug: "acme-labs",
+          tenantType: "organization",
           keyId: "k1",
           keyName: "Test Key",
           scopes: ["hackathons:read"],
@@ -88,7 +91,43 @@ describe("whoami", () => {
     const output = consoleLogSpy.mock.calls[0][0]
     const parsed = JSON.parse(output)
     expect(parsed.tenantId).toBe("t1")
+    expect(parsed.tenantName).toBe("Acme Labs")
     expect(parsed.scopes).toEqual(["hackathons:read"])
+
+    consoleLogSpy.mockRestore()
+    globalThis.fetch = originalFetch
+  })
+
+  it("runWhoAmI shows the active workspace", async () => {
+    const mockFetch = mock<typeof globalThis.fetch>()
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = mockFetch as unknown as typeof globalThis.fetch
+
+    mockFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          tenantId: "t1",
+          tenantName: "Acme Labs",
+          tenantType: "organization",
+          keyId: "k1",
+          keyName: "Test Key",
+          scopes: ["hackathons:read"],
+        }),
+        { headers: { "Content-Type": "application/json" } }
+      )
+    )
+
+    const { OatmealClient } = await import("../../src/client")
+    const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
+
+    const consoleLogSpy = spyOn(console, "log").mockImplementation(() => {})
+    const { runWhoAmI } = await import("../../src/commands/whoami")
+    await runWhoAmI(client, { json: false })
+
+    const output = consoleLogSpy.mock.calls[0][0]
+    expect(output).toContain("Workspace")
+    expect(output).toContain("Acme Labs (organization)")
+    expect(output).toContain("Tenant ID")
 
     consoleLogSpy.mockRestore()
     globalThis.fetch = originalFetch
