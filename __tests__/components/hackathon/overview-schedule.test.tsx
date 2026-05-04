@@ -187,6 +187,58 @@ describe("OverviewSchedule (interactive agenda)", () => {
     expect(screen.queryByText("Edit agenda item")).toBeNull()
   })
 
+  it("shows virtual Event ends item when no submission_deadline lands on hackathonEndsAt", () => {
+    render(
+      <ScheduleEditor
+        {...defaultProps}
+        scheduleItems={[regularItem]}
+        hackathonEndsAt="2030-04-12T17:00:00Z"
+        hackathonStatus="published"
+      />,
+    )
+    expect(screen.getByText("Event ends")).toBeDefined()
+  })
+
+  it("hides virtual Event ends item when a submission_deadline lands on hackathonEndsAt", () => {
+    render(
+      <ScheduleEditor
+        {...defaultProps}
+        scheduleItems={[submissionDeadlineItem]}
+        hackathonEndsAt="2030-04-12T17:00:00Z"
+        hackathonStatus="published"
+      />,
+    )
+    expect(screen.queryByText("Event ends")).toBeNull()
+    expect(screen.getByText("Submissions Close")).toBeDefined()
+  })
+
+  it("hides virtual Event ends when timestamps differ only in sub-second precision", () => {
+    const itemWithMs = { ...submissionDeadlineItem, starts_at: "2030-04-12T17:00:00.000Z" }
+    render(
+      <ScheduleEditor
+        {...defaultProps}
+        scheduleItems={[itemWithMs]}
+        hackathonEndsAt="2030-04-12T17:00:00.658Z"
+        hackathonStatus="published"
+      />,
+    )
+    expect(screen.queryByText("Event ends")).toBeNull()
+  })
+
+  it("still shows virtual Event ends when submission_deadline is at a custom (non-end) time", () => {
+    const customDeadline = { ...submissionDeadlineItem, starts_at: "2030-04-12T15:00:00Z" }
+    render(
+      <ScheduleEditor
+        {...defaultProps}
+        scheduleItems={[customDeadline]}
+        hackathonEndsAt="2030-04-12T17:00:00Z"
+        hackathonStatus="published"
+      />,
+    )
+    expect(screen.getByText("Event ends")).toBeDefined()
+    expect(screen.getByText("Submissions Close")).toBeDefined()
+  })
+
   it("shows released challenge under the actual release time, not scheduled time", () => {
     render(
       <ScheduleEditor

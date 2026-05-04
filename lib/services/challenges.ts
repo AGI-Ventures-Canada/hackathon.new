@@ -253,26 +253,11 @@ export async function reorderChallenges(
   return true
 }
 
-export async function releaseChallenges(
+async function releaseChallengesIfAny(
+  client: SupabaseClient,
   hackathonId: string,
   tenantId: string,
 ): Promise<boolean> {
-  const client = getSupabase() as unknown as SupabaseClient
-
-  const { data: hackathon, error: fetchErr } = await client
-    .from("hackathons")
-    .select("challenge_released_at")
-    .eq("id", hackathonId)
-    .eq("tenant_id", tenantId)
-    .single()
-
-  if (fetchErr || !hackathon) {
-    console.error("Failed to fetch hackathon for challenge release:", fetchErr)
-    return false
-  }
-
-  if (hackathon.challenge_released_at) return true
-
   const { count, error: countErr } = await client
     .from("challenges")
     .select("id", { count: "exact", head: true })
@@ -299,6 +284,129 @@ export async function releaseChallenges(
   }
 
   return true
+}
+
+export async function releaseChallenges(
+  hackathonId: string,
+  tenantId: string,
+): Promise<boolean> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data: hackathon, error: fetchErr } = await client
+    .from("hackathons")
+    .select("challenge_released_at")
+    .eq("id", hackathonId)
+    .eq("tenant_id", tenantId)
+    .single()
+
+  if (fetchErr || !hackathon) {
+    console.error("Failed to fetch hackathon for challenge release:", fetchErr)
+    return false
+  }
+
+  if (hackathon.challenge_released_at) return true
+
+  return releaseChallengesIfAny(client, hackathonId, tenantId)
+}
+
+type PublishLinkRow = {
+  linked_to: string | null
+  hackathons: { tenant_id: string; status: string; challenge_released_at: string | null }
+}
+
+export async function maybeReleaseChallengesForPublishLink(
+  hackathonId: string,
+  tenantId: string,
+): Promise<boolean> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data, error: fetchErr } = await client
+    .from("hackathon_schedule_items")
+    .select("linked_to, hackathons!inner(tenant_id, status, challenge_released_at)")
+    .eq("hackathon_id", hackathonId)
+    .eq("trigger_type", "challenge_release")
+    .eq("hackathons.tenant_id", tenantId)
+    .maybeSingle()
+
+  if (fetchErr) {
+    console.error("Failed to fetch trigger item for publish-link release:", fetchErr)
+    return false
+  }
+  const row = data as unknown as PublishLinkRow | null
+  if (!row || row.linked_to !== "event_publish") return false
+  if (row.hackathons.challenge_released_at) return true
+  if (row.hackathons.status !== "published") return false
+
+  return releaseChallengesIfAny(client, hackathonId, tenantId)
+}
+
+export type ScheduledChallengeReleaseResult = {
+  processed: number
+  releases: Array<{ hackathonId: string }>
+  errors: string[]
+}
+
+export async function processScheduledChallengeReleases(): Promise<ScheduledChallengeReleaseResult> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const result: ScheduledChallengeReleaseResult = {
+    processed: 0,
+    releases: [],
+    errors: [],
+  }
+
+  const { data: hackathons, error: hackErr } = await client
+    .from("hackathons")
+    .select("id, tenant_id")
+    .eq("status", "active")
+    .is("challenge_released_at", null)
+
+  if (hackErr) {
+    result.errors.push(`Failed to fetch active hackathons: ${hackErr.message}`)
+    return result
+  }
+  if (!hackathons || hackathons.length === 0) return result
+
+  const hackathonIds = hackathons.map((h) => h.id as string)
+  const tenantById = new Map<string, string>(
+    hackathons.map((h) => [h.id as string, h.tenant_id as string]),
+  )
+
+  const { data: items, error: itemsErr } = await client
+    .from("hackathon_schedule_items")
+    .select("hackathon_id, starts_at, linked_to")
+    .in("hackathon_id", hackathonIds)
+    .eq("trigger_type", "challenge_release")
+
+  if (itemsErr) {
+    result.errors.push(`Failed to fetch challenge_release items: ${itemsErr.message}`)
+    return result
+  }
+  if (!items || items.length === 0) return result
+
+  const nowIso = new Date().toISOString()
+  for (const item of items) {
+    if (item.linked_to !== null) continue
+    if (typeof item.starts_at !== "string" || item.starts_at > nowIso) continue
+
+    const hackathonId = item.hackathon_id as string
+    const tenantId = tenantById.get(hackathonId)
+    if (!tenantId) continue
+
+    try {
+      const released = await releaseChallenges(hackathonId, tenantId)
+      if (released) {
+        result.processed++
+        result.releases.push({ hackathonId })
+      }
+    } catch (err) {
+      result.errors.push(
+        `Failed to release challenges for ${hackathonId}: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+  }
+
+  return result
 }
 
 export async function getSubmissionChallengeIds(submissionId: string): Promise<string[]> {

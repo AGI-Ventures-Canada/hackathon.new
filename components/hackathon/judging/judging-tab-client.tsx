@@ -1,9 +1,11 @@
 "use client"
 
-import { useState, useMemo, useEffect } from "react"
+import { useState, useEffect } from "react"
+import { useIsClient } from "@/hooks/use-is-client"
 import { useRouter } from "next/navigation"
 import { useOptimisticList } from "@/hooks/use-optimistic-list"
 import { useOptimisticMutation } from "@/hooks/use-optimistic-mutation"
+import { usePrizeJudgeAssignments } from "@/hooks/use-prize-judge-assignments"
 import { assertOk } from "@/lib/utils/fetch"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -38,6 +40,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { CopyButton } from "@/components/ui/copy-button"
 import { TabsUrlSync } from "@/components/ui/tabs-url-sync"
 import { JudgingSetupWizard } from "./judging-setup-wizard"
 import type { ManageJtab } from "@/lib/utils/manage-tabs"
@@ -63,6 +66,7 @@ import {
   X,
   MapPin,
   Bell,
+  ExternalLink,
 } from "lucide-react"
 import { useActionItemsOptional } from "@/components/hackathon/manage/action-items-context"
 import { AddJudgeDialog, type AddJudgeResult } from "./add-judge-dialog"
@@ -133,6 +137,7 @@ type InvitationData = {
   status: string
   createdAt: string
   remindedAt: string | null
+  token: string | null
 }
 
 type ResultData = {
@@ -162,6 +167,10 @@ interface JudgingTabClientProps {
   locationType: "in_person" | "virtual" | "hybrid" | null
   activeJtab: ManageJtab
 }
+
+const getPrizeId = (p: PrizeData) => p.id
+const getJudgeParticipantId = (j: JudgeData) => j.participantId
+const getInvitationId = (i: InvitationData) => i.id
 
 const STYLE_META: Record<string, { label: string; icon: typeof Trophy; color: string }> = {
   bucket_sort: { label: "Bucket Sort", icon: ArrowUpDown, color: "bg-blue-500/10 text-blue-700 dark:text-blue-400" },
@@ -214,21 +223,15 @@ export function JudgingTabClient({
 
   const base = `/api/dashboard/hackathons/${hackathonId}`
 
-  const prizesList = useOptimisticList({ items: initialPrizes, getId: (p) => p.id })
-  const judgesList = useOptimisticList({ items: initialJudges, getId: (j) => j.participantId })
-  const invitationsList = useOptimisticList({ items: initialInvitations, getId: (i) => i.id })
-  const [hiddenPrizeJudges, setHiddenPrizeJudges] = useState<Set<string>>(new Set())
+  const prizesList = useOptimisticList({ items: initialPrizes, getId: getPrizeId })
+  const judgesList = useOptimisticList({ items: initialJudges, getId: getJudgeParticipantId })
+  const invitationsList = useOptimisticList({ items: initialInvitations, getId: getInvitationId })
 
-  const judges = useMemo(
-    () =>
-      judgesList.visibleItems.map((j) => ({
-        ...j,
-        prizeIds: j.prizeIds.filter(
-          (pid) => !hiddenPrizeJudges.has(`${pid}:${j.participantId}`)
-        ),
-      })),
-    [judgesList.visibleItems, hiddenPrizeJudges]
-  )
+  const {
+    optimisticJudges: judges,
+    assignJudgeToPrize,
+    unassignJudgeFromPrize,
+  } = usePrizeJudgeAssignments({ hackathonId, judges: judgesList.visibleItems })
   const prizes = prizesList.visibleItems
   const invitations = invitationsList.visibleItems
 
@@ -305,32 +308,6 @@ export function JudgingTabClient({
     onRevert: (invitationId) =>
       invitationsList.clearLocalEdit(invitationId),
   })
-
-  async function assignJudgeToPrize(prizeId: string, judgeParticipantId: string) {
-    await fetch(`${base}/prizes/${prizeId}/assign-judge`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ judgeParticipantId }),
-    }).then(assertOk)
-  }
-
-  async function unassignJudgeFromPrize(prizeId: string, judgeParticipantId: string) {
-    const key = `${prizeId}:${judgeParticipantId}`
-    setHiddenPrizeJudges((prev) => new Set(prev).add(key))
-    try {
-      await fetch(`${base}/prizes/${prizeId}/judges/${judgeParticipantId}`, {
-        method: "DELETE",
-      }).then(assertOk)
-      router.refresh()
-    } catch (err) {
-      setHiddenPrizeJudges((prev) => {
-        const next = new Set(prev)
-        next.delete(key)
-        return next
-      })
-      throw err
-    }
-  }
 
   async function handlePublish() {
     setPublishing(true)
@@ -502,6 +479,7 @@ export function JudgingTabClient({
               status: "pending",
               createdAt: new Date().toISOString(),
               remindedAt: null,
+              token: result.token,
             })
           }
           router.refresh()
@@ -542,6 +520,9 @@ function JudgesSection({
   onCancelInvitation: (id: string) => void
   onRemindInvitation: (id: string) => void
 }) {
+  const isClient = useIsClient()
+  const origin = isClient ? window.location.origin : ""
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
@@ -612,6 +593,24 @@ function JudgesSection({
                       <Clock className="mr-1 size-3" />
                       Invited
                     </Badge>
+                  )}
+                  {inv.token && (
+                    <>
+                      <a
+                        href={`${origin}/judge-invite/${inv.token}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center text-muted-foreground hover:text-foreground"
+                      >
+                        <ExternalLink className="size-3.5" />
+                        <span className="sr-only">Open invite link</span>
+                      </a>
+                      <CopyButton
+                        value={`${origin}/judge-invite/${inv.token}`}
+                        size="icon"
+                        className="size-6"
+                      />
+                    </>
                   )}
                   <Button
                     variant="ghost"

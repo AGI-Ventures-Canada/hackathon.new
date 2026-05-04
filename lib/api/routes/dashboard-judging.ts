@@ -1167,9 +1167,6 @@ export const dashboardJudgingRoutes = new Elysia()
             hackathonStartsAt: hackathon.starts_at,
             hackathonEndsAt: hackathon.ends_at,
           }).catch(console.error)
-        } else {
-          const { createJudgePendingNotification } = await import("@/lib/services/judge-invitations")
-          await createJudgePendingNotification(hackathon.id, invitationResult.invitation.id, typedBody.email, inviterName)
         }
 
         const { scheduleReminders } = await import("@/lib/services/smart-reminders")
@@ -1197,7 +1194,13 @@ export const dashboardJudgingRoutes = new Elysia()
           metadata: { email: typedBody.email },
         })
 
-        return { invitation: { id: invitationResult.invitation.id, email: typedBody.email } }
+        return {
+          invitation: {
+            id: invitationResult.invitation.id,
+            email: typedBody.email,
+            token: invitationResult.invitation.token,
+          },
+        }
       }
 
       return new Response(JSON.stringify({ error: "Must provide clerkUserId or email" }), { status: 400, headers: { "Content-Type": "application/json" } })

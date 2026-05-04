@@ -33,6 +33,12 @@ const ATTENDANCE_MODE_MAP: Record<string, "in_person" | "virtual"> = {
   "https://schema.org/MixedEventAttendanceMode": "in_person",
 }
 
+type LumaNextData = {
+  description: string | null
+  startsAt: string | null
+  endsAt: string | null
+}
+
 export const extractLumaEventData = cache(async function extractLumaEventData(
   slug: string
 ): Promise<LumaEventData | null> {
@@ -52,14 +58,31 @@ export const extractLumaEventData = cache(async function extractLumaEventData(
   const data = parseJsonLd(html) ?? parseOgMetaFallback(html)
   if (!data) return null
 
-  const richDescription = extractDescriptionFromNextData(html)
+  const nextData = extractLumaNextData(html)
 
   return {
-    ...data,
-    description: richDescription ?? data.description,
+    name: data.name,
+    description: nextData?.description ?? data.description,
+    startsAt: nextData?.startsAt ?? data.startsAt,
+    endsAt: nextData?.endsAt ?? data.endsAt,
+    locationType: data.locationType,
+    locationName: data.locationName,
+    locationUrl: data.locationUrl,
+    imageUrl: data.imageUrl,
+    language: data.language,
     translationLinks: parseTranslationLinksFromHtml(html, slug),
   }
 })
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
+function getString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null
+}
 
 function parseJsonLd(html: string): LumaEventData | null {
   const jsonLdMatch = html.match(
@@ -106,9 +129,7 @@ type ProseMirrorNode = {
   marks?: { type?: string }[]
 }
 
-// Reads Luma's undocumented __NEXT_DATA__ SSR payload. Degrades to the
-// JSON-LD description when the shape changes upstream.
-function extractDescriptionFromNextData(html: string): string | null {
+function extractLumaNextData(html: string): LumaNextData | null {
   const match = html.match(/<script\s+id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/)
   if (!match) return null
 
@@ -119,15 +140,35 @@ function extractDescriptionFromNextData(html: string): string | null {
     return null
   }
 
-  const data = (payload as { props?: { pageProps?: { initialData?: { data?: unknown } } } })
-    ?.props?.pageProps?.initialData?.data as Record<string, unknown> | undefined
+  const root = asRecord(payload)
+  const props = asRecord(root?.props)
+  const pageProps = asRecord(props?.pageProps)
+  const initialData = asRecord(pageProps?.initialData)
+  const data = asRecord(initialData?.data)
   if (!data) return null
 
-  const mirror = data.description_mirror as ProseMirrorNode | undefined
-  if (!mirror?.content?.length) return null
+  const event = asRecord(data.event) ?? data
+  const mirror =
+    asProseMirrorNode(event.description_mirror) ??
+    asProseMirrorNode(data.description_mirror)
+  const description = mirror ? renderProseMirrorToText(mirror).trim() : ""
+  const startsAt = normalizeEventDate(getString(event.start_at))
+  const endsAt = normalizeEventDate(getString(event.end_at))
 
-  const text = renderProseMirrorToText(mirror).trim()
-  return text.length > 0 ? text : null
+  if (!description && !startsAt && !endsAt) return null
+
+  return {
+    description: description.length > 0 ? description : null,
+    startsAt,
+    endsAt,
+  }
+}
+
+function asProseMirrorNode(value: unknown): ProseMirrorNode | null {
+  const node = asRecord(value)
+  if (!node) return null
+
+  return Array.isArray(node.content) ? (node as ProseMirrorNode) : null
 }
 
 function renderProseMirrorToText(node: ProseMirrorNode): string {

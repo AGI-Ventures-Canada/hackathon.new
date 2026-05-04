@@ -1,5 +1,6 @@
 import { EyeOff, Globe, Zap, Lock, Trophy } from "lucide-react"
 import type { HackathonStatus, HackathonPhase } from "@/lib/db/hackathon-types"
+import type { ActionItem } from "@/lib/utils/organizer-actions"
 
 export const LIFECYCLE_STAGES = [
   { key: "draft", label: "Draft", icon: EyeOff, badgeVariant: "secondary" },
@@ -10,6 +11,10 @@ export const LIFECYCLE_STAGES = [
 ] as const
 
 export type StageKey = (typeof LIFECYCLE_STAGES)[number]["key"]
+
+export function isStageKey(value: string): value is StageKey {
+  return LIFECYCLE_STAGES.some((s) => s.key === value)
+}
 
 export const PHASE_LABELS: Record<HackathonPhase, string> = {
   build: "Building",
@@ -107,4 +112,65 @@ export function getTransitionConfirmation(from: HackathonStatus, to: string) {
     title: `Switch to ${to}?`,
     description: `This will change the hackathon status to "${to}".`,
   }
+}
+
+export function applyOptimisticStage(
+  baseStatus: HackathonStatus,
+  optimisticStage: StageKey | null,
+): HackathonStatus {
+  return optimisticStage ?? baseStatus
+}
+
+export function shouldClearOptimisticStage(
+  baseStatus: HackathonStatus,
+  optimisticStage: StageKey | null,
+): boolean {
+  return !!optimisticStage && stageKeyForStatus(baseStatus) === optimisticStage
+}
+
+export function buildHackathonFingerprint(args: {
+  status: HackathonStatus
+  phase: HackathonPhase | null
+  startsAt: string | null
+  endsAt: string | null
+  actionItems: ActionItem[]
+}): string {
+  const actionItemsKey = JSON.stringify(
+    args.actionItems.map((i) => [
+      i.id,
+      i.close.kind === "auto" ? i.close.isComplete : null,
+    ]),
+  )
+  return [
+    args.status,
+    args.phase ?? "",
+    args.startsAt ?? "",
+    args.endsAt ?? "",
+    actionItemsKey,
+  ].join("|")
+}
+
+const ACTIVE_REOPEN_EXTENSION_MS = 60 * 60 * 1000
+
+export function buildStatusTransitionBody(
+  targetStage: StageKey,
+  endsAt: string | null | undefined,
+): { status: HackathonStatus; endsAt?: string } {
+  const dbStatus: HackathonStatus =
+    targetStage === "published" ? "registration_open" : targetStage
+  const body: { status: HackathonStatus; endsAt?: string } = { status: dbStatus }
+  const now = Date.now()
+
+  if (targetStage === "judging") {
+    if (!endsAt || new Date(endsAt).getTime() > now) {
+      body.endsAt = new Date(now).toISOString()
+    }
+  }
+  if (targetStage === "active") {
+    if (endsAt && new Date(endsAt).getTime() <= now) {
+      body.endsAt = new Date(now + ACTIVE_REOPEN_EXTENSION_MS).toISOString()
+    }
+  }
+
+  return body
 }

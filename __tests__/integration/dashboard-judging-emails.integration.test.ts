@@ -48,6 +48,7 @@ const mockCreateJudgeInvitation = mock(() =>
 )
 
 const mockHasPendingJudgeEntry = mock(() => Promise.resolve(false))
+const mockCreateJudgePendingNotification = mock(() => Promise.resolve())
 
 mock.module("@/lib/services/judge-invitations", () => ({
   createJudgeInvitation: mockCreateJudgeInvitation,
@@ -55,7 +56,7 @@ mock.module("@/lib/services/judge-invitations", () => ({
   cancelJudgeInvitation: mock(() => Promise.resolve({ success: true })),
   hasPendingJudgeInvitation: mock(() => Promise.resolve(false)),
   hasPendingJudgeEntry: mockHasPendingJudgeEntry,
-  createJudgePendingNotification: mock(() => Promise.resolve()),
+  createJudgePendingNotification: mockCreateJudgePendingNotification,
 }))
 
 const mockSendJudgeAddedNotification = mock(() => Promise.resolve({ success: true }))
@@ -176,6 +177,7 @@ describe("POST /hackathons/:id/judging/judges - email notifications", () => {
     mockGetUserList.mockClear()
     mockLogAudit.mockClear()
     mockHasPendingJudgeEntry.mockClear()
+    mockCreateJudgePendingNotification.mockClear()
 
     mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
     mockHasPendingJudgeEntry.mockResolvedValue(false)
@@ -294,6 +296,7 @@ describe("POST /hackathons/:id/judging/judges - email notifications", () => {
 
       expect(data.invitation).toBeDefined()
       expect(data.invitation.email).toBe("newjudge@example.com")
+      expect(data.invitation.token).toBe("invite-token-123")
       expect(mockSendJudgeInvitationEmail).toHaveBeenCalledTimes(1)
       expect(mockSendJudgeInvitationEmail).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -313,9 +316,23 @@ describe("POST /hackathons/:id/judging/judges - email notifications", () => {
       const res = await postAddJudge({ email: "newjudge@example.com" })
       const data = await res.json()
 
+      expect(res.status).toBe(200)
       expect(data.invitation).toBeDefined()
       expect(data.invitation.email).toBe("newjudge@example.com")
+      expect(data.invitation.token).toBe("invite-token-123")
       expect(mockSendJudgeInvitationEmail).not.toHaveBeenCalled()
+    })
+
+    it("does not write a pending-notification row for new-email invites in draft mode", async () => {
+      mockCheckHackathonOrganizer.mockResolvedValue({
+        status: "ok",
+        hackathon: { id: "h1", name: "Draft Hackathon", slug: "draft-hack", status: "draft" },
+      })
+
+      const res = await postAddJudge({ email: "newjudge@example.com" })
+      expect(res.status).toBe(200)
+
+      expect(mockCreateJudgePendingNotification).not.toHaveBeenCalled()
     })
   })
 

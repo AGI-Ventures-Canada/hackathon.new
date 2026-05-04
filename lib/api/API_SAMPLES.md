@@ -1387,6 +1387,15 @@ curl -s -X DELETE "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/schedule/$IT
   -H "Authorization: Bearer $API_KEY"
 ```
 
+The `linkedTo` field on `PATCH` controls how the item is bound to the hackathon timeline:
+
+| Value | Effect |
+|-------|--------|
+| `event_start` | `starts_at` stays in sync with the hackathon's start time |
+| `event_end` | `starts_at` stays in sync with the hackathon's end time |
+| `event_publish` | Status-only link (no time sync). For `challenge_release` items, fires the release when the hackathon transitions to `published` |
+| `null` | Item uses its own `starts_at` value |
+
 ---
 
 ### Organization Profile
@@ -1426,6 +1435,28 @@ curl -s -X POST "$BASE_URL/api/dashboard/upload-logo" \
 # Delete
 curl -s -X DELETE "$BASE_URL/api/dashboard/logo/light" \
   -H "Authorization: Bearer $API_KEY"
+```
+
+---
+
+#### Manage organization people
+
+These routes are used by the settings page and require a Clerk browser session for the active organization.
+
+```bash
+# List people and pending invites
+curl -s "$BASE_URL/api/dashboard/organization-members" | jq .
+
+# Invite someone
+curl -s -X POST "$BASE_URL/api/dashboard/organization-members/invitations" \
+  -H "Content-Type: application/json" \
+  -d '{ "email": "teammate@example.com", "role": "org:member" }' | jq .
+
+# Cancel a pending invite
+curl -s -X DELETE "$BASE_URL/api/dashboard/organization-members/invitations/$INVITATION_ID"
+
+# Remove a person
+curl -s -X DELETE "$BASE_URL/api/dashboard/organization-members/$USER_ID"
 ```
 
 ---
@@ -1519,7 +1550,15 @@ curl -s "$BASE_URL/api/v1/whoami" \
 **Response:**
 
 ```json
-{ "tenantId": "uuid", "keyId": "uuid", "scopes": ["hackathons:read", "hackathons:write"] }
+{
+  "tenantId": "uuid",
+  "tenantName": "Acme Labs",
+  "tenantSlug": "acme-labs",
+  "tenantType": "organization",
+  "keyId": "uuid",
+  "keyName": "Oatmeal CLI (localhost, 2026-05-04)",
+  "scopes": ["hackathons:read", "hackathons:write"]
+}
 ```
 
 ---

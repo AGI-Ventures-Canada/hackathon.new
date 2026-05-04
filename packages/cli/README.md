@@ -26,6 +26,17 @@ hackathon announcements create <hackathon-id> --title "Kickoff in 1 hour" --body
 
 The API key is stored at `~/.hackathon/config.json` — log in once, use it from anywhere.
 
+### Which workspace does the CLI use?
+
+The CLI uses the workspace that is active in your browser when you run `hackathon login`.
+If your personal workspace is active, new events are created there. To create events for an organization, switch to that organization in Oatmeal, then run `hackathon login` again.
+
+Check the saved workspace before creating anything:
+
+```bash
+hackathon whoami
+```
+
 ### Pointing at a different environment
 
 ```bash

@@ -72,6 +72,10 @@ function isVirtualItem(id: string): boolean {
   return id === VIRTUAL_ID_EVENT_START || id === VIRTUAL_ID_EVENT_END
 }
 
+function isoToSeconds(iso: string): number {
+  return Math.floor(new Date(iso).getTime() / 1000)
+}
+
 const DURATION_PRESETS = [
   { label: "15m", minutes: 15 },
   { label: "30m", minutes: 30 },
@@ -203,7 +207,18 @@ export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challe
         trigger_type: "event_start",
       })
     }
-    if (hackathonEndsAt && hackathonStatus !== "completed" && hackathonStatus !== "archived") {
+    const endsAtSec = hackathonEndsAt ? isoToSeconds(hackathonEndsAt) : null
+    const submissionDeadlineAtEnd =
+      endsAtSec !== null &&
+      base.some(
+        (i) => i.trigger_type === "submission_deadline" && isoToSeconds(i.starts_at) === endsAtSec,
+      )
+    if (
+      hackathonEndsAt &&
+      hackathonStatus !== "completed" &&
+      hackathonStatus !== "archived" &&
+      !submissionDeadlineAtEnd
+    ) {
       virtual.push({
         id: VIRTUAL_ID_EVENT_END,
         title: "Event ends",

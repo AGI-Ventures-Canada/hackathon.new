@@ -105,7 +105,6 @@ export function AssignJudgesDialog({
       } else {
         await onAssignJudge(prizeId, judge.participantId)
       }
-      hasChanges.current = true
     } catch {
       setLocalOverrides((prev) => {
         const next = new Map(prev)

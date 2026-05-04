@@ -388,6 +388,8 @@ bun lint && bun run build && bun run test:all && bun cli:build
 
 Fix all failures before pushing.
 
+After CI checks pass, invoke the [`pr-review`](.claude/skills/pr-review.md) skill against the local diff before `git push`. The skill mirrors the rules enforced by [.github/workflows/claude-pr-review.yml](.github/workflows/claude-pr-review.yml) so issues surface and get fixed locally instead of in PR comments. **Critical** findings block the push; **Warning** and **Suggestion** findings are surfaced for the user to decide.
+
 ### Commit Message Style
 
 Conventional Commits: `<type>(<scope>): <subject>` — imperative present tense, no capital, no period, under 50 chars. Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`.
@@ -396,7 +398,7 @@ Conventional Commits: `<type>(<scope>): <subject>` — imperative present tense,
 
 ### Proactive Code Review
 
-**CRITICAL: Before every push, run the `code-reviewer` agent against `git diff origin/staging...HEAD`.** Fix all critical/important findings and re-run affected tests before pushing. Focus: security, missing validation, logic bugs, type safety, dead code.
+**CRITICAL: Before every push, invoke the [`pr-review`](.claude/skills/pr-review.md) skill against the local diff vs `origin/staging`.** Fix all Critical findings and re-run affected tests before pushing. The skill mirrors the rules enforced by the `Claude PR Review` GitHub Action — running it locally prevents review-bot churn after the PR opens. Focus: security, missing validation, logic bugs, type safety, dead code.
 
 ### Address All PR Review Warnings
 

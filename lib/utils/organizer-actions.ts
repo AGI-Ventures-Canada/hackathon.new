@@ -443,13 +443,12 @@ function addPublishedActions(items: ActionItem[], input: ActionItemsInput) {
   if (input.startsAt) {
     const hoursUntilStart = (new Date(input.startsAt).getTime() - Date.now()) / (1000 * 60 * 60)
     if (hoursUntilStart > 0 && hoursUntilStart <= 24) {
-      items.push(autoAction({
+      items.push(dismissAction({
         id: "starting-soon",
+        label: "Event starts in less than 24 hours",
+        hint: "Double-check everything is ready",
         severity: "info",
         tooltip: "Review your schedule, challenge, judges, and prizes. Make sure your communication channels are set up and your team is briefed on the run-of-show.",
-        isComplete: false,
-        pending: { label: "Event starts in less than 24 hours", hint: "Double-check everything is ready" },
-        completed: { label: "Event starts in less than 24 hours", hint: "Double-check everything is ready" },
       }))
     }
   }

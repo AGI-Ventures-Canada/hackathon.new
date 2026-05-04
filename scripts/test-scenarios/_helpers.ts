@@ -36,6 +36,18 @@ export const SEED_USERS = [
   "seed_user_eve_005",
 ]
 
+function friendlyTeamName(captainUserId: string): string {
+  const match = captainUserId.match(/^seed_user_([a-z]+)_/)
+  if (match) {
+    const name = match[1].charAt(0).toUpperCase() + match[1].slice(1)
+    return `${name}'s Team`
+  }
+  if (captainUserId === DEV_USER_ID) {
+    return "Dev User's Team"
+  }
+  return "Test Team"
+}
+
 const SUBMISSION_DATA = [
   { title: "AI Research Assistant", desc: "An AI-powered research tool that synthesizes academic papers", github: "https://github.com/example/ai-research" },
   { title: "Code Reviewer Bot", desc: "Automated code review with context-aware suggestions", github: "https://github.com/example/code-reviewer" },
@@ -186,7 +198,7 @@ export async function createTeamWithMembers(
     .from("teams")
     .insert({
       hackathon_id: hackathonId,
-      name: `Team ${captainUserId.slice(-3)}`,
+      name: friendlyTeamName(captainUserId),
       captain_clerk_user_id: captainUserId,
       invite_code: crypto.randomUUID().slice(0, 8),
       status: "forming",

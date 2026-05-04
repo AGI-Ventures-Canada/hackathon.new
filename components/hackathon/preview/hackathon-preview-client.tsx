@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
+import { useIsClient } from "@/hooks/use-is-client"
 import { useRouter } from "next/navigation"
 import { useOptimisticMutation } from "@/hooks/use-optimistic-mutation"
 import { assertOk } from "@/lib/utils/fetch"
@@ -21,7 +22,8 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
-import { CheckCircle2, Crown, Clock, X, Lock, Scale, Mail, CalendarClock, MapPin, AlertTriangle, Pencil, Users as UsersIcon, Bell } from "lucide-react"
+import { CopyButton } from "@/components/ui/copy-button"
+import { CheckCircle2, Crown, Clock, X, Lock, Scale, Mail, CalendarClock, MapPin, AlertTriangle, Pencil, Users as UsersIcon, Bell, ExternalLink } from "lucide-react"
 import type { PublicHackathon } from "@/lib/services/public-hackathons"
 import type { HackathonJudgeDisplay } from "@/lib/db/hackathon-types"
 import type { Submission } from "@/lib/db/hackathon-types"
@@ -96,6 +98,8 @@ function HackathonPreviewContent({
 }: Omit<HackathonPreviewClientProps, "isEditable">) {
   const { isEditable, editMode, activeSection, openSection, closeDrawer } = useEdit()
   const router = useRouter()
+  const isClient = useIsClient()
+  const origin = isClient ? window.location.origin : ""
   const primaryLocale = hackathon.default_locale ?? "en"
   const translationLocale =
     currentLocale && currentLocale !== primaryLocale ? currentLocale : null
@@ -297,7 +301,10 @@ function HackathonPreviewContent({
         <div className="space-y-1 pl-1">
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-muted-foreground">
-              {teamInfo.members.length + teamInfo.pendingInvitations.length} / {hackathon.max_team_size} members
+              {teamInfo.members.length} / {hackathon.max_team_size} members
+              {teamInfo.pendingInvitations.length > 0 && (
+                <> &middot; {teamInfo.pendingInvitations.length} pending</>
+              )}
             </span>
           </div>
           {(() => {
@@ -363,6 +370,24 @@ function HackathonPreviewContent({
                     </PopoverTrigger>
                     {teamInfo.isCaptain && (
                       <div className="flex items-center gap-0.5">
+                        {invitation.token && (
+                          <>
+                            <a
+                              href={`${origin}/invite/${invitation.token}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:text-foreground shrink-0 opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 transition-opacity max-sm:opacity-100"
+                            >
+                              <ExternalLink className="size-3" />
+                              <span className="sr-only">Open invite link</span>
+                            </a>
+                            <CopyButton
+                              value={`${origin}/invite/${invitation.token}`}
+                              size="icon"
+                              className="size-7 opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 transition-opacity max-sm:opacity-100"
+                            />
+                          </>
+                        )}
                         {!isExpired && !(invitation.remindedAt || remindedIds.has(invitation.id)) && (
                           <Button
                             variant="ghost"

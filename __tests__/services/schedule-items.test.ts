@@ -214,7 +214,7 @@ describe("buildDefaultAgendaItems", () => {
   it("derives times from start and end dates", () => {
     const items = buildDefaultAgendaItems("2026-04-10T09:00:00Z", "2026-04-10T18:00:00Z")
     expect(items[0].startsAt).toBe("2026-04-10T09:00:00.000Z")
-    expect(items[3].startsAt).toBe("2026-04-10T17:00:00.000Z")
+    expect(items[3].startsAt).toBe("2026-04-10T18:00:00.000Z")
   })
 
   it("non-trigger items have no triggerType", () => {
@@ -231,15 +231,17 @@ describe("buildDefaultAgendaItems", () => {
     expect(items[3].triggerType).toBe("submission_deadline")
   })
 
-  it("sets submission deadline to event end when event is shorter than 1 hour", () => {
+  it("sets submission deadline to the hackathon end time", () => {
+    const items = buildDefaultAgendaItems("2026-04-10T09:00:00Z", "2026-04-10T18:00:00Z")
+    const deadline = items.find((i) => i.triggerType === "submission_deadline")
+    expect(deadline?.startsAt).toBe("2026-04-10T18:00:00.000Z")
+    expect(deadline?.endsAt).toBe("2026-04-10T18:00:00.000Z")
+  })
+
+  it("still sets submission deadline to ends_at for short (sub-hour) events", () => {
     const items = buildDefaultAgendaItems("2026-04-10T09:00:00Z", "2026-04-10T09:30:00Z")
     const deadline = items.find((i) => i.triggerType === "submission_deadline")
     expect(deadline?.startsAt).toBe("2026-04-10T09:30:00.000Z")
-  })
-
-  it("sets submission deadline to 1hr before end when event is long enough", () => {
-    const items = buildDefaultAgendaItems("2026-04-10T09:00:00Z", "2026-04-10T18:00:00Z")
-    const deadline = items.find((i) => i.triggerType === "submission_deadline")
-    expect(deadline?.startsAt).toBe("2026-04-10T17:00:00.000Z")
+    expect(deadline?.endsAt).toBe("2026-04-10T09:30:00.000Z")
   })
 })

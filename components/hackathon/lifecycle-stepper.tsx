@@ -40,8 +40,10 @@ import {
   LIFECYCLE_STAGES as phases,
   TRANSITION_CONFIRMATIONS as confirmations,
   resolveStageIndex as resolvePhaseIndex,
+  buildStatusTransitionBody,
   type StageKey as PhaseKey,
 } from "@/lib/utils/lifecycle-stages"
+import { useActionItemsOptional } from "@/components/hackathon/manage/action-items-context"
 import type { DevStatusDetail } from "@/components/dev-tool/events"
 
 interface LifecycleStepperProps {
@@ -104,6 +106,7 @@ export function LifecycleStepper({
 }: LifecycleStepperProps) {
   const router = useRouter()
   const isMobile = useIsMobile()
+  const actionItems = useActionItemsOptional()
   const [currentStatus, setCurrentStatus] = useState(status)
   const [updating, setUpdating] = useState(false)
   const [pendingTarget, setPendingTarget] = useState<PhaseKey | null>(null)
@@ -132,11 +135,9 @@ export function LifecycleStepper({
   const currentIndex = resolvePhaseIndex(currentStatus)
 
   async function commitStatusChange(newStatus: PhaseKey) {
-    const now = new Date().toISOString()
-    const dbStatus = newStatus === "published" ? "registration_open" : newStatus
-
     setUpdating(true)
     try {
+      actionItems?.setOptimisticStage(newStatus)
       if (newStatus === "completed") {
         const calcRes = await fetch(
           `/api/dashboard/hackathons/${hackathonId}/results/calculate`,
@@ -162,7 +163,7 @@ export function LifecycleStepper({
           {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ status: dbStatus }),
+            body: JSON.stringify({ status: "completed" }),
           },
         )
         if (!res.ok) throw new Error("Failed to update status")
@@ -186,10 +187,7 @@ export function LifecycleStepper({
         )
       }
 
-      const body: Record<string, unknown> = { status: dbStatus }
-      if (newStatus === "judging") {
-        if (!endsAt || new Date(endsAt) > new Date()) body.endsAt = now
-      }
+      const body = buildStatusTransitionBody(newStatus, endsAt)
 
       const res = await fetch(
         `/api/dashboard/hackathons/${hackathonId}/settings`,
@@ -203,7 +201,7 @@ export function LifecycleStepper({
       setCurrentStatus(newStatus)
       router.refresh()
     } catch {
-      // keep current status on failure
+      actionItems?.setOptimisticStage(null)
     } finally {
       setUpdating(false)
       setPendingTarget(null)

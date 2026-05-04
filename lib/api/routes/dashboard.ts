@@ -13,9 +13,20 @@ import { dashboardPostEventRoutes } from "./dashboard-post-event"
 import { dashboardSponsorFulfillmentRoutes } from "./dashboard-sponsor-fulfillments"
 import { getEffectiveStatus } from "@/lib/utils/timeline"
 import { normalizeLocale } from "@/lib/utils/language"
-import type { Scope } from "@/lib/auth/types"
+import type { Scope, UserPrincipal } from "@/lib/auth/types"
 import { ALL_SCOPES } from "@/lib/auth/types"
 import type { WebhookEvent, SponsorTier } from "@/lib/db/hackathon-types"
+
+function organizationAdminError(principal: UserPrincipal): Response | null {
+  if (principal.orgRole === "org:admin") {
+    return null
+  }
+
+  return new Response(JSON.stringify({ error: "Only org admins can manage people." }), {
+    status: 403,
+    headers: { "Content-Type": "application/json" },
+  })
+}
 
 export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
   .derive(async ({ request }) => {
@@ -126,6 +137,207 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         q: t.String({ minLength: 2 }),
         exclude: t.Optional(t.String()),
       }),
+    }
+  )
+  .get(
+    "/organization-members",
+    async ({ principal }) => {
+      requirePrincipal(principal, ["user"], ["org:read"])
+
+      if (!principal.orgId) {
+        return new Response(JSON.stringify({ error: "Switch to an organization to see people." }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+
+      const { listOrganizationPeople } = await import("@/lib/services/organization-members")
+
+      return listOrganizationPeople(principal.orgId)
+    },
+    {
+      detail: {
+        summary: "List organization people",
+        description: "Lists people and pending invites for the active Clerk organization. Clerk-only.",
+      },
+    }
+  )
+  .post(
+    "/organization-members/invitations",
+    async ({ principal, body }) => {
+      requirePrincipal(principal, ["user"], ["org:write"])
+      if (!principal.orgId) {
+        return new Response(JSON.stringify({ error: "Switch to an organization to invite people." }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+      const adminError = organizationAdminError(principal)
+      if (adminError) return adminError
+
+      const rateLimitResult = await checkRateLimit(`org_invitation:${principal.orgId}`, {
+        maxRequests: 20,
+        windowMs: 60_000,
+      })
+      if (!rateLimitResult.allowed) {
+        throw new RateLimitError(rateLimitResult.resetAt, rateLimitResult.remaining)
+      }
+
+      const {
+        getClerkErrorMessage,
+        inviteOrganizationMember,
+        isOrganizationMemberRole,
+        normalizeOrganizationInviteEmail,
+      } = await import("@/lib/services/organization-members")
+
+      const email = normalizeOrganizationInviteEmail(body.email)
+      if (!email) {
+        return new Response(JSON.stringify({ error: "Enter a valid email address." }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+
+      const role = body.role ?? "org:member"
+      if (!isOrganizationMemberRole(role)) {
+        return new Response(JSON.stringify({ error: "Pick a valid role." }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+
+      try {
+        const invitation = await inviteOrganizationMember({
+          organizationId: principal.orgId,
+          inviterUserId: principal.userId,
+          email,
+          role,
+        })
+
+        await logAudit({
+          principal,
+          action: "org_member.invited",
+          resourceType: "organization_invitation",
+          resourceId: invitation.id,
+          metadata: { email, role },
+        })
+
+        return { invitation }
+      } catch (error) {
+        return new Response(JSON.stringify({ error: getClerkErrorMessage(error, "Could not send invite.") }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+    },
+    {
+      detail: {
+        summary: "Invite organization member",
+        description: "Sends an invite to join the active Clerk organization. Requires org:write scope. Clerk-only.",
+      },
+      body: t.Object({
+        email: t.String({ minLength: 3 }),
+        role: t.Optional(t.Union([t.Literal("org:member"), t.Literal("org:admin")])),
+      }),
+    }
+  )
+  .delete(
+    "/organization-members/invitations/:invitationId",
+    async ({ principal, params }) => {
+      requirePrincipal(principal, ["user"], ["org:write"])
+      if (!principal.orgId) {
+        return new Response(JSON.stringify({ error: "Switch to an organization to cancel invites." }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+      const adminError = organizationAdminError(principal)
+      if (adminError) return adminError
+
+      const { getClerkErrorMessage, revokeOrganizationMemberInvitation } = await import(
+        "@/lib/services/organization-members"
+      )
+
+      try {
+        const invitation = await revokeOrganizationMemberInvitation({
+          organizationId: principal.orgId,
+          invitationId: params.invitationId,
+          requestingUserId: principal.userId,
+        })
+
+        await logAudit({
+          principal,
+          action: "org_invitation.cancelled",
+          resourceType: "organization_invitation",
+          resourceId: params.invitationId,
+          metadata: { email: invitation.email },
+        })
+
+        return { success: true }
+      } catch (error) {
+        return new Response(JSON.stringify({ error: getClerkErrorMessage(error, "Could not cancel invite.") }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+    },
+    {
+      detail: {
+        summary: "Cancel organization invite",
+        description: "Cancels a pending invite for the active Clerk organization. Requires org:write scope. Clerk-only.",
+      },
+    }
+  )
+  .delete(
+    "/organization-members/:userId",
+    async ({ principal, params }) => {
+      requirePrincipal(principal, ["user"], ["org:write"])
+      if (!principal.orgId) {
+        return new Response(JSON.stringify({ error: "Switch to an organization to remove people." }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+      const adminError = organizationAdminError(principal)
+      if (adminError) return adminError
+
+      if (params.userId === principal.userId) {
+        return new Response(JSON.stringify({ error: "You can't remove yourself." }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+
+      const { getClerkErrorMessage, removeOrganizationMember } = await import(
+        "@/lib/services/organization-members"
+      )
+
+      try {
+        await removeOrganizationMember({
+          organizationId: principal.orgId,
+          userId: params.userId,
+        })
+
+        await logAudit({
+          principal,
+          action: "org_member.removed",
+          resourceType: "organization_member",
+          resourceId: params.userId,
+        })
+
+        return { success: true }
+      } catch (error) {
+        return new Response(JSON.stringify({ error: getClerkErrorMessage(error, "Could not remove this person.") }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+    },
+    {
+      detail: {
+        summary: "Remove organization member",
+        description: "Removes a person from the active Clerk organization. Requires org:write scope. Clerk-only.",
+      },
     }
   )
   .get("/keys", async ({ principal }) => {

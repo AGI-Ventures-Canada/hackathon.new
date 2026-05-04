@@ -90,6 +90,7 @@ export async function JudgingTabContent({
     status: inv.status,
     createdAt: inv.created_at,
     remindedAt: inv.reminded_at ?? null,
+    token: inv.token,
   }))
 
   return (

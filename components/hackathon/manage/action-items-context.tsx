@@ -19,6 +19,13 @@ import {
 } from "@/lib/utils/organizer-actions";
 import type { HackathonStatus, HackathonPhase } from "@/lib/db/hackathon-types";
 import { useOrganizerPoll } from "@/hooks/use-organizer-poll";
+import { getEffectiveStatus } from "@/lib/utils/timeline";
+import {
+  applyOptimisticStage,
+  buildHackathonFingerprint,
+  shouldClearOptimisticStage,
+  type StageKey,
+} from "@/lib/utils/lifecycle-stages";
 import {
   Dialog,
   DialogContent,
@@ -69,6 +76,7 @@ interface ActionItemsContextValue {
   hackathonPhase: HackathonPhase | null;
   challengeExists: boolean;
   slug: string;
+  setOptimisticStage: (stage: StageKey | null) => void;
 }
 
 const ActionItemsContext = createContext<ActionItemsContextValue | null>(null);
@@ -160,8 +168,15 @@ export function ActionItemsProvider({
     useOrganizerPoll(hackathonId);
 
   const serverFingerprint = useMemo(
-    () => serverActionItems.map((i) => `${i.id}:${i.close.kind === "auto" ? i.close.isComplete : ""}`).join(","),
-    [serverActionItems],
+    () =>
+      buildHackathonFingerprint({
+        status: serverStatus,
+        phase: serverPhase,
+        startsAt: serverStartsAt,
+        endsAt: serverEndsAt,
+        actionItems: serverActionItems,
+      }),
+    [serverStatus, serverPhase, serverStartsAt, serverEndsAt, serverActionItems],
   );
   const prevFingerprintRef = useRef(serverFingerprint);
   useEffect(() => {
@@ -171,19 +186,43 @@ export function ActionItemsProvider({
     }
   }, [serverFingerprint, refreshPoll]);
 
-  const actionItems = pollData
+  const serverFingerprintRef = useRef(serverFingerprint);
+  useEffect(() => {
+    serverFingerprintRef.current = serverFingerprint;
+  }, [serverFingerprint]);
+  const [pollFingerprint, setPollFingerprint] = useState<string | null>(null);
+  useEffect(() => {
+    if (pollData) setPollFingerprint(serverFingerprintRef.current);
+  }, [pollData]);
+  // Pin poll data to the server fingerprint at arrival time so a router.refresh() that lands mid-poll invalidates the snapshot on the next render.
+  const isPollFresh = !!pollData && pollFingerprint === serverFingerprint;
+
+  const actionItems = isPollFresh && pollData
     ? getOrganizerActionItems(pollData)
     : serverActionItems;
-  const liveChallengeExists = pollData
+  const liveChallengeExists = isPollFresh && pollData
     ? pollData.challengeExists
     : challengeExists;
-  const liveEndsAt = pollData ? pollData.endsAt : serverEndsAt;
+  const liveEndsAt = isPollFresh && pollData ? pollData.endsAt : serverEndsAt;
+  const liveStartsAt = isPollFresh && pollData ? pollData.startsAt : serverStartsAt;
   const liveStatus = (
-    pollData ? pollData.status : serverStatus
+    isPollFresh && pollData ? pollData.status : serverStatus
   ) as HackathonStatus;
   const livePhase = (
-    pollData ? pollData.phase : serverPhase
+    isPollFresh && pollData ? pollData.phase : serverPhase
   ) as HackathonPhase | null;
+  const baseEffectiveStatus = getEffectiveStatus({
+    status: liveStatus,
+    starts_at: liveStartsAt,
+    ends_at: liveEndsAt,
+  });
+  const [optimisticStage, setOptimisticStage] = useState<StageKey | null>(null);
+  useEffect(() => {
+    if (shouldClearOptimisticStage(baseEffectiveStatus, optimisticStage)) {
+      setOptimisticStage(null);
+    }
+  }, [baseEffectiveStatus, optimisticStage]);
+  const effectiveStatus = applyOptimisticStage(baseEffectiveStatus, optimisticStage);
 
   const [completedIds, setCompletedIds] = useState<Set<string>>(() => {
     if (typeof window === "undefined") return new Set<string>();
@@ -570,10 +609,11 @@ export function ActionItemsProvider({
       registerTabAction,
       unregisterTabAction,
       isStale,
-      hackathonStatus: liveStatus,
+      hackathonStatus: effectiveStatus,
       hackathonPhase: livePhase,
       challengeExists: liveChallengeExists,
       slug,
+      setOptimisticStage,
     }),
     [
       actionItems,
@@ -595,7 +635,7 @@ export function ActionItemsProvider({
       registerTabAction,
       unregisterTabAction,
       isStale,
-      liveStatus,
+      effectiveStatus,
       livePhase,
       liveChallengeExists,
       slug,

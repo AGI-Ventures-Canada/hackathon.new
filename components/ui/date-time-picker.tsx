@@ -23,6 +23,7 @@ interface DateTimePickerProps {
   name?: string;
   className?: string;
   minDate?: Date;
+  maxDate?: Date;
 }
 
 function to12Hour(hours24: number): { hours: number; period: "AM" | "PM" } {
@@ -60,6 +61,7 @@ export function DateTimePicker({
   name,
   className,
   minDate,
+  maxDate,
 }: DateTimePickerProps) {
   const [open, setOpen] = React.useState(false);
 
@@ -258,8 +260,12 @@ export function DateTimePicker({
           selected={pendingDate ?? undefined}
           onSelect={handleDateSelect}
           className="w-full"
-          disabled={minDate ? { before: minDate } : undefined}
+          disabled={[
+            ...(minDate ? [{ before: minDate }] : []),
+            ...(maxDate ? [{ after: maxDate }] : []),
+          ]}
           fromMonth={minDate}
+          toMonth={maxDate}
           initialFocus
         />
         <div className="px-3 pb-2 pt-1">

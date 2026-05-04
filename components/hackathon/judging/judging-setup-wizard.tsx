@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
+import { usePrizeJudgeAssignments } from "@/hooks/use-prize-judge-assignments"
 import {
   Trophy,
   Users,
@@ -123,7 +124,6 @@ export function JudgingSetupWizard({
   const [hiddenRoundIds, setHiddenRoundIds] = useState<Set<string>>(new Set())
   const [hiddenJudgeIds, setHiddenJudgeIds] = useState<Set<string>>(new Set())
   const [hiddenInvitationIds, setHiddenInvitationIds] = useState<Set<string>>(new Set())
-  const [hiddenPrizeJudges, setHiddenPrizeJudges] = useState<Set<string>>(new Set())
 
   const [pendingPrizes, setPendingPrizes] = useState<WizardPrize[]>([])
   const [pendingRounds, setPendingRounds] = useState<RoundData[]>([])
@@ -163,22 +163,20 @@ export function JudgingSetupWizard({
       ),
     [rounds, pendingRounds, hiddenRoundIds],
   )
-  const visibleJudges = useMemo(
+  const mergedJudges = useMemo(
     () =>
-      [...judges, ...pendingJudges]
-        .filter(
-          (j, idx, arr) =>
-            !hiddenJudgeIds.has(j.participantId) &&
-            arr.findIndex((x) => x.participantId === j.participantId) === idx,
-        )
-        .map((j) => ({
-          ...j,
-          prizeIds: j.prizeIds.filter(
-            (pid) => !hiddenPrizeJudges.has(`${pid}:${j.participantId}`),
-          ),
-        })),
-    [judges, pendingJudges, hiddenJudgeIds, hiddenPrizeJudges],
+      [...judges, ...pendingJudges].filter(
+        (j, idx, arr) =>
+          !hiddenJudgeIds.has(j.participantId) &&
+          arr.findIndex((x) => x.participantId === j.participantId) === idx,
+      ),
+    [judges, pendingJudges, hiddenJudgeIds],
   )
+  const {
+    optimisticJudges: visibleJudges,
+    assignJudgeToPrize,
+    unassignJudgeFromPrize,
+  } = usePrizeJudgeAssignments({ hackathonId, judges: mergedJudges })
   const visibleInvitations = useMemo(
     () =>
       [...pendingInvitations, ...pendingInvites].filter(
@@ -381,32 +379,6 @@ export function JudgingSetupWizard({
         return next
       })
       setError(err instanceof Error ? err.message : "Failed to remove judge")
-    }
-  }
-
-  async function assignJudgeToPrize(prizeId: string, judgeParticipantId: string) {
-    await fetch(`/api/dashboard/hackathons/${hackathonId}/prizes/${prizeId}/assign-judge`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ judgeParticipantId }),
-    }).then(assertOk)
-  }
-
-  async function unassignJudgeFromPrize(prizeId: string, judgeParticipantId: string) {
-    const key = `${prizeId}:${judgeParticipantId}`
-    setHiddenPrizeJudges((prev) => new Set(prev).add(key))
-    try {
-      await fetch(`/api/dashboard/hackathons/${hackathonId}/prizes/${prizeId}/judges/${judgeParticipantId}`, {
-        method: "DELETE",
-      }).then(assertOk)
-      refresh()
-    } catch (err) {
-      setHiddenPrizeJudges((prev) => {
-        const next = new Set(prev)
-        next.delete(key)
-        return next
-      })
-      throw err
     }
   }
 
