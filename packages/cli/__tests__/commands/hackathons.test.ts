@@ -8,7 +8,7 @@ const mockConfirm = mock(() => Promise.resolve(false))
 mock.module("@clack/prompts", () => ({
   confirm: mockConfirm,
   isCancel: () => false,
-  log: { info: () => {} },
+  log: { info: () => {}, warn: () => {} },
 }))
 
 function jsonResponse(body: unknown, status = 200) {
@@ -91,9 +91,19 @@ describe("hackathons commands", () => {
 
   describe("create", () => {
     it("sends POST with provided flags (non-interactive)", async () => {
-      mockFetch.mockResolvedValueOnce(
-        jsonResponse({ id: "new-id", name: "New Hack", slug: "new-hack" })
-      )
+      mockFetch
+        .mockResolvedValueOnce(
+          jsonResponse({
+            tenantId: "tenant-org-1",
+            tenantName: "Acme Labs",
+            tenantType: "organization",
+            keyId: "key-1",
+            scopes: ["hackathons:write"],
+          })
+        )
+        .mockResolvedValueOnce(
+          jsonResponse({ id: "new-id", name: "New Hack", slug: "new-hack" })
+        )
       const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
       const { runHackathonsCreate } = await import("../../src/commands/hackathons/create")
       await runHackathonsCreate(client, [
@@ -102,16 +112,26 @@ describe("hackathons commands", () => {
         "--description", "A test hackathon",
       ])
 
-      const init = mockFetch.mock.calls[0][1] as RequestInit
+      const init = mockFetch.mock.calls[1][1] as RequestInit
       const body = JSON.parse(init.body as string)
       expect(body.name).toBe("New Hack")
       expect(body.slug).toBe("new-hack")
     })
 
     it("imports a hackathon from a supported event URL", async () => {
-      mockFetch.mockResolvedValueOnce(
-        jsonResponse({ id: "imported-id", name: "Imported Hack", slug: "imported-hack" })
-      )
+      mockFetch
+        .mockResolvedValueOnce(
+          jsonResponse({
+            tenantId: "tenant-org-1",
+            tenantName: "Acme Labs",
+            tenantType: "organization",
+            keyId: "key-1",
+            scopes: ["hackathons:write"],
+          })
+        )
+        .mockResolvedValueOnce(
+          jsonResponse({ id: "imported-id", name: "Imported Hack", slug: "imported-hack" })
+        )
       const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
       const { runHackathonsCreate } = await import("../../src/commands/hackathons/create")
       await runHackathonsCreate(client, [
@@ -121,8 +141,8 @@ describe("hackathons commands", () => {
         "--json",
       ])
 
-      const url = mockFetch.mock.calls[0][0] as string
-      const init = mockFetch.mock.calls[0][1] as RequestInit
+      const url = mockFetch.mock.calls[1][0] as string
+      const init = mockFetch.mock.calls[1][1] as RequestInit
       const body = JSON.parse(init.body as string)
 
       expect(url).toContain("/api/dashboard/import/url")
@@ -139,9 +159,19 @@ describe("hackathons commands", () => {
     })
 
     it("imports a hackathon from a non-Luma event page URL", async () => {
-      mockFetch.mockResolvedValueOnce(
-        jsonResponse({ id: "ep-id", name: "Devpost Hack", slug: "devpost-hack" })
-      )
+      mockFetch
+        .mockResolvedValueOnce(
+          jsonResponse({
+            tenantId: "tenant-org-1",
+            tenantName: "Acme Labs",
+            tenantType: "organization",
+            keyId: "key-1",
+            scopes: ["hackathons:write"],
+          })
+        )
+        .mockResolvedValueOnce(
+          jsonResponse({ id: "ep-id", name: "Devpost Hack", slug: "devpost-hack" })
+        )
       const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
       const { runHackathonsCreate } = await import("../../src/commands/hackathons/create")
       await runHackathonsCreate(client, [
@@ -149,8 +179,8 @@ describe("hackathons commands", () => {
         "--json",
       ])
 
-      const url = mockFetch.mock.calls[0][0] as string
-      const init = mockFetch.mock.calls[0][1] as RequestInit
+      const url = mockFetch.mock.calls[1][0] as string
+      const init = mockFetch.mock.calls[1][1] as RequestInit
       const body = JSON.parse(init.body as string)
 
       expect(url).toContain("/api/dashboard/import/url")
@@ -164,6 +194,51 @@ describe("hackathons commands", () => {
         name: "Devpost Hack",
         slug: "devpost-hack",
       })
+    })
+
+    it("stops non-interactive personal workspace creates without --yes", async () => {
+      mockFetch.mockResolvedValueOnce(
+        jsonResponse({
+          tenantId: "tenant-personal-1",
+          tenantName: "Personal",
+          tenantType: "personal",
+          keyId: "key-1",
+          scopes: ["hackathons:write"],
+        })
+      )
+      const exitSpy = spyOn(process, "exit").mockImplementation(() => { throw new Error("exit") })
+      const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
+      const { runHackathonsCreate } = await import("../../src/commands/hackathons/create")
+
+      await expect(runHackathonsCreate(client, ["--name", "New Hack"])).rejects.toThrow("exit")
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("personal workspace"))
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+      exitSpy.mockRestore()
+    })
+
+    it("allows non-interactive personal workspace creates with --yes", async () => {
+      mockFetch
+        .mockResolvedValueOnce(
+          jsonResponse({
+            tenantId: "tenant-personal-1",
+            tenantName: "Personal",
+            tenantType: "personal",
+            keyId: "key-1",
+            scopes: ["hackathons:write"],
+          })
+        )
+        .mockResolvedValueOnce(
+          jsonResponse({ id: "new-id", name: "New Hack", slug: "new-hack" })
+        )
+      const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
+      const { runHackathonsCreate } = await import("../../src/commands/hackathons/create")
+
+      await runHackathonsCreate(client, ["--name", "New Hack", "--yes"])
+
+      expect(mockFetch).toHaveBeenCalledTimes(2)
+      const url = mockFetch.mock.calls[1][0] as string
+      expect(url).toContain("/api/dashboard/hackathons")
     })
   })
 

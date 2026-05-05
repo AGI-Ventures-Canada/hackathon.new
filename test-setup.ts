@@ -54,6 +54,8 @@ g.__clerkState = {
 }
 
 mock.module("@clerk/nextjs", () => ({
+  OrganizationList: (props: Record<string, unknown>) =>
+    createElement("div", { "data-testid": "organization-list", ...props }),
   useAuth: () => ({ isSignedIn: g.__clerkState.isSignedIn, isLoaded: g.__clerkState.isLoaded, userId: g.__clerkState.userId }),
   useUser: () => ({ isLoaded: g.__clerkState.isLoaded, isSignedIn: g.__clerkState.isSignedIn, user: g.__clerkState.isSignedIn ? g.__clerkState.user : null }),
   useClerk: () => ({ openUserProfile: g.__clerkState.openUserProfile, openOrganizationProfile: g.__clerkState.openOrganizationProfile, signOut: g.__clerkState.signOut, client: g.__clerkState.client, setActive: g.__clerkState.signInSetActive }),

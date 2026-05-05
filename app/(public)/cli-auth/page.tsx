@@ -1,5 +1,7 @@
 import { auth } from "@clerk/nextjs/server"
+import { OrganizationList } from "@clerk/nextjs"
 import { headers } from "next/headers"
+import Link from "next/link"
 import { redirect } from "next/navigation"
 import { CliAuthClient } from "@/components/cli-auth/cli-auth-client"
 import { completeCliAuthSession } from "@/lib/services/cli-auth"
@@ -13,11 +15,11 @@ export const metadata: Metadata = {
 }
 
 type PageProps = {
-  searchParams: Promise<{ token?: string }>
+  searchParams: Promise<{ token?: string; personal?: string }>
 }
 
 export default async function CliAuthPage({ searchParams }: PageProps) {
-  const { token } = await searchParams
+  const { token, personal } = await searchParams
 
   if (!token || token.length < 32) {
     return (
@@ -34,10 +36,38 @@ export default async function CliAuthPage({ searchParams }: PageProps) {
     )
   }
 
+  const returnUrl = `/cli-auth?token=${encodeURIComponent(token)}`
+  const personalUrl = `${returnUrl}&personal=1`
+
   const { userId, orgId } = await auth()
 
   if (!userId) {
-    redirect(`/sign-in?redirect_url=/cli-auth?token=${encodeURIComponent(token)}`)
+    redirect(
+      `/sign-in?redirect_url=${encodeURIComponent(personal === "1" ? personalUrl : returnUrl)}`
+    )
+  }
+
+  if (!orgId && personal !== "1") {
+    return (
+      <div className="min-h-[calc(100vh-80px)] flex items-center justify-center p-4">
+        <div className="flex max-w-md flex-col items-center space-y-6 text-center">
+          <div>
+            <h1 className="text-2xl font-bold mb-2">Pick a workspace</h1>
+            <p className="text-muted-foreground">
+              The CLI will create events in the workspace you pick here.
+            </p>
+          </div>
+          <OrganizationList
+            afterCreateOrganizationUrl={returnUrl}
+            afterSelectOrganizationUrl={returnUrl}
+            afterSelectPersonalUrl={personalUrl}
+          />
+          <Link href={personalUrl} className="text-sm text-muted-foreground underline">
+            Use my personal workspace
+          </Link>
+        </div>
+      </div>
+    )
   }
 
   const headersList = await headers()

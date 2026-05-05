@@ -327,7 +327,10 @@ async function main() {
           }
           case "create": {
             const { runHackathonsCreate } = await import("./commands/hackathons/create.js")
-            await runHackathonsCreate(client, rest.slice(2).concat(flags.json ? ["--json"] : []))
+            await runHackathonsCreate(
+              client,
+              rest.slice(2).concat(flags.json ? ["--json"] : []).concat(flags.yes ? ["--yes"] : [])
+            )
             break
           }
           case "update": {
