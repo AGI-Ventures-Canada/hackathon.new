@@ -98,14 +98,39 @@ describe("CLI Auth Page", () => {
       ).rejects.toThrow("NEXT_REDIRECT")
 
       expect(mockRedirect).toHaveBeenCalledWith(
-        `/sign-in?redirect_url=/cli-auth?token=${encodeURIComponent(validToken)}`
+        `/sign-in?redirect_url=${encodeURIComponent(
+          `/cli-auth?token=${encodeURIComponent(validToken)}`
+        )}`
       )
+    })
+
+    it("keeps the personal choice through sign-in", async () => {
+      mockAuth.mockResolvedValue({ userId: null, orgId: null })
+
+      await expect(
+        CliAuthPage({ searchParams: Promise.resolve({ token: validToken, personal: "1" }) })
+      ).rejects.toThrow("NEXT_REDIRECT")
+
+      expect(mockRedirect).toHaveBeenCalledWith(
+        `/sign-in?redirect_url=${encodeURIComponent(
+          `/cli-auth?token=${encodeURIComponent(validToken)}&personal=1`
+        )}`
+      )
+    })
+  })
+
+  describe("workspace choice", () => {
+    it("shows workspace choices before using a personal workspace", async () => {
+      const result = await CliAuthPage({ searchParams: Promise.resolve({ token: validToken }) })
+
+      expect(mockCompleteCliAuthSession).not.toHaveBeenCalled()
+      expect(JSON.stringify(result)).toContain("Pick a workspace")
     })
   })
 
   describe("successful auth", () => {
     it("calls completeCliAuthSession with hostname from host header (no port)", async () => {
-      await CliAuthPage({ searchParams: Promise.resolve({ token: validToken }) })
+      await CliAuthPage({ searchParams: Promise.resolve({ token: validToken, personal: "1" }) })
 
       expect(mockCompleteCliAuthSession).toHaveBeenCalledWith(
         validToken,
@@ -128,15 +153,15 @@ describe("CLI Auth Page", () => {
       )
     })
 
-    it("uses personal tenant when orgId is null", async () => {
-      await CliAuthPage({ searchParams: Promise.resolve({ token: validToken }) })
+    it("uses personal tenant when the user picks personal workspace", async () => {
+      await CliAuthPage({ searchParams: Promise.resolve({ token: validToken, personal: "1" }) })
 
       expect(mockGetOrCreatePersonalTenant).toHaveBeenCalledWith("user-123")
       expect(mockGetOrCreateTenant).not.toHaveBeenCalled()
     })
 
     it("logs audit event on success", async () => {
-      await CliAuthPage({ searchParams: Promise.resolve({ token: validToken }) })
+      await CliAuthPage({ searchParams: Promise.resolve({ token: validToken, personal: "1" }) })
 
       expect(mockLogAudit).toHaveBeenCalledTimes(1)
       const call = mockLogAudit.mock.calls[0] as unknown as [{ action: string; resourceType: string; resourceId: string; principal: { kind: string; tenantId: string; userId: string } }]
@@ -151,7 +176,7 @@ describe("CLI Auth Page", () => {
     it("passes hostname undefined when host header is absent", async () => {
       mockHeaders.mockResolvedValue({ get: () => null })
 
-      await CliAuthPage({ searchParams: Promise.resolve({ token: validToken }) })
+      await CliAuthPage({ searchParams: Promise.resolve({ token: validToken, personal: "1" }) })
 
       expect(mockCompleteCliAuthSession).toHaveBeenCalledWith(
         validToken,
@@ -165,7 +190,7 @@ describe("CLI Auth Page", () => {
     it("does not log audit when session completion fails", async () => {
       mockCompleteCliAuthSession.mockResolvedValue({ success: false, error: "Session expired" })
 
-      await CliAuthPage({ searchParams: Promise.resolve({ token: validToken }) })
+      await CliAuthPage({ searchParams: Promise.resolve({ token: validToken, personal: "1" }) })
 
       expect(mockLogAudit).not.toHaveBeenCalled()
     })
@@ -173,7 +198,7 @@ describe("CLI Auth Page", () => {
     it("returns error result when tenant cannot be resolved", async () => {
       mockGetOrCreatePersonalTenant.mockResolvedValue(null)
 
-      const result = await CliAuthPage({ searchParams: Promise.resolve({ token: validToken }) })
+      const result = await CliAuthPage({ searchParams: Promise.resolve({ token: validToken, personal: "1" }) })
 
       expect(mockCompleteCliAuthSession).not.toHaveBeenCalled()
       expect(mockLogAudit).not.toHaveBeenCalled()
@@ -183,7 +208,7 @@ describe("CLI Auth Page", () => {
     it("returns generic error message when completeCliAuthSession throws", async () => {
       mockCompleteCliAuthSession.mockRejectedValue(new Error("DB connection failed"))
 
-      const result = await CliAuthPage({ searchParams: Promise.resolve({ token: validToken }) })
+      const result = await CliAuthPage({ searchParams: Promise.resolve({ token: validToken, personal: "1" }) })
 
       expect(mockLogAudit).not.toHaveBeenCalled()
       expect(result).toBeDefined()
@@ -192,7 +217,7 @@ describe("CLI Auth Page", () => {
     it("does not expose internal error details in result on exception", async () => {
       mockCompleteCliAuthSession.mockRejectedValue(new Error("secret DB password is abc123"))
 
-      const pageResult = await CliAuthPage({ searchParams: Promise.resolve({ token: validToken }) })
+      const pageResult = await CliAuthPage({ searchParams: Promise.resolve({ token: validToken, personal: "1" }) })
 
       const resultStr = JSON.stringify(pageResult)
       expect(resultStr).not.toContain("abc123")
