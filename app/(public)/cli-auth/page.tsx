@@ -2,8 +2,9 @@ import { auth } from "@clerk/nextjs/server"
 import { headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { CliAuthClient } from "@/components/cli-auth/cli-auth-client"
+import { CliAuthOrgGate } from "@/components/cli-auth/cli-auth-org-gate"
 import { completeCliAuthSession } from "@/lib/services/cli-auth"
-import { getOrCreateTenant, getOrCreatePersonalTenant } from "@/lib/services/tenants"
+import { getOrCreateTenant } from "@/lib/services/tenants"
 import { logAudit } from "@/lib/services/audit"
 import type { Metadata } from "next"
 
@@ -34,21 +35,26 @@ export default async function CliAuthPage({ searchParams }: PageProps) {
     )
   }
 
+  const returnUrl = `/cli-auth?token=${encodeURIComponent(token)}`
+
   const { userId, orgId } = await auth()
 
   if (!userId) {
-    redirect(`/sign-in?redirect_url=/cli-auth?token=${encodeURIComponent(token)}`)
+    redirect(`/sign-in?redirect_url=${encodeURIComponent(returnUrl)}`)
+  }
+
+  if (!orgId) {
+    return (
+      <div className="min-h-[calc(100vh-80px)] flex items-center justify-center p-4">
+        <CliAuthOrgGate />
+      </div>
+    )
   }
 
   const headersList = await headers()
   const hostname = headersList.get("host")?.split(":")[0]
 
-  let tenant
-  if (orgId) {
-    tenant = await getOrCreateTenant(orgId)
-  } else {
-    tenant = await getOrCreatePersonalTenant(userId)
-  }
+  const tenant = await getOrCreateTenant(orgId)
 
   let result: { success: boolean; error?: string }
   if (!tenant) {

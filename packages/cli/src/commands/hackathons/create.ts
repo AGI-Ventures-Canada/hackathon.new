@@ -1,7 +1,8 @@
 import * as p from "@clack/prompts"
 import type { OatmealClient } from "../../client.js"
 import { formatJson, formatSuccess } from "../../output.js"
-import type { Hackathon } from "../../types.js"
+import type { Hackathon, WhoAmIResponse } from "../../types.js"
+import { formatWorkspace } from "../../workspace.js"
 
 interface CreateOptions {
   name?: string
@@ -9,6 +10,7 @@ interface CreateOptions {
   description?: string
   fromUrl?: string
   json?: boolean
+  yes?: boolean
 }
 
 interface ImportedHackathonResponse {
@@ -36,6 +38,10 @@ export function parseCreateOptions(args: string[]): CreateOptions {
       case "--json":
         options.json = true
         break
+      case "--yes":
+      case "-y":
+        options.yes = true
+        break
     }
   }
   return options
@@ -52,6 +58,8 @@ export async function runHackathonsCreate(
   let description = options.description
 
   if (options.fromUrl) {
+    await confirmPersonalWorkspace(client, options)
+
     const hackathon = await client.post<ImportedHackathonResponse>("/api/dashboard/import/url", {
       url: options.fromUrl,
       name,
@@ -90,6 +98,8 @@ export async function runHackathonsCreate(
     if (!p.isCancel(result)) description = result || undefined
   }
 
+  await confirmPersonalWorkspace(client, options)
+
   const hackathon = await client.post<Hackathon>("/api/dashboard/hackathons", {
     name,
     slug,
@@ -102,4 +112,40 @@ export async function runHackathonsCreate(
   }
 
   console.log(formatSuccess(`Created hackathon "${hackathon.name}" (${hackathon.id})`))
+}
+
+async function confirmPersonalWorkspace(
+  client: OatmealClient,
+  options: Pick<CreateOptions, "yes" | "json">
+): Promise<void> {
+  const whoami = await client.get<WhoAmIResponse>("/api/v1/whoami")
+
+  if (whoami.tenantType !== "personal") {
+    return
+  }
+
+  if (options.yes) {
+    if (!options.json) {
+      p.log.warn("Creating this event in your personal workspace.")
+    }
+    return
+  }
+
+  if (!process.stdout.isTTY) {
+    console.error(
+      "Error: You're logged in to a personal workspace. " +
+        "Run \"hackathon login\" and pick an organization, or rerun with --yes to create it here."
+    )
+    process.exit(1)
+  }
+
+  const confirmed = await p.confirm({
+    message: `You're using ${formatWorkspace(whoami)}. Create this event there?`,
+    initialValue: false,
+  })
+
+  if (p.isCancel(confirmed) || !confirmed) {
+    p.log.info("Create cancelled.")
+    process.exit(0)
+  }
 }
