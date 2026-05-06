@@ -36,6 +36,12 @@ mock.module("@/lib/services/schedule-items", () => ({
   getTriggerItem: mockGetTriggerItem,
 }))
 
+const mockSendBulkEmail = mock(() => Promise.resolve({ sent: 0 }))
+
+mock.module("@/lib/services/participant-emails", () => ({
+  sendBulkEmail: mockSendBulkEmail,
+}))
+
 const mockMaybeReleaseChallengesForPublishLink = mock(() => Promise.resolve(false))
 
 mock.module("@/lib/services/challenges", () => ({
@@ -709,6 +715,73 @@ describe("Dashboard Event Routes Integration Tests", () => {
 
       expect(res.status).toBe(200)
       expect(mockMaybeReleaseChallengesForPublishLink).toHaveBeenCalledWith(hackathonId, "tenant-123")
+    })
+  })
+
+  describe("POST /api/dashboard/hackathons/:id/email-blast", () => {
+    const blastUrl = `${baseUrl}/email-blast`
+
+    function postBlast() {
+      return app.handle(
+        new Request(blastUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ subject: "Hi", html: "<p>Hi</p>" }),
+        })
+      )
+    }
+
+    it("blocks email blast when hackathon is in draft", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockCheckHackathonOrganizer.mockResolvedValue({
+        status: "ok" as const,
+        hackathon: { id: hackathonId, tenant_id: "tenant-123", status: "draft" },
+      })
+      mockSendBulkEmail.mockClear()
+
+      const res = await postBlast()
+      const data = await res.json()
+
+      expect(res.status).toBe(400)
+      expect(data.code).toBe("hackathon_draft")
+      expect(mockSendBulkEmail).not.toHaveBeenCalled()
+    })
+
+    it("sends email blast when hackathon is active", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockCheckHackathonOrganizer.mockResolvedValue({
+        status: "ok" as const,
+        hackathon: { id: hackathonId, tenant_id: "tenant-123", status: "active" },
+      })
+      mockSendBulkEmail.mockClear()
+      mockSendBulkEmail.mockResolvedValueOnce({ sent: 5 })
+
+      const res = await postBlast()
+      const data = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(data.sent).toBe(5)
+      expect(mockSendBulkEmail).toHaveBeenCalledTimes(1)
+    })
+
+    it("returns 404 when hackathon not found", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockCheckHackathonOrganizer.mockResolvedValue({ status: "not_found" as const })
+      mockSendBulkEmail.mockClear()
+
+      const res = await postBlast()
+      expect(res.status).toBe(404)
+      expect(mockSendBulkEmail).not.toHaveBeenCalled()
+    })
+
+    it("returns 403 when tenant does not match", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockCheckHackathonOrganizer.mockResolvedValue({ status: "not_authorized" as const })
+      mockSendBulkEmail.mockClear()
+
+      const res = await postBlast()
+      expect(res.status).toBe(403)
+      expect(mockSendBulkEmail).not.toHaveBeenCalled()
     })
   })
 })

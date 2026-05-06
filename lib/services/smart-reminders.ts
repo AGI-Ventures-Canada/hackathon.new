@@ -278,6 +278,15 @@ async function validateReminderEntity(
 ): Promise<boolean> {
   const client = getSupabase() as unknown as SupabaseClient
 
+  if (reminder.entity_type === "team_invitation" || reminder.entity_type === "judge_invitation") {
+    const { data: hackathon } = await client
+      .from("hackathons")
+      .select("status")
+      .eq("id", reminder.hackathon_id)
+      .single()
+    if (!hackathon || hackathon.status === "draft") return false
+  }
+
   if (reminder.entity_type === "team_invitation") {
     const { data } = await client
       .from("team_invitations")

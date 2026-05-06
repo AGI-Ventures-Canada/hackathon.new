@@ -9,6 +9,7 @@ const SERVICE_MOCK_ISOLATED_TESTS = [
   "__tests__/services/notification-dispatcher.test.ts",
   "__tests__/services/lifecycle.test.ts",
   "__tests__/services/cli-auth.test.ts",
+  "__tests__/services/team-invitations.test.ts",
 ]
 const serviceMockSet = new Set(SERVICE_MOCK_ISOLATED_TESTS)
 
