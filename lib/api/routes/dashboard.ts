@@ -1509,6 +1509,19 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           const { sendJudgeNotificationsWorkflow } = await import(
             "@/lib/workflows/judge-notifications"
           )
+          const { sendPendingTeamInvitationEmails } = await import("@/lib/services/team-invitations")
+          sendPendingTeamInvitationEmails(hackathon.id, inviterName)
+            .then(({ sent, total, failedEmails }) => {
+              if (total === 0) return
+              if (failedEmails.length > 0) {
+                console.error(
+                  `Team invitation emails: ${sent}/${total} sent for hackathon ${hackathon.id}. Failed: ${failedEmails.join(", ")}.`
+                )
+              }
+            })
+            .catch((err) => {
+              console.error(`Failed to send pending team invitation emails for hackathon ${hackathon.id}:`, err)
+            })
           start(sendJudgeNotificationsWorkflow, [
             {
               hackathonId: hackathon.id,
@@ -2445,8 +2458,9 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       }
 
       const teamInfo = await getTeamWithHackathon(params.teamId)
+      const isDraft = !teamInfo || teamInfo.hackathon.status === "draft"
 
-      if (teamInfo) {
+      if (teamInfo && !isDraft) {
         const inviterName = body.inviterName || "A team captain"
         const emailInput = {
           to: body.email,
@@ -2460,13 +2474,24 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           hackathonEndsAt: teamInfo.hackathon.ends_at,
           teamMembers: teamInfo.memberNames,
         }
+        const { markTeamInvitationEmailed } = await import("@/lib/services/team-invitations")
+        const invitationId = result.invitation.id
+
         const { start } = await import("workflow/api")
         const { sendTeamInvitationWorkflow } = await import("@/lib/workflows/team-invitations")
-        start(sendTeamInvitationWorkflow, [emailInput]).catch(async (err) => {
-          console.error("Failed to start team invitation workflow, falling back to direct send:", err)
-          const { sendTeamInvitationEmail } = await import("@/lib/email/team-invitations")
-          sendTeamInvitationEmail(emailInput).catch(console.error)
-        })
+        start(sendTeamInvitationWorkflow, [emailInput])
+          .then(() => markTeamInvitationEmailed(invitationId).catch(console.error))
+          .catch(async (err) => {
+            console.error("Failed to start team invitation workflow, falling back to direct send:", err)
+            const { sendTeamInvitationEmail } = await import("@/lib/email/team-invitations")
+            const sendResult = await sendTeamInvitationEmail(emailInput).catch((sendErr) => {
+              console.error(sendErr)
+              return { success: false }
+            })
+            if (sendResult.success) {
+              markTeamInvitationEmailed(invitationId).catch(console.error)
+            }
+          })
 
         const { scheduleReminders } = await import("@/lib/services/smart-reminders")
         scheduleReminders(
@@ -2489,10 +2514,10 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
 
       await logAudit({
         principal,
-        action: "team_invitation.sent",
+        action: isDraft ? "team_invitation.queued" : "team_invitation.sent",
         resourceType: "team_invitation",
         resourceId: result.invitation.id,
-        metadata: { teamId: params.teamId, email: body.email },
+        metadata: { teamId: params.teamId, email: body.email, queued: isDraft },
       })
 
       return {
@@ -2615,6 +2640,13 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         status: 404,
         headers: { "Content-Type": "application/json" },
       })
+    }
+
+    if (teamInfo.hackathon.status === "draft") {
+      return new Response(
+        JSON.stringify({ error: "Reminders can't be sent while the hackathon is in draft.", code: "hackathon_draft" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      )
     }
 
     const rateLimitResult = await checkRateLimit(`team_invitation_remind:${params.teamId}`, {

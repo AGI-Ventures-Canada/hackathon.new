@@ -667,8 +667,20 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   }, { detail: { summary: "Get live event stats" } })
   .post("/hackathons/:id/email-blast", async ({ params, body, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
-    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+    const check = await checkHackathonOrganizer(params.id, principal.tenantId)
+    if (check.status === "not_found") {
+      set.status = 404
+      return { error: "Hackathon not found" }
+    }
+    if (check.status === "not_authorized") {
+      set.status = 403
+      return { error: "Not authorized to manage this hackathon" }
+    }
+    if (check.hackathon.status === "draft") {
+      set.status = 400
+      return { error: "Go live before sending an email blast.", code: "hackathon_draft" }
+    }
     const { subject, html, recipientFilter } = body as { subject: string; html: string; recipientFilter?: ParticipantRole[] }
     const result = await sendBulkEmail(params.id, { subject, html, recipientFilter })
     await logAudit({ principal, action: "email_blast.sent", resourceType: "hackathon", resourceId: params.id, metadata: { hackathonId: params.id, subject, recipientFilter: recipientFilter ?? "all", sentCount: result.sent } })

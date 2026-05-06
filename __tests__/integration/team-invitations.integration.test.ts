@@ -42,10 +42,12 @@ const mockCancelTeamInvitation = mock(() => Promise.resolve({ success: true }))
 const mockGetTeamWithHackathon = mock(() =>
   Promise.resolve({
     name: "Test Team",
-    hackathon: { name: "Test Hackathon", slug: "test-hackathon", starts_at: "2025-06-01T00:00:00Z", ends_at: "2025-06-02T00:00:00Z" },
+    hackathon: { name: "Test Hackathon", slug: "test-hackathon", status: "active", starts_at: "2025-06-01T00:00:00Z", ends_at: "2025-06-02T00:00:00Z" },
     memberNames: [],
   })
 )
+const mockMarkTeamInvitationEmailed = mock(() => Promise.resolve())
+const mockSendPendingTeamInvitationEmails = mock(() => Promise.resolve({ sent: 0, total: 0, failedEmails: [] }))
 const mockRemindTeamInvitation = mock(() =>
   Promise.resolve({
     success: true,
@@ -67,6 +69,8 @@ mock.module("@/lib/services/team-invitations", () => ({
   cancelTeamInvitation: mockCancelTeamInvitation,
   getTeamWithHackathon: mockGetTeamWithHackathon,
   remindTeamInvitation: mockRemindTeamInvitation,
+  markTeamInvitationEmailed: mockMarkTeamInvitationEmailed,
+  sendPendingTeamInvitationEmails: mockSendPendingTeamInvitationEmails,
 }))
 
 const mockGetPublicHackathonById = mock(() => Promise.resolve({ slug: "test-hackathon" }))

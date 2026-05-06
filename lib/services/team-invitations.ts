@@ -388,7 +388,7 @@ export async function remindTeamInvitation(
 
 interface TeamWithHackathon {
   name: string
-  hackathon: { name: string; slug: string; starts_at: string | null; ends_at: string | null }
+  hackathon: { name: string; slug: string; status: string; starts_at: string | null; ends_at: string | null }
   memberNames: string[]
 }
 
@@ -406,7 +406,7 @@ export async function getTeamWithHackathon(
     .from("teams")
     .select(`
       name,
-      hackathons!inner(name, slug, starts_at, ends_at),
+      hackathons!inner(name, slug, status, starts_at, ends_at),
       hackathon_participants!hackathon_participants_team_id_fkey(clerk_user_id, role)
     `)
     .eq("id", teamId)
@@ -416,7 +416,7 @@ export async function getTeamWithHackathon(
     return null
   }
 
-  const hackathon = data.hackathons as unknown as { name: string; slug: string; starts_at: string | null; ends_at: string | null }
+  const hackathon = data.hackathons as unknown as { name: string; slug: string; status: string; starts_at: string | null; ends_at: string | null }
   const rawParticipants = (data.hackathon_participants ?? []) as unknown as { clerk_user_id: string; role: string }[]
   const participants = rawParticipants.filter((p) => p.role === "participant")
 
@@ -446,9 +446,107 @@ export async function getTeamWithHackathon(
     hackathon: {
       name: hackathon.name,
       slug: hackathon.slug,
+      status: hackathon.status,
       starts_at: hackathon.starts_at,
       ends_at: hackathon.ends_at,
     },
     memberNames,
   }
+}
+
+export async function markTeamInvitationEmailed(invitationId: string): Promise<void> {
+  const client = getSupabase()
+  const { error } = await client
+    .from("team_invitations")
+    .update({ emailed_at: new Date().toISOString() })
+    .eq("id", invitationId)
+  if (error) {
+    throw new Error(`Failed to mark team invitation emailed: ${error.message}`)
+  }
+}
+
+export async function sendPendingTeamInvitationEmails(
+  hackathonId: string,
+  inviterName: string
+): Promise<{ sent: number; total: number; failedEmails: string[] }> {
+  const client = getSupabase()
+
+  const { data: pending } = await client
+    .from("team_invitations")
+    .select("*")
+    .eq("hackathon_id", hackathonId)
+    .eq("status", "pending")
+    .is("emailed_at", null)
+
+  const rows = (pending ?? []) as TeamInvitation[]
+  if (rows.length === 0) return { sent: 0, total: 0, failedEmails: [] }
+
+  const teamCache = new Map<string, TeamWithHackathon | null>()
+  const getTeam = async (teamId: string) => {
+    if (!teamCache.has(teamId)) {
+      teamCache.set(teamId, await getTeamWithHackathon(teamId))
+    }
+    return teamCache.get(teamId) ?? null
+  }
+
+  const { sendTeamInvitationEmail } = await import("@/lib/email/team-invitations")
+  const { scheduleReminders } = await import("@/lib/services/smart-reminders")
+
+  const results = await Promise.allSettled(
+    rows.map(async (invitation) => {
+      const teamInfo = await getTeam(invitation.team_id)
+      if (!teamInfo) return { success: false }
+
+      const result = await sendTeamInvitationEmail({
+        to: invitation.email,
+        teamName: teamInfo.name,
+        hackathonName: teamInfo.hackathon.name,
+        inviterName,
+        inviteToken: invitation.token,
+        expiresAt: invitation.expires_at,
+        hackathonSlug: teamInfo.hackathon.slug,
+        hackathonStartsAt: teamInfo.hackathon.starts_at,
+        hackathonEndsAt: teamInfo.hackathon.ends_at,
+        teamMembers: teamInfo.memberNames,
+      })
+
+      if (!result.success) return { success: false }
+
+      await markTeamInvitationEmailed(invitation.id).catch((err) => {
+        console.error(`Failed to mark team_invitation ${invitation.id} as emailed (email was sent):`, err)
+      })
+
+      await scheduleReminders(
+        "team_invitation",
+        invitation.id,
+        hackathonId,
+        "invitation_reminder",
+        new Date(),
+        new Date(invitation.expires_at),
+        {
+          email: invitation.email,
+          teamName: teamInfo.name,
+          hackathonName: teamInfo.hackathon.name,
+          inviterName,
+          inviteToken: invitation.token,
+          expiresAt: invitation.expires_at,
+        }
+      ).catch((err) => console.error(`Failed to schedule reminders for team_invitation ${invitation.id} (hackathon=${hackathonId}):`, err))
+
+      return { success: true }
+    })
+  )
+
+  const sent = results.filter(
+    (r) => r.status === "fulfilled" && r.value.success
+  ).length
+
+  const failedEmails = rows
+    .filter((_, i) => {
+      const r = results[i]
+      return r.status === "rejected" || (r.status === "fulfilled" && !r.value.success)
+    })
+    .map((inv) => inv.email)
+
+  return { sent, total: rows.length, failedEmails }
 }

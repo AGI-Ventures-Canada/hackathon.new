@@ -2591,6 +2591,7 @@ export type Database = {
           accepted_by_clerk_user_id: string | null
           created_at: string
           email: string
+          emailed_at: string | null
           expires_at: string
           hackathon_id: string
           id: string
@@ -2607,6 +2608,7 @@ export type Database = {
           accepted_by_clerk_user_id?: string | null
           created_at?: string
           email: string
+          emailed_at?: string | null
           expires_at?: string
           hackathon_id: string
           id?: string
@@ -2623,6 +2625,7 @@ export type Database = {
           accepted_by_clerk_user_id?: string | null
           created_at?: string
           email?: string
+          emailed_at?: string | null
           expires_at?: string
           hackathon_id?: string
           id?: string
