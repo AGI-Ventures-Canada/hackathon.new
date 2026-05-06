@@ -2458,10 +2458,11 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       }
 
       const teamInfo = await getTeamWithHackathon(params.teamId)
-      const isDraft = !teamInfo || teamInfo.hackathon.status === "draft"
+      const isDraft = teamInfo?.hackathon.status === "draft"
+      const willSendImmediately = !!teamInfo && !isDraft
 
-      if (teamInfo && !isDraft) {
-        const inviterName = body.inviterName || "A team captain"
+      if (willSendImmediately) {
+        const inviterName = body.inviterName || "Your team captain"
         const emailInput = {
           to: body.email,
           teamName: teamInfo.name,
@@ -2514,10 +2515,10 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
 
       await logAudit({
         principal,
-        action: isDraft ? "team_invitation.queued" : "team_invitation.sent",
+        action: willSendImmediately ? "team_invitation.sent" : "team_invitation.queued",
         resourceType: "team_invitation",
         resourceId: result.invitation.id,
-        metadata: { teamId: params.teamId, email: body.email, queued: isDraft },
+        metadata: { teamId: params.teamId, email: body.email, queued: !willSendImmediately },
       })
 
       return {

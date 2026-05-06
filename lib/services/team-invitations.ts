@@ -485,6 +485,9 @@ export async function sendPendingTeamInvitationEmails(
   const rows = (claimed ?? []) as TeamInvitation[]
   if (rows.length === 0) return { sent: 0, total: 0, failedEmails: [] }
 
+  const { clerkClient } = await import("@clerk/nextjs/server")
+  const clerk = await clerkClient()
+
   const teamCache = new Map<string, TeamWithHackathon | null>()
   const getTeam = async (teamId: string) => {
     if (!teamCache.has(teamId)) {
@@ -493,22 +496,22 @@ export async function sendPendingTeamInvitationEmails(
     return teamCache.get(teamId) ?? null
   }
 
-  const inviterCache = new Map<string, string>()
-  const resolveInviterName = async (clerkUserId: string): Promise<string> => {
-    const cached = inviterCache.get(clerkUserId)
-    if (cached !== undefined) return cached
-    let name = "Your team captain"
-    try {
-      const { clerkClient } = await import("@clerk/nextjs/server")
-      const clerk = await clerkClient()
-      const user = await clerk.users.getUser(clerkUserId)
-      const resolved = [user.firstName, user.lastName].filter(Boolean).join(" ")
-      if (resolved) name = resolved
-    } catch (err) {
-      console.warn(`Failed to resolve inviter name for clerk user ${clerkUserId}:`, err)
-    }
-    inviterCache.set(clerkUserId, name)
-    return name
+  const inviterCache = new Map<string, Promise<string>>()
+  const resolveInviterName = (clerkUserId: string): Promise<string> => {
+    const inflight = inviterCache.get(clerkUserId)
+    if (inflight) return inflight
+    const promise = (async () => {
+      try {
+        const user = await clerk.users.getUser(clerkUserId)
+        const resolved = [user.firstName, user.lastName].filter(Boolean).join(" ")
+        if (resolved) return resolved
+      } catch (err) {
+        console.warn(`Failed to resolve inviter name for clerk user ${clerkUserId}:`, err)
+      }
+      return "Your team captain"
+    })()
+    inviterCache.set(clerkUserId, promise)
+    return promise
   }
 
   const { sendTeamInvitationEmail } = await import("@/lib/email/team-invitations")
@@ -557,16 +560,28 @@ export async function sendPendingTeamInvitationEmails(
     })
   )
 
-  const sent = results.filter(
-    (r) => r.status === "fulfilled" && r.value.success
-  ).length
+  const failedIds: string[] = []
+  const failedEmails: string[] = []
+  rows.forEach((invitation, i) => {
+    const r = results[i]
+    if (r.status === "rejected" || (r.status === "fulfilled" && !r.value.success)) {
+      failedIds.push(invitation.id)
+      failedEmails.push(invitation.email)
+    }
+  })
 
-  const failedEmails = rows
-    .filter((_, i) => {
-      const r = results[i]
-      return r.status === "rejected" || (r.status === "fulfilled" && !r.value.success)
-    })
-    .map((inv) => inv.email)
+  if (failedIds.length > 0) {
+    const { error: revertError } = await client
+      .from("team_invitations")
+      .update({ emailed_at: null })
+      .in("id", failedIds)
+    if (revertError) {
+      console.error(
+        `Failed to revert emailed_at for failed team_invitations [${failedIds.join(", ")}] (hackathon=${hackathonId}):`,
+        revertError
+      )
+    }
+  }
 
-  return { sent, total: rows.length, failedEmails }
+  return { sent: rows.length - failedEmails.length, total: rows.length, failedEmails }
 }

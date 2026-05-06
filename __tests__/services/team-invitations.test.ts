@@ -1130,14 +1130,27 @@ describe("Team Invitations Service", () => {
       )
     })
 
-    it("counts failures and surfaces failed emails without scheduling reminders", async () => {
+    it("counts failures, reverts emailed_at on the failed row, and surfaces failed emails", async () => {
       const pending = [
         { ...mockInvitation, id: "inv_1", email: "good@example.com", token: "t1", team_id: "team_1" },
         { ...mockInvitation, id: "inv_2", email: "bad@example.com", token: "t2", team_id: "team_1" },
       ]
+      const updates: Array<{ emailed_at: string | null }> = []
+      const inFilters: string[][] = []
       setMockFromImplementation((table) => {
         if (table === "team_invitations") {
-          return createChainableMock({ data: pending, error: null })
+          const chain = createChainableMock({ data: pending, error: null })
+          const originalUpdate = chain.update as (data: unknown) => unknown
+          chain.update = (data: unknown) => {
+            updates.push(data as { emailed_at: string | null })
+            return originalUpdate(data)
+          }
+          const originalIn = chain.in as (col: string, vals: string[]) => unknown
+          chain.in = (col: string, vals: string[]) => {
+            inFilters.push(vals)
+            return originalIn(col, vals)
+          }
+          return chain
         }
         if (table === "teams") {
           return createChainableMock({ data: teamRow, error: null })
@@ -1155,6 +1168,8 @@ describe("Team Invitations Service", () => {
       expect(result.total).toBe(2)
       expect(result.failedEmails).toEqual(["bad@example.com"])
       expect(mockScheduleReminders).toHaveBeenCalledTimes(1)
+      expect(updates.some((u) => u.emailed_at === null)).toBe(true)
+      expect(inFilters.some((vals) => vals.includes("inv_2") && !vals.includes("inv_1"))).toBe(true)
     })
   })
 })

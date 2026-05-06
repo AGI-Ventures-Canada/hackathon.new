@@ -603,7 +603,7 @@ describe("Dashboard Team Invitations Routes", () => {
 
       expect(mockWorkflowStart).toHaveBeenCalledWith(
         expect.anything(),
-        expect.arrayContaining([expect.objectContaining({ inviterName: "A team captain" })])
+        expect.arrayContaining([expect.objectContaining({ inviterName: "Your team captain" })])
       )
     })
   })
