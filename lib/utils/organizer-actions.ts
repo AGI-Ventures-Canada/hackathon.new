@@ -37,6 +37,23 @@ export function isTransition(item: ActionItem): boolean {
   return item.close.kind === "transition"
 }
 
+const ACTIONS_ALLOWED_WITHOUT_TARGET = new Set([
+  "confirm-promote",
+  "open-agenda-dialog",
+])
+
+export function actionItemRequiresTarget(item: ActionItem): boolean {
+  if (!item.action) return false
+  if (item.action.startsWith("transition-to-")) return false
+  return !ACTIONS_ALLOWED_WITHOUT_TARGET.has(item.action)
+}
+
+export function validateActionItemTargets(items: ActionItem[]): string[] {
+  return items
+    .filter((item) => actionItemRequiresTarget(item) && !item.tab)
+    .map((item) => item.id)
+}
+
 type SharedFields = {
   id: string
   severity: ActionSeverity
@@ -155,7 +172,14 @@ export function getOrganizerActionItems(input: ActionItemsInput): ActionItem[] {
     }
   }
 
-  return Array.from(itemMap.values())
+  const items = Array.from(itemMap.values())
+  const missingTargets = validateActionItemTargets(items)
+  if (missingTargets.length > 0) {
+    throw new Error(
+      `Action items with feature-backed actions must include target tabs: ${missingTargets.join(", ")}`
+    )
+  }
+  return items
 }
 
 const CHALLENGE_TOOLTIP = "The challenge is the problem statement or theme that participants build around. Without it, teams won't know what to work on. You can schedule it to release at a specific time or publish it immediately."
@@ -176,6 +200,7 @@ function addChallengeActions(items: ActionItem[], input: ActionItemsInput) {
     items.push(autoAction({
       id: "create-challenge",
       severity: "warning",
+      tab: "challenges",
       action: "open-challenge-dialog",
       ctaLabel: "Add",
       tooltip: CHALLENGE_TOOLTIP,
@@ -198,6 +223,7 @@ function addChallengeActions(items: ActionItem[], input: ActionItemsInput) {
     items.push(autoAction({
       id: "release-challenge",
       severity: "scheduled",
+      tab: "challenges",
       action: "release-challenge",
       ctaLabel: "Release now",
       tooltip: CHALLENGE_TOOLTIP,
@@ -209,6 +235,7 @@ function addChallengeActions(items: ActionItem[], input: ActionItemsInput) {
     items.push(autoAction({
       id: "release-challenge",
       severity: "warning",
+      tab: "challenges",
       action: "release-challenge",
       ctaLabel: "Release",
       tooltip: CHALLENGE_TOOLTIP,
@@ -235,6 +262,7 @@ function addPerksAction(items: ActionItem[], input: ActionItemsInput) {
     id: "add-perks",
     severity: "info",
     tab: "perks",
+    action: hasPerks ? undefined : "open-perk-dialog",
     ctaLabel: "Add",
     tooltip: PERKS_TOOLTIP,
     isComplete: hasPerks,
@@ -258,6 +286,7 @@ function addDraftActions(items: ActionItem[], input: ActionItemsInput) {
     id: "no-dates",
     severity: "urgent",
     tab: "edit",
+    action: hasDates ? undefined : "open-dates-dialog",
     ctaLabel: "Edit",
     tooltip: "Event dates determine when registration opens, when the hackathon goes live, and when submissions close. All scheduling and countdown timers depend on these dates.",
     isComplete: hasDates,
@@ -270,6 +299,7 @@ function addDraftActions(items: ActionItem[], input: ActionItemsInput) {
     id: "no-description",
     severity: "info",
     tab: "edit",
+    action: hasDescription ? undefined : "open-description-dialog",
     ctaLabel: "Edit",
     tooltip: "The description appears on your public event page and helps potential participants decide whether to sign up. Include the theme, format, who should join, and what they'll get out of it.",
     isComplete: hasDescription,
@@ -295,6 +325,7 @@ function addDraftActions(items: ActionItem[], input: ActionItemsInput) {
     id: "no-banner",
     severity: "info",
     tab: "edit",
+    action: hasBanner ? undefined : "open-banner-dialog",
     ctaLabel: "Add",
     tooltip: "The banner image is the first thing participants see on your event page. A good banner sets the tone and makes your hackathon look professional. Recommended size is 1200x630px.",
     isComplete: hasBanner,
@@ -313,6 +344,7 @@ function addDraftActions(items: ActionItem[], input: ActionItemsInput) {
     tab: "judging",
     subtab: hasPrizes ? undefined : "setup",
     subtabKey: hasPrizes ? undefined : "jtab",
+    action: hasPrizes ? undefined : "open-prize-dialog",
     ctaLabel: "Add",
     tooltip: PRIZES_TOOLTIP,
     isComplete: hasPrizes,
@@ -330,6 +362,7 @@ function addDraftActions(items: ActionItem[], input: ActionItemsInput) {
     tab: "judging",
     subtab: hasJudges ? undefined : "setup",
     subtabKey: hasJudges ? undefined : "jtab",
+    action: hasJudges ? undefined : "open-judge-dialog",
     ctaLabel: "Invite",
     tooltip: JUDGES_TOOLTIP,
     isComplete: hasJudges,
@@ -363,6 +396,7 @@ function addDraftActions(items: ActionItem[], input: ActionItemsInput) {
     label: "Confirm submission close time",
     hint: "This controls when submissions lock and judging begins",
     severity: "warning",
+    tab: "edit",
     action: "open-submission-deadline-dialog",
     ctaLabel: "Check",
     tooltip: "The submission deadline is an automated agenda item that locks submissions and starts the judging phase. Make sure the time is correct — once it passes, participants can no longer submit or edit their projects.",
@@ -389,6 +423,7 @@ function addCommunityLinkAction(items: ActionItem[], input: ActionItemsInput) {
     label: "Add a community/help link",
     hint: "Share a Discord, Slack, or help link with registered attendees",
     severity: "info",
+    tab: "edit",
     action: "open-community-dialog",
     ctaLabel: "Add",
     tooltip: "Drop a link to your Discord, Slack, Telegram, or help doc. Registered attendees will see it on the event page so they can ask questions and meet other builders.",
@@ -412,6 +447,7 @@ function addPublishedActions(items: ActionItem[], input: ActionItemsInput) {
     tab: "judging",
     subtab: hasJudges ? undefined : "setup",
     subtabKey: hasJudges ? undefined : "jtab",
+    action: hasJudges ? undefined : "open-judge-dialog",
     ctaLabel: "Invite",
     tooltip: JUDGES_TOOLTIP,
     isComplete: hasJudges,
@@ -426,6 +462,7 @@ function addPublishedActions(items: ActionItem[], input: ActionItemsInput) {
     tab: "judging",
     subtab: hasPrizes ? undefined : "setup",
     subtabKey: hasPrizes ? undefined : "jtab",
+    action: hasPrizes ? undefined : "open-prize-dialog",
     ctaLabel: "Add",
     tooltip: PRIZES_TOOLTIP,
     isComplete: hasPrizes,
@@ -507,6 +544,7 @@ function addActiveActions(items: ActionItem[], input: ActionItemsInput) {
     tab: "judging",
     subtab: hasJudges ? undefined : "setup",
     subtabKey: hasJudges ? undefined : "jtab",
+    action: hasJudges ? undefined : "open-judge-dialog",
     ctaLabel: "Invite",
     tooltip: "Judges are needed to evaluate submissions once the hackathon ends. Without judges, you won't be able to score projects and determine winners. Invite them now so they're ready when judging begins.",
     isComplete: hasJudges,

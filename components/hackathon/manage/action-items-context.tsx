@@ -34,6 +34,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
 import {
@@ -49,6 +59,17 @@ import type { ScheduleItem } from "@/lib/services/schedule-items";
 import { LocationEditDialog } from "./location-edit-dialog";
 import { TeamSettingsDialog } from "./team-settings-dialog";
 import { CommunityEditForm } from "@/components/hackathon/edit-drawer/community-edit-form";
+import { TimelineEditForm } from "@/components/hackathon/edit-drawer/timeline-edit-form";
+import { AboutEditForm } from "@/components/hackathon/edit-drawer/about-edit-form";
+import { BannerUpload } from "@/components/hackathon/banner-upload";
+import { ChallengeEditorDialog } from "./challenge-editor-dialog";
+import { PerkEditorDialog, type SponsorOption } from "./perk-editor-dialog";
+import { AddJudgeDialog } from "@/components/hackathon/judging/add-judge-dialog";
+import { AddPrizeDialog } from "@/components/hackathon/judging/add-prize-dialog";
+import type { RoundData } from "@/components/hackathon/judging/rounds-types";
+import type { Challenge } from "@/lib/services/challenges";
+import type { Perk } from "@/lib/services/perks";
+import { assertOk } from "@/lib/utils/fetch";
 
 const SEVERITY_ORDER: ActionSeverity[] = ["urgent", "warning", "scheduled", "info"];
 
@@ -92,12 +113,28 @@ export function useActionItemsOptional() {
   return useContext(ActionItemsContext);
 }
 
-export function buildActionHref(slug: string, item: ActionItem): string | null {
-  if (item.action) return null;
+export function buildActionTargetHref(slug: string, item: ActionItem): string | null {
   if (!item.tab) return null;
   const params = new URLSearchParams({ tab: item.tab });
   if (item.subtab && item.subtabKey) params.set(item.subtabKey, item.subtab);
   return `/e/${slug}/manage?${params.toString()}`;
+}
+
+export function buildActionHref(slug: string, item: ActionItem): string | null {
+  if (item.action) return null;
+  return buildActionTargetHref(slug, item);
+}
+
+export function isActionTargetHrefActive(
+  href: string,
+  searchParams: { get: (name: string) => string | null },
+): boolean {
+  const query = href.split("?")[1] ?? "";
+  const targetParams = new URLSearchParams(query);
+  for (const [key, value] of targetParams) {
+    if (searchParams.get(key) !== value) return false;
+  }
+  return true;
 }
 
 type TeamSettingsInitialData = {
@@ -123,12 +160,19 @@ type ProviderProps = {
   phase: HackathonPhase | null;
   challengeExists: boolean;
   challengeReleasedAt: string | null;
+  challenges: Challenge[];
+  challengeReleaseItem: ScheduleItem | null;
   scheduleItems: ScheduleItem[];
   startsAt: string | null;
   endsAt: string | null;
+  description: string | null;
+  descriptionLocale: string | null;
+  bannerUrl: string | null;
   locationInitialData: LocationInitialData;
   teamSettingsInitialData: TeamSettingsInitialData;
   communityInitialData: { url: string | null; label: string | null };
+  sponsors: SponsorOption[];
+  rounds: RoundData[];
   children: React.ReactNode;
 };
 
@@ -140,12 +184,19 @@ export function ActionItemsProvider({
   phase: serverPhase,
   challengeExists,
   challengeReleasedAt,
+  challenges: serverChallenges,
+  challengeReleaseItem,
   scheduleItems: serverScheduleItems,
   startsAt: serverStartsAt,
   endsAt: serverEndsAt,
+  description,
+  descriptionLocale,
+  bannerUrl: serverBannerUrl,
   locationInitialData,
   teamSettingsInitialData,
   communityInitialData,
+  sponsors,
+  rounds,
   children,
 }: ProviderProps) {
   const router = useRouter();
@@ -153,16 +204,37 @@ export function ActionItemsProvider({
   const transitionRef = useRef<TransitionConfirmDialogHandle>(null);
   const submissionDeadlineRef = useRef<SubmissionDeadlineDialogHandle>(null);
   const tabActionsRef = useRef(new Map<string, () => void>());
+  const [datesDialogItem, setDatesDialogItem] = useState<ActionItem | null>(null);
+  const [descriptionDialogItem, setDescriptionDialogItem] = useState<ActionItem | null>(null);
+  const [bannerDialogItem, setBannerDialogItem] = useState<ActionItem | null>(null);
+  const [challengeDialogItem, setChallengeDialogItem] = useState<ActionItem | null>(null);
+  const [releaseChallengeDialogItem, setReleaseChallengeDialogItem] = useState<ActionItem | null>(null);
+  const [perkDialogItem, setPerkDialogItem] = useState<ActionItem | null>(null);
+  const [prizeDialogItem, setPrizeDialogItem] = useState<ActionItem | null>(null);
+  const [judgeDialogItem, setJudgeDialogItem] = useState<ActionItem | null>(null);
+  const [locationDialogItem, setLocationDialogItem] = useState<ActionItem | null>(null);
+  const [teamSettingsDialogItem, setTeamSettingsDialogItem] = useState<ActionItem | null>(null);
+  const [communityDialogItem, setCommunityDialogItem] = useState<ActionItem | null>(null);
+  const [submissionDeadlineDialogItem, setSubmissionDeadlineDialogItem] = useState<ActionItem | null>(null);
   const [promoteDialogOpen, setPromoteDialogOpen] = useState(false);
   const [agendaDialogOpen, setAgendaDialogOpen] = useState(false);
-  const [locationDialogOpen, setLocationDialogOpen] = useState(false);
-  const [teamSettingsDialogOpen, setTeamSettingsDialogOpen] = useState(false);
-  const [communityDialogOpen, setCommunityDialogOpen] = useState(false);
+  const [releasingChallenge, setReleasingChallenge] = useState(false);
+  const [releaseChallengeError, setReleaseChallengeError] = useState<string | null>(null);
+  const [settingsDialogError, setSettingsDialogError] = useState<string | null>(null);
+  const [pendingTargetRefreshHref, setPendingTargetRefreshHref] = useState<string | null>(null);
 
   const [scheduleItems, setScheduleItems] = useState(serverScheduleItems);
   useEffect(() => {
     setScheduleItems(serverScheduleItems);
   }, [serverScheduleItems]);
+  const [challenges, setChallenges] = useState(serverChallenges);
+  useEffect(() => {
+    setChallenges(serverChallenges);
+  }, [serverChallenges]);
+  const [bannerUrl, setBannerUrl] = useState(serverBannerUrl);
+  useEffect(() => {
+    setBannerUrl(serverBannerUrl);
+  }, [serverBannerUrl]);
 
   const { data: pollData, isStale, refresh: refreshPoll } =
     useOrganizerPoll(hackathonId);
@@ -474,24 +546,144 @@ export function ActionItemsProvider({
     tabActionsRef.current.delete(actionItemId);
   }, []);
 
+  useEffect(() => {
+    if (!pendingTargetRefreshHref) return;
+    if (!isActionTargetHrefActive(pendingTargetRefreshHref, searchParams)) return;
+    router.refresh();
+    refreshPoll();
+    setPendingTargetRefreshHref(null);
+  }, [pendingTargetRefreshHref, router, searchParams, refreshPoll]);
+
+  const routeToActionTarget = useCallback(
+    (item: ActionItem | null) => {
+      const href = item ? buildActionTargetHref(slug, item) : null;
+      if (!href) {
+        router.refresh();
+        refreshPoll();
+        return;
+      }
+      setPendingTargetRefreshHref(href);
+      if (!isActionTargetHrefActive(href, searchParams)) {
+        router.push(href);
+      }
+    },
+    [router, slug, searchParams, refreshPoll],
+  );
+
+  const saveSettingsForAction = useCallback(
+    async (item: ActionItem | null, data: Record<string, unknown>) => {
+      setSettingsDialogError(null);
+      try {
+        await fetch(`/api/dashboard/hackathons/${hackathonId}/settings`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+        }).then(assertOk);
+        routeToActionTarget(item);
+        return true;
+      } catch (err) {
+        setSettingsDialogError(err instanceof Error ? err.message : "Failed to save");
+        return false;
+      }
+    },
+    [hackathonId, routeToActionTarget],
+  );
+
+  const handleChallengeSaved = useCallback(
+    (saved: Challenge) => {
+      setChallenges((prev) => {
+        const existing = prev.findIndex((c) => c.id === saved.id);
+        if (existing >= 0) {
+          const next = [...prev];
+          next[existing] = saved;
+          return next;
+        }
+        return [...prev, saved];
+      });
+      const item = challengeDialogItem;
+      setChallengeDialogItem(null);
+      routeToActionTarget(item);
+    },
+    [challengeDialogItem, routeToActionTarget],
+  );
+
+  const handlePerkSaved = useCallback(
+    (_saved: Perk) => {
+      const item = perkDialogItem;
+      setPerkDialogItem(null);
+      routeToActionTarget(item);
+    },
+    [perkDialogItem, routeToActionTarget],
+  );
+
+  const handleReleaseChallenge = useCallback(async () => {
+    const item = releaseChallengeDialogItem;
+    if (!item) return;
+    setReleasingChallenge(true);
+    setReleaseChallengeError(null);
+    try {
+      await fetch(`/api/dashboard/hackathons/${hackathonId}/challenge/release`, {
+        method: "POST",
+      }).then(assertOk);
+      setReleaseChallengeDialogItem(null);
+      routeToActionTarget(item);
+    } catch (err) {
+      setReleaseChallengeError(
+        err instanceof Error ? err.message : "Failed to release challenge",
+      );
+    } finally {
+      setReleasingChallenge(false);
+    }
+  }, [hackathonId, releaseChallengeDialogItem, routeToActionTarget]);
+
+  const handlePrizeActionDone = useCallback(() => {
+    const item = prizeDialogItem;
+    setPrizeDialogItem(null);
+    routeToActionTarget(item);
+  }, [prizeDialogItem, routeToActionTarget]);
+
+  const handleJudgeActionDone = useCallback(() => {
+    const item = judgeDialogItem;
+    setJudgeDialogItem(null);
+    routeToActionTarget(item);
+  }, [judgeDialogItem, routeToActionTarget]);
+
   const handleActionClick = useCallback(
     (item: ActionItem) => {
       if (item.action === "confirm-promote") {
         setPromoteDialogOpen(true);
+      } else if (item.action === "open-dates-dialog") {
+        setSettingsDialogError(null);
+        setDatesDialogItem(item);
+      } else if (item.action === "open-description-dialog") {
+        setSettingsDialogError(null);
+        setDescriptionDialogItem(item);
+      } else if (item.action === "open-banner-dialog") {
+        setBannerDialogItem(item);
       } else if (
-        item.action === "open-challenge-dialog" ||
-        item.action === "release-challenge"
+        item.action === "open-challenge-dialog"
       ) {
-        router.push(`/e/${slug}/manage?tab=challenges`);
+        setChallengeDialogItem(item);
+      } else if (item.action === "release-challenge") {
+        setReleaseChallengeDialogItem(item);
+        setReleaseChallengeError(null);
+      } else if (item.action === "open-perk-dialog") {
+        setPerkDialogItem(item);
+      } else if (item.action === "open-prize-dialog") {
+        setPrizeDialogItem(item);
+      } else if (item.action === "open-judge-dialog") {
+        setJudgeDialogItem(item);
       } else if (item.action === "open-agenda-dialog") {
         setAgendaDialogOpen(true);
       } else if (item.action === "open-location-dialog") {
-        setLocationDialogOpen(true);
+        setLocationDialogItem(item);
       } else if (item.action === "open-team-settings-dialog") {
-        setTeamSettingsDialogOpen(true);
+        setTeamSettingsDialogItem(item);
       } else if (item.action === "open-community-dialog") {
-        setCommunityDialogOpen(true);
+        setSettingsDialogError(null);
+        setCommunityDialogItem(item);
       } else if (item.action === "open-submission-deadline-dialog") {
+        setSubmissionDeadlineDialogItem(item);
         submissionDeadlineRef.current?.openDialog();
       } else if (item.action?.startsWith("transition-to-")) {
         const targetStatus = item.action.replace("transition-to-", "");
@@ -657,7 +849,169 @@ export function ActionItemsProvider({
         hackathonId={hackathonId}
         scheduleItems={scheduleItems}
         endsAt={liveEndsAt}
-        onSaved={() => markComplete("check-submission-deadline")}
+        onSaved={() => {
+          markComplete("check-submission-deadline");
+          const item = submissionDeadlineDialogItem;
+          setSubmissionDeadlineDialogItem(null);
+          routeToActionTarget(item);
+        }}
+      />
+      <Dialog
+        open={!!datesDialogItem}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDatesDialogItem(null);
+            setSettingsDialogError(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Event dates</DialogTitle>
+            <DialogDescription>
+              Set when the event starts and ends.
+            </DialogDescription>
+          </DialogHeader>
+          {settingsDialogError && (
+            <p className="text-sm text-destructive">{settingsDialogError}</p>
+          )}
+          <TimelineEditForm
+            hackathonId={hackathonId}
+            initialData={{
+              startsAt: liveStartsAt,
+              endsAt: liveEndsAt,
+            }}
+            onCancel={() => setDatesDialogItem(null)}
+            onSave={(data) =>
+              saveSettingsForAction(datesDialogItem, {
+                startsAt: data.startsAt?.toISOString() ?? null,
+                endsAt: data.endsAt?.toISOString() ?? null,
+              })
+            }
+          />
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={!!descriptionDialogItem}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDescriptionDialogItem(null);
+            setSettingsDialogError(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Event description</DialogTitle>
+            <DialogDescription>
+              Tell attendees what the event is about.
+            </DialogDescription>
+          </DialogHeader>
+          {settingsDialogError && (
+            <p className="text-sm text-destructive">{settingsDialogError}</p>
+          )}
+          <AboutEditForm
+            hackathonId={hackathonId}
+            initialData={{ description }}
+            locale={descriptionLocale}
+            onCancel={() => setDescriptionDialogItem(null)}
+            onSave={(data) =>
+              saveSettingsForAction(descriptionDialogItem, {
+                ...data,
+                ...(descriptionLocale ? { locale: descriptionLocale } : {}),
+              })
+            }
+          />
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!bannerDialogItem} onOpenChange={(open) => !open && setBannerDialogItem(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Banner image</DialogTitle>
+            <DialogDescription>
+              Add a banner for the event page.
+            </DialogDescription>
+          </DialogHeader>
+          <BannerUpload
+            hackathonId={hackathonId}
+            currentBannerUrl={bannerUrl}
+            mode="persisted"
+            onUploadComplete={(url) => {
+              setBannerUrl(url);
+              const item = bannerDialogItem;
+              setBannerDialogItem(null);
+              routeToActionTarget(item);
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+      <ChallengeEditorDialog
+        open={!!challengeDialogItem}
+        onOpenChange={(open) => !open && setChallengeDialogItem(null)}
+        hackathonId={hackathonId}
+        challenge={challenges[0] ?? null}
+        onSaved={handleChallengeSaved}
+        releaseScheduleItem={challengeReleaseItem}
+        hackathonStartsAt={liveStartsAt}
+        hackathonEndsAt={liveEndsAt}
+        hackathonStatus={liveStatus}
+        alreadyReleased={!!challengeReleasedAt}
+      />
+      <AlertDialog
+        open={!!releaseChallengeDialogItem}
+        onOpenChange={(open) => {
+          if (!open) {
+            setReleaseChallengeDialogItem(null);
+            setReleaseChallengeError(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Release challenge now?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Attendees will be able to see the challenge right away.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {releaseChallengeError && (
+            <p className="text-sm text-destructive">{releaseChallengeError}</p>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={releasingChallenge}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                handleReleaseChallenge();
+              }}
+              disabled={releasingChallenge}
+            >
+              {releasingChallenge ? "Releasing..." : "Release"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <PerkEditorDialog
+        open={!!perkDialogItem}
+        onOpenChange={(open) => !open && setPerkDialogItem(null)}
+        hackathonId={hackathonId}
+        perk={null}
+        sponsors={sponsors}
+        onSaved={handlePerkSaved}
+      />
+      <AddPrizeDialog
+        hackathonId={hackathonId}
+        open={!!prizeDialogItem}
+        onOpenChange={(open) => !open && setPrizeDialogItem(null)}
+        rounds={rounds}
+        onSuccess={(created) => {
+          if (created) handlePrizeActionDone();
+        }}
+      />
+      <AddJudgeDialog
+        hackathonId={hackathonId}
+        open={!!judgeDialogItem}
+        onOpenChange={(open) => !open && setJudgeDialogItem(null)}
+        onSuccess={handleJudgeActionDone}
       />
       <Dialog open={agendaDialogOpen} onOpenChange={setAgendaDialogOpen}>
         <DialogContent className="sm:max-w-3xl">
@@ -678,6 +1032,7 @@ export function ActionItemsProvider({
                 setAgendaDialogOpen(false);
                 router.push(`/e/${slug}/manage?tab=challenges`);
               } else if (item.trigger_type === "submission_deadline") {
+                setSubmissionDeadlineDialogItem(null);
                 submissionDeadlineRef.current?.openDialog();
               }
             }}
@@ -690,20 +1045,37 @@ export function ActionItemsProvider({
         </DialogContent>
       </Dialog>
       <LocationEditDialog
-        open={locationDialogOpen}
-        onOpenChange={setLocationDialogOpen}
+        open={!!locationDialogItem}
+        onOpenChange={(open) => !open && setLocationDialogItem(null)}
         hackathonId={hackathonId}
         initialData={locationInitialData}
-        onSaved={refreshPoll}
+        onSaved={() => {
+          const item = locationDialogItem;
+          setLocationDialogItem(null);
+          routeToActionTarget(item);
+        }}
       />
       <TeamSettingsDialog
-        open={teamSettingsDialogOpen}
-        onOpenChange={setTeamSettingsDialogOpen}
+        open={!!teamSettingsDialogItem}
+        onOpenChange={(open) => !open && setTeamSettingsDialogItem(null)}
         hackathonId={hackathonId}
         initialData={teamSettingsInitialData}
-        onSaved={() => markComplete("review-team-settings")}
+        onSaved={() => {
+          markComplete("review-team-settings");
+          const item = teamSettingsDialogItem;
+          setTeamSettingsDialogItem(null);
+          routeToActionTarget(item);
+        }}
       />
-      <Dialog open={communityDialogOpen} onOpenChange={setCommunityDialogOpen}>
+      <Dialog
+        open={!!communityDialogItem}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCommunityDialogItem(null);
+            setSettingsDialogError(null);
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Community link</DialogTitle>
@@ -711,15 +1083,21 @@ export function ActionItemsProvider({
               Share a Discord, Slack, or help link with registered attendees.
             </DialogDescription>
           </DialogHeader>
+          {settingsDialogError && (
+            <p className="text-sm text-destructive">{settingsDialogError}</p>
+          )}
           <CommunityEditForm
             hackathonId={hackathonId}
             initialUrl={communityInitialData.url}
             initialLabel={communityInitialData.label}
-            onCancel={() => setCommunityDialogOpen(false)}
-            onSaveAndNext={() => {
-              setCommunityDialogOpen(false);
-              refreshPoll();
-            }}
+            locale={descriptionLocale}
+            onCancel={() => setCommunityDialogItem(null)}
+            onSave={(data) =>
+              saveSettingsForAction(communityDialogItem, {
+                ...data,
+                ...(descriptionLocale ? { locale: descriptionLocale } : {}),
+              })
+            }
           />
         </DialogContent>
       </Dialog>

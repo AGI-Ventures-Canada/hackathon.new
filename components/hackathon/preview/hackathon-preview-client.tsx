@@ -113,6 +113,10 @@ function HackathonPreviewContent({
   const [judgingDialogOpen, setJudgingDialogOpen] = useState(false)
 
   useEffect(() => {
+    setBannerUrl(hackathon.banner_url)
+  }, [hackathon.banner_url])
+
+  useEffect(() => {
     const serverIds = new Set(hackathon.prizes.map((p) => p.id))
     setPendingPrizes((prev) => prev.filter((p) => !serverIds.has(p.id)))
   }, [hackathon.prizes])
