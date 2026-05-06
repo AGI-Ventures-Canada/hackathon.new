@@ -139,6 +139,18 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
 
   const submissionsForSelect = submissions.map((s) => ({ id: s.id, title: s.title }))
   const teamsTabTooltip = `${overviewStats.teamCount} team${overviewStats.teamCount === 1 ? "" : "s"} · ${submissionCount} submission${submissionCount === 1 ? "" : "s"}`
+  const descriptionLocale = currentLocale !== (hackathon.default_locale ?? "en") ? currentLocale : null
+  const roundsForDialogs = rounds.map((r) => ({
+    id: r.id,
+    name: r.name,
+    status: r.status,
+    isActive: r.status === "active",
+    displayOrder: r.displayOrder,
+    advancement: r.advancement,
+    advancementConfig: r.advancementConfig,
+    prizeCount: r.prizeCount,
+    screeningPrizeId: r.screeningPrizeId,
+  }))
 
   return (
     <div className="space-y-6">
@@ -150,9 +162,14 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
         phase={hackathon.phase}
         challengeExists={challengeExists}
         challengeReleasedAt={hackathon.challenge_released_at}
+        challenges={challenges}
+        challengeReleaseItem={challengeReleaseItem ?? null}
         scheduleItems={scheduleItems}
         startsAt={hackathon.starts_at}
         endsAt={hackathon.ends_at}
+        description={hackathon.description}
+        descriptionLocale={descriptionLocale}
+        bannerUrl={hackathon.banner_url}
         locationInitialData={{
           locationType: hackathon.location_type,
           locationName: hackathon.location_name,
@@ -170,6 +187,8 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
           url: hackathon.community_url ?? null,
           label: hackathon.community_label ?? null,
         }}
+        sponsors={hackathon.sponsors.map((s) => ({ id: s.id, name: s.name }))}
+        rounds={roundsForDialogs}
       >
         <TabsUrlSync paramKey="tab" value={activeTab}>
           <ActionItemsLayout>

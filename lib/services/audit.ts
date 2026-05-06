@@ -44,6 +44,7 @@ export type AuditAction =
   | "logo.uploaded"
   | "logo.deleted"
   | "team_invitation.sent"
+  | "team_invitation.queued"
   | "team_invitation.reminded"
   | "team_invitation.cancelled"
   | "judging_criteria.created"

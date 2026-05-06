@@ -3,6 +3,7 @@ import {
   getOrganizerActionItems,
   isCompleted,
   SEVERITY_GROUP_LABEL,
+  validateActionItemTargets,
   type ActionItem,
 } from "@/lib/utils/organizer-actions"
 import type { HackathonStatus, HackathonPhase } from "@/lib/db/hackathon-types"
@@ -103,6 +104,19 @@ describe("getOrganizerActionItems", () => {
       expect(items.find((i) => i.id === "no-prizes")?.tab).toBe("judging")
       expect(items.find((i) => i.id === "no-judges")?.tab).toBe("judging")
       expect(items.find((i) => i.id === "no-location")?.tab).toBe("edit")
+      expect(items.find((i) => i.id === "check-submission-deadline")?.tab).toBe("edit")
+    })
+
+    it("opens direct editors for setup action items", () => {
+      const items = getOrganizerActionItems(makeInput())
+
+      expect(items.find((i) => i.id === "no-dates")?.action).toBe("open-dates-dialog")
+      expect(items.find((i) => i.id === "no-description")?.action).toBe("open-description-dialog")
+      expect(items.find((i) => i.id === "no-banner")?.action).toBe("open-banner-dialog")
+      expect(items.find((i) => i.id === "create-challenge")?.action).toBe("open-challenge-dialog")
+      expect(items.find((i) => i.id === "add-perks")?.action).toBe("open-perk-dialog")
+      expect(items.find((i) => i.id === "no-prizes")?.action).toBe("open-prize-dialog")
+      expect(items.find((i) => i.id === "no-judges")?.action).toBe("open-judge-dialog")
     })
 
     it("marks judges completed when judgeCount > 0", () => {
@@ -139,6 +153,7 @@ describe("getOrganizerActionItems", () => {
       const item = items.find((i) => i.id === "check-submission-deadline")
       expect(item).toBeDefined()
       expect(item?.action).toBe("open-submission-deadline-dialog")
+      expect(item?.tab).toBe("edit")
       expect(item?.close.kind).toBe("manual")
     })
 
@@ -166,6 +181,7 @@ describe("getOrganizerActionItems", () => {
       expect(item).toBeDefined()
       expect(isCompleted(item!)).toBe(false)
       expect(item?.tab).toBe("perks")
+      expect(item?.action).toBe("open-perk-dialog")
     })
 
     it("marks add-perks completed when perkCount > 0", () => {
@@ -631,6 +647,10 @@ describe("getOrganizerActionItems", () => {
           expect(typeof item.close.isComplete).toBe("boolean")
         }
       }
+    })
+
+    it.each(representativeInputs)("feature-backed actions have target tabs for %s", (_name, input) => {
+      expect(validateActionItemTargets(getOrganizerActionItems(input))).toEqual([])
     })
   })
 

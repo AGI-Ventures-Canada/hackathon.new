@@ -58,6 +58,17 @@ mock.module("@/lib/services/judge-invitations", () => ({
   listJudgeInvitations: mock(() => Promise.resolve([])),
 }))
 
+const mockSendPendingTeamInvitationEmails = mock(() => Promise.resolve({ sent: 1, total: 1, failedEmails: [] }))
+mock.module("@/lib/services/team-invitations", () => ({
+  sendPendingTeamInvitationEmails: mockSendPendingTeamInvitationEmails,
+  markTeamInvitationEmailed: mock(() => Promise.resolve()),
+  createTeamInvitation: mock(() => Promise.resolve({ success: false, error: "not used", code: "noop" })),
+  getTeamWithHackathon: mock(() => Promise.resolve(null)),
+  listTeamInvitations: mock(() => Promise.resolve({ success: true, invitations: [] })),
+  cancelTeamInvitation: mock(() => Promise.resolve({ success: true })),
+  remindTeamInvitation: mock(() => Promise.resolve({ success: false, error: "not used", code: "noop" })),
+}))
+
 const mockLogAudit = mock(() => Promise.resolve(null))
 mock.module("@/lib/services/audit", () => ({
   logAudit: mockLogAudit,
@@ -228,6 +239,7 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - status change emails", 
     mockUpdateHackathonSettings.mockClear()
     mockExecuteTransition.mockClear()
     mockSendPendingJudgeInvitationEmails.mockClear()
+    mockSendPendingTeamInvitationEmails.mockClear()
     mockLogAudit.mockClear()
     mockTriggerWebhooks.mockClear()
     mockGetUser.mockClear()
@@ -269,6 +281,8 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - status change emails", 
       "Jane Doe",
       { hackathonSlug: "test-hackathon", hackathonStartsAt: null, hackathonEndsAt: null }
     )
+    expect(mockSendPendingTeamInvitationEmails).toHaveBeenCalledTimes(1)
+    expect(mockSendPendingTeamInvitationEmails).toHaveBeenCalledWith("h1")
   })
 
   it("does not send pending invitation emails when status stays draft", async () => {
@@ -284,6 +298,7 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - status change emails", 
     await Promise.resolve()
 
     expect(mockSendPendingJudgeInvitationEmails).not.toHaveBeenCalled()
+    expect(mockSendPendingTeamInvitationEmails).not.toHaveBeenCalled()
   })
 
   it("does not send pending invitation emails when previous status was not draft", async () => {
@@ -299,6 +314,7 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - status change emails", 
     await Promise.resolve()
 
     expect(mockSendPendingJudgeInvitationEmails).not.toHaveBeenCalled()
+    expect(mockSendPendingTeamInvitationEmails).not.toHaveBeenCalled()
   })
 
   it("does not send pending invitation emails for non-status updates", async () => {
@@ -310,6 +326,7 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - status change emails", 
     await Promise.resolve()
 
     expect(mockSendPendingJudgeInvitationEmails).not.toHaveBeenCalled()
+    expect(mockSendPendingTeamInvitationEmails).not.toHaveBeenCalled()
   })
 
   it("returns 404 early when hackathon not found", async () => {
@@ -321,6 +338,7 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - status change emails", 
     expect(mockUpdateHackathonSettings).not.toHaveBeenCalled()
     expect(mockExecuteTransition).not.toHaveBeenCalled()
     expect(mockSendPendingJudgeInvitationEmails).not.toHaveBeenCalled()
+    expect(mockSendPendingTeamInvitationEmails).not.toHaveBeenCalled()
   })
 
   it("returns 403 when tenant does not match", async () => {

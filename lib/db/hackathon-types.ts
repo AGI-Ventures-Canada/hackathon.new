@@ -164,6 +164,7 @@ export interface TeamInvitation {
   accepted_at: string | null
   accepted_by_clerk_user_id: string | null
   reminded_at: string | null
+  emailed_at: string | null
   created_at: string
   updated_at: string
 }

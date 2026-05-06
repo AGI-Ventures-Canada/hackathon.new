@@ -1167,24 +1167,24 @@ export const dashboardJudgingRoutes = new Elysia()
             hackathonStartsAt: hackathon.starts_at,
             hackathonEndsAt: hackathon.ends_at,
           }).catch(console.error)
-        }
 
-        const { scheduleReminders } = await import("@/lib/services/smart-reminders")
-        scheduleReminders(
-          "judge_invitation",
-          invitationResult.invitation.id,
-          params.id,
-          "invitation_reminder",
-          new Date(invitationResult.invitation.created_at),
-          new Date(invitationResult.invitation.expires_at),
-          {
-            email: typedBody.email,
-            hackathonName: hackathon.name,
-            inviterName,
-            inviteToken: invitationResult.invitation.token,
-            expiresAt: invitationResult.invitation.expires_at,
-          }
-        ).catch((err) => console.error(`Failed to schedule reminders for judge_invitation ${invitationResult.invitation.id} (hackathon=${params.id}):`, err))
+          const { scheduleReminders } = await import("@/lib/services/smart-reminders")
+          scheduleReminders(
+            "judge_invitation",
+            invitationResult.invitation.id,
+            params.id,
+            "invitation_reminder",
+            new Date(invitationResult.invitation.created_at),
+            new Date(invitationResult.invitation.expires_at),
+            {
+              email: typedBody.email,
+              hackathonName: hackathon.name,
+              inviterName,
+              inviteToken: invitationResult.invitation.token,
+              expiresAt: invitationResult.invitation.expires_at,
+            }
+          ).catch((err) => console.error(`Failed to schedule reminders for judge_invitation ${invitationResult.invitation.id} (hackathon=${params.id}):`, err))
+        }
 
         logAudit({
           principal,
@@ -1314,6 +1314,15 @@ export const dashboardJudgingRoutes = new Elysia()
       return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
     }
 
+    const hackathon = result.hackathon
+
+    if (hackathon.status === "draft") {
+      return new Response(
+        JSON.stringify({ error: "Reminders can't be sent while the hackathon is in draft.", code: "hackathon_draft" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      )
+    }
+
     const rateLimitResult = await checkRateLimit(`judge_invitation_remind:${params.id}:${params.invitationId}`, {
       maxRequests: 5,
       windowMs: 60_000,
@@ -1332,7 +1341,6 @@ export const dashboardJudgingRoutes = new Elysia()
       })
     }
 
-    const hackathon = result.hackathon!
     const { clerkClient } = await import("@clerk/nextjs/server")
     const client = await clerkClient()
     const inviterName = await resolveAdderName(principal, client)

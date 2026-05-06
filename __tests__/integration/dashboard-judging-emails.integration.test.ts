@@ -67,6 +67,15 @@ mock.module("@/lib/email/judge-invitations", () => ({
   sendJudgeInvitationEmail: mockSendJudgeInvitationEmail,
 }))
 
+const mockScheduleReminders = mock(() => Promise.resolve(0))
+const mockCancelUpcomingReminder = mock(() => Promise.resolve(0))
+const mockCancelRemindersForEntity = mock(() => Promise.resolve(0))
+mock.module("@/lib/services/smart-reminders", () => ({
+  scheduleReminders: mockScheduleReminders,
+  cancelUpcomingReminder: mockCancelUpcomingReminder,
+  cancelRemindersForEntity: mockCancelRemindersForEntity,
+}))
+
 const mockLogAudit = mock(() => Promise.resolve(null))
 mock.module("@/lib/services/audit", () => ({
   logAudit: mockLogAudit,
@@ -178,6 +187,7 @@ describe("POST /hackathons/:id/judging/judges - email notifications", () => {
     mockLogAudit.mockClear()
     mockHasPendingJudgeEntry.mockClear()
     mockCreateJudgePendingNotification.mockClear()
+    mockScheduleReminders.mockClear()
 
     mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
     mockHasPendingJudgeEntry.mockResolvedValue(false)
@@ -333,6 +343,41 @@ describe("POST /hackathons/:id/judging/judges - email notifications", () => {
       expect(res.status).toBe(200)
 
       expect(mockCreateJudgePendingNotification).not.toHaveBeenCalled()
+    })
+
+    it("schedules reminders when hackathon is not draft", async () => {
+      mockCheckHackathonOrganizer.mockResolvedValue({
+        status: "ok",
+        hackathon: { id: "h1", name: "Active Hackathon", slug: "active-hack", status: "active" },
+      })
+
+      const res = await postAddJudge({ email: "newjudge@example.com" })
+      expect(res.status).toBe(200)
+
+      await Promise.resolve()
+      expect(mockScheduleReminders).toHaveBeenCalledTimes(1)
+      expect(mockScheduleReminders).toHaveBeenCalledWith(
+        "judge_invitation",
+        expect.any(String),
+        "h1",
+        "invitation_reminder",
+        expect.any(Date),
+        expect.any(Date),
+        expect.objectContaining({ email: "newjudge@example.com" })
+      )
+    })
+
+    it("does NOT schedule reminders when hackathon is draft", async () => {
+      mockCheckHackathonOrganizer.mockResolvedValue({
+        status: "ok",
+        hackathon: { id: "h1", name: "Draft Hackathon", slug: "draft-hack", status: "draft" },
+      })
+
+      const res = await postAddJudge({ email: "newjudge@example.com" })
+      expect(res.status).toBe(200)
+
+      await Promise.resolve()
+      expect(mockScheduleReminders).not.toHaveBeenCalled()
     })
   })
 
