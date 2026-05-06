@@ -470,6 +470,10 @@ export async function sendPendingTeamInvitationEmails(
 ): Promise<{ sent: number; total: number; failedEmails: string[] }> {
   const client = getSupabase()
 
+  // Atomic claim: a process crash between this UPDATE and the send loop
+  // below leaves rows claimed without ever sending. We accept that trade-off
+  // — duplicate sends from concurrent go-lives are worse than a rare lost
+  // send, and there is no recovery path short of organizer re-invite.
   const { data: claimed, error: claimError } = await client
     .from("team_invitations")
     .update({ emailed_at: new Date().toISOString() })
