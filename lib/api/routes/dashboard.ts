@@ -1510,7 +1510,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
             "@/lib/workflows/judge-notifications"
           )
           const { sendPendingTeamInvitationEmails } = await import("@/lib/services/team-invitations")
-          sendPendingTeamInvitationEmails(hackathon.id, inviterName)
+          sendPendingTeamInvitationEmails(hackathon.id)
             .then(({ sent, total, failedEmails }) => {
               if (total === 0) return
               if (failedEmails.length > 0) {

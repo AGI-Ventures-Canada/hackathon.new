@@ -282,7 +282,7 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - status change emails", 
       { hackathonSlug: "test-hackathon", hackathonStartsAt: null, hackathonEndsAt: null }
     )
     expect(mockSendPendingTeamInvitationEmails).toHaveBeenCalledTimes(1)
-    expect(mockSendPendingTeamInvitationEmails).toHaveBeenCalledWith("h1", "Jane Doe")
+    expect(mockSendPendingTeamInvitationEmails).toHaveBeenCalledWith("h1")
   })
 
   it("does not send pending invitation emails when status stays draft", async () => {

@@ -1037,18 +1037,37 @@ describe("Team Invitations Service", () => {
     it("returns sent: 0 when no pending invites exist", async () => {
       setMockFromImplementation(() => createChainableMock({ data: [], error: null }))
 
-      const result = await sendPendingTeamInvitationEmails("h1", "Organizer")
+      const result = await sendPendingTeamInvitationEmails("h1")
 
       expect(result).toEqual({ sent: 0, total: 0, failedEmails: [] })
       expect(mockSendTeamInvitationEmail).not.toHaveBeenCalled()
       expect(mockScheduleReminders).not.toHaveBeenCalled()
     })
 
+    it("throws when the atomic claim fails", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({ data: null, error: { message: "connection lost" } })
+      )
+
+      await expect(sendPendingTeamInvitationEmails("h1")).rejects.toThrow(
+        /Failed to claim pending team invitations: connection lost/
+      )
+      expect(mockSendTeamInvitationEmail).not.toHaveBeenCalled()
+    })
+
     it("emails each pending invitation, marks emailed_at, and schedules reminders", async () => {
       const pending = [
-        { ...mockInvitation, id: "inv_1", email: "a@example.com", token: "t1", team_id: "team_1" },
-        { ...mockInvitation, id: "inv_2", email: "b@example.com", token: "t2", team_id: "team_1" },
+        { ...mockInvitation, id: "inv_1", email: "a@example.com", token: "t1", team_id: "team_1", invited_by_clerk_user_id: "user_captain" },
+        { ...mockInvitation, id: "inv_2", email: "b@example.com", token: "t2", team_id: "team_1", invited_by_clerk_user_id: "user_captain" },
       ]
+
+      const { mockClerkClient } = await import("../lib/supabase-mock")
+      const getUserMock = mock(() =>
+        Promise.resolve({ firstName: "Captain", lastName: "Hook" })
+      )
+      mockClerkClient.mockResolvedValueOnce({
+        users: { getUser: getUserMock },
+      } as unknown)
 
       const updateCalls: string[] = []
       setMockFromImplementation((table) => {
@@ -1067,7 +1086,7 @@ describe("Team Invitations Service", () => {
         return createChainableMock({ data: null, error: null })
       })
 
-      const result = await sendPendingTeamInvitationEmails("h1", "Organizer Name")
+      const result = await sendPendingTeamInvitationEmails("h1")
 
       expect(result.sent).toBe(2)
       expect(result.total).toBe(2)
@@ -1078,12 +1097,37 @@ describe("Team Invitations Service", () => {
           to: "a@example.com",
           teamName: "Test Team",
           hackathonName: "Test Hackathon",
-          inviterName: "Organizer Name",
+          inviterName: "Captain Hook",
           inviteToken: "t1",
         })
       )
+      expect(getUserMock).toHaveBeenCalledTimes(1)
       expect(mockScheduleReminders).toHaveBeenCalledTimes(2)
       expect(updateCalls.every((c) => c.includes("emailed_at"))).toBe(true)
+    })
+
+    it("falls back to a generic captain label when clerk lookup fails", async () => {
+      const pending = [
+        { ...mockInvitation, id: "inv_1", email: "a@example.com", token: "t1", team_id: "team_1", invited_by_clerk_user_id: "user_missing" },
+      ]
+
+      const { mockClerkClient } = await import("../lib/supabase-mock")
+      mockClerkClient.mockResolvedValueOnce({
+        users: { getUser: mock(() => Promise.reject(new Error("not found"))) },
+      } as unknown)
+
+      setMockFromImplementation((table) => {
+        if (table === "team_invitations") return createChainableMock({ data: pending, error: null })
+        if (table === "teams") return createChainableMock({ data: teamRow, error: null })
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await sendPendingTeamInvitationEmails("h1")
+
+      expect(result.sent).toBe(1)
+      expect(mockSendTeamInvitationEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ inviterName: "Your team captain" })
+      )
     })
 
     it("counts failures and surfaces failed emails without scheduling reminders", async () => {
@@ -1105,7 +1149,7 @@ describe("Team Invitations Service", () => {
         .mockResolvedValueOnce({ success: true })
         .mockResolvedValueOnce({ success: false })
 
-      const result = await sendPendingTeamInvitationEmails("h1", "Organizer")
+      const result = await sendPendingTeamInvitationEmails("h1")
 
       expect(result.sent).toBe(1)
       expect(result.total).toBe(2)

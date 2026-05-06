@@ -466,18 +466,21 @@ export async function markTeamInvitationEmailed(invitationId: string): Promise<v
 }
 
 export async function sendPendingTeamInvitationEmails(
-  hackathonId: string,
-  inviterName: string
+  hackathonId: string
 ): Promise<{ sent: number; total: number; failedEmails: string[] }> {
   const client = getSupabase()
 
-  const { data: claimed } = await client
+  const { data: claimed, error: claimError } = await client
     .from("team_invitations")
     .update({ emailed_at: new Date().toISOString() })
     .eq("hackathon_id", hackathonId)
     .eq("status", "pending")
     .is("emailed_at", null)
     .select()
+
+  if (claimError) {
+    throw new Error(`Failed to claim pending team invitations: ${claimError.message}`)
+  }
 
   const rows = (claimed ?? []) as TeamInvitation[]
   if (rows.length === 0) return { sent: 0, total: 0, failedEmails: [] }
@@ -490,6 +493,24 @@ export async function sendPendingTeamInvitationEmails(
     return teamCache.get(teamId) ?? null
   }
 
+  const inviterCache = new Map<string, string>()
+  const resolveInviterName = async (clerkUserId: string): Promise<string> => {
+    const cached = inviterCache.get(clerkUserId)
+    if (cached !== undefined) return cached
+    let name = "Your team captain"
+    try {
+      const { clerkClient } = await import("@clerk/nextjs/server")
+      const clerk = await clerkClient()
+      const user = await clerk.users.getUser(clerkUserId)
+      const resolved = [user.firstName, user.lastName].filter(Boolean).join(" ")
+      if (resolved) name = resolved
+    } catch (err) {
+      console.warn(`Failed to resolve inviter name for clerk user ${clerkUserId}:`, err)
+    }
+    inviterCache.set(clerkUserId, name)
+    return name
+  }
+
   const { sendTeamInvitationEmail } = await import("@/lib/email/team-invitations")
   const { scheduleReminders } = await import("@/lib/services/smart-reminders")
 
@@ -497,6 +518,8 @@ export async function sendPendingTeamInvitationEmails(
     rows.map(async (invitation) => {
       const teamInfo = await getTeam(invitation.team_id)
       if (!teamInfo) return { success: false }
+
+      const inviterName = await resolveInviterName(invitation.invited_by_clerk_user_id)
 
       const result = await sendTeamInvitationEmail({
         to: invitation.email,
