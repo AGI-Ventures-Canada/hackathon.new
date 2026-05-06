@@ -471,14 +471,15 @@ export async function sendPendingTeamInvitationEmails(
 ): Promise<{ sent: number; total: number; failedEmails: string[] }> {
   const client = getSupabase()
 
-  const { data: pending } = await client
+  const { data: claimed } = await client
     .from("team_invitations")
-    .select("*")
+    .update({ emailed_at: new Date().toISOString() })
     .eq("hackathon_id", hackathonId)
     .eq("status", "pending")
     .is("emailed_at", null)
+    .select()
 
-  const rows = (pending ?? []) as TeamInvitation[]
+  const rows = (claimed ?? []) as TeamInvitation[]
   if (rows.length === 0) return { sent: 0, total: 0, failedEmails: [] }
 
   const teamCache = new Map<string, TeamWithHackathon | null>()
@@ -511,10 +512,6 @@ export async function sendPendingTeamInvitationEmails(
       })
 
       if (!result.success) return { success: false }
-
-      await markTeamInvitationEmailed(invitation.id).catch((err) => {
-        console.error(`Failed to mark team_invitation ${invitation.id} as emailed (email was sent):`, err)
-      })
 
       await scheduleReminders(
         "team_invitation",

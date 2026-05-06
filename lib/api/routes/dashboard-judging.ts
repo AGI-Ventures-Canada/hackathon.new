@@ -1316,7 +1316,9 @@ export const dashboardJudgingRoutes = new Elysia()
       return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
     }
 
-    if (result.hackathon!.status === "draft") {
+    const hackathon = result.hackathon
+
+    if (hackathon.status === "draft") {
       return new Response(
         JSON.stringify({ error: "Reminders can't be sent while the hackathon is in draft.", code: "hackathon_draft" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
@@ -1341,7 +1343,6 @@ export const dashboardJudgingRoutes = new Elysia()
       })
     }
 
-    const hackathon = result.hackathon!
     const { clerkClient } = await import("@clerk/nextjs/server")
     const client = await clerkClient()
     const inviterName = await resolveAdderName(principal, client)
