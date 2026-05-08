@@ -5,7 +5,7 @@ import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { TabsUrlSync } from "@/components/ui/tabs-url-sync"
 import { RoomsTab } from "./_rooms-tab"
 import { ActivityTab } from "./_activity-tab"
-import { SettingsTab } from "./_settings-tab"
+import { TermsTab } from "./_terms-tab"
 
 interface MiscsTabContentProps {
   hackathonId: string
@@ -26,7 +26,7 @@ export function MiscsTabContent({
         <TabsList>
           <TabsTrigger value="rooms"><DoorOpen className="size-4" /><span className="hidden sm:inline">Rooms</span></TabsTrigger>
           <TabsTrigger value="activity"><Activity className="size-4" /><span className="hidden sm:inline">Activity</span></TabsTrigger>
-          <TabsTrigger value="settings"><FileText className="size-4" /><span className="hidden sm:inline">Terms &amp; Conditions</span></TabsTrigger>
+          <TabsTrigger value="terms"><FileText className="size-4" /><span className="hidden sm:inline">Terms &amp; Conditions</span></TabsTrigger>
         </TabsList>
       </div>
 
@@ -38,8 +38,8 @@ export function MiscsTabContent({
         <ActivityTab hackathonId={hackathonId} />
       </TabsContent>
 
-      <TabsContent value="settings" forceMount className="data-[state=inactive]:hidden">
-        <SettingsTab
+      <TabsContent value="terms" forceMount className="data-[state=inactive]:hidden">
+        <TermsTab
           hackathonId={hackathonId}
           initialRequireTermsAcceptance={requireTermsAcceptance}
           initialTermsContent={termsContent}

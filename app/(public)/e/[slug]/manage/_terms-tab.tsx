@@ -15,17 +15,17 @@ import { Button } from "@/components/ui/button"
 import { Loader2 } from "lucide-react"
 import { MarkdownEditor } from "@/components/ui/markdown-editor"
 
-interface SettingsTabProps {
+interface TermsTabProps {
   hackathonId: string
   initialRequireTermsAcceptance: boolean
   initialTermsContent: string | null
 }
 
-export function SettingsTab({
+export function TermsTab({
   hackathonId,
   initialRequireTermsAcceptance,
   initialTermsContent,
-}: SettingsTabProps) {
+}: TermsTabProps) {
   const router = useRouter()
   const [requireTerms, setRequireTerms] = useState(initialRequireTermsAcceptance)
   const [termsContent, setTermsContent] = useState(initialTermsContent ?? "")
@@ -66,10 +66,12 @@ export function SettingsTab({
 
   const hasContent = Boolean(termsContent.trim())
 
-  function handleToggle(next: boolean) {
+  async function handleToggle(next: boolean) {
+    const prev = requireTerms
     setRequireTerms(next)
     setError(null)
-    void save(next, termsContent)
+    const ok = await save(next, termsContent)
+    if (!ok) setRequireTerms(prev)
   }
 
   async function handleSaveContent() {

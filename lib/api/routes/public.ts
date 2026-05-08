@@ -248,6 +248,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
+    let termsWarning: string | undefined
     if (expectedTermsHash) {
       try {
         await recordTermsAcceptance(
@@ -261,6 +262,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       } catch (err) {
         console.error("Failed to record terms acceptance:", err)
+        termsWarning = "terms_record_failed"
       }
     }
 
@@ -271,7 +273,12 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       data: { hackathonId: hackathon.id, participantId: result.participantId, teamId: result.teamId },
     }).catch(console.error)
 
-    return { success: true, participantId: result.participantId, teamId: result.teamId }
+    return {
+      success: true,
+      participantId: result.participantId,
+      teamId: result.teamId,
+      ...(termsWarning && { warning: termsWarning }),
+    }
   }, {
     detail: {
       summary: "Register for hackathon",
@@ -982,6 +989,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
+    let termsWarning: string | undefined
     if (invitation && expectedTermsHash) {
       try {
         await recordTermsAcceptance(
@@ -995,6 +1003,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       } catch (err) {
         console.error("Failed to record terms acceptance:", err)
+        termsWarning = "terms_record_failed"
       }
     }
 
@@ -1008,7 +1017,12 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     const { getPublicHackathonById } = await import("@/lib/services/public-hackathons")
     const hackathon = await getPublicHackathonById(result.hackathonId)
 
-    return { success: true, teamId: result.teamId, hackathonSlug: hackathon?.slug || null }
+    return {
+      success: true,
+      teamId: result.teamId,
+      hackathonSlug: hackathon?.slug || null,
+      ...(termsWarning && { warning: termsWarning }),
+    }
   }, {
     detail: {
       summary: "Accept team invitation",
@@ -1769,6 +1783,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
+    let termsWarning: string | undefined
     if (judgeInvitation && expectedTermsHash) {
       try {
         await recordTermsAcceptance(
@@ -1782,6 +1797,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       } catch (err) {
         console.error("Failed to record terms acceptance:", err)
+        termsWarning = "terms_record_failed"
       }
     }
 
@@ -1792,7 +1808,11 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
-    return { success: true, hackathonSlug: result.hackathonSlug }
+    return {
+      success: true,
+      hackathonSlug: result.hackathonSlug,
+      ...(termsWarning && { warning: termsWarning }),
+    }
   }, {
     detail: {
       summary: "Accept judge invitation",

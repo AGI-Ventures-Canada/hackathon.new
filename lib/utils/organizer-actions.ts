@@ -408,7 +408,7 @@ function addDraftActions(items: ActionItem[], input: ActionItemsInput) {
     id: "add-terms-and-conditions",
     severity: "info",
     tab: "miscs",
-    subtab: "settings",
+    subtab: "terms",
     subtabKey: "mtab",
     ctaLabel: "Add",
     tooltip: "Add custom terms participants must agree to before they register or accept an invite. Useful for code of conduct, IP, photo release, or anything sponsors require.",

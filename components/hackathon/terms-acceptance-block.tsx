@@ -57,7 +57,7 @@ export function TermsAcceptanceBlock({
         </div>
       )}
 
-      <label className="flex items-start gap-2 cursor-pointer">
+      <div className="flex items-start gap-2">
         <Checkbox
           id="agree-terms"
           checked={accepted}
@@ -68,7 +68,7 @@ export function TermsAcceptanceBlock({
         <Label htmlFor="agree-terms" className="text-sm font-normal leading-snug cursor-pointer">
           I agree to the terms and conditions.
         </Label>
-      </label>
+      </div>
     </div>
   )
 }

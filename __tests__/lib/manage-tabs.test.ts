@@ -55,10 +55,10 @@ describe("VALID_ETABS", () => {
 })
 
 describe("VALID_MTABS", () => {
-  it("contains rooms, activity, and settings", () => {
+  it("contains rooms, activity, and terms", () => {
     expect(VALID_MTABS).toContain("rooms")
     expect(VALID_MTABS).toContain("activity")
-    expect(VALID_MTABS).toContain("settings")
+    expect(VALID_MTABS).toContain("terms")
     expect(VALID_MTABS).toHaveLength(3)
   })
 })
