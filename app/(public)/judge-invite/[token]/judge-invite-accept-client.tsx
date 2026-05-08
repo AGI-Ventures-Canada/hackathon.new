@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Scale, Check, X, AlertCircle, Clock } from "lucide-react"
+import { TermsAcceptanceBlock } from "@/components/hackathon/terms-acceptance-block"
 
 interface JudgeInviteAcceptClientProps {
   token: string
@@ -24,6 +25,9 @@ interface JudgeInviteAcceptClientProps {
     email: string
     status: string
     expiresAt: string
+    requireTermsAcceptance?: boolean
+    termsContent?: string | null
+    termsHash?: string | null
   }
   isAuthenticated: boolean
 }
@@ -37,17 +41,27 @@ export function JudgeInviteAcceptClient({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  const [termsAccepted, setTermsAccepted] = useState(false)
 
   const isValid = invitation.status === "pending"
+  const needsTerms = Boolean(invitation.requireTermsAcceptance && invitation.termsContent && invitation.termsHash)
+  const canAccept = !loading && (!needsTerms || termsAccepted)
 
   async function handleAccept() {
+    if (needsTerms && !termsAccepted) {
+      setError("Please agree to the terms and conditions to continue.")
+      return
+    }
     setLoading(true)
     setError(null)
 
     try {
-      await fetch(`/api/public/judge-invitations/${token}/accept`, {
+      const res = await fetch(`/api/public/judge-invitations/${token}/accept`, {
         method: "POST",
-      }).then(assertOk)
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(needsTerms ? { terms_hash: invitation.termsHash } : {}),
+      })
+      await assertOk(res)
 
       setSuccess(true)
       setTimeout(() => {
@@ -170,12 +184,21 @@ export function JudgeInviteAcceptClient({
             </AlertDescription>
           </Alert>
         )}
+
+        {isAuthenticated && needsTerms && invitation.termsContent && (
+          <TermsAcceptanceBlock
+            termsContent={invitation.termsContent}
+            accepted={termsAccepted}
+            onChange={setTermsAccepted}
+            disabled={loading}
+          />
+        )}
       </CardContent>
 
       <CardFooter className="flex-col gap-3">
         {isAuthenticated ? (
           <>
-            <Button className="w-full" onClick={handleAccept} disabled={loading}>
+            <Button className="w-full" onClick={handleAccept} disabled={!canAccept}>
               {loading ? "Accepting..." : "Accept & Become Judge"}
             </Button>
             <Button

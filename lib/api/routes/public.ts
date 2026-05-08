@@ -16,6 +16,7 @@ import {
   getTeamMemberCount,
 } from "@/lib/services/submissions"
 import { getTeamSizeWarning } from "@/lib/utils/team-size"
+import { currentTermsHash, recordTermsAcceptance } from "@/lib/services/hackathon-terms"
 
 export const publicRoutes = new Elysia({ prefix: "/public" })
   .get("/health", () => ({
@@ -112,6 +113,11 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       })
     }
 
+    const termsHash = await currentTermsHash({
+      require_terms_acceptance: hackathon.require_terms_acceptance ?? false,
+      terms_content: hackathon.terms_content ?? null,
+    })
+
     return {
       id: hackathon.id,
       name: hackathon.name,
@@ -125,6 +131,9 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       endsAt: hackathon.ends_at,
       registrationOpensAt: hackathon.registration_opens_at,
       registrationClosesAt: hackathon.registration_closes_at,
+      requireTermsAcceptance: Boolean(termsHash),
+      termsContent: termsHash ? hackathon.terms_content : null,
+      termsHash,
       organizer: {
         id: hackathon.organizer.id,
         name: hackathon.organizer.name,
@@ -204,6 +213,17 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       }
     }
 
+    const expectedTermsHash = await currentTermsHash({
+      require_terms_acceptance: hackathon.require_terms_acceptance ?? false,
+      terms_content: hackathon.terms_content ?? null,
+    })
+    if (expectedTermsHash && (!body?.terms_hash || body.terms_hash !== expectedTermsHash)) {
+      return new Response(
+        JSON.stringify({ error: "You must accept the terms and conditions to register.", code: "terms_required" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      )
+    }
+
     let teamName: string | undefined
     try {
       const client = await clerkClient()
@@ -228,6 +248,22 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
+    if (expectedTermsHash) {
+      try {
+        await recordTermsAcceptance(
+          {
+            id: hackathon.id,
+            require_terms_acceptance: hackathon.require_terms_acceptance ?? false,
+            terms_content: hackathon.terms_content ?? null,
+          },
+          userId,
+          expectedTermsHash
+        )
+      } catch (err) {
+        console.error("Failed to record terms acceptance:", err)
+      }
+    }
+
     const { triggerWebhooks } = await import("@/lib/services/webhooks")
     triggerWebhooks(hackathon.tenant_id, "participant.registered", {
       event: "participant.registered",
@@ -244,6 +280,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     body: t.Optional(t.Object({
       latitude: t.Optional(t.Number()),
       longitude: t.Optional(t.Number()),
+      terms_hash: t.Optional(t.String({ description: "SHA-256 of accepted terms content. Required when the hackathon has terms acceptance enabled." })),
     })),
   })
   .get("/hackathons/:slug/submissions/me", async ({ params }) => {
@@ -874,6 +911,11 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     const now = new Date()
     const isExpired = new Date(invitation.expires_at) < now
 
+    const termsHash = await currentTermsHash({
+      require_terms_acceptance: invitation.hackathon.require_terms_acceptance,
+      terms_content: invitation.hackathon.terms_content,
+    })
+
     return {
       id: invitation.id,
       status: isExpired && invitation.status === "pending" ? "expired" : invitation.status,
@@ -883,6 +925,9 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       hackathonStatus: invitation.hackathon.status,
       email: invitation.email,
       expiresAt: invitation.expires_at,
+      requireTermsAcceptance: Boolean(termsHash),
+      termsContent: termsHash ? invitation.hackathon.terms_content : null,
+      termsHash,
     }
   }, {
     detail: {
@@ -890,7 +935,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       description: "Returns team invitation details by token.",
     },
   })
-  .post("/invitations/:token/accept", async ({ params }) => {
+  .post("/invitations/:token/accept", async ({ params, body }) => {
     const { userId } = await auth()
 
     if (!userId) {
@@ -913,6 +958,20 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
 
     const { acceptTeamInvitation, getInvitationByToken } = await import("@/lib/services/team-invitations")
     const invitation = await getInvitationByToken(params.token)
+
+    const expectedTermsHash = invitation
+      ? await currentTermsHash({
+          require_terms_acceptance: invitation.hackathon.require_terms_acceptance,
+          terms_content: invitation.hackathon.terms_content,
+        })
+      : null
+    if (expectedTermsHash && (!body?.terms_hash || body.terms_hash !== expectedTermsHash)) {
+      return new Response(
+        JSON.stringify({ error: "You must accept the terms and conditions to join the team.", code: "terms_required" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      )
+    }
+
     const result = await acceptTeamInvitation(params.token, userId, userEmail)
 
     if (!result.success) {
@@ -921,6 +980,22 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         JSON.stringify({ error: result.error, code: result.code }),
         { status: statusCode, headers: { "Content-Type": "application/json" } }
       )
+    }
+
+    if (invitation && expectedTermsHash) {
+      try {
+        await recordTermsAcceptance(
+          {
+            id: invitation.hackathon.id,
+            require_terms_acceptance: invitation.hackathon.require_terms_acceptance,
+            terms_content: invitation.hackathon.terms_content,
+          },
+          userId,
+          expectedTermsHash
+        )
+      } catch (err) {
+        console.error("Failed to record terms acceptance:", err)
+      }
     }
 
     if (invitation) {
@@ -939,6 +1014,9 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       summary: "Accept team invitation",
       description: "Accepts a team invitation and joins the team. Requires Clerk session.",
     },
+    body: t.Optional(t.Object({
+      terms_hash: t.Optional(t.String({ description: "SHA-256 of accepted terms content. Required when the hackathon has terms acceptance enabled." })),
+    })),
   })
   .post("/invitations/:token/decline", async ({ params }) => {
     const { userId } = await auth()
@@ -1622,6 +1700,11 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     const now = new Date()
     const isExpired = new Date(invitation.expires_at) < now
 
+    const termsHash = await currentTermsHash({
+      require_terms_acceptance: invitation.hackathon.require_terms_acceptance,
+      terms_content: invitation.hackathon.terms_content,
+    })
+
     return {
       id: invitation.id,
       status: isExpired && invitation.status === "pending" ? "expired" : invitation.status,
@@ -1629,6 +1712,9 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       hackathonSlug: invitation.hackathon.slug,
       email: invitation.email,
       expiresAt: invitation.expires_at,
+      requireTermsAcceptance: Boolean(termsHash),
+      termsContent: termsHash ? invitation.hackathon.terms_content : null,
+      termsHash,
     }
   }, {
     detail: {
@@ -1636,7 +1722,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       description: "Returns judge invitation details by token.",
     },
   })
-  .post("/judge-invitations/:token/accept", async ({ params }) => {
+  .post("/judge-invitations/:token/accept", async ({ params, body }) => {
     const { userId } = await auth()
 
     if (!userId) {
@@ -1659,6 +1745,20 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
 
     const { acceptJudgeInvitation, getJudgeInvitationByToken } = await import("@/lib/services/judge-invitations")
     const judgeInvitation = await getJudgeInvitationByToken(params.token)
+
+    const expectedTermsHash = judgeInvitation
+      ? await currentTermsHash({
+          require_terms_acceptance: judgeInvitation.hackathon.require_terms_acceptance,
+          terms_content: judgeInvitation.hackathon.terms_content,
+        })
+      : null
+    if (expectedTermsHash && (!body?.terms_hash || body.terms_hash !== expectedTermsHash)) {
+      return new Response(
+        JSON.stringify({ error: "You must accept the terms and conditions to judge this event.", code: "terms_required" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      )
+    }
+
     const result = await acceptJudgeInvitation(params.token, userId, userEmails)
 
     if (!result.success) {
@@ -1667,6 +1767,22 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         JSON.stringify({ error: result.error, code: result.code }),
         { status: statusCode, headers: { "Content-Type": "application/json" } }
       )
+    }
+
+    if (judgeInvitation && expectedTermsHash) {
+      try {
+        await recordTermsAcceptance(
+          {
+            id: judgeInvitation.hackathon.id,
+            require_terms_acceptance: judgeInvitation.hackathon.require_terms_acceptance,
+            terms_content: judgeInvitation.hackathon.terms_content,
+          },
+          userId,
+          expectedTermsHash
+        )
+      } catch (err) {
+        console.error("Failed to record terms acceptance:", err)
+      }
     }
 
     if (judgeInvitation) {
@@ -1682,6 +1798,9 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       summary: "Accept judge invitation",
       description: "Accepts a judge invitation and adds user as judge. Requires Clerk session.",
     },
+    body: t.Optional(t.Object({
+      terms_hash: t.Optional(t.String({ description: "SHA-256 of accepted terms content. Required when the hackathon has terms acceptance enabled." })),
+    })),
   })
   .post("/judge-invitations/:token/decline", async ({ params }) => {
     const { userId } = await auth()

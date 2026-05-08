@@ -1,6 +1,7 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Hackathon, TenantProfile, HackathonSponsor, HackathonStatus, HackathonJudgeDisplay, Prize, JudgingMode } from "@/lib/db/hackathon-types"
+import { currentTermsHash } from "@/lib/services/hackathon-terms"
 
 export type PublicPrize = Omit<Prize, "distribution_method" | "monetary_value" | "currency">
 export const PUBLISHED_STATUSES: HackathonStatus[] = ["published", "registration_open", "active", "judging", "completed"]
@@ -17,6 +18,7 @@ export type PublicHackathon = Hackathon & {
   })[]
   judges: HackathonJudgeDisplay[]
   prizes: PublicPrize[]
+  terms_hash: string | null
 }
 
 export async function getPublicHackathonById(
@@ -105,12 +107,15 @@ export async function getPublicHackathon(
     ...rest
   }) => rest)
 
+  const termsHash = await currentTermsHash(hackathon as Hackathon)
+
   return {
     ...hackathon,
     status: getEffectiveStatus(hackathon),
     sponsors: sponsors || [],
     judges: (judges || []) as unknown as HackathonJudgeDisplay[],
     prizes: publicPrizes,
+    terms_hash: termsHash,
   } as unknown as PublicHackathon
 }
 
@@ -264,12 +269,15 @@ export async function getHackathonByIdWithFullData(
     ...rest
   }) => rest)
 
+  const termsHash = await currentTermsHash(hackathon as Hackathon)
+
   return {
     ...hackathon,
     status: getEffectiveStatus(hackathon),
     sponsors: sponsors || [],
     judges: (judges || []) as unknown as HackathonJudgeDisplay[],
     prizes: fullPrizes,
+    terms_hash: termsHash,
   } as unknown as PublicHackathon
 }
 
@@ -348,6 +356,8 @@ export async function updateHackathonSettings(
     allowSolo?: boolean
     communityUrl?: string | null
     communityLabel?: string | null
+    requireTermsAcceptance?: boolean
+    termsContent?: string | null
   }
 ): Promise<Hackathon | null> {
   const client = getSupabase() as unknown as SupabaseClient
@@ -376,6 +386,8 @@ export async function updateHackathonSettings(
   if (updates.allowSolo !== undefined) updateData.allow_solo = updates.allowSolo
   if (updates.communityUrl !== undefined) updateData.community_url = updates.communityUrl
   if (updates.communityLabel !== undefined) updateData.community_label = updates.communityLabel
+  if (updates.requireTermsAcceptance !== undefined) updateData.require_terms_acceptance = updates.requireTermsAcceptance
+  if (updates.termsContent !== undefined) updateData.terms_content = updates.termsContent
 
   const { data, error } = await client
     .from("hackathons")

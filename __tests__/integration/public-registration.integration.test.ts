@@ -27,6 +27,14 @@ mock.module("@clerk/nextjs/server", () => ({
 
 const mockGetPublicHackathonById = mock(() => Promise.resolve(null))
 
+const mockCurrentTermsHash = mock(() => Promise.resolve(null as string | null))
+const mockRecordTermsAcceptance = mock(() => Promise.resolve())
+
+mock.module("@/lib/services/hackathon-terms", () => ({
+  currentTermsHash: mockCurrentTermsHash,
+  recordTermsAcceptance: mockRecordTermsAcceptance,
+}))
+
 mock.module("@/lib/services/public-hackathons", () => ({
   getPublicHackathon: mockGetPublicHackathon,
   getPublicHackathonById: mockGetPublicHackathonById,
@@ -92,6 +100,9 @@ describe("Public Registration Routes", () => {
     mockGetParticipantCount.mockReset()
     mockIsUserRegistered.mockReset()
     mockGetPublicTenantWithEvents.mockReset()
+    mockCurrentTermsHash.mockReset()
+    mockRecordTermsAcceptance.mockReset()
+    mockCurrentTermsHash.mockResolvedValue(null)
   })
 
   describe("POST /api/public/hackathons/:slug/register", () => {
@@ -244,6 +255,88 @@ describe("Public Registration Routes", () => {
 
       expect(res.status).toBe(400)
       expect(data.code).toBe("registration_closed")
+    })
+
+    it("returns 400 with terms_required when terms enabled and no hash provided", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockCurrentTermsHash.mockResolvedValue("expected-hash")
+
+      const res = await app.handle(
+        new Request("http://localhost/api/public/hackathons/test-hackathon/register", {
+          method: "POST",
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(400)
+      expect(data.code).toBe("terms_required")
+      expect(mockRegisterForHackathon).not.toHaveBeenCalled()
+    })
+
+    it("returns 400 when terms hash does not match", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockCurrentTermsHash.mockResolvedValue("expected-hash")
+
+      const res = await app.handle(
+        new Request("http://localhost/api/public/hackathons/test-hackathon/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ terms_hash: "stale-hash" }),
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(400)
+      expect(data.code).toBe("terms_required")
+      expect(mockRegisterForHackathon).not.toHaveBeenCalled()
+    })
+
+    it("registers and records acceptance when terms hash matches", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockCurrentTermsHash.mockResolvedValue("expected-hash")
+      mockRegisterForHackathon.mockResolvedValue({
+        success: true,
+        participantId: "p1",
+        teamId: "t1",
+      })
+
+      const res = await app.handle(
+        new Request("http://localhost/api/public/hackathons/test-hackathon/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ terms_hash: "expected-hash" }),
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(data.success).toBe(true)
+      expect(mockRecordTermsAcceptance).toHaveBeenCalledTimes(1)
+    })
+
+    it("does not record acceptance when registration fails", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockCurrentTermsHash.mockResolvedValue("expected-hash")
+      mockRegisterForHackathon.mockResolvedValue({
+        success: false,
+        error: "Already registered",
+        code: "already_registered",
+      })
+
+      const res = await app.handle(
+        new Request("http://localhost/api/public/hackathons/test-hackathon/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ terms_hash: "expected-hash" }),
+        })
+      )
+
+      expect(res.status).toBe(409)
+      expect(mockRecordTermsAcceptance).not.toHaveBeenCalled()
     })
 
     it("calls registerForHackathon with correct parameters", async () => {

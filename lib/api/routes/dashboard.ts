@@ -1309,9 +1309,12 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       const hasDateUpdate = body.startsAt !== undefined || body.endsAt !== undefined
       const isStatusChange = body.status !== undefined
 
+      const needsCurrentForTermsCheck =
+        body.requireTermsAcceptance === true && body.termsContent === undefined
+
       let previousStatus: string | undefined
       let currentHackathon: import("@/lib/db/hackathon-types").Hackathon | undefined
-      if (hasDateUpdate || isStatusChange || body.locale !== undefined) {
+      if (hasDateUpdate || isStatusChange || body.locale !== undefined || needsCurrentForTermsCheck) {
         const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
         const check = await checkHackathonOrganizer(params.id, principal.tenantId)
         if (check.status === "not_found") {
@@ -1345,6 +1348,18 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         }
       }
 
+      if (body.requireTermsAcceptance === true) {
+        const candidateContent = body.termsContent !== undefined
+          ? body.termsContent
+          : currentHackathon?.terms_content
+        if (!candidateContent || candidateContent.trim().length === 0) {
+          return new Response(
+            JSON.stringify({ error: "Add your terms before turning this on.", code: "terms_content_required" }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          )
+        }
+      }
+
       const hasStatusTransition = previousStatus && body.status && body.status !== previousStatus
       const hasOtherFields = body.bannerUrl !== undefined || body.name !== undefined ||
         body.description !== undefined || body.rules !== undefined ||
@@ -1355,7 +1370,8 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         body.locationLongitude !== undefined || body.requireLocationVerification !== undefined ||
         body.maxParticipants !== undefined || body.minTeamSize !== undefined ||
         body.maxTeamSize !== undefined || body.allowSolo !== undefined ||
-        body.communityUrl !== undefined || body.communityLabel !== undefined
+        body.communityUrl !== undefined || body.communityLabel !== undefined ||
+        body.requireTermsAcceptance !== undefined || body.termsContent !== undefined
 
       const primaryLocale = currentHackathon?.default_locale ?? "en"
       const normalizedLocale = body.locale ? normalizeLocale(body.locale) : null
@@ -1387,6 +1403,8 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           maxTeamSize: body.maxTeamSize,
           allowSolo: body.allowSolo,
           communityUrl: normalizeOptionalUrl(body.communityUrl),
+          requireTermsAcceptance: body.requireTermsAcceptance,
+          termsContent: body.termsContent,
         }
 
         const translatable: Parameters<typeof updateHackathonTranslation>[3] = {}
@@ -1443,6 +1461,8 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           allowSolo: body.allowSolo,
           communityUrl: normalizeOptionalUrl(body.communityUrl),
           communityLabel: body.communityLabel,
+          requireTermsAcceptance: body.requireTermsAcceptance,
+          termsContent: body.termsContent,
         })
       }
 
@@ -1605,6 +1625,8 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         allowSolo: h.allow_solo,
         anonymousJudging: h.anonymous_judging,
         judgingMode: h.judging_mode,
+        requireTermsAcceptance: h.require_terms_acceptance ?? false,
+        termsContent: h.terms_content ?? null,
         resultsPublishedAt: h.results_published_at,
         createdAt: h.created_at,
         updatedAt: h.updated_at,
@@ -1645,6 +1667,8 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         allowSolo: t.Optional(t.Boolean()),
         communityUrl: t.Optional(t.Union([t.String(), t.Null()])),
         communityLabel: t.Optional(t.Union([t.String(), t.Null()])),
+        requireTermsAcceptance: t.Optional(t.Boolean({ description: "When true, attendees and judges must accept the hackathon terms before registering or accepting an invite." })),
+        termsContent: t.Optional(t.Union([t.String({ maxLength: 50000 }), t.Null()], { description: "Markdown body of the terms shown to attendees and judges. Pass null to clear." })),
         locale: t.Optional(t.String({ minLength: 1 })),
       }),
     }

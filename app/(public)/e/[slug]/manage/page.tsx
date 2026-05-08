@@ -125,6 +125,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     perksNone: hackathon.perks_none ?? false,
     rounds: roundsSummary,
     communityUrl: hackathon.community_url ?? null,
+    termsContent: hackathon.terms_content ?? null,
   })
 
   const activeTab = resolveTab(tab, VALID_TABS, DEFAULT_TAB)
@@ -338,7 +339,12 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
             </TabsContent>
 
             <TabsContent value="miscs" forceMount className="data-[state=inactive]:hidden">
-              <MiscsTabContent hackathonId={hackathon.id} activeMtab={activeMtab} />
+              <MiscsTabContent
+                hackathonId={hackathon.id}
+                activeMtab={activeMtab}
+                requireTermsAcceptance={hackathon.require_terms_acceptance ?? false}
+                termsContent={hackathon.terms_content ?? null}
+              />
             </TabsContent>
 
             <TabsContent value="event" forceMount className="data-[state=inactive]:hidden">

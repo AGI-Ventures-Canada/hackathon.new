@@ -61,6 +61,8 @@ export const mockHackathon: Hackathon = {
   perks_none: false,
   community_url: "https://discord.gg/example",
   community_label: "Discord",
+  require_terms_acceptance: false,
+  terms_content: null,
   translations: null,
   default_locale: null,
   metadata: {},
@@ -362,6 +364,7 @@ export const mockPublicHackathon: PublicHackathon = {
   sponsors: mockSponsors,
   judges: mockJudges,
   prizes: mockPublicPrizes,
+  terms_hash: null,
 }
 
 export interface ShowcaseData {
