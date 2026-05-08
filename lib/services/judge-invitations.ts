@@ -74,7 +74,14 @@ export async function createJudgeInvitation(
 }
 
 export type JudgeInvitationWithDetails = JudgeInvitation & {
-  hackathon: { name: string; slug: string; status: string }
+  hackathon: {
+    id: string
+    name: string
+    slug: string
+    status: string
+    require_terms_acceptance: boolean
+    terms_content: string | null
+  }
 }
 
 export async function getJudgeInvitationByToken(
@@ -86,7 +93,7 @@ export async function getJudgeInvitationByToken(
     .from("judge_invitations")
     .select(`
       *,
-      hackathons!inner(name, slug, status)
+      hackathons!inner(id, name, slug, status, require_terms_acceptance, terms_content)
     `)
     .eq("token", token)
     .single()
@@ -95,14 +102,24 @@ export async function getJudgeInvitationByToken(
     return null
   }
 
-  const hackathon = data.hackathons as unknown as { name: string; slug: string; status: string }
+  const hackathon = data.hackathons as unknown as {
+    id: string
+    name: string
+    slug: string
+    status: string
+    require_terms_acceptance: boolean | null
+    terms_content: string | null
+  }
 
   return {
     ...data,
     hackathon: {
+      id: hackathon.id,
       name: hackathon.name,
       slug: hackathon.slug,
       status: hackathon.status,
+      require_terms_acceptance: hackathon.require_terms_acceptance ?? false,
+      terms_content: hackathon.terms_content ?? null,
     },
   } as JudgeInvitationWithDetails
 }

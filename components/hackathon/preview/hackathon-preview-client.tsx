@@ -837,6 +837,9 @@ function HackathonPreviewContent({
         participantCount,
         isRegistered,
         requireLocationVerification: hackathon.require_location_verification,
+        requireTermsAcceptance: hackathon.require_terms_acceptance ?? false,
+        termsContent: hackathon.terms_content ?? null,
+        termsHash: hackathon.terms_hash ?? null,
         submission,
         onRegistrationSuccess: handleRegistrationSuccess,
         teamSizeWarning: teamInfo ? (getTeamSizeWarning({

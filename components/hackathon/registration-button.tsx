@@ -7,6 +7,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Loader2, Check, CalendarClock, Lock, Users } from "lucide-react"
 import type { HackathonStatus } from "@/lib/db/hackathon-types"
+import { TermsAcceptanceBlock } from "@/components/hackathon/terms-acceptance-block"
 
 interface RegistrationButtonProps {
   hackathonSlug: string
@@ -18,6 +19,9 @@ interface RegistrationButtonProps {
   participantCount: number
   isRegistered: boolean
   requireLocationVerification?: boolean
+  requireTermsAcceptance?: boolean
+  termsContent?: string | null
+  termsHash?: string | null
   onRegistrationSuccess?: () => void
 }
 
@@ -34,6 +38,9 @@ export function RegistrationButton({
   participantCount,
   isRegistered: initialIsRegistered,
   requireLocationVerification,
+  requireTermsAcceptance,
+  termsContent,
+  termsHash,
   onRegistrationSuccess,
 }: RegistrationButtonProps) {
   const { isSignedIn, isLoaded } = useUser()
@@ -42,6 +49,8 @@ export function RegistrationButton({
   const [isRegistered, setIsRegistered] = useState(initialIsRegistered)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [termsAccepted, setTermsAccepted] = useState(false)
+  const needsTerms = Boolean(requireTermsAcceptance && termsContent && termsHash)
 
   if (!isLoaded) {
     return (
@@ -157,28 +166,29 @@ export function RegistrationButton({
       at_capacity: "This event has reached maximum capacity.",
       location_required: "Location verification required. Please share your location.",
       location_too_far: fallback,
+      terms_required: "You must agree to the terms and conditions to register.",
+      terms_record_failed: "Couldn't record your agreement. Please try again.",
     }
     return errorMessages[code] || fallback
   }
 
   async function handleRegister() {
+    if (needsTerms && !termsAccepted) {
+      setError("Please agree to the terms and conditions to register.")
+      return
+    }
     setIsLoading(true)
     setError(null)
 
     try {
-      let fetchBody: string | undefined
-      let fetchHeaders: Record<string, string> | undefined
-
+      const bodyPayload: Record<string, unknown> = {}
       if (requireLocationVerification) {
         try {
           const position = await new Promise<GeolocationPosition>((resolve, reject) => {
             navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 })
           })
-          fetchBody = JSON.stringify({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-          })
-          fetchHeaders = { "Content-Type": "application/json" }
+          bodyPayload.latitude = position.coords.latitude
+          bodyPayload.longitude = position.coords.longitude
         } catch {
           setError("Location access is required for this in-person event. Please enable location permissions and try again.")
           setIsLoading(false)
@@ -186,10 +196,15 @@ export function RegistrationButton({
         }
       }
 
+      if (needsTerms) {
+        bodyPayload.terms_hash = termsHash
+      }
+
+      const hasBody = Object.keys(bodyPayload).length > 0
       const response = await fetch(`/api/public/hackathons/${hackathonSlug}/register`, {
         method: "POST",
-        headers: fetchHeaders,
-        body: fetchBody,
+        headers: hasBody ? { "Content-Type": "application/json" } : undefined,
+        body: hasBody ? JSON.stringify(bodyPayload) : undefined,
       })
 
       let data
@@ -203,6 +218,10 @@ export function RegistrationButton({
       if (!response.ok) {
         setError(getErrorMessage(data.code, data.error || "Failed to register"))
         return
+      }
+
+      if (data.warning === "terms_record_failed") {
+        console.warn("[terms] registration succeeded but acceptance was not recorded for hackathon", hackathonSlug)
       }
 
       setIsRegistered(true)
@@ -220,8 +239,20 @@ export function RegistrationButton({
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      <Button onClick={handleRegister} disabled={isLoading} size="lg">
+    <div className="flex flex-col gap-3">
+      {needsTerms && termsContent && (
+        <TermsAcceptanceBlock
+          termsContent={termsContent}
+          accepted={termsAccepted}
+          onChange={setTermsAccepted}
+          disabled={isLoading}
+        />
+      )}
+      <Button
+        onClick={handleRegister}
+        disabled={isLoading || (needsTerms && !termsAccepted)}
+        size="lg"
+      >
         {isLoading ? (
           <>
             <Loader2 className="size-4 animate-spin" />

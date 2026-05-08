@@ -25,6 +25,9 @@ interface RegistrationProps {
   participantCount: number;
   isRegistered: boolean;
   requireLocationVerification?: boolean;
+  requireTermsAcceptance?: boolean;
+  termsContent?: string | null;
+  termsHash?: string | null;
   submission?: Submission | null;
   onRegistrationSuccess?: () => void;
   teamSizeWarning?: string | null;
@@ -461,6 +464,9 @@ export function EventHero({
               participantCount={registrationProps.participantCount}
               isRegistered={registrationProps.isRegistered}
               requireLocationVerification={registrationProps.requireLocationVerification}
+              requireTermsAcceptance={registrationProps.requireTermsAcceptance}
+              termsContent={registrationProps.termsContent}
+              termsHash={registrationProps.termsHash}
               onRegistrationSuccess={registrationProps.onRegistrationSuccess}
             />
           )}

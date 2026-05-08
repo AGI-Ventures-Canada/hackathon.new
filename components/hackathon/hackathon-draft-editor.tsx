@@ -103,6 +103,8 @@ function stateToHackathon(state: DraftState): PublicHackathon {
     perks_none: false,
     community_url: null,
     community_label: null,
+    require_terms_acceptance: false,
+    terms_content: null,
     translations: null,
     default_locale: null,
     banner_url: state.imageUrl,
@@ -161,6 +163,7 @@ function stateToHackathon(state: DraftState): PublicHackathon {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })),
+    terms_hash: null,
   }
 }
 

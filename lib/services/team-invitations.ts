@@ -24,7 +24,14 @@ export type AcceptInvitationResult =
 
 export type InvitationWithDetails = TeamInvitation & {
   team: { name: string }
-  hackathon: { name: string; slug: string; status: string }
+  hackathon: {
+    id: string
+    name: string
+    slug: string
+    status: string
+    require_terms_acceptance: boolean
+    terms_content: string | null
+  }
 }
 
 export async function createTeamInvitation(
@@ -146,7 +153,7 @@ export async function getInvitationByToken(
     .select(`
       *,
       teams!inner(name),
-      hackathons!inner(name, slug, status)
+      hackathons!inner(id, name, slug, status, require_terms_acceptance, terms_content)
     `)
     .eq("token", token)
     .single()
@@ -156,15 +163,25 @@ export async function getInvitationByToken(
   }
 
   const team = data.teams as unknown as { name: string }
-  const hackathon = data.hackathons as unknown as { name: string; slug: string; status: string }
+  const hackathon = data.hackathons as unknown as {
+    id: string
+    name: string
+    slug: string
+    status: string
+    require_terms_acceptance: boolean | null
+    terms_content: string | null
+  }
 
   return {
     ...data,
     team: { name: team.name },
     hackathon: {
+      id: hackathon.id,
       name: hackathon.name,
       slug: hackathon.slug,
       status: hackathon.status,
+      require_terms_acceptance: hackathon.require_terms_acceptance ?? false,
+      terms_content: hackathon.terms_content ?? null,
     },
   } as InvitationWithDetails
 }
