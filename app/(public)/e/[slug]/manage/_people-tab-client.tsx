@@ -50,6 +50,10 @@ export function PeopleTabClient({ hackathonId, people }: PeopleTabClientProps) {
         <a
           href={`/api/dashboard/hackathons/${hackathonId}/people.csv`}
           download
+          onClick={(e) => {
+            const today = new Date().toLocaleDateString("sv-SE")
+            e.currentTarget.href = `/api/dashboard/hackathons/${hackathonId}/people.csv?date=${today}`
+          }}
           className="self-start sm:self-auto"
         >
           <Button variant="outline">

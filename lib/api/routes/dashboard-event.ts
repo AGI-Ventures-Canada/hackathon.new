@@ -237,7 +237,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       description: "Returns every attendee, judge, mentor, and organizer for the hackathon, including pending team and judge invitations.",
     },
   })
-  .get("/hackathons/:id/people.csv", async ({ params, principal, set }) => {
+  .get("/hackathons/:id/people.csv", async ({ params, query, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if (authErr) return authErr
@@ -262,7 +262,10 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       { key: "Joined or invited at", header: "Joined or invited at" },
     ])
 
-    const today = new Date().toISOString().slice(0, 10)
+    const clientDate = typeof query?.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(query.date)
+      ? query.date
+      : null
+    const today = clientDate ?? new Date().toISOString().slice(0, 10)
     const filename = `${slug}-people-${today}.csv`
 
     await logAudit({

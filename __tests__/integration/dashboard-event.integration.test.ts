@@ -918,5 +918,42 @@ describe("Dashboard Event Routes Integration Tests", () => {
       expect(body.split("\r\n")[0]).toBe("Name,Email,Role,Status,Team,Captain,Joined or invited at")
       expect(body).toContain("ada@example.com")
     })
+
+    it("uses a client-supplied date in the filename when provided", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockCheckHackathonOrganizer.mockResolvedValue({
+        status: "ok" as const,
+        hackathon: { id: hackathonId, tenant_id: "tenant-123", slug: "test-event" },
+      })
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({ data: { slug: "test-event" }, error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const res = await app.handle(new Request(`${url}?date=2026-01-15`))
+      const disposition = res.headers.get("content-disposition") ?? ""
+      expect(disposition).toContain("test-event-people-2026-01-15.csv")
+    })
+
+    it("ignores a malformed date query param and falls back to UTC today", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockCheckHackathonOrganizer.mockResolvedValue({
+        status: "ok" as const,
+        hackathon: { id: hackathonId, tenant_id: "tenant-123", slug: "test-event" },
+      })
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({ data: { slug: "test-event" }, error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const res = await app.handle(new Request(`${url}?date=not-a-date`))
+      const disposition = res.headers.get("content-disposition") ?? ""
+      expect(disposition).toMatch(/test-event-people-\d{4}-\d{2}-\d{2}\.csv/)
+      expect(disposition).not.toContain("not-a-date")
+    })
   })
 })

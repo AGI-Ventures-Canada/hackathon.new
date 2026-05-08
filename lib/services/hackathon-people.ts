@@ -59,6 +59,11 @@ export async function listHackathonPeople(hackathonId: string): Promise<Person[]
       .eq("status", "pending"),
   ])
 
+  if (participantsRes.error) console.error("Failed to load hackathon_participants:", participantsRes.error)
+  if (teamsRes.error) console.error("Failed to load teams:", teamsRes.error)
+  if (teamInvitesRes.error) console.error("Failed to load team_invitations:", teamInvitesRes.error)
+  if (judgeInvitesRes.error) console.error("Failed to load judge_invitations:", judgeInvitesRes.error)
+
   const participants = (participantsRes.data ?? []) as ParticipantRow[]
   const teams = (teamsRes.data ?? []) as TeamRow[]
   const teamInvites = (teamInvitesRes.data ?? []) as TeamInvitationRow[]
