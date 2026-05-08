@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useMemo, useState, useSyncExternalStore } from "react"
 import { Download, Search } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -21,8 +21,17 @@ type PeopleTabClientProps = {
   people: Person[]
 }
 
+const emptySubscribe = () => () => {}
+
 export function PeopleTabClient({ hackathonId, people }: PeopleTabClientProps) {
   const [query, setQuery] = useState("")
+  const isClient = useSyncExternalStore(emptySubscribe, () => true, () => false)
+  const csvHref = useMemo(() => {
+    const base = `/api/dashboard/hackathons/${hackathonId}/people.csv`
+    if (!isClient) return base
+    const today = new Date().toLocaleDateString("sv-SE")
+    return `${base}?date=${today}`
+  }, [hackathonId, isClient])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -48,12 +57,8 @@ export function PeopleTabClient({ hackathonId, people }: PeopleTabClientProps) {
           </p>
         </div>
         <a
-          href={`/api/dashboard/hackathons/${hackathonId}/people.csv`}
+          href={csvHref}
           download
-          onClick={(e) => {
-            const today = new Date().toLocaleDateString("sv-SE")
-            e.currentTarget.href = `/api/dashboard/hackathons/${hackathonId}/people.csv?date=${today}`
-          }}
           className="self-start sm:self-auto"
         >
           <Button variant="outline">

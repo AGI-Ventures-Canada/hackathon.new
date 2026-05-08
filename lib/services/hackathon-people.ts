@@ -1,4 +1,5 @@
 import { supabase as getSupabase } from "@/lib/db/client"
+import { isValidUuid } from "@/lib/utils/uuid"
 import { resolveClerkUsers } from "./clerk-users"
 import { ROLE_LABEL, STATUS_LABEL, type Person, type PersonRole } from "./hackathon-people-types"
 
@@ -35,6 +36,8 @@ type JudgeInvitationRow = {
 const PEOPLE_ROLES: PersonRole[] = ["participant", "judge", "mentor", "organizer"]
 
 export async function listHackathonPeople(hackathonId: string): Promise<Person[]> {
+  if (!isValidUuid(hackathonId)) return []
+
   const client = getSupabase()
 
   const [participantsRes, teamsRes, teamInvitesRes, judgeInvitesRes] = await Promise.all([

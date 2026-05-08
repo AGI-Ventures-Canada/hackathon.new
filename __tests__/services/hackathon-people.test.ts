@@ -57,6 +57,11 @@ describe("listHackathonPeople", () => {
     expect(result).toEqual([])
   })
 
+  it("returns an empty array when hackathonId is not a valid UUID", async () => {
+    const result = await listHackathonPeople("draft")
+    expect(result).toEqual([])
+  })
+
   it("returns accepted rows for all four roles", async () => {
     mockTables({
       hackathon_participants: [
