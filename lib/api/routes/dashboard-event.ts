@@ -60,13 +60,13 @@ async function checkOrganizer(hackathonId: string, tenantId: string, set: { stat
   const check = await checkHackathonOrganizer(hackathonId, tenantId)
   if (check.status === "not_found") {
     set.status = 404
-    return { error: "Hackathon not found" }
+    return { error: "Hackathon not found" } as const
   }
   if (check.status === "not_authorized") {
     set.status = 403
-    return { error: "Not authorized to manage this hackathon" }
+    return { error: "Not authorized to manage this hackathon" } as const
   }
-  return null
+  return { hackathon: check.hackathon } as const
 }
 
 export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
@@ -93,7 +93,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     }
 
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
 
     const result = await setPhase(params.id, principal.tenantId, phase as HackathonPhase)
 
@@ -114,13 +114,13 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .get("/hackathons/:id/rooms", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     return { rooms: await listRooms(params.id) }
   }, { detail: { summary: "List rooms" } })
   .post("/hackathons/:id/rooms", async ({ params, body, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const room = await createRoom(params.id, body as { name: string; displayOrder?: number })
     if (!room) { set.status = 400; return { error: "Failed to create room" } }
     await logAudit({ principal, action: "room.created", resourceType: "room", resourceId: room.id, metadata: { hackathonId: params.id, name: (body as { name: string }).name } })
@@ -132,7 +132,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .patch("/hackathons/:id/rooms/:roomId", async ({ params, body, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const room = await updateRoom(params.roomId, params.id, body as { name?: string; displayOrder?: number })
     if (!room) { set.status = 400; return { error: "Failed to update room" } }
     await logAudit({ principal, action: "room.updated", resourceType: "room", resourceId: params.roomId, metadata: { hackathonId: params.id } })
@@ -144,7 +144,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .delete("/hackathons/:id/rooms/:roomId", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const ok = await deleteRoom(params.roomId, params.id)
     if (!ok) { set.status = 400; return { error: "Failed to delete room" } }
     await logAudit({ principal, action: "room.deleted", resourceType: "room", resourceId: params.roomId, metadata: { hackathonId: params.id } })
@@ -153,7 +153,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .post("/hackathons/:id/rooms/:roomId/teams", async ({ params, body, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const { teamId } = body as { teamId: string }
     const ok = await addTeamToRoom(params.roomId, teamId)
     if (!ok) { set.status = 400; return { error: "Failed to add team to room" } }
@@ -166,7 +166,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .delete("/hackathons/:id/rooms/:roomId/teams/:teamId", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const ok = await removeTeamFromRoom(params.roomId, params.teamId)
     if (!ok) { set.status = 400; return { error: "Failed to remove team from room" } }
     await logAudit({ principal, action: "room_team.removed", resourceType: "room", resourceId: params.roomId, metadata: { hackathonId: params.id, teamId: params.teamId } })
@@ -175,7 +175,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .patch("/hackathons/:id/rooms/:roomId/teams/:teamId", async ({ params, body, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const { presented } = body as { presented: boolean }
     const ok = await togglePresented(params.roomId, params.teamId, presented)
     if (!ok) { set.status = 400; return { error: "Failed to update presentation status" } }
@@ -188,7 +188,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .patch("/hackathons/:id/rooms/:roomId/timer", async ({ params, body, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const { endsAt, label } = body as { endsAt?: string; label?: string }
     if (!endsAt) {
       const room = await clearRoomTimer(params.roomId, params.id)
@@ -207,7 +207,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .post("/hackathons/:id/rooms/:roomId/timer/pause", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const room = await pauseRoomTimer(params.roomId, params.id)
     if (!room) { set.status = 400; return { error: "Failed to pause timer" } }
     await logAudit({ principal, action: "room_timer.paused", resourceType: "room", resourceId: params.roomId, metadata: { hackathonId: params.id } })
@@ -218,7 +218,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .post("/hackathons/:id/rooms/:roomId/timer/resume", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const room = await resumeRoomTimer(params.roomId, params.id)
     if (!room) { set.status = 400; return { error: "Failed to resume timer" } }
     await logAudit({ principal, action: "room_timer.resumed", resourceType: "room", resourceId: params.roomId, metadata: { hackathonId: params.id } })
@@ -229,7 +229,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .get("/hackathons/:id/people", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     return { people: await listHackathonPeople(params.id) }
   }, {
     detail: {
@@ -240,16 +240,9 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .get("/hackathons/:id/people.csv", async ({ params, query, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
 
-    const { supabase } = await import("@/lib/db/client")
-    const { data: hackathonRow } = await supabase()
-      .from("hackathons")
-      .select("slug")
-      .eq("id", params.id)
-      .single()
-    const rawSlug = (hackathonRow as { slug?: string } | null)?.slug ?? "hackathon"
-    const slug = rawSlug.replace(/[^a-z0-9-]/gi, "") || "hackathon"
+    const slug = (authErr.hackathon.slug ?? "hackathon").replace(/[^a-z0-9-]/gi, "") || "hackathon"
 
     const people = await listHackathonPeople(params.id)
     const csv = toCsv(peopleToCsvRows(people), [
@@ -293,13 +286,13 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .get("/hackathons/:id/teams", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     return { teams: await listTeamsWithMembers(params.id) }
   }, { detail: { summary: "List teams with members" } })
   .post("/hackathons/:id/teams", async ({ params, body, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const b = body as { name: string; captainEmail: string }
     const result = await createTeamWithMembers(params.id, {
       ...b,
@@ -321,7 +314,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .patch("/hackathons/:id/teams/:teamId/members", async ({ params, body, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const b = body as { add?: string[]; remove?: string[] }
     const ok = await modifyTeamMembers(params.teamId, params.id, b)
     if (!ok) { set.status = 400; return { error: "Failed to modify team members" } }
@@ -334,7 +327,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .post("/hackathons/:id/teams/bulk-assign", async ({ params, body, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const { assignments } = body as { assignments: { teamId: string; roomId: string }[] }
     const result = await bulkAssignTeams(params.id, assignments)
     await logAudit({ principal, action: "team.bulk_assigned", resourceType: "hackathon", resourceId: params.id, metadata: { hackathonId: params.id, assignmentCount: assignments.length } })
@@ -428,13 +421,13 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .get("/hackathons/:id/categories", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     return { categories: await listCategories(params.id) }
   }, { detail: { summary: "List categories" } })
   .post("/hackathons/:id/categories", async ({ params, body, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const cat = await createCategory(params.id, body as { name: string; description?: string; prizeId?: string; displayOrder?: number })
     if (!cat) { set.status = 400; return { error: "Failed to create category" } }
     await logAudit({ principal, action: "category.created", resourceType: "category", resourceId: cat.id, metadata: { hackathonId: params.id, name: (body as { name: string }).name } })
@@ -446,7 +439,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .patch("/hackathons/:id/categories/:categoryId", async ({ params, body, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const cat = await updateCategory(params.categoryId, params.id, body as { name?: string; description?: string; prizeId?: string; displayOrder?: number })
     if (!cat) { set.status = 400; return { error: "Failed to update category" } }
     await logAudit({ principal, action: "category.updated", resourceType: "category", resourceId: params.categoryId, metadata: { hackathonId: params.id } })
@@ -458,7 +451,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .delete("/hackathons/:id/categories/:categoryId", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const ok = await deleteCategory(params.categoryId, params.id)
     if (!ok) { set.status = 400; return { error: "Failed to delete category" } }
     await logAudit({ principal, action: "category.deleted", resourceType: "category", resourceId: params.categoryId, metadata: { hackathonId: params.id } })
@@ -467,13 +460,13 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .get("/hackathons/:id/judging/rounds", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     return { rounds: await listRounds(params.id) }
   }, { detail: { summary: "List judging rounds" } })
   .post("/hackathons/:id/judging/rounds", async ({ params, body, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const round = await createRound(params.id, body as { name: string; roundType: "preliminary" | "finals" })
     if (!round) { set.status = 400; return { error: "Failed to create round" } }
     await logAudit({ principal, action: "judging_round.created", resourceType: "judging_round", resourceId: round.id, metadata: { hackathonId: params.id, name: (body as { name: string }).name } })
@@ -485,7 +478,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .patch("/hackathons/:id/judging/rounds/:roundId", async ({ params, body, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const round = await updateRound(params.roundId, params.id, body as { name?: string; roundType?: "preliminary" | "finals"; displayOrder?: number })
     if (!round) { set.status = 400; return { error: "Failed to update round" } }
     await logAudit({ principal, action: "judging_round.updated", resourceType: "judging_round", resourceId: params.roundId, metadata: { hackathonId: params.id } })
@@ -497,7 +490,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .delete("/hackathons/:id/judging/rounds/:roundId", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const ok = await deleteRound(params.roundId, params.id)
     if (!ok) { set.status = 400; return { error: "Failed to delete round" } }
     await logAudit({ principal, action: "judging_round.deleted", resourceType: "judging_round", resourceId: params.roundId, metadata: { hackathonId: params.id } })
@@ -506,7 +499,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .post("/hackathons/:id/judging/rounds/:roundId/activate", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const ok = await activateRound(params.roundId, params.id)
     if (!ok) { set.status = 400; return { error: "Failed to activate round" } }
     await logAudit({ principal, action: "judging_round.activated", resourceType: "judging_round", resourceId: params.roundId, metadata: { hackathonId: params.id } })
@@ -515,13 +508,13 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .get("/hackathons/:id/social-submissions", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     return { submissions: await listSocialSubmissions(params.id) }
   }, { detail: { summary: "List social submissions" } })
   .patch("/hackathons/:id/social-submissions/:submissionId", async ({ params, body, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const { status } = body as { status: "approved" | "rejected" }
     const ok = await reviewSocialSubmission(params.submissionId, status)
     if (!ok) { set.status = 400; return { error: "Failed to review submission" } }
@@ -534,19 +527,19 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .get("/hackathons/:id/mentor-requests", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     return { requests: await listMentorQueue(params.id) }
   }, { detail: { summary: "List mentor requests" } })
   .get("/hackathons/:id/challenges", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     return { challenges: await listChallenges(params.id) }
   }, { detail: { summary: "List challenges" } })
   .post("/hackathons/:id/challenges", async ({ params, body, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const b = body as { title: string; description?: string | null; resources?: { label: string; url: string }[] }
     const created = await createChallenge(params.id, principal.tenantId, b)
     if (!created) { set.status = 400; return { error: "Failed to create challenge" } }
@@ -566,7 +559,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .put("/hackathons/:id/challenges/reorder", async ({ params, body, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const b = body as { orderedIds: string[] }
     const ok = await reorderChallenges(params.id, principal.tenantId, b.orderedIds)
     if (!ok) { set.status = 400; return { error: "Failed to reorder challenges" } }
@@ -578,7 +571,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .put("/hackathons/:id/challenges/:cid", async ({ params, body, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     if (!isValidUuid(params.cid)) { set.status = 404; return { error: "Challenge not found" } }
     const b = body as { title?: string; description?: string | null; resources?: { label: string; url: string }[] }
     const updated = await updateChallenge(params.cid, principal.tenantId, b)
@@ -596,7 +589,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .delete("/hackathons/:id/challenges/:cid", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     if (!isValidUuid(params.cid)) { set.status = 404; return { error: "Challenge not found" } }
     const ok = await deleteChallenge(params.cid, principal.tenantId)
     if (!ok) { set.status = 400; return { error: "Failed to delete challenge" } }
@@ -606,7 +599,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .post("/hackathons/:id/challenge/release", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const ok = await releaseChallenges(params.id, principal.tenantId)
     if (!ok) { set.status = 400; return { error: "Failed to release challenges. Ensure at least one challenge exists." } }
     await logAudit({ principal, action: "challenge.released", resourceType: "challenge", resourceId: params.id, metadata: { hackathonId: params.id } })
@@ -616,13 +609,13 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .get("/hackathons/:id/perks", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     return { perks: await listPerks(params.id) }
   }, { detail: { summary: "List perks" } })
   .post("/hackathons/:id/perks", async ({ params, body, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const b = body as {
       name: string
       description?: string | null
@@ -657,7 +650,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .put("/hackathons/:id/perks/:pid", async ({ params, body, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     if (!isValidUuid(params.pid)) { set.status = 404; return { error: "Perk not found" } }
     const b = body as Partial<{
       name: string
@@ -693,7 +686,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .delete("/hackathons/:id/perks/:pid", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     if (!isValidUuid(params.pid)) { set.status = 404; return { error: "Perk not found" } }
     const ok = await deletePerk(params.pid, principal.tenantId)
     if (!ok) { set.status = 400; return { error: "Failed to delete perk" } }
@@ -703,7 +696,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .post("/hackathons/:id/perks/:pid/release", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     if (!isValidUuid(params.pid)) { set.status = 404; return { error: "Perk not found" } }
     const released = await releasePerkNow(params.pid, principal.tenantId)
     if (!released) { set.status = 400; return { error: "Failed to release perk" } }
@@ -713,7 +706,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .post("/hackathons/:id/perks-none", async ({ params, body, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const b = body as { perksNone: boolean }
     const ok = await setPerksNone(params.id, principal.tenantId, b.perksNone)
     if (!ok) { set.status = 400; return { error: "Failed to update" } }
@@ -726,7 +719,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .get("/hackathons/:id/live-stats", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const stats = await getLiveStats(params.id)
     if (!stats) { set.status = 404; return { error: "Hackathon not found" } }
     return stats
@@ -762,13 +755,13 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .get("/hackathons/:id/announcements", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     return { announcements: await listAnnouncements(params.id) }
   }, { detail: { summary: "List announcements" } })
   .post("/hackathons/:id/announcements", async ({ params, body, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const announcement = await createAnnouncement(params.id, body as CreateAnnouncementInput)
     if (!announcement) { set.status = 400; return { error: "Failed to create announcement" } }
     await logAudit({ principal, action: "announcement.created", resourceType: "announcement", resourceId: announcement.id, metadata: { hackathonId: params.id, title: (body as CreateAnnouncementInput).title } })
@@ -786,7 +779,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     if (!isValidUuid(params.announcementId)) { set.status = 400; return { error: "Invalid announcement ID" } }
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const announcement = await updateAnnouncement(params.announcementId, params.id, body as UpdateAnnouncementInput)
     if (!announcement) { set.status = 400; return { error: "Failed to update announcement" } }
     await logAudit({ principal, action: "announcement.updated", resourceType: "announcement", resourceId: params.announcementId, metadata: { hackathonId: params.id } })
@@ -804,7 +797,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     if (!isValidUuid(params.announcementId)) { set.status = 400; return { error: "Invalid announcement ID" } }
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const ok = await deleteAnnouncement(params.announcementId, params.id)
     if (!ok) { set.status = 400; return { error: "Failed to delete announcement" } }
     await logAudit({ principal, action: "announcement.deleted", resourceType: "announcement", resourceId: params.announcementId, metadata: { hackathonId: params.id } })
@@ -814,7 +807,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     if (!isValidUuid(params.announcementId)) { set.status = 400; return { error: "Invalid announcement ID" } }
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const announcement = await publishAnnouncement(params.announcementId, params.id)
     if (!announcement) { set.status = 400; return { error: "Failed to publish announcement" } }
     await logAudit({ principal, action: "announcement.published", resourceType: "announcement", resourceId: params.announcementId, metadata: { hackathonId: params.id } })
@@ -824,7 +817,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     if (!isValidUuid(params.announcementId)) { set.status = 400; return { error: "Invalid announcement ID" } }
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const { scheduledAt } = body as { scheduledAt: string }
     const scheduledDate = new Date(scheduledAt)
     if (isNaN(scheduledDate.getTime())) {
@@ -847,7 +840,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     if (!isValidUuid(params.announcementId)) { set.status = 400; return { error: "Invalid announcement ID" } }
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const announcement = await unpublishAnnouncement(params.announcementId, params.id)
     if (!announcement) { set.status = 400; return { error: "Failed to unpublish announcement" } }
     await logAudit({ principal, action: "announcement.unpublished", resourceType: "announcement", resourceId: params.announcementId, metadata: { hackathonId: params.id } })
@@ -856,13 +849,13 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   .get("/hackathons/:id/schedule", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     return { scheduleItems: await listScheduleItems(params.id) }
   }, { detail: { summary: "List schedule items" } })
   .post("/hackathons/:id/schedule", async ({ params, body, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const b = body as { title: string; startsAt: string; description?: string; endsAt?: string; location?: string; sortOrder?: number; triggerType?: "challenge_release" | "submission_deadline" | null }
     const item = await createScheduleItem(params.id, b)
     if (!item) { set.status = 400; return { error: "Failed to create schedule item" } }
@@ -876,7 +869,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     if (!isValidUuid(params.itemId)) { set.status = 400; return { error: "Invalid schedule item ID" } }
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const b = body as { title?: string; startsAt?: string; description?: string | null; endsAt?: string | null; location?: string | null; sortOrder?: number; linkedTo?: "event_start" | "event_end" | "event_publish" | null }
     if (b.linkedTo === "event_publish") {
       const triggerItem = await getTriggerItem(params.id, "challenge_release")
@@ -901,7 +894,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     if (!isValidUuid(params.itemId)) { set.status = 400; return { error: "Invalid schedule item ID" } }
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if (authErr) return authErr
+    if ("error" in authErr) return authErr
     const items = await listScheduleItems(params.id)
     const item = items.find((i) => i.id === params.itemId)
     if (item?.trigger_type) { set.status = 400; return { error: `Cannot delete ${item.trigger_type === "challenge_release" ? "challenge release" : "submission deadline"} — this item is required` } }

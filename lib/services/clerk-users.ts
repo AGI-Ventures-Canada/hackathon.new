@@ -31,7 +31,8 @@ export async function resolveClerkUsers(userIds: string[]): Promise<ClerkUserLoo
         displayNames[user.id] = user.firstName
           ? `${user.firstName}${user.lastName ? ` ${user.lastName}` : ""}`
           : user.username || null
-        emails[user.id] = user.emailAddresses[0]?.emailAddress ?? null
+        const primary = user.emailAddresses.find((e) => e.id === user.primaryEmailAddressId)
+        emails[user.id] = primary?.emailAddress ?? user.emailAddresses[0]?.emailAddress ?? null
       }
     }
   } catch (err) {

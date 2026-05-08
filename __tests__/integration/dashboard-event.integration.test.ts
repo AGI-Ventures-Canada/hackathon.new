@@ -1,5 +1,5 @@
 import { describe, expect, it, mock, beforeEach } from "bun:test"
-import { createChainableMock, resetClerkMocks, setMockFromImplementation } from "../lib/supabase-mock"
+import { resetClerkMocks } from "../lib/supabase-mock"
 
 const mockSetPhase = mock(() => Promise.resolve({ success: true }))
 
@@ -876,12 +876,6 @@ describe("Dashboard Event Routes Integration Tests", () => {
         status: "ok" as const,
         hackathon: { id: hackathonId, tenant_id: "tenant-123", slug: "test-event" },
       })
-      setMockFromImplementation((table) => {
-        if (table === "hackathons") {
-          return createChainableMock({ data: { slug: "test-event" }, error: null })
-        }
-        return createChainableMock({ data: null, error: null })
-      })
       mockListHackathonPeople.mockResolvedValueOnce([
         {
           id: "p1",
@@ -925,12 +919,6 @@ describe("Dashboard Event Routes Integration Tests", () => {
         status: "ok" as const,
         hackathon: { id: hackathonId, tenant_id: "tenant-123", slug: "test-event" },
       })
-      setMockFromImplementation((table) => {
-        if (table === "hackathons") {
-          return createChainableMock({ data: { slug: "test-event" }, error: null })
-        }
-        return createChainableMock({ data: null, error: null })
-      })
 
       const res = await app.handle(new Request(`${url}?date=2026-01-15`))
       const disposition = res.headers.get("content-disposition") ?? ""
@@ -942,12 +930,6 @@ describe("Dashboard Event Routes Integration Tests", () => {
       mockCheckHackathonOrganizer.mockResolvedValue({
         status: "ok" as const,
         hackathon: { id: hackathonId, tenant_id: "tenant-123", slug: "test-event" },
-      })
-      setMockFromImplementation((table) => {
-        if (table === "hackathons") {
-          return createChainableMock({ data: { slug: "test-event" }, error: null })
-        }
-        return createChainableMock({ data: null, error: null })
       })
 
       const res = await app.handle(new Request(`${url}?date=not-a-date`))
