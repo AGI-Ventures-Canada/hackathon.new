@@ -239,18 +239,17 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   })
   .get("/hackathons/:id/people.csv", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
-    const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
-    const check = await checkHackathonOrganizer(params.id, principal.tenantId)
-    if (check.status === "not_found") {
-      set.status = 404
-      return { error: "Hackathon not found" }
-    }
-    if (check.status === "not_authorized") {
-      set.status = 403
-      return { error: "Not authorized to manage this hackathon" }
-    }
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if (authErr) return authErr
 
-    const slug = check.hackathon?.slug ?? "hackathon"
+    const { supabase } = await import("@/lib/db/client")
+    const { data: hackathonRow } = await supabase()
+      .from("hackathons")
+      .select("slug")
+      .eq("id", params.id)
+      .single()
+    const slug = (hackathonRow as { slug?: string } | null)?.slug ?? "hackathon"
+
     const people = await listHackathonPeople(params.id)
     const csv = toCsv(peopleToCsvRows(people), [
       { key: "Name", header: "Name" },

@@ -30,7 +30,6 @@ const STATUS_LABEL: Record<PersonStatus, string> = {
 
 type PeopleTabClientProps = {
   hackathonId: string
-  slug: string
   people: Person[]
 }
 

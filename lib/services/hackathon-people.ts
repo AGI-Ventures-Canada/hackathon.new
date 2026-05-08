@@ -106,8 +106,8 @@ export async function listHackathonPeople(hackathonId: string): Promise<Person[]
             userEmails[user.id] = user.emailAddresses[0]?.emailAddress ?? null
           }
         }
-      } catch {
-        // Clerk lookup failed; rows still render with null name/email
+      } catch (err) {
+        console.error("Failed to resolve Clerk users for hackathon people:", err)
       }
     }
   }

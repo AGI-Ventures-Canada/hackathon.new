@@ -3,10 +3,9 @@ import { PeopleTabClient } from "./_people-tab-client"
 
 export type PeopleTabProps = {
   hackathonId: string
-  slug: string
 }
 
-export async function PeopleTab({ hackathonId, slug }: PeopleTabProps) {
+export async function PeopleTab({ hackathonId }: PeopleTabProps) {
   const people = await listHackathonPeople(hackathonId)
-  return <PeopleTabClient hackathonId={hackathonId} slug={slug} people={people} />
+  return <PeopleTabClient hackathonId={hackathonId} people={people} />
 }

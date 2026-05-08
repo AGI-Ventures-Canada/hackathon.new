@@ -1,5 +1,5 @@
 import { describe, expect, it, mock, beforeEach } from "bun:test"
-import { resetClerkMocks } from "../lib/supabase-mock"
+import { createChainableMock, resetClerkMocks, setMockFromImplementation } from "../lib/supabase-mock"
 
 const mockSetPhase = mock(() => Promise.resolve({ success: true }))
 
@@ -875,6 +875,12 @@ describe("Dashboard Event Routes Integration Tests", () => {
       mockCheckHackathonOrganizer.mockResolvedValue({
         status: "ok" as const,
         hackathon: { id: hackathonId, tenant_id: "tenant-123", slug: "test-event" },
+      })
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({ data: { slug: "test-event" }, error: null })
+        }
+        return createChainableMock({ data: null, error: null })
       })
       mockListHackathonPeople.mockResolvedValueOnce([
         {

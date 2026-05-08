@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test"
 import {
   createChainableMock,
+  mockClerkClient,
+  resetClerkMocks,
   resetSupabaseMocks,
   setMockFromImplementation,
 } from "../lib/supabase-mock"
@@ -17,11 +19,6 @@ let nextUsers: FakeUser[] = []
 const getUserList = mock(({ userId }: { userId: string[] }) =>
   Promise.resolve({ data: nextUsers.filter((u) => userId.includes(u.id)) })
 )
-
-mock.module("@clerk/nextjs/server", () => ({
-  clerkClient: () => Promise.resolve({ users: { getUserList } }),
-  auth: () => Promise.resolve({ userId: null, orgId: null, orgRole: null }),
-}))
 
 const { listHackathonPeople, peopleToCsvRows } = await import(
   "@/lib/services/hackathon-people"
@@ -46,8 +43,12 @@ function mockTables(tables: Tables) {
 describe("listHackathonPeople", () => {
   beforeEach(() => {
     resetSupabaseMocks()
+    resetClerkMocks()
     nextUsers = []
     getUserList.mockClear()
+    mockClerkClient.mockImplementation(() =>
+      Promise.resolve({ users: { getUserList } } as never)
+    )
   })
 
   it("returns an empty array when there are no participants or invites", async () => {
