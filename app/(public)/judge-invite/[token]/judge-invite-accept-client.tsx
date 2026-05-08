@@ -58,10 +58,19 @@ export function JudgeInviteAcceptClient({
     try {
       const res = await fetch(`/api/public/judge-invitations/${token}/accept`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(needsTerms ? { terms_hash: invitation.termsHash } : {}),
+        ...(needsTerms && {
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ terms_hash: invitation.termsHash }),
+        }),
       })
-      await assertOk(res)
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}))
+        throw new Error(errBody.error || `Request failed with status ${res.status}`)
+      }
+      const body = await res.json().catch(() => ({}))
+      if (body.warning === "terms_record_failed") {
+        console.warn("[terms] judge-invite accept succeeded but acceptance was not recorded for hackathon", invitation.hackathonSlug)
+      }
 
       setSuccess(true)
       setTimeout(() => {

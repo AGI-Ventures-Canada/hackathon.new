@@ -251,15 +251,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     let termsWarning: string | undefined
     if (expectedTermsHash) {
       try {
-        await recordTermsAcceptance(
-          {
-            id: hackathon.id,
-            require_terms_acceptance: hackathon.require_terms_acceptance ?? false,
-            terms_content: hackathon.terms_content ?? null,
-          },
-          userId,
-          expectedTermsHash
-        )
+        await recordTermsAcceptance(hackathon.id, userId, expectedTermsHash)
       } catch (err) {
         console.error("Failed to record terms acceptance:", err)
         termsWarning = "terms_record_failed"
@@ -992,15 +984,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     let termsWarning: string | undefined
     if (invitation && expectedTermsHash) {
       try {
-        await recordTermsAcceptance(
-          {
-            id: invitation.hackathon.id,
-            require_terms_acceptance: invitation.hackathon.require_terms_acceptance,
-            terms_content: invitation.hackathon.terms_content,
-          },
-          userId,
-          expectedTermsHash
-        )
+        await recordTermsAcceptance(invitation.hackathon.id, userId, expectedTermsHash)
       } catch (err) {
         console.error("Failed to record terms acceptance:", err)
         termsWarning = "terms_record_failed"
@@ -1786,15 +1770,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     let termsWarning: string | undefined
     if (judgeInvitation && expectedTermsHash) {
       try {
-        await recordTermsAcceptance(
-          {
-            id: judgeInvitation.hackathon.id,
-            require_terms_acceptance: judgeInvitation.hackathon.require_terms_acceptance,
-            terms_content: judgeInvitation.hackathon.terms_content,
-          },
-          userId,
-          expectedTermsHash
-        )
+        await recordTermsAcceptance(judgeInvitation.hackathon.id, userId, expectedTermsHash)
       } catch (err) {
         console.error("Failed to record terms acceptance:", err)
         termsWarning = "terms_record_failed"

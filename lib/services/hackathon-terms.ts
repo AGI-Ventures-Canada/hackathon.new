@@ -17,26 +17,18 @@ export async function currentTermsHash(
 }
 
 export async function recordTermsAcceptance(
-  hackathon: HackathonTermsFields & { id: string },
+  hackathonId: string,
   clerkUserId: string,
-  expectedHash: string
+  hash: string
 ): Promise<void> {
-  const currentHash = await currentTermsHash(hackathon)
-  if (!currentHash) {
-    throw new Error("Hackathon does not require terms acceptance")
-  }
-  if (currentHash !== expectedHash) {
-    throw new Error("Terms hash mismatch")
-  }
-
   const client = getSupabase() as unknown as SupabaseClient
   const { error } = await client
     .from("hackathon_terms_acceptances")
     .upsert(
       {
-        hackathon_id: hackathon.id,
+        hackathon_id: hackathonId,
         clerk_user_id: clerkUserId,
-        terms_hash: currentHash,
+        terms_hash: hash,
         accepted_at: new Date().toISOString(),
       },
       { onConflict: "hackathon_id,clerk_user_id" }

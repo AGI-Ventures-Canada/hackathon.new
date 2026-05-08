@@ -220,6 +220,10 @@ export function RegistrationButton({
         return
       }
 
+      if (data.warning === "terms_record_failed") {
+        console.warn("[terms] registration succeeded but acceptance was not recorded for hackathon", hackathonSlug)
+      }
+
       setIsRegistered(true)
       onRegistrationSuccess?.()
       router.refresh()

@@ -51,49 +51,19 @@ describe("currentTermsHash", () => {
 describe("recordTermsAcceptance", () => {
   beforeEach(() => resetSupabaseMocks())
 
-  it("rejects when hackathon does not require terms", async () => {
-    await expect(
-      recordTermsAcceptance(
-        { id: HACKATHON_ID, require_terms_acceptance: false, terms_content: "x" },
-        USER_ID,
-        "any"
-      )
-    ).rejects.toThrow(/does not require/)
-  })
-
-  it("rejects when expectedHash does not match current content hash", async () => {
-    await expect(
-      recordTermsAcceptance(
-        { id: HACKATHON_ID, require_terms_acceptance: true, terms_content: "current" },
-        USER_ID,
-        "stale-hash"
-      )
-    ).rejects.toThrow(/mismatch/)
-  })
-
-  it("upserts when hash matches", async () => {
-    const content = "Hello world"
-    const hash = await hashTerms(content)
+  it("upserts the provided hash", async () => {
+    const hash = await hashTerms("Hello world")
     mockTableQuery("hackathon_terms_acceptances", mockSuccess({ id: "row" }))
 
-    await recordTermsAcceptance(
-      { id: HACKATHON_ID, require_terms_acceptance: true, terms_content: content },
-      USER_ID,
-      hash
-    )
+    await recordTermsAcceptance(HACKATHON_ID, USER_ID, hash)
   })
 
   it("propagates errors from supabase", async () => {
-    const content = "Hello world"
-    const hash = await hashTerms(content)
+    const hash = await hashTerms("Hello world")
     mockTableQuery("hackathon_terms_acceptances", mockError("upsert failed"))
 
     await expect(
-      recordTermsAcceptance(
-        { id: HACKATHON_ID, require_terms_acceptance: true, terms_content: content },
-        USER_ID,
-        hash
-      )
+      recordTermsAcceptance(HACKATHON_ID, USER_ID, hash)
     ).rejects.toThrow(/upsert failed/)
   })
 })
