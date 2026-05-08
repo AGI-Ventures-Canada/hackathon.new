@@ -5,9 +5,14 @@ export type CsvColumn<T> = {
 
 export type CsvCell = string | number | boolean | null | undefined
 
+const FORMULA_PREFIXES = /^[=+\-@]/
+
 function escapeField(value: CsvCell): string {
   if (value === null || value === undefined) return ""
-  const str = typeof value === "string" ? value : String(value)
+  let str = typeof value === "string" ? value : String(value)
+  if (FORMULA_PREFIXES.test(str)) {
+    str = `\t${str}`
+  }
   if (/[",\r\n]/.test(str)) {
     return `"${str.replace(/"/g, '""')}"`
   }

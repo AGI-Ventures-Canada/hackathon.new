@@ -60,4 +60,26 @@ describe("toCsv", () => {
     )
     expect(csv).toBe("Flag,Count\r\ntrue,42\r\n")
   })
+
+  it("neutralizes formula-injection attempts by prefixing risky cells with a tab", () => {
+    const csv = toCsv(
+      [
+        { value: "=SUM(A1:A10)" },
+        { value: "+1234" },
+        { value: "-bad" },
+        { value: "@evil" },
+        { value: "Normal" },
+      ],
+      [{ key: "value", header: "Value" }]
+    )
+    expect(csv).toBe("Value\r\n\t=SUM(A1:A10)\r\n\t+1234\r\n\t-bad\r\n\t@evil\r\nNormal\r\n")
+  })
+
+  it("quotes a formula cell that also contains a comma", () => {
+    const csv = toCsv(
+      [{ value: '=HYPERLINK("https://evil.com","click")' }],
+      [{ key: "value", header: "Value" }]
+    )
+    expect(csv).toBe('Value\r\n"\t=HYPERLINK(""https://evil.com"",""click"")"\r\n')
+  })
 })
