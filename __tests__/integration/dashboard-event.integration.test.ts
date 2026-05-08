@@ -42,6 +42,14 @@ mock.module("@/lib/services/participant-emails", () => ({
   sendBulkEmail: mockSendBulkEmail,
 }))
 
+const mockListHackathonPeople = mock(() => Promise.resolve([] as unknown[]))
+const mockPeopleToCsvRows = mock((people: unknown[]) => people as Record<string, string>[])
+
+mock.module("@/lib/services/hackathon-people", () => ({
+  listHackathonPeople: mockListHackathonPeople,
+  peopleToCsvRows: mockPeopleToCsvRows,
+}))
+
 const mockMaybeReleaseChallengesForPublishLink = mock(() => Promise.resolve(false))
 
 mock.module("@/lib/services/challenges", () => ({
@@ -157,6 +165,10 @@ describe("Dashboard Event Routes Integration Tests", () => {
     mockDeleteScheduleItem.mockReset()
     mockGetTriggerItem.mockReset()
     mockMaybeReleaseChallengesForPublishLink.mockReset()
+    mockListHackathonPeople.mockReset()
+    mockPeopleToCsvRows.mockReset()
+    mockListHackathonPeople.mockResolvedValue([])
+    mockPeopleToCsvRows.mockImplementation((people: unknown) => people as Record<string, string>[])
 
     mockSetPhase.mockResolvedValue({ success: true })
     mockCheckHackathonOrganizer.mockResolvedValue({
@@ -782,6 +794,123 @@ describe("Dashboard Event Routes Integration Tests", () => {
       const res = await postBlast()
       expect(res.status).toBe(403)
       expect(mockSendBulkEmail).not.toHaveBeenCalled()
+    })
+  })
+
+  describe("GET /api/dashboard/hackathons/:id/people", () => {
+    const url = `${baseUrl}/people`
+
+    it("rejects unauthenticated requests", async () => {
+      mockResolvePrincipal.mockResolvedValue({ kind: "anon" })
+
+      const res = await app.handle(new Request(url))
+      const data = await res.json()
+
+      expect(res.status).toBeGreaterThanOrEqual(400)
+      expect(data.error).toBe("Unauthorized")
+    })
+
+    it("returns 403 when caller is not the organizer", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockCheckHackathonOrganizer.mockResolvedValue({ status: "not_authorized" as const })
+
+      const res = await app.handle(new Request(url))
+      expect(res.status).toBe(403)
+    })
+
+    it("returns the people roster as JSON for an organizer", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockListHackathonPeople.mockResolvedValueOnce([
+        {
+          id: "p1",
+          name: "Ada",
+          email: "ada@example.com",
+          role: "participant",
+          status: "accepted",
+          teamId: null,
+          teamName: null,
+          isCaptain: false,
+          joinedOrInvitedAt: "2026-05-01T00:00:00Z",
+        },
+      ])
+
+      const res = await app.handle(new Request(url))
+      const data = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(data.people).toHaveLength(1)
+      expect(data.people[0].email).toBe("ada@example.com")
+      expect(mockListHackathonPeople).toHaveBeenCalledWith(hackathonId)
+    })
+  })
+
+  describe("GET /api/dashboard/hackathons/:id/people.csv", () => {
+    const url = `${baseUrl}/people.csv`
+
+    it("rejects unauthenticated requests", async () => {
+      mockResolvePrincipal.mockResolvedValue({ kind: "anon" })
+
+      const res = await app.handle(new Request(url))
+      expect(res.status).toBeGreaterThanOrEqual(400)
+    })
+
+    it("returns 403 when caller is not the organizer", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockCheckHackathonOrganizer.mockResolvedValue({ status: "not_authorized" as const })
+
+      const res = await app.handle(new Request(url))
+      expect(res.status).toBe(403)
+    })
+
+    it("returns 404 when the hackathon is not found", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockCheckHackathonOrganizer.mockResolvedValue({ status: "not_found" as const })
+
+      const res = await app.handle(new Request(url))
+      expect(res.status).toBe(404)
+    })
+
+    it("returns text/csv with a download header for an organizer", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockCheckHackathonOrganizer.mockResolvedValue({
+        status: "ok" as const,
+        hackathon: { id: hackathonId, tenant_id: "tenant-123", slug: "test-event" },
+      })
+      mockListHackathonPeople.mockResolvedValueOnce([
+        {
+          id: "p1",
+          name: "Ada",
+          email: "ada@example.com",
+          role: "participant",
+          status: "accepted",
+          teamId: null,
+          teamName: null,
+          isCaptain: false,
+          joinedOrInvitedAt: "2026-05-01T00:00:00Z",
+        },
+      ])
+      mockPeopleToCsvRows.mockImplementationOnce((people: unknown) =>
+        (people as { email: string }[]).map((p) => ({
+          Name: "Ada",
+          Email: p.email,
+          Role: "Attendee",
+          Status: "Accepted",
+          Team: "",
+          Captain: "No",
+          "Joined or invited at": "2026-05-01T00:00:00Z",
+        }))
+      )
+
+      const res = await app.handle(new Request(url))
+
+      expect(res.status).toBe(200)
+      expect(res.headers.get("content-type")).toContain("text/csv")
+      const disposition = res.headers.get("content-disposition") ?? ""
+      expect(disposition).toContain("attachment")
+      expect(disposition).toContain("test-event-people-")
+      const body = await res.text()
+      expect(body.split("\r\n")[0]).toBe("Name,Email,Role,Status,Team,Captain,Joined or invited at")
+      expect(body).toContain("ada@example.com")
     })
   })
 })

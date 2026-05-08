@@ -9,6 +9,8 @@ import { listCategories, createCategory, updateCategory, deleteCategory } from "
 import { listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, publishAnnouncement, unpublishAnnouncement, scheduleAnnouncement, type CreateAnnouncementInput, type UpdateAnnouncementInput } from "@/lib/services/announcements"
 import { listScheduleItems, createScheduleItem, updateScheduleItem, deleteScheduleItem, getTriggerItem } from "@/lib/services/schedule-items"
 import { listTeamsWithMembers, createTeamWithMembers, modifyTeamMembers, bulkAssignTeams } from "@/lib/services/hackathons"
+import { listHackathonPeople, peopleToCsvRows } from "@/lib/services/hackathon-people"
+import { toCsv } from "@/lib/utils/csv"
 import { listRounds, createRound, updateRound, deleteRound, activateRound } from "@/lib/services/judging-rounds"
 import { listSocialSubmissions, reviewSocialSubmission } from "@/lib/services/social-submissions"
 import { listMentorQueue } from "@/lib/services/mentor-requests"
@@ -223,6 +225,67 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     return room
   }, {
     detail: { summary: "Resume paused room timer" },
+  })
+  .get("/hackathons/:id/people", async ({ params, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if (authErr) return authErr
+    return { people: await listHackathonPeople(params.id) }
+  }, {
+    detail: {
+      summary: "List people for a hackathon",
+      description: "Returns every attendee, judge, mentor, and organizer for the hackathon, including pending team and judge invitations.",
+    },
+  })
+  .get("/hackathons/:id/people.csv", async ({ params, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
+    const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+    const check = await checkHackathonOrganizer(params.id, principal.tenantId)
+    if (check.status === "not_found") {
+      set.status = 404
+      return { error: "Hackathon not found" }
+    }
+    if (check.status === "not_authorized") {
+      set.status = 403
+      return { error: "Not authorized to manage this hackathon" }
+    }
+
+    const slug = check.hackathon?.slug ?? "hackathon"
+    const people = await listHackathonPeople(params.id)
+    const csv = toCsv(peopleToCsvRows(people), [
+      { key: "Name", header: "Name" },
+      { key: "Email", header: "Email" },
+      { key: "Role", header: "Role" },
+      { key: "Status", header: "Status" },
+      { key: "Team", header: "Team" },
+      { key: "Captain", header: "Captain" },
+      { key: "Joined or invited at", header: "Joined or invited at" },
+    ])
+
+    const today = new Date().toISOString().slice(0, 10)
+    const filename = `${slug}-people-${today}.csv`
+
+    await logAudit({
+      principal,
+      action: "people.exported_csv",
+      resourceType: "hackathon",
+      resourceId: params.id,
+      metadata: { rowCount: people.length },
+    })
+
+    return new Response(csv, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Cache-Control": "no-store",
+      },
+    })
+  }, {
+    detail: {
+      summary: "Export people roster as CSV",
+      description: "Downloads the full roster (attendees, judges, mentors, organizers, plus pending invites) as a CSV file for record keeping.",
+    },
   })
   .get("/hackathons/:id/teams", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])

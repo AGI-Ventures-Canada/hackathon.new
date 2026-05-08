@@ -33,6 +33,7 @@ import { PostEventTabContent } from "./_post-event-tab"
 import { EventTabContent } from "./_event-tab"
 import { MiscsTabContent } from "./_miscs-tab"
 import { TeamsTab } from "./_teams-tab"
+import { PeopleTab } from "./_people-tab"
 
 type PageProps = {
   params: Promise<{ slug: string }>
@@ -209,6 +210,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
               <TabsTrigger value="perks">Perks{perks.length > 0 && <TabCount>{perks.length}</TabCount>}</TabsTrigger>
               <TabsTrigger value="edit">Event Page</TabsTrigger>
               <TabsTrigger value="teams" title={teamsTabTooltip}>Teams</TabsTrigger>
+              <TabsTrigger value="people">People</TabsTrigger>
               <TabsTrigger value="judging">Judging &amp; Prizes{prizes.length > 0 && <TabCount>{prizes.length}</TabCount>}</TabsTrigger>
               <TabsTrigger value="post-event">Post-Event</TabsTrigger>
               <TabsTrigger value="event">Communications</TabsTrigger>
@@ -336,6 +338,12 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
                 minTeamSize={hackathon.min_team_size ?? 1}
                 allowSolo={hackathon.allow_solo ?? true}
               />
+            </TabsContent>
+
+            <TabsContent value="people" forceMount className="data-[state=inactive]:hidden">
+              <Suspense fallback={<TabLoadingSkeleton />}>
+                <PeopleTab hackathonId={hackathon.id} slug={hackathon.slug} />
+              </Suspense>
             </TabsContent>
 
             <TabsContent value="miscs" forceMount className="data-[state=inactive]:hidden">

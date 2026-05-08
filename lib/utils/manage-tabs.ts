@@ -1,4 +1,4 @@
-export const VALID_TABS = ["action-items", "overview", "challenges", "perks", "edit", "teams", "miscs", "judging", "post-event", "event"] as const
+export const VALID_TABS = ["action-items", "overview", "challenges", "perks", "edit", "teams", "people", "miscs", "judging", "post-event", "event"] as const
 export const VALID_ETABS = ["announcements", "mentors", "social", "email"] as const
 export const VALID_MTABS = ["rooms", "activity", "terms"] as const
 export const VALID_JTABS = ["setup", "judges", "rounds", "prizes", "results"] as const
