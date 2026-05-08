@@ -131,6 +131,8 @@ export interface Hackathon {
   perks_none: boolean
   community_url: string | null
   community_label: string | null
+  require_terms_acceptance: boolean
+  terms_content: string | null
   translations: Record<string, Partial<Record<"name" | "description" | "rules" | "location_name" | "community_label", string>>> | null
   default_locale: string | null
   metadata: Json

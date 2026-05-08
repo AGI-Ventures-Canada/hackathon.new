@@ -843,6 +843,38 @@ export type Database = {
           },
         ]
       }
+      hackathon_terms_acceptances: {
+        Row: {
+          accepted_at: string
+          clerk_user_id: string
+          hackathon_id: string
+          id: string
+          terms_hash: string
+        }
+        Insert: {
+          accepted_at?: string
+          clerk_user_id: string
+          hackathon_id: string
+          id?: string
+          terms_hash: string
+        }
+        Update: {
+          accepted_at?: string
+          clerk_user_id?: string
+          hackathon_id?: string
+          id?: string
+          terms_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hackathon_terms_acceptances_hackathon_id_fkey"
+            columns: ["hackathon_id"]
+            isOneToOne: false
+            referencedRelation: "hackathons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       hackathon_transitions: {
         Row: {
           created_at: string
@@ -912,6 +944,7 @@ export type Database = {
           registration_closes_at: string | null
           registration_opens_at: string | null
           require_location_verification: boolean
+          require_terms_acceptance: boolean
           results_announcement_sent_at: string | null
           results_published_at: string | null
           rules: string | null
@@ -919,6 +952,7 @@ export type Database = {
           starts_at: string | null
           status: Database["public"]["Enums"]["hackathon_status"]
           tenant_id: string
+          terms_content: string | null
           translations: Json | null
           updated_at: string
           winner_emails_sent_at: string | null
@@ -953,6 +987,7 @@ export type Database = {
           registration_closes_at?: string | null
           registration_opens_at?: string | null
           require_location_verification?: boolean
+          require_terms_acceptance?: boolean
           results_announcement_sent_at?: string | null
           results_published_at?: string | null
           rules?: string | null
@@ -960,6 +995,7 @@ export type Database = {
           starts_at?: string | null
           status?: Database["public"]["Enums"]["hackathon_status"]
           tenant_id: string
+          terms_content?: string | null
           translations?: Json | null
           updated_at?: string
           winner_emails_sent_at?: string | null
@@ -994,6 +1030,7 @@ export type Database = {
           registration_closes_at?: string | null
           registration_opens_at?: string | null
           require_location_verification?: boolean
+          require_terms_acceptance?: boolean
           results_announcement_sent_at?: string | null
           results_published_at?: string | null
           rules?: string | null
@@ -1001,6 +1038,7 @@ export type Database = {
           starts_at?: string | null
           status?: Database["public"]["Enums"]["hackathon_status"]
           tenant_id?: string
+          terms_content?: string | null
           translations?: Json | null
           updated_at?: string
           winner_emails_sent_at?: string | null
@@ -3031,6 +3069,7 @@ export type Database = {
           registration_closes_at: string | null
           registration_opens_at: string | null
           require_location_verification: boolean
+          require_terms_acceptance: boolean
           results_announcement_sent_at: string | null
           results_published_at: string | null
           rules: string | null
@@ -3038,6 +3077,7 @@ export type Database = {
           starts_at: string | null
           status: Database["public"]["Enums"]["hackathon_status"]
           tenant_id: string
+          terms_content: string | null
           translations: Json | null
           updated_at: string
           winner_emails_sent_at: string | null

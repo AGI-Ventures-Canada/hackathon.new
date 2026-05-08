@@ -73,6 +73,14 @@ mock.module("@/lib/services/team-invitations", () => ({
   sendPendingTeamInvitationEmails: mockSendPendingTeamInvitationEmails,
 }))
 
+const mockCurrentTermsHash = mock(() => Promise.resolve(null as string | null))
+const mockRecordTermsAcceptance = mock(() => Promise.resolve())
+
+mock.module("@/lib/services/hackathon-terms", () => ({
+  currentTermsHash: mockCurrentTermsHash,
+  recordTermsAcceptance: mockRecordTermsAcceptance,
+}))
+
 const mockGetPublicHackathonById = mock(() => Promise.resolve({ slug: "test-hackathon" }))
 
 mock.module("@/lib/services/public-hackathons", () => ({
@@ -197,7 +205,14 @@ const mockInvitation = {
   id: "inv_1",
   status: "pending",
   team: { name: "Test Team" },
-  hackathon: { name: "Test Hackathon", slug: "test-hackathon", status: "active" },
+  hackathon: {
+    id: "h1",
+    name: "Test Hackathon",
+    slug: "test-hackathon",
+    status: "active",
+    require_terms_acceptance: false,
+    terms_content: null,
+  },
   email: "invitee@example.com",
   expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
 }
@@ -220,6 +235,9 @@ describe("Team Invitations API Routes", () => {
     mockResolveAdderName.mockReset()
     mockLogAudit.mockReset()
     mockCheckRateLimit.mockReset()
+    mockCurrentTermsHash.mockReset()
+    mockRecordTermsAcceptance.mockReset()
+    mockCurrentTermsHash.mockResolvedValue(null)
     mockGetTeamWithHackathon.mockResolvedValue({
       name: "Test Team",
       hackathon: { name: "Test Hackathon", slug: "test-hackathon" },
@@ -406,6 +424,89 @@ describe("Team Invitations API Routes", () => {
       )
 
       expect(mockAcceptTeamInvitation).toHaveBeenCalledWith("my_token", "user_456", "user@example.com")
+    })
+
+    it("returns 400 with terms_required when terms enabled and no hash provided", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetInvitationByToken.mockResolvedValue(mockInvitation)
+      mockCurrentTermsHash.mockResolvedValue("expected-hash")
+
+      const res = await publicApp.handle(
+        new Request("http://localhost/api/public/invitations/valid_token/accept", {
+          method: "POST",
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(400)
+      expect(data.code).toBe("terms_required")
+      expect(mockAcceptTeamInvitation).not.toHaveBeenCalled()
+    })
+
+    it("returns 400 when terms hash does not match", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetInvitationByToken.mockResolvedValue(mockInvitation)
+      mockCurrentTermsHash.mockResolvedValue("expected-hash")
+
+      const res = await publicApp.handle(
+        new Request("http://localhost/api/public/invitations/valid_token/accept", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ terms_hash: "stale-hash" }),
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(400)
+      expect(data.code).toBe("terms_required")
+      expect(mockAcceptTeamInvitation).not.toHaveBeenCalled()
+    })
+
+    it("accepts and records acceptance when terms hash matches", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetInvitationByToken.mockResolvedValue(mockInvitation)
+      mockCurrentTermsHash.mockResolvedValue("expected-hash")
+      mockAcceptTeamInvitation.mockResolvedValue({
+        success: true,
+        teamId: "team_1",
+        hackathonId: "h1",
+      })
+      mockGetPublicHackathonById.mockResolvedValue({ slug: "test-hackathon" })
+
+      const res = await publicApp.handle(
+        new Request("http://localhost/api/public/invitations/valid_token/accept", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ terms_hash: "expected-hash" }),
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(data.success).toBe(true)
+      expect(mockRecordTermsAcceptance).toHaveBeenCalledTimes(1)
+    })
+
+    it("does not record acceptance when invitation accept fails", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetInvitationByToken.mockResolvedValue(mockInvitation)
+      mockCurrentTermsHash.mockResolvedValue("expected-hash")
+      mockAcceptTeamInvitation.mockResolvedValue({
+        success: false,
+        error: "Invitation expired",
+        code: "expired",
+      })
+
+      const res = await publicApp.handle(
+        new Request("http://localhost/api/public/invitations/valid_token/accept", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ terms_hash: "expected-hash" }),
+        })
+      )
+
+      expect(res.status).toBe(400)
+      expect(mockRecordTermsAcceptance).not.toHaveBeenCalled()
     })
   })
 

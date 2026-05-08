@@ -346,6 +346,7 @@ describe("getOrganizerActionItems", () => {
         prizeCount: 2,
         judgeDisplayCount: 3,
         perkCount: 2,
+        termsContent: "## Terms\nBe excellent.",
       }))
 
       const incompleteAuto = items.filter((i) => i.close.kind === "auto" && !isCompleted(i))

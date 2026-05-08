@@ -295,3 +295,94 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - locale branch", () => {
     expect(body.error).toBe("Failed to update settings")
   })
 })
+
+describe("PATCH /api/dashboard/hackathons/:id/settings - terms validation", () => {
+  beforeEach(() => {
+    mockResolvePrincipal.mockClear()
+    mockCheckHackathonOrganizer.mockClear()
+    mockUpdateHackathonSettings.mockClear()
+    mockUpdateHackathonTranslation.mockClear()
+
+    mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+    mockUpdateHackathonSettings.mockResolvedValue(mockHackathonResponse)
+  })
+
+  it("rejects requireTermsAcceptance=true when no terms content is set anywhere", async () => {
+    mockCheckHackathonOrganizer.mockResolvedValue({
+      status: "ok",
+      hackathon: { ...mockHackathonResponse, terms_content: null },
+    })
+
+    const res = await patchSettings({ requireTermsAcceptance: true })
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.code).toBe("terms_content_required")
+    expect(mockUpdateHackathonSettings).not.toHaveBeenCalled()
+  })
+
+  it("rejects requireTermsAcceptance=true when body explicitly sets termsContent to null", async () => {
+    mockCheckHackathonOrganizer.mockResolvedValue({
+      status: "ok",
+      hackathon: { ...mockHackathonResponse, terms_content: "Existing terms" },
+    })
+
+    const res = await patchSettings({ requireTermsAcceptance: true, termsContent: null })
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.code).toBe("terms_content_required")
+    expect(mockUpdateHackathonSettings).not.toHaveBeenCalled()
+  })
+
+  it("rejects requireTermsAcceptance=true when body termsContent is whitespace only", async () => {
+    mockCheckHackathonOrganizer.mockResolvedValue({
+      status: "ok",
+      hackathon: { ...mockHackathonResponse, terms_content: null },
+    })
+
+    const res = await patchSettings({ requireTermsAcceptance: true, termsContent: "   \n  " })
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.code).toBe("terms_content_required")
+  })
+
+  it("accepts requireTermsAcceptance=true when content is provided in body", async () => {
+    mockCheckHackathonOrganizer.mockResolvedValue({
+      status: "ok",
+      hackathon: { ...mockHackathonResponse, terms_content: null },
+    })
+
+    const res = await patchSettings({
+      requireTermsAcceptance: true,
+      termsContent: "## Terms\n\nBe excellent.",
+    })
+    expect(res.status).toBe(200)
+    expect(mockUpdateHackathonSettings).toHaveBeenCalledWith(
+      "11111111-1111-1111-1111-111111111111",
+      "22222222-2222-2222-2222-222222222222",
+      expect.objectContaining({
+        requireTermsAcceptance: true,
+        termsContent: "## Terms\n\nBe excellent.",
+      })
+    )
+  })
+
+  it("accepts requireTermsAcceptance=true when content already exists in DB", async () => {
+    mockCheckHackathonOrganizer.mockResolvedValue({
+      status: "ok",
+      hackathon: { ...mockHackathonResponse, terms_content: "Existing terms" },
+    })
+
+    const res = await patchSettings({ requireTermsAcceptance: true })
+    expect(res.status).toBe(200)
+  })
+
+  it("accepts requireTermsAcceptance=false without requiring content", async () => {
+    mockCheckHackathonOrganizer.mockResolvedValue({
+      status: "ok",
+      hackathon: { ...mockHackathonResponse, terms_content: null },
+    })
+
+    const res = await patchSettings({ requireTermsAcceptance: false })
+    expect(res.status).toBe(200)
+  })
+})

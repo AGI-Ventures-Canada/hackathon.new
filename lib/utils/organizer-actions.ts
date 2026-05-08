@@ -143,6 +143,7 @@ export type ActionItemsInput = {
   perksNone: boolean
   rounds: { plannedCount: number; activeCount: number; completeCount: number }
   communityUrl?: string | null
+  termsContent?: string | null
 }
 
 const STATUS_ORDER: HackathonStatus[] = ["draft", "published", "active", "judging", "completed"]
@@ -400,6 +401,20 @@ function addDraftActions(items: ActionItem[], input: ActionItemsInput) {
     action: "open-submission-deadline-dialog",
     ctaLabel: "Check",
     tooltip: "The submission deadline is an automated agenda item that locks submissions and starts the judging phase. Make sure the time is correct — once it passes, participants can no longer submit or edit their projects.",
+  }))
+
+  const hasTerms = !!input.termsContent && input.termsContent.trim().length > 0
+  items.push(autoAction({
+    id: "add-terms-and-conditions",
+    severity: "info",
+    tab: "miscs",
+    subtab: "terms",
+    subtabKey: "mtab",
+    ctaLabel: "Add",
+    tooltip: "Add custom terms participants must agree to before they register or accept an invite. Useful for code of conduct, IP, photo release, or anything sponsors require.",
+    isComplete: hasTerms,
+    pending: { label: "Add terms and conditions (optional)", hint: "Make attendees and judges agree before they join" },
+    completed: { label: "Terms and conditions added", hint: "Attendees and judges will see and agree to your terms" },
   }))
 
   addCommunityLinkAction(items, input)
