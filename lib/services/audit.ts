@@ -131,6 +131,7 @@ export type AuditAction =
   | "reminder.scheduled"
   | "reminder.sent"
   | "reminder.cancelled"
+  | "people.exported_csv"
 
 export type LogAuditInput = {
   principal: Exclude<Principal, { kind: "anon" }>

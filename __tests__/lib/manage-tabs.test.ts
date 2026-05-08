@@ -19,11 +19,12 @@ describe("VALID_TABS", () => {
     expect(VALID_TABS).toContain("perks")
     expect(VALID_TABS).toContain("edit")
     expect(VALID_TABS).toContain("teams")
+    expect(VALID_TABS).toContain("people")
     expect(VALID_TABS).toContain("miscs")
     expect(VALID_TABS).toContain("judging")
     expect(VALID_TABS).toContain("post-event")
     expect(VALID_TABS).toContain("event")
-    expect(VALID_TABS).toHaveLength(10)
+    expect(VALID_TABS).toHaveLength(11)
   })
 
   it("does not contain the old activity tab", () => {
