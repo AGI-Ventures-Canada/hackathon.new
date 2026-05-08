@@ -14,19 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { formatDate } from "@/lib/utils/format"
-import type { Person, PersonRole, PersonStatus } from "@/lib/services/hackathon-people"
-
-const ROLE_LABEL: Record<PersonRole, string> = {
-  participant: "Attendee",
-  judge: "Judge",
-  mentor: "Mentor",
-  organizer: "Organizer",
-}
-
-const STATUS_LABEL: Record<PersonStatus, string> = {
-  accepted: "Accepted",
-  pending: "Invited",
-}
+import { ROLE_LABEL, STATUS_LABEL, type Person } from "@/lib/services/hackathon-people-types"
 
 type PeopleTabClientProps = {
   hackathonId: string

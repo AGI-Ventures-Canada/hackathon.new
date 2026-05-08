@@ -248,7 +248,8 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       .select("slug")
       .eq("id", params.id)
       .single()
-    const slug = (hackathonRow as { slug?: string } | null)?.slug ?? "hackathon"
+    const rawSlug = (hackathonRow as { slug?: string } | null)?.slug ?? "hackathon"
+    const slug = rawSlug.replace(/[^a-z0-9-]/gi, "") || "hackathon"
 
     const people = await listHackathonPeople(params.id)
     const csv = toCsv(peopleToCsvRows(people), [

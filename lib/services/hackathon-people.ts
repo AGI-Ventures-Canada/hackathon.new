@@ -1,21 +1,9 @@
 import { supabase as getSupabase } from "@/lib/db/client"
-import type { SupabaseClient } from "@supabase/supabase-js"
-import { clerkClient } from "@clerk/nextjs/server"
+import { resolveClerkUsers } from "./clerk-users"
+import { ROLE_LABEL, STATUS_LABEL, type Person, type PersonRole } from "./hackathon-people-types"
 
-export type PersonRole = "participant" | "judge" | "mentor" | "organizer"
-export type PersonStatus = "accepted" | "pending"
-
-export type Person = {
-  id: string
-  name: string | null
-  email: string | null
-  role: PersonRole
-  status: PersonStatus
-  teamId: string | null
-  teamName: string | null
-  isCaptain: boolean
-  joinedOrInvitedAt: string
-}
+export { ROLE_LABEL, STATUS_LABEL }
+export type { Person, PersonRole, PersonStatus } from "./hackathon-people-types"
 
 type ParticipantRow = {
   id: string
@@ -47,7 +35,7 @@ type JudgeInvitationRow = {
 const PEOPLE_ROLES: PersonRole[] = ["participant", "judge", "mentor", "organizer"]
 
 export async function listHackathonPeople(hackathonId: string): Promise<Person[]> {
-  const client = getSupabase() as unknown as SupabaseClient
+  const client = getSupabase()
 
   const [participantsRes, teamsRes, teamInvitesRes, judgeInvitesRes] = await Promise.all([
     client
@@ -80,37 +68,8 @@ export async function listHackathonPeople(hackathonId: string): Promise<Person[]
   for (const t of teams) teamById[t.id] = t
 
   const allUserIds = [...new Set(participants.map((p) => p.clerk_user_id))]
-  const userDisplayNames: Record<string, string | null> = {}
-  const userEmails: Record<string, string | null> = {}
-
-  if (allUserIds.length > 0) {
-    const realUserIds = allUserIds.filter((id) => !id.startsWith("seed_user_"))
-    const seedUserIds = allUserIds.filter((id) => id.startsWith("seed_user_"))
-
-    for (const seedId of seedUserIds) {
-      const name = seedId.replace(/^seed_user_/, "").replace(/_\d+$/, "")
-      userDisplayNames[seedId] = name.charAt(0).toUpperCase() + name.slice(1)
-      userEmails[seedId] = `${name}@seed.local`
-    }
-
-    if (realUserIds.length > 0) {
-      try {
-        const clerk = await clerkClient()
-        for (let i = 0; i < realUserIds.length; i += 100) {
-          const batch = realUserIds.slice(i, i + 100)
-          const users = await clerk.users.getUserList({ userId: batch })
-          for (const user of users.data) {
-            userDisplayNames[user.id] = user.firstName
-              ? `${user.firstName}${user.lastName ? ` ${user.lastName}` : ""}`
-              : user.username || null
-            userEmails[user.id] = user.emailAddresses[0]?.emailAddress ?? null
-          }
-        }
-      } catch (err) {
-        console.error("Failed to resolve Clerk users for hackathon people:", err)
-      }
-    }
-  }
+  const { displayNames: userDisplayNames, emails: userEmails } =
+    await resolveClerkUsers(allUserIds)
 
   const acceptedEmails = new Set<string>()
   const accepted: Person[] = participants.map((p) => {
@@ -170,18 +129,6 @@ export async function listHackathonPeople(hackathonId: string): Promise<Person[]
   pending.sort(byTimeDesc)
 
   return [...accepted, ...pending]
-}
-
-const ROLE_LABEL: Record<PersonRole, string> = {
-  participant: "Attendee",
-  judge: "Judge",
-  mentor: "Mentor",
-  organizer: "Organizer",
-}
-
-const STATUS_LABEL: Record<PersonStatus, string> = {
-  accepted: "Accepted",
-  pending: "Invited",
 }
 
 export type PeopleCsvRow = {
