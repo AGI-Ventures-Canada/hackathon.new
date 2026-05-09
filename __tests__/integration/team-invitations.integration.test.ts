@@ -108,12 +108,6 @@ mock.module("@/lib/auth/resolve-adder-name", () => ({
   resolveAdderName: mockResolveAdderName,
 }))
 
-const mockWorkflowStart = mock(() => Promise.resolve({ runId: "run_1" }))
-mock.module("workflow/api", () => ({ start: mockWorkflowStart }))
-mock.module("@/lib/workflows/team-invitations", () => ({
-  sendTeamInvitationWorkflow: mock(() => Promise.resolve()),
-}))
-
 const mockLogAudit = mock(() => Promise.resolve())
 
 mock.module("@/lib/services/audit", () => ({
@@ -602,8 +596,8 @@ describe("Dashboard Team Invitations Routes", () => {
     mockGetTeamWithHackathon.mockReset()
     mockSendTeamInvitationEmail.mockReset()
     mockSendTeamInvitationEmail.mockResolvedValue({ success: true })
-    mockWorkflowStart.mockReset()
-    mockWorkflowStart.mockResolvedValue({ runId: "run_1" })
+    mockMarkTeamInvitationEmailed.mockReset()
+    mockMarkTeamInvitationEmailed.mockResolvedValue(undefined)
     mockLogAudit.mockReset()
     mockCheckRateLimit.mockReset()
     mockCheckRateLimit.mockReturnValue({ allowed: true, remaining: 9, resetAt: Date.now() + 60000 })
@@ -653,8 +647,38 @@ describe("Dashboard Team Invitations Routes", () => {
       expect(data.id).toBe("inv_1")
       expect(data.email).toBe("test@example.com")
       expect(data.emailSent).toBeUndefined()
-      expect(mockWorkflowStart).toHaveBeenCalled()
+      expect(mockSendTeamInvitationEmail).toHaveBeenCalled()
+      expect(mockMarkTeamInvitationEmailed).toHaveBeenCalledWith("inv_1")
       expect(mockLogAudit).toHaveBeenCalled()
+    })
+
+    it("does not mark invitation emailed when send fails", async () => {
+      mockCreateTeamInvitation.mockResolvedValue({
+        success: true,
+        invitation: {
+          id: "inv_2",
+          email: "test@example.com",
+          token: "token123",
+          expires_at: new Date().toISOString(),
+        },
+      })
+      mockSendTeamInvitationEmail.mockResolvedValueOnce({ success: false })
+
+      const res = await dashboardApp.handle(
+        new Request("http://localhost/api/dashboard/teams/team_1/invitations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            hackathonId: "h1",
+            email: "test@example.com",
+            inviterName: "John Doe",
+          }),
+        })
+      )
+
+      expect(res.status).toBe(200)
+      expect(mockSendTeamInvitationEmail).toHaveBeenCalled()
+      expect(mockMarkTeamInvitationEmailed).not.toHaveBeenCalled()
     })
 
     it("returns error when creation fails", async () => {
@@ -702,9 +726,8 @@ describe("Dashboard Team Invitations Routes", () => {
         })
       )
 
-      expect(mockWorkflowStart).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.arrayContaining([expect.objectContaining({ inviterName: "Your team captain" })])
+      expect(mockSendTeamInvitationEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ inviterName: "Your team captain" })
       )
     })
   })

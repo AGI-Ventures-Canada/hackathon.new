@@ -66,14 +66,6 @@ mock.module("@/lib/email/team-invitations", () => ({
   sendTeamInvitationReminderEmail: mockSendTeamInvitationReminderEmail,
 }))
 
-const mockSendTeamInvitationWorkflow = mock(() => Promise.resolve())
-mock.module("@/lib/workflows/team-invitations", () => ({
-  sendTeamInvitationWorkflow: mockSendTeamInvitationWorkflow,
-}))
-
-const mockWorkflowStart = mock(() => Promise.resolve({ runId: "run_1" }))
-mock.module("workflow/api", () => ({ start: mockWorkflowStart }))
-
 const mockScheduleReminders = mock(() => Promise.resolve(0))
 const mockCancelRemindersForEntity = mock(() => Promise.resolve(0))
 const mockCancelUpcomingReminder = mock(() => Promise.resolve(0))
@@ -193,8 +185,6 @@ describe("Team invitations: draft hackathon gating", () => {
     mockMarkTeamInvitationEmailed.mockClear()
     mockSendTeamInvitationEmail.mockClear()
     mockSendTeamInvitationReminderEmail.mockClear()
-    mockSendTeamInvitationWorkflow.mockClear()
-    mockWorkflowStart.mockClear()
     mockScheduleReminders.mockClear()
     mockCancelUpcomingReminder.mockClear()
   })
@@ -213,7 +203,6 @@ describe("Team invitations: draft hackathon gating", () => {
     expect(res.status).toBe(200)
     expect(mockCreateTeamInvitation).toHaveBeenCalledTimes(1)
     expect(mockMarkTeamInvitationEmailed).not.toHaveBeenCalled()
-    expect(mockWorkflowStart).not.toHaveBeenCalled()
     expect(mockSendTeamInvitationEmail).not.toHaveBeenCalled()
     expect(mockScheduleReminders).not.toHaveBeenCalled()
   })
@@ -230,8 +219,8 @@ describe("Team invitations: draft hackathon gating", () => {
     })
 
     expect(res.status).toBe(200)
+    expect(mockSendTeamInvitationEmail).toHaveBeenCalledTimes(1)
     expect(mockMarkTeamInvitationEmailed).toHaveBeenCalledTimes(1)
-    expect(mockWorkflowStart).toHaveBeenCalledTimes(1)
     expect(mockScheduleReminders).toHaveBeenCalledTimes(1)
   })
 

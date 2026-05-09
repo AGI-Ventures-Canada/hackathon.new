@@ -2500,23 +2500,18 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           teamMembers: teamInfo.memberNames,
         }
         const { markTeamInvitationEmailed } = await import("@/lib/services/team-invitations")
+        const { sendTeamInvitationEmail } = await import("@/lib/email/team-invitations")
         const invitationId = result.invitation.id
 
-        const { start } = await import("workflow/api")
-        const { sendTeamInvitationWorkflow } = await import("@/lib/workflows/team-invitations")
-        start(sendTeamInvitationWorkflow, [emailInput])
-          .then(() => markTeamInvitationEmailed(invitationId).catch(console.error))
-          .catch(async (err) => {
-            console.error("Failed to start team invitation workflow, falling back to direct send:", err)
-            const { sendTeamInvitationEmail } = await import("@/lib/email/team-invitations")
-            const sendResult = await sendTeamInvitationEmail(emailInput).catch((sendErr) => {
-              console.error(sendErr)
-              return { success: false }
-            })
-            if (sendResult.success) {
-              markTeamInvitationEmailed(invitationId).catch(console.error)
-            }
-          })
+        const sendResult = await sendTeamInvitationEmail(emailInput).catch((sendErr) => {
+          console.error(`Failed to send team invitation email for ${invitationId}:`, sendErr)
+          return { success: false }
+        })
+        if (sendResult.success) {
+          await markTeamInvitationEmailed(invitationId).catch((markErr) =>
+            console.error(`Failed to mark team_invitation ${invitationId} emailed:`, markErr)
+          )
+        }
 
         const { scheduleReminders } = await import("@/lib/services/smart-reminders")
         scheduleReminders(
