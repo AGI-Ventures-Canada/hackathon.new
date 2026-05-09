@@ -151,11 +151,11 @@ export function UnifiedScoringPanel({
       const prizeCriteria = detail.criteria.filter((c) => c.prizeId === pid)
       const prizeSum = prizeCriteria.reduce((acc, c) => acc + (scores[c.id] ?? 0) * c.weight, 0)
       const prizeWeightSum = prizeCriteria.reduce((acc, c) => acc + c.weight, 0)
-      const total = (coreSum + prizeSum) / 100
+      const totalWeightSum = coreWeightSum + prizeWeightSum
       return {
         prizeId: pid,
         prizeName: prizeCriteria[0]?.prizeName ?? "Prize",
-        score: coreWeightSum + prizeWeightSum > 0 ? total : 0,
+        score: totalWeightSum > 0 ? (coreSum + prizeSum) / totalWeightSum : 0,
       }
     })
 

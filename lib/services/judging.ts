@@ -2835,9 +2835,7 @@ export async function submitScores(
   if (scores.length > 0) {
     const validCriteriaIds = new Set((criteria ?? []).map((c) => c.id))
     const maxScoreMap = new Map((criteria ?? []).map((c) => [c.id, c.max_score]))
-    const minScoreMap = new Map(
-      (criteria ?? []).map((c) => [c.id, (c as { min_score?: number }).min_score ?? 0])
-    )
+    const minScoreMap = new Map((criteria ?? []).map((c) => [c.id, c.min_score ?? 0]))
 
     for (const s of scores) {
       if (!validCriteriaIds.has(s.criteriaId)) {
