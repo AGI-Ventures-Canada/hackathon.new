@@ -15,18 +15,39 @@ async function fetchClerkOrgName(clerkOrgId: string): Promise<string | undefined
 
 const FALLBACK_NAME_RE = /^Org org_|^Unnamed Organization$|^Personal user_|^Personal Account$/
 
+const RACE_RETRY_DELAYS_MS = [25, 75, 150]
+
+async function fetchTenantBy(
+  column: "clerk_org_id" | "clerk_user_id",
+  value: string
+): Promise<Tenant | null> {
+  const { data } = await getSupabase()
+    .from("tenants")
+    .select("*")
+    .eq(column, value)
+    .maybeSingle()
+  return (data as Tenant) ?? null
+}
+
+async function refetchAfterRace(
+  column: "clerk_org_id" | "clerk_user_id",
+  value: string
+): Promise<Tenant | null> {
+  for (const delay of RACE_RETRY_DELAYS_MS) {
+    const found = await fetchTenantBy(column, value)
+    if (found) return found
+    await new Promise((resolve) => setTimeout(resolve, delay))
+  }
+  return fetchTenantBy(column, value)
+}
+
 export async function getOrCreateTenant(
   clerkOrgId: string,
   clerkOrgName?: string
 ): Promise<Tenant | null> {
-  const { data: existing } = await getSupabase()
-    .from("tenants")
-    .select("*")
-    .eq("clerk_org_id", clerkOrgId)
-    .single()
+  const existing = await fetchTenantBy("clerk_org_id", clerkOrgId)
 
   if (existing) {
-    // Resolve name from Clerk if not provided and existing name is a fallback
     if (!clerkOrgName && FALLBACK_NAME_RE.test(existing.name)) {
       clerkOrgName = await fetchClerkOrgName(clerkOrgId)
     }
@@ -37,12 +58,11 @@ export async function getOrCreateTenant(
         .eq("id", existing.id)
         .select()
         .single()
-      return (updated as Tenant) ?? (existing as Tenant)
+      return (updated as Tenant) ?? existing
     }
-    return existing as Tenant
+    return existing
   }
 
-  // Resolve name from Clerk if not provided
   if (!clerkOrgName) {
     clerkOrgName = await fetchClerkOrgName(clerkOrgId)
   }
@@ -56,30 +76,25 @@ export async function getOrCreateTenant(
     .select()
     .single()
 
-  if (error) {
-    if (error.code !== "23505") {
-      console.error("Failed to create org tenant:", error.message, error.code, error.details)
-    }
-    const { data: retried } = await getSupabase()
-      .from("tenants")
-      .select("*")
-      .eq("clerk_org_id", clerkOrgId)
-      .single()
-    return (retried as Tenant) ?? null
+  if (!error) return created as Tenant
+
+  if (error.code !== "23505") {
+    console.error("Failed to create org tenant:", error.message, error.code, error.details)
+    return null
   }
 
-  return created as Tenant
+  const retried = await refetchAfterRace("clerk_org_id", clerkOrgId)
+  if (!retried) {
+    console.error("Tenant race retry exhausted for org:", clerkOrgId)
+  }
+  return retried
 }
 
 export async function getOrCreatePersonalTenant(
   clerkUserId: string,
   userName?: string
 ): Promise<Tenant | null> {
-  const { data: existing } = await getSupabase()
-    .from("tenants")
-    .select("*")
-    .eq("clerk_user_id", clerkUserId)
-    .single()
+  const existing = await fetchTenantBy("clerk_user_id", clerkUserId)
 
   if (existing) {
     if (userName && existing.name !== userName && FALLBACK_NAME_RE.test(existing.name)) {
@@ -89,9 +104,9 @@ export async function getOrCreatePersonalTenant(
         .eq("id", existing.id)
         .select()
         .single()
-      return (updated as Tenant) ?? (existing as Tenant)
+      return (updated as Tenant) ?? existing
     }
-    return existing as Tenant
+    return existing
   }
 
   const { data: created, error } = await getSupabase()
@@ -103,19 +118,18 @@ export async function getOrCreatePersonalTenant(
     .select()
     .single()
 
-  if (error) {
-    if (error.code !== "23505") {
-      console.error("Failed to create personal tenant:", error.message, error.code, error.details)
-    }
-    const { data: retried } = await getSupabase()
-      .from("tenants")
-      .select("*")
-      .eq("clerk_user_id", clerkUserId)
-      .single()
-    return (retried as Tenant) ?? null
+  if (!error) return created as Tenant
+
+  if (error.code !== "23505") {
+    console.error("Failed to create personal tenant:", error.message, error.code, error.details)
+    return null
   }
 
-  return created as Tenant
+  const retried = await refetchAfterRace("clerk_user_id", clerkUserId)
+  if (!retried) {
+    console.error("Tenant race retry exhausted for user:", clerkUserId)
+  }
+  return retried
 }
 
 export async function resolvePageTenant(): Promise<Tenant> {
