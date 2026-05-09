@@ -12,6 +12,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Trash2,
+  Pencil,
   Mail,
   Clock,
   Sliders,
@@ -707,16 +708,30 @@ function PrizesStep({
                         )}
                       </div>
                     </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => onDelete(prize.id)}
-                      className="size-8 text-muted-foreground"
-                    >
-                      <Trash2 className="size-4" />
-                      <span className="sr-only">Delete {prize.name}</span>
-                    </Button>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {onEditPrize && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => onEditPrize(prize.id)}
+                          className="size-8 text-muted-foreground"
+                        >
+                          <Pencil className="size-4" />
+                          <span className="sr-only">Edit {prize.name}</span>
+                        </Button>
+                      )}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => onDelete(prize.id)}
+                        className="size-8 text-muted-foreground"
+                      >
+                        <Trash2 className="size-4" />
+                        <span className="sr-only">Delete {prize.name}</span>
+                      </Button>
+                    </div>
                   </div>
                   {showSponsorCta && (
                     <div className="border-t px-3 py-1.5">
