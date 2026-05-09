@@ -1932,28 +1932,22 @@ describe("Judging Service", () => {
             error: null,
           })
         }
-        if (table === "judge_assignments") {
-          return createChainableMock({
-            data: [
-              { id: "a1", submission_id: "s1", judge_participant_id: "j1" },
-              { id: "a2", submission_id: "s1", judge_participant_id: "j2" },
-              { id: "a3", submission_id: "s2", judge_participant_id: "j1" },
-            ],
-            error: null,
-          })
-        }
         if (table === "scores") {
+          const ja = (sid: string, jid: string) => ({
+            submission_id: sid,
+            judge_participant_id: jid,
+          })
           return createChainableMock({
             data: [
-              { judge_assignment_id: "a1", criteria_id: "core-1", score: 10 },
-              { judge_assignment_id: "a1", criteria_id: "core-2", score: 10 },
-              { judge_assignment_id: "a1", criteria_id: "prize-1", score: 10 },
-              { judge_assignment_id: "a2", criteria_id: "core-1", score: 8 },
-              { judge_assignment_id: "a2", criteria_id: "core-2", score: 8 },
-              { judge_assignment_id: "a2", criteria_id: "prize-1", score: 8 },
-              { judge_assignment_id: "a3", criteria_id: "core-1", score: 5 },
-              { judge_assignment_id: "a3", criteria_id: "core-2", score: 5 },
-              { judge_assignment_id: "a3", criteria_id: "prize-1", score: 5 },
+              { criteria_id: "core-1", score: 10, judge_assignments: ja("s1", "j1") },
+              { criteria_id: "core-2", score: 10, judge_assignments: ja("s1", "j1") },
+              { criteria_id: "prize-1", score: 10, judge_assignments: ja("s1", "j1") },
+              { criteria_id: "core-1", score: 8, judge_assignments: ja("s1", "j2") },
+              { criteria_id: "core-2", score: 8, judge_assignments: ja("s1", "j2") },
+              { criteria_id: "prize-1", score: 8, judge_assignments: ja("s1", "j2") },
+              { criteria_id: "core-1", score: 5, judge_assignments: ja("s2", "j1") },
+              { criteria_id: "core-2", score: 5, judge_assignments: ja("s2", "j1") },
+              { criteria_id: "prize-1", score: 5, judge_assignments: ja("s2", "j1") },
             ],
             error: null,
           })
@@ -1988,15 +1982,15 @@ describe("Judging Service", () => {
       expect(s1!.judge_count).toBe(2)
     })
 
-    it("returns zero count when no completed assignments exist", async () => {
+    it("returns zero count when no scored assignments exist", async () => {
       setMockFromImplementation((table: string) => {
         if (table === "hackathon_results") {
           return createChainableMock({ data: null, error: null })
         }
         if (table === "judging_criteria") {
-          return createChainableMock({ data: [{ id: "c1", weight: 100 }], error: null })
+          return createChainableMock({ data: [{ id: "c1", weight: 100, min_score: 0, max_score: 10 }], error: null })
         }
-        if (table === "judge_assignments") {
+        if (table === "scores") {
           return createChainableMock({ data: [], error: null })
         }
         return createChainableMock({ data: null, error: null })
@@ -2051,22 +2045,17 @@ describe("Judging Service", () => {
             error: null,
           })
         }
-        if (table === "judge_assignments") {
-          return createChainableMock({
-            data: [
-              { id: "a1", submission_id: "s1", judge_participant_id: "j1" },
-              { id: "a2", submission_id: "s2", judge_participant_id: "j1" },
-            ],
-            error: null,
-          })
-        }
         if (table === "scores") {
+          const ja = (sid: string, jid: string) => ({
+            submission_id: sid,
+            judge_participant_id: jid,
+          })
           return createChainableMock({
             data: [
-              { judge_assignment_id: "a1", criteria_id: "core-1", score: 10 },
-              { judge_assignment_id: "a1", criteria_id: "core-2", score: 5 },
-              { judge_assignment_id: "a2", criteria_id: "core-1", score: 4 },
-              { judge_assignment_id: "a2", criteria_id: "core-2", score: 8 },
+              { criteria_id: "core-1", score: 10, judge_assignments: ja("s1", "j1") },
+              { criteria_id: "core-2", score: 5, judge_assignments: ja("s1", "j1") },
+              { criteria_id: "core-1", score: 4, judge_assignments: ja("s2", "j1") },
+              { criteria_id: "core-2", score: 8, judge_assignments: ja("s2", "j1") },
             ],
             error: null,
           })

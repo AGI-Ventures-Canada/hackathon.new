@@ -70,8 +70,6 @@ export const dashboardJudgingRoutes = new Elysia()
         }
       }
 
-      // weighted_score sum mismatches are surfaced as warnings client-side, not blocking errors.
-
       const { createPrize } = await import("@/lib/services/judging")
       const createResult = await createPrize(params.id, {
         name: body.name,

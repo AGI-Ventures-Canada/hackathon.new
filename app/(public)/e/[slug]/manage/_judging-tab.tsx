@@ -25,23 +25,24 @@ export async function JudgingTabContent({
     await calculateResults(hackathonId)
   }
 
-  const [prizes, judges, progress, rounds, pendingInvitations, results, coreCriteria, weightedAssignmentSummary] = await Promise.all([
-    listPrizes(hackathonId),
+  const prizes = await listPrizes(hackathonId)
+  const visiblePrizes = prizes.filter((p) => !p.is_screening)
+
+  const weightedPrizeIds = visiblePrizes
+    .filter((p) => p.judging_style === "weighted_score")
+    .map((p) => p.id)
+  const hasWeightedPrizes = weightedPrizeIds.length > 0
+
+  const [judges, progress, rounds, pendingInvitations, results, coreCriteria, weightedAssignmentSummary, weightedPrizeCriteriaMap] = await Promise.all([
     listJudges(hackathonId),
     getJudgingProgress(hackathonId),
     listRounds(hackathonId),
     listJudgeInvitations(hackathonId, "pending"),
     getResults(hackathonId),
     listCoreCriteria(hackathonId),
-    getWeightedScoreAssignmentSummary(hackathonId),
+    hasWeightedPrizes ? getWeightedScoreAssignmentSummary(hackathonId) : Promise.resolve(undefined),
+    listPrizeCriteriaByPrizeIds(weightedPrizeIds),
   ])
-
-  const visiblePrizes = prizes.filter((p) => !p.is_screening)
-
-  const weightedPrizeIds = visiblePrizes
-    .filter((p) => p.judging_style === "weighted_score")
-    .map((p) => p.id)
-  const weightedPrizeCriteriaMap = await listPrizeCriteriaByPrizeIds(weightedPrizeIds)
 
   const prizesForClient = visiblePrizes.map((p) => ({
     id: p.id,
