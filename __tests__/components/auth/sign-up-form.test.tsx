@@ -162,12 +162,25 @@ describe("SignUpForm", () => {
       })
     })
 
-    it("transitions to create-org step on successful verification", async () => {
+    it("transitions to create-org step on successful verification when no redirectUrl is set", async () => {
       await goToVerify()
       fireEvent.click(screen.getByRole("button", { name: "Verify email" }))
       await waitFor(() => {
         expect(screen.getByText("Create your organization")).toBeDefined()
       })
+    })
+
+    it("redirects to redirectUrl after verification when redirectUrl is set", async () => {
+      render(<SignUpForm redirectUrl="/e/my-event" />)
+      fireEvent.click(screen.getByRole("button", { name: "Sign up" }))
+      await waitFor(() =>
+        expect(screen.getByText("Check your email")).toBeDefined(),
+      )
+      fireEvent.click(screen.getByRole("button", { name: "Verify email" }))
+      await waitFor(() => {
+        expect(mockPush).toHaveBeenCalledWith("/e/my-event")
+      })
+      expect(screen.queryByText("Create your organization")).toBeNull()
     })
 
     it("shows error on failed verification", async () => {
@@ -183,7 +196,7 @@ describe("SignUpForm", () => {
 
   describe("create-org step", () => {
     async function goToCreateOrg() {
-      render(<SignUpForm redirectUrl="/dashboard" />)
+      render(<SignUpForm />)
       fireEvent.click(screen.getByRole("button", { name: "Sign up" }))
       await waitFor(() =>
         expect(screen.getByText("Check your email")).toBeDefined(),
@@ -204,10 +217,10 @@ describe("SignUpForm", () => {
       expect(screen.getByRole("button", { name: "Skip for now" })).toBeDefined()
     })
 
-    it("Skip for now navigates to redirectUrl", async () => {
+    it("Skip for now navigates to /onboarding when no redirectUrl is set", async () => {
       await goToCreateOrg()
       fireEvent.click(screen.getByRole("button", { name: "Skip for now" }))
-      expect(mockPush).toHaveBeenCalledWith("/dashboard")
+      expect(mockPush).toHaveBeenCalledWith("/onboarding")
     })
 
     it("auto-generates slug from org name", async () => {
