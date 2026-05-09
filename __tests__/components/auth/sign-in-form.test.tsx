@@ -154,6 +154,173 @@ describe("SignInForm", () => {
     })
   })
 
+  describe("OAuth-only account fallback", () => {
+    function rejectWithStrategyError() {
+      return Promise.reject({
+        clerkError: true,
+        errors: [
+          {
+            code: "strategy_for_user_invalid",
+            message: "The verification strategy is not valid for this account",
+          },
+        ],
+      })
+    }
+
+    it("shows Continue with Google when password fails on OAuth-only account", async () => {
+      let callCount = 0
+      signInCreateImpl = (...args: unknown[]) => {
+        callCount += 1
+        const params = args[0] as { password?: string }
+        if (callCount === 1 && params?.password) return rejectWithStrategyError()
+        return Promise.resolve({
+          status: "needs_first_factor",
+          supportedFirstFactors: [{ strategy: "oauth_google" }],
+        })
+      }
+
+      render(<SignInForm />)
+      fireEvent.change(screen.getByLabelText("Email"), {
+        target: { value: "user@example.com" },
+      })
+      fireEvent.change(screen.getByLabelText("Password"), {
+        target: { value: "wrong" },
+      })
+      fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: "Continue with Google" }),
+        ).toBeDefined()
+      })
+      expect(screen.getByText(/signs in with Google/)).toBeDefined()
+    })
+
+    it("triggers OAuth redirect when Continue with Google is clicked", async () => {
+      let callCount = 0
+      signInCreateImpl = (...args: unknown[]) => {
+        callCount += 1
+        const params = args[0] as { password?: string }
+        if (callCount === 1 && params?.password) return rejectWithStrategyError()
+        return Promise.resolve({
+          status: "needs_first_factor",
+          supportedFirstFactors: [{ strategy: "oauth_google" }],
+        })
+      }
+
+      render(<SignInForm redirectUrl="/dashboard" />)
+      fireEvent.change(screen.getByLabelText("Email"), {
+        target: { value: "user@example.com" },
+      })
+      fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
+
+      const continueButton = await waitFor(() =>
+        screen.getByRole("button", { name: "Continue with Google" }),
+      )
+      fireEvent.click(continueButton)
+
+      await waitFor(() => {
+        expect(signInAuthenticateWithRedirect).toHaveBeenCalledWith({
+          strategy: "oauth_google",
+          redirectUrl: "/sso-callback",
+          redirectUrlComplete: "/dashboard",
+        })
+      })
+    })
+
+    it("shows multiple OAuth providers when account supports several", async () => {
+      let callCount = 0
+      signInCreateImpl = (...args: unknown[]) => {
+        callCount += 1
+        const params = args[0] as { password?: string }
+        if (callCount === 1 && params?.password) return rejectWithStrategyError()
+        return Promise.resolve({
+          status: "needs_first_factor",
+          supportedFirstFactors: [
+            { strategy: "oauth_google" },
+            { strategy: "oauth_github" },
+          ],
+        })
+      }
+
+      render(<SignInForm />)
+      fireEvent.change(screen.getByLabelText("Email"), {
+        target: { value: "user@example.com" },
+      })
+      fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: "Continue with Google" }),
+        ).toBeDefined()
+        expect(
+          screen.getByRole("button", { name: "Continue with GitHub" }),
+        ).toBeDefined()
+      })
+    })
+
+    it("falls back to default error if probe finds no usable strategies", async () => {
+      let callCount = 0
+      signInCreateImpl = (...args: unknown[]) => {
+        callCount += 1
+        const params = args[0] as { password?: string }
+        if (callCount === 1 && params?.password) return rejectWithStrategyError()
+        return Promise.resolve({
+          status: "needs_first_factor",
+          supportedFirstFactors: [{ strategy: "email_code" }],
+        })
+      }
+
+      render(<SignInForm />)
+      fireEvent.change(screen.getByLabelText("Email"), {
+        target: { value: "user@example.com" },
+      })
+      fireEvent.change(screen.getByLabelText("Password"), {
+        target: { value: "wrong" },
+      })
+      fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
+
+      await waitFor(() => {
+        expect(
+          screen.getByText(/verification strategy is not valid/),
+        ).toBeDefined()
+      })
+    })
+
+    it("clears OAuth-only fallback when email is edited", async () => {
+      let callCount = 0
+      signInCreateImpl = (...args: unknown[]) => {
+        callCount += 1
+        const params = args[0] as { password?: string }
+        if (callCount === 1 && params?.password) return rejectWithStrategyError()
+        return Promise.resolve({
+          status: "needs_first_factor",
+          supportedFirstFactors: [{ strategy: "oauth_google" }],
+        })
+      }
+
+      render(<SignInForm />)
+      fireEvent.change(screen.getByLabelText("Email"), {
+        target: { value: "user@example.com" },
+      })
+      fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
+
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Continue with Google" }),
+        ).toBeDefined(),
+      )
+
+      fireEvent.change(screen.getByLabelText("Email"), {
+        target: { value: "other@example.com" },
+      })
+
+      expect(
+        screen.queryByRole("button", { name: "Continue with Google" }),
+      ).toBeNull()
+    })
+  })
+
   describe("second factor step", () => {
     async function goToSecondFactor() {
       signInCreateImpl = () =>
