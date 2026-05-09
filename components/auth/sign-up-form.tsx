@@ -45,9 +45,7 @@ export function SignUpForm({ redirectUrl }: { redirectUrl?: string }) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const finalRedirect = redirectUrl || "/onboarding";
-  const onboardingUrl = redirectUrl
-    ? `/onboarding?redirect_url=${encodeURIComponent(redirectUrl)}`
-    : "/onboarding";
+  const oauthCompleteUrl = redirectUrl || "/onboarding";
 
   useEffect(() => {
     if (!orgSlugEdited) {
@@ -139,6 +137,10 @@ export function SignUpForm({ redirectUrl }: { redirectUrl?: string }) {
 
       if (result.status === "complete") {
         await setActive({ session: result.createdSessionId });
+        if (redirectUrl) {
+          router.push(redirectUrl);
+          return;
+        }
         setStep("create-org");
       }
     } catch (err) {
@@ -201,7 +203,7 @@ export function SignUpForm({ redirectUrl }: { redirectUrl?: string }) {
       await signUp.authenticateWithRedirect({
         strategy: provider,
         redirectUrl: "/sso-callback",
-        redirectUrlComplete: onboardingUrl,
+        redirectUrlComplete: oauthCompleteUrl,
       });
     } catch (err) {
       if (isClerkAPIResponseError(err)) {
