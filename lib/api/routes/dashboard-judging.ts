@@ -1418,10 +1418,6 @@ export const dashboardJudgingRoutes = new Elysia()
     detail: { summary: "Get judging progress", description: "Returns overall judging completion and per-judge breakdown." },
   })
 
-  // ============================================================
-  // Core criteria (weighted_score: hackathon-wide criteria)
-  // ============================================================
-
   .get("/hackathons/:id/core-criteria", async ({ principal, params }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
 

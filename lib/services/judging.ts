@@ -253,8 +253,6 @@ export async function createPrize(
     }
   }
 
-  // Weighted_score sum validation is intentionally non-blocking; the UI surfaces mismatches as warnings.
-
   const cleanBuckets =
     input.judgingStyle === "bucket_sort" && input.buckets !== undefined
       ? input.buckets.filter((b) => b.label.trim().length > 0)
@@ -296,7 +294,10 @@ export async function createPrize(
     const { error: critError } = await client.from("judging_criteria").insert(criteriaRows)
     if (critError) {
       console.error("Failed to insert criteria, rolling back prize:", critError)
-      await client.from("prizes").delete().eq("id", prize.id)
+      const { error: rollbackError } = await client.from("prizes").delete().eq("id", prize.id)
+      if (rollbackError) {
+        console.error("Prize rollback failed; orphaned prize id:", prize.id, rollbackError)
+      }
       return { success: false, error: critError.message, code: "db_error" }
     }
   }
@@ -315,7 +316,10 @@ export async function createPrize(
     const { error: critError } = await client.from("judging_criteria").insert(criteriaRows)
     if (critError) {
       console.error("Failed to insert weighted criteria, rolling back prize:", critError)
-      await client.from("prizes").delete().eq("id", prize.id)
+      const { error: rollbackError } = await client.from("prizes").delete().eq("id", prize.id)
+      if (rollbackError) {
+        console.error("Prize rollback failed; orphaned prize id:", prize.id, rollbackError)
+      }
       return { success: false, error: critError.message, code: "db_error" }
     }
   }
@@ -1576,22 +1580,30 @@ export async function verifyAssignmentOwnership(
   clerkUserId: string
 ): Promise<AssignmentOwnership | false> {
   const client = getSupabase() as unknown as SupabaseClient
+  type Row = {
+    hackathon_id: string
+    prize_id: string | null
+    assignment_kind: "per_prize" | "unified_weighted_score" | null
+    is_complete: boolean | null
+    submission_id: string
+    notes: string | null
+    hackathon_participants: { clerk_user_id: string }
+  }
   const { data } = await client
     .from("judge_assignments")
     .select("judge_participant_id, hackathon_id, prize_id, assignment_kind, is_complete, submission_id, notes, hackathon_participants!inner(clerk_user_id)")
     .eq("id", assignmentId)
-    .single()
+    .single<Row>()
 
   if (!data) return false
-  const participant = data.hackathon_participants as unknown as { clerk_user_id: string }
-  if (participant.clerk_user_id !== clerkUserId) return false
+  if (data.hackathon_participants.clerk_user_id !== clerkUserId) return false
   return {
     hackathonId: data.hackathon_id,
     prizeId: data.prize_id ?? null,
     isComplete: data.is_complete === true,
     submissionId: data.submission_id,
     notes: data.notes ?? "",
-    assignmentKind: ((data as { assignment_kind?: string }).assignment_kind as "per_prize" | "unified_weighted_score" | undefined) ?? "per_prize",
+    assignmentKind: data.assignment_kind ?? "per_prize",
   }
 }
 
@@ -1638,6 +1650,17 @@ export async function assertAssignmentWritable(
     }
   }
 
+  type Row = {
+    submission_id: string
+    round_id: string | null
+    hackathon_id: string
+    prize_id: string | null
+    assignment_kind: "per_prize" | "unified_weighted_score" | null
+    is_complete: boolean | null
+    notes: string | null
+    judge: unknown
+    submission: unknown
+  }
   const { data } = await client
     .from("judge_assignments")
     .select(`
@@ -1646,7 +1669,7 @@ export async function assertAssignmentWritable(
       submission:submissions!submission_id(team_id)
     `)
     .eq("id", assignmentId)
-    .maybeSingle()
+    .maybeSingle<Row>()
 
   if (!data) {
     return {
@@ -1687,7 +1710,7 @@ export async function assertAssignmentWritable(
     }
   }
 
-  const roundId = data.round_id as string | null
+  const roundId = data.round_id
   if (roundId) {
     const { data: round } = await client
       .from("judging_rounds")
@@ -1713,11 +1736,7 @@ export async function assertAssignmentWritable(
       isComplete: data.is_complete === true,
       submissionId: data.submission_id,
       notes: data.notes ?? "",
-      assignmentKind:
-        ((data as { assignment_kind?: string }).assignment_kind as
-          | "per_prize"
-          | "unified_weighted_score"
-          | undefined) ?? "per_prize",
+      assignmentKind: data.assignment_kind ?? "per_prize",
     },
   }
 }
@@ -2310,6 +2329,7 @@ async function insertRankedResults(
       weighted_score: r.avg,
       judge_count: r.judgeCount,
       prize_id: prizeId,
+      result_kind: "prize",
     }
   })
 
@@ -2324,15 +2344,20 @@ async function insertRankedResults(
 
 export async function recalculateForAssignment(assignmentId: string): Promise<void> {
   const client = getSupabase() as unknown as SupabaseClient
+  type Row = {
+    hackathon_id: string
+    prize_id: string | null
+    assignment_kind: "per_prize" | "unified_weighted_score" | null
+  }
   const { data } = await client
     .from("judge_assignments")
     .select("hackathon_id, prize_id, assignment_kind")
     .eq("id", assignmentId)
-    .single()
+    .single<Row>()
 
   if (!data?.hackathon_id) return
 
-  if ((data as { assignment_kind?: string }).assignment_kind === "unified_weighted_score") {
+  if (data.assignment_kind === "unified_weighted_score") {
     const { data: weightedPrizes } = await client
       .from("prizes")
       .select("id")
@@ -2913,10 +2938,6 @@ export async function submitScores(
   return { success: true }
 }
 
-// ============================================================
-// Weighted Score: core criteria CRUD, validation, results, assignments, summary
-// ============================================================
-
 export type CoreCriterionInput = {
   name: string
   description?: string | null
@@ -3181,10 +3202,6 @@ export async function seedDefaultCoreCriteria(
   }
 }
 
-// ============================================================
-// Weighted score results
-// ============================================================
-
 export async function calculateWeightedScoreResults(
   hackathonId: string,
   prizeId: string
@@ -3379,10 +3396,6 @@ export async function calculateCoreOnlyResults(
   return { success: true, count: inserts.length }
 }
 
-// ============================================================
-// Unified weighted-score assignments
-// ============================================================
-
 export async function assignWeightedScoreJudge(
   hackathonId: string,
   judgeParticipantId: string,
@@ -3530,10 +3543,6 @@ export async function getWeightedScoreAssignmentSummary(
     countsByJudge,
   }
 }
-
-// ============================================================
-// Per-judge private summary (top 3 per ranking)
-// ============================================================
 
 export type JudgeSummaryEntry = {
   submissionId: string
