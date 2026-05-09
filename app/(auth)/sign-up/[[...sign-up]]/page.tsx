@@ -8,11 +8,11 @@ export default async function SignUpPage({
 }: {
   searchParams: Promise<{ redirect_url?: string }>
 }) {
-  const { userId } = await auth()
+  const { userId, orgId } = await auth()
   const { redirect_url } = await searchParams
   const safeRedirect = redirect_url ? safeRedirectUrl(redirect_url) : undefined
 
-  if (userId) {
+  if (userId && orgId) {
     redirect(safeRedirect ?? "/home")
   }
 
