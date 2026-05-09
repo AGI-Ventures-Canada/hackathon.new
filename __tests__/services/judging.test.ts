@@ -1739,6 +1739,7 @@ describe("Judging Service", () => {
             round_id: "r1",
             hackathon_id: "h1",
             prize_id: "p1",
+            assignment_kind: "per_prize",
             is_complete: false,
             notes: "partial",
             judge: { clerk_user_id: "user_123", team_id: null },
@@ -1756,6 +1757,7 @@ describe("Judging Service", () => {
           isComplete: false,
           submissionId: "s1",
           notes: "partial",
+          assignmentKind: "per_prize",
         })
       }
     })

@@ -1618,7 +1618,7 @@ export async function assertAssignmentWritable(
   const { data } = await client
     .from("judge_assignments")
     .select(`
-      submission_id, round_id, hackathon_id, prize_id, is_complete, notes,
+      submission_id, round_id, hackathon_id, prize_id, assignment_kind, is_complete, notes,
       judge:hackathon_participants!judge_participant_id(clerk_user_id, team_id),
       submission:submissions!submission_id(team_id)
     `)
@@ -1690,6 +1690,11 @@ export async function assertAssignmentWritable(
       isComplete: data.is_complete === true,
       submissionId: data.submission_id,
       notes: data.notes ?? "",
+      assignmentKind:
+        ((data as { assignment_kind?: string }).assignment_kind as
+          | "per_prize"
+          | "unified_weighted_score"
+          | undefined) ?? "per_prize",
     },
   }
 }
