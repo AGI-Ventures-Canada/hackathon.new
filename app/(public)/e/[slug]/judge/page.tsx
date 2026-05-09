@@ -1,11 +1,9 @@
-import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
 import { auth } from "@clerk/nextjs/server"
 import { getPublicHackathon, PUBLISHED_STATUSES } from "@/lib/services/public-hackathons"
 import { JudgeAssignmentsCard } from "@/components/hackathon/judging/judge-assignments-card"
 import { PageHeader } from "@/components/page-header"
-import { Button } from "@/components/ui/button"
-import { Clock, BarChart3 } from "lucide-react"
+import { Clock } from "lucide-react"
 
 type PageProps = {
   params: Promise<{ slug: string }>
@@ -59,11 +57,6 @@ export default async function JudgePage({ params }: PageProps) {
   const hasUnifiedAssignments = judgeAssignments.some(
     (a) => a.assignmentKind === "unified_weighted_score"
   )
-  const allUnifiedComplete =
-    hasUnifiedAssignments &&
-    judgeAssignments
-      .filter((a) => a.assignmentKind === "unified_weighted_score")
-      .every((a) => a.isComplete)
 
   return (
     <div className="p-4 md:p-6 space-y-6">
@@ -75,17 +68,6 @@ export default async function JudgePage({ params }: PageProps) {
         title="Judging"
         description="Review and score your assigned submissions"
       />
-
-      {hasUnifiedAssignments && allUnifiedComplete && (
-        <div className="flex justify-end">
-          <Button asChild variant="outline" size="sm">
-            <Link href={`/e/${slug}/judge/summary`}>
-              <BarChart3 className="mr-2 size-4" />
-              View your summary
-            </Link>
-          </Button>
-        </div>
-      )}
 
       {judgeAssignments.length === 0 ? (
         <p className="text-sm text-muted-foreground text-center py-12">
@@ -99,6 +81,7 @@ export default async function JudgePage({ params }: PageProps) {
             minTeamSize: hackathon.min_team_size,
             allowSolo: hackathon.allow_solo,
           }}
+          summaryHref={hasUnifiedAssignments ? `/e/${slug}/judge/summary` : undefined}
         />
       )}
     </div>

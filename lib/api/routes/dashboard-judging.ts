@@ -70,23 +70,7 @@ export const dashboardJudgingRoutes = new Elysia()
         }
       }
 
-      if (body.judgingStyle === "weighted_score") {
-        const nonEmpty = (body.criteria ?? []).filter((c) => c.name.trim().length > 0)
-        if (nonEmpty.length === 0) {
-          return new Response(
-            JSON.stringify({ error: "At least one criterion is required for weighted scoring" }),
-            { status: 400, headers: { "Content-Type": "application/json" } }
-          )
-        }
-        const { validateWeightedScoreSum } = await import("@/lib/services/judging")
-        const validation = await validateWeightedScoreSum(params.id, null, nonEmpty)
-        if (!validation.ok) {
-          return new Response(
-            JSON.stringify({ error: validation.error, code: "weighted_sum_invalid" }),
-            { status: 400, headers: { "Content-Type": "application/json" } }
-          )
-        }
-      }
+      // weighted_score sum mismatches are surfaced as warnings client-side, not blocking errors.
 
       const { createPrize } = await import("@/lib/services/judging")
       const createResult = await createPrize(params.id, {
@@ -212,23 +196,13 @@ export const dashboardJudgingRoutes = new Elysia()
 
       if (body.criteria !== undefined) {
         const nonEmpty = body.criteria.filter((c) => c.name.trim().length > 0)
-        if (nonEmpty.length === 0) {
+        if (effectiveStyle !== "weighted_score" && nonEmpty.length === 0) {
           return new Response(
             JSON.stringify({
               error: "At least one criterion is required for pass-or-fail prizes",
             }),
             { status: 400, headers: { "Content-Type": "application/json" } }
           )
-        }
-        if (effectiveStyle === "weighted_score") {
-          const { validateWeightedScoreSum } = await import("@/lib/services/judging")
-          const validation = await validateWeightedScoreSum(params.id, params.prizeId, nonEmpty)
-          if (!validation.ok) {
-            return new Response(
-              JSON.stringify({ error: validation.error, code: "weighted_sum_invalid" }),
-              { status: 400, headers: { "Content-Type": "application/json" } }
-            )
-          }
         }
       }
 
@@ -1459,6 +1433,35 @@ export const dashboardJudgingRoutes = new Elysia()
   })
 
   .post(
+    "/hackathons/:id/core-criteria/seed-defaults",
+    async ({ principal, params }) => {
+      requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+
+      const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+      const result = await checkHackathonOrganizer(params.id, principal.tenantId)
+      if (result.status === "not_found") {
+        return new Response(JSON.stringify({ error: "Hackathon not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+      }
+      if (result.status === "not_authorized") {
+        return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
+      }
+
+      const { seedDefaultCoreCriteria } = await import("@/lib/services/judging")
+      const seeded = await seedDefaultCoreCriteria(params.id)
+      if (!seeded.success) {
+        return new Response(
+          JSON.stringify({ error: seeded.error }),
+          { status: 409, headers: { "Content-Type": "application/json" } }
+        )
+      }
+      return { criteria: seeded.criteria }
+    },
+    {
+      detail: { summary: "Seed default core criteria", description: "Inserts four starter score categories (25% each). Fails if any core criteria already exist." },
+    }
+  )
+
+  .post(
     "/hackathons/:id/core-criteria",
     async ({ principal, params, body }) => {
       requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
@@ -1496,7 +1499,7 @@ export const dashboardJudgingRoutes = new Elysia()
         minScore: t.Optional(t.Number({ minimum: 0 })),
         maxScore: t.Optional(t.Number({ minimum: 1 })),
       }),
-      detail: { summary: "Create core criterion", description: "Adds a hackathon-wide criterion. Validates that every weighted_score prize still sums to 100." },
+      detail: { summary: "Create core criterion", description: "Adds a hackathon-wide criterion. Sum imbalances against weighted_score prizes are reported as warnings, not errors." },
     }
   )
 
@@ -1538,7 +1541,7 @@ export const dashboardJudgingRoutes = new Elysia()
         minScore: t.Optional(t.Number({ minimum: 0 })),
         maxScore: t.Optional(t.Number({ minimum: 1 })),
       }),
-      detail: { summary: "Update core criterion", description: "Updates a core criterion. Validates the change keeps every weighted_score prize at 100." },
+      detail: { summary: "Update core criterion", description: "Updates a core criterion. Sum imbalances against weighted_score prizes are reported as warnings, not errors." },
     }
   )
 
@@ -1564,7 +1567,7 @@ export const dashboardJudgingRoutes = new Elysia()
     }
     return { success: true }
   }, {
-    detail: { summary: "Delete core criterion", description: "Removes a core criterion if every weighted_score prize still sums to 100 without it." },
+    detail: { summary: "Delete core criterion", description: "Removes a core criterion. Sum imbalances against weighted_score prizes are reported as warnings, not errors." },
   })
 
   .post("/hackathons/:id/judging/assign-weighted-score-judge", async ({ principal, params, body }) => {

@@ -129,6 +129,7 @@ type PrizeData = {
   allowedTeamModes: TeamMode[] | null
   criteria: PrizeCriterionData[] | null
   buckets: PrizeBucketData[] | null
+  sponsorName?: string | null
 }
 
 type JudgeData = {
@@ -219,6 +220,12 @@ export function JudgingTabClient({
     coreCriteria.length > 0 ||
       initialPrizes.some((p) => p.judgingStyle === "weighted_score")
   )
+  useEffect(() => {
+    const shouldEnable =
+      coreCriteria.length > 0 ||
+      initialPrizes.some((p) => p.judgingStyle === "weighted_score")
+    if (shouldEnable) setWeightedScoringEnabled(true)
+  }, [coreCriteria, initialPrizes])
   const results = initialResults
   const [isPublished, setIsPublished] = useState(initialIsPublished)
   const [error, setError] = useState<string | null>(null)
@@ -255,6 +262,18 @@ export function JudgingTabClient({
   } = usePrizeJudgeAssignments({ hackathonId, judges: judgesList.visibleItems })
   const prizes = prizesList.visibleItems
   const invitations = invitationsList.visibleItems
+
+  const coreWeightSum = coreCriteria.reduce((acc, c) => acc + c.weight, 0)
+  const weightWarnings = prizes
+    .filter((p) => p.judgingStyle === "weighted_score")
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      sum:
+        coreWeightSum +
+        (p.criteria ?? []).reduce((acc, c) => acc + (c.weight ?? 0), 0),
+    }))
+    .filter((w) => Math.abs(w.sum - 100) > 0.01)
 
   const overallPercent = initialProgress.totalAssignments > 0
     ? Math.round((initialProgress.completedAssignments / initialProgress.totalAssignments) * 100)
@@ -418,10 +437,37 @@ export function JudgingTabClient({
           <JudgingSetupWizard
             hackathonId={hackathonId}
             slug={slug}
-            prizes={initialPrizes}
+            prizes={initialPrizes.map((p) => ({
+              id: p.id,
+              name: p.name,
+              description: p.description,
+              value: p.value,
+              judgingStyle: p.judgingStyle,
+              assignmentMode: p.assignmentMode,
+              maxPicks: p.maxPicks,
+              roundId: p.roundId,
+              displayOrder: p.displayOrder,
+              totalAssignments: p.totalAssignments,
+              completedAssignments: p.completedAssignments,
+              judgeCount: p.judgeCount,
+              sponsorName: p.sponsorName ?? null,
+              bonusCriteriaCount:
+                p.judgingStyle === "weighted_score"
+                  ? (p.criteria?.length ?? 0)
+                  : 0,
+              bonusWeightSum:
+                p.judgingStyle === "weighted_score"
+                  ? (p.criteria ?? []).reduce((acc, c) => acc + (c.weight ?? 0), 0)
+                  : 0,
+            }))}
             judges={initialJudges}
             rounds={rounds}
             pendingInvitations={initialInvitations}
+            coreCriteria={coreCriteria}
+            onEditPrize={(prizeId) => {
+              const prize = initialPrizes.find((p) => p.id === prizeId)
+              if (prize) handleEditPrize(prize)
+            }}
           />
         </TabsContent>
 
@@ -442,6 +488,21 @@ export function JudgingTabClient({
         </TabsContent>
 
         <TabsContent value="prizes" className="mt-4 space-y-6">
+          {weightWarnings.length > 0 && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm">
+              <p className="font-medium">Some prize weights don&apos;t add up to 100%.</p>
+              <ul className="mt-1 list-disc pl-5 text-xs text-muted-foreground space-y-0.5">
+                {weightWarnings.map((w) => (
+                  <li key={w.id}>
+                    {w.name}: {w.sum}%
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                You can save and come back to this. Judges will still score on what you set.
+              </p>
+            </div>
+          )}
           <div className="space-y-3">
             <h3 className="text-base font-semibold flex items-center gap-2">
               <Sliders className="size-4" />

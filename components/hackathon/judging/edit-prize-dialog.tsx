@@ -251,12 +251,6 @@ export function EditPrizeDialog({
           return
         }
       }
-      const prizeSum = cleaned.reduce((acc, c) => acc + c.weight, 0)
-      const total = coreWeightSum + prizeSum
-      if (Math.abs(total - 100) > 0.01) {
-        setError(`Weights must sum to 100. Core ${coreWeightSum}% + this prize ${prizeSum}% = ${total}%.`)
-        return
-      }
       criteriaPayload = cleaned
     }
 
@@ -520,7 +514,7 @@ export function EditPrizeDialog({
                   <div>
                     <Label>What this prize cares about</Label>
                     <p className="text-xs text-muted-foreground">
-                      Judges score each on a custom range (default 1–10). Together with the core ({coreWeightSum}%), weights must add to 100.
+                      Judges score each on a custom range (default 1–10). Together with the score categories ({coreWeightSum}%), aim for weights that add to 100.
                     </p>
                   </div>
                   <Button type="button" variant="outline" size="sm" onClick={addWeighted}>
@@ -612,8 +606,8 @@ export function EditPrizeDialog({
                   const total = coreWeightSum + prizeSum
                   const ok = Math.abs(total - 100) < 0.01
                   return (
-                    <p className={`text-xs ${ok ? "text-muted-foreground" : "text-destructive"}`}>
-                      Core {coreWeightSum}% + this prize {prizeSum}% = {total}% {ok ? "✓" : "(needs to be 100)"}
+                    <p className="text-xs text-muted-foreground">
+                      Score categories {coreWeightSum}% + this prize {prizeSum}% = {total}% {ok ? "✓" : "(aim for 100)"}
                     </p>
                   )
                 })()}

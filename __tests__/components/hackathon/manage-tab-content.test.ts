@@ -15,6 +15,7 @@ mock.module("@/lib/services/judging", () => ({
   countJudges: mock(() => Promise.resolve(0)),
   listCoreCriteria: mock(() => Promise.resolve([])),
   listPrizeCriteria: mock(() => Promise.resolve([])),
+  listPrizeCriteriaByPrizeIds: mock(() => Promise.resolve(new Map())),
   getWeightedScoreAssignmentSummary: mock(() => Promise.resolve({ totalSubmissionCount: 0, rooms: [], countsByJudge: {} })),
 }))
 

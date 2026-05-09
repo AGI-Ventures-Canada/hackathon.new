@@ -1,4 +1,4 @@
-import { listPrizes, listJudges, getJudgingProgress, listRounds, listCoreCriteria, listPrizeCriteria, getWeightedScoreAssignmentSummary } from "@/lib/services/judging"
+import { listPrizes, listJudges, getJudgingProgress, listRounds, listCoreCriteria, listPrizeCriteriaByPrizeIds, getWeightedScoreAssignmentSummary } from "@/lib/services/judging"
 import { listJudgeInvitations } from "@/lib/services/judge-invitations"
 import { calculateResults, getResults } from "@/lib/services/results"
 import { JudgingTabClient } from "@/components/hackathon/judging/judging-tab-client"
@@ -38,26 +38,10 @@ export async function JudgingTabContent({
 
   const visiblePrizes = prizes.filter((p) => !p.is_screening)
 
-  const weightedPrizeCriteriaMap = new Map<
-    string,
-    { id: string; name: string; description: string | null; weight: number; minScore: number; maxScore: number }[]
-  >()
-  for (const p of visiblePrizes) {
-    if (p.judging_style === "weighted_score") {
-      const items = await listPrizeCriteria(p.id)
-      weightedPrizeCriteriaMap.set(
-        p.id,
-        items.map((c) => ({
-          id: c.id,
-          name: c.name,
-          description: c.description,
-          weight: c.weight,
-          minScore: c.minScore,
-          maxScore: c.maxScore,
-        }))
-      )
-    }
-  }
+  const weightedPrizeIds = visiblePrizes
+    .filter((p) => p.judging_style === "weighted_score")
+    .map((p) => p.id)
+  const weightedPrizeCriteriaMap = await listPrizeCriteriaByPrizeIds(weightedPrizeIds)
 
   const prizesForClient = visiblePrizes.map((p) => ({
     id: p.id,
@@ -73,9 +57,17 @@ export async function JudgingTabContent({
     completedAssignments: p.completedAssignments,
     judgeCount: p.judgeCount,
     allowedTeamModes: p.allowed_team_modes,
+    sponsorName: p.sponsorName ?? null,
     criteria:
       p.judging_style === "weighted_score"
-        ? weightedPrizeCriteriaMap.get(p.id) ?? null
+        ? (weightedPrizeCriteriaMap.get(p.id) ?? []).map((c) => ({
+            id: c.id,
+            name: c.name,
+            description: c.description,
+            weight: c.weight,
+            minScore: c.minScore,
+            maxScore: c.maxScore,
+          }))
         : (p.criteria?.map((c) => ({
             id: c.id,
             name: c.name,

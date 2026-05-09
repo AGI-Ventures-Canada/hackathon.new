@@ -38,12 +38,14 @@ interface JudgeAssignmentsCardProps {
   hackathonSlug: string
   assignments: JudgeAssignment[]
   teamSettings?: TeamSettings
+  summaryHref?: string
 }
 
 export function JudgeAssignmentsCard({
   hackathonSlug,
   assignments,
   teamSettings,
+  summaryHref,
 }: JudgeAssignmentsCardProps) {
   const [viewMode, setViewMode] = useState<"focus" | "list">("focus")
   const [openAssignmentId, setOpenAssignmentId] = useState<string | null>(null)
@@ -130,6 +132,7 @@ export function JudgeAssignmentsCard({
             initialCompletedIds={completedIds}
             onScoreSubmitted={handleScoreSubmitted}
             teamSettings={teamSettings}
+            summaryHref={summaryHref}
           />
         ) : (
           <>

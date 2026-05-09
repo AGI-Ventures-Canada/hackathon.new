@@ -80,6 +80,7 @@ export type PrizeWithProgress = Prize & {
   completedAssignments: number
   buckets?: BucketDefinition[]
   criteria?: PrizeCriterion[]
+  sponsorName?: string | null
 }
 
 export async function listPrizes(hackathonId: string): Promise<PrizeWithProgress[]> {
@@ -151,6 +152,28 @@ export async function listPrizes(hackathonId: string): Promise<PrizeWithProgress
     }
   }
 
+  const trackIds = Array.from(
+    new Set(
+      prizes
+        .map((p) => (p as unknown as Prize).prize_track_id)
+        .filter((id): id is string => typeof id === "string" && id.length > 0)
+    )
+  )
+  const sponsorByTrackId: Record<string, string> = {}
+  if (trackIds.length > 0) {
+    const { data: trackRows } = await client
+      .from("prize_tracks")
+      .select("id, sponsor:hackathon_sponsors!sponsor_id(name)")
+      .in("id", trackIds)
+
+    for (const row of (trackRows ?? []) as unknown as { id: string; sponsor: { name: string } | { name: string }[] | null }[]) {
+      const sponsorName = Array.isArray(row.sponsor)
+        ? row.sponsor[0]?.name ?? null
+        : row.sponsor?.name ?? null
+      if (sponsorName) sponsorByTrackId[row.id] = sponsorName
+    }
+  }
+
   return (prizes as unknown as Prize[]).map((p) => ({
     ...p,
     judgeCount: prizeStats[p.id]?.judges.size ?? 0,
@@ -158,6 +181,7 @@ export async function listPrizes(hackathonId: string): Promise<PrizeWithProgress
     completedAssignments: prizeStats[p.id]?.completed ?? 0,
     buckets: bucketMap[p.id],
     criteria: criteriaMap[p.id],
+    sponsorName: p.prize_track_id ? sponsorByTrackId[p.prize_track_id] ?? null : null,
   }))
 }
 
@@ -218,19 +242,7 @@ export async function createPrize(
     }
   }
 
-  if (input.judgingStyle === "weighted_score") {
-    if (cleanCriteria.length === 0) {
-      return {
-        success: false,
-        error: "At least one criterion is required for weighted scoring",
-        code: "validation",
-      }
-    }
-    const sumValidation = await validateWeightedScoreSum(hackathonId, null, cleanCriteria)
-    if (!sumValidation.ok) {
-      return { success: false, error: sumValidation.error, code: "validation" }
-    }
-  }
+  // Weighted_score sum validation is intentionally non-blocking; the UI surfaces mismatches as warnings.
 
   const cleanBuckets =
     input.judgingStyle === "bucket_sort" && input.buckets !== undefined
@@ -278,7 +290,7 @@ export async function createPrize(
     }
   }
 
-  if (input.judgingStyle === "weighted_score") {
+  if (input.judgingStyle === "weighted_score" && cleanCriteria.length > 0) {
     const criteriaRows = cleanCriteria.map((c, i) => ({
       hackathon_id: hackathonId,
       prize_id: prize.id,
@@ -2946,76 +2958,45 @@ export async function listPrizeCriteria(prizeId: string): Promise<CoreCriterion[
   }))
 }
 
-export type ValidateWeightedSumResult =
-  | { ok: true }
-  | { ok: false; error: string; offendingPrizes?: { id: string; name: string; sum: number }[] }
+export async function listPrizeCriteriaByPrizeIds(
+  prizeIds: string[]
+): Promise<Map<string, CoreCriterion[]>> {
+  const map = new Map<string, CoreCriterion[]>()
+  if (prizeIds.length === 0) return map
 
-export async function validateWeightedScoreSum(
-  hackathonId: string,
-  prizeId: string | null,
-  prizeCriteria: { weight?: number }[] | null,
-  coreOverride?: { weight: number }[] | null
-): Promise<ValidateWeightedSumResult> {
   const client = getSupabase() as unknown as SupabaseClient
+  const { data, error } = await client
+    .from("judging_criteria")
+    .select("id, name, description, weight, min_score, max_score, display_order, prize_id")
+    .in("prize_id", prizeIds)
+    .order("display_order")
 
-  let coreSum: number
-  if (coreOverride !== undefined && coreOverride !== null) {
-    coreSum = coreOverride.reduce((acc, c) => acc + (Number(c.weight) || 0), 0)
-  } else {
-    const { data: coreRows } = await client
-      .from("judging_criteria")
-      .select("weight")
-      .eq("hackathon_id", hackathonId)
-      .is("prize_id", null)
-    coreSum = (coreRows ?? []).reduce((acc, r) => acc + Number(r.weight || 0), 0)
+  if (error || !data) return map
+
+  for (const c of data as Array<{
+    id: string
+    name: string
+    description: string | null
+    weight: number
+    min_score?: number
+    max_score?: number
+    display_order: number
+    prize_id: string | null
+  }>) {
+    if (!c.prize_id) continue
+    const list = map.get(c.prize_id) ?? []
+    list.push({
+      id: c.id,
+      name: c.name,
+      description: c.description,
+      weight: Number(c.weight),
+      minScore: Number(c.min_score ?? 1),
+      maxScore: Number(c.max_score ?? 10),
+      displayOrder: c.display_order,
+    })
+    map.set(c.prize_id, list)
   }
-
-  const TOLERANCE = 0.01
-
-  if (prizeCriteria) {
-    const prizeSum = prizeCriteria.reduce((acc, c) => acc + (Number(c.weight) || 0), 0)
-    const total = coreSum + prizeSum
-    if (Math.abs(total - 100) > TOLERANCE) {
-      return {
-        ok: false,
-        error: `Weights must sum to 100. Core ${coreSum}% + prize ${prizeSum}% = ${total}%.`,
-      }
-    }
-    return { ok: true }
-  }
-
-  // Validate ALL existing weighted_score prizes still satisfy invariant
-  const { data: weightedPrizes } = await client
-    .from("prizes")
-    .select("id, name")
-    .eq("hackathon_id", hackathonId)
-    .eq("judging_style", "weighted_score")
-
-  if (!weightedPrizes || weightedPrizes.length === 0) return { ok: true }
-
-  const offending: { id: string; name: string; sum: number }[] = []
-  for (const p of weightedPrizes) {
-    const { data: rows } = await client
-      .from("judging_criteria")
-      .select("weight")
-      .eq("prize_id", p.id)
-    const prizeSum = (rows ?? []).reduce((acc, r) => acc + Number(r.weight || 0), 0)
-    const total = coreSum + prizeSum
-    if (Math.abs(total - 100) > TOLERANCE) {
-      offending.push({ id: p.id, name: p.name, sum: total })
-    }
-  }
-
-  if (offending.length > 0) {
-    const names = offending.map((p) => `${p.name}: ${p.sum}%`).join(", ")
-    return {
-      ok: false,
-      error: `These prizes would no longer add up to 100%: ${names}.`,
-      offendingPrizes: offending,
-    }
-  }
-
-  return { ok: true }
+  return map
 }
 
 export async function createCoreCriterion(
@@ -3025,16 +3006,6 @@ export async function createCoreCriterion(
   const client = getSupabase() as unknown as SupabaseClient
 
   const existing = await listCoreCriteria(hackathonId)
-  const newCore = [...existing, { weight: input.weight }]
-  const validation = await validateWeightedScoreSum(hackathonId, null, null, newCore)
-  if (!validation.ok) {
-    return {
-      success: false,
-      error: validation.error,
-      offendingPrizes: "offendingPrizes" in validation ? validation.offendingPrizes : undefined,
-    }
-  }
-
   const displayOrder = existing.length
   const minScore = input.minScore ?? 1
   const maxScore = input.maxScore ?? 10
@@ -3082,21 +3053,6 @@ export async function updateCoreCriterion(
 ): Promise<{ success: true; criterion: CoreCriterion } | { success: false; error: string; offendingPrizes?: { id: string; name: string; sum: number }[] }> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  if (input.weight !== undefined) {
-    const existing = await listCoreCriteria(hackathonId)
-    const newCore = existing.map((c) =>
-      c.id === criterionId ? { weight: input.weight as number } : { weight: c.weight }
-    )
-    const validation = await validateWeightedScoreSum(hackathonId, null, null, newCore)
-    if (!validation.ok) {
-      return {
-        success: false,
-        error: validation.error,
-        offendingPrizes: "offendingPrizes" in validation ? validation.offendingPrizes : undefined,
-      }
-    }
-  }
-
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
   if (input.name !== undefined) updates.name = input.name.trim()
   if (input.description !== undefined) updates.description = input.description?.trim() || null
@@ -3143,17 +3099,6 @@ export async function deleteCoreCriterion(
 ): Promise<{ success: true } | { success: false; error: string; offendingPrizes?: { id: string; name: string; sum: number }[] }> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const existing = await listCoreCriteria(hackathonId)
-  const newCore = existing.filter((c) => c.id !== criterionId).map((c) => ({ weight: c.weight }))
-  const validation = await validateWeightedScoreSum(hackathonId, null, null, newCore)
-  if (!validation.ok) {
-    return {
-      success: false,
-      error: validation.error,
-      offendingPrizes: "offendingPrizes" in validation ? validation.offendingPrizes : undefined,
-    }
-  }
-
   const { error } = await client
     .from("judging_criteria")
     .delete()
@@ -3163,6 +3108,57 @@ export async function deleteCoreCriterion(
 
   if (error) return { success: false, error: error.message }
   return { success: true }
+}
+
+export const DEFAULT_CORE_CRITERIA: CoreCriterionInput[] = [
+  { name: "Innovation", description: "How original and creative is the idea?", weight: 25, minScore: 0, maxScore: 10 },
+  { name: "Technical execution", description: "How well is it built? Does it work?", weight: 25, minScore: 0, maxScore: 10 },
+  { name: "Design and UX", description: "How easy and pleasant is it to use?", weight: 25, minScore: 0, maxScore: 10 },
+  { name: "Impact", description: "How useful is this? Who benefits?", weight: 25, minScore: 0, maxScore: 10 },
+]
+
+export async function seedDefaultCoreCriteria(
+  hackathonId: string
+): Promise<{ success: true; criteria: CoreCriterion[] } | { success: false; error: string }> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const existing = await listCoreCriteria(hackathonId)
+  if (existing.length > 0) {
+    return { success: false, error: "Core categories already exist" }
+  }
+
+  const rows = DEFAULT_CORE_CRITERIA.map((c, i) => ({
+    hackathon_id: hackathonId,
+    prize_id: null,
+    name: c.name,
+    description: c.description ?? null,
+    min_score: c.minScore ?? 1,
+    max_score: c.maxScore ?? 10,
+    weight: c.weight,
+    display_order: i,
+  }))
+
+  const { data, error } = await client
+    .from("judging_criteria")
+    .insert(rows)
+    .select("id, name, description, weight, min_score, max_score, display_order")
+
+  if (error || !data) {
+    return { success: false, error: error?.message ?? "Failed to seed core criteria" }
+  }
+
+  return {
+    success: true,
+    criteria: data.map((c) => ({
+      id: c.id,
+      name: c.name,
+      description: c.description,
+      weight: Number(c.weight),
+      minScore: Number((c as { min_score?: number }).min_score ?? 1),
+      maxScore: Number((c as { max_score?: number }).max_score ?? 10),
+      displayOrder: c.display_order,
+    })),
+  }
 }
 
 // ============================================================
@@ -3203,6 +3199,9 @@ export async function calculateWeightedScoreResults(
   const weightMap = new Map(allCriteria.map((c) => [c.id, Number(c.weight)]))
   if (allCriteria.length === 0) return { success: true, count: 0 }
 
+  const totalWeightSum = Array.from(weightMap.values()).reduce((a, b) => a + b, 0)
+  if (totalWeightSum <= 0) return { success: true, count: 0 }
+
   const { data: assignments } = await client
     .from("judge_assignments")
     .select("id, submission_id, judge_participant_id")
@@ -3222,14 +3221,14 @@ export async function calculateWeightedScoreResults(
   const subMap = new Map(assignments.map((a) => [a.id, a.submission_id]))
   const judgeMap = new Map(assignments.map((a) => [a.id, a.judge_participant_id]))
 
-  const subScores: Record<string, { totalWeighted: number; judgeIds: Set<string>; perJudge: Record<string, number> }> = {}
+  const subScores: Record<string, { judgeIds: Set<string>; perJudge: Record<string, number> }> = {}
 
   for (const s of scores ?? []) {
     const sid = subMap.get(s.judge_assignment_id)
     const jid = judgeMap.get(s.judge_assignment_id)
     const w = weightMap.get(s.criteria_id)
     if (!sid || !jid || w === undefined) continue
-    if (!subScores[sid]) subScores[sid] = { totalWeighted: 0, judgeIds: new Set(), perJudge: {} }
+    if (!subScores[sid]) subScores[sid] = { judgeIds: new Set(), perJudge: {} }
     const key = `${sid}:${jid}`
     if (subScores[sid].perJudge[key] === undefined) subScores[sid].perJudge[key] = 0
     subScores[sid].perJudge[key] += s.score * w
@@ -3240,7 +3239,7 @@ export async function calculateWeightedScoreResults(
     .map(([sid, info]) => {
       const judgeCount = info.judgeIds.size
       const sumPerJudge = Object.values(info.perJudge).reduce((a, b) => a + b, 0)
-      const avg = judgeCount > 0 ? sumPerJudge / judgeCount / 100 : 0
+      const avg = judgeCount > 0 ? sumPerJudge / judgeCount / totalWeightSum : 0
       return { sid, avg, total: avg, judgeCount }
     })
     .sort((a, b) => b.avg - a.avg)

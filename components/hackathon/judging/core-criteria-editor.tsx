@@ -1,31 +1,31 @@
-"use client";
+"use client"
 
-import { useState, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Plus, Trash2, Pencil } from "lucide-react";
-import { assertOk, assertOkJson } from "@/lib/utils/fetch";
+import { useState, type ReactNode } from "react"
+import { useRouter } from "next/navigation"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Plus, Trash2, Pencil } from "lucide-react"
+import { assertOk, assertOkJson } from "@/lib/utils/fetch"
 
 export type CoreCriterion = {
-  id: string;
-  name: string;
-  description: string | null;
-  weight: number;
-  minScore: number;
-  maxScore: number;
-  displayOrder: number;
-};
+  id: string
+  name: string
+  description: string | null
+  weight: number
+  minScore: number
+  maxScore: number
+  displayOrder: number
+}
 
 type DraftRow = {
-  name: string;
-  description: string;
-  weight: string;
-  minScore: string;
-  maxScore: string;
-};
+  name: string
+  description: string
+  weight: string
+  minScore: string
+  maxScore: string
+}
 
 const EMPTY_DRAFT: DraftRow = {
   name: "",
@@ -33,68 +33,68 @@ const EMPTY_DRAFT: DraftRow = {
   weight: "",
   minScore: "1",
   maxScore: "10",
-};
+}
 
 interface CoreCriteriaEditorProps {
-  hackathonId: string;
-  criteria: CoreCriterion[];
+  hackathonId: string
+  criteria: CoreCriterion[]
 }
 
 export function CoreCriteriaEditor({
   hackathonId,
   criteria,
 }: CoreCriteriaEditorProps) {
-  const router = useRouter();
-  const [items, setItems] = useState<CoreCriterion[]>(criteria);
-  const [adding, setAdding] = useState(false);
-  const [draft, setDraft] = useState<DraftRow>(EMPTY_DRAFT);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editDraft, setEditDraft] = useState<DraftRow>(EMPTY_DRAFT);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const router = useRouter()
+  const [items, setItems] = useState<CoreCriterion[]>(criteria)
+  const [adding, setAdding] = useState(false)
+  const [draft, setDraft] = useState<DraftRow>(EMPTY_DRAFT)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState<DraftRow>(EMPTY_DRAFT)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
 
-  const sum = items.reduce((acc, c) => acc + c.weight, 0);
+  const sum = items.reduce((acc, c) => acc + c.weight, 0)
 
   function startEdit(c: CoreCriterion) {
-    setEditingId(c.id);
+    setEditingId(c.id)
     setEditDraft({
       name: c.name,
       description: c.description ?? "",
       weight: String(c.weight),
       minScore: String(c.minScore),
       maxScore: String(c.maxScore),
-    });
-    setError(null);
+    })
+    setError(null)
   }
 
   function validateDraft(
     d: DraftRow,
   ):
     | {
-        ok: true;
+        ok: true
         payload: {
-          name: string;
-          description: string | null;
-          weight: number;
-          minScore: number;
-          maxScore: number;
-        };
+          name: string
+          description: string | null
+          weight: number
+          minScore: number
+          maxScore: number
+        }
       }
     | { ok: false; error: string } {
-    const name = d.name.trim();
-    if (!name) return { ok: false, error: "Name is required" };
-    const weight = Number(d.weight);
+    const name = d.name.trim()
+    if (!name) return { ok: false, error: "Name is required" }
+    const weight = Number(d.weight)
     if (!Number.isFinite(weight) || weight < 0 || weight > 100) {
-      return { ok: false, error: "Weight must be between 0 and 100" };
+      return { ok: false, error: "Weight must be between 0 and 100" }
     }
-    const minScore = Number(d.minScore);
-    const maxScore = Number(d.maxScore);
+    const minScore = Number(d.minScore)
+    const maxScore = Number(d.maxScore)
     if (!Number.isFinite(minScore) || !Number.isFinite(maxScore)) {
-      return { ok: false, error: "Min and max must be numbers" };
+      return { ok: false, error: "Min and max must be numbers" }
     }
-    if (minScore < 0) return { ok: false, error: "Min must be 0 or higher" };
+    if (minScore < 0) return { ok: false, error: "Min must be 0 or higher" }
     if (!(minScore < maxScore))
-      return { ok: false, error: "Min must be less than max" };
+      return { ok: false, error: "Min must be less than max" }
     return {
       ok: true,
       payload: {
@@ -104,18 +104,18 @@ export function CoreCriteriaEditor({
         minScore,
         maxScore,
       },
-    };
+    }
   }
 
   async function handleAdd() {
-    const result = validateDraft(draft);
+    const result = validateDraft(draft)
     if (!result.ok) {
-      setError(result.error);
-      return;
+      setError(result.error)
+      return
     }
 
-    setBusy(true);
-    setError(null);
+    setBusy(true)
+    setError(null)
     try {
       const data = await fetch(
         `/api/dashboard/hackathons/${hackathonId}/core-criteria`,
@@ -124,28 +124,28 @@ export function CoreCriteriaEditor({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(result.payload),
         },
-      ).then(assertOkJson<{ criterion: CoreCriterion }>);
+      ).then(assertOkJson<{ criterion: CoreCriterion }>)
 
-      setItems([...items, data.criterion]);
-      setDraft(EMPTY_DRAFT);
-      setAdding(false);
-      router.refresh();
+      setItems([...items, data.criterion])
+      setDraft(EMPTY_DRAFT)
+      setAdding(false)
+      router.refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to add");
+      setError(err instanceof Error ? err.message : "Failed to add")
     } finally {
-      setBusy(false);
+      setBusy(false)
     }
   }
 
   async function handleSaveEdit(id: string) {
-    const result = validateDraft(editDraft);
+    const result = validateDraft(editDraft)
     if (!result.ok) {
-      setError(result.error);
-      return;
+      setError(result.error)
+      return
     }
 
-    setBusy(true);
-    setError(null);
+    setBusy(true)
+    setError(null)
     try {
       const data = await fetch(
         `/api/dashboard/hackathons/${hackathonId}/core-criteria/${id}`,
@@ -154,33 +154,33 @@ export function CoreCriteriaEditor({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(result.payload),
         },
-      ).then(assertOkJson<{ criterion: CoreCriterion }>);
+      ).then(assertOkJson<{ criterion: CoreCriterion }>)
 
-      setItems(items.map((c) => (c.id === id ? data.criterion : c)));
-      setEditingId(null);
-      router.refresh();
+      setItems(items.map((c) => (c.id === id ? data.criterion : c)))
+      setEditingId(null)
+      router.refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save");
+      setError(err instanceof Error ? err.message : "Failed to save")
     } finally {
-      setBusy(false);
+      setBusy(false)
     }
   }
 
   async function handleDelete(id: string) {
-    setBusy(true);
-    setError(null);
+    setBusy(true)
+    setError(null)
     try {
       await fetch(
         `/api/dashboard/hackathons/${hackathonId}/core-criteria/${id}`,
         { method: "DELETE" },
-      ).then(assertOk);
+      ).then(assertOk)
 
-      setItems(items.filter((c) => c.id !== id));
-      router.refresh();
+      setItems(items.filter((c) => c.id !== id))
+      router.refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete");
+      setError(err instanceof Error ? err.message : "Failed to delete")
     } finally {
-      setBusy(false);
+      setBusy(false)
     }
   }
 
@@ -237,7 +237,7 @@ export function CoreCriteriaEditor({
           {actions && <div className="ml-auto flex gap-2">{actions}</div>}
         </div>
       </div>
-    );
+    )
   }
 
   return (
@@ -281,7 +281,7 @@ export function CoreCriteriaEditor({
 
       <div className="space-y-2">
         {items.map((c) => {
-          const isEditing = editingId === c.id;
+          const isEditing = editingId === c.id
           if (isEditing) {
             return (
               <div key={c.id} className="rounded-md border p-3 space-y-3">
@@ -352,7 +352,7 @@ export function CoreCriteriaEditor({
                   </>,
                 )}
               </div>
-            );
+            )
           }
           return (
             <div
@@ -397,7 +397,7 @@ export function CoreCriteriaEditor({
                 </Button>
               </div>
             </div>
-          );
+          )
         })}
       </div>
 
@@ -451,9 +451,9 @@ export function CoreCriteriaEditor({
                 type="button"
                 variant="outline"
                 onClick={() => {
-                  setAdding(false);
-                  setDraft(EMPTY_DRAFT);
-                  setError(null);
+                  setAdding(false)
+                  setDraft(EMPTY_DRAFT)
+                  setError(null)
                 }}
                 disabled={busy}
               >
@@ -469,5 +469,5 @@ export function CoreCriteriaEditor({
 
       {error && <p className="text-sm text-destructive">{error}</p>}
     </div>
-  );
+  )
 }
