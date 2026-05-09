@@ -243,6 +243,15 @@ export const dashboardJudgingRoutes = new Elysia()
       }
 
       if (body.criteria !== undefined) {
+        if (
+          effectiveStyle === "weighted_score" &&
+          body.criteria.some((c) => c.name.trim().length > 0 && (c.weight ?? 0) <= 0)
+        ) {
+          return new Response(
+            JSON.stringify({ error: "Each weighted criterion needs a weight greater than zero" }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          )
+        }
         const updatedCriteria = await replacePrizeCriteria(
           params.id,
           params.prizeId,

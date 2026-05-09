@@ -216,16 +216,13 @@ export function JudgingTabClient({
   const [showAddPrize, setShowAddPrize] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [publishDialogOpen, setPublishDialogOpen] = useState(false)
-  const [weightedScoringEnabled, setWeightedScoringEnabled] = useState(
+  const weightedScoringLocked =
     coreCriteria.length > 0 ||
-      initialPrizes.some((p) => p.judgingStyle === "weighted_score")
-  )
+    initialPrizes.some((p) => p.judgingStyle === "weighted_score")
+  const [weightedScoringEnabled, setWeightedScoringEnabled] = useState(weightedScoringLocked)
   useEffect(() => {
-    const shouldEnable =
-      coreCriteria.length > 0 ||
-      initialPrizes.some((p) => p.judgingStyle === "weighted_score")
-    if (shouldEnable) setWeightedScoringEnabled(true)
-  }, [coreCriteria, initialPrizes])
+    if (weightedScoringLocked) setWeightedScoringEnabled(true)
+  }, [weightedScoringLocked])
   const results = initialResults
   const [isPublished, setIsPublished] = useState(initialIsPublished)
   const [error, setError] = useState<string | null>(null)
@@ -519,11 +516,17 @@ export function JudgingTabClient({
                       Judges evaluate submissions on numerical sliders. You define
                       the weight of each criterion.
                     </p>
+                    {weightedScoringLocked && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Remove your shared criteria and any weighted-score prizes to turn this off.
+                      </p>
+                    )}
                   </div>
                   <Switch
                     id="weighted-scoring-toggle"
                     checked={weightedScoringEnabled}
                     onCheckedChange={setWeightedScoringEnabled}
+                    disabled={weightedScoringLocked}
                   />
                 </div>
                 {weightedScoringEnabled && (
