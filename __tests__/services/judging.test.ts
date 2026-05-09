@@ -1914,14 +1914,14 @@ describe("Judging Service", () => {
           if (criteriaCallCount === 1) {
             return createChainableMock({
               data: [
-                { id: "core-1", weight: 30 },
-                { id: "core-2", weight: 30 },
+                { id: "core-1", weight: 30, min_score: 0, max_score: 10 },
+                { id: "core-2", weight: 30, min_score: 0, max_score: 10 },
               ],
               error: null,
             })
           }
           return createChainableMock({
-            data: [{ id: "prize-1", weight: 30 }],
+            data: [{ id: "prize-1", weight: 30, min_score: 0, max_score: 10 }],
             error: null,
           })
         }
@@ -1966,15 +1966,16 @@ describe("Judging Service", () => {
 
       expect(result.success).toBe(true)
       expect(result.count).toBe(2)
-      // Total weight sum = 90 (30+30+30, even though "should" be 100). Without
-      // the fix this would divide by 100 and produce avg=8.1 instead of 9.0
-      // for s1 (avg of judge1=10 and judge2=8 across all criteria).
+      // Total weight sum = 90 (30+30+30). With min=0/max=10 normalization,
+      // s1 averages judges j1 (1.0) and j2 (0.8) → weighted_score = 0.9.
+      // s2 has only j1 (0.5) → 0.5. Without the actual-weight-sum fix this
+      // would divide by 100, producing 0.81 / 0.45.
       const s1 = insertCapture.find((r) => r.submission_id === "s1")
       const s2 = insertCapture.find((r) => r.submission_id === "s2")
       expect(s1).toBeDefined()
       expect(s2).toBeDefined()
-      expect(s1!.weighted_score).toBeCloseTo(9, 5)
-      expect(s2!.weighted_score).toBeCloseTo(5, 5)
+      expect(s1!.weighted_score).toBeCloseTo(0.9, 5)
+      expect(s2!.weighted_score).toBeCloseTo(0.5, 5)
       expect(s1!.rank).toBe(1)
       expect(s2!.rank).toBe(2)
       expect(s1!.judge_count).toBe(2)
@@ -2037,8 +2038,8 @@ describe("Judging Service", () => {
         if (table === "judging_criteria") {
           return createChainableMock({
             data: [
-              { id: "core-1", weight: 60 },
-              { id: "core-2", weight: 40 },
+              { id: "core-1", weight: 60, min_score: 0, max_score: 10 },
+              { id: "core-2", weight: 40, min_score: 0, max_score: 10 },
             ],
             error: null,
           })
@@ -2071,8 +2072,10 @@ describe("Judging Service", () => {
       expect(result.count).toBe(2)
       const s1 = inserted.find((r) => r.submission_id === "s1")
       const s2 = inserted.find((r) => r.submission_id === "s2")
-      expect(s1!.weighted_score).toBeCloseTo(8, 5)
-      expect(s2!.weighted_score).toBeCloseTo(5.6, 5)
+      // s1: (1.0 * 60 + 0.5 * 40) / 100 = 0.8
+      // s2: (0.4 * 60 + 0.8 * 40) / 100 = 0.56
+      expect(s1!.weighted_score).toBeCloseTo(0.8, 5)
+      expect(s2!.weighted_score).toBeCloseTo(0.56, 5)
       expect(s1!.rank).toBe(1)
       expect(s2!.rank).toBe(2)
       for (const row of inserted) expect(row.result_kind).toBe("core_only")
@@ -2153,13 +2156,13 @@ describe("Judging Service", () => {
           if (prizeCriteriaCallCount === 0 && coreCriteriaCallCount === 0) {
             coreCriteriaCallCount++
             return createChainableMock({
-              data: [{ id: "core-1", weight: 50 }],
+              data: [{ id: "core-1", weight: 50, min_score: 0, max_score: 10 }],
               error: null,
             })
           }
           prizeCriteriaCallCount++
           return createChainableMock({
-            data: [{ id: "prize-1", weight: 50 }],
+            data: [{ id: "prize-1", weight: 50, min_score: 0, max_score: 10, prize_id: "p1" }],
             error: null,
           })
         }
@@ -2193,7 +2196,8 @@ describe("Judging Service", () => {
       if (summary.unlocked) {
         expect(summary.coreRanking.top).toHaveLength(3)
         expect(summary.coreRanking.top[0].submissionId).toBe("s1")
-        expect(summary.coreRanking.top[0].score).toBeCloseTo(9, 5)
+        // s1 core score: 9 normalized to (9-0)/10 = 0.9; weighted sum 0.9*50 / 50 = 0.9
+        expect(summary.coreRanking.top[0].score).toBeCloseTo(0.9, 5)
         expect(summary.coreRanking.top[2].submissionId).toBe("s3")
         expect(summary.prizeRankings).toHaveLength(1)
         expect(summary.prizeRankings[0].prizeName).toBe("Best Overall")
