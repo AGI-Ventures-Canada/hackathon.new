@@ -135,7 +135,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
   const activeMtab = resolveTab(mtab ?? mtabFallback, VALID_MTABS, DEFAULT_MTAB)
   const hasJudgingSetup = prizes.length > 0 || judgeCount > 0 || rounds.length > 0
   const jtabFallback = hasJudgingSetup ? DEFAULT_JTAB : "setup"
-  const activeJtab = resolveTab(jtab, VALID_JTABS, jtabFallback) as "setup" | "judges" | "rounds" | "prizes" | "results"
+  const activeJtab = resolveTab(jtab, VALID_JTABS, jtabFallback) as "setup" | "judges" | "rounds" | "prizes" | "assignments" | "results"
   const ptabFallback = tab === "fulfillment" ? "fulfillment" : tab === "feedback" ? "feedback" : undefined
   const activePtab = resolveTab(ptab ?? ptabFallback, VALID_PTABS, DEFAULT_PTAB)
 

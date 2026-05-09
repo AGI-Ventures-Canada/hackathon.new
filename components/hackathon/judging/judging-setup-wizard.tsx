@@ -841,12 +841,17 @@ function PrizeAssignmentCard({
   onOpenAssign: (prize: { id: string; name: string }) => void
 }) {
   const assigned = judges.filter((j) => j.prizeIds.includes(prize.id))
+  const isWeightedScore = prize.judgingStyle === "weighted_score"
   return (
     <div className="rounded-md border p-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="font-medium truncate">{prize.name}</p>
-          {assigned.length === 0 ? (
+          {isWeightedScore ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Judges for this prize are managed in the Assignments tab.
+            </p>
+          ) : assigned.length === 0 ? (
             <p className="mt-1 text-xs text-muted-foreground">No judges assigned</p>
           ) : (
             <div className="mt-2 flex flex-wrap gap-1.5">
@@ -860,15 +865,17 @@ function PrizeAssignmentCard({
             </div>
           )}
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => onOpenAssign({ id: prize.id, name: prize.name })}
-          className="shrink-0"
-        >
-          {assigned.length === 0 ? "Assign" : "Edit"}
-        </Button>
+        {!isWeightedScore && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => onOpenAssign({ id: prize.id, name: prize.name })}
+            className="shrink-0"
+          >
+            {assigned.length === 0 ? "Assign" : "Edit"}
+          </Button>
+        )}
       </div>
     </div>
   )

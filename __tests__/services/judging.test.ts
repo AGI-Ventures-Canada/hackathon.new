@@ -10,6 +10,8 @@ const {
   listJudges,
   removeJudge,
   autoAssignJudges,
+  assignWeightedScoreJudge,
+  getWeightedScoreAssignmentSummary,
   getJudgingProgress,
   getJudgeAssignments,
   saveNotes,
@@ -481,6 +483,256 @@ describe("Judging Service", () => {
       const result = await autoAssignJudges("h1", "p1", 3)
 
       expect(result.assignedCount).toBe(0)
+    })
+
+    it("filters submissions to room teams when roomId is provided", async () => {
+      let submissionsCallCount = 0
+      let assignmentsCallCount = 0
+      let inserted: { submission_id: string }[] = []
+
+      setMockFromImplementation((table) => {
+        if (table === "prizes") {
+          return createChainableMock({ data: { id: "p1", round_id: null }, error: null })
+        }
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: [{ id: "j1", team_id: null }], error: null })
+        }
+        if (table === "room_teams") {
+          return createChainableMock({ data: [{ team_id: "t1" }], error: null })
+        }
+        if (table === "submissions") {
+          submissionsCallCount++
+          if (submissionsCallCount === 1) {
+            return createChainableMock({ data: [{ id: "s1" }, { id: "s2" }], error: null })
+          }
+          return createChainableMock({
+            data: [
+              { id: "s1", team_id: "t1", teams: null },
+              { id: "s2", team_id: "t2", teams: null },
+            ],
+            error: null,
+          })
+        }
+        if (table === "judge_assignments") {
+          assignmentsCallCount++
+          if (assignmentsCallCount === 1) {
+            return createChainableMock({ data: [], error: null })
+          }
+          const insertMock = createChainableMock({ data: null, error: null })
+          insertMock.insert = mock((rows: { submission_id: string }[]) => {
+            inserted = rows
+            return Promise.resolve({ data: null, error: null })
+          }) as typeof insertMock.insert
+          return insertMock
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await autoAssignJudges("h1", "p1", 3, { roomId: "room-1" })
+
+      expect(result.assignedCount).toBe(1)
+      expect(inserted).toHaveLength(1)
+      expect(inserted[0].submission_id).toBe("s1")
+    })
+
+    it("returns zero when room has no teams", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "prizes") {
+          return createChainableMock({ data: { id: "p1", round_id: null }, error: null })
+        }
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: [{ id: "j1", team_id: null }], error: null })
+        }
+        if (table === "room_teams") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "submissions") {
+          return createChainableMock({ data: [{ id: "s1" }], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await autoAssignJudges("h1", "p1", 3, { roomId: "empty-room" })
+
+      expect(result.assignedCount).toBe(0)
+    })
+  })
+
+  describe("assignWeightedScoreJudge", () => {
+    it("filters submissions by room when roomId is provided", async () => {
+      let inserted: { submission_id: string }[] = []
+
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: { id: "j1", team_id: null }, error: null })
+        }
+        if (table === "room_teams") {
+          return createChainableMock({ data: [{ team_id: "t1" }, { team_id: "t3" }], error: null })
+        }
+        if (table === "submissions") {
+          return createChainableMock({
+            data: [
+              { id: "s1", team_id: "t1" },
+              { id: "s3", team_id: "t3" },
+            ],
+            error: null,
+          })
+        }
+        if (table === "judge_assignments") {
+          const m = createChainableMock({ data: [], error: null })
+          m.insert = mock((rows: { submission_id: string }[]) => {
+            inserted = rows
+            return Promise.resolve({ data: null, error: null })
+          }) as typeof m.insert
+          return m
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await assignWeightedScoreJudge("h1", "j1", { roomId: "room-1" })
+
+      expect(result.success).toBe(true)
+      expect(result.assignedCount).toBe(2)
+      expect(inserted.map((r) => r.submission_id).sort()).toEqual(["s1", "s3"])
+    })
+
+    it("returns zero assignments when room has no teams", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: { id: "j1", team_id: null }, error: null })
+        }
+        if (table === "room_teams") {
+          return createChainableMock({ data: [], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await assignWeightedScoreJudge("h1", "j1", { roomId: "empty" })
+
+      expect(result.success).toBe(true)
+      expect(result.assignedCount).toBe(0)
+    })
+
+    it("skips judge's own team submissions", async () => {
+      let inserted: { submission_id: string }[] = []
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: { id: "j1", team_id: "t1" }, error: null })
+        }
+        if (table === "submissions") {
+          return createChainableMock({
+            data: [
+              { id: "s1", team_id: "t1" },
+              { id: "s2", team_id: "t2" },
+            ],
+            error: null,
+          })
+        }
+        if (table === "judge_assignments") {
+          const m = createChainableMock({ data: [], error: null })
+          m.insert = mock((rows: { submission_id: string }[]) => {
+            inserted = rows
+            return Promise.resolve({ data: null, error: null })
+          }) as typeof m.insert
+          return m
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await assignWeightedScoreJudge("h1", "j1")
+
+      expect(result.success).toBe(true)
+      expect(inserted).toHaveLength(1)
+      expect(inserted[0].submission_id).toBe("s2")
+    })
+  })
+
+  describe("getWeightedScoreAssignmentSummary", () => {
+    it("aggregates per-room counts and per-judge counts", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "submissions") {
+          return createChainableMock({
+            data: [
+              { id: "s1", team_id: "t1" },
+              { id: "s2", team_id: "t2" },
+              { id: "s3", team_id: "t3" },
+              { id: "s4", team_id: null },
+            ],
+            error: null,
+          })
+        }
+        if (table === "rooms") {
+          return createChainableMock({
+            data: [
+              { id: "room-1", name: "Room 1", display_order: 0 },
+              { id: "room-2", name: "Room 2", display_order: 1 },
+            ],
+            error: null,
+          })
+        }
+        if (table === "room_teams") {
+          return createChainableMock({
+            data: [
+              { room_id: "room-1", team_id: "t1" },
+              { room_id: "room-1", team_id: "t2" },
+              { room_id: "room-2", team_id: "t3" },
+            ],
+            error: null,
+          })
+        }
+        if (table === "judge_assignments") {
+          return createChainableMock({
+            data: [
+              { judge_participant_id: "j1", submission_id: "s1" },
+              { judge_participant_id: "j1", submission_id: "s2" },
+              { judge_participant_id: "j1", submission_id: "s3" },
+              { judge_participant_id: "j2", submission_id: "s1" },
+            ],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const summary = await getWeightedScoreAssignmentSummary("h1")
+
+      expect(summary.totalSubmissionCount).toBe(4)
+      expect(summary.rooms).toEqual([
+        { id: "room-1", name: "Room 1", submissionCount: 2 },
+        { id: "room-2", name: "Room 2", submissionCount: 1 },
+      ])
+      expect(summary.countsByJudge.j1).toEqual({
+        all: 3,
+        byRoom: { "room-1": 2, "room-2": 1 },
+      })
+      expect(summary.countsByJudge.j2).toEqual({
+        all: 1,
+        byRoom: { "room-1": 1 },
+      })
+    })
+
+    it("returns empty rooms when none exist", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "submissions") {
+          return createChainableMock({ data: [{ id: "s1", team_id: "t1" }], error: null })
+        }
+        if (table === "rooms") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "room_teams") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "judge_assignments") {
+          return createChainableMock({ data: [], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const summary = await getWeightedScoreAssignmentSummary("h1")
+
+      expect(summary.totalSubmissionCount).toBe(1)
+      expect(summary.rooms).toEqual([])
+      expect(summary.countsByJudge).toEqual({})
     })
   })
 

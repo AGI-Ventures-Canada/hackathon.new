@@ -36,7 +36,13 @@ export type CreatePrizeInput = {
   monetaryValue?: number | null
   currency?: string | null
   criteriaId?: string | null
-  criteria?: { name: string; description?: string | null }[]
+  criteria?: {
+    name: string
+    description?: string | null
+    weight?: number
+    minScore?: number
+    maxScore?: number
+  }[]
   buckets?: { level: number; label: string; description?: string | null }[]
   distributionMethod?: string | null
   displayValue?: string | null
@@ -200,7 +206,7 @@ export async function createPrize(
   if (input.displayValue !== undefined) row.display_value = input.displayValue
 
   const cleanCriteria =
-    input.judgingStyle === "gate_check"
+    input.judgingStyle === "gate_check" || input.judgingStyle === "weighted_score"
       ? (input.criteria ?? []).filter((c) => c.name.trim().length > 0)
       : []
 
@@ -209,6 +215,20 @@ export async function createPrize(
       success: false,
       error: "At least one criterion is required for pass-or-fail prizes",
       code: "validation",
+    }
+  }
+
+  if (input.judgingStyle === "weighted_score") {
+    if (cleanCriteria.length === 0) {
+      return {
+        success: false,
+        error: "At least one criterion is required for weighted scoring",
+        code: "validation",
+      }
+    }
+    const sumValidation = await validateWeightedScoreSum(hackathonId, null, cleanCriteria)
+    if (!sumValidation.ok) {
+      return { success: false, error: sumValidation.error, code: "validation" }
     }
   }
 
@@ -253,6 +273,25 @@ export async function createPrize(
     const { error: critError } = await client.from("judging_criteria").insert(criteriaRows)
     if (critError) {
       console.error("Failed to insert criteria, rolling back prize:", critError)
+      await client.from("prizes").delete().eq("id", prize.id)
+      return { success: false, error: critError.message, code: "db_error" }
+    }
+  }
+
+  if (input.judgingStyle === "weighted_score") {
+    const criteriaRows = cleanCriteria.map((c, i) => ({
+      hackathon_id: hackathonId,
+      prize_id: prize.id,
+      name: c.name.trim(),
+      description: c.description?.trim() || null,
+      min_score: c.minScore ?? 1,
+      max_score: c.maxScore ?? 10,
+      weight: c.weight ?? 0,
+      display_order: i,
+    }))
+    const { error: critError } = await client.from("judging_criteria").insert(criteriaRows)
+    if (critError) {
+      console.error("Failed to insert weighted criteria, rolling back prize:", critError)
       await client.from("prizes").delete().eq("id", prize.id)
       return { success: false, error: critError.message, code: "db_error" }
     }
@@ -329,15 +368,25 @@ export async function updatePrize(
 export type ReplacePrizeCriteriaInput = {
   name: string
   description?: string | null
+  weight?: number
+  minScore?: number
+  maxScore?: number
+}
+
+export type ReplacePrizeCriteriaOptions = {
+  style?: PrizeJudgingStyle | null
 }
 
 export async function replacePrizeCriteria(
   hackathonId: string,
   prizeId: string,
-  criteria: ReplacePrizeCriteriaInput[]
+  criteria: ReplacePrizeCriteriaInput[],
+  options: ReplacePrizeCriteriaOptions = {}
 ): Promise<PrizeCriterion[] | null> {
   const client = getSupabase() as unknown as SupabaseClient
   const cleaned = criteria.filter((c) => c.name.trim().length > 0)
+
+  const isWeighted = options.style === "weighted_score"
 
   const { error: deleteError } = await client
     .from("judging_criteria")
@@ -356,8 +405,9 @@ export async function replacePrizeCriteria(
     prize_id: prizeId,
     name: c.name.trim(),
     description: c.description?.trim() || null,
-    max_score: 1,
-    weight: 1,
+    min_score: isWeighted ? c.minScore ?? 1 : 0,
+    max_score: isWeighted ? c.maxScore ?? 10 : 1,
+    weight: isWeighted ? c.weight ?? 0 : 1,
     display_order: i,
   }))
 
@@ -1060,6 +1110,15 @@ export async function getRoundPool(hackathonId: string, roundId: string | null):
   return (data ?? []).map((s) => s.id)
 }
 
+async function getTeamIdsInRoom(client: SupabaseClient, roomId: string): Promise<string[]> {
+  const { data } = await client
+    .from("room_teams")
+    .select("team_id")
+    .eq("room_id", roomId)
+
+  return (data ?? []).map((rt: { team_id: string }) => rt.team_id)
+}
+
 export async function advanceSubmissions(
   fromRoundId: string,
   toRoundId: string,
@@ -1409,12 +1468,20 @@ export async function assignJudgeToPrize(
 
   const { data: prize } = await client
     .from("prizes")
-    .select("id, round_id")
+    .select("id, round_id, judging_style")
     .eq("id", prizeId)
     .eq("hackathon_id", hackathonId)
     .single()
 
   if (!prize) return { success: false, assignedCount: 0, error: "Prize not found" }
+
+  if ((prize as { judging_style: string | null }).judging_style === "weighted_score") {
+    return {
+      success: false,
+      assignedCount: 0,
+      error: "Weight-based prizes use unified assignments — assign judges from the Assignments tab.",
+    }
+  }
 
   const { error: linkError } = await client
     .from("judge_prize_assignments")
@@ -1478,6 +1545,7 @@ export type AssignmentOwnership = {
   isComplete: boolean
   submissionId: string
   notes: string
+  assignmentKind?: "per_prize" | "unified_weighted_score"
 }
 
 export async function verifyAssignmentOwnership(
@@ -1487,7 +1555,7 @@ export async function verifyAssignmentOwnership(
   const client = getSupabase() as unknown as SupabaseClient
   const { data } = await client
     .from("judge_assignments")
-    .select("judge_participant_id, hackathon_id, prize_id, is_complete, submission_id, notes, hackathon_participants!inner(clerk_user_id)")
+    .select("judge_participant_id, hackathon_id, prize_id, assignment_kind, is_complete, submission_id, notes, hackathon_participants!inner(clerk_user_id)")
     .eq("id", assignmentId)
     .single()
 
@@ -1500,6 +1568,7 @@ export async function verifyAssignmentOwnership(
     isComplete: data.is_complete === true,
     submissionId: data.submission_id,
     notes: data.notes ?? "",
+    assignmentKind: ((data as { assignment_kind?: string }).assignment_kind as "per_prize" | "unified_weighted_score" | undefined) ?? "per_prize",
   }
 }
 
@@ -1665,18 +1734,23 @@ export async function removeJudgeFromPrize(
 export async function autoAssignJudges(
   hackathonId: string,
   prizeId: string,
-  submissionsPerJudge: number
+  submissionsPerJudge: number,
+  options?: { roomId?: string | null }
 ): Promise<{ assignedCount: number }> {
   const client = getSupabase() as unknown as SupabaseClient
 
   const { data: prize } = await client
     .from("prizes")
-    .select("id, round_id, allowed_team_modes")
+    .select("id, round_id, allowed_team_modes, judging_style")
     .eq("id", prizeId)
     .eq("hackathon_id", hackathonId)
     .single()
 
   if (!prize) return { assignedCount: 0 }
+
+  if ((prize as { judging_style: string | null }).judging_style === "weighted_score") {
+    return { assignedCount: 0 }
+  }
 
   const { data: judges } = await client
     .from("hackathon_participants")
@@ -1689,6 +1763,12 @@ export async function autoAssignJudges(
   const pool = await getRoundPool(hackathonId, prize.round_id)
   if (pool.length === 0) return { assignedCount: 0 }
 
+  const roomTeamIds = options?.roomId
+    ? await getTeamIdsInRoom(client, options.roomId)
+    : null
+
+  if (roomTeamIds && roomTeamIds.length === 0) return { assignedCount: 0 }
+
   const { data: submissionsRaw } = await client
     .from("submissions")
     .select("id, team_id, teams:teams!submissions_team_id_fkey(id, mode)")
@@ -1697,8 +1777,10 @@ export async function autoAssignJudges(
   if (!submissionsRaw || submissionsRaw.length === 0) return { assignedCount: 0 }
 
   const allowedModes = (prize as { allowed_team_modes: ("in_person" | "virtual")[] | null }).allowed_team_modes
+  const roomTeamIdSet = roomTeamIds ? new Set(roomTeamIds) : null
   const submissions = (submissionsRaw as unknown as { id: string; team_id: string; teams: { id: string; mode: "in_person" | "virtual" | null } | null }[])
     .filter((s) => {
+      if (roomTeamIdSet && !roomTeamIdSet.has(s.team_id)) return false
       if (!allowedModes || allowedModes.length === 0) return true
       return s.teams?.mode ? allowedModes.includes(s.teams.mode) : false
     })
@@ -1961,6 +2043,8 @@ export async function calculatePrizeResults(
       return calculateJudgesPickResults(hackathonId, prizeId)
     case "crowd_vote":
       return calculateCrowdVoteResults(hackathonId, prizeId)
+    case "weighted_score":
+      return calculateWeightedScoreResults(hackathonId, prizeId)
     default:
       return { success: false, count: 0 }
   }
@@ -2214,11 +2298,27 @@ export async function recalculateForAssignment(assignmentId: string): Promise<vo
   const client = getSupabase() as unknown as SupabaseClient
   const { data } = await client
     .from("judge_assignments")
-    .select("hackathon_id, prize_id")
+    .select("hackathon_id, prize_id, assignment_kind")
     .eq("id", assignmentId)
     .single()
 
-  if (data?.hackathon_id && data?.prize_id) {
+  if (!data?.hackathon_id) return
+
+  if ((data as { assignment_kind?: string }).assignment_kind === "unified_weighted_score") {
+    const { data: weightedPrizes } = await client
+      .from("prizes")
+      .select("id")
+      .eq("hackathon_id", data.hackathon_id)
+      .eq("judging_style", "weighted_score")
+
+    for (const p of weightedPrizes ?? []) {
+      await calculateWeightedScoreResults(data.hackathon_id, p.id)
+    }
+    await calculateCoreOnlyResults(data.hackathon_id)
+    return
+  }
+
+  if (data.prize_id) {
     await calculatePrizeResults(data.hackathon_id, data.prize_id)
   }
 }
@@ -2307,6 +2407,7 @@ export type JudgeAssignmentForJudge = {
   prizeName: string | null
   judgingStyle: PrizeJudgingStyle | null
   selfJudging: boolean
+  assignmentKind: "per_prize" | "unified_weighted_score"
 }
 
 export async function getJudgeAssignments(
@@ -2330,7 +2431,7 @@ export async function getJudgeAssignments(
   const { data: assignments, error } = await client
     .from("judge_assignments")
     .select(`
-      id, submission_id, is_complete, notes, viewed_at, prize_id,
+      id, submission_id, is_complete, notes, viewed_at, prize_id, assignment_kind,
       submission:submissions!submission_id(title, description, github_url, live_app_url, screenshot_url, team_id)
     `)
     .eq("hackathon_id", hackathonId)
@@ -2389,6 +2490,9 @@ export async function getJudgeAssignments(
       team_id: string | null
     }
     const pid = a.prize_id as string | null
+    const kind = ((a.assignment_kind as string | null) ?? "per_prize") as
+      | "per_prize"
+      | "unified_weighted_score"
     const selfJudging = Boolean(judgeTeamId && sub.team_id && judgeTeamId === sub.team_id)
     return {
       id: a.id as string,
@@ -2406,8 +2510,13 @@ export async function getJudgeAssignments(
       viewedAt: (a.viewed_at as string | null) ?? null,
       prizeId: pid,
       prizeName: pid ? prizeMap[pid]?.name ?? null : null,
-      judgingStyle: pid ? (prizeMap[pid]?.judging_style as PrizeJudgingStyle | null) : null,
+      judgingStyle: pid
+        ? (prizeMap[pid]?.judging_style as PrizeJudgingStyle | null)
+        : kind === "unified_weighted_score"
+          ? "weighted_score"
+          : null,
       selfJudging,
+      assignmentKind: kind,
     }
   })
 }
@@ -2478,11 +2587,14 @@ export type AssignmentDetailCriterion = {
   id: string
   name: string
   description: string | null
+  min_score: number
   max_score: number
   weight: number
   category: string | null
   currentScore: number | null
   rubricLevels: { id: string; level_number: number; label: string; description: string | null }[]
+  prizeId?: string | null
+  prizeName?: string | null
 }
 
 export type AssignmentDetail = {
@@ -2497,6 +2609,7 @@ export type AssignmentDetail = {
   isComplete: boolean
   notes: string
   criteria: AssignmentDetailCriterion[]
+  assignmentKind?: "per_prize" | "unified_weighted_score"
 }
 
 export async function getAssignmentDetail(
@@ -2517,6 +2630,7 @@ export async function getAssignmentDetail(
     id: string
     name: string
     description: string | null
+    min_score: number
     max_score: number
     weight: number
     category: string | null
@@ -2526,22 +2640,64 @@ export async function getAssignmentDetail(
     ? client.from("teams").select("name").eq("id", sub.team_id).single().then(({ data }) => data?.name ?? null)
     : Promise.resolve(null)
 
-  const fetchCriteria = async (): Promise<CriteriaRow[]> => {
+  type CriteriaRowWithPrize = CriteriaRow & { prize_id: string | null; prize_name?: string | null }
+
+  const fetchCriteria = async (): Promise<CriteriaRowWithPrize[]> => {
+    if (ownership.assignmentKind === "unified_weighted_score") {
+      const { data: weightedPrizes } = await client
+        .from("prizes")
+        .select("id, name")
+        .eq("hackathon_id", ownership.hackathonId)
+        .eq("judging_style", "weighted_score")
+        .order("display_order")
+
+      const prizeIds = (weightedPrizes ?? []).map((p) => p.id)
+      const prizeNameMap = new Map((weightedPrizes ?? []).map((p) => [p.id, p.name]))
+
+      const { data: coreCriteria } = await client
+        .from("judging_criteria")
+        .select("id, name, description, min_score, max_score, weight, category, prize_id")
+        .eq("hackathon_id", ownership.hackathonId)
+        .is("prize_id", null)
+        .order("display_order")
+
+      let prizeCriteria: Array<CriteriaRow & { prize_id: string | null }> = []
+      if (prizeIds.length > 0) {
+        const { data } = await client
+          .from("judging_criteria")
+          .select("id, name, description, min_score, max_score, weight, category, prize_id")
+          .in("prize_id", prizeIds)
+          .order("display_order")
+        prizeCriteria = (data ?? []) as Array<CriteriaRow & { prize_id: string | null }>
+      }
+
+      const result: CriteriaRowWithPrize[] = []
+      for (const c of (coreCriteria ?? []) as Array<CriteriaRow & { prize_id: string | null }>) {
+        result.push({ ...c, prize_id: null, prize_name: null })
+      }
+      for (const c of prizeCriteria) {
+        result.push({ ...c, prize_name: c.prize_id ? prizeNameMap.get(c.prize_id) ?? null : null })
+      }
+      return result
+    }
+
     if (ownership.prizeId) {
       const { data } = await client
         .from("judging_criteria")
-        .select("id, name, description, max_score, weight, category")
+        .select("id, name, description, min_score, max_score, weight, category")
         .eq("prize_id", ownership.prizeId)
         .order("display_order")
-      if (data && data.length > 0) return data as CriteriaRow[]
+      if (data && data.length > 0) {
+        return (data as CriteriaRow[]).map((c) => ({ ...c, prize_id: ownership.prizeId, prize_name: null }))
+      }
     }
     const { data } = await client
       .from("judging_criteria")
-      .select("id, name, description, max_score, weight, category")
+      .select("id, name, description, min_score, max_score, weight, category")
       .eq("hackathon_id", ownership.hackathonId)
       .is("prize_id", null)
       .order("display_order")
-    return (data ?? []) as CriteriaRow[]
+    return ((data ?? []) as CriteriaRow[]).map((c) => ({ ...c, prize_id: null, prize_name: null }))
   }
 
   const [teamName, criteria] = await Promise.all([teamNamePromise, fetchCriteria()])
@@ -2592,15 +2748,19 @@ export async function getAssignmentDetail(
     teamName,
     isComplete: ownership.isComplete,
     notes: ownership.notes,
+    assignmentKind: ownership.assignmentKind ?? "per_prize",
     criteria: criteria.map((c) => ({
       id: c.id,
       name: c.name,
       description: c.description,
+      min_score: Number((c as { min_score?: number }).min_score ?? 0),
       max_score: c.max_score,
       weight: Number(c.weight), // Supabase returns Postgres numeric columns as strings
       category: c.category ?? null,
       currentScore: scoreMap[c.id] ?? null,
       rubricLevels: rubricMap[c.id] ?? [],
+      prizeId: c.prize_id ?? null,
+      prizeName: c.prize_name ?? null,
     })),
   }
 }
@@ -2623,9 +2783,25 @@ export async function submitScores(
 
   let criteriaQuery = client
     .from("judging_criteria")
-    .select("id, max_score")
+    .select("id, min_score, max_score")
 
-  if (ownership.prizeId) {
+  if (ownership.assignmentKind === "unified_weighted_score") {
+    const { data: weightedPrizes } = await client
+      .from("prizes")
+      .select("id")
+      .eq("hackathon_id", ownership.hackathonId)
+      .eq("judging_style", "weighted_score")
+    const prizeIds = (weightedPrizes ?? []).map((p) => p.id)
+    criteriaQuery = client
+      .from("judging_criteria")
+      .select("id, min_score, max_score")
+      .eq("hackathon_id", ownership.hackathonId)
+    if (prizeIds.length > 0) {
+      criteriaQuery = criteriaQuery.or(`prize_id.is.null,prize_id.in.(${prizeIds.join(",")})`)
+    } else {
+      criteriaQuery = criteriaQuery.is("prize_id", null)
+    }
+  } else if (ownership.prizeId) {
     criteriaQuery = criteriaQuery.eq("prize_id", ownership.prizeId)
   } else {
     criteriaQuery = criteriaQuery
@@ -2642,13 +2818,21 @@ export async function submitScores(
   if (scores.length > 0) {
     const validCriteriaIds = new Set((criteria ?? []).map((c) => c.id))
     const maxScoreMap = new Map((criteria ?? []).map((c) => [c.id, c.max_score]))
+    const minScoreMap = new Map(
+      (criteria ?? []).map((c) => [c.id, (c as { min_score?: number }).min_score ?? 0])
+    )
 
     for (const s of scores) {
       if (!validCriteriaIds.has(s.criteriaId)) {
         return { success: false, error: "One or more criteria IDs are invalid", code: "invalid_criteria" }
       }
-      if (s.score < 0) {
-        return { success: false, error: "Scores cannot be negative", code: "invalid_score" }
+      const minScore = minScoreMap.get(s.criteriaId) ?? 0
+      if (s.score < minScore) {
+        return {
+          success: false,
+          error: `Score ${s.score} is below minimum ${minScore}`,
+          code: "invalid_score",
+        }
       }
       const maxScore = maxScoreMap.get(s.criteriaId)
       if (maxScore != null && s.score > maxScore) {
@@ -2690,4 +2874,746 @@ export async function submitScores(
   }
 
   return { success: true }
+}
+
+// ============================================================
+// Weighted Score: core criteria CRUD, validation, results, assignments, summary
+// ============================================================
+
+export type CoreCriterionInput = {
+  name: string
+  description?: string | null
+  weight: number
+  minScore?: number
+  maxScore?: number
+}
+
+export type CoreCriterion = {
+  id: string
+  name: string
+  description: string | null
+  weight: number
+  minScore: number
+  maxScore: number
+  displayOrder: number
+}
+
+export async function listCoreCriteria(hackathonId: string): Promise<CoreCriterion[]> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const { data, error } = await client
+    .from("judging_criteria")
+    .select("id, name, description, weight, min_score, max_score, display_order")
+    .eq("hackathon_id", hackathonId)
+    .is("prize_id", null)
+    .order("display_order")
+
+  if (error || !data) return []
+
+  return data.map((c) => ({
+    id: c.id,
+    name: c.name,
+    description: c.description,
+    weight: Number(c.weight),
+    minScore: Number((c as { min_score?: number }).min_score ?? 1),
+    maxScore: Number((c as { max_score?: number }).max_score ?? 10),
+    displayOrder: c.display_order,
+  }))
+}
+
+export async function listPrizeCriteria(prizeId: string): Promise<CoreCriterion[]> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const { data, error } = await client
+    .from("judging_criteria")
+    .select("id, name, description, weight, min_score, max_score, display_order")
+    .eq("prize_id", prizeId)
+    .order("display_order")
+
+  if (error || !data) return []
+
+  return data.map((c) => ({
+    id: c.id,
+    name: c.name,
+    description: c.description,
+    weight: Number(c.weight),
+    minScore: Number((c as { min_score?: number }).min_score ?? 1),
+    maxScore: Number((c as { max_score?: number }).max_score ?? 10),
+    displayOrder: c.display_order,
+  }))
+}
+
+export type ValidateWeightedSumResult =
+  | { ok: true }
+  | { ok: false; error: string; offendingPrizes?: { id: string; name: string; sum: number }[] }
+
+export async function validateWeightedScoreSum(
+  hackathonId: string,
+  prizeId: string | null,
+  prizeCriteria: { weight?: number }[] | null,
+  coreOverride?: { weight: number }[] | null
+): Promise<ValidateWeightedSumResult> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  let coreSum: number
+  if (coreOverride !== undefined && coreOverride !== null) {
+    coreSum = coreOverride.reduce((acc, c) => acc + (Number(c.weight) || 0), 0)
+  } else {
+    const { data: coreRows } = await client
+      .from("judging_criteria")
+      .select("weight")
+      .eq("hackathon_id", hackathonId)
+      .is("prize_id", null)
+    coreSum = (coreRows ?? []).reduce((acc, r) => acc + Number(r.weight || 0), 0)
+  }
+
+  const TOLERANCE = 0.01
+
+  if (prizeCriteria) {
+    const prizeSum = prizeCriteria.reduce((acc, c) => acc + (Number(c.weight) || 0), 0)
+    const total = coreSum + prizeSum
+    if (Math.abs(total - 100) > TOLERANCE) {
+      return {
+        ok: false,
+        error: `Weights must sum to 100. Core ${coreSum}% + prize ${prizeSum}% = ${total}%.`,
+      }
+    }
+    return { ok: true }
+  }
+
+  // Validate ALL existing weighted_score prizes still satisfy invariant
+  const { data: weightedPrizes } = await client
+    .from("prizes")
+    .select("id, name")
+    .eq("hackathon_id", hackathonId)
+    .eq("judging_style", "weighted_score")
+
+  if (!weightedPrizes || weightedPrizes.length === 0) return { ok: true }
+
+  const offending: { id: string; name: string; sum: number }[] = []
+  for (const p of weightedPrizes) {
+    const { data: rows } = await client
+      .from("judging_criteria")
+      .select("weight")
+      .eq("prize_id", p.id)
+    const prizeSum = (rows ?? []).reduce((acc, r) => acc + Number(r.weight || 0), 0)
+    const total = coreSum + prizeSum
+    if (Math.abs(total - 100) > TOLERANCE) {
+      offending.push({ id: p.id, name: p.name, sum: total })
+    }
+  }
+
+  if (offending.length > 0) {
+    const names = offending.map((p) => `${p.name}: ${p.sum}%`).join(", ")
+    return {
+      ok: false,
+      error: `These prizes would no longer add up to 100%: ${names}.`,
+      offendingPrizes: offending,
+    }
+  }
+
+  return { ok: true }
+}
+
+export async function createCoreCriterion(
+  hackathonId: string,
+  input: CoreCriterionInput
+): Promise<{ success: true; criterion: CoreCriterion } | { success: false; error: string; offendingPrizes?: { id: string; name: string; sum: number }[] }> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const existing = await listCoreCriteria(hackathonId)
+  const newCore = [...existing, { weight: input.weight }]
+  const validation = await validateWeightedScoreSum(hackathonId, null, null, newCore)
+  if (!validation.ok) {
+    return {
+      success: false,
+      error: validation.error,
+      offendingPrizes: "offendingPrizes" in validation ? validation.offendingPrizes : undefined,
+    }
+  }
+
+  const displayOrder = existing.length
+  const minScore = input.minScore ?? 1
+  const maxScore = input.maxScore ?? 10
+  if (!(minScore < maxScore)) {
+    return { success: false, error: "Minimum score must be less than maximum score" }
+  }
+
+  const { data, error } = await client
+    .from("judging_criteria")
+    .insert({
+      hackathon_id: hackathonId,
+      prize_id: null,
+      name: input.name.trim(),
+      description: input.description?.trim() || null,
+      min_score: minScore,
+      max_score: maxScore,
+      weight: input.weight,
+      display_order: displayOrder,
+    })
+    .select("id, name, description, weight, min_score, max_score, display_order")
+    .single()
+
+  if (error || !data) {
+    return { success: false, error: error?.message ?? "Failed to create criterion" }
+  }
+
+  return {
+    success: true,
+    criterion: {
+      id: data.id,
+      name: data.name,
+      description: data.description,
+      weight: Number(data.weight),
+      minScore: Number((data as { min_score?: number }).min_score ?? 1),
+      maxScore: Number((data as { max_score?: number }).max_score ?? 10),
+      displayOrder: data.display_order,
+    },
+  }
+}
+
+export async function updateCoreCriterion(
+  hackathonId: string,
+  criterionId: string,
+  input: Partial<CoreCriterionInput>
+): Promise<{ success: true; criterion: CoreCriterion } | { success: false; error: string; offendingPrizes?: { id: string; name: string; sum: number }[] }> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  if (input.weight !== undefined) {
+    const existing = await listCoreCriteria(hackathonId)
+    const newCore = existing.map((c) =>
+      c.id === criterionId ? { weight: input.weight as number } : { weight: c.weight }
+    )
+    const validation = await validateWeightedScoreSum(hackathonId, null, null, newCore)
+    if (!validation.ok) {
+      return {
+        success: false,
+        error: validation.error,
+        offendingPrizes: "offendingPrizes" in validation ? validation.offendingPrizes : undefined,
+      }
+    }
+  }
+
+  const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
+  if (input.name !== undefined) updates.name = input.name.trim()
+  if (input.description !== undefined) updates.description = input.description?.trim() || null
+  if (input.weight !== undefined) updates.weight = input.weight
+  if (input.minScore !== undefined) updates.min_score = input.minScore
+  if (input.maxScore !== undefined) updates.max_score = input.maxScore
+
+  if (input.minScore !== undefined && input.maxScore !== undefined) {
+    if (!(input.minScore < input.maxScore)) {
+      return { success: false, error: "Minimum score must be less than maximum score" }
+    }
+  }
+
+  const { data, error } = await client
+    .from("judging_criteria")
+    .update(updates)
+    .eq("id", criterionId)
+    .eq("hackathon_id", hackathonId)
+    .is("prize_id", null)
+    .select("id, name, description, weight, min_score, max_score, display_order")
+    .single()
+
+  if (error || !data) {
+    return { success: false, error: error?.message ?? "Failed to update criterion" }
+  }
+
+  return {
+    success: true,
+    criterion: {
+      id: data.id,
+      name: data.name,
+      description: data.description,
+      weight: Number(data.weight),
+      minScore: Number((data as { min_score?: number }).min_score ?? 1),
+      maxScore: Number((data as { max_score?: number }).max_score ?? 10),
+      displayOrder: data.display_order,
+    },
+  }
+}
+
+export async function deleteCoreCriterion(
+  hackathonId: string,
+  criterionId: string
+): Promise<{ success: true } | { success: false; error: string; offendingPrizes?: { id: string; name: string; sum: number }[] }> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const existing = await listCoreCriteria(hackathonId)
+  const newCore = existing.filter((c) => c.id !== criterionId).map((c) => ({ weight: c.weight }))
+  const validation = await validateWeightedScoreSum(hackathonId, null, null, newCore)
+  if (!validation.ok) {
+    return {
+      success: false,
+      error: validation.error,
+      offendingPrizes: "offendingPrizes" in validation ? validation.offendingPrizes : undefined,
+    }
+  }
+
+  const { error } = await client
+    .from("judging_criteria")
+    .delete()
+    .eq("id", criterionId)
+    .eq("hackathon_id", hackathonId)
+    .is("prize_id", null)
+
+  if (error) return { success: false, error: error.message }
+  return { success: true }
+}
+
+// ============================================================
+// Weighted score results
+// ============================================================
+
+export async function calculateWeightedScoreResults(
+  hackathonId: string,
+  prizeId: string
+): Promise<{ success: boolean; count: number }> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { error: deleteError } = await client
+    .from("hackathon_results")
+    .delete()
+    .eq("hackathon_id", hackathonId)
+    .eq("prize_id", prizeId)
+    .eq("result_kind", "prize")
+
+  if (deleteError) {
+    console.error("Failed to clear weighted results:", deleteError)
+    return { success: false, count: 0 }
+  }
+
+  const [{ data: coreCriteria }, { data: prizeCriteria }] = await Promise.all([
+    client
+      .from("judging_criteria")
+      .select("id, weight")
+      .eq("hackathon_id", hackathonId)
+      .is("prize_id", null),
+    client
+      .from("judging_criteria")
+      .select("id, weight")
+      .eq("prize_id", prizeId),
+  ])
+
+  const allCriteria = [...(coreCriteria ?? []), ...(prizeCriteria ?? [])]
+  const weightMap = new Map(allCriteria.map((c) => [c.id, Number(c.weight)]))
+  if (allCriteria.length === 0) return { success: true, count: 0 }
+
+  const { data: assignments } = await client
+    .from("judge_assignments")
+    .select("id, submission_id, judge_participant_id")
+    .eq("hackathon_id", hackathonId)
+    .eq("assignment_kind", "unified_weighted_score")
+    .eq("is_complete", true)
+
+  if (!assignments || assignments.length === 0) return { success: true, count: 0 }
+
+  const assignmentIds = assignments.map((a) => a.id)
+  const { data: scores } = await client
+    .from("scores")
+    .select("judge_assignment_id, criteria_id, score")
+    .in("judge_assignment_id", assignmentIds)
+    .in("criteria_id", Array.from(weightMap.keys()))
+
+  const subMap = new Map(assignments.map((a) => [a.id, a.submission_id]))
+  const judgeMap = new Map(assignments.map((a) => [a.id, a.judge_participant_id]))
+
+  const subScores: Record<string, { totalWeighted: number; judgeIds: Set<string>; perJudge: Record<string, number> }> = {}
+
+  for (const s of scores ?? []) {
+    const sid = subMap.get(s.judge_assignment_id)
+    const jid = judgeMap.get(s.judge_assignment_id)
+    const w = weightMap.get(s.criteria_id)
+    if (!sid || !jid || w === undefined) continue
+    if (!subScores[sid]) subScores[sid] = { totalWeighted: 0, judgeIds: new Set(), perJudge: {} }
+    const key = `${sid}:${jid}`
+    if (subScores[sid].perJudge[key] === undefined) subScores[sid].perJudge[key] = 0
+    subScores[sid].perJudge[key] += s.score * w
+    subScores[sid].judgeIds.add(jid)
+  }
+
+  const ranked = Object.entries(subScores)
+    .map(([sid, info]) => {
+      const judgeCount = info.judgeIds.size
+      const sumPerJudge = Object.values(info.perJudge).reduce((a, b) => a + b, 0)
+      const avg = judgeCount > 0 ? sumPerJudge / judgeCount / 100 : 0
+      return { sid, avg, total: avg, judgeCount }
+    })
+    .sort((a, b) => b.avg - a.avg)
+
+  return insertRankedResults(hackathonId, prizeId, ranked)
+}
+
+export async function calculateCoreOnlyResults(
+  hackathonId: string
+): Promise<{ success: boolean; count: number }> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { error: deleteError } = await client
+    .from("hackathon_results")
+    .delete()
+    .eq("hackathon_id", hackathonId)
+    .eq("result_kind", "core_only")
+
+  if (deleteError) {
+    console.error("Failed to clear core-only results:", deleteError)
+    return { success: false, count: 0 }
+  }
+
+  const { data: coreCriteria } = await client
+    .from("judging_criteria")
+    .select("id, weight")
+    .eq("hackathon_id", hackathonId)
+    .is("prize_id", null)
+
+  if (!coreCriteria || coreCriteria.length === 0) return { success: true, count: 0 }
+
+  const weightMap = new Map(coreCriteria.map((c) => [c.id, Number(c.weight)]))
+  const coreWeightSum = Array.from(weightMap.values()).reduce((a, b) => a + b, 0)
+  if (coreWeightSum <= 0) return { success: true, count: 0 }
+
+  const { data: assignments } = await client
+    .from("judge_assignments")
+    .select("id, submission_id, judge_participant_id")
+    .eq("hackathon_id", hackathonId)
+    .eq("assignment_kind", "unified_weighted_score")
+    .eq("is_complete", true)
+
+  if (!assignments || assignments.length === 0) return { success: true, count: 0 }
+
+  const assignmentIds = assignments.map((a) => a.id)
+  const { data: scores } = await client
+    .from("scores")
+    .select("judge_assignment_id, criteria_id, score")
+    .in("judge_assignment_id", assignmentIds)
+    .in("criteria_id", Array.from(weightMap.keys()))
+
+  const subMap = new Map(assignments.map((a) => [a.id, a.submission_id]))
+  const judgeMap = new Map(assignments.map((a) => [a.id, a.judge_participant_id]))
+
+  const subScores: Record<string, { judgeIds: Set<string>; perJudge: Record<string, number> }> = {}
+
+  for (const s of scores ?? []) {
+    const sid = subMap.get(s.judge_assignment_id)
+    const jid = judgeMap.get(s.judge_assignment_id)
+    const w = weightMap.get(s.criteria_id)
+    if (!sid || !jid || w === undefined) continue
+    if (!subScores[sid]) subScores[sid] = { judgeIds: new Set(), perJudge: {} }
+    const key = `${sid}:${jid}`
+    if (subScores[sid].perJudge[key] === undefined) subScores[sid].perJudge[key] = 0
+    subScores[sid].perJudge[key] += s.score * w
+    subScores[sid].judgeIds.add(jid)
+  }
+
+  const ranked = Object.entries(subScores)
+    .map(([sid, info]) => {
+      const judgeCount = info.judgeIds.size
+      const sumPerJudge = Object.values(info.perJudge).reduce((a, b) => a + b, 0)
+      const avg = judgeCount > 0 ? sumPerJudge / judgeCount / coreWeightSum : 0
+      return { sid, avg, total: avg, judgeCount }
+    })
+    .sort((a, b) => b.avg - a.avg)
+
+  if (ranked.length === 0) return { success: true, count: 0 }
+
+  let currentRank = 1
+  const inserts = ranked.map((r, i) => {
+    if (i > 0 && r.avg < ranked[i - 1].avg) currentRank = i + 1
+    return {
+      hackathon_id: hackathonId,
+      submission_id: r.sid,
+      rank: currentRank,
+      total_score: r.total,
+      weighted_score: r.avg,
+      judge_count: r.judgeCount,
+      prize_id: null,
+      result_kind: "core_only",
+    }
+  })
+
+  const { error } = await client.from("hackathon_results").insert(inserts)
+  if (error) {
+    console.error("Failed to insert core-only results:", error)
+    return { success: false, count: 0 }
+  }
+
+  return { success: true, count: inserts.length }
+}
+
+// ============================================================
+// Unified weighted-score assignments
+// ============================================================
+
+export async function assignWeightedScoreJudge(
+  hackathonId: string,
+  judgeParticipantId: string,
+  options?: { roomId?: string | null }
+): Promise<{ success: boolean; assignedCount: number; error?: string }> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data: judge } = await client
+    .from("hackathon_participants")
+    .select("id, team_id")
+    .eq("id", judgeParticipantId)
+    .single()
+
+  if (!judge) return { success: false, assignedCount: 0, error: "Judge not found" }
+
+  const roomTeamIds = options?.roomId
+    ? await getTeamIdsInRoom(client, options.roomId)
+    : null
+
+  if (roomTeamIds && roomTeamIds.length === 0) {
+    return { success: true, assignedCount: 0 }
+  }
+
+  let submissionsQuery = client
+    .from("submissions")
+    .select("id, team_id")
+    .eq("hackathon_id", hackathonId)
+
+  if (roomTeamIds) {
+    submissionsQuery = submissionsQuery.in("team_id", roomTeamIds)
+  }
+
+  const { data: submissions } = await submissionsQuery
+
+  const { data: existing } = await client
+    .from("judge_assignments")
+    .select("submission_id")
+    .eq("hackathon_id", hackathonId)
+    .eq("judge_participant_id", judgeParticipantId)
+    .eq("assignment_kind", "unified_weighted_score")
+
+  const existingSet = new Set((existing ?? []).map((e) => e.submission_id))
+
+  const newAssignments = (submissions ?? [])
+    .filter((s) => !existingSet.has(s.id))
+    .filter((s) => !((judge as { team_id: string | null }).team_id && s.team_id && (judge as { team_id: string | null }).team_id === s.team_id))
+    .map((s) => ({
+      hackathon_id: hackathonId,
+      judge_participant_id: judgeParticipantId,
+      submission_id: s.id,
+      prize_id: null,
+      round_id: null,
+      assignment_kind: "unified_weighted_score",
+    }))
+
+  if (newAssignments.length === 0) return { success: true, assignedCount: 0 }
+
+  const { error } = await client.from("judge_assignments").insert(newAssignments)
+  if (error) {
+    console.error("Failed to create unified assignments:", error)
+    return { success: false, assignedCount: 0, error: error.message }
+  }
+
+  return { success: true, assignedCount: newAssignments.length }
+}
+
+export async function getWeightedScoreAssignmentCounts(
+  hackathonId: string
+): Promise<Record<string, number>> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const { data } = await client
+    .from("judge_assignments")
+    .select("judge_participant_id")
+    .eq("hackathon_id", hackathonId)
+    .eq("assignment_kind", "unified_weighted_score")
+
+  const counts: Record<string, number> = {}
+  for (const row of data ?? []) {
+    const id = (row as { judge_participant_id: string }).judge_participant_id
+    counts[id] = (counts[id] ?? 0) + 1
+  }
+  return counts
+}
+
+export type WeightedScoreRoomSummary = {
+  totalSubmissionCount: number
+  rooms: { id: string; name: string; submissionCount: number }[]
+  countsByJudge: Record<string, { all: number; byRoom: Record<string, number> }>
+}
+
+export async function getWeightedScoreAssignmentSummary(
+  hackathonId: string
+): Promise<WeightedScoreRoomSummary> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const [submissionsResult, roomsResult, roomTeamsResult, assignmentsResult] = await Promise.all([
+    client.from("submissions").select("id, team_id").eq("hackathon_id", hackathonId),
+    client.from("rooms").select("id, name, display_order").eq("hackathon_id", hackathonId).order("display_order"),
+    client.from("room_teams").select("room_id, team_id"),
+    client
+      .from("judge_assignments")
+      .select("judge_participant_id, submission_id")
+      .eq("hackathon_id", hackathonId)
+      .eq("assignment_kind", "unified_weighted_score"),
+  ])
+
+  const submissions = (submissionsResult.data ?? []) as { id: string; team_id: string | null }[]
+  const rooms = (roomsResult.data ?? []) as { id: string; name: string; display_order: number }[]
+  const allRoomTeams = (roomTeamsResult.data ?? []) as { room_id: string; team_id: string }[]
+  const assignments = (assignmentsResult.data ?? []) as { judge_participant_id: string; submission_id: string }[]
+
+  const roomIdSet = new Set(rooms.map((r) => r.id))
+  const teamIdToRoomId: Record<string, string> = {}
+  for (const rt of allRoomTeams) {
+    if (roomIdSet.has(rt.room_id)) teamIdToRoomId[rt.team_id] = rt.room_id
+  }
+
+  const submissionToRoomId: Record<string, string> = {}
+  const submissionsPerRoom: Record<string, number> = {}
+  for (const s of submissions) {
+    if (!s.team_id) continue
+    const roomId = teamIdToRoomId[s.team_id]
+    if (!roomId) continue
+    submissionToRoomId[s.id] = roomId
+    submissionsPerRoom[roomId] = (submissionsPerRoom[roomId] ?? 0) + 1
+  }
+
+  const countsByJudge: Record<string, { all: number; byRoom: Record<string, number> }> = {}
+  for (const a of assignments) {
+    const entry = (countsByJudge[a.judge_participant_id] ??= { all: 0, byRoom: {} })
+    entry.all += 1
+    const roomId = submissionToRoomId[a.submission_id]
+    if (roomId) entry.byRoom[roomId] = (entry.byRoom[roomId] ?? 0) + 1
+  }
+
+  return {
+    totalSubmissionCount: submissions.length,
+    rooms: rooms.map((r) => ({
+      id: r.id,
+      name: r.name,
+      submissionCount: submissionsPerRoom[r.id] ?? 0,
+    })),
+    countsByJudge,
+  }
+}
+
+// ============================================================
+// Per-judge private summary (top 3 per ranking)
+// ============================================================
+
+export type JudgeSummaryEntry = {
+  submissionId: string
+  title: string
+  teamName: string | null
+  score: number
+}
+
+export type JudgeSummary =
+  | { unlocked: false; total: number; completed: number }
+  | {
+      unlocked: true
+      total: number
+      completed: number
+      prizeRankings: { prizeId: string; prizeName: string; top: JudgeSummaryEntry[] }[]
+      coreRanking: { top: JudgeSummaryEntry[] }
+    }
+
+export async function getJudgeSummary(
+  hackathonId: string,
+  judgeParticipantId: string
+): Promise<JudgeSummary> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data: assignments } = await client
+    .from("judge_assignments")
+    .select("id, submission_id, is_complete")
+    .eq("hackathon_id", hackathonId)
+    .eq("judge_participant_id", judgeParticipantId)
+    .eq("assignment_kind", "unified_weighted_score")
+
+  const total = assignments?.length ?? 0
+  const completed = assignments?.filter((a) => a.is_complete).length ?? 0
+
+  if (total === 0 || completed < total) {
+    return { unlocked: false, total, completed }
+  }
+
+  const assignmentIds = (assignments ?? []).map((a) => a.id)
+  const submissionIds = Array.from(new Set((assignments ?? []).map((a) => a.submission_id)))
+
+  const [{ data: subs }, { data: weightedPrizes }, { data: coreCriteria }, { data: scores }] = await Promise.all([
+    client
+      .from("submissions")
+      .select("id, title, team_id")
+      .in("id", submissionIds.length > 0 ? submissionIds : ["00000000-0000-0000-0000-000000000000"]),
+    client
+      .from("prizes")
+      .select("id, name")
+      .eq("hackathon_id", hackathonId)
+      .eq("judging_style", "weighted_score")
+      .order("display_order"),
+    client
+      .from("judging_criteria")
+      .select("id, weight")
+      .eq("hackathon_id", hackathonId)
+      .is("prize_id", null),
+    client
+      .from("scores")
+      .select("judge_assignment_id, criteria_id, score")
+      .in("judge_assignment_id", assignmentIds.length > 0 ? assignmentIds : ["00000000-0000-0000-0000-000000000000"]),
+  ])
+
+  const teamIds = (subs ?? []).map((s) => s.team_id).filter((id): id is string => Boolean(id))
+  const teamMap: Record<string, string> = {}
+  if (teamIds.length > 0) {
+    const { data: teams } = await client.from("teams").select("id, name").in("id", teamIds)
+    for (const t of teams ?? []) teamMap[t.id] = t.name
+  }
+
+  const subInfoMap = new Map(
+    (subs ?? []).map((s) => [s.id, { title: s.title as string, teamName: s.team_id ? teamMap[s.team_id] ?? null : null }])
+  )
+
+  const assignmentSubMap = new Map((assignments ?? []).map((a) => [a.id, a.submission_id]))
+
+  const coreWeights = new Map((coreCriteria ?? []).map((c) => [c.id, Number(c.weight)]))
+  const coreWeightSum = Array.from(coreWeights.values()).reduce((a, b) => a + b, 0)
+
+  const prizeWeightMaps: Map<string, Map<string, number>> = new Map()
+  const prizeNameMap = new Map<string, string>()
+  for (const p of weightedPrizes ?? []) {
+    prizeNameMap.set(p.id, p.name)
+    const { data: pc } = await client
+      .from("judging_criteria")
+      .select("id, weight")
+      .eq("prize_id", p.id)
+    prizeWeightMaps.set(p.id, new Map((pc ?? []).map((c) => [c.id, Number(c.weight)])))
+  }
+
+  const buildRanking = (weightMap: Map<string, number>, denom: number): JudgeSummaryEntry[] => {
+    if (denom <= 0) return []
+    const subTotals: Record<string, number> = {}
+    for (const s of scores ?? []) {
+      const sid = assignmentSubMap.get(s.judge_assignment_id)
+      const w = weightMap.get(s.criteria_id)
+      if (!sid || w === undefined) continue
+      if (!subTotals[sid]) subTotals[sid] = 0
+      subTotals[sid] += s.score * w
+    }
+    return Object.entries(subTotals)
+      .map(([sid, total]) => {
+        const info = subInfoMap.get(sid)
+        return {
+          submissionId: sid,
+          title: info?.title ?? "Unknown",
+          teamName: info?.teamName ?? null,
+          score: total / denom,
+        }
+      })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3)
+  }
+
+  const prizeRankings = (weightedPrizes ?? []).map((p) => {
+    const prizeMap = prizeWeightMaps.get(p.id) ?? new Map<string, number>()
+    const combined = new Map<string, number>([...coreWeights, ...prizeMap])
+    const denom = Array.from(combined.values()).reduce((a, b) => a + b, 0)
+    return { prizeId: p.id, prizeName: p.name, top: buildRanking(combined, denom) }
+  })
+
+  const coreRanking = { top: buildRanking(coreWeights, coreWeightSum) }
+
+  return { unlocked: true, total, completed, prizeRankings, coreRanking }
 }

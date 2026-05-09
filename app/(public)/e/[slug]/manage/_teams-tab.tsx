@@ -1,9 +1,9 @@
 "use client"
 
 import { Fragment, useEffect, useRef, useState } from "react"
-import { assertOkJson } from "@/lib/utils/fetch"
+import { assertOk, assertOkJson } from "@/lib/utils/fetch"
 import {
-  Loader2, Plus, Users, ChevronRight, FileText, DoorOpen, Crown, Mail, Settings2,
+  Loader2, Plus, Users, ChevronRight, FileText, Crown, Mail, Settings2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -14,6 +14,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { useActionItemsOptional } from "@/components/hackathon/manage/action-items-context"
 import { TeamSettingsDialog, teamSettingsSummary } from "@/components/hackathon/manage/team-settings-dialog"
@@ -103,11 +110,15 @@ type TeamsTabProps = {
   allowSolo: boolean
 }
 
+const UNASSIGNED_ROOM = "__unassigned__"
+
 export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: initialMin, allowSolo: initialSolo }: TeamsTabProps) {
   const ctx = useActionItemsOptional()
   const [teams, setTeams] = useState<Team[]>([])
+  const [rooms, setRooms] = useState<{ id: string; name: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [roomError, setRoomError] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
   const [teamName, setTeamName] = useState("")
@@ -127,13 +138,20 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
     try {
       setLoading(true)
       setError(null)
-      const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/teams`)
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
+      const [teamsRes, roomsRes] = await Promise.all([
+        fetch(`/api/dashboard/hackathons/${hackathonId}/teams`),
+        fetch(`/api/dashboard/hackathons/${hackathonId}/rooms`),
+      ])
+      if (!teamsRes.ok) {
+        const data = await teamsRes.json().catch(() => ({}))
         throw new Error(data.error || "Failed to fetch teams")
       }
-      const data = await res.json()
-      setTeams(data.teams ?? [])
+      const teamsData = await teamsRes.json()
+      setTeams(teamsData.teams ?? [])
+      if (roomsRes.ok) {
+        const roomsData = await roomsRes.json()
+        setRooms((roomsData.rooms ?? []).map((r: { id: string; name: string }) => ({ id: r.id, name: r.name })))
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch teams")
     } finally {
@@ -145,6 +163,56 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
     fetchTeams()
   // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchTeams recreates on every render; hackathonId is the real trigger
   }, [hackathonId])
+
+  useEffect(() => {
+    async function refreshRooms() {
+      try {
+        const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/rooms`)
+        if (!res.ok) return
+        const data = await res.json()
+        const next = (data.rooms ?? []).map((r: { id: string; name: string }) => ({ id: r.id, name: r.name }))
+        setRooms(next)
+        const validIds = new Set(next.map((r: { id: string }) => r.id))
+        setTeams((prev) =>
+          prev.map((t) => (t.room && !validIds.has(t.room.id) ? { ...t, room: null } : t))
+        )
+      } catch {}
+    }
+    document.addEventListener("rooms-changed", refreshRooms)
+    return () => document.removeEventListener("rooms-changed", refreshRooms)
+  }, [hackathonId])
+
+  async function handleAssignRoom(teamId: string, newRoomId: string | null) {
+    const team = teams.find((t) => t.id === teamId)
+    if (!team) return
+    const previousRoom = team.room
+    const previousRoomId = previousRoom?.id ?? null
+    if (previousRoomId === newRoomId) return
+
+    const newRoom = newRoomId ? rooms.find((r) => r.id === newRoomId) ?? null : null
+    setRoomError(null)
+    setTeams((prev) => prev.map((t) => (t.id === teamId ? { ...t, room: newRoom } : t)))
+
+    try {
+      if (previousRoomId) {
+        await fetch(
+          `/api/dashboard/hackathons/${hackathonId}/rooms/${previousRoomId}/teams/${teamId}`,
+          { method: "DELETE" },
+        ).then(assertOk)
+      }
+      if (newRoomId) {
+        await fetch(`/api/dashboard/hackathons/${hackathonId}/rooms/${newRoomId}/teams`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ teamId }),
+        }).then(assertOk)
+      }
+    } catch (err) {
+      setTeams((prev) => prev.map((t) => (t.id === teamId ? { ...t, room: previousRoom } : t)))
+      setRoomError(err instanceof Error ? err.message : "Failed to update room")
+      setTimeout(() => setRoomError(null), 8000)
+    }
+  }
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
@@ -248,6 +316,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
           {inviteSuccess}
         </div>
       )}
+      {roomError && <p className="text-sm text-destructive">{roomError}</p>}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-muted-foreground">
           {teams.length === 0
@@ -387,11 +456,28 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                             <span className="text-muted-foreground">-</span>
                           )}
                         </TableCell>
-                        <TableCell>
-                          {team.room ? (
-                            <span>{team.room.name}</span>
-                          ) : (
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          {rooms.length === 0 ? (
                             <span className="text-muted-foreground">-</span>
+                          ) : (
+                            <Select
+                              value={team.room?.id ?? UNASSIGNED_ROOM}
+                              onValueChange={(value) =>
+                                handleAssignRoom(team.id, value === UNASSIGNED_ROOM ? null : value)
+                              }
+                            >
+                              <SelectTrigger size="sm" className="w-40">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value={UNASSIGNED_ROOM}>Unassigned</SelectItem>
+                                {rooms.map((room) => (
+                                  <SelectItem key={room.id} value={room.id}>
+                                    {room.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           )}
                         </TableCell>
                       </TableRow>
@@ -438,17 +524,6 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                                   </div>
                                 </section>
 
-                                {team.room && (
-                                  <section className="space-y-2">
-                                    <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                                      <DoorOpen className="size-3" />
-                                      Room
-                                    </div>
-                                    <div className="rounded-md border bg-background px-3 py-2">
-                                      <p className="text-sm font-medium">{team.room.name}</p>
-                                    </div>
-                                  </section>
-                                )}
                               </div>
 
                               <section className="space-y-2">

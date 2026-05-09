@@ -21,6 +21,7 @@ import {
   ChevronRight,
   Plus,
   Trash2,
+  Sliders,
 } from "lucide-react"
 import {
   Select,
@@ -67,6 +68,13 @@ const STYLE_OPTIONS: {
     detail: "Example: 3 judges each pick 1 favorite from 6 finalists. The top-picked project wins.",
     icon: Award,
   },
+  {
+    value: "weighted_score",
+    label: "Weighted scoring",
+    description: "Judges score on numerical sliders. You set how much each thing counts.",
+    detail: "Good for: sponsor prizes with a custom rubric on top of shared criteria",
+    icon: Sliders,
+  },
 ]
 
 const DEFAULT_BUCKETS = [
@@ -96,6 +104,14 @@ export type CreatedPrize = {
 }
 
 type CriterionDraft = { id: string; name: string; description: string }
+type WeightedCriterionDraft = {
+  id: string
+  name: string
+  description: string
+  weight: string
+  minScore: string
+  maxScore: string
+}
 type BucketDraft = { id: string; level: number; label: string; description: string }
 
 let draftIdCounter = 0
@@ -110,6 +126,11 @@ interface AddPrizeDialogProps {
   onOpenChange: (open: boolean) => void
   onSuccess?: (created?: CreatedPrize) => void
   rounds?: RoundData[]
+  coreWeightSum?: number
+}
+
+function initialWeightedCriteria(): WeightedCriterionDraft[] {
+  return [{ id: nextDraftId(), name: "", description: "", weight: "", minScore: "1", maxScore: "10" }]
 }
 
 function initialCriteria(): CriterionDraft[] {
@@ -131,6 +152,7 @@ export function AddPrizeDialog({
   onOpenChange,
   onSuccess,
   rounds = [],
+  coreWeightSum = 0,
 }: AddPrizeDialogProps) {
   const router = useRouter()
   const visibleRounds = [...rounds].sort((a, b) => a.displayOrder - b.displayOrder)
@@ -145,6 +167,7 @@ export function AddPrizeDialog({
     judgingStyle: "bucket_sort" as PrizeJudgingStyle,
     roundId: defaultRoundId,
     criteria: initialCriteria(),
+    weightedCriteria: initialWeightedCriteria(),
     buckets: initialBuckets(),
     maxPicks: "3",
   })
@@ -171,6 +194,7 @@ export function AddPrizeDialog({
         judgingStyle: "bucket_sort",
         roundId: defaultRoundId,
         criteria: initialCriteria(),
+        weightedCriteria: initialWeightedCriteria(),
         buckets: initialBuckets(),
         maxPicks: "3",
       })
@@ -185,10 +209,38 @@ export function AddPrizeDialog({
       name: "",
       judgingStyle: style,
       criteria: style === "gate_check" ? initialCriteria() : form.criteria,
+      weightedCriteria: style === "weighted_score" ? initialWeightedCriteria() : form.weightedCriteria,
       buckets: style === "bucket_sort" ? initialBuckets() : form.buckets,
       maxPicks: style === "judges_pick" ? "3" : form.maxPicks,
     })
     setStep("details")
+  }
+
+  function updateWeighted(index: number, patch: Partial<WeightedCriterionDraft>) {
+    setForm({
+      ...form,
+      weightedCriteria: form.weightedCriteria.map((c, i) =>
+        i === index ? { ...c, ...patch } : c
+      ),
+    })
+  }
+
+  function addWeighted() {
+    setForm({
+      ...form,
+      weightedCriteria: [
+        ...form.weightedCriteria,
+        { id: nextDraftId(), name: "", description: "", weight: "", minScore: "1", maxScore: "10" },
+      ],
+    })
+  }
+
+  function removeWeighted(index: number) {
+    if (form.weightedCriteria.length <= 1) return
+    setForm({
+      ...form,
+      weightedCriteria: form.weightedCriteria.filter((_, i) => i !== index),
+    })
   }
 
   function updateCriterion(index: number, patch: Partial<CriterionDraft>) {
@@ -248,9 +300,49 @@ export function AddPrizeDialog({
       return
     }
 
-    let criteriaPayload: { name: string; description: string | null }[] | undefined
+    let criteriaPayload:
+      | { name: string; description: string | null; weight?: number; minScore?: number; maxScore?: number }[]
+      | undefined
     let bucketsPayload: { level: number; label: string; description: string | null }[] | undefined
     let maxPicksPayload: number | undefined
+
+    if (form.judgingStyle === "weighted_score") {
+      const cleaned = form.weightedCriteria
+        .map((c) => ({
+          name: c.name.trim(),
+          description: c.description.trim() || null,
+          weight: Number(c.weight),
+          minScore: Number(c.minScore),
+          maxScore: Number(c.maxScore),
+        }))
+        .filter((c) => c.name.length > 0)
+      if (cleaned.length === 0) {
+        setError("Add at least one criterion")
+        return
+      }
+      for (const c of cleaned) {
+        if (!Number.isFinite(c.weight) || c.weight < 0 || c.weight > 100) {
+          setError("Each weight must be between 0 and 100")
+          return
+        }
+        if (
+          !Number.isFinite(c.minScore) ||
+          !Number.isFinite(c.maxScore) ||
+          c.minScore < 0 ||
+          !(c.minScore < c.maxScore)
+        ) {
+          setError(`"${c.name}": min must be 0 or higher and less than max`)
+          return
+        }
+      }
+      const prizeSum = cleaned.reduce((acc, c) => acc + c.weight, 0)
+      const total = coreWeightSum + prizeSum
+      if (Math.abs(total - 100) > 0.01) {
+        setError(`Weights must sum to 100. Core ${coreWeightSum}% + this prize ${prizeSum}% = ${total}%.`)
+        return
+      }
+      criteriaPayload = cleaned
+    }
 
     if (form.judgingStyle === "gate_check") {
       const cleaned = form.criteria
@@ -579,6 +671,112 @@ export function AddPrizeDialog({
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {form.judgingStyle === "weighted_score" && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label>What this prize cares about</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Judges score each on a custom range (default 1–10). Weights set how much each one counts. Together with the core ({coreWeightSum}%), they must add to 100.
+                    </p>
+                  </div>
+                  <Button type="button" variant="outline" size="sm" onClick={addWeighted}>
+                    <Plus className="mr-1 size-3.5" />
+                    Add criterion
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  {form.weightedCriteria.map((c, i) => (
+                    <div key={c.id} className="flex items-start gap-2 rounded-md border p-3">
+                      <div className="flex-1 space-y-2 min-w-0">
+                        <Input
+                          value={c.name}
+                          onChange={(e) => updateWeighted(i, { name: e.target.value })}
+                          placeholder="e.g. Use of sponsor API"
+                          autoComplete="off"
+                          data-1p-ignore
+                          data-lpignore="true"
+                          data-form-type="other"
+                        />
+                        <Input
+                          value={c.description}
+                          onChange={(e) => updateWeighted(i, { description: e.target.value })}
+                          placeholder="Helper text for judges (optional)"
+                          autoComplete="off"
+                          data-1p-ignore
+                          data-lpignore="true"
+                          data-form-type="other"
+                        />
+                        <div className="flex items-center gap-2">
+                          <div className="flex flex-col items-center w-16">
+                            <Input
+                              type="number"
+                              inputMode="numeric"
+                              value={c.minScore}
+                              onChange={(e) => updateWeighted(i, { minScore: e.target.value })}
+                              className="text-center"
+                              autoComplete="off"
+                            />
+                            <span className="text-xs text-muted-foreground mt-1">min</span>
+                          </div>
+                          <span className="text-muted-foreground pt-2">–</span>
+                          <div className="flex flex-col items-center w-16">
+                            <Input
+                              type="number"
+                              inputMode="numeric"
+                              value={c.maxScore}
+                              onChange={(e) => updateWeighted(i, { maxScore: e.target.value })}
+                              className="text-center"
+                              autoComplete="off"
+                            />
+                            <span className="text-xs text-muted-foreground mt-1">max</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-center w-20 shrink-0">
+                        <Input
+                          type="number"
+                          inputMode="numeric"
+                          min={0}
+                          max={100}
+                          value={c.weight}
+                          onChange={(e) => updateWeighted(i, { weight: e.target.value })}
+                          placeholder="%"
+                          className="text-center"
+                          autoComplete="off"
+                        />
+                        <span className="text-xs text-muted-foreground mt-1">weight %</span>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 shrink-0"
+                        onClick={() => removeWeighted(i)}
+                        disabled={form.weightedCriteria.length <= 1}
+                        aria-label="Remove criterion"
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+                {(() => {
+                  const prizeSum = form.weightedCriteria.reduce(
+                    (acc, c) => acc + (Number(c.weight) || 0),
+                    0
+                  )
+                  const total = coreWeightSum + prizeSum
+                  const ok = Math.abs(total - 100) < 0.01
+                  return (
+                    <p className={`text-xs ${ok ? "text-muted-foreground" : "text-destructive"}`}>
+                      Core {coreWeightSum}% + this prize {prizeSum}% = {total}% {ok ? "✓" : "(needs to be 100)"}
+                    </p>
+                  )
+                })()}
               </div>
             )}
 

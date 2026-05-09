@@ -1166,12 +1166,58 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         prizeName: a.prizeName,
         judgingStyle: a.judgingStyle,
         selfJudging: a.selfJudging,
+        assignmentKind: a.assignmentKind,
       })),
     }
   }, {
     detail: {
       summary: "List my judging assignments",
       description: "Returns the authenticated judge's assignments for a hackathon. Requires Clerk session.",
+    },
+  })
+
+  .get("/hackathons/:slug/judging/my-summary", async ({ params }) => {
+    const { userId } = await auth()
+    if (!userId) {
+      return new Response(
+        JSON.stringify({ error: "Sign in required", code: "not_authenticated" }),
+        { status: 401, headers: { "Content-Type": "application/json" } }
+      )
+    }
+
+    const hackathon = await getPublicHackathon(params.slug)
+    if (!hackathon) {
+      return new Response(
+        JSON.stringify({ error: "Hackathon not found" }),
+        { status: 404, headers: { "Content-Type": "application/json" } }
+      )
+    }
+
+    const { supabase: getSupabase } = await import("@/lib/db/client")
+    const client = getSupabase()
+    const { data: participant } = await client
+      .from("hackathon_participants")
+      .select("id")
+      .eq("hackathon_id", hackathon.id)
+      .eq("clerk_user_id", userId)
+      .eq("role", "judge")
+      .maybeSingle()
+
+    if (!participant) {
+      return new Response(
+        JSON.stringify({ error: "Not a judge on this hackathon", code: "not_judge" }),
+        { status: 404, headers: { "Content-Type": "application/json" } }
+      )
+    }
+
+    const { getJudgeSummary } = await import("@/lib/services/judging")
+    const summary = await getJudgeSummary(hackathon.id, participant.id)
+    return summary
+  }, {
+    detail: {
+      summary: "Get my judge summary",
+      description:
+        "Returns this judge's private top-3 rankings per weighted_score prize and core-only. Locked until all unified assignments are complete.",
     },
   })
   .patch(

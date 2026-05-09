@@ -13,6 +13,9 @@ mock.module("@/lib/services/judging", () => ({
   getJudgingProgress: mockGetJudgingProgress,
   listRounds: mockListRounds,
   countJudges: mock(() => Promise.resolve(0)),
+  listCoreCriteria: mock(() => Promise.resolve([])),
+  listPrizeCriteria: mock(() => Promise.resolve([])),
+  getWeightedScoreAssignmentSummary: mock(() => Promise.resolve({ totalSubmissionCount: 0, rooms: [], countsByJudge: {} })),
 }))
 
 const mockListJudgeInvitations = mock(() => Promise.resolve([]))

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Gavel, CheckCircle2, Circle, ChevronDown, ChevronLeft, ChevronRight, Focus, List, Eye, AlertTriangle } from "lucide-react"
 import { getTeamSizeWarning } from "@/lib/utils/team-size"
 import { ScoringPanel } from "./scoring-panel"
+import { UnifiedScoringPanel } from "./unified-scoring-panel"
 import { FocusScoringView } from "./focus-scoring-view"
 import { usePrefetchAssignment } from "@/hooks/use-prefetch-assignment"
 
@@ -30,6 +31,7 @@ type JudgeAssignment = {
   isComplete: boolean
   notes: string
   viewedAt: string | null
+  assignmentKind?: "per_prize" | "unified_weighted_score"
 }
 
 interface JudgeAssignmentsCardProps {
@@ -179,21 +181,39 @@ export function JudgeAssignmentsCard({
 
                     {isOpen && (
                       <div className="border-t px-4 py-4">
-                        <ScoringPanel
-                          hackathonSlug={hackathonSlug}
-                          assignmentId={a.id}
-                          onClose={() => setOpenAssignmentId(null)}
-                          onScoreSubmitted={() => handleScoreSubmitted(a.id)}
-                          prefetchedDetail={prefetchCache[a.id] ?? null}
-                          teamSizeWarning={teamSettings && a.teamMemberCount != null
-                            ? (getTeamSizeWarning({
-                                memberCount: a.teamMemberCount,
-                                minTeamSize: teamSettings.minTeamSize,
-                                allowSolo: teamSettings.allowSolo,
-                              })?.message ?? null)
-                            : null
-                          }
-                        />
+                        {a.assignmentKind === "unified_weighted_score" ? (
+                          <UnifiedScoringPanel
+                            hackathonSlug={hackathonSlug}
+                            assignmentId={a.id}
+                            onClose={() => setOpenAssignmentId(null)}
+                            onScoreSubmitted={() => handleScoreSubmitted(a.id)}
+                            prefetchedDetail={prefetchCache[a.id] ?? null}
+                            teamSizeWarning={teamSettings && a.teamMemberCount != null
+                              ? (getTeamSizeWarning({
+                                  memberCount: a.teamMemberCount,
+                                  minTeamSize: teamSettings.minTeamSize,
+                                  allowSolo: teamSettings.allowSolo,
+                                })?.message ?? null)
+                              : null
+                            }
+                          />
+                        ) : (
+                          <ScoringPanel
+                            hackathonSlug={hackathonSlug}
+                            assignmentId={a.id}
+                            onClose={() => setOpenAssignmentId(null)}
+                            onScoreSubmitted={() => handleScoreSubmitted(a.id)}
+                            prefetchedDetail={prefetchCache[a.id] ?? null}
+                            teamSizeWarning={teamSettings && a.teamMemberCount != null
+                              ? (getTeamSizeWarning({
+                                  memberCount: a.teamMemberCount,
+                                  minTeamSize: teamSettings.minTeamSize,
+                                  allowSolo: teamSettings.allowSolo,
+                                })?.message ?? null)
+                              : null
+                            }
+                          />
+                        )}
                       </div>
                     )}
                   </div>

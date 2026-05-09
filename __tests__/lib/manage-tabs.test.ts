@@ -65,13 +65,14 @@ describe("VALID_MTABS", () => {
 })
 
 describe("VALID_JTABS", () => {
-  it("contains setup, judges, rounds, prizes, results", () => {
+  it("contains setup, judges, rounds, prizes, assignments, results", () => {
     expect(VALID_JTABS).toContain("setup")
     expect(VALID_JTABS).toContain("judges")
     expect(VALID_JTABS).toContain("rounds")
     expect(VALID_JTABS).toContain("prizes")
+    expect(VALID_JTABS).toContain("assignments")
     expect(VALID_JTABS).toContain("results")
-    expect(VALID_JTABS).toHaveLength(5)
+    expect(VALID_JTABS).toHaveLength(6)
   })
 })
 

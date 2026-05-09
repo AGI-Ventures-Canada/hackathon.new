@@ -173,6 +173,7 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
         setRooms((prev) =>
           prev.map((r) => (r.id === editingRoom.id ? { ...r, ...updated } : r))
         )
+        document.dispatchEvent(new CustomEvent("rooms-changed"))
       } catch (err) {
         setRooms((prev) =>
           prev.map((r) => (r.id === editingRoom.id ? { ...r, name: prevName } : r))
@@ -211,6 +212,7 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
               : r
           )
         )
+        document.dispatchEvent(new CustomEvent("rooms-changed"))
       } catch (err) {
         setRooms((prev) => prev.filter((r) => r.id !== tempId))
         setError(err instanceof Error ? err.message : "Failed to create room")
@@ -226,6 +228,7 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
         `/api/dashboard/hackathons/${hackathonId}/rooms/${roomId}`,
         { method: "DELETE" }
       ).then(assertOk)
+      document.dispatchEvent(new CustomEvent("rooms-changed"))
     } catch {
       if (removed) setRooms((prev) => [...prev, removed])
       setError("Failed to delete room")
