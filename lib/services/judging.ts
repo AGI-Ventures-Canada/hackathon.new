@@ -2328,10 +2328,10 @@ export async function recalculateForAssignment(assignmentId: string): Promise<vo
       .eq("hackathon_id", data.hackathon_id)
       .eq("judging_style", "weighted_score")
 
-    for (const p of weightedPrizes ?? []) {
-      await calculateWeightedScoreResults(data.hackathon_id, p.id)
-    }
-    await calculateCoreOnlyResults(data.hackathon_id)
+    await Promise.all([
+      ...(weightedPrizes ?? []).map((p) => calculateWeightedScoreResults(data.hackathon_id, p.id)),
+      calculateCoreOnlyResults(data.hackathon_id),
+    ])
     return
   }
 
@@ -3184,20 +3184,25 @@ export async function calculateWeightedScoreResults(
   const [{ data: coreCriteria }, { data: prizeCriteria }] = await Promise.all([
     client
       .from("judging_criteria")
-      .select("id, weight")
+      .select("id, weight, min_score, max_score")
       .eq("hackathon_id", hackathonId)
       .is("prize_id", null),
     client
       .from("judging_criteria")
-      .select("id, weight")
+      .select("id, weight, min_score, max_score")
       .eq("prize_id", prizeId),
   ])
 
   const allCriteria = [...(coreCriteria ?? []), ...(prizeCriteria ?? [])]
-  const weightMap = new Map(allCriteria.map((c) => [c.id, Number(c.weight)]))
+  const criteriaMap = new Map(
+    allCriteria.map((c) => [
+      c.id,
+      { weight: Number(c.weight), minScore: Number(c.min_score), maxScore: Number(c.max_score) },
+    ])
+  )
   if (allCriteria.length === 0) return { success: true, count: 0 }
 
-  const totalWeightSum = Array.from(weightMap.values()).reduce((a, b) => a + b, 0)
+  const totalWeightSum = Array.from(criteriaMap.values()).reduce((a, c) => a + c.weight, 0)
   if (totalWeightSum <= 0) return { success: true, count: 0 }
 
   const { data: assignments } = await client
@@ -3214,7 +3219,7 @@ export async function calculateWeightedScoreResults(
     .from("scores")
     .select("judge_assignment_id, criteria_id, score")
     .in("judge_assignment_id", assignmentIds)
-    .in("criteria_id", Array.from(weightMap.keys()))
+    .in("criteria_id", Array.from(criteriaMap.keys()))
 
   const subMap = new Map(assignments.map((a) => [a.id, a.submission_id]))
   const judgeMap = new Map(assignments.map((a) => [a.id, a.judge_participant_id]))
@@ -3224,12 +3229,15 @@ export async function calculateWeightedScoreResults(
   for (const s of scores ?? []) {
     const sid = subMap.get(s.judge_assignment_id)
     const jid = judgeMap.get(s.judge_assignment_id)
-    const w = weightMap.get(s.criteria_id)
-    if (!sid || !jid || w === undefined) continue
+    const c = criteriaMap.get(s.criteria_id)
+    if (!sid || !jid || !c) continue
+    const range = c.maxScore - c.minScore
+    if (range <= 0) continue
+    const normalized = (s.score - c.minScore) / range
     if (!subScores[sid]) subScores[sid] = { judgeIds: new Set(), perJudge: {} }
     const key = `${sid}:${jid}`
     if (subScores[sid].perJudge[key] === undefined) subScores[sid].perJudge[key] = 0
-    subScores[sid].perJudge[key] += s.score * w
+    subScores[sid].perJudge[key] += normalized * c.weight
     subScores[sid].judgeIds.add(jid)
   }
 
@@ -3372,6 +3380,7 @@ export async function assignWeightedScoreJudge(
     .from("submissions")
     .select("id, team_id")
     .eq("hackathon_id", hackathonId)
+    .eq("status", "submitted")
 
   if (roomTeamIds) {
     submissionsQuery = submissionsQuery.in("team_id", roomTeamIds)
@@ -3548,7 +3557,7 @@ export async function getJudgeSummary(
       .order("display_order"),
     client
       .from("judging_criteria")
-      .select("id, weight")
+      .select("id, weight, min_score, max_score")
       .eq("hackathon_id", hackathonId)
       .is("prize_id", null),
     client
@@ -3570,29 +3579,45 @@ export async function getJudgeSummary(
 
   const assignmentSubMap = new Map((assignments ?? []).map((a) => [a.id, a.submission_id]))
 
-  const coreWeights = new Map((coreCriteria ?? []).map((c) => [c.id, Number(c.weight)]))
-  const coreWeightSum = Array.from(coreWeights.values()).reduce((a, b) => a + b, 0)
+  type CriterionMeta = { weight: number; minScore: number; maxScore: number }
+  const toMeta = (c: { weight: number; min_score: number; max_score: number }): CriterionMeta => ({
+    weight: Number(c.weight),
+    minScore: Number(c.min_score),
+    maxScore: Number(c.max_score),
+  })
 
-  const prizeWeightMaps: Map<string, Map<string, number>> = new Map()
-  const prizeNameMap = new Map<string, string>()
-  for (const p of weightedPrizes ?? []) {
-    prizeNameMap.set(p.id, p.name)
-    const { data: pc } = await client
+  const coreCriteriaMap = new Map<string, CriterionMeta>(
+    (coreCriteria ?? []).map((c) => [c.id, toMeta(c)])
+  )
+  const coreWeightSum = Array.from(coreCriteriaMap.values()).reduce((a, c) => a + c.weight, 0)
+
+  const prizeCriteriaMaps = new Map<string, Map<string, CriterionMeta>>()
+  const prizeIds = (weightedPrizes ?? []).map((p) => p.id)
+  if (prizeIds.length > 0) {
+    const { data: prizeCriteriaRows } = await client
       .from("judging_criteria")
-      .select("id, weight")
-      .eq("prize_id", p.id)
-    prizeWeightMaps.set(p.id, new Map((pc ?? []).map((c) => [c.id, Number(c.weight)])))
+      .select("id, weight, min_score, max_score, prize_id")
+      .in("prize_id", prizeIds)
+    for (const pid of prizeIds) prizeCriteriaMaps.set(pid, new Map())
+    for (const row of prizeCriteriaRows ?? []) {
+      const pid = (row as { prize_id: string }).prize_id
+      const map = prizeCriteriaMaps.get(pid)
+      if (map) map.set(row.id, toMeta(row))
+    }
   }
 
-  const buildRanking = (weightMap: Map<string, number>, denom: number): JudgeSummaryEntry[] => {
+  const buildRanking = (criteriaMap: Map<string, CriterionMeta>, denom: number): JudgeSummaryEntry[] => {
     if (denom <= 0) return []
     const subTotals: Record<string, number> = {}
     for (const s of scores ?? []) {
       const sid = assignmentSubMap.get(s.judge_assignment_id)
-      const w = weightMap.get(s.criteria_id)
-      if (!sid || w === undefined) continue
+      const c = criteriaMap.get(s.criteria_id)
+      if (!sid || !c) continue
+      const range = c.maxScore - c.minScore
+      if (range <= 0) continue
+      const normalized = (s.score - c.minScore) / range
       if (!subTotals[sid]) subTotals[sid] = 0
-      subTotals[sid] += s.score * w
+      subTotals[sid] += normalized * c.weight
     }
     return Object.entries(subTotals)
       .map(([sid, total]) => {
@@ -3609,13 +3634,13 @@ export async function getJudgeSummary(
   }
 
   const prizeRankings = (weightedPrizes ?? []).map((p) => {
-    const prizeMap = prizeWeightMaps.get(p.id) ?? new Map<string, number>()
-    const combined = new Map<string, number>([...coreWeights, ...prizeMap])
-    const denom = Array.from(combined.values()).reduce((a, b) => a + b, 0)
+    const prizeMap = prizeCriteriaMaps.get(p.id) ?? new Map<string, CriterionMeta>()
+    const combined = new Map<string, CriterionMeta>([...coreCriteriaMap, ...prizeMap])
+    const denom = Array.from(combined.values()).reduce((a, c) => a + c.weight, 0)
     return { prizeId: p.id, prizeName: p.name, top: buildRanking(combined, denom) }
   })
 
-  const coreRanking = { top: buildRanking(coreWeights, coreWeightSum) }
+  const coreRanking = { top: buildRanking(coreCriteriaMap, coreWeightSum) }
 
   return { unlocked: true, total, completed, prizeRankings, coreRanking }
 }

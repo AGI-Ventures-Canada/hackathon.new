@@ -139,8 +139,13 @@ export function UnifiedScoringPanel({
 
   const livePreview = useMemo(() => {
     if (!detail) return { coreOnly: 0, perPrize: [] as { prizeId: string; prizeName: string; score: number }[] }
+    const normalize = (c: AssignmentDetail["criteria"][number]) => {
+      const range = c.max_score - c.min_score
+      if (range <= 0) return 0
+      return ((scores[c.id] ?? c.min_score) - c.min_score) / range
+    }
     const coreCriteria = detail.criteria.filter((c) => !c.prizeId)
-    const coreSum = coreCriteria.reduce((acc, c) => acc + (scores[c.id] ?? 0) * c.weight, 0)
+    const coreSum = coreCriteria.reduce((acc, c) => acc + normalize(c) * c.weight, 0)
     const coreWeightSum = coreCriteria.reduce((acc, c) => acc + c.weight, 0)
     const coreOnly = coreWeightSum > 0 ? coreSum / coreWeightSum : 0
 
@@ -149,7 +154,7 @@ export function UnifiedScoringPanel({
     )
     const perPrize = prizeIds.map((pid) => {
       const prizeCriteria = detail.criteria.filter((c) => c.prizeId === pid)
-      const prizeSum = prizeCriteria.reduce((acc, c) => acc + (scores[c.id] ?? 0) * c.weight, 0)
+      const prizeSum = prizeCriteria.reduce((acc, c) => acc + normalize(c) * c.weight, 0)
       const prizeWeightSum = prizeCriteria.reduce((acc, c) => acc + c.weight, 0)
       const totalWeightSum = coreWeightSum + prizeWeightSum
       return {
