@@ -30,6 +30,22 @@ export function sanitizeTag(name: string): string {
     .slice(0, 100)
 }
 
+export function extractEmailAddress(emailLike: string): string {
+  const match = emailLike.match(/<([^>]+)>/)
+  return (match ? match[1] : emailLike).trim()
+}
+
+export function formatFromAddress(displayName: string, emailLike: string): string {
+  const email = extractEmailAddress(emailLike)
+  const safeName = displayName.replace(/[\r\n]+/g, " ").trim()
+  if (!safeName) return email
+  if (/[(),.:;<>@\[\]\\"]|[^\x20-\x7e]/.test(safeName)) {
+    const escaped = safeName.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
+    return `"${escaped}" <${email}>`
+  }
+  return `${safeName} <${email}>`
+}
+
 export async function renderEmail(
   element: React.ReactElement
 ): Promise<{ html: string; text: string }> {
