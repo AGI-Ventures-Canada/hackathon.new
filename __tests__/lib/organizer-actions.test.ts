@@ -418,11 +418,25 @@ describe("getOrganizerActionItems", () => {
       expect(item?.label).toBe("1 project waiting for a judge")
     })
 
-    it("hides unassigned-submissions when count is zero", () => {
+    it("marks unassigned-submissions complete when every project has a judge", () => {
       const items = getOrganizerActionItems(makeInput({
         status: "active",
         judgeCount: 3,
         submissionCount: 5,
+        unassignedSubmissionCount: 0,
+      }))
+
+      const item = items.find((i) => i.id === "unassigned-submissions")
+      expect(item).toBeDefined()
+      expect(isCompleted(item!)).toBe(true)
+      expect(item?.label).toBe("Every project has a judge")
+    })
+
+    it("hides unassigned-submissions when there are no submitted projects", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "active",
+        judgeCount: 3,
+        submissionCount: 0,
         unassignedSubmissionCount: 0,
       }))
 

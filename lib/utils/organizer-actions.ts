@@ -568,7 +568,7 @@ function addActiveActions(items: ActionItem[], input: ActionItemsInput) {
     completed: { label: "Judges assigned", hint: "Ready to evaluate submissions when the time comes" },
   }))
 
-  if (input.unassignedSubmissionCount > 0) {
+  if (input.submissionCount > 0) {
     const count = input.unassignedSubmissionCount
     items.push(autoAction({
       id: "unassigned-submissions",
@@ -576,7 +576,7 @@ function addActiveActions(items: ActionItem[], input: ActionItemsInput) {
       tab: "judging",
       ctaLabel: "Assign",
       tooltip: "Every submitted project needs a judge. Without an assignment, no one will score it and the project won't show up in results. Open the Judging tab to assign judges.",
-      isComplete: false,
+      isComplete: count === 0,
       pending: {
         label: `${count} project${count === 1 ? "" : "s"} waiting for a judge`,
         hint: "Assign judges so they can start scoring",
