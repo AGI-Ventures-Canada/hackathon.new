@@ -2,7 +2,7 @@ import { describe, it, expect, mock, beforeEach } from "bun:test"
 import type { ClerkClient } from "@clerk/backend"
 import { mockClerkClient } from "./supabase-mock"
 
-const { resolveAdderName } = await import("@/lib/auth/resolve-adder-name")
+const { resolveAdderName, resolveAdderEmail } = await import("@/lib/auth/resolve-adder-name")
 
 const mockGetUser = mock(() =>
   Promise.resolve({ firstName: "Jane", lastName: "Doe" })
@@ -11,6 +11,20 @@ const mockGetUser = mock(() =>
 function makeClient(firstName: string | null, lastName: string | null): ClerkClient {
   return {
     users: { getUser: mock(() => Promise.resolve({ firstName, lastName })) },
+  } as unknown as ClerkClient
+}
+
+function makeClientWithEmail(email: string | null): ClerkClient {
+  return {
+    users: {
+      getUser: mock(() =>
+        Promise.resolve({
+          firstName: "Test",
+          lastName: "User",
+          primaryEmailAddress: email ? { emailAddress: email } : null,
+        })
+      ),
+    },
   } as unknown as ClerkClient
 }
 
@@ -72,5 +86,43 @@ describe("resolveAdderName", () => {
     const result = await resolveAdderName({ kind: "user", userId: "u1" })
     expect(result).toBe("Sam Smith")
     expect(mockClerkClient).toHaveBeenCalled()
+  })
+})
+
+describe("resolveAdderEmail", () => {
+  beforeEach(() => {
+    mockClerkClient.mockClear()
+  })
+
+  it("returns undefined for non-user principal", async () => {
+    expect(await resolveAdderEmail({ kind: "api_key" })).toBeUndefined()
+  })
+
+  it("returns undefined for user principal without userId", async () => {
+    expect(await resolveAdderEmail({ kind: "user" })).toBeUndefined()
+  })
+
+  it("returns the primary email when present", async () => {
+    const result = await resolveAdderEmail(
+      { kind: "user", userId: "u1" },
+      makeClientWithEmail("captain@example.com")
+    )
+    expect(result).toBe("captain@example.com")
+  })
+
+  it("returns undefined when no primary email is set", async () => {
+    const result = await resolveAdderEmail(
+      { kind: "user", userId: "u1" },
+      makeClientWithEmail(null)
+    )
+    expect(result).toBeUndefined()
+  })
+
+  it("returns undefined when Clerk getUser throws", async () => {
+    const client = {
+      users: { getUser: mock(() => Promise.reject(new Error("Clerk error"))) },
+    } as unknown as ClerkClient
+    const result = await resolveAdderEmail({ kind: "user", userId: "u1" }, client)
+    expect(result).toBeUndefined()
   })
 })

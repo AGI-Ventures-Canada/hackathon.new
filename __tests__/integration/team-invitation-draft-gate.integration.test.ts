@@ -84,8 +84,10 @@ mock.module("@/lib/services/smart-reminders", () => ({
 }))
 
 const mockResolveAdderName = mock(() => Promise.resolve("Captain Test"))
+const mockResolveAdderEmail = mock(() => Promise.resolve("captain@example.com"))
 mock.module("@/lib/auth/resolve-adder-name", () => ({
   resolveAdderName: mockResolveAdderName,
+  resolveAdderEmail: mockResolveAdderEmail,
 }))
 
 mock.module("@/lib/services/audit", () => ({

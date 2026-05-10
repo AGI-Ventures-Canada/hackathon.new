@@ -1,5 +1,9 @@
 import { describe, it, expect } from "bun:test"
-import { formatTimeLeft } from "@/lib/email/utils"
+import {
+  extractEmailAddress,
+  formatFromAddress,
+  formatTimeLeft,
+} from "@/lib/email/utils"
 
 describe("formatTimeLeft", () => {
   it("returns days for time more than 24 hours away", () => {
@@ -36,5 +40,72 @@ describe("formatTimeLeft", () => {
     const oneDay = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
     const result = formatTimeLeft(oneDay)
     expect(result).toBe("1 day")
+  })
+})
+
+describe("extractEmailAddress", () => {
+  it("returns a bare address unchanged", () => {
+    expect(extractEmailAddress("hello@example.com")).toBe("hello@example.com")
+  })
+
+  it("extracts the address from a Name <email> form", () => {
+    expect(extractEmailAddress("Oatmeal <hello@example.com>")).toBe("hello@example.com")
+  })
+
+  it("trims whitespace around the address", () => {
+    expect(extractEmailAddress("  hello@example.com  ")).toBe("hello@example.com")
+    expect(extractEmailAddress("Name < hello@example.com >")).toBe("hello@example.com")
+  })
+})
+
+describe("formatFromAddress", () => {
+  it("formats a simple display name as Name <email>", () => {
+    expect(formatFromAddress("Sarah Chen", "hello@example.com")).toBe(
+      "Sarah Chen <hello@example.com>"
+    )
+  })
+
+  it("falls back to the bare email when display name is empty", () => {
+    expect(formatFromAddress("", "hello@example.com")).toBe("hello@example.com")
+    expect(formatFromAddress("   ", "hello@example.com")).toBe("hello@example.com")
+  })
+
+  it("quotes display names containing RFC 5322 specials", () => {
+    expect(formatFromAddress("Doe, Jane", "hello@example.com")).toBe(
+      '"Doe, Jane" <hello@example.com>'
+    )
+    expect(formatFromAddress("Sarah (admin)", "hello@example.com")).toBe(
+      '"Sarah (admin)" <hello@example.com>'
+    )
+  })
+
+  it("escapes embedded quotes and backslashes inside the quoted name", () => {
+    expect(formatFromAddress('She said "hi"', "hello@example.com")).toBe(
+      '"She said \\"hi\\"" <hello@example.com>'
+    )
+    expect(formatFromAddress("path\\name, foo", "hello@example.com")).toBe(
+      '"path\\\\name, foo" <hello@example.com>'
+    )
+  })
+
+  it("strips CR/LF to prevent header injection", () => {
+    expect(
+      formatFromAddress(
+        "Sarah\r\nBcc: attacker@example.com",
+        "hello@example.com"
+      )
+    ).toBe('"Sarah Bcc: attacker@example.com" <hello@example.com>')
+  })
+
+  it("uses the inner address when given a Name <email> base", () => {
+    expect(formatFromAddress("Sarah", "Oatmeal <hello@example.com>")).toBe(
+      "Sarah <hello@example.com>"
+    )
+  })
+
+  it("quotes display names with non-ASCII characters", () => {
+    expect(formatFromAddress("Renée", "hello@example.com")).toBe(
+      '"Renée" <hello@example.com>'
+    )
   })
 })

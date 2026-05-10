@@ -2487,11 +2487,14 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
 
       if (willSendImmediately) {
         const inviterName = body.inviterName || "Your team captain"
+        const { resolveAdderEmail } = await import("@/lib/auth/resolve-adder-name")
+        const inviterEmail = await resolveAdderEmail(principal)
         const emailInput = {
           to: body.email,
           teamName: teamInfo.name,
           hackathonName: teamInfo.hackathon.name,
           inviterName,
+          inviterEmail,
           inviteToken: result.invitation.token,
           expiresAt: result.invitation.expires_at,
           hackathonSlug: teamInfo.hackathon.slug,
@@ -2531,6 +2534,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
             teamName: teamInfo.name,
             hackathonName: teamInfo.hackathon.name,
             inviterName,
+            inviterEmail,
             inviteToken: result.invitation.token,
             expiresAt: result.invitation.expires_at,
           }
@@ -2691,8 +2695,9 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       })
     }
 
-    const { resolveAdderName } = await import("@/lib/auth/resolve-adder-name")
+    const { resolveAdderName, resolveAdderEmail } = await import("@/lib/auth/resolve-adder-name")
     const inviterName = await resolveAdderName(principal)
+    const inviterEmail = await resolveAdderEmail(principal)
 
     const { sendTeamInvitationReminderEmail } = await import(
       "@/lib/email/team-invitations"
@@ -2702,6 +2707,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       teamName: teamInfo.name,
       hackathonName: teamInfo.hackathon.name,
       inviterName,
+      inviterEmail,
       inviteToken: result.invitation.token,
       expiresAt: result.invitation.expires_at,
     }).catch(console.error)

@@ -13,3 +13,17 @@ export async function resolveAdderName(
     return "An organizer"
   }
 }
+
+export async function resolveAdderEmail(
+  principal: { kind: string; userId?: string },
+  client?: ClerkClient
+): Promise<string | undefined> {
+  if (principal.kind !== "user" || !principal.userId) return undefined
+  try {
+    const clerk = client ?? (await (await import("@clerk/nextjs/server")).clerkClient())
+    const adder = await clerk.users.getUser(principal.userId)
+    return adder.primaryEmailAddress?.emailAddress
+  } catch {
+    return undefined
+  }
+}

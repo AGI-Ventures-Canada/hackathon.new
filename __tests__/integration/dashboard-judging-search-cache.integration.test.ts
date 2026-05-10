@@ -75,6 +75,7 @@ mock.module("@/lib/services/audit", () => ({
 
 mock.module("@/lib/auth/resolve-adder-name", () => ({
   resolveAdderName: mock(() => Promise.resolve("Test User")),
+  resolveAdderEmail: mock(() => Promise.resolve("test-user@example.com")),
 }))
 
 mock.module("@/lib/services/rate-limit", () => ({

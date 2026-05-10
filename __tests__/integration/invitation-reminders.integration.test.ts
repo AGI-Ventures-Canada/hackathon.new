@@ -128,6 +128,7 @@ mock.module("@/lib/auth/principal", () => {
 
 mock.module("@/lib/auth/resolve-adder-name", () => ({
   resolveAdderName: mock(() => Promise.resolve("Test Organizer")),
+  resolveAdderEmail: mock(() => Promise.resolve("organizer@example.com")),
 }))
 
 const { Elysia } = await import("elysia")
