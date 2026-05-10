@@ -212,6 +212,9 @@ describe("SignInForm", () => {
       fireEvent.change(screen.getByLabelText("Email"), {
         target: { value: "user@example.com" },
       })
+      fireEvent.change(screen.getByLabelText("Password"), {
+        target: { value: "wrong" },
+      })
       fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
 
       const continueButton = await waitFor(() =>
@@ -246,6 +249,9 @@ describe("SignInForm", () => {
       render(<SignInForm />)
       fireEvent.change(screen.getByLabelText("Email"), {
         target: { value: "user@example.com" },
+      })
+      fireEvent.change(screen.getByLabelText("Password"), {
+        target: { value: "wrong" },
       })
       fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
 
@@ -302,6 +308,9 @@ describe("SignInForm", () => {
       render(<SignInForm />)
       fireEvent.change(screen.getByLabelText("Email"), {
         target: { value: "user@example.com" },
+      })
+      fireEvent.change(screen.getByLabelText("Password"), {
+        target: { value: "wrong" },
       })
       fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
 
