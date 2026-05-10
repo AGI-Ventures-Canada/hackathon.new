@@ -1290,6 +1290,7 @@ describe("Judging Service", () => {
           chain = createChainableMock({
             data: [{ weight: 100 }],
             error: null,
+            count: 1,
           })
         } else if (table === "prizes") {
           chain = createChainableMock({
@@ -1323,7 +1324,7 @@ describe("Judging Service", () => {
       setMockFromImplementation((table: string) => {
         let chain: ReturnType<typeof createChainableMock>
         if (table === "judging_criteria") {
-          chain = createChainableMock({ data: [{ weight: 50 }], error: null })
+          chain = createChainableMock({ data: [{ weight: 50 }], error: null, count: 1 })
         } else if (table === "prizes") {
           chain = createChainableMock({
             data: { id: "prize_partial", name: "Sponsor Pick", judging_style: "weighted_score" },
@@ -1344,6 +1345,33 @@ describe("Judging Service", () => {
       })
 
       expect(result.success).toBe(true)
+    })
+
+    it("rejects weighted_score with zero bonus criteria when no core categories exist", async () => {
+      let prizeInsertCount = 0
+      setMockFromImplementation((table: string) => {
+        if (table === "judging_criteria") {
+          return createChainableMock({ data: [], error: null, count: 0 })
+        }
+        if (table === "prizes") {
+          prizeInsertCount++
+          return createChainableMock({ data: null, error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await createPrize("h1", {
+        name: "Orphan Prize",
+        judgingStyle: "weighted_score",
+        criteria: [],
+      })
+
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.code).toBe("validation")
+        expect(result.error).toContain("category")
+      }
+      expect(prizeInsertCount).toBe(0)
     })
   })
 
