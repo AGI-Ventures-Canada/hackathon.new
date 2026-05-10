@@ -63,6 +63,7 @@ import { TimelineEditForm } from "@/components/hackathon/edit-drawer/timeline-ed
 import { AboutEditForm } from "@/components/hackathon/edit-drawer/about-edit-form";
 import { BannerUpload } from "@/components/hackathon/banner-upload";
 import { ChallengeEditorDialog } from "./challenge-editor-dialog";
+import { ShowcaseDialog } from "./showcase-dialog";
 import { PerkEditorDialog, type SponsorOption } from "./perk-editor-dialog";
 import { AddJudgeDialog } from "@/components/hackathon/judging/add-judge-dialog";
 import { AddPrizeDialog } from "@/components/hackathon/judging/add-prize-dialog";
@@ -92,6 +93,7 @@ interface ActionItemsContextValue {
   customItems: ActionItem[];
   registerTabAction: (actionItemId: string, callback: () => void) => void;
   unregisterTabAction: (actionItemId: string) => void;
+  openShowcaseDialog: () => void;
   isStale: boolean;
   hackathonStatus: HackathonStatus;
   hackathonPhase: HackathonPhase | null;
@@ -217,6 +219,7 @@ export function ActionItemsProvider({
   const [communityDialogItem, setCommunityDialogItem] = useState<ActionItem | null>(null);
   const [submissionDeadlineDialogItem, setSubmissionDeadlineDialogItem] = useState<ActionItem | null>(null);
   const [promoteDialogOpen, setPromoteDialogOpen] = useState(false);
+  const [showcaseDialogOpen, setShowcaseDialogOpen] = useState(false);
   const [agendaDialogOpen, setAgendaDialogOpen] = useState(false);
   const [releasingChallenge, setReleasingChallenge] = useState(false);
   const [releaseChallengeError, setReleaseChallengeError] = useState<string | null>(null);
@@ -685,6 +688,8 @@ export function ActionItemsProvider({
       } else if (item.action === "open-submission-deadline-dialog") {
         setSubmissionDeadlineDialogItem(item);
         submissionDeadlineRef.current?.openDialog();
+      } else if (item.action === "open-showcase-dialog") {
+        setShowcaseDialogOpen(true);
       } else if (item.action?.startsWith("transition-to-")) {
         const targetStatus = item.action.replace("transition-to-", "");
         transitionRef.current?.openTransitionDialog(targetStatus);
@@ -806,6 +811,7 @@ export function ActionItemsProvider({
       challengeExists: liveChallengeExists,
       slug,
       setOptimisticStage,
+      openShowcaseDialog: () => setShowcaseDialogOpen(true),
     }),
     [
       actionItems,
@@ -1124,6 +1130,13 @@ export function ActionItemsProvider({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ShowcaseDialog
+        open={showcaseDialogOpen}
+        onOpenChange={setShowcaseDialogOpen}
+        hackathonId={hackathonId}
+        hackathonSlug={slug}
+        rounds={rounds.map((r) => ({ id: r.id, name: r.name }))}
+      />
     </ActionItemsContext.Provider>
   );
 }

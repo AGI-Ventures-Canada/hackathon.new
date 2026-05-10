@@ -165,6 +165,24 @@ export async function getTenantById(id: string): Promise<Tenant | null> {
   return data as Tenant | null
 }
 
+export async function isOrgTenant(tenantId: string): Promise<boolean> {
+  const tenant = await getTenantById(tenantId)
+  return Boolean(tenant?.clerk_org_id)
+}
+
+export const ORGANIZATION_REQUIRED_ERROR = {
+  error:
+    "Switch to an organization to create a hackathon. Personal accounts can't host events.",
+  code: "organization_required" as const,
+}
+
+export function organizationRequiredResponse(): Response {
+  return new Response(JSON.stringify(ORGANIZATION_REQUIRED_ERROR), {
+    status: 400,
+    headers: { "Content-Type": "application/json" },
+  })
+}
+
 export async function updateTenantName(
   tenantId: string,
   name: string

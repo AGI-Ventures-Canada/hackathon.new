@@ -4,6 +4,7 @@ import {
   renderEmail,
   buildEventUrl,
   formatTimeLeft,
+  buildUnsubscribeHeaders,
   formatFromAddress,
 } from "./utils"
 import TeamInvitationEmail from "@/emails/team-invitation"
@@ -46,6 +47,7 @@ export async function sendTeamInvitationEmail(
   }
 
   const acceptUrl = `${process.env.NEXT_PUBLIC_APP_URL}/invite/${input.inviteToken}`
+  const unsubscribeUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/public/invitations/${input.inviteToken}/unsubscribe`
   const expiresDate = new Date(input.expiresAt).toLocaleDateString("en-US", {
     weekday: "long",
     year: "numeric",
@@ -69,11 +71,12 @@ export async function sendTeamInvitationEmail(
 
   const result = await sendEmail({
     to: input.to,
-    subject: `Join "${input.teamName}" for ${input.hackathonName}`,
+    subject: `${input.inviterName} invited you to "${input.teamName}" for ${input.hackathonName}`,
     html,
     text,
     from: buildPersonalizedFrom(input.inviterName),
     replyTo: input.inviterEmail,
+    headers: buildUnsubscribeHeaders(unsubscribeUrl),
     tags: [
       { name: "type", value: "team_invitation" },
       { name: "hackathon", value: sanitizeTag(input.hackathonName) },
@@ -95,8 +98,8 @@ export type SendTeamInvitationReminderInput = {
 }
 
 function teamReminderSubject(teamName: string, hackathonName: string, urgency: string): string {
-  if (urgency === "high") return `Last chance \u2014 invite to "${teamName}" expires soon`
-  if (urgency === "medium") return `Your invite to "${teamName}" expires tomorrow`
+  if (urgency === "high") return `Your "${teamName}" invite expires soon`
+  if (urgency === "medium") return `Your "${teamName}" invite expires tomorrow`
   return `Reminder: Join "${teamName}" for ${hackathonName}`
 }
 
@@ -109,6 +112,7 @@ export async function sendTeamInvitationReminderEmail(
   }
 
   const acceptUrl = `${process.env.NEXT_PUBLIC_APP_URL}/invite/${input.inviteToken}`
+  const unsubscribeUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/public/invitations/${input.inviteToken}/unsubscribe`
   const expiresDate = new Date(input.expiresAt).toLocaleDateString("en-US", {
     weekday: "long",
     year: "numeric",
@@ -137,6 +141,7 @@ export async function sendTeamInvitationReminderEmail(
     text,
     from: buildPersonalizedFrom(input.inviterName),
     replyTo: input.inviterEmail,
+    headers: buildUnsubscribeHeaders(unsubscribeUrl),
     tags: [
       { name: "type", value: "team_invitation_reminder" },
       { name: "hackathon", value: sanitizeTag(input.hackathonName) },

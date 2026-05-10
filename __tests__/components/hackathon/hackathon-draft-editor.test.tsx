@@ -152,7 +152,7 @@ describe("HackathonDraftEditor", () => {
       fireEvent.click(screen.getByText("Connect Organization"))
 
       await waitFor(() => {
-        expect(screen.getByText("Organization Required")).toBeDefined()
+        expect(screen.getByText("Pick an organization")).toBeDefined()
       })
     })
 
@@ -186,8 +186,8 @@ describe("HackathonDraftEditor", () => {
       renderEditor()
       fireEvent.click(screen.getByText("Connect Organization"))
 
-      await waitFor(() => screen.getByText("Create New Organization"))
-      fireEvent.click(screen.getByText("Create New Organization"))
+      await waitFor(() => screen.getByText("Create a new organization"))
+      fireEvent.click(screen.getByText("Create a new organization"))
 
       await waitFor(() => screen.getByTestId("simulate-org-created"))
       clerkState.organization = { id: "org_new", name: "New Org" }
@@ -202,7 +202,7 @@ describe("HackathonDraftEditor", () => {
       renderEditor()
       fireEvent.click(screen.getByText("Connect Organization"))
 
-      await waitFor(() => screen.getByText("Organization Required"))
+      await waitFor(() => screen.getByText("Pick an organization"))
 
       expect(mockOnSubmit).not.toHaveBeenCalled()
     })
@@ -212,7 +212,7 @@ describe("HackathonDraftEditor", () => {
       renderEditor()
 
       await waitFor(() => {
-        expect(screen.getByText("Organization Required")).toBeDefined()
+        expect(screen.getByText("Pick an organization")).toBeDefined()
       })
     })
   })

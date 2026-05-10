@@ -1,8 +1,8 @@
 "use client"
 
 import Image from "next/image"
-import { Plus } from "lucide-react"
-import { useOrganizationList } from "@clerk/nextjs"
+import { Loader2, Plus } from "lucide-react"
+import { useAuth, useOrganization, useOrganizationList } from "@clerk/nextjs"
 import {
   Dialog,
   DialogContent,
@@ -21,61 +21,120 @@ type OrgGateDialogProps = {
 }
 
 export function OrgGateDialog({ open, onOpenChange, onOrgSelected }: OrgGateDialogProps) {
-  const { userMemberships, setActive } = useOrganizationList({
+  const { userMemberships, setActive, isLoaded } = useOrganizationList({
     userMemberships: { infinite: true },
   })
+  const { organization } = useOrganization()
+  const { getToken } = useAuth()
   const [createOrgOpen, setCreateOrgOpen] = useState(false)
+  const [switchingOrgId, setSwitchingOrgId] = useState<string | null>(null)
+
+  function handleOpenChange(next: boolean) {
+    if (!next && !organization) {
+      return
+    }
+    onOpenChange(next)
+  }
+
+  const memberships = userMemberships?.data ?? []
+  const hasMemberships = memberships.length > 0
+  const showLoading = !isLoaded || (userMemberships?.isLoading ?? false)
+
+  async function switchToOrg(orgId: string) {
+    if (switchingOrgId) return
+    setSwitchingOrgId(orgId)
+    try {
+      await setActive?.({ organization: orgId })
+      await getToken({ skipCache: true })
+      onOrgSelected()
+      onOpenChange(false)
+    } finally {
+      setSwitchingOrgId(null)
+    }
+  }
 
   return (
     <>
-      <Dialog open={open && !createOrgOpen} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-md">
+      <Dialog open={open && !createOrgOpen} onOpenChange={handleOpenChange}>
+        <DialogContent
+          className="sm:max-w-md"
+          showCloseButton={Boolean(organization)}
+          onPointerDownOutside={(e) => {
+            if (!organization) e.preventDefault()
+          }}
+          onEscapeKeyDown={(e) => {
+            if (!organization) e.preventDefault()
+          }}
+        >
           <DialogHeader>
-            <DialogTitle>Organization Required</DialogTitle>
+            <DialogTitle>Pick an organization</DialogTitle>
             <DialogDescription>
-              Hackathons are created under organizations. Switch to an organization or create a new one to get started.
+              Hackathons live under organizations, not personal accounts. Switch to one of yours or make a new one.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
-            {userMemberships?.data && userMemberships.data.length > 0 && (
-              <div className="space-y-1">
-                {userMemberships.data.map((mem) => (
-                  <Button
-                    key={mem.organization.id}
-                    variant="ghost"
-                    onClick={async () => {
-                      await setActive?.({ organization: mem.organization.id })
-                      onOrgSelected()
-                      onOpenChange(false)
-                    }}
-                  >
-                    {mem.organization.imageUrl ? (
-                      <Image
-                        src={mem.organization.imageUrl}
-                        alt={mem.organization.name}
-                        width={24}
-                        height={24}
-                        className="size-6 rounded object-cover"
-                      />
-                    ) : (
-                      <div className="flex size-6 items-center justify-center rounded bg-primary text-primary-foreground text-xs font-semibold">
-                        {mem.organization.name.charAt(0).toUpperCase()}
-                      </div>
-                    )}
-                    <span>{mem.organization.name}</span>
-                  </Button>
-                ))}
+            {showLoading ? (
+              <div className="flex items-center justify-center py-6">
+                <Loader2 className="size-5 animate-spin text-muted-foreground" />
               </div>
+            ) : (
+              <>
+                {hasMemberships && (
+                  <div className="space-y-1">
+                    {memberships.map((mem) => {
+                      const isSwitching = switchingOrgId === mem.organization.id
+                      const otherSwitching = switchingOrgId !== null && !isSwitching
+                      return (
+                        <Button
+                          key={mem.organization.id}
+                          variant="ghost"
+                          className="w-full justify-start"
+                          onClick={() => void switchToOrg(mem.organization.id)}
+                          disabled={otherSwitching}
+                        >
+                          {mem.organization.imageUrl ? (
+                            <Image
+                              src={mem.organization.imageUrl}
+                              alt={mem.organization.name}
+                              width={24}
+                              height={24}
+                              className="size-6 rounded object-cover"
+                            />
+                          ) : (
+                            <div className="flex size-6 items-center justify-center rounded bg-primary text-primary-foreground text-xs font-semibold">
+                              {mem.organization.name.charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                          <span className="flex-1 text-left">{mem.organization.name}</span>
+                          {isSwitching && <Loader2 className="size-4 animate-spin" />}
+                        </Button>
+                      )
+                    })}
+                    {userMemberships?.hasNextPage && (
+                      <Button
+                        variant="ghost"
+                        className="w-full justify-start text-muted-foreground"
+                        onClick={() => userMemberships.fetchNext?.()}
+                        disabled={userMemberships.isFetching}
+                      >
+                        {userMemberships.isFetching ? "Loading…" : "Show more"}
+                      </Button>
+                    )}
+                  </div>
+                )}
+                <div>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start"
+                    onClick={() => setCreateOrgOpen(true)}
+                    disabled={switchingOrgId !== null}
+                  >
+                    <Plus className="size-4" />
+                    {hasMemberships ? "Create a new organization" : "Create your first organization"}
+                  </Button>
+                </div>
+              </>
             )}
-            <div>
-              <Button
-                variant="outline"
-                onClick={() => setCreateOrgOpen(true)}
-              >
-                <Plus className="size-4 mr-2" />
-                Create New Organization
-              </Button>
-            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -83,8 +142,9 @@ export function OrgGateDialog({ open, onOpenChange, onOrgSelected }: OrgGateDial
       <CreateOrganizationDialog
         open={createOrgOpen}
         onOpenChange={setCreateOrgOpen}
-        onSuccess={() => {
+        onSuccess={async () => {
           setCreateOrgOpen(false)
+          await getToken({ skipCache: true })
           onOrgSelected()
           onOpenChange(false)
         }}

@@ -44,6 +44,7 @@ export const clerkMock = {
     isSignedIn: clerkState.isSignedIn,
     isLoaded: clerkState.isLoaded,
     userId: clerkState.userId,
+    getToken: () => Promise.resolve(null),
   }),
   useClerk: () => ({
     openUserProfile: clerkState.openUserProfile,
@@ -57,9 +58,16 @@ export const clerkMock = {
     isLoaded: clerkState.isLoaded,
   }),
   useOrganizationList: () => ({
-    userMemberships: { data: clerkState.memberships },
+    userMemberships: {
+      data: clerkState.memberships,
+      isLoading: false,
+      isFetching: false,
+      hasNextPage: false,
+      fetchNext: () => {},
+    },
     setActive: clerkState.setOrgActive ?? clerkState.setActive,
     createOrganization: clerkState.createOrganization,
+    isLoaded: clerkState.isLoaded,
   }),
   useSignIn: () => ({
     isLoaded: clerkState.signInLoaded,

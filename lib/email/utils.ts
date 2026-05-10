@@ -9,6 +9,20 @@ export function buildEventUrl(slug?: string, path?: string): string | undefined 
   return path ? `${base}${path}` : base
 }
 
+export function getReplyToAddress(): string | undefined {
+  return process.env.RESEND_REPLY_TO_EMAIL || process.env.RESEND_FROM_EMAIL || undefined
+}
+
+export function buildUnsubscribeHeaders(unsubscribeUrl: string): Record<string, string> {
+  const mailto = process.env.RESEND_REPLY_TO_EMAIL
+  const targets = [`<${unsubscribeUrl}>`]
+  if (mailto) targets.push(`<mailto:${mailto}?subject=unsubscribe>`)
+  return {
+    "List-Unsubscribe": targets.join(", "),
+    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+  }
+}
+
 export function sanitizeTag(name: string): string {
   return name
     .replace(/[^a-zA-Z0-9_-]/g, "_")

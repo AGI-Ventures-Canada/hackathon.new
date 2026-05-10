@@ -63,6 +63,18 @@ const mockGetOrCreatePersonalTenant = mock(() => Promise.resolve(null))
 mock.module("@/lib/services/tenants", () => ({
   getOrCreateTenant: mockGetOrCreateTenant,
   getOrCreatePersonalTenant: mockGetOrCreatePersonalTenant,
+  getTenantById: () =>
+    Promise.resolve({ id: "tenant-1", clerk_org_id: "org-1", clerk_user_id: null }),
+  isOrgTenant: () => Promise.resolve(true),
+  organizationRequiredResponse: () =>
+    new Response(
+      JSON.stringify({
+        error:
+          "Switch to an organization to create a hackathon. Personal accounts can't host events.",
+        code: "organization_required",
+      }),
+      { status: 400, headers: { "Content-Type": "application/json" } }
+    ),
 }))
 
 const { api } = await import("@/lib/api")

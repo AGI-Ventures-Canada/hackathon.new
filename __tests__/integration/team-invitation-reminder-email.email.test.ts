@@ -7,6 +7,7 @@ type SendEmailInput = {
   text?: string
   from?: string
   replyTo?: string
+  headers?: Record<string, string>
   tags?: Array<{ name: string; value: string }>
 }
 
@@ -146,6 +147,17 @@ describe("Team Invitation Reminder Email", () => {
 
       expect(result.success).toBe(false)
       expect(mockSendEmail).not.toHaveBeenCalled()
+    })
+
+    it("sets a List-Unsubscribe header pointing at the unsubscribe endpoint", async () => {
+      await sendTeamInvitationReminderEmail(validInput)
+
+      const callArgs = mockSendEmail.mock.calls[0][0]
+      expect(callArgs.headers).toBeDefined()
+      expect(callArgs.headers!["List-Unsubscribe"]).toContain(
+        "https://example.com/api/public/invitations/abc123token/unsubscribe"
+      )
+      expect(callArgs.headers!["List-Unsubscribe-Post"]).toBe("List-Unsubscribe=One-Click")
     })
 
     it("personalizes the from address with the inviter name", async () => {

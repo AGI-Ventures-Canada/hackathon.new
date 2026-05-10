@@ -145,6 +145,12 @@ const BANNER = `
     prizes assign <id> <pid>                 Assign prize
     prizes unassign <id> <pid> <sid>         Unassign prize
 
+  ${pc.dim("SHOWCASE / PRESENTER")}
+    presenter list <id>                      List saved showcase views
+    presenter create <id> --name <n>         Create a showcase view
+                          (--round <round-id> | --submissions <id1,id2>)
+    presenter delete <id> <view-id>          Delete a showcase view
+
   ${pc.dim("CHALLENGES")}
     challenges list <id>                     List challenges
     challenges create <id>                   Create (--title [--description --resources "label|url;..."])
@@ -622,6 +628,31 @@ async function main() {
           }
           default:
             console.error(`Unknown prizes command: ${sub}`)
+            process.exit(1)
+        }
+        break
+      }
+
+      case "presenter": {
+        const client = createAuthenticatedClient(flags)
+        switch (sub) {
+          case "list": {
+            const { runPresenterList } = await import("./commands/presenter/list.js")
+            await runPresenterList(client, rest[2], { json: flags.json })
+            break
+          }
+          case "create": {
+            const { runPresenterCreate } = await import("./commands/presenter/create.js")
+            await runPresenterCreate(client, rest[2], rest.slice(3).concat(flags.json ? ["--json"] : []))
+            break
+          }
+          case "delete": {
+            const { runPresenterDelete } = await import("./commands/presenter/delete.js")
+            await runPresenterDelete(client, rest[2], rest[3], { yes: flags.yes })
+            break
+          }
+          default:
+            console.error(`Unknown presenter command: ${sub}`)
             process.exit(1)
         }
         break

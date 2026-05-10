@@ -224,6 +224,7 @@ export function HackathonDraftEditor({
   const pendingSubmit = useRef(false)
   const copyTimeoutRef = useRef<number | null>(null)
   const autoTriggeredRef = useRef(false)
+  const gatePromptedRef = useRef(false)
 
   useEffect(() => {
     localStorage.setItem(storageKey, JSON.stringify({ state, sourceUrl, savedAt: Date.now() }))
@@ -242,6 +243,16 @@ export function HackathonDraftEditor({
       pendingSubmit.current = true
       setOrgGateOpen(true)
     }
+  }, [isLoaded, isOrgLoaded, isSignedIn, organization, searchParams])
+
+  useEffect(() => {
+    if (gatePromptedRef.current) return
+    if (!isLoaded || !isOrgLoaded) return
+    if (!isSignedIn) return
+    if (organization) return
+    if (searchParams.get("edit") === "true") return
+    gatePromptedRef.current = true
+    setOrgGateOpen(true)
   }, [isLoaded, isOrgLoaded, isSignedIn, organization, searchParams])
 
   useEffect(() => {

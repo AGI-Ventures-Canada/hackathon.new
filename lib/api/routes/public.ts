@@ -352,6 +352,43 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       description: "Lists all submissions for a hackathon.",
     },
   })
+  .get("/hackathons/:slug/presenter-views/:viewId", async ({ params }) => {
+    const hackathon = await getPublicHackathon(params.slug, { includeUnpublished: true })
+    if (!hackathon) {
+      return new Response(
+        JSON.stringify({ error: "Hackathon not found", code: "hackathon_not_found" }),
+        { status: 404, headers: { "Content-Type": "application/json" } }
+      )
+    }
+    const { getPresenterView, resolvePresenterSubmissions } = await import("@/lib/services/presenter-views")
+    const view = await getPresenterView(params.viewId)
+    if (!view || view.hackathon_id !== hackathon.id) {
+      return new Response(
+        JSON.stringify({ error: "Presenter view not found", code: "presenter_view_not_found" }),
+        { status: 404, headers: { "Content-Type": "application/json" } }
+      )
+    }
+    const submissions = await resolvePresenterSubmissions(view)
+    return {
+      view: { id: view.id, name: view.name, config: view.config },
+      hackathon: { id: hackathon.id, name: hackathon.name, slug: hackathon.slug },
+      submissions: submissions.map((s) => ({
+        id: s.id,
+        title: s.title,
+        description: s.description,
+        githubUrl: s.github_url,
+        liveAppUrl: s.live_app_url,
+        demoVideoUrl: s.demo_video_url,
+        screenshotUrl: s.screenshot_url,
+        submitter: s.submitter_name,
+      })),
+    }
+  }, {
+    detail: {
+      summary: "Get presenter view (resolved)",
+      description: "Public-facing endpoint that returns the hackathon, the view metadata, and the list of submissions to project on the showcase display. Auth-free so the /e/<slug>/display/showcase page works on a projector with no login.",
+    },
+  })
   .post(
     "/hackathons/:slug/submissions",
     async ({ params, body }) => {
@@ -1053,6 +1090,22 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     detail: {
       summary: "Decline team invitation",
       description: "Declines a team invitation. Requires Clerk session.",
+    },
+  })
+  .post("/invitations/:token/unsubscribe", async ({ params }) => {
+    const { unsubscribeTeamInvitation } = await import("@/lib/services/team-invitations")
+    const result = await unsubscribeTeamInvitation(params.token)
+    if (!result.success && result.code === "not_found") {
+      return new Response(
+        JSON.stringify({ error: "Invitation not found", code: "not_found" }),
+        { status: 404, headers: { "Content-Type": "application/json" } }
+      )
+    }
+    return { success: true }
+  }, {
+    detail: {
+      summary: "Unsubscribe from a team invitation (one-click)",
+      description: "Marks a pending team invitation as declined and cancels its reminders. Auth-free because the token itself is the secret — used by RFC 8058 List-Unsubscribe-Post one-click flows from email clients.",
     },
   })
   .get("/prize-claims/:token", async ({ params }) => {

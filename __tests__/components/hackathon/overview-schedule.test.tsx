@@ -116,20 +116,21 @@ describe("OverviewSchedule (interactive agenda)", () => {
     expect(screen.getByText("Add agenda item")).toBeDefined()
   })
 
-  it("shows delete confirmation for regular items", () => {
-    render(<OverviewSchedule {...defaultProps} />)
-    const deleteButtons = screen.getAllByText("Delete agenda item?")
-    expect(deleteButtons.length).toBeGreaterThan(0)
+  it("shows delete trigger for regular items", () => {
+    const { container } = render(<OverviewSchedule {...defaultProps} />)
+    const trashButtons = container.querySelectorAll('button .lucide-trash2')
+    expect(trashButtons.length).toBeGreaterThan(0)
   })
 
-  it("does not show delete for trigger items", () => {
-    render(
+  it("does not show delete trigger for trigger items", () => {
+    const { container } = render(
       <OverviewSchedule
         {...defaultProps}
         scheduleItems={[challengeReleaseItem]}
       />
     )
-    expect(screen.queryByText("Delete agenda item?")).toBeNull()
+    const trashButtons = container.querySelectorAll('button .lucide-trash2')
+    expect(trashButtons.length).toBe(0)
   })
 
   it("calls onEditTriggerItem instead of opening generic editor for trigger items", () => {

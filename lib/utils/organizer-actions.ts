@@ -40,6 +40,7 @@ export function isTransition(item: ActionItem): boolean {
 const ACTIONS_ALLOWED_WITHOUT_TARGET = new Set([
   "confirm-promote",
   "open-agenda-dialog",
+  "open-showcase-dialog",
 ])
 
 export function actionItemRequiresTarget(item: ActionItem): boolean {
@@ -532,8 +533,22 @@ function addPublishedActions(items: ActionItem[], input: ActionItemsInput) {
   }
 }
 
+function addShowcaseAction(items: ActionItem[], input: ActionItemsInput) {
+  if (input.submissionCount === 0) return
+  items.push(manualAction({
+    id: "open-showcase",
+    label: "Show projects on the big screen",
+    hint: "Pick a round or specific projects, then open the link on a projector.",
+    severity: "info",
+    action: "open-showcase-dialog",
+    ctaLabel: "Set up",
+    tooltip: "Make a showcase view to project on the big screen during demos. You can pick a whole round of projects or hand-pick a few. Saved views stick around so you can re-open them anytime.",
+  }))
+}
+
 function addActiveActions(items: ActionItem[], input: ActionItemsInput) {
   addChallengeActions(items, input)
+  addShowcaseAction(items, input)
 
   if (input.mentorQueue.open > 0) {
     items.push(autoAction({
@@ -623,6 +638,7 @@ function addActiveActions(items: ActionItem[], input: ActionItemsInput) {
 }
 
 function addJudgingActions(items: ActionItem[], input: ActionItemsInput) {
+  addShowcaseAction(items, input)
   if (
     input.rounds.plannedCount > 0 &&
     input.rounds.activeCount === 0 &&
@@ -697,6 +713,7 @@ function addJudgingActions(items: ActionItem[], input: ActionItemsInput) {
 }
 
 function addCompletedActions(items: ActionItem[], input: ActionItemsInput) {
+  addShowcaseAction(items, input)
   const resultsPublished = !!input.resultsPublishedAt
   items.push(autoAction({
     id: "results-not-published",

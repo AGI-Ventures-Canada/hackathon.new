@@ -6,15 +6,16 @@ import { CustomSignUp } from "./custom-sign-up"
 export default async function SignUpPage({
   searchParams,
 }: {
-  searchParams: Promise<{ redirect_url?: string }>
+  searchParams: Promise<{ redirect_url?: string; email?: string }>
 }) {
   const { userId, orgId } = await auth()
-  const { redirect_url } = await searchParams
+  const { redirect_url, email } = await searchParams
   const safeRedirect = redirect_url ? safeRedirectUrl(redirect_url) : undefined
+  const initialEmail = redirect_url ? email : undefined
 
   if (userId && orgId) {
     redirect(safeRedirect ?? "/home")
   }
 
-  return <CustomSignUp redirectUrl={safeRedirect} />
+  return <CustomSignUp redirectUrl={safeRedirect} initialEmail={initialEmail} />
 }
