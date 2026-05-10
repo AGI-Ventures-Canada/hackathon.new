@@ -58,7 +58,7 @@ export async function runHackathonsCreate(
   let description = options.description
 
   if (options.fromUrl) {
-    await confirmPersonalWorkspace(client, options)
+    await confirmPersonalWorkspace(client)
 
     const hackathon = await client.post<ImportedHackathonResponse>("/api/dashboard/import/url", {
       url: options.fromUrl,
@@ -98,7 +98,7 @@ export async function runHackathonsCreate(
     if (!p.isCancel(result)) description = result || undefined
   }
 
-  await confirmPersonalWorkspace(client, options)
+  await confirmPersonalWorkspace(client)
 
   const hackathon = await client.post<Hackathon>("/api/dashboard/hackathons", {
     name,
@@ -114,10 +114,7 @@ export async function runHackathonsCreate(
   console.log(formatSuccess(`Created hackathon "${hackathon.name}" (${hackathon.id})`))
 }
 
-async function confirmPersonalWorkspace(
-  client: OatmealClient,
-  _options: Pick<CreateOptions, "yes" | "json">
-): Promise<void> {
+async function confirmPersonalWorkspace(client: OatmealClient): Promise<void> {
   const whoami = await client.get<WhoAmIResponse>("/api/v1/whoami")
 
   if (whoami.tenantType !== "personal") {

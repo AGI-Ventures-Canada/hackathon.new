@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { assertOk } from "@/lib/utils/fetch"
@@ -51,7 +51,7 @@ export function InviteAcceptClient({
 
   const autoAcceptedRef = useRef(false)
 
-  async function handleAccept() {
+  const handleAccept = useCallback(async () => {
     if (needsTerms && !termsAccepted) {
       setError("Please agree to the terms and conditions to continue.")
       return
@@ -85,15 +85,14 @@ export function InviteAcceptClient({
     } finally {
       setLoading(false)
     }
-  }
+  }, [needsTerms, termsAccepted, token, invitation.termsHash, invitation.hackathonSlug, router])
 
   useEffect(() => {
     if (autoAcceptedRef.current) return
     if (!isAuthenticated || !isValid || needsTerms) return
     autoAcceptedRef.current = true
     void handleAccept()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, isValid, needsTerms])
+  }, [isAuthenticated, isValid, needsTerms, handleAccept])
 
   async function handleDecline() {
     setLoading(true)
@@ -250,12 +249,16 @@ export function InviteAcceptClient({
         ) : (
           <>
             <Button className="w-full" asChild>
-              <Link href={`/sign-in?redirect_url=${encodeURIComponent(`/invite/${token}`)}`}>
+              <Link
+                href={`/sign-in?redirect_url=${encodeURIComponent(`/invite/${token}`)}&email=${encodeURIComponent(invitation.email)}`}
+              >
                 Sign In to Accept
               </Link>
             </Button>
             <Button variant="outline" className="w-full" asChild>
-              <Link href={`/sign-up?redirect_url=${encodeURIComponent(`/invite/${token}`)}`}>
+              <Link
+                href={`/sign-up?redirect_url=${encodeURIComponent(`/invite/${token}`)}&email=${encodeURIComponent(invitation.email)}`}
+              >
                 Create Account
               </Link>
             </Button>

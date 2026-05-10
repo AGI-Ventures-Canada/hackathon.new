@@ -58,6 +58,7 @@ export default async function DisplayShowcasePage({ params, searchParams }: Page
         id: s.id,
         title: s.title,
         description: s.description,
+        githubUrl: s.github_url,
         liveAppUrl: s.live_app_url,
         demoVideoUrl: s.demo_video_url,
         screenshotUrl: s.screenshot_url,

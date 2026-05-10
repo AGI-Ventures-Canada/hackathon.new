@@ -1092,6 +1092,22 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       description: "Declines a team invitation. Requires Clerk session.",
     },
   })
+  .post("/invitations/:token/unsubscribe", async ({ params }) => {
+    const { unsubscribeTeamInvitation } = await import("@/lib/services/team-invitations")
+    const result = await unsubscribeTeamInvitation(params.token)
+    if (!result.success && result.code === "not_found") {
+      return new Response(
+        JSON.stringify({ error: "Invitation not found", code: "not_found" }),
+        { status: 404, headers: { "Content-Type": "application/json" } }
+      )
+    }
+    return { success: true }
+  }, {
+    detail: {
+      summary: "Unsubscribe from a team invitation (one-click)",
+      description: "Marks a pending team invitation as declined and cancels its reminders. Auth-free because the token itself is the secret — used by RFC 8058 List-Unsubscribe-Post one-click flows from email clients.",
+    },
+  })
   .get("/prize-claims/:token", async ({ params }) => {
     const { getClaimByToken } = await import("@/lib/services/prize-fulfillment")
     const claim = await getClaimByToken(params.token)

@@ -46,8 +46,10 @@ function isOAuthProvider(strategy: string): strategy is OAuthProvider {
 
 export function SignInForm({
   redirectUrl = "/home",
+  initialEmail = "",
 }: {
   redirectUrl?: string;
+  initialEmail?: string;
 }) {
   const { signIn, isLoaded, setActive } = useSignIn();
   const { client, setActive: resumeSession } = useClerk();
@@ -55,7 +57,7 @@ export function SignInForm({
 
   const lastSession = client?.sessions?.[0] ?? null;
 
-  const [identifier, setIdentifier] = useState("");
+  const [identifier, setIdentifier] = useState(initialEmail);
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [newPassword, setNewPassword] = useState("");

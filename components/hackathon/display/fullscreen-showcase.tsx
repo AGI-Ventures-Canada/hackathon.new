@@ -8,6 +8,7 @@ type ShowcaseSubmission = {
   id: string
   title: string
   description: string | null
+  githubUrl: string | null
   liveAppUrl: string | null
   demoVideoUrl: string | null
   screenshotUrl: string | null
@@ -89,7 +90,10 @@ export function FullscreenShowcase({
                   {s.demoVideoUrl && (
                     <ShowcaseLink href={s.demoVideoUrl} icon={Play} label="Demo" />
                   )}
-                  {!s.liveAppUrl && !s.demoVideoUrl && (
+                  {s.githubUrl && (
+                    <ShowcaseLink href={s.githubUrl} icon={Github} label="Code" />
+                  )}
+                  {!s.liveAppUrl && !s.demoVideoUrl && !s.githubUrl && (
                     <span className="text-muted-foreground">No links</span>
                   )}
                 </div>

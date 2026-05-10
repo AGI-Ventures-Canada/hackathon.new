@@ -32,6 +32,7 @@ export async function sendTeamInvitationEmail(
   }
 
   const acceptUrl = `${process.env.NEXT_PUBLIC_APP_URL}/invite/${input.inviteToken}`
+  const unsubscribeUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/public/invitations/${input.inviteToken}/unsubscribe`
   const expiresDate = new Date(input.expiresAt).toLocaleDateString("en-US", {
     weekday: "long",
     year: "numeric",
@@ -59,7 +60,7 @@ export async function sendTeamInvitationEmail(
     html,
     text,
     replyTo: getReplyToAddress(),
-    headers: buildUnsubscribeHeaders(acceptUrl),
+    headers: buildUnsubscribeHeaders(unsubscribeUrl),
     tags: [
       { name: "type", value: "team_invitation" },
       { name: "hackathon", value: sanitizeTag(input.hackathonName) },
@@ -94,6 +95,7 @@ export async function sendTeamInvitationReminderEmail(
   }
 
   const acceptUrl = `${process.env.NEXT_PUBLIC_APP_URL}/invite/${input.inviteToken}`
+  const unsubscribeUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/public/invitations/${input.inviteToken}/unsubscribe`
   const expiresDate = new Date(input.expiresAt).toLocaleDateString("en-US", {
     weekday: "long",
     year: "numeric",
@@ -121,7 +123,7 @@ export async function sendTeamInvitationReminderEmail(
     html,
     text,
     replyTo: getReplyToAddress(),
-    headers: buildUnsubscribeHeaders(acceptUrl),
+    headers: buildUnsubscribeHeaders(unsubscribeUrl),
     tags: [
       { name: "type", value: "team_invitation_reminder" },
       { name: "hackathon", value: sanitizeTag(input.hackathonName) },

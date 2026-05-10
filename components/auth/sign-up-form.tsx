@@ -23,14 +23,20 @@ import { generateSlug, isValidSlugFormat } from "@/lib/utils/slug";
 
 type Step = "register" | "verify" | "create-org";
 
-export function SignUpForm({ redirectUrl }: { redirectUrl?: string }) {
+export function SignUpForm({
+  redirectUrl,
+  initialEmail = "",
+}: {
+  redirectUrl?: string;
+  initialEmail?: string;
+}) {
   const { signUp, isLoaded, setActive } = useSignUp();
   const { createOrganization, setActive: setOrgActive } = useOrganizationList();
   const router = useRouter();
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [step, setStep] = useState<Step>("register");

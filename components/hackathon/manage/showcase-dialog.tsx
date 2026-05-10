@@ -128,10 +128,8 @@ export function ShowcaseDialog({
   )
 
   const showcaseUrl = useCallback(
-    (viewId: string) => {
-      if (typeof window === "undefined") return `/e/${hackathonSlug}/display/showcase?view=${viewId}`
-      return `${window.location.origin}/e/${hackathonSlug}/display/showcase?view=${viewId}`
-    },
+    (viewId: string) =>
+      `${window.location.origin}/e/${hackathonSlug}/display/showcase?view=${viewId}`,
     [hackathonSlug]
   )
 

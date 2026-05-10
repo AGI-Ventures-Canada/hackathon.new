@@ -257,6 +257,47 @@ export async function declineTeamInvitation(
   return { success: !error }
 }
 
+export async function unsubscribeTeamInvitation(
+  token: string
+): Promise<{ success: boolean; code?: string }> {
+  const client = getSupabase()
+
+  const { data: invitation } = await client
+    .from("team_invitations")
+    .select("id, status")
+    .eq("token", token)
+    .maybeSingle()
+
+  if (!invitation) {
+    return { success: false, code: "not_found" }
+  }
+
+  if (invitation.status !== "pending") {
+    return { success: true, code: "already_resolved" }
+  }
+
+  const { error } = await client
+    .from("team_invitations")
+    .update({
+      status: "declined",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("token", token)
+    .eq("status", "pending")
+
+  if (error) {
+    console.error("Failed to unsubscribe invitation:", error)
+    return { success: false, code: "update_failed" }
+  }
+
+  const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
+  cancelRemindersForEntity("team_invitation", invitation.id).catch((err) =>
+    console.error(`Failed to cancel reminders for team_invitation ${invitation.id}:`, err)
+  )
+
+  return { success: true }
+}
+
 export async function cancelTeamInvitation(
   invitationId: string,
   clerkUserId: string

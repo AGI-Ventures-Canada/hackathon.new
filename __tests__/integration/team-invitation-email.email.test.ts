@@ -227,13 +227,15 @@ describe("Team Invitation Email", () => {
       expect(callArgs.text).toContain("Sarah Chen")
     })
 
-    it("sets a List-Unsubscribe header for spam-filter compliance", async () => {
+    it("sets a List-Unsubscribe header pointing at the unsubscribe endpoint", async () => {
       await sendTeamInvitationEmail(validInput)
 
       const callArgs = mockSendEmail.mock.calls[0][0]
       expect(callArgs.headers).toBeDefined()
-      expect(callArgs.headers!["List-Unsubscribe"]).toContain("https://example.com/invite/abc123token")
-      expect(callArgs.headers!["List-Unsubscribe"]).toContain("mailto:")
+      expect(callArgs.headers!["List-Unsubscribe"]).toContain(
+        "https://example.com/api/public/invitations/abc123token/unsubscribe"
+      )
+      expect(callArgs.headers!["List-Unsubscribe"]).not.toContain("/invite/abc123token>")
       expect(callArgs.headers!["List-Unsubscribe-Post"]).toBe("List-Unsubscribe=One-Click")
     })
 
