@@ -19,7 +19,7 @@ interface RpcPollRow {
   feedback_survey_url: string | null
   feedback_survey_sent_at: string | null
   submission_count: number
-  unassigned_submission_count: number
+  unassigned_submission_count: number | null
   participant_count: number
   team_count: number
   assignment_total: number
