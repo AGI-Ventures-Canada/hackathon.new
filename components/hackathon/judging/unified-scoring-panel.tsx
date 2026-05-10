@@ -118,7 +118,7 @@ export function UnifiedScoringPanel({
             }
           )
         } catch {
-          // silent
+          // ignore — notes auto-save retries on next edit
         } finally {
           setSavingNotes(false)
         }
