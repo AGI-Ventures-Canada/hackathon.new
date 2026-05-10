@@ -74,19 +74,15 @@ export function SignInForm({
     );
   }
 
-  async function detectOAuthOnlyProviders(): Promise<OAuthProvider[] | null> {
-    if (!signIn) return null;
-    try {
-      const probe = await signIn.create({ identifier });
-      const factors = probe.supportedFirstFactors ?? [];
-      const strategies = factors.map((f) => f.strategy);
-      if (strategies.includes("password")) return null;
-      const providers = strategies.filter(isOAuthProvider);
-      const unique = Array.from(new Set(providers));
-      return unique.length > 0 ? unique : null;
-    } catch {
-      return null;
-    }
+  function getOAuthOnlyProviders(
+    factors: ReadonlyArray<{ strategy: string }> | undefined,
+  ): OAuthProvider[] | null {
+    if (!factors) return null;
+    const strategies = factors.map((f) => f.strategy);
+    if (strategies.includes("password")) return null;
+    const providers = strategies.filter(isOAuthProvider);
+    const unique = Array.from(new Set(providers));
+    return unique.length > 0 ? unique : null;
   }
 
   async function handleCredentials(e: React.FormEvent) {
@@ -112,7 +108,7 @@ export function SignInForm({
       if (isClerkAPIResponseError(err)) {
         const errorCode = err.errors[0]?.code;
         if (errorCode === "strategy_for_user_invalid") {
-          const providers = await detectOAuthOnlyProviders();
+          const providers = getOAuthOnlyProviders(signIn.supportedFirstFactors ?? undefined);
           if (providers) {
             setOauthOnlyProviders(providers);
             return;

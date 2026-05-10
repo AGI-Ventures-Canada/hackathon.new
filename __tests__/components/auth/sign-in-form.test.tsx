@@ -155,29 +155,27 @@ describe("SignInForm", () => {
   })
 
   describe("OAuth-only account fallback", () => {
-    function rejectWithStrategyError() {
-      return Promise.reject({
-        clerkError: true,
-        errors: [
-          {
-            code: "strategy_for_user_invalid",
-            message: "The verification strategy is not valid for this account",
-          },
-        ],
-      })
+    function failWithStrategyError(factors: { strategy: string }[]) {
+      return (...args: unknown[]) => {
+        const params = args[0] as { password?: string }
+        if (params?.password) {
+          ;(g.__clerkState.signIn as { supportedFirstFactors?: { strategy: string }[] }).supportedFirstFactors = factors
+          return Promise.reject({
+            clerkError: true,
+            errors: [
+              {
+                code: "strategy_for_user_invalid",
+                message: "The verification strategy is not valid for this account",
+              },
+            ],
+          })
+        }
+        return Promise.resolve({ status: "needs_first_factor", supportedFirstFactors: factors })
+      }
     }
 
     it("shows Continue with Google when password fails on OAuth-only account", async () => {
-      let callCount = 0
-      signInCreateImpl = (...args: unknown[]) => {
-        callCount += 1
-        const params = args[0] as { password?: string }
-        if (callCount === 1 && params?.password) return rejectWithStrategyError()
-        return Promise.resolve({
-          status: "needs_first_factor",
-          supportedFirstFactors: [{ strategy: "oauth_google" }],
-        })
-      }
+      signInCreateImpl = failWithStrategyError([{ strategy: "oauth_google" }])
 
       render(<SignInForm />)
       fireEvent.change(screen.getByLabelText("Email"), {
@@ -197,16 +195,7 @@ describe("SignInForm", () => {
     })
 
     it("triggers OAuth redirect when Continue with Google is clicked", async () => {
-      let callCount = 0
-      signInCreateImpl = (...args: unknown[]) => {
-        callCount += 1
-        const params = args[0] as { password?: string }
-        if (callCount === 1 && params?.password) return rejectWithStrategyError()
-        return Promise.resolve({
-          status: "needs_first_factor",
-          supportedFirstFactors: [{ strategy: "oauth_google" }],
-        })
-      }
+      signInCreateImpl = failWithStrategyError([{ strategy: "oauth_google" }])
 
       render(<SignInForm redirectUrl="/dashboard" />)
       fireEvent.change(screen.getByLabelText("Email"), {
@@ -232,19 +221,10 @@ describe("SignInForm", () => {
     })
 
     it("shows multiple OAuth providers when account supports several", async () => {
-      let callCount = 0
-      signInCreateImpl = (...args: unknown[]) => {
-        callCount += 1
-        const params = args[0] as { password?: string }
-        if (callCount === 1 && params?.password) return rejectWithStrategyError()
-        return Promise.resolve({
-          status: "needs_first_factor",
-          supportedFirstFactors: [
-            { strategy: "oauth_google" },
-            { strategy: "oauth_github" },
-          ],
-        })
-      }
+      signInCreateImpl = failWithStrategyError([
+        { strategy: "oauth_google" },
+        { strategy: "oauth_github" },
+      ])
 
       render(<SignInForm />)
       fireEvent.change(screen.getByLabelText("Email"), {
@@ -265,17 +245,8 @@ describe("SignInForm", () => {
       })
     })
 
-    it("falls back to default error if probe finds no usable strategies", async () => {
-      let callCount = 0
-      signInCreateImpl = (...args: unknown[]) => {
-        callCount += 1
-        const params = args[0] as { password?: string }
-        if (callCount === 1 && params?.password) return rejectWithStrategyError()
-        return Promise.resolve({
-          status: "needs_first_factor",
-          supportedFirstFactors: [{ strategy: "email_code" }],
-        })
-      }
+    it("falls back to default error if signIn reports no usable strategies", async () => {
+      signInCreateImpl = failWithStrategyError([{ strategy: "email_code" }])
 
       render(<SignInForm />)
       fireEvent.change(screen.getByLabelText("Email"), {
@@ -294,16 +265,7 @@ describe("SignInForm", () => {
     })
 
     it("clears OAuth-only fallback when email is edited", async () => {
-      let callCount = 0
-      signInCreateImpl = (...args: unknown[]) => {
-        callCount += 1
-        const params = args[0] as { password?: string }
-        if (callCount === 1 && params?.password) return rejectWithStrategyError()
-        return Promise.resolve({
-          status: "needs_first_factor",
-          supportedFirstFactors: [{ strategy: "oauth_google" }],
-        })
-      }
+      signInCreateImpl = failWithStrategyError([{ strategy: "oauth_google" }])
 
       render(<SignInForm />)
       fireEvent.change(screen.getByLabelText("Email"), {
