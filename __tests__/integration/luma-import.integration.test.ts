@@ -73,7 +73,7 @@ mock.module("@/lib/services/tenants", () => ({
           "Switch to an organization to create a hackathon. Personal accounts can't host events.",
         code: "organization_required",
       }),
-      { status: 400, headers: { "Content-Type": "application/json" } }
+      { status: 403, headers: { "Content-Type": "application/json" } }
     ),
 }))
 

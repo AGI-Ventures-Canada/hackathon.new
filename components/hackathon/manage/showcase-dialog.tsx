@@ -129,7 +129,7 @@ export function ShowcaseDialog({
 
   const showcaseUrl = useCallback(
     (viewId: string) =>
-      `${window.location.origin}/e/${hackathonSlug}/display/showcase?view=${viewId}`,
+      `${window.location.origin}/e/${encodeURIComponent(hackathonSlug)}/display/showcase?view=${encodeURIComponent(viewId)}`,
     [hackathonSlug]
   )
 

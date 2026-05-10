@@ -35,6 +35,11 @@ export async function runPresenterCreate(
   hackathonId: string,
   args: string[]
 ): Promise<void> {
+  if (!hackathonId) {
+    console.error("Usage: hackathon presenter create <hackathon-id> --name <name> (--round <round-id> | --submissions <id1,id2,...>)")
+    process.exit(1)
+  }
+
   const options = parsePresenterCreateOptions(args)
 
   if (!options.name) {

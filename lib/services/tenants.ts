@@ -179,7 +179,7 @@ export const ORGANIZATION_REQUIRED_ERROR = {
 
 export function organizationRequiredResponse(): Response {
   return new Response(JSON.stringify(ORGANIZATION_REQUIRED_ERROR), {
-    status: 400,
+    status: 403,
     headers: { "Content-Type": "application/json" },
   })
 }
