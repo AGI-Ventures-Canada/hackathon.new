@@ -1265,6 +1265,48 @@ export async function countJudges(hackathonId: string): Promise<number> {
   return count ?? 0
 }
 
+export async function countUnassignedSubmissions(hackathonId: string): Promise<number> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const PAGE_SIZE = 1000
+
+  const submittedIds: string[] = []
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await client
+      .from("submissions")
+      .select("id")
+      .eq("hackathon_id", hackathonId)
+      .eq("status", "submitted")
+      .range(from, from + PAGE_SIZE - 1)
+
+    if (error) {
+      console.error("Failed to load submitted submissions:", error)
+      return 0
+    }
+    if (!data || data.length === 0) break
+    for (const row of data) submittedIds.push(row.id as string)
+    if (data.length < PAGE_SIZE) break
+  }
+
+  if (submittedIds.length === 0) return 0
+
+  const assignedIds = new Set<string>()
+  for (let i = 0; i < submittedIds.length; i += PAGE_SIZE) {
+    const slice = submittedIds.slice(i, i + PAGE_SIZE)
+    const { data, error } = await client
+      .from("judge_assignments")
+      .select("submission_id")
+      .in("submission_id", slice)
+
+    if (error) {
+      console.error("Failed to load judge assignments:", error)
+      return 0
+    }
+    for (const row of data ?? []) assignedIds.add(row.submission_id as string)
+  }
+
+  return submittedIds.filter((id) => !assignedIds.has(id)).length
+}
+
 export async function listJudges(hackathonId: string): Promise<JudgeInfo[]> {
   const client = getSupabase() as unknown as SupabaseClient
 

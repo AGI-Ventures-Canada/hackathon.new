@@ -27,6 +27,7 @@ function makeRpcPayload(overrides: Record<string, unknown> = {}) {
     feedback_survey_url: null,
     feedback_survey_sent_at: null,
     submission_count: 5,
+    unassigned_submission_count: 0,
     participant_count: 20,
     team_count: 10,
     assignment_total: 20,
@@ -75,6 +76,7 @@ describe("Organizer Polling Service", () => {
       expect(result!.status).toBe("active")
       expect(result!.phase).toBe("build")
       expect(result!.submissionCount).toBe(5)
+      expect(result!.unassignedSubmissionCount).toBe(0)
       expect(result!.participantCount).toBe(20)
       expect(result!.teamCount).toBe(10)
       expect(result!.judgingProgress).toEqual({
@@ -150,6 +152,7 @@ describe("Organizer Polling Service", () => {
     it("defaults counts to 0 when null", async () => {
       mockRpcCall("get_organizer_poll_data", mockSuccess(makeRpcPayload({
         submission_count: null,
+        unassigned_submission_count: null,
         participant_count: null,
         team_count: null,
         assignment_total: null,
@@ -165,6 +168,7 @@ describe("Organizer Polling Service", () => {
 
       expect(result).not.toBeNull()
       expect(result!.submissionCount).toBe(0)
+      expect(result!.unassignedSubmissionCount).toBe(0)
       expect(result!.participantCount).toBe(0)
       expect(result!.teamCount).toBe(0)
       expect(result!.judgingProgress.totalAssignments).toBe(0)
@@ -174,6 +178,17 @@ describe("Organizer Polling Service", () => {
       expect(result!.judgeDisplayCount).toBe(0)
       expect(result!.mentorQueue.open).toBe(0)
       expect(result!.pendingJudgeInvitationCount).toBe(0)
+    })
+
+    it("maps unassigned_submission_count when present", async () => {
+      mockRpcCall("get_organizer_poll_data", mockSuccess(
+        makeRpcPayload({ unassigned_submission_count: 4 })
+      ))
+
+      const result = await buildOrganizerPollPayload(hackathonId)
+
+      expect(result).not.toBeNull()
+      expect(result!.unassignedSubmissionCount).toBe(4)
     })
 
     it("sets challengeReleased to false when challenge_released_at is null", async () => {
