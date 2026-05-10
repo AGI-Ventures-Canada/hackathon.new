@@ -3,7 +3,7 @@ import { notFound } from "next/navigation"
 import { auth } from "@clerk/nextjs/server"
 import { getManageHackathon } from "@/lib/services/manage-hackathon"
 import { getHackathonSubmissions } from "@/lib/services/submissions"
-import { countJudges, getJudgingProgress, listPrizes, listRounds } from "@/lib/services/judging"
+import { countJudges, countUnassignedSubmissions, getJudgingProgress, listPrizes, listRounds } from "@/lib/services/judging"
 import { countPendingJudgeInvitations } from "@/lib/services/judge-invitations"
 import { countJudgeDisplayProfiles } from "@/lib/services/judge-display"
 import { getManageOverviewStats } from "@/lib/services/manage-overview"
@@ -72,6 +72,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     challenges,
     rounds,
     perks,
+    unassignedSubmissionCount,
   ] = await Promise.all([
     getHackathonSubmissions(hackathon.id),
     getJudgingProgress(hackathon.id),
@@ -85,6 +86,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     listChallenges(hackathon.id),
     listRounds(hackathon.id),
     listPerks(hackathon.id),
+    countUnassignedSubmissions(hackathon.id),
   ])
 
   const submissionCount = submissions.length
@@ -103,6 +105,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     status: hackathon.status,
     phase: hackathon.phase,
     submissionCount,
+    unassignedSubmissionCount,
     participantCount: overviewStats.participantCount,
     teamCount: overviewStats.teamCount,
     judgingProgress,

@@ -28,6 +28,22 @@ type Step =
   | "reset-code"
   | "reset-password";
 
+type OAuthProvider = "oauth_google" | "oauth_github" | "oauth_linkedin_oidc";
+
+const OAUTH_PROVIDER_LABEL: Record<OAuthProvider, string> = {
+  oauth_google: "Google",
+  oauth_github: "GitHub",
+  oauth_linkedin_oidc: "LinkedIn",
+};
+
+function isOAuthProvider(strategy: string): strategy is OAuthProvider {
+  return (
+    strategy === "oauth_google" ||
+    strategy === "oauth_github" ||
+    strategy === "oauth_linkedin_oidc"
+  );
+}
+
 export function SignInForm({
   redirectUrl = "/home",
 }: {
@@ -46,6 +62,9 @@ export function SignInForm({
   const [step, setStep] = useState<Step>("credentials");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [oauthOnlyProviders, setOauthOnlyProviders] = useState<
+    OAuthProvider[] | null
+  >(null);
 
   if (!isLoaded) {
     return (
@@ -55,10 +74,22 @@ export function SignInForm({
     );
   }
 
+  function getOAuthOnlyProviders(
+    factors: ReadonlyArray<{ strategy: string }> | undefined,
+  ): OAuthProvider[] | null {
+    if (!factors) return null;
+    const strategies = factors.map((f) => f.strategy);
+    if (strategies.includes("password")) return null;
+    const providers = strategies.filter(isOAuthProvider);
+    const unique = Array.from(new Set(providers));
+    return unique.length > 0 ? unique : null;
+  }
+
   async function handleCredentials(e: React.FormEvent) {
     e.preventDefault();
     if (!signIn) return;
     setError("");
+    setOauthOnlyProviders(null);
     setIsSubmitting(true);
 
     try {
@@ -75,6 +106,14 @@ export function SignInForm({
       }
     } catch (err) {
       if (isClerkAPIResponseError(err)) {
+        const errorCode = err.errors[0]?.code;
+        if (errorCode === "strategy_for_user_invalid") {
+          const providers = getOAuthOnlyProviders(signIn.supportedFirstFactors ?? undefined);
+          if (providers) {
+            setOauthOnlyProviders(providers);
+            return;
+          }
+        }
         setError(
           err.errors[0]?.longMessage ||
             err.errors[0]?.message ||
@@ -474,13 +513,38 @@ export function SignInForm({
           className="space-y-4"
         >
           {error && <p className="text-xs text-destructive">{error}</p>}
+          {oauthOnlyProviders && (
+            <div className="space-y-3 rounded-md border border-border bg-muted/40 p-3">
+              <p className="text-xs text-muted-foreground">
+                {oauthOnlyProviders.length === 1
+                  ? `This account signs in with ${OAUTH_PROVIDER_LABEL[oauthOnlyProviders[0]]}.`
+                  : "This account doesn't use a password. Use one of these to sign in:"}
+              </p>
+              <div className="flex flex-col gap-2">
+                {oauthOnlyProviders.map((provider) => (
+                  <Button
+                    key={provider}
+                    type="button"
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => handleOAuth(provider)}
+                  >
+                    Continue with {OAUTH_PROVIDER_LABEL[provider]}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="identifier">Email</Label>
             <Input
               id="identifier"
               type="email"
               value={identifier}
-              onChange={(e) => setIdentifier(e.target.value)}
+              onChange={(e) => {
+                setIdentifier(e.target.value);
+                if (oauthOnlyProviders) setOauthOnlyProviders(null);
+              }}
               placeholder="you@example.com"
               autoFocus
               autoComplete="email"

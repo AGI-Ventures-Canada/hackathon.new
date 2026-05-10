@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test"
 import {
   createChainableMock,
+  mockRpcCall,
+  mockSuccess,
+  mockError,
   resetSupabaseMocks,
   setMockFromImplementation,
 } from "../lib/supabase-mock"
@@ -12,6 +15,7 @@ const {
   autoAssignJudges,
   assignWeightedScoreJudge,
   getWeightedScoreAssignmentSummary,
+  countUnassignedSubmissions,
   getJudgingProgress,
   getJudgeAssignments,
   saveNotes,
@@ -799,6 +803,32 @@ describe("Judging Service", () => {
     })
   })
 
+  describe("countUnassignedSubmissions", () => {
+    it("returns the count from the RPC", async () => {
+      mockRpcCall("count_unassigned_submissions", mockSuccess(7))
+
+      const result = await countUnassignedSubmissions("h1")
+
+      expect(result).toBe(7)
+    })
+
+    it("returns 0 when the RPC errors", async () => {
+      mockRpcCall("count_unassigned_submissions", mockError("RPC failed"))
+
+      const result = await countUnassignedSubmissions("h1")
+
+      expect(result).toBe(0)
+    })
+
+    it("returns 0 when the RPC returns null", async () => {
+      mockRpcCall("count_unassigned_submissions", mockSuccess(null))
+
+      const result = await countUnassignedSubmissions("h1")
+
+      expect(result).toBe(0)
+    })
+  })
+
   describe("getJudgeAssignments", () => {
     it("returns all assignments for a specific judge with submission details", async () => {
       let foundParticipant = false
@@ -1260,6 +1290,7 @@ describe("Judging Service", () => {
           chain = createChainableMock({
             data: [{ weight: 100 }],
             error: null,
+            count: 1,
           })
         } else if (table === "prizes") {
           chain = createChainableMock({
@@ -1293,7 +1324,7 @@ describe("Judging Service", () => {
       setMockFromImplementation((table: string) => {
         let chain: ReturnType<typeof createChainableMock>
         if (table === "judging_criteria") {
-          chain = createChainableMock({ data: [{ weight: 50 }], error: null })
+          chain = createChainableMock({ data: [{ weight: 50 }], error: null, count: 1 })
         } else if (table === "prizes") {
           chain = createChainableMock({
             data: { id: "prize_partial", name: "Sponsor Pick", judging_style: "weighted_score" },
@@ -1314,6 +1345,33 @@ describe("Judging Service", () => {
       })
 
       expect(result.success).toBe(true)
+    })
+
+    it("rejects weighted_score with zero bonus criteria when no core categories exist", async () => {
+      let prizeInsertCount = 0
+      setMockFromImplementation((table: string) => {
+        if (table === "judging_criteria") {
+          return createChainableMock({ data: [], error: null, count: 0 })
+        }
+        if (table === "prizes") {
+          prizeInsertCount++
+          return createChainableMock({ data: null, error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await createPrize("h1", {
+        name: "Orphan Prize",
+        judgingStyle: "weighted_score",
+        criteria: [],
+      })
+
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.code).toBe("validation")
+        expect(result.error).toContain("category")
+      }
+      expect(prizeInsertCount).toBe(0)
     })
   })
 

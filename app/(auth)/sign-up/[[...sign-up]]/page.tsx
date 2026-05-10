@@ -8,11 +8,14 @@ export default async function SignUpPage({
 }: {
   searchParams: Promise<{ redirect_url?: string }>
 }) {
-  const { userId } = await auth()
+  const { userId, orgId } = await auth()
   const { redirect_url } = await searchParams
   const safeRedirect = redirect_url ? safeRedirectUrl(redirect_url) : undefined
 
-  if (userId) {
+  // Only bounce away if the user already has an *active* org. A signed-in
+  // user mid-create-org (or whose org was deleted/revoked) needs to fall
+  // through and re-run the org-creation step, not get redirected.
+  if (userId && orgId) {
     redirect(safeRedirect ?? "/home")
   }
 

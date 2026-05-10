@@ -253,6 +253,25 @@ export async function createPrize(
     }
   }
 
+  if (input.judgingStyle === "weighted_score" && cleanCriteria.length === 0) {
+    const { count: coreCount, error: coreCountError } = await client
+      .from("judging_criteria")
+      .select("id", { count: "exact", head: true })
+      .eq("hackathon_id", hackathonId)
+      .is("prize_id", null)
+    if (coreCountError) {
+      console.error("Failed to count core criteria for weighted prize check:", coreCountError)
+      return { success: false, error: coreCountError.message, code: "db_error" }
+    }
+    if (!coreCount || coreCount === 0) {
+      return {
+        success: false,
+        error: "Add at least one shared category before creating a weighted prize, or give this prize its own categories",
+        code: "validation",
+      }
+    }
+  }
+
   const cleanBuckets =
     input.judgingStyle === "bucket_sort" && input.buckets !== undefined
       ? input.buckets.filter((b) => b.label.trim().length > 0)
@@ -1349,6 +1368,21 @@ export async function countJudges(hackathonId: string): Promise<number> {
     return 0
   }
   return count ?? 0
+}
+
+export async function countUnassignedSubmissions(hackathonId: string): Promise<number> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data, error } = await client.rpc("count_unassigned_submissions", {
+    p_hackathon_id: hackathonId,
+  })
+
+  if (error) {
+    console.error("Failed to count unassigned submissions:", error)
+    return 0
+  }
+
+  return (data as number | null) ?? 0
 }
 
 export async function listJudges(hackathonId: string): Promise<JudgeInfo[]> {
@@ -2806,7 +2840,7 @@ export async function getAssignmentDetail(
       id: c.id,
       name: c.name,
       description: c.description,
-      min_score: Number((c as { min_score?: number }).min_score ?? 0),
+      min_score: Number(c.min_score),
       max_score: c.max_score,
       weight: Number(c.weight), // Supabase returns Postgres numeric columns as strings
       category: c.category ?? null,
@@ -2972,8 +3006,8 @@ export async function listCoreCriteria(hackathonId: string): Promise<CoreCriteri
     name: c.name,
     description: c.description,
     weight: Number(c.weight),
-    minScore: Number((c as { min_score?: number }).min_score ?? 1),
-    maxScore: Number((c as { max_score?: number }).max_score ?? 10),
+    minScore: Number(c.min_score ?? 1),
+    maxScore: Number(c.max_score ?? 10),
     displayOrder: c.display_order,
   }))
 }
@@ -2993,8 +3027,8 @@ export async function listPrizeCriteria(prizeId: string): Promise<CoreCriterion[
     name: c.name,
     description: c.description,
     weight: Number(c.weight),
-    minScore: Number((c as { min_score?: number }).min_score ?? 1),
-    maxScore: Number((c as { max_score?: number }).max_score ?? 10),
+    minScore: Number(c.min_score ?? 1),
+    maxScore: Number(c.max_score ?? 10),
     displayOrder: c.display_order,
   }))
 }
@@ -3080,8 +3114,8 @@ export async function createCoreCriterion(
       name: data.name,
       description: data.description,
       weight: Number(data.weight),
-      minScore: Number((data as { min_score?: number }).min_score ?? 1),
-      maxScore: Number((data as { max_score?: number }).max_score ?? 10),
+      minScore: Number(data.min_score ?? 1),
+      maxScore: Number(data.max_score ?? 10),
       displayOrder: data.display_order,
     },
   }
@@ -3113,8 +3147,8 @@ export async function updateCoreCriterion(
         .is("prize_id", null)
         .single()
       if (!current) return { success: false, error: "Criterion not found" }
-      if (nextMin === undefined) nextMin = Number((current as { min_score: number }).min_score)
-      if (nextMax === undefined) nextMax = Number((current as { max_score: number }).max_score)
+      if (nextMin === undefined) nextMin = Number(current.min_score)
+      if (nextMax === undefined) nextMax = Number(current.max_score)
     }
     if (!(nextMin < nextMax)) {
       return { success: false, error: "Minimum score must be less than maximum score" }
@@ -3141,8 +3175,8 @@ export async function updateCoreCriterion(
       name: data.name,
       description: data.description,
       weight: Number(data.weight),
-      minScore: Number((data as { min_score?: number }).min_score ?? 1),
-      maxScore: Number((data as { max_score?: number }).max_score ?? 10),
+      minScore: Number(data.min_score ?? 1),
+      maxScore: Number(data.max_score ?? 10),
       displayOrder: data.display_order,
     },
   }
@@ -3209,8 +3243,8 @@ export async function seedDefaultCoreCriteria(
       name: c.name,
       description: c.description,
       weight: Number(c.weight),
-      minScore: Number((c as { min_score?: number }).min_score ?? 1),
-      maxScore: Number((c as { max_score?: number }).max_score ?? 10),
+      minScore: Number(c.min_score ?? 1),
+      maxScore: Number(c.max_score ?? 10),
       displayOrder: c.display_order,
     })),
   }
@@ -3251,9 +3285,8 @@ async function aggregateWeightedScores(
     const sid = ja.submission_id
     const jid = ja.judge_participant_id
     if (!subScores[sid]) subScores[sid] = { judgeIds: new Set(), perJudge: {} }
-    const key = `${sid}:${jid}`
-    if (subScores[sid].perJudge[key] === undefined) subScores[sid].perJudge[key] = 0
-    subScores[sid].perJudge[key] += normalized * c.weight
+    if (subScores[sid].perJudge[jid] === undefined) subScores[sid].perJudge[jid] = 0
+    subScores[sid].perJudge[jid] += normalized * c.weight
     subScores[sid].judgeIds.add(jid)
   }
 

@@ -348,7 +348,7 @@ describe("Tenants Service", () => {
         if (callCount === 2) {
           return createChainableMock({
             data: null,
-            error: { message: "Conflict" },
+            error: { message: "Conflict", code: "23505" },
           })
         }
         return createChainableMock({ data: mockPersonalTenant, error: null })
@@ -357,6 +357,42 @@ describe("Tenants Service", () => {
       const result = await getOrCreatePersonalTenant("user_abc123")
 
       expect(result).not.toBeNull()
+    })
+
+    it("falls back through retry-with-delay when first refetch returns null", async () => {
+      let callCount = 0
+      setMockFromImplementation(() => {
+        callCount++
+        if (callCount === 1) return createChainableMock({ data: null, error: null })
+        if (callCount === 2) {
+          return createChainableMock({
+            data: null,
+            error: { message: "Conflict", code: "23505" },
+          })
+        }
+        if (callCount === 3) return createChainableMock({ data: null, error: null })
+        return createChainableMock({ data: mockPersonalTenant, error: null })
+      })
+
+      const result = await getOrCreatePersonalTenant("user_abc123")
+
+      expect(result).not.toBeNull()
+    })
+
+    it("returns null when create fails with non-conflict error", async () => {
+      let callCount = 0
+      setMockFromImplementation(() => {
+        callCount++
+        if (callCount === 1) return createChainableMock({ data: null, error: null })
+        return createChainableMock({
+          data: null,
+          error: { message: "Database error" },
+        })
+      })
+
+      const result = await getOrCreatePersonalTenant("user_abc123")
+
+      expect(result).toBeNull()
     })
   })
 
