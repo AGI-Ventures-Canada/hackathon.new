@@ -352,6 +352,43 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       description: "Lists all submissions for a hackathon.",
     },
   })
+  .get("/hackathons/:slug/presenter-views/:viewId", async ({ params }) => {
+    const hackathon = await getPublicHackathon(params.slug, { includeUnpublished: true })
+    if (!hackathon) {
+      return new Response(
+        JSON.stringify({ error: "Hackathon not found", code: "hackathon_not_found" }),
+        { status: 404, headers: { "Content-Type": "application/json" } }
+      )
+    }
+    const { getPresenterView, resolvePresenterSubmissions } = await import("@/lib/services/presenter-views")
+    const view = await getPresenterView(params.viewId)
+    if (!view || view.hackathon_id !== hackathon.id) {
+      return new Response(
+        JSON.stringify({ error: "Presenter view not found", code: "presenter_view_not_found" }),
+        { status: 404, headers: { "Content-Type": "application/json" } }
+      )
+    }
+    const submissions = await resolvePresenterSubmissions(view)
+    return {
+      view: { id: view.id, name: view.name, config: view.config },
+      hackathon: { id: hackathon.id, name: hackathon.name, slug: hackathon.slug },
+      submissions: submissions.map((s) => ({
+        id: s.id,
+        title: s.title,
+        description: s.description,
+        githubUrl: s.github_url,
+        liveAppUrl: s.live_app_url,
+        demoVideoUrl: s.demo_video_url,
+        screenshotUrl: s.screenshot_url,
+        submitter: s.submitter_name,
+      })),
+    }
+  }, {
+    detail: {
+      summary: "Get presenter view (resolved)",
+      description: "Public-facing endpoint that returns the hackathon, the view metadata, and the list of submissions to project on the showcase display. Auth-free so the /e/<slug>/display/showcase page works on a projector with no login.",
+    },
+  })
   .post(
     "/hackathons/:slug/submissions",
     async ({ params, body }) => {

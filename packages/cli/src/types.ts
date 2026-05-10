@@ -290,6 +290,19 @@ export interface PickResults {
   results: Record<string, unknown>
 }
 
+export type PresenterViewConfig =
+  | { kind: "round_finalists"; roundId: string }
+  | { kind: "manual"; submissionIds: string[] }
+
+export interface PresenterView {
+  id: string
+  hackathon_id: string
+  name: string
+  config: PresenterViewConfig
+  created_at: string
+  updated_at: string
+}
+
 export interface PaginationParams {
   page?: number
   limit?: number

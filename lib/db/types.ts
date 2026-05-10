@@ -1724,6 +1724,44 @@ export type Database = {
           },
         ]
       }
+      organizer_presenter_views: {
+        Row: {
+          config: Json
+          created_at: string
+          created_by_clerk_user_id: string
+          hackathon_id: string
+          id: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          config: Json
+          created_at?: string
+          created_by_clerk_user_id: string
+          hackathon_id: string
+          id?: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          config?: Json
+          created_at?: string
+          created_by_clerk_user_id?: string
+          hackathon_id?: string
+          id?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organizer_presenter_views_hackathon_id_fkey"
+            columns: ["hackathon_id"]
+            isOneToOne: false
+            referencedRelation: "hackathons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       post_event_reminders: {
         Row: {
           cancelled_at: string | null
