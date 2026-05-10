@@ -1268,17 +1268,16 @@ export async function countJudges(hackathonId: string): Promise<number> {
 export async function countUnassignedSubmissions(hackathonId: string): Promise<number> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { data, error } = await client.rpc("get_organizer_poll_data", {
+  const { data, error } = await client.rpc("count_unassigned_submissions", {
     p_hackathon_id: hackathonId,
   })
 
   if (error) {
-    console.error("Failed to load organizer poll data:", error)
+    console.error("Failed to count unassigned submissions:", error)
     return 0
   }
 
-  const row = data as { unassigned_submission_count?: number } | null
-  return row?.unassigned_submission_count ?? 0
+  return (data as number | null) ?? 0
 }
 
 export async function listJudges(hackathonId: string): Promise<JudgeInfo[]> {
