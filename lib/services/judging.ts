@@ -3266,9 +3266,8 @@ async function aggregateWeightedScores(
     const sid = ja.submission_id
     const jid = ja.judge_participant_id
     if (!subScores[sid]) subScores[sid] = { judgeIds: new Set(), perJudge: {} }
-    const key = `${sid}:${jid}`
-    if (subScores[sid].perJudge[key] === undefined) subScores[sid].perJudge[key] = 0
-    subScores[sid].perJudge[key] += normalized * c.weight
+    if (subScores[sid].perJudge[jid] === undefined) subScores[sid].perJudge[jid] = 0
+    subScores[sid].perJudge[jid] += normalized * c.weight
     subScores[sid].judgeIds.add(jid)
   }
 

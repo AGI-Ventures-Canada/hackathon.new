@@ -1511,6 +1511,11 @@ export const dashboardJudgingRoutes = new Elysia()
     async ({ principal, params, body }) => {
       requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
 
+      const { isValidUuid } = await import("@/lib/utils/uuid")
+      if (!isValidUuid(params.criteriaId)) {
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+      }
+
       const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
       const result = await checkHackathonOrganizer(params.id, principal.tenantId)
       if (result.status === "not_found") {
@@ -1550,6 +1555,11 @@ export const dashboardJudgingRoutes = new Elysia()
 
   .delete("/hackathons/:id/core-criteria/:criteriaId", async ({ principal, params }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+
+    const { isValidUuid } = await import("@/lib/utils/uuid")
+    if (!isValidUuid(params.criteriaId)) {
+      return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+    }
 
     const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
     const result = await checkHackathonOrganizer(params.id, principal.tenantId)
