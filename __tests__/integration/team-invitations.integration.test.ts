@@ -104,8 +104,12 @@ mock.module("@/lib/email/team-invitations", () => ({
 
 const mockResolveAdderName = mock(() => Promise.resolve("Test User"))
 const mockResolveAdderEmail = mock(() => Promise.resolve("test-user@example.com"))
+const mockResolveAdder = mock(() =>
+  Promise.resolve({ name: "Test User", email: "test-user@example.com" })
+)
 
 mock.module("@/lib/auth/resolve-adder-name", () => ({
+  resolveAdder: mockResolveAdder,
   resolveAdderName: mockResolveAdderName,
   resolveAdderEmail: mockResolveAdderEmail,
 }))

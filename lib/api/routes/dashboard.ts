@@ -2695,9 +2695,8 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       })
     }
 
-    const { resolveAdderName, resolveAdderEmail } = await import("@/lib/auth/resolve-adder-name")
-    const inviterName = await resolveAdderName(principal)
-    const inviterEmail = await resolveAdderEmail(principal)
+    const { resolveAdder } = await import("@/lib/auth/resolve-adder-name")
+    const { name: inviterName, email: inviterEmail } = await resolveAdder(principal)
 
     const { sendTeamInvitationReminderEmail } = await import(
       "@/lib/email/team-invitations"

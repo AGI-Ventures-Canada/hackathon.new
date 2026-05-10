@@ -127,6 +127,9 @@ mock.module("@/lib/auth/principal", () => {
 })
 
 mock.module("@/lib/auth/resolve-adder-name", () => ({
+  resolveAdder: mock(() =>
+    Promise.resolve({ name: "Test Organizer", email: "organizer@example.com" })
+  ),
   resolveAdderName: mock(() => Promise.resolve("Test Organizer")),
   resolveAdderEmail: mock(() => Promise.resolve("organizer@example.com")),
 }))

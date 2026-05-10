@@ -9,7 +9,11 @@ import {
 import TeamInvitationEmail from "@/emails/team-invitation"
 import TeamInvitationReminderEmail from "@/emails/team-invitation-reminder"
 
-const GENERIC_INVITER_NAMES = new Set(["your team captain", "an organizer"])
+const GENERIC_INVITER_NAMES = new Set([
+  "your team captain",
+  "an organizer",
+  "the organizer",
+])
 
 function buildPersonalizedFrom(inviterName: string): string | undefined {
   const baseFrom = process.env.RESEND_FROM_EMAIL

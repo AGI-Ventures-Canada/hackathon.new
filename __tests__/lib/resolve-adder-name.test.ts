@@ -2,7 +2,9 @@ import { describe, it, expect, mock, beforeEach } from "bun:test"
 import type { ClerkClient } from "@clerk/backend"
 import { mockClerkClient } from "./supabase-mock"
 
-const { resolveAdderName, resolveAdderEmail } = await import("@/lib/auth/resolve-adder-name")
+const { resolveAdder, resolveAdderName, resolveAdderEmail } = await import(
+  "@/lib/auth/resolve-adder-name"
+)
 
 const mockGetUser = mock(() =>
   Promise.resolve({ firstName: "Jane", lastName: "Doe" })
@@ -86,6 +88,54 @@ describe("resolveAdderName", () => {
     const result = await resolveAdderName({ kind: "user", userId: "u1" })
     expect(result).toBe("Sam Smith")
     expect(mockClerkClient).toHaveBeenCalled()
+  })
+})
+
+describe("resolveAdder", () => {
+  beforeEach(() => {
+    mockClerkClient.mockClear()
+  })
+
+  it("returns 'An organizer' name and undefined email for non-user principal", async () => {
+    expect(await resolveAdder({ kind: "api_key" })).toEqual({ name: "An organizer" })
+  })
+
+  it("returns name and email in a single call", async () => {
+    const getUser = mock(() =>
+      Promise.resolve({
+        firstName: "Sarah",
+        lastName: "Chen",
+        primaryEmailAddress: { emailAddress: "sarah@example.com" },
+      })
+    )
+    const client = { users: { getUser } } as unknown as ClerkClient
+    const result = await resolveAdder({ kind: "user", userId: "u1" }, client)
+    expect(result).toEqual({ name: "Sarah Chen", email: "sarah@example.com" })
+    expect(getUser).toHaveBeenCalledTimes(1)
+  })
+
+  it("falls back to 'An organizer' when name parts are missing but email exists", async () => {
+    const client = {
+      users: {
+        getUser: mock(() =>
+          Promise.resolve({
+            firstName: null,
+            lastName: null,
+            primaryEmailAddress: { emailAddress: "sarah@example.com" },
+          })
+        ),
+      },
+    } as unknown as ClerkClient
+    const result = await resolveAdder({ kind: "user", userId: "u1" }, client)
+    expect(result).toEqual({ name: "An organizer", email: "sarah@example.com" })
+  })
+
+  it("returns fallback name and undefined email when Clerk getUser throws", async () => {
+    const client = {
+      users: { getUser: mock(() => Promise.reject(new Error("Clerk error"))) },
+    } as unknown as ClerkClient
+    const result = await resolveAdder({ kind: "user", userId: "u1" }, client)
+    expect(result).toEqual({ name: "An organizer" })
   })
 })
 
