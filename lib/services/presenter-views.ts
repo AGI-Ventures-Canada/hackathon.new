@@ -93,6 +93,7 @@ function rowToView(row: Record<string, unknown>): PresenterView | null {
 }
 
 export async function listPresenterViews(hackathonId: string): Promise<PresenterView[]> {
+  if (!isValidUuid(hackathonId)) return []
   const client = getSupabase() as unknown as SupabaseClient
   const { data, error } = await client
     .from("organizer_presenter_views")
@@ -144,6 +145,7 @@ async function isRoundInHackathon(
 export async function createPresenterView(
   input: CreatePresenterViewInput
 ): Promise<PresenterView | null> {
+  if (!isValidUuid(input.hackathonId)) return null
   const name = validatePresenterViewName(input.name)
   if (!name) return null
   const config = validatePresenterViewConfig(input.config)
@@ -197,18 +199,18 @@ export async function updatePresenterView(
   const client = getSupabase() as unknown as SupabaseClient
 
   if (nextConfig?.kind === "round_finalists") {
-    const { data: existing } = await client
+    const { data: round } = await client
+      .from("judging_rounds")
+      .select("id, hackathon_id")
+      .eq("id", nextConfig.roundId)
+      .maybeSingle()
+    if (!round) return null
+    const { data: view } = await client
       .from("organizer_presenter_views")
       .select("hackathon_id")
       .eq("id", viewId)
       .maybeSingle()
-    if (!existing) return null
-    const ok = await isRoundInHackathon(
-      client,
-      nextConfig.roundId,
-      existing.hackathon_id as string
-    )
-    if (!ok) return null
+    if (!view || view.hackathon_id !== round.hackathon_id) return null
   }
 
   const { data, error } = await client
@@ -216,7 +218,7 @@ export async function updatePresenterView(
     .update(updates)
     .eq("id", viewId)
     .select()
-    .single()
+    .maybeSingle()
 
   if (error || !data) {
     if (error) console.error("Failed to update presenter view:", error)

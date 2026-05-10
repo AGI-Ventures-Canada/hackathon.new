@@ -85,6 +85,11 @@ describe("presenter-views service", () => {
   })
 
   describe("listPresenterViews", () => {
+    it("returns empty for non-uuid hackathonId without hitting the database", async () => {
+      const result = await listPresenterViews("draft")
+      expect(result).toEqual([])
+    })
+
     it("filters out rows with invalid configs so callers never crash", async () => {
       setMockFromImplementation(() =>
         createChainableMock(
@@ -129,6 +134,16 @@ describe("presenter-views service", () => {
         hackathonId: HACKATHON_ID,
         name: "x",
         config: { kind: "manual", submissionIds: [] },
+        createdByClerkUserId: "user_1",
+      })
+      expect(result).toBeNull()
+    })
+
+    it("rejects non-uuid hackathonId without hitting the database", async () => {
+      const result = await createPresenterView({
+        hackathonId: "draft",
+        name: "Demo Day",
+        config: { kind: "manual", submissionIds: [SUBMISSION_A] },
         createdByClerkUserId: "user_1",
       })
       expect(result).toBeNull()
