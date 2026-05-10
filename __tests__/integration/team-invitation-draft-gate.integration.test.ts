@@ -84,8 +84,14 @@ mock.module("@/lib/services/smart-reminders", () => ({
 }))
 
 const mockResolveAdderName = mock(() => Promise.resolve("Captain Test"))
+const mockResolveAdderEmail = mock(() => Promise.resolve("captain@example.com"))
+const mockResolveAdder = mock(() =>
+  Promise.resolve({ name: "Captain Test", email: "captain@example.com" })
+)
 mock.module("@/lib/auth/resolve-adder-name", () => ({
+  resolveAdder: mockResolveAdder,
   resolveAdderName: mockResolveAdderName,
+  resolveAdderEmail: mockResolveAdderEmail,
 }))
 
 mock.module("@/lib/services/audit", () => ({
@@ -233,6 +239,40 @@ describe("Team invitations: draft hackathon gating", () => {
     expect(mockMarkTeamInvitationEmailed).toHaveBeenCalledTimes(1)
     expect(mockWorkflowStart).toHaveBeenCalledTimes(1)
     expect(mockScheduleReminders).toHaveBeenCalledTimes(1)
+  })
+
+  it("persists inviterEmail in reminder metadata when scheduling", async () => {
+    mockGetTeamWithHackathon.mockResolvedValueOnce({
+      ...baseTeam,
+      hackathon: { ...baseTeam.hackathon, status: "published" },
+    })
+
+    await postInvitation({
+      hackathonId: "h1",
+      email: "invitee@example.com",
+    })
+
+    expect(mockScheduleReminders).toHaveBeenCalledTimes(1)
+    const meta = mockScheduleReminders.mock.calls[0][6] as Record<string, unknown>
+    expect(meta.inviterEmail).toBe("captain@example.com")
+    expect(meta.inviterName).toBe("Your team captain")
+  })
+
+  it("passes inviterEmail to the reminder email on remind", async () => {
+    mockGetTeamWithHackathon.mockResolvedValueOnce({
+      ...baseTeam,
+      hackathon: { ...baseTeam.hackathon, status: "active" },
+    })
+
+    await postRemind("22222222-2222-2222-2222-222222222222")
+
+    expect(mockSendTeamInvitationReminderEmail).toHaveBeenCalledTimes(1)
+    const args = mockSendTeamInvitationReminderEmail.mock.calls[0][0] as {
+      inviterName: string
+      inviterEmail?: string
+    }
+    expect(args.inviterEmail).toBe("captain@example.com")
+    expect(args.inviterName).toBe("Captain Test")
   })
 
   it("blocks remind with hackathon_draft when hackathon is draft", async () => {

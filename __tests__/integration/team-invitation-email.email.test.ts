@@ -37,11 +37,13 @@ mock.module("@/lib/email/resend", () => ({
 const { sendTeamInvitationEmail } = await import("@/lib/email/team-invitations")
 
 const originalAppUrl = process.env.NEXT_PUBLIC_APP_URL
+const originalFromEmail = process.env.RESEND_FROM_EMAIL
 
 describe("Team Invitation Email", () => {
   beforeEach(() => {
     resetMocks()
     process.env.NEXT_PUBLIC_APP_URL = "https://example.com"
+    process.env.RESEND_FROM_EMAIL = "noreply@getoatmeal.com"
   })
 
   afterEach(() => {
@@ -49,6 +51,11 @@ describe("Team Invitation Email", () => {
       delete process.env.NEXT_PUBLIC_APP_URL
     } else {
       process.env.NEXT_PUBLIC_APP_URL = originalAppUrl
+    }
+    if (originalFromEmail === undefined) {
+      delete process.env.RESEND_FROM_EMAIL
+    } else {
+      process.env.RESEND_FROM_EMAIL = originalFromEmail
     }
   })
 
@@ -224,6 +231,52 @@ describe("Team Invitation Email", () => {
       expect(callArgs.html).toContain("Sarah Chen")
       expect(callArgs.html).toContain("Marcus Rivera")
       expect(callArgs.text).toContain("Sarah Chen")
+    })
+
+    it("personalizes the from address with the inviter name", async () => {
+      await sendTeamInvitationEmail(validInput)
+
+      const callArgs = mockSendEmail.mock.calls[0][0]
+      expect(callArgs.from).toBe("John Doe via Oatmeal <noreply@getoatmeal.com>")
+    })
+
+    it("quotes the from display name when it has special characters", async () => {
+      await sendTeamInvitationEmail({ ...validInput, inviterName: "Doe, Jane" })
+
+      const callArgs = mockSendEmail.mock.calls[0][0]
+      expect(callArgs.from).toBe('"Doe, Jane via Oatmeal" <noreply@getoatmeal.com>')
+    })
+
+    it("omits a personalized from when inviter name is the generic fallback", async () => {
+      await sendTeamInvitationEmail({ ...validInput, inviterName: "Your team captain" })
+
+      const callArgs = mockSendEmail.mock.calls[0][0]
+      expect(callArgs.from).toBeUndefined()
+    })
+
+    it("omits the from override when RESEND_FROM_EMAIL is missing", async () => {
+      delete process.env.RESEND_FROM_EMAIL
+      await sendTeamInvitationEmail(validInput)
+
+      const callArgs = mockSendEmail.mock.calls[0][0]
+      expect(callArgs.from).toBeUndefined()
+    })
+
+    it("sets replyTo to the inviter email when provided", async () => {
+      await sendTeamInvitationEmail({
+        ...validInput,
+        inviterEmail: "captain@example.com",
+      })
+
+      const callArgs = mockSendEmail.mock.calls[0][0]
+      expect(callArgs.replyTo).toBe("captain@example.com")
+    })
+
+    it("does not set replyTo when inviter email is missing", async () => {
+      await sendTeamInvitationEmail(validInput)
+
+      const callArgs = mockSendEmail.mock.calls[0][0]
+      expect(callArgs.replyTo).toBeUndefined()
     })
   })
 })

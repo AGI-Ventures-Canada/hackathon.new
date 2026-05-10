@@ -353,6 +353,7 @@ async function dispatchReminderEmail(
       teamName: meta.teamName as string,
       hackathonName: meta.hackathonName as string,
       inviterName: meta.inviterName as string,
+      inviterEmail: typeof meta.inviterEmail === "string" ? meta.inviterEmail : undefined,
       inviteToken: meta.inviteToken as string,
       expiresAt: meta.expiresAt as string,
       urgency: reminder.urgency,

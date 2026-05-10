@@ -33,11 +33,13 @@ mock.module("@/lib/email/resend", () => ({
 const { sendTeamInvitationReminderEmail } = await import("@/lib/email/team-invitations")
 
 const originalAppUrl = process.env.NEXT_PUBLIC_APP_URL
+const originalFromEmail = process.env.RESEND_FROM_EMAIL
 
 describe("Team Invitation Reminder Email", () => {
   beforeEach(() => {
     resetMocks()
     process.env.NEXT_PUBLIC_APP_URL = "https://example.com"
+    process.env.RESEND_FROM_EMAIL = "noreply@getoatmeal.com"
   })
 
   afterEach(() => {
@@ -45,6 +47,11 @@ describe("Team Invitation Reminder Email", () => {
       delete process.env.NEXT_PUBLIC_APP_URL
     } else {
       process.env.NEXT_PUBLIC_APP_URL = originalAppUrl
+    }
+    if (originalFromEmail === undefined) {
+      delete process.env.RESEND_FROM_EMAIL
+    } else {
+      process.env.RESEND_FROM_EMAIL = originalFromEmail
     }
   })
 
@@ -139,6 +146,23 @@ describe("Team Invitation Reminder Email", () => {
 
       expect(result.success).toBe(false)
       expect(mockSendEmail).not.toHaveBeenCalled()
+    })
+
+    it("personalizes the from address with the inviter name", async () => {
+      await sendTeamInvitationReminderEmail(validInput)
+
+      const callArgs = mockSendEmail.mock.calls[0][0]
+      expect(callArgs.from).toBe("John Doe via Oatmeal <noreply@getoatmeal.com>")
+    })
+
+    it("sets replyTo to the inviter email when provided", async () => {
+      await sendTeamInvitationReminderEmail({
+        ...validInput,
+        inviterEmail: "captain@example.com",
+      })
+
+      const callArgs = mockSendEmail.mock.calls[0][0]
+      expect(callArgs.replyTo).toBe("captain@example.com")
     })
   })
 })

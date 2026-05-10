@@ -1,13 +1,34 @@
 import { sendEmail } from "./resend"
-import { sanitizeTag, renderEmail, buildEventUrl, formatTimeLeft } from "./utils"
+import {
+  sanitizeTag,
+  renderEmail,
+  buildEventUrl,
+  formatTimeLeft,
+  formatFromAddress,
+} from "./utils"
 import TeamInvitationEmail from "@/emails/team-invitation"
 import TeamInvitationReminderEmail from "@/emails/team-invitation-reminder"
+
+const GENERIC_INVITER_NAMES = new Set([
+  "your team captain",
+  "an organizer",
+  "the organizer",
+])
+
+function buildPersonalizedFrom(inviterName: string): string | undefined {
+  const baseFrom = process.env.RESEND_FROM_EMAIL
+  if (!baseFrom) return undefined
+  const trimmed = inviterName.trim()
+  if (!trimmed || GENERIC_INVITER_NAMES.has(trimmed.toLowerCase())) return undefined
+  return formatFromAddress(`${trimmed} via Oatmeal`, baseFrom)
+}
 
 export type SendTeamInvitationInput = {
   to: string
   teamName: string
   hackathonName: string
   inviterName: string
+  inviterEmail?: string
   inviteToken: string
   expiresAt: string
   hackathonSlug?: string
@@ -51,6 +72,8 @@ export async function sendTeamInvitationEmail(
     subject: `Join "${input.teamName}" for ${input.hackathonName}`,
     html,
     text,
+    from: buildPersonalizedFrom(input.inviterName),
+    replyTo: input.inviterEmail,
     tags: [
       { name: "type", value: "team_invitation" },
       { name: "hackathon", value: sanitizeTag(input.hackathonName) },
@@ -65,6 +88,7 @@ export type SendTeamInvitationReminderInput = {
   teamName: string
   hackathonName: string
   inviterName: string
+  inviterEmail?: string
   inviteToken: string
   expiresAt: string
   urgency?: "low" | "medium" | "high"
@@ -111,6 +135,8 @@ export async function sendTeamInvitationReminderEmail(
     subject,
     html,
     text,
+    from: buildPersonalizedFrom(input.inviterName),
+    replyTo: input.inviterEmail,
     tags: [
       { name: "type", value: "team_invitation_reminder" },
       { name: "hackathon", value: sanitizeTag(input.hackathonName) },
