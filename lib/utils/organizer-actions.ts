@@ -120,6 +120,7 @@ export type ActionItemsInput = {
   status: HackathonStatus
   phase: HackathonPhase | null
   submissionCount: number
+  unassignedSubmissionCount: number
   participantCount: number
   teamCount: number
   judgingProgress: { totalAssignments: number; completedAssignments: number }
@@ -566,6 +567,23 @@ function addActiveActions(items: ActionItem[], input: ActionItemsInput) {
     pending: { label: "No judges assigned yet", hint: "You'll need judges before starting the judging phase" },
     completed: { label: "Judges assigned", hint: "Ready to evaluate submissions when the time comes" },
   }))
+
+  if (input.submissionCount > 0) {
+    const count = input.unassignedSubmissionCount
+    items.push(autoAction({
+      id: "unassigned-submissions",
+      severity: "urgent",
+      tab: "judging",
+      ctaLabel: "Assign",
+      tooltip: "Every submitted project needs a judge. Without an assignment, no one will score it and the project won't show up in results. Open the Judging tab to assign judges.",
+      isComplete: count === 0,
+      pending: {
+        label: `${count} project${count === 1 ? "" : "s"} waiting for a judge`,
+        hint: "Assign judges so they can start scoring",
+      },
+      completed: { label: "Every project has a judge", hint: "Judges are ready to score" },
+    }))
+  }
 
   if (
     input.rounds.plannedCount > 0 &&
