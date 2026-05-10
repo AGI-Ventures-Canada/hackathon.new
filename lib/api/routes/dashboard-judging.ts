@@ -3,6 +3,7 @@ import { resolvePrincipal, requirePrincipal } from "@/lib/auth/principal"
 import { logAudit } from "@/lib/services/audit"
 import { resolveAdderName } from "@/lib/auth/resolve-adder-name"
 import { checkRateLimit, RateLimitError } from "@/lib/services/rate-limit"
+import { isValidUuid } from "@/lib/utils/uuid"
 
 type CachedAuthResult = { status: "ok" } | { status: "not_found" } | { status: "not_authorized" }
 // Local-dev-only optimisation: avoids repeated checkHackathonOrganizer calls
@@ -1323,8 +1324,6 @@ export const dashboardJudgingRoutes = new Elysia()
 
   .post("/hackathons/:id/judging/invitations/:invitationId/remind", async ({ principal, params }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
-
-    const { isValidUuid } = await import("@/lib/utils/uuid")
     if (!isValidUuid(params.invitationId)) {
       return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
     }
@@ -1510,8 +1509,6 @@ export const dashboardJudgingRoutes = new Elysia()
     "/hackathons/:id/core-criteria/:criteriaId",
     async ({ principal, params, body }) => {
       requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
-
-      const { isValidUuid } = await import("@/lib/utils/uuid")
       if (!isValidUuid(params.criteriaId)) {
         return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
       }
@@ -1555,8 +1552,6 @@ export const dashboardJudgingRoutes = new Elysia()
 
   .delete("/hackathons/:id/core-criteria/:criteriaId", async ({ principal, params }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
-
-    const { isValidUuid } = await import("@/lib/utils/uuid")
     if (!isValidUuid(params.criteriaId)) {
       return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
     }
