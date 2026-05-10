@@ -19,6 +19,7 @@ interface RpcPollRow {
   feedback_survey_url: string | null
   feedback_survey_sent_at: string | null
   submission_count: number
+  unassigned_submission_count: number | null
   participant_count: number
   team_count: number
   assignment_total: number
@@ -53,6 +54,7 @@ export async function buildOrganizerPollPayload(hackathonId: string): Promise<Or
     status: r.status as HackathonStatus,
     phase: r.phase as HackathonPhase | null,
     submissionCount: r.submission_count ?? 0,
+    unassignedSubmissionCount: r.unassigned_submission_count ?? 0,
     participantCount: r.participant_count ?? 0,
     teamCount: r.team_count ?? 0,
     judgingProgress: {

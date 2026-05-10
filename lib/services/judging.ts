@@ -1265,6 +1265,21 @@ export async function countJudges(hackathonId: string): Promise<number> {
   return count ?? 0
 }
 
+export async function countUnassignedSubmissions(hackathonId: string): Promise<number> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data, error } = await client.rpc("count_unassigned_submissions", {
+    p_hackathon_id: hackathonId,
+  })
+
+  if (error) {
+    console.error("Failed to count unassigned submissions:", error)
+    return 0
+  }
+
+  return (data as number | null) ?? 0
+}
+
 export async function listJudges(hackathonId: string): Promise<JudgeInfo[]> {
   const client = getSupabase() as unknown as SupabaseClient
 
