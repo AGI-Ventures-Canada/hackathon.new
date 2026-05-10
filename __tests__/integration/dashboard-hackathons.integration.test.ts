@@ -34,7 +34,7 @@ mock.module("@/lib/services/tenants", () => ({
           "Switch to an organization to create a hackathon. Personal accounts can't host events.",
         code: "organization_required",
       }),
-      { status: 400, headers: { "Content-Type": "application/json" } }
+      { status: 403, headers: { "Content-Type": "application/json" } }
     ),
 }))
 
@@ -214,7 +214,7 @@ describe("POST /api/dashboard/hackathons", () => {
     )
     const data = await res.json()
 
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(403)
     expect(data.code).toBe("organization_required")
     expect(mockCreateHackathon).not.toHaveBeenCalled()
   })

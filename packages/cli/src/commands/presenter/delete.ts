@@ -8,7 +8,7 @@ export async function runPresenterDelete(
   viewId: string,
   options: { yes?: boolean }
 ): Promise<void> {
-  if (!viewId) {
+  if (!hackathonId || !viewId) {
     console.error("Usage: hackathon presenter delete <hackathon-id> <view-id>")
     process.exit(1)
   }

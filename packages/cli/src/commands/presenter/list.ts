@@ -7,6 +7,11 @@ export async function runPresenterList(
   hackathonId: string,
   options: { json?: boolean }
 ): Promise<void> {
+  if (!hackathonId) {
+    console.error("Usage: hackathon presenter list <hackathon-id>")
+    process.exit(1)
+  }
+
   const data = await client.get<{ views: PresenterView[] }>(
     `/api/dashboard/hackathons/${hackathonId}/presenter-views`
   )
