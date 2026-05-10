@@ -2821,7 +2821,7 @@ export async function getAssignmentDetail(
       id: c.id,
       name: c.name,
       description: c.description,
-      min_score: Number((c as { min_score?: number }).min_score ?? 0),
+      min_score: Number(c.min_score),
       max_score: c.max_score,
       weight: Number(c.weight), // Supabase returns Postgres numeric columns as strings
       category: c.category ?? null,
@@ -2987,8 +2987,8 @@ export async function listCoreCriteria(hackathonId: string): Promise<CoreCriteri
     name: c.name,
     description: c.description,
     weight: Number(c.weight),
-    minScore: Number((c as { min_score?: number }).min_score ?? 1),
-    maxScore: Number((c as { max_score?: number }).max_score ?? 10),
+    minScore: Number(c.min_score ?? 1),
+    maxScore: Number(c.max_score ?? 10),
     displayOrder: c.display_order,
   }))
 }
@@ -3008,8 +3008,8 @@ export async function listPrizeCriteria(prizeId: string): Promise<CoreCriterion[
     name: c.name,
     description: c.description,
     weight: Number(c.weight),
-    minScore: Number((c as { min_score?: number }).min_score ?? 1),
-    maxScore: Number((c as { max_score?: number }).max_score ?? 10),
+    minScore: Number(c.min_score ?? 1),
+    maxScore: Number(c.max_score ?? 10),
     displayOrder: c.display_order,
   }))
 }
@@ -3095,8 +3095,8 @@ export async function createCoreCriterion(
       name: data.name,
       description: data.description,
       weight: Number(data.weight),
-      minScore: Number((data as { min_score?: number }).min_score ?? 1),
-      maxScore: Number((data as { max_score?: number }).max_score ?? 10),
+      minScore: Number(data.min_score ?? 1),
+      maxScore: Number(data.max_score ?? 10),
       displayOrder: data.display_order,
     },
   }
@@ -3128,8 +3128,8 @@ export async function updateCoreCriterion(
         .is("prize_id", null)
         .single()
       if (!current) return { success: false, error: "Criterion not found" }
-      if (nextMin === undefined) nextMin = Number((current as { min_score: number }).min_score)
-      if (nextMax === undefined) nextMax = Number((current as { max_score: number }).max_score)
+      if (nextMin === undefined) nextMin = Number(current.min_score)
+      if (nextMax === undefined) nextMax = Number(current.max_score)
     }
     if (!(nextMin < nextMax)) {
       return { success: false, error: "Minimum score must be less than maximum score" }
@@ -3156,8 +3156,8 @@ export async function updateCoreCriterion(
       name: data.name,
       description: data.description,
       weight: Number(data.weight),
-      minScore: Number((data as { min_score?: number }).min_score ?? 1),
-      maxScore: Number((data as { max_score?: number }).max_score ?? 10),
+      minScore: Number(data.min_score ?? 1),
+      maxScore: Number(data.max_score ?? 10),
       displayOrder: data.display_order,
     },
   }
@@ -3224,8 +3224,8 @@ export async function seedDefaultCoreCriteria(
       name: c.name,
       description: c.description,
       weight: Number(c.weight),
-      minScore: Number((c as { min_score?: number }).min_score ?? 1),
-      maxScore: Number((c as { max_score?: number }).max_score ?? 10),
+      minScore: Number(c.min_score ?? 1),
+      maxScore: Number(c.max_score ?? 10),
       displayOrder: c.display_order,
     })),
   }
