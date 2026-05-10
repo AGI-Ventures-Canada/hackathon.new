@@ -1,9 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { assertOk } from "@/lib/utils/fetch"
-import { SignInButton, SignUpButton } from "@clerk/nextjs"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -49,6 +49,8 @@ export function InviteAcceptClient({
   const needsTerms = Boolean(invitation.requireTermsAcceptance && invitation.termsContent && invitation.termsHash)
   const canAccept = !loading && (!needsTerms || termsAccepted)
 
+  const autoAcceptedRef = useRef(false)
+
   async function handleAccept() {
     if (needsTerms && !termsAccepted) {
       setError("Please agree to the terms and conditions to continue.")
@@ -84,6 +86,14 @@ export function InviteAcceptClient({
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    if (autoAcceptedRef.current) return
+    if (!isAuthenticated || !isValid || needsTerms) return
+    autoAcceptedRef.current = true
+    void handleAccept()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, isValid, needsTerms])
 
   async function handleDecline() {
     setLoading(true)
@@ -239,22 +249,16 @@ export function InviteAcceptClient({
           </>
         ) : (
           <>
-            <SignInButton
-              mode="modal"
-              forceRedirectUrl={`/invite/${token}`}
-              initialValues={{ emailAddress: invitation.email }}
-            >
-              <Button className="w-full">Sign In to Accept</Button>
-            </SignInButton>
-            <SignUpButton
-              mode="modal"
-              forceRedirectUrl={`/invite/${token}`}
-              initialValues={{ emailAddress: invitation.email }}
-            >
-              <Button variant="outline" className="w-full">
+            <Button className="w-full" asChild>
+              <Link href={`/sign-in?redirect_url=${encodeURIComponent(`/invite/${token}`)}`}>
+                Sign In to Accept
+              </Link>
+            </Button>
+            <Button variant="outline" className="w-full" asChild>
+              <Link href={`/sign-up?redirect_url=${encodeURIComponent(`/invite/${token}`)}`}>
                 Create Account
-              </Button>
-            </SignUpButton>
+              </Link>
+            </Button>
           </>
         )}
       </CardFooter>

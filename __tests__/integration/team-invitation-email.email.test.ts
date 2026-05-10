@@ -7,6 +7,7 @@ type SendEmailInput = {
   text?: string
   from?: string
   replyTo?: string
+  headers?: Record<string, string>
   tags?: Array<{ name: string; value: string }>
 }
 
@@ -224,6 +225,23 @@ describe("Team Invitation Email", () => {
       expect(callArgs.html).toContain("Sarah Chen")
       expect(callArgs.html).toContain("Marcus Rivera")
       expect(callArgs.text).toContain("Sarah Chen")
+    })
+
+    it("sets a List-Unsubscribe header for spam-filter compliance", async () => {
+      await sendTeamInvitationEmail(validInput)
+
+      const callArgs = mockSendEmail.mock.calls[0][0]
+      expect(callArgs.headers).toBeDefined()
+      expect(callArgs.headers!["List-Unsubscribe"]).toContain("https://example.com/invite/abc123token")
+      expect(callArgs.headers!["List-Unsubscribe"]).toContain("mailto:")
+      expect(callArgs.headers!["List-Unsubscribe-Post"]).toBe("List-Unsubscribe=One-Click")
+    })
+
+    it("includes the inviter name in the subject", async () => {
+      await sendTeamInvitationEmail(validInput)
+
+      const callArgs = mockSendEmail.mock.calls[0][0]
+      expect(callArgs.subject).toContain("John Doe")
     })
   })
 })

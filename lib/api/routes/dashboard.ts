@@ -1153,6 +1153,11 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
     async ({ principal, body }) => {
       requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
 
+      const { isOrgTenant, organizationRequiredResponse } = await import("@/lib/services/tenants")
+      if (!(await isOrgTenant(principal.tenantId))) {
+        return organizationRequiredResponse()
+      }
+
       const { createHackathon } = await import("@/lib/services/hackathons")
       const hackathon = await createHackathon(principal.tenantId, {
         name: body.name,

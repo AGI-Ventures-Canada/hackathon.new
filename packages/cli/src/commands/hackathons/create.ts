@@ -116,7 +116,7 @@ export async function runHackathonsCreate(
 
 async function confirmPersonalWorkspace(
   client: OatmealClient,
-  options: Pick<CreateOptions, "yes" | "json">
+  _options: Pick<CreateOptions, "yes" | "json">
 ): Promise<void> {
   const whoami = await client.get<WhoAmIResponse>("/api/v1/whoami")
 
@@ -124,28 +124,10 @@ async function confirmPersonalWorkspace(
     return
   }
 
-  if (options.yes) {
-    if (!options.json) {
-      p.log.warn("Creating this event in your personal workspace.")
-    }
-    return
-  }
-
-  if (!process.stdout.isTTY) {
-    console.error(
-      "Error: You're logged in to a personal workspace. " +
-        "Run \"hackathon login\" and pick an organization, or rerun with --yes to create it here."
-    )
-    process.exit(1)
-  }
-
-  const confirmed = await p.confirm({
-    message: `You're using ${formatWorkspace(whoami)}. Create this event there?`,
-    initialValue: false,
-  })
-
-  if (p.isCancel(confirmed) || !confirmed) {
-    p.log.info("Create cancelled.")
-    process.exit(0)
-  }
+  console.error(
+    `Error: ${formatWorkspace(whoami)} is a personal workspace. ` +
+      "Hackathons must be created under an organization. " +
+      'Run "hackathon login" and pick an organization, or create one in the dashboard first.'
+  )
+  process.exit(1)
 }

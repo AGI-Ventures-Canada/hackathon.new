@@ -7,6 +7,7 @@ type SendEmailInput = {
   text?: string
   from?: string
   replyTo?: string
+  headers?: Record<string, string>
   tags?: Array<{ name: string; value: string }>
 }
 

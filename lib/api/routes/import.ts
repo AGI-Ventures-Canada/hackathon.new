@@ -61,6 +61,11 @@ export const dashboardImportRoutes = new Elysia({ prefix: "/dashboard/import" })
     async ({ principal, body, set }) => {
       requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
 
+      const { isOrgTenant, organizationRequiredResponse } = await import("@/lib/services/tenants")
+      if (!(await isOrgTenant(principal.tenantId))) {
+        return organizationRequiredResponse()
+      }
+
       const { createHackathonFromImport, importTranslationVariants } = await import(
         "@/lib/services/luma-import-create"
       )
@@ -211,6 +216,11 @@ export const dashboardImportRoutes = new Elysia({ prefix: "/dashboard/import" })
     "/url",
     async ({ principal, body, set }) => {
       requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+
+      const { isOrgTenant, organizationRequiredResponse } = await import("@/lib/services/tenants")
+      if (!(await isOrgTenant(principal.tenantId))) {
+        return organizationRequiredResponse()
+      }
 
       const url = normalizeUrl(body.url)
 

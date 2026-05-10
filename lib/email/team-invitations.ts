@@ -1,5 +1,12 @@
 import { sendEmail } from "./resend"
-import { sanitizeTag, renderEmail, buildEventUrl, formatTimeLeft } from "./utils"
+import {
+  sanitizeTag,
+  renderEmail,
+  buildEventUrl,
+  formatTimeLeft,
+  getReplyToAddress,
+  buildUnsubscribeHeaders,
+} from "./utils"
 import TeamInvitationEmail from "@/emails/team-invitation"
 import TeamInvitationReminderEmail from "@/emails/team-invitation-reminder"
 
@@ -48,9 +55,11 @@ export async function sendTeamInvitationEmail(
 
   const result = await sendEmail({
     to: input.to,
-    subject: `Join "${input.teamName}" for ${input.hackathonName}`,
+    subject: `${input.inviterName} invited you to "${input.teamName}" for ${input.hackathonName}`,
     html,
     text,
+    replyTo: getReplyToAddress(),
+    headers: buildUnsubscribeHeaders(acceptUrl),
     tags: [
       { name: "type", value: "team_invitation" },
       { name: "hackathon", value: sanitizeTag(input.hackathonName) },
@@ -71,8 +80,8 @@ export type SendTeamInvitationReminderInput = {
 }
 
 function teamReminderSubject(teamName: string, hackathonName: string, urgency: string): string {
-  if (urgency === "high") return `Last chance \u2014 invite to "${teamName}" expires soon`
-  if (urgency === "medium") return `Your invite to "${teamName}" expires tomorrow`
+  if (urgency === "high") return `Your "${teamName}" invite expires soon`
+  if (urgency === "medium") return `Your "${teamName}" invite expires tomorrow`
   return `Reminder: Join "${teamName}" for ${hackathonName}`
 }
 
@@ -111,6 +120,8 @@ export async function sendTeamInvitationReminderEmail(
     subject,
     html,
     text,
+    replyTo: getReplyToAddress(),
+    headers: buildUnsubscribeHeaders(acceptUrl),
     tags: [
       { name: "type", value: "team_invitation_reminder" },
       { name: "hackathon", value: sanitizeTag(input.hackathonName) },
