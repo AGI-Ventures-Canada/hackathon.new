@@ -22,6 +22,9 @@ export default async function DisplayShowcasePage({ params, searchParams }: Page
   const { slug } = await params
   const { view: viewId } = await searchParams
 
+  // Intentionally allows unpublished hackathons so organizers can set up the
+  // projector view (and verify the link) before going live. Access is gated
+  // by the unguessable view UUID, mirroring the other /display/* pages.
   const hackathon = await getPublicHackathon(slug, { includeUnpublished: true })
   if (!hackathon) notFound()
 

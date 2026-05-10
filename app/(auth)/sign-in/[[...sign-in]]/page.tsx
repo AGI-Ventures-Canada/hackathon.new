@@ -11,10 +11,11 @@ export default async function SignInPage({
   const { userId } = await auth()
   const { redirect_url, email } = await searchParams
   const safeRedirect = safeRedirectUrl(redirect_url)
+  const initialEmail = redirect_url ? email : undefined
 
   if (userId) {
     redirect(safeRedirect)
   }
 
-  return <CustomSignIn redirectUrl={safeRedirect} initialEmail={email} />
+  return <CustomSignIn redirectUrl={safeRedirect} initialEmail={initialEmail} />
 }

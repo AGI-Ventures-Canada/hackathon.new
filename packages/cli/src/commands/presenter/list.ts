@@ -38,6 +38,7 @@ export async function runPresenterList(
         { key: "name", label: "Name" },
         { key: "kind", label: "Kind" },
         { key: "target", label: "Target" },
+        { key: "updated_at", label: "Updated" },
       ]
     )
   )

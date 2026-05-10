@@ -2,7 +2,7 @@
 
 import Image from "next/image"
 import { Loader2, Plus } from "lucide-react"
-import { useAuth, useOrganizationList } from "@clerk/nextjs"
+import { useAuth, useOrganization, useOrganizationList } from "@clerk/nextjs"
 import {
   Dialog,
   DialogContent,
@@ -24,9 +24,17 @@ export function OrgGateDialog({ open, onOpenChange, onOrgSelected }: OrgGateDial
   const { userMemberships, setActive, isLoaded } = useOrganizationList({
     userMemberships: { infinite: true },
   })
+  const { organization } = useOrganization()
   const { getToken } = useAuth()
   const [createOrgOpen, setCreateOrgOpen] = useState(false)
   const [switchingOrgId, setSwitchingOrgId] = useState<string | null>(null)
+
+  function handleOpenChange(next: boolean) {
+    if (!next && !organization) {
+      return
+    }
+    onOpenChange(next)
+  }
 
   const memberships = userMemberships?.data ?? []
   const hasMemberships = memberships.length > 0
@@ -47,8 +55,17 @@ export function OrgGateDialog({ open, onOpenChange, onOrgSelected }: OrgGateDial
 
   return (
     <>
-      <Dialog open={open && !createOrgOpen} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-md">
+      <Dialog open={open && !createOrgOpen} onOpenChange={handleOpenChange}>
+        <DialogContent
+          className="sm:max-w-md"
+          showCloseButton={Boolean(organization)}
+          onPointerDownOutside={(e) => {
+            if (!organization) e.preventDefault()
+          }}
+          onEscapeKeyDown={(e) => {
+            if (!organization) e.preventDefault()
+          }}
+        >
           <DialogHeader>
             <DialogTitle>Pick an organization</DialogTitle>
             <DialogDescription>

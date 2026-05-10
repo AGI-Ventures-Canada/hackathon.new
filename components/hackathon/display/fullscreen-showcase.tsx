@@ -57,6 +57,7 @@ export function FullscreenShowcase({
             >
               {s.screenshotUrl ? (
                 <div className="relative aspect-video w-full bg-muted">
+                  {/* unoptimized: screenshot URLs come from arbitrary user-submitted hosts; allowlisting them in next.config would be brittle and noisy. */}
                   <Image
                     src={s.screenshotUrl}
                     alt={s.title}

@@ -127,6 +127,20 @@ export async function getPresenterView(viewId: string): Promise<PresenterView | 
   return rowToView(data as Record<string, unknown>)
 }
 
+async function isRoundInHackathon(
+  client: SupabaseClient,
+  roundId: string,
+  hackathonId: string
+): Promise<boolean> {
+  const { data } = await client
+    .from("judging_rounds")
+    .select("id")
+    .eq("id", roundId)
+    .eq("hackathon_id", hackathonId)
+    .maybeSingle()
+  return Boolean(data)
+}
+
 export async function createPresenterView(
   input: CreatePresenterViewInput
 ): Promise<PresenterView | null> {
@@ -136,6 +150,12 @@ export async function createPresenterView(
   if (!config) return null
 
   const client = getSupabase() as unknown as SupabaseClient
+
+  if (config.kind === "round_finalists") {
+    const ok = await isRoundInHackathon(client, config.roundId, input.hackathonId)
+    if (!ok) return null
+  }
+
   const { data, error } = await client
     .from("organizer_presenter_views")
     .insert({
@@ -161,6 +181,7 @@ export async function updatePresenterView(
   if (!isValidUuid(viewId)) return null
 
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
+  let nextConfig: PresenterViewConfig | null = null
   if (input.name !== undefined) {
     const name = validatePresenterViewName(input.name)
     if (!name) return null
@@ -170,9 +191,26 @@ export async function updatePresenterView(
     const config = validatePresenterViewConfig(input.config)
     if (!config) return null
     updates.config = config
+    nextConfig = config
   }
 
   const client = getSupabase() as unknown as SupabaseClient
+
+  if (nextConfig?.kind === "round_finalists") {
+    const { data: existing } = await client
+      .from("organizer_presenter_views")
+      .select("hackathon_id")
+      .eq("id", viewId)
+      .maybeSingle()
+    if (!existing) return null
+    const ok = await isRoundInHackathon(
+      client,
+      nextConfig.roundId,
+      existing.hackathon_id as string
+    )
+    if (!ok) return null
+  }
+
   const { data, error } = await client
     .from("organizer_presenter_views")
     .update(updates)

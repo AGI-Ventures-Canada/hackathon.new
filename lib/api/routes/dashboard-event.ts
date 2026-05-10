@@ -950,7 +950,14 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       config,
       createdByClerkUserId: createdBy,
     })
-    if (!view) { set.status = 400; return { error: "Failed to save presenter view" } }
+    if (!view) {
+      set.status = 400
+      const error =
+        config.kind === "round_finalists"
+          ? "That judging round isn't part of this hackathon."
+          : "Failed to save presenter view"
+      return { error }
+    }
     await logAudit({ principal, action: "presenter_view.created", resourceType: "presenter_view", resourceId: view.id, metadata: { hackathonId: params.id, kind: config.kind } })
     return view
   }, {

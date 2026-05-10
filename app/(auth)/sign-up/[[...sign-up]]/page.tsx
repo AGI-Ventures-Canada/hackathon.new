@@ -11,10 +11,11 @@ export default async function SignUpPage({
   const { userId, orgId } = await auth()
   const { redirect_url, email } = await searchParams
   const safeRedirect = redirect_url ? safeRedirectUrl(redirect_url) : undefined
+  const initialEmail = redirect_url ? email : undefined
 
   if (userId && orgId) {
     redirect(safeRedirect ?? "/home")
   }
 
-  return <CustomSignUp redirectUrl={safeRedirect} initialEmail={email} />
+  return <CustomSignUp redirectUrl={safeRedirect} initialEmail={initialEmail} />
 }
