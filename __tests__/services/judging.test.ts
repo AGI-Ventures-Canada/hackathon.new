@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test"
 import {
   createChainableMock,
+  mockRpcCall,
+  mockSuccess,
+  mockError,
   resetSupabaseMocks,
   setMockFromImplementation,
 } from "../lib/supabase-mock"
@@ -10,6 +13,7 @@ const {
   listJudges,
   removeJudge,
   autoAssignJudges,
+  countUnassignedSubmissions,
   getJudgingProgress,
   getJudgeAssignments,
   saveNotes,
@@ -532,6 +536,32 @@ describe("Judging Service", () => {
       expect(result.totalAssignments).toBe(0)
       expect(result.completedAssignments).toBe(0)
       expect(result.judges).toEqual([])
+    })
+  })
+
+  describe("countUnassignedSubmissions", () => {
+    it("returns the count from the RPC", async () => {
+      mockRpcCall("count_unassigned_submissions", mockSuccess(7))
+
+      const result = await countUnassignedSubmissions("h1")
+
+      expect(result).toBe(7)
+    })
+
+    it("returns 0 when the RPC errors", async () => {
+      mockRpcCall("count_unassigned_submissions", mockError("RPC failed"))
+
+      const result = await countUnassignedSubmissions("h1")
+
+      expect(result).toBe(0)
+    })
+
+    it("returns 0 when the RPC returns null", async () => {
+      mockRpcCall("count_unassigned_submissions", mockSuccess(null))
+
+      const result = await countUnassignedSubmissions("h1")
+
+      expect(result).toBe(0)
     })
   })
 

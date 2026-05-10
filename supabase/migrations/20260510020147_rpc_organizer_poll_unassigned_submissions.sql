@@ -1,6 +1,7 @@
 -- Extend organizer poll RPC to expose the count of submitted projects
 -- that have no judge_assignments row. Drives the new urgent
 -- "X projects waiting for a judge" action item on the organizer dashboard.
+-- Delegates to count_unassigned_submissions so the predicate lives in one place.
 
 create or replace function get_organizer_poll_data(p_hackathon_id uuid)
 returns jsonb
@@ -30,14 +31,7 @@ begin
       select count(*) from submissions
       where hackathon_id = p_hackathon_id and status = 'submitted'
     ),
-    'unassigned_submission_count', (
-      select count(*) from submissions s
-      where s.hackathon_id = p_hackathon_id
-        and s.status = 'submitted'
-        and not exists (
-          select 1 from judge_assignments ja where ja.submission_id = s.id
-        )
-    ),
+    'unassigned_submission_count', count_unassigned_submissions(p_hackathon_id),
     'participant_count', (
       select count(*) from hackathon_participants
       where hackathon_id = p_hackathon_id and role = 'participant'
