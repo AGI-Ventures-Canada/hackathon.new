@@ -211,6 +211,24 @@ describe("presenter-views routes", () => {
       expect(data.error).toContain("isn't part of this hackathon")
     })
 
+    it("returns a friendly 400 when service rejects manual config with cross-hackathon submission", async () => {
+      mockResolvePrincipal.mockResolvedValue(userPrincipal)
+      mockCreatePresenterView.mockResolvedValue(null)
+      const res = await app.handle(
+        new Request(`http://localhost/api/dashboard/hackathons/${HACKATHON_ID}/presenter-views`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: "Demo Day",
+            config: { kind: "manual", submissionIds: ["66666666-6666-6666-6666-666666666666"] },
+          }),
+        })
+      )
+      const data = await res.json()
+      expect(res.status).toBe(400)
+      expect(data.error).toContain("don't belong to this hackathon")
+    })
+
     it("creates a view for a Clerk user principal", async () => {
       mockResolvePrincipal.mockResolvedValue(userPrincipal)
       mockCreatePresenterView.mockResolvedValue({

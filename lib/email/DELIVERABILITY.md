@@ -128,3 +128,18 @@ await sendEmail({
 If your email omits any of `text`, `replyTo`, `headers`, or `tags`, that's
 a deliverability bug — fix it before merging, not after the first
 "my mail is in spam" report.
+
+## Email link query params
+
+When an email links the recipient to a sign-in / sign-up page with
+`?email=` pre-filled (as the invite flow does), remember:
+
+- The address ends up in browser history, server access logs, and any
+  analytics that capture URL params (PostHog, etc.). Don't put anything
+  more sensitive than the invitee's own email in there.
+- Only honour the `?email=` param when a `?redirect_url=` is also
+  present. A bare `/sign-in?email=victim@corp.com` URL is phishing-
+  friendly — anyone can craft one. The signed-up form must come from a
+  flow that also dictates where the user lands.
+- Don't pass tokens, session IDs, or anything else that would let a
+  reader of the log act on behalf of the user.

@@ -955,7 +955,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       const error =
         config.kind === "round_finalists"
           ? "That judging round isn't part of this hackathon."
-          : "Failed to save presenter view"
+          : "One or more of those projects don't belong to this hackathon."
       return { error }
     }
     await logAudit({ principal, action: "presenter_view.created", resourceType: "presenter_view", resourceId: view.id, metadata: { hackathonId: params.id, kind: config.kind } })

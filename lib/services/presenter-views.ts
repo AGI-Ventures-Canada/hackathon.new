@@ -142,6 +142,20 @@ async function isRoundInHackathon(
   return Boolean(data)
 }
 
+async function allSubmissionsInHackathon(
+  client: SupabaseClient,
+  submissionIds: string[],
+  hackathonId: string
+): Promise<boolean> {
+  if (submissionIds.length === 0) return false
+  const { data } = await client
+    .from("submissions")
+    .select("id")
+    .eq("hackathon_id", hackathonId)
+    .in("id", submissionIds)
+  return (data?.length ?? 0) === submissionIds.length
+}
+
 export async function createPresenterView(
   input: CreatePresenterViewInput
 ): Promise<PresenterView | null> {
@@ -155,6 +169,9 @@ export async function createPresenterView(
 
   if (config.kind === "round_finalists") {
     const ok = await isRoundInHackathon(client, config.roundId, input.hackathonId)
+    if (!ok) return null
+  } else {
+    const ok = await allSubmissionsInHackathon(client, config.submissionIds, input.hackathonId)
     if (!ok) return null
   }
 
@@ -198,19 +215,26 @@ export async function updatePresenterView(
 
   const client = getSupabase() as unknown as SupabaseClient
 
-  if (nextConfig?.kind === "round_finalists") {
-    const { data: round } = await client
-      .from("judging_rounds")
-      .select("id, hackathon_id")
-      .eq("id", nextConfig.roundId)
-      .maybeSingle()
-    if (!round) return null
+  if (nextConfig) {
     const { data: view } = await client
       .from("organizer_presenter_views")
       .select("hackathon_id")
       .eq("id", viewId)
       .maybeSingle()
-    if (!view || view.hackathon_id !== round.hackathon_id) return null
+    if (!view) return null
+    const viewHackathonId = view.hackathon_id as string
+
+    if (nextConfig.kind === "round_finalists") {
+      const ok = await isRoundInHackathon(client, nextConfig.roundId, viewHackathonId)
+      if (!ok) return null
+    } else {
+      const ok = await allSubmissionsInHackathon(
+        client,
+        nextConfig.submissionIds,
+        viewHackathonId
+      )
+      if (!ok) return null
+    }
   }
 
   const { data, error } = await client

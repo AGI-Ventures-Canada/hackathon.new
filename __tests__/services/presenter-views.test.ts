@@ -150,19 +150,19 @@ describe("presenter-views service", () => {
     })
 
     it("returns the created row when valid", async () => {
-      setMockFromImplementation(() =>
-        createChainableMock(
-          mockSuccess({
-            id: VIEW_ID,
-            hackathon_id: HACKATHON_ID,
-            name: "Demo Day",
-            config: { kind: "manual", submissionIds: [SUBMISSION_A] },
-            created_by_clerk_user_id: "user_1",
-            created_at: "2026-05-10T00:00:00Z",
-            updated_at: "2026-05-10T00:00:00Z",
-          })
-        )
-      )
+      const { mockMultiTableQuery } = await import("../lib/supabase-mock")
+      mockMultiTableQuery({
+        submissions: mockSuccess([{ id: SUBMISSION_A }]),
+        organizer_presenter_views: mockSuccess({
+          id: VIEW_ID,
+          hackathon_id: HACKATHON_ID,
+          name: "Demo Day",
+          config: { kind: "manual", submissionIds: [SUBMISSION_A] },
+          created_by_clerk_user_id: "user_1",
+          created_at: "2026-05-10T00:00:00Z",
+          updated_at: "2026-05-10T00:00:00Z",
+        }),
+      })
       const view = await createPresenterView({
         hackathonId: HACKATHON_ID,
         name: "Demo Day",
@@ -171,6 +171,20 @@ describe("presenter-views service", () => {
       })
       expect(view).not.toBeNull()
       expect(view!.name).toBe("Demo Day")
+    })
+
+    it("rejects manual config when a submission belongs to a different hackathon", async () => {
+      const { mockMultiTableQuery } = await import("../lib/supabase-mock")
+      mockMultiTableQuery({
+        submissions: mockSuccess([]),
+      })
+      const view = await createPresenterView({
+        hackathonId: HACKATHON_ID,
+        name: "Demo Day",
+        config: { kind: "manual", submissionIds: [SUBMISSION_A] },
+        createdByClerkUserId: "user_1",
+      })
+      expect(view).toBeNull()
     })
   })
 
