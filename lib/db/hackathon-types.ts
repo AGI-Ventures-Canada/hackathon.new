@@ -355,6 +355,8 @@ export interface JudgingCriteria {
   updated_at: string
 }
 
+export type JudgeAssignmentKind = "per_prize" | "unified_weighted_score"
+
 export interface JudgeAssignment {
   id: string
   hackathon_id: string
@@ -365,6 +367,10 @@ export interface JudgeAssignment {
   assigned_at: string
   completed_at: string | null
   viewed_at: string | null
+  prize_id: string | null
+  round_id: string | null
+  room_id: string | null
+  assignment_kind: JudgeAssignmentKind
 }
 
 export interface JudgePick {
@@ -418,7 +424,12 @@ export interface Prize {
 
 export type JudgingMode = "points" | "subjective" | "rubric"
 
-export type PrizeJudgingStyle = "bucket_sort" | "gate_check" | "crowd_vote" | "judges_pick"
+export type PrizeJudgingStyle =
+  | "bucket_sort"
+  | "gate_check"
+  | "crowd_vote"
+  | "judges_pick"
+  | "weighted_score"
 
 export type PrizeAssignmentMode = "organizer_assigned" | "self_select"
 
@@ -518,6 +529,8 @@ export interface PrizeAssignment {
   assigned_at: string
 }
 
+export type HackathonResultKind = "prize" | "core_only"
+
 export interface HackathonResult {
   id: string
   hackathon_id: string
@@ -528,6 +541,8 @@ export interface HackathonResult {
   judge_count: number
   published_at: string | null
   created_at: string
+  prize_id: string | null
+  result_kind: HackathonResultKind
 }
 
 export interface JudgeInvitation {

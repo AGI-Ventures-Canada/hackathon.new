@@ -815,7 +815,12 @@ export const devRoutes = new Elysia({ prefix: "/dev" })
 
       const preset = body.preset ?? "standard"
 
-      type PrizeJudgingStyle = "bucket_sort" | "gate_check" | "crowd_vote" | "judges_pick"
+      type PrizeJudgingStyle =
+        | "bucket_sort"
+        | "gate_check"
+        | "crowd_vote"
+        | "judges_pick"
+        | "weighted_score"
       type PrizeType = "score" | "criteria" | "crowd" | "favorite"
       type SeedPrize = {
         name: string

@@ -54,6 +54,10 @@ export default async function JudgePage({ params }: PageProps) {
     judgeAssignments = judgeAssignments.map((a) => ({ ...a, teamName: null, teamMemberCount: null }))
   }
 
+  const hasUnifiedAssignments = judgeAssignments.some(
+    (a) => a.assignmentKind === "unified_weighted_score"
+  )
+
   return (
     <div className="p-4 md:p-6 space-y-6">
       <PageHeader
@@ -77,6 +81,7 @@ export default async function JudgePage({ params }: PageProps) {
             minTeamSize: hackathon.min_team_size,
             allowSolo: hackathon.allow_solo,
           }}
+          summaryHref={hasUnifiedAssignments ? `/e/${slug}/judge/summary` : undefined}
         />
       )}
     </div>

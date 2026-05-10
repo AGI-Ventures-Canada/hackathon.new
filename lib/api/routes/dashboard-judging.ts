@@ -3,6 +3,7 @@ import { resolvePrincipal, requirePrincipal } from "@/lib/auth/principal"
 import { logAudit } from "@/lib/services/audit"
 import { resolveAdderName } from "@/lib/auth/resolve-adder-name"
 import { checkRateLimit, RateLimitError } from "@/lib/services/rate-limit"
+import { isValidUuid } from "@/lib/utils/uuid"
 
 type CachedAuthResult = { status: "ok" } | { status: "not_found" } | { status: "not_authorized" }
 // Local-dev-only optimisation: avoids repeated checkHackathonOrganizer calls
@@ -75,7 +76,13 @@ export const dashboardJudgingRoutes = new Elysia()
         name: body.name,
         description: body.description,
         value: body.value,
-        judgingStyle: body.judgingStyle as "bucket_sort" | "gate_check" | "crowd_vote" | "judges_pick" | undefined,
+        judgingStyle: body.judgingStyle as
+          | "bucket_sort"
+          | "gate_check"
+          | "crowd_vote"
+          | "judges_pick"
+          | "weighted_score"
+          | undefined,
         roundId: body.roundId,
         assignmentMode: body.assignmentMode as "organizer_assigned" | "self_select" | undefined,
         maxPicks: body.maxPicks,
@@ -133,6 +140,9 @@ export const dashboardJudgingRoutes = new Elysia()
             t.Object({
               name: t.String(),
               description: t.Optional(t.Nullable(t.String())),
+              weight: t.Optional(t.Number({ minimum: 0, maximum: 100 })),
+              minScore: t.Optional(t.Number({ minimum: 0 })),
+              maxScore: t.Optional(t.Number({ minimum: 1 })),
             }),
             { description: "Pass/fail criteria. Required when judgingStyle is 'gate_check'." }
           )
@@ -185,7 +195,7 @@ export const dashboardJudgingRoutes = new Elysia()
 
       if (body.criteria !== undefined) {
         const nonEmpty = body.criteria.filter((c) => c.name.trim().length > 0)
-        if (nonEmpty.length === 0) {
+        if (effectiveStyle !== "weighted_score" && nonEmpty.length === 0) {
           return new Response(
             JSON.stringify({
               error: "At least one criterion is required for pass-or-fail prizes",
@@ -232,10 +242,20 @@ export const dashboardJudgingRoutes = new Elysia()
       }
 
       if (body.criteria !== undefined) {
+        if (
+          effectiveStyle === "weighted_score" &&
+          body.criteria.some((c) => c.name.trim().length > 0 && (c.weight ?? 0) <= 0)
+        ) {
+          return new Response(
+            JSON.stringify({ error: "Each weighted criterion needs a weight greater than zero" }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          )
+        }
         const updatedCriteria = await replacePrizeCriteria(
           params.id,
           params.prizeId,
-          body.criteria
+          body.criteria,
+          { style: effectiveStyle ?? null }
         )
         if (updatedCriteria === null) {
           return new Response(
@@ -279,6 +299,9 @@ export const dashboardJudgingRoutes = new Elysia()
             t.Object({
               name: t.String(),
               description: t.Optional(t.Nullable(t.String())),
+              weight: t.Optional(t.Number({ minimum: 0, maximum: 100 })),
+              minScore: t.Optional(t.Number({ minimum: 0 })),
+              maxScore: t.Optional(t.Number({ minimum: 1 })),
             }),
             { description: "Replace all pass/fail criteria for this prize." }
           )
@@ -441,15 +464,18 @@ export const dashboardJudgingRoutes = new Elysia()
       }
 
       const { autoAssignJudges } = await import("@/lib/services/judging")
-      const assigned = await autoAssignJudges(params.id, params.prizeId, body.submissionsPerJudge)
+      const assigned = await autoAssignJudges(params.id, params.prizeId, body.submissionsPerJudge, {
+        roomId: body.roomId ?? null,
+      })
 
       return assigned
     },
     {
       body: t.Object({
         submissionsPerJudge: t.Number({ description: "Number of submissions each judge should evaluate" }),
+        roomId: t.Optional(t.String({ description: "Limit assignments to projects from this room only" })),
       }),
-      detail: { summary: "Auto-assign judges", description: "Automatically distributes submissions across judges for a prize." },
+      detail: { summary: "Auto-assign judges", description: "Automatically distributes submissions across judges for a prize. When roomId is provided, only projects from that room are considered." },
     }
   )
 
@@ -1298,8 +1324,6 @@ export const dashboardJudgingRoutes = new Elysia()
 
   .post("/hackathons/:id/judging/invitations/:invitationId/remind", async ({ principal, params }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
-
-    const { isValidUuid } = await import("@/lib/utils/uuid")
     if (!isValidUuid(params.invitationId)) {
       return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
     }
@@ -1389,4 +1413,195 @@ export const dashboardJudgingRoutes = new Elysia()
     return progress
   }, {
     detail: { summary: "Get judging progress", description: "Returns overall judging completion and per-judge breakdown." },
+  })
+
+  .get("/hackathons/:id/core-criteria", async ({ principal, params }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
+
+    const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+    const result = await checkHackathonOrganizer(params.id, principal.tenantId)
+    if (result.status === "not_found") {
+      return new Response(JSON.stringify({ error: "Hackathon not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+    }
+    if (result.status === "not_authorized") {
+      return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
+    }
+
+    const { listCoreCriteria } = await import("@/lib/services/judging")
+    const criteria = await listCoreCriteria(params.id)
+    return { criteria }
+  }, {
+    detail: { summary: "List core criteria", description: "Returns hackathon-wide criteria used by all weighted_score prizes." },
+  })
+
+  .post(
+    "/hackathons/:id/core-criteria/seed-defaults",
+    async ({ principal, params }) => {
+      requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+
+      const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+      const result = await checkHackathonOrganizer(params.id, principal.tenantId)
+      if (result.status === "not_found") {
+        return new Response(JSON.stringify({ error: "Hackathon not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+      }
+      if (result.status === "not_authorized") {
+        return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
+      }
+
+      const { seedDefaultCoreCriteria } = await import("@/lib/services/judging")
+      const seeded = await seedDefaultCoreCriteria(params.id)
+      if (!seeded.success) {
+        return new Response(
+          JSON.stringify({ error: seeded.error }),
+          { status: 409, headers: { "Content-Type": "application/json" } }
+        )
+      }
+      return { criteria: seeded.criteria }
+    },
+    {
+      detail: { summary: "Seed default core criteria", description: "Inserts four starter score categories (25% each). Fails if any core criteria already exist." },
+    }
+  )
+
+  .post(
+    "/hackathons/:id/core-criteria",
+    async ({ principal, params, body }) => {
+      requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+
+      const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+      const result = await checkHackathonOrganizer(params.id, principal.tenantId)
+      if (result.status === "not_found") {
+        return new Response(JSON.stringify({ error: "Hackathon not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+      }
+      if (result.status === "not_authorized") {
+        return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
+      }
+
+      const { createCoreCriterion } = await import("@/lib/services/judging")
+      const created = await createCoreCriterion(params.id, {
+        name: body.name,
+        description: body.description ?? null,
+        weight: body.weight,
+        minScore: body.minScore,
+        maxScore: body.maxScore,
+      })
+      if (!created.success) {
+        return new Response(
+          JSON.stringify({ error: created.error, offendingPrizes: created.offendingPrizes }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        )
+      }
+      return { criterion: created.criterion }
+    },
+    {
+      body: t.Object({
+        name: t.String(),
+        description: t.Optional(t.Nullable(t.String())),
+        weight: t.Number({ minimum: 0, maximum: 100 }),
+        minScore: t.Optional(t.Number({ minimum: 0 })),
+        maxScore: t.Optional(t.Number({ minimum: 1 })),
+      }),
+      detail: { summary: "Create core criterion", description: "Adds a hackathon-wide criterion. Sum imbalances against weighted_score prizes are reported as warnings, not errors." },
+    }
+  )
+
+  .patch(
+    "/hackathons/:id/core-criteria/:criteriaId",
+    async ({ principal, params, body }) => {
+      requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+      if (!isValidUuid(params.criteriaId)) {
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+      }
+
+      const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+      const result = await checkHackathonOrganizer(params.id, principal.tenantId)
+      if (result.status === "not_found") {
+        return new Response(JSON.stringify({ error: "Hackathon not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+      }
+      if (result.status === "not_authorized") {
+        return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
+      }
+
+      const { updateCoreCriterion } = await import("@/lib/services/judging")
+      const updated = await updateCoreCriterion(params.id, params.criteriaId, {
+        name: body.name,
+        description: body.description,
+        weight: body.weight,
+        minScore: body.minScore,
+        maxScore: body.maxScore,
+      })
+      if (!updated.success) {
+        return new Response(
+          JSON.stringify({ error: updated.error, offendingPrizes: updated.offendingPrizes }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        )
+      }
+      return { criterion: updated.criterion }
+    },
+    {
+      body: t.Object({
+        name: t.Optional(t.String()),
+        description: t.Optional(t.Nullable(t.String())),
+        weight: t.Optional(t.Number({ minimum: 0, maximum: 100 })),
+        minScore: t.Optional(t.Number({ minimum: 0 })),
+        maxScore: t.Optional(t.Number({ minimum: 1 })),
+      }),
+      detail: { summary: "Update core criterion", description: "Updates a core criterion. Sum imbalances against weighted_score prizes are reported as warnings, not errors." },
+    }
+  )
+
+  .delete("/hackathons/:id/core-criteria/:criteriaId", async ({ principal, params }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+    if (!isValidUuid(params.criteriaId)) {
+      return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+    }
+
+    const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+    const result = await checkHackathonOrganizer(params.id, principal.tenantId)
+    if (result.status === "not_found") {
+      return new Response(JSON.stringify({ error: "Hackathon not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+    }
+    if (result.status === "not_authorized") {
+      return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
+    }
+
+    const { deleteCoreCriterion } = await import("@/lib/services/judging")
+    const deleted = await deleteCoreCriterion(params.id, params.criteriaId)
+    if (!deleted.success) {
+      return new Response(
+        JSON.stringify({ error: deleted.error, offendingPrizes: deleted.offendingPrizes }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      )
+    }
+    return { success: true }
+  }, {
+    detail: { summary: "Delete core criterion", description: "Removes a core criterion. Sum imbalances against weighted_score prizes are reported as warnings, not errors." },
+  })
+
+  .post("/hackathons/:id/judging/assign-weighted-score-judge", async ({ principal, params, body }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+
+    const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+    const result = await checkHackathonOrganizer(params.id, principal.tenantId)
+    if (result.status === "not_found") {
+      return new Response(JSON.stringify({ error: "Hackathon not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+    }
+    if (result.status === "not_authorized") {
+      return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
+    }
+
+    const { assignWeightedScoreJudge } = await import("@/lib/services/judging")
+    const out = await assignWeightedScoreJudge(params.id, body.judgeParticipantId, {
+      roomId: body.roomId ?? null,
+    })
+    if (!out.success) {
+      return new Response(JSON.stringify({ error: out.error ?? "Failed" }), { status: 400, headers: { "Content-Type": "application/json" } })
+    }
+    return out
+  }, {
+    body: t.Object({
+      judgeParticipantId: t.String(),
+      roomId: t.Optional(t.String({ description: "Limit assignments to projects from this room only" })),
+    }),
+    detail: { summary: "Assign judge to unified scorecard", description: "Creates one unified weighted_score assignment per submission for this judge. When roomId is provided, only projects from that room are assigned." },
   })

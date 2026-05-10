@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog"
 import { JudgingSetupWizard } from "./judging-setup-wizard"
 import type { WizardJudgeAdded, WizardPrizeAdded } from "./judging-setup-wizard"
+import type { CoreCriterion } from "./core-criteria-editor"
 import type { RoundData } from "./rounds-types"
 import { assertOkJson } from "@/lib/utils/fetch"
 
@@ -29,6 +30,8 @@ type PrizeResponse = {
   totalAssignments: number
   completedAssignments: number
   judgeCount: number
+  sponsorName?: string | null
+  criteria?: { id: string }[] | null
 }
 
 type JudgeResponse = {
@@ -71,6 +74,8 @@ type WizardPrize = {
   totalAssignments: number
   completedAssignments: number
   judgeCount: number
+  sponsorName?: string | null
+  bonusCriteriaCount?: number
 }
 
 type WizardJudge = {
@@ -110,6 +115,7 @@ export function JudgingSetupDialog({
   const [judges, setJudges] = useState<WizardJudge[]>([])
   const [rounds, setRounds] = useState<RoundData[]>([])
   const [pendingInvitations, setPendingInvitations] = useState<WizardInvitation[]>([])
+  const [coreCriteria, setCoreCriteria] = useState<CoreCriterion[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -118,13 +124,16 @@ export function JudgingSetupDialog({
     setLoading(true)
     setError(null)
     try {
-      const [prizesData, judgesData, roundsData, invitationsData] = await Promise.all([
+      const [prizesData, judgesData, roundsData, invitationsData, coreData] = await Promise.all([
         fetch(`/api/dashboard/hackathons/${hackathonId}/prizes`, { signal }).then(assertOkJson<{ prizes: PrizeResponse[] }>),
         fetch(`/api/dashboard/hackathons/${hackathonId}/judging/judges`, { signal }).then(assertOkJson<{ judges: JudgeResponse[] }>),
         fetch(`/api/dashboard/hackathons/${hackathonId}/rounds`, { signal }).then(assertOkJson<{ rounds: RoundResponse[] }>),
         fetch(`/api/dashboard/hackathons/${hackathonId}/judging/invitations`, { signal })
           .then(assertOkJson<{ invitations: InvitationResponse[] }>)
           .catch(() => ({ invitations: [] as InvitationResponse[] })),
+        fetch(`/api/dashboard/hackathons/${hackathonId}/core-criteria`, { signal })
+          .then(assertOkJson<{ criteria: CoreCriterion[] }>)
+          .catch(() => ({ criteria: [] as CoreCriterion[] })),
       ])
 
       setPrizes(
@@ -143,8 +152,13 @@ export function JudgingSetupDialog({
             totalAssignments: p.totalAssignments ?? 0,
             completedAssignments: p.completedAssignments ?? 0,
             judgeCount: p.judgeCount ?? 0,
+            sponsorName: p.sponsorName ?? null,
+            bonusCriteriaCount:
+              p.judging_style === "weighted_score" ? p.criteria?.length ?? 0 : 0,
           }))
       )
+
+      setCoreCriteria(coreData.criteria ?? [])
 
       setJudges(
         (judgesData.judges ?? []).map((j) => ({
@@ -234,6 +248,7 @@ export function JudgingSetupDialog({
             judges={judges}
             rounds={rounds}
             pendingInvitations={pendingInvitations}
+            coreCriteria={coreCriteria}
             onFinish={() => onOpenChange(false)}
             onJudgeAdded={onJudgeAdded}
             onPrizeAdded={onPrizeAdded}

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { usePrizeJudgeAssignments } from "@/hooks/use-prize-judge-assignments"
 import {
   Trophy,
@@ -12,8 +12,11 @@ import {
   ArrowLeft,
   ArrowRight,
   Trash2,
+  Pencil,
   Mail,
   Clock,
+  Sliders,
+  Sparkles,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -24,6 +27,7 @@ import { AddJudgeDialog, type AddJudgeResult } from "./add-judge-dialog"
 import { AssignJudgesDialog } from "./assign-judges-dialog"
 import { RoundFormDialog, type CreatedRound } from "./round-form-dialog"
 import { JudgePill } from "./judge-pill"
+import { CoreCriteriaEditor, type CoreCriterion } from "./core-criteria-editor"
 import type { PrizeJudgingStyle } from "@/lib/db/hackathon-types"
 import type { RoundData } from "./rounds-types"
 
@@ -40,6 +44,9 @@ type WizardPrize = {
   totalAssignments: number
   completedAssignments: number
   judgeCount: number
+  sponsorName?: string | null
+  bonusCriteriaCount?: number
+  bonusWeightSum?: number
 }
 
 type WizardJudge = {
@@ -81,9 +88,11 @@ type Props = {
   judges: WizardJudge[]
   rounds: RoundData[]
   pendingInvitations: WizardInvitation[]
+  coreCriteria?: CoreCriterion[]
   onFinish?: () => void
   onJudgeAdded?: (judge: WizardJudgeAdded) => void
   onPrizeAdded?: (prize: WizardPrizeAdded) => void
+  onEditPrize?: (prizeId: string) => void
 }
 
 const STEPS = [
@@ -114,11 +123,21 @@ export function JudgingSetupWizard({
   judges,
   rounds,
   pendingInvitations,
+  coreCriteria = [],
   onFinish,
   onJudgeAdded,
   onPrizeAdded,
+  onEditPrize,
 }: Props) {
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  useEffect(() => {
+    if (searchParams.get("jtab") === "setup") return
+    const params = new URLSearchParams(searchParams.toString())
+    params.set("jtab", "setup")
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+  }, [pathname, router, searchParams])
   const [roundsAcknowledged, setRoundsAcknowledged] = useState(false)
   const [hiddenPrizeIds, setHiddenPrizeIds] = useState<Set<string>>(new Set())
   const [hiddenRoundIds, setHiddenRoundIds] = useState<Set<string>>(new Set())
@@ -286,6 +305,22 @@ export function JudgingSetupWizard({
     refresh()
   }
 
+  const hasWeightedPrize = useMemo(
+    () => visiblePrizes.some((p) => p.judgingStyle === "weighted_score"),
+    [visiblePrizes],
+  )
+  const coreWeightSum = useMemo(
+    () => coreCriteria.reduce((acc, c) => acc + c.weight, 0),
+    [coreCriteria],
+  )
+  const weightWarnings = useMemo(() => {
+    if (!hasWeightedPrize) return [] as { id: string; name: string; sum: number }[]
+    return visiblePrizes
+      .filter((p) => p.judgingStyle === "weighted_score")
+      .map((p) => ({ id: p.id, name: p.name, sum: coreWeightSum + (p.bonusWeightSum ?? 0) }))
+      .filter((w) => Math.abs(w.sum - 100) > 0.01)
+  }, [visiblePrizes, hasWeightedPrize, coreWeightSum])
+
   const canAdvance = (() => {
     if (currentStep === 1) return visibleRounds.length > 0 || roundsAcknowledged
     if (currentStep === 2) return visiblePrizes.length > 0
@@ -414,9 +449,14 @@ export function JudgingSetupWizard({
 
         {currentStep === 2 && (
           <PrizesStep
+            hackathonId={hackathonId}
             prizes={visiblePrizes}
+            coreCriteria={coreCriteria}
+            hasWeightedPrize={hasWeightedPrize}
+            weightWarnings={weightWarnings}
             onAdd={() => setShowPrizeDialog(true)}
             onDelete={handleDeletePrize}
+            onEditPrize={onEditPrize}
           />
         )}
 
@@ -478,6 +518,8 @@ export function JudgingSetupWizard({
         onOpenChange={setShowPrizeDialog}
         onSuccess={handlePrizeCreated}
         rounds={visibleRounds}
+        coreWeightSum={coreWeightSum}
+        coreCriteriaCount={coreCriteria.length}
       />
       <AddJudgeDialog
         hackathonId={hackathonId}
@@ -584,58 +626,152 @@ function StepIntro({ title, description }: { title: string; description: string 
 }
 
 function PrizesStep({
+  hackathonId,
   prizes,
+  coreCriteria,
+  hasWeightedPrize,
+  weightWarnings,
   onAdd,
   onDelete,
+  onEditPrize,
 }: {
+  hackathonId: string
   prizes: WizardPrize[]
+  coreCriteria: CoreCriterion[]
+  hasWeightedPrize: boolean
+  weightWarnings: { id: string; name: string; sum: number }[]
   onAdd: () => void
   onDelete: (prizeId: string) => void
+  onEditPrize?: (prizeId: string) => void
 }) {
   return (
-    <div>
-      <StepIntro
-        title="What are you awarding?"
-        description="Add every prize or track you'll give out. You can edit or reorder these later."
-      />
-      {prizes.length === 0 ? (
-        <div className="rounded-md border border-dashed p-8 text-center">
-          <Trophy className="mx-auto size-6 text-muted-foreground" />
-          <p className="mt-2 text-sm text-muted-foreground">No prizes yet</p>
-          <Button onClick={onAdd} className="mt-3 gap-1.5">
-            <Plus className="size-4" />
-            Add prize
-          </Button>
+    <div className="space-y-5">
+      {weightWarnings.length > 0 && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm">
+          <p className="font-medium">Some prize weights don&apos;t add up to 100%.</p>
+          <ul className="mt-1 list-disc pl-5 text-xs text-muted-foreground space-y-0.5">
+            {weightWarnings.map((w) => (
+              <li key={w.id}>
+                {w.name}: {w.sum}%
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            You can save and come back to this. Judges will still score on what you set.
+          </p>
         </div>
-      ) : (
-        <div className="space-y-2">
-          {prizes.map((prize) => (
-            <div
-              key={prize.id}
-              className="flex items-center justify-between rounded-md border px-3 py-2"
-            >
-              <div className="min-w-0">
-                <p className="font-medium truncate">{prize.name}</p>
-                {prize.value && (
-                  <p className="text-xs text-muted-foreground truncate">{prize.value}</p>
-                )}
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={() => onDelete(prize.id)}
-                className="size-8 text-muted-foreground"
-              >
-                <Trash2 className="size-4" />
-                <span className="sr-only">Delete {prize.name}</span>
-              </Button>
+      )}
+      <div>
+        <StepIntro
+          title="What are you awarding?"
+          description="Add every prize or track you'll give out. You can edit or reorder these later."
+        />
+        {prizes.length === 0 ? (
+          <div className="rounded-md border border-dashed p-8 text-center">
+            <Trophy className="mx-auto size-6 text-muted-foreground" />
+            <p className="mt-2 text-sm text-muted-foreground">No prizes yet</p>
+            <Button onClick={onAdd} className="mt-3 gap-1.5">
+              <Plus className="size-4" />
+              Add prize
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {prizes.map((prize) => {
+              const isWeighted = prize.judgingStyle === "weighted_score"
+              const showSponsorCta = isWeighted && !!onEditPrize
+              const bonusCount = prize.bonusCriteriaCount ?? 0
+              const ctaLabel = bonusCount > 0
+                ? `Edit bonus categories (${bonusCount})`
+                : prize.sponsorName
+                  ? `Add bonus categories for ${prize.sponsorName}`
+                  : "Add bonus categories (optional)"
+              return (
+                <div key={prize.id} className="rounded-md border">
+                  <div className="flex items-center justify-between gap-2 px-3 py-2">
+                    <div className="min-w-0">
+                      <p className="font-medium truncate">{prize.name}</p>
+                      <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                        {prize.value && (
+                          <span className="text-xs text-muted-foreground truncate">{prize.value}</span>
+                        )}
+                        {isWeighted && (
+                          <Badge variant="secondary" className="font-normal gap-1">
+                            <Sliders className="size-3" />
+                            Weighted scoring
+                          </Badge>
+                        )}
+                        {prize.sponsorName && (
+                          <Badge variant="outline" className="font-normal">
+                            Sponsor: {prize.sponsorName}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {onEditPrize && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => onEditPrize(prize.id)}
+                          className="size-8 text-muted-foreground"
+                        >
+                          <Pencil className="size-4" />
+                          <span className="sr-only">Edit {prize.name}</span>
+                        </Button>
+                      )}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => onDelete(prize.id)}
+                        className="size-8 text-muted-foreground"
+                      >
+                        <Trash2 className="size-4" />
+                        <span className="sr-only">Delete {prize.name}</span>
+                      </Button>
+                    </div>
+                  </div>
+                  {showSponsorCta && (
+                    <div className="border-t px-3 py-1.5">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onEditPrize?.(prize.id)}
+                        className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                      >
+                        <Plus className="size-3" />
+                        {ctaLabel}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+            <Button onClick={onAdd} variant="outline" className="w-full gap-1.5">
+              <Plus className="size-4" />
+              Add another prize
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {hasWeightedPrize && (
+        <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
+          <div className="flex items-start gap-2">
+            <Sparkles className="size-4 mt-0.5 shrink-0 text-primary" />
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold">Score categories</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Judges score every weighted-scoring prize on these. They add up to 100%.
+              </p>
             </div>
-          ))}
-          <Button onClick={onAdd} variant="outline" className="w-full gap-1.5">
-            <Plus className="size-4" />
-            Add another prize
-          </Button>
+          </div>
+          <div className="rounded-md border bg-background p-3">
+            <CoreCriteriaEditor hackathonId={hackathonId} criteria={coreCriteria} />
+          </div>
         </div>
       )}
     </div>
@@ -841,12 +977,17 @@ function PrizeAssignmentCard({
   onOpenAssign: (prize: { id: string; name: string }) => void
 }) {
   const assigned = judges.filter((j) => j.prizeIds.includes(prize.id))
+  const isWeightedScore = prize.judgingStyle === "weighted_score"
   return (
     <div className="rounded-md border p-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="font-medium truncate">{prize.name}</p>
-          {assigned.length === 0 ? (
+          {isWeightedScore ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Judges for this prize are managed in the Assignments tab.
+            </p>
+          ) : assigned.length === 0 ? (
             <p className="mt-1 text-xs text-muted-foreground">No judges assigned</p>
           ) : (
             <div className="mt-2 flex flex-wrap gap-1.5">
@@ -860,15 +1001,17 @@ function PrizeAssignmentCard({
             </div>
           )}
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => onOpenAssign({ id: prize.id, name: prize.name })}
-          className="shrink-0"
-        >
-          {assigned.length === 0 ? "Assign" : "Edit"}
-        </Button>
+        {!isWeightedScore && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => onOpenAssign({ id: prize.id, name: prize.name })}
+            className="shrink-0"
+          >
+            {assigned.length === 0 ? "Assign" : "Edit"}
+          </Button>
+        )}
       </div>
     </div>
   )

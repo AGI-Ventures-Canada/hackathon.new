@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { assertOkJson } from "@/lib/utils/fetch"
 import { Button } from "@/components/ui/button"
@@ -21,6 +21,7 @@ import {
   ChevronRight,
   Plus,
   Trash2,
+  Sliders,
 } from "lucide-react"
 import {
   Select,
@@ -67,6 +68,13 @@ const STYLE_OPTIONS: {
     detail: "Example: 3 judges each pick 1 favorite from 6 finalists. The top-picked project wins.",
     icon: Award,
   },
+  {
+    value: "weighted_score",
+    label: "Weighted scoring",
+    description: "Judges rate each project on a set of categories you define, with a weight assigned to each.",
+    detail: "Good for: sponsor prizes with a custom rubric on top of shared criteria",
+    icon: Sliders,
+  },
 ]
 
 const DEFAULT_BUCKETS = [
@@ -96,6 +104,14 @@ export type CreatedPrize = {
 }
 
 type CriterionDraft = { id: string; name: string; description: string }
+type WeightedCriterionDraft = {
+  id: string
+  name: string
+  description: string
+  weight: string
+  minScore: string
+  maxScore: string
+}
 type BucketDraft = { id: string; level: number; label: string; description: string }
 
 let draftIdCounter = 0
@@ -110,6 +126,16 @@ interface AddPrizeDialogProps {
   onOpenChange: (open: boolean) => void
   onSuccess?: (created?: CreatedPrize) => void
   rounds?: RoundData[]
+  coreWeightSum?: number
+  coreCriteriaCount?: number
+}
+
+function initialWeightedCriteria(): WeightedCriterionDraft[] {
+  return [{ id: nextDraftId(), name: "", description: "", weight: "", minScore: "1", maxScore: "10" }]
+}
+
+function emptyWeightedCriteria(): WeightedCriterionDraft[] {
+  return []
 }
 
 function initialCriteria(): CriterionDraft[] {
@@ -131,6 +157,8 @@ export function AddPrizeDialog({
   onOpenChange,
   onSuccess,
   rounds = [],
+  coreWeightSum: coreWeightSumProp = 0,
+  coreCriteriaCount: coreCriteriaCountProp = 0,
 }: AddPrizeDialogProps) {
   const router = useRouter()
   const visibleRounds = [...rounds].sort((a, b) => a.displayOrder - b.displayOrder)
@@ -145,10 +173,23 @@ export function AddPrizeDialog({
     judgingStyle: "bucket_sort" as PrizeJudgingStyle,
     roundId: defaultRoundId,
     criteria: initialCriteria(),
+    weightedCriteria: initialWeightedCriteria(),
     buckets: initialBuckets(),
     maxPicks: "3",
   })
   const [error, setError] = useState<string | null>(null)
+  const [coreWeightSum, setCoreWeightSum] = useState(coreWeightSumProp)
+  const [coreCriteriaCount, setCoreCriteriaCount] = useState(coreCriteriaCountProp)
+  const [seedingCore, setSeedingCore] = useState(false)
+  const [seededInThisFlow, setSeededInThisFlow] = useState(false)
+  const seedAttemptedRef = useRef(false)
+
+  useEffect(() => {
+    setCoreWeightSum(coreWeightSumProp)
+  }, [coreWeightSumProp])
+  useEffect(() => {
+    setCoreCriteriaCount(coreCriteriaCountProp)
+  }, [coreCriteriaCountProp])
 
   useEffect(() => {
     if (!open) return
@@ -171,24 +212,85 @@ export function AddPrizeDialog({
         judgingStyle: "bucket_sort",
         roundId: defaultRoundId,
         criteria: initialCriteria(),
+        weightedCriteria: initialWeightedCriteria(),
         buckets: initialBuckets(),
         maxPicks: "3",
       })
       setError(null)
+      setSeededInThisFlow(false)
+      seedAttemptedRef.current = false
     }
     onOpenChange(nextOpen)
   }
 
+  async function maybeSeedCoreCriteria() {
+    if (seedAttemptedRef.current) return
+    if (coreCriteriaCount > 0) return
+    seedAttemptedRef.current = true
+    setSeedingCore(true)
+    try {
+      const data = await fetch(
+        `/api/dashboard/hackathons/${hackathonId}/core-criteria/seed-defaults`,
+        { method: "POST" }
+      ).then(assertOkJson<{ criteria: { weight: number }[] }>)
+      const seededSum = data.criteria.reduce((acc, c) => acc + c.weight, 0)
+      setCoreWeightSum(seededSum)
+      setCoreCriteriaCount(data.criteria.length)
+      setSeededInThisFlow(true)
+      router.refresh()
+    } catch {
+      // Seeding is best-effort. If it fails (e.g., already exists), the user can still configure.
+    } finally {
+      setSeedingCore(false)
+    }
+  }
+
   function selectStyle(style: PrizeJudgingStyle) {
+    const willSeed = style === "weighted_score" && coreCriteriaCount === 0
     setForm({
       ...form,
       name: "",
       judgingStyle: style,
       criteria: style === "gate_check" ? initialCriteria() : form.criteria,
+      weightedCriteria:
+        style === "weighted_score"
+          ? willSeed
+            ? emptyWeightedCriteria()
+            : initialWeightedCriteria()
+          : form.weightedCriteria,
       buckets: style === "bucket_sort" ? initialBuckets() : form.buckets,
       maxPicks: style === "judges_pick" ? "3" : form.maxPicks,
     })
     setStep("details")
+    if (style === "weighted_score") {
+      void maybeSeedCoreCriteria()
+    }
+  }
+
+  function updateWeighted(index: number, patch: Partial<WeightedCriterionDraft>) {
+    setForm({
+      ...form,
+      weightedCriteria: form.weightedCriteria.map((c, i) =>
+        i === index ? { ...c, ...patch } : c
+      ),
+    })
+  }
+
+  function addWeighted() {
+    setForm({
+      ...form,
+      weightedCriteria: [
+        ...form.weightedCriteria,
+        { id: nextDraftId(), name: "", description: "", weight: "", minScore: "1", maxScore: "10" },
+      ],
+    })
+  }
+
+  function removeWeighted(index: number) {
+    setForm({
+      ...form,
+      weightedCriteria: form.weightedCriteria.filter((_, i) => i !== index),
+    })
   }
 
   function updateCriterion(index: number, patch: Partial<CriterionDraft>) {
@@ -248,9 +350,39 @@ export function AddPrizeDialog({
       return
     }
 
-    let criteriaPayload: { name: string; description: string | null }[] | undefined
+    let criteriaPayload:
+      | { name: string; description: string | null; weight?: number; minScore?: number; maxScore?: number }[]
+      | undefined
     let bucketsPayload: { level: number; label: string; description: string | null }[] | undefined
     let maxPicksPayload: number | undefined
+
+    if (form.judgingStyle === "weighted_score") {
+      const cleaned = form.weightedCriteria
+        .map((c) => ({
+          name: c.name.trim(),
+          description: c.description.trim() || null,
+          weight: Number(c.weight),
+          minScore: Number(c.minScore),
+          maxScore: Number(c.maxScore),
+        }))
+        .filter((c) => c.name.length > 0)
+      for (const c of cleaned) {
+        if (!Number.isFinite(c.weight) || c.weight < 0 || c.weight > 100) {
+          setError("Each weight must be between 0 and 100")
+          return
+        }
+        if (
+          !Number.isFinite(c.minScore) ||
+          !Number.isFinite(c.maxScore) ||
+          c.minScore < 0 ||
+          !(c.minScore < c.maxScore)
+        ) {
+          setError(`"${c.name}": min must be 0 or higher and less than max`)
+          return
+        }
+      }
+      criteriaPayload = cleaned
+    }
 
     if (form.judgingStyle === "gate_check") {
       const cleaned = form.criteria
@@ -579,6 +711,119 @@ export function AddPrizeDialog({
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {form.judgingStyle === "weighted_score" && (
+              <div className="space-y-2">
+                {seedingCore && (
+                  <p className="text-xs text-muted-foreground">Setting up starter score categories…</p>
+                )}
+                {seededInThisFlow && !seedingCore && (
+                  <div className="rounded-md border bg-muted/40 p-2 text-xs text-muted-foreground">
+                    We added 4 starter score categories you can edit later. Together they cover the full 100%, so this prize doesn&apos;t need any extra categories.
+                  </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label>Bonus categories for this prize (optional)</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Add extra things judges score this prize on. Together with the score categories ({coreWeightSum}%), all weights must add up to 100.
+                    </p>
+                  </div>
+                  <Button type="button" variant="outline" size="sm" onClick={addWeighted}>
+                    <Plus className="mr-1 size-3.5" />
+                    Add bonus category
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  {form.weightedCriteria.map((c, i) => (
+                    <div key={c.id} className="flex items-start gap-2 rounded-md border p-3">
+                      <div className="flex-1 space-y-2 min-w-0">
+                        <Input
+                          value={c.name}
+                          onChange={(e) => updateWeighted(i, { name: e.target.value })}
+                          placeholder="e.g. Use of sponsor API"
+                          autoComplete="off"
+                          data-1p-ignore
+                          data-lpignore="true"
+                          data-form-type="other"
+                        />
+                        <Input
+                          value={c.description}
+                          onChange={(e) => updateWeighted(i, { description: e.target.value })}
+                          placeholder="Helper text for judges (optional)"
+                          autoComplete="off"
+                          data-1p-ignore
+                          data-lpignore="true"
+                          data-form-type="other"
+                        />
+                        <div className="flex items-center gap-2">
+                          <div className="flex flex-col items-center w-16">
+                            <Input
+                              type="number"
+                              inputMode="numeric"
+                              value={c.minScore}
+                              onChange={(e) => updateWeighted(i, { minScore: e.target.value })}
+                              className="text-center"
+                              autoComplete="off"
+                            />
+                            <span className="text-xs text-muted-foreground mt-1">min</span>
+                          </div>
+                          <span className="text-muted-foreground pt-2">–</span>
+                          <div className="flex flex-col items-center w-16">
+                            <Input
+                              type="number"
+                              inputMode="numeric"
+                              value={c.maxScore}
+                              onChange={(e) => updateWeighted(i, { maxScore: e.target.value })}
+                              className="text-center"
+                              autoComplete="off"
+                            />
+                            <span className="text-xs text-muted-foreground mt-1">max</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-center w-20 shrink-0">
+                        <Input
+                          type="number"
+                          inputMode="numeric"
+                          min={0}
+                          max={100}
+                          value={c.weight}
+                          onChange={(e) => updateWeighted(i, { weight: e.target.value })}
+                          placeholder="%"
+                          className="text-center"
+                          autoComplete="off"
+                        />
+                        <span className="text-xs text-muted-foreground mt-1">weight %</span>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 shrink-0"
+                        onClick={() => removeWeighted(i)}
+                        aria-label="Remove criterion"
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+                {(() => {
+                  const prizeSum = form.weightedCriteria.reduce(
+                    (acc, c) => acc + (Number(c.weight) || 0),
+                    0
+                  )
+                  const total = coreWeightSum + prizeSum
+                  const ok = Math.abs(total - 100) < 0.01
+                  return (
+                    <p className="text-xs text-muted-foreground">
+                      Score categories {coreWeightSum}% + this prize {prizeSum}% = {total}% {ok ? "✓" : "(aim for 100)"}
+                    </p>
+                  )
+                })()}
               </div>
             )}
 

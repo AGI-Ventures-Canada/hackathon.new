@@ -13,6 +13,8 @@ const {
   listJudges,
   removeJudge,
   autoAssignJudges,
+  assignWeightedScoreJudge,
+  getWeightedScoreAssignmentSummary,
   countUnassignedSubmissions,
   getJudgingProgress,
   getJudgeAssignments,
@@ -24,6 +26,18 @@ const {
   replacePrizeCriteria,
   createRoundsPreset,
   assertAssignmentWritable,
+  seedDefaultCoreCriteria,
+  DEFAULT_CORE_CRITERIA,
+  calculateWeightedScoreResults,
+  calculateCoreOnlyResults,
+  getJudgeSummary,
+  listCoreCriteria,
+  listPrizeCriteria,
+  listPrizeCriteriaByPrizeIds,
+  createCoreCriterion,
+  updateCoreCriterion,
+  deleteCoreCriterion,
+  getWeightedScoreAssignmentCounts,
 } = await import("@/lib/services/judging")
 
 describe("Judging Service", () => {
@@ -485,6 +499,256 @@ describe("Judging Service", () => {
       const result = await autoAssignJudges("h1", "p1", 3)
 
       expect(result.assignedCount).toBe(0)
+    })
+
+    it("filters submissions to room teams when roomId is provided", async () => {
+      let submissionsCallCount = 0
+      let assignmentsCallCount = 0
+      let inserted: { submission_id: string }[] = []
+
+      setMockFromImplementation((table) => {
+        if (table === "prizes") {
+          return createChainableMock({ data: { id: "p1", round_id: null }, error: null })
+        }
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: [{ id: "j1", team_id: null }], error: null })
+        }
+        if (table === "room_teams") {
+          return createChainableMock({ data: [{ team_id: "t1" }], error: null })
+        }
+        if (table === "submissions") {
+          submissionsCallCount++
+          if (submissionsCallCount === 1) {
+            return createChainableMock({ data: [{ id: "s1" }, { id: "s2" }], error: null })
+          }
+          return createChainableMock({
+            data: [
+              { id: "s1", team_id: "t1", teams: null },
+              { id: "s2", team_id: "t2", teams: null },
+            ],
+            error: null,
+          })
+        }
+        if (table === "judge_assignments") {
+          assignmentsCallCount++
+          if (assignmentsCallCount === 1) {
+            return createChainableMock({ data: [], error: null })
+          }
+          const insertMock = createChainableMock({ data: null, error: null })
+          insertMock.insert = mock((rows: { submission_id: string }[]) => {
+            inserted = rows
+            return Promise.resolve({ data: null, error: null })
+          }) as typeof insertMock.insert
+          return insertMock
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await autoAssignJudges("h1", "p1", 3, { roomId: "room-1" })
+
+      expect(result.assignedCount).toBe(1)
+      expect(inserted).toHaveLength(1)
+      expect(inserted[0].submission_id).toBe("s1")
+    })
+
+    it("returns zero when room has no teams", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "prizes") {
+          return createChainableMock({ data: { id: "p1", round_id: null }, error: null })
+        }
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: [{ id: "j1", team_id: null }], error: null })
+        }
+        if (table === "room_teams") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "submissions") {
+          return createChainableMock({ data: [{ id: "s1" }], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await autoAssignJudges("h1", "p1", 3, { roomId: "empty-room" })
+
+      expect(result.assignedCount).toBe(0)
+    })
+  })
+
+  describe("assignWeightedScoreJudge", () => {
+    it("filters submissions by room when roomId is provided", async () => {
+      let inserted: { submission_id: string }[] = []
+
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: { id: "j1", team_id: null }, error: null })
+        }
+        if (table === "room_teams") {
+          return createChainableMock({ data: [{ team_id: "t1" }, { team_id: "t3" }], error: null })
+        }
+        if (table === "submissions") {
+          return createChainableMock({
+            data: [
+              { id: "s1", team_id: "t1" },
+              { id: "s3", team_id: "t3" },
+            ],
+            error: null,
+          })
+        }
+        if (table === "judge_assignments") {
+          const m = createChainableMock({ data: [], error: null })
+          m.insert = mock((rows: { submission_id: string }[]) => {
+            inserted = rows
+            return Promise.resolve({ data: null, error: null })
+          }) as typeof m.insert
+          return m
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await assignWeightedScoreJudge("h1", "j1", { roomId: "room-1" })
+
+      expect(result.success).toBe(true)
+      expect(result.assignedCount).toBe(2)
+      expect(inserted.map((r) => r.submission_id).sort()).toEqual(["s1", "s3"])
+    })
+
+    it("returns zero assignments when room has no teams", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: { id: "j1", team_id: null }, error: null })
+        }
+        if (table === "room_teams") {
+          return createChainableMock({ data: [], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await assignWeightedScoreJudge("h1", "j1", { roomId: "empty" })
+
+      expect(result.success).toBe(true)
+      expect(result.assignedCount).toBe(0)
+    })
+
+    it("skips judge's own team submissions", async () => {
+      let inserted: { submission_id: string }[] = []
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: { id: "j1", team_id: "t1" }, error: null })
+        }
+        if (table === "submissions") {
+          return createChainableMock({
+            data: [
+              { id: "s1", team_id: "t1" },
+              { id: "s2", team_id: "t2" },
+            ],
+            error: null,
+          })
+        }
+        if (table === "judge_assignments") {
+          const m = createChainableMock({ data: [], error: null })
+          m.insert = mock((rows: { submission_id: string }[]) => {
+            inserted = rows
+            return Promise.resolve({ data: null, error: null })
+          }) as typeof m.insert
+          return m
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await assignWeightedScoreJudge("h1", "j1")
+
+      expect(result.success).toBe(true)
+      expect(inserted).toHaveLength(1)
+      expect(inserted[0].submission_id).toBe("s2")
+    })
+  })
+
+  describe("getWeightedScoreAssignmentSummary", () => {
+    it("aggregates per-room counts and per-judge counts", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "submissions") {
+          return createChainableMock({
+            data: [
+              { id: "s1", team_id: "t1" },
+              { id: "s2", team_id: "t2" },
+              { id: "s3", team_id: "t3" },
+              { id: "s4", team_id: null },
+            ],
+            error: null,
+          })
+        }
+        if (table === "rooms") {
+          return createChainableMock({
+            data: [
+              { id: "room-1", name: "Room 1", display_order: 0 },
+              { id: "room-2", name: "Room 2", display_order: 1 },
+            ],
+            error: null,
+          })
+        }
+        if (table === "room_teams") {
+          return createChainableMock({
+            data: [
+              { room_id: "room-1", team_id: "t1" },
+              { room_id: "room-1", team_id: "t2" },
+              { room_id: "room-2", team_id: "t3" },
+            ],
+            error: null,
+          })
+        }
+        if (table === "judge_assignments") {
+          return createChainableMock({
+            data: [
+              { judge_participant_id: "j1", submission_id: "s1" },
+              { judge_participant_id: "j1", submission_id: "s2" },
+              { judge_participant_id: "j1", submission_id: "s3" },
+              { judge_participant_id: "j2", submission_id: "s1" },
+            ],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const summary = await getWeightedScoreAssignmentSummary("h1")
+
+      expect(summary.totalSubmissionCount).toBe(4)
+      expect(summary.rooms).toEqual([
+        { id: "room-1", name: "Room 1", submissionCount: 2 },
+        { id: "room-2", name: "Room 2", submissionCount: 1 },
+      ])
+      expect(summary.countsByJudge.j1).toEqual({
+        all: 3,
+        byRoom: { "room-1": 2, "room-2": 1 },
+      })
+      expect(summary.countsByJudge.j2).toEqual({
+        all: 1,
+        byRoom: { "room-1": 1 },
+      })
+    })
+
+    it("returns empty rooms when none exist", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "submissions") {
+          return createChainableMock({ data: [{ id: "s1", team_id: "t1" }], error: null })
+        }
+        if (table === "rooms") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "room_teams") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "judge_assignments") {
+          return createChainableMock({ data: [], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const summary = await getWeightedScoreAssignmentSummary("h1")
+
+      expect(summary.totalSubmissionCount).toBe(1)
+      expect(summary.rooms).toEqual([])
+      expect(summary.countsByJudge).toEqual({})
     })
   })
 
@@ -1016,6 +1280,162 @@ describe("Judging Service", () => {
       expect(insertArgs).toBeDefined()
       expect(insertArgs.max_picks).toBe(5)
     })
+
+    it("allows weighted_score with zero bonus criteria when core sums to 100", async () => {
+      const chains: Record<string, ReturnType<typeof createChainableMock>[]> = {}
+
+      setMockFromImplementation((table: string) => {
+        let chain: ReturnType<typeof createChainableMock>
+        if (table === "judging_criteria") {
+          chain = createChainableMock({
+            data: [{ weight: 100 }],
+            error: null,
+            count: 1,
+          })
+        } else if (table === "prizes") {
+          chain = createChainableMock({
+            data: { id: "prize_ws", name: "Sponsor Pick", judging_style: "weighted_score" },
+            error: null,
+          })
+        } else {
+          chain = createChainableMock({ data: null, error: null })
+        }
+        if (!chains[table]) chains[table] = []
+        chains[table].push(chain)
+        return chain
+      })
+
+      const result = await createPrize("h1", {
+        name: "Sponsor Pick",
+        judgingStyle: "weighted_score",
+        criteria: [],
+      })
+
+      expect(result.success).toBe(true)
+      const criteriaInserts = (chains["judging_criteria"] ?? []).flatMap(
+        (c) => c.insert.mock.calls as unknown as [Record<string, unknown>[]][]
+      )
+      expect(criteriaInserts.length).toBe(0)
+    })
+
+    it("allows weighted_score with zero bonus criteria even when core does not sum to 100", async () => {
+      const chains: Record<string, ReturnType<typeof createChainableMock>[]> = {}
+
+      setMockFromImplementation((table: string) => {
+        let chain: ReturnType<typeof createChainableMock>
+        if (table === "judging_criteria") {
+          chain = createChainableMock({ data: [{ weight: 50 }], error: null, count: 1 })
+        } else if (table === "prizes") {
+          chain = createChainableMock({
+            data: { id: "prize_partial", name: "Sponsor Pick", judging_style: "weighted_score" },
+            error: null,
+          })
+        } else {
+          chain = createChainableMock({ data: null, error: null })
+        }
+        if (!chains[table]) chains[table] = []
+        chains[table].push(chain)
+        return chain
+      })
+
+      const result = await createPrize("h1", {
+        name: "Sponsor Pick",
+        judgingStyle: "weighted_score",
+        criteria: [],
+      })
+
+      expect(result.success).toBe(true)
+    })
+
+    it("rejects weighted_score with zero bonus criteria when no core categories exist", async () => {
+      let prizeInsertCount = 0
+      setMockFromImplementation((table: string) => {
+        if (table === "judging_criteria") {
+          return createChainableMock({ data: [], error: null, count: 0 })
+        }
+        if (table === "prizes") {
+          prizeInsertCount++
+          return createChainableMock({ data: null, error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await createPrize("h1", {
+        name: "Orphan Prize",
+        judgingStyle: "weighted_score",
+        criteria: [],
+      })
+
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.code).toBe("validation")
+        expect(result.error).toContain("category")
+      }
+      expect(prizeInsertCount).toBe(0)
+    })
+  })
+
+  describe("seedDefaultCoreCriteria", () => {
+    it("inserts four default categories totalling 100% when none exist", async () => {
+      const chains: Record<string, ReturnType<typeof createChainableMock>[]> = {}
+      let listCallCount = 0
+
+      setMockFromImplementation((table: string) => {
+        let chain: ReturnType<typeof createChainableMock>
+        if (table === "judging_criteria") {
+          listCallCount++
+          if (listCallCount === 1) {
+            chain = createChainableMock({ data: [], error: null })
+          } else {
+            chain = createChainableMock({
+              data: DEFAULT_CORE_CRITERIA.map((c, i) => ({
+                id: `seed-${i}`,
+                name: c.name,
+                description: c.description,
+                weight: c.weight,
+                min_score: c.minScore,
+                max_score: c.maxScore,
+                display_order: i,
+              })),
+              error: null,
+            })
+          }
+        } else if (table === "prizes") {
+          chain = createChainableMock({ data: [], error: null })
+        } else {
+          chain = createChainableMock({ data: null, error: null })
+        }
+        if (!chains[table]) chains[table] = []
+        chains[table].push(chain)
+        return chain
+      })
+
+      const result = await seedDefaultCoreCriteria("h1")
+      expect(result.success).toBe(true)
+      if (result.success) {
+        expect(result.criteria.length).toBe(4)
+        const total = result.criteria.reduce((acc, c) => acc + c.weight, 0)
+        expect(total).toBe(100)
+      }
+    })
+
+    it("refuses to seed when core criteria already exist", async () => {
+      setMockFromImplementation((table: string) => {
+        if (table === "judging_criteria") {
+          return createChainableMock({
+            data: [{ id: "existing", name: "Existing", weight: 50, min_score: 0, max_score: 10, display_order: 0 }],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await seedDefaultCoreCriteria("h1")
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.error).toContain("already exist")
+      }
+    })
   })
 
   describe("listPrizes", () => {
@@ -1517,6 +1937,7 @@ describe("Judging Service", () => {
             round_id: "r1",
             hackathon_id: "h1",
             prize_id: "p1",
+            assignment_kind: "per_prize",
             is_complete: false,
             notes: "partial",
             judge: { clerk_user_id: "user_123", team_id: null },
@@ -1534,8 +1955,576 @@ describe("Judging Service", () => {
           isComplete: false,
           submissionId: "s1",
           notes: "partial",
+          assignmentKind: "per_prize",
         })
       }
+    })
+  })
+
+  describe("calculateWeightedScoreResults", () => {
+    it("ranks submissions and normalizes by actual weight sum (not hardcoded 100)", async () => {
+      type ResultRow = {
+        submission_id: string
+        rank: number
+        weighted_score: number
+        prize_id: string
+        judge_count: number
+      }
+      const insertCapture: ResultRow[] = []
+      let criteriaCallCount = 0
+
+      setMockFromImplementation((table: string) => {
+        if (table === "judging_criteria") {
+          criteriaCallCount++
+          if (criteriaCallCount === 1) {
+            return createChainableMock({
+              data: [
+                { id: "core-1", weight: 30, min_score: 0, max_score: 10 },
+                { id: "core-2", weight: 30, min_score: 0, max_score: 10 },
+              ],
+              error: null,
+            })
+          }
+          return createChainableMock({
+            data: [{ id: "prize-1", weight: 30, min_score: 0, max_score: 10 }],
+            error: null,
+          })
+        }
+        if (table === "scores") {
+          const ja = (sid: string, jid: string) => ({
+            submission_id: sid,
+            judge_participant_id: jid,
+          })
+          return createChainableMock({
+            data: [
+              { criteria_id: "core-1", score: 10, judge_assignments: ja("s1", "j1") },
+              { criteria_id: "core-2", score: 10, judge_assignments: ja("s1", "j1") },
+              { criteria_id: "prize-1", score: 10, judge_assignments: ja("s1", "j1") },
+              { criteria_id: "core-1", score: 8, judge_assignments: ja("s1", "j2") },
+              { criteria_id: "core-2", score: 8, judge_assignments: ja("s1", "j2") },
+              { criteria_id: "prize-1", score: 8, judge_assignments: ja("s1", "j2") },
+              { criteria_id: "core-1", score: 5, judge_assignments: ja("s2", "j1") },
+              { criteria_id: "core-2", score: 5, judge_assignments: ja("s2", "j1") },
+              { criteria_id: "prize-1", score: 5, judge_assignments: ja("s2", "j1") },
+            ],
+            error: null,
+          })
+        }
+        if (table === "hackathon_results") {
+          const m = createChainableMock({ data: null, error: null })
+          m.insert = mock((rows: ResultRow[]) => {
+            insertCapture.push(...rows)
+            return Promise.resolve({ data: null, error: null })
+          }) as typeof m.insert
+          return m
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await calculateWeightedScoreResults("h1", "p1")
+
+      expect(result.success).toBe(true)
+      expect(result.count).toBe(2)
+      // Total weight sum = 90 (30+30+30). With min=0/max=10 normalization,
+      // s1 averages judges j1 (1.0) and j2 (0.8) → weighted_score = 0.9.
+      // s2 has only j1 (0.5) → 0.5. Without the actual-weight-sum fix this
+      // would divide by 100, producing 0.81 / 0.45.
+      const s1 = insertCapture.find((r) => r.submission_id === "s1")
+      const s2 = insertCapture.find((r) => r.submission_id === "s2")
+      expect(s1).toBeDefined()
+      expect(s2).toBeDefined()
+      expect(s1!.weighted_score).toBeCloseTo(0.9, 5)
+      expect(s2!.weighted_score).toBeCloseTo(0.5, 5)
+      expect(s1!.rank).toBe(1)
+      expect(s2!.rank).toBe(2)
+      expect(s1!.judge_count).toBe(2)
+    })
+
+    it("returns zero count when no scored assignments exist", async () => {
+      setMockFromImplementation((table: string) => {
+        if (table === "hackathon_results") {
+          return createChainableMock({ data: null, error: null })
+        }
+        if (table === "judging_criteria") {
+          return createChainableMock({ data: [{ id: "c1", weight: 100, min_score: 0, max_score: 10 }], error: null })
+        }
+        if (table === "scores") {
+          return createChainableMock({ data: [], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await calculateWeightedScoreResults("h1", "p1")
+      expect(result.success).toBe(true)
+      expect(result.count).toBe(0)
+    })
+
+    it("skips when no criteria are defined", async () => {
+      setMockFromImplementation((table: string) => {
+        if (table === "hackathon_results") {
+          return createChainableMock({ data: null, error: null })
+        }
+        if (table === "judging_criteria") {
+          return createChainableMock({ data: [], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await calculateWeightedScoreResults("h1", "p1")
+      expect(result.success).toBe(true)
+      expect(result.count).toBe(0)
+    })
+  })
+
+  describe("calculateCoreOnlyResults", () => {
+    it("ranks by core-only weighted average", async () => {
+      const inserted: Array<{
+        submission_id: string
+        rank: number
+        weighted_score: number
+        result_kind: string
+      }> = []
+
+      setMockFromImplementation((table: string) => {
+        if (table === "hackathon_results") {
+          const m = createChainableMock({ data: null, error: null })
+          m.insert = mock((rows: typeof inserted) => {
+            inserted.push(...rows)
+            return Promise.resolve({ data: null, error: null })
+          }) as typeof m.insert
+          return m
+        }
+        if (table === "judging_criteria") {
+          return createChainableMock({
+            data: [
+              { id: "core-1", weight: 60, min_score: 0, max_score: 10 },
+              { id: "core-2", weight: 40, min_score: 0, max_score: 10 },
+            ],
+            error: null,
+          })
+        }
+        if (table === "scores") {
+          const ja = (sid: string, jid: string) => ({
+            submission_id: sid,
+            judge_participant_id: jid,
+          })
+          return createChainableMock({
+            data: [
+              { criteria_id: "core-1", score: 10, judge_assignments: ja("s1", "j1") },
+              { criteria_id: "core-2", score: 5, judge_assignments: ja("s1", "j1") },
+              { criteria_id: "core-1", score: 4, judge_assignments: ja("s2", "j1") },
+              { criteria_id: "core-2", score: 8, judge_assignments: ja("s2", "j1") },
+            ],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await calculateCoreOnlyResults("h1")
+      expect(result.success).toBe(true)
+      expect(result.count).toBe(2)
+      const s1 = inserted.find((r) => r.submission_id === "s1")
+      const s2 = inserted.find((r) => r.submission_id === "s2")
+      // s1: (1.0 * 60 + 0.5 * 40) / 100 = 0.8
+      // s2: (0.4 * 60 + 0.8 * 40) / 100 = 0.56
+      expect(s1!.weighted_score).toBeCloseTo(0.8, 5)
+      expect(s2!.weighted_score).toBeCloseTo(0.56, 5)
+      expect(s1!.rank).toBe(1)
+      expect(s2!.rank).toBe(2)
+      for (const row of inserted) expect(row.result_kind).toBe("core_only")
+    })
+
+    it("returns zero count when no core criteria exist", async () => {
+      setMockFromImplementation((table: string) => {
+        if (table === "hackathon_results") {
+          return createChainableMock({ data: null, error: null })
+        }
+        if (table === "judging_criteria") {
+          return createChainableMock({ data: [], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await calculateCoreOnlyResults("h1")
+      expect(result.success).toBe(true)
+      expect(result.count).toBe(0)
+    })
+  })
+
+  describe("getJudgeSummary", () => {
+    it("returns locked while assignments are incomplete", async () => {
+      setMockFromImplementation((table: string) => {
+        if (table === "judge_assignments") {
+          return createChainableMock({
+            data: [
+              { id: "a1", submission_id: "s1", is_complete: true },
+              { id: "a2", submission_id: "s2", is_complete: false },
+            ],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const summary = await getJudgeSummary("h1", "j1")
+      expect(summary.unlocked).toBe(false)
+      if (!summary.unlocked) {
+        expect(summary.total).toBe(2)
+        expect(summary.completed).toBe(1)
+      }
+    })
+
+    it("returns top-3 rankings per prize plus core-only when all assignments complete", async () => {
+      let coreCriteriaCallCount = 0
+      let prizeCriteriaCallCount = 0
+
+      setMockFromImplementation((table: string) => {
+        if (table === "judge_assignments") {
+          return createChainableMock({
+            data: [
+              { id: "a1", submission_id: "s1", is_complete: true },
+              { id: "a2", submission_id: "s2", is_complete: true },
+              { id: "a3", submission_id: "s3", is_complete: true },
+            ],
+            error: null,
+          })
+        }
+        if (table === "submissions") {
+          return createChainableMock({
+            data: [
+              { id: "s1", title: "Project Alpha", team_id: "t1" },
+              { id: "s2", title: "Project Bravo", team_id: "t2" },
+              { id: "s3", title: "Project Charlie", team_id: null },
+            ],
+            error: null,
+          })
+        }
+        if (table === "prizes") {
+          return createChainableMock({
+            data: [{ id: "p1", name: "Best Overall" }],
+            error: null,
+          })
+        }
+        if (table === "judging_criteria") {
+          if (prizeCriteriaCallCount === 0 && coreCriteriaCallCount === 0) {
+            coreCriteriaCallCount++
+            return createChainableMock({
+              data: [{ id: "core-1", weight: 50, min_score: 0, max_score: 10 }],
+              error: null,
+            })
+          }
+          prizeCriteriaCallCount++
+          return createChainableMock({
+            data: [{ id: "prize-1", weight: 50, min_score: 0, max_score: 10, prize_id: "p1" }],
+            error: null,
+          })
+        }
+        if (table === "scores") {
+          return createChainableMock({
+            data: [
+              { judge_assignment_id: "a1", criteria_id: "core-1", score: 9 },
+              { judge_assignment_id: "a1", criteria_id: "prize-1", score: 9 },
+              { judge_assignment_id: "a2", criteria_id: "core-1", score: 6 },
+              { judge_assignment_id: "a2", criteria_id: "prize-1", score: 6 },
+              { judge_assignment_id: "a3", criteria_id: "core-1", score: 3 },
+              { judge_assignment_id: "a3", criteria_id: "prize-1", score: 3 },
+            ],
+            error: null,
+          })
+        }
+        if (table === "teams") {
+          return createChainableMock({
+            data: [
+              { id: "t1", name: "Team Alpha" },
+              { id: "t2", name: "Team Bravo" },
+            ],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const summary = await getJudgeSummary("h1", "j1")
+      expect(summary.unlocked).toBe(true)
+      if (summary.unlocked) {
+        expect(summary.coreRanking.top).toHaveLength(3)
+        expect(summary.coreRanking.top[0].submissionId).toBe("s1")
+        // s1 core score: 9 normalized to (9-0)/10 = 0.9; weighted sum 0.9*50 / 50 = 0.9
+        expect(summary.coreRanking.top[0].score).toBeCloseTo(0.9, 5)
+        expect(summary.coreRanking.top[2].submissionId).toBe("s3")
+        expect(summary.prizeRankings).toHaveLength(1)
+        expect(summary.prizeRankings[0].prizeName).toBe("Best Overall")
+        expect(summary.prizeRankings[0].top[0].submissionId).toBe("s1")
+      }
+    })
+
+    it("returns locked when judge has no assignments", async () => {
+      setMockFromImplementation((table: string) => {
+        if (table === "judge_assignments") {
+          return createChainableMock({ data: [], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const summary = await getJudgeSummary("h1", "j1")
+      expect(summary.unlocked).toBe(false)
+      if (!summary.unlocked) {
+        expect(summary.total).toBe(0)
+        expect(summary.completed).toBe(0)
+      }
+    })
+  })
+
+  describe("listCoreCriteria", () => {
+    it("returns core criteria mapped to camelCase fields", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({
+          data: [
+            { id: "c1", name: "Innovation", description: "n", weight: 25, min_score: 0, max_score: 10, display_order: 0 },
+            { id: "c2", name: "Impact", description: null, weight: 75, min_score: 1, max_score: 5, display_order: 1 },
+          ],
+          error: null,
+        })
+      )
+
+      const list = await listCoreCriteria("h1")
+
+      expect(list).toHaveLength(2)
+      expect(list[0]).toEqual({
+        id: "c1",
+        name: "Innovation",
+        description: "n",
+        weight: 25,
+        minScore: 0,
+        maxScore: 10,
+        displayOrder: 0,
+      })
+      expect(list[1].minScore).toBe(1)
+      expect(list[1].maxScore).toBe(5)
+    })
+
+    it("returns an empty array on error", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({ data: null, error: { message: "fail" } })
+      )
+      const list = await listCoreCriteria("h1")
+      expect(list).toEqual([])
+    })
+  })
+
+  describe("listPrizeCriteria", () => {
+    it("returns prize criteria mapped to camelCase fields", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({
+          data: [
+            { id: "pc1", name: "Demo", description: null, weight: 50, min_score: 0, max_score: 10, display_order: 0 },
+          ],
+          error: null,
+        })
+      )
+
+      const list = await listPrizeCriteria("p1")
+      expect(list).toHaveLength(1)
+      expect(list[0].id).toBe("pc1")
+      expect(list[0].weight).toBe(50)
+    })
+
+    it("returns empty on error", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({ data: null, error: { message: "fail" } })
+      )
+      const list = await listPrizeCriteria("p1")
+      expect(list).toEqual([])
+    })
+  })
+
+  describe("listPrizeCriteriaByPrizeIds", () => {
+    it("returns an empty map when no prizeIds are passed", async () => {
+      const map = await listPrizeCriteriaByPrizeIds([])
+      expect(map.size).toBe(0)
+    })
+
+    it("groups criteria by prize_id", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({
+          data: [
+            { id: "c1", name: "A", description: null, weight: 30, min_score: 0, max_score: 10, display_order: 0, prize_id: "p1" },
+            { id: "c2", name: "B", description: null, weight: 20, min_score: 0, max_score: 10, display_order: 1, prize_id: "p1" },
+            { id: "c3", name: "C", description: null, weight: 40, min_score: 0, max_score: 10, display_order: 0, prize_id: "p2" },
+          ],
+          error: null,
+        })
+      )
+
+      const map = await listPrizeCriteriaByPrizeIds(["p1", "p2"])
+      expect(map.get("p1")).toHaveLength(2)
+      expect(map.get("p2")).toHaveLength(1)
+      expect(map.get("p1")![0].id).toBe("c1")
+    })
+
+    it("returns an empty map on error", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({ data: null, error: { message: "fail" } })
+      )
+      const map = await listPrizeCriteriaByPrizeIds(["p1"])
+      expect(map.size).toBe(0)
+    })
+  })
+
+  describe("createCoreCriterion", () => {
+    it("rejects when minScore is not less than maxScore", async () => {
+      setMockFromImplementation(() => createChainableMock({ data: [], error: null }))
+      const result = await createCoreCriterion("h1", { name: "X", weight: 10, minScore: 5, maxScore: 5 })
+      expect(result.success).toBe(false)
+      if (!result.success) expect(result.error).toMatch(/Minimum score must be less than/)
+    })
+
+    it("inserts and returns the new criterion with display_order = existing.length", async () => {
+      let listCallCount = 0
+      let insertedRow: Record<string, unknown> | null = null
+      setMockFromImplementation((table: string) => {
+        if (table === "judging_criteria") {
+          listCallCount++
+          if (listCallCount === 1) {
+            return createChainableMock({
+              data: [
+                { id: "c1", name: "A", description: null, weight: 25, min_score: 0, max_score: 10, display_order: 0 },
+                { id: "c2", name: "B", description: null, weight: 25, min_score: 0, max_score: 10, display_order: 1 },
+              ],
+              error: null,
+            })
+          }
+          const m = createChainableMock({
+            data: { id: "c3", name: "Impact", description: "d", weight: 50, min_score: 0, max_score: 10, display_order: 2 },
+            error: null,
+          })
+          const originalInsert = m.insert
+          m.insert = mock((row: Record<string, unknown>) => {
+            insertedRow = row
+            return originalInsert(row)
+          }) as typeof m.insert
+          return m
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await createCoreCriterion("h1", {
+        name: "Impact",
+        description: "d",
+        weight: 50,
+      })
+
+      expect(result.success).toBe(true)
+      expect(insertedRow).not.toBeNull()
+      expect(insertedRow!.display_order).toBe(2)
+      expect(insertedRow!.prize_id).toBeNull()
+      if (result.success) {
+        expect(result.criterion.id).toBe("c3")
+      }
+    })
+
+    it("returns failure when insert errors", async () => {
+      let listCallCount = 0
+      setMockFromImplementation(() => {
+        listCallCount++
+        if (listCallCount === 1) return createChainableMock({ data: [], error: null })
+        return createChainableMock({ data: null, error: { message: "boom" } })
+      })
+      const result = await createCoreCriterion("h1", { name: "X", weight: 10 })
+      expect(result.success).toBe(false)
+      if (!result.success) expect(result.error).toBe("boom")
+    })
+  })
+
+  describe("updateCoreCriterion", () => {
+    it("rejects when both minScore and maxScore are provided and not strictly ordered", async () => {
+      const result = await updateCoreCriterion("h1", "c1", { minScore: 10, maxScore: 5 })
+      expect(result.success).toBe(false)
+      if (!result.success) expect(result.error).toMatch(/Minimum score must be less than/)
+    })
+
+    it("updates and returns the criterion", async () => {
+      let updateRow: Record<string, unknown> | null = null
+      setMockFromImplementation((table: string) => {
+        if (table === "judging_criteria") {
+          const m = createChainableMock({
+            data: { id: "c1", name: "Renamed", description: null, weight: 20, min_score: 0, max_score: 10, display_order: 0 },
+            error: null,
+          })
+          const originalUpdate = m.update
+          m.update = mock((row: Record<string, unknown>) => {
+            updateRow = row
+            return originalUpdate(row)
+          }) as typeof m.update
+          return m
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await updateCoreCriterion("h1", "c1", { name: "Renamed", weight: 20 })
+
+      expect(result.success).toBe(true)
+      expect(updateRow!.name).toBe("Renamed")
+      expect(updateRow!.weight).toBe(20)
+      expect(updateRow!.updated_at).toBeDefined()
+    })
+
+    it("returns failure when update errors", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({ data: null, error: { message: "nope" } })
+      )
+      const result = await updateCoreCriterion("h1", "c1", { name: "X" })
+      expect(result.success).toBe(false)
+      if (!result.success) expect(result.error).toBe("nope")
+    })
+  })
+
+  describe("deleteCoreCriterion", () => {
+    it("returns success when delete succeeds", async () => {
+      setMockFromImplementation(() => createChainableMock({ data: null, error: null }))
+      const result = await deleteCoreCriterion("h1", "c1")
+      expect(result.success).toBe(true)
+    })
+
+    it("returns failure with the underlying error message", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({ data: null, error: { message: "fk_constraint" } })
+      )
+      const result = await deleteCoreCriterion("h1", "c1")
+      expect(result.success).toBe(false)
+      if (!result.success) expect(result.error).toBe("fk_constraint")
+    })
+  })
+
+  describe("getWeightedScoreAssignmentCounts", () => {
+    it("aggregates counts per judge_participant_id", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({
+          data: [
+            { judge_participant_id: "j1" },
+            { judge_participant_id: "j1" },
+            { judge_participant_id: "j2" },
+            { judge_participant_id: "j1" },
+          ],
+          error: null,
+        })
+      )
+
+      const counts = await getWeightedScoreAssignmentCounts("h1")
+      expect(counts).toEqual({ j1: 3, j2: 1 })
+    })
+
+    it("returns an empty object when there are no rows", async () => {
+      setMockFromImplementation(() => createChainableMock({ data: [], error: null }))
+      const counts = await getWeightedScoreAssignmentCounts("h1")
+      expect(counts).toEqual({})
+    })
+
+    it("returns an empty object when the query returns null data", async () => {
+      setMockFromImplementation(() => createChainableMock({ data: null, error: null }))
+      const counts = await getWeightedScoreAssignmentCounts("h1")
+      expect(counts).toEqual({})
     })
   })
 
