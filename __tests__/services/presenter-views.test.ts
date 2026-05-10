@@ -119,6 +119,36 @@ describe("presenter-views service", () => {
       expect(result).toHaveLength(1)
       expect(result[0].name).toBe("Good")
     })
+
+    it("filters out rows with missing required string fields", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock(
+          mockSuccess([
+            {
+              id: VIEW_ID,
+              hackathon_id: HACKATHON_ID,
+              name: "Good",
+              config: { kind: "round_finalists", roundId: ROUND_ID },
+              created_by_clerk_user_id: "user_1",
+              created_at: "2026-05-10T00:00:00Z",
+              updated_at: "2026-05-10T00:00:00Z",
+            },
+            {
+              id: null,
+              hackathon_id: HACKATHON_ID,
+              name: null,
+              config: { kind: "round_finalists", roundId: ROUND_ID },
+              created_by_clerk_user_id: "user_1",
+              created_at: "2026-05-10T00:00:00Z",
+              updated_at: "2026-05-10T00:00:00Z",
+            },
+          ])
+        )
+      )
+      const result = await listPresenterViews(HACKATHON_ID)
+      expect(result).toHaveLength(1)
+      expect(result[0].id).toBe(VIEW_ID)
+    })
   })
 
   describe("getPresenterView", () => {

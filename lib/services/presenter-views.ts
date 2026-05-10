@@ -79,16 +79,26 @@ export function validatePresenterViewName(name: string): string | null {
 }
 
 function rowToView(row: Record<string, unknown>): PresenterView | null {
+  if (
+    typeof row.id !== "string" ||
+    typeof row.hackathon_id !== "string" ||
+    typeof row.name !== "string" ||
+    typeof row.created_by_clerk_user_id !== "string" ||
+    typeof row.created_at !== "string" ||
+    typeof row.updated_at !== "string"
+  ) {
+    return null
+  }
   const config = validatePresenterViewConfig(row.config)
   if (!config) return null
   return {
-    id: row.id as string,
-    hackathon_id: row.hackathon_id as string,
-    name: row.name as string,
+    id: row.id,
+    hackathon_id: row.hackathon_id,
+    name: row.name,
     config,
-    created_by_clerk_user_id: row.created_by_clerk_user_id as string,
-    created_at: row.created_at as string,
-    updated_at: row.updated_at as string,
+    created_by_clerk_user_id: row.created_by_clerk_user_id,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
   }
 }
 
@@ -215,6 +225,7 @@ export async function updatePresenterView(
 
   const client = getSupabase() as unknown as SupabaseClient
 
+  let viewHackathonId: string | null = null
   if (nextConfig) {
     const { data: view } = await client
       .from("organizer_presenter_views")
@@ -222,7 +233,7 @@ export async function updatePresenterView(
       .eq("id", viewId)
       .maybeSingle()
     if (!view) return null
-    const viewHackathonId = view.hackathon_id as string
+    viewHackathonId = view.hackathon_id as string
 
     if (nextConfig.kind === "round_finalists") {
       const ok = await isRoundInHackathon(client, nextConfig.roundId, viewHackathonId)
@@ -237,12 +248,14 @@ export async function updatePresenterView(
     }
   }
 
-  const { data, error } = await client
+  let query = client
     .from("organizer_presenter_views")
     .update(updates)
     .eq("id", viewId)
-    .select()
-    .maybeSingle()
+  if (viewHackathonId) {
+    query = query.eq("hackathon_id", viewHackathonId)
+  }
+  const { data, error } = await query.select().maybeSingle()
 
   if (error || !data) {
     if (error) console.error("Failed to update presenter view:", error)

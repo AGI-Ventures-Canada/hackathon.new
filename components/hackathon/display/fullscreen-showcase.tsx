@@ -22,6 +22,16 @@ interface FullscreenShowcaseProps {
   message?: string | null
 }
 
+export function safeHttpUrl(value: string | null): string | null {
+  if (!value) return null
+  try {
+    const url = new URL(value)
+    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : null
+  } catch {
+    return null
+  }
+}
+
 export function FullscreenShowcase({
   hackathonName,
   viewName,
@@ -50,16 +60,22 @@ export function FullscreenShowcase({
           )}
         </header>
         <ul className="grid w-full grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {submissions.map((s) => (
+          {submissions.map((s) => {
+            const safeScreenshot = safeHttpUrl(s.screenshotUrl)
+            const safeLiveApp = safeHttpUrl(s.liveAppUrl)
+            const safeDemo = safeHttpUrl(s.demoVideoUrl)
+            const safeGithub = safeHttpUrl(s.githubUrl)
+            const hasLinks = Boolean(safeLiveApp || safeDemo || safeGithub)
+            return (
             <li
               key={s.id}
               className="flex flex-col overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm"
             >
-              {s.screenshotUrl ? (
+              {safeScreenshot ? (
                 <div className="relative aspect-video w-full bg-muted">
                   {/* unoptimized: screenshot URLs come from arbitrary user-submitted hosts; allowlisting them in next.config would be brittle and noisy. */}
                   <Image
-                    src={s.screenshotUrl}
+                    src={safeScreenshot}
                     alt={s.title}
                     fill
                     className="object-cover"
@@ -85,22 +101,23 @@ export function FullscreenShowcase({
                   </p>
                 )}
                 <div className="mt-auto flex flex-wrap gap-2 pt-2 text-sm">
-                  {s.liveAppUrl && (
-                    <ShowcaseLink href={s.liveAppUrl} icon={ExternalLink} label="Live app" />
+                  {safeLiveApp && (
+                    <ShowcaseLink href={safeLiveApp} icon={ExternalLink} label="Live app" />
                   )}
-                  {s.demoVideoUrl && (
-                    <ShowcaseLink href={s.demoVideoUrl} icon={Play} label="Demo" />
+                  {safeDemo && (
+                    <ShowcaseLink href={safeDemo} icon={Play} label="Demo" />
                   )}
-                  {s.githubUrl && (
-                    <ShowcaseLink href={s.githubUrl} icon={Github} label="Code" />
+                  {safeGithub && (
+                    <ShowcaseLink href={safeGithub} icon={Github} label="Code" />
                   )}
-                  {!s.liveAppUrl && !s.demoVideoUrl && !s.githubUrl && (
+                  {!hasLinks && (
                     <span className="text-muted-foreground">No links</span>
                   )}
                 </div>
               </div>
             </li>
-          ))}
+            )
+          })}
         </ul>
       </div>
     </FullscreenWrapper>
