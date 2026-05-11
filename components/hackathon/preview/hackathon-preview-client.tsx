@@ -32,6 +32,7 @@ import { getTeamSizeWarning } from "@/lib/utils/team-size"
 import { PublicResults } from "@/components/hackathon/results/public-results"
 import { MarkdownContent } from "@/components/ui/markdown-content"
 import { TruncatableContent } from "./truncatable-content"
+import { canInviteTeamMembers as getCanInviteTeamMembers } from "@/lib/utils/team-invite"
 import { NameEditForm } from "@/components/hackathon/edit-drawer/name-edit-form"
 import { AboutEditForm } from "@/components/hackathon/edit-drawer/about-edit-form"
 import { TimelineEditForm } from "@/components/hackathon/edit-drawer/timeline-edit-form"
@@ -141,7 +142,7 @@ function HackathonPreviewContent({
     ]
   }, [hackathon.prizes, pendingPrizes])
 
-  const [nowIso, setNowIso] = useState(() => new Date().toISOString())
+  const [nowIso, setNowIso] = useState<string | null>(null)
   useEffect(() => {
     const tick = () => setNowIso(new Date().toISOString())
     tick()
@@ -150,11 +151,11 @@ function HackathonPreviewContent({
   }, [])
   const rename = useTeamRename(hackathon.id, teamInfo?.team.id ?? "", teamInfo?.team.name ?? "")
   const canRenameTeam = teamInfo?.isCaptain && teamInfo.team.status === "forming"
-  const canInviteTeamMembers = Boolean(
-    canRenameTeam &&
-    (!hackathon.registration_closes_at ||
-      new Date(hackathon.registration_closes_at).getTime() > new Date(nowIso).getTime())
-  )
+  const canInviteTeamMembers = getCanInviteTeamMembers({
+    canRenameTeam,
+    registrationClosesAt: hackathon.registration_closes_at,
+    nowIso,
+  })
 
   const handleRegistrationSuccess = () => {
     setIsRegistered(true)
