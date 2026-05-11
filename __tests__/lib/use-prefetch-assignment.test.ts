@@ -19,6 +19,7 @@ function fakeDetail(id: string): AssignmentDetail {
     submissionDescription: null,
     submissionGithubUrl: null,
     submissionLiveAppUrl: null,
+    submissionDemoVideoUrl: null,
     submissionScreenshotUrl: null,
     teamName: null,
     isComplete: false,

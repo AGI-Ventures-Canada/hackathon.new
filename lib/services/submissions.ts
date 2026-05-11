@@ -89,6 +89,7 @@ export type CreateSubmissionInput = {
   description: string
   githubUrl: string
   liveAppUrl?: string | null
+  demoVideoUrl?: string | null
   screenshotUrl?: string | null
   metadata?: Record<string, unknown>
   challengeIds?: string[]
@@ -112,6 +113,7 @@ export async function createSubmission(
       description: input.description,
       github_url: input.githubUrl,
       live_app_url: input.liveAppUrl ?? null,
+      demo_video_url: input.demoVideoUrl ?? null,
       screenshot_url: input.screenshotUrl ?? null,
       status: "submitted",
       metadata: input.metadata ?? {},
@@ -146,6 +148,7 @@ export type UpdateSubmissionInput = {
   description?: string
   githubUrl?: string
   liveAppUrl?: string | null
+  demoVideoUrl?: string | null
   screenshotUrl?: string | null
   challengeIds?: string[]
 }
@@ -163,6 +166,7 @@ export async function updateSubmission(
   if (input.description !== undefined) updates.description = input.description
   if (input.githubUrl !== undefined) updates.github_url = input.githubUrl
   if (input.liveAppUrl !== undefined) updates.live_app_url = input.liveAppUrl
+  if (input.demoVideoUrl !== undefined) updates.demo_video_url = input.demoVideoUrl
   if (input.screenshotUrl !== undefined) updates.screenshot_url = input.screenshotUrl
 
   let query = client

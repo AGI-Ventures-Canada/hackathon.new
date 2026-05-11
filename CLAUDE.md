@@ -408,6 +408,8 @@ Conventional Commits: `<type>(<scope>): <subject>` — imperative present tense,
 
 **CRITICAL: For any UI change, verify in the browser with `agent-browser` before considering done.**
 
+**Sandbox exception:** If running inside a sandboxed Codex environment, do not open Chrome, launch `agent-browser`, or run `bun run browser`. Use automated tests/builds instead and note that browser verification was skipped because the sandbox blocks browser startup.
+
 **Preferred: `bun run browser`** — wraps the full startup sequence (launches a side Chrome profile, saves auth, opens target, snapshots). See [scripts/browser.sh](scripts/browser.sh).
 
 ```bash

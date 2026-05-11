@@ -24,7 +24,8 @@ const mockSubmission: Submission = {
   description: "A test project description",
   github_url: "https://github.com/test/repo",
   live_app_url: "https://test.vercel.app",
-  demo_video_url: null,
+  demo_video_url: "https://youtube.com/watch?v=test-demo",
+  screenshot_url: null,
   status: "submitted",
   metadata: {},
   created_at: "2026-01-01T00:00:00Z",
@@ -219,11 +220,17 @@ describe("Submissions Service", () => {
         description: "A test project description",
         githubUrl: "https://github.com/test/repo",
         liveAppUrl: "https://test.vercel.app",
+        demoVideoUrl: "youtube.com/watch?v=test-demo",
       })
 
       expect(result).not.toBeNull()
       expect(result?.title).toBe("Test Project")
       expect(result?.participant_id).toBe("p1")
+      expect(chain.insert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          demo_video_url: "youtube.com/watch?v=test-demo",
+        })
+      )
     })
 
     it("creates submission for team", async () => {
@@ -271,10 +278,17 @@ describe("Submissions Service", () => {
 
       const result = await updateSubmission("s1", "p1", null, {
         title: "Updated Title",
+        demoVideoUrl: "https://youtu.be/test-demo",
       })
 
       expect(result).not.toBeNull()
       expect(result?.title).toBe("Updated Title")
+      expect(chain.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Updated Title",
+          demo_video_url: "https://youtu.be/test-demo",
+        })
+      )
     })
 
     it("updates submission for team", async () => {

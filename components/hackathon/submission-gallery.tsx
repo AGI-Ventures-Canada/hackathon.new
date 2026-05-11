@@ -16,8 +16,8 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination"
-import { extractYouTubeVideoId } from "@/lib/utils/youtube"
-import { YouTubeEmbed } from "@/components/hackathon/youtube-embed"
+import { getVideoEmbedInfo } from "@/lib/utils/video-embed"
+import { VideoEmbed } from "@/components/hackathon/video-embed"
 import { SubmissionLinks } from "@/components/hackathon/submission-links"
 
 export type GallerySubmission = {
@@ -152,8 +152,8 @@ export function SubmissionGallery({ submissions }: SubmissionGalleryProps) {
 }
 
 function SubmissionExpandedContent({ submission }: { submission: GallerySubmission }) {
-  const youtubeVideoId = submission.demoVideoUrl
-    ? extractYouTubeVideoId(submission.demoVideoUrl)
+  const videoEmbed = submission.demoVideoUrl
+    ? getVideoEmbedInfo(submission.demoVideoUrl)
     : null
 
   return (
@@ -174,12 +174,12 @@ function SubmissionExpandedContent({ submission }: { submission: GallerySubmissi
         </p>
       )}
       <p className="text-xs text-muted-foreground">by {submission.submitter}</p>
-      {youtubeVideoId && <YouTubeEmbed videoId={youtubeVideoId} />}
+      {videoEmbed && <VideoEmbed video={videoEmbed} />}
       <SubmissionLinks
         githubUrl={submission.githubUrl}
         liveAppUrl={submission.liveAppUrl}
         demoVideoUrl={submission.demoVideoUrl}
-        isYouTube={youtubeVideoId !== null}
+        hasEmbeddedVideo={videoEmbed !== null}
       />
     </div>
   )

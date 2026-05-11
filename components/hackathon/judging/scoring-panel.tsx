@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Slider } from "@/components/ui/slider"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, ExternalLink, Github, Maximize2, AlertTriangle } from "lucide-react"
+import { Loader2, ExternalLink, Github, Maximize2, AlertTriangle, Play } from "lucide-react"
 import { RubricLevelSelector } from "./rubric-level-selector"
 import Image from "next/image"
 import { assertOkJson } from "@/lib/utils/fetch"
@@ -246,6 +246,14 @@ export function ScoringPanel({
             <a href={detail.submissionLiveAppUrl} target="_blank" rel="noopener noreferrer">
               <ExternalLink className="mr-2 size-3.5" />
               Live Demo
+            </a>
+          </Button>
+        )}
+        {detail.submissionDemoVideoUrl && (
+          <Button variant="outline" size="sm" asChild>
+            <a href={detail.submissionDemoVideoUrl} target="_blank" rel="noopener noreferrer">
+              <Play className="mr-2 size-3.5" />
+              Video
             </a>
           </Button>
         )}

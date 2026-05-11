@@ -203,8 +203,8 @@ export function AttendeeShowcase({ data }: { data: ShowcaseData }) {
         <SubmissionLinks
           githubUrl="https://github.com/example/loopback"
           liveAppUrl="https://loopback.example"
-          demoVideoUrl="https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-          isYouTube
+          demoVideoUrl="https://demo.example/video"
+          hasEmbeddedVideo={false}
         />
       </ShowcaseSection>
 

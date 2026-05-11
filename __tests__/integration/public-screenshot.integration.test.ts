@@ -50,6 +50,7 @@ mock.module("@/lib/integrations/oauth", () => ({
 
 const mockGetParticipantWithTeam = mock(() => Promise.resolve(null))
 const mockGetExistingSubmission = mock(() => Promise.resolve(null))
+const mockCreateSubmission = mock(() => Promise.resolve({ id: "new-sub" }))
 const mockUpdateSubmission = mock(() => Promise.resolve({ id: "sub123" }))
 const mockGetSubmissionForParticipant = mock(() => Promise.resolve(null))
 const mockGetHackathonSubmissions = mock(() => Promise.resolve([]))
@@ -58,7 +59,7 @@ mock.module("@/lib/services/submissions", () => ({
   getParticipantWithTeam: mockGetParticipantWithTeam,
   getSubmissionForParticipant: mockGetSubmissionForParticipant,
   getExistingSubmission: mockGetExistingSubmission,
-  createSubmission: mock(() => Promise.resolve({ id: "new-sub" })),
+  createSubmission: mockCreateSubmission,
   updateSubmission: mockUpdateSubmission,
   getHackathonSubmissions: mockGetHackathonSubmissions,
   getTeamMemberCount: mock(() => Promise.resolve(0)),
@@ -89,6 +90,10 @@ mock.module("@/lib/utils/sort-hackathons", () => ({
   sortByStatusPriority: mock((arr: unknown[]) => arr),
 }))
 
+mock.module("@/lib/services/webhooks", () => ({
+  triggerWebhooks: mock(() => Promise.resolve()),
+}))
+
 const { Elysia } = await import("elysia")
 const { publicRoutes } = await import("@/lib/api/routes/public")
 
@@ -96,12 +101,15 @@ const app = new Elysia({ prefix: "/api" }).use(publicRoutes)
 
 const mockHackathon = {
   id: "h1",
+  tenant_id: "tenant1",
   name: "Test Hackathon",
   slug: "test-hackathon",
   description: "A test hackathon",
   rules: null,
   banner_url: null,
   status: "active",
+  allow_solo: true,
+  min_team_size: 1,
   starts_at: "2026-03-01T00:00:00Z",
   ends_at: "2026-03-02T00:00:00Z",
   registration_opens_at: "2026-01-01T00:00:00Z",
@@ -124,6 +132,7 @@ const mockSubmission = {
   description: "A test project",
   github_url: "https://github.com/test/repo",
   live_app_url: null,
+  demo_video_url: null,
   screenshot_url: null,
   status: "submitted",
   created_at: "2026-01-01T00:00:00Z",
@@ -136,15 +145,139 @@ describe("Public Screenshot Routes", () => {
     mockGetPublicHackathon.mockReset()
     mockGetParticipantWithTeam.mockReset()
     mockGetExistingSubmission.mockReset()
+    mockCreateSubmission.mockReset()
     mockUpdateSubmission.mockReset()
     mockUploadScreenshot.mockReset()
     mockDeleteScreenshot.mockReset()
     mockGetSubmissionForParticipant.mockReset()
     mockGetHackathonSubmissions.mockReset()
 
+    mockCreateSubmission.mockImplementation(() => Promise.resolve({ id: "new-sub" }))
     mockUpdateSubmission.mockImplementation(() => Promise.resolve({ id: "sub123" }))
     mockUploadScreenshot.mockImplementation(() => Promise.resolve({ url: "https://storage.test/screenshot.webp", path: "sub123/screenshot.webp" }))
     mockDeleteScreenshot.mockImplementation(() => Promise.resolve(true))
+  })
+
+  describe("POST /api/public/hackathons/:slug/submissions", () => {
+    it("saves a normalized video link", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockGetParticipantWithTeam.mockResolvedValue({ participantId: "p1", teamId: null })
+      mockGetExistingSubmission.mockResolvedValue(null)
+
+      const res = await app.handle(
+        new Request("http://localhost/api/public/hackathons/test-hackathon/submissions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: "Project Atlas",
+            description: "A helper for teams.",
+            githubUrl: "github.com/acme/atlas",
+            liveAppUrl: null,
+            demoVideoUrl: "youtube.com/watch?v=atlas-demo",
+          }),
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(data.submissionId).toBe("new-sub")
+      expect(mockCreateSubmission).toHaveBeenCalledWith(
+        "h1",
+        "p1",
+        null,
+        expect.objectContaining({
+          githubUrl: "https://github.com/acme/atlas",
+          liveAppUrl: null,
+          demoVideoUrl: "https://youtube.com/watch?v=atlas-demo",
+        })
+      )
+    })
+
+    it("rejects an invalid video link", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockGetParticipantWithTeam.mockResolvedValue({ participantId: "p1", teamId: null })
+      mockGetExistingSubmission.mockResolvedValue(null)
+
+      const res = await app.handle(
+        new Request("http://localhost/api/public/hackathons/test-hackathon/submissions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: "Project Atlas",
+            description: "A helper for teams.",
+            githubUrl: "github.com/acme/atlas",
+            liveAppUrl: null,
+            demoVideoUrl: "not a url",
+          }),
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(400)
+      expect(data).toEqual({
+        error: "Invalid video link",
+        code: "invalid_demo_video_url",
+      })
+      expect(mockCreateSubmission).not.toHaveBeenCalled()
+    })
+  })
+
+  describe("PATCH /api/public/hackathons/:slug/submissions", () => {
+    it("updates a normalized video link", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockGetParticipantWithTeam.mockResolvedValue({ participantId: "p1", teamId: null })
+      mockGetExistingSubmission.mockResolvedValue(mockSubmission)
+
+      const res = await app.handle(
+        new Request("http://localhost/api/public/hackathons/test-hackathon/submissions", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            demoVideoUrl: "youtu.be/atlas-demo",
+          }),
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(data.submissionId).toBe("sub123")
+      expect(mockUpdateSubmission).toHaveBeenCalledWith(
+        "sub123",
+        "p1",
+        null,
+        expect.objectContaining({
+          demoVideoUrl: "https://youtu.be/atlas-demo",
+        })
+      )
+    })
+
+    it("rejects an invalid video link", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockGetParticipantWithTeam.mockResolvedValue({ participantId: "p1", teamId: null })
+      mockGetExistingSubmission.mockResolvedValue(mockSubmission)
+
+      const res = await app.handle(
+        new Request("http://localhost/api/public/hackathons/test-hackathon/submissions", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            demoVideoUrl: "not a url",
+          }),
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(400)
+      expect(data).toEqual({
+        error: "Invalid video link",
+        code: "invalid_demo_video_url",
+      })
+      expect(mockUpdateSubmission).not.toHaveBeenCalled()
+    })
   })
 
   describe("POST /api/public/hackathons/:slug/submissions/screenshot", () => {

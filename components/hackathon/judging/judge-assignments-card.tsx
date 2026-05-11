@@ -25,6 +25,7 @@ type JudgeAssignment = {
   submissionDescription: string | null
   submissionGithubUrl: string | null
   submissionLiveAppUrl: string | null
+  submissionDemoVideoUrl: string | null
   submissionScreenshotUrl: string | null
   teamName: string | null
   teamMemberCount: number | null
