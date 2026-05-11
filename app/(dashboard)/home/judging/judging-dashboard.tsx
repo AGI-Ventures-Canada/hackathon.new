@@ -35,6 +35,7 @@ type Hackathon = {
 type Props = {
   hackathons: Hackathon[]
   judgeStats: Record<string, JudgeHackathonStats>
+  showHeader?: boolean
 }
 
 function StatCard({ label, value, icon: Icon }: { label: string; value: number | string; icon: React.ComponentType<{ className?: string }> }) {
@@ -54,7 +55,7 @@ function StatCard({ label, value, icon: Icon }: { label: string; value: number |
 const JUDGING_ACTIVE: HackathonStatus[] = ["active", "judging"]
 const PAST_STATUSES: HackathonStatus[] = ["completed", "archived"]
 
-export function JudgingDashboard({ hackathons, judgeStats }: Props) {
+export function JudgingDashboard({ hackathons, judgeStats, showHeader = true }: Props) {
   const statsMap = useMemo(
     () => new Map(Object.entries(judgeStats)),
     [judgeStats],
@@ -126,10 +127,12 @@ export function JudgingDashboard({ hackathons, judgeStats }: Props) {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Judging</h1>
-        <p className="text-muted-foreground mt-1">Your review queue</p>
-      </div>
+      {showHeader && (
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Judging</h1>
+          <p className="text-muted-foreground mt-1">Your review queue</p>
+        </div>
+      )}
 
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
         <StatCard label="Events" value={totals.events} icon={Scale} />

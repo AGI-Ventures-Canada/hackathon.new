@@ -33,6 +33,7 @@ type Hackathon = {
 type Props = {
   hackathons: Hackathon[]
   submittedHackathonIds: string[]
+  showHeader?: boolean
 }
 
 function StatCard({ label, value, icon: Icon }: { label: string; value: number; icon: React.ComponentType<{ className?: string }> }) {
@@ -52,7 +53,7 @@ function StatCard({ label, value, icon: Icon }: { label: string; value: number; 
 const ACTIVE_STATUSES: HackathonStatus[] = ["active", "registration_open", "published", "judging"]
 const PAST_STATUSES: HackathonStatus[] = ["completed", "archived"]
 
-export function ParticipatingDashboard({ hackathons, submittedHackathonIds }: Props) {
+export function ParticipatingDashboard({ hackathons, submittedHackathonIds, showHeader = true }: Props) {
   const submittedSet = useMemo(() => new Set(submittedHackathonIds), [submittedHackathonIds])
 
   const { active, past } = useMemo(() => {
@@ -106,10 +107,12 @@ export function ParticipatingDashboard({ hackathons, submittedHackathonIds }: Pr
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Participating</h1>
-        <p className="text-muted-foreground mt-1">Your hackathon journey</p>
-      </div>
+      {showHeader && (
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Participating</h1>
+          <p className="text-muted-foreground mt-1">Your hackathon journey</p>
+        </div>
+      )}
 
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
         <StatCard label="Events joined" value={hackathons.length} icon={Users} />

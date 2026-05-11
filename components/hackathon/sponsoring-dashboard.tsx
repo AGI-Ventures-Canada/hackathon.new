@@ -32,6 +32,7 @@ type Hackathon = {
 type Props = {
   hackathons: Hackathon[]
   sponsorships: Record<string, SponsorshipInfo>
+  showHeader?: boolean
 }
 
 const TIER_LABELS: Record<SponsorTier, string> = {
@@ -68,7 +69,7 @@ function TierBadge({ tier, customLabel }: { tier: SponsorTier; customLabel?: str
 
 const PAST_STATUSES: HackathonStatus[] = ["completed", "archived"]
 
-export function SponsoringDashboard({ hackathons, sponsorships }: Props) {
+export function SponsoringDashboard({ hackathons, sponsorships, showHeader = true }: Props) {
   const sponsorMap = useMemo(
     () => new Map(Object.entries(sponsorships)),
     [sponsorships],
@@ -130,10 +131,12 @@ export function SponsoringDashboard({ hackathons, sponsorships }: Props) {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Sponsoring</h1>
-        <p className="text-muted-foreground mt-1">Your sponsorship portfolio</p>
-      </div>
+      {showHeader && (
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Sponsoring</h1>
+          <p className="text-muted-foreground mt-1">Your sponsorship portfolio</p>
+        </div>
+      )}
 
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-3">
         <StatCard label="Events sponsored" value={hackathons.length} icon={Star} />
