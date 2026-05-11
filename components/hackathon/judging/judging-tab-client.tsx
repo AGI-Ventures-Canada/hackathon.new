@@ -67,12 +67,18 @@ import {
   MapPin,
   Bell,
   ExternalLink,
+  Sliders,
+  ClipboardList,
 } from "lucide-react"
 import { useActionItemsOptional } from "@/components/hackathon/manage/action-items-context"
 import { AddJudgeDialog, type AddJudgeResult } from "./add-judge-dialog"
 import { AddPrizeDialog } from "./add-prize-dialog"
 import { EditPrizeDialog, type EditablePrize, type UpdatedPrize } from "./edit-prize-dialog"
+import { CoreCriteriaEditor } from "./core-criteria-editor"
+import { Switch } from "@/components/ui/switch"
+import { Label } from "@/components/ui/label"
 import { AssignJudgesDialog } from "./assign-judges-dialog"
+import { AssignmentsSection } from "./assignments-section"
 import { JudgePill } from "./judge-pill"
 import { RoundsSection } from "./rounds-section"
 import type { RoundData } from "./rounds-types"
@@ -95,6 +101,9 @@ type PrizeCriterionData = {
   id: string
   name: string
   description: string | null
+  weight?: number
+  minScore?: number
+  maxScore?: number
 }
 
 type PrizeBucketData = {
@@ -120,6 +129,7 @@ type PrizeData = {
   allowedTeamModes: TeamMode[] | null
   criteria: PrizeCriterionData[] | null
   buckets: PrizeBucketData[] | null
+  sponsorName?: string | null
 }
 
 type JudgeData = {
@@ -166,6 +176,12 @@ interface JudgingTabClientProps {
   isPublished: boolean
   locationType: "in_person" | "virtual" | "hybrid" | null
   activeJtab: ManageJtab
+  coreCriteria?: { id: string; name: string; description: string | null; weight: number; minScore: number; maxScore: number; displayOrder: number }[]
+  weightedAssignmentSummary?: {
+    totalSubmissionCount: number
+    rooms: { id: string; name: string; submissionCount: number }[]
+    countsByJudge: Record<string, { all: number; byRoom: Record<string, number> }>
+  }
 }
 
 const getPrizeId = (p: PrizeData) => p.id
@@ -192,12 +208,21 @@ export function JudgingTabClient({
   isPublished: initialIsPublished,
   locationType,
   activeJtab,
+  coreCriteria = [],
+  weightedAssignmentSummary,
 }: JudgingTabClientProps) {
   const router = useRouter()
   const [showAddJudge, setShowAddJudge] = useState(false)
   const [showAddPrize, setShowAddPrize] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [publishDialogOpen, setPublishDialogOpen] = useState(false)
+  const weightedScoringLocked =
+    coreCriteria.length > 0 ||
+    initialPrizes.some((p) => p.judgingStyle === "weighted_score")
+  const [weightedScoringEnabled, setWeightedScoringEnabled] = useState(weightedScoringLocked)
+  useEffect(() => {
+    if (weightedScoringLocked) setWeightedScoringEnabled(true)
+  }, [weightedScoringLocked])
   const results = initialResults
   const [isPublished, setIsPublished] = useState(initialIsPublished)
   const [error, setError] = useState<string | null>(null)
@@ -234,6 +259,18 @@ export function JudgingTabClient({
   } = usePrizeJudgeAssignments({ hackathonId, judges: judgesList.visibleItems })
   const prizes = prizesList.visibleItems
   const invitations = invitationsList.visibleItems
+
+  const coreWeightSum = coreCriteria.reduce((acc, c) => acc + c.weight, 0)
+  const weightWarnings = prizes
+    .filter((p) => p.judgingStyle === "weighted_score")
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      sum:
+        coreWeightSum +
+        (p.criteria ?? []).reduce((acc, c) => acc + (c.weight ?? 0), 0),
+    }))
+    .filter((w) => Math.abs(w.sum - 100) > 0.01)
 
   const overallPercent = initialProgress.totalAssignments > 0
     ? Math.round((initialProgress.completedAssignments / initialProgress.totalAssignments) * 100)
@@ -378,10 +415,14 @@ export function JudgingTabClient({
           </TabsTrigger>
           <TabsTrigger value="prizes">
             <Trophy className="size-3.5" />
-            Prizes
+            Prizes & Scoring
             {prizes.length > 0 && (
               <Badge variant="secondary" className="ml-1">{prizes.length}</Badge>
             )}
+          </TabsTrigger>
+          <TabsTrigger value="assignments">
+            <ClipboardList className="size-3.5" />
+            Assignments
           </TabsTrigger>
           <TabsTrigger value="results">
             <Calculator className="size-3.5" />
@@ -393,10 +434,37 @@ export function JudgingTabClient({
           <JudgingSetupWizard
             hackathonId={hackathonId}
             slug={slug}
-            prizes={initialPrizes}
+            prizes={initialPrizes.map((p) => ({
+              id: p.id,
+              name: p.name,
+              description: p.description,
+              value: p.value,
+              judgingStyle: p.judgingStyle,
+              assignmentMode: p.assignmentMode,
+              maxPicks: p.maxPicks,
+              roundId: p.roundId,
+              displayOrder: p.displayOrder,
+              totalAssignments: p.totalAssignments,
+              completedAssignments: p.completedAssignments,
+              judgeCount: p.judgeCount,
+              sponsorName: p.sponsorName ?? null,
+              bonusCriteriaCount:
+                p.judgingStyle === "weighted_score"
+                  ? (p.criteria?.length ?? 0)
+                  : 0,
+              bonusWeightSum:
+                p.judgingStyle === "weighted_score"
+                  ? (p.criteria ?? []).reduce((acc, c) => acc + (c.weight ?? 0), 0)
+                  : 0,
+            }))}
             judges={initialJudges}
             rounds={rounds}
             pendingInvitations={initialInvitations}
+            coreCriteria={coreCriteria}
+            onEditPrize={(prizeId) => {
+              const prize = initialPrizes.find((p) => p.id === prizeId)
+              if (prize) handleEditPrize(prize)
+            }}
           />
         </TabsContent>
 
@@ -416,7 +484,57 @@ export function JudgingTabClient({
           <RoundsSection hackathonId={hackathonId} rounds={rounds} />
         </TabsContent>
 
-        <TabsContent value="prizes" className="mt-4">
+        <TabsContent value="prizes" className="mt-4 space-y-6">
+          {weightWarnings.length > 0 && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm">
+              <p className="font-medium">Some prize weights don&apos;t add up to 100%.</p>
+              <ul className="mt-1 list-disc pl-5 text-xs text-muted-foreground space-y-0.5">
+                {weightWarnings.map((w) => (
+                  <li key={w.id}>
+                    {w.name}: {w.sum}%
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                You can save and come back to this. Judges will still score on what you set.
+              </p>
+            </div>
+          )}
+          <div className="space-y-3">
+            <h3 className="text-base font-semibold flex items-center gap-2">
+              <Sliders className="size-4" />
+              Scoring
+            </h3>
+            <Card>
+              <CardContent className="p-4 space-y-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <Label htmlFor="weighted-scoring-toggle" className="text-base font-semibold">
+                      Weight-based scoring
+                    </Label>
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                      Judges evaluate submissions on numerical sliders. You define
+                      the weight of each criterion.
+                    </p>
+                    {weightedScoringLocked && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Remove your shared criteria and any weighted-score prizes to turn this off.
+                      </p>
+                    )}
+                  </div>
+                  <Switch
+                    id="weighted-scoring-toggle"
+                    checked={weightedScoringEnabled}
+                    onCheckedChange={setWeightedScoringEnabled}
+                    disabled={weightedScoringLocked}
+                  />
+                </div>
+                {weightedScoringEnabled && (
+                  <CoreCriteriaEditor hackathonId={hackathonId} criteria={coreCriteria} />
+                )}
+              </CardContent>
+            </Card>
+          </div>
           <PrizesSection
             hackathonId={hackathonId}
             prizes={prizes}
@@ -430,6 +548,24 @@ export function JudgingTabClient({
             onUnassignJudge={unassignJudgeFromPrize}
             onUpdateModes={handleUpdatePrizeModes}
             onRefresh={() => router.refresh()}
+          />
+        </TabsContent>
+
+        <TabsContent value="assignments" className="mt-4">
+          <AssignmentsSection
+            hackathonId={hackathonId}
+            judges={judges.map((j) => ({
+              participantId: j.participantId,
+              displayName: j.displayName,
+              imageUrl: j.imageUrl,
+            }))}
+            totalSubmissionCount={weightedAssignmentSummary?.totalSubmissionCount ?? _submissions.length}
+            rooms={weightedAssignmentSummary?.rooms ?? []}
+            countsByJudge={weightedAssignmentSummary?.countsByJudge ?? {}}
+            hasWeightedScoring={
+              coreCriteria.length > 0 ||
+              prizes.some((p) => p.judgingStyle === "weighted_score")
+            }
           />
         </TabsContent>
 
@@ -491,6 +627,7 @@ export function JudgingTabClient({
         prize={editingPrize}
         onClose={() => setEditingPrize(null)}
         onSuccess={handlePrizeUpdated}
+        coreWeightSum={coreCriteria.reduce((acc, c) => acc + c.weight, 0)}
       />
 
       <AddPrizeDialog
@@ -498,6 +635,7 @@ export function JudgingTabClient({
         open={showAddPrize}
         onOpenChange={setShowAddPrize}
         rounds={rounds}
+        coreWeightSum={coreCriteria.reduce((acc, c) => acc + c.weight, 0)}
       />
     </div>
   )
@@ -810,6 +948,7 @@ function PrizeCard({
     : 0
   const assignedJudges = judges.filter((j) => j.prizeIds.includes(prize.id))
   const isCrowdVote = prize.judgingStyle === "crowd_vote"
+  const isWeightedScore = prize.judgingStyle === "weighted_score"
   const isHybrid = locationType === "hybrid"
   const modeFilter = modesToFilter(prize.allowedTeamModes)
 
@@ -954,7 +1093,11 @@ function PrizeCard({
           </p>
         )}
 
-        {!isCrowdVote && (
+        {isWeightedScore ? (
+          <p className="text-xs text-muted-foreground">
+            Judges for this prize are managed in the Assignments tab.
+          </p>
+        ) : !isCrowdVote && (
           <div className="flex items-center gap-2 flex-wrap">
             {assignedJudges.map((j) => (
               <JudgePill

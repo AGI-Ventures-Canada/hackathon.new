@@ -13,6 +13,7 @@ function makeInput(overrides: Partial<Parameters<typeof getOrganizerActionItems>
     status: "draft" as HackathonStatus,
     phase: null as HackathonPhase | null,
     submissionCount: 0,
+    unassignedSubmissionCount: 0,
     participantCount: 0,
     teamCount: 0,
     judgingProgress: { totalAssignments: 0, completedAssignments: 0 },
@@ -387,9 +388,76 @@ describe("getOrganizerActionItems", () => {
       }))
       expect(items.find((i) => i.id === "ready-for-judging")).toBeUndefined()
     })
+
+    it("flags unassigned submissions as urgent and routes to judging tab", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "active",
+        judgeCount: 3,
+        submissionCount: 5,
+        unassignedSubmissionCount: 4,
+      }))
+
+      const item = items.find((i) => i.id === "unassigned-submissions")
+      expect(item).toBeDefined()
+      expect(item?.severity).toBe("urgent")
+      expect(item?.tab).toBe("judging")
+      expect(item?.label).toContain("4")
+      expect(item?.label).toContain("project")
+      expect(item?.ctaLabel).toBe("Assign")
+    })
+
+    it("uses singular wording when exactly one submission is unassigned", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "active",
+        judgeCount: 3,
+        submissionCount: 1,
+        unassignedSubmissionCount: 1,
+      }))
+
+      const item = items.find((i) => i.id === "unassigned-submissions")
+      expect(item?.label).toBe("1 project waiting for a judge")
+    })
+
+    it("marks unassigned-submissions complete when every project has a judge", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "active",
+        judgeCount: 3,
+        submissionCount: 5,
+        unassignedSubmissionCount: 0,
+      }))
+
+      const item = items.find((i) => i.id === "unassigned-submissions")
+      expect(item).toBeDefined()
+      expect(isCompleted(item!)).toBe(true)
+      expect(item?.label).toBe("Every project has a judge")
+    })
+
+    it("hides unassigned-submissions when there are no submitted projects", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "active",
+        judgeCount: 3,
+        submissionCount: 0,
+        unassignedSubmissionCount: 0,
+      }))
+
+      expect(items.find((i) => i.id === "unassigned-submissions")).toBeUndefined()
+    })
   })
 
   describe("judging status", () => {
+    it("carries unassigned-submissions item into the judging phase", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "judging",
+        judgeCount: 3,
+        submissionCount: 5,
+        unassignedSubmissionCount: 2,
+      }))
+
+      const item = items.find((i) => i.id === "unassigned-submissions")
+      expect(item).toBeDefined()
+      expect(item?.severity).toBe("urgent")
+    })
+
     it("shows judging progress percentage", () => {
       const items = getOrganizerActionItems(makeInput({
         status: "judging",

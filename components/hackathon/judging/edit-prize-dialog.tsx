@@ -16,6 +16,14 @@ import { Loader2, Plus, Trash2 } from "lucide-react"
 import type { PrizeJudgingStyle } from "@/lib/db/hackathon-types"
 
 type CriterionDraft = { id: string; name: string; description: string }
+type WeightedCriterionDraft = {
+  id: string
+  name: string
+  description: string
+  weight: string
+  minScore: string
+  maxScore: string
+}
 type BucketDraft = { id: string; level: number; label: string; description: string }
 
 let draftIdCounter = 0
@@ -32,7 +40,14 @@ export type EditablePrize = {
   judgingStyle: PrizeJudgingStyle | null
   maxPicks: number | null
   criteria:
-    | { id: string; name: string; description: string | null }[]
+    | {
+        id: string
+        name: string
+        description: string | null
+        weight?: number
+        minScore?: number
+        maxScore?: number
+      }[]
     | null
   buckets:
     | { id: string; level: number; label: string; description: string | null }[]
@@ -58,6 +73,7 @@ interface EditPrizeDialogProps {
   prize: EditablePrize | null
   onClose: () => void
   onSuccess?: (updated: UpdatedPrize) => void
+  coreWeightSum?: number
 }
 
 export function EditPrizeDialog({
@@ -65,6 +81,7 @@ export function EditPrizeDialog({
   prize,
   onClose,
   onSuccess,
+  coreWeightSum = 0,
 }: EditPrizeDialogProps) {
   const router = useRouter()
   const [form, setForm] = useState({
@@ -73,6 +90,7 @@ export function EditPrizeDialog({
     value: "",
     maxPicks: "3",
     criteria: [] as CriterionDraft[],
+    weightedCriteria: [] as WeightedCriterionDraft[],
     buckets: [] as BucketDraft[],
   })
   const [saving, setSaving] = useState(false)
@@ -92,6 +110,17 @@ export function EditPrizeDialog({
               id: nextDraftId(),
               name: c.name,
               description: c.description ?? "",
+            }))
+          : [],
+      weightedCriteria:
+        prize.judgingStyle === "weighted_score"
+          ? (prize.criteria ?? []).map((c) => ({
+              id: nextDraftId(),
+              name: c.name,
+              description: c.description ?? "",
+              weight: c.weight != null ? String(c.weight) : "",
+              minScore: c.minScore != null ? String(c.minScore) : "1",
+              maxScore: c.maxScore != null ? String(c.maxScore) : "10",
             }))
           : [],
       buckets:
@@ -150,6 +179,33 @@ export function EditPrizeDialog({
     setForm({ ...form, buckets: form.buckets.filter((_, i) => i !== index) })
   }
 
+  function updateWeighted(index: number, patch: Partial<WeightedCriterionDraft>) {
+    setForm({
+      ...form,
+      weightedCriteria: form.weightedCriteria.map((c, i) =>
+        i === index ? { ...c, ...patch } : c
+      ),
+    })
+  }
+
+  function addWeighted() {
+    setForm({
+      ...form,
+      weightedCriteria: [
+        ...form.weightedCriteria,
+        { id: nextDraftId(), name: "", description: "", weight: "", minScore: "1", maxScore: "10" },
+      ],
+    })
+  }
+
+  function removeWeighted(index: number) {
+    if (form.weightedCriteria.length <= 1) return
+    setForm({
+      ...form,
+      weightedCriteria: form.weightedCriteria.filter((_, i) => i !== index),
+    })
+  }
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     if (!prize) return
@@ -160,9 +216,43 @@ export function EditPrizeDialog({
       return
     }
 
-    let criteriaPayload: { name: string; description: string | null }[] | undefined
+    let criteriaPayload:
+      | { name: string; description: string | null; weight?: number; minScore?: number; maxScore?: number }[]
+      | undefined
     let bucketsPayload: { level: number; label: string; description: string | null }[] | undefined
     let maxPicksPayload: number | undefined
+
+    if (prize.judgingStyle === "weighted_score") {
+      const cleaned = form.weightedCriteria
+        .map((c) => ({
+          name: c.name.trim(),
+          description: c.description.trim() || null,
+          weight: Number(c.weight),
+          minScore: Number(c.minScore),
+          maxScore: Number(c.maxScore),
+        }))
+        .filter((c) => c.name.length > 0)
+      if (cleaned.length === 0) {
+        setError("Add at least one criterion")
+        return
+      }
+      for (const c of cleaned) {
+        if (!Number.isFinite(c.weight) || c.weight < 0 || c.weight > 100) {
+          setError("Each weight must be between 0 and 100")
+          return
+        }
+        if (
+          !Number.isFinite(c.minScore) ||
+          !Number.isFinite(c.maxScore) ||
+          c.minScore < 0 ||
+          !(c.minScore < c.maxScore)
+        ) {
+          setError(`"${c.name}": min must be 0 or higher and less than max`)
+          return
+        }
+      }
+      criteriaPayload = cleaned
+    }
 
     if (prize.judgingStyle === "gate_check") {
       const cleaned = form.criteria
@@ -415,6 +505,112 @@ export function EditPrizeDialog({
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {prize.judgingStyle === "weighted_score" && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label>What this prize cares about</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Judges score each on a custom range (default 1–10). Together with the score categories ({coreWeightSum}%), aim for weights that add to 100.
+                    </p>
+                  </div>
+                  <Button type="button" variant="outline" size="sm" onClick={addWeighted}>
+                    <Plus className="mr-1 size-3.5" />
+                    Add criterion
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  {form.weightedCriteria.map((c, i) => (
+                    <div key={c.id} className="flex items-start gap-2 rounded-md border p-3">
+                      <div className="flex-1 space-y-2 min-w-0">
+                        <Input
+                          value={c.name}
+                          onChange={(e) => updateWeighted(i, { name: e.target.value })}
+                          placeholder="e.g. Use of sponsor API"
+                          autoComplete="off"
+                          data-1p-ignore
+                          data-lpignore="true"
+                          data-form-type="other"
+                        />
+                        <Input
+                          value={c.description}
+                          onChange={(e) => updateWeighted(i, { description: e.target.value })}
+                          placeholder="Helper text for judges (optional)"
+                          autoComplete="off"
+                          data-1p-ignore
+                          data-lpignore="true"
+                          data-form-type="other"
+                        />
+                        <div className="flex items-center gap-2">
+                          <div className="flex flex-col items-center w-16">
+                            <Input
+                              type="number"
+                              inputMode="numeric"
+                              value={c.minScore}
+                              onChange={(e) => updateWeighted(i, { minScore: e.target.value })}
+                              className="text-center"
+                              autoComplete="off"
+                            />
+                            <span className="text-xs text-muted-foreground mt-1">min</span>
+                          </div>
+                          <span className="text-muted-foreground pt-2">–</span>
+                          <div className="flex flex-col items-center w-16">
+                            <Input
+                              type="number"
+                              inputMode="numeric"
+                              value={c.maxScore}
+                              onChange={(e) => updateWeighted(i, { maxScore: e.target.value })}
+                              className="text-center"
+                              autoComplete="off"
+                            />
+                            <span className="text-xs text-muted-foreground mt-1">max</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-center w-20 shrink-0">
+                        <Input
+                          type="number"
+                          inputMode="numeric"
+                          min={0}
+                          max={100}
+                          value={c.weight}
+                          onChange={(e) => updateWeighted(i, { weight: e.target.value })}
+                          placeholder="%"
+                          className="text-center"
+                          autoComplete="off"
+                        />
+                        <span className="text-xs text-muted-foreground mt-1">weight %</span>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 shrink-0"
+                        onClick={() => removeWeighted(i)}
+                        disabled={form.weightedCriteria.length <= 1}
+                        aria-label="Remove criterion"
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+                {(() => {
+                  const prizeSum = form.weightedCriteria.reduce(
+                    (acc, c) => acc + (Number(c.weight) || 0),
+                    0
+                  )
+                  const total = coreWeightSum + prizeSum
+                  const ok = Math.abs(total - 100) < 0.01
+                  return (
+                    <p className="text-xs text-muted-foreground">
+                      Score categories {coreWeightSum}% + this prize {prizeSum}% = {total}% {ok ? "✓" : "(aim for 100)"}
+                    </p>
+                  )
+                })()}
               </div>
             )}
 

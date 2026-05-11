@@ -78,7 +78,7 @@ export async function dispatchTransitionNotifications(
 
   const webhookEvent = EVENT_TO_WEBHOOK[input.type]
   try {
-    const { triggerWebhooks } = await import("./webhooks")
+    const { triggerWebhooks } = await import("@/lib/services/webhooks")
     triggerWebhooks(input.tenantId, webhookEvent, {
       event: webhookEvent,
       timestamp: new Date().toISOString(),

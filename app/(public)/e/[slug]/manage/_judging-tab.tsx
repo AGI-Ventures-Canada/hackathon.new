@@ -1,4 +1,4 @@
-import { listPrizes, listJudges, getJudgingProgress, listRounds } from "@/lib/services/judging"
+import { listPrizes, listJudges, getJudgingProgress, listRounds, listCoreCriteria, listPrizeCriteriaByPrizeIds, getWeightedScoreAssignmentSummary } from "@/lib/services/judging"
 import { listJudgeInvitations } from "@/lib/services/judge-invitations"
 import { calculateResults, getResults } from "@/lib/services/results"
 import { JudgingTabClient } from "@/components/hackathon/judging/judging-tab-client"
@@ -25,16 +25,24 @@ export async function JudgingTabContent({
     await calculateResults(hackathonId)
   }
 
-  const [prizes, judges, progress, rounds, pendingInvitations, results] = await Promise.all([
-    listPrizes(hackathonId),
+  const prizes = await listPrizes(hackathonId)
+  const visiblePrizes = prizes.filter((p) => !p.is_screening)
+
+  const weightedPrizeIds = visiblePrizes
+    .filter((p) => p.judging_style === "weighted_score")
+    .map((p) => p.id)
+  const hasWeightedPrizes = weightedPrizeIds.length > 0
+
+  const [judges, progress, rounds, pendingInvitations, results, coreCriteria, weightedAssignmentSummary, weightedPrizeCriteriaMap] = await Promise.all([
     listJudges(hackathonId),
     getJudgingProgress(hackathonId),
     listRounds(hackathonId),
     listJudgeInvitations(hackathonId, "pending"),
     getResults(hackathonId),
+    listCoreCriteria(hackathonId),
+    hasWeightedPrizes ? getWeightedScoreAssignmentSummary(hackathonId) : Promise.resolve(undefined),
+    listPrizeCriteriaByPrizeIds(weightedPrizeIds),
   ])
-
-  const visiblePrizes = prizes.filter((p) => !p.is_screening)
 
   const prizesForClient = visiblePrizes.map((p) => ({
     id: p.id,
@@ -50,11 +58,22 @@ export async function JudgingTabContent({
     completedAssignments: p.completedAssignments,
     judgeCount: p.judgeCount,
     allowedTeamModes: p.allowed_team_modes,
-    criteria: p.criteria?.map((c) => ({
-      id: c.id,
-      name: c.name,
-      description: c.description,
-    })) ?? null,
+    sponsorName: p.sponsorName ?? null,
+    criteria:
+      p.judging_style === "weighted_score"
+        ? (weightedPrizeCriteriaMap.get(p.id) ?? []).map((c) => ({
+            id: c.id,
+            name: c.name,
+            description: c.description,
+            weight: c.weight,
+            minScore: c.minScore,
+            maxScore: c.maxScore,
+          }))
+        : (p.criteria?.map((c) => ({
+            id: c.id,
+            name: c.name,
+            description: c.description,
+          })) ?? null),
     buckets: p.buckets?.map((b) => ({
       id: b.id,
       level: b.level,
@@ -118,6 +137,8 @@ export async function JudgingTabContent({
       isPublished={resultsPublishedAt !== null}
       locationType={locationType}
       activeJtab={activeJtab}
+      coreCriteria={coreCriteria}
+      weightedAssignmentSummary={weightedAssignmentSummary}
     />
   )
 }

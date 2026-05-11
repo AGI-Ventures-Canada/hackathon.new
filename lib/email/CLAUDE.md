@@ -2,6 +2,13 @@
 
 This directory contains the Resend SDK integration for sending and receiving emails. Email templates are built with React Email components.
 
+> **Read [DELIVERABILITY.md](DELIVERABILITY.md) before adding any new email
+> here.** It encodes the rules that keep mail out of spam folders (List-
+> Unsubscribe headers, plain-text body, replyTo, subject phrasing,
+> verified-domain From). Anything that ships from this directory must
+> follow them — the team-invitation regression in PR #334 is exactly the
+> kind of mistake the doc exists to prevent.
+
 ## Overview
 
 Resend provides email sending with tracking, plus inbound email support via webhooks. Used for:

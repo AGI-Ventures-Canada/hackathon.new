@@ -649,6 +649,7 @@ export type Database = {
           prize_track_id: string | null
           published_at: string | null
           rank: number
+          result_kind: string
           round_id: string | null
           submission_id: string
           total_score: number | null
@@ -663,6 +664,7 @@ export type Database = {
           prize_track_id?: string | null
           published_at?: string | null
           rank: number
+          result_kind?: string
           round_id?: string | null
           submission_id: string
           total_score?: number | null
@@ -677,6 +679,7 @@ export type Database = {
           prize_track_id?: string | null
           published_at?: string | null
           rank?: number
+          result_kind?: string
           round_id?: string | null
           submission_id?: string
           total_score?: number | null
@@ -1119,6 +1122,7 @@ export type Database = {
       judge_assignments: {
         Row: {
           assigned_at: string
+          assignment_kind: string
           completed_at: string | null
           hackathon_id: string
           id: string
@@ -1133,6 +1137,7 @@ export type Database = {
         }
         Insert: {
           assigned_at?: string
+          assignment_kind?: string
           completed_at?: string | null
           hackathon_id: string
           id?: string
@@ -1147,6 +1152,7 @@ export type Database = {
         }
         Update: {
           assigned_at?: string
+          assignment_kind?: string
           completed_at?: string | null
           hackathon_id?: string
           id?: string
@@ -1423,6 +1429,7 @@ export type Database = {
           hackathon_id: string
           id: string
           max_score: number
+          min_score: number
           name: string
           prize_id: string | null
           round_id: string | null
@@ -1438,6 +1445,7 @@ export type Database = {
           hackathon_id: string
           id?: string
           max_score?: number
+          min_score?: number
           name: string
           prize_id?: string | null
           round_id?: string | null
@@ -1453,6 +1461,7 @@ export type Database = {
           hackathon_id?: string
           id?: string
           max_score?: number
+          min_score?: number
           name?: string
           prize_id?: string | null
           round_id?: string | null
@@ -1720,6 +1729,44 @@ export type Database = {
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organizer_presenter_views: {
+        Row: {
+          config: Json
+          created_at: string
+          created_by_clerk_user_id: string
+          hackathon_id: string
+          id: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          config: Json
+          created_at?: string
+          created_by_clerk_user_id: string
+          hackathon_id: string
+          id?: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          config?: Json
+          created_at?: string
+          created_by_clerk_user_id?: string
+          hackathon_id?: string
+          id?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organizer_presenter_views_hackathon_id_fkey"
+            columns: ["hackathon_id"]
+            isOneToOne: false
+            referencedRelation: "hackathons"
             referencedColumns: ["id"]
           },
         ]

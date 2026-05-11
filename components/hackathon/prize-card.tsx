@@ -21,6 +21,7 @@ const judgingStyleLabels: Record<PrizeJudgingStyle, string> = {
   gate_check: "Gate Check",
   crowd_vote: "Crowd Vote",
   judges_pick: "Judge's Pick",
+  weighted_score: "Weighted",
 }
 
 const typeLabels: Record<PrizeType, string> = {

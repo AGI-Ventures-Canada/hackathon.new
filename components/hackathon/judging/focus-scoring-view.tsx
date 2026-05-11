@@ -1,9 +1,10 @@
 "use client"
 
 import { useState, useEffect, useCallback, useMemo } from "react"
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { ChevronLeft, ChevronRight, CheckCircle2 } from "lucide-react"
+import { BarChart3, ChevronLeft, ChevronRight, CheckCircle2 } from "lucide-react"
 import { ScoringPanel } from "./scoring-panel"
 import { getTeamSizeWarning } from "@/lib/utils/team-size"
 import { usePrefetchAssignment } from "@/hooks/use-prefetch-assignment"
@@ -27,6 +28,7 @@ interface FocusScoringViewProps {
   initialCompletedIds: Set<string>
   onScoreSubmitted: (assignmentId: string) => void
   teamSettings?: TeamSettings
+  summaryHref?: string
 }
 
 export function FocusScoringView({
@@ -35,6 +37,7 @@ export function FocusScoringView({
   initialCompletedIds,
   onScoreSubmitted,
   teamSettings,
+  summaryHref,
 }: FocusScoringViewProps) {
   const [completedIds, setCompletedIds] = useState<Set<string>>(initialCompletedIds)
 
@@ -96,6 +99,14 @@ export function FocusScoringView({
         <p className="text-sm text-muted-foreground">
           You&apos;ve scored all {total} assignments.
         </p>
+        {summaryHref && (
+          <Button asChild variant="outline" size="sm" className="mt-2">
+            <Link href={summaryHref}>
+              <BarChart3 className="mr-2 size-4" />
+              View your summary
+            </Link>
+          </Button>
+        )}
       </div>
     )
   }

@@ -8,7 +8,7 @@ const mockConfirm = mock(() => Promise.resolve(false))
 mock.module("@clack/prompts", () => ({
   confirm: mockConfirm,
   isCancel: () => false,
-  log: { info: () => {}, warn: () => {} },
+  log: { info: () => {}, warn: () => {}, success: () => {} },
 }))
 
 function jsonResponse(body: unknown, status = 200) {
@@ -196,7 +196,7 @@ describe("hackathons commands", () => {
       })
     })
 
-    it("stops non-interactive personal workspace creates without --yes", async () => {
+    it("blocks personal workspace creates", async () => {
       mockFetch.mockResolvedValueOnce(
         jsonResponse({
           tenantId: "tenant-personal-1",
@@ -217,28 +217,55 @@ describe("hackathons commands", () => {
       exitSpy.mockRestore()
     })
 
-    it("allows non-interactive personal workspace creates with --yes", async () => {
-      mockFetch
-        .mockResolvedValueOnce(
-          jsonResponse({
-            tenantId: "tenant-personal-1",
-            tenantName: "Personal",
-            tenantType: "personal",
-            keyId: "key-1",
-            scopes: ["hackathons:write"],
-          })
-        )
-        .mockResolvedValueOnce(
-          jsonResponse({ id: "new-id", name: "New Hack", slug: "new-hack" })
-        )
+    it("blocks personal workspace creates even with --yes", async () => {
+      mockFetch.mockResolvedValueOnce(
+        jsonResponse({
+          tenantId: "tenant-personal-1",
+          tenantName: "Personal",
+          tenantType: "personal",
+          keyId: "key-1",
+          scopes: ["hackathons:write"],
+        })
+      )
+      const exitSpy = spyOn(process, "exit").mockImplementation(() => { throw new Error("exit") })
       const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
       const { runHackathonsCreate } = await import("../../src/commands/hackathons/create")
 
-      await runHackathonsCreate(client, ["--name", "New Hack", "--yes"])
+      await expect(runHackathonsCreate(client, ["--name", "New Hack", "--yes"])).rejects.toThrow("exit")
 
-      expect(mockFetch).toHaveBeenCalledTimes(2)
-      const url = mockFetch.mock.calls[1][0] as string
-      expect(url).toContain("/api/dashboard/hackathons")
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("personal workspace"))
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+      exitSpy.mockRestore()
+    })
+
+    it("offers a re-login prompt in an interactive TTY", async () => {
+      mockFetch.mockResolvedValueOnce(
+        jsonResponse({
+          tenantId: "tenant-personal-1",
+          tenantName: "Personal",
+          tenantType: "personal",
+          keyId: "key-1",
+          scopes: ["hackathons:write"],
+        })
+      )
+      const ttyDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY")
+      Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true })
+      const exitSpy = spyOn(process, "exit").mockImplementation(() => { throw new Error("exit") })
+      mockConfirm.mockResolvedValueOnce(false)
+      const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
+      const { runHackathonsCreate } = await import("../../src/commands/hackathons/create")
+
+      await expect(runHackathonsCreate(client, ["--name", "New Hack"])).rejects.toThrow("exit")
+
+      expect(mockConfirm).toHaveBeenCalled()
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+      exitSpy.mockRestore()
+      if (ttyDescriptor) {
+        Object.defineProperty(process.stdout, "isTTY", ttyDescriptor)
+      } else {
+        // @ts-expect-error - revert by deletion when there was no descriptor
+        delete process.stdout.isTTY
+      }
     })
   })
 

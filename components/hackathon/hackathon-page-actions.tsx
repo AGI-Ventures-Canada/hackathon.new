@@ -28,7 +28,9 @@ import {
   MessageCircle,
   Copy,
   Check,
+  Presentation,
 } from "lucide-react"
+import { useActionItemsOptional } from "@/components/hackathon/manage/action-items-context"
 
 interface HackathonPageActionsProps {
   slug: string
@@ -54,6 +56,7 @@ export function HackathonPageActions({
   isOrganizer,
 }: HackathonPageActionsProps) {
   const [copied, setCopied] = useState(false)
+  const actionItems = useActionItemsOptional()
 
   async function handleCopyUrl() {
     const url =
@@ -105,6 +108,17 @@ export function HackathonPageActions({
                 </Link>
               </DropdownMenuItem>
             ))}
+            {actionItems && (
+              <DropdownMenuItem
+                onSelect={(e) => {
+                  e.preventDefault()
+                  actionItems.openShowcaseDialog()
+                }}
+              >
+                <Presentation className="mr-2 size-4" />
+                Showcase…
+              </DropdownMenuItem>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuLabel>Public Pages</DropdownMenuLabel>
             {PAGE_LINKS.map(({ href, label, icon: Icon }) => (

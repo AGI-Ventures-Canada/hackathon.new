@@ -73,6 +73,7 @@ export function CreateFlow({ onSubmit, onPatchSettings }: CreateFlowProps) {
   const [importMode, setImportMode] = useState<"choose" | "import">("choose")
   const pendingSubmit = useRef(false)
   const autoTriggeredRef = useRef(false)
+  const gatePromptedRef = useRef(false)
 
   useEffect(() => {
     localStorage.setItem(
@@ -95,6 +96,16 @@ export function CreateFlow({ onSubmit, onPatchSettings }: CreateFlowProps) {
       pendingSubmit.current = true
       setOrgGateOpen(true)
     }
+  }, [isLoaded, isOrgLoaded, isSignedIn, organization, searchParams])
+
+  useEffect(() => {
+    if (gatePromptedRef.current) return
+    if (!isLoaded || !isOrgLoaded) return
+    if (!isSignedIn) return
+    if (organization) return
+    if (searchParams.get("edit") === "true") return
+    gatePromptedRef.current = true
+    setOrgGateOpen(true)
   }, [isLoaded, isOrgLoaded, isSignedIn, organization, searchParams])
 
   const canSkip = state.name.trim().length > 0

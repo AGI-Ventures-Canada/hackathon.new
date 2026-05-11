@@ -903,3 +903,108 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     await logAudit({ principal, action: "schedule_item.deleted", resourceType: "schedule_item", resourceId: params.itemId, metadata: { hackathonId: params.id } })
     return { success: true }
   }, { detail: { summary: "Delete schedule item" } })
+  .get("/hackathons/:id/submissions", async ({ params, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if ("error" in authErr) return authErr
+    const { getHackathonSubmissions } = await import("@/lib/services/submissions")
+    const submissions = await getHackathonSubmissions(params.id)
+    return {
+      submissions: submissions.map((s) => ({
+        id: s.id,
+        title: s.title,
+        submitter: s.submitter_name,
+      })),
+    }
+  }, {
+    detail: {
+      summary: "List submissions for this hackathon",
+      description: "Organizer-side list with title + submitter name. Used by the showcase dialog to pick projects.",
+    },
+  })
+  .get("/hackathons/:id/presenter-views", async ({ params, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if ("error" in authErr) return authErr
+    const { listPresenterViews } = await import("@/lib/services/presenter-views")
+    return { views: await listPresenterViews(params.id) }
+  }, {
+    detail: {
+      summary: "List presenter views",
+      description: "Lists saved presenter (showcase) view configurations for the hackathon. Each view points at either a judging round (round_finalists) or an explicit submission list (manual).",
+    },
+  })
+  .post("/hackathons/:id/presenter-views", async ({ params, body, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if ("error" in authErr) return authErr
+    const { createPresenterView, validatePresenterViewConfig, validatePresenterViewName } = await import("@/lib/services/presenter-views")
+    const name = validatePresenterViewName(body.name)
+    if (!name) { set.status = 400; return { error: "Name is required" } }
+    const config = validatePresenterViewConfig(body.config)
+    if (!config) { set.status = 400; return { error: "Pick a judging round or at least one project to display." } }
+    const createdBy = principal.kind === "user" ? principal.userId : `api_key:${principal.keyId}`
+    const view = await createPresenterView({
+      hackathonId: params.id,
+      name,
+      config,
+      createdByClerkUserId: createdBy,
+    })
+    if (!view) {
+      set.status = 400
+      const error =
+        config.kind === "round_finalists"
+          ? "That judging round isn't part of this hackathon."
+          : "One or more of those projects don't belong to this hackathon."
+      return { error }
+    }
+    await logAudit({ principal, action: "presenter_view.created", resourceType: "presenter_view", resourceId: view.id, metadata: { hackathonId: params.id, kind: config.kind } })
+    return view
+  }, {
+    body: t.Object({
+      name: t.String({ description: "Display name shown in the showcase dialog list." }),
+      config: t.Union([
+        t.Object({ kind: t.Literal("round_finalists"), roundId: t.String() }),
+        t.Object({ kind: t.Literal("manual"), submissionIds: t.Array(t.String()) }),
+      ]),
+    }),
+    detail: {
+      summary: "Create presenter view",
+      description: "Saves a named showcase configuration. The matching public display URL is /e/<slug>/display/showcase?view=<id>.",
+    },
+  })
+  .patch("/hackathons/:id/presenter-views/:viewId", async ({ params, body, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+    if (!isValidUuid(params.viewId)) { set.status = 404; return { error: "Presenter view not found" } }
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if ("error" in authErr) return authErr
+    const { getPresenterView, updatePresenterView } = await import("@/lib/services/presenter-views")
+    const existing = await getPresenterView(params.viewId)
+    if (!existing || existing.hackathon_id !== params.id) { set.status = 404; return { error: "Presenter view not found" } }
+    const view = await updatePresenterView(params.viewId, body)
+    if (!view) { set.status = 400; return { error: "Failed to update presenter view" } }
+    await logAudit({ principal, action: "presenter_view.updated", resourceType: "presenter_view", resourceId: params.viewId, metadata: { hackathonId: params.id } })
+    return view
+  }, {
+    body: t.Object({
+      name: t.Optional(t.String()),
+      config: t.Optional(t.Union([
+        t.Object({ kind: t.Literal("round_finalists"), roundId: t.String() }),
+        t.Object({ kind: t.Literal("manual"), submissionIds: t.Array(t.String()) }),
+      ])),
+    }),
+    detail: { summary: "Update presenter view" },
+  })
+  .delete("/hackathons/:id/presenter-views/:viewId", async ({ params, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+    if (!isValidUuid(params.viewId)) { set.status = 404; return { error: "Presenter view not found" } }
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if ("error" in authErr) return authErr
+    const { getPresenterView, deletePresenterView } = await import("@/lib/services/presenter-views")
+    const existing = await getPresenterView(params.viewId)
+    if (!existing || existing.hackathon_id !== params.id) { set.status = 404; return { error: "Presenter view not found" } }
+    const ok = await deletePresenterView(params.viewId)
+    if (!ok) { set.status = 400; return { error: "Failed to delete presenter view" } }
+    await logAudit({ principal, action: "presenter_view.deleted", resourceType: "presenter_view", resourceId: params.viewId, metadata: { hackathonId: params.id } })
+    return { success: true }
+  }, { detail: { summary: "Delete presenter view" } })

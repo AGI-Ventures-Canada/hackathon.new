@@ -6,15 +6,16 @@ import { CustomSignIn } from "./custom-sign-in"
 export default async function SignInPage({
   searchParams,
 }: {
-  searchParams: Promise<{ redirect_url?: string }>
+  searchParams: Promise<{ redirect_url?: string; email?: string }>
 }) {
   const { userId } = await auth()
-  const { redirect_url } = await searchParams
+  const { redirect_url, email } = await searchParams
   const safeRedirect = safeRedirectUrl(redirect_url)
+  const initialEmail = redirect_url ? email?.slice(0, 254) : undefined
 
   if (userId) {
     redirect(safeRedirect)
   }
 
-  return <CustomSignIn redirectUrl={safeRedirect} />
+  return <CustomSignIn redirectUrl={safeRedirect} initialEmail={initialEmail} />
 }

@@ -58,7 +58,7 @@ export async function runHackathonsCreate(
   let description = options.description
 
   if (options.fromUrl) {
-    await confirmPersonalWorkspace(client, options)
+    await confirmPersonalWorkspace(client)
 
     const hackathon = await client.post<ImportedHackathonResponse>("/api/dashboard/import/url", {
       url: options.fromUrl,
@@ -98,7 +98,7 @@ export async function runHackathonsCreate(
     if (!p.isCancel(result)) description = result || undefined
   }
 
-  await confirmPersonalWorkspace(client, options)
+  await confirmPersonalWorkspace(client)
 
   const hackathon = await client.post<Hackathon>("/api/dashboard/hackathons", {
     name,
@@ -114,38 +114,40 @@ export async function runHackathonsCreate(
   console.log(formatSuccess(`Created hackathon "${hackathon.name}" (${hackathon.id})`))
 }
 
-async function confirmPersonalWorkspace(
-  client: OatmealClient,
-  options: Pick<CreateOptions, "yes" | "json">
-): Promise<void> {
+async function confirmPersonalWorkspace(client: OatmealClient): Promise<void> {
   const whoami = await client.get<WhoAmIResponse>("/api/v1/whoami")
 
   if (whoami.tenantType !== "personal") {
     return
   }
 
-  if (options.yes) {
-    if (!options.json) {
-      p.log.warn("Creating this event in your personal workspace.")
-    }
-    return
-  }
-
   if (!process.stdout.isTTY) {
     console.error(
-      "Error: You're logged in to a personal workspace. " +
-        "Run \"hackathon login\" and pick an organization, or rerun with --yes to create it here."
+      `Error: ${formatWorkspace(whoami)} is a personal workspace. ` +
+        "Hackathons must be created under an organization. " +
+        'Run "hackathon login" again and pick an organization in the browser.'
     )
     process.exit(1)
   }
 
-  const confirmed = await p.confirm({
-    message: `You're using ${formatWorkspace(whoami)}. Create this event there?`,
-    initialValue: false,
+  p.log.warn(
+    `${formatWorkspace(whoami)} can't host hackathons — pick an organization to continue.`
+  )
+
+  const wantsLogin = await p.confirm({
+    message: "Sign in again and pick an organization?",
+    initialValue: true,
   })
 
-  if (p.isCancel(confirmed) || !confirmed) {
-    p.log.info("Create cancelled.")
+  if (p.isCancel(wantsLogin) || !wantsLogin) {
+    p.log.info("Cancelled.")
     process.exit(0)
   }
+
+  const { runLogin } = await import("../login.js")
+  await runLogin([])
+  p.log.success(
+    'Signed in. Re-run your "hackathon events create" command to use the new workspace.'
+  )
+  process.exit(0)
 }

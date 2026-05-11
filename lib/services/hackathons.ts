@@ -662,12 +662,14 @@ async function createPendingTeamWithInvite(
   }
 
   let inviterName = "The organizer"
+  let inviterEmail: string | undefined
   if (input.organizerClerkUserId) {
     try {
       const organizer = await clerk.users.getUser(input.organizerClerkUserId)
       if (organizer.firstName) {
         inviterName = organizer.firstName + (organizer.lastName ? ` ${organizer.lastName}` : "")
       }
+      inviterEmail = organizer.primaryEmailAddress?.emailAddress
     } catch {
       // fallback to default
     }
@@ -720,6 +722,7 @@ async function createPendingTeamWithInvite(
     teamName: input.name,
     hackathonName: hackathon.name,
     inviterName,
+    inviterEmail,
     inviteToken: token,
     expiresAt,
     hackathonSlug: hackathon.slug,

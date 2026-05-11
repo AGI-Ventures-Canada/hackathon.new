@@ -22,6 +22,7 @@ export type SendEmailInput = {
   text?: string
   from?: string
   replyTo?: string
+  headers?: Record<string, string>
   tags?: Array<{ name: string; value: string }>
 }
 
@@ -57,6 +58,7 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult 
     if (input.html) emailOptions.html = input.html
     if (input.text) emailOptions.text = input.text
     if (input.replyTo) emailOptions.replyTo = input.replyTo
+    if (input.headers) emailOptions.headers = input.headers
     if (input.tags) emailOptions.tags = input.tags
 
     const { data, error } = await client.emails.send(emailOptions)

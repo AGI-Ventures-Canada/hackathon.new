@@ -257,6 +257,47 @@ export async function declineTeamInvitation(
   return { success: !error }
 }
 
+export async function unsubscribeTeamInvitation(
+  token: string
+): Promise<{ success: boolean; code?: string }> {
+  const client = getSupabase()
+
+  const { data: invitation } = await client
+    .from("team_invitations")
+    .select("id, status")
+    .eq("token", token)
+    .maybeSingle()
+
+  if (!invitation) {
+    return { success: false, code: "not_found" }
+  }
+
+  if (invitation.status !== "pending") {
+    return { success: true, code: "already_resolved" }
+  }
+
+  const { error } = await client
+    .from("team_invitations")
+    .update({
+      status: "declined",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("token", token)
+    .eq("status", "pending")
+
+  if (error) {
+    console.error("Failed to unsubscribe invitation:", error)
+    return { success: false, code: "update_failed" }
+  }
+
+  const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
+  cancelRemindersForEntity("team_invitation", invitation.id).catch((err) =>
+    console.error(`Failed to cancel reminders for team_invitation ${invitation.id}:`, err)
+  )
+
+  return { success: true }
+}
+
 export async function cancelTeamInvitation(
   invitationId: string,
   clerkUserId: string
@@ -517,19 +558,22 @@ export async function sendPendingTeamInvitationEmails(
     return teamCache.get(teamId) ?? null
   }
 
-  const inviterCache = new Map<string, Promise<string>>()
-  const resolveInviterName = (clerkUserId: string): Promise<string> => {
+  const inviterCache = new Map<string, Promise<{ name: string; email?: string }>>()
+  const resolveInviter = (clerkUserId: string): Promise<{ name: string; email?: string }> => {
     const inflight = inviterCache.get(clerkUserId)
     if (inflight) return inflight
     const promise = (async () => {
       try {
         const user = await clerk.users.getUser(clerkUserId)
-        const resolved = [user.firstName, user.lastName].filter(Boolean).join(" ")
-        if (resolved) return resolved
+        const resolvedName = [user.firstName, user.lastName].filter(Boolean).join(" ")
+        return {
+          name: resolvedName || "Your team captain",
+          email: user.primaryEmailAddress?.emailAddress,
+        }
       } catch (err) {
-        console.warn(`Failed to resolve inviter name for clerk user ${clerkUserId}:`, err)
+        console.warn(`Failed to resolve inviter for clerk user ${clerkUserId}:`, err)
+        return { name: "Your team captain" }
       }
-      return "Your team captain"
     })()
     inviterCache.set(clerkUserId, promise)
     return promise
@@ -543,13 +587,14 @@ export async function sendPendingTeamInvitationEmails(
       const teamInfo = await getTeam(invitation.team_id)
       if (!teamInfo) return { success: false }
 
-      const inviterName = await resolveInviterName(invitation.invited_by_clerk_user_id)
+      const inviter = await resolveInviter(invitation.invited_by_clerk_user_id)
 
       const result = await sendTeamInvitationEmail({
         to: invitation.email,
         teamName: teamInfo.name,
         hackathonName: teamInfo.hackathon.name,
-        inviterName,
+        inviterName: inviter.name,
+        inviterEmail: inviter.email,
         inviteToken: invitation.token,
         expiresAt: invitation.expires_at,
         hackathonSlug: teamInfo.hackathon.slug,
@@ -571,7 +616,8 @@ export async function sendPendingTeamInvitationEmails(
           email: invitation.email,
           teamName: teamInfo.name,
           hackathonName: teamInfo.hackathon.name,
-          inviterName,
+          inviterName: inviter.name,
+          inviterEmail: inviter.email,
           inviteToken: invitation.token,
           expiresAt: invitation.expires_at,
         }

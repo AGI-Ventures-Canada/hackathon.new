@@ -40,6 +40,7 @@ export function isTransition(item: ActionItem): boolean {
 const ACTIONS_ALLOWED_WITHOUT_TARGET = new Set([
   "confirm-promote",
   "open-agenda-dialog",
+  "open-showcase-dialog",
 ])
 
 export function actionItemRequiresTarget(item: ActionItem): boolean {
@@ -120,6 +121,7 @@ export type ActionItemsInput = {
   status: HackathonStatus
   phase: HackathonPhase | null
   submissionCount: number
+  unassignedSubmissionCount: number
   participantCount: number
   teamCount: number
   judgingProgress: { totalAssignments: number; completedAssignments: number }
@@ -531,8 +533,22 @@ function addPublishedActions(items: ActionItem[], input: ActionItemsInput) {
   }
 }
 
+function addShowcaseAction(items: ActionItem[], input: ActionItemsInput) {
+  if (input.submissionCount === 0) return
+  items.push(manualAction({
+    id: "open-showcase",
+    label: "Show projects on the big screen",
+    hint: "Pick a round or specific projects, then open the link on a projector.",
+    severity: "info",
+    action: "open-showcase-dialog",
+    ctaLabel: "Set up",
+    tooltip: "Make a showcase view to project on the big screen during demos. You can pick a whole round of projects or hand-pick a few. Saved views stick around so you can re-open them anytime.",
+  }))
+}
+
 function addActiveActions(items: ActionItem[], input: ActionItemsInput) {
   addChallengeActions(items, input)
+  addShowcaseAction(items, input)
 
   if (input.mentorQueue.open > 0) {
     items.push(autoAction({
@@ -566,6 +582,23 @@ function addActiveActions(items: ActionItem[], input: ActionItemsInput) {
     pending: { label: "No judges assigned yet", hint: "You'll need judges before starting the judging phase" },
     completed: { label: "Judges assigned", hint: "Ready to evaluate submissions when the time comes" },
   }))
+
+  if (input.submissionCount > 0) {
+    const count = input.unassignedSubmissionCount
+    items.push(autoAction({
+      id: "unassigned-submissions",
+      severity: "urgent",
+      tab: "judging",
+      ctaLabel: "Assign",
+      tooltip: "Every submitted project needs a judge. Without an assignment, no one will score it and the project won't show up in results. Open the Judging tab to assign judges.",
+      isComplete: count === 0,
+      pending: {
+        label: `${count} project${count === 1 ? "" : "s"} waiting for a judge`,
+        hint: "Assign judges so they can start scoring",
+      },
+      completed: { label: "Every project has a judge", hint: "Judges are ready to score" },
+    }))
+  }
 
   if (
     input.rounds.plannedCount > 0 &&
@@ -605,6 +638,7 @@ function addActiveActions(items: ActionItem[], input: ActionItemsInput) {
 }
 
 function addJudgingActions(items: ActionItem[], input: ActionItemsInput) {
+  addShowcaseAction(items, input)
   if (
     input.rounds.plannedCount > 0 &&
     input.rounds.activeCount === 0 &&
@@ -679,6 +713,7 @@ function addJudgingActions(items: ActionItem[], input: ActionItemsInput) {
 }
 
 function addCompletedActions(items: ActionItem[], input: ActionItemsInput) {
+  addShowcaseAction(items, input)
   const resultsPublished = !!input.resultsPublishedAt
   items.push(autoAction({
     id: "results-not-published",

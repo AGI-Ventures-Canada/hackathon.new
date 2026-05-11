@@ -9,11 +9,41 @@ export function buildEventUrl(slug?: string, path?: string): string | undefined 
   return path ? `${base}${path}` : base
 }
 
+export function getReplyToAddress(): string | undefined {
+  return process.env.RESEND_REPLY_TO_EMAIL || process.env.RESEND_FROM_EMAIL || undefined
+}
+
+export function buildUnsubscribeHeaders(unsubscribeUrl: string): Record<string, string> {
+  const mailto = process.env.RESEND_REPLY_TO_EMAIL
+  const targets = [`<${unsubscribeUrl}>`]
+  if (mailto) targets.push(`<mailto:${mailto}?subject=unsubscribe>`)
+  return {
+    "List-Unsubscribe": targets.join(", "),
+    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+  }
+}
+
 export function sanitizeTag(name: string): string {
   return name
     .replace(/[^a-zA-Z0-9_-]/g, "_")
     .replace(/_+/g, "_")
     .slice(0, 100)
+}
+
+export function extractEmailAddress(emailLike: string): string {
+  const match = emailLike.match(/<([^>]+)>/)
+  return (match ? match[1] : emailLike).trim()
+}
+
+export function formatFromAddress(displayName: string, emailLike: string): string {
+  const email = extractEmailAddress(emailLike)
+  const safeName = displayName.replace(/[\r\n]+/g, " ").trim()
+  if (!safeName) return email
+  if (/[(),.:;<>@\[\]\\"]|[^\x20-\x7e]/.test(safeName)) {
+    const escaped = safeName.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
+    return `"${escaped}" <${email}>`
+  }
+  return `${safeName} <${email}>`
 }
 
 export async function renderEmail(

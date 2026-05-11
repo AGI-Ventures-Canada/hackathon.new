@@ -5,10 +5,37 @@ const mockCheckHackathonOrganizer = mock(() => Promise.resolve({ status: "ok" })
 const mockDeleteHackathon = mock(() => Promise.resolve(true))
 const mockLogAudit = mock(() => Promise.resolve(null))
 const mockTriggerWebhooks = mock(() => Promise.resolve())
+const mockCreateHackathon = mock(() =>
+  Promise.resolve({ id: "h-new", name: "New Hack", slug: "new-hack" })
+)
+const mockGetTenantById = mock(() =>
+  Promise.resolve({ id: "tenant-123", clerk_org_id: "org-789", clerk_user_id: null })
+)
 
 mock.module("@/lib/services/public-hackathons", () => ({
   checkHackathonOrganizer: mockCheckHackathonOrganizer,
   deleteHackathon: mockDeleteHackathon,
+}))
+
+mock.module("@/lib/services/hackathons", () => ({
+  createHackathon: mockCreateHackathon,
+}))
+
+mock.module("@/lib/services/tenants", () => ({
+  getTenantById: mockGetTenantById,
+  isOrgTenant: async (_tenantId: string) => {
+    const tenant = await mockGetTenantById()
+    return Boolean(tenant?.clerk_org_id)
+  },
+  organizationRequiredResponse: () =>
+    new Response(
+      JSON.stringify({
+        error:
+          "Switch to an organization to create a hackathon. Personal accounts can't host events.",
+        code: "organization_required",
+      }),
+      { status: 403, headers: { "Content-Type": "application/json" } }
+    ),
 }))
 
 mock.module("@/lib/services/audit", () => ({
@@ -155,5 +182,67 @@ describe("DELETE /api/dashboard/hackathons/:id", () => {
 
     expect(res.status).toBe(500)
     expect(data.error).toBe("Failed to delete hackathon")
+  })
+})
+
+describe("POST /api/dashboard/hackathons", () => {
+  beforeEach(() => {
+    resetClerkMocks()
+    mockResolvePrincipal.mockReset()
+    mockCreateHackathon.mockReset()
+    mockGetTenantById.mockReset()
+    mockLogAudit.mockReset()
+    mockTriggerWebhooks.mockReset()
+    mockLogAudit.mockResolvedValue(null)
+    mockTriggerWebhooks.mockResolvedValue(undefined)
+  })
+
+  it("rejects personal-account principals with organization_required", async () => {
+    mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+    mockGetTenantById.mockResolvedValue({
+      id: "tenant-personal",
+      clerk_org_id: null,
+      clerk_user_id: "user-456",
+    })
+
+    const res = await app.handle(
+      new Request("http://localhost/api/dashboard/hackathons", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "My Hack" }),
+      })
+    )
+    const data = await res.json()
+
+    expect(res.status).toBe(403)
+    expect(data.code).toBe("organization_required")
+    expect(mockCreateHackathon).not.toHaveBeenCalled()
+  })
+
+  it("creates hackathon for an org-backed tenant", async () => {
+    mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+    mockGetTenantById.mockResolvedValue({
+      id: "tenant-123",
+      clerk_org_id: "org-789",
+      clerk_user_id: null,
+    })
+    mockCreateHackathon.mockResolvedValue({
+      id: "h-new",
+      name: "Org Hack",
+      slug: "org-hack",
+    })
+
+    const res = await app.handle(
+      new Request("http://localhost/api/dashboard/hackathons", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Org Hack" }),
+      })
+    )
+    const data = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(data.id).toBe("h-new")
+    expect(mockCreateHackathon).toHaveBeenCalledTimes(1)
   })
 })

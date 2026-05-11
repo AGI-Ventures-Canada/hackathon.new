@@ -38,7 +38,16 @@ async function refetchAfterRace(
     if (found) return found
     await new Promise((resolve) => setTimeout(resolve, delay))
   }
-  return fetchTenantBy(column, value)
+  const final = await fetchTenantBy(column, value)
+  if (!final) {
+    console.error("[tenants] race retry exhausted", {
+      column,
+      value,
+      attempts: RACE_RETRY_DELAYS_MS.length + 1,
+      severity: "error",
+    })
+  }
+  return final
 }
 
 export async function getOrCreateTenant(
@@ -83,11 +92,7 @@ export async function getOrCreateTenant(
     return null
   }
 
-  const retried = await refetchAfterRace("clerk_org_id", clerkOrgId)
-  if (!retried) {
-    console.error("Tenant race retry exhausted for org:", clerkOrgId)
-  }
-  return retried
+  return refetchAfterRace("clerk_org_id", clerkOrgId)
 }
 
 export async function getOrCreatePersonalTenant(
@@ -125,11 +130,7 @@ export async function getOrCreatePersonalTenant(
     return null
   }
 
-  const retried = await refetchAfterRace("clerk_user_id", clerkUserId)
-  if (!retried) {
-    console.error("Tenant race retry exhausted for user:", clerkUserId)
-  }
-  return retried
+  return refetchAfterRace("clerk_user_id", clerkUserId)
 }
 
 export async function resolvePageTenant(): Promise<Tenant> {
@@ -163,6 +164,24 @@ export async function getTenantById(id: string): Promise<Tenant | null> {
     .single()
 
   return data as Tenant | null
+}
+
+export async function isOrgTenant(tenantId: string): Promise<boolean> {
+  const tenant = await getTenantById(tenantId)
+  return Boolean(tenant?.clerk_org_id)
+}
+
+export const ORGANIZATION_REQUIRED_ERROR = {
+  error:
+    "Switch to an organization to create a hackathon. Personal accounts can't host events.",
+  code: "organization_required" as const,
+}
+
+export function organizationRequiredResponse(): Response {
+  return new Response(JSON.stringify(ORGANIZATION_REQUIRED_ERROR), {
+    status: 403,
+    headers: { "Content-Type": "application/json" },
+  })
 }
 
 export async function updateTenantName(
