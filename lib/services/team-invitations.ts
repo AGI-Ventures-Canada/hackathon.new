@@ -560,6 +560,9 @@ export async function sendPendingTeamInvitationEmails(
 
   const inviterCache = new Map<string, Promise<{ name: string; email?: string }>>()
   const resolveInviter = (clerkUserId: string): Promise<{ name: string; email?: string }> => {
+    if (clerkUserId === "system") {
+      return Promise.resolve({ name: "Your team captain" })
+    }
     const inflight = inviterCache.get(clerkUserId)
     if (inflight) return inflight
     const promise = (async () => {

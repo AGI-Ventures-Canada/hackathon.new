@@ -254,10 +254,14 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, captainEmail: email }),
-      }).then(assertOkJson<{ team?: Team; invited?: boolean }>)
+      }).then(assertOkJson<{ team?: Team; invited?: boolean; queued?: boolean }>)
 
       if (data.invited) {
-        setInviteSuccess(`Invite sent to ${email}`)
+        setInviteSuccess(
+          data.queued
+            ? `Invite saved for ${email}. We'll send it when you go live.`
+            : `Invite sent to ${email}`
+        )
         setTimeout(() => setInviteSuccess(null), 5000)
       }
 

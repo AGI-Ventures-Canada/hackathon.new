@@ -1106,6 +1106,32 @@ describe("Team Invitations Service", () => {
       expect(updateCalls.every((c) => c.includes("emailed_at"))).toBe(true)
     })
 
+    it("skips Clerk lookup for the literal \"system\" inviter", async () => {
+      const pending = [
+        { ...mockInvitation, id: "inv_sys", email: "captain@example.com", token: "tsys", team_id: "team_1", invited_by_clerk_user_id: "system" },
+      ]
+
+      const { mockClerkClient } = await import("../lib/supabase-mock")
+      const getUserSpy = mock(() => Promise.reject(new Error("should not be called")))
+      mockClerkClient.mockResolvedValueOnce({
+        users: { getUser: getUserSpy },
+      } as unknown)
+
+      setMockFromImplementation((table) => {
+        if (table === "team_invitations") return createChainableMock({ data: pending, error: null })
+        if (table === "teams") return createChainableMock({ data: teamRow, error: null })
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await sendPendingTeamInvitationEmails("h1")
+
+      expect(result.sent).toBe(1)
+      expect(getUserSpy).not.toHaveBeenCalled()
+      expect(mockSendTeamInvitationEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ inviterName: "Your team captain" })
+      )
+    })
+
     it("falls back to a generic captain label when clerk lookup fails", async () => {
       const pending = [
         { ...mockInvitation, id: "inv_1", email: "a@example.com", token: "t1", team_id: "team_1", invited_by_clerk_user_id: "user_missing" },
