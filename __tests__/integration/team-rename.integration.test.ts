@@ -296,6 +296,58 @@ describe("PATCH /api/dashboard/hackathons/:id/teams/:teamId", () => {
     expect(data.name).toBe("Captain Name")
   })
 
+  it("allows admin captain to rename their team", async () => {
+    mockResolvePrincipal.mockResolvedValue({
+      kind: "admin" as const,
+      userId: "captain-123",
+      tenantId: "personal-tenant",
+      orgId: null,
+      scopes: ["hackathons:read", "hackathons:write"],
+    })
+    mockCheckHackathonOrganizer.mockResolvedValue({
+      status: "not_authorized" as const,
+    })
+
+    let callCount = 0
+    mockFrom.mockImplementation(() => {
+      callCount++
+      if (callCount === 1) {
+        return {
+          select: mock(() => ({
+            eq: mock(() => ({
+              eq: mock(() => ({
+                single: mock(() => Promise.resolve({ data: { captain_clerk_user_id: "captain-123", status: "forming" }, error: null })),
+              })),
+            })),
+          })),
+        }
+      }
+      return {
+        update: mock(() => ({
+          eq: mock(() => ({
+            eq: mock(() => ({
+              select: mock(() => ({
+                single: mock(() => Promise.resolve({ data: { id: teamId, name: "Admin Captain Name" }, error: null })),
+              })),
+            })),
+          })),
+        })),
+      }
+    })
+
+    const res = await app.handle(
+      new Request(url, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Admin Captain Name" }),
+      })
+    )
+    const data = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(data.name).toBe("Admin Captain Name")
+  })
+
   it("rejects non-captain non-organizer with 403", async () => {
     mockResolvePrincipal.mockResolvedValue({ ...mockUserPrincipal, userId: "random-user" })
     mockCheckHackathonOrganizer.mockResolvedValue({

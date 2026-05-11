@@ -27,6 +27,7 @@ import {
   Maximize2,
   ExternalLink,
   Github,
+  Play,
 } from "lucide-react"
 import Image from "next/image"
 
@@ -41,6 +42,7 @@ type Submission = {
   description: string | null
   githubUrl: string | null
   liveAppUrl: string | null
+  demoVideoUrl: string | null
   screenshotUrl: string | null
   teamName: string | null
   viewedAt: string | null
@@ -335,6 +337,13 @@ export function SubjectiveScoringView({
                             </a>
                           </Button>
                         )}
+                        {sub.demoVideoUrl && (
+                          <Button variant="outline" size="sm" className="h-7 text-xs" asChild>
+                            <a href={sub.demoVideoUrl} target="_blank" rel="noopener noreferrer">
+                              <Play className="mr-1 size-3" /> Video
+                            </a>
+                          </Button>
+                        )}
                       </div>
                       <div className="space-y-1">
                         <p className="text-xs font-medium">Pick for:</p>
@@ -510,6 +519,13 @@ function SubmissionDetail({
           <Button variant="outline" size="sm" asChild>
             <a href={submission.liveAppUrl} target="_blank" rel="noopener noreferrer">
               <ExternalLink className="mr-2 size-3.5" /> Live Demo
+            </a>
+          </Button>
+        )}
+        {submission.demoVideoUrl && (
+          <Button variant="outline" size="sm" asChild>
+            <a href={submission.demoVideoUrl} target="_blank" rel="noopener noreferrer">
+              <Play className="mr-2 size-3.5" /> Video
             </a>
           </Button>
         )}

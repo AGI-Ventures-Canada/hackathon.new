@@ -4,7 +4,7 @@ interface SubmissionLinksProps {
   githubUrl: string | null
   liveAppUrl: string | null
   demoVideoUrl: string | null
-  isYouTube: boolean
+  hasEmbeddedVideo: boolean
 }
 
 const linkClassName =
@@ -14,9 +14,9 @@ export function SubmissionLinks({
   githubUrl,
   liveAppUrl,
   demoVideoUrl,
-  isYouTube,
+  hasEmbeddedVideo,
 }: SubmissionLinksProps) {
-  const hasLinks = githubUrl || liveAppUrl || (demoVideoUrl && !isYouTube)
+  const hasLinks = githubUrl || liveAppUrl || (demoVideoUrl && !hasEmbeddedVideo)
 
   if (!hasLinks) return null
 
@@ -34,7 +34,7 @@ export function SubmissionLinks({
           <span>Live Demo</span>
         </a>
       )}
-      {demoVideoUrl && !isYouTube && (
+      {demoVideoUrl && !hasEmbeddedVideo && (
         <a href={demoVideoUrl} target="_blank" rel="noopener noreferrer" className={linkClassName}>
           <Play className="size-3.5" />
           <span>Demo Video</span>

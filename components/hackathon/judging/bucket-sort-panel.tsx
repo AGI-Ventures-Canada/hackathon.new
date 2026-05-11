@@ -11,6 +11,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ExternalLink,
+  Play,
 } from "lucide-react"
 
 type BucketDef = {
@@ -33,6 +34,7 @@ type Assignment = {
   submissionDescription: string | null
   submissionGithubUrl: string | null
   submissionLiveAppUrl: string | null
+  submissionDemoVideoUrl: string | null
   submissionScreenshotUrl: string | null
   teamName: string | null
   isComplete: boolean
@@ -329,6 +331,14 @@ export function BucketSortPanel({
                       <a href={detail.submissionLiveAppUrl} target="_blank" rel="noopener noreferrer">
                         Demo
                         <ExternalLink className="ml-1 size-3" />
+                      </a>
+                    </Button>
+                  )}
+                  {detail.submissionDemoVideoUrl && (
+                    <Button variant="outline" size="sm" asChild>
+                      <a href={detail.submissionDemoVideoUrl} target="_blank" rel="noopener noreferrer">
+                        Video
+                        <Play className="ml-1 size-3" />
                       </a>
                     </Button>
                   )}

@@ -308,6 +308,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         description: submission.description,
         githubUrl: submission.github_url,
         liveAppUrl: submission.live_app_url,
+        demoVideoUrl: submission.demo_video_url,
         screenshotUrl: submission.screenshot_url,
         status: submission.status,
         createdAt: submission.created_at,
@@ -455,6 +456,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
 
       const githubUrl = normalizeUrl(body.githubUrl)
       const liveAppUrl = body.liveAppUrl ? normalizeUrl(body.liveAppUrl) : body.liveAppUrl
+      const demoVideoUrl = body.demoVideoUrl ? normalizeUrl(body.demoVideoUrl) : body.demoVideoUrl
 
       try {
         const url = new URL(githubUrl)
@@ -469,6 +471,17 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
           JSON.stringify({ error: "Invalid GitHub URL", code: "invalid_github_url" }),
           { status: 400, headers: { "Content-Type": "application/json" } }
         )
+      }
+
+      if (demoVideoUrl) {
+        try {
+          new URL(demoVideoUrl)
+        } catch {
+          return new Response(
+            JSON.stringify({ error: "Invalid video link", code: "invalid_demo_video_url" }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          )
+        }
       }
 
       if (body.challengeIds?.some((id) => !isValidUuid(id))) {
@@ -487,6 +500,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
           description: body.description,
           githubUrl,
           liveAppUrl,
+          demoVideoUrl,
           metadata: teamSizeWarning
             ? { teamSizeWarning, teamMemberCount }
             : undefined,
@@ -520,6 +534,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         description: t.String({ minLength: 1, maxLength: 280 }),
         githubUrl: t.String(),
         liveAppUrl: t.Optional(t.Union([t.String(), t.Null()])),
+        demoVideoUrl: t.Optional(t.Union([t.String(), t.Null()])),
         challengeIds: t.Optional(t.Array(t.String())),
       }),
     }
@@ -576,6 +591,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
 
       const normalizedGithubUrl = body.githubUrl ? normalizeUrl(body.githubUrl) : body.githubUrl
       const normalizedLiveAppUrl = body.liveAppUrl ? normalizeUrl(body.liveAppUrl) : body.liveAppUrl
+      const normalizedDemoVideoUrl = body.demoVideoUrl ? normalizeUrl(body.demoVideoUrl) : body.demoVideoUrl
 
       if (normalizedGithubUrl) {
         try {
@@ -589,6 +605,17 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         } catch {
           return new Response(
             JSON.stringify({ error: "Invalid GitHub URL", code: "invalid_github_url" }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          )
+        }
+      }
+
+      if (normalizedDemoVideoUrl) {
+        try {
+          new URL(normalizedDemoVideoUrl)
+        } catch {
+          return new Response(
+            JSON.stringify({ error: "Invalid video link", code: "invalid_demo_video_url" }),
             { status: 400, headers: { "Content-Type": "application/json" } }
           )
         }
@@ -610,6 +637,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
           description: body.description,
           githubUrl: normalizedGithubUrl,
           liveAppUrl: normalizedLiveAppUrl,
+          demoVideoUrl: normalizedDemoVideoUrl,
           challengeIds: body.challengeIds,
         }
       )
@@ -640,6 +668,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         description: t.Optional(t.String({ minLength: 1, maxLength: 280 })),
         githubUrl: t.Optional(t.String()),
         liveAppUrl: t.Optional(t.Union([t.String(), t.Null()])),
+        demoVideoUrl: t.Optional(t.Union([t.String(), t.Null()])),
         challengeIds: t.Optional(t.Array(t.String())),
       }),
     }
@@ -1210,6 +1239,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         submissionDescription: a.submissionDescription,
         submissionGithubUrl: a.submissionGithubUrl,
         submissionLiveAppUrl: a.submissionLiveAppUrl,
+        submissionDemoVideoUrl: a.submissionDemoVideoUrl,
         submissionScreenshotUrl: a.submissionScreenshotUrl,
         teamName: anonymize ? null : a.teamName,
         teamMode: anonymize ? null : a.teamMode,

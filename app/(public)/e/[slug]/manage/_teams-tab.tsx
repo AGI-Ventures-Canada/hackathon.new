@@ -33,8 +33,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
-import { extractYouTubeVideoId } from "@/lib/utils/youtube"
-import { YouTubeEmbed } from "@/components/hackathon/youtube-embed"
+import { getVideoEmbedInfo } from "@/lib/utils/video-embed"
+import { VideoEmbed } from "@/components/hackathon/video-embed"
 import { SubmissionLinks } from "@/components/hackathon/submission-links"
 
 type TeamMember = {
@@ -68,8 +68,8 @@ type Team = {
 }
 
 function TeamSubmissionPanel({ submission }: { submission: TeamSubmission }) {
-  const youtubeVideoId = submission.demoVideoUrl
-    ? extractYouTubeVideoId(submission.demoVideoUrl)
+  const videoEmbed = submission.demoVideoUrl
+    ? getVideoEmbedInfo(submission.demoVideoUrl)
     : null
 
   return (
@@ -92,12 +92,12 @@ function TeamSubmissionPanel({ submission }: { submission: TeamSubmission }) {
           />
         </div>
       )}
-      {youtubeVideoId && <YouTubeEmbed videoId={youtubeVideoId} />}
+      {videoEmbed && <VideoEmbed video={videoEmbed} />}
       <SubmissionLinks
         githubUrl={submission.githubUrl}
         liveAppUrl={submission.liveAppUrl}
         demoVideoUrl={submission.demoVideoUrl}
-        isYouTube={youtubeVideoId !== null}
+        hasEmbeddedVideo={videoEmbed !== null}
       />
     </div>
   )
@@ -254,10 +254,14 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, captainEmail: email }),
-      }).then(assertOkJson<{ team?: Team; invited?: boolean }>)
+      }).then(assertOkJson<{ team?: Team; invited?: boolean; queued?: boolean }>)
 
       if (data.invited) {
-        setInviteSuccess(`Invite sent to ${email}`)
+        setInviteSuccess(
+          data.queued
+            ? `Invite saved for ${email}. We'll send it when you go live.`
+            : `Invite sent to ${email}`
+        )
         setTimeout(() => setInviteSuccess(null), 5000)
       }
 

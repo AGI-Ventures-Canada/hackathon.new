@@ -637,6 +637,7 @@ describe("Judging Scoring Routes", () => {
       submissionDescription: null,
       submissionGithubUrl: null,
       submissionLiveAppUrl: null,
+      submissionDemoVideoUrl: null,
       submissionScreenshotUrl: null,
       teamName: "Dream Team",
       isComplete: false,

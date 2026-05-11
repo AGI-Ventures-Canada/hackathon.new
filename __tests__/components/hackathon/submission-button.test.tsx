@@ -68,6 +68,7 @@ describe("SubmissionButton", () => {
     ).toBeDefined()
     expect(within(dialog).getByLabelText("Title")).toBeDefined()
     expect(within(dialog).queryByLabelText("GitHub URL")).toBeNull()
+    expect(within(dialog).queryByLabelText(/Video link/)).toBeNull()
     expect(within(dialog).queryByText("Project Title")).toBeNull()
     expect(within(dialog).queryByText("Elevator Pitch")).toBeNull()
     expect(within(dialog).queryByText("App Screenshot")).toBeNull()
@@ -91,6 +92,9 @@ describe("SubmissionButton", () => {
     })
     fireEvent.click(within(dialog).getByRole("button", { name: "Next" }))
     expect(within(dialog).getByLabelText("Live App / Project URL")).toBeDefined()
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Next" }))
+    expect(within(dialog).getByLabelText(/Video link/)).toBeDefined()
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Next" }))
     expect(within(dialog).getByLabelText("What is this?")).toBeDefined()
@@ -152,6 +156,11 @@ describe("SubmissionButton", () => {
     })
     fireEvent.click(within(dialog).getByRole("button", { name: "Next" }))
 
+    fireEvent.change(within(dialog).getByLabelText(/Video link/), {
+      target: { value: "youtube.com/watch?v=atlas-demo" },
+    })
+    fireEvent.click(within(dialog).getByRole("button", { name: "Next" }))
+
     fireEvent.change(within(dialog).getByLabelText("What is this?"), {
       target: { value: "An AI teammate for hackathon teams." },
     })
@@ -174,6 +183,7 @@ describe("SubmissionButton", () => {
       description: "An AI teammate for hackathon teams.",
       githubUrl: "https://github.com/acme/atlas",
       liveAppUrl: "https://atlas.vercel.app",
+      demoVideoUrl: "https://youtube.com/watch?v=atlas-demo",
     })
   })
 })
