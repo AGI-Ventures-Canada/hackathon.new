@@ -375,7 +375,7 @@ export function SubmissionButton({
       try {
         new URL(normalizeUrl(demoVideoUrl))
       } catch {
-        return "Please enter a valid video link"
+        return "Please enter a valid video link."
       }
     }
 

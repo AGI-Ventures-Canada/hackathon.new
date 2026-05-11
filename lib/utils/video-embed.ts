@@ -119,7 +119,3 @@ export function getVideoEmbedInfo(rawUrl: string): VideoEmbedInfo | null {
 
   return getYouTubeEmbedInfo(url) ?? getLoomEmbedInfo(url) ?? getVimeoEmbedInfo(url)
 }
-
-export function isEmbeddableVideoUrl(rawUrl: string): boolean {
-  return getVideoEmbedInfo(rawUrl) !== null
-}

@@ -141,7 +141,7 @@ function HackathonPreviewContent({
     ]
   }, [hackathon.prizes, pendingPrizes])
 
-  const [nowIso, setNowIso] = useState<string | null>(null)
+  const [nowIso, setNowIso] = useState(() => new Date().toISOString())
   useEffect(() => {
     const tick = () => setNowIso(new Date().toISOString())
     tick()
@@ -153,7 +153,6 @@ function HackathonPreviewContent({
   const canInviteTeamMembers = Boolean(
     canRenameTeam &&
     (!hackathon.registration_closes_at ||
-      !nowIso ||
       new Date(hackathon.registration_closes_at).getTime() > new Date(nowIso).getTime())
   )
 

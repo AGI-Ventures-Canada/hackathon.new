@@ -1,8 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import {
-  getVideoEmbedInfo,
-  isEmbeddableVideoUrl,
-} from "@/lib/utils/video-embed"
+import { getVideoEmbedInfo } from "@/lib/utils/video-embed"
 
 describe("getVideoEmbedInfo", () => {
   it("detects YouTube watch links", () => {
@@ -47,6 +44,5 @@ describe("getVideoEmbedInfo", () => {
 
   it("leaves unknown links as plain links", () => {
     expect(getVideoEmbedInfo("https://example.com/demo-video")).toBeNull()
-    expect(isEmbeddableVideoUrl("https://example.com/demo-video")).toBe(false)
   })
 })
