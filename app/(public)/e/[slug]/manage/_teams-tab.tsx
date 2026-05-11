@@ -33,8 +33,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
-import { extractYouTubeVideoId } from "@/lib/utils/youtube"
-import { YouTubeEmbed } from "@/components/hackathon/youtube-embed"
+import { getVideoEmbedInfo } from "@/lib/utils/video-embed"
+import { VideoEmbed } from "@/components/hackathon/video-embed"
 import { SubmissionLinks } from "@/components/hackathon/submission-links"
 
 type TeamMember = {
@@ -68,8 +68,8 @@ type Team = {
 }
 
 function TeamSubmissionPanel({ submission }: { submission: TeamSubmission }) {
-  const youtubeVideoId = submission.demoVideoUrl
-    ? extractYouTubeVideoId(submission.demoVideoUrl)
+  const videoEmbed = submission.demoVideoUrl
+    ? getVideoEmbedInfo(submission.demoVideoUrl)
     : null
 
   return (
@@ -92,12 +92,12 @@ function TeamSubmissionPanel({ submission }: { submission: TeamSubmission }) {
           />
         </div>
       )}
-      {youtubeVideoId && <YouTubeEmbed videoId={youtubeVideoId} />}
+      {videoEmbed && <VideoEmbed video={videoEmbed} />}
       <SubmissionLinks
         githubUrl={submission.githubUrl}
         liveAppUrl={submission.liveAppUrl}
         demoVideoUrl={submission.demoVideoUrl}
-        isYouTube={youtubeVideoId !== null}
+        hasEmbeddedVideo={videoEmbed !== null}
       />
     </div>
   )

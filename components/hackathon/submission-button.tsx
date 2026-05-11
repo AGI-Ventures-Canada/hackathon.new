@@ -654,7 +654,7 @@ export function SubmissionButton({
                     id="submission-demo-video-url"
                     name="demoVideoUrl"
                     {...urlInputProps}
-                    placeholder="youtube.com/watch?v=..."
+                    placeholder="youtube.com, loom.com, or any link"
                     value={demoVideoUrl}
                     onChange={(e) => handleChange(setDemoVideoUrl, e.target.value)}
                     onBlur={() => setDemoVideoUrl(normalizeUrlFieldValue(demoVideoUrl))}
@@ -664,7 +664,7 @@ export function SubmissionButton({
                     data-lpignore="true"
                     data-form-type="other"
                   />
-                  <FieldDescription>Add a YouTube, Loom, or demo video link.</FieldDescription>
+                  <FieldDescription>Add YouTube, Loom, Vimeo, or any video link.</FieldDescription>
                 </Field>
               )}
 
