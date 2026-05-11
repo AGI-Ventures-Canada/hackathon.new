@@ -7,19 +7,25 @@ afterEach(() => {
 })
 
 describe("VideoEmbed", () => {
-  it("sandboxes embedded provider iframes", () => {
+  it.each([
+    {
+      provider: "loom" as const,
+      embedUrl: "https://www.loom.com/embed/abc123",
+      title: "Loom video",
+    },
+    {
+      provider: "vimeo" as const,
+      embedUrl: "https://player.vimeo.com/video/123456",
+      title: "Vimeo video",
+    },
+  ])("sandboxes $provider iframes without same-origin access", (video) => {
     render(
-      <VideoEmbed
-        video={{
-          provider: "loom",
-          embedUrl: "https://www.loom.com/embed/abc123",
-          title: "Loom video",
-        }}
-      />
+      <VideoEmbed video={video} />
     )
 
-    expect(screen.getByTitle("Loom video").getAttribute("sandbox")).toBe(
-      "allow-scripts allow-same-origin allow-presentation allow-popups"
-    )
+    const iframe = screen.getByTitle(video.title)
+    expect(iframe.getAttribute("src")).toBe(video.embedUrl)
+    expect(iframe.getAttribute("sandbox")).toBe("allow-scripts allow-presentation allow-popups")
+    expect(iframe.getAttribute("sandbox")).not.toContain("allow-same-origin")
   })
 })
