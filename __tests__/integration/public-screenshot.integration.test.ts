@@ -50,6 +50,7 @@ mock.module("@/lib/integrations/oauth", () => ({
 
 const mockGetParticipantWithTeam = mock(() => Promise.resolve(null))
 const mockGetExistingSubmission = mock(() => Promise.resolve(null))
+const mockCreateSubmission = mock(() => Promise.resolve({ id: "new-sub" }))
 const mockUpdateSubmission = mock(() => Promise.resolve({ id: "sub123" }))
 const mockGetSubmissionForParticipant = mock(() => Promise.resolve(null))
 const mockGetHackathonSubmissions = mock(() => Promise.resolve([]))
@@ -58,7 +59,7 @@ mock.module("@/lib/services/submissions", () => ({
   getParticipantWithTeam: mockGetParticipantWithTeam,
   getSubmissionForParticipant: mockGetSubmissionForParticipant,
   getExistingSubmission: mockGetExistingSubmission,
-  createSubmission: mock(() => Promise.resolve({ id: "new-sub" })),
+  createSubmission: mockCreateSubmission,
   updateSubmission: mockUpdateSubmission,
   getHackathonSubmissions: mockGetHackathonSubmissions,
   getTeamMemberCount: mock(() => Promise.resolve(0)),
@@ -136,15 +137,83 @@ describe("Public Screenshot Routes", () => {
     mockGetPublicHackathon.mockReset()
     mockGetParticipantWithTeam.mockReset()
     mockGetExistingSubmission.mockReset()
+    mockCreateSubmission.mockReset()
     mockUpdateSubmission.mockReset()
     mockUploadScreenshot.mockReset()
     mockDeleteScreenshot.mockReset()
     mockGetSubmissionForParticipant.mockReset()
     mockGetHackathonSubmissions.mockReset()
 
+    mockCreateSubmission.mockImplementation(() => Promise.resolve({ id: "new-sub" }))
     mockUpdateSubmission.mockImplementation(() => Promise.resolve({ id: "sub123" }))
     mockUploadScreenshot.mockImplementation(() => Promise.resolve({ url: "https://storage.test/screenshot.webp", path: "sub123/screenshot.webp" }))
     mockDeleteScreenshot.mockImplementation(() => Promise.resolve(true))
+  })
+
+  describe("POST /api/public/hackathons/:slug/submissions", () => {
+    it("saves a demo video link", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockGetParticipantWithTeam.mockResolvedValue({ participantId: "p1", teamId: null })
+      mockGetExistingSubmission.mockResolvedValue(null)
+
+      const res = await app.handle(
+        new Request("http://localhost/api/public/hackathons/test-hackathon/submissions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: "Test Project",
+            description: "A test project",
+            githubUrl: "github.com/test/repo",
+            liveAppUrl: "test.vercel.app",
+            demoVideoUrl: "youtube.com/watch?v=dQw4w9WgXcQ",
+          }),
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(data.submissionId).toBe("new-sub")
+      expect(mockCreateSubmission).toHaveBeenCalledWith(
+        "h1",
+        "p1",
+        null,
+        expect.objectContaining({
+          demoVideoUrl: "https://youtube.com/watch?v=dQw4w9WgXcQ",
+        })
+      )
+    })
+  })
+
+  describe("PATCH /api/public/hackathons/:slug/submissions", () => {
+    it("updates a demo video link", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockGetParticipantWithTeam.mockResolvedValue({ participantId: "p1", teamId: null })
+      mockGetExistingSubmission.mockResolvedValue(mockSubmission)
+
+      const res = await app.handle(
+        new Request("http://localhost/api/public/hackathons/test-hackathon/submissions", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            demoVideoUrl: "youtu.be/dQw4w9WgXcQ",
+          }),
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(data.submissionId).toBe("sub123")
+      expect(mockUpdateSubmission).toHaveBeenCalledWith(
+        "sub123",
+        "p1",
+        null,
+        expect.objectContaining({
+          demoVideoUrl: "https://youtu.be/dQw4w9WgXcQ",
+        })
+      )
+    })
   })
 
   describe("POST /api/public/hackathons/:slug/submissions/screenshot", () => {
@@ -637,6 +706,7 @@ describe("Public Screenshot Routes", () => {
       expect(data.submissions).toHaveLength(2)
       expect(data.submissions[0].screenshotUrl).toBe("https://storage.test/screenshot1.webp")
       expect(data.submissions[1].screenshotUrl).toBeNull()
+      expect(data.submissions[1].demoVideoUrl).toBe("https://youtube.com/watch?v=123")
     })
   })
 })

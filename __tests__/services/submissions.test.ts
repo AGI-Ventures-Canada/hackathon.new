@@ -219,11 +219,15 @@ describe("Submissions Service", () => {
         description: "A test project description",
         githubUrl: "https://github.com/test/repo",
         liveAppUrl: "https://test.vercel.app",
+        demoVideoUrl: "https://youtube.com/watch?v=dQw4w9WgXcQ",
       })
 
       expect(result).not.toBeNull()
       expect(result?.title).toBe("Test Project")
       expect(result?.participant_id).toBe("p1")
+      expect(chain.insert).toHaveBeenCalledWith(expect.objectContaining({
+        demo_video_url: "https://youtube.com/watch?v=dQw4w9WgXcQ",
+      }))
     })
 
     it("creates submission for team", async () => {
@@ -271,10 +275,14 @@ describe("Submissions Service", () => {
 
       const result = await updateSubmission("s1", "p1", null, {
         title: "Updated Title",
+        demoVideoUrl: "https://youtu.be/dQw4w9WgXcQ",
       })
 
       expect(result).not.toBeNull()
       expect(result?.title).toBe("Updated Title")
+      expect(chain.update).toHaveBeenCalledWith(expect.objectContaining({
+        demo_video_url: "https://youtu.be/dQw4w9WgXcQ",
+      }))
     })
 
     it("updates submission for team", async () => {
