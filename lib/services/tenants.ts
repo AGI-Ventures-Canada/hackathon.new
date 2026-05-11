@@ -15,8 +15,6 @@ async function fetchClerkOrgName(clerkOrgId: string): Promise<string | undefined
 
 const FALLBACK_NAME_RE = /^Org org_|^Unnamed Organization$|^Personal user_|^Personal Account$/
 
-const RACE_RETRY_DELAYS_MS = [25, 75, 150]
-
 async function fetchTenantBy(
   column: "clerk_org_id" | "clerk_user_id",
   value: string
@@ -29,25 +27,31 @@ async function fetchTenantBy(
   return (data as Tenant) ?? null
 }
 
-async function refetchAfterRace(
+async function upsertAndFetchTenant(
   column: "clerk_org_id" | "clerk_user_id",
-  value: string
+  value: string,
+  name: string,
+  options: { overwriteNameOnConflict: boolean }
 ): Promise<Tenant | null> {
-  for (const delay of RACE_RETRY_DELAYS_MS) {
-    const found = await fetchTenantBy(column, value)
-    if (found) return found
-    await new Promise((resolve) => setTimeout(resolve, delay))
+  const { data, error } = await getSupabase()
+    .from("tenants")
+    .upsert(
+      { [column]: value, name },
+      { onConflict: column, ignoreDuplicates: !options.overwriteNameOnConflict }
+    )
+    .select()
+    .maybeSingle()
+
+  if (error) {
+    console.error("Failed to upsert tenant:", error.message, error.code, error.details)
+    return null
   }
-  const final = await fetchTenantBy(column, value)
-  if (!final) {
-    console.error("[tenants] race retry exhausted", {
-      column,
-      value,
-      attempts: RACE_RETRY_DELAYS_MS.length + 1,
-      severity: "error",
-    })
+
+  if (!data) {
+    return fetchTenantBy(column, value)
   }
-  return final
+
+  return data as Tenant
 }
 
 export async function getOrCreateTenant(
@@ -76,23 +80,12 @@ export async function getOrCreateTenant(
     clerkOrgName = await fetchClerkOrgName(clerkOrgId)
   }
 
-  const { data: created, error } = await getSupabase()
-    .from("tenants")
-    .insert({
-      clerk_org_id: clerkOrgId,
-      name: clerkOrgName ?? "Unnamed Organization",
-    })
-    .select()
-    .single()
-
-  if (!error) return created as Tenant
-
-  if (error.code !== "23505") {
-    console.error("Failed to create org tenant:", error.message, error.code, error.details)
-    return null
-  }
-
-  return refetchAfterRace("clerk_org_id", clerkOrgId)
+  return upsertAndFetchTenant(
+    "clerk_org_id",
+    clerkOrgId,
+    clerkOrgName ?? "Unnamed Organization",
+    { overwriteNameOnConflict: true }
+  )
 }
 
 export async function getOrCreatePersonalTenant(
@@ -114,23 +107,12 @@ export async function getOrCreatePersonalTenant(
     return existing
   }
 
-  const { data: created, error } = await getSupabase()
-    .from("tenants")
-    .insert({
-      clerk_user_id: clerkUserId,
-      name: userName ?? "Personal Account",
-    })
-    .select()
-    .single()
-
-  if (!error) return created as Tenant
-
-  if (error.code !== "23505") {
-    console.error("Failed to create personal tenant:", error.message, error.code, error.details)
-    return null
-  }
-
-  return refetchAfterRace("clerk_user_id", clerkUserId)
+  return upsertAndFetchTenant(
+    "clerk_user_id",
+    clerkUserId,
+    userName ?? "Personal Account",
+    { overwriteNameOnConflict: false }
+  )
 }
 
 export async function resolvePageTenant(): Promise<Tenant> {

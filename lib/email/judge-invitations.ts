@@ -32,7 +32,7 @@ export async function sendJudgeAddedNotification(
     return { success: false }
   }
 
-  const eventUrl = buildEventUrl(input.hackathonSlug)
+  const eventUrl = buildEventUrl(input.hackathonSlug, "?as=judge")
 
   const { html, text } = await renderEmail(
     JudgeAddedEmail({

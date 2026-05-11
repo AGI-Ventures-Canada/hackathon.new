@@ -1,50 +1,37 @@
-import { Badge } from "@/components/ui/badge"
 import Link from "next/link"
-import type { PrizeType, PrizeJudgingStyle, HackathonStatus } from "@/lib/db/hackathon-types"
+import { Vote } from "lucide-react"
+import type { HackathonStatus, PrizeJudgingStyle, PrizeType } from "@/lib/db/hackathon-types"
 
 interface PrizeCardProps {
   name: string
   description: string | null
   value: string | null
-  type: PrizeType
-  judgingStyle: PrizeJudgingStyle | null
+  type?: PrizeType
+  judgingStyle?: PrizeJudgingStyle | null
+  hackathonSlug?: string
+  hackathonStatus?: HackathonStatus
   winner?: {
     submissionTitle: string
     teamName: string | null
   } | null
-  hackathonSlug?: string
-  hackathonStatus?: HackathonStatus
 }
 
-const judgingStyleLabels: Record<PrizeJudgingStyle, string> = {
-  bucket_sort: "Judged",
-  gate_check: "Gate Check",
-  crowd_vote: "Crowd Vote",
-  judges_pick: "Judge's Pick",
-  weighted_score: "Weighted",
-}
-
-const typeLabels: Record<PrizeType, string> = {
-  score: "Judged",
-  criteria: "Judged",
-  favorite: "Judged",
-  crowd: "Crowd Vote",
-}
-
-function getBadgeLabel(judgingStyle: PrizeJudgingStyle | null, type: PrizeType): string {
-  if (judgingStyle) return judgingStyleLabels[judgingStyle]
-  return typeLabels[type]
-}
-
-export function PrizeCard({ name, description, value, type, judgingStyle, winner, hackathonSlug, hackathonStatus }: PrizeCardProps) {
+export function PrizeCard({
+  name,
+  description,
+  value,
+  type,
+  judgingStyle,
+  hackathonSlug,
+  hackathonStatus,
+  winner,
+}: PrizeCardProps) {
   const isCrowd = judgingStyle === "crowd_vote" || type === "crowd"
-  const showCrowdLink =
+  const showVoteLink =
     isCrowd &&
     hackathonSlug &&
     hackathonStatus &&
     ["active", "judging"].includes(hackathonStatus)
-
-  const badgeLabel = getBadgeLabel(judgingStyle, type)
 
   return (
     <div className="rounded-lg border p-4 space-y-2">
@@ -55,16 +42,14 @@ export function PrizeCard({ name, description, value, type, judgingStyle, winner
             <p className="text-sm text-muted-foreground line-clamp-2">{description}</p>
           )}
         </div>
-        {showCrowdLink ? (
-          <Link href={`/e/${hackathonSlug}/vote`}>
-            <Badge variant="secondary" className="shrink-0 text-xs hover:bg-secondary/80 cursor-pointer">
-              {badgeLabel}
-            </Badge>
+        {showVoteLink && (
+          <Link
+            href={`/e/${hackathonSlug}/vote`}
+            className="shrink-0 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+          >
+            <Vote className="size-3" />
+            Vote
           </Link>
-        ) : (
-          <Badge variant="secondary" className="shrink-0 text-xs">
-            {badgeLabel}
-          </Badge>
         )}
       </div>
       {value && (

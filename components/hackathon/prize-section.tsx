@@ -43,9 +43,9 @@ export function PrizeSection({ prizes, hackathonSlug, hackathonStatus }: PrizeSe
               value={prize.display_value ?? prize.value}
               type={prize.type}
               judgingStyle={prize.judging_style}
-              winner={prize.winner}
               hackathonSlug={hackathonSlug}
               hackathonStatus={hackathonStatus}
+              winner={prize.winner}
             />
           ))}
         </div>

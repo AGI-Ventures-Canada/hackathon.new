@@ -1,5 +1,10 @@
-import { AuthenticateWithRedirectCallback } from "@clerk/nextjs"
+import { Suspense } from "react"
+import { SSOCallback } from "./sso-callback"
 
 export default function SSOCallbackPage() {
-  return <AuthenticateWithRedirectCallback />
+  return (
+    <Suspense>
+      <SSOCallback />
+    </Suspense>
+  )
 }

@@ -34,6 +34,7 @@ mock.module("next/navigation", () => ({
 g.__clerkState = {
   isSignedIn: true,
   userId: "user_123",
+  orgId: null as string | null,
   user: { id: "user_123", fullName: "Test User", firstName: "Test", imageUrl: null },
   isLoaded: true,
   organization: null as { id: string; name: string } | null,
@@ -56,7 +57,9 @@ g.__clerkState = {
 mock.module("@clerk/nextjs", () => ({
   OrganizationList: (props: Record<string, unknown>) =>
     createElement("div", { "data-testid": "organization-list", ...props }),
-  useAuth: () => ({ isSignedIn: g.__clerkState.isSignedIn, isLoaded: g.__clerkState.isLoaded, userId: g.__clerkState.userId }),
+  useAuth: () => ({ isSignedIn: g.__clerkState.isSignedIn, isLoaded: g.__clerkState.isLoaded, userId: g.__clerkState.userId, orgId: g.__clerkState.orgId, getToken: () => Promise.resolve(null) }),
+  AuthenticateWithRedirectCallback: (props: Record<string, unknown>) =>
+    createElement("div", { "data-testid": "authenticate-with-redirect-callback", ...props }),
   useUser: () => ({ isLoaded: g.__clerkState.isLoaded, isSignedIn: g.__clerkState.isSignedIn, user: g.__clerkState.isSignedIn ? g.__clerkState.user : null }),
   useClerk: () => ({ openUserProfile: g.__clerkState.openUserProfile, openOrganizationProfile: g.__clerkState.openOrganizationProfile, signOut: g.__clerkState.signOut, client: g.__clerkState.client, setActive: g.__clerkState.signInSetActive }),
   useOrganization: () => ({ organization: g.__clerkState.organization, isLoaded: g.__clerkState.isLoaded }),
@@ -64,6 +67,7 @@ mock.module("@clerk/nextjs", () => ({
     userMemberships: { data: g.__clerkState.memberships },
     setActive: g.__clerkState.setOrgActive ?? g.__clerkState.setActive,
     createOrganization: g.__clerkState.createOrganization,
+    isLoaded: g.__clerkState.isLoaded,
   }),
   useSignIn: () => ({
     isLoaded: g.__clerkState.signInLoaded,
