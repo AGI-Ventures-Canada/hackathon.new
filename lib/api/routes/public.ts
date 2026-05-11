@@ -17,6 +17,12 @@ import {
 } from "@/lib/services/submissions"
 import { getTeamSizeWarning } from "@/lib/utils/team-size"
 import { currentTermsHash, recordTermsAcceptance } from "@/lib/services/hackathon-terms"
+import {
+  buildSubmissionScreenshotMetadata,
+  getSubmissionScreenshots,
+  getSubmissionScreenshotUrls,
+  MAX_SUBMISSION_SCREENSHOTS,
+} from "@/lib/utils/submission-screenshots"
 
 export const publicRoutes = new Elysia({ prefix: "/public" })
   .get("/health", () => ({
@@ -310,6 +316,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         liveAppUrl: submission.live_app_url,
         demoVideoUrl: submission.demo_video_url,
         screenshotUrl: submission.screenshot_url,
+        screenshotUrls: getSubmissionScreenshotUrls(submission),
         status: submission.status,
         createdAt: submission.created_at,
         updatedAt: submission.updated_at,
@@ -342,6 +349,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         liveAppUrl: s.live_app_url,
         demoVideoUrl: s.demo_video_url,
         screenshotUrl: s.screenshot_url,
+        screenshotUrls: getSubmissionScreenshotUrls(s),
         status: s.status,
         createdAt: s.created_at,
         submitter: s.submitter_name,
@@ -381,6 +389,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         liveAppUrl: s.live_app_url,
         demoVideoUrl: s.demo_video_url,
         screenshotUrl: s.screenshot_url,
+        screenshotUrls: getSubmissionScreenshotUrls(s),
         submitter: s.submitter_name,
       })),
     }
@@ -723,6 +732,15 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
 
     const formData = await request.formData()
     const file = formData.get("file") as File | null
+    const rawSlot = formData.get("slot")
+    const slot = typeof rawSlot === "string" ? Number(rawSlot) : 0
+
+    if (!Number.isInteger(slot) || slot < 0 || slot >= MAX_SUBMISSION_SCREENSHOTS) {
+      return new Response(
+        JSON.stringify({ error: "Invalid screenshot slot", code: "invalid_screenshot_slot" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      )
+    }
 
     if (!file) {
       return new Response(
@@ -748,7 +766,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
 
     const { uploadScreenshot } = await import("@/lib/services/storage")
     const buffer = Buffer.from(await file.arrayBuffer())
-    const uploadResult = await uploadScreenshot(existing.id, buffer)
+    const uploadResult = await uploadScreenshot(existing.id, buffer, slot)
 
     if (!uploadResult) {
       return new Response(
@@ -757,11 +775,16 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
+    const screenshots = [
+      ...getSubmissionScreenshots(existing).filter((screenshot) => screenshot.slot !== slot),
+      { slot: slot as 0 | 1, url: uploadResult.url },
+    ].sort((a, b) => a.slot - b.slot)
+    const metadata = buildSubmissionScreenshotMetadata(existing.metadata, screenshots)
     const updated = await updateSubmission(
       existing.id,
       participant.participantId,
       participant.teamId,
-      { screenshotUrl: uploadResult.url }
+      { screenshotUrl: screenshots[0]?.url ?? null, metadata }
     )
 
     if (!updated) {
@@ -771,14 +794,18 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
-    return { success: true, screenshotUrl: uploadResult.url }
+    return {
+      success: true,
+      screenshotUrl: uploadResult.url,
+      screenshotUrls: updated ? getSubmissionScreenshotUrls(updated) : screenshots.map((s) => s.url),
+    }
   }, {
     detail: {
       summary: "Upload submission screenshot",
       description: "Uploads a screenshot image for the user's submission. Accepts PNG, JPEG, or WebP (max 10MB).",
     },
   })
-  .delete("/hackathons/:slug/submissions/screenshot", async ({ params }) => {
+  .delete("/hackathons/:slug/submissions/screenshot", async ({ params, request }) => {
     const { userId } = await auth()
 
     if (!userId) {
@@ -826,17 +853,41 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
-    const { deleteScreenshot } = await import("@/lib/services/storage")
-    await deleteScreenshot(existing.id)
+    const slotParam = new URL(request.url).searchParams.get("slot")
+    const slot = slotParam === null ? null : Number(slotParam)
 
-    await updateSubmission(
+    if (
+      slot !== null &&
+      (!Number.isInteger(slot) || slot < 0 || slot >= MAX_SUBMISSION_SCREENSHOTS)
+    ) {
+      return new Response(
+        JSON.stringify({ error: "Invalid screenshot slot", code: "invalid_screenshot_slot" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      )
+    }
+
+    const { deleteScreenshot } = await import("@/lib/services/storage")
+    await deleteScreenshot(existing.id, slot ?? undefined)
+    const screenshots = slot === null
+      ? []
+      : getSubmissionScreenshots(existing).filter((screenshot) => screenshot.slot !== slot)
+    const metadata = buildSubmissionScreenshotMetadata(existing.metadata, screenshots)
+
+    const updated = await updateSubmission(
       existing.id,
       participant.participantId,
       participant.teamId,
-      { screenshotUrl: null }
+      { screenshotUrl: screenshots[0]?.url ?? null, metadata }
     )
 
-    return { success: true }
+    if (!updated) {
+      return new Response(
+        JSON.stringify({ error: "Failed to save screenshot URL", code: "update_failed" }),
+        { status: 500, headers: { "Content-Type": "application/json" } }
+      )
+    }
+
+    return { success: true, screenshotUrls: getSubmissionScreenshotUrls(updated) }
   }, {
     detail: {
       summary: "Delete submission screenshot",

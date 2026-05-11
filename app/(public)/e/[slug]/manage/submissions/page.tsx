@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation"
 import { getManageHackathon } from "@/lib/services/manage-hackathon"
 import { getHackathonSubmissions } from "@/lib/services/submissions"
+import { getSubmissionScreenshotUrls } from "@/lib/utils/submission-screenshots"
 import { PageHeader } from "@/components/page-header"
 import { SubmissionGallery } from "@/components/hackathon/submission-gallery"
 
@@ -28,6 +29,7 @@ export default async function SubmissionsPage({ params }: PageProps) {
     liveAppUrl: s.live_app_url,
     demoVideoUrl: s.demo_video_url,
     screenshotUrl: s.screenshot_url,
+    screenshotUrls: getSubmissionScreenshotUrls(s),
     submitter: s.submitter_name,
     createdAt: s.created_at,
   }))

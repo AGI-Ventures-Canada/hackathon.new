@@ -107,8 +107,30 @@ describe("SubmissionButton", () => {
     await waitFor(() => {
       expect(within(dialog).getByRole("button", { name: "Go to Screenshots step" })).toBeDefined()
       expect(within(dialog).getAllByText("Screenshots").length).toBeGreaterThan(0)
-      expect(within(dialog).getByText("Upload screenshot")).toBeDefined()
+      expect(within(dialog).getByText("Upload screenshots")).toBeDefined()
       expect(within(dialog).queryByText("App Screenshot")).toBeNull()
+    })
+  })
+
+  it("shows a video preview after a supported video link is entered", async () => {
+    const dialog = openDialog()
+
+    fireEvent.change(within(dialog).getByLabelText("Title"), {
+      target: { value: "Project Atlas" },
+    })
+    fireEvent.click(within(dialog).getByRole("button", { name: "Next" }))
+
+    fireEvent.change(within(dialog).getByLabelText("GitHub URL"), {
+      target: { value: "github.com/acme/atlas" },
+    })
+    fireEvent.click(within(dialog).getByRole("button", { name: "Next" }))
+
+    fireEvent.change(within(dialog).getByRole("textbox", { name: /Video link/ }), {
+      target: { value: "youtube.com/watch?v=dQw4w9WgXcQ" },
+    })
+
+    await waitFor(() => {
+      expect(within(dialog).getByTitle("YouTube video")).toBeDefined()
     })
   })
 

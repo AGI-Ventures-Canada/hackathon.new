@@ -528,7 +528,32 @@ describe("Public Screenshot Routes", () => {
 
       expect(mockUploadScreenshot).toHaveBeenCalledWith(
         "sub123",
-        expect.any(Buffer)
+        expect.any(Buffer),
+        0
+      )
+    })
+
+    it("uploads screenshot to the requested slot", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockGetParticipantWithTeam.mockResolvedValue({ participantId: "p1", teamId: null })
+      mockGetExistingSubmission.mockResolvedValue(mockSubmission)
+
+      const formData = new FormData()
+      formData.append("file", new Blob(["test"], { type: "image/jpeg" }), "screenshot.jpg")
+      formData.append("slot", "1")
+
+      await app.handle(
+        new Request("http://localhost/api/public/hackathons/test-hackathon/submissions/screenshot", {
+          method: "POST",
+          body: formData,
+        })
+      )
+
+      expect(mockUploadScreenshot).toHaveBeenCalledWith(
+        "sub123",
+        expect.any(Buffer),
+        1
       )
     })
 
@@ -680,8 +705,26 @@ describe("Public Screenshot Routes", () => {
         "sub123",
         "p1",
         null,
-        { screenshotUrl: null }
+        expect.objectContaining({ screenshotUrl: null })
       )
+    })
+
+    it("returns 500 when clearing the screenshot URL fails", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockGetParticipantWithTeam.mockResolvedValue({ participantId: "p1", teamId: null })
+      mockGetExistingSubmission.mockResolvedValue(mockSubmission)
+      mockUpdateSubmission.mockResolvedValue(null)
+
+      const res = await app.handle(
+        new Request("http://localhost/api/public/hackathons/test-hackathon/submissions/screenshot", {
+          method: "DELETE",
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(500)
+      expect(data.code).toBe("update_failed")
     })
   })
 

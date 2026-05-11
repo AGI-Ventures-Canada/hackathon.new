@@ -274,13 +274,14 @@ export async function optimizeScreenshot(
 
 export async function uploadScreenshot(
   submissionId: string,
-  file: Buffer
+  file: Buffer,
+  slot = 0
 ): Promise<UploadScreenshotResult | null> {
   const client = getSupabase()
 
   const { buffer, mimeType } = await optimizeScreenshot(file)
 
-  const filename = "screenshot.webp"
+  const filename = slot === 0 ? "screenshot.webp" : `screenshot-${slot + 1}.webp`
   const path = `${submissionId}/${filename}`
 
   const { error } = await client.storage
@@ -306,11 +307,16 @@ export async function uploadScreenshot(
   }
 }
 
-export async function deleteScreenshot(submissionId: string): Promise<boolean> {
+export async function deleteScreenshot(submissionId: string, slot?: number): Promise<boolean> {
   const client = getSupabase()
 
   const extensions = ["webp", "png", "jpg", "svg"]
-  const paths = extensions.map((ext) => `${submissionId}/screenshot.${ext}`)
+  const filenames = slot === undefined
+    ? ["screenshot", "screenshot-2"]
+    : [slot === 0 ? "screenshot" : `screenshot-${slot + 1}`]
+  const paths = filenames.flatMap((filename) =>
+    extensions.map((ext) => `${submissionId}/${filename}.${ext}`)
+  )
 
   const { error } = await client.storage
     .from(SCREENSHOTS_BUCKET)
