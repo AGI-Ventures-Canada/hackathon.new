@@ -125,6 +125,26 @@ describe("CreateOrgForm", () => {
     expect(mockPush).not.toHaveBeenCalled()
   })
 
+  it("does not create a duplicate organization on retry after slug patch fails", async () => {
+    patchOk = false
+    render(<CreateOrgForm redirectUrl="/home" />)
+    await fillName("Acme Inc")
+
+    fireEvent.click(screen.getByRole("button", { name: "Create organization" }))
+    await waitFor(() => {
+      expect(screen.getByText("Slug already taken")).toBeDefined()
+    })
+    expect(mockCreateOrganization).toHaveBeenCalledTimes(1)
+
+    patchOk = true
+    fireEvent.click(screen.getByRole("button", { name: "Create organization" }))
+    await waitFor(() => {
+      expect(mockPush).toHaveBeenCalledWith("/home")
+    })
+    expect(mockCreateOrganization).toHaveBeenCalledTimes(1)
+    expect(mockSetOrgActive).toHaveBeenCalledTimes(1)
+  })
+
   it("renders Skip button only when skipUrl is provided", () => {
     const { rerender } = render(<CreateOrgForm redirectUrl="/home" />)
     expect(screen.queryByRole("button", { name: "Skip for now" })).toBeNull()

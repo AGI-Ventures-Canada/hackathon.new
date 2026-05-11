@@ -34,6 +34,7 @@ export function CreateOrgForm({
   const [isCheckingSlug, setIsCheckingSlug] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState("")
+  const [createdOrgId, setCreatedOrgId] = useState<string | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -91,8 +92,13 @@ export function CreateOrgForm({
     setError("")
 
     try {
-      const org = await createOrganization({ name: name.trim() })
-      await setActive?.({ organization: org.id })
+      let orgId = createdOrgId
+      if (!orgId) {
+        const org = await createOrganization({ name: name.trim() })
+        orgId = org.id
+        setCreatedOrgId(orgId)
+        await setActive?.({ organization: orgId })
+      }
 
       const res = await fetch("/api/dashboard/org-profile", {
         method: "PATCH",
