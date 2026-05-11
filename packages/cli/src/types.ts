@@ -46,6 +46,7 @@ export interface Submission {
   createdAt?: string
   githubUrl?: string
   liveAppUrl?: string
+  demoVideoUrl?: string
 }
 
 export interface JudgingCriteria {

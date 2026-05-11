@@ -2483,6 +2483,7 @@ export type JudgeAssignmentForJudge = {
   submissionDescription: string | null
   submissionGithubUrl: string | null
   submissionLiveAppUrl: string | null
+  submissionDemoVideoUrl: string | null
   submissionScreenshotUrl: string | null
   teamName: string | null
   teamMode: "in_person" | "virtual" | null
@@ -2519,7 +2520,7 @@ export async function getJudgeAssignments(
     .from("judge_assignments")
     .select(`
       id, submission_id, is_complete, notes, viewed_at, prize_id, assignment_kind,
-      submission:submissions!submission_id(title, description, github_url, live_app_url, screenshot_url, team_id)
+      submission:submissions!submission_id(title, description, github_url, live_app_url, demo_video_url, screenshot_url, team_id)
     `)
     .eq("hackathon_id", hackathonId)
     .eq("judge_participant_id", participant.id)
@@ -2573,6 +2574,7 @@ export async function getJudgeAssignments(
       description: string | null
       github_url: string | null
       live_app_url: string | null
+      demo_video_url: string | null
       screenshot_url: string | null
       team_id: string | null
     }
@@ -2588,6 +2590,7 @@ export async function getJudgeAssignments(
       submissionDescription: sub.description,
       submissionGithubUrl: sub.github_url,
       submissionLiveAppUrl: sub.live_app_url,
+      submissionDemoVideoUrl: sub.demo_video_url,
       submissionScreenshotUrl: sub.screenshot_url,
       teamName: sub.team_id ? teamsMap[sub.team_id] ?? null : null,
       teamMode: sub.team_id ? teamModeMap[sub.team_id] ?? null : null,
@@ -2691,6 +2694,7 @@ export type AssignmentDetail = {
   submissionDescription: string | null
   submissionGithubUrl: string | null
   submissionLiveAppUrl: string | null
+  submissionDemoVideoUrl: string | null
   submissionScreenshotUrl: string | null
   teamName: string | null
   isComplete: boolean
@@ -2707,7 +2711,7 @@ export async function getAssignmentDetail(
 
   const { data: sub, error: subError } = await client
     .from("submissions")
-    .select("title, description, github_url, live_app_url, screenshot_url, team_id")
+    .select("title, description, github_url, live_app_url, demo_video_url, screenshot_url, team_id")
     .eq("id", ownership.submissionId)
     .single()
 
@@ -2831,6 +2835,7 @@ export async function getAssignmentDetail(
     submissionDescription: sub.description,
     submissionGithubUrl: sub.github_url,
     submissionLiveAppUrl: sub.live_app_url,
+    submissionDemoVideoUrl: sub.demo_video_url,
     submissionScreenshotUrl: sub.screenshot_url,
     teamName,
     isComplete: ownership.isComplete,

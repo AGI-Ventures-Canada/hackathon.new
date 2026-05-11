@@ -25,6 +25,7 @@ function mockSubmissionRow() {
     description: "A cool project",
     github_url: "https://github.com/test/repo",
     live_app_url: "https://myapp.com",
+    demo_video_url: "https://youtube.com/watch?v=test-demo",
     screenshot_url: "https://img.com/shot.png",
     team_id: TEAM_ID,
   }
@@ -126,6 +127,7 @@ describe("Judging Scoring Service", () => {
       expect(result!.submissionTitle).toBe("My Project")
       expect(result!.submissionDescription).toBe("A cool project")
       expect(result!.submissionGithubUrl).toBe("https://github.com/test/repo")
+      expect(result!.submissionDemoVideoUrl).toBe("https://youtube.com/watch?v=test-demo")
       expect(result!.teamName).toBe("Dream Team")
       expect(result!.isComplete).toBe(false)
       expect(result!.notes).toBe("some notes")

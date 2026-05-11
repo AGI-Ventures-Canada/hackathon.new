@@ -27,6 +27,7 @@ const submissionSteps = [
   { key: "title", label: "Title" },
   { key: "githubUrl", label: "GitHub" },
   { key: "liveAppUrl", label: "Project URL" },
+  { key: "demoVideoUrl", label: "Video" },
   { key: "description", label: "What is this?" },
   { key: "screenshots", label: "Screenshots" },
 ] as const
@@ -37,6 +38,7 @@ type SubmissionDraft = {
   title: string
   githubUrl: string
   liveAppUrl: string
+  demoVideoUrl: string
   description: string
   currentStep: number
   screenshotPreview: string | null
@@ -69,6 +71,7 @@ export function SubmissionButton({
   const [title, setTitle] = useState(submission?.title || "")
   const [githubUrl, setGithubUrl] = useState(submission?.github_url || "")
   const [liveAppUrl, setLiveAppUrl] = useState(submission?.live_app_url || "")
+  const [demoVideoUrl, setDemoVideoUrl] = useState(submission?.demo_video_url || "")
   const [description, setDescription] = useState(submission?.description || "")
   const [screenshotFile, setScreenshotFile] = useState<File | null>(null)
   const [screenshotPreview, setScreenshotPreview] = useState<string | null>(
@@ -96,6 +99,7 @@ export function SubmissionButton({
       title,
       githubUrl,
       liveAppUrl,
+      demoVideoUrl,
       description,
       currentStep,
       screenshotPreview: screenshotPreview?.startsWith("blob:") ? null : screenshotPreview,
@@ -105,6 +109,7 @@ export function SubmissionButton({
   }, [
     currentStep,
     description,
+    demoVideoUrl,
     draftStorageKey,
     githubUrl,
     isDialogOpen,
@@ -146,6 +151,7 @@ export function SubmissionButton({
     setTitle(submission?.title || "")
     setGithubUrl(submission?.github_url || "")
     setLiveAppUrl(submission?.live_app_url || "")
+    setDemoVideoUrl(submission?.demo_video_url || "")
     setDescription(submission?.description || "")
     setScreenshotFile(null)
     if (screenshotPreview?.startsWith("blob:")) {
@@ -175,6 +181,7 @@ export function SubmissionButton({
         title: parsed.title ?? "",
         githubUrl: parsed.githubUrl ?? "",
         liveAppUrl: parsed.liveAppUrl ?? "",
+        demoVideoUrl: parsed.demoVideoUrl ?? "",
         description: parsed.description ?? "",
         currentStep: Math.min(
           Math.max(parsed.currentStep ?? 0, 0),
@@ -196,6 +203,7 @@ export function SubmissionButton({
     setTitle(draft.title)
     setGithubUrl(draft.githubUrl)
     setLiveAppUrl(draft.liveAppUrl)
+    setDemoVideoUrl(draft.demoVideoUrl)
     setDescription(draft.description)
     setCurrentStep(draft.currentStep)
     setScreenshotPreview(draft.screenshotPreview)
@@ -327,6 +335,7 @@ export function SubmissionButton({
       submissions_closed: "Submissions are not currently open.",
       already_submitted: "You have already submitted. Edit your existing submission.",
       invalid_github_url: "Please enter a valid GitHub repository URL.",
+      invalid_demo_video_url: "Please enter a valid video link.",
       no_file: "Please select a screenshot to upload.",
       invalid_file_type: "Please select a PNG, JPEG, or WebP image.",
       file_too_large: "Screenshot must be smaller than 10MB.",
@@ -362,6 +371,14 @@ export function SubmissionButton({
       }
     }
 
+    if (step === "demoVideoUrl" && demoVideoUrl.trim()) {
+      try {
+        new URL(normalizeUrl(demoVideoUrl))
+      } catch {
+        return "Please enter a valid video link"
+      }
+    }
+
     if (step === "description") {
       if (!description.trim()) {
         return "Please tell judges what your project is"
@@ -386,7 +403,7 @@ export function SubmissionButton({
   }
 
   function handleNextStep() {
-      const validationError = validateStep(submissionSteps[currentStep].key)
+    const validationError = validateStep(submissionSteps[currentStep].key)
     if (validationError) {
       setError(validationError)
       return
@@ -434,6 +451,7 @@ export function SubmissionButton({
     try {
       const normalizedGithubUrl = normalizeUrl(githubUrl)
       const normalizedLiveAppUrl = normalizeOptionalUrl(liveAppUrl)
+      const normalizedDemoVideoUrl = normalizeOptionalUrl(demoVideoUrl)
       const method = submission ? "PATCH" : "POST"
       const response = await fetch(`/api/public/hackathons/${hackathonSlug}/submissions`, {
         method,
@@ -443,6 +461,7 @@ export function SubmissionButton({
           description: description.trim(),
           githubUrl: normalizedGithubUrl,
           liveAppUrl: normalizedLiveAppUrl,
+          demoVideoUrl: normalizedDemoVideoUrl,
         }),
       })
 
@@ -490,6 +509,7 @@ export function SubmissionButton({
         description: description.trim(),
         github_url: normalizedGithubUrl,
         live_app_url: normalizedLiveAppUrl,
+        demo_video_url: normalizedDemoVideoUrl,
         screenshot_url: finalScreenshotUrl,
       } as Submission)
 
@@ -546,9 +566,11 @@ export function SubmissionButton({
                   ? githubUrl.trim().length > 0
                   : step.key === "liveAppUrl"
                     ? liveAppUrl.trim().length > 0
-                    : step.key === "description"
-                      ? description.trim().length > 0
-                      : screenshotPreview !== null,
+                    : step.key === "demoVideoUrl"
+                      ? demoVideoUrl.trim().length > 0
+                      : step.key === "description"
+                        ? description.trim().length > 0
+                        : screenshotPreview !== null,
           }))}
           title={submission ? "Edit Your Submission" : "Submit Your Project"}
         >
@@ -627,6 +649,27 @@ export function SubmissionButton({
 
               {currentStep === 3 && (
                 <Field>
+                  <FieldLabel htmlFor="submission-demo-video-url">Video link <span className="text-muted-foreground font-normal">(optional)</span></FieldLabel>
+                  <Input
+                    id="submission-demo-video-url"
+                    name="demoVideoUrl"
+                    {...urlInputProps}
+                    placeholder="youtube.com/watch?v=..."
+                    value={demoVideoUrl}
+                    onChange={(e) => handleChange(setDemoVideoUrl, e.target.value)}
+                    onBlur={() => setDemoVideoUrl(normalizeUrlFieldValue(demoVideoUrl))}
+                    autoComplete="off"
+                    autoFocus
+                    data-1p-ignore
+                    data-lpignore="true"
+                    data-form-type="other"
+                  />
+                  <FieldDescription>Add a YouTube, Loom, or demo video link.</FieldDescription>
+                </Field>
+              )}
+
+              {currentStep === 4 && (
+                <Field>
                   <FieldLabel htmlFor="submission-description">What is this?</FieldLabel>
                   <Textarea
                     id="submission-description"
@@ -646,7 +689,7 @@ export function SubmissionButton({
                 </Field>
               )}
 
-              {currentStep === 4 && (
+              {currentStep === 5 && (
                 <Field>
                   <FieldLabel>Screenshots <span className="text-muted-foreground font-normal">(optional)</span></FieldLabel>
                   <FieldDescription className="mb-2">
