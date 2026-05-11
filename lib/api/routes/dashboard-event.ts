@@ -353,7 +353,8 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     const { supabase } = await import("@/lib/db/client")
 
     if (check.status === "not_authorized") {
-      if (principal.kind !== "user") {
+      const actorUserId = principal.kind === "api_key" ? null : principal.userId
+      if (!actorUserId) {
         set.status = 403
         return { error: "Not authorized to manage this hackathon" }
       }
@@ -363,7 +364,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
         .eq("id", params.teamId)
         .eq("hackathon_id", params.id)
         .single()
-      if (!team || team.captain_clerk_user_id !== principal.userId) {
+      if (!team || team.captain_clerk_user_id !== actorUserId) {
         set.status = 403
         return { error: "Only the team captain or an organizer can rename a team" }
       }
