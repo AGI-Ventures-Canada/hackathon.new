@@ -4,6 +4,7 @@ import { useEffect } from "react"
 import { AuthenticateWithRedirectCallback, useAuth } from "@clerk/nextjs"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Loader2 } from "lucide-react"
+import { safeRedirectUrl } from "@/lib/utils/url"
 
 export function SSOCallback() {
   const { isLoaded, isSignedIn, orgId } = useAuth()
@@ -15,7 +16,8 @@ export function SSOCallback() {
     if (!isLoaded || !isSignedIn) return
     const timeout = window.setTimeout(() => {
       if (window.location.pathname === "/sso-callback") {
-        router.replace(stored ?? (orgId ? "/home" : "/onboarding"))
+        const fallback = orgId ? "/home" : "/onboarding"
+        router.replace(safeRedirectUrl(stored ?? undefined, fallback))
       }
     }, 8000)
     return () => window.clearTimeout(timeout)

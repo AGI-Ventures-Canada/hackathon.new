@@ -114,6 +114,25 @@ describe("SSOCallback", () => {
     expect(mockReplace).toHaveBeenCalledWith("/judge-invite/abc")
   })
 
+  it("ignores absolute URLs in redirect_url to prevent open redirect", async () => {
+    g.__nextNavState.searchParams = new URLSearchParams("redirect_url=https://evil.com/steal")
+    render(<SSOCallback />)
+    await act(async () => {
+      flushTimers()
+    })
+    expect(mockReplace).toHaveBeenCalledWith("/onboarding")
+  })
+
+  it("ignores protocol-relative URLs in redirect_url", async () => {
+    g.__nextNavState.searchParams = new URLSearchParams("redirect_url=//evil.com/steal")
+    g.__clerkState.orgId = "org_abc"
+    render(<SSOCallback />)
+    await act(async () => {
+      flushTimers()
+    })
+    expect(mockReplace).toHaveBeenCalledWith("/home")
+  })
+
   it("does not navigate if Clerk already moved off /sso-callback", async () => {
     render(<SSOCallback />)
     setLocation("/home")

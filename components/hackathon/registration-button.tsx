@@ -142,7 +142,7 @@ export function RegistrationButton({
     return (
       <Button asChild size="lg">
         <Link href={`/sign-in?redirect_url=${encodeURIComponent(pathname)}`}>
-          {isJudgeLogin ? "Login to judge" : "Register to Attend"}
+          {isJudgeLogin ? "Log in to judge" : "Register to Attend"}
         </Link>
       </Button>
     )
