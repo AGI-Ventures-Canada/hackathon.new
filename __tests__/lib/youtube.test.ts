@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test"
 import {
   extractYouTubeVideoId,
-  isYouTubeUrl,
   getYouTubeEmbedUrl,
+  isYouTubeUrl,
 } from "@/lib/utils/youtube"
 
 describe("extractYouTubeVideoId", () => {
@@ -20,6 +20,10 @@ describe("extractYouTubeVideoId", () => {
 
   it("extracts from embed URL", () => {
     expect(extractYouTubeVideoId("https://www.youtube.com/embed/dQw4w9WgXcQ")).toBe("dQw4w9WgXcQ")
+  })
+
+  it("extracts from shorts URL", () => {
+    expect(extractYouTubeVideoId("https://www.youtube.com/shorts/dQw4w9WgXcQ")).toBe("dQw4w9WgXcQ")
   })
 
   it("extracts from mobile URL", () => {

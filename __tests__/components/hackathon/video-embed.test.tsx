@@ -7,6 +7,21 @@ afterEach(() => {
 })
 
 describe("VideoEmbed", () => {
+  it("allows same-origin for YouTube embeds", () => {
+    render(
+      <VideoEmbed
+        video={{
+          provider: "youtube",
+          embedUrl: "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ",
+          title: "YouTube video",
+        }}
+      />
+    )
+
+    const iframe = screen.getByTitle("YouTube video")
+    expect(iframe.getAttribute("sandbox")).toContain("allow-same-origin")
+  })
+
   it.each([
     {
       provider: "loom" as const,

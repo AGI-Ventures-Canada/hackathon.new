@@ -68,7 +68,7 @@ describe("SubmissionButton", () => {
     ).toBeDefined()
     expect(within(dialog).getByLabelText("Title")).toBeDefined()
     expect(within(dialog).queryByLabelText("GitHub URL")).toBeNull()
-    expect(within(dialog).queryByLabelText(/Video link/)).toBeNull()
+    expect(within(dialog).queryByRole("textbox", { name: /Video link/ })).toBeNull()
     expect(within(dialog).queryByText("Project Title")).toBeNull()
     expect(within(dialog).queryByText("Elevator Pitch")).toBeNull()
     expect(within(dialog).queryByText("App Screenshot")).toBeNull()
@@ -91,10 +91,10 @@ describe("SubmissionButton", () => {
       target: { value: "https://github.com/acme/atlas" },
     })
     fireEvent.click(within(dialog).getByRole("button", { name: "Next" }))
-    expect(within(dialog).getByLabelText("Live App / Project URL")).toBeDefined()
+    expect(within(dialog).getByRole("textbox", { name: /Video link/ })).toBeDefined()
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Next" }))
-    expect(within(dialog).getByLabelText(/Video link/)).toBeDefined()
+    expect(within(dialog).getByLabelText("Live App / Project URL")).toBeDefined()
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Next" }))
     expect(within(dialog).getByLabelText("What is this?")).toBeDefined()
@@ -151,13 +151,13 @@ describe("SubmissionButton", () => {
     })
     fireEvent.click(within(dialog).getByRole("button", { name: "Next" }))
 
-    fireEvent.change(within(dialog).getByLabelText("Live App / Project URL"), {
-      target: { value: "atlas.vercel.app" },
+    fireEvent.change(within(dialog).getByRole("textbox", { name: /Video link/ }), {
+      target: { value: "youtube.com/watch?v=atlas-demo" },
     })
     fireEvent.click(within(dialog).getByRole("button", { name: "Next" }))
 
-    fireEvent.change(within(dialog).getByLabelText(/Video link/), {
-      target: { value: "youtube.com/watch?v=atlas-demo" },
+    fireEvent.change(within(dialog).getByLabelText("Live App / Project URL"), {
+      target: { value: "atlas.vercel.app" },
     })
     fireEvent.click(within(dialog).getByRole("button", { name: "Next" }))
 

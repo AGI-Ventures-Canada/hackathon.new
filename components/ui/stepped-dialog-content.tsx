@@ -1,6 +1,6 @@
 "use client"
 
-import { Check } from "lucide-react"
+import { Check, type LucideIcon } from "lucide-react"
 import type { ReactNode } from "react"
 import {
   DialogContent,
@@ -21,6 +21,7 @@ type StepItem = {
   label: string
   complete?: boolean
   disabled?: boolean
+  icon?: LucideIcon
   stateLabel?: string
 }
 
@@ -67,14 +68,15 @@ export function SteppedDialogContent({
         {stepsLayout === "timeline" ? (
           <>
             {steps.length > 1 && (
-              <div className="flex items-center justify-center gap-2">
+              <div className="flex w-full items-center justify-center">
                 {steps.map((step, index) => {
+                  const Icon = step.icon
                   const isCurrent = currentStep === index
                   const isComplete = step.complete
                   const isLast = index === steps.length - 1
 
                   return (
-                    <div key={step.key} className="flex items-center gap-2">
+                    <div key={step.key} className={cn("flex items-center", !isLast && "flex-1")}>
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <button
@@ -82,28 +84,39 @@ export function SteppedDialogContent({
                             className="disabled:cursor-not-allowed disabled:opacity-50"
                             disabled={step.disabled}
                             aria-label={`Go to ${step.label} step`}
+                            aria-current={isCurrent ? "step" : undefined}
                             onClick={() => onStepChange(index)}
                           >
                             <span
                               className={cn(
-                                "flex size-7 items-center justify-center rounded-full border text-xs transition-colors",
-                                isComplete || isCurrent
-                                  ? "border-foreground text-foreground"
-                                  : "border-border text-muted-foreground"
+                                "flex size-8 items-center justify-center rounded-full border text-xs transition-colors",
+                                isCurrent
+                                  ? "border-primary bg-primary text-primary-foreground"
+                                  : Icon && isComplete
+                                    ? "border-primary bg-primary/10 text-primary"
+                                    : !Icon && isComplete
+                                      ? "border-foreground text-foreground"
+                                      : "border-border text-muted-foreground"
                               )}
                             >
-                              {isComplete ? <Check className="size-3.5" /> : index + 1}
+                              {Icon ? (
+                                <Icon className="size-4" />
+                              ) : isComplete ? (
+                                <Check className="size-3.5" />
+                              ) : (
+                                index + 1
+                              )}
                             </span>
                           </button>
                         </TooltipTrigger>
                         <TooltipContent>
                           <p>{step.label}</p>
                           <p className="text-xs text-muted-foreground">
-                            {step.stateLabel ?? (step.complete ? "Filled" : "Empty")}
+                            {step.stateLabel ?? (isCurrent ? "Current" : step.complete ? "Filled" : "Empty")}
                           </p>
                         </TooltipContent>
                       </Tooltip>
-                      {!isLast && <span className="h-px w-6 bg-border" />}
+                      {!isLast && <span className="mx-1 h-px flex-1 bg-border" />}
                     </div>
                   )
                 })}

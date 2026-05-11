@@ -14,7 +14,21 @@ import {
   FieldGroup,
 } from "@/components/ui/field"
 import { SteppedDialogContent } from "@/components/ui/stepped-dialog-content"
-import { Loader2, Send, Pencil, Lock, Upload, X, ImageIcon, AlertTriangle } from "lucide-react"
+import {
+  AlertTriangle,
+  ExternalLink,
+  FileText,
+  Github,
+  ImageIcon,
+  Loader2,
+  Lock,
+  Pencil,
+  Send,
+  Type,
+  Upload,
+  Video,
+  X,
+} from "lucide-react"
 import type { HackathonStatus, Submission } from "@/lib/db/hackathon-types"
 import {
   normalizeOptionalUrl,
@@ -24,12 +38,12 @@ import {
 } from "@/lib/utils/url"
 
 const submissionSteps = [
-  { key: "title", label: "Title" },
-  { key: "githubUrl", label: "GitHub" },
-  { key: "liveAppUrl", label: "Project URL" },
-  { key: "demoVideoUrl", label: "Video" },
-  { key: "description", label: "What is this?" },
-  { key: "screenshots", label: "Screenshots" },
+  { key: "title", label: "Title", icon: Type },
+  { key: "githubUrl", label: "GitHub", icon: Github },
+  { key: "demoVideoUrl", label: "Video link", icon: Video },
+  { key: "liveAppUrl", label: "Project URL", icon: ExternalLink },
+  { key: "description", label: "What is this?", icon: FileText },
+  { key: "screenshots", label: "Screenshots", icon: ImageIcon },
 ] as const
 
 type SubmissionStep = (typeof submissionSteps)[number]["key"]
@@ -375,7 +389,7 @@ export function SubmissionButton({
       try {
         new URL(normalizeUrl(demoVideoUrl))
       } catch {
-        return "Please enter a valid video link."
+        return "Please enter a valid video link"
       }
     }
 
@@ -545,6 +559,7 @@ export function SubmissionButton({
 
       <Dialog open={isDialogOpen} onOpenChange={handleOpenChange}>
         <SteppedDialogContent
+          className="sm:max-w-2xl"
           currentStep={currentStep}
           description={
             submission
@@ -564,13 +579,14 @@ export function SubmissionButton({
                 ? title.trim().length > 0
                 : step.key === "githubUrl"
                   ? githubUrl.trim().length > 0
-                  : step.key === "liveAppUrl"
-                    ? liveAppUrl.trim().length > 0
-                    : step.key === "demoVideoUrl"
-                      ? demoVideoUrl.trim().length > 0
+                  : step.key === "demoVideoUrl"
+                    ? demoVideoUrl.trim().length > 0
+                    : step.key === "liveAppUrl"
+                      ? liveAppUrl.trim().length > 0
                       : step.key === "description"
                         ? description.trim().length > 0
                         : screenshotPreview !== null,
+            icon: step.icon,
           }))}
           title={submission ? "Edit Your Submission" : "Submit Your Project"}
         >
@@ -628,6 +644,29 @@ export function SubmissionButton({
 
               {currentStep === 2 && (
                 <Field>
+                  <FieldLabel htmlFor="submission-demo-video-url">
+                    Video link <span className="text-muted-foreground font-normal">(optional)</span>
+                  </FieldLabel>
+                  <Input
+                    id="submission-demo-video-url"
+                    name="demoVideoUrl"
+                    {...urlInputProps}
+                    placeholder="youtube.com/watch?v=..."
+                    value={demoVideoUrl}
+                    onChange={(e) => handleChange(setDemoVideoUrl, e.target.value)}
+                    onBlur={() => setDemoVideoUrl(normalizeUrlFieldValue(demoVideoUrl))}
+                    autoComplete="off"
+                    autoFocus
+                    data-1p-ignore
+                    data-lpignore="true"
+                    data-form-type="other"
+                  />
+                  <FieldDescription>Add YouTube, Loom, Vimeo, or another video link.</FieldDescription>
+                </Field>
+              )}
+
+              {currentStep === 3 && (
+                <Field>
                   <FieldLabel htmlFor="submission-live-url">Live App / Project URL</FieldLabel>
                   <Input
                     id="submission-live-url"
@@ -644,27 +683,6 @@ export function SubmissionButton({
                     data-form-type="other"
                   />
                   <FieldDescription>Optional if your project is not live yet.</FieldDescription>
-                </Field>
-              )}
-
-              {currentStep === 3 && (
-                <Field>
-                  <FieldLabel htmlFor="submission-demo-video-url">Video link <span className="text-muted-foreground font-normal">(optional)</span></FieldLabel>
-                  <Input
-                    id="submission-demo-video-url"
-                    name="demoVideoUrl"
-                    {...urlInputProps}
-                    placeholder="youtube.com, loom.com, or any link"
-                    value={demoVideoUrl}
-                    onChange={(e) => handleChange(setDemoVideoUrl, e.target.value)}
-                    onBlur={() => setDemoVideoUrl(normalizeUrlFieldValue(demoVideoUrl))}
-                    autoComplete="off"
-                    autoFocus
-                    data-1p-ignore
-                    data-lpignore="true"
-                    data-form-type="other"
-                  />
-                  <FieldDescription>Add YouTube, Loom, Vimeo, or any video link.</FieldDescription>
                 </Field>
               )}
 
