@@ -86,7 +86,7 @@ function getLoomEmbedInfo(url: URL): VideoEmbedInfo | null {
 
   return {
     provider: "loom",
-    embedUrl: `https://www.loom.com/embed/${encodeURIComponent(videoId)}`,
+    embedUrl: `https://www.loom.com/embed/${videoId}`,
     title: "Loom video",
   }
 }

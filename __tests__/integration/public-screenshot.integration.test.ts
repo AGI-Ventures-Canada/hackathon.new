@@ -193,6 +193,35 @@ describe("Public Screenshot Routes", () => {
         })
       )
     })
+
+    it("rejects an invalid video link", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockGetParticipantWithTeam.mockResolvedValue({ participantId: "p1", teamId: null })
+      mockGetExistingSubmission.mockResolvedValue(null)
+
+      const res = await app.handle(
+        new Request("http://localhost/api/public/hackathons/test-hackathon/submissions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: "Project Atlas",
+            description: "A helper for teams.",
+            githubUrl: "github.com/acme/atlas",
+            liveAppUrl: null,
+            demoVideoUrl: "not a url",
+          }),
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(400)
+      expect(data).toEqual({
+        error: "Invalid video link",
+        code: "invalid_demo_video_url",
+      })
+      expect(mockCreateSubmission).not.toHaveBeenCalled()
+    })
   })
 
   describe("PATCH /api/public/hackathons/:slug/submissions", () => {
@@ -223,6 +252,31 @@ describe("Public Screenshot Routes", () => {
           demoVideoUrl: "https://youtu.be/atlas-demo",
         })
       )
+    })
+
+    it("rejects an invalid video link", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockGetParticipantWithTeam.mockResolvedValue({ participantId: "p1", teamId: null })
+      mockGetExistingSubmission.mockResolvedValue(mockSubmission)
+
+      const res = await app.handle(
+        new Request("http://localhost/api/public/hackathons/test-hackathon/submissions", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            demoVideoUrl: "not a url",
+          }),
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(400)
+      expect(data).toEqual({
+        error: "Invalid video link",
+        code: "invalid_demo_video_url",
+      })
+      expect(mockUpdateSubmission).not.toHaveBeenCalled()
     })
   })
 
