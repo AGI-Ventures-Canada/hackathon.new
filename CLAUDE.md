@@ -250,6 +250,30 @@ Other rules:
 
 When a feature references a user by email and they don't exist in Clerk, send a personalized invite (who, which org, what for) using the existing team invitation infrastructure (`team_invitations` table, `sendTeamInvitationEmail`, `/invite/[token]`).
 
+### Three Identity States for Email-Driven Flows
+
+**Any feature that adds, invites, or assigns a person by email must explicitly handle all three identity states:**
+
+1. **Registered participant in this hackathon** — direct assignment, no email needed.
+2. **Clerk user exists but isn't registered here** — route to the pending-invite flow so the invite + acceptance step handles registration.
+3. **No Clerk account at all** — route to the same pending-invite flow; the invite link bootstraps signup.
+
+Never reject with `"That user is not registered for this hackathon"` (or similar) — that blocks organizers from seeding teams before participants sign up. Each branch needs a forward path. Reference implementation: `createTeamWithMembers` in `lib/services/hackathons.ts`.
+
+### Status-Gated Side Effects
+
+**When you gate a side effect on hackathon status, apply the gate at every entry point.** If you add `if (hackathon.status === "draft") return` before a `sendXEmail`, `triggerWebhook`, or `scheduleReminder` call, grep for *every* other place that triggers the same side effect — sibling routes, services, workflows, CLI commands, cron jobs — and apply the same gate. The bug pattern is gating 4 of 5 entry points and leaving the 5th unguarded.
+
+Pair every gate with a draft→non-draft *flush* path so queued items go out at go-live (see `sendPendingTeamInvitationEmails` and `sendPendingJudgeInvitationEmails`, both invoked from the status-transition handler in `dashboard.ts`).
+
+### Sentinel Values
+
+**Literal sentinel strings written to a DB column must be guarded at every downstream consumer.** When you write `value || "system"` or any magic ID into a column that elsewhere feeds an external API call (Clerk, Stripe, Resend), every reader must short-circuit on the sentinel before passing it through. The bug pattern: storing the sentinel works fine, reading it 404s. Document the originating site at the *write* location so future authors find it; the `lib/services/team-invitations.ts` `resolveInviter` short-circuit on `"system"` is the reference example.
+
+### Queued vs Immediate (UI/CLI Copy)
+
+**If a backend action can run immediately *or* be deferred, the response must carry a discriminator and every surface must branch on it.** When a mutation is sometimes synchronous and sometimes queued (for go-live, retry, batch processing), add a `queued?: boolean` (or `status: "sent" | "queued"`) to the API response. UI toasts, CLI output, audit log actions, and emails-about-emails must all read it. Never claim "Invite sent" when the backend queued. Reference: `_teams-tab.tsx` toast and `packages/cli/src/commands/teams/create.ts` output both branch on `queued`.
+
 ### Date/Time Defaults
 
 **Every date/time input must have a sensible default.** Event start: 2 weeks from today at 8:30 AM. Event end: day after start at 5:00 PM. Registration: open now, close day before event. Schedule items: next slot after last item (rounded to 15 min), default 30 min duration. Announcements: 1 hour from now. Recurring schedules: 9:00 AM. Fallback "from" times: 8:30 AM, "to" times: 5:00 PM. Use `minDate`/`min` to prevent past dates on forward-looking inputs (exception: admin editors).

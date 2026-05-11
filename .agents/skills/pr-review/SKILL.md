@@ -113,6 +113,14 @@ In priority order:
 7. **Dead code** — unused imports/vars/exports introduced in the diff, commented-out blocks.
 8. **Style** — only flag if it materially hurts readability or contradicts the standards above.
 
+### Flow-completeness checks
+
+These map to the rules in the "Three Identity States" and "Status-Gated Side Effects" sections of [CLAUDE.md](../../CLAUDE.md). Run them when the diff matches the trigger shape.
+
+**Identity-branch audit** — if the diff adds or modifies code that accepts a user email or ID and creates a relationship (team member, judge, sponsor, organizer): confirm all three identity states are handled with forward paths — (a) registered participant, (b) Clerk user not registered here, (c) no Clerk account. Flag any branch returning `400`/`409`/`"not registered"` instead of routing to a pending-invite flow. Treat as **Warning** (or **Critical** if it visibly blocks an organizer workflow).
+
+**Status-gate completeness check** — if the diff adds a status check before a side effect (`if (hackathon.status === "draft")`, `if (status !== "published")`, etc.) around a `sendXEmail`, `triggerWebhook`, `scheduleReminder`, or external API call: grep the rest of the codebase for other call sites of the same side effect and report any that lack the matching guard. Treat missing guards as **Warning**. Also verify a draft→non-draft flush path exists for any newly-queued state.
+
 Do **not** flag:
 
 - Pre-existing code outside the diff scope.
