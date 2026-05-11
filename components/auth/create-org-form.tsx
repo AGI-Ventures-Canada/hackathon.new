@@ -157,7 +157,7 @@ export function CreateOrgForm({
       <form onSubmit={handleSubmit} onKeyDown={handleKeyDown} autoComplete="off">
         <CardContent className="space-y-4">
           {error && <p className="text-xs text-destructive">{error}</p>}
-          <div className="space-y-4">
+          <div className="space-y-2">
             <Label htmlFor="org-name">Organization name</Label>
             <Input
               id="org-name"

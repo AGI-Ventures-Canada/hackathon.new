@@ -236,6 +236,7 @@ export function AddJudgeDialog({
     (u) => u.email?.toLowerCase() === trimmedQuery.toLowerCase()
   )
   const showInviteByEmail = isQueryValidEmail && !hasExactEmailMatch && !searching
+  const hasPartialEmail = trimmedQuery.includes("@") && !isQueryValidEmail
   const showNoResults =
     !searching &&
     !isQueryValidEmail &&
@@ -343,7 +344,9 @@ export function AddJudgeDialog({
 
             {showNoResults && (
               <p className="text-sm text-muted-foreground text-center py-3">
-                No users found
+                {hasPartialEmail
+                  ? "Enter a full email to invite someone new"
+                  : "No users found"}
               </p>
             )}
           </div>
