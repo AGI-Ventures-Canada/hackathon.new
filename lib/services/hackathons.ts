@@ -585,8 +585,8 @@ export async function listTeamsWithMembers(hackathonId: string): Promise<TeamWit
 }
 
 export type CreateTeamResult =
-  | { team: { id: string; name: string }; invited?: undefined }
-  | { team: { id: string; name: string }; invited: true }
+  | { team: { id: string; name: string }; invited?: undefined; queued?: undefined }
+  | { team: { id: string; name: string }; invited: true; queued?: boolean }
   | { error: string }
 
 export async function createTeamWithMembers(
@@ -598,51 +598,49 @@ export async function createTeamWithMembers(
   const users = await clerk.users.getUserList({ emailAddress: [input.captainEmail], limit: 1 })
 
   const client = getSupabase() as unknown as SupabaseClient
+  const captainClerkUserId = users.data[0]?.id
 
-  if (users.data.length === 0) {
-    return createPendingTeamWithInvite(client, clerk, hackathonId, input)
+  if (captainClerkUserId) {
+    const { data: participant } = await client
+      .from("hackathon_participants")
+      .select("id, team_id")
+      .eq("hackathon_id", hackathonId)
+      .eq("clerk_user_id", captainClerkUserId)
+      .single()
+
+    if (participant?.team_id) {
+      return { error: "That user is already on a team" }
+    }
+
+    if (participant) {
+      const { data: team, error } = await client
+        .from("teams")
+        .insert({
+          hackathon_id: hackathonId,
+          name: input.name,
+          captain_clerk_user_id: captainClerkUserId,
+          invite_code: crypto.randomUUID().slice(0, 8),
+          status: "forming",
+        })
+        .select("id, name")
+        .single()
+
+      if (error) {
+        console.error("Failed to create team:", error)
+        return { error: "Failed to create team" }
+      }
+
+      await client
+        .from("hackathon_participants")
+        .update({ team_id: team.id })
+        .eq("hackathon_id", hackathonId)
+        .eq("clerk_user_id", captainClerkUserId)
+
+      return { team }
+    }
   }
 
-  const captainClerkUserId = users.data[0].id
-
-  const { data: participant } = await client
-    .from("hackathon_participants")
-    .select("id, team_id")
-    .eq("hackathon_id", hackathonId)
-    .eq("clerk_user_id", captainClerkUserId)
-    .single()
-
-  if (!participant) {
-    return { error: "That user is not registered for this hackathon" }
-  }
-  if (participant.team_id) {
-    return { error: "That user is already on a team" }
-  }
-
-  const { data: team, error } = await client
-    .from("teams")
-    .insert({
-      hackathon_id: hackathonId,
-      name: input.name,
-      captain_clerk_user_id: captainClerkUserId,
-      invite_code: crypto.randomUUID().slice(0, 8),
-      status: "forming",
-    })
-    .select("id, name")
-    .single()
-
-  if (error) {
-    console.error("Failed to create team:", error)
-    return { error: "Failed to create team" }
-  }
-
-  await client
-    .from("hackathon_participants")
-    .update({ team_id: team.id })
-    .eq("hackathon_id", hackathonId)
-    .eq("clerk_user_id", captainClerkUserId)
-
-  return { team }
+  return createPendingTeamWithInvite(client, clerk, hackathonId, input)
 }
 
 async function createPendingTeamWithInvite(
@@ -653,13 +651,15 @@ async function createPendingTeamWithInvite(
 ): Promise<CreateTeamResult> {
   const { data: hackathon } = await client
     .from("hackathons")
-    .select("name, slug, starts_at, ends_at")
+    .select("name, slug, status, starts_at, ends_at")
     .eq("id", hackathonId)
     .single()
 
   if (!hackathon) {
     return { error: "Hackathon not found" }
   }
+
+  const isDraft = hackathon.status === "draft"
 
   let inviterName = "The organizer"
   let inviterEmail: string | undefined
@@ -697,7 +697,7 @@ async function createPendingTeamWithInvite(
   const token = randomBytes(32).toString("base64url")
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
 
-  const { error: inviteError } = await client
+  const { data: invitation, error: inviteError } = await client
     .from("team_invitations")
     .insert({
       team_id: team.id,
@@ -709,28 +709,63 @@ async function createPendingTeamWithInvite(
       expires_at: expiresAt,
       is_captain_invite: true,
     })
+    .select("id")
+    .single()
 
-  if (inviteError) {
+  if (inviteError || !invitation) {
     console.error("Failed to create captain invitation:", inviteError)
     await client.from("teams").delete().eq("id", team.id)
     return { error: "Failed to send invitation" }
   }
 
-  const { sendTeamInvitationEmail } = await import("@/lib/email/team-invitations")
-  await sendTeamInvitationEmail({
-    to: input.captainEmail.toLowerCase(),
-    teamName: input.name,
-    hackathonName: hackathon.name,
-    inviterName,
-    inviterEmail,
-    inviteToken: token,
-    expiresAt,
-    hackathonSlug: hackathon.slug,
-    hackathonStartsAt: hackathon.starts_at,
-    hackathonEndsAt: hackathon.ends_at,
-  })
+  if (!isDraft) {
+    const { sendTeamInvitationEmail } = await import("@/lib/email/team-invitations")
+    const sendResult = await sendTeamInvitationEmail({
+      to: input.captainEmail.toLowerCase(),
+      teamName: input.name,
+      hackathonName: hackathon.name,
+      inviterName,
+      inviterEmail,
+      inviteToken: token,
+      expiresAt,
+      hackathonSlug: hackathon.slug,
+      hackathonStartsAt: hackathon.starts_at,
+      hackathonEndsAt: hackathon.ends_at,
+    }).catch((err) => {
+      console.error(`Failed to send captain invitation email for ${invitation.id}:`, err)
+      return { success: false }
+    })
 
-  return { team, invited: true }
+    if (sendResult.success) {
+      const { markTeamInvitationEmailed } = await import("@/lib/services/team-invitations")
+      await markTeamInvitationEmailed(invitation.id).catch((err) =>
+        console.error(`Failed to mark team_invitation ${invitation.id} emailed:`, err)
+      )
+
+      const { scheduleReminders } = await import("@/lib/services/smart-reminders")
+      scheduleReminders(
+        "team_invitation",
+        invitation.id,
+        hackathonId,
+        "invitation_reminder",
+        new Date(),
+        new Date(expiresAt),
+        {
+          email: input.captainEmail.toLowerCase(),
+          teamName: input.name,
+          hackathonName: hackathon.name,
+          inviterName,
+          inviterEmail,
+          inviteToken: token,
+          expiresAt,
+        }
+      ).catch((err) =>
+        console.error(`Failed to schedule reminders for team_invitation ${invitation.id} (hackathon=${hackathonId}):`, err)
+      )
+    }
+  }
+
+  return { team, invited: true, queued: isDraft }
 }
 
 export async function modifyTeamMembers(

@@ -57,7 +57,7 @@ export async function runTeamsCreate(
     process.exit(1)
   }
 
-  const response = await client.post<{ team: { id: string; name: string }; invited?: boolean }>(
+  const response = await client.post<{ team: { id: string; name: string }; invited?: boolean; queued?: boolean }>(
     `/api/dashboard/hackathons/${hackathonId}/teams`,
     { name, captainEmail }
   )
@@ -68,7 +68,9 @@ export async function runTeamsCreate(
   }
 
   const msg = response.invited
-    ? `Created team "${response.team.name}" and sent invite to ${captainEmail}`
+    ? response.queued
+      ? `Created team "${response.team.name}" and queued invite to ${captainEmail} (sent when hackathon goes live)`
+      : `Created team "${response.team.name}" and sent invite to ${captainEmail}`
     : `Created team "${response.team.name}" (${response.team.id})`
   console.log(formatSuccess(msg))
 }

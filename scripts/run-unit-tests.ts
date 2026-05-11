@@ -10,6 +10,7 @@ const SERVICE_MOCK_ISOLATED_TESTS = [
   "__tests__/services/lifecycle.test.ts",
   "__tests__/services/cli-auth.test.ts",
   "__tests__/services/team-invitations.test.ts",
+  "__tests__/services/team-create.test.ts",
 ]
 const serviceMockSet = new Set(SERVICE_MOCK_ISOLATED_TESTS)
 
@@ -23,6 +24,10 @@ const SERVICE_MOCK_OTHER_TESTS = [
   "__tests__/services/lifecycle.test.ts",
   "__tests__/services/cli-auth.test.ts",
   "__tests__/services/team-invitations.test.ts",
+]
+
+const SERVICE_MOCK_TEAM_CREATE_TESTS = [
+  "__tests__/services/team-create.test.ts",
 ]
 
 const STORAGE_MOCK_ISOLATED_TESTS = [
@@ -95,6 +100,10 @@ const groups: Group[] = [
   {
     name: "services (service-mock isolated: other)",
     args: SERVICE_MOCK_OTHER_TESTS,
+  },
+  {
+    name: "services (service-mock isolated: team-create)",
+    args: SERVICE_MOCK_TEAM_CREATE_TESTS,
   },
   {
     name: "services (storage-mock isolated: storage)",
