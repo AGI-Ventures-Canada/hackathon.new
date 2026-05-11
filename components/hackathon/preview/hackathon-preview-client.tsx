@@ -16,14 +16,14 @@ import { SponsorSection } from "@/components/hackathon/sponsor-section"
 import { JudgeSection } from "@/components/hackathon/judge-section"
 import { PrizeSection } from "@/components/hackathon/prize-section"
 import { SubmissionGallery, type GallerySubmission } from "@/components/hackathon/submission-gallery"
-import { TeamInviteDialog } from "@/components/hackathon/team-invite-dialog"
+import { ParticipantTeamHeader } from "@/components/hackathon/preview/participant-team-header"
 import { useTeamRename } from "@/hooks/use-team-rename"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
 import { CopyButton } from "@/components/ui/copy-button"
-import { CheckCircle2, Crown, Clock, X, Lock, Scale, Mail, CalendarClock, MapPin, AlertTriangle, Pencil, Users as UsersIcon, Bell, ExternalLink } from "lucide-react"
+import { CheckCircle2, Crown, Clock, X, Scale, Mail, CalendarClock, MapPin, AlertTriangle, Users as UsersIcon, Bell, ExternalLink } from "lucide-react"
 import type { PublicHackathon } from "@/lib/services/public-hackathons"
 import type { HackathonJudgeDisplay } from "@/lib/db/hackathon-types"
 import type { Submission } from "@/lib/db/hackathon-types"
@@ -149,6 +149,13 @@ function HackathonPreviewContent({
     return () => clearInterval(interval)
   }, [])
   const rename = useTeamRename(hackathon.id, teamInfo?.team.id ?? "", teamInfo?.team.name ?? "")
+  const canRenameTeam = teamInfo?.isCaptain && teamInfo.team.status === "forming"
+  const canInviteTeamMembers = Boolean(
+    canRenameTeam &&
+    (!hackathon.registration_closes_at ||
+      !nowIso ||
+      new Date(hackathon.registration_closes_at).getTime() > new Date(nowIso).getTime())
+  )
 
   const handleRegistrationSuccess = () => {
     setIsRegistered(true)
@@ -240,59 +247,14 @@ function HackathonPreviewContent({
 
   const registrationStatus = isRegistered && participantRole === "participant" && (
     <div className={`space-y-2.5 ${justRegistered ? "animate-in fade-in duration-500" : ""}`}>
-      <div className="flex items-center gap-2.5 rounded-lg border bg-muted/50 px-3 py-2.5">
-        <CheckCircle2 className="size-4 text-primary shrink-0" />
-        <div className="flex items-center gap-2 min-w-0 flex-1">
-          <span className="text-sm font-medium">Registered</span>
-          {teamInfo && (
-            <>
-              <span className="text-muted-foreground">·</span>
-              {teamInfo.isCaptain && teamInfo.team.status === "forming" && !rename.editing ? (
-                <>
-                  <span className="text-sm font-medium text-muted-foreground truncate">{teamInfo.team.name}</span>
-                  <button
-                    type="button"
-                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground shrink-0 ml-1"
-                    onClick={rename.startEditing}
-                  >
-                    <Pencil className="size-3" />
-                    Edit
-                  </button>
-                </>
-              ) : rename.editing ? (
-                <input
-                  ref={rename.inputRef}
-                  value={rename.value}
-                  onChange={(e) => rename.setValue(e.target.value)}
-                  onBlur={rename.save}
-                  onKeyDown={rename.handleKeyDown}
-                  disabled={rename.saving}
-                  className="h-6 text-sm bg-transparent border-b border-input outline-none focus:border-ring w-48 sm:w-64"
-                  maxLength={100}
-                  autoComplete="off"
-                  data-1p-ignore
-                  data-lpignore="true"
-                  data-form-type="other"
-                />
-              ) : (
-                <span className="text-sm text-muted-foreground truncate">{teamInfo.team.name}</span>
-              )}
-              {teamInfo.team.status === "locked" && (
-                <Lock className="size-3 text-muted-foreground shrink-0" />
-              )}
-            </>
-          )}
-        </div>
-        {teamInfo && teamInfo.isCaptain && teamInfo.team.status === "forming" &&
-          (!hackathon.registration_closes_at || new Date(hackathon.registration_closes_at) > new Date()) && (
-          <TeamInviteDialog
-            teamId={teamInfo.team.id}
-            hackathonId={hackathon.id}
-            teamName={teamInfo.team.name}
-            maxTeamSize={hackathon.max_team_size ?? 5}
-          />
-        )}
-      </div>
+      <ParticipantTeamHeader
+        teamInfo={teamInfo}
+        hackathonId={hackathon.id}
+        maxTeamSize={hackathon.max_team_size ?? 5}
+        canRenameTeam={Boolean(canRenameTeam)}
+        canInviteTeamMembers={canInviteTeamMembers}
+        rename={rename}
+      />
       {rename.error && (
         <p className="text-xs text-destructive px-3">{rename.error}</p>
       )}
