@@ -1,5 +1,10 @@
+import { Suspense } from "react"
 import { SSOCallback } from "./sso-callback"
 
 export default function SSOCallbackPage() {
-  return <SSOCallback />
+  return (
+    <Suspense>
+      <SSOCallback />
+    </Suspense>
+  )
 }
