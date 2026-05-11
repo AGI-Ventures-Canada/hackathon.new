@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react"
 import { Search, Loader2 } from "lucide-react"
+import { DashboardGridLoading } from "@/components/dashboard/dashboard-grid-loading"
 import { Input } from "@/components/ui/input"
 import {
   Card,
@@ -20,6 +21,7 @@ import {
 } from "@/components/ui/pagination"
 import { HackathonCard } from "@/components/hackathon/hackathon-card"
 import type { HackathonStatus } from "@/lib/db/hackathon-types"
+import { assertOkJson } from "@/lib/utils/fetch"
 
 type BrowseHackathon = {
   id: string
@@ -37,6 +39,12 @@ type Props = {
   initialHackathons: BrowseHackathon[]
   initialPage: number
   initialTotalPages: number
+}
+
+type HackathonListResponse = {
+  hackathons: BrowseHackathon[]
+  page: number
+  totalPages: number
 }
 
 function toCardData(h: BrowseHackathon) {
@@ -78,13 +86,11 @@ export function BrowseHackathonGrid({
       if (search && search.length >= 2) {
         params.set("q", search)
       }
-      const res = await fetch(`/api/public/hackathons?${params}`)
-      if (res.ok) {
-        const data = await res.json()
-        setHackathons(data.hackathons)
-        setPage(data.page)
-        setTotalPages(data.totalPages)
-      }
+      const data = await fetch(`/api/public/hackathons?${params}`)
+        .then(assertOkJson<HackathonListResponse>)
+      setHackathons(data.hackathons)
+      setPage(data.page)
+      setTotalPages(data.totalPages)
     } catch {
       // keep current state on error
     } finally {
@@ -122,6 +128,8 @@ export function BrowseHackathonGrid({
   }, [query, initialHackathons, initialPage, initialTotalPages, fetchPage])
 
   function goToPage(targetPage: number) {
+    if (loading || targetPage === page) return
+
     fetchPage(targetPage, isSearching ? query : undefined)
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
@@ -163,7 +171,13 @@ export function BrowseHackathonGrid({
         />
       </div>
 
-      {hackathons.length === 0 && !loading ? (
+      {loading ? (
+        <DashboardGridLoading
+          statCards={0}
+          cardCount={PAGE_SIZE}
+          showPagination={totalPages > 1}
+        />
+      ) : hackathons.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12 text-center">
             <Search className="size-10 text-muted-foreground mb-4" />

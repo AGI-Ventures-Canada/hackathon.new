@@ -35,6 +35,7 @@ type Hackathon = {
 type Props = {
   hackathons: Hackathon[]
   stats: Record<string, HackathonMiniStats>
+  showHeader?: boolean
 }
 
 function StatCard({ label, value, icon: Icon }: { label: string; value: number; icon: React.ComponentType<{ className?: string }> }) {
@@ -77,7 +78,7 @@ function MiniStatsRow({ stats }: { stats: HackathonMiniStats }) {
   )
 }
 
-export function OrganizingDashboard({ hackathons, stats }: Props) {
+export function OrganizingDashboard({ hackathons, stats, showHeader = true }: Props) {
   const statsMap = useMemo(
     () => new Map(Object.entries(stats)),
     [stats],
@@ -124,10 +125,12 @@ export function OrganizingDashboard({ hackathons, stats }: Props) {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Organizing</h1>
-        <p className="text-muted-foreground mt-1">Your events at a glance</p>
-      </div>
+      {showHeader && (
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Organizing</h1>
+          <p className="text-muted-foreground mt-1">Your events at a glance</p>
+        </div>
+      )}
 
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
         <StatCard label="Events" value={totals.events} icon={Megaphone} />
