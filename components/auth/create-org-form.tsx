@@ -97,6 +97,7 @@ export function CreateOrgForm({
         const org = await createOrganization({ name: name.trim() })
         orgId = org.id
         setCreatedOrgId(orgId)
+        // setActive only runs on first attempt; on retry the session is already active.
         await setActive?.({ organization: orgId })
       }
 

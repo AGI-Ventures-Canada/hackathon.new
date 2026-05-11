@@ -17,7 +17,9 @@ export function SSOCallback() {
     const timeout = window.setTimeout(() => {
       if (window.location.pathname === "/sso-callback") {
         const fallback = orgId ? "/home" : "/onboarding"
-        router.replace(safeRedirectUrl(stored ?? undefined, fallback))
+        const destination = safeRedirectUrl(stored ?? undefined, fallback)
+        console.warn("[sso-callback] Clerk redirect stalled; falling back to", destination)
+        router.replace(destination)
       }
     }, 8000)
     return () => window.clearTimeout(timeout)
