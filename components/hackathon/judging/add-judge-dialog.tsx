@@ -235,13 +235,17 @@ export function AddJudgeDialog({
   const hasExactEmailMatch = searchResults.some(
     (u) => u.email?.toLowerCase() === trimmedQuery.toLowerCase()
   )
+  const minLength = trimmedQuery.includes("@") ? 2 : 3
+  const aboveMinLength = trimmedQuery.length >= minLength
+
+  // Only one of these is true at a time after searching settles:
+  //  - searching:          spinner only (invite/no-results suppressed during fetch)
+  //  - showInviteByEmail:  complete email + no exact match -> invite row
+  //  - showNoResults:      incomplete query past min length with zero hits -> message
   const showInviteByEmail = isQueryValidEmail && !hasExactEmailMatch && !searching
   const hasPartialEmail = trimmedQuery.includes("@") && !isQueryValidEmail
   const showNoResults =
-    !searching &&
-    !isQueryValidEmail &&
-    trimmedQuery.length >= (trimmedQuery.includes("@") ? 2 : 3) &&
-    searchResults.length === 0
+    !searching && !isQueryValidEmail && aboveMinLength && searchResults.length === 0
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
