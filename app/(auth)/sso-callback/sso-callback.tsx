@@ -11,7 +11,9 @@ export function SSOCallback() {
     if (!isLoaded || !isSignedIn) return
     const timeout = window.setTimeout(() => {
       if (window.location.pathname === "/sso-callback") {
-        window.location.replace(orgId ? "/home" : "/onboarding")
+        const stored = new URLSearchParams(window.location.search).get("redirect_url")
+        const destination = stored ?? (orgId ? "/home" : "/onboarding")
+        window.location.replace(destination)
       }
     }, 8000)
     return () => window.clearTimeout(timeout)
@@ -22,8 +24,6 @@ export function SSOCallback() {
       <AuthenticateWithRedirectCallback
         signInFallbackRedirectUrl="/home"
         signUpFallbackRedirectUrl="/onboarding"
-        signInForceRedirectUrl="/home"
-        signUpForceRedirectUrl="/onboarding"
       />
       <Loader2 className="size-5 animate-spin text-muted-foreground" />
       <p className="text-muted-foreground text-sm">Signing you in…</p>

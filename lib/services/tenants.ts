@@ -30,11 +30,15 @@ async function fetchTenantBy(
 async function upsertAndFetchTenant(
   column: "clerk_org_id" | "clerk_user_id",
   value: string,
-  name: string
+  name: string,
+  options: { overwriteNameOnConflict: boolean }
 ): Promise<Tenant | null> {
   const { data, error } = await getSupabase()
     .from("tenants")
-    .upsert({ [column]: value, name }, { onConflict: column, ignoreDuplicates: false })
+    .upsert(
+      { [column]: value, name },
+      { onConflict: column, ignoreDuplicates: !options.overwriteNameOnConflict }
+    )
     .select()
     .maybeSingle()
 
@@ -76,7 +80,12 @@ export async function getOrCreateTenant(
     clerkOrgName = await fetchClerkOrgName(clerkOrgId)
   }
 
-  return upsertAndFetchTenant("clerk_org_id", clerkOrgId, clerkOrgName ?? "Unnamed Organization")
+  return upsertAndFetchTenant(
+    "clerk_org_id",
+    clerkOrgId,
+    clerkOrgName ?? "Unnamed Organization",
+    { overwriteNameOnConflict: true }
+  )
 }
 
 export async function getOrCreatePersonalTenant(
@@ -98,7 +107,12 @@ export async function getOrCreatePersonalTenant(
     return existing
   }
 
-  return upsertAndFetchTenant("clerk_user_id", clerkUserId, userName ?? "Personal Account")
+  return upsertAndFetchTenant(
+    "clerk_user_id",
+    clerkUserId,
+    userName ?? "Personal Account",
+    { overwriteNameOnConflict: false }
+  )
 }
 
 export async function resolvePageTenant(): Promise<Tenant> {
