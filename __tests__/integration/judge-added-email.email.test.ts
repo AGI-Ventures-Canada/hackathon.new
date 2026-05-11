@@ -58,11 +58,11 @@ describe("Judge Added Notification Email", () => {
     const call = mockSendEmail.mock.calls[0][0] as SendEmailInput
     expect(call.to).toBe("judge@example.com")
     expect(call.subject).toBe("You're a judge for Test Hackathon")
-    expect(call.html).toContain("https://example.com/e/test-hackathon")
+    expect(call.html).toContain("https://example.com/e/test-hackathon?as=judge")
     expect(call.html).toContain("Jane Organizer")
     expect(call.html).toContain("Test Hackathon")
     expect(call.html).toContain("View Event")
-    expect(call.text).toContain("https://example.com/e/test-hackathon")
+    expect(call.text).toContain("https://example.com/e/test-hackathon?as=judge")
   })
 
   it("returns failure when NEXT_PUBLIC_APP_URL is not set", async () => {

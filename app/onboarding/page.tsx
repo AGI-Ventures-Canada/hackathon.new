@@ -1,8 +1,7 @@
 import { auth } from "@clerk/nextjs/server"
 import { redirect } from "next/navigation"
-import Link from "next/link"
-import { OrganizationList } from "@clerk/nextjs"
 import { safeRedirectUrl } from "@/lib/utils/url"
+import { CreateOrgForm } from "@/components/auth/create-org-form"
 
 export default async function OnboardingPage({
   searchParams,
@@ -22,26 +21,14 @@ export default async function OnboardingPage({
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="flex flex-col items-center text-center space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold">Welcome to Oatmeal</h1>
-          <p className="text-muted-foreground">
-            Create or select an organization, or continue with a personal
-            account
-          </p>
-        </div>
-        <OrganizationList
-          afterCreateOrganizationUrl={destination}
-          afterSelectOrganizationUrl={destination}
-          afterSelectPersonalUrl={destination}
-        />
-        <div className="pt-2">
-          <Link href={destination} className="text-sm text-muted-foreground underline">
-            Continue with personal account
-          </Link>
-        </div>
+    <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4">
+      <div className="mb-8 text-center">
+        <h1 className="font-bold text-2xl text-foreground">Welcome to Oatmeal</h1>
+        <p className="text-muted-foreground text-sm mt-1">
+          Create an organization or continue with your personal account
+        </p>
       </div>
+      <CreateOrgForm redirectUrl={destination} skipUrl={destination} />
     </div>
   )
 }

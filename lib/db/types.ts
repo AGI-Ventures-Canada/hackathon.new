@@ -3031,6 +3031,10 @@ export type Database = {
         Args: { p_limit?: number }
         Returns: number
       }
+      count_unassigned_submissions: {
+        Args: { p_hackathon_id: string }
+        Returns: number
+      }
       effective_hackathon_status: {
         Args: {
           ends_at: string

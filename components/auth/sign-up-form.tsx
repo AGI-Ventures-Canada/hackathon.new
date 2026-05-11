@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { useSignUp, useOrganizationList } from "@clerk/nextjs";
+import { useState } from "react";
+import { useSignUp } from "@clerk/nextjs";
 import { isClerkAPIResponseError } from "@clerk/nextjs/errors";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { OAuthButtons } from "@/components/auth/oauth-buttons";
+import { CreateOrgForm } from "@/components/auth/create-org-form";
 import {
   Card,
   CardContent,
@@ -19,7 +20,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { generateSlug, isValidSlugFormat } from "@/lib/utils/slug";
 
 type Step = "register" | "verify" | "create-org";
 
@@ -31,7 +31,6 @@ export function SignUpForm({
   initialEmail?: string;
 }) {
   const { signUp, isLoaded, setActive } = useSignUp();
-  const { createOrganization, setActive: setOrgActive } = useOrganizationList();
   const router = useRouter();
 
   const [firstName, setFirstName] = useState("");
@@ -43,55 +42,8 @@ export function SignUpForm({
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [orgName, setOrgName] = useState("");
-  const [orgSlug, setOrgSlug] = useState("");
-  const [orgSlugEdited, setOrgSlugEdited] = useState(false);
-  const [slugAvailable, setSlugAvailable] = useState<boolean | null>(null);
-  const [isCheckingSlug, setIsCheckingSlug] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const finalRedirect = redirectUrl || "/onboarding";
   const oauthCompleteUrl = redirectUrl || "/onboarding";
-
-  useEffect(() => {
-    if (!orgSlugEdited) {
-      setOrgSlug(generateSlug(orgName));
-    }
-  }, [orgName, orgSlugEdited]);
-
-  useEffect(() => {
-    if (!orgSlug || !isValidSlugFormat(orgSlug)) {
-      setSlugAvailable(null);
-      return;
-    }
-
-    setIsCheckingSlug(true);
-    setSlugAvailable(null);
-
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-
-    debounceRef.current = setTimeout(async () => {
-      try {
-        const res = await fetch(
-          `/api/dashboard/organizations/slug-available?slug=${encodeURIComponent(orgSlug)}`,
-        );
-        if (res.ok) {
-          const data = await res.json();
-          setSlugAvailable(data.available);
-        } else {
-          setSlugAvailable(null);
-        }
-      } catch {
-        setSlugAvailable(null);
-      } finally {
-        setIsCheckingSlug(false);
-      }
-    }, 400);
-
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [orgSlug]);
 
   if (!isLoaded) {
     return (
@@ -162,45 +114,6 @@ export function SignUpForm({
     }
   }
 
-  async function handleCreateOrg(e: React.FormEvent) {
-    e.preventDefault();
-    if (
-      !orgName.trim() ||
-      !orgSlug ||
-      !isValidSlugFormat(orgSlug) ||
-      slugAvailable !== true ||
-      !createOrganization
-    )
-      return;
-
-    setIsSubmitting(true);
-    setError("");
-
-    try {
-      const org = await createOrganization({ name: orgName.trim() });
-      await setOrgActive?.({ organization: org.id });
-
-      const res = await fetch("/api/dashboard/org-profile", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slug: orgSlug }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? "Failed to save organization slug");
-      }
-
-      router.push(finalRedirect);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to create organization",
-      );
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
   async function handleOAuth(
     provider: "oauth_google" | "oauth_github" | "oauth_linkedin_oidc",
   ) {
@@ -230,108 +143,8 @@ export function SignUpForm({
     ? `/sign-in?redirect_url=${encodeURIComponent(redirectUrl)}`
     : "/sign-in";
 
-  const slugStatus = (() => {
-    if (!orgSlug) return null;
-    if (!isValidSlugFormat(orgSlug)) return "invalid";
-    if (isCheckingSlug) return "checking";
-    if (slugAvailable === true) return "available";
-    if (slugAvailable === false) return "taken";
-    return null;
-  })();
-
-  const canSubmitOrg =
-    orgName.trim().length > 0 &&
-    orgSlug.length > 0 &&
-    slugStatus === "available" &&
-    !isSubmitting;
-
   if (step === "create-org") {
-    return (
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle>Create your organization</CardTitle>
-          <CardDescription>
-            Events are managed under organizations. Set up yours to get started.
-          </CardDescription>
-        </CardHeader>
-        <form
-          onSubmit={handleCreateOrg}
-          onKeyDown={handleKeyDown}
-          autoComplete="off"
-        >
-          <CardContent className="space-y-4">
-            {error && <p className="text-xs text-destructive">{error}</p>}
-            <div className="space-y-4">
-              <Label htmlFor="org-name">Organization name</Label>
-              <Input
-                id="org-name"
-                name="org-name"
-                placeholder="Acme Inc."
-                value={orgName}
-                onChange={(e) => setOrgName(e.target.value)}
-                autoComplete="off"
-                data-1p-ignore
-                data-lpignore="true"
-                data-form-type="other"
-                autoFocus
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="org-slug">URL slug</Label>
-              <Input
-                id="org-slug"
-                name="org-slug"
-                placeholder="acme-inc"
-                value={orgSlug}
-                onChange={(e) => {
-                  setOrgSlug(
-                    e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""),
-                  );
-                  setOrgSlugEdited(true);
-                }}
-                autoComplete="off"
-                data-1p-ignore
-                data-lpignore="true"
-                data-form-type="other"
-                required
-              />
-              {orgSlug && (
-                <p
-                  className={`text-xs ${
-                    slugStatus === "available"
-                      ? "text-primary"
-                      : slugStatus === "taken" || slugStatus === "invalid"
-                        ? "text-destructive"
-                        : "text-muted-foreground"
-                  }`}
-                >
-                  {slugStatus === "checking" && "Checking availability..."}
-                  {slugStatus === "available" && "This slug is available"}
-                  {slugStatus === "taken" && "This slug is already taken"}
-                  {slugStatus === "invalid" &&
-                    "Slugs can only contain lowercase letters, numbers, and hyphens"}
-                </p>
-              )}
-            </div>
-          </CardContent>
-          <CardFooter className="flex-col gap-3">
-            <Button type="submit" className="w-full" disabled={!canSubmitOrg}>
-              {isSubmitting && <Loader2 className="animate-spin" />}
-              Create organization
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              className="w-full"
-              onClick={() => router.push(finalRedirect)}
-            >
-              Skip for now
-            </Button>
-          </CardFooter>
-        </form>
-      </Card>
-    );
+    return <CreateOrgForm redirectUrl={finalRedirect} skipUrl={finalRedirect} />;
   }
 
   if (step === "verify") {

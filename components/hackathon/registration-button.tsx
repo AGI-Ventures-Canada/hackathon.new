@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useUser } from "@clerk/nextjs"
-import { usePathname, useRouter } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Loader2, Check, CalendarClock, Lock, Users } from "lucide-react"
@@ -46,6 +46,8 @@ export function RegistrationButton({
   const { isSignedIn, isLoaded } = useUser()
   const pathname = usePathname()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const isJudgeLogin = searchParams.get("as") === "judge"
   const [isRegistered, setIsRegistered] = useState(initialIsRegistered)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -140,7 +142,7 @@ export function RegistrationButton({
     return (
       <Button asChild size="lg">
         <Link href={`/sign-in?redirect_url=${encodeURIComponent(pathname)}`}>
-          Register to Attend
+          {isJudgeLogin ? "Login to judge" : "Register to Attend"}
         </Link>
       </Button>
     )
