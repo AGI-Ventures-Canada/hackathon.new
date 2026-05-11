@@ -19,9 +19,9 @@ describe("getVideoEmbedInfo", () => {
   })
 
   it("detects Loom share links", () => {
-    expect(getVideoEmbedInfo("loom.com/share/abc123-def456")).toEqual({
+    expect(getVideoEmbedInfo("loom.com/share/abc_123-def456")).toEqual({
       provider: "loom",
-      embedUrl: "https://www.loom.com/embed/abc123-def456",
+      embedUrl: "https://www.loom.com/embed/abc_123-def456",
       title: "Loom video",
     })
   })

@@ -150,9 +150,9 @@ function HackathonPreviewContent({
     return () => clearInterval(interval)
   }, [])
   const rename = useTeamRename(hackathon.id, teamInfo?.team.id ?? "", teamInfo?.team.name ?? "")
-  const canRenameTeam = teamInfo?.isCaptain && teamInfo.team.status === "forming"
+  const isFormingCaptain = teamInfo?.isCaptain && teamInfo.team.status === "forming"
   const canInviteTeamMembers = getCanInviteTeamMembers({
-    canRenameTeam,
+    isFormingCaptain,
     registrationClosesAt: hackathon.registration_closes_at,
     nowIso,
   })
@@ -251,7 +251,7 @@ function HackathonPreviewContent({
         teamInfo={teamInfo}
         hackathonId={hackathon.id}
         maxTeamSize={hackathon.max_team_size ?? 5}
-        canRenameTeam={Boolean(canRenameTeam)}
+        canRenameTeam={Boolean(isFormingCaptain)}
         canInviteTeamMembers={canInviteTeamMembers}
         rename={rename}
       />

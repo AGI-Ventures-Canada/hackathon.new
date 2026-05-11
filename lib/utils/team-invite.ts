@@ -1,15 +1,15 @@
 interface CanInviteTeamMembersInput {
-  canRenameTeam: boolean | null | undefined
+  isFormingCaptain: boolean | null | undefined
   registrationClosesAt: string | null | undefined
   nowIso: string | null
 }
 
 export function canInviteTeamMembers({
-  canRenameTeam,
+  isFormingCaptain,
   registrationClosesAt,
   nowIso,
 }: CanInviteTeamMembersInput): boolean {
-  if (!canRenameTeam) return false
+  if (!isFormingCaptain) return false
   if (!registrationClosesAt) return true
   if (!nowIso) return false
 

@@ -9,7 +9,7 @@ export type VideoEmbedInfo = {
 }
 
 const YOUTUBE_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/
-const LOOM_ID_PATTERN = /^[A-Za-z0-9-]+$/
+const LOOM_ID_PATTERN = /^[A-Za-z0-9_-]+$/
 const VIMEO_ID_PATTERN = /^\d+$/
 
 function parseUrl(rawUrl: string): URL | null {
