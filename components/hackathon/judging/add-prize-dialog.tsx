@@ -417,7 +417,7 @@ export function AddPrizeDialog({
 
     setError(null)
     const savedForm = { ...form, name }
-    onOpenChange(false)
+    handleOpenChange(false)
 
     try {
       const data = await fetch(

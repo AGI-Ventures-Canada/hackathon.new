@@ -61,7 +61,14 @@ export type UpdatedPrize = {
   value: string | null
   maxPicks: number | null
   criteria:
-    | { id: string; name: string; description: string | null }[]
+    | {
+        id: string
+        name: string
+        description: string | null
+        weight?: number
+        minScore?: number
+        maxScore?: number
+      }[]
     | null
   buckets:
     | { id: string; level: number; label: string; description: string | null }[]
@@ -199,7 +206,6 @@ export function EditPrizeDialog({
   }
 
   function removeWeighted(index: number) {
-    if (form.weightedCriteria.length <= 1) return
     setForm({
       ...form,
       weightedCriteria: form.weightedCriteria.filter((_, i) => i !== index),
@@ -232,10 +238,6 @@ export function EditPrizeDialog({
           maxScore: Number(c.maxScore),
         }))
         .filter((c) => c.name.length > 0)
-      if (cleaned.length === 0) {
-        setError("Add at least one criterion")
-        return
-      }
       for (const c of cleaned) {
         if (!Number.isFinite(c.weight) || c.weight < 0 || c.weight > 100) {
           setError("Each weight must be between 0 and 100")
@@ -298,6 +300,7 @@ export function EditPrizeDialog({
             name,
             description: form.description.trim() || null,
             value: form.value.trim() || null,
+            ...(prize.judgingStyle ? { judgingStyle: prize.judgingStyle } : {}),
             ...(criteriaPayload ? { criteria: criteriaPayload } : {}),
             ...(bucketsPayload ? { buckets: bucketsPayload } : {}),
             ...(maxPicksPayload !== undefined ? { maxPicks: maxPicksPayload } : {}),
@@ -321,6 +324,9 @@ export function EditPrizeDialog({
               id: `optimistic-edit-${prize.id}-criterion-${i}`,
               name: c.name,
               description: c.description,
+              ...(c.weight !== undefined ? { weight: c.weight } : {}),
+              ...(c.minScore !== undefined ? { minScore: c.minScore } : {}),
+              ...(c.maxScore !== undefined ? { maxScore: c.maxScore } : {}),
             }))
           : prize.criteria,
         buckets: bucketsPayload
@@ -590,7 +596,6 @@ export function EditPrizeDialog({
                         size="icon"
                         className="size-8 shrink-0"
                         onClick={() => removeWeighted(i)}
-                        disabled={form.weightedCriteria.length <= 1}
                         aria-label="Remove criterion"
                       >
                         <Trash2 className="size-4" />
