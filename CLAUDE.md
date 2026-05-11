@@ -151,6 +151,8 @@ All page components in `app/` must be server-side rendered. Never use `"use clie
 
 Sidebar pages like Dashboard, Explore, Organizing, Participating, Judging, and Sponsoring must show the page shell right away. Put slow data grids/lists behind `Suspense` with a skeleton fallback instead of awaiting all data in the page component.
 
+If a sidebar page has its own route segment and can fetch slow data, add a matching `loading.tsx` that renders the same header plus skeleton content. Client-side pagination, filters, and search must also show skeleton content immediately while fetching the next page — don't leave stale cards in place with only a spinner.
+
 ### Hydration Safety
 
 **Never render browser-only state (`localStorage`, `sessionStorage`, `window`, `Date.now()`, `Math.random()`) during the first render pass.** The server has no access to these, so any derived UI diverges on hydration and React throws a mismatch error.

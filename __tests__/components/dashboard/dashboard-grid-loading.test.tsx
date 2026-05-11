@@ -14,12 +14,18 @@ describe("DashboardGridLoading", () => {
     expect(container.querySelectorAll("[data-slot='skeleton']").length).toBeGreaterThan(0)
   })
 
-  it("can render search and progress placeholders", () => {
+  it("can render search, progress, and pagination placeholders", () => {
     const { container } = render(
-      <DashboardGridLoading statCards={0} cardCount={2} showSearch showProgress />,
+      <DashboardGridLoading
+        statCards={0}
+        cardCount={2}
+        showSearch
+        showProgress
+        showPagination
+      />,
     )
 
     expect(screen.getByLabelText("Loading")).toBeDefined()
-    expect(container.querySelectorAll("[data-slot='skeleton']").length).toBeGreaterThan(10)
+    expect(container.querySelectorAll("[data-slot='skeleton']").length).toBeGreaterThan(14)
   })
 })

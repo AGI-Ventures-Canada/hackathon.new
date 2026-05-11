@@ -5,6 +5,7 @@ type DashboardGridLoadingProps = {
   cardCount?: number
   showSearch?: boolean
   showProgress?: boolean
+  showPagination?: boolean
 }
 
 export function DashboardGridLoading({
@@ -12,6 +13,7 @@ export function DashboardGridLoading({
   cardCount = 6,
   showSearch = false,
   showProgress = false,
+  showPagination = false,
 }: DashboardGridLoadingProps) {
   return (
     <div className="space-y-6" aria-label="Loading">
@@ -60,6 +62,15 @@ export function DashboardGridLoading({
           ))}
         </div>
       </div>
+
+      {showPagination && (
+        <div className="flex justify-center gap-2">
+          <Skeleton className="h-9 w-9 sm:w-24" />
+          <Skeleton className="h-9 w-9" />
+          <Skeleton className="h-9 w-9" />
+          <Skeleton className="h-9 w-9 sm:w-16" />
+        </div>
+      )}
     </div>
   )
 }

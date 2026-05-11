@@ -16,7 +16,16 @@ export default function BrowsePage(props: {
         description="Discover and join published hackathons"
       />
 
-      <Suspense fallback={<DashboardGridLoading statCards={0} showSearch />}>
+      <Suspense
+        fallback={
+          <DashboardGridLoading
+            statCards={0}
+            cardCount={PAGE_SIZE}
+            showSearch
+            showPagination
+          />
+        }
+      >
         <BrowseGridContent searchParams={props.searchParams} />
       </Suspense>
     </div>
