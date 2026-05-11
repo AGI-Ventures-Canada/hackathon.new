@@ -1,5 +1,7 @@
+import { Suspense } from "react"
 import { auth } from "@clerk/nextjs/server"
 import { redirect } from "next/navigation"
+import { DashboardGridLoading } from "@/components/dashboard/dashboard-grid-loading"
 import { resolvePageTenant } from "@/lib/services/tenants"
 import {
   listParticipatingHackathons,
@@ -18,6 +20,14 @@ export default async function DashboardPage() {
     redirect("/sign-in")
   }
 
+  return (
+    <Suspense fallback={<DashboardGridLoading statCards={0} showSearch />}>
+      <DashboardHomeContent userId={userId} />
+    </Suspense>
+  )
+}
+
+async function DashboardHomeContent({ userId }: { userId: string }) {
   const tenant = await resolvePageTenant()
 
   const organizedWithStats = listOrganizedHackathons(tenant.id).then(async (hackathons) => {
