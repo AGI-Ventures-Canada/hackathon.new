@@ -27,17 +27,16 @@ async function fetchTenantBy(
   return (data as Tenant) ?? null
 }
 
-async function upsertAndFetchTenant(
+async function insertOrFetchTenant(
   column: "clerk_org_id" | "clerk_user_id",
   value: string,
-  name: string,
-  options: { overwriteNameOnConflict: boolean }
+  name: string
 ): Promise<Tenant | null> {
   const { data, error } = await getSupabase()
     .from("tenants")
     .upsert(
       { [column]: value, name },
-      { onConflict: column, ignoreDuplicates: !options.overwriteNameOnConflict }
+      { onConflict: column, ignoreDuplicates: true }
     )
     .select()
     .maybeSingle()
@@ -80,11 +79,10 @@ export async function getOrCreateTenant(
     clerkOrgName = await fetchClerkOrgName(clerkOrgId)
   }
 
-  return upsertAndFetchTenant(
+  return insertOrFetchTenant(
     "clerk_org_id",
     clerkOrgId,
-    clerkOrgName ?? "Unnamed Organization",
-    { overwriteNameOnConflict: true }
+    clerkOrgName ?? "Unnamed Organization"
   )
 }
 
@@ -107,11 +105,10 @@ export async function getOrCreatePersonalTenant(
     return existing
   }
 
-  return upsertAndFetchTenant(
+  return insertOrFetchTenant(
     "clerk_user_id",
     clerkUserId,
-    userName ?? "Personal Account",
-    { overwriteNameOnConflict: false }
+    userName ?? "Personal Account"
   )
 }
 
