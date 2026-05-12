@@ -604,7 +604,9 @@ function HackathonPreviewContent({
           >
             <div className="overflow-x-auto overflow-y-hidden">
               <TabsList variant="line">
-                {challenges.length > 0 && hackathon.challenge_released_at && (
+                <TabsTrigger value="overview">Overview</TabsTrigger>
+                <TabsTrigger value="schedule">Schedule</TabsTrigger>
+                {challenges.length > 0 && (
                   <TabsTrigger value="challenges">
                     <span className="flex items-center gap-1.5">
                       Challenges
@@ -615,11 +617,6 @@ function HackathonPreviewContent({
                       )}
                     </span>
                   </TabsTrigger>
-                )}
-                <TabsTrigger value="overview">Overview</TabsTrigger>
-                <TabsTrigger value="schedule">Schedule</TabsTrigger>
-                {challenges.length > 0 && !hackathon.challenge_released_at && (
-                  <TabsTrigger value="challenges">Challenges</TabsTrigger>
                 )}
                 {viewerPerks.length > 0 && (
                   <TabsTrigger value="perks">Perks</TabsTrigger>

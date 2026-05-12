@@ -1,12 +1,8 @@
 import { Section, Text } from "@react-email/components"
+import type { ChallengeSummary } from "@/lib/db/hackathon-types"
 import { OatmealLayout } from "./_components/oatmeal-layout"
 import { CTAButton } from "./_components/cta-button"
 import { colors, fontSize, spacing } from "./_components/constants"
-
-export interface ChallengeSummary {
-  title: string
-  description: string | null
-}
 
 interface ChallengesReleasedEmailProps {
   hackathonName: string

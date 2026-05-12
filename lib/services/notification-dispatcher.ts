@@ -1,13 +1,9 @@
 import type {
+  ChallengeSummary,
   TransitionEvent,
   TransitionTrigger,
   WebhookEvent,
 } from "@/lib/db/hackathon-types"
-
-export type ChallengeSummary = {
-  title: string
-  description: string | null
-}
 
 export type DispatchInput = {
   type: TransitionEvent

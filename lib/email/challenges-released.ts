@@ -1,7 +1,6 @@
 import { sanitizeTag, renderEmail, buildEventUrl } from "./utils"
-import ChallengesReleasedEmail, {
-  type ChallengeSummary,
-} from "@/emails/challenges-released"
+import type { ChallengeSummary } from "@/lib/db/hackathon-types"
+import ChallengesReleasedEmail from "@/emails/challenges-released"
 
 type EmailContent = {
   subject: string

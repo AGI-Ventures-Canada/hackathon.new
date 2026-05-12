@@ -1,14 +1,9 @@
 import { Section, Text } from "@react-email/components"
-import type { TransitionEvent } from "@/lib/db/hackathon-types"
+import type { ChallengeSummary, TransitionEvent } from "@/lib/db/hackathon-types"
 import { OatmealLayout } from "./_components/oatmeal-layout"
 import { EventDetailBox } from "./_components/event-detail-box"
 import { CTAButton } from "./_components/cta-button"
 import { colors, fontSize, spacing } from "./_components/constants"
-
-export interface ChallengeSummary {
-  title: string
-  description: string | null
-}
 
 interface TransitionNotificationEmailProps {
   event: TransitionEvent

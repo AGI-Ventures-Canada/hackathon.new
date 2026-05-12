@@ -1,16 +1,13 @@
 "use workflow"
 
-export type ChallengeSummaryInput = {
-  title: string
-  description: string | null
-}
+import type { ChallengeSummary } from "@/lib/db/hackathon-types"
 
 export type ChallengesReleasedNotificationInput = {
   hackathonId: string
   hackathonName: string
   hackathonSlug: string
   recipientRoles: string[]
-  challenges: ChallengeSummaryInput[]
+  challenges: ChallengeSummary[]
 }
 
 export async function sendChallengesReleasedNotificationsWorkflow(

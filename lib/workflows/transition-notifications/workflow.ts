@@ -1,11 +1,9 @@
 "use workflow"
 
-import type { TransitionEvent } from "@/lib/db/hackathon-types"
-
-export type ChallengeSummaryInput = {
-  title: string
-  description: string | null
-}
+import type {
+  ChallengeSummary,
+  TransitionEvent,
+} from "@/lib/db/hackathon-types"
 
 export type TransitionNotificationInput = {
   hackathonId: string
@@ -15,7 +13,7 @@ export type TransitionNotificationInput = {
   hackathonEndsAt?: string | null
   event: TransitionEvent
   recipientRoles: string[]
-  challenges?: ChallengeSummaryInput[]
+  challenges?: ChallengeSummary[]
 }
 
 export async function sendTransitionNotificationsWorkflow(

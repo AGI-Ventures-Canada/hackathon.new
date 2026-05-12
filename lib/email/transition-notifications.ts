@@ -1,8 +1,9 @@
 import { sanitizeTag, renderEmail, buildEventUrl } from "./utils"
-import type { TransitionEvent } from "@/lib/db/hackathon-types"
-import TransitionNotificationEmail, {
-  type ChallengeSummary,
-} from "@/emails/transition-notification"
+import type {
+  ChallengeSummary,
+  TransitionEvent,
+} from "@/lib/db/hackathon-types"
+import TransitionNotificationEmail from "@/emails/transition-notification"
 
 type EmailContent = {
   subject: string

@@ -200,7 +200,14 @@ describe("Lifecycle Service", () => {
 
       expect(result.success).toBe(true)
       expect(mockGetTriggerItem).toHaveBeenCalledWith("h1", "challenge_release")
-      expect(mockReleaseChallenges).toHaveBeenCalled()
+      expect(mockReleaseChallenges).toHaveBeenCalledWith(
+        "h1",
+        "t1",
+        expect.objectContaining({
+          dispatchNotification: false,
+          trigger: "event_start",
+        }),
+      )
     })
 
     it("auto-releases challenges on active transition with linked_to event_publish (covers skipped-published path)", async () => {
@@ -239,7 +246,14 @@ describe("Lifecycle Service", () => {
       })
 
       expect(result.success).toBe(true)
-      expect(mockReleaseChallenges).toHaveBeenCalled()
+      expect(mockReleaseChallenges).toHaveBeenCalledWith(
+        "h1",
+        "t1",
+        expect.objectContaining({
+          dispatchNotification: false,
+          trigger: "event_publish",
+        }),
+      )
     })
 
     it("auto-releases challenges when transitioning to published with linked_to event_publish", async () => {
@@ -279,7 +293,14 @@ describe("Lifecycle Service", () => {
 
       expect(result.success).toBe(true)
       expect(mockGetTriggerItem).toHaveBeenCalledWith("h1", "challenge_release")
-      expect(mockReleaseChallenges).toHaveBeenCalled()
+      expect(mockReleaseChallenges).toHaveBeenCalledWith(
+        "h1",
+        "t1",
+        expect.objectContaining({
+          dispatchNotification: false,
+          trigger: "event_publish",
+        }),
+      )
     })
 
     it("does NOT release challenges when transitioning to registration_open with linked_to event_publish", async () => {
@@ -397,7 +418,14 @@ describe("Lifecycle Service", () => {
       })
 
       expect(result.success).toBe(true)
-      expect(mockReleaseChallenges).toHaveBeenCalled()
+      expect(mockReleaseChallenges).toHaveBeenCalledWith(
+        "h1",
+        "t1",
+        expect.objectContaining({
+          dispatchNotification: false,
+          trigger: "scheduled",
+        }),
+      )
     })
 
     it("does NOT release challenges when going active with a custom future time", async () => {
@@ -479,13 +507,14 @@ describe("Lifecycle Service", () => {
       })
 
       expect(result.success).toBe(true)
-      expect(mockReleaseChallenges).toHaveBeenCalled()
-      const releaseOpts = mockReleaseChallenges.mock.calls[0][2] as {
-        dispatchNotification?: boolean
-        trigger?: string
-      }
-      expect(releaseOpts.dispatchNotification).toBe(false)
-      expect(releaseOpts.trigger).toBe("event_start")
+      expect(mockReleaseChallenges).toHaveBeenCalledWith(
+        "h1",
+        "t1",
+        expect.objectContaining({
+          dispatchNotification: false,
+          trigger: "event_start",
+        }),
+      )
 
       expect(mockDispatch).toHaveBeenCalledTimes(1)
       const dispatchCall = mockDispatch.mock.calls[0][0] as {

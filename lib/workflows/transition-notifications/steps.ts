@@ -1,6 +1,9 @@
 "use step"
 
-import type { TransitionEvent } from "@/lib/db/hackathon-types"
+import type {
+  ChallengeSummary,
+  TransitionEvent,
+} from "@/lib/db/hackathon-types"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 export async function fetchRecipientEmails(
@@ -43,11 +46,6 @@ export async function fetchRecipientEmails(
   }
 
   return emails
-}
-
-export type ChallengeSummary = {
-  title: string
-  description: string | null
 }
 
 export type SendTransitionEmailInput = {

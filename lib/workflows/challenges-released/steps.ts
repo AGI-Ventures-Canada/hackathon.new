@@ -1,9 +1,6 @@
 "use step"
 
-export type ChallengeSummary = {
-  title: string
-  description: string | null
-}
+import type { ChallengeSummary } from "@/lib/db/hackathon-types"
 
 export type SendChallengesReleasedEmailInput = {
   to: string

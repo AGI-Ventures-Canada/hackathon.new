@@ -59,6 +59,11 @@ export type TransitionEvent =
   | "judging_started"
   | "results_published"
 
+export type ChallengeSummary = {
+  title: string
+  description: string | null
+}
+
 export interface HackathonTransition {
   id: string
   hackathon_id: string

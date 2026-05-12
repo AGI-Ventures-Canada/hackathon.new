@@ -103,8 +103,12 @@ export async function executeTransition(
           linkedToEventPublish || linkedToEventStart || customTimePassed
 
         if (shouldRelease) {
-          const releaseTrigger: "event_publish" | "event_start" =
-            toStatus === "active" ? "event_start" : "event_publish"
+          const releaseTrigger: "event_publish" | "event_start" | "scheduled" =
+            linkedToEventPublish
+              ? "event_publish"
+              : linkedToEventStart
+                ? "event_start"
+                : "scheduled"
           const { releaseChallenges, listChallenges } = await import(
             "./challenges"
           )

@@ -316,8 +316,8 @@ export async function releaseChallenges(
   if (!released) return false
 
   const dispatchNotification = options?.dispatchNotification ?? true
-  const status = hackathon.status as string
-  const eligibleStatus = status === "published" || status === "active"
+  const eligibleStatus =
+    hackathon.status === "published" || hackathon.status === "active"
 
   if (dispatchNotification && eligibleStatus) {
     try {
@@ -330,8 +330,8 @@ export async function releaseChallenges(
           hackathonId,
           tenantId,
           hackathon: {
-            name: hackathon.name as string,
-            slug: hackathon.slug as string,
+            name: hackathon.name,
+            slug: hackathon.slug,
           },
           challenges: challenges.map((c) => ({
             title: c.title,
