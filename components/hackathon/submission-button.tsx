@@ -451,6 +451,7 @@ export function SubmissionButton({
     }
 
     setIsUploadingScreenshot(true)
+    const syncedPreviewUrls: string[] = []
     try {
       if (screenshots.length === 0 && previousScreenshots.length > 0) {
         const response = await fetch(
@@ -488,7 +489,7 @@ export function SubmissionButton({
           }
 
           nextBySlot.set(screenshot.slot, data.screenshotUrl)
-          revokePreviewUrl(screenshot.url)
+          syncedPreviewUrls.push(screenshot.url)
         }
 
         for (const slot of removedSlots) {
@@ -510,6 +511,10 @@ export function SubmissionButton({
       const syncedScreenshots = Array.from(nextBySlot.entries())
         .sort(([a], [b]) => a - b)
         .map(([slot, url]) => ({ slot, url }))
+
+      for (const url of syncedPreviewUrls) {
+        revokePreviewUrl(url)
+      }
 
       setScreenshots(
         syncedScreenshots.map((screenshot) => ({
