@@ -467,6 +467,7 @@ export function SubmissionButton({
 
         nextBySlot.clear()
       } else {
+        // Keep uploads before deletes; a later save failure can leave extra files, but it avoids dropping saved screenshots.
         for (const screenshot of screenshotsToUpload) {
           const formData = new FormData()
           formData.append("file", screenshot.file)
