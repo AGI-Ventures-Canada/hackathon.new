@@ -74,6 +74,7 @@ docs/
 .superset/
 
 # IDE / tool config
+.codex/config.toml
 .continue/
 .factory/
 cli.json
