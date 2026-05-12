@@ -97,6 +97,10 @@ mock.module("@/lib/services/rooms", () => ({
   clearRoomTimer: mock(() => Promise.resolve(null)),
   pauseRoomTimer: mock(() => Promise.resolve(null)),
   resumeRoomTimer: mock(() => Promise.resolve(null)),
+  addJudgeToRoom: mock(() => Promise.resolve(false)),
+  removeJudgeFromRoom: mock(() => Promise.resolve(false)),
+  getAutoAssignByRoom: mock(() => Promise.resolve(false)),
+  setAutoAssignByRoom: mock(() => Promise.resolve(false)),
 }))
 
 mock.module("@/lib/services/categories", () => ({

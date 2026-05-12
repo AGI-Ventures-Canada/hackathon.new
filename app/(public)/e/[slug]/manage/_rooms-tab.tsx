@@ -7,6 +7,15 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
+import { Switch } from "@/components/ui/switch"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
   Card,
   CardContent,
@@ -42,6 +51,8 @@ import {
   Play,
   DoorOpen,
   Check,
+  X,
+  Gavel,
 } from "lucide-react"
 
 type RoomTeamInfo = {
@@ -51,6 +62,24 @@ type RoomTeamInfo = {
   has_presented: boolean
   present_order: number | null
   team_name: string
+}
+
+type RoomJudgeInfo = {
+  id: string
+  room_id: string
+  judge_participant_id: string
+  clerk_user_id: string
+  display_name: string
+  email: string | null
+  image_url: string | null
+}
+
+type JudgePoolEntry = {
+  participantId: string
+  clerkUserId: string
+  displayName: string
+  email: string | null
+  imageUrl: string | null
 }
 
 type Room = {
@@ -65,6 +94,7 @@ type Room = {
   teamCount: number
   presentedCount: number
   teams: RoomTeamInfo[]
+  judges: RoomJudgeInfo[]
 }
 
 interface RoomsTabProps {
@@ -85,6 +115,11 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
   const [rooms, setRooms] = useState<Room[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  const [autoAssignEnabled, setAutoAssignEnabled] = useState(false)
+  const [judgePool, setJudgePool] = useState<JudgePoolEntry[]>([])
+  const [syncing, setSyncing] = useState(false)
+  const [syncResult, setSyncResult] = useState<string | null>(null)
 
   const [roomDialogOpen, setRoomDialogOpen] = useState(false)
   const [editingRoom, setEditingRoom] = useState<Room | null>(null)
@@ -109,9 +144,172 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
     }
   }, [hackathonId])
 
+  const fetchToggle = useCallback(async () => {
+    try {
+      const data = await fetch(
+        `/api/dashboard/hackathons/${hackathonId}/auto-assign-by-room`
+      ).then(assertOkJson<{ enabled: boolean }>)
+      setAutoAssignEnabled(Boolean(data.enabled))
+    } catch (err) {
+      console.error("Failed to load auto-assign-by-room setting:", err)
+      setError(err instanceof Error ? err.message : "Failed to load auto-assign setting")
+    }
+  }, [hackathonId])
+
+  const fetchJudgePool = useCallback(async () => {
+    try {
+      const data = await fetch(
+        `/api/dashboard/hackathons/${hackathonId}/judging/judges`
+      ).then(assertOkJson<{ judges: JudgePoolEntry[] }>)
+      setJudgePool(data.judges ?? [])
+    } catch (err) {
+      console.error("Failed to load judge pool:", err)
+      setError(err instanceof Error ? err.message : "Failed to load judges")
+    }
+  }, [hackathonId])
+
   useEffect(() => {
     fetchRooms()
-  }, [fetchRooms])
+    fetchToggle()
+    fetchJudgePool()
+  }, [fetchRooms, fetchToggle, fetchJudgePool])
+
+  async function handleSyncRoomSubmissions() {
+    setSyncing(true)
+    setSyncResult(null)
+    setError(null)
+    try {
+      const data = await fetch(
+        `/api/dashboard/hackathons/${hackathonId}/auto-assign-by-room/sync`,
+        { method: "POST" }
+      ).then(
+        assertOkJson<{
+          submissionsProcessed: number
+          totalAssignmentsCreated: number
+          reasonCounts: Record<string, number>
+          skipped?: "hackathon_status"
+        }>
+      )
+      const created = data.totalAssignmentsCreated
+      const processed = data.submissionsProcessed
+      if (data.skipped === "hackathon_status") {
+        setSyncResult("Sync runs once the hackathon is live. Flip your event to active first.")
+      } else if (created === 0 && processed === 0) {
+        setSyncResult("Nothing to sync. No submissions in any room yet.")
+      } else if (created === 0) {
+        setSyncResult(
+          `Checked ${processed} submission${processed === 1 ? "" : "s"} — all judges already had them.`
+        )
+      } else {
+        setSyncResult(
+          `Synced ${created} judge assignment${created === 1 ? "" : "s"} across ${processed} submission${processed === 1 ? "" : "s"}.`
+        )
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to sync")
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  async function handleToggleAutoAssign(next: boolean) {
+    const prev = autoAssignEnabled
+    setAutoAssignEnabled(next)
+    setError(null)
+    try {
+      await fetch(
+        `/api/dashboard/hackathons/${hackathonId}/auto-assign-by-room`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled: next }),
+        }
+      ).then(assertOk)
+    } catch (err) {
+      setAutoAssignEnabled(prev)
+      setError(err instanceof Error ? err.message : "Failed to update setting")
+    }
+  }
+
+  async function handleAddJudgeToRoom(roomId: string, judgeParticipantId: string) {
+    const judge = judgePool.find((j) => j.participantId === judgeParticipantId)
+    if (!judge) return
+
+    const optimistic: RoomJudgeInfo = {
+      id: `temp-${crypto.randomUUID()}`,
+      room_id: roomId,
+      judge_participant_id: judge.participantId,
+      clerk_user_id: judge.clerkUserId,
+      display_name: judge.displayName,
+      email: judge.email,
+      image_url: judge.imageUrl,
+    }
+
+    setRooms((prev) =>
+      prev.map((r) =>
+        r.id === roomId ? { ...r, judges: [...r.judges, optimistic] } : r
+      )
+    )
+
+    try {
+      await fetch(
+        `/api/dashboard/hackathons/${hackathonId}/rooms/${roomId}/judges`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ judgeParticipantId }),
+        }
+      ).then(assertOk)
+      document.dispatchEvent(new CustomEvent("rooms-changed"))
+    } catch (err) {
+      setRooms((prev) =>
+        prev.map((r) =>
+          r.id === roomId
+            ? { ...r, judges: r.judges.filter((j) => j.id !== optimistic.id) }
+            : r
+        )
+      )
+      setError(err instanceof Error ? err.message : "Failed to add judge to room")
+    }
+  }
+
+  async function handleRemoveJudgeFromRoom(
+    roomId: string,
+    judgeParticipantId: string
+  ) {
+    const room = rooms.find((r) => r.id === roomId)
+    const removed = room?.judges.find(
+      (j) => j.judge_participant_id === judgeParticipantId
+    )
+    setRooms((prev) =>
+      prev.map((r) =>
+        r.id === roomId
+          ? {
+              ...r,
+              judges: r.judges.filter(
+                (j) => j.judge_participant_id !== judgeParticipantId
+              ),
+            }
+          : r
+      )
+    )
+    try {
+      await fetch(
+        `/api/dashboard/hackathons/${hackathonId}/rooms/${roomId}/judges/${judgeParticipantId}`,
+        { method: "DELETE" }
+      ).then(assertOk)
+      document.dispatchEvent(new CustomEvent("rooms-changed"))
+    } catch (err) {
+      if (removed) {
+        setRooms((prev) =>
+          prev.map((r) =>
+            r.id === roomId ? { ...r, judges: [...r.judges, removed] } : r
+          )
+        )
+      }
+      setError(err instanceof Error ? err.message : "Failed to remove judge")
+    }
+  }
 
   function openCreate() {
     setEditingRoom(null)
@@ -194,6 +392,7 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
         teamCount: 0,
         presentedCount: 0,
         teams: [],
+        judges: [],
       }
       setRooms((prev) => [...prev, tempRoom])
       try {
@@ -208,7 +407,7 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
         setRooms((prev) =>
           prev.map((r) =>
             r.id === tempId
-              ? { ...created, teamCount: 0, presentedCount: 0, teams: [] }
+              ? { ...created, teamCount: 0, presentedCount: 0, teams: [], judges: [] }
               : r
           )
         )
@@ -479,6 +678,44 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
         </Button>
       </div>
 
+      <div className="space-y-3 rounded-lg border p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-0.5">
+            <Label htmlFor="auto-assign-by-room" className="text-sm font-medium">
+              Auto-assign submissions to room judges
+            </Label>
+            <p className="text-sm text-muted-foreground">
+              When a team submits, judges in their room get the project right away.
+            </p>
+          </div>
+          <Switch
+            id="auto-assign-by-room"
+            checked={autoAssignEnabled}
+            onCheckedChange={handleToggleAutoAssign}
+          />
+        </div>
+        {autoAssignEnabled && (
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-muted-foreground">
+              Already have submissions? Sync them to the room judges now.
+            </p>
+            <div className="flex flex-col items-start gap-1 sm:items-end">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSyncRoomSubmissions}
+                disabled={syncing}
+              >
+                {syncing ? "Syncing…" : "Sync existing submissions"}
+              </Button>
+              {syncResult && (
+                <p className="text-xs text-muted-foreground">{syncResult}</p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
       {error && !roomDialogOpen && !timerDialogOpen && (
         <p className="text-sm text-destructive">{error}</p>
       )}
@@ -671,6 +908,13 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
                     ))}
                   </div>
                 )}
+
+                <RoomJudgesSection
+                  room={room}
+                  judgePool={judgePool}
+                  onAddJudge={handleAddJudgeToRoom}
+                  onRemoveJudge={handleRemoveJudgeFromRoom}
+                />
               </CardContent>
             </Card>
           ))}
@@ -804,6 +1048,108 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
           </form>
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+function judgeInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return "?"
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+}
+
+const ADD_JUDGE_VALUE = "__add_judge__"
+
+function RoomJudgesSection({
+  room,
+  judgePool,
+  onAddJudge,
+  onRemoveJudge,
+}: {
+  room: Room
+  judgePool: JudgePoolEntry[]
+  onAddJudge: (roomId: string, judgeParticipantId: string) => void
+  onRemoveJudge: (roomId: string, judgeParticipantId: string) => void
+}) {
+  const assignedIds = new Set(room.judges.map((j) => j.judge_participant_id))
+  const available = judgePool.filter((j) => !assignedIds.has(j.participantId))
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <Gavel className="size-3" />
+        Judges in this room
+      </div>
+      {room.judges.length === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          No judges in this room yet.
+        </p>
+      ) : (
+        <div className="space-y-1.5">
+          {room.judges.map((judge) => (
+            <div
+              key={judge.id}
+              className="flex items-center gap-2 rounded-md bg-muted px-2 py-1.5"
+            >
+              <Avatar className="size-6">
+                <AvatarImage
+                  src={judge.image_url ?? undefined}
+                  alt={judge.display_name}
+                />
+                <AvatarFallback className="text-[10px]">
+                  {judgeInitials(judge.display_name)}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm">{judge.display_name}</p>
+                {judge.email && (
+                  <p className="truncate text-xs text-muted-foreground">
+                    {judge.email}
+                  </p>
+                )}
+              </div>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() =>
+                  onRemoveJudge(room.id, judge.judge_participant_id)
+                }
+                aria-label={`Remove ${judge.display_name}`}
+              >
+                <X className="size-3.5" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+      <Select
+        value=""
+        onValueChange={(v) => {
+          if (v && v !== ADD_JUDGE_VALUE) onAddJudge(room.id, v)
+        }}
+        disabled={available.length === 0}
+      >
+        <SelectTrigger size="sm" className="w-full">
+          <SelectValue
+            placeholder={
+              judgePool.length === 0
+                ? "No judges yet"
+                : available.length === 0
+                  ? "All judges added"
+                  : "Add judge"
+            }
+          />
+        </SelectTrigger>
+        <SelectContent>
+          {available.map((j) => (
+            <SelectItem key={j.participantId} value={j.participantId}>
+              {j.displayName}
+              {j.email ? ` (${j.email})` : ""}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   )
 }

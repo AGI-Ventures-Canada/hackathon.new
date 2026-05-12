@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Submission } from "@/lib/db/hackathon-types"
 import { trackEvent } from "@/lib/analytics/posthog"
 import { tagSubmissionChallenges } from "@/lib/services/challenges"
+import { autoAssignSubmissionToRoomJudges, ROOM_ROUTING_STATUSES } from "@/lib/services/judging"
 
 export type ParticipantInfo = {
   participantId: string
@@ -140,7 +141,33 @@ export async function createSubmission(
     }
   }
 
+  await routeSubmissionToRoomJudgesIfEnabled(client, hackathonId, data.id, teamId)
+
   return data as unknown as Submission
+}
+
+async function routeSubmissionToRoomJudgesIfEnabled(
+  client: SupabaseClient,
+  hackathonId: string,
+  submissionId: string,
+  teamId: string | null
+): Promise<void> {
+  try {
+    const { data: hackathon } = await client
+      .from("hackathons")
+      .select("auto_assign_by_room, status")
+      .eq("id", hackathonId)
+      .maybeSingle()
+
+    if (!hackathon) return
+    const row = hackathon as { auto_assign_by_room: boolean; status: string }
+    if (!row.auto_assign_by_room) return
+    if (!ROOM_ROUTING_STATUSES.has(row.status)) return
+
+    await autoAssignSubmissionToRoomJudges({ hackathonId, submissionId, teamId })
+  } catch (err) {
+    console.error("Room-judge routing failed (non-fatal):", err)
+  }
 }
 
 export type UpdateSubmissionInput = {

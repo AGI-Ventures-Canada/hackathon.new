@@ -4,7 +4,7 @@ import { checkRateLimit, RateLimitError } from "@/lib/services/rate-limit"
 import { logAudit } from "@/lib/services/audit"
 import { isValidUuid } from "@/lib/utils/uuid"
 import { setPhase } from "@/lib/services/phases"
-import { listRooms, createRoom, updateRoom, deleteRoom, addTeamToRoom, removeTeamFromRoom, togglePresented, setRoomTimer, clearRoomTimer, pauseRoomTimer, resumeRoomTimer } from "@/lib/services/rooms"
+import { listRooms, createRoom, updateRoom, deleteRoom, addTeamToRoom, removeTeamFromRoom, togglePresented, setRoomTimer, clearRoomTimer, pauseRoomTimer, resumeRoomTimer, addJudgeToRoom, removeJudgeFromRoom, setAutoAssignByRoom, getAutoAssignByRoom } from "@/lib/services/rooms"
 import { listCategories, createCategory, updateCategory, deleteCategory } from "@/lib/services/categories"
 import { listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, publishAnnouncement, unpublishAnnouncement, scheduleAnnouncement, type CreateAnnouncementInput, type UpdateAnnouncementInput } from "@/lib/services/announcements"
 import { listScheduleItems, createScheduleItem, updateScheduleItem, deleteScheduleItem, getTriggerItem } from "@/lib/services/schedule-items"
@@ -225,6 +225,79 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     return room
   }, {
     detail: { summary: "Resume paused room timer" },
+  })
+  .post("/hackathons/:id/rooms/:roomId/judges", async ({ params, body, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if ("error" in authErr) return authErr
+    const { judgeParticipantId } = body as { judgeParticipantId: string }
+    if (!isValidUuid(judgeParticipantId)) { set.status = 400; return { error: "Invalid judge id" } }
+    const ok = await addJudgeToRoom(params.roomId, params.id, judgeParticipantId)
+    if (!ok) { set.status = 400; return { error: "Failed to add judge to room" } }
+    await logAudit({ principal, action: "room_judge.added", resourceType: "room", resourceId: params.roomId, metadata: { hackathonId: params.id, judgeParticipantId } })
+    return { success: true }
+  }, {
+    body: t.Object({ judgeParticipantId: t.String({ description: "Hackathon participant id of the judge to add" }) }),
+    detail: {
+      summary: "Add judge to room",
+      description: "Assigns a judge (existing hackathon participant with role=judge) to a presentation room. Used for room-based submission routing.",
+    },
+  })
+  .delete("/hackathons/:id/rooms/:roomId/judges/:judgeParticipantId", async ({ params, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if ("error" in authErr) return authErr
+    if (!isValidUuid(params.judgeParticipantId)) { set.status = 400; return { error: "Invalid judge id" } }
+    const ok = await removeJudgeFromRoom(params.roomId, params.judgeParticipantId)
+    if (!ok) { set.status = 400; return { error: "Failed to remove judge from room" } }
+    await logAudit({ principal, action: "room_judge.removed", resourceType: "room", resourceId: params.roomId, metadata: { hackathonId: params.id, judgeParticipantId: params.judgeParticipantId } })
+    return { success: true }
+  }, {
+    detail: {
+      summary: "Remove judge from room",
+      description: "Removes a judge's assignment to a presentation room. Existing judge_assignments are left in place.",
+    },
+  })
+  .get("/hackathons/:id/auto-assign-by-room", async ({ params, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if ("error" in authErr) return authErr
+    return { enabled: await getAutoAssignByRoom(params.id) }
+  }, {
+    detail: {
+      summary: "Get auto-assign-by-room toggle",
+      description: "Returns whether new submissions are automatically routed to judges in the team's room.",
+    },
+  })
+  .patch("/hackathons/:id/auto-assign-by-room", async ({ params, body, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if ("error" in authErr) return authErr
+    const { enabled } = body as { enabled: boolean }
+    const ok = await setAutoAssignByRoom(params.id, enabled)
+    if (!ok) { set.status = 400; return { error: "Failed to update setting" } }
+    await logAudit({ principal, action: "hackathon.auto_assign_by_room.updated", resourceType: "hackathon", resourceId: params.id, metadata: { hackathonId: params.id, enabled } })
+    return { enabled }
+  }, {
+    body: t.Object({ enabled: t.Boolean({ description: "When true, new submissions are auto-assigned to judges in the team's room." }) }),
+    detail: {
+      summary: "Set auto-assign-by-room toggle",
+      description: "When enabled, every new submission is auto-assigned (one unified weighted-score row per judge) to each judge in the submitting team's room. Judges on the submitting team are skipped.",
+    },
+  })
+  .post("/hackathons/:id/auto-assign-by-room/sync", async ({ params, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if ("error" in authErr) return authErr
+    const { syncRoomSubmissionsToJudges } = await import("@/lib/services/judging")
+    const result = await syncRoomSubmissionsToJudges(params.id)
+    await logAudit({ principal, action: "hackathon.auto_assign_by_room.synced", resourceType: "hackathon", resourceId: params.id, metadata: { hackathonId: params.id, ...result } })
+    return result
+  }, {
+    detail: {
+      summary: "Sync existing submissions to room judges",
+      description: "Retroactively routes every submitted project in every room to that room's judges. Useful after enabling the toggle or adding/changing judges or rooms.",
+    },
   })
   .get("/hackathons/:id/people", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
