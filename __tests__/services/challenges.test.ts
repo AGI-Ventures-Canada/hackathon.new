@@ -457,8 +457,22 @@ describe("Challenges Service", () => {
             error: null,
           })
         }
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: {
+              challenge_released_at: null,
+              name: "Test Hack",
+              slug: "test-hack",
+              status: "published",
+            },
+            error: null,
+          })
+        }
         if (table === "challenges") {
           return createChainableMock({ data: null, error: null, count: 1 })
+        }
+        if (table === "hackathon_notification_settings") {
+          return createChainableMock({ data: null, error: { message: "No rows" } })
         }
         return createChainableMock({ data: null, error: null })
       })

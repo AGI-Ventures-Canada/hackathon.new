@@ -1,6 +1,8 @@
 import { sanitizeTag, renderEmail, buildEventUrl } from "./utils"
 import type { TransitionEvent } from "@/lib/db/hackathon-types"
-import TransitionNotificationEmail from "@/emails/transition-notification"
+import TransitionNotificationEmail, {
+  type ChallengeSummary,
+} from "@/emails/transition-notification"
 
 type EmailContent = {
   subject: string
@@ -23,10 +25,12 @@ export async function buildTransitionEmail(
   options?: {
     hackathonStartsAt?: string | null
     hackathonEndsAt?: string | null
+    challenges?: ChallengeSummary[]
   }
 ): Promise<EmailContent> {
   const eventUrl = buildEventUrl(hackathonSlug)
   const tag = sanitizeTag(hackathonName)
+  const hasChallenges = !!options?.challenges && options.challenges.length > 0
 
   const { html, text } = await renderEmail(
     TransitionNotificationEmail({
@@ -35,8 +39,13 @@ export async function buildTransitionEmail(
       eventUrl,
       hackathonStartsAt: options?.hackathonStartsAt,
       hackathonEndsAt: options?.hackathonEndsAt,
+      challenges: options?.challenges,
     })
   )
 
-  return { subject: subjectMap[event](hackathonName), html, text, tag }
+  const subject = hasChallenges
+    ? `${hackathonName} is live — see the challenges`
+    : subjectMap[event](hackathonName)
+
+  return { subject, html, text, tag }
 }

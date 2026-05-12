@@ -6,6 +6,7 @@ import JudgeAddedEmail from "@/emails/judge-added"
 import ResultsAnnouncementEmail from "@/emails/results-announcement"
 import FeedbackSurveyEmail from "@/emails/feedback-survey"
 import TransitionNotificationEmail from "@/emails/transition-notification"
+import ChallengesReleasedEmail from "@/emails/challenges-released"
 import PostEventReminderEmail from "@/emails/post-event-reminder"
 import WinnerNotificationEmail from "@/emails/winner-notification"
 import AgentNotificationEmail from "@/emails/agent-notification"
@@ -77,6 +78,29 @@ describe("Email Template Rendering", () => {
       expect(html.length).toBeGreaterThan(0)
       expect(text.length).toBeGreaterThan(0)
     }
+  })
+
+  it("renders transition-notification with merged challenges block", async () => {
+    const { html, text } = await renderEmail(
+      TransitionNotificationEmail({
+        ...TransitionNotificationEmail.PreviewProps,
+        event: "hackathon_started",
+      })
+    )
+    expect(html).toContain("Here Are the Challenges")
+    expect(html).toContain("Build a Smarter Inbox")
+    expect(html).toContain("View Challenges")
+    expect(text).toContain("Build a Smarter Inbox")
+  })
+
+  it("renders challenges-released", async () => {
+    const { html, text } = await renderEmail(
+      ChallengesReleasedEmail(ChallengesReleasedEmail.PreviewProps)
+    )
+    expect(html).toContain("Challenges Are Out")
+    expect(html).toContain("Build a Smarter Inbox")
+    expect(html).toContain("View Challenges")
+    expect(text).toContain("Build a Smarter Inbox")
   })
 
   it("renders post-event-reminder", async () => {

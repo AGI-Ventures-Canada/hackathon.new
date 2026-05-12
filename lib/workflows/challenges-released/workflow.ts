@@ -1,27 +1,25 @@
 "use workflow"
 
-import type { TransitionEvent } from "@/lib/db/hackathon-types"
-
 export type ChallengeSummaryInput = {
   title: string
   description: string | null
 }
 
-export type TransitionNotificationInput = {
+export type ChallengesReleasedNotificationInput = {
   hackathonId: string
   hackathonName: string
   hackathonSlug: string
-  hackathonStartsAt?: string | null
-  hackathonEndsAt?: string | null
-  event: TransitionEvent
   recipientRoles: string[]
-  challenges?: ChallengeSummaryInput[]
+  challenges: ChallengeSummaryInput[]
 }
 
-export async function sendTransitionNotificationsWorkflow(
-  input: TransitionNotificationInput
+export async function sendChallengesReleasedNotificationsWorkflow(
+  input: ChallengesReleasedNotificationInput
 ): Promise<{ sent: number; failed: number }> {
-  const { fetchRecipientEmails, sendTransitionEmail } = await import("./steps")
+  const { fetchRecipientEmails } = await import(
+    "@/lib/workflows/transition-notifications/steps"
+  )
+  const { sendChallengesReleasedEmail } = await import("./steps")
 
   const emails = await fetchRecipientEmails(input.hackathonId, input.recipientRoles)
 
@@ -31,25 +29,25 @@ export async function sendTransitionNotificationsWorkflow(
   let failed = 0
   for (const email of emails) {
     try {
-      await sendTransitionEmail({
+      await sendChallengesReleasedEmail({
         to: email,
-        event: input.event,
         hackathonName: input.hackathonName,
         hackathonSlug: input.hackathonSlug,
-        hackathonStartsAt: input.hackathonStartsAt,
-        hackathonEndsAt: input.hackathonEndsAt,
         challenges: input.challenges,
       })
       sent++
     } catch (err) {
-      console.error(`Failed to send transition email to ${email}:`, err)
+      console.error(
+        `Failed to send challenges-released email to ${email}:`,
+        err
+      )
       failed++
     }
   }
 
   if (failed > 0) {
     throw new Error(
-      `${failed}/${emails.length} transition emails failed — workflow will retry`
+      `${failed}/${emails.length} challenges-released emails failed — workflow will retry`
     )
   }
 
