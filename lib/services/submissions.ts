@@ -104,23 +104,32 @@ export async function createSubmission(
 ): Promise<Submission | null> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { data, error } = await client
-    .from("submissions")
-    .insert({
-      hackathon_id: hackathonId,
-      participant_id: teamId ? null : participantId,
-      team_id: teamId,
-      title: input.title,
-      description: input.description,
-      github_url: input.githubUrl,
-      live_app_url: input.liveAppUrl ?? null,
-      demo_video_url: input.demoVideoUrl ?? null,
-      screenshot_url: input.screenshotUrl ?? null,
-      status: "submitted",
-      metadata: input.metadata ?? {},
-    })
-    .select()
-    .single()
+  const [insertResult, hackathonResult] = await Promise.all([
+    client
+      .from("submissions")
+      .insert({
+        hackathon_id: hackathonId,
+        participant_id: teamId ? null : participantId,
+        team_id: teamId,
+        title: input.title,
+        description: input.description,
+        github_url: input.githubUrl,
+        live_app_url: input.liveAppUrl ?? null,
+        demo_video_url: input.demoVideoUrl ?? null,
+        screenshot_url: input.screenshotUrl ?? null,
+        status: "submitted",
+        metadata: input.metadata ?? {},
+      })
+      .select()
+      .single(),
+    client
+      .from("hackathons")
+      .select("auto_assign_by_room, status")
+      .eq("id", hackathonId)
+      .maybeSingle(),
+  ])
+
+  const { data, error } = insertResult
 
   if (error) {
     console.error("Failed to create submission:", error)
@@ -141,28 +150,26 @@ export async function createSubmission(
     }
   }
 
-  await routeSubmissionToRoomJudgesIfEnabled(client, hackathonId, data.id, teamId)
+  await routeSubmissionToRoomJudgesIfEnabled(
+    hackathonResult.data as { auto_assign_by_room: boolean; status: string } | null,
+    hackathonId,
+    data.id,
+    teamId
+  )
 
   return data as unknown as Submission
 }
 
 async function routeSubmissionToRoomJudgesIfEnabled(
-  client: SupabaseClient,
+  hackathon: { auto_assign_by_room: boolean; status: string } | null,
   hackathonId: string,
   submissionId: string,
   teamId: string | null
 ): Promise<void> {
   try {
-    const { data: hackathon } = await client
-      .from("hackathons")
-      .select("auto_assign_by_room, status")
-      .eq("id", hackathonId)
-      .maybeSingle()
-
     if (!hackathon) return
-    const row = hackathon as { auto_assign_by_room: boolean; status: string }
-    if (!row.auto_assign_by_room) return
-    if (!ROOM_ROUTING_STATUSES.has(row.status)) return
+    if (!hackathon.auto_assign_by_room) return
+    if (!ROOM_ROUTING_STATUSES.has(hackathon.status)) return
 
     await autoAssignSubmissionToRoomJudges({ hackathonId, submissionId, teamId })
   } catch (err) {

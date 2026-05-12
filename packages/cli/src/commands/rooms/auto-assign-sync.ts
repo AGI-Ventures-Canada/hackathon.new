@@ -49,5 +49,7 @@ export async function runRoomsAutoAssignSync(
       `Synced ${created} judge assignment${created === 1 ? "" : "s"} across ${processed} submission${processed === 1 ? "" : "s"}.`
     )
   )
-  console.log("Note: sync runs regardless of the auto-assign-by-room toggle.")
+  console.log(
+    "Note: sync runs regardless of the auto-assign-by-room toggle (but still requires the hackathon to be active or judging)."
+  )
 }

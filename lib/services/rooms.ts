@@ -327,6 +327,7 @@ export async function removeJudgeFromRoom(
     .select("id")
     .eq("id", judgeParticipantId)
     .eq("hackathon_id", hackathonId)
+    .eq("role", "judge")
     .maybeSingle()
 
   if (!participant) {
