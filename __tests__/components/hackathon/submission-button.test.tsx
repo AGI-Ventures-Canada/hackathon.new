@@ -3,6 +3,8 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { resetComponentMocks, setRouter } from "../../lib/component-mocks"
 
 const mockRefresh = mock(() => {})
+const mockCreateObjectURL = mock(() => "blob:submission-preview")
+const mockRevokeObjectURL = mock(() => {})
 const mockFetch = mock(() =>
   Promise.resolve(
     new Response(JSON.stringify({ submissionId: "sub_123" }), {
@@ -25,6 +27,16 @@ beforeEach(() => {
   setRouter({ refresh: mockRefresh })
   window.localStorage.clear()
   mockRefresh.mockClear()
+  mockCreateObjectURL.mockClear()
+  mockRevokeObjectURL.mockClear()
+  Object.defineProperty(URL, "createObjectURL", {
+    value: mockCreateObjectURL,
+    writable: true,
+  })
+  Object.defineProperty(URL, "revokeObjectURL", {
+    value: mockRevokeObjectURL,
+    writable: true,
+  })
   mockFetch.mockClear()
   mockFetch.mockImplementation(() =>
     Promise.resolve(
@@ -56,6 +68,25 @@ function openDialog() {
   renderSubmissionButton()
   fireEvent.click(screen.getByRole("button", { name: "Submit Project" }))
   return screen.getByRole("dialog")
+}
+
+function completeRequiredSteps(dialog: HTMLElement) {
+  fireEvent.change(within(dialog).getByLabelText("Title"), {
+    target: { value: "Project Atlas" },
+  })
+  fireEvent.click(within(dialog).getByRole("button", { name: "Next" }))
+
+  fireEvent.change(within(dialog).getByLabelText("GitHub URL"), {
+    target: { value: "github.com/acme/atlas" },
+  })
+  fireEvent.click(within(dialog).getByRole("button", { name: "Next" }))
+  fireEvent.click(within(dialog).getByRole("button", { name: "Next" }))
+  fireEvent.click(within(dialog).getByRole("button", { name: "Next" }))
+
+  fireEvent.change(within(dialog).getByLabelText("What is this?"), {
+    target: { value: "An AI teammate for hackathon teams." },
+  })
+  fireEvent.click(within(dialog).getByRole("button", { name: "Next" }))
 }
 
 describe("SubmissionButton", () => {
@@ -207,5 +238,50 @@ describe("SubmissionButton", () => {
       liveAppUrl: "https://atlas.vercel.app",
       demoVideoUrl: "https://youtube.com/watch?v=atlas-demo",
     })
+  })
+
+  it("does not claim screenshots changed when the first upload fails", async () => {
+    mockFetch.mockImplementation((input) => {
+      const url = String(input)
+      if (url.endsWith("/submissions/screenshot")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: "Failed to upload screenshot", code: "upload_failed" }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+          })
+        )
+      }
+
+      return Promise.resolve(
+        new Response(JSON.stringify({ submissionId: "sub_123" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      )
+    })
+    const dialog = openDialog()
+    completeRequiredSteps(dialog)
+
+    const fileInput = dialog.querySelector("input[type='file']") as HTMLInputElement
+    fireEvent.change(fileInput, {
+      target: {
+        files: [new File(["screenshot"], "screenshot.png", { type: "image/png" })],
+      },
+    })
+
+    await waitFor(() => {
+      expect(within(dialog).getByAltText("Screenshot 1 preview")).toBeDefined()
+    })
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Submit Project" }))
+
+    await waitFor(() => {
+      expect(
+        within(dialog).getByText(
+          "Your project was saved, but screenshots were not updated. Failed to upload screenshot"
+        )
+      ).toBeDefined()
+    })
+    expect(within(dialog).queryByText(/screenshot change failed/)).toBeNull()
   })
 })

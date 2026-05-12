@@ -18,8 +18,11 @@ function isRecord(value: Json | null | undefined): value is { [key: string]: Jso
   return !!value && typeof value === "object" && !Array.isArray(value)
 }
 
-function asScreenshotSlot(index: number): SubmissionScreenshotSlot {
-  return index === 1 ? 1 : 0
+function toScreenshotSlot(index: number): SubmissionScreenshotSlot | null {
+  if (index === 0 || index === 1) {
+    return index
+  }
+  return null
 }
 
 export function getSubmissionScreenshots(
@@ -27,21 +30,28 @@ export function getSubmissionScreenshots(
 ): SubmissionScreenshot[] {
   const screenshots: SubmissionScreenshot[] = []
   const metadata = isRecord(submission.metadata) ? submission.metadata : null
-  const metadataUrls = Array.isArray(metadata?.screenshotUrls)
-    ? metadata.screenshotUrls
-    : null
+  const metadataUrls = metadata?.screenshotUrls
 
-  if (metadataUrls) {
+  if (Array.isArray(metadataUrls)) {
     for (const [index, value] of metadataUrls.slice(0, MAX_SUBMISSION_SCREENSHOTS).entries()) {
-      if (typeof value === "string" && value.trim()) {
-        screenshots.push({ slot: asScreenshotSlot(index), url: value })
+      const slot = toScreenshotSlot(index)
+      if (slot !== null && typeof value === "string" && value.trim()) {
+        screenshots.push({ slot, url: value })
       }
     }
+  } else if (isRecord(metadataUrls)) {
+    for (const [key, value] of Object.entries(metadataUrls)) {
+      const slot = toScreenshotSlot(Number(key))
+      if (slot !== null && typeof value === "string" && value.trim()) {
+        screenshots.push({ slot, url: value })
+      }
+    }
+    screenshots.sort((a, b) => a.slot - b.slot)
   }
 
   if (
     submission.screenshot_url &&
-    !screenshots.some((screenshot) => screenshot.slot === 0)
+    screenshots.length === 0
   ) {
     screenshots.unshift({ slot: 0, url: submission.screenshot_url })
   }
@@ -58,13 +68,10 @@ export function buildSubmissionScreenshotMetadata(
   screenshots: SubmissionScreenshot[]
 ): Record<string, Json | undefined> {
   const nextMetadata = isRecord(metadata) ? { ...metadata } : {}
-  const screenshotUrls: Array<string | null> = Array.from(
-    { length: MAX_SUBMISSION_SCREENSHOTS },
-    () => null
-  )
+  const screenshotUrls: Record<string, Json> = {}
 
   for (const screenshot of screenshots) {
-    screenshotUrls[screenshot.slot] = screenshot.url
+    screenshotUrls[String(screenshot.slot)] = screenshot.url
   }
 
   nextMetadata.screenshotUrls = screenshotUrls

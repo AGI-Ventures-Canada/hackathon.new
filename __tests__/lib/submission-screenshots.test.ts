@@ -33,6 +33,19 @@ describe("submission screenshot helpers", () => {
     ])
   })
 
+  it("reads sparse screenshot URL metadata", () => {
+    expect(
+      getSubmissionScreenshots({
+        screenshot_url: "https://storage.test/second.webp",
+        metadata: {
+          screenshotUrls: {
+            "1": "https://storage.test/second.webp",
+          },
+        },
+      })
+    ).toEqual([{ slot: 1, url: "https://storage.test/second.webp" }])
+  })
+
   it("preserves unrelated metadata when writing screenshot URLs", () => {
     expect(
       buildSubmissionScreenshotMetadata(
@@ -41,7 +54,7 @@ describe("submission screenshot helpers", () => {
       )
     ).toEqual({
       source: "import",
-      screenshotUrls: [null, "https://storage.test/second.webp"],
+      screenshotUrls: { "1": "https://storage.test/second.webp" },
     })
   })
 })

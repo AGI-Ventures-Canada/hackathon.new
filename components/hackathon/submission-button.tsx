@@ -75,6 +75,10 @@ type ScreenshotDraftItem = SubmissionScreenshot & {
   file: File | null
 }
 
+type ScreenshotSyncResult =
+  | { ok: true; screenshots: SubmissionScreenshot[] }
+  | { ok: false; didChange: boolean; error: string }
+
 const screenshotSlots = [0, 1] as const
 const allowedScreenshotTypes = ["image/png", "image/jpeg", "image/webp"]
 
@@ -429,31 +433,36 @@ export function SubmissionButton({
   }
 
   async function syncScreenshots(
-    previousScreenshots: SubmissionScreenshot[]
-  ): Promise<SubmissionScreenshot[] | null> {
+    previousScreenshots: SubmissionScreenshot[],
+    nextScreenshots: ScreenshotDraftItem[]
+  ): Promise<ScreenshotSyncResult> {
     const nextBySlot = new Map<SubmissionScreenshotSlot, string>()
-    for (const screenshot of screenshots) {
+    for (const screenshot of nextScreenshots) {
       if (!screenshot.file) {
         nextBySlot.set(screenshot.slot, screenshot.url)
       }
     }
 
-    const currentSlots = new Set(screenshots.map((screenshot) => screenshot.slot))
+    const currentSlots = new Set(nextScreenshots.map((screenshot) => screenshot.slot))
     const removedSlots = previousScreenshots
       .filter((screenshot) => !currentSlots.has(screenshot.slot))
       .map((screenshot) => screenshot.slot)
-    const screenshotsToUpload = screenshots.filter(
+    const screenshotsToUpload = nextScreenshots.filter(
       (screenshot): screenshot is ScreenshotDraftItem & { file: File } => screenshot.file !== null
     )
 
     if (removedSlots.length === 0 && screenshotsToUpload.length === 0) {
-      return screenshots.map(({ slot, url }) => ({ slot, url }))
+      return {
+        ok: true,
+        screenshots: nextScreenshots.map(({ slot, url }) => ({ slot, url })),
+      }
     }
 
     setIsUploadingScreenshot(true)
     const syncedPreviewUrls: string[] = []
+    let didChange = false
     try {
-      if (screenshots.length === 0 && previousScreenshots.length > 0) {
+      if (nextScreenshots.length === 0 && previousScreenshots.length > 0) {
         const response = await fetch(
           `/api/public/hackathons/${hackathonSlug}/submissions/screenshot`,
           { method: "DELETE" }
@@ -461,36 +470,55 @@ export function SubmissionButton({
 
         if (!response.ok) {
           const data = await response.json().catch(() => ({}))
-          setError(data.error || "Failed to remove screenshot")
-          return null
+          return {
+            ok: false,
+            didChange: data.code === "update_failed",
+            error: data.error || "Failed to remove screenshot",
+          }
         }
 
+        didChange = true
         nextBySlot.clear()
       } else {
-        // Keep uploads before deletes; a later save failure can leave extra files, but it avoids dropping saved screenshots.
+        // Uploads stay serial because each API call merges with the current saved screenshot metadata.
         for (const screenshot of screenshotsToUpload) {
           const formData = new FormData()
           formData.append("file", screenshot.file)
           formData.append("slot", String(screenshot.slot))
 
-          const response = await fetch(
-            `/api/public/hackathons/${hackathonSlug}/submissions/screenshot`,
-            { method: "POST", body: formData }
-          )
-          const data = await response.json().catch(() => ({}))
+          try {
+            const response = await fetch(
+              `/api/public/hackathons/${hackathonSlug}/submissions/screenshot`,
+              { method: "POST", body: formData }
+            )
+            const data = await response.json().catch(() => ({}))
 
-          if (!response.ok) {
-            setError(data.error || "Failed to upload screenshot")
-            return null
+            if (!response.ok) {
+              return {
+                ok: false,
+                didChange: didChange || data.code === "update_failed",
+                error: data.error || "Failed to upload screenshot",
+              }
+            }
+
+            if (typeof data.screenshotUrl !== "string") {
+              return {
+                ok: false,
+                didChange,
+                error: "Failed to upload screenshot",
+              }
+            }
+
+            nextBySlot.set(screenshot.slot, data.screenshotUrl)
+            syncedPreviewUrls.push(screenshot.url)
+            didChange = true
+          } catch {
+            return {
+              ok: false,
+              didChange,
+              error: "Failed to upload screenshot",
+            }
           }
-
-          if (typeof data.screenshotUrl !== "string") {
-            setError("Failed to upload screenshot")
-            return null
-          }
-
-          nextBySlot.set(screenshot.slot, data.screenshotUrl)
-          syncedPreviewUrls.push(screenshot.url)
         }
 
         for (const slot of removedSlots) {
@@ -501,11 +529,15 @@ export function SubmissionButton({
 
           if (!response.ok) {
             const data = await response.json().catch(() => ({}))
-            setError(data.error || "Failed to remove screenshot")
-            return null
+            return {
+              ok: false,
+              didChange: didChange || data.code === "update_failed",
+              error: data.error || "Failed to remove screenshot",
+            }
           }
 
           nextBySlot.delete(slot)
+          didChange = true
         }
       }
 
@@ -524,10 +556,13 @@ export function SubmissionButton({
           file: null,
         }))
       )
-      return syncedScreenshots
+      return { ok: true, screenshots: syncedScreenshots }
     } catch {
-      setError("Failed to upload screenshot")
-      return null
+      return {
+        ok: false,
+        didChange,
+        error: "Failed to upload screenshot",
+      }
     } finally {
       setIsUploadingScreenshot(false)
     }
@@ -706,14 +741,15 @@ export function SubmissionButton({
       }
 
       const previousScreenshots = submission ? getSubmissionScreenshots(submission) : []
-      const finalScreenshots = await syncScreenshots(previousScreenshots)
-      if (finalScreenshots === null) {
-        setError(
-          (prev) =>
-            `Your submission was saved, but the screenshot change failed. ${prev || "Please try again."}`
-        )
+      const screenshotSync = await syncScreenshots(previousScreenshots, screenshots)
+      if (!screenshotSync.ok) {
+        const prefix = screenshotSync.didChange
+          ? "Your project was saved, but some screenshot changes did not finish."
+          : "Your project was saved, but screenshots were not updated."
+        setError(`${prefix} ${screenshotSync.error}`)
         return
       }
+      const finalScreenshots = screenshotSync.screenshots
       const finalMetadata = buildSubmissionScreenshotMetadata(
         submission?.metadata,
         finalScreenshots
