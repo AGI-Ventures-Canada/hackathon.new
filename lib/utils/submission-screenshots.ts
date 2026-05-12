@@ -68,6 +68,7 @@ export function buildSubmissionScreenshotMetadata(
   screenshots: SubmissionScreenshot[]
 ): Record<string, Json | undefined> {
   const nextMetadata = isRecord(metadata) ? { ...metadata } : {}
+  // Read support still accepts the old array shape; new writes use slot-keyed objects.
   const screenshotUrls: Record<string, Json> = {}
 
   for (const screenshot of screenshots) {

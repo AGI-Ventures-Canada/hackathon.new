@@ -346,7 +346,7 @@ export function SubmissionButton({
       : [replaceSlot]
 
     if (availableSlots.length === 0) {
-      setError("You can upload up to 2 screenshots.")
+      setError(null)
       return
     }
 

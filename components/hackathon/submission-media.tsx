@@ -65,7 +65,7 @@ export function SubmissionMedia({
         <div className="grid grid-cols-2 gap-2">
           {screenshots.map((url, index) => (
             <button
-              key={`${url}-${index}`}
+              key={url}
               type="button"
               onClick={() => openScreenshot(index)}
               className={cn(
