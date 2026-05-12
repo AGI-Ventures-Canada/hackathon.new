@@ -322,6 +322,18 @@ export async function removeJudgeFromRoom(
     return false
   }
 
+  const { data: participant } = await client
+    .from("hackathon_participants")
+    .select("id")
+    .eq("id", judgeParticipantId)
+    .eq("hackathon_id", hackathonId)
+    .maybeSingle()
+
+  if (!participant) {
+    console.error("Judge not found for hackathon:", { roomId, judgeParticipantId, hackathonId })
+    return false
+  }
+
   const { error } = await client
     .from("judge_room_assignments")
     .delete()

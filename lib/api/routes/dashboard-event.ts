@@ -12,6 +12,7 @@ import { listTeamsWithMembers, createTeamWithMembers, modifyTeamMembers, bulkAss
 import { listHackathonPeople, peopleToCsvRows } from "@/lib/services/hackathon-people"
 import { toCsv } from "@/lib/utils/csv"
 import { listRounds, createRound, updateRound, deleteRound, activateRound } from "@/lib/services/judging-rounds"
+import { syncRoomSubmissionsToJudges } from "@/lib/services/judging"
 import { listSocialSubmissions, reviewSocialSubmission } from "@/lib/services/social-submissions"
 import { listMentorQueue } from "@/lib/services/mentor-requests"
 import {
@@ -291,7 +292,13 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if ("error" in authErr) return authErr
-    const { syncRoomSubmissionsToJudges } = await import("@/lib/services/judging")
+    const rateLimitResult = await checkRateLimit(`auto_assign_by_room_sync:${params.id}`, {
+      maxRequests: 5,
+      windowMs: 60_000,
+    })
+    if (!rateLimitResult.allowed) {
+      throw new RateLimitError(rateLimitResult.resetAt, rateLimitResult.remaining)
+    }
     const result = await syncRoomSubmissionsToJudges(params.id)
     await logAudit({ principal, action: "hackathon.auto_assign_by_room.synced", resourceType: "hackathon", resourceId: params.id, metadata: { hackathonId: params.id, ...result } })
     return result

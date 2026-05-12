@@ -227,9 +227,12 @@ describe("rooms service", () => {
   })
 
   describe("removeJudgeFromRoom", () => {
-    it("removes a judge after verifying room ownership", async () => {
+    it("removes a judge after verifying room ownership and participant existence", async () => {
       setMockFromImplementation((table) => {
         if (table === "rooms") return createChainableMock(mockSuccess({ id: ROOM_ID }))
+        if (table === "hackathon_participants") {
+          return createChainableMock(mockSuccess({ id: JUDGE_PARTICIPANT_ID }))
+        }
         return createChainableMock({ data: null, error: null })
       })
       const result = await removeJudgeFromRoom(ROOM_ID, JUDGE_PARTICIPANT_ID, HACKATHON_ID)
@@ -245,9 +248,22 @@ describe("rooms service", () => {
       expect(result).toBe(false)
     })
 
+    it("returns false when participant does not belong to the hackathon", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "rooms") return createChainableMock(mockSuccess({ id: ROOM_ID }))
+        if (table === "hackathon_participants") return createChainableMock(mockSuccess(null))
+        return createChainableMock({ data: null, error: null })
+      })
+      const result = await removeJudgeFromRoom(ROOM_ID, JUDGE_PARTICIPANT_ID, HACKATHON_ID)
+      expect(result).toBe(false)
+    })
+
     it("returns false on delete error", async () => {
       setMockFromImplementation((table) => {
         if (table === "rooms") return createChainableMock(mockSuccess({ id: ROOM_ID }))
+        if (table === "hackathon_participants") {
+          return createChainableMock(mockSuccess({ id: JUDGE_PARTICIPANT_ID }))
+        }
         return createChainableMock(mockError("Delete failed"))
       })
       const result = await removeJudgeFromRoom(ROOM_ID, JUDGE_PARTICIPANT_ID, HACKATHON_ID)
