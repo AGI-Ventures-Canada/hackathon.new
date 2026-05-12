@@ -339,6 +339,7 @@ export async function removeJudgeFromRoom(
     .delete()
     .eq("room_id", roomId)
     .eq("judge_participant_id", judgeParticipantId)
+    .eq("hackathon_id", hackathonId)
 
   if (error) {
     console.error("Failed to remove judge from room:", error)

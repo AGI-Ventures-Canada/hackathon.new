@@ -305,7 +305,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   }, {
     detail: {
       summary: "Sync existing submissions to room judges",
-      description: "Retroactively routes every submitted project in every room to that room's judges. Useful after enabling the toggle or adding/changing judges or rooms.",
+      description: "Retroactively routes every submitted project in every room to that room's judges. Useful after enabling the toggle or adding/changing judges or rooms. Note: this runs regardless of the auto_assign_by_room flag, so it can be used as a one-off backfill even when the toggle is off. Rate limited to 5/min per hackathon. Still gated on hackathon status — only runs when the event is active or judging.",
     },
   })
   .get("/hackathons/:id/people", async ({ params, principal, set }) => {

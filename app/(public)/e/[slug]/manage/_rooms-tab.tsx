@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { cn } from "@/lib/utils"
 import { assertOk, assertOkJson } from "@/lib/utils/fetch"
+import type { RoomJudgeInfo, RoomWithTeams } from "@/lib/services/rooms"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -55,25 +56,6 @@ import {
   Gavel,
 } from "lucide-react"
 
-type RoomTeamInfo = {
-  id: string
-  room_id: string
-  team_id: string
-  has_presented: boolean
-  present_order: number | null
-  team_name: string
-}
-
-type RoomJudgeInfo = {
-  id: string
-  room_id: string
-  judge_participant_id: string
-  clerk_user_id: string
-  display_name: string
-  email: string | null
-  image_url: string | null
-}
-
 type JudgePoolEntry = {
   participantId: string
   clerkUserId: string
@@ -82,20 +64,7 @@ type JudgePoolEntry = {
   imageUrl: string | null
 }
 
-type Room = {
-  id: string
-  hackathon_id: string
-  name: string
-  display_order: number
-  timer_ends_at: string | null
-  timer_remaining_ms: number | null
-  timer_label: string | null
-  created_at: string
-  teamCount: number
-  presentedCount: number
-  teams: RoomTeamInfo[]
-  judges: RoomJudgeInfo[]
-}
+type Room = RoomWithTeams
 
 interface RoomsTabProps {
   hackathonId: string
