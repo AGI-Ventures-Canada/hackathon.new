@@ -4,6 +4,7 @@ import { OatmealLayout } from "./_components/oatmeal-layout"
 import { EventDetailBox } from "./_components/event-detail-box"
 import { CTAButton } from "./_components/cta-button"
 import { colors, fontSize, spacing } from "./_components/constants"
+import { truncate } from "./_components/format-utils"
 
 interface TransitionNotificationEmailProps {
   event: TransitionEvent
@@ -47,14 +48,6 @@ const eventConfig: Record<
     bodySuffix: ". Sign up before spots fill up!",
     ctaLabel: "Register Now",
   },
-}
-
-const SUMMARY_LIMIT = 160
-
-function truncate(text: string, limit: number): string {
-  const trimmed = text.trim()
-  if (trimmed.length <= limit) return trimmed
-  return `${trimmed.slice(0, limit - 1).trimEnd()}…`
 }
 
 export default function TransitionNotificationEmail({
@@ -112,7 +105,7 @@ export default function TransitionNotificationEmail({
           >
             Challenges
           </Text>
-          {challenges!.map((c, idx) => (
+          {(challenges ?? []).map((c, idx) => (
             <Section
               key={idx}
               style={{
@@ -141,7 +134,7 @@ export default function TransitionNotificationEmail({
                     lineHeight: "1.5",
                   }}
                 >
-                  {truncate(c.description, SUMMARY_LIMIT)}
+                  {truncate(c.description)}
                 </Text>
               )}
             </Section>

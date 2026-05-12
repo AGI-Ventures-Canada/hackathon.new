@@ -595,11 +595,8 @@ function HackathonPreviewContent({
       <section className="py-12 border-t">
         <div className="mx-auto max-w-4xl px-4">
           <Tabs
-            defaultValue={
-              challenges.length > 0 && hackathon.challenge_released_at
-                ? "challenges"
-                : "overview"
-            }
+            key={isChallengesFreshlyReleased ? "tabs-fresh" : "tabs-default"}
+            defaultValue={isChallengesFreshlyReleased ? "challenges" : "overview"}
             className="w-full"
           >
             <div className="overflow-x-auto overflow-y-hidden">

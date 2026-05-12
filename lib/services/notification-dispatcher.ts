@@ -102,7 +102,7 @@ export async function dispatchTransitionNotifications(
         data: {
           hackathonId: input.hackathonId,
           trigger: input.trigger,
-          challengeCount: input.challenges!.length,
+          challengeCount: input.challenges?.length ?? 0,
           source: "transition",
           coincidentWith: webhookEvent,
         },

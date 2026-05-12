@@ -3,19 +3,12 @@ import type { ChallengeSummary } from "@/lib/db/hackathon-types"
 import { OatmealLayout } from "./_components/oatmeal-layout"
 import { CTAButton } from "./_components/cta-button"
 import { colors, fontSize, spacing } from "./_components/constants"
+import { truncate } from "./_components/format-utils"
 
 interface ChallengesReleasedEmailProps {
   hackathonName: string
   eventUrl: string
   challenges: ChallengeSummary[]
-}
-
-const SUMMARY_LIMIT = 160
-
-function truncate(text: string, limit: number): string {
-  const trimmed = text.trim()
-  if (trimmed.length <= limit) return trimmed
-  return `${trimmed.slice(0, limit - 1).trimEnd()}…`
 }
 
 export default function ChallengesReleasedEmail({
@@ -71,7 +64,7 @@ export default function ChallengesReleasedEmail({
                   lineHeight: "1.5",
                 }}
               >
-                {truncate(c.description, SUMMARY_LIMIT)}
+                {truncate(c.description)}
               </Text>
             )}
           </Section>
