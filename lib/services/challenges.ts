@@ -291,25 +291,20 @@ export type ReleaseChallengesOptions = {
   trigger?: "manual" | "scheduled" | "event_publish" | "event_start"
 }
 
-export async function releaseChallenges(
+type ReleasableHackathon = {
+  challenge_released_at: string | null
+  name: string
+  slug: string
+  status: string
+}
+
+async function releaseChallengesWithHackathon(
+  client: SupabaseClient,
   hackathonId: string,
   tenantId: string,
+  hackathon: ReleasableHackathon,
   options?: ReleaseChallengesOptions,
 ): Promise<boolean> {
-  const client = getSupabase() as unknown as SupabaseClient
-
-  const { data: hackathon, error: fetchErr } = await client
-    .from("hackathons")
-    .select("challenge_released_at, name, slug, status")
-    .eq("id", hackathonId)
-    .eq("tenant_id", tenantId)
-    .single()
-
-  if (fetchErr || !hackathon) {
-    console.error("Failed to fetch hackathon for challenge release:", fetchErr)
-    return false
-  }
-
   if (hackathon.challenge_released_at) return true
 
   const released = await releaseChallengesIfAny(client, hackathonId, tenantId)
@@ -356,9 +351,37 @@ export async function releaseChallenges(
   return true
 }
 
+export async function releaseChallenges(
+  hackathonId: string,
+  tenantId: string,
+  options?: ReleaseChallengesOptions,
+): Promise<boolean> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data: hackathon, error: fetchErr } = await client
+    .from("hackathons")
+    .select("challenge_released_at, name, slug, status")
+    .eq("id", hackathonId)
+    .eq("tenant_id", tenantId)
+    .single()
+
+  if (fetchErr || !hackathon) {
+    console.error("Failed to fetch hackathon for challenge release:", fetchErr)
+    return false
+  }
+
+  return releaseChallengesWithHackathon(
+    client,
+    hackathonId,
+    tenantId,
+    hackathon,
+    options,
+  )
+}
+
 type PublishLinkRow = {
   linked_to: string | null
-  hackathons: { tenant_id: string; status: string; challenge_released_at: string | null }
+  hackathons: ReleasableHackathon & { tenant_id: string }
 }
 
 export async function maybeReleaseChallengesForPublishLink(
@@ -369,7 +392,9 @@ export async function maybeReleaseChallengesForPublishLink(
 
   const { data, error: fetchErr } = await client
     .from("hackathon_schedule_items")
-    .select("linked_to, hackathons!inner(tenant_id, status, challenge_released_at)")
+    .select(
+      "linked_to, hackathons!inner(tenant_id, status, challenge_released_at, name, slug)",
+    )
     .eq("hackathon_id", hackathonId)
     .eq("trigger_type", "challenge_release")
     .eq("hackathons.tenant_id", tenantId)
@@ -381,10 +406,15 @@ export async function maybeReleaseChallengesForPublishLink(
   }
   const row = data as unknown as PublishLinkRow | null
   if (!row || row.linked_to !== "event_publish") return false
-  if (row.hackathons.challenge_released_at) return true
   if (row.hackathons.status !== "published") return false
 
-  return releaseChallenges(hackathonId, tenantId, { trigger: "event_publish" })
+  return releaseChallengesWithHackathon(
+    client,
+    hackathonId,
+    tenantId,
+    row.hackathons,
+    { trigger: "event_publish" },
+  )
 }
 
 export type ScheduledChallengeReleaseResult = {

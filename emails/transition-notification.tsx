@@ -103,7 +103,7 @@ export default function TransitionNotificationEmail({
               color: colors.textPrimary,
             }}
           >
-            Challenges
+            Pick one and start building
           </Text>
           {(challenges ?? []).map((c, idx) => (
             <Section

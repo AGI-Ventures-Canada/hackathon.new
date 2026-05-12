@@ -119,6 +119,8 @@ export type ChallengesReleasedTrigger =
   | "event_publish"
   | "event_start"
 
+const CHALLENGES_RELEASED_RECIPIENT_ROLES = ["participant"] as const
+
 export type ChallengesReleasedDispatchInput = {
   hackathonId: string
   tenantId: string
@@ -147,7 +149,7 @@ export async function dispatchChallengesReleasedNotifications(
           hackathonId: input.hackathonId,
           hackathonName: input.hackathon.name,
           hackathonSlug: input.hackathon.slug,
-          recipientRoles: ["participant"],
+          recipientRoles: [...CHALLENGES_RELEASED_RECIPIENT_ROLES],
           challenges: input.challenges,
         },
       ]).catch((err) => {
