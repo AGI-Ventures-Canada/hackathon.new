@@ -80,6 +80,61 @@ export async function executeTransition(
     triggered_by: triggeredBy,
   })
 
+  let coincidentChallenges:
+    | Array<{ title: string; description: string | null }>
+    | undefined
+
+  if (toStatus === "published" || toStatus === "active") {
+    try {
+      const { getTriggerItem } = await import("./schedule-items")
+      const triggerItem = await getTriggerItem(
+        hackathonId,
+        "challenge_release"
+      )
+      if (triggerItem) {
+        const linkedToEventPublish = triggerItem.linked_to === "event_publish"
+        const linkedToEventStart =
+          toStatus === "active" && triggerItem.linked_to === "event_start"
+        const customTimePassed =
+          toStatus === "active" &&
+          triggerItem.linked_to === null &&
+          triggerItem.starts_at <= new Date().toISOString()
+        const shouldRelease =
+          linkedToEventPublish || linkedToEventStart || customTimePassed
+
+        if (shouldRelease) {
+          const releaseTrigger: "event_publish" | "event_start" | "scheduled" =
+            linkedToEventPublish
+              ? "event_publish"
+              : linkedToEventStart
+                ? "event_start"
+                : "scheduled"
+          const { releaseChallenges, listChallenges } = await import(
+            "./challenges"
+          )
+          const released = await releaseChallenges(hackathonId, tenantId, {
+            dispatchNotification: false,
+            trigger: releaseTrigger,
+          })
+          if (released) {
+            const items = await listChallenges(hackathonId)
+            if (items.length > 0) {
+              coincidentChallenges = items.map((c) => ({
+                title: c.title,
+                description: c.description,
+              }))
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error(
+        `Failed to evaluate challenge release for ${hackathonId}:`,
+        err
+      )
+    }
+  }
+
   const event = STATUS_TO_EVENT[toStatus]
   if (event) {
     const { dispatchTransitionNotifications } = await import(
@@ -99,6 +154,7 @@ export async function executeTransition(
       triggeredBy,
       fromStatus,
       toStatus,
+      challenges: coincidentChallenges,
     }).catch((err) => {
       console.error(
         `Failed to dispatch notifications for ${fromStatus} → ${toStatus}:`,
@@ -121,29 +177,6 @@ export async function executeTransition(
         err
       )
     })
-  }
-
-  if (toStatus === "published" || toStatus === "active") {
-    const { releaseChallenges } = await import("./challenges")
-    const { getTriggerItem } = await import("./schedule-items")
-    const triggerItem = await getTriggerItem(hackathonId, "challenge_release")
-    if (triggerItem) {
-      const linkedToEventPublish = triggerItem.linked_to === "event_publish"
-      const linkedToEventStart =
-        toStatus === "active" && triggerItem.linked_to === "event_start"
-      const customTimePassed =
-        toStatus === "active" &&
-        triggerItem.linked_to === null &&
-        triggerItem.starts_at <= new Date().toISOString()
-      if (linkedToEventPublish || linkedToEventStart || customTimePassed) {
-        releaseChallenges(hackathonId, tenantId).catch((err) => {
-          console.error(
-            `Failed to auto-release challenges for ${hackathonId}:`,
-            err
-          )
-        })
-      }
-    }
   }
 
   if (toStatus === "completed" || toStatus === "archived") {

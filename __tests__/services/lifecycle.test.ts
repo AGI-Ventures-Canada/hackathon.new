@@ -11,8 +11,10 @@ mock.module("@/lib/services/notification-dispatcher", () => ({
 }))
 
 const mockReleaseChallenges = mock(() => Promise.resolve(true))
+const mockListChallenges = mock(() => Promise.resolve([] as Array<{ title: string; description: string | null }>))
 mock.module("@/lib/services/challenges", () => ({
   releaseChallenges: mockReleaseChallenges,
+  listChallenges: mockListChallenges,
 }))
 
 const mockGetTriggerItem = mock(() => Promise.resolve(null))
@@ -29,6 +31,9 @@ describe("Lifecycle Service", () => {
     resetSupabaseMocks()
     mockDispatch.mockClear()
     mockReleaseChallenges.mockClear()
+    mockReleaseChallenges.mockImplementation(() => Promise.resolve(true))
+    mockListChallenges.mockClear()
+    mockListChallenges.mockImplementation(() => Promise.resolve([]))
     mockGetTriggerItem.mockClear()
     mockGetTriggerItem.mockResolvedValue(null)
   })
@@ -195,7 +200,14 @@ describe("Lifecycle Service", () => {
 
       expect(result.success).toBe(true)
       expect(mockGetTriggerItem).toHaveBeenCalledWith("h1", "challenge_release")
-      expect(mockReleaseChallenges).toHaveBeenCalledWith("h1", "t1")
+      expect(mockReleaseChallenges).toHaveBeenCalledWith(
+        "h1",
+        "t1",
+        expect.objectContaining({
+          dispatchNotification: false,
+          trigger: "event_start",
+        }),
+      )
     })
 
     it("auto-releases challenges on active transition with linked_to event_publish (covers skipped-published path)", async () => {
@@ -234,7 +246,14 @@ describe("Lifecycle Service", () => {
       })
 
       expect(result.success).toBe(true)
-      expect(mockReleaseChallenges).toHaveBeenCalledWith("h1", "t1")
+      expect(mockReleaseChallenges).toHaveBeenCalledWith(
+        "h1",
+        "t1",
+        expect.objectContaining({
+          dispatchNotification: false,
+          trigger: "event_publish",
+        }),
+      )
     })
 
     it("auto-releases challenges when transitioning to published with linked_to event_publish", async () => {
@@ -274,7 +293,14 @@ describe("Lifecycle Service", () => {
 
       expect(result.success).toBe(true)
       expect(mockGetTriggerItem).toHaveBeenCalledWith("h1", "challenge_release")
-      expect(mockReleaseChallenges).toHaveBeenCalledWith("h1", "t1")
+      expect(mockReleaseChallenges).toHaveBeenCalledWith(
+        "h1",
+        "t1",
+        expect.objectContaining({
+          dispatchNotification: false,
+          trigger: "event_publish",
+        }),
+      )
     })
 
     it("does NOT release challenges when transitioning to registration_open with linked_to event_publish", async () => {
@@ -392,7 +418,14 @@ describe("Lifecycle Service", () => {
       })
 
       expect(result.success).toBe(true)
-      expect(mockReleaseChallenges).toHaveBeenCalledWith("h1", "t1")
+      expect(mockReleaseChallenges).toHaveBeenCalledWith(
+        "h1",
+        "t1",
+        expect.objectContaining({
+          dispatchNotification: false,
+          trigger: "scheduled",
+        }),
+      )
     })
 
     it("does NOT release challenges when going active with a custom future time", async () => {
@@ -433,6 +466,65 @@ describe("Lifecycle Service", () => {
       expect(result.success).toBe(true)
       expect(mockGetTriggerItem).toHaveBeenCalledWith("h1", "challenge_release")
       expect(mockReleaseChallenges).not.toHaveBeenCalled()
+    })
+
+    it("passes challenges to dispatcher when coincident with go-live", async () => {
+      const hackathon = {
+        id: "h1",
+        tenant_id: "t1",
+        name: "Test Hack",
+        slug: "test-hack",
+        status: "active",
+      }
+
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_transitions") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "hackathons") {
+          return createChainableMock({ data: hackathon, error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      mockGetTriggerItem.mockResolvedValue({
+        id: "item-1",
+        trigger_type: "challenge_release",
+        starts_at: "2026-04-10T09:00:00Z",
+        linked_to: "event_start",
+      })
+      mockListChallenges.mockResolvedValue([
+        { title: "Build It", description: "Make something cool" },
+      ])
+
+      const result = await executeTransition({
+        hackathonId: "h1",
+        tenantId: "t1",
+        fromStatus: "registration_open",
+        toStatus: "active",
+        trigger: "manual",
+        triggeredBy: "user1",
+      })
+
+      expect(result.success).toBe(true)
+      expect(mockReleaseChallenges).toHaveBeenCalledWith(
+        "h1",
+        "t1",
+        expect.objectContaining({
+          dispatchNotification: false,
+          trigger: "event_start",
+        }),
+      )
+
+      expect(mockDispatch).toHaveBeenCalledTimes(1)
+      const dispatchCall = mockDispatch.mock.calls[0][0] as {
+        type: string
+        challenges?: Array<{ title: string }>
+      }
+      expect(dispatchCall.type).toBe("hackathon_started")
+      expect(dispatchCall.challenges).toBeDefined()
+      expect(dispatchCall.challenges).toHaveLength(1)
+      expect(dispatchCall.challenges![0].title).toBe("Build It")
     })
 
     it("does not release challenges when no challenge_release schedule item exists", async () => {

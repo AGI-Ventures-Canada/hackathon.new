@@ -496,6 +496,7 @@ export type Database = {
       hackathon_notification_settings: {
         Row: {
           created_at: string
+          email_on_challenges_released: boolean
           email_on_hackathon_active: boolean
           email_on_judging_started: boolean
           email_on_registration_open: boolean
@@ -505,6 +506,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          email_on_challenges_released?: boolean
           email_on_hackathon_active?: boolean
           email_on_judging_started?: boolean
           email_on_registration_open?: boolean
@@ -514,6 +516,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          email_on_challenges_released?: boolean
           email_on_hackathon_active?: boolean
           email_on_judging_started?: boolean
           email_on_registration_open?: boolean

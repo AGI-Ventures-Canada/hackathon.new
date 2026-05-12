@@ -1,6 +1,9 @@
 "use step"
 
-import type { TransitionEvent } from "@/lib/db/hackathon-types"
+import type {
+  ChallengeSummary,
+  TransitionEvent,
+} from "@/lib/db/hackathon-types"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 export async function fetchRecipientEmails(
@@ -52,6 +55,7 @@ export type SendTransitionEmailInput = {
   hackathonSlug: string
   hackathonStartsAt?: string | null
   hackathonEndsAt?: string | null
+  challenges?: ChallengeSummary[]
 }
 
 export async function sendTransitionEmail(
@@ -62,6 +66,7 @@ export async function sendTransitionEmail(
   )
   const { sendEmail } = await import("@/lib/email/resend")
 
+  const hasChallenges = !!input.challenges && input.challenges.length > 0
   const { subject, html, text, tag } = await buildTransitionEmail(
     input.event,
     input.hackathonName,
@@ -69,6 +74,7 @@ export async function sendTransitionEmail(
     {
       hackathonStartsAt: input.hackathonStartsAt,
       hackathonEndsAt: input.hackathonEndsAt,
+      challenges: input.challenges,
     }
   )
 
@@ -78,7 +84,12 @@ export async function sendTransitionEmail(
     html,
     text,
     tags: [
-      { name: "type", value: `transition_${input.event}` },
+      {
+        name: "type",
+        value: hasChallenges
+          ? `transition_${input.event}_with_challenges`
+          : `transition_${input.event}`,
+      },
       { name: "hackathon", value: tag },
     ],
   })

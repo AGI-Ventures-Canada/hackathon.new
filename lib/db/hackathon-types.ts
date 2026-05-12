@@ -44,6 +44,7 @@ export type WebhookEvent =
   | "hackathon.started"
   | "hackathon.judging_started"
   | "hackathon.completed"
+  | "hackathon.challenges_released"
   | "participant.registered"
   | "submission.created"
   | "submission.submitted"
@@ -57,6 +58,11 @@ export type TransitionEvent =
   | "hackathon_started"
   | "judging_started"
   | "results_published"
+
+export type ChallengeSummary = {
+  title: string
+  description: string | null
+}
 
 export interface HackathonTransition {
   id: string
@@ -74,6 +80,7 @@ export interface HackathonNotificationSettings {
   email_on_hackathon_active: boolean
   email_on_judging_started: boolean
   email_on_results_published: boolean
+  email_on_challenges_released: boolean
   created_at: string
   updated_at: string
 }

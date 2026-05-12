@@ -7,6 +7,7 @@ const DEFAULTS: Omit<HackathonNotificationSettings, "hackathon_id" | "created_at
   email_on_hackathon_active: true,
   email_on_judging_started: true,
   email_on_results_published: true,
+  email_on_challenges_released: true,
 }
 
 export async function getNotificationSettings(

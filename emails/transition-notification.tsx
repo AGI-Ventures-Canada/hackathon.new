@@ -1,9 +1,10 @@
-import { Text } from "@react-email/components"
-import type { TransitionEvent } from "@/lib/db/hackathon-types"
+import { Section, Text } from "@react-email/components"
+import type { ChallengeSummary, TransitionEvent } from "@/lib/db/hackathon-types"
 import { OatmealLayout } from "./_components/oatmeal-layout"
 import { EventDetailBox } from "./_components/event-detail-box"
 import { CTAButton } from "./_components/cta-button"
-import { fontSize, spacing } from "./_components/constants"
+import { ChallengeList } from "./_components/challenge-list"
+import { colors, fontSize, spacing } from "./_components/constants"
 
 interface TransitionNotificationEmailProps {
   event: TransitionEvent
@@ -11,6 +12,7 @@ interface TransitionNotificationEmailProps {
   eventUrl: string
   hackathonStartsAt?: string | null
   hackathonEndsAt?: string | null
+  challenges?: ChallengeSummary[]
 }
 
 const eventConfig: Record<
@@ -54,14 +56,22 @@ export default function TransitionNotificationEmail({
   eventUrl,
   hackathonStartsAt,
   hackathonEndsAt,
+  challenges,
 }: TransitionNotificationEmailProps) {
   const config = eventConfig[event]
+  const hasChallenges = !!challenges && challenges.length > 0
+  const heading = hasChallenges
+    ? `${hackathonName} Is Live — Here Are the Challenges`
+    : config.heading(hackathonName)
+  const bodyText = hasChallenges
+    ? ` is live and the challenges are out. Take a look and start building.`
+    : config.bodySuffix
 
   return (
     <OatmealLayout
-      heading={config.heading(hackathonName)}
-      preview={`${config.heading(hackathonName)}`}
-      footerText={`You got this because you\u2019re registered for ${hackathonName}.`}
+      heading={heading}
+      preview={heading}
+      footerText={`You got this because you’re registered for ${hackathonName}.`}
       eventUrl={eventUrl}
       hackathonName={hackathonName}
     >
@@ -72,9 +82,9 @@ export default function TransitionNotificationEmail({
           lineHeight: "1.6",
         }}
       >
-        {config.bodyPrefix}
+        {hasChallenges ? "" : config.bodyPrefix}
         <strong>{hackathonName}</strong>
-        {config.bodySuffix}
+        {bodyText}
       </Text>
 
       <EventDetailBox
@@ -83,7 +93,25 @@ export default function TransitionNotificationEmail({
         endsAt={hackathonEndsAt}
       />
 
-      <CTAButton href={eventUrl}>{config.ctaLabel}</CTAButton>
+      {hasChallenges && (
+        <Section style={{ marginTop: spacing.lg, marginBottom: spacing.lg }}>
+          <Text
+            style={{
+              fontSize: fontSize.lg,
+              fontWeight: 700,
+              marginBottom: spacing.md,
+              color: colors.textPrimary,
+            }}
+          >
+            Pick one and start building
+          </Text>
+          <ChallengeList challenges={challenges ?? []} />
+        </Section>
+      )}
+
+      <CTAButton href={eventUrl}>
+        {hasChallenges ? "View Challenges" : config.ctaLabel}
+      </CTAButton>
     </OatmealLayout>
   )
 }
@@ -94,4 +122,14 @@ TransitionNotificationEmail.PreviewProps = {
   eventUrl: "https://getoatmeal.com/e/ai-innovation-2026",
   hackathonStartsAt: "2026-04-20T08:30:00Z",
   hackathonEndsAt: "2026-04-22T17:00:00Z",
+  challenges: [
+    {
+      title: "Build a Smarter Inbox",
+      description: "Cut through email noise with an AI assistant that prioritizes what matters.",
+    },
+    {
+      title: "Real-time Translation",
+      description: "Live captions and translation for any video call participant.",
+    },
+  ],
 } satisfies TransitionNotificationEmailProps
