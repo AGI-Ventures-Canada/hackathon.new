@@ -3,8 +3,8 @@ import type { ChallengeSummary, TransitionEvent } from "@/lib/db/hackathon-types
 import { OatmealLayout } from "./_components/oatmeal-layout"
 import { EventDetailBox } from "./_components/event-detail-box"
 import { CTAButton } from "./_components/cta-button"
+import { ChallengeList } from "./_components/challenge-list"
 import { colors, fontSize, spacing } from "./_components/constants"
-import { truncate } from "./_components/format-utils"
 
 interface TransitionNotificationEmailProps {
   event: TransitionEvent
@@ -105,40 +105,7 @@ export default function TransitionNotificationEmail({
           >
             Pick one and start building
           </Text>
-          {(challenges ?? []).map((c, idx) => (
-            <Section
-              key={idx}
-              style={{
-                borderLeft: `3px solid ${colors.accent}`,
-                paddingLeft: spacing.md,
-                marginBottom: spacing.md,
-              }}
-            >
-              <Text
-                style={{
-                  fontSize: fontSize.base,
-                  fontWeight: 600,
-                  margin: 0,
-                  marginBottom: "4px",
-                  color: colors.textPrimary,
-                }}
-              >
-                {c.title}
-              </Text>
-              {c.description && (
-                <Text
-                  style={{
-                    fontSize: fontSize.sm,
-                    color: colors.textSecondary,
-                    margin: 0,
-                    lineHeight: "1.5",
-                  }}
-                >
-                  {truncate(c.description)}
-                </Text>
-              )}
-            </Section>
-          ))}
+          <ChallengeList challenges={challenges ?? []} />
         </Section>
       )}
 

@@ -64,6 +64,12 @@ export async function dispatchTransitionNotifications(
           hackathonEndsAt: input.hackathon.ends_at ?? null,
           event: input.type,
           recipientRoles: roles,
+          // Challenges are merged into the transition email by design, gated
+          // only by the transition's own setting (e.g. email_on_hackathon_active).
+          // email_on_challenges_released controls the *standalone* path in
+          // dispatchChallengesReleasedNotifications — when challenges land in
+          // the same window as a status transition, recipients get one email,
+          // not two.
           challenges: input.challenges,
         },
       ]).catch((err) => {

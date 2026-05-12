@@ -2,8 +2,8 @@ import { Section, Text } from "@react-email/components"
 import type { ChallengeSummary } from "@/lib/db/hackathon-types"
 import { OatmealLayout } from "./_components/oatmeal-layout"
 import { CTAButton } from "./_components/cta-button"
-import { colors, fontSize, spacing } from "./_components/constants"
-import { truncate } from "./_components/format-utils"
+import { ChallengeList } from "./_components/challenge-list"
+import { fontSize, spacing } from "./_components/constants"
 
 interface ChallengesReleasedEmailProps {
   hackathonName: string
@@ -35,40 +35,7 @@ export default function ChallengesReleasedEmail({
       </Text>
 
       <Section style={{ marginBottom: spacing.lg }}>
-        {challenges.map((c, idx) => (
-          <Section
-            key={idx}
-            style={{
-              borderLeft: `3px solid ${colors.accent}`,
-              paddingLeft: spacing.md,
-              marginBottom: spacing.md,
-            }}
-          >
-            <Text
-              style={{
-                fontSize: fontSize.base,
-                fontWeight: 600,
-                margin: 0,
-                marginBottom: "4px",
-                color: colors.textPrimary,
-              }}
-            >
-              {c.title}
-            </Text>
-            {c.description && (
-              <Text
-                style={{
-                  fontSize: fontSize.sm,
-                  color: colors.textSecondary,
-                  margin: 0,
-                  lineHeight: "1.5",
-                }}
-              >
-                {truncate(c.description)}
-              </Text>
-            )}
-          </Section>
-        ))}
+        <ChallengeList challenges={challenges} />
       </Section>
 
       <CTAButton href={eventUrl}>View Challenges</CTAButton>
