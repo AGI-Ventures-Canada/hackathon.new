@@ -260,8 +260,27 @@ export async function setAutoAssignByRoom(hackathonId: string, enabled: boolean)
   return true
 }
 
+async function roomBelongsToHackathon(
+  client: SupabaseClient,
+  roomId: string,
+  hackathonId: string
+): Promise<boolean> {
+  const { data } = await client
+    .from("rooms")
+    .select("id")
+    .eq("id", roomId)
+    .eq("hackathon_id", hackathonId)
+    .maybeSingle()
+  return Boolean(data)
+}
+
 export async function addJudgeToRoom(roomId: string, hackathonId: string, judgeParticipantId: string): Promise<boolean> {
   const client = getSupabase() as unknown as SupabaseClient
+
+  if (!(await roomBelongsToHackathon(client, roomId, hackathonId))) {
+    console.error("Room not found for hackathon:", { roomId, hackathonId })
+    return false
+  }
 
   const { data: participant } = await client
     .from("hackathon_participants")
@@ -291,8 +310,17 @@ export async function addJudgeToRoom(roomId: string, hackathonId: string, judgeP
   return true
 }
 
-export async function removeJudgeFromRoom(roomId: string, judgeParticipantId: string): Promise<boolean> {
+export async function removeJudgeFromRoom(
+  roomId: string,
+  judgeParticipantId: string,
+  hackathonId: string
+): Promise<boolean> {
   const client = getSupabase() as unknown as SupabaseClient
+
+  if (!(await roomBelongsToHackathon(client, roomId, hackathonId))) {
+    console.error("Room not found for hackathon:", { roomId, hackathonId })
+    return false
+  }
 
   const { error } = await client
     .from("judge_room_assignments")

@@ -1059,8 +1059,6 @@ function judgeInitials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
 }
 
-const ADD_JUDGE_VALUE = "__add_judge__"
-
 function RoomJudgesSection({
   room,
   judgePool,
@@ -1126,7 +1124,7 @@ function RoomJudgesSection({
       <Select
         value=""
         onValueChange={(v) => {
-          if (v && v !== ADD_JUDGE_VALUE) onAddJudge(room.id, v)
+          if (v) onAddJudge(room.id, v)
         }}
         disabled={available.length === 0}
       >

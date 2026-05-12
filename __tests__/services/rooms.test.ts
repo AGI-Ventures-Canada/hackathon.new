@@ -176,8 +176,9 @@ describe("rooms service", () => {
   })
 
   describe("addJudgeToRoom", () => {
-    it("adds a judge after verifying participant role", async () => {
+    it("adds a judge after verifying room ownership and participant role", async () => {
       setMockFromImplementation((table) => {
+        if (table === "rooms") return createChainableMock(mockSuccess({ id: ROOM_ID }))
         if (table === "hackathon_participants") {
           return createChainableMock(
             mockSuccess({ id: JUDGE_PARTICIPANT_ID, hackathon_id: HACKATHON_ID, role: "judge" })
@@ -189,8 +190,18 @@ describe("rooms service", () => {
       expect(result).toBe(true)
     })
 
+    it("returns false when room does not belong to the hackathon", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "rooms") return createChainableMock(mockSuccess(null))
+        return createChainableMock({ data: null, error: null })
+      })
+      const result = await addJudgeToRoom(ROOM_ID, HACKATHON_ID, JUDGE_PARTICIPANT_ID)
+      expect(result).toBe(false)
+    })
+
     it("returns false when participant is not a judge in this hackathon", async () => {
       setMockFromImplementation((table) => {
+        if (table === "rooms") return createChainableMock(mockSuccess({ id: ROOM_ID }))
         if (table === "hackathon_participants") {
           return createChainableMock(mockSuccess(null))
         }
@@ -202,6 +213,7 @@ describe("rooms service", () => {
 
     it("returns false on upsert error", async () => {
       setMockFromImplementation((table) => {
+        if (table === "rooms") return createChainableMock(mockSuccess({ id: ROOM_ID }))
         if (table === "hackathon_participants") {
           return createChainableMock(
             mockSuccess({ id: JUDGE_PARTICIPANT_ID, hackathon_id: HACKATHON_ID, role: "judge" })
@@ -215,15 +227,30 @@ describe("rooms service", () => {
   })
 
   describe("removeJudgeFromRoom", () => {
-    it("removes a judge", async () => {
-      setMockFromImplementation(() => createChainableMock({ data: null, error: null }))
-      const result = await removeJudgeFromRoom(ROOM_ID, JUDGE_PARTICIPANT_ID)
+    it("removes a judge after verifying room ownership", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "rooms") return createChainableMock(mockSuccess({ id: ROOM_ID }))
+        return createChainableMock({ data: null, error: null })
+      })
+      const result = await removeJudgeFromRoom(ROOM_ID, JUDGE_PARTICIPANT_ID, HACKATHON_ID)
       expect(result).toBe(true)
     })
 
-    it("returns false on error", async () => {
-      setMockFromImplementation(() => createChainableMock(mockError("Delete failed")))
-      const result = await removeJudgeFromRoom(ROOM_ID, JUDGE_PARTICIPANT_ID)
+    it("returns false when room does not belong to the hackathon", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "rooms") return createChainableMock(mockSuccess(null))
+        return createChainableMock({ data: null, error: null })
+      })
+      const result = await removeJudgeFromRoom(ROOM_ID, JUDGE_PARTICIPANT_ID, HACKATHON_ID)
+      expect(result).toBe(false)
+    })
+
+    it("returns false on delete error", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "rooms") return createChainableMock(mockSuccess({ id: ROOM_ID }))
+        return createChainableMock(mockError("Delete failed"))
+      })
+      const result = await removeJudgeFromRoom(ROOM_ID, JUDGE_PARTICIPANT_ID, HACKATHON_ID)
       expect(result).toBe(false)
     })
   })

@@ -230,6 +230,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if ("error" in authErr) return authErr
+    if (!isValidUuid(params.roomId)) { set.status = 400; return { error: "Invalid room id" } }
     const { judgeParticipantId } = body as { judgeParticipantId: string }
     if (!isValidUuid(judgeParticipantId)) { set.status = 400; return { error: "Invalid judge id" } }
     const ok = await addJudgeToRoom(params.roomId, params.id, judgeParticipantId)
@@ -247,8 +248,9 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if ("error" in authErr) return authErr
+    if (!isValidUuid(params.roomId)) { set.status = 400; return { error: "Invalid room id" } }
     if (!isValidUuid(params.judgeParticipantId)) { set.status = 400; return { error: "Invalid judge id" } }
-    const ok = await removeJudgeFromRoom(params.roomId, params.judgeParticipantId)
+    const ok = await removeJudgeFromRoom(params.roomId, params.judgeParticipantId, params.id)
     if (!ok) { set.status = 400; return { error: "Failed to remove judge from room" } }
     await logAudit({ principal, action: "room_judge.removed", resourceType: "room", resourceId: params.roomId, metadata: { hackathonId: params.id, judgeParticipantId: params.judgeParticipantId } })
     return { success: true }
