@@ -1,6 +1,7 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Submission } from "@/lib/db/hackathon-types"
+import type { Json } from "@/lib/db/types"
 import { trackEvent } from "@/lib/analytics/posthog"
 import { tagSubmissionChallenges } from "@/lib/services/challenges"
 
@@ -150,6 +151,7 @@ export type UpdateSubmissionInput = {
   liveAppUrl?: string | null
   demoVideoUrl?: string | null
   screenshotUrl?: string | null
+  metadata?: Record<string, Json | undefined>
   challengeIds?: string[]
 }
 
@@ -168,6 +170,7 @@ export async function updateSubmission(
   if (input.liveAppUrl !== undefined) updates.live_app_url = input.liveAppUrl
   if (input.demoVideoUrl !== undefined) updates.demo_video_url = input.demoVideoUrl
   if (input.screenshotUrl !== undefined) updates.screenshot_url = input.screenshotUrl
+  if (input.metadata !== undefined) updates.metadata = input.metadata
 
   let query = client
     .from("submissions")
@@ -233,6 +236,7 @@ export type PublicSubmission = {
   live_app_url: string | null
   demo_video_url: string | null
   screenshot_url: string | null
+  metadata: Json
   status: string
   created_at: string
   participant_id: string | null
@@ -255,6 +259,7 @@ export async function getHackathonSubmissions(
       live_app_url,
       demo_video_url,
       screenshot_url,
+      metadata,
       status,
       created_at,
       participant_id,

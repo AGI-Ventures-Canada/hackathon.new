@@ -5,6 +5,7 @@ import { sortByStartDate } from "@/lib/utils/format"
 import { generateSlug } from "@/lib/utils/slug"
 import { clerkClient } from "@clerk/nextjs/server"
 import { trackEvent } from "@/lib/analytics/posthog"
+import { getSubmissionScreenshotUrls } from "@/lib/utils/submission-screenshots"
 
 type ParticipantWithHackathon = HackathonParticipant & {
   hackathons: Hackathon
@@ -473,6 +474,7 @@ export type TeamWithMembers = {
     liveAppUrl: string | null
     demoVideoUrl: string | null
     screenshotUrl: string | null
+    screenshotUrls: string[]
     createdAt: string
   } | null
   room: { id: string; name: string } | null
@@ -500,7 +502,7 @@ export async function listTeamsWithMembers(hackathonId: string): Promise<TeamWit
       .in("team_id", teamIds),
     client
       .from("submissions")
-      .select("id, title, status, team_id, description, github_url, live_app_url, demo_video_url, screenshot_url, created_at")
+      .select("id, title, status, team_id, description, github_url, live_app_url, demo_video_url, screenshot_url, metadata, created_at")
       .eq("hackathon_id", hackathonId)
       .in("team_id", teamIds),
     client
@@ -521,6 +523,7 @@ export async function listTeamsWithMembers(hackathonId: string): Promise<TeamWit
         liveAppUrl: s.live_app_url ?? null,
         demoVideoUrl: s.demo_video_url ?? null,
         screenshotUrl: s.screenshot_url ?? null,
+        screenshotUrls: getSubmissionScreenshotUrls(s),
         createdAt: s.created_at,
       }
     }

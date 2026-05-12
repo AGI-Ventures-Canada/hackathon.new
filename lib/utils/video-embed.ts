@@ -95,11 +95,22 @@ function getVimeoEmbedInfo(url: URL): VideoEmbedInfo | null {
   const hostname = url.hostname.toLowerCase()
   const segments = pathSegments(url)
   let videoId: string | null = null
+  let hash: string | null = null
 
   if (hostname === "vimeo.com" || hostname === "www.vimeo.com") {
-    videoId = [...segments].reverse().find((segment) => VIMEO_ID_PATTERN.test(segment)) ?? null
+    let idIndex = -1
+    for (let index = segments.length - 1; index >= 0; index -= 1) {
+      if (VIMEO_ID_PATTERN.test(segments[index])) {
+        idIndex = index
+        break
+      }
+    }
+    videoId = idIndex >= 0 ? segments[idIndex] : null
+    const pathHash = idIndex >= 0 ? segments[idIndex + 1] : null
+    hash = pathHash && /^[A-Za-z0-9_-]+$/.test(pathHash) ? pathHash : null
   } else if (hostname === "player.vimeo.com" && segments[0] === "video") {
     videoId = segments[1] ?? null
+    hash = url.searchParams.get("h")
   }
 
   if (!videoId || !VIMEO_ID_PATTERN.test(videoId)) {
@@ -108,7 +119,7 @@ function getVimeoEmbedInfo(url: URL): VideoEmbedInfo | null {
 
   return {
     provider: "vimeo",
-    embedUrl: `https://player.vimeo.com/video/${videoId}`,
+    embedUrl: `https://player.vimeo.com/video/${videoId}${hash ? `?h=${encodeURIComponent(hash)}` : ""}`,
     title: "Vimeo video",
   }
 }

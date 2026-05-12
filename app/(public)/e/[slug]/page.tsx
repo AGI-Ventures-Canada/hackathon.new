@@ -4,6 +4,7 @@ import { getPublicHackathon, PUBLISHED_STATUSES } from "@/lib/services/public-ha
 import { listScheduleItems } from "@/lib/services/schedule-items"
 import { listPublishedAnnouncements } from "@/lib/services/announcements"
 import { listChallenges } from "@/lib/services/challenges"
+import { getSubmissionScreenshotUrls } from "@/lib/utils/submission-screenshots"
 import { HackathonPreviewClient } from "@/components/hackathon/preview/hackathon-preview-client"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Eye, Clock } from "lucide-react"
@@ -171,6 +172,7 @@ export default async function EventPage({ params, searchParams }: PageProps) {
     liveAppUrl: s.live_app_url,
     demoVideoUrl: s.demo_video_url,
     screenshotUrl: s.screenshot_url,
+    screenshotUrls: getSubmissionScreenshotUrls(s),
     submitter: s.submitter_name,
     createdAt: s.created_at,
   }))

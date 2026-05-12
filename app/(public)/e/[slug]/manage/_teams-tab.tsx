@@ -34,7 +34,7 @@ import {
 } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
 import { getVideoEmbedInfo } from "@/lib/utils/video-embed"
-import { VideoEmbed } from "@/components/hackathon/video-embed"
+import { SubmissionMedia } from "@/components/hackathon/submission-media"
 import { SubmissionLinks } from "@/components/hackathon/submission-links"
 
 type TeamMember = {
@@ -53,6 +53,7 @@ type TeamSubmission = {
   liveAppUrl: string | null
   demoVideoUrl: string | null
   screenshotUrl: string | null
+  screenshotUrls: string[]
   createdAt: string
 }
 
@@ -82,17 +83,12 @@ function TeamSubmissionPanel({ submission }: { submission: TeamSubmission }) {
           </p>
         )}
       </div>
-      {submission.screenshotUrl && (
-        <div className="rounded-md overflow-hidden border bg-background">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={submission.screenshotUrl}
-            alt={`Screenshot of ${submission.title}`}
-            className="w-full h-auto max-h-80 object-contain"
-          />
-        </div>
-      )}
-      {videoEmbed && <VideoEmbed video={videoEmbed} />}
+      <SubmissionMedia
+        title={submission.title}
+        video={videoEmbed}
+        screenshotUrl={submission.screenshotUrl}
+        screenshotUrls={submission.screenshotUrls}
+      />
       <SubmissionLinks
         githubUrl={submission.githubUrl}
         liveAppUrl={submission.liveAppUrl}
