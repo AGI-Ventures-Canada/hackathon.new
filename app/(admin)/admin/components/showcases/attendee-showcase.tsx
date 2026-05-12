@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { Suspense, useState } from "react"
 import {
   SectionLayout,
   ShowcaseSection,
@@ -142,27 +142,31 @@ export function AttendeeShowcase({ data }: { data: ShowcaseData }) {
         description="Standalone CTA. Changes copy based on event status and whether you're signed in / registered."
       >
         <ShowcaseRow>
-          <RegistrationButton
-            hackathonSlug={hackathon.slug}
-            status={hackathon.status}
-            endsAt={hackathon.ends_at}
-            registrationOpensAt={hackathon.registration_opens_at}
-            registrationClosesAt={hackathon.registration_closes_at}
-            maxParticipants={hackathon.max_participants}
-            participantCount={42}
-            isRegistered={false}
-            onRegistrationSuccess={() => record("Registered (standalone)")}
-          />
-          <RegistrationButton
-            hackathonSlug={hackathon.slug}
-            status={hackathon.status}
-            endsAt={hackathon.ends_at}
-            registrationOpensAt={hackathon.registration_opens_at}
-            registrationClosesAt={hackathon.registration_closes_at}
-            maxParticipants={hackathon.max_participants}
-            participantCount={42}
-            isRegistered
-          />
+          <Suspense>
+            <RegistrationButton
+              hackathonSlug={hackathon.slug}
+              status={hackathon.status}
+              endsAt={hackathon.ends_at}
+              registrationOpensAt={hackathon.registration_opens_at}
+              registrationClosesAt={hackathon.registration_closes_at}
+              maxParticipants={hackathon.max_participants}
+              participantCount={42}
+              isRegistered={false}
+              onRegistrationSuccess={() => record("Registered (standalone)")}
+            />
+          </Suspense>
+          <Suspense>
+            <RegistrationButton
+              hackathonSlug={hackathon.slug}
+              status={hackathon.status}
+              endsAt={hackathon.ends_at}
+              registrationOpensAt={hackathon.registration_opens_at}
+              registrationClosesAt={hackathon.registration_closes_at}
+              maxParticipants={hackathon.max_participants}
+              participantCount={42}
+              isRegistered
+            />
+          </Suspense>
         </ShowcaseRow>
       </ShowcaseSection>
 

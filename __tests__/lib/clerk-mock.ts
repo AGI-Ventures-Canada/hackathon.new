@@ -10,6 +10,7 @@ export const clerkState = g.__clerkState
 export function resetClerkState() {
   clerkState.isSignedIn = true
   clerkState.userId = "user_123"
+  clerkState.orgId = null
   clerkState.user = {
     id: "user_123",
     fullName: "Test User",

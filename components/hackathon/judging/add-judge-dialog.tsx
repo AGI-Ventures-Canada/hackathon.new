@@ -2,9 +2,7 @@
 
 import { useState, useRef, useCallback } from "react"
 import { assertOkJson } from "@/lib/utils/fetch"
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
   Dialog,
@@ -19,6 +17,8 @@ import {
   Search,
   Mail,
 } from "lucide-react"
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 type SearchUser = {
   id: string
@@ -51,8 +51,6 @@ export function AddJudgeDialog({
   const [searching, setSearching] = useState(false)
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [showInviteForm, setShowInviteForm] = useState(false)
-  const [inviteEmail, setInviteEmail] = useState("")
   const abortRef = useRef<AbortController | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const cacheRef = useRef<Map<string, SearchUser[]>>(new Map())
@@ -63,8 +61,6 @@ export function AddJudgeDialog({
     setSearchQuery("")
     setSearchResults([])
     setError(null)
-    setShowInviteForm(false)
-    setInviteEmail("")
     if (debounceRef.current) clearTimeout(debounceRef.current)
     abortRef.current?.abort()
     cacheRef.current.clear()
@@ -194,14 +190,11 @@ export function AddJudgeDialog({
     }
   }
 
-  async function handleInviteByEmail(e: React.FormEvent) {
-    e.preventDefault()
-    const email = inviteEmail.trim()
-    if (!email) return
-
+  async function handleInviteByEmail(email: string) {
     setAdding(true)
     setError(null)
-    const savedEmail = email
+    const savedQuery = searchQuery
+    const savedResults = searchResults
     handleOpenChange(false)
 
     try {
@@ -216,20 +209,20 @@ export function AddJudgeDialog({
         }>
       )
       if (data.invitation) {
-        onSuccess?.({ type: "invitation", id: data.invitation.id, email: savedEmail, token: data.invitation.token })
+        onSuccess?.({ type: "invitation", id: data.invitation.id, email, token: data.invitation.token })
       } else if (data.participant) {
         onSuccess?.({
           type: "judge",
           participantId: data.participant.id,
           clerkUserId: data.participant.clerkUserId,
-          displayName: savedEmail,
-          email: savedEmail,
+          displayName: email,
+          email,
           imageUrl: null,
         })
       }
     } catch (err) {
-      setInviteEmail(savedEmail)
-      setShowInviteForm(true)
+      setSearchQuery(savedQuery)
+      setSearchResults(savedResults)
       setError(err instanceof Error ? err.message : "Something went wrong")
       onOpenChange(true)
     } finally {
@@ -237,12 +230,22 @@ export function AddJudgeDialog({
     }
   }
 
-  function handleInviteKeyDown(e: React.KeyboardEvent) {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !adding) {
-      e.preventDefault()
-      handleInviteByEmail(e as unknown as React.FormEvent)
-    }
-  }
+  const trimmedQuery = searchQuery.trim()
+  const isQueryValidEmail = EMAIL_REGEX.test(trimmedQuery)
+  const hasExactEmailMatch = searchResults.some(
+    (u) => u.email?.toLowerCase() === trimmedQuery.toLowerCase()
+  )
+  const minLength = trimmedQuery.includes("@") ? 2 : 3
+  const aboveMinLength = trimmedQuery.length >= minLength
+
+  // Only one of these is true at a time after searching settles:
+  //  - searching:          spinner only (invite/no-results suppressed during fetch)
+  //  - showInviteByEmail:  complete email + no exact match -> invite row
+  //  - showNoResults:      incomplete query past min length with zero hits -> message
+  const showInviteByEmail = isQueryValidEmail && !hasExactEmailMatch && !searching
+  const hasPartialEmail = trimmedQuery.includes("@") && !isQueryValidEmail
+  const showNoResults =
+    !searching && !isQueryValidEmail && aboveMinLength && searchResults.length === 0
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -278,7 +281,7 @@ export function AddJudgeDialog({
               </div>
             )}
 
-            {searchResults.length > 0 && (
+            {(searchResults.length > 0 || showInviteByEmail) && (
               <div className={`space-y-1 max-h-64 overflow-y-auto transition-opacity ${searching ? "opacity-60" : ""}`}>
                 {searchResults.map((user) => {
                   const displayName = getDisplayName(user)
@@ -312,76 +315,44 @@ export function AddJudgeDialog({
                     </button>
                   )
                 })}
+
+                {showInviteByEmail && (
+                  <button
+                    type="button"
+                    onClick={() => handleInviteByEmail(trimmedQuery)}
+                    disabled={adding}
+                    className="flex items-center gap-3 w-full rounded-lg p-2 text-left hover:bg-muted transition-colors disabled:opacity-50"
+                  >
+                    <Avatar size="sm">
+                      <AvatarFallback>
+                        <Mail className="size-4" />
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        {trimmedQuery}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        Invite via email
+                      </p>
+                    </div>
+                    {adding ? (
+                      <Loader2 className="size-4 animate-spin text-muted-foreground shrink-0" />
+                    ) : (
+                      <UserPlus className="size-4 text-muted-foreground shrink-0" />
+                    )}
+                  </button>
+                )}
               </div>
             )}
 
-            {!searching &&
-              searchQuery.length >= (searchQuery.includes("@") ? 2 : 3) &&
-              searchResults.length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-3">
-                  No users found
-                </p>
-              )}
-
-            <div className="border-t pt-4">
-              {!showInviteForm ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full"
-                  onClick={() => setShowInviteForm(true)}
-                >
-                  <Mail className="mr-2 size-4" />
-                  Invite by email
-                </Button>
-              ) : (
-                <form
-                  onSubmit={handleInviteByEmail}
-                  onKeyDown={handleInviteKeyDown}
-                  autoComplete="off"
-                  className="space-y-3"
-                >
-                  <div className="space-y-1.5">
-                    <Label htmlFor="invite-email" className="text-xs">
-                      Email address
-                    </Label>
-                    <Input
-                      id="invite-email"
-                      name="invite-email"
-                      type="email"
-                      value={inviteEmail}
-                      onChange={(e) => setInviteEmail(e.target.value)}
-                      placeholder="judge@example.com"
-                      autoFocus
-                      autoComplete="off"
-                      data-1p-ignore
-                      data-lpignore="true"
-                      data-form-type="other"
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setShowInviteForm(false)}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      type="submit"
-                      size="sm"
-                      disabled={adding || !inviteEmail.trim()}
-                    >
-                      {adding && (
-                        <Loader2 className="mr-2 size-4 animate-spin" />
-                      )}
-                      Send Invitation
-                    </Button>
-                  </div>
-                </form>
-              )}
-            </div>
+            {showNoResults && (
+              <p className="text-sm text-muted-foreground text-center py-3">
+                {hasPartialEmail
+                  ? "Enter a full email to invite someone new"
+                  : "No users found"}
+              </p>
+            )}
           </div>
       </DialogContent>
     </Dialog>

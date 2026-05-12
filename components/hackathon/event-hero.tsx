@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { OptimizedImage } from "@/components/ui/optimized-image";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
@@ -454,21 +455,23 @@ export function EventHero({
       ) : registrationProps && (
         <div className="flex flex-wrap items-center gap-2">
           {!hideRegistrationButton && !isRegistered && (
-            <RegistrationButton
-              hackathonSlug={registrationProps.hackathonSlug}
-              status={status}
-              endsAt={registrationProps.endsAt}
-              registrationOpensAt={registrationProps.registrationOpensAt}
-              registrationClosesAt={registrationProps.registrationClosesAt}
-              maxParticipants={registrationProps.maxParticipants}
-              participantCount={registrationProps.participantCount}
-              isRegistered={registrationProps.isRegistered}
-              requireLocationVerification={registrationProps.requireLocationVerification}
-              requireTermsAcceptance={registrationProps.requireTermsAcceptance}
-              termsContent={registrationProps.termsContent}
-              termsHash={registrationProps.termsHash}
-              onRegistrationSuccess={registrationProps.onRegistrationSuccess}
-            />
+            <Suspense>
+              <RegistrationButton
+                hackathonSlug={registrationProps.hackathonSlug}
+                status={status}
+                endsAt={registrationProps.endsAt}
+                registrationOpensAt={registrationProps.registrationOpensAt}
+                registrationClosesAt={registrationProps.registrationClosesAt}
+                maxParticipants={registrationProps.maxParticipants}
+                participantCount={registrationProps.participantCount}
+                isRegistered={registrationProps.isRegistered}
+                requireLocationVerification={registrationProps.requireLocationVerification}
+                requireTermsAcceptance={registrationProps.requireTermsAcceptance}
+                termsContent={registrationProps.termsContent}
+                termsHash={registrationProps.termsHash}
+                onRegistrationSuccess={registrationProps.onRegistrationSuccess}
+              />
+            </Suspense>
           )}
           <SubmissionButton
             hackathonSlug={registrationProps.hackathonSlug}

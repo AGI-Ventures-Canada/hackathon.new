@@ -1,9 +1,9 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { assertOk } from "@/lib/utils/fetch"
-import { SignInButton, SignUpButton } from "@clerk/nextjs"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -221,14 +221,20 @@ export function JudgeInviteAcceptClient({
           </>
         ) : (
           <>
-            <SignInButton mode="modal" forceRedirectUrl={`/judge-invite/${token}`}>
-              <Button className="w-full">Sign In to Accept</Button>
-            </SignInButton>
-            <SignUpButton mode="modal" forceRedirectUrl={`/judge-invite/${token}`}>
-              <Button variant="outline" className="w-full">
+            <Button className="w-full" asChild>
+              <Link
+                href={`/sign-in?redirect_url=${encodeURIComponent(`/judge-invite/${token}`)}&email=${encodeURIComponent(invitation.email)}`}
+              >
+                Sign In to Accept
+              </Link>
+            </Button>
+            <Button variant="outline" className="w-full" asChild>
+              <Link
+                href={`/sign-up?redirect_url=${encodeURIComponent(`/judge-invite/${token}`)}&email=${encodeURIComponent(invitation.email)}`}
+              >
                 Create Account
-              </Button>
-            </SignUpButton>
+              </Link>
+            </Button>
           </>
         )}
       </CardFooter>
