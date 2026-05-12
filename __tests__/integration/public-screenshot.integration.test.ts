@@ -557,6 +557,29 @@ describe("Public Screenshot Routes", () => {
       )
     })
 
+    it("returns 400 for an invalid upload slot", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockGetParticipantWithTeam.mockResolvedValue({ participantId: "p1", teamId: null })
+      mockGetExistingSubmission.mockResolvedValue(mockSubmission)
+
+      const formData = new FormData()
+      formData.append("file", new Blob(["test"], { type: "image/png" }), "screenshot.png")
+      formData.append("slot", "9")
+
+      const res = await app.handle(
+        new Request("http://localhost/api/public/hackathons/test-hackathon/submissions/screenshot", {
+          method: "POST",
+          body: formData,
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(400)
+      expect(data.code).toBe("invalid_screenshot_slot")
+      expect(mockUploadScreenshot).not.toHaveBeenCalled()
+    })
+
     it("accepts webp format", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)

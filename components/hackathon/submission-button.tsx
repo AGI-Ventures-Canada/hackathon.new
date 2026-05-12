@@ -466,6 +466,31 @@ export function SubmissionButton({
 
         nextBySlot.clear()
       } else {
+        for (const screenshot of screenshotsToUpload) {
+          const formData = new FormData()
+          formData.append("file", screenshot.file)
+          formData.append("slot", String(screenshot.slot))
+
+          const response = await fetch(
+            `/api/public/hackathons/${hackathonSlug}/submissions/screenshot`,
+            { method: "POST", body: formData }
+          )
+          const data = await response.json().catch(() => ({}))
+
+          if (!response.ok) {
+            setError(data.error || "Failed to upload screenshot")
+            return null
+          }
+
+          if (typeof data.screenshotUrl !== "string") {
+            setError("Failed to upload screenshot")
+            return null
+          }
+
+          nextBySlot.set(screenshot.slot, data.screenshotUrl)
+          revokePreviewUrl(screenshot.url)
+        }
+
         for (const slot of removedSlots) {
           const response = await fetch(
             `/api/public/hackathons/${hackathonSlug}/submissions/screenshot?slot=${slot}`,
@@ -480,31 +505,6 @@ export function SubmissionButton({
 
           nextBySlot.delete(slot)
         }
-      }
-
-      for (const screenshot of screenshotsToUpload) {
-        const formData = new FormData()
-        formData.append("file", screenshot.file)
-        formData.append("slot", String(screenshot.slot))
-
-        const response = await fetch(
-          `/api/public/hackathons/${hackathonSlug}/submissions/screenshot`,
-          { method: "POST", body: formData }
-        )
-        const data = await response.json().catch(() => ({}))
-
-        if (!response.ok) {
-          setError(data.error || "Failed to upload screenshot")
-          return null
-        }
-
-        if (typeof data.screenshotUrl !== "string") {
-          setError("Failed to upload screenshot")
-          return null
-        }
-
-        nextBySlot.set(screenshot.slot, data.screenshotUrl)
-        revokePreviewUrl(screenshot.url)
       }
 
       const syncedScreenshots = Array.from(nextBySlot.entries())

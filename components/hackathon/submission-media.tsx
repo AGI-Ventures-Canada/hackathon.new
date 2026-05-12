@@ -4,6 +4,7 @@ import { useMemo, useState } from "react"
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
@@ -87,6 +88,9 @@ export function SubmissionMedia({
       <Dialog open={screenshotOpen} onOpenChange={setScreenshotOpen}>
         <DialogContent className="p-2 sm:max-w-5xl">
           <DialogTitle className="sr-only">{title} screenshot</DialogTitle>
+          <DialogDescription className="sr-only">
+            Larger screenshot preview for {title}.
+          </DialogDescription>
           {activeScreenshot && (
             <div className="flex max-h-[80vh] items-center justify-center overflow-hidden bg-muted">
               {/* eslint-disable-next-line @next/next/no-img-element */}

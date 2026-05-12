@@ -1,5 +1,6 @@
 import sharp from "sharp"
 import { supabase as getSupabase } from "@/lib/db/client"
+import { MAX_SUBMISSION_SCREENSHOTS } from "@/lib/utils/submission-screenshots"
 
 const LOGOS_BUCKET = "logos"
 const BANNERS_BUCKET = "banners"
@@ -312,7 +313,9 @@ export async function deleteScreenshot(submissionId: string, slot?: number): Pro
 
   const extensions = ["webp", "png", "jpg", "svg"]
   const filenames = slot === undefined
-    ? ["screenshot", "screenshot-2"]
+    ? Array.from({ length: MAX_SUBMISSION_SCREENSHOTS }, (_, index) =>
+        index === 0 ? "screenshot" : `screenshot-${index + 1}`
+      )
     : [slot === 0 ? "screenshot" : `screenshot-${slot + 1}`]
   const paths = filenames.flatMap((filename) =>
     extensions.map((ext) => `${submissionId}/${filename}.${ext}`)

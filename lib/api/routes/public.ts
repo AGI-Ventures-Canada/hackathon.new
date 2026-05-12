@@ -867,7 +867,11 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     }
 
     const { deleteScreenshot } = await import("@/lib/services/storage")
-    await deleteScreenshot(existing.id, slot ?? undefined)
+    if (slot === null) {
+      await deleteScreenshot(existing.id)
+    } else {
+      await deleteScreenshot(existing.id, slot)
+    }
     const screenshots = slot === null
       ? []
       : getSubmissionScreenshots(existing).filter((screenshot) => screenshot.slot !== slot)
