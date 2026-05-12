@@ -266,6 +266,99 @@ describe("Submissions Service", () => {
 
       expect(result).toBeNull()
     })
+
+    it("skips room-judge routing when auto_assign_by_room is off", async () => {
+      let routingFired = false
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: { auto_assign_by_room: false, status: "active" },
+            error: null,
+          })
+        }
+        if (table === "submissions") {
+          return createChainableMock({
+            data: { ...mockSubmission, team_id: "team1", participant_id: null },
+            error: null,
+          })
+        }
+        if (table === "room_teams" || table === "judge_room_assignments") {
+          routingFired = true
+          return createChainableMock({ data: null, error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      await createSubmission("h1", "p1", "team1", {
+        title: "T",
+        description: "d",
+        githubUrl: "https://github.com/x/y",
+      })
+
+      expect(routingFired).toBe(false)
+    })
+
+    it("skips room-judge routing when hackathon status is draft", async () => {
+      let routingFired = false
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: { auto_assign_by_room: true, status: "draft" },
+            error: null,
+          })
+        }
+        if (table === "submissions") {
+          return createChainableMock({
+            data: { ...mockSubmission, team_id: "team1", participant_id: null },
+            error: null,
+          })
+        }
+        if (table === "room_teams" || table === "judge_room_assignments") {
+          routingFired = true
+          return createChainableMock({ data: null, error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      await createSubmission("h1", "p1", "team1", {
+        title: "T",
+        description: "d",
+        githubUrl: "https://github.com/x/y",
+      })
+
+      expect(routingFired).toBe(false)
+    })
+
+    it("invokes room-judge routing when toggle on and status active", async () => {
+      let routingFired = false
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: { auto_assign_by_room: true, status: "active" },
+            error: null,
+          })
+        }
+        if (table === "submissions") {
+          return createChainableMock({
+            data: { ...mockSubmission, team_id: "team1", participant_id: null },
+            error: null,
+          })
+        }
+        if (table === "room_teams") {
+          routingFired = true
+          return createChainableMock({ data: null, error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      await createSubmission("h1", "p1", "team1", {
+        title: "T",
+        description: "d",
+        githubUrl: "https://github.com/x/y",
+      })
+
+      expect(routingFired).toBe(true)
+    })
   })
 
   describe("updateSubmission", () => {

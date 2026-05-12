@@ -1932,6 +1932,268 @@ export async function autoAssignJudges(
 }
 
 // ============================================================
+// Room-based auto-assignment on submission
+// ============================================================
+
+export const ROOM_ROUTING_STATUSES = new Set(["active", "judging"])
+
+export type RoomRoutingResult = {
+  routed: boolean
+  reason?:
+    | "team_has_no_room"
+    | "room_has_no_judges"
+    | "self_judging_only"
+    | "all_existed"
+  assignedCount: number
+}
+
+export async function autoAssignSubmissionToRoomJudges(input: {
+  hackathonId: string
+  submissionId: string
+  teamId: string | null
+}): Promise<RoomRoutingResult> {
+  if (!input.teamId) {
+    return { routed: false, reason: "team_has_no_room", assignedCount: 0 }
+  }
+
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data: roomTeam } = await client
+    .from("room_teams")
+    .select("room_id")
+    .eq("team_id", input.teamId)
+    .maybeSingle()
+
+  if (!roomTeam) {
+    return { routed: false, reason: "team_has_no_room", assignedCount: 0 }
+  }
+
+  const { data: roomJudges } = await client
+    .from("judge_room_assignments")
+    .select("judge_participant_id")
+    .eq("room_id", (roomTeam as { room_id: string }).room_id)
+
+  const judgeIds = (roomJudges ?? []).map((rj: { judge_participant_id: string }) => rj.judge_participant_id)
+  if (judgeIds.length === 0) {
+    return { routed: false, reason: "room_has_no_judges", assignedCount: 0 }
+  }
+
+  const { data: judgeRows } = await client
+    .from("hackathon_participants")
+    .select("id, team_id")
+    .in("id", judgeIds)
+
+  const eligibleJudgeIds = (judgeRows ?? [])
+    .filter((j: { id: string; team_id: string | null }) => !(j.team_id && j.team_id === input.teamId))
+    .map((j: { id: string }) => j.id)
+
+  if (eligibleJudgeIds.length === 0) {
+    return { routed: false, reason: "self_judging_only", assignedCount: 0 }
+  }
+
+  const { data: existing } = await client
+    .from("judge_assignments")
+    .select("judge_participant_id")
+    .eq("submission_id", input.submissionId)
+    .eq("assignment_kind", "unified_weighted_score")
+    .in("judge_participant_id", eligibleJudgeIds)
+
+  const existingSet = new Set(
+    (existing ?? []).map((e: { judge_participant_id: string }) => e.judge_participant_id)
+  )
+
+  const rows = eligibleJudgeIds
+    .filter((id) => !existingSet.has(id))
+    .map((id) => ({
+      hackathon_id: input.hackathonId,
+      judge_participant_id: id,
+      submission_id: input.submissionId,
+      prize_id: null,
+      round_id: null,
+      assignment_kind: "unified_weighted_score",
+    }))
+
+  if (rows.length === 0) {
+    return { routed: true, reason: "all_existed", assignedCount: 0 }
+  }
+
+  const { error } = await client.from("judge_assignments").insert(rows)
+  if (error) {
+    console.error("Failed to route submission to room judges:", error)
+    return { routed: false, assignedCount: 0 }
+  }
+
+  return { routed: true, assignedCount: rows.length }
+}
+
+export type RoomRoutingSyncResult = {
+  submissionsProcessed: number
+  totalAssignmentsCreated: number
+  reasonCounts: Record<string, number>
+  skipped?: "hackathon_status"
+}
+
+export async function syncRoomSubmissionsToJudges(
+  hackathonId: string
+): Promise<RoomRoutingSyncResult> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data: hackathon } = await client
+    .from("hackathons")
+    .select("status")
+    .eq("id", hackathonId)
+    .maybeSingle()
+
+  if (!hackathon || !ROOM_ROUTING_STATUSES.has((hackathon as { status: string }).status)) {
+    return {
+      submissionsProcessed: 0,
+      totalAssignmentsCreated: 0,
+      reasonCounts: {},
+      skipped: "hackathon_status",
+    }
+  }
+
+  const { data: rooms } = await client
+    .from("rooms")
+    .select("id")
+    .eq("hackathon_id", hackathonId)
+
+  const roomIds = (rooms ?? []).map((r: { id: string }) => r.id)
+  if (roomIds.length === 0) {
+    return { submissionsProcessed: 0, totalAssignmentsCreated: 0, reasonCounts: {} }
+  }
+
+  const [{ data: roomTeams }, { data: roomJudges }] = await Promise.all([
+    client.from("room_teams").select("room_id, team_id").in("room_id", roomIds),
+    client.from("judge_room_assignments").select("room_id, judge_participant_id").in("room_id", roomIds),
+  ])
+
+  const teamToRoom = new Map<string, string>()
+  for (const rt of (roomTeams ?? []) as { room_id: string; team_id: string }[]) {
+    teamToRoom.set(rt.team_id, rt.room_id)
+  }
+
+  const judgesByRoom = new Map<string, string[]>()
+  const allJudgeIds = new Set<string>()
+  for (const rj of (roomJudges ?? []) as { room_id: string; judge_participant_id: string }[]) {
+    const list = judgesByRoom.get(rj.room_id) ?? []
+    list.push(rj.judge_participant_id)
+    judgesByRoom.set(rj.room_id, list)
+    allJudgeIds.add(rj.judge_participant_id)
+  }
+
+  const teamIds = Array.from(teamToRoom.keys())
+  if (teamIds.length === 0) {
+    return { submissionsProcessed: 0, totalAssignmentsCreated: 0, reasonCounts: {} }
+  }
+
+  const { data: submissions } = await client
+    .from("submissions")
+    .select("id, team_id")
+    .eq("hackathon_id", hackathonId)
+    .eq("status", "submitted")
+    .in("team_id", teamIds)
+
+  const subs = (submissions ?? []) as { id: string; team_id: string }[]
+
+  const judgeTeams = new Map<string, string | null>()
+  if (allJudgeIds.size > 0) {
+    const { data: judgeRows } = await client
+      .from("hackathon_participants")
+      .select("id, team_id")
+      .in("id", Array.from(allJudgeIds))
+    for (const j of (judgeRows ?? []) as { id: string; team_id: string | null }[]) {
+      judgeTeams.set(j.id, j.team_id)
+    }
+  }
+
+  const submissionIds = subs.map((s) => s.id)
+  const existingBySubmission = new Map<string, Set<string>>()
+  if (submissionIds.length > 0) {
+    const { data: existing } = await client
+      .from("judge_assignments")
+      .select("submission_id, judge_participant_id")
+      .eq("assignment_kind", "unified_weighted_score")
+      .in("submission_id", submissionIds)
+    for (const e of (existing ?? []) as { submission_id: string; judge_participant_id: string }[]) {
+      const set = existingBySubmission.get(e.submission_id) ?? new Set<string>()
+      set.add(e.judge_participant_id)
+      existingBySubmission.set(e.submission_id, set)
+    }
+  }
+
+  const reasonCounts: Record<string, number> = {}
+  const bumpReason = (key: string) => {
+    reasonCounts[key] = (reasonCounts[key] ?? 0) + 1
+  }
+
+  const rowsToInsert: {
+    hackathon_id: string
+    judge_participant_id: string
+    submission_id: string
+    prize_id: null
+    round_id: null
+    assignment_kind: string
+  }[] = []
+
+  for (const sub of subs) {
+    const roomId = teamToRoom.get(sub.team_id)
+    if (!roomId) {
+      bumpReason("team_has_no_room")
+      continue
+    }
+    const judges = judgesByRoom.get(roomId) ?? []
+    if (judges.length === 0) {
+      bumpReason("room_has_no_judges")
+      continue
+    }
+    const eligible = judges.filter((id) => {
+      const judgeTeamId = judgeTeams.get(id)
+      return !(judgeTeamId && judgeTeamId === sub.team_id)
+    })
+    if (eligible.length === 0) {
+      bumpReason("self_judging_only")
+      continue
+    }
+    const existing = existingBySubmission.get(sub.id) ?? new Set<string>()
+    const newJudges = eligible.filter((id) => !existing.has(id))
+    if (newJudges.length === 0) {
+      bumpReason("all_existed")
+      continue
+    }
+    for (const id of newJudges) {
+      rowsToInsert.push({
+        hackathon_id: hackathonId,
+        judge_participant_id: id,
+        submission_id: sub.id,
+        prize_id: null,
+        round_id: null,
+        assignment_kind: "unified_weighted_score",
+      })
+    }
+    bumpReason("routed")
+  }
+
+  if (rowsToInsert.length === 0) {
+    return { submissionsProcessed: subs.length, totalAssignmentsCreated: 0, reasonCounts }
+  }
+
+  const CHUNK_SIZE = 500
+  let inserted = 0
+  for (let i = 0; i < rowsToInsert.length; i += CHUNK_SIZE) {
+    const chunk = rowsToInsert.slice(i, i + CHUNK_SIZE)
+    const { error } = await client.from("judge_assignments").insert(chunk)
+    if (error) {
+      console.error("Failed to bulk-insert room-routed judge assignments:", error)
+      return { submissionsProcessed: subs.length, totalAssignmentsCreated: inserted, reasonCounts }
+    }
+    inserted += chunk.length
+  }
+
+  return { submissionsProcessed: subs.length, totalAssignmentsCreated: inserted, reasonCounts }
+}
+
+// ============================================================
 // Scoring: Bucket Sort
 // ============================================================
 
