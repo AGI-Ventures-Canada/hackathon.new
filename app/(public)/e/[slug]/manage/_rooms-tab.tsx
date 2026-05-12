@@ -204,6 +204,8 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
     const judge = judgePool.find((j) => j.participantId === judgeParticipantId)
     if (!judge) return
 
+    setError(null)
+
     const optimistic: RoomJudgeInfo = {
       id: `temp-${crypto.randomUUID()}`,
       room_id: roomId,
@@ -246,6 +248,7 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
     roomId: string,
     judgeParticipantId: string
   ) {
+    setError(null)
     const room = rooms.find((r) => r.id === roomId)
     const removed = room?.judges.find(
       (j) => j.judge_participant_id === judgeParticipantId

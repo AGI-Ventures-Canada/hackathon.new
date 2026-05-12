@@ -234,10 +234,12 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     if (!isValidUuid(params.roomId)) { set.status = 400; return { error: "Invalid room id" } }
     const { judgeParticipantId } = body as { judgeParticipantId: string }
     if (!isValidUuid(judgeParticipantId)) { set.status = 400; return { error: "Invalid judge id" } }
-    const ok = await addJudgeToRoom(params.roomId, params.id, judgeParticipantId)
-    if (!ok) { set.status = 400; return { error: "Failed to add judge to room" } }
-    await logAudit({ principal, action: "room_judge.added", resourceType: "room", resourceId: params.roomId, metadata: { hackathonId: params.id, judgeParticipantId } })
-    return { success: true }
+    const result = await addJudgeToRoom(params.roomId, params.id, judgeParticipantId)
+    if (!result.ok) { set.status = 400; return { error: "Failed to add judge to room" } }
+    if (result.changed) {
+      await logAudit({ principal, action: "room_judge.added", resourceType: "room", resourceId: params.roomId, metadata: { hackathonId: params.id, judgeParticipantId } })
+    }
+    return { success: true, changed: result.changed }
   }, {
     body: t.Object({ judgeParticipantId: t.String({ description: "Hackathon participant id of the judge to add" }) }),
     detail: {
@@ -251,10 +253,12 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     if ("error" in authErr) return authErr
     if (!isValidUuid(params.roomId)) { set.status = 400; return { error: "Invalid room id" } }
     if (!isValidUuid(params.judgeParticipantId)) { set.status = 400; return { error: "Invalid judge id" } }
-    const ok = await removeJudgeFromRoom(params.roomId, params.judgeParticipantId, params.id)
-    if (!ok) { set.status = 400; return { error: "Failed to remove judge from room" } }
-    await logAudit({ principal, action: "room_judge.removed", resourceType: "room", resourceId: params.roomId, metadata: { hackathonId: params.id, judgeParticipantId: params.judgeParticipantId } })
-    return { success: true }
+    const result = await removeJudgeFromRoom(params.roomId, params.judgeParticipantId, params.id)
+    if (!result.ok) { set.status = 400; return { error: "Failed to remove judge from room" } }
+    if (result.changed) {
+      await logAudit({ principal, action: "room_judge.removed", resourceType: "room", resourceId: params.roomId, metadata: { hackathonId: params.id, judgeParticipantId: params.judgeParticipantId } })
+    }
+    return { success: true, changed: result.changed }
   }, {
     detail: {
       summary: "Remove judge from room",

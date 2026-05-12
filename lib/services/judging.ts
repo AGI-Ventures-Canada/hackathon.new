@@ -2178,13 +2178,19 @@ export async function syncRoomSubmissionsToJudges(
     return { submissionsProcessed: subs.length, totalAssignmentsCreated: 0, reasonCounts }
   }
 
-  const { error } = await client.from("judge_assignments").insert(rowsToInsert)
-  if (error) {
-    console.error("Failed to bulk-insert room-routed judge assignments:", error)
-    return { submissionsProcessed: subs.length, totalAssignmentsCreated: 0, reasonCounts }
+  const CHUNK_SIZE = 500
+  let inserted = 0
+  for (let i = 0; i < rowsToInsert.length; i += CHUNK_SIZE) {
+    const chunk = rowsToInsert.slice(i, i + CHUNK_SIZE)
+    const { error } = await client.from("judge_assignments").insert(chunk)
+    if (error) {
+      console.error("Failed to bulk-insert room-routed judge assignments:", error)
+      return { submissionsProcessed: subs.length, totalAssignmentsCreated: inserted, reasonCounts }
+    }
+    inserted += chunk.length
   }
 
-  return { submissionsProcessed: subs.length, totalAssignmentsCreated: rowsToInsert.length, reasonCounts }
+  return { submissionsProcessed: subs.length, totalAssignmentsCreated: inserted, reasonCounts }
 }
 
 // ============================================================

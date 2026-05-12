@@ -274,12 +274,20 @@ async function roomBelongsToHackathon(
   return Boolean(data)
 }
 
-export async function addJudgeToRoom(roomId: string, hackathonId: string, judgeParticipantId: string): Promise<boolean> {
+export type RoomJudgeMutationResult =
+  | { ok: true; changed: boolean }
+  | { ok: false }
+
+export async function addJudgeToRoom(
+  roomId: string,
+  hackathonId: string,
+  judgeParticipantId: string
+): Promise<RoomJudgeMutationResult> {
   const client = getSupabase() as unknown as SupabaseClient
 
   if (!(await roomBelongsToHackathon(client, roomId, hackathonId))) {
     console.error("Room not found for hackathon:", { roomId, hackathonId })
-    return false
+    return { ok: false }
   }
 
   const { data: participant } = await client
@@ -292,34 +300,35 @@ export async function addJudgeToRoom(roomId: string, hackathonId: string, judgeP
 
   if (!participant) {
     console.error("Judge not found for hackathon:", { roomId, judgeParticipantId, hackathonId })
-    return false
+    return { ok: false }
   }
 
-  const { error } = await client
+  const { data, error } = await client
     .from("judge_room_assignments")
     .upsert(
       { room_id: roomId, judge_participant_id: judgeParticipantId, hackathon_id: hackathonId },
       { onConflict: "room_id,judge_participant_id", ignoreDuplicates: true }
     )
+    .select()
 
   if (error) {
     console.error("Failed to add judge to room:", error)
-    return false
+    return { ok: false }
   }
 
-  return true
+  return { ok: true, changed: (data ?? []).length > 0 }
 }
 
 export async function removeJudgeFromRoom(
   roomId: string,
   judgeParticipantId: string,
   hackathonId: string
-): Promise<boolean> {
+): Promise<RoomJudgeMutationResult> {
   const client = getSupabase() as unknown as SupabaseClient
 
   if (!(await roomBelongsToHackathon(client, roomId, hackathonId))) {
     console.error("Room not found for hackathon:", { roomId, hackathonId })
-    return false
+    return { ok: false }
   }
 
   const { data: participant } = await client
@@ -332,22 +341,23 @@ export async function removeJudgeFromRoom(
 
   if (!participant) {
     console.error("Judge not found for hackathon:", { roomId, judgeParticipantId, hackathonId })
-    return false
+    return { ok: false }
   }
 
-  const { error } = await client
+  const { data, error } = await client
     .from("judge_room_assignments")
     .delete()
     .eq("room_id", roomId)
     .eq("judge_participant_id", judgeParticipantId)
     .eq("hackathon_id", hackathonId)
+    .select()
 
   if (error) {
     console.error("Failed to remove judge from room:", error)
-    return false
+    return { ok: false }
   }
 
-  return true
+  return { ok: true, changed: (data ?? []).length > 0 }
 }
 
 export async function togglePresented(roomId: string, teamId: string, presented: boolean): Promise<boolean> {
