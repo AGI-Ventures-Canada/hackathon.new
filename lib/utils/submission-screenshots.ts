@@ -1,8 +1,9 @@
 import type { Json } from "@/lib/db/types"
 
-export const MAX_SUBMISSION_SCREENSHOTS = 2
+export const SUBMISSION_SCREENSHOT_SLOTS = [0, 1] as const
+export const MAX_SUBMISSION_SCREENSHOTS = SUBMISSION_SCREENSHOT_SLOTS.length
 
-export type SubmissionScreenshotSlot = 0 | 1
+export type SubmissionScreenshotSlot = (typeof SUBMISSION_SCREENSHOT_SLOTS)[number]
 
 export type SubmissionScreenshot = {
   slot: SubmissionScreenshotSlot
@@ -18,9 +19,11 @@ function isRecord(value: Json | null | undefined): value is { [key: string]: Jso
   return !!value && typeof value === "object" && !Array.isArray(value)
 }
 
+const submissionScreenshotSlotSet = new Set<number>(SUBMISSION_SCREENSHOT_SLOTS)
+
 function toScreenshotSlot(index: number): SubmissionScreenshotSlot | null {
-  if (index === 0 || index === 1) {
-    return index
+  if (submissionScreenshotSlotSet.has(index)) {
+    return index as SubmissionScreenshotSlot
   }
   return null
 }
@@ -66,8 +69,15 @@ export function getSubmissionScreenshotUrls(submission: SubmissionScreenshotSour
 export function buildSubmissionScreenshotMetadata(
   metadata: Json | null | undefined,
   screenshots: SubmissionScreenshot[]
-): Record<string, Json | undefined> {
-  const nextMetadata = isRecord(metadata) ? { ...metadata } : {}
+): Record<string, Json> {
+  const nextMetadata: Record<string, Json> = {}
+  if (isRecord(metadata)) {
+    for (const [key, value] of Object.entries(metadata)) {
+      if (value !== undefined) {
+        nextMetadata[key] = value
+      }
+    }
+  }
   // Read support still accepts the old array shape; new writes use slot-keyed objects.
   const screenshotUrls: Record<string, Json> = {}
 

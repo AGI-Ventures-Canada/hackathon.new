@@ -37,11 +37,11 @@ import {
   urlInputProps,
 } from "@/lib/utils/url"
 import { cn } from "@/lib/utils"
-import type { Json } from "@/lib/db/types"
 import {
   buildSubmissionScreenshotMetadata,
   getSubmissionScreenshots,
   MAX_SUBMISSION_SCREENSHOTS,
+  SUBMISSION_SCREENSHOT_SLOTS,
   type SubmissionScreenshot,
   type SubmissionScreenshotSlot,
 } from "@/lib/utils/submission-screenshots"
@@ -79,11 +79,13 @@ type ScreenshotSyncResult =
   | { ok: true; screenshots: SubmissionScreenshot[] }
   | { ok: false; didChange: boolean; error: string }
 
-const screenshotSlots = [0, 1] as const
 const allowedScreenshotTypes = ["image/png", "image/jpeg", "image/webp"]
 
 function isScreenshotSlot(value: unknown): value is SubmissionScreenshotSlot {
-  return value === 0 || value === 1
+  return (
+    typeof value === "number" &&
+    SUBMISSION_SCREENSHOT_SLOTS.includes(value as SubmissionScreenshotSlot)
+  )
 }
 
 function getInitialScreenshotDrafts(submission: Submission | null): ScreenshotDraftItem[] {
@@ -342,7 +344,9 @@ export function SubmissionButton({
     replaceSlot: SubmissionScreenshotSlot | null
   ) {
     const availableSlots = replaceSlot === null
-      ? screenshotSlots.filter((slot) => !screenshots.some((screenshot) => screenshot.slot === slot))
+      ? SUBMISSION_SCREENSHOT_SLOTS.filter((slot) =>
+          !screenshots.some((screenshot) => screenshot.slot === slot)
+        )
       : [replaceSlot]
 
     if (availableSlots.length === 0) {
@@ -753,7 +757,7 @@ export function SubmissionButton({
       const finalMetadata = buildSubmissionScreenshotMetadata(
         submission?.metadata,
         finalScreenshots
-      ) as Json
+      )
 
       setSubmission({
         ...submission,

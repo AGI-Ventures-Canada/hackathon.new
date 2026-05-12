@@ -14,6 +14,7 @@ import { VideoEmbed } from "@/components/hackathon/video-embed"
 type SubmissionMediaProps = {
   title: string
   video: VideoEmbedInfo | null
+  screenshotUrl?: string | null
   screenshotUrls?: string[]
   className?: string
 }
@@ -21,12 +22,21 @@ type SubmissionMediaProps = {
 export function SubmissionMedia({
   title,
   video,
+  screenshotUrl,
   screenshotUrls = [],
   className,
 }: SubmissionMediaProps) {
   const screenshots = useMemo(
-    () => Array.from(new Set(screenshotUrls.filter(Boolean))).slice(0, 2),
-    [screenshotUrls]
+    () => {
+      const metadataUrls = screenshotUrls.filter(Boolean)
+      const urls = metadataUrls.length
+        ? metadataUrls
+        : screenshotUrl
+          ? [screenshotUrl]
+          : []
+      return Array.from(new Set(urls)).slice(0, 2)
+    },
+    [screenshotUrl, screenshotUrls]
   )
   const [activeScreenshotIndex, setActiveScreenshotIndex] = useState(0)
   const [screenshotOpen, setScreenshotOpen] = useState(false)

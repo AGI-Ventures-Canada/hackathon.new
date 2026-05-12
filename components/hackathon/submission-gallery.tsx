@@ -156,18 +156,14 @@ function SubmissionExpandedContent({ submission }: { submission: GallerySubmissi
   const videoEmbed = submission.demoVideoUrl
     ? getVideoEmbedInfo(submission.demoVideoUrl)
     : null
-  const screenshotUrls = submission.screenshotUrls?.length
-    ? submission.screenshotUrls
-    : submission.screenshotUrl
-      ? [submission.screenshotUrl]
-      : []
 
   return (
     <div className="pl-10 space-y-4">
       <SubmissionMedia
         title={submission.title}
         video={videoEmbed}
-        screenshotUrls={screenshotUrls}
+        screenshotUrl={submission.screenshotUrl}
+        screenshotUrls={submission.screenshotUrls}
       />
       {submission.description && (
         <p className="text-sm text-muted-foreground whitespace-pre-wrap">

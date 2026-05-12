@@ -22,6 +22,7 @@ import {
   getSubmissionScreenshots,
   getSubmissionScreenshotUrls,
   MAX_SUBMISSION_SCREENSHOTS,
+  type SubmissionScreenshotSlot,
 } from "@/lib/utils/submission-screenshots"
 
 export const publicRoutes = new Elysia({ prefix: "/public" })
@@ -777,7 +778,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
 
     const screenshots = [
       ...getSubmissionScreenshots(existing).filter((screenshot) => screenshot.slot !== slot),
-      { slot: slot as 0 | 1, url: uploadResult.url },
+      { slot: slot as SubmissionScreenshotSlot, url: uploadResult.url },
     ].sort((a, b) => a.slot - b.slot)
     const metadata = buildSubmissionScreenshotMetadata(existing.metadata, screenshots)
     const updated = await updateSubmission(
