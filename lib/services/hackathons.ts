@@ -365,7 +365,8 @@ export async function getParticipantTeamInfo(
   hackathonId: string,
   clerkUserId: string
 ): Promise<ParticipantTeamInfo> {
-  const client = getSupabase() as unknown as SupabaseClient
+  const typedClient = getSupabase()
+  const client = typedClient as unknown as SupabaseClient
 
   const { data: participant } = await client
     .from("hackathon_participants")
@@ -395,10 +396,12 @@ export async function getParticipantTeamInfo(
       .eq("team_id", participant.team_id)
       .eq("status", "pending")
       .order("created_at", { ascending: false }),
-    client
+    typedClient
       .from("room_teams")
       .select("room_id, rooms(id, name)")
-      .eq("team_id", participant.team_id),
+      .eq("team_id", participant.team_id)
+      .limit(1)
+      .maybeSingle(),
   ])
 
   if (teamResult.error || !teamResult.data) {
@@ -451,10 +454,7 @@ export async function getParticipantTeamInfo(
   if (roomTeamResult.error) {
     console.error("Failed to get room assignment:", roomTeamResult.error)
   }
-  const roomTeamRow = (roomTeamResult.data ?? [])[0]
-  const roomRow = roomTeamRow
-    ? (roomTeamRow.rooms as unknown as { id: string; name: string } | null)
-    : null
+  const roomRow = roomTeamResult.data?.rooms ?? null
   const room = roomRow ? { id: roomRow.id, name: roomRow.name } : null
 
   return {

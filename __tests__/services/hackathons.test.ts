@@ -750,7 +750,7 @@ describe("Hackathons Service", () => {
         }
         if (table === "room_teams") {
           return createChainableMock({
-            data: [{ room_id: "room_1", rooms: { id: "room_1", name: "Room A" } }],
+            data: { room_id: "room_1", rooms: { id: "room_1", name: "Room A" } },
             error: null,
           })
         }
@@ -789,7 +789,7 @@ describe("Hackathons Service", () => {
           return createChainableMock({ data: [], error: null })
         }
         if (table === "room_teams") {
-          return createChainableMock({ data: [], error: null })
+          return createChainableMock({ data: null, error: null })
         }
         return createChainableMock({ data: null, error: null })
       })
