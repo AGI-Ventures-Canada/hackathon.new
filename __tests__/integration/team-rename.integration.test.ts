@@ -83,6 +83,8 @@ mock.module("@/lib/services/hackathons", () => ({
   createTeamWithMembers: mock(() => Promise.resolve(null)),
   modifyTeamMembers: mock(() => Promise.resolve(null)),
   bulkAssignTeams: mock(() => Promise.resolve({ assigned: 0 })),
+  deleteTeam: mock(() => Promise.resolve({ success: true, membersUnassigned: 0, invitesCancelled: 0, roomsCleared: 0 })),
+  setTeamCaptain: mock(() => Promise.resolve({ success: true })),
 }))
 
 mock.module("@/lib/services/rooms", () => ({

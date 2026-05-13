@@ -8,7 +8,7 @@ import { listRooms, createRoom, updateRoom, deleteRoom, addTeamToRoom, removeTea
 import { listCategories, createCategory, updateCategory, deleteCategory } from "@/lib/services/categories"
 import { listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, publishAnnouncement, unpublishAnnouncement, scheduleAnnouncement, type CreateAnnouncementInput, type UpdateAnnouncementInput } from "@/lib/services/announcements"
 import { listScheduleItems, createScheduleItem, updateScheduleItem, deleteScheduleItem, getTriggerItem } from "@/lib/services/schedule-items"
-import { listTeamsWithMembers, createTeamWithMembers, modifyTeamMembers, bulkAssignTeams } from "@/lib/services/hackathons"
+import { listTeamsWithMembers, createTeamWithMembers, modifyTeamMembers, bulkAssignTeams, deleteTeam, setTeamCaptain } from "@/lib/services/hackathons"
 import { listHackathonPeople, peopleToCsvRows } from "@/lib/services/hackathon-people"
 import { toCsv } from "@/lib/utils/csv"
 import { listRounds, createRound, updateRound, deleteRound, activateRound } from "@/lib/services/judging-rounds"
@@ -460,20 +460,59 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       }
     }
 
-    const { name, mode } = body as { name?: string; mode?: "in_person" | "virtual" | null }
+    const { name, mode, captainClerkUserId } = body as {
+      name?: string
+      mode?: "in_person" | "virtual" | null
+      captainClerkUserId?: string
+    }
     if (name !== undefined && (!name.trim() || name.length > 100)) {
       set.status = 400
       return { error: "Team name must be 1-100 characters" }
     }
 
-    const updatePayload: Record<string, unknown> = { updated_at: new Date().toISOString() }
+    if (mode !== undefined && check.status === "not_authorized") {
+      set.status = 403
+      return { error: "Only an organizer can change the team mode" }
+    }
+
+    let captainUpdatedTeam: { id: string; name: string; mode: "in_person" | "virtual" | null } | null = null
+    if (captainClerkUserId !== undefined) {
+      if (check.status === "not_authorized") {
+        set.status = 403
+        return { error: "Only an organizer can change the captain" }
+      }
+      const result = await setTeamCaptain(params.teamId, params.id, captainClerkUserId)
+      if ("error" in result) {
+        set.status =
+          result.code === "not_found" ? 404 :
+          result.code === "not_member" ? 400 :
+          result.code === "status_locked" ? 409 : 500
+        return { error: result.error }
+      }
+      captainUpdatedTeam = result.team
+      await logAudit({
+        principal,
+        action: "team.captain_changed",
+        resourceType: "team",
+        resourceId: params.teamId,
+        metadata: { hackathonId: params.id, captainClerkUserId },
+      })
+    }
+
+    const updatePayload: Record<string, unknown> = {}
     if (name !== undefined) updatePayload.name = name.trim()
     if (mode !== undefined) updatePayload.mode = mode
 
-    if (Object.keys(updatePayload).length === 1) {
+    if (Object.keys(updatePayload).length === 0 && captainClerkUserId === undefined) {
       set.status = 400
       return { error: "No changes to update" }
     }
+
+    if (Object.keys(updatePayload).length === 0) {
+      return captainUpdatedTeam
+    }
+
+    updatePayload.updated_at = new Date().toISOString()
 
     const client = supabase()
     const { data, error } = await client
@@ -502,8 +541,279 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     body: t.Object({
       name: t.Optional(t.String({ minLength: 1, maxLength: 100 })),
       mode: t.Optional(t.Union([t.Literal("in_person"), t.Literal("virtual"), t.Null()])),
+      captainClerkUserId: t.Optional(t.String({ minLength: 1, description: "Clerk user ID of the new captain — must be an accepted member of this team" })),
     }),
-    detail: { summary: "Update team name or mode" },
+    detail: { summary: "Update team name, mode, or captain" },
+  })
+  .delete("/hackathons/:id/teams/:teamId/invitations/:invitationId", async ({ params, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+    if (!isValidUuid(params.teamId) || !isValidUuid(params.invitationId)) {
+      set.status = 400
+      return { error: "Invalid id" }
+    }
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if ("error" in authErr) return authErr
+
+    const { cancelTeamInvitationAsOrganizer } = await import("@/lib/services/team-invitations")
+    const result = await cancelTeamInvitationAsOrganizer(params.invitationId, params.id)
+    if (!result.success) {
+      set.status = 400
+      return { error: result.error }
+    }
+
+    const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
+    cancelRemindersForEntity("team_invitation", params.invitationId).catch((err) =>
+      console.error(`Failed to cancel reminders for team_invitation ${params.invitationId}:`, err)
+    )
+
+    await logAudit({
+      principal,
+      action: "team_invitation.cancelled",
+      resourceType: "team_invitation",
+      resourceId: params.invitationId,
+      metadata: { hackathonId: params.id, teamId: params.teamId, viaOrganizer: true },
+    })
+
+    return { success: true }
+  }, {
+    detail: { summary: "Cancel a team invitation as organizer" },
+  })
+  .post("/hackathons/:id/teams/:teamId/invitations/:invitationId/remind", async ({ params, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+    if (!isValidUuid(params.teamId) || !isValidUuid(params.invitationId)) {
+      set.status = 400
+      return { error: "Invalid id" }
+    }
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if ("error" in authErr) return authErr
+
+    const rateLimitResult = await checkRateLimit(`team_invitation_remind:${params.teamId}`, {
+      maxRequests: 5,
+      windowMs: 60_000,
+    })
+    if (!rateLimitResult.allowed) throw new RateLimitError(rateLimitResult.resetAt, rateLimitResult.remaining)
+
+    const { remindTeamInvitationAsOrganizer, getTeamWithHackathon } = await import("@/lib/services/team-invitations")
+    const teamInfo = await getTeamWithHackathon(params.teamId)
+    if (!teamInfo || teamInfo.hackathon.id !== params.id) {
+      set.status = 404
+      return { error: "Team not found" }
+    }
+
+    if (teamInfo.hackathon.status === "draft") {
+      set.status = 400
+      return { error: "Reminders can't be sent while the hackathon is in draft.", code: "hackathon_draft" }
+    }
+
+    const result = await remindTeamInvitationAsOrganizer(params.invitationId, params.teamId, params.id)
+    if (!result.success) {
+      set.status = 400
+      return { error: result.error, code: result.code }
+    }
+
+    const { sendTeamInvitationEmail } = await import("@/lib/email/team-invitations")
+    const { resolveAdderEmail } = await import("@/lib/auth/resolve-adder-name")
+    const inviterEmail = await resolveAdderEmail(principal)
+    sendTeamInvitationEmail({
+      to: result.invitation.email,
+      teamName: teamInfo.name,
+      hackathonName: teamInfo.hackathon.name,
+      inviterName: "The organizer",
+      inviterEmail,
+      inviteToken: result.invitation.token,
+      expiresAt: result.invitation.expires_at,
+      hackathonSlug: teamInfo.hackathon.slug,
+      hackathonStartsAt: teamInfo.hackathon.starts_at,
+      hackathonEndsAt: teamInfo.hackathon.ends_at,
+      teamMembers: teamInfo.memberNames,
+    }).catch((err) =>
+      console.error(`Failed to send reminder email for team_invitation ${params.invitationId}:`, err)
+    )
+
+    await logAudit({
+      principal,
+      action: "team_invitation.reminded",
+      resourceType: "team_invitation",
+      resourceId: params.invitationId,
+      metadata: { hackathonId: params.id, teamId: params.teamId, viaOrganizer: true },
+    })
+
+    return { success: true }
+  }, {
+    detail: { summary: "Resend a team invitation as organizer" },
+  })
+  .patch("/hackathons/:id/teams/:teamId/captain-invitation", async ({ params, body, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+    if (!isValidUuid(params.teamId)) {
+      set.status = 400
+      return { error: "Invalid team ID" }
+    }
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if ("error" in authErr) return authErr
+
+    const { email } = body as { email: string }
+    if (!email.trim()) {
+      set.status = 400
+      return { error: "Email is required" }
+    }
+
+    const actorClerkUserId = principal.kind === "api_key" ? "system" : principal.userId!
+    const { replaceTeamCaptainInvitation } = await import("@/lib/services/team-invitations")
+    const result = await replaceTeamCaptainInvitation(params.teamId, params.id, email.trim(), actorClerkUserId)
+    if (!result.success) {
+      set.status = result.code === "team_not_found" ? 404 : result.code === "captain_set" ? 409 : 400
+      return { error: result.error, code: result.code }
+    }
+
+    await logAudit({
+      principal,
+      action: "team_invitation.replaced",
+      resourceType: "team",
+      resourceId: params.teamId,
+      metadata: { hackathonId: params.id, email: email.trim().toLowerCase(), queued: result.queued },
+    })
+
+    return { success: true, invitationId: result.invitationId, queued: result.queued }
+  }, {
+    body: t.Object({ email: t.String({ format: "email" }) }),
+    detail: { summary: "Replace the pending captain invitation email" },
+  })
+  .delete("/hackathons/:id/teams/:teamId", async ({ params, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+    if (!isValidUuid(params.teamId)) {
+      set.status = 400
+      return { error: "Invalid team ID" }
+    }
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if ("error" in authErr) return authErr
+
+    const result = await deleteTeam(params.teamId, params.id)
+    if ("error" in result) {
+      set.status =
+        result.code === "not_found" ? 404 :
+        result.code === "status_locked" || result.code === "submission_exists" ? 409 : 500
+      return { error: result.error }
+    }
+
+    await logAudit({
+      principal,
+      action: "team.deleted",
+      resourceType: "team",
+      resourceId: params.teamId,
+      metadata: {
+        hackathonId: params.id,
+        membersUnassigned: result.membersUnassigned,
+        invitesCancelled: result.invitesCancelled,
+        roomsCleared: result.roomsCleared,
+      },
+    })
+
+    return { success: true }
+  }, {
+    detail: { summary: "Delete a team — unassigns members, cancels pending invites, clears room assignment. Blocked when a submission exists or status is judging/completed." },
+  })
+  .patch("/hackathons/:id/participants/:participantId", async ({ params, body, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+    if (!isValidUuid(params.participantId)) {
+      set.status = 400
+      return { error: "Invalid person ID" }
+    }
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if ("error" in authErr) return authErr
+
+    const b = body as {
+      teamId?: string | null
+      role?: "participant" | "judge" | "mentor" | "organizer"
+    }
+    if (b.teamId === undefined && b.role === undefined) {
+      set.status = 400
+      return { error: "No changes to update" }
+    }
+
+    const { assignParticipantToTeam, updateParticipantRole } = await import("@/lib/services/hackathon-participants-admin")
+    let teamResult: Awaited<ReturnType<typeof assignParticipantToTeam>> | null = null
+    let roleResult: Awaited<ReturnType<typeof updateParticipantRole>> | null = null
+
+    if (b.role !== undefined) {
+      roleResult = await updateParticipantRole(params.participantId, params.id, b.role)
+      if ("error" in roleResult) {
+        set.status =
+          roleResult.code === "not_found" ? 404 :
+          roleResult.code === "invalid_role" ? 400 :
+          roleResult.code === "status_locked" ? 409 : 500
+        return { error: roleResult.error }
+      }
+      await logAudit({
+        principal,
+        action: "participant.role_changed",
+        resourceType: "participant",
+        resourceId: params.participantId,
+        metadata: { hackathonId: params.id, role: b.role, capacityHandedOff: roleResult.capacityHandedOff },
+      })
+    }
+
+    if (b.teamId !== undefined) {
+      teamResult = await assignParticipantToTeam(params.participantId, params.id, b.teamId)
+      if ("error" in teamResult) {
+        set.status =
+          teamResult.code === "not_found" ? 404 :
+          teamResult.code === "team_not_found" ? 404 :
+          teamResult.code === "not_participant" ? 409 :
+          teamResult.code === "team_full" ? 409 :
+          teamResult.code === "status_locked" ? 409 : 500
+        return { error: teamResult.error }
+      }
+      await logAudit({
+        principal,
+        action: "participant.team_changed",
+        resourceType: "participant",
+        resourceId: params.participantId,
+        metadata: { hackathonId: params.id, teamId: b.teamId, capacityHandedOff: teamResult.capacityHandedOff },
+      })
+    }
+
+    return { success: true }
+  }, {
+    body: t.Object({
+      teamId: t.Optional(t.Union([t.String(), t.Null()])),
+      role: t.Optional(t.Union([
+        t.Literal("participant"),
+        t.Literal("judge"),
+        t.Literal("mentor"),
+        t.Literal("organizer"),
+      ])),
+    }),
+    detail: { summary: "Update a participant's team or role" },
+  })
+  .delete("/hackathons/:id/participants/:participantId", async ({ params, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+    if (!isValidUuid(params.participantId)) {
+      set.status = 400
+      return { error: "Invalid person ID" }
+    }
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if ("error" in authErr) return authErr
+
+    const { removeParticipantFromEvent } = await import("@/lib/services/hackathon-participants-admin")
+    const result = await removeParticipantFromEvent(params.participantId, params.id)
+    if ("error" in result) {
+      set.status =
+        result.code === "not_found" ? 404 :
+        result.code === "status_locked" ? 409 : 500
+      return { error: result.error }
+    }
+
+    await logAudit({
+      principal,
+      action: "participant.removed",
+      resourceType: "participant",
+      resourceId: params.participantId,
+      metadata: { hackathonId: params.id, capacityHandedOff: result.capacityHandedOff },
+    })
+
+    return { success: true }
+  }, {
+    detail: { summary: "Remove a person from the event. Blocked once status is judging/completed." },
   })
   .get("/hackathons/:id/categories", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
