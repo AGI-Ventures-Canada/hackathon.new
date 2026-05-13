@@ -358,13 +358,15 @@ export type ParticipantTeamInfo = {
     token: string | null
   }[]
   isCaptain: boolean
+  room: { id: string; name: string } | null
 } | null
 
 export async function getParticipantTeamInfo(
   hackathonId: string,
   clerkUserId: string
 ): Promise<ParticipantTeamInfo> {
-  const client = getSupabase() as unknown as SupabaseClient
+  const typedClient = getSupabase()
+  const client = typedClient as unknown as SupabaseClient
 
   const { data: participant } = await client
     .from("hackathon_participants")
@@ -377,7 +379,7 @@ export async function getParticipantTeamInfo(
     return null
   }
 
-  const [teamResult, membersResult, invitationsResult] = await Promise.all([
+  const [teamResult, membersResult, invitationsResult, roomTeamResult] = await Promise.all([
     client
       .from("teams")
       .select("id, name, status, invite_code, captain_clerk_user_id, mode")
@@ -394,6 +396,12 @@ export async function getParticipantTeamInfo(
       .eq("team_id", participant.team_id)
       .eq("status", "pending")
       .order("created_at", { ascending: false }),
+    typedClient
+      .from("room_teams")
+      .select("room_id, rooms(id, name)")
+      .eq("team_id", participant.team_id)
+      .limit(1)
+      .maybeSingle(),
   ])
 
   if (teamResult.error || !teamResult.data) {
@@ -443,6 +451,12 @@ export async function getParticipantTeamInfo(
     token: isCaptain ? inv.token : null,
   }))
 
+  if (roomTeamResult.error) {
+    console.error("Failed to get room assignment:", roomTeamResult.error)
+  }
+  const roomRow = roomTeamResult.data?.rooms ?? null
+  const room = roomRow ? { id: roomRow.id, name: roomRow.name } : null
+
   return {
     team: {
       id: team.id,
@@ -455,6 +469,7 @@ export async function getParticipantTeamInfo(
     members,
     pendingInvitations,
     isCaptain,
+    room,
   }
 }
 
@@ -493,7 +508,8 @@ export type TeamWithMembers = {
 }
 
 export async function listTeamsWithMembers(hackathonId: string): Promise<TeamWithMembers[]> {
-  const client = getSupabase() as unknown as SupabaseClient
+  const typedClient = getSupabase()
+  const client = typedClient as unknown as SupabaseClient
 
   const { data: teams, error: teamsErr } = await client
     .from("teams")
@@ -517,7 +533,7 @@ export async function listTeamsWithMembers(hackathonId: string): Promise<TeamWit
       .select("id, title, status, team_id, description, github_url, live_app_url, demo_video_url, screenshot_url, metadata, created_at")
       .eq("hackathon_id", hackathonId)
       .in("team_id", teamIds),
-    client
+    typedClient
       .from("room_teams")
       .select("team_id, room_id, rooms(id, name)")
       .in("team_id", teamIds),
@@ -568,7 +584,7 @@ export async function listTeamsWithMembers(hackathonId: string): Promise<TeamWit
 
   const roomByTeam: Record<string, { id: string; name: string }> = {}
   for (const rt of roomTeams ?? []) {
-    const room = rt.rooms as unknown as { id: string; name: string } | null
+    const room = rt.rooms
     if (rt.team_id && room) roomByTeam[rt.team_id] = { id: room.id, name: room.name }
   }
 
