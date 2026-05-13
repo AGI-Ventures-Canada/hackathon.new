@@ -25,12 +25,14 @@ type TeamInvitationRow = {
   team_id: string
   email: string
   created_at: string
+  reminded_at: string | null
 }
 
 type JudgeInvitationRow = {
   id: string
   email: string
   created_at: string
+  reminded_at: string | null
 }
 
 const PEOPLE_ROLES: PersonRole[] = ["participant", "judge", "mentor", "organizer"]
@@ -52,12 +54,12 @@ export async function listHackathonPeople(hackathonId: string): Promise<Person[]
       .eq("hackathon_id", hackathonId),
     client
       .from("team_invitations")
-      .select("id, team_id, email, created_at")
+      .select("id, team_id, email, created_at, reminded_at")
       .eq("hackathon_id", hackathonId)
       .eq("status", "pending"),
     client
       .from("judge_invitations")
-      .select("id, email, created_at")
+      .select("id, email, created_at, reminded_at")
       .eq("hackathon_id", hackathonId)
       .eq("status", "pending"),
   ])
@@ -94,6 +96,7 @@ export async function listHackathonPeople(hackathonId: string): Promise<Person[]
       teamName: team?.name ?? null,
       isCaptain: team !== null && team.captain_clerk_user_id === p.clerk_user_id,
       joinedOrInvitedAt: p.registered_at,
+      remindedAt: null,
     }
   })
 
@@ -112,6 +115,7 @@ export async function listHackathonPeople(hackathonId: string): Promise<Person[]
       teamName: team?.name ?? null,
       isCaptain: false,
       joinedOrInvitedAt: inv.created_at,
+      remindedAt: inv.reminded_at,
     })
   }
 
@@ -127,6 +131,7 @@ export async function listHackathonPeople(hackathonId: string): Promise<Person[]
       teamName: null,
       isCaptain: false,
       joinedOrInvitedAt: inv.created_at,
+      remindedAt: inv.reminded_at,
     })
   }
 

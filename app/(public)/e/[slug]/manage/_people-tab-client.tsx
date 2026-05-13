@@ -3,7 +3,8 @@
 import { useMemo, useState, useSyncExternalStore } from "react"
 import { useRouter } from "next/navigation"
 import { useOptimisticList } from "@/hooks/use-optimistic-list"
-import { Download, Search, MoreHorizontal, UserCog, UserMinus, Users as UsersIcon, Send, X } from "lucide-react"
+import { useOptimisticMutation } from "@/hooks/use-optimistic-mutation"
+import { Bell, Download, Search, MoreHorizontal, UserCog, UserMinus, Users as UsersIcon, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -68,8 +69,6 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
   const [removingPerson, setRemovingPerson] = useState<Person | null>(null)
   const [removing, setRemoving] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
-  const [actionInfo, setActionInfo] = useState<string | null>(null)
-  const [resendingIds, setResendingIds] = useState<Set<string>>(new Set())
 
   const isClient = useSyncExternalStore(emptySubscribe, () => true, () => false)
   const csvHref = useMemo(() => {
@@ -97,11 +96,6 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
   function showError(message: string) {
     setActionError(message)
     setTimeout(() => setActionError(null), 8000)
-  }
-
-  function showInfo(message: string) {
-    setActionInfo(message)
-    setTimeout(() => setActionInfo(null), 5000)
   }
 
   async function handleAssignTeam(person: Person, nextTeamId: string | null) {
@@ -158,33 +152,27 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
     }
   }
 
-  async function handleResendInvite(person: Person) {
-    const parsed = parsePendingId(person.id)
-    if (!parsed || parsed.kind !== "team") {
-      showError("Only team invitations can be resent from here")
-      return
-    }
-    if (!person.teamId) {
-      showError("Missing team for invite")
-      return
-    }
-    if (resendingIds.has(parsed.invitationId)) return
-    setResendingIds((prev) => new Set(prev).add(parsed.invitationId))
-    try {
-      await fetch(`/api/dashboard/hackathons/${hackathonId}/teams/${person.teamId}/invitations/${parsed.invitationId}/remind`, {
-        method: "POST",
-      }).then(assertOk)
-      showInfo(`Reminder sent to ${person.email}`)
-    } catch (err) {
-      showError(err instanceof Error ? err.message : "Failed to resend invite")
-    } finally {
-      setResendingIds((prev) => {
-        const next = new Set(prev)
-        next.delete(parsed.invitationId)
-        return next
-      })
-    }
-  }
+  const { execute: handleRemind, error: remindError } = useOptimisticMutation({
+    fn: async (person: Person) => {
+      const parsed = parsePendingId(person.id)
+      if (!parsed) throw new Error("This row has no invitation to remind")
+      if (parsed.kind === "team") {
+        if (!person.teamId) throw new Error("Missing team for invite")
+        await fetch(
+          `/api/dashboard/hackathons/${hackathonId}/teams/${person.teamId}/invitations/${parsed.invitationId}/remind`,
+          { method: "POST" },
+        ).then(assertOk)
+        return
+      }
+      await fetch(
+        `/api/dashboard/hackathons/${hackathonId}/judging/invitations/${parsed.invitationId}/remind`,
+        { method: "POST" },
+      ).then(assertOk)
+    },
+    onOptimistic: (person) =>
+      list.setLocalEdit(person.id, { remindedAt: new Date().toISOString() }),
+    onRevert: (person) => list.clearLocalEdit(person.id),
+  })
 
   async function handleCancelInvite(person: Person) {
     const parsed = parsePendingId(person.id)
@@ -237,7 +225,7 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
       </div>
 
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
-      {actionInfo && <p className="text-sm text-muted-foreground">{actionInfo}</p>}
+      {remindError && <p className="text-sm text-destructive">{remindError}</p>}
 
       {people.length === 0 ? (
         <div className="rounded-lg border border-dashed py-12 text-center text-sm text-muted-foreground">
@@ -265,8 +253,9 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
               {filtered.map((p) => {
                 const parsedPending = parsePendingId(p.id)
                 const isAccepted = p.status === "accepted"
+                const isPending = p.status === "pending"
                 const isTeamInvite = parsedPending?.kind === "team"
-                const hasActions = isAccepted || isTeamInvite
+                const isReminded = isPending && !!p.remindedAt
                 return (
                   <TableRow key={p.id}>
                     <TableCell className="font-medium">
@@ -277,7 +266,14 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
                       <Badge variant="secondary">{ROLE_LABEL[p.role]}</Badge>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={p.status === "accepted" ? "default" : "outline"}>{STATUS_LABEL[p.status]}</Badge>
+                      {isReminded ? (
+                        <Badge variant="secondary">
+                          <Bell className="mr-1 size-3" />
+                          Reminded
+                        </Badge>
+                      ) : (
+                        <Badge variant={isAccepted ? "default" : "outline"}>{STATUS_LABEL[p.status]}</Badge>
+                      )}
                     </TableCell>
                     <TableCell>
                       {p.teamName ? (
@@ -293,99 +289,103 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
                     </TableCell>
                     <TableCell className="text-muted-foreground">{formatDate(p.joinedOrInvitedAt)}</TableCell>
                     <TableCell className="w-10">
-                      {hasActions ? (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="size-8" aria-label={`Actions for ${p.name ?? p.email ?? "person"}`}>
-                              <MoreHorizontal className="size-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            {isAccepted && (
-                              <>
-                                {p.role === "participant" && (
-                                <DropdownMenuSub>
-                                  <DropdownMenuSubTrigger disabled={isLocked}>
-                                    <UsersIcon className="size-4" />
-                                    {p.teamId ? "Move team" : "Assign team"}
-                                  </DropdownMenuSubTrigger>
-                                  <DropdownMenuSubContent>
-                                    {teams.length === 0 ? (
-                                      <DropdownMenuItem disabled>No teams yet</DropdownMenuItem>
-                                    ) : (
-                                      <DropdownMenuRadioGroup
-                                        value={p.teamId ?? UNASSIGNED}
-                                        onValueChange={(v) => handleAssignTeam(p, v === UNASSIGNED ? null : v)}
-                                      >
-                                        <DropdownMenuRadioItem value={UNASSIGNED}>No team</DropdownMenuRadioItem>
-                                        {teams.map((t) => (
-                                          <DropdownMenuRadioItem key={t.id} value={t.id}>{t.name}</DropdownMenuRadioItem>
-                                        ))}
-                                      </DropdownMenuRadioGroup>
-                                    )}
-                                  </DropdownMenuSubContent>
-                                </DropdownMenuSub>
-                                )}
-                                <DropdownMenuSub>
-                                  <DropdownMenuSubTrigger disabled={isLocked}>
-                                    <UserCog className="size-4" />
-                                    Change role
-                                  </DropdownMenuSubTrigger>
-                                  <DropdownMenuSubContent>
-                                    <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-                                      Pick a role
-                                    </DropdownMenuLabel>
+                      <div className="flex items-center justify-end gap-1">
+                        {isPending && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-8"
+                            aria-label={`Send reminder to ${p.email ?? "invitee"}`}
+                            title="Send reminder"
+                            onClick={() => handleRemind(p)}
+                          >
+                            <Bell className="size-4" />
+                          </Button>
+                        )}
+                        {isAccepted && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="size-8" aria-label={`Actions for ${p.name ?? p.email ?? "person"}`}>
+                                <MoreHorizontal className="size-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              {p.role === "participant" && (
+                              <DropdownMenuSub>
+                                <DropdownMenuSubTrigger disabled={isLocked}>
+                                  <UsersIcon className="size-4" />
+                                  {p.teamId ? "Move team" : "Assign team"}
+                                </DropdownMenuSubTrigger>
+                                <DropdownMenuSubContent>
+                                  {teams.length === 0 ? (
+                                    <DropdownMenuItem disabled>No teams yet</DropdownMenuItem>
+                                  ) : (
                                     <DropdownMenuRadioGroup
-                                      value={p.role}
-                                      onValueChange={(v) => handleChangeRole(p, v as PersonRole)}
+                                      value={p.teamId ?? UNASSIGNED}
+                                      onValueChange={(v) => handleAssignTeam(p, v === UNASSIGNED ? null : v)}
                                     >
-                                      {ROLES.map((r) => (
-                                        <DropdownMenuRadioItem key={r} value={r}>{ROLE_LABEL[r]}</DropdownMenuRadioItem>
+                                      <DropdownMenuRadioItem value={UNASSIGNED}>No team</DropdownMenuRadioItem>
+                                      {teams.map((t) => (
+                                        <DropdownMenuRadioItem key={t.id} value={t.id}>{t.name}</DropdownMenuRadioItem>
                                       ))}
                                     </DropdownMenuRadioGroup>
-                                  </DropdownMenuSubContent>
-                                </DropdownMenuSub>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  variant="destructive"
-                                  disabled={isLocked}
-                                  onSelect={() => {
-                                    if (isLocked) {
-                                      showError("People can't be removed once judging has started")
-                                      return
-                                    }
-                                    setRemovingPerson(p)
-                                  }}
-                                >
-                                  <UserMinus className="size-4" />
-                                  Remove from event
-                                </DropdownMenuItem>
-                              </>
-                            )}
-                            {isTeamInvite && (() => {
-                              const parsed = parsePendingId(p.id)
-                              const invitationId = parsed?.kind === "team" ? parsed.invitationId : null
-                              const isResending = invitationId ? resendingIds.has(invitationId) : false
-                              return (
-                              <>
-                                <DropdownMenuItem
-                                  disabled={isResending}
-                                  onSelect={() => handleResendInvite(p)}
-                                >
-                                  <Send className="size-4" />
-                                  {isResending ? "Sending…" : "Resend invite"}
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem variant="destructive" onSelect={() => handleCancelInvite(p)}>
-                                  <X className="size-4" />
-                                  Cancel invite
-                                </DropdownMenuItem>
-                              </>
-                              )
-                            })()}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      ) : null}
+                                  )}
+                                </DropdownMenuSubContent>
+                              </DropdownMenuSub>
+                              )}
+                              <DropdownMenuSub>
+                                <DropdownMenuSubTrigger disabled={isLocked}>
+                                  <UserCog className="size-4" />
+                                  Change role
+                                </DropdownMenuSubTrigger>
+                                <DropdownMenuSubContent>
+                                  <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                                    Pick a role
+                                  </DropdownMenuLabel>
+                                  <DropdownMenuRadioGroup
+                                    value={p.role}
+                                    onValueChange={(v) => handleChangeRole(p, v as PersonRole)}
+                                  >
+                                    {ROLES.map((r) => (
+                                      <DropdownMenuRadioItem key={r} value={r}>{ROLE_LABEL[r]}</DropdownMenuRadioItem>
+                                    ))}
+                                  </DropdownMenuRadioGroup>
+                                </DropdownMenuSubContent>
+                              </DropdownMenuSub>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                variant="destructive"
+                                disabled={isLocked}
+                                onSelect={() => {
+                                  if (isLocked) {
+                                    showError("People can't be removed once judging has started")
+                                    return
+                                  }
+                                  setRemovingPerson(p)
+                                }}
+                              >
+                                <UserMinus className="size-4" />
+                                Remove from event
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                        {isTeamInvite && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="size-8" aria-label={`Actions for ${p.email ?? "invitee"}`}>
+                                <MoreHorizontal className="size-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem variant="destructive" onSelect={() => handleCancelInvite(p)}>
+                                <X className="size-4" />
+                                Cancel invite
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 )

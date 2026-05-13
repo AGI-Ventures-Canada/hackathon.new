@@ -18,6 +18,7 @@ const {
   getRegistrationInfo,
   registerForHackathon,
   getParticipantTeamInfo,
+  listTeamsWithMembers,
 } = await import("@/lib/services/hackathons")
 
 const mockHackathon: Hackathon = {
@@ -723,6 +724,104 @@ describe("Hackathons Service", () => {
       expect(result).not.toBeNull()
       expect(result!.members[0].email).toBeNull()
       expect(result!.members[0].displayName).toBeNull()
+    })
+  })
+
+  describe("listTeamsWithMembers", () => {
+    beforeEach(() => {
+      resetClerkMocks()
+      mockClerkClient.mockResolvedValue({
+        users: { getUserList: () => Promise.resolve({ data: [] }) },
+      } as never)
+    })
+
+    function mockTables(rows: {
+      teams?: unknown[]
+      participants?: unknown[]
+      submissions?: unknown[]
+      room_teams?: unknown[]
+      team_invitations?: unknown[]
+    }) {
+      setMockFromImplementation((table) => {
+        switch (table) {
+          case "teams":
+            return createChainableMock({ data: rows.teams ?? [], error: null })
+          case "hackathon_participants":
+            return createChainableMock({ data: rows.participants ?? [], error: null })
+          case "submissions":
+            return createChainableMock({ data: rows.submissions ?? [], error: null })
+          case "room_teams":
+            return createChainableMock({ data: rows.room_teams ?? [], error: null })
+          case "team_invitations":
+            return createChainableMock({ data: rows.team_invitations ?? [], error: null })
+          default:
+            return createChainableMock({ data: [], error: null })
+        }
+      })
+    }
+
+    it("plumbs reminded_at through onto pending member invitations", async () => {
+      mockTables({
+        teams: [
+          { id: "team_1", name: "Rocket", status: "active", mode: null, captain_clerk_user_id: "user_cap", pending_captain_email: null },
+        ],
+        team_invitations: [
+          { id: "inv_member_reminded", team_id: "team_1", email: "reminded@example.com", is_captain_invite: false, created_at: "2026-05-05T00:00:00Z", reminded_at: "2026-05-06T12:00:00Z" },
+          { id: "inv_member_fresh", team_id: "team_1", email: "fresh@example.com", is_captain_invite: false, created_at: "2026-05-05T00:00:00Z", reminded_at: null },
+        ],
+      })
+
+      const result = await listTeamsWithMembers("h1")
+      expect(result).toHaveLength(1)
+
+      const team = result[0]
+      const reminded = team.pendingInvitations.find((inv) => inv.email === "reminded@example.com")!
+      expect(reminded.remindedAt).toBe("2026-05-06T12:00:00Z")
+      const fresh = team.pendingInvitations.find((inv) => inv.email === "fresh@example.com")!
+      expect(fresh.remindedAt).toBeNull()
+    })
+
+    it("populates pendingCaptainRemindedAt from the captain invitation row", async () => {
+      mockTables({
+        teams: [
+          { id: "team_1", name: "Rocket", status: "active", mode: null, captain_clerk_user_id: null, pending_captain_email: "captain@example.com" },
+        ],
+        team_invitations: [
+          { id: "inv_captain", team_id: "team_1", email: "captain@example.com", is_captain_invite: true, created_at: "2026-05-01T00:00:00Z", reminded_at: "2026-05-02T15:00:00Z" },
+        ],
+      })
+
+      const result = await listTeamsWithMembers("h1")
+      expect(result[0].pendingCaptainInvitationId).toBe("inv_captain")
+      expect(result[0].pendingCaptainRemindedAt).toBe("2026-05-02T15:00:00Z")
+    })
+
+    it("leaves pendingCaptainRemindedAt null when there is no captain invitation", async () => {
+      mockTables({
+        teams: [
+          { id: "team_1", name: "Rocket", status: "active", mode: null, captain_clerk_user_id: "user_cap", pending_captain_email: null },
+        ],
+      })
+
+      const result = await listTeamsWithMembers("h1")
+      expect(result[0].pendingCaptainInvitationId).toBeNull()
+      expect(result[0].pendingCaptainRemindedAt).toBeNull()
+    })
+
+    it("takes the first captain invitation row when multiple exist", async () => {
+      mockTables({
+        teams: [
+          { id: "team_1", name: "Rocket", status: "active", mode: null, captain_clerk_user_id: null, pending_captain_email: "captain@example.com" },
+        ],
+        team_invitations: [
+          { id: "inv_captain_first", team_id: "team_1", email: "old@example.com", is_captain_invite: true, created_at: "2026-05-01T00:00:00Z", reminded_at: "2026-05-02T10:00:00Z" },
+          { id: "inv_captain_second", team_id: "team_1", email: "new@example.com", is_captain_invite: true, created_at: "2026-05-03T00:00:00Z", reminded_at: null },
+        ],
+      })
+
+      const result = await listTeamsWithMembers("h1")
+      expect(result[0].pendingCaptainInvitationId).toBe("inv_captain_first")
+      expect(result[0].pendingCaptainRemindedAt).toBe("2026-05-02T10:00:00Z")
     })
   })
 })

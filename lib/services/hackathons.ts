@@ -463,6 +463,7 @@ export type TeamPendingInvitation = {
   email: string
   isCaptainInvite: boolean
   createdAt: string
+  remindedAt: string | null
 }
 
 export type TeamWithMembers = {
@@ -473,6 +474,7 @@ export type TeamWithMembers = {
   captainClerkUserId: string | null
   pendingCaptainEmail: string | null
   pendingCaptainInvitationId: string | null
+  pendingCaptainRemindedAt: string | null
   pendingInvitations: TeamPendingInvitation[]
   members: { clerkUserId: string; displayName: string | null; email: string | null; role: string }[]
   submission: {
@@ -521,7 +523,7 @@ export async function listTeamsWithMembers(hackathonId: string): Promise<TeamWit
       .in("team_id", teamIds),
     client
       .from("team_invitations")
-      .select("id, team_id, email, is_captain_invite, created_at")
+      .select("id, team_id, email, is_captain_invite, created_at, reminded_at")
       .eq("hackathon_id", hackathonId)
       .eq("status", "pending")
       .in("team_id", teamIds)
@@ -530,16 +532,19 @@ export async function listTeamsWithMembers(hackathonId: string): Promise<TeamWit
 
   const invitesByTeam: Record<string, TeamPendingInvitation[]> = {}
   const captainInviteIdByTeam: Record<string, string> = {}
-  for (const inv of (invites ?? []) as Array<{ id: string; team_id: string; email: string; is_captain_invite: boolean; created_at: string }>) {
+  const captainInviteRemindedAtByTeam: Record<string, string | null> = {}
+  for (const inv of (invites ?? []) as Array<{ id: string; team_id: string; email: string; is_captain_invite: boolean; created_at: string; reminded_at: string | null }>) {
     const list = invitesByTeam[inv.team_id] ?? (invitesByTeam[inv.team_id] = [])
     list.push({
       id: inv.id,
       email: inv.email,
       isCaptainInvite: !!inv.is_captain_invite,
       createdAt: inv.created_at,
+      remindedAt: inv.reminded_at ?? null,
     })
     if (inv.is_captain_invite && !captainInviteIdByTeam[inv.team_id]) {
       captainInviteIdByTeam[inv.team_id] = inv.id
+      captainInviteRemindedAtByTeam[inv.team_id] = inv.reminded_at ?? null
     }
   }
 
@@ -608,6 +613,7 @@ export async function listTeamsWithMembers(hackathonId: string): Promise<TeamWit
     captainClerkUserId: team.captain_clerk_user_id,
     pendingCaptainEmail: team.pending_captain_email || null,
     pendingCaptainInvitationId: captainInviteIdByTeam[team.id] ?? null,
+    pendingCaptainRemindedAt: captainInviteRemindedAtByTeam[team.id] ?? null,
     pendingInvitations: invitesByTeam[team.id] ?? [],
     members: (participants ?? [])
       .filter((p: { team_id: string }) => p.team_id === team.id)
