@@ -185,20 +185,6 @@ export async function getHackathonByIdForOrganizer(
   return result.status === "ok" ? result.hackathon : null
 }
 
-export async function getHackathonStatus(hackathonId: string): Promise<string | null> {
-  const { isValidUuid } = await import("@/lib/utils/uuid")
-  if (!isValidUuid(hackathonId)) return null
-
-  const client = getSupabase() as unknown as SupabaseClient
-  const { data } = await client
-    .from("hackathons")
-    .select("status")
-    .eq("id", hackathonId)
-    .maybeSingle()
-
-  return (data as { status?: string } | null)?.status ?? null
-}
-
 export async function checkHackathonOrganizer(
   hackathonId: string,
   tenantId: string

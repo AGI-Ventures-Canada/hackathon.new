@@ -78,6 +78,29 @@ async function promoteNextCaptain(
   const next = candidates?.[0] as { clerk_user_id: string } | undefined
   const successor = next?.clerk_user_id ?? null
 
+  const { data: cancelledInvites, error: cancelErr } = await client
+    .from("team_invitations")
+    .update({ status: "cancelled", updated_at: new Date().toISOString() })
+    .eq("team_id", teamId)
+    .eq("hackathon_id", hackathonId)
+    .eq("status", "pending")
+    .eq("is_captain_invite", true)
+    .select("id")
+
+  if (cancelErr) {
+    console.error("Failed to cancel pending captain invitations:", cancelErr)
+    return { ok: false }
+  }
+
+  if (cancelledInvites && cancelledInvites.length > 0) {
+    const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
+    for (const inv of cancelledInvites as Array<{ id: string }>) {
+      cancelRemindersForEntity("team_invitation", inv.id).catch((err) =>
+        console.error(`Failed to cancel reminders for team_invitation ${inv.id}:`, err)
+      )
+    }
+  }
+
   const { error: updateErr } = await client
     .from("teams")
     .update({
