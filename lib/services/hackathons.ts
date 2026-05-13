@@ -458,12 +458,22 @@ export async function getParticipantTeamInfo(
   }
 }
 
+export type TeamPendingInvitation = {
+  id: string
+  email: string
+  isCaptainInvite: boolean
+  createdAt: string
+}
+
 export type TeamWithMembers = {
   id: string
   name: string
   status: string
+  mode: "in_person" | "virtual" | null
   captainClerkUserId: string | null
   pendingCaptainEmail: string | null
+  pendingCaptainInvitationId: string | null
+  pendingInvitations: TeamPendingInvitation[]
   members: { clerkUserId: string; displayName: string | null; email: string | null; role: string }[]
   submission: {
     id: string
@@ -485,7 +495,7 @@ export async function listTeamsWithMembers(hackathonId: string): Promise<TeamWit
 
   const { data: teams, error: teamsErr } = await client
     .from("teams")
-    .select("id, name, status, captain_clerk_user_id, pending_captain_email")
+    .select("id, name, status, mode, captain_clerk_user_id, pending_captain_email")
     .eq("hackathon_id", hackathonId)
     .neq("status", "disbanded")
     .order("name")
@@ -494,7 +504,7 @@ export async function listTeamsWithMembers(hackathonId: string): Promise<TeamWit
 
   const teamIds = teams.map((t: { id: string }) => t.id)
 
-  const [{ data: participants }, { data: submissions }, { data: roomTeams }] = await Promise.all([
+  const [{ data: participants }, { data: submissions }, { data: roomTeams }, { data: invites }] = await Promise.all([
     client
       .from("hackathon_participants")
       .select("clerk_user_id, role, team_id")
@@ -509,7 +519,29 @@ export async function listTeamsWithMembers(hackathonId: string): Promise<TeamWit
       .from("room_teams")
       .select("team_id, room_id, rooms(id, name)")
       .in("team_id", teamIds),
+    client
+      .from("team_invitations")
+      .select("id, team_id, email, is_captain_invite, created_at")
+      .eq("hackathon_id", hackathonId)
+      .eq("status", "pending")
+      .in("team_id", teamIds)
+      .order("created_at", { ascending: true }),
   ])
+
+  const invitesByTeam: Record<string, TeamPendingInvitation[]> = {}
+  const captainInviteIdByTeam: Record<string, string> = {}
+  for (const inv of (invites ?? []) as Array<{ id: string; team_id: string; email: string; is_captain_invite: boolean; created_at: string }>) {
+    const list = invitesByTeam[inv.team_id] ?? (invitesByTeam[inv.team_id] = [])
+    list.push({
+      id: inv.id,
+      email: inv.email,
+      isCaptainInvite: !!inv.is_captain_invite,
+      createdAt: inv.created_at,
+    })
+    if (inv.is_captain_invite && !captainInviteIdByTeam[inv.team_id]) {
+      captainInviteIdByTeam[inv.team_id] = inv.id
+    }
+  }
 
   const submissionByTeam: Record<string, TeamWithMembers["submission"]> = {}
   for (const s of submissions ?? []) {
@@ -568,12 +600,15 @@ export async function listTeamsWithMembers(hackathonId: string): Promise<TeamWit
     }
   }
 
-  return teams.map((team: { id: string; name: string; status: string; captain_clerk_user_id: string | null; pending_captain_email: string | null }) => ({
+  return teams.map((team: { id: string; name: string; status: string; mode: "in_person" | "virtual" | null; captain_clerk_user_id: string | null; pending_captain_email: string | null }) => ({
     id: team.id,
     name: team.name,
     status: team.status,
+    mode: team.mode ?? null,
     captainClerkUserId: team.captain_clerk_user_id,
     pendingCaptainEmail: team.pending_captain_email || null,
+    pendingCaptainInvitationId: captainInviteIdByTeam[team.id] ?? null,
+    pendingInvitations: invitesByTeam[team.id] ?? [],
     members: (participants ?? [])
       .filter((p: { team_id: string }) => p.team_id === team.id)
       .map((p: { clerk_user_id: string; role: string }) => ({
@@ -822,4 +857,155 @@ export async function bulkAssignTeams(
     success: result?.success ?? false,
     assignedCount: result?.assigned_count ?? 0,
   }
+}
+
+export type DeleteTeamResult =
+  | { success: true; membersUnassigned: number; invitesCancelled: number; roomsCleared: number }
+  | { error: string; code: "not_found" | "submission_exists" | "status_locked" | "failed" }
+
+export async function deleteTeam(teamId: string, hackathonId: string): Promise<DeleteTeamResult> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data: team, error: teamErr } = await client
+    .from("teams")
+    .select("id, hackathon_id, hackathons(status)")
+    .eq("id", teamId)
+    .eq("hackathon_id", hackathonId)
+    .single()
+
+  if (teamErr || !team) return { error: "Team not found", code: "not_found" }
+
+  const status = (team as unknown as { hackathons?: { status?: string } | null }).hackathons?.status
+  if (status === "judging" || status === "completed" || status === "archived") {
+    return { error: "Teams can't be deleted once judging has started", code: "status_locked" }
+  }
+
+  const { count: submissionCount, error: submissionErr } = await client
+    .from("submissions")
+    .select("id", { count: "exact", head: true })
+    .eq("team_id", teamId)
+
+  if (submissionErr) {
+    console.error("Failed to check team submissions:", submissionErr)
+    return { error: "Failed to delete team", code: "failed" }
+  }
+
+  if ((submissionCount ?? 0) > 0) {
+    return { error: "This team has a submission. Delete the submission first.", code: "submission_exists" }
+  }
+
+  const { count: memberCount, error: memberCountErr } = await client
+    .from("hackathon_participants")
+    .select("id", { count: "exact", head: true })
+    .eq("team_id", teamId)
+    .eq("hackathon_id", hackathonId)
+
+  if (memberCountErr) {
+    console.error("Failed to count team members:", memberCountErr)
+    return { error: "Failed to delete team", code: "failed" }
+  }
+
+  const { count: roomCount, error: roomCountErr } = await client
+    .from("room_teams")
+    .select("room_id", { count: "exact", head: true })
+    .eq("team_id", teamId)
+
+  if (roomCountErr) {
+    console.error("Failed to count team rooms:", roomCountErr)
+    return { error: "Failed to delete team", code: "failed" }
+  }
+
+  const { data: cancelledInvites, error: inviteErr } = await client
+    .from("team_invitations")
+    .update({ status: "cancelled" })
+    .eq("team_id", teamId)
+    .eq("status", "pending")
+    .select("id")
+
+  if (inviteErr) {
+    console.error("Failed to cancel team invitations:", inviteErr)
+    return { error: "Failed to delete team", code: "failed" }
+  }
+
+  if (cancelledInvites && cancelledInvites.length > 0) {
+    const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
+    for (const inv of cancelledInvites as Array<{ id: string }>) {
+      cancelRemindersForEntity("team_invitation", inv.id).catch((err) =>
+        console.error(`Failed to cancel reminders for team_invitation ${inv.id}:`, err)
+      )
+    }
+  }
+
+  const { error: deleteErr } = await client
+    .from("teams")
+    .delete()
+    .eq("id", teamId)
+    .eq("hackathon_id", hackathonId)
+
+  if (deleteErr) {
+    console.error("Failed to delete team:", deleteErr)
+    return { error: "Failed to delete team", code: "failed" }
+  }
+
+  return {
+    success: true,
+    membersUnassigned: memberCount ?? 0,
+    invitesCancelled: cancelledInvites?.length ?? 0,
+    roomsCleared: roomCount ?? 0,
+  }
+}
+
+export type SetTeamCaptainResult =
+  | { success: true }
+  | { error: string; code: "not_found" | "not_member" | "failed" }
+
+export async function setTeamCaptain(
+  teamId: string,
+  hackathonId: string,
+  clerkUserId: string
+): Promise<SetTeamCaptainResult> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data: team, error: teamErr } = await client
+    .from("teams")
+    .select("id, captain_clerk_user_id")
+    .eq("id", teamId)
+    .eq("hackathon_id", hackathonId)
+    .single()
+
+  if (teamErr || !team) return { error: "Team not found", code: "not_found" }
+
+  if (team.captain_clerk_user_id === clerkUserId) return { success: true }
+
+  const { data: member, error: memberErr } = await client
+    .from("hackathon_participants")
+    .select("id")
+    .eq("hackathon_id", hackathonId)
+    .eq("clerk_user_id", clerkUserId)
+    .eq("team_id", teamId)
+    .maybeSingle()
+
+  if (memberErr) {
+    console.error("Failed to verify team member:", memberErr)
+    return { error: "Failed to change captain", code: "failed" }
+  }
+
+  if (!member) return { error: "That person isn't on this team", code: "not_member" }
+
+  const { error: updateErr } = await client
+    .from("teams")
+    .update({
+      captain_clerk_user_id: clerkUserId,
+      pending_captain_email: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", teamId)
+    .eq("hackathon_id", hackathonId)
+
+  if (updateErr) {
+    console.error("Failed to update team captain:", updateErr)
+    return { error: "Failed to change captain", code: "failed" }
+  }
+
+  return { success: true }
 }

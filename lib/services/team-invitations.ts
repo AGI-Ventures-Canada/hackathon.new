@@ -298,6 +298,168 @@ export async function unsubscribeTeamInvitation(
   return { success: true }
 }
 
+export async function cancelTeamInvitationAsOrganizer(
+  invitationId: string,
+  hackathonId: string
+): Promise<{ success: boolean; error?: string }> {
+  const client = getSupabase()
+
+  const { data: invitation } = await client
+    .from("team_invitations")
+    .select("id, hackathon_id, status")
+    .eq("id", invitationId)
+    .single()
+
+  if (!invitation || invitation.hackathon_id !== hackathonId) {
+    return { success: false, error: "Invitation not found" }
+  }
+  if (invitation.status !== "pending") {
+    return { success: false, error: "Invitation is no longer pending" }
+  }
+
+  const { error } = await client
+    .from("team_invitations")
+    .update({ status: "cancelled", updated_at: new Date().toISOString() })
+    .eq("id", invitationId)
+
+  return { success: !error, error: error?.message }
+}
+
+export type ReplaceCaptainInvitationResult =
+  | { success: true; invitationId: string; queued: boolean }
+  | { success: false; error: string; code: string }
+
+export async function replaceTeamCaptainInvitation(
+  teamId: string,
+  hackathonId: string,
+  newEmail: string,
+  invitedByClerkUserId: string,
+): Promise<ReplaceCaptainInvitationResult> {
+  const client = getSupabase()
+
+  const { data: team, error: teamError } = await client
+    .from("teams")
+    .select("id, name, status, captain_clerk_user_id, pending_captain_email")
+    .eq("id", teamId)
+    .eq("hackathon_id", hackathonId)
+    .single()
+
+  if (teamError || !team) return { success: false, error: "Team not found", code: "team_not_found" }
+  if (team.captain_clerk_user_id) return { success: false, error: "This team already has a captain", code: "captain_set" }
+
+  const { data: hackathon } = await client
+    .from("hackathons")
+    .select("name, slug, status, starts_at, ends_at")
+    .eq("id", hackathonId)
+    .single()
+
+  if (!hackathon) return { success: false, error: "Hackathon not found", code: "hackathon_not_found" }
+  if (hackathon.status === "completed" || hackathon.status === "archived") {
+    return { success: false, error: "Hackathon has ended", code: "hackathon_ended" }
+  }
+
+  const normalized = newEmail.toLowerCase()
+
+  const { data: cancelledInvites } = await client
+    .from("team_invitations")
+    .update({ status: "cancelled", updated_at: new Date().toISOString() })
+    .eq("team_id", teamId)
+    .eq("status", "pending")
+    .eq("is_captain_invite", true)
+    .select("id")
+
+  if (cancelledInvites && cancelledInvites.length > 0) {
+    const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
+    for (const inv of cancelledInvites as Array<{ id: string }>) {
+      cancelRemindersForEntity("team_invitation", inv.id).catch((err) =>
+        console.error(`Failed to cancel reminders for replaced team_invitation ${inv.id}:`, err)
+      )
+    }
+  }
+
+  const token = randomBytes(32).toString("base64url")
+  const expiresAt = new Date(Date.now() + INVITATION_EXPIRY_MS).toISOString()
+
+  const { data: invitation, error: insertError } = await client
+    .from("team_invitations")
+    .insert({
+      team_id: teamId,
+      hackathon_id: hackathonId,
+      email: normalized,
+      token,
+      invited_by_clerk_user_id: invitedByClerkUserId,
+      status: "pending",
+      expires_at: expiresAt,
+      is_captain_invite: true,
+    })
+    .select("id")
+    .single()
+
+  if (insertError || !invitation) {
+    console.error("Failed to insert replacement captain invitation:", insertError)
+    return { success: false, error: "Failed to send invitation", code: "insert_failed" }
+  }
+
+  await client
+    .from("teams")
+    .update({ pending_captain_email: normalized, updated_at: new Date().toISOString() })
+    .eq("id", teamId)
+
+  const isDraft = hackathon.status === "draft"
+
+  if (!isDraft) {
+    let inviterName = "The organizer"
+    let inviterEmail: string | undefined
+    try {
+      const { clerkClient } = await import("@clerk/nextjs/server")
+      const clerk = await clerkClient()
+      const organizer = await clerk.users.getUser(invitedByClerkUserId)
+      if (organizer.firstName) {
+        inviterName = organizer.firstName + (organizer.lastName ? ` ${organizer.lastName}` : "")
+      }
+      inviterEmail = organizer.primaryEmailAddress?.emailAddress
+    } catch {
+      // fallback to defaults
+    }
+
+    const emailInput = {
+      to: normalized,
+      teamName: team.name,
+      hackathonName: hackathon.name,
+      inviterName,
+      inviterEmail,
+      inviteToken: token,
+      expiresAt,
+      hackathonSlug: hackathon.slug,
+      hackathonStartsAt: hackathon.starts_at,
+      hackathonEndsAt: hackathon.ends_at,
+    }
+    const { sendTeamInvitationEmail } = await import("@/lib/email/team-invitations")
+    sendTeamInvitationEmail(emailInput)
+      .then(async (result) => {
+        if (result.success) {
+          await markTeamInvitationEmailed(invitation.id).catch(console.error)
+        }
+      })
+      .catch((err) => console.error(`Failed to send replacement captain invitation ${invitation.id}:`, err))
+
+    const { scheduleReminders } = await import("@/lib/services/smart-reminders")
+    scheduleReminders(
+      "team_invitation",
+      invitation.id,
+      hackathonId,
+      "invitation_reminder",
+      new Date(),
+      new Date(expiresAt),
+      emailInput,
+    ).catch((err) =>
+      console.error(`Failed to schedule reminders for replacement team_invitation ${invitation.id} (hackathon=${hackathonId}):`, err)
+    )
+  }
+
+  return { success: true, invitationId: invitation.id, queued: isDraft }
+}
+
 export async function cancelTeamInvitation(
   invitationId: string,
   clerkUserId: string
@@ -388,6 +550,52 @@ export async function listTeamInvitations(
   }
 
   return { success: true, invitations: data as TeamInvitation[] }
+}
+
+export async function remindTeamInvitationAsOrganizer(
+  invitationId: string,
+  teamId: string,
+  hackathonId: string,
+): Promise<RemindTeamInvitationResult> {
+  if (!isValidUuid(invitationId) || !isValidUuid(teamId)) {
+    return { success: false, error: "Invitation not found", code: "not_found" }
+  }
+
+  const client = getSupabase()
+
+  const { data: invitation, error: fetchError } = await client
+    .from("team_invitations")
+    .select("*")
+    .eq("id", invitationId)
+    .eq("team_id", teamId)
+    .eq("hackathon_id", hackathonId)
+    .single()
+
+  if (fetchError || !invitation) {
+    return { success: false, error: "Invitation not found", code: "not_found" }
+  }
+
+  if (invitation.status !== "pending") {
+    return { success: false, error: "Invitation is not pending", code: "not_pending" }
+  }
+
+  if (new Date(invitation.expires_at) < new Date()) {
+    return { success: false, error: "Invitation has expired", code: "expired" }
+  }
+
+  const { data: updated, error: updateError } = await client
+    .from("team_invitations")
+    .update({ reminded_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq("id", invitationId)
+    .eq("team_id", teamId)
+    .select()
+    .single()
+
+  if (updateError || !updated) {
+    return { success: false, error: "Failed to update reminder status", code: "update_failed" }
+  }
+
+  return { success: true, invitation: updated as TeamInvitation }
 }
 
 export type RemindTeamInvitationResult =

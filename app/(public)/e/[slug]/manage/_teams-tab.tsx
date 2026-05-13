@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useRef, useState } from "react"
 import { assertOk, assertOkJson } from "@/lib/utils/fetch"
 import {
-  Loader2, Plus, Users, ChevronRight, FileText, Crown, Mail, Settings2,
+  Loader2, Plus, Users, ChevronRight, FileText, Crown, Mail, Settings2, MoreHorizontal, Pencil, Trash2, Send, X, UserMinus,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -21,9 +21,27 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Input } from "@/components/ui/input"
 import { useActionItemsOptional } from "@/components/hackathon/manage/action-items-context"
 import { TeamSettingsDialog, teamSettingsSummary } from "@/components/hackathon/manage/team-settings-dialog"
+import { TeamEditDialog } from "@/components/hackathon/manage/team-edit-dialog"
 import {
   Table,
   TableBody,
@@ -57,12 +75,22 @@ type TeamSubmission = {
   createdAt: string
 }
 
+type TeamPendingInvitation = {
+  id: string
+  email: string
+  isCaptainInvite: boolean
+  createdAt: string
+}
+
 type Team = {
   id: string
   name: string
   status: string
+  mode: "in_person" | "virtual" | null
   captainClerkUserId: string | null
   pendingCaptainEmail: string | null
+  pendingCaptainInvitationId: string | null
+  pendingInvitations: TeamPendingInvitation[]
   members: TeamMember[]
   submission: TeamSubmission | null
   room: { id: string; name: string } | null
@@ -123,6 +151,14 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const tempIdCounter = useRef(0)
+  const [editingTeam, setEditingTeam] = useState<Team | null>(null)
+  const [deletingTeam, setDeletingTeam] = useState<Team | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [reinviteTarget, setReinviteTarget] = useState<{ team: Team; invitationId: string; previousEmail: string } | null>(null)
+  const [reinviteEmail, setReinviteEmail] = useState("")
+  const [reinviteBusy, setReinviteBusy] = useState(false)
+  const [reinviteError, setReinviteError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!ctx) return
@@ -237,8 +273,11 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
       id: tempId,
       name,
       status: "active",
+      mode: null,
       captainClerkUserId: null,
       pendingCaptainEmail: email,
+      pendingCaptainInvitationId: null,
+      pendingInvitations: [],
       members: [],
       submission: null,
       room: null,
@@ -268,6 +307,133 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
       setCaptainEmail(email)
       setCreateError(err instanceof Error ? err.message : "Failed to create team")
       setDialogOpen(true)
+    }
+  }
+
+  function showActionError(message: string) {
+    setActionError(message)
+    setTimeout(() => setActionError(null), 8000)
+  }
+
+  function deleteBlockReason(team: Team): string | null {
+    if (team.submission) return "This team has a submission. Delete the submission first."
+    return null
+  }
+
+  async function handleDeleteTeam(team: Team) {
+    setDeleting(true)
+    const snapshot = teams
+    setTeams((prev) => prev.filter((t) => t.id !== team.id))
+    try {
+      await fetch(`/api/dashboard/hackathons/${hackathonId}/teams/${team.id}`, {
+        method: "DELETE",
+      }).then(assertOk)
+      setDeletingTeam(null)
+    } catch (err) {
+      setTeams(snapshot)
+      showActionError(err instanceof Error ? err.message : "Failed to delete team")
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  async function handleRemoveMember(team: Team, member: TeamMember) {
+    const snapshot = team.members
+    const nextMembers = team.members.filter((m) => m.clerkUserId !== member.clerkUserId)
+    setTeams((prev) => prev.map((t) => (t.id === team.id ? { ...t, members: nextMembers } : t)))
+    try {
+      await fetch(`/api/dashboard/hackathons/${hackathonId}/teams/${team.id}/members`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ remove: [member.clerkUserId] }),
+      }).then(assertOk)
+    } catch (err) {
+      setTeams((prev) => prev.map((t) => (t.id === team.id ? { ...t, members: snapshot } : t)))
+      showActionError(err instanceof Error ? err.message : "Failed to remove member")
+    }
+  }
+
+  async function handleMakeCaptain(team: Team, member: TeamMember) {
+    const previous = team.captainClerkUserId
+    setTeams((prev) => prev.map((t) => (t.id === team.id ? { ...t, captainClerkUserId: member.clerkUserId } : t)))
+    try {
+      await fetch(`/api/dashboard/hackathons/${hackathonId}/teams/${team.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ captainClerkUserId: member.clerkUserId }),
+      }).then(assertOk)
+    } catch (err) {
+      setTeams((prev) => prev.map((t) => (t.id === team.id ? { ...t, captainClerkUserId: previous } : t)))
+      showActionError(err instanceof Error ? err.message : "Failed to change captain")
+    }
+  }
+
+  async function handleResendInvite(team: Team, invitationId: string) {
+    try {
+      await fetch(`/api/dashboard/hackathons/${hackathonId}/teams/${team.id}/invitations/${invitationId}/remind`, {
+        method: "POST",
+      }).then(assertOk)
+      setInviteSuccess(`Reminder sent for ${team.name}`)
+      setTimeout(() => setInviteSuccess(null), 5000)
+    } catch (err) {
+      showActionError(err instanceof Error ? err.message : "Failed to resend invite")
+    }
+  }
+
+  async function handleCancelInvite(team: Team, invitationId: string) {
+    const wasCaptainInvite = team.pendingCaptainInvitationId === invitationId
+    const snapshot = teams
+    setTeams((prev) => prev.map((t) => {
+      if (t.id !== team.id) return t
+      return {
+        ...t,
+        pendingInvitations: t.pendingInvitations.filter((i) => i.id !== invitationId),
+        pendingCaptainEmail: wasCaptainInvite ? null : t.pendingCaptainEmail,
+        pendingCaptainInvitationId: wasCaptainInvite ? null : t.pendingCaptainInvitationId,
+      }
+    }))
+    try {
+      await fetch(`/api/dashboard/hackathons/${hackathonId}/teams/${team.id}/invitations/${invitationId}`, {
+        method: "DELETE",
+      }).then(assertOk)
+    } catch (err) {
+      setTeams(snapshot)
+      showActionError(err instanceof Error ? err.message : "Failed to cancel invite")
+    }
+  }
+
+  async function handleChangeCaptainInviteEmail() {
+    if (!reinviteTarget) return
+    const email = reinviteEmail.trim().toLowerCase()
+    if (!email) {
+      setReinviteError("Email is required")
+      return
+    }
+    if (email === reinviteTarget.previousEmail.toLowerCase()) {
+      setReinviteError("That's the same email")
+      return
+    }
+    setReinviteBusy(true)
+    setReinviteError(null)
+    try {
+      const data = await fetch(`/api/dashboard/hackathons/${hackathonId}/teams/${reinviteTarget.team.id}/captain-invitation`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      }).then(assertOkJson<{ queued?: boolean }>)
+      setReinviteTarget(null)
+      setReinviteEmail("")
+      setInviteSuccess(
+        data.queued
+          ? `Invite saved for ${email}. We'll send it when you go live.`
+          : `Invite sent to ${email}`
+      )
+      setTimeout(() => setInviteSuccess(null), 5000)
+      await fetchTeams()
+    } catch (err) {
+      setReinviteError(err instanceof Error ? err.message : "Failed to update invite")
+    } finally {
+      setReinviteBusy(false)
     }
   }
 
@@ -317,6 +483,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         </div>
       )}
       {roomError && <p className="text-sm text-destructive">{roomError}</p>}
+      {actionError && <p className="text-sm text-destructive">{actionError}</p>}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-muted-foreground">
           {teams.length === 0
@@ -405,6 +572,93 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         </Dialog>
       </div>
 
+      {editingTeam && (
+        <TeamEditDialog
+          open
+          onOpenChange={(open) => { if (!open) setEditingTeam(null) }}
+          hackathonId={hackathonId}
+          teamId={editingTeam.id}
+          initial={{ name: editingTeam.name, mode: editingTeam.mode, captainClerkUserId: editingTeam.captainClerkUserId }}
+          members={editingTeam.members.map((m) => ({ clerkUserId: m.clerkUserId, displayName: m.displayName, email: m.email }))}
+          onSaved={(next) => {
+            setTeams((prev) => prev.map((t) => (t.id === editingTeam.id ? {
+              ...t,
+              name: next.name,
+              mode: next.mode,
+              captainClerkUserId: next.captainClerkUserId,
+            } : t)))
+          }}
+        />
+      )}
+
+      <AlertDialog open={!!deletingTeam} onOpenChange={(open) => { if (!open && !deleting) setDeletingTeam(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete team &quot;{deletingTeam?.name}&quot;?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deletingTeam ? (
+                <>
+                  {deletingTeam.members.length > 0 && (
+                    <>{deletingTeam.members.length} member{deletingTeam.members.length === 1 ? "" : "s"} will be unassigned but stay registered. </>
+                  )}
+                  {deletingTeam.pendingInvitations.length > 0 && (
+                    <>{deletingTeam.pendingInvitations.length} pending invite{deletingTeam.pendingInvitations.length === 1 ? "" : "s"} will be cancelled. </>
+                  )}
+                  {deletingTeam.room && <>The room will be unassigned. </>}
+                  This can&apos;t be undone.
+                </>
+              ) : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Keep team</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); if (deletingTeam) void handleDeleteTeam(deletingTeam) }}
+              disabled={deleting}
+            >
+              {deleting ? "Deleting…" : "Delete team"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog open={!!reinviteTarget} onOpenChange={(open) => { if (!open && !reinviteBusy) setReinviteTarget(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Change captain invite email</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Cancels the invite for {reinviteTarget?.previousEmail} and sends a new one.
+            </p>
+            <Input
+              type="email"
+              placeholder="captain@example.com"
+              autoFocus
+              value={reinviteEmail}
+              onChange={(e) => { setReinviteEmail(e.target.value); setReinviteError(null) }}
+              onKeyDown={(e) => {
+                if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                  e.preventDefault()
+                  void handleChangeCaptainInviteEmail()
+                }
+              }}
+              autoComplete="off"
+              data-1p-ignore
+              data-lpignore="true"
+              data-form-type="other"
+            />
+            {reinviteError && <p className="text-sm text-destructive">{reinviteError}</p>}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setReinviteTarget(null)} disabled={reinviteBusy}>Cancel</Button>
+              <Button onClick={() => void handleChangeCaptainInviteEmail()} disabled={reinviteBusy}>
+                {reinviteBusy ? "Sending…" : "Send invite"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {teams.length > 0 && (
         <div className="rounded-lg border">
           <div className="overflow-x-auto">
@@ -417,6 +671,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                   <TableHead>Members</TableHead>
                   <TableHead>Submission</TableHead>
                   <TableHead>Room</TableHead>
+                  <TableHead className="w-10 sr-only">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -480,11 +735,44 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                             </Select>
                           )}
                         </TableCell>
+                        <TableCell className="w-10" onClick={(e) => e.stopPropagation()}>
+                          {team.id.startsWith("temp-") ? null : (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="size-8" aria-label={`Team actions for ${team.name}`}>
+                                  <MoreHorizontal className="size-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onSelect={() => setEditingTeam(team)}>
+                                  <Pencil className="size-4" />
+                                  Edit team
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  variant="destructive"
+                                  disabled={!!deleteBlockReason(team)}
+                                  onSelect={() => {
+                                    const reason = deleteBlockReason(team)
+                                    if (reason) {
+                                      showActionError(reason)
+                                      return
+                                    }
+                                    setDeletingTeam(team)
+                                  }}
+                                >
+                                  <Trash2 className="size-4" />
+                                  Delete team
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
+                        </TableCell>
                       </TableRow>
                       {isExpanded && (
                         <TableRow className="bg-muted/30 hover:bg-muted/30">
                           <TableCell />
-                          <TableCell colSpan={5} className="py-4">
+                          <TableCell colSpan={6} className="py-4">
                             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
                               <div className="space-y-4">
                                 <section className="space-y-2">
@@ -493,30 +781,110 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                                     Members
                                   </div>
                                   <div className="rounded-md border bg-background p-3">
-                                    {team.pendingCaptainEmail && (
+                                    {team.pendingCaptainInvitationId && team.pendingCaptainEmail && (
                                       <div className="flex items-center gap-2 text-sm">
                                         <Mail className="size-3 text-muted-foreground shrink-0" />
                                         <span className="text-muted-foreground truncate">{team.pendingCaptainEmail}</span>
                                         <Badge variant="secondary" className="ml-auto font-normal">Pending</Badge>
+                                        <DropdownMenu>
+                                          <DropdownMenuTrigger asChild>
+                                            <Button variant="ghost" size="icon" className="size-6" aria-label="Captain invite actions">
+                                              <MoreHorizontal className="size-3.5" />
+                                            </Button>
+                                          </DropdownMenuTrigger>
+                                          <DropdownMenuContent align="end">
+                                            <DropdownMenuItem onSelect={() => handleResendInvite(team, team.pendingCaptainInvitationId!)}>
+                                              <Send className="size-4" />
+                                              Resend
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onSelect={() => {
+                                              setReinviteTarget({ team, invitationId: team.pendingCaptainInvitationId!, previousEmail: team.pendingCaptainEmail! })
+                                              setReinviteEmail("")
+                                              setReinviteError(null)
+                                            }}>
+                                              <Pencil className="size-4" />
+                                              Change email
+                                            </DropdownMenuItem>
+                                            <DropdownMenuSeparator />
+                                            <DropdownMenuItem variant="destructive" onSelect={() => handleCancelInvite(team, team.pendingCaptainInvitationId!)}>
+                                              <X className="size-4" />
+                                              Cancel invite
+                                            </DropdownMenuItem>
+                                          </DropdownMenuContent>
+                                        </DropdownMenu>
                                       </div>
                                     )}
                                     {team.members.length === 0 && !team.pendingCaptainEmail ? (
                                       <p className="text-sm text-muted-foreground">No members yet</p>
                                     ) : (
                                       <ul className="flex flex-col gap-1.5">
-                                        {team.members.map((m) => (
-                                          <li key={m.clerkUserId} className="flex items-center gap-2 text-sm">
-                                            {m.clerkUserId === team.captainClerkUserId ? (
-                                              <Crown className="size-3 text-primary shrink-0" />
-                                            ) : (
-                                              <span className="size-3 shrink-0" />
-                                            )}
-                                            <span className="font-medium">{m.displayName || m.clerkUserId}</span>
-                                            {m.email && (
-                                              <span className="text-muted-foreground text-xs truncate">
-                                                {m.email}
-                                              </span>
-                                            )}
+                                        {team.members.map((m) => {
+                                          const isCaptain = m.clerkUserId === team.captainClerkUserId
+                                          return (
+                                            <li key={m.clerkUserId} className="flex items-center gap-2 text-sm">
+                                              {isCaptain ? (
+                                                <Crown className="size-3 text-primary shrink-0" />
+                                              ) : (
+                                                <span className="size-3 shrink-0" />
+                                              )}
+                                              <span className="font-medium">{m.displayName || m.clerkUserId}</span>
+                                              {m.email && (
+                                                <span className="text-muted-foreground text-xs truncate">
+                                                  {m.email}
+                                                </span>
+                                              )}
+                                              <DropdownMenu>
+                                                <DropdownMenuTrigger asChild>
+                                                  <Button variant="ghost" size="icon" className="ml-auto size-6" aria-label={`Actions for ${m.displayName ?? m.clerkUserId}`}>
+                                                    <MoreHorizontal className="size-3.5" />
+                                                  </Button>
+                                                </DropdownMenuTrigger>
+                                                <DropdownMenuContent align="end">
+                                                  {!isCaptain && (
+                                                    <DropdownMenuItem onSelect={() => handleMakeCaptain(team, m)}>
+                                                      <Crown className="size-4" />
+                                                      Make captain
+                                                    </DropdownMenuItem>
+                                                  )}
+                                                  <DropdownMenuItem
+                                                    variant="destructive"
+                                                    onSelect={() => handleRemoveMember(team, m)}
+                                                  >
+                                                    <UserMinus className="size-4" />
+                                                    Remove from team
+                                                  </DropdownMenuItem>
+                                                </DropdownMenuContent>
+                                              </DropdownMenu>
+                                            </li>
+                                          )
+                                        })}
+                                      </ul>
+                                    )}
+                                    {team.pendingInvitations.filter((i) => !i.isCaptainInvite).length > 0 && (
+                                      <ul className="mt-2 flex flex-col gap-1.5 border-t pt-2">
+                                        {team.pendingInvitations.filter((i) => !i.isCaptainInvite).map((inv) => (
+                                          <li key={inv.id} className="flex items-center gap-2 text-sm">
+                                            <Mail className="size-3 text-muted-foreground shrink-0" />
+                                            <span className="text-muted-foreground truncate">{inv.email}</span>
+                                            <Badge variant="secondary" className="ml-auto font-normal">Pending</Badge>
+                                            <DropdownMenu>
+                                              <DropdownMenuTrigger asChild>
+                                                <Button variant="ghost" size="icon" className="size-6" aria-label={`Invite actions for ${inv.email}`}>
+                                                  <MoreHorizontal className="size-3.5" />
+                                                </Button>
+                                              </DropdownMenuTrigger>
+                                              <DropdownMenuContent align="end">
+                                                <DropdownMenuItem onSelect={() => handleResendInvite(team, inv.id)}>
+                                                  <Send className="size-4" />
+                                                  Resend
+                                                </DropdownMenuItem>
+                                                <DropdownMenuSeparator />
+                                                <DropdownMenuItem variant="destructive" onSelect={() => handleCancelInvite(team, inv.id)}>
+                                                  <X className="size-4" />
+                                                  Cancel invite
+                                                </DropdownMenuItem>
+                                              </DropdownMenuContent>
+                                            </DropdownMenu>
                                           </li>
                                         ))}
                                       </ul>
