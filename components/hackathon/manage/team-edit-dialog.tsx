@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -68,22 +68,23 @@ export function TeamEditDialog({
     }
   }, [open, initial.name, initial.mode, initial.captainClerkUserId])
 
+  const payload = useMemo(() => {
+    const p: Record<string, unknown> = {}
+    if (name.trim() && name.trim() !== initial.name) p.name = name.trim()
+    if (mode !== initial.mode) p.mode = mode
+    if (captainId && captainId !== initial.captainClerkUserId) p.captainClerkUserId = captainId
+    return p
+  }, [name, mode, captainId, initial.name, initial.mode, initial.captainClerkUserId])
+
+  const hasChanges = Object.keys(payload).length > 0
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     if (!name.trim()) {
       setError("Team name is required")
       return
     }
-
-    const payload: Record<string, unknown> = {}
-    if (name.trim() !== initial.name) payload.name = name.trim()
-    if (mode !== initial.mode) payload.mode = mode
-    if (captainId && captainId !== initial.captainClerkUserId) payload.captainClerkUserId = captainId
-
-    if (Object.keys(payload).length === 0) {
-      onOpenChange(false)
-      return
-    }
+    if (!hasChanges) return
 
     setSaving(true)
     setError(null)
@@ -189,7 +190,7 @@ export function TeamEditDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
               Cancel
             </Button>
-            <Button type="submit" disabled={saving}>
+            <Button type="submit" disabled={saving || !hasChanges}>
               {saving ? "Saving…" : "Save"}
             </Button>
           </div>
