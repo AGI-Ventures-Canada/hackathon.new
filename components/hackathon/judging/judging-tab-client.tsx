@@ -673,8 +673,9 @@ export function JudgesSection({
         () => setCopiedInviteId((prev) => (prev === id ? null : prev)),
         2000,
       )
-    } catch (err) {
-      console.error("Failed to copy invite link", err)
+    } catch {
+      // Clipboard write can fail in restricted contexts (insecure origin,
+      // permissions denied); the copy simply doesn't happen.
     }
   }
 
