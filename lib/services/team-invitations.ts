@@ -308,7 +308,7 @@ export async function cancelTeamInvitationAsOrganizer(
     .from("team_invitations")
     .select("id, hackathon_id, status")
     .eq("id", invitationId)
-    .single()
+    .maybeSingle()
 
   if (!invitation || invitation.hackathon_id !== hackathonId) {
     return { success: false, error: "Invitation not found" }

@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { assertOkJson } from "@/lib/utils/fetch"
+import { assertOk } from "@/lib/utils/fetch"
 
 type TeamMember = {
   clerkUserId: string
@@ -90,7 +90,7 @@ export function TeamEditDialog({
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
-      }).then(assertOkJson)
+      }).then(assertOk)
       onSaved({ name: name.trim(), mode, captainClerkUserId: captainId })
       onOpenChange(false)
     } catch (err) {

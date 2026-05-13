@@ -936,6 +936,7 @@ export async function deleteTeam(teamId: string, hackathonId: string): Promise<D
     }
   }
 
+  // hackathon_participants.team_id → ON DELETE SET NULL; room_teams.team_id → ON DELETE CASCADE
   const { error: deleteErr } = await client
     .from("teams")
     .delete()
