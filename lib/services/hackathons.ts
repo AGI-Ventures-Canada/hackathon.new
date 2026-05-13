@@ -977,7 +977,9 @@ export async function listAssignableTeams(
 
 export type SetTeamCaptainResult =
   | { success: true; team: { id: string; name: string; mode: "in_person" | "virtual" | null } }
-  | { error: string; code: "not_found" | "not_member" | "failed" }
+  | { error: string; code: "not_found" | "not_member" | "status_locked" | "failed" }
+
+const TEAM_MUTATION_LOCKED_STATUSES = new Set(["judging", "completed", "archived"])
 
 export async function setTeamCaptain(
   teamId: string,
@@ -988,12 +990,17 @@ export async function setTeamCaptain(
 
   const { data: team, error: teamErr } = await client
     .from("teams")
-    .select("id, name, mode, captain_clerk_user_id")
+    .select("id, name, mode, captain_clerk_user_id, hackathons(status)")
     .eq("id", teamId)
     .eq("hackathon_id", hackathonId)
     .single()
 
   if (teamErr || !team) return { error: "Team not found", code: "not_found" }
+
+  const status = (team as unknown as { hackathons?: { status?: string } | null }).hackathons?.status
+  if (status && TEAM_MUTATION_LOCKED_STATUSES.has(status)) {
+    return { error: "Captain changes are locked once judging has started", code: "status_locked" }
+  }
 
   if (team.captain_clerk_user_id === clerkUserId) {
     return { success: true, team: { id: team.id, name: team.name, mode: team.mode ?? null } }

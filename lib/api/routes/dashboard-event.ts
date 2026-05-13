@@ -478,7 +478,10 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       }
       const result = await setTeamCaptain(params.teamId, params.id, captainClerkUserId)
       if ("error" in result) {
-        set.status = result.code === "not_found" ? 404 : result.code === "not_member" ? 400 : 500
+        set.status =
+          result.code === "not_found" ? 404 :
+          result.code === "not_member" ? 400 :
+          result.code === "status_locked" ? 409 : 500
         return { error: result.error }
       }
       captainUpdatedTeam = result.team

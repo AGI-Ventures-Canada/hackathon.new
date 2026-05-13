@@ -27,15 +27,19 @@ function tableImpl(handlers: Record<string, SupaResult | SupaResult[]>) {
   }
 }
 
-const participantRow = (overrides: Partial<{ id: string; clerk_user_id: string; role: string; team_id: string | null }> = {}) => ({
-  id: "p_1",
-  hackathon_id: "h_1",
-  clerk_user_id: "user_1",
-  role: "participant",
-  team_id: null,
-  registered_at: "2026-04-01T00:00:00Z",
-  ...overrides,
-})
+const participantRow = (overrides: Partial<{ id: string; clerk_user_id: string; role: string; team_id: string | null; hackathonStatus: string }> = {}) => {
+  const { hackathonStatus = "active", ...rest } = overrides
+  return {
+    id: "p_1",
+    hackathon_id: "h_1",
+    clerk_user_id: "user_1",
+    role: "participant",
+    team_id: null,
+    registered_at: "2026-04-01T00:00:00Z",
+    hackathons: { status: hackathonStatus },
+    ...rest,
+  }
+}
 
 const VALID_UUID = "11111111-1111-1111-1111-111111111111"
 const TEAM_UUID = "22222222-2222-2222-2222-222222222222"
@@ -46,39 +50,34 @@ describe("assignParticipantToTeam", () => {
 
   it("rejects when status is judging", async () => {
     setMockFromImplementation(tableImpl({
-      hackathons: { data: { status: "judging" }, error: null },
+      hackathon_participants: { data: participantRow({ hackathonStatus: "judging" }), error: null },
     }))
-    const result = await assignParticipantToTeam(VALID_UUID, VALID_UUID, "team_1")
+    const result = await assignParticipantToTeam(VALID_UUID, VALID_UUID, TEAM_UUID)
     expect(result.success).toBeUndefined()
     if ("error" in result) expect(result.code).toBe("status_locked")
   })
 
   it("returns not_found when the participant doesn't exist", async () => {
     setMockFromImplementation(tableImpl({
-      hackathons: { data: { status: "active" }, error: null },
       hackathon_participants: { data: null, error: null },
     }))
-    const result = await assignParticipantToTeam(VALID_UUID, VALID_UUID, "team_1")
+    const result = await assignParticipantToTeam(VALID_UUID, VALID_UUID, TEAM_UUID)
     expect(result).toEqual({ error: "Person not found", code: "not_found" })
   })
 
   it("returns team_not_found when the target team doesn't exist", async () => {
     setMockFromImplementation(tableImpl({
-      hackathons: { data: { status: "active" }, error: null },
       hackathon_participants: { data: participantRow(), error: null },
       teams: { data: null, error: null },
     }))
-    const result = await assignParticipantToTeam(VALID_UUID, VALID_UUID, "missing_team")
+    const result = await assignParticipantToTeam(VALID_UUID, VALID_UUID, TEAM_UUID)
     expect(result.success).toBeUndefined()
     if ("error" in result) expect(result.code).toBe("team_not_found")
   })
 
   it("returns team_full when capacity is reached", async () => {
     setMockFromImplementation(tableImpl({
-      hackathons: [
-        { data: { status: "active" }, error: null },
-        { data: { max_team_size: 5 }, error: null },
-      ],
+      hackathons: { data: { max_team_size: 5 }, error: null },
       hackathon_participants: [
         { data: participantRow(), error: null },
         { data: null, error: null, count: 5 },
@@ -92,10 +91,7 @@ describe("assignParticipantToTeam", () => {
 
   it("assigns to a new team and reports no captain handoff", async () => {
     setMockFromImplementation(tableImpl({
-      hackathons: [
-        { data: { status: "active" }, error: null },
-        { data: { max_team_size: 5 }, error: null },
-      ],
+      hackathons: { data: { max_team_size: 5 }, error: null },
       hackathon_participants: [
         { data: participantRow(), error: null },
         { data: null, error: null, count: 1 },
@@ -109,10 +105,7 @@ describe("assignParticipantToTeam", () => {
 
   it("hands off captaincy when moving the captain off a team", async () => {
     setMockFromImplementation(tableImpl({
-      hackathons: [
-        { data: { status: "active" }, error: null },
-        { data: { max_team_size: 5 }, error: null },
-      ],
+      hackathons: { data: { max_team_size: 5 }, error: null },
       hackathon_participants: [
         { data: participantRow({ team_id: "team_old" }), error: null },
         { data: [{ clerk_user_id: "user_2" }], error: null },
@@ -141,7 +134,7 @@ describe("updateParticipantRole", () => {
 
   it("rejects when status is judging", async () => {
     setMockFromImplementation(tableImpl({
-      hackathons: { data: { status: "judging" }, error: null },
+      hackathon_participants: { data: participantRow({ hackathonStatus: "judging" }), error: null },
     }))
     const result = await updateParticipantRole(VALID_UUID, VALID_UUID, "judge")
     expect(result.success).toBeUndefined()
@@ -150,7 +143,6 @@ describe("updateParticipantRole", () => {
 
   it("no-ops when the role is unchanged", async () => {
     setMockFromImplementation(tableImpl({
-      hackathons: { data: { status: "active" }, error: null },
       hackathon_participants: { data: participantRow({ role: "judge" }), error: null },
     }))
     const result = await updateParticipantRole(VALID_UUID, VALID_UUID, "judge")
@@ -159,7 +151,6 @@ describe("updateParticipantRole", () => {
 
   it("hands off captain when participant leaves the participant role", async () => {
     setMockFromImplementation(tableImpl({
-      hackathons: { data: { status: "active" }, error: null },
       hackathon_participants: [
         { data: participantRow({ team_id: "team_1" }), error: null },
         { data: [{ clerk_user_id: "user_2" }], error: null },
@@ -177,7 +168,6 @@ describe("updateParticipantRole", () => {
 
   it("clears judge assignments when demoting a judge to participant", async () => {
     setMockFromImplementation(tableImpl({
-      hackathons: { data: { status: "active" }, error: null },
       hackathon_participants: [
         { data: participantRow({ role: "judge" }), error: null },
         { data: null, error: null },
@@ -196,7 +186,7 @@ describe("removeParticipantFromEvent", () => {
 
   it("rejects when status is judging", async () => {
     setMockFromImplementation(tableImpl({
-      hackathons: { data: { status: "judging" }, error: null },
+      hackathon_participants: { data: participantRow({ hackathonStatus: "judging" }), error: null },
     }))
     const result = await removeParticipantFromEvent(VALID_UUID, VALID_UUID)
     expect(result.success).toBeUndefined()
@@ -205,7 +195,7 @@ describe("removeParticipantFromEvent", () => {
 
   it("rejects when status is completed", async () => {
     setMockFromImplementation(tableImpl({
-      hackathons: { data: { status: "completed" }, error: null },
+      hackathon_participants: { data: participantRow({ hackathonStatus: "completed" }), error: null },
     }))
     const result = await removeParticipantFromEvent(VALID_UUID, VALID_UUID)
     expect(result.success).toBeUndefined()
@@ -214,7 +204,6 @@ describe("removeParticipantFromEvent", () => {
 
   it("returns not_found when participant doesn't exist", async () => {
     setMockFromImplementation(tableImpl({
-      hackathons: { data: { status: "active" }, error: null },
       hackathon_participants: { data: null, error: null },
     }))
     const result = await removeParticipantFromEvent(VALID_UUID, VALID_UUID)
@@ -224,7 +213,6 @@ describe("removeParticipantFromEvent", () => {
 
   it("deletes the participant and hands off captain when removed", async () => {
     setMockFromImplementation(tableImpl({
-      hackathons: { data: { status: "active" }, error: null },
       hackathon_participants: [
         { data: participantRow({ team_id: "team_1" }), error: null },
         { data: [{ clerk_user_id: "user_2" }], error: null },

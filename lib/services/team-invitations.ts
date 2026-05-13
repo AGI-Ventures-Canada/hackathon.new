@@ -432,7 +432,8 @@ export async function replaceTeamCaptainInvitation(
           inviterName = organizer.firstName + (organizer.lastName ? ` ${organizer.lastName}` : "")
         }
         inviterEmail = organizer.primaryEmailAddress?.emailAddress
-      } catch {
+      } catch (err) {
+        console.warn(`Failed to resolve inviter ${invitedByClerkUserId} for replaced captain invitation; falling back to "The organizer":`, err)
       }
     }
 

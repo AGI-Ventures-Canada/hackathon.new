@@ -1,15 +1,9 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
-import { getHackathonStatus } from "./public-hackathons"
 import type { PersonRole } from "./hackathon-people-types"
 import { isValidUuid } from "@/lib/utils/uuid"
 
 const LOCKED_STATUSES = new Set(["judging", "completed", "archived"])
-
-async function isStatusLocked(hackathonId: string): Promise<boolean> {
-  const status = await getHackathonStatus(hackathonId)
-  return status !== null && LOCKED_STATUSES.has(status)
-}
 
 type ParticipantRow = {
   id: string
@@ -18,6 +12,7 @@ type ParticipantRow = {
   role: PersonRole
   team_id: string | null
   registered_at: string
+  hackathonStatus: string | null
 }
 
 async function fetchParticipant(
@@ -27,7 +22,7 @@ async function fetchParticipant(
 ): Promise<ParticipantRow | null> {
   const { data, error } = await client
     .from("hackathon_participants")
-    .select("id, hackathon_id, clerk_user_id, role, team_id, registered_at")
+    .select("id, hackathon_id, clerk_user_id, role, team_id, registered_at, hackathons(status)")
     .eq("id", participantId)
     .eq("hackathon_id", hackathonId)
     .maybeSingle()
@@ -36,7 +31,26 @@ async function fetchParticipant(
     console.error("Failed to load participant:", error)
     return null
   }
-  return (data as ParticipantRow | null) ?? null
+  if (!data) return null
+  const row = data as unknown as {
+    id: string
+    hackathon_id: string
+    clerk_user_id: string
+    role: PersonRole
+    team_id: string | null
+    registered_at: string
+    hackathons?: { status?: string } | Array<{ status?: string }> | null
+  }
+  const joined = Array.isArray(row.hackathons) ? row.hackathons[0] : row.hackathons
+  return {
+    id: row.id,
+    hackathon_id: row.hackathon_id,
+    clerk_user_id: row.clerk_user_id,
+    role: row.role,
+    team_id: row.team_id,
+    registered_at: row.registered_at,
+    hackathonStatus: joined?.status ?? null,
+  }
 }
 
 async function promoteNextCaptain(
@@ -104,13 +118,12 @@ export async function assignParticipantToTeam(
   hackathonId: string,
   newTeamId: string | null,
 ): Promise<AssignTeamResult> {
-  if (await isStatusLocked(hackathonId)) {
-    return { error: "Team changes are locked once judging has started", code: "status_locked" }
-  }
-
   const client = getSupabase() as unknown as SupabaseClient
   const participant = await fetchParticipant(client, participantId, hackathonId)
   if (!participant) return { error: "Person not found", code: "not_found" }
+  if (participant.hackathonStatus && LOCKED_STATUSES.has(participant.hackathonStatus)) {
+    return { error: "Team changes are locked once judging has started", code: "status_locked" }
+  }
 
   if (newTeamId) {
     if (!isValidUuid(newTeamId)) return { error: "Team not found", code: "team_not_found" }
@@ -174,13 +187,12 @@ export async function updateParticipantRole(
 ): Promise<UpdateRoleResult> {
   if (!VALID_ROLES.includes(role)) return { error: "Invalid role", code: "invalid_role" }
 
-  if (await isStatusLocked(hackathonId)) {
-    return { error: "Role changes are locked once judging has started", code: "status_locked" }
-  }
-
   const client = getSupabase() as unknown as SupabaseClient
   const participant = await fetchParticipant(client, participantId, hackathonId)
   if (!participant) return { error: "Person not found", code: "not_found" }
+  if (participant.hackathonStatus && LOCKED_STATUSES.has(participant.hackathonStatus)) {
+    return { error: "Role changes are locked once judging has started", code: "status_locked" }
+  }
 
   if (participant.role === role) return { success: true, role, capacityHandedOff: false }
 
@@ -223,13 +235,12 @@ export async function removeParticipantFromEvent(
   participantId: string,
   hackathonId: string,
 ): Promise<RemoveParticipantResult> {
-  if (await isStatusLocked(hackathonId)) {
-    return { error: "People can't be removed once judging has started", code: "status_locked" }
-  }
-
   const client = getSupabase() as unknown as SupabaseClient
   const participant = await fetchParticipant(client, participantId, hackathonId)
   if (!participant) return { error: "Person not found", code: "not_found" }
+  if (participant.hackathonStatus && LOCKED_STATUSES.has(participant.hackathonStatus)) {
+    return { error: "People can't be removed once judging has started", code: "status_locked" }
+  }
 
   let capacityHandedOff = false
   if (participant.team_id) {

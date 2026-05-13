@@ -126,6 +126,18 @@ describe("setTeamCaptain", () => {
     expect(result).toEqual({ success: true, team: { id: "team_1", name: "Team One", mode: null } })
   })
 
+  it("rejects captain change once hackathon is in judging", async () => {
+    setMockFromImplementation(
+      tableImpl({
+        teams: { data: { id: "team_1", name: "Team One", mode: null, captain_clerk_user_id: "user_old", hackathons: { status: "judging" } }, error: null },
+      })
+    )
+
+    const result = await setTeamCaptain("team_1", "h_1", "user_new")
+    expect(result.success).toBeUndefined()
+    if ("error" in result) expect(result.code).toBe("status_locked")
+  })
+
   it("rejects setting a non-member as captain", async () => {
     setMockFromImplementation(
       tableImpl({
