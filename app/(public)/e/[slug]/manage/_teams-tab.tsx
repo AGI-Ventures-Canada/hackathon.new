@@ -334,11 +334,11 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
     setDeleting(true)
     const snapshot = teams
     setTeams((prev) => prev.filter((t) => t.id !== team.id))
+    setDeletingTeam(null)
     try {
       await fetch(`/api/dashboard/hackathons/${hackathonId}/teams/${team.id}`, {
         method: "DELETE",
       }).then(assertOk)
-      setDeletingTeam(null)
       router.refresh()
     } catch (err) {
       setTeams(snapshot)
@@ -441,20 +441,27 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
       setReinviteError("Email is required")
       return
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setReinviteError("Enter a valid email address")
+      return
+    }
     if (email === reinviteTarget.previousEmail.toLowerCase()) {
       setReinviteError("That's the same email")
       return
     }
+    const targetTeamId = reinviteTarget.team.id
+    const snapshot = teams
+    setTeams((prev) => prev.map((t) => (t.id === targetTeamId ? { ...t, pendingCaptainEmail: email } : t)))
+    setReinviteTarget(null)
+    setReinviteEmail("")
     setReinviteBusy(true)
     setReinviteError(null)
     try {
-      const data = await fetch(`/api/dashboard/hackathons/${hackathonId}/teams/${reinviteTarget.team.id}/captain-invitation`, {
+      const data = await fetch(`/api/dashboard/hackathons/${hackathonId}/teams/${targetTeamId}/captain-invitation`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
       }).then(assertOkJson<{ queued?: boolean }>)
-      setReinviteTarget(null)
-      setReinviteEmail("")
       setInviteSuccess(
         data.queued
           ? `Invite saved for ${email}. We'll send it when you go live.`
@@ -464,7 +471,8 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
       await fetchTeams()
       router.refresh()
     } catch (err) {
-      setReinviteError(err instanceof Error ? err.message : "Failed to update invite")
+      setTeams(snapshot)
+      showActionError(err instanceof Error ? err.message : "Failed to update invite")
     } finally {
       setReinviteBusy(false)
     }
