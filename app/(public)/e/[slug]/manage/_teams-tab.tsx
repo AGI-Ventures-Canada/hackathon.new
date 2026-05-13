@@ -307,6 +307,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
       }
 
       await fetchTeams()
+      router.refresh()
     } catch (err) {
       setTeams((prev) => prev.filter((t) => t.id !== tempId))
       setTeamName(name)
@@ -461,6 +462,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
       )
       setTimeout(() => setInviteSuccess(null), 5000)
       await fetchTeams()
+      router.refresh()
     } catch (err) {
       setReinviteError(err instanceof Error ? err.message : "Failed to update invite")
     } finally {

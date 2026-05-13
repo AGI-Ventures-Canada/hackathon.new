@@ -78,6 +78,11 @@ export function TeamEditDialog({
 
   const hasChanges = Object.keys(payload).length > 0
 
+  const currentCaptainMissing = Boolean(
+    initial.captainClerkUserId
+      && !members.some((m) => m.clerkUserId === initial.captainClerkUserId)
+  )
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     if (!name.trim()) {
@@ -165,32 +170,28 @@ export function TeamEditDialog({
               <p className="text-sm text-muted-foreground">
                 Add a member before you can pick a captain.
               </p>
-            ) : (() => {
-              const currentCaptainMissing = initial.captainClerkUserId
-                && !members.some((m) => m.clerkUserId === initial.captainClerkUserId)
-              return (
-                <Select
-                  value={captainId ?? ""}
-                  onValueChange={(v) => setCaptainId(v)}
-                >
-                  <SelectTrigger id="team-edit-captain">
-                    <SelectValue placeholder="Pick a captain" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {currentCaptainMissing && initial.captainClerkUserId && (
-                      <SelectItem value={initial.captainClerkUserId} disabled>
-                        Current captain (no longer on team)
-                      </SelectItem>
-                    )}
-                    {members.map((m) => (
-                      <SelectItem key={m.clerkUserId} value={m.clerkUserId}>
-                        {m.displayName ?? m.email ?? m.clerkUserId}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )
-            })()}
+            ) : (
+              <Select
+                value={captainId ?? ""}
+                onValueChange={(v) => setCaptainId(v)}
+              >
+                <SelectTrigger id="team-edit-captain">
+                  <SelectValue placeholder="Pick a captain" />
+                </SelectTrigger>
+                <SelectContent>
+                  {currentCaptainMissing && initial.captainClerkUserId && (
+                    <SelectItem value={initial.captainClerkUserId} disabled>
+                      Current captain (no longer on team)
+                    </SelectItem>
+                  )}
+                  {members.map((m) => (
+                    <SelectItem key={m.clerkUserId} value={m.clerkUserId}>
+                      {m.displayName ?? m.email ?? m.clerkUserId}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           {error && <p className="text-destructive text-sm">{error}</p>}

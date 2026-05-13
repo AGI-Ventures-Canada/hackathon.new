@@ -53,11 +53,13 @@ async function fetchParticipant(
   }
 }
 
+type PromoteCaptainResult = { ok: true; successor: string | null } | { ok: false }
+
 async function promoteNextCaptain(
   client: SupabaseClient,
   teamId: string,
   excludeClerkUserId: string,
-): Promise<string | null> {
+): Promise<PromoteCaptainResult> {
   const { data: candidates, error } = await client
     .from("hackathon_participants")
     .select("clerk_user_id, registered_at")
@@ -68,29 +70,27 @@ async function promoteNextCaptain(
 
   if (error) {
     console.error("Failed to find captain successor:", error)
-    return null
+    return { ok: false }
   }
 
   const next = candidates?.[0] as { clerk_user_id: string } | undefined
   const successor = next?.clerk_user_id ?? null
 
-  const updatePayload = {
-    captain_clerk_user_id: successor,
-    pending_captain_email: null,
-    updated_at: new Date().toISOString(),
-  }
-
   const { error: updateErr } = await client
     .from("teams")
-    .update(updatePayload)
+    .update({
+      captain_clerk_user_id: successor,
+      pending_captain_email: null,
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", teamId)
 
   if (updateErr) {
     console.error("Failed to reassign captain:", updateErr)
-    return null
+    return { ok: false }
   }
 
-  return successor
+  return { ok: true, successor }
 }
 
 async function isCaptainOf(client: SupabaseClient, teamId: string, clerkUserId: string): Promise<boolean> {
@@ -157,7 +157,8 @@ export async function assignParticipantToTeam(
   if (participant.team_id && participant.team_id !== newTeamId) {
     const wasCaptain = await isCaptainOf(client, participant.team_id, participant.clerk_user_id)
     if (wasCaptain) {
-      await promoteNextCaptain(client, participant.team_id, participant.clerk_user_id)
+      const promotion = await promoteNextCaptain(client, participant.team_id, participant.clerk_user_id)
+      if (!promotion.ok) return { error: "Failed to reassign captain", code: "failed" }
       capacityHandedOff = true
     }
   }
@@ -203,7 +204,8 @@ export async function updateParticipantRole(
   if (leavingParticipantRole && participant.team_id) {
     const wasCaptain = await isCaptainOf(client, participant.team_id, participant.clerk_user_id)
     if (wasCaptain) {
-      await promoteNextCaptain(client, participant.team_id, participant.clerk_user_id)
+      const promotion = await promoteNextCaptain(client, participant.team_id, participant.clerk_user_id)
+      if (!promotion.ok) return { error: "Failed to reassign captain", code: "failed" }
       capacityHandedOff = true
     }
   }
@@ -248,7 +250,8 @@ export async function removeParticipantFromEvent(
   if (participant.team_id) {
     const wasCaptain = await isCaptainOf(client, participant.team_id, participant.clerk_user_id)
     if (wasCaptain) {
-      await promoteNextCaptain(client, participant.team_id, participant.clerk_user_id)
+      const promotion = await promoteNextCaptain(client, participant.team_id, participant.clerk_user_id)
+      if (!promotion.ok) return { error: "Failed to reassign captain", code: "failed" }
       capacityHandedOff = true
     }
   }

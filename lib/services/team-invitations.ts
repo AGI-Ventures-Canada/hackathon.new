@@ -376,6 +376,7 @@ export async function replaceTeamCaptainInvitation(
     .from("team_invitations")
     .update({ status: "cancelled", updated_at: new Date().toISOString() })
     .eq("team_id", teamId)
+    .eq("hackathon_id", hackathonId)
     .eq("status", "pending")
     .eq("is_captain_invite", true)
     .select("id")
