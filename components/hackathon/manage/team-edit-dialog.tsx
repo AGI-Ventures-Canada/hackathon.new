@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -51,6 +52,7 @@ export function TeamEditDialog({
   members,
   onSaved,
 }: Props) {
+  const router = useRouter()
   const [name, setName] = useState(initial.name)
   const [mode, setMode] = useState<TeamEditValues["mode"]>(initial.mode)
   const [captainId, setCaptainId] = useState<string | null>(initial.captainClerkUserId)
@@ -93,6 +95,7 @@ export function TeamEditDialog({
       }).then(assertOk)
       onSaved({ name: name.trim(), mode, captainClerkUserId: captainId })
       onOpenChange(false)
+      router.refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save")
     } finally {

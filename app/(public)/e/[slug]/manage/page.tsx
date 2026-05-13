@@ -340,6 +340,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
                 maxTeamSize={hackathon.max_team_size ?? 5}
                 minTeamSize={hackathon.min_team_size ?? 1}
                 allowSolo={hackathon.allow_solo ?? true}
+                hackathonStatus={hackathon.status}
               />
             </TabsContent>
 

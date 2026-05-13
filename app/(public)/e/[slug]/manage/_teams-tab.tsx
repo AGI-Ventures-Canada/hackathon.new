@@ -133,11 +133,14 @@ type TeamsTabProps = {
   maxTeamSize: number
   minTeamSize: number
   allowSolo: boolean
+  hackathonStatus: string | null
 }
+
+const STATUS_LOCKS_TEAM_DELETE = new Set(["judging", "completed", "archived"])
 
 const UNASSIGNED_ROOM = "__unassigned__"
 
-export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: initialMin, allowSolo: initialSolo }: TeamsTabProps) {
+export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: initialMin, allowSolo: initialSolo, hackathonStatus }: TeamsTabProps) {
   const router = useRouter()
   const ctx = useActionItemsOptional()
   const [teams, setTeams] = useState<Team[]>([])
@@ -319,6 +322,9 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
   }
 
   function deleteBlockReason(team: Team): string | null {
+    if (hackathonStatus && STATUS_LOCKS_TEAM_DELETE.has(hackathonStatus)) {
+      return "Teams can't be deleted once judging has started"
+    }
     if (team.submission) return "This team has a submission. Delete the submission first."
     return null
   }

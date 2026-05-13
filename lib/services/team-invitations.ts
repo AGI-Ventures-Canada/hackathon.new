@@ -411,16 +411,17 @@ export async function replaceTeamCaptainInvitation(
   if (!isDraft) {
     let inviterName = "The organizer"
     let inviterEmail: string | undefined
-    try {
-      const { clerkClient } = await import("@clerk/nextjs/server")
-      const clerk = await clerkClient()
-      const organizer = await clerk.users.getUser(invitedByClerkUserId)
-      if (organizer.firstName) {
-        inviterName = organizer.firstName + (organizer.lastName ? ` ${organizer.lastName}` : "")
+    if (invitedByClerkUserId !== "system") {
+      try {
+        const { clerkClient } = await import("@clerk/nextjs/server")
+        const clerk = await clerkClient()
+        const organizer = await clerk.users.getUser(invitedByClerkUserId)
+        if (organizer.firstName) {
+          inviterName = organizer.firstName + (organizer.lastName ? ` ${organizer.lastName}` : "")
+        }
+        inviterEmail = organizer.primaryEmailAddress?.emailAddress
+      } catch {
       }
-      inviterEmail = organizer.primaryEmailAddress?.emailAddress
-    } catch {
-      // fallback to defaults
     }
 
     const emailInput = {
