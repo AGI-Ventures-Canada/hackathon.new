@@ -549,7 +549,9 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
       )}
       {roomError && <p className="text-sm text-destructive">{roomError}</p>}
       {(actionError || remindError) && (
-        <p className="text-sm text-destructive">{actionError ?? remindError}</p>
+        <p className="text-sm text-destructive">
+          {[actionError, remindError].filter(Boolean).join(" · ")}
+        </p>
       )}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-muted-foreground">
@@ -848,52 +850,57 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                                     Members
                                   </div>
                                   <div className="rounded-md border bg-background p-3">
-                                    {team.pendingCaptainInvitationId && team.pendingCaptainEmail && (
-                                      <div className="flex items-center gap-2 text-sm">
-                                        <Mail className="size-3 text-muted-foreground shrink-0" />
-                                        <span className="text-muted-foreground truncate">{team.pendingCaptainEmail}</span>
-                                        {team.pendingCaptainRemindedAt ? (
-                                          <Badge variant="secondary" className="ml-auto font-normal">
-                                            <Bell className="mr-1 size-3" />
-                                            Reminded
-                                          </Badge>
-                                        ) : (
-                                          <Badge variant="secondary" className="ml-auto font-normal">Pending</Badge>
-                                        )}
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          className="size-6"
-                                          aria-label={`Send reminder to ${team.pendingCaptainEmail}`}
-                                          title="Send reminder"
-                                          onClick={() => handleResendInvite({ team, invitationId: team.pendingCaptainInvitationId! })}
-                                        >
-                                          <Bell className="size-3.5" />
-                                        </Button>
-                                        <DropdownMenu>
-                                          <DropdownMenuTrigger asChild>
-                                            <Button variant="ghost" size="icon" className="size-6" aria-label="Captain invite actions">
-                                              <MoreHorizontal className="size-3.5" />
-                                            </Button>
-                                          </DropdownMenuTrigger>
-                                          <DropdownMenuContent align="end">
-                                            <DropdownMenuItem onSelect={() => {
-                                              setReinviteTarget({ team, invitationId: team.pendingCaptainInvitationId!, previousEmail: team.pendingCaptainEmail! })
-                                              setReinviteEmail("")
-                                              setReinviteError(null)
-                                            }}>
-                                              <Pencil className="size-4" />
-                                              Change email
-                                            </DropdownMenuItem>
-                                            <DropdownMenuSeparator />
-                                            <DropdownMenuItem variant="destructive" onSelect={() => handleCancelInvite(team, team.pendingCaptainInvitationId!)}>
-                                              <X className="size-4" />
-                                              Cancel invite
-                                            </DropdownMenuItem>
-                                          </DropdownMenuContent>
-                                        </DropdownMenu>
-                                      </div>
-                                    )}
+                                    {(() => {
+                                      const captainInvitationId = team.pendingCaptainInvitationId
+                                      const captainEmail = team.pendingCaptainEmail
+                                      if (!captainInvitationId || !captainEmail) return null
+                                      return (
+                                        <div className="flex items-center gap-2 text-sm">
+                                          <Mail className="size-3 text-muted-foreground shrink-0" />
+                                          <span className="text-muted-foreground truncate">{captainEmail}</span>
+                                          {team.pendingCaptainRemindedAt ? (
+                                            <Badge variant="secondary" className="ml-auto font-normal">
+                                              <Bell className="mr-1 size-3" />
+                                              Reminded
+                                            </Badge>
+                                          ) : (
+                                            <Badge variant="secondary" className="ml-auto font-normal">Pending</Badge>
+                                          )}
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="size-6"
+                                            aria-label={`Send reminder to ${captainEmail}`}
+                                            title="Send reminder"
+                                            onClick={() => handleResendInvite({ team, invitationId: captainInvitationId })}
+                                          >
+                                            <Bell className="size-3.5" />
+                                          </Button>
+                                          <DropdownMenu>
+                                            <DropdownMenuTrigger asChild>
+                                              <Button variant="ghost" size="icon" className="size-6" aria-label="Captain invite actions">
+                                                <MoreHorizontal className="size-3.5" />
+                                              </Button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent align="end">
+                                              <DropdownMenuItem onSelect={() => {
+                                                setReinviteTarget({ team, invitationId: captainInvitationId, previousEmail: captainEmail })
+                                                setReinviteEmail("")
+                                                setReinviteError(null)
+                                              }}>
+                                                <Pencil className="size-4" />
+                                                Change email
+                                              </DropdownMenuItem>
+                                              <DropdownMenuSeparator />
+                                              <DropdownMenuItem variant="destructive" onSelect={() => handleCancelInvite(team, captainInvitationId)}>
+                                                <X className="size-4" />
+                                                Cancel invite
+                                              </DropdownMenuItem>
+                                            </DropdownMenuContent>
+                                          </DropdownMenu>
+                                        </div>
+                                      )
+                                    })()}
                                     {team.members.length === 0 && !team.pendingCaptainEmail ? (
                                       <p className="text-sm text-muted-foreground">No members yet</p>
                                     ) : (

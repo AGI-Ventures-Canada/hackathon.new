@@ -225,7 +225,9 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
       </div>
 
       {(actionError || remindError) && (
-        <p className="text-sm text-destructive">{actionError ?? remindError}</p>
+        <p className="text-sm text-destructive">
+          {[actionError, remindError].filter(Boolean).join(" · ")}
+        </p>
       )}
 
       {people.length === 0 ? (
