@@ -416,6 +416,7 @@ export async function replaceTeamCaptainInvitation(
     .from("teams")
     .update({ pending_captain_email: normalized, updated_at: new Date().toISOString() })
     .eq("id", teamId)
+    .eq("hackathon_id", hackathonId)
 
   const isDraft = hackathon.status === "draft"
 
@@ -582,11 +583,11 @@ export async function remindTeamInvitationAsOrganizer(
 
   const { data: invitation, error: fetchError } = await client
     .from("team_invitations")
-    .select("*")
+    .select("id, status, expires_at")
     .eq("id", invitationId)
     .eq("team_id", teamId)
     .eq("hackathon_id", hackathonId)
-    .single()
+    .maybeSingle()
 
   if (fetchError || !invitation) {
     return { success: false, error: "Invitation not found", code: "not_found" }

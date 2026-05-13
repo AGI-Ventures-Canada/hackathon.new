@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useSyncExternalStore } from "react"
 import { useRouter } from "next/navigation"
+import { useOptimisticList } from "@/hooks/use-optimistic-list"
 import { Download, Search, MoreHorizontal, UserCog, UserMinus, Users as UsersIcon, Send, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -61,7 +62,8 @@ function parsePendingId(id: string): { kind: "team" | "judge"; invitationId: str
 
 export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hackathonStatus }: PeopleTabClientProps) {
   const router = useRouter()
-  const [people, setPeople] = useState(initialPeople)
+  const list = useOptimisticList({ items: initialPeople, getId: (p) => p.id })
+  const people = list.visibleItems
   const [query, setQuery] = useState("")
   const [removingPerson, setRemovingPerson] = useState<Person | null>(null)
   const [removing, setRemoving] = useState(false)
@@ -104,9 +106,8 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
 
   async function handleAssignTeam(person: Person, nextTeamId: string | null) {
     if (person.teamId === nextTeamId) return
-    const prev = people
     const nextTeamName = nextTeamId ? teams.find((t) => t.id === nextTeamId)?.name ?? null : null
-    setPeople((cur) => cur.map((p) => (p.id === person.id ? { ...p, teamId: nextTeamId, teamName: nextTeamName, isCaptain: false } : p)))
+    list.setLocalEdit(person.id, { teamId: nextTeamId, teamName: nextTeamName, isCaptain: false })
     try {
       await fetch(`/api/dashboard/hackathons/${hackathonId}/participants/${person.id}`, {
         method: "PATCH",
@@ -115,18 +116,18 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
       }).then(assertOk)
       router.refresh()
     } catch (err) {
-      setPeople(prev)
+      list.clearLocalEdit(person.id)
       showError(err instanceof Error ? err.message : "Failed to update team")
     }
   }
 
   async function handleChangeRole(person: Person, nextRole: PersonRole) {
     if (person.role === nextRole) return
-    const prev = people
     const droppingFromTeam = person.role === "participant" && nextRole !== "participant"
-    setPeople((cur) => cur.map((p) => (p.id === person.id
-      ? { ...p, role: nextRole, teamId: droppingFromTeam ? null : p.teamId, teamName: droppingFromTeam ? null : p.teamName, isCaptain: droppingFromTeam ? false : p.isCaptain }
-      : p)))
+    const patch: Partial<Person> = droppingFromTeam
+      ? { role: nextRole, teamId: null, teamName: null, isCaptain: false }
+      : { role: nextRole }
+    list.setLocalEdit(person.id, patch)
     try {
       await fetch(`/api/dashboard/hackathons/${hackathonId}/participants/${person.id}`, {
         method: "PATCH",
@@ -135,15 +136,14 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
       }).then(assertOk)
       router.refresh()
     } catch (err) {
-      setPeople(prev)
+      list.clearLocalEdit(person.id)
       showError(err instanceof Error ? err.message : "Failed to change role")
     }
   }
 
   async function handleRemoveFromEvent(person: Person) {
     setRemoving(true)
-    const prev = people
-    setPeople((cur) => cur.filter((p) => p.id !== person.id))
+    list.hideItem(person.id)
     try {
       await fetch(`/api/dashboard/hackathons/${hackathonId}/participants/${person.id}`, {
         method: "DELETE",
@@ -151,7 +151,7 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
       setRemovingPerson(null)
       router.refresh()
     } catch (err) {
-      setPeople(prev)
+      list.unhideItem(person.id)
       showError(err instanceof Error ? err.message : "Failed to remove person")
     } finally {
       setRemoving(false)
@@ -196,15 +196,14 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
       showError("Missing team for invite")
       return
     }
-    const prev = people
-    setPeople((cur) => cur.filter((p) => p.id !== person.id))
+    list.hideItem(person.id)
     try {
       await fetch(`/api/dashboard/hackathons/${hackathonId}/teams/${person.teamId}/invitations/${parsed.invitationId}`, {
         method: "DELETE",
       }).then(assertOk)
       router.refresh()
     } catch (err) {
-      setPeople(prev)
+      list.unhideItem(person.id)
       showError(err instanceof Error ? err.message : "Failed to cancel invite")
     }
   }

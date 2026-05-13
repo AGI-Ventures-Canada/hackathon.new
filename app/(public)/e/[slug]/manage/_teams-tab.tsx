@@ -348,9 +348,15 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
   }
 
   async function handleRemoveMember(team: Team, member: TeamMember) {
-    const snapshot = team.members
+    const snapshotMembers = team.members
+    const snapshotCaptain = team.captainClerkUserId
     const nextMembers = team.members.filter((m) => m.clerkUserId !== member.clerkUserId)
-    setTeams((prev) => prev.map((t) => (t.id === team.id ? { ...t, members: nextMembers } : t)))
+    const removedCaptain = team.captainClerkUserId === member.clerkUserId
+    setTeams((prev) => prev.map((t) => (t.id === team.id ? {
+      ...t,
+      members: nextMembers,
+      captainClerkUserId: removedCaptain ? null : t.captainClerkUserId,
+    } : t)))
     try {
       await fetch(`/api/dashboard/hackathons/${hackathonId}/teams/${team.id}/members`, {
         method: "PATCH",
@@ -359,7 +365,11 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
       }).then(assertOk)
       router.refresh()
     } catch (err) {
-      setTeams((prev) => prev.map((t) => (t.id === team.id ? { ...t, members: snapshot } : t)))
+      setTeams((prev) => prev.map((t) => (t.id === team.id ? {
+        ...t,
+        members: snapshotMembers,
+        captainClerkUserId: snapshotCaptain,
+      } : t)))
       showActionError(err instanceof Error ? err.message : "Failed to remove member")
     }
   }
