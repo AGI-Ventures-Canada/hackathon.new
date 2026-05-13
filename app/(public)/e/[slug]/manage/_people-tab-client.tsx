@@ -3,7 +3,6 @@
 import { useMemo, useState, useSyncExternalStore } from "react"
 import { useRouter } from "next/navigation"
 import { useOptimisticList } from "@/hooks/use-optimistic-list"
-import { useOptimisticMutation } from "@/hooks/use-optimistic-mutation"
 import { Bell, Download, Search, MoreHorizontal, UserCog, UserMinus, Users as UsersIcon, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -69,6 +68,8 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
   const [removingPerson, setRemovingPerson] = useState<Person | null>(null)
   const [removing, setRemoving] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [remindError, setRemindError] = useState<string | null>(null)
+  const [remindPendingIds, setRemindPendingIds] = useState<Set<string>>(new Set())
 
   const isClient = useSyncExternalStore(emptySubscribe, () => true, () => false)
   const csvHref = useMemo(() => {
@@ -96,6 +97,11 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
   function showError(message: string) {
     setActionError(message)
     setTimeout(() => setActionError(null), 8000)
+  }
+
+  function showRemindError(message: string) {
+    setRemindError(message)
+    setTimeout(() => setRemindError(null), 8000)
   }
 
   async function handleAssignTeam(person: Person, nextTeamId: string | null) {
@@ -152,27 +158,36 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
     }
   }
 
-  const { execute: handleRemind, isPending: remindPending, error: remindError } = useOptimisticMutation({
-    fn: async (person: Person) => {
-      const parsed = parsePendingId(person.id)
-      if (!parsed) throw new Error("This row has no invitation to remind")
-      if (parsed.kind === "team") {
-        if (!person.teamId) throw new Error("Missing team for invite")
-        await fetch(
-          `/api/dashboard/hackathons/${hackathonId}/teams/${person.teamId}/invitations/${parsed.invitationId}/remind`,
-          { method: "POST" },
-        ).then(assertOk)
-        return
-      }
-      await fetch(
-        `/api/dashboard/hackathons/${hackathonId}/judging/invitations/${parsed.invitationId}/remind`,
-        { method: "POST" },
-      ).then(assertOk)
-    },
-    onOptimistic: (person) =>
-      list.setLocalEdit(person.id, { remindedAt: new Date().toISOString() }),
-    onRevert: (person) => list.clearLocalEdit(person.id),
-  })
+  async function handleRemind(person: Person) {
+    const parsed = parsePendingId(person.id)
+    if (!parsed) {
+      showRemindError("This row has no invitation to remind")
+      return
+    }
+    if (parsed.kind === "team" && !person.teamId) {
+      showRemindError("Missing team for invite")
+      return
+    }
+    if (remindPendingIds.has(parsed.invitationId)) return
+    setRemindPendingIds((prev) => new Set(prev).add(parsed.invitationId))
+    list.setLocalEdit(person.id, { remindedAt: new Date().toISOString() })
+    try {
+      const url = parsed.kind === "team"
+        ? `/api/dashboard/hackathons/${hackathonId}/teams/${person.teamId}/invitations/${parsed.invitationId}/remind`
+        : `/api/dashboard/hackathons/${hackathonId}/judging/invitations/${parsed.invitationId}/remind`
+      await fetch(url, { method: "POST" }).then(assertOk)
+      router.refresh()
+    } catch (err) {
+      list.clearLocalEdit(person.id)
+      showRemindError(err instanceof Error ? err.message : "Failed to send reminder")
+    } finally {
+      setRemindPendingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(parsed.invitationId)
+        return next
+      })
+    }
+  }
 
   async function handleCancelInvite(person: Person) {
     const parsed = parsePendingId(person.id)
@@ -300,7 +315,7 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
                             className="size-8"
                             aria-label={`Send reminder to ${p.email ?? "invitee"}`}
                             title="Send reminder"
-                            disabled={remindPending}
+                            disabled={!!parsedPending && remindPendingIds.has(parsedPending.invitationId)}
                             onClick={() => handleRemind(p)}
                           >
                             <Bell className="size-4" />

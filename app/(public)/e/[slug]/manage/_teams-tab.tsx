@@ -3,7 +3,6 @@
 import { Fragment, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { assertOk, assertOkJson } from "@/lib/utils/fetch"
-import { useOptimisticMutation } from "@/hooks/use-optimistic-mutation"
 import {
   Loader2, Plus, Users, ChevronRight, FileText, Crown, Mail, Settings2, MoreHorizontal, Pencil, Trash2, Bell, X, UserMinus,
 } from "lucide-react"
@@ -167,6 +166,8 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
   const [reinviteEmail, setReinviteEmail] = useState("")
   const [reinviteBusy, setReinviteBusy] = useState(false)
   const [reinviteError, setReinviteError] = useState<string | null>(null)
+  const [remindError, setRemindError] = useState<string | null>(null)
+  const [remindPendingIds, setRemindPendingIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     if (!ctx) return
@@ -394,46 +395,52 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
     }
   }
 
-  const remindSnapshotsRef = useRef<Map<string, { pendingInvitations: TeamPendingInvitation[]; pendingCaptainRemindedAt: string | null }>>(new Map())
+  function showRemindError(message: string) {
+    setRemindError(message)
+    setTimeout(() => setRemindError(null), 8000)
+  }
 
-  const { execute: handleResendInvite, isPending: remindPending, error: remindError } = useOptimisticMutation({
-    fn: ({ team, invitationId }: { team: Team; invitationId: string }) =>
-      fetch(
-        `/api/dashboard/hackathons/${hackathonId}/teams/${team.id}/invitations/${invitationId}/remind`,
-        { method: "POST" },
-      ).then(assertOk),
-    onOptimistic: ({ team, invitationId }) => {
-      const now = new Date().toISOString()
-      const wasCaptainInvite = team.pendingCaptainInvitationId === invitationId
-      setTeams((prev) => prev.map((t) => {
-        if (t.id !== team.id) return t
-        remindSnapshotsRef.current.set(invitationId, {
-          pendingInvitations: t.pendingInvitations,
-          pendingCaptainRemindedAt: t.pendingCaptainRemindedAt,
-        })
-        return {
-          ...t,
-          pendingCaptainRemindedAt: wasCaptainInvite ? now : t.pendingCaptainRemindedAt,
-          pendingInvitations: t.pendingInvitations.map((inv) =>
-            inv.id === invitationId ? { ...inv, remindedAt: now } : inv,
-          ),
-        }
-      }))
-    },
-    onSuccess: (_, { invitationId }) => {
-      remindSnapshotsRef.current.delete(invitationId)
-    },
-    onRevert: ({ team, invitationId }) => {
-      const snapshot = remindSnapshotsRef.current.get(invitationId)
-      if (!snapshot) return
-      remindSnapshotsRef.current.delete(invitationId)
-      setTeams((prev) => prev.map((t) => (
-        t.id === team.id
-          ? { ...t, pendingInvitations: snapshot.pendingInvitations, pendingCaptainRemindedAt: snapshot.pendingCaptainRemindedAt }
-          : t
-      )))
-    },
-  })
+  async function handleResendInvite(team: Team, invitationId: string) {
+    if (remindPendingIds.has(invitationId)) return
+    const now = new Date().toISOString()
+    const wasCaptainInvite = team.pendingCaptainInvitationId === invitationId
+    let snapshot: { pendingInvitations: TeamPendingInvitation[]; pendingCaptainRemindedAt: string | null } | null = null
+    setRemindPendingIds((prev) => new Set(prev).add(invitationId))
+    setTeams((prev) => prev.map((t) => {
+      if (t.id !== team.id) return t
+      snapshot = {
+        pendingInvitations: t.pendingInvitations,
+        pendingCaptainRemindedAt: t.pendingCaptainRemindedAt,
+      }
+      return {
+        ...t,
+        pendingCaptainRemindedAt: wasCaptainInvite ? now : t.pendingCaptainRemindedAt,
+        pendingInvitations: t.pendingInvitations.map((inv) =>
+          inv.id === invitationId ? { ...inv, remindedAt: now } : inv,
+        ),
+      }
+    }))
+    try {
+      await fetch(`/api/dashboard/hackathons/${hackathonId}/teams/${team.id}/invitations/${invitationId}/remind`, {
+        method: "POST",
+      }).then(assertOk)
+      router.refresh()
+    } catch (err) {
+      if (snapshot) {
+        const { pendingInvitations, pendingCaptainRemindedAt } = snapshot
+        setTeams((prev) => prev.map((t) => (
+          t.id === team.id ? { ...t, pendingInvitations, pendingCaptainRemindedAt } : t
+        )))
+      }
+      showRemindError(err instanceof Error ? err.message : "Failed to send reminder")
+    } finally {
+      setRemindPendingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(invitationId)
+        return next
+      })
+    }
+  }
 
   async function handleCancelInvite(team: Team, invitationId: string) {
     const wasCaptainInvite = team.pendingCaptainInvitationId === invitationId
@@ -872,8 +879,8 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                                             className="size-6"
                                             aria-label={`Send reminder to ${captainEmail}`}
                                             title="Send reminder"
-                                            disabled={remindPending}
-                                            onClick={() => handleResendInvite({ team, invitationId: captainInvitationId })}
+                                            disabled={remindPendingIds.has(captainInvitationId)}
+                                            onClick={() => handleResendInvite(team, captainInvitationId)}
                                           >
                                             <Bell className="size-3.5" />
                                           </Button>
@@ -968,8 +975,8 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                                               className="size-6"
                                               aria-label={`Send reminder to ${inv.email}`}
                                               title="Send reminder"
-                                              disabled={remindPending}
-                                              onClick={() => handleResendInvite({ team, invitationId: inv.id })}
+                                              disabled={remindPendingIds.has(inv.id)}
+                                              onClick={() => handleResendInvite(team, inv.id)}
                                             >
                                               <Bell className="size-3.5" />
                                             </Button>
