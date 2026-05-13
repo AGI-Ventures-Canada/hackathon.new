@@ -396,7 +396,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
 
   const remindSnapshotsRef = useRef<Map<string, { pendingInvitations: TeamPendingInvitation[]; pendingCaptainRemindedAt: string | null }>>(new Map())
 
-  const { execute: handleResendInvite, error: remindError } = useOptimisticMutation({
+  const { execute: handleResendInvite, isPending: remindPending, error: remindError } = useOptimisticMutation({
     fn: ({ team, invitationId }: { team: Team; invitationId: string }) =>
       fetch(
         `/api/dashboard/hackathons/${hackathonId}/teams/${team.id}/invitations/${invitationId}/remind`,
@@ -872,6 +872,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                                             className="size-6"
                                             aria-label={`Send reminder to ${captainEmail}`}
                                             title="Send reminder"
+                                            disabled={remindPending}
                                             onClick={() => handleResendInvite({ team, invitationId: captainInvitationId })}
                                           >
                                             <Bell className="size-3.5" />
@@ -967,6 +968,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                                               className="size-6"
                                               aria-label={`Send reminder to ${inv.email}`}
                                               title="Send reminder"
+                                              disabled={remindPending}
                                               onClick={() => handleResendInvite({ team, invitationId: inv.id })}
                                             >
                                               <Bell className="size-3.5" />

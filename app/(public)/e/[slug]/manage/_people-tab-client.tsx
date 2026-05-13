@@ -152,7 +152,7 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
     }
   }
 
-  const { execute: handleRemind, error: remindError } = useOptimisticMutation({
+  const { execute: handleRemind, isPending: remindPending, error: remindError } = useOptimisticMutation({
     fn: async (person: Person) => {
       const parsed = parsePendingId(person.id)
       if (!parsed) throw new Error("This row has no invitation to remind")
@@ -300,6 +300,7 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
                             className="size-8"
                             aria-label={`Send reminder to ${p.email ?? "invitee"}`}
                             title="Send reminder"
+                            disabled={remindPending}
                             onClick={() => handleRemind(p)}
                           >
                             <Bell className="size-4" />
