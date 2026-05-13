@@ -4,7 +4,7 @@ import { Fragment, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { assertOk, assertOkJson } from "@/lib/utils/fetch"
 import {
-  Loader2, Plus, Users, ChevronRight, FileText, Crown, Mail, Settings2, MoreHorizontal, Pencil, Trash2, Send, X, UserMinus,
+  Loader2, Plus, Users, ChevronRight, FileText, Crown, Mail, Settings2, MoreHorizontal, Pencil, Trash2, Bell, X, UserMinus,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -81,6 +81,7 @@ type TeamPendingInvitation = {
   email: string
   isCaptainInvite: boolean
   createdAt: string
+  remindedAt: string | null
 }
 
 type Team = {
@@ -91,6 +92,7 @@ type Team = {
   captainClerkUserId: string | null
   pendingCaptainEmail: string | null
   pendingCaptainInvitationId: string | null
+  pendingCaptainRemindedAt: string | null
   pendingInvitations: TeamPendingInvitation[]
   members: TeamMember[]
   submission: TeamSubmission | null
@@ -164,7 +166,8 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
   const [reinviteEmail, setReinviteEmail] = useState("")
   const [reinviteBusy, setReinviteBusy] = useState(false)
   const [reinviteError, setReinviteError] = useState<string | null>(null)
-  const [resendingIds, setResendingIds] = useState<Set<string>>(new Set())
+  const [remindError, setRemindError] = useState<string | null>(null)
+  const [remindPendingIds, setRemindPendingIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     if (!ctx) return
@@ -283,6 +286,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
       captainClerkUserId: null,
       pendingCaptainEmail: email,
       pendingCaptainInvitationId: null,
+      pendingCaptainRemindedAt: null,
       pendingInvitations: [],
       members: [],
       submission: null,
@@ -391,19 +395,46 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
     }
   }
 
+  function showRemindError(message: string) {
+    setRemindError(message)
+    setTimeout(() => setRemindError(null), 8000)
+  }
+
   async function handleResendInvite(team: Team, invitationId: string) {
-    if (resendingIds.has(invitationId)) return
-    setResendingIds((prev) => new Set(prev).add(invitationId))
+    if (remindPendingIds.has(invitationId)) return
+    const now = new Date().toISOString()
+    const wasCaptainInvite = team.pendingCaptainInvitationId === invitationId
+    let snapshot: { pendingInvitations: TeamPendingInvitation[]; pendingCaptainRemindedAt: string | null } | null = null
+    setRemindPendingIds((prev) => new Set(prev).add(invitationId))
+    setTeams((prev) => prev.map((t) => {
+      if (t.id !== team.id) return t
+      snapshot = {
+        pendingInvitations: t.pendingInvitations,
+        pendingCaptainRemindedAt: t.pendingCaptainRemindedAt,
+      }
+      return {
+        ...t,
+        pendingCaptainRemindedAt: wasCaptainInvite ? now : t.pendingCaptainRemindedAt,
+        pendingInvitations: t.pendingInvitations.map((inv) =>
+          inv.id === invitationId ? { ...inv, remindedAt: now } : inv,
+        ),
+      }
+    }))
     try {
       await fetch(`/api/dashboard/hackathons/${hackathonId}/teams/${team.id}/invitations/${invitationId}/remind`, {
         method: "POST",
       }).then(assertOk)
-      setInviteSuccess(`Reminder sent for ${team.name}`)
-      setTimeout(() => setInviteSuccess(null), 5000)
+      router.refresh()
     } catch (err) {
-      showActionError(err instanceof Error ? err.message : "Failed to resend invite")
+      if (snapshot) {
+        const { pendingInvitations, pendingCaptainRemindedAt } = snapshot
+        setTeams((prev) => prev.map((t) => (
+          t.id === team.id ? { ...t, pendingInvitations, pendingCaptainRemindedAt } : t
+        )))
+      }
+      showRemindError(err instanceof Error ? err.message : "Failed to send reminder")
     } finally {
-      setResendingIds((prev) => {
+      setRemindPendingIds((prev) => {
         const next = new Set(prev)
         next.delete(invitationId)
         return next
@@ -524,7 +555,11 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         </div>
       )}
       {roomError && <p className="text-sm text-destructive">{roomError}</p>}
-      {actionError && <p className="text-sm text-destructive">{actionError}</p>}
+      {(actionError || remindError) && (
+        <p className="text-sm text-destructive">
+          {[actionError, remindError].filter(Boolean).join(" · ")}
+        </p>
+      )}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-muted-foreground">
           {teams.length === 0
@@ -822,42 +857,58 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                                     Members
                                   </div>
                                   <div className="rounded-md border bg-background p-3">
-                                    {team.pendingCaptainInvitationId && team.pendingCaptainEmail && (
-                                      <div className="flex items-center gap-2 text-sm">
-                                        <Mail className="size-3 text-muted-foreground shrink-0" />
-                                        <span className="text-muted-foreground truncate">{team.pendingCaptainEmail}</span>
-                                        <Badge variant="secondary" className="ml-auto font-normal">Pending</Badge>
-                                        <DropdownMenu>
-                                          <DropdownMenuTrigger asChild>
-                                            <Button variant="ghost" size="icon" className="size-6" aria-label="Captain invite actions">
-                                              <MoreHorizontal className="size-3.5" />
-                                            </Button>
-                                          </DropdownMenuTrigger>
-                                          <DropdownMenuContent align="end">
-                                            <DropdownMenuItem
-                                              disabled={resendingIds.has(team.pendingCaptainInvitationId!)}
-                                              onSelect={() => handleResendInvite(team, team.pendingCaptainInvitationId!)}
-                                            >
-                                              <Send className="size-4" />
-                                              {resendingIds.has(team.pendingCaptainInvitationId!) ? "Sending…" : "Resend"}
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem onSelect={() => {
-                                              setReinviteTarget({ team, invitationId: team.pendingCaptainInvitationId!, previousEmail: team.pendingCaptainEmail! })
-                                              setReinviteEmail("")
-                                              setReinviteError(null)
-                                            }}>
-                                              <Pencil className="size-4" />
-                                              Change email
-                                            </DropdownMenuItem>
-                                            <DropdownMenuSeparator />
-                                            <DropdownMenuItem variant="destructive" onSelect={() => handleCancelInvite(team, team.pendingCaptainInvitationId!)}>
-                                              <X className="size-4" />
-                                              Cancel invite
-                                            </DropdownMenuItem>
-                                          </DropdownMenuContent>
-                                        </DropdownMenu>
-                                      </div>
-                                    )}
+                                    {(() => {
+                                      const captainInvitationId = team.pendingCaptainInvitationId
+                                      const captainEmail = team.pendingCaptainEmail
+                                      if (!captainInvitationId || !captainEmail) return null
+                                      return (
+                                        <div className="flex items-center gap-2 text-sm">
+                                          <Mail className="size-3 text-muted-foreground shrink-0" />
+                                          <span className="text-muted-foreground truncate">{captainEmail}</span>
+                                          {team.pendingCaptainRemindedAt ? (
+                                            <Badge variant="secondary" className="ml-auto font-normal">
+                                              <Bell className="mr-1 size-3" />
+                                              Reminded
+                                            </Badge>
+                                          ) : (
+                                            <Badge variant="secondary" className="ml-auto font-normal">Pending</Badge>
+                                          )}
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="size-6"
+                                            aria-label={`Send reminder to ${captainEmail}`}
+                                            title="Send reminder"
+                                            disabled={remindPendingIds.has(captainInvitationId)}
+                                            onClick={() => handleResendInvite(team, captainInvitationId)}
+                                          >
+                                            <Bell className="size-3.5" />
+                                          </Button>
+                                          <DropdownMenu>
+                                            <DropdownMenuTrigger asChild>
+                                              <Button variant="ghost" size="icon" className="size-6" aria-label="Captain invite actions">
+                                                <MoreHorizontal className="size-3.5" />
+                                              </Button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent align="end">
+                                              <DropdownMenuItem onSelect={() => {
+                                                setReinviteTarget({ team, invitationId: captainInvitationId, previousEmail: captainEmail })
+                                                setReinviteEmail("")
+                                                setReinviteError(null)
+                                              }}>
+                                                <Pencil className="size-4" />
+                                                Change email
+                                              </DropdownMenuItem>
+                                              <DropdownMenuSeparator />
+                                              <DropdownMenuItem variant="destructive" onSelect={() => handleCancelInvite(team, captainInvitationId)}>
+                                                <X className="size-4" />
+                                                Cancel invite
+                                              </DropdownMenuItem>
+                                            </DropdownMenuContent>
+                                          </DropdownMenu>
+                                        </div>
+                                      )
+                                    })()}
                                     {team.members.length === 0 && !team.pendingCaptainEmail ? (
                                       <p className="text-sm text-muted-foreground">No members yet</p>
                                     ) : (
@@ -910,7 +961,25 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                                           <li key={inv.id} className="flex items-center gap-2 text-sm">
                                             <Mail className="size-3 text-muted-foreground shrink-0" />
                                             <span className="text-muted-foreground truncate">{inv.email}</span>
-                                            <Badge variant="secondary" className="ml-auto font-normal">Pending</Badge>
+                                            {inv.remindedAt ? (
+                                              <Badge variant="secondary" className="ml-auto font-normal">
+                                                <Bell className="mr-1 size-3" />
+                                                Reminded
+                                              </Badge>
+                                            ) : (
+                                              <Badge variant="secondary" className="ml-auto font-normal">Pending</Badge>
+                                            )}
+                                            <Button
+                                              variant="ghost"
+                                              size="icon"
+                                              className="size-6"
+                                              aria-label={`Send reminder to ${inv.email}`}
+                                              title="Send reminder"
+                                              disabled={remindPendingIds.has(inv.id)}
+                                              onClick={() => handleResendInvite(team, inv.id)}
+                                            >
+                                              <Bell className="size-3.5" />
+                                            </Button>
                                             <DropdownMenu>
                                               <DropdownMenuTrigger asChild>
                                                 <Button variant="ghost" size="icon" className="size-6" aria-label={`Invite actions for ${inv.email}`}>
@@ -918,14 +987,6 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                                                 </Button>
                                               </DropdownMenuTrigger>
                                               <DropdownMenuContent align="end">
-                                                <DropdownMenuItem
-                                                  disabled={resendingIds.has(inv.id)}
-                                                  onSelect={() => handleResendInvite(team, inv.id)}
-                                                >
-                                                  <Send className="size-4" />
-                                                  {resendingIds.has(inv.id) ? "Sending…" : "Resend"}
-                                                </DropdownMenuItem>
-                                                <DropdownMenuSeparator />
                                                 <DropdownMenuItem variant="destructive" onSelect={() => handleCancelInvite(team, inv.id)}>
                                                   <X className="size-4" />
                                                   Cancel invite

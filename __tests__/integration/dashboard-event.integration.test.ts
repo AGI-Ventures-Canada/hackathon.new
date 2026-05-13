@@ -831,6 +831,7 @@ describe("Dashboard Event Routes Integration Tests", () => {
           teamName: null,
           isCaptain: false,
           joinedOrInvitedAt: "2026-05-01T00:00:00Z",
+          remindedAt: null,
         },
       ])
 
@@ -887,6 +888,7 @@ describe("Dashboard Event Routes Integration Tests", () => {
           teamName: null,
           isCaptain: false,
           joinedOrInvitedAt: "2026-05-01T00:00:00Z",
+          remindedAt: null,
         },
       ])
       mockPeopleToCsvRows.mockImplementationOnce((people: unknown) =>

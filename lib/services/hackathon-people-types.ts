@@ -11,6 +11,7 @@ export type Person = {
   teamName: string | null
   isCaptain: boolean
   joinedOrInvitedAt: string
+  remindedAt: string | null
 }
 
 export const ROLE_LABEL: Record<PersonRole, string> = {
