@@ -1,6 +1,7 @@
 "use client"
 
 import { Fragment, useEffect, useRef, useState } from "react"
+import { useRouter } from "next/navigation"
 import { assertOk, assertOkJson } from "@/lib/utils/fetch"
 import {
   Loader2, Plus, Users, ChevronRight, FileText, Crown, Mail, Settings2, MoreHorizontal, Pencil, Trash2, Send, X, UserMinus,
@@ -137,6 +138,7 @@ type TeamsTabProps = {
 const UNASSIGNED_ROOM = "__unassigned__"
 
 export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: initialMin, allowSolo: initialSolo }: TeamsTabProps) {
+  const router = useRouter()
   const ctx = useActionItemsOptional()
   const [teams, setTeams] = useState<Team[]>([])
   const [rooms, setRooms] = useState<{ id: string; name: string }[]>([])
@@ -329,6 +331,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         method: "DELETE",
       }).then(assertOk)
       setDeletingTeam(null)
+      router.refresh()
     } catch (err) {
       setTeams(snapshot)
       showActionError(err instanceof Error ? err.message : "Failed to delete team")
@@ -347,6 +350,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ remove: [member.clerkUserId] }),
       }).then(assertOk)
+      router.refresh()
     } catch (err) {
       setTeams((prev) => prev.map((t) => (t.id === team.id ? { ...t, members: snapshot } : t)))
       showActionError(err instanceof Error ? err.message : "Failed to remove member")
@@ -362,6 +366,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ captainClerkUserId: member.clerkUserId }),
       }).then(assertOk)
+      router.refresh()
     } catch (err) {
       setTeams((prev) => prev.map((t) => (t.id === team.id ? { ...t, captainClerkUserId: previous } : t)))
       showActionError(err instanceof Error ? err.message : "Failed to change captain")
@@ -396,6 +401,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
       await fetch(`/api/dashboard/hackathons/${hackathonId}/teams/${team.id}/invitations/${invitationId}`, {
         method: "DELETE",
       }).then(assertOk)
+      router.refresh()
     } catch (err) {
       setTeams(snapshot)
       showActionError(err instanceof Error ? err.message : "Failed to cancel invite")

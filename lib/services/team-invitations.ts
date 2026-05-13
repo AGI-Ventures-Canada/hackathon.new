@@ -552,6 +552,10 @@ export async function listTeamInvitations(
   return { success: true, invitations: data as TeamInvitation[] }
 }
 
+export type RemindTeamInvitationResult =
+  | { success: true; invitation: TeamInvitation }
+  | { success: false; error: string; code: string }
+
 export async function remindTeamInvitationAsOrganizer(
   invitationId: string,
   teamId: string,
@@ -597,10 +601,6 @@ export async function remindTeamInvitationAsOrganizer(
 
   return { success: true, invitation: updated as TeamInvitation }
 }
-
-export type RemindTeamInvitationResult =
-  | { success: true; invitation: TeamInvitation }
-  | { success: false; error: string; code: string }
 
 export async function remindTeamInvitation(
   invitationId: string,

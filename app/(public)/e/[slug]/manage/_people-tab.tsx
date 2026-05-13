@@ -11,7 +11,12 @@ export async function PeopleTab({ hackathonId }: PeopleTabProps) {
   const client = getSupabase()
   const [people, teamsRes, status] = await Promise.all([
     listHackathonPeople(hackathonId),
-    client.from("teams").select("id, name").eq("hackathon_id", hackathonId).order("name"),
+    client
+      .from("teams")
+      .select("id, name")
+      .eq("hackathon_id", hackathonId)
+      .neq("status", "disbanded")
+      .order("name"),
     getHackathonStatus(hackathonId),
   ])
 
