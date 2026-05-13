@@ -540,11 +540,11 @@ export async function listTeamsWithMembers(hackathonId: string): Promise<TeamWit
       email: inv.email,
       isCaptainInvite: !!inv.is_captain_invite,
       createdAt: inv.created_at,
-      remindedAt: inv.reminded_at ?? null,
+      remindedAt: inv.reminded_at,
     })
     if (inv.is_captain_invite && !captainInviteIdByTeam[inv.team_id]) {
       captainInviteIdByTeam[inv.team_id] = inv.id
-      captainInviteRemindedAtByTeam[inv.team_id] = inv.reminded_at ?? null
+      captainInviteRemindedAtByTeam[inv.team_id] = inv.reminded_at
     }
   }
 
