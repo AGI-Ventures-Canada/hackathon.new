@@ -70,6 +70,7 @@ import {
   Sliders,
   ClipboardList,
   Copy,
+  Check,
 } from "lucide-react"
 import { useActionItemsOptional } from "@/components/hackathon/manage/action-items-context"
 import { AddJudgeDialog, type AddJudgeResult } from "./add-judge-dialog"
@@ -662,6 +663,28 @@ function JudgesSection({
   const isClient = useIsClient()
   const origin = isClient ? window.location.origin : ""
   const totalCount = judges.length + invitations.length
+  const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null)
+
+  const handleCopyInvite = async (id: string, link: string) => {
+    try {
+      await navigator.clipboard.writeText(link)
+      setCopiedInviteId(id)
+      setTimeout(
+        () => setCopiedInviteId((prev) => (prev === id ? null : prev)),
+        2000,
+      )
+    } catch (err) {
+      console.error("Failed to copy invite link", err)
+    }
+  }
+
+  const getInitials = (name: string) =>
+    name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2)
 
   return (
     <Card>
@@ -704,7 +727,7 @@ function JudgesSection({
                             <AvatarImage src={judge.imageUrl} alt={judge.displayName} />
                           )}
                           <AvatarFallback className="text-[10px]">
-                            {judge.displayName.slice(0, 2).toUpperCase()}
+                            {getInitials(judge.displayName)}
                           </AvatarFallback>
                         </Avatar>
                         <div className="min-w-0">
@@ -718,7 +741,7 @@ function JudgesSection({
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="secondary" className="font-normal">Active</Badge>
+                      <span className="text-sm text-muted-foreground">—</span>
                     </TableCell>
                     <TableCell>
                       {judge.prizeIds.length > 0 ? (
@@ -769,12 +792,12 @@ function JudgesSection({
                     </TableCell>
                     <TableCell>
                       {inv.remindedAt ? (
-                        <Badge variant="secondary" className="font-normal">
+                        <Badge variant="secondary">
                           <Bell className="mr-1 size-3" />
                           Reminded
                         </Badge>
                       ) : (
-                        <Badge variant="outline" className="font-normal">
+                        <Badge variant="outline">
                           <Clock className="mr-1 size-3" />
                           Invited
                         </Badge>
@@ -805,14 +828,25 @@ function JudgesSection({
                                 </a>
                               </DropdownMenuItem>
                               <DropdownMenuItem
-                                onClick={() => {
-                                  navigator.clipboard.writeText(
+                                onSelect={(e) => {
+                                  e.preventDefault()
+                                  void handleCopyInvite(
+                                    inv.id,
                                     `${origin}/judge-invite/${inv.token}`,
                                   )
                                 }}
                               >
-                                <Copy className="mr-2 size-4" />
-                                Copy invite link
+                                {copiedInviteId === inv.id ? (
+                                  <>
+                                    <Check className="mr-2 size-4" />
+                                    Copied
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="mr-2 size-4" />
+                                    Copy invite link
+                                  </>
+                                )}
                               </DropdownMenuItem>
                             </>
                           )}
