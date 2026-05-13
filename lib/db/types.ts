@@ -496,6 +496,7 @@ export type Database = {
       hackathon_notification_settings: {
         Row: {
           created_at: string
+          email_on_challenges_released: boolean
           email_on_hackathon_active: boolean
           email_on_judging_started: boolean
           email_on_registration_open: boolean
@@ -505,6 +506,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          email_on_challenges_released?: boolean
           email_on_hackathon_active?: boolean
           email_on_judging_started?: boolean
           email_on_registration_open?: boolean
@@ -514,6 +516,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          email_on_challenges_released?: boolean
           email_on_hackathon_active?: boolean
           email_on_judging_started?: boolean
           email_on_registration_open?: boolean
@@ -920,6 +923,7 @@ export type Database = {
         Row: {
           allow_solo: boolean | null
           anonymous_judging: boolean
+          auto_assign_by_room: boolean
           banner_url: string | null
           challenge_released_at: string | null
           community_label: string | null
@@ -963,6 +967,7 @@ export type Database = {
         Insert: {
           allow_solo?: boolean | null
           anonymous_judging?: boolean
+          auto_assign_by_room?: boolean
           banner_url?: string | null
           challenge_released_at?: string | null
           community_label?: string | null
@@ -1006,6 +1011,7 @@ export type Database = {
         Update: {
           allow_solo?: boolean | null
           anonymous_judging?: boolean
+          auto_assign_by_room?: boolean
           banner_url?: string | null
           challenge_released_at?: string | null
           community_label?: string | null
@@ -1415,6 +1421,52 @@ export type Database = {
             columns: ["prize_id"]
             isOneToOne: false
             referencedRelation: "prizes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      judge_room_assignments: {
+        Row: {
+          created_at: string
+          hackathon_id: string
+          id: string
+          judge_participant_id: string
+          room_id: string
+        }
+        Insert: {
+          created_at?: string
+          hackathon_id: string
+          id?: string
+          judge_participant_id: string
+          room_id: string
+        }
+        Update: {
+          created_at?: string
+          hackathon_id?: string
+          id?: string
+          judge_participant_id?: string
+          room_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "judge_room_assignments_hackathon_id_fkey"
+            columns: ["hackathon_id"]
+            isOneToOne: false
+            referencedRelation: "hackathons"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "judge_room_assignments_judge_participant_id_fkey"
+            columns: ["judge_participant_id"]
+            isOneToOne: false
+            referencedRelation: "hackathon_participants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "judge_room_assignments_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "rooms"
             referencedColumns: ["id"]
           },
         ]
@@ -3093,6 +3145,7 @@ export type Database = {
         Returns: {
           allow_solo: boolean | null
           anonymous_judging: boolean
+          auto_assign_by_room: boolean
           banner_url: string | null
           challenge_released_at: string | null
           community_label: string | null

@@ -11,6 +11,7 @@ const SERVICE_MOCK_ISOLATED_TESTS = [
   "__tests__/services/cli-auth.test.ts",
   "__tests__/services/team-invitations.test.ts",
   "__tests__/services/team-create.test.ts",
+  "__tests__/services/team-invitations-organizer.test.ts",
 ]
 const serviceMockSet = new Set(SERVICE_MOCK_ISOLATED_TESTS)
 
@@ -28,6 +29,10 @@ const SERVICE_MOCK_OTHER_TESTS = [
 
 const SERVICE_MOCK_TEAM_CREATE_TESTS = [
   "__tests__/services/team-create.test.ts",
+]
+
+const SERVICE_MOCK_TEAM_INVITATIONS_ORGANIZER_TESTS = [
+  "__tests__/services/team-invitations-organizer.test.ts",
 ]
 
 const STORAGE_MOCK_ISOLATED_TESTS = [
@@ -49,6 +54,7 @@ const RADIX_ISOLATED_TESTS = [
   "__tests__/components/ui/tabs-url-sync.test.tsx",
   "__tests__/components/org/org-event-tabs.test.tsx",
   "__tests__/components/dashboard/api-key-create-dialog.test.tsx",
+  "__tests__/components/hackathon/judging/judges-section.test.tsx",
 ]
 const radixSet = new Set(RADIX_ISOLATED_TESTS)
 
@@ -104,6 +110,10 @@ const groups: Group[] = [
   {
     name: "services (service-mock isolated: team-create)",
     args: SERVICE_MOCK_TEAM_CREATE_TESTS,
+  },
+  {
+    name: "services (service-mock isolated: team-invitations-organizer)",
+    args: SERVICE_MOCK_TEAM_INVITATIONS_ORGANIZER_TESTS,
   },
   {
     name: "services (storage-mock isolated: storage)",

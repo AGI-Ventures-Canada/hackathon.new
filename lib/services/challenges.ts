@@ -286,15 +286,81 @@ async function releaseChallengesIfAny(
   return true
 }
 
+export type ReleaseChallengesOptions = {
+  dispatchNotification?: boolean
+  trigger?: "manual" | "scheduled" | "event_publish" | "event_start"
+}
+
+type ReleasableHackathon = {
+  challenge_released_at: string | null
+  name: string
+  slug: string
+  status: string
+}
+
+async function releaseChallengesWithHackathon(
+  client: SupabaseClient,
+  hackathonId: string,
+  tenantId: string,
+  hackathon: ReleasableHackathon,
+  options?: ReleaseChallengesOptions,
+): Promise<boolean> {
+  if (hackathon.challenge_released_at) return true
+
+  const released = await releaseChallengesIfAny(client, hackathonId, tenantId)
+  if (!released) return false
+
+  const dispatchNotification = options?.dispatchNotification ?? true
+  const eligibleStatus =
+    hackathon.status === "published" || hackathon.status === "active"
+
+  if (dispatchNotification && eligibleStatus) {
+    try {
+      const challenges = await listChallenges(hackathonId)
+      if (challenges.length > 0) {
+        const { dispatchChallengesReleasedNotifications } = await import(
+          "./notification-dispatcher"
+        )
+        dispatchChallengesReleasedNotifications({
+          hackathonId,
+          tenantId,
+          hackathon: {
+            name: hackathon.name,
+            slug: hackathon.slug,
+          },
+          challenges: challenges.map((c) => ({
+            title: c.title,
+            description: c.description,
+          })),
+          trigger: options?.trigger ?? "manual",
+        }).catch((err) => {
+          console.error(
+            `Failed to dispatch challenges-released notifications for ${hackathonId}:`,
+            err,
+          )
+        })
+      }
+    } catch (err) {
+      console.error(
+        `Failed to load challenges for release notification ${hackathonId}:`,
+        err,
+      )
+    }
+  }
+
+  return true
+}
+
 export async function releaseChallenges(
   hackathonId: string,
   tenantId: string,
+  options?: ReleaseChallengesOptions,
 ): Promise<boolean> {
   const client = getSupabase() as unknown as SupabaseClient
 
   const { data: hackathon, error: fetchErr } = await client
     .from("hackathons")
-    .select("challenge_released_at")
+    .select("challenge_released_at, name, slug, status")
     .eq("id", hackathonId)
     .eq("tenant_id", tenantId)
     .single()
@@ -304,14 +370,18 @@ export async function releaseChallenges(
     return false
   }
 
-  if (hackathon.challenge_released_at) return true
-
-  return releaseChallengesIfAny(client, hackathonId, tenantId)
+  return releaseChallengesWithHackathon(
+    client,
+    hackathonId,
+    tenantId,
+    hackathon,
+    options,
+  )
 }
 
 type PublishLinkRow = {
   linked_to: string | null
-  hackathons: { tenant_id: string; status: string; challenge_released_at: string | null }
+  hackathons: ReleasableHackathon & { tenant_id: string }
 }
 
 export async function maybeReleaseChallengesForPublishLink(
@@ -322,7 +392,9 @@ export async function maybeReleaseChallengesForPublishLink(
 
   const { data, error: fetchErr } = await client
     .from("hackathon_schedule_items")
-    .select("linked_to, hackathons!inner(tenant_id, status, challenge_released_at)")
+    .select(
+      "linked_to, hackathons!inner(tenant_id, status, challenge_released_at, name, slug)",
+    )
     .eq("hackathon_id", hackathonId)
     .eq("trigger_type", "challenge_release")
     .eq("hackathons.tenant_id", tenantId)
@@ -334,10 +406,15 @@ export async function maybeReleaseChallengesForPublishLink(
   }
   const row = data as unknown as PublishLinkRow | null
   if (!row || row.linked_to !== "event_publish") return false
-  if (row.hackathons.challenge_released_at) return true
   if (row.hackathons.status !== "published") return false
 
-  return releaseChallengesIfAny(client, hackathonId, tenantId)
+  return releaseChallengesWithHackathon(
+    client,
+    hackathonId,
+    tenantId,
+    row.hackathons,
+    { trigger: "event_publish" },
+  )
 }
 
 export type ScheduledChallengeReleaseResult = {
@@ -394,7 +471,9 @@ export async function processScheduledChallengeReleases(): Promise<ScheduledChal
     if (!tenantId) continue
 
     try {
-      const released = await releaseChallenges(hackathonId, tenantId)
+      const released = await releaseChallenges(hackathonId, tenantId, {
+        trigger: "scheduled",
+      })
       if (released) {
         result.processed++
         result.releases.push({ hackathonId })

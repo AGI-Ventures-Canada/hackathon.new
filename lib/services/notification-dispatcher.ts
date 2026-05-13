@@ -1,4 +1,5 @@
 import type {
+  ChallengeSummary,
   TransitionEvent,
   TransitionTrigger,
   WebhookEvent,
@@ -13,6 +14,7 @@ export type DispatchInput = {
   triggeredBy: string
   fromStatus: string
   toStatus: string
+  challenges?: ChallengeSummary[]
 }
 
 const EVENT_TO_WEBHOOK: Record<TransitionEvent, WebhookEvent> = {
@@ -45,6 +47,7 @@ export async function dispatchTransitionNotifications(
   const settingKey = EVENT_TO_SETTING_KEY[input.type] as keyof typeof settings
   const emailEnabled = settings[settingKey] as boolean
   const roles = EVENT_TO_ROLES[input.type]
+  const hasChallenges = !!input.challenges && input.challenges.length > 0
 
   if (emailEnabled && roles.length > 0) {
     try {
@@ -61,6 +64,13 @@ export async function dispatchTransitionNotifications(
           hackathonEndsAt: input.hackathon.ends_at ?? null,
           event: input.type,
           recipientRoles: roles,
+          // Challenges are merged into the transition email by design, gated
+          // only by the transition's own setting (e.g. email_on_hackathon_active).
+          // email_on_challenges_released controls the *standalone* path in
+          // dispatchChallengesReleasedNotifications — when challenges land in
+          // the same window as a status transition, recipients get one email,
+          // not two.
+          challenges: input.challenges,
         },
       ]).catch((err) => {
         console.error(
@@ -79,9 +89,10 @@ export async function dispatchTransitionNotifications(
   const webhookEvent = EVENT_TO_WEBHOOK[input.type]
   try {
     const { triggerWebhooks } = await import("@/lib/services/webhooks")
+    const timestamp = new Date().toISOString()
     triggerWebhooks(input.tenantId, webhookEvent, {
       event: webhookEvent,
-      timestamp: new Date().toISOString(),
+      timestamp,
       data: {
         hackathonId: input.hackathonId,
         fromStatus: input.fromStatus,
@@ -89,7 +100,94 @@ export async function dispatchTransitionNotifications(
         trigger: input.trigger,
       },
     }).catch(console.error)
+
+    if (hasChallenges) {
+      triggerWebhooks(input.tenantId, "hackathon.challenges_released", {
+        event: "hackathon.challenges_released",
+        timestamp,
+        data: {
+          hackathonId: input.hackathonId,
+          trigger: input.trigger,
+          challengeCount: input.challenges?.length ?? 0,
+          source: "transition",
+          coincidentWith: webhookEvent,
+        },
+      }).catch(console.error)
+    }
   } catch (err) {
     console.error(`Failed to trigger webhooks for ${input.type}:`, err)
+  }
+}
+
+export type ChallengesReleasedTrigger =
+  | "manual"
+  | "scheduled"
+  | "event_publish"
+  | "event_start"
+
+const CHALLENGES_RELEASED_RECIPIENT_ROLES = ["participant"] as const
+
+export type ChallengesReleasedDispatchInput = {
+  hackathonId: string
+  tenantId: string
+  hackathon: { name: string; slug: string }
+  challenges: ChallengeSummary[]
+  trigger: ChallengesReleasedTrigger
+}
+
+export async function dispatchChallengesReleasedNotifications(
+  input: ChallengesReleasedDispatchInput
+): Promise<void> {
+  if (input.challenges.length === 0) return
+
+  const { getNotificationSettings } = await import("./notification-settings")
+  const settings = await getNotificationSettings(input.hackathonId)
+  const emailEnabled = settings.email_on_challenges_released
+
+  if (emailEnabled) {
+    try {
+      const { start } = await import("workflow/api")
+      const { sendChallengesReleasedNotificationsWorkflow } = await import(
+        "@/lib/workflows/challenges-released"
+      )
+      start(sendChallengesReleasedNotificationsWorkflow, [
+        {
+          hackathonId: input.hackathonId,
+          hackathonName: input.hackathon.name,
+          hackathonSlug: input.hackathon.slug,
+          recipientRoles: [...CHALLENGES_RELEASED_RECIPIENT_ROLES],
+          challenges: input.challenges,
+        },
+      ]).catch((err) => {
+        console.error(
+          `Failed to start challenges-released workflow for ${input.hackathonId}:`,
+          err
+        )
+      })
+    } catch (err) {
+      console.error(
+        `Failed to dispatch challenges-released emails for ${input.hackathonId}:`,
+        err
+      )
+    }
+  }
+
+  try {
+    const { triggerWebhooks } = await import("@/lib/services/webhooks")
+    triggerWebhooks(input.tenantId, "hackathon.challenges_released", {
+      event: "hackathon.challenges_released",
+      timestamp: new Date().toISOString(),
+      data: {
+        hackathonId: input.hackathonId,
+        trigger: input.trigger,
+        challengeCount: input.challenges.length,
+        source: "standalone",
+      },
+    }).catch(console.error)
+  } catch (err) {
+    console.error(
+      `Failed to trigger challenges-released webhook for ${input.hackathonId}:`,
+      err
+    )
   }
 }

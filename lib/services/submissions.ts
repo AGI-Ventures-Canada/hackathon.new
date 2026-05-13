@@ -1,8 +1,10 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Submission } from "@/lib/db/hackathon-types"
+import type { Json } from "@/lib/db/types"
 import { trackEvent } from "@/lib/analytics/posthog"
 import { tagSubmissionChallenges } from "@/lib/services/challenges"
+import { autoAssignSubmissionToRoomJudges, ROOM_ROUTING_STATUSES } from "@/lib/services/judging"
 
 export type ParticipantInfo = {
   participantId: string
@@ -103,23 +105,32 @@ export async function createSubmission(
 ): Promise<Submission | null> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { data, error } = await client
-    .from("submissions")
-    .insert({
-      hackathon_id: hackathonId,
-      participant_id: teamId ? null : participantId,
-      team_id: teamId,
-      title: input.title,
-      description: input.description,
-      github_url: input.githubUrl,
-      live_app_url: input.liveAppUrl ?? null,
-      demo_video_url: input.demoVideoUrl ?? null,
-      screenshot_url: input.screenshotUrl ?? null,
-      status: "submitted",
-      metadata: input.metadata ?? {},
-    })
-    .select()
-    .single()
+  const [insertResult, hackathonResult] = await Promise.all([
+    client
+      .from("submissions")
+      .insert({
+        hackathon_id: hackathonId,
+        participant_id: teamId ? null : participantId,
+        team_id: teamId,
+        title: input.title,
+        description: input.description,
+        github_url: input.githubUrl,
+        live_app_url: input.liveAppUrl ?? null,
+        demo_video_url: input.demoVideoUrl ?? null,
+        screenshot_url: input.screenshotUrl ?? null,
+        status: "submitted",
+        metadata: input.metadata ?? {},
+      })
+      .select()
+      .single(),
+    client
+      .from("hackathons")
+      .select("auto_assign_by_room, status")
+      .eq("id", hackathonId)
+      .maybeSingle(),
+  ])
+
+  const { data, error } = insertResult
 
   if (error) {
     console.error("Failed to create submission:", error)
@@ -140,7 +151,31 @@ export async function createSubmission(
     }
   }
 
+  await routeSubmissionToRoomJudgesIfEnabled(
+    hackathonResult.data as { auto_assign_by_room: boolean; status: string } | null,
+    hackathonId,
+    data.id,
+    teamId
+  )
+
   return data as unknown as Submission
+}
+
+async function routeSubmissionToRoomJudgesIfEnabled(
+  hackathon: { auto_assign_by_room: boolean; status: string } | null,
+  hackathonId: string,
+  submissionId: string,
+  teamId: string | null
+): Promise<void> {
+  try {
+    if (!hackathon) return
+    if (!hackathon.auto_assign_by_room) return
+    if (!ROOM_ROUTING_STATUSES.has(hackathon.status)) return
+
+    await autoAssignSubmissionToRoomJudges({ hackathonId, submissionId, teamId })
+  } catch (err) {
+    console.error("Room-judge routing failed (non-fatal):", err)
+  }
 }
 
 export type UpdateSubmissionInput = {
@@ -150,6 +185,7 @@ export type UpdateSubmissionInput = {
   liveAppUrl?: string | null
   demoVideoUrl?: string | null
   screenshotUrl?: string | null
+  metadata?: Record<string, Json | undefined>
   challengeIds?: string[]
 }
 
@@ -168,6 +204,7 @@ export async function updateSubmission(
   if (input.liveAppUrl !== undefined) updates.live_app_url = input.liveAppUrl
   if (input.demoVideoUrl !== undefined) updates.demo_video_url = input.demoVideoUrl
   if (input.screenshotUrl !== undefined) updates.screenshot_url = input.screenshotUrl
+  if (input.metadata !== undefined) updates.metadata = input.metadata
 
   let query = client
     .from("submissions")
@@ -233,6 +270,7 @@ export type PublicSubmission = {
   live_app_url: string | null
   demo_video_url: string | null
   screenshot_url: string | null
+  metadata: Json
   status: string
   created_at: string
   participant_id: string | null
@@ -255,6 +293,7 @@ export async function getHackathonSubmissions(
       live_app_url,
       demo_video_url,
       screenshot_url,
+      metadata,
       status,
       created_at,
       participant_id,

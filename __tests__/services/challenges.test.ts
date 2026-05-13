@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "bun:test"
+import { describe, it, expect, beforeEach, mock } from "bun:test"
 import {
   createChainableMock,
   resetSupabaseMocks,
@@ -7,6 +7,11 @@ import {
   mockSuccess,
   mockError,
 } from "../lib/supabase-mock"
+
+const mockDispatchChallengesReleased = mock(() => Promise.resolve())
+mock.module("@/lib/services/notification-dispatcher", () => ({
+  dispatchChallengesReleasedNotifications: mockDispatchChallengesReleased,
+}))
 
 const {
   listChallenges,
@@ -45,6 +50,7 @@ function makeRow(overrides: Record<string, unknown> = {}) {
 describe("Challenges Service", () => {
   beforeEach(() => {
     resetSupabaseMocks()
+    mockDispatchChallengesReleased.mockClear()
   })
 
   describe("listChallenges", () => {
@@ -452,7 +458,13 @@ describe("Challenges Service", () => {
           return createChainableMock({
             data: {
               linked_to: "event_publish",
-              hackathons: { tenant_id: tenantId, status: "published", challenge_released_at: null },
+              hackathons: {
+                tenant_id: tenantId,
+                status: "published",
+                challenge_released_at: null,
+                name: "Test Hack",
+                slug: "test-hack",
+              },
             },
             error: null,
           })
@@ -460,12 +472,61 @@ describe("Challenges Service", () => {
         if (table === "challenges") {
           return createChainableMock({ data: null, error: null, count: 1 })
         }
+        if (table === "hackathon_notification_settings") {
+          return createChainableMock({ data: null, error: { message: "No rows" } })
+        }
         return createChainableMock({ data: null, error: null })
       })
 
       const result = await maybeReleaseChallengesForPublishLink(hackathonId, tenantId)
 
       expect(result).toBe(true)
+    })
+
+    it("dispatches challenges-released notifications with event_publish trigger", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_schedule_items") {
+          return createChainableMock({
+            data: {
+              linked_to: "event_publish",
+              hackathons: {
+                tenant_id: tenantId,
+                status: "published",
+                challenge_released_at: null,
+                name: "Test Hack",
+                slug: "test-hack",
+              },
+            },
+            error: null,
+          })
+        }
+        if (table === "challenges") {
+          return createChainableMock({
+            data: [makeRow({ title: "Build something cool" })],
+            error: null,
+            count: 1,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await maybeReleaseChallengesForPublishLink(hackathonId, tenantId)
+
+      expect(result).toBe(true)
+      expect(mockDispatchChallengesReleased).toHaveBeenCalledTimes(1)
+      const call = mockDispatchChallengesReleased.mock.calls[0]?.[0] as {
+        hackathonId: string
+        tenantId: string
+        hackathon: { name: string; slug: string }
+        trigger: string
+        challenges: Array<{ title: string }>
+      }
+      expect(call.hackathonId).toBe(hackathonId)
+      expect(call.tenantId).toBe(tenantId)
+      expect(call.hackathon).toEqual({ name: "Test Hack", slug: "test-hack" })
+      expect(call.trigger).toBe("event_publish")
+      expect(call.challenges).toHaveLength(1)
+      expect(call.challenges[0].title).toBe("Build something cool")
     })
   })
 

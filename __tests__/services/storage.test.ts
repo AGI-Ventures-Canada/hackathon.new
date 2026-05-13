@@ -225,6 +225,20 @@ describe("Storage Service", () => {
       )
     })
 
+    it("uploads the second screenshot slot", async () => {
+      const buffer = Buffer.alloc(1024)
+      await uploadScreenshot("sub123", buffer, 1)
+
+      expect(mockUpload).toHaveBeenCalledWith(
+        "sub123/screenshot-2.webp",
+        expect.any(Buffer),
+        expect.objectContaining({
+          contentType: "image/webp",
+          upsert: true,
+        })
+      )
+    })
+
     it("returns null on upload error", async () => {
       mockUpload.mockImplementation(() => Promise.resolve({ error: { message: "Upload failed" } }))
 
@@ -246,6 +260,22 @@ describe("Storage Service", () => {
         "sub123/screenshot.png",
         "sub123/screenshot.jpg",
         "sub123/screenshot.svg",
+        "sub123/screenshot-2.webp",
+        "sub123/screenshot-2.png",
+        "sub123/screenshot-2.jpg",
+        "sub123/screenshot-2.svg",
+      ])
+    })
+
+    it("removes a single screenshot slot", async () => {
+      const result = await deleteScreenshot("sub123", 1)
+
+      expect(result).toBe(true)
+      expect(mockRemove).toHaveBeenCalledWith([
+        "sub123/screenshot-2.webp",
+        "sub123/screenshot-2.png",
+        "sub123/screenshot-2.jpg",
+        "sub123/screenshot-2.svg",
       ])
     })
 

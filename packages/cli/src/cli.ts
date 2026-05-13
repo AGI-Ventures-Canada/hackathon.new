@@ -175,6 +175,13 @@ const BANNER = `
     teams assign-room <id> <rid>             Assign team to room (--team <tid>)
     teams unassign-room <id> <rid> <tid>     Remove team from room
 
+  ${pc.dim("ROOMS")}
+    rooms judges add <id> <rid>              Add judge to room (--judge <participant-id>)
+    rooms judges remove <id> <rid> <jid>     Remove judge from room
+    rooms auto-assign get <id>               Show room-routing toggle state
+    rooms auto-assign set <id> --on|--off    Toggle auto-assign of submissions to room judges
+    rooms auto-assign sync <id>              Route existing submissions to their room's judges
+
   ${pc.dim("SPONSORS")}
     sponsors list <id>                       List sponsors
     sponsors add <id>                        Add a sponsor (--name --tier --website --logo-url)
@@ -773,6 +780,59 @@ async function main() {
           }
           default:
             console.error(`Unknown teams command: ${sub}`)
+            process.exit(1)
+        }
+        break
+      }
+
+      case "rooms": {
+        const client = createAuthenticatedClient(flags)
+        switch (sub) {
+          case "judges": {
+            const judgesSub = rest[2]
+            switch (judgesSub) {
+              case "add": {
+                const { runRoomsJudgesAdd } = await import("./commands/rooms/judges-add.js")
+                await runRoomsJudgesAdd(client, rest[3], rest[4], rest.slice(5))
+                break
+              }
+              case "remove": {
+                const { runRoomsJudgesRemove } = await import("./commands/rooms/judges-remove.js")
+                await runRoomsJudgesRemove(client, rest[3], rest[4], rest[5])
+                break
+              }
+              default:
+                console.error(`Unknown rooms judges command: ${judgesSub}`)
+                process.exit(1)
+            }
+            break
+          }
+          case "auto-assign": {
+            const autoSub = rest[2]
+            switch (autoSub) {
+              case "get": {
+                const { runRoomsAutoAssignGet } = await import("./commands/rooms/auto-assign-get.js")
+                await runRoomsAutoAssignGet(client, rest[3], { json: flags.json })
+                break
+              }
+              case "set": {
+                const { runRoomsAutoAssignSet } = await import("./commands/rooms/auto-assign-set.js")
+                await runRoomsAutoAssignSet(client, rest[3], rest.slice(4))
+                break
+              }
+              case "sync": {
+                const { runRoomsAutoAssignSync } = await import("./commands/rooms/auto-assign-sync.js")
+                await runRoomsAutoAssignSync(client, rest[3], { json: flags.json })
+                break
+              }
+              default:
+                console.error(`Unknown rooms auto-assign command: ${autoSub}`)
+                process.exit(1)
+            }
+            break
+          }
+          default:
+            console.error(`Unknown rooms command: ${sub}`)
             process.exit(1)
         }
         break

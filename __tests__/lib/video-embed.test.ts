@@ -42,6 +42,19 @@ describe("getVideoEmbedInfo", () => {
     })
   })
 
+  it("keeps Vimeo unlisted hashes", () => {
+    expect(getVideoEmbedInfo("https://vimeo.com/123456789/abc123")).toEqual({
+      provider: "vimeo",
+      embedUrl: "https://player.vimeo.com/video/123456789?h=abc123",
+      title: "Vimeo video",
+    })
+    expect(getVideoEmbedInfo("https://player.vimeo.com/video/123456789?h=abc123")).toEqual({
+      provider: "vimeo",
+      embedUrl: "https://player.vimeo.com/video/123456789?h=abc123",
+      title: "Vimeo video",
+    })
+  })
+
   it("leaves unknown links as plain links", () => {
     expect(getVideoEmbedInfo("https://example.com/demo-video")).toBeNull()
   })

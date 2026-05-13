@@ -149,6 +149,15 @@ function HackathonPreviewContent({
     const interval = setInterval(tick, 30_000)
     return () => clearInterval(interval)
   }, [])
+  const isChallengesFreshlyReleased = useMemo(() => {
+    if (!isClient) return false
+    if (!hackathon.challenge_released_at) return false
+    if (!nowIso) return false
+    const releasedAt = new Date(hackathon.challenge_released_at).getTime()
+    const now = new Date(nowIso).getTime()
+    return now - releasedAt < 24 * 60 * 60 * 1000
+  }, [isClient, hackathon.challenge_released_at, nowIso])
+
   const rename = useTeamRename(hackathon.id, teamInfo?.team.id ?? "", teamInfo?.team.name ?? "")
   const isFormingCaptain = teamInfo?.isCaptain && teamInfo.team.status === "forming"
   const canInviteTeamMembers = getCanInviteTeamMembers({
@@ -585,13 +594,26 @@ function HackathonPreviewContent({
 
       <section className="py-12 border-t">
         <div className="mx-auto max-w-4xl px-4">
-          <Tabs defaultValue="overview" className="w-full">
+          <Tabs
+            key={isChallengesFreshlyReleased ? "tabs-fresh" : "tabs-default"}
+            defaultValue={isChallengesFreshlyReleased ? "challenges" : "overview"}
+            className="w-full"
+          >
             <div className="overflow-x-auto overflow-y-hidden">
               <TabsList variant="line">
                 <TabsTrigger value="overview">Overview</TabsTrigger>
                 <TabsTrigger value="schedule">Schedule</TabsTrigger>
                 {challenges.length > 0 && (
-                  <TabsTrigger value="challenges">Challenges</TabsTrigger>
+                  <TabsTrigger value="challenges">
+                    <span className="flex items-center gap-1.5">
+                      Challenges
+                      {isChallengesFreshlyReleased && (
+                        <Badge variant="secondary" className="h-4 px-1.5 text-[10px] font-medium">
+                          New
+                        </Badge>
+                      )}
+                    </span>
+                  </TabsTrigger>
                 )}
                 {viewerPerks.length > 0 && (
                   <TabsTrigger value="perks">Perks</TabsTrigger>

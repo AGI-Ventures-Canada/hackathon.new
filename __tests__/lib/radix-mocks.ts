@@ -115,6 +115,44 @@ mock.module("@/components/ui/hover-card", () => ({
   HoverCardContent: () => null,
 }))
 
+const DropdownCtx = createContext({ open: false, setOpen: (_v: boolean) => {} })
+
+mock.module("@/components/ui/dropdown-menu", () => ({
+  DropdownMenu: ({ children }: { children: React.ReactNode }) => {
+    const [open, setOpen] = useState(false)
+    return h(DropdownCtx.Provider, { value: { open, setOpen } }, h("div", null, children))
+  },
+  DropdownMenuTrigger: ({ children, asChild }: { children: React.ReactNode; asChild?: boolean }) => {
+    const ctx = useContext(DropdownCtx)
+    const triggerProps = { type: "button", onClick: () => ctx.setOpen(!ctx.open) }
+    if (asChild && isValidElement(children)) {
+      return cloneElement(children as React.ReactElement<Record<string, unknown>>, triggerProps)
+    }
+    return h("button", triggerProps, children)
+  },
+  DropdownMenuContent: ({ children }: { children: React.ReactNode }) => {
+    const ctx = useContext(DropdownCtx)
+    if (!ctx.open) return null
+    return h("div", { role: "menu" }, children)
+  },
+  DropdownMenuItem: ({ children, onClick, onSelect, asChild, className }: { children: React.ReactNode; onClick?: () => void; onSelect?: (e: { preventDefault: () => void }) => void; asChild?: boolean; className?: string }) => {
+    const handle = () => {
+      onClick?.()
+      onSelect?.({ preventDefault: () => {} })
+    }
+    if (asChild && isValidElement(children)) {
+      return cloneElement(children as React.ReactElement<Record<string, unknown>>, { onClick: handle, className })
+    }
+    return h("button", { type: "button", role: "menuitem", onClick: handle, className }, children)
+  },
+  DropdownMenuLabel: ({ children }: { children: React.ReactNode }) => h("div", null, children),
+  DropdownMenuRadioGroup: ({ children }: { children: React.ReactNode }) => h("div", null, children),
+  DropdownMenuRadioItem: ({ children, value, onSelect }: { children: React.ReactNode; value: string; onSelect?: () => void }) =>
+    h("button", { type: "button", role: "menuitemradio", "data-value": value, onClick: onSelect }, children),
+  DropdownMenuSeparator: () => h("hr"),
+  DropdownMenuPortal: ({ children }: { children: React.ReactNode }) => children,
+}))
+
 mock.module("@/components/ui/popover", () => ({
   Popover: ({ children }: { children: React.ReactNode }) => h("div", null, children),
   PopoverTrigger: ({ children, asChild }: { children: React.ReactNode; asChild?: boolean }) => {

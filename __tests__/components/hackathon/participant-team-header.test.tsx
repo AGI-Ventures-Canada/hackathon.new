@@ -26,16 +26,18 @@ const teamInfo = {
   ],
   pendingInvitations: [],
   isCaptain: true,
+  room: null,
 } satisfies NonNullable<ParticipantTeamInfo>
 
-function TeamHeaderHarness() {
+function TeamHeaderHarness({ overrides }: { overrides?: Partial<NonNullable<ParticipantTeamInfo>> } = {}) {
+  const merged = { ...teamInfo, ...overrides }
   const [editing, setEditing] = useState(false)
-  const [value, setValue] = useState(teamInfo.team.name)
+  const [value, setValue] = useState(merged.team.name)
   const inputRef = useRef<HTMLInputElement>(null)
 
   return (
     <ParticipantTeamHeader
-      teamInfo={teamInfo}
+      teamInfo={merged}
       hackathonId="hackathon-1"
       maxTeamSize={4}
       canRenameTeam
@@ -71,5 +73,18 @@ describe("ParticipantTeamHeader", () => {
 
     const input = screen.getByDisplayValue("Hai The Dude's Team")
     expect(input.tagName).toBe("INPUT")
+  })
+
+  it("shows the assigned room when one is set", () => {
+    render(<TeamHeaderHarness overrides={{ room: { id: "room-1", name: "Main Hall" } }} />)
+
+    expect(screen.getByText("Your room")).toBeDefined()
+    expect(screen.getByText("Main Hall")).toBeDefined()
+  })
+
+  it("hides the room line when no room is assigned", () => {
+    render(<TeamHeaderHarness />)
+
+    expect(screen.queryByText("Your room")).toBeNull()
   })
 })

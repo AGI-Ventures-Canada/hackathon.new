@@ -17,7 +17,7 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination"
 import { getVideoEmbedInfo } from "@/lib/utils/video-embed"
-import { VideoEmbed } from "@/components/hackathon/video-embed"
+import { SubmissionMedia } from "@/components/hackathon/submission-media"
 import { SubmissionLinks } from "@/components/hackathon/submission-links"
 
 export type GallerySubmission = {
@@ -28,6 +28,7 @@ export type GallerySubmission = {
   liveAppUrl: string | null
   demoVideoUrl: string | null
   screenshotUrl: string | null
+  screenshotUrls?: string[]
   submitter: string
   createdAt: string
 }
@@ -158,23 +159,18 @@ function SubmissionExpandedContent({ submission }: { submission: GallerySubmissi
 
   return (
     <div className="pl-10 space-y-4">
-      {submission.screenshotUrl && (
-        <div className="rounded-lg overflow-hidden border bg-muted">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={submission.screenshotUrl}
-            alt={`Screenshot of ${submission.title}`}
-            className="w-full h-auto max-h-80 object-contain"
-          />
-        </div>
-      )}
+      <SubmissionMedia
+        title={submission.title}
+        video={videoEmbed}
+        screenshotUrl={submission.screenshotUrl}
+        screenshotUrls={submission.screenshotUrls}
+      />
       {submission.description && (
         <p className="text-sm text-muted-foreground whitespace-pre-wrap">
           {submission.description}
         </p>
       )}
       <p className="text-xs text-muted-foreground">by {submission.submitter}</p>
-      {videoEmbed && <VideoEmbed video={videoEmbed} />}
       <SubmissionLinks
         githubUrl={submission.githubUrl}
         liveAppUrl={submission.liveAppUrl}

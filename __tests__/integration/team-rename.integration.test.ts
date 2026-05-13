@@ -83,6 +83,8 @@ mock.module("@/lib/services/hackathons", () => ({
   createTeamWithMembers: mock(() => Promise.resolve(null)),
   modifyTeamMembers: mock(() => Promise.resolve(null)),
   bulkAssignTeams: mock(() => Promise.resolve({ assigned: 0 })),
+  deleteTeam: mock(() => Promise.resolve({ success: true, membersUnassigned: 0, invitesCancelled: 0, roomsCleared: 0 })),
+  setTeamCaptain: mock(() => Promise.resolve({ success: true })),
 }))
 
 mock.module("@/lib/services/rooms", () => ({
@@ -97,6 +99,10 @@ mock.module("@/lib/services/rooms", () => ({
   clearRoomTimer: mock(() => Promise.resolve(null)),
   pauseRoomTimer: mock(() => Promise.resolve(null)),
   resumeRoomTimer: mock(() => Promise.resolve(null)),
+  addJudgeToRoom: mock(() => Promise.resolve({ ok: false } as const)),
+  removeJudgeFromRoom: mock(() => Promise.resolve({ ok: false } as const)),
+  getAutoAssignByRoom: mock(() => Promise.resolve(false)),
+  setAutoAssignByRoom: mock(() => Promise.resolve(false)),
 }))
 
 mock.module("@/lib/services/categories", () => ({

@@ -1,4 +1,5 @@
 import { supabase as getSupabase } from "@/lib/db/client"
+import { listJudges } from "@/lib/services/judging"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 export type Room = {
@@ -16,6 +17,7 @@ export type RoomWithTeams = Room & {
   teamCount: number
   presentedCount: number
   teams: RoomTeamInfo[]
+  judges: RoomJudgeInfo[]
 }
 
 export type RoomTeamInfo = {
@@ -25,6 +27,16 @@ export type RoomTeamInfo = {
   has_presented: boolean
   present_order: number | null
   team_name: string
+}
+
+export type RoomJudgeInfo = {
+  id: string
+  room_id: string
+  judge_participant_id: string
+  clerk_user_id: string
+  display_name: string
+  email: string | null
+  image_url: string | null
 }
 
 export type CreateRoomInput = {
@@ -52,7 +64,7 @@ export async function listRooms(hackathonId: string): Promise<RoomWithTeams[]> {
   }
 
   const roomIds = rooms.map((r: Room) => r.id)
-  if (roomIds.length === 0) return rooms.map((r: Room) => ({ ...r, teamCount: 0, presentedCount: 0, teams: [] }))
+  if (roomIds.length === 0) return rooms.map((r: Room) => ({ ...r, teamCount: 0, presentedCount: 0, teams: [], judges: [] }))
 
   const { data: roomTeams } = await client
     .from("room_teams")
@@ -71,8 +83,31 @@ export async function listRooms(hackathonId: string): Promise<RoomWithTeams[]> {
     }
   }
 
+  const { data: roomJudges } = await client
+    .from("judge_room_assignments")
+    .select("id, room_id, judge_participant_id")
+    .in("room_id", roomIds)
+
+  const hasJudgeAssignments = (roomJudges ?? []).length > 0
+  const judgeInfoByParticipantId: Record<
+    string,
+    { clerkUserId: string; displayName: string; email: string | null; imageUrl: string | null }
+  > = {}
+  if (hasJudgeAssignments) {
+    const judgeList = await listJudges(hackathonId)
+    for (const j of judgeList) {
+      judgeInfoByParticipantId[j.participantId] = {
+        clerkUserId: j.clerkUserId,
+        displayName: j.displayName,
+        email: j.email,
+        imageUrl: j.imageUrl,
+      }
+    }
+  }
+
   return rooms.map((room: Room) => {
     const rts = (roomTeams ?? []).filter((rt: { room_id: string }) => rt.room_id === room.id)
+    const rjs = (roomJudges ?? []).filter((rj: { room_id: string }) => rj.room_id === room.id)
     return {
       ...room,
       teamCount: rts.length,
@@ -81,6 +116,18 @@ export async function listRooms(hackathonId: string): Promise<RoomWithTeams[]> {
         ...rt,
         team_name: teamNames[rt.team_id] ?? "Unknown Team",
       })),
+      judges: rjs.map((rj: { id: string; room_id: string; judge_participant_id: string }) => {
+        const info = judgeInfoByParticipantId[rj.judge_participant_id]
+        return {
+          id: rj.id,
+          room_id: rj.room_id,
+          judge_participant_id: rj.judge_participant_id,
+          clerk_user_id: info?.clerkUserId ?? "",
+          display_name: info?.displayName ?? "Unknown Judge",
+          email: info?.email ?? null,
+          image_url: info?.imageUrl ?? null,
+        }
+      }),
     }
   })
 }
@@ -178,6 +225,139 @@ export async function removeTeamFromRoom(roomId: string, teamId: string): Promis
   }
 
   return true
+}
+
+export async function getAutoAssignByRoom(hackathonId: string): Promise<boolean> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data, error } = await client
+    .from("hackathons")
+    .select("auto_assign_by_room")
+    .eq("id", hackathonId)
+    .maybeSingle()
+
+  if (error || !data) {
+    if (error) console.error("Failed to read auto_assign_by_room:", error)
+    return false
+  }
+
+  return Boolean((data as { auto_assign_by_room: boolean }).auto_assign_by_room)
+}
+
+export async function setAutoAssignByRoom(hackathonId: string, enabled: boolean): Promise<boolean> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { error } = await client
+    .from("hackathons")
+    .update({ auto_assign_by_room: enabled })
+    .eq("id", hackathonId)
+
+  if (error) {
+    console.error("Failed to set auto_assign_by_room:", error)
+    return false
+  }
+
+  return true
+}
+
+async function roomBelongsToHackathon(
+  client: SupabaseClient,
+  roomId: string,
+  hackathonId: string
+): Promise<boolean> {
+  const { data } = await client
+    .from("rooms")
+    .select("id")
+    .eq("id", roomId)
+    .eq("hackathon_id", hackathonId)
+    .maybeSingle()
+  return Boolean(data)
+}
+
+export type RoomJudgeMutationResult =
+  | { ok: true; changed: boolean }
+  | { ok: false }
+
+export async function addJudgeToRoom(
+  roomId: string,
+  hackathonId: string,
+  judgeParticipantId: string
+): Promise<RoomJudgeMutationResult> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  if (!(await roomBelongsToHackathon(client, roomId, hackathonId))) {
+    console.error("Room not found for hackathon:", { roomId, hackathonId })
+    return { ok: false }
+  }
+
+  const { data: participant } = await client
+    .from("hackathon_participants")
+    .select("id, hackathon_id, role")
+    .eq("id", judgeParticipantId)
+    .eq("hackathon_id", hackathonId)
+    .eq("role", "judge")
+    .maybeSingle()
+
+  if (!participant) {
+    console.error("Judge not found for hackathon:", { roomId, judgeParticipantId, hackathonId })
+    return { ok: false }
+  }
+
+  const { data, error } = await client
+    .from("judge_room_assignments")
+    .upsert(
+      { room_id: roomId, judge_participant_id: judgeParticipantId, hackathon_id: hackathonId },
+      { onConflict: "room_id,judge_participant_id", ignoreDuplicates: true }
+    )
+    .select()
+
+  if (error) {
+    console.error("Failed to add judge to room:", error)
+    return { ok: false }
+  }
+
+  return { ok: true, changed: (data ?? []).length > 0 }
+}
+
+export async function removeJudgeFromRoom(
+  roomId: string,
+  judgeParticipantId: string,
+  hackathonId: string
+): Promise<RoomJudgeMutationResult> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  if (!(await roomBelongsToHackathon(client, roomId, hackathonId))) {
+    console.error("Room not found for hackathon:", { roomId, hackathonId })
+    return { ok: false }
+  }
+
+  const { data: participant } = await client
+    .from("hackathon_participants")
+    .select("id")
+    .eq("id", judgeParticipantId)
+    .eq("hackathon_id", hackathonId)
+    .eq("role", "judge")
+    .maybeSingle()
+
+  if (!participant) {
+    console.error("Judge not found for hackathon:", { roomId, judgeParticipantId, hackathonId })
+    return { ok: false }
+  }
+
+  const { data, error } = await client
+    .from("judge_room_assignments")
+    .delete()
+    .eq("room_id", roomId)
+    .eq("judge_participant_id", judgeParticipantId)
+    .eq("hackathon_id", hackathonId)
+    .select()
+
+  if (error) {
+    console.error("Failed to remove judge from room:", error)
+    return { ok: false }
+  }
+
+  return { ok: true, changed: (data ?? []).length > 0 }
 }
 
 export async function togglePresented(roomId: string, teamId: string, presented: boolean): Promise<boolean> {

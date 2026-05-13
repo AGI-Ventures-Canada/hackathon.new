@@ -340,12 +340,13 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
                 maxTeamSize={hackathon.max_team_size ?? 5}
                 minTeamSize={hackathon.min_team_size ?? 1}
                 allowSolo={hackathon.allow_solo ?? true}
+                hackathonStatus={hackathon.status}
               />
             </TabsContent>
 
             <TabsContent value="people" forceMount className="data-[state=inactive]:hidden">
               <Suspense fallback={<TabLoadingSkeleton />}>
-                <PeopleTab hackathonId={hackathon.id} />
+                <PeopleTab hackathonId={hackathon.id} hackathonStatus={hackathon.status} />
               </Suspense>
             </TabsContent>
 
