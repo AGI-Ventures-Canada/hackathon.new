@@ -86,6 +86,12 @@ export function ParticipantTeamHeader({
                     )}
                   </div>
                 )}
+                {teamInfo.room && (
+                  <div className="min-w-0 pt-1">
+                    <p className="text-xs text-muted-foreground">Your room</p>
+                    <p className="truncate text-sm font-medium">{teamInfo.room.name}</p>
+                  </div>
+                )}
               </div>
             )}
           </div>

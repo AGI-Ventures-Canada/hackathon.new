@@ -358,6 +358,7 @@ export type ParticipantTeamInfo = {
     token: string | null
   }[]
   isCaptain: boolean
+  room: { id: string; name: string } | null
 } | null
 
 export async function getParticipantTeamInfo(
@@ -377,7 +378,7 @@ export async function getParticipantTeamInfo(
     return null
   }
 
-  const [teamResult, membersResult, invitationsResult] = await Promise.all([
+  const [teamResult, membersResult, invitationsResult, roomTeamResult] = await Promise.all([
     client
       .from("teams")
       .select("id, name, status, invite_code, captain_clerk_user_id, mode")
@@ -394,6 +395,10 @@ export async function getParticipantTeamInfo(
       .eq("team_id", participant.team_id)
       .eq("status", "pending")
       .order("created_at", { ascending: false }),
+    client
+      .from("room_teams")
+      .select("room_id, rooms(id, name)")
+      .eq("team_id", participant.team_id),
   ])
 
   if (teamResult.error || !teamResult.data) {
@@ -443,6 +448,12 @@ export async function getParticipantTeamInfo(
     token: isCaptain ? inv.token : null,
   }))
 
+  const roomTeamRow = (roomTeamResult.data ?? [])[0]
+  const roomRow = roomTeamRow
+    ? (roomTeamRow.rooms as unknown as { id: string; name: string } | null)
+    : null
+  const room = roomRow ? { id: roomRow.id, name: roomRow.name } : null
+
   return {
     team: {
       id: team.id,
@@ -455,6 +466,7 @@ export async function getParticipantTeamInfo(
     members,
     pendingInvitations,
     isCaptain,
+    room,
   }
 }
 

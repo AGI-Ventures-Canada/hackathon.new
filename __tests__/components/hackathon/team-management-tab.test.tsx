@@ -14,6 +14,7 @@ const baseTeamInfo = {
     status: "forming" as const,
     inviteCode: "abc123",
     captainClerkUserId: "user-1",
+    mode: null,
   },
   members: [
     {
@@ -27,6 +28,7 @@ const baseTeamInfo = {
   ],
   pendingInvitations: [],
   isCaptain: true,
+  room: null,
 }
 
 describe("TeamManagementTab", () => {
