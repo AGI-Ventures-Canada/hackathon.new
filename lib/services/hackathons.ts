@@ -448,6 +448,9 @@ export async function getParticipantTeamInfo(
     token: isCaptain ? inv.token : null,
   }))
 
+  if (roomTeamResult.error) {
+    console.error("Failed to get room assignment:", roomTeamResult.error)
+  }
   const roomTeamRow = (roomTeamResult.data ?? [])[0]
   const roomRow = roomTeamRow
     ? (roomTeamRow.rooms as unknown as { id: string; name: string } | null)
