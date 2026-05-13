@@ -303,6 +303,7 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
                           <DropdownMenuContent align="end">
                             {isAccepted && (
                               <>
+                                {p.role === "participant" && (
                                 <DropdownMenuSub>
                                   <DropdownMenuSubTrigger disabled={isLocked}>
                                     <UsersIcon className="size-4" />
@@ -324,6 +325,7 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
                                     )}
                                   </DropdownMenuSubContent>
                                 </DropdownMenuSub>
+                                )}
                                 <DropdownMenuSub>
                                   <DropdownMenuSubTrigger disabled={isLocked}>
                                     <UserCog className="size-4" />

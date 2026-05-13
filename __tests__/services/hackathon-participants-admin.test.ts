@@ -65,6 +65,15 @@ describe("assignParticipantToTeam", () => {
     expect(result).toEqual({ error: "Person not found", code: "not_found" })
   })
 
+  it("rejects assigning a non-participant role to a team", async () => {
+    setMockFromImplementation(tableImpl({
+      hackathon_participants: { data: participantRow({ role: "judge" }), error: null },
+    }))
+    const result = await assignParticipantToTeam(VALID_UUID, VALID_UUID, TEAM_UUID)
+    expect(result.success).toBeUndefined()
+    if ("error" in result) expect(result.code).toBe("not_participant")
+  })
+
   it("returns team_not_found when the target team doesn't exist", async () => {
     setMockFromImplementation(tableImpl({
       hackathon_participants: { data: participantRow(), error: null },

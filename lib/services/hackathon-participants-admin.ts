@@ -58,12 +58,14 @@ type PromoteCaptainResult = { ok: true; successor: string | null } | { ok: false
 async function promoteNextCaptain(
   client: SupabaseClient,
   teamId: string,
+  hackathonId: string,
   excludeClerkUserId: string,
 ): Promise<PromoteCaptainResult> {
   const { data: candidates, error } = await client
     .from("hackathon_participants")
     .select("clerk_user_id, registered_at")
     .eq("team_id", teamId)
+    .eq("hackathon_id", hackathonId)
     .neq("clerk_user_id", excludeClerkUserId)
     .order("registered_at", { ascending: true })
     .limit(1)
@@ -113,7 +115,7 @@ async function deleteJudgeAssignments(client: SupabaseClient, participantId: str
 
 export type AssignTeamResult =
   | { success: true; teamId: string | null; capacityHandedOff: boolean }
-  | { error: string; code: "not_found" | "team_not_found" | "team_full" | "status_locked" | "failed" }
+  | { error: string; code: "not_found" | "not_participant" | "team_not_found" | "team_full" | "status_locked" | "failed" }
 
 export async function assignParticipantToTeam(
   participantId: string,
@@ -123,6 +125,9 @@ export async function assignParticipantToTeam(
   const client = getSupabase() as unknown as SupabaseClient
   const participant = await fetchParticipant(client, participantId, hackathonId)
   if (!participant) return { error: "Person not found", code: "not_found" }
+  if (participant.role !== "participant") {
+    return { error: "Only participants can be assigned to a team", code: "not_participant" }
+  }
   if (participant.hackathonStatus && LOCKED_STATUSES.has(participant.hackathonStatus)) {
     return { error: "Team changes are locked once judging has started", code: "status_locked" }
   }
@@ -157,7 +162,7 @@ export async function assignParticipantToTeam(
   if (participant.team_id && participant.team_id !== newTeamId) {
     const wasCaptain = await isCaptainOf(client, participant.team_id, participant.clerk_user_id)
     if (wasCaptain) {
-      const promotion = await promoteNextCaptain(client, participant.team_id, participant.clerk_user_id)
+      const promotion = await promoteNextCaptain(client, participant.team_id, hackathonId, participant.clerk_user_id)
       if (!promotion.ok) return { error: "Failed to reassign captain", code: "failed" }
       capacityHandedOff = true
     }
@@ -204,7 +209,7 @@ export async function updateParticipantRole(
   if (leavingParticipantRole && participant.team_id) {
     const wasCaptain = await isCaptainOf(client, participant.team_id, participant.clerk_user_id)
     if (wasCaptain) {
-      const promotion = await promoteNextCaptain(client, participant.team_id, participant.clerk_user_id)
+      const promotion = await promoteNextCaptain(client, participant.team_id, hackathonId, participant.clerk_user_id)
       if (!promotion.ok) return { error: "Failed to reassign captain", code: "failed" }
       capacityHandedOff = true
     }
@@ -250,7 +255,7 @@ export async function removeParticipantFromEvent(
   if (participant.team_id) {
     const wasCaptain = await isCaptainOf(client, participant.team_id, participant.clerk_user_id)
     if (wasCaptain) {
-      const promotion = await promoteNextCaptain(client, participant.team_id, participant.clerk_user_id)
+      const promotion = await promoteNextCaptain(client, participant.team_id, hackathonId, participant.clerk_user_id)
       if (!promotion.ok) return { error: "Failed to reassign captain", code: "failed" }
       capacityHandedOff = true
     }

@@ -670,7 +670,7 @@ export async function remindTeamInvitation(
 
 interface TeamWithHackathon {
   name: string
-  hackathon: { name: string; slug: string; status: string; starts_at: string | null; ends_at: string | null }
+  hackathon: { id: string; name: string; slug: string; status: string; starts_at: string | null; ends_at: string | null }
   memberNames: string[]
 }
 
@@ -688,7 +688,7 @@ export async function getTeamWithHackathon(
     .from("teams")
     .select(`
       name,
-      hackathons!inner(name, slug, status, starts_at, ends_at),
+      hackathons!inner(id, name, slug, status, starts_at, ends_at),
       hackathon_participants!hackathon_participants_team_id_fkey(clerk_user_id, role)
     `)
     .eq("id", teamId)
@@ -698,7 +698,7 @@ export async function getTeamWithHackathon(
     return null
   }
 
-  const hackathon = data.hackathons as unknown as { name: string; slug: string; status: string; starts_at: string | null; ends_at: string | null }
+  const hackathon = data.hackathons as unknown as { id: string; name: string; slug: string; status: string; starts_at: string | null; ends_at: string | null }
   const rawParticipants = (data.hackathon_participants ?? []) as unknown as { clerk_user_id: string; role: string }[]
   const participants = rawParticipants.filter((p) => p.role === "participant")
 
@@ -726,6 +726,7 @@ export async function getTeamWithHackathon(
   return {
     name: data.name,
     hackathon: {
+      id: hackathon.id,
       name: hackathon.name,
       slug: hackathon.slug,
       status: hackathon.status,

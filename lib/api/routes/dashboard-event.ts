@@ -595,7 +595,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
 
     const { remindTeamInvitationAsOrganizer, getTeamWithHackathon } = await import("@/lib/services/team-invitations")
     const teamInfo = await getTeamWithHackathon(params.teamId)
-    if (!teamInfo) {
+    if (!teamInfo || teamInfo.hackathon.id !== params.id) {
       set.status = 404
       return { error: "Team not found" }
     }
@@ -758,6 +758,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
         set.status =
           teamResult.code === "not_found" ? 404 :
           teamResult.code === "team_not_found" ? 404 :
+          teamResult.code === "not_participant" ? 409 :
           teamResult.code === "team_full" ? 409 :
           teamResult.code === "status_locked" ? 409 : 500
         return { error: teamResult.error }
