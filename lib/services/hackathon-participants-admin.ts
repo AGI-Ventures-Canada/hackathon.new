@@ -2,6 +2,7 @@ import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { getHackathonStatus } from "./public-hackathons"
 import type { PersonRole } from "./hackathon-people-types"
+import { isValidUuid } from "@/lib/utils/uuid"
 
 const LOCKED_STATUSES = new Set(["judging", "completed", "archived"])
 
@@ -112,6 +113,7 @@ export async function assignParticipantToTeam(
   if (!participant) return { error: "Person not found", code: "not_found" }
 
   if (newTeamId) {
+    if (!isValidUuid(newTeamId)) return { error: "Team not found", code: "team_not_found" }
     const { data: targetTeam } = await client
       .from("teams")
       .select("id, hackathon_id")

@@ -38,6 +38,8 @@ const participantRow = (overrides: Partial<{ id: string; clerk_user_id: string; 
 })
 
 const VALID_UUID = "11111111-1111-1111-1111-111111111111"
+const TEAM_UUID = "22222222-2222-2222-2222-222222222222"
+const TEAM_UUID_2 = "33333333-3333-3333-3333-333333333333"
 
 describe("assignParticipantToTeam", () => {
   beforeEach(() => resetSupabaseMocks())
@@ -81,9 +83,9 @@ describe("assignParticipantToTeam", () => {
         { data: participantRow(), error: null },
         { data: null, error: null, count: 5 },
       ],
-      teams: { data: { id: "team_1", hackathon_id: "h_1" }, error: null },
+      teams: { data: { id: TEAM_UUID, hackathon_id: "h_1" }, error: null },
     }))
-    const result = await assignParticipantToTeam(VALID_UUID, VALID_UUID, "team_1")
+    const result = await assignParticipantToTeam(VALID_UUID, VALID_UUID, TEAM_UUID)
     expect(result.success).toBeUndefined()
     if ("error" in result) expect(result.code).toBe("team_full")
   })
@@ -99,10 +101,10 @@ describe("assignParticipantToTeam", () => {
         { data: null, error: null, count: 1 },
         { data: null, error: null },
       ],
-      teams: { data: { id: "team_1", hackathon_id: "h_1" }, error: null },
+      teams: { data: { id: TEAM_UUID, hackathon_id: "h_1" }, error: null },
     }))
-    const result = await assignParticipantToTeam(VALID_UUID, VALID_UUID, "team_1")
-    expect(result).toEqual({ success: true, teamId: "team_1", capacityHandedOff: false })
+    const result = await assignParticipantToTeam(VALID_UUID, VALID_UUID, TEAM_UUID)
+    expect(result).toEqual({ success: true, teamId: TEAM_UUID, capacityHandedOff: false })
   })
 
   it("hands off captaincy when moving the captain off a team", async () => {
@@ -118,12 +120,12 @@ describe("assignParticipantToTeam", () => {
         { data: null, error: null },
       ],
       teams: [
-        { data: { id: "team_new", hackathon_id: "h_1" }, error: null },
+        { data: { id: TEAM_UUID_2, hackathon_id: "h_1" }, error: null },
         { data: { captain_clerk_user_id: "user_1" }, error: null },
         { data: null, error: null },
       ],
     }))
-    const result = await assignParticipantToTeam(VALID_UUID, VALID_UUID, "team_new")
+    const result = await assignParticipantToTeam(VALID_UUID, VALID_UUID, TEAM_UUID_2)
     expect(result.success).toBe(true)
     if (result.success) expect(result.capacityHandedOff).toBe(true)
   })

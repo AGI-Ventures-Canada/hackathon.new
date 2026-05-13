@@ -306,7 +306,7 @@ export async function cancelTeamInvitationAsOrganizer(
 
   const { data: invitation } = await client
     .from("team_invitations")
-    .select("id, hackathon_id, status")
+    .select("id, hackathon_id, team_id, status, is_captain_invite")
     .eq("id", invitationId)
     .maybeSingle()
 
@@ -323,7 +323,18 @@ export async function cancelTeamInvitationAsOrganizer(
     .eq("id", invitationId)
     .eq("hackathon_id", hackathonId)
 
-  return { success: !error, error: error?.message }
+  if (error) return { success: false, error: error.message }
+
+  if (invitation.is_captain_invite && invitation.team_id) {
+    const { error: teamErr } = await client
+      .from("teams")
+      .update({ pending_captain_email: null, updated_at: new Date().toISOString() })
+      .eq("id", invitation.team_id)
+      .eq("hackathon_id", hackathonId)
+    if (teamErr) console.error("Failed to clear pending_captain_email:", teamErr)
+  }
+
+  return { success: true }
 }
 
 export type ReplaceCaptainInvitationResult =
