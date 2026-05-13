@@ -40,7 +40,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { CopyButton } from "@/components/ui/copy-button"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { TabsUrlSync } from "@/components/ui/tabs-url-sync"
 import { JudgingSetupWizard } from "./judging-setup-wizard"
 import type { ManageJtab } from "@/lib/utils/manage-tabs"
@@ -69,6 +69,7 @@ import {
   ExternalLink,
   Sliders,
   ClipboardList,
+  Copy,
 } from "lucide-react"
 import { useActionItemsOptional } from "@/components/hackathon/manage/action-items-context"
 import { AddJudgeDialog, type AddJudgeResult } from "./add-judge-dialog"
@@ -660,6 +661,7 @@ function JudgesSection({
 }) {
   const isClient = useIsClient()
   const origin = isClient ? window.location.origin : ""
+  const totalCount = judges.length + invitations.length
 
   return (
     <Card>
@@ -667,8 +669,8 @@ function JudgesSection({
         <CardTitle className="flex items-center gap-2 text-base">
           <Users className="size-4" />
           Judges
-          {judges.length > 0 && (
-            <Badge variant="secondary">{judges.length}</Badge>
+          {totalCount > 0 && (
+            <Badge variant="secondary">{totalCount}</Badge>
           )}
         </CardTitle>
         <Button size="sm" variant="outline" onClick={onAddJudge}>
@@ -677,99 +679,161 @@ function JudgesSection({
         </Button>
       </CardHeader>
       <CardContent>
-        {judges.length === 0 && invitations.length === 0 ? (
+        {totalCount === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-4">
             No judges yet. Add judges to start assigning them to prizes.
           </p>
         ) : (
-          <div className="space-y-3">
-            <div className="flex flex-wrap gap-2">
-              {judges.map((judge) => (
-                <JudgePill
-                  key={judge.participantId}
-                  imageUrl={judge.imageUrl}
-                  displayName={judge.displayName}
-                  badge={
-                    judge.prizeIds.length > 0 ? (
-                      <Badge variant="secondary" className="text-xs">{judge.prizeIds.length} prize{judge.prizeIds.length !== 1 ? "s" : ""}</Badge>
-                    ) : undefined
-                  }
-                  action={
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="size-6">
-                          <MoreHorizontal className="size-3" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          className="text-destructive"
-                          onClick={() => onRemoveJudge(judge.participantId)}
-                        >
-                          <Trash2 className="mr-2 size-4" />
-                          Remove Judge
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  }
-                />
-              ))}
-              {invitations.map((inv) => (
-                <div
-                  key={inv.id}
-                  className="flex items-center gap-2 rounded-lg border border-dashed px-3 py-1.5 text-sm text-muted-foreground"
-                >
-                  <Mail className="size-3.5" />
-                  <span>{inv.email}</span>
-                  {inv.remindedAt ? (
-                    <Badge variant="secondary" className="text-xs">
-                      <Bell className="mr-1 size-3" />
-                      Reminded
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline" className="text-xs">
-                      <Clock className="mr-1 size-3" />
-                      Invited
-                    </Badge>
-                  )}
-                  {inv.token && (
-                    <>
-                      <a
-                        href={`${origin}/judge-invite/${inv.token}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center text-muted-foreground hover:text-foreground"
-                      >
-                        <ExternalLink className="size-3.5" />
-                        <span className="sr-only">Open invite link</span>
-                      </a>
-                      <CopyButton
-                        value={`${origin}/judge-invite/${inv.token}`}
-                        size="icon"
-                        className="size-6"
-                      />
-                    </>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-6"
-                    onClick={() => onRemindInvitation(inv.id)}
-                  >
-                    <Bell className="size-3" />
-                    <span className="sr-only">Send reminder</span>
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-6"
-                    onClick={() => onCancelInvitation(inv.id)}
-                  >
-                    <Trash2 className="size-3" />
-                  </Button>
-                </div>
-              ))}
-            </div>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Judge</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Prizes</TableHead>
+                  <TableHead className="w-12" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {judges.map((judge) => (
+                  <TableRow key={`judge-${judge.participantId}`}>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Avatar size="sm">
+                          {judge.imageUrl && (
+                            <AvatarImage src={judge.imageUrl} alt={judge.displayName} />
+                          )}
+                          <AvatarFallback className="text-[10px]">
+                            {judge.displayName.slice(0, 2).toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0">
+                          <div className="font-medium truncate">{judge.displayName}</div>
+                          {judge.email && (
+                            <div className="text-xs text-muted-foreground truncate">
+                              {judge.email}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="secondary" className="font-normal">Active</Badge>
+                    </TableCell>
+                    <TableCell>
+                      {judge.prizeIds.length > 0 ? (
+                        <span className="text-sm">
+                          {judge.prizeIds.length} prize{judge.prizeIds.length !== 1 ? "s" : ""}
+                        </span>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="size-8">
+                            <MoreHorizontal className="size-4" />
+                            <span className="sr-only">Open judge actions</span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            onClick={() => onRemoveJudge(judge.participantId)}
+                          >
+                            <Trash2 className="mr-2 size-4" />
+                            Remove judge
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {invitations.map((inv) => (
+                  <TableRow key={`inv-${inv.id}`}>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Avatar size="sm">
+                          <AvatarFallback className="text-muted-foreground">
+                            <Mail className="size-3" />
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0">
+                          <div className="font-medium truncate">{inv.email}</div>
+                          <div className="text-xs text-muted-foreground">
+                            Awaiting acceptance
+                          </div>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {inv.remindedAt ? (
+                        <Badge variant="secondary" className="font-normal">
+                          <Bell className="mr-1 size-3" />
+                          Reminded
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="font-normal">
+                          <Clock className="mr-1 size-3" />
+                          Invited
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-sm text-muted-foreground">—</span>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="size-8">
+                            <MoreHorizontal className="size-4" />
+                            <span className="sr-only">Open invite actions</span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {inv.token && (
+                            <>
+                              <DropdownMenuItem asChild>
+                                <a
+                                  href={`${origin}/judge-invite/${inv.token}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  <ExternalLink className="mr-2 size-4" />
+                                  Open invite link
+                                </a>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  navigator.clipboard.writeText(
+                                    `${origin}/judge-invite/${inv.token}`,
+                                  )
+                                }}
+                              >
+                                <Copy className="mr-2 size-4" />
+                                Copy invite link
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                          <DropdownMenuItem onClick={() => onRemindInvitation(inv.id)}>
+                            <Bell className="mr-2 size-4" />
+                            Send reminder
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            onClick={() => onCancelInvitation(inv.id)}
+                          >
+                            <Trash2 className="mr-2 size-4" />
+                            Cancel invite
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
         )}
       </CardContent>
