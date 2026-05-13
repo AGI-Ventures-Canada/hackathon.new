@@ -67,6 +67,7 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
   const [removing, setRemoving] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionInfo, setActionInfo] = useState<string | null>(null)
+  const [resendingIds, setResendingIds] = useState<Set<string>>(new Set())
 
   const isClient = useSyncExternalStore(emptySubscribe, () => true, () => false)
   const csvHref = useMemo(() => {
@@ -167,6 +168,8 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
       showError("Missing team for invite")
       return
     }
+    if (resendingIds.has(parsed.invitationId)) return
+    setResendingIds((prev) => new Set(prev).add(parsed.invitationId))
     try {
       await fetch(`/api/dashboard/hackathons/${hackathonId}/teams/${person.teamId}/invitations/${parsed.invitationId}/remind`, {
         method: "POST",
@@ -174,6 +177,12 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
       showInfo(`Reminder sent to ${person.email}`)
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to resend invite")
+    } finally {
+      setResendingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(parsed.invitationId)
+        return next
+      })
     }
   }
 
@@ -352,11 +361,18 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
                                 </DropdownMenuItem>
                               </>
                             )}
-                            {isTeamInvite && (
+                            {isTeamInvite && (() => {
+                              const parsed = parsePendingId(p.id)
+                              const invitationId = parsed?.kind === "team" ? parsed.invitationId : null
+                              const isResending = invitationId ? resendingIds.has(invitationId) : false
+                              return (
                               <>
-                                <DropdownMenuItem onSelect={() => handleResendInvite(p)}>
+                                <DropdownMenuItem
+                                  disabled={isResending}
+                                  onSelect={() => handleResendInvite(p)}
+                                >
                                   <Send className="size-4" />
-                                  Resend invite
+                                  {isResending ? "Sending…" : "Resend invite"}
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem variant="destructive" onSelect={() => handleCancelInvite(p)}>
@@ -364,7 +380,8 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
                                   Cancel invite
                                 </DropdownMenuItem>
                               </>
-                            )}
+                              )
+                            })()}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       ) : null}

@@ -107,10 +107,6 @@ export function TeamEditDialog({
     }
   }
 
-  const captainOptions = members.length > 0
-    ? members
-    : []
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -161,7 +157,7 @@ export function TeamEditDialog({
             <label htmlFor="team-edit-captain" className="text-xs font-medium">
               Captain
             </label>
-            {captainOptions.length === 0 ? (
+            {members.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 Add a member before you can pick a captain.
               </p>
@@ -174,7 +170,7 @@ export function TeamEditDialog({
                   <SelectValue placeholder="Pick a captain" />
                 </SelectTrigger>
                 <SelectContent>
-                  {captainOptions.map((m) => (
+                  {members.map((m) => (
                     <SelectItem key={m.clerkUserId} value={m.clerkUserId}>
                       {m.displayName ?? m.email ?? m.clerkUserId}
                     </SelectItem>

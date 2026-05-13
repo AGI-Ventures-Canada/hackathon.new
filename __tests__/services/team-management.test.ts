@@ -118,18 +118,18 @@ describe("setTeamCaptain", () => {
   it("no-ops when the requested captain is already the captain", async () => {
     setMockFromImplementation(
       tableImpl({
-        teams: { data: { id: "team_1", captain_clerk_user_id: "user_1" }, error: null },
+        teams: { data: { id: "team_1", name: "Team One", mode: null, captain_clerk_user_id: "user_1" }, error: null },
       })
     )
 
     const result = await setTeamCaptain("team_1", "h_1", "user_1")
-    expect(result).toEqual({ success: true })
+    expect(result).toEqual({ success: true, team: { id: "team_1", name: "Team One", mode: null } })
   })
 
   it("rejects setting a non-member as captain", async () => {
     setMockFromImplementation(
       tableImpl({
-        teams: { data: { id: "team_1", captain_clerk_user_id: "user_existing" }, error: null },
+        teams: { data: { id: "team_1", name: "Team One", mode: null, captain_clerk_user_id: "user_existing" }, error: null },
         hackathon_participants: { data: null, error: null },
       })
     )
@@ -142,14 +142,15 @@ describe("setTeamCaptain", () => {
     setMockFromImplementation(
       tableImpl({
         teams: [
-          { data: { id: "team_1", captain_clerk_user_id: "user_old" }, error: null },
-          { data: null, error: null },
+          { data: { id: "team_1", name: "Team One", mode: "in_person", captain_clerk_user_id: "user_old" }, error: null },
+          { data: { id: "team_1", name: "Team One", mode: "in_person" }, error: null },
         ],
         hackathon_participants: { data: { id: "p_1" }, error: null },
+        team_invitations: { data: [], error: null },
       })
     )
 
     const result = await setTeamCaptain("team_1", "h_1", "user_new")
-    expect(result).toEqual({ success: true })
+    expect(result).toEqual({ success: true, team: { id: "team_1", name: "Team One", mode: "in_person" } })
   })
 })

@@ -955,8 +955,27 @@ export async function deleteTeam(teamId: string, hackathonId: string): Promise<D
   }
 }
 
+export async function listAssignableTeams(
+  hackathonId: string
+): Promise<{ id: string; name: string }[]> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const { data, error } = await client
+    .from("teams")
+    .select("id, name")
+    .eq("hackathon_id", hackathonId)
+    .neq("status", "disbanded")
+    .order("name")
+
+  if (error) {
+    console.error("Failed to list assignable teams:", error)
+    return []
+  }
+
+  return (data ?? []) as { id: string; name: string }[]
+}
+
 export type SetTeamCaptainResult =
-  | { success: true }
+  | { success: true; team: { id: string; name: string; mode: "in_person" | "virtual" | null } }
   | { error: string; code: "not_found" | "not_member" | "failed" }
 
 export async function setTeamCaptain(
@@ -968,14 +987,16 @@ export async function setTeamCaptain(
 
   const { data: team, error: teamErr } = await client
     .from("teams")
-    .select("id, captain_clerk_user_id")
+    .select("id, name, mode, captain_clerk_user_id")
     .eq("id", teamId)
     .eq("hackathon_id", hackathonId)
     .single()
 
   if (teamErr || !team) return { error: "Team not found", code: "not_found" }
 
-  if (team.captain_clerk_user_id === clerkUserId) return { success: true }
+  if (team.captain_clerk_user_id === clerkUserId) {
+    return { success: true, team: { id: team.id, name: team.name, mode: team.mode ?? null } }
+  }
 
   const { data: member, error: memberErr } = await client
     .from("hackathon_participants")
@@ -992,7 +1013,30 @@ export async function setTeamCaptain(
 
   if (!member) return { error: "That person isn't on this team", code: "not_member" }
 
-  const { error: updateErr } = await client
+  const { data: cancelledInvites, error: cancelErr } = await client
+    .from("team_invitations")
+    .update({ status: "cancelled", updated_at: new Date().toISOString() })
+    .eq("team_id", teamId)
+    .eq("hackathon_id", hackathonId)
+    .eq("status", "pending")
+    .eq("is_captain_invite", true)
+    .select("id")
+
+  if (cancelErr) {
+    console.error("Failed to cancel pending captain invitations:", cancelErr)
+    return { error: "Failed to change captain", code: "failed" }
+  }
+
+  if (cancelledInvites && cancelledInvites.length > 0) {
+    const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
+    for (const inv of cancelledInvites as Array<{ id: string }>) {
+      cancelRemindersForEntity("team_invitation", inv.id).catch((err) =>
+        console.error(`Failed to cancel reminders for team_invitation ${inv.id}:`, err)
+      )
+    }
+  }
+
+  const { data: updated, error: updateErr } = await client
     .from("teams")
     .update({
       captain_clerk_user_id: clerkUserId,
@@ -1001,11 +1045,13 @@ export async function setTeamCaptain(
     })
     .eq("id", teamId)
     .eq("hackathon_id", hackathonId)
+    .select("id, name, mode")
+    .single()
 
-  if (updateErr) {
+  if (updateErr || !updated) {
     console.error("Failed to update team captain:", updateErr)
     return { error: "Failed to change captain", code: "failed" }
   }
 
-  return { success: true }
+  return { success: true, team: { id: updated.id, name: updated.name, mode: updated.mode ?? null } }
 }

@@ -117,6 +117,7 @@ export async function assignParticipantToTeam(
       .select("id, hackathon_id")
       .eq("id", newTeamId)
       .eq("hackathon_id", hackathonId)
+      .neq("status", "disbanded")
       .maybeSingle()
     if (!targetTeam) return { error: "Team not found", code: "team_not_found" }
 

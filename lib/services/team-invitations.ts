@@ -321,6 +321,7 @@ export async function cancelTeamInvitationAsOrganizer(
     .from("team_invitations")
     .update({ status: "cancelled", updated_at: new Date().toISOString() })
     .eq("id", invitationId)
+    .eq("hackathon_id", hackathonId)
 
   return { success: !error, error: error?.message }
 }

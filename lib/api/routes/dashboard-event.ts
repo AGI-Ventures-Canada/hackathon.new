@@ -470,6 +470,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       return { error: "Team name must be 1-100 characters" }
     }
 
+    let captainUpdatedTeam: { id: string; name: string; mode: "in_person" | "virtual" | null } | null = null
     if (captainClerkUserId !== undefined) {
       if (check.status === "not_authorized") {
         set.status = 403
@@ -480,6 +481,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
         set.status = result.code === "not_found" ? 404 : result.code === "not_member" ? 400 : 500
         return { error: result.error }
       }
+      captainUpdatedTeam = result.team
       await logAudit({
         principal,
         action: "team.captain_changed",
@@ -499,13 +501,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     }
 
     if (Object.keys(updatePayload).length === 0) {
-      const { data } = await supabase()
-        .from("teams")
-        .select("id, name, mode")
-        .eq("id", params.teamId)
-        .eq("hackathon_id", params.id)
-        .single()
-      return data
+      return captainUpdatedTeam
     }
 
     updatePayload.updated_at = new Date().toISOString()

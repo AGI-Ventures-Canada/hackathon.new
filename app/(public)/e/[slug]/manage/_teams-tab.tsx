@@ -161,6 +161,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
   const [reinviteEmail, setReinviteEmail] = useState("")
   const [reinviteBusy, setReinviteBusy] = useState(false)
   const [reinviteError, setReinviteError] = useState<string | null>(null)
+  const [resendingIds, setResendingIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     if (!ctx) return
@@ -374,6 +375,8 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
   }
 
   async function handleResendInvite(team: Team, invitationId: string) {
+    if (resendingIds.has(invitationId)) return
+    setResendingIds((prev) => new Set(prev).add(invitationId))
     try {
       await fetch(`/api/dashboard/hackathons/${hackathonId}/teams/${team.id}/invitations/${invitationId}/remind`, {
         method: "POST",
@@ -382,6 +385,12 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
       setTimeout(() => setInviteSuccess(null), 5000)
     } catch (err) {
       showActionError(err instanceof Error ? err.message : "Failed to resend invite")
+    } finally {
+      setResendingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(invitationId)
+        return next
+      })
     }
   }
 
@@ -799,9 +808,12 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                                             </Button>
                                           </DropdownMenuTrigger>
                                           <DropdownMenuContent align="end">
-                                            <DropdownMenuItem onSelect={() => handleResendInvite(team, team.pendingCaptainInvitationId!)}>
+                                            <DropdownMenuItem
+                                              disabled={resendingIds.has(team.pendingCaptainInvitationId!)}
+                                              onSelect={() => handleResendInvite(team, team.pendingCaptainInvitationId!)}
+                                            >
                                               <Send className="size-4" />
-                                              Resend
+                                              {resendingIds.has(team.pendingCaptainInvitationId!) ? "Sending…" : "Resend"}
                                             </DropdownMenuItem>
                                             <DropdownMenuItem onSelect={() => {
                                               setReinviteTarget({ team, invitationId: team.pendingCaptainInvitationId!, previousEmail: team.pendingCaptainEmail! })
@@ -880,9 +892,12 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                                                 </Button>
                                               </DropdownMenuTrigger>
                                               <DropdownMenuContent align="end">
-                                                <DropdownMenuItem onSelect={() => handleResendInvite(team, inv.id)}>
+                                                <DropdownMenuItem
+                                                  disabled={resendingIds.has(inv.id)}
+                                                  onSelect={() => handleResendInvite(team, inv.id)}
+                                                >
                                                   <Send className="size-4" />
-                                                  Resend
+                                                  {resendingIds.has(inv.id) ? "Sending…" : "Resend"}
                                                 </DropdownMenuItem>
                                                 <DropdownMenuSeparator />
                                                 <DropdownMenuItem variant="destructive" onSelect={() => handleCancelInvite(team, inv.id)}>
