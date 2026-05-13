@@ -54,6 +54,7 @@ const RADIX_ISOLATED_TESTS = [
   "__tests__/components/ui/tabs-url-sync.test.tsx",
   "__tests__/components/org/org-event-tabs.test.tsx",
   "__tests__/components/dashboard/api-key-create-dialog.test.tsx",
+  "__tests__/components/hackathon/judging/judges-section.test.tsx",
 ]
 const radixSet = new Set(RADIX_ISOLATED_TESTS)
 
