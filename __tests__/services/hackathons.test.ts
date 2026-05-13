@@ -802,6 +802,44 @@ describe("Hackathons Service", () => {
       expect(result).not.toBeNull()
       expect(result!.room).toBeNull()
     })
+
+    it("returns null room and continues when room_teams query errors", async () => {
+      const participantsCalls = { count: 0 }
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants") {
+          participantsCalls.count++
+          if (participantsCalls.count === 1) {
+            return createChainableMock({ data: { team_id: "team_1" }, error: null })
+          }
+          return createChainableMock({
+            data: [{ clerk_user_id: "user_captain", role: "participant", registered_at: "2026-01-01T00:00:00Z" }],
+            error: null,
+          })
+        }
+        if (table === "teams") {
+          return createChainableMock({
+            data: { id: "team_1", name: "Test Team", status: "forming", invite_code: "abc123", captain_clerk_user_id: "user_captain" },
+            error: null,
+          })
+        }
+        if (table === "team_invitations") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "room_teams") {
+          return createChainableMock({ data: null, error: { message: "db went sideways" } })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      mockClerkClient.mockResolvedValueOnce({
+        users: { getUserList: () => Promise.resolve({ data: [] }) },
+      })
+
+      const result = await getParticipantTeamInfo("h1", "user_captain")
+      expect(result).not.toBeNull()
+      expect(result!.room).toBeNull()
+      expect(result!.team.id).toBe("team_1")
+    })
   })
 
   describe("listTeamsWithMembers", () => {
