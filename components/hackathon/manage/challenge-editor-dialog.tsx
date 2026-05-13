@@ -217,7 +217,7 @@ export function ChallengeEditorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle>{challenge ? "Edit challenge" : "Add challenge"}</DialogTitle>
         </DialogHeader>
@@ -250,7 +250,7 @@ export function ChallengeEditorDialog({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Describe the challenge, problem statement, and any constraints..."
-              className="min-h-[12rem]"
+              className="min-h-[12rem] max-h-48 overflow-y-auto"
               autoComplete="off"
             />
             <p className="text-xs text-muted-foreground">Markdown supported</p>
