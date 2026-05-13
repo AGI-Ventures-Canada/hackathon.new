@@ -548,8 +548,9 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         </div>
       )}
       {roomError && <p className="text-sm text-destructive">{roomError}</p>}
-      {actionError && <p className="text-sm text-destructive">{actionError}</p>}
-      {remindError && <p className="text-sm text-destructive">{remindError}</p>}
+      {(actionError || remindError) && (
+        <p className="text-sm text-destructive">{actionError ?? remindError}</p>
+      )}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-muted-foreground">
           {teams.length === 0

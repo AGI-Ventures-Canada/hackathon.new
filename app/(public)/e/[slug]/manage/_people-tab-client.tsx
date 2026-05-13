@@ -224,8 +224,9 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
         />
       </div>
 
-      {actionError && <p className="text-sm text-destructive">{actionError}</p>}
-      {remindError && <p className="text-sm text-destructive">{remindError}</p>}
+      {(actionError || remindError) && (
+        <p className="text-sm text-destructive">{actionError ?? remindError}</p>
+      )}
 
       {people.length === 0 ? (
         <div className="rounded-lg border border-dashed py-12 text-center text-sm text-muted-foreground">
