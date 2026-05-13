@@ -470,6 +470,11 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       return { error: "Team name must be 1-100 characters" }
     }
 
+    if (mode !== undefined && check.status === "not_authorized") {
+      set.status = 403
+      return { error: "Only an organizer can change the team mode" }
+    }
+
     let captainUpdatedTeam: { id: string; name: string; mode: "in_person" | "virtual" | null } | null = null
     if (captainClerkUserId !== undefined) {
       if (check.status === "not_authorized") {

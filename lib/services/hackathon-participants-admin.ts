@@ -74,9 +74,11 @@ async function promoteNextCaptain(
   const next = candidates?.[0] as { clerk_user_id: string } | undefined
   const successor = next?.clerk_user_id ?? null
 
-  const updatePayload = successor
-    ? { captain_clerk_user_id: successor, updated_at: new Date().toISOString() }
-    : { captain_clerk_user_id: null, pending_captain_email: null, updated_at: new Date().toISOString() }
+  const updatePayload = {
+    captain_clerk_user_id: successor,
+    pending_captain_email: null,
+    updated_at: new Date().toISOString(),
+  }
 
   const { error: updateErr } = await client
     .from("teams")

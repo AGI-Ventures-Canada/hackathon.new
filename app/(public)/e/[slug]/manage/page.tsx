@@ -346,7 +346,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
 
             <TabsContent value="people" forceMount className="data-[state=inactive]:hidden">
               <Suspense fallback={<TabLoadingSkeleton />}>
-                <PeopleTab hackathonId={hackathon.id} />
+                <PeopleTab hackathonId={hackathon.id} hackathonStatus={hackathon.status} />
               </Suspense>
             </TabsContent>
 
