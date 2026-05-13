@@ -643,7 +643,7 @@ export function JudgingTabClient({
   )
 }
 
-function JudgesSection({
+export function JudgesSection({
   judges,
   invitations,
   hackathonId: _hackathonId,
@@ -741,7 +741,7 @@ function JudgesSection({
                       </div>
                     </TableCell>
                     <TableCell>
-                      <span className="text-sm text-muted-foreground">—</span>
+                      <Badge variant="secondary">Active</Badge>
                     </TableCell>
                     <TableCell>
                       {judge.prizeIds.length > 0 ? (
