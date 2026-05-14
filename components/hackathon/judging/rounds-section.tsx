@@ -390,7 +390,7 @@ export function RoundsSection({ hackathonId, rounds }: RoundsSectionProps) {
         const idx = visibleRounds.findIndex((r) => r.id === closeRound.id)
         const next = visibleRounds[idx + 1]
         if (!next) return null
-        const advancedCount = next.submissionCount
+        const advancedCount = pickedCounts[next.id] ?? next.submissionCount
         return (
           <AlertDialog
             open={!!closeRound}
