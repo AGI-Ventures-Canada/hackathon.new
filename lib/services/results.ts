@@ -592,8 +592,17 @@ export async function getResultsByPrize(
     .eq("hackathon_id", hackathonId)
 
   const criteriaWeights = new Map<string, number>()
-  for (const c of (criteriaData ?? []) as Array<{ id: string; weight: number }>) {
+  const sharedCriteriaIds = new Set<string>()
+  const criteriaByPrize = new Map<string, Set<string>>()
+  for (const c of (criteriaData ?? []) as Array<{ id: string; weight: number; prize_id: string | null }>) {
     criteriaWeights.set(c.id, Number(c.weight) || 0)
+    if (c.prize_id === null) {
+      sharedCriteriaIds.add(c.id)
+    } else {
+      const set = criteriaByPrize.get(c.prize_id) ?? new Set<string>()
+      set.add(c.id)
+      criteriaByPrize.set(c.prize_id, set)
+    }
   }
 
   const submissionIdSet = new Set<string>()
@@ -761,6 +770,62 @@ export async function getResultsByPrize(
         prizeType: prize.type,
         judgingStyle: prize.judging_style,
         mode: "per_prize",
+        results: rankResults(rows),
+      })
+      continue
+    }
+
+    const unifiedAssignments = assignments.filter(
+      (a) => a.assignment_kind === "unified_weighted_score"
+    )
+
+    if (unifiedAssignments.length > 0) {
+      const prizeOwnCriteria = criteriaByPrize.get(prize.id) ?? new Set<string>()
+      const relevantCriteria = new Set<string>(sharedCriteriaIds)
+      for (const id of prizeOwnCriteria) relevantCriteria.add(id)
+
+      const bySubmission = new Map<
+        string,
+        { totalScore: number; weightedSum: number; weightSum: number; judgeAssignmentIds: Set<string> }
+      >()
+      for (const a of unifiedAssignments) {
+        const assignmentScores = (scoresByAssignment.get(a.id) ?? []).filter((s) =>
+          relevantCriteria.has(s.criteria_id)
+        )
+        if (assignmentScores.length === 0) continue
+        const entry = bySubmission.get(a.submission_id) ?? {
+          totalScore: 0,
+          weightedSum: 0,
+          weightSum: 0,
+          judgeAssignmentIds: new Set<string>(),
+        }
+        entry.judgeAssignmentIds.add(a.id)
+        for (const s of assignmentScores) {
+          const w = criteriaWeights.get(s.criteria_id) ?? 0
+          entry.totalScore += s.score
+          entry.weightedSum += s.score * w
+          entry.weightSum += w
+        }
+        bySubmission.set(a.submission_id, entry)
+      }
+
+      const rows: PerPrizeTeamResult[] = []
+      for (const [submissionId, agg] of bySubmission.entries()) {
+        const row = makeRow(submissionId, {
+          totalScore: agg.totalScore,
+          weightedScore:
+            agg.weightSum > 0 ? agg.weightedSum / agg.weightSum : null,
+          judgeCount: agg.judgeAssignmentIds.size,
+        })
+        if (row) rows.push(row)
+      }
+
+      groups.push({
+        prizeId: prize.id,
+        prizeName: prize.name,
+        prizeType: prize.type,
+        judgingStyle: prize.judging_style,
+        mode: "unified",
         results: rankResults(rows),
       })
       continue

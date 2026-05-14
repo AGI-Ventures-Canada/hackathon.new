@@ -7,6 +7,7 @@ import { useOptimisticList } from "@/hooks/use-optimistic-list"
 import { useOptimisticMutation } from "@/hooks/use-optimistic-mutation"
 import { usePrizeJudgeAssignments } from "@/hooks/use-prize-judge-assignments"
 import { assertOk } from "@/lib/utils/fetch"
+import { toCsv } from "@/lib/utils/csv"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
@@ -72,6 +73,7 @@ import {
   ClipboardList,
   Copy,
   Check,
+  Download,
 } from "lucide-react"
 import { useActionItemsOptional } from "@/components/hackathon/manage/action-items-context"
 import { AddJudgeDialog, type AddJudgeResult } from "./add-judge-dialog"
@@ -578,6 +580,7 @@ export function JudgingTabClient({
           {prizes.length > 0 || results.length > 0 ? (
             <ResultsSection
               hackathonId={hackathonId}
+              slug={slug}
               results={results}
               resultsByPrize={resultsByPrize}
               isPublished={isPublished}
@@ -1266,6 +1269,7 @@ function groupPrizesByRound(
 
 function ResultsSection({
   hackathonId: _hackathonId,
+  slug,
   results,
   resultsByPrize,
   isPublished,
@@ -1277,6 +1281,7 @@ function ResultsSection({
   incompleteAssignments,
 }: {
   hackathonId: string
+  slug: string
   results: ResultData[]
   resultsByPrize: PrizeResultsGroup[]
   isPublished: boolean
@@ -1296,6 +1301,47 @@ function ResultsSection({
 
   const hasAnyScored = results.length > 0
 
+  const exportableRows = resultsByPrize.flatMap((group) =>
+    group.results.map((r) => ({
+      Prize: group.prizeName,
+      Mode: group.mode,
+      Style: group.judgingStyle ?? "",
+      Rank: r.rank !== null ? r.rank : "",
+      Project: r.submissionTitle,
+      Team: r.teamName ?? "",
+      "Weighted score": r.weightedScore !== null ? Number(r.weightedScore).toFixed(2) : "",
+      "Total score": r.totalScore !== null ? Number(r.totalScore).toFixed(2) : "",
+      Judges: r.judgeCount,
+      "Assigned winner": r.isAssignedWinner ? "yes" : "",
+    }))
+  )
+
+  const handleExportCsv = () => {
+    const csv = toCsv(exportableRows, [
+      { key: "Prize", header: "Prize" },
+      { key: "Mode", header: "Mode" },
+      { key: "Style", header: "Style" },
+      { key: "Rank", header: "Rank" },
+      { key: "Project", header: "Project" },
+      { key: "Team", header: "Team" },
+      { key: "Weighted score", header: "Weighted score" },
+      { key: "Total score", header: "Total score" },
+      { key: "Judges", header: "Judges" },
+      { key: "Assigned winner", header: "Assigned winner" },
+    ])
+    const safeSlug = (slug || "hackathon").replace(/[^a-z0-9-]/gi, "") || "hackathon"
+    const today = new Date().toISOString().slice(0, 10)
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `${safeSlug}-results-${today}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1309,6 +1355,16 @@ function ResultsSection({
           ) : null}
         </h3>
         <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleExportCsv}
+            disabled={exportableRows.length === 0}
+          >
+            <Download className="mr-2 size-4" />
+            <span className="hidden sm:inline">Download CSV</span>
+            <span className="sm:hidden">CSV</span>
+          </Button>
           {isPublished ? (
             <AlertDialog>
               <AlertDialogTrigger asChild>

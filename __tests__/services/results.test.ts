@@ -839,6 +839,89 @@ describe("Results Service", () => {
       expect(group.results[1].judgeCount).toBe(1)
     })
 
+    it("aggregates unified scoring per prize using shared + prize-scoped criteria", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "prizes") {
+          return createChainableMock({
+            data: [
+              { id: "prize-a", name: "Prize A", type: "score", judging_style: "weighted_score", display_order: 0, is_screening: false },
+              { id: "prize-b", name: "Prize B", type: "score", judging_style: "weighted_score", display_order: 1, is_screening: false },
+            ],
+            error: null,
+          })
+        }
+        if (table === "judge_assignments") {
+          return createChainableMock({
+            data: [
+              { id: "ja1", submission_id: "sub1", prize_id: null, assignment_kind: "unified_weighted_score", is_complete: true },
+              { id: "ja2", submission_id: "sub2", prize_id: null, assignment_kind: "unified_weighted_score", is_complete: true },
+            ],
+            error: null,
+          })
+        }
+        if (table === "scores") {
+          return createChainableMock({
+            data: [
+              { judge_assignment_id: "ja1", criteria_id: "shared", score: 8 },
+              { judge_assignment_id: "ja1", criteria_id: "crit-a", score: 9 },
+              { judge_assignment_id: "ja1", criteria_id: "crit-b", score: 3 },
+              { judge_assignment_id: "ja2", criteria_id: "shared", score: 6 },
+              { judge_assignment_id: "ja2", criteria_id: "crit-a", score: 4 },
+              { judge_assignment_id: "ja2", criteria_id: "crit-b", score: 10 },
+            ],
+            error: null,
+          })
+        }
+        if (table === "judging_criteria") {
+          return createChainableMock({
+            data: [
+              { id: "shared", weight: 1, prize_id: null },
+              { id: "crit-a", weight: 1, prize_id: "prize-a" },
+              { id: "crit-b", weight: 1, prize_id: "prize-b" },
+            ],
+            error: null,
+          })
+        }
+        if (table === "prize_assignments") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "hackathon_results") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "submissions") {
+          return createChainableMock({
+            data: [
+              { id: "sub1", title: "Alpha", team_id: null },
+              { id: "sub2", title: "Beta", team_id: null },
+            ],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const groups = await getResultsByPrize("h1")
+      expect(groups).toHaveLength(2)
+
+      const prizeA = groups.find((g) => g.prizeId === "prize-a")!
+      expect(prizeA.mode).toBe("unified")
+      expect(prizeA.results).toHaveLength(2)
+      const alphaA = prizeA.results.find((r) => r.submissionId === "sub1")!
+      const betaA = prizeA.results.find((r) => r.submissionId === "sub2")!
+      expect(alphaA.totalScore).toBe(17)
+      expect(betaA.totalScore).toBe(10)
+      expect(alphaA.rank).toBe(1)
+      expect(betaA.rank).toBe(2)
+
+      const prizeB = groups.find((g) => g.prizeId === "prize-b")!
+      const alphaB = prizeB.results.find((r) => r.submissionId === "sub1")!
+      const betaB = prizeB.results.find((r) => r.submissionId === "sub2")!
+      expect(alphaB.totalScore).toBe(11)
+      expect(betaB.totalScore).toBe(16)
+      expect(betaB.rank).toBe(1)
+      expect(alphaB.rank).toBe(2)
+    })
+
     it("falls back to overall hackathon_results for prizes without per-prize assignments", async () => {
       setMockFromImplementation((table) => {
         if (table === "prizes") {
