@@ -12,7 +12,7 @@ import type { AdvanceCandidate } from "@/lib/services/judging"
 interface ManualAdvanceListProps {
   hackathonId: string
   fromRound: { id: string; name: string }
-  toRound: { id: string; name: string; submissionCount: number }
+  toRound: { id: string; name: string }
   onPickedCountChange?: (toRoundId: string, count: number) => void
 }
 
@@ -25,13 +25,11 @@ export function ManualAdvanceList({
   const router = useRouter()
   const [candidates, setCandidates] = useState<AdvanceCandidate[] | null>(null)
   const [search, setSearch] = useState("")
-  const [loading, setLoading] = useState(true)
   const [pending, setPending] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
     setError(null)
     fetch(
       `/api/dashboard/hackathons/${hackathonId}/rounds/${fromRound.id}/advance-candidates?toRoundId=${toRound.id}`
@@ -45,13 +43,10 @@ export function ManualAdvanceList({
         if (cancelled) return
         setError(err instanceof Error ? err.message : "Failed to load projects")
       })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
     return () => {
       cancelled = true
     }
-  }, [hackathonId, fromRound.id, toRound.id, toRound.submissionCount])
+  }, [hackathonId, fromRound.id, toRound.id])
 
   const filtered = useMemo(() => {
     if (!candidates) return []
@@ -117,7 +112,10 @@ export function ManualAdvanceList({
 
   const hasAnyScore = candidates?.some((c) => c.score !== null) ?? false
 
-  if (loading) {
+  if (candidates === null) {
+    if (error) {
+      return <div className="border-t pt-3 text-xs text-destructive">{error}</div>
+    }
     return (
       <div className="flex items-center gap-2 border-t pt-3 text-xs text-muted-foreground">
         <Loader2 className="size-3 animate-spin" />
@@ -126,7 +124,7 @@ export function ManualAdvanceList({
     )
   }
 
-  if (candidates && candidates.length === 0) {
+  if (candidates.length === 0) {
     return (
       <div className="border-t pt-3 text-xs text-muted-foreground">
         No projects in this round yet.

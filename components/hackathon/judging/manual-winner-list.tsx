@@ -20,20 +20,17 @@ interface ManualWinnerListProps {
   hackathonId: string
   roundName: string
   roundId: string
-  submissionCount: number
 }
 
-export function ManualWinnerList({ hackathonId, roundName, roundId, submissionCount }: ManualWinnerListProps) {
+export function ManualWinnerList({ hackathonId, roundName, roundId }: ManualWinnerListProps) {
   const router = useRouter()
   const [data, setData] = useState<WinnerPickerData | null>(null)
   const [search, setSearch] = useState("")
-  const [loading, setLoading] = useState(true)
   const [pending, setPending] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
     setError(null)
     fetch(`/api/dashboard/hackathons/${hackathonId}/rounds/${roundId}/winner-picker`)
       .then(assertOkJson<WinnerPickerData>)
@@ -45,13 +42,10 @@ export function ManualWinnerList({ hackathonId, roundName, roundId, submissionCo
         if (cancelled) return
         setError(err instanceof Error ? err.message : "Failed to load projects")
       })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
     return () => {
       cancelled = true
     }
-  }, [hackathonId, roundId, submissionCount])
+  }, [hackathonId, roundId])
 
   const filtered = useMemo(() => {
     if (!data) return []
@@ -153,19 +147,16 @@ export function ManualWinnerList({ hackathonId, roundName, roundId, submissionCo
     }
   }
 
-  if (loading) {
+  if (!data) {
+    if (error) {
+      return (
+        <div className="border-t pt-3 text-xs text-destructive">{error}</div>
+      )
+    }
     return (
       <div className="flex items-center gap-2 border-t pt-3 text-xs text-muted-foreground">
         <Loader2 className="size-3 animate-spin" />
         Loading projects...
-      </div>
-    )
-  }
-
-  if (!data) {
-    return (
-      <div className="border-t pt-3 text-xs text-destructive">
-        {error ?? "Failed to load projects"}
       </div>
     )
   }

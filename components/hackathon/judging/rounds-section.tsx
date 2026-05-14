@@ -304,11 +304,7 @@ export function RoundsSection({ hackathonId, rounds }: RoundsSectionProps) {
                       <ManualAdvanceList
                         hackathonId={hackathonId}
                         fromRound={{ id: round.id, name: round.name }}
-                        toRound={{
-                          id: nextRound.id,
-                          name: nextRound.name,
-                          submissionCount: nextRound.submissionCount,
-                        }}
+                        toRound={{ id: nextRound.id, name: nextRound.name }}
                         onPickedCountChange={handlePickedCountChange}
                       />
                     )}
@@ -317,7 +313,6 @@ export function RoundsSection({ hackathonId, rounds }: RoundsSectionProps) {
                         hackathonId={hackathonId}
                         roundId={round.id}
                         roundName={round.name}
-                        submissionCount={round.submissionCount}
                       />
                     )}
                   </div>
