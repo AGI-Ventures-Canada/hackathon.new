@@ -51,6 +51,7 @@ type RoundResponse = {
   advancement: string
   advancementConfig: Record<string, unknown>
   prizeCount: number
+  submissionCount: number
   screeningPrizeId: string | null
 }
 
@@ -181,6 +182,7 @@ export function JudgingSetupDialog({
           advancement: (r.advancement as RoundData["advancement"]) ?? "manual",
           advancementConfig: (r.advancementConfig as RoundData["advancementConfig"]) ?? {},
           prizeCount: r.prizeCount ?? 0,
+          submissionCount: r.submissionCount ?? 0,
           screeningPrizeId: r.screeningPrizeId ?? null,
         }))
       )

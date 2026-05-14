@@ -855,6 +855,166 @@ export const dashboardJudgingRoutes = new Elysia()
     detail: { summary: "Complete round", description: "Marks a round as complete." },
   })
 
+  .get(
+    "/hackathons/:id/rounds/:roundId/advance-candidates",
+    async ({ principal, params, query }) => {
+      requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
+      if (!isValidUuid(params.roundId) || !isValidUuid(query.toRoundId)) {
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+      }
+
+      const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+      const result = await checkHackathonOrganizer(params.id, principal.tenantId)
+
+      if (result.status === "not_found") {
+        return new Response(JSON.stringify({ error: "Hackathon not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+      }
+      if (result.status === "not_authorized") {
+        return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
+      }
+
+      const { listAdvanceCandidates } = await import("@/lib/services/judging")
+      const candidates = await listAdvanceCandidates(params.id, params.roundId, query.toRoundId)
+      return { candidates }
+    },
+    {
+      query: t.Object({
+        toRoundId: t.String({ description: "Target round ID (used to mark candidates already advanced)" }),
+      }),
+      detail: {
+        summary: "List advance candidates",
+        description:
+          "Returns the submissions in this round with any available screening scores and whether each one has already been advanced to the target round. Used by the manual-advance picker.",
+      },
+    }
+  )
+
+  .post(
+    "/hackathons/:id/prizes/:prizeId/assign",
+    async ({ principal, params, body }) => {
+      requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+      if (!isValidUuid(params.prizeId) || !isValidUuid(body.submissionId)) {
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+      }
+
+      const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+      const result = await checkHackathonOrganizer(params.id, principal.tenantId)
+
+      if (result.status === "not_found") {
+        return new Response(JSON.stringify({ error: "Hackathon not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+      }
+      if (result.status === "not_authorized") {
+        return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
+      }
+
+      const { assignPrize } = await import("@/lib/services/prizes")
+      const assignment = await assignPrize(params.prizeId, body.submissionId)
+
+      if (!assignment) {
+        return new Response(JSON.stringify({ error: "Failed to assign prize" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+
+      await logAudit({
+        principal,
+        action: "prize.assigned",
+        resourceType: "prize_assignment",
+        resourceId: assignment.id,
+        metadata: { prizeId: params.prizeId, submissionId: body.submissionId },
+      })
+
+      return { id: assignment.id }
+    },
+    {
+      body: t.Object({
+        submissionId: t.String({ description: "Submission ID to assign as the winner of this prize" }),
+      }),
+      detail: {
+        summary: "Assign prize to submission",
+        description: "Marks a submission as the winner of a prize. Requires hackathons:write scope.",
+      },
+    }
+  )
+
+  .delete(
+    "/hackathons/:id/prizes/:prizeId/assign/:submissionId",
+    async ({ principal, params }) => {
+      requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+      if (!isValidUuid(params.prizeId) || !isValidUuid(params.submissionId)) {
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+      }
+
+      const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+      const result = await checkHackathonOrganizer(params.id, principal.tenantId)
+
+      if (result.status === "not_found") {
+        return new Response(JSON.stringify({ error: "Hackathon not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+      }
+      if (result.status === "not_authorized") {
+        return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
+      }
+
+      const { removePrizeAssignment } = await import("@/lib/services/prizes")
+      const success = await removePrizeAssignment(params.prizeId, params.submissionId)
+
+      if (!success) {
+        return new Response(JSON.stringify({ error: "Assignment not found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+
+      await logAudit({
+        principal,
+        action: "prize.unassigned",
+        resourceType: "prize_assignment",
+        resourceId: `${params.prizeId}:${params.submissionId}`,
+        metadata: { prizeId: params.prizeId, submissionId: params.submissionId },
+      })
+
+      return { success: true }
+    },
+    {
+      detail: {
+        summary: "Unassign prize from submission",
+        description: "Removes a submission as the winner of a prize. Requires hackathons:write scope.",
+      },
+    }
+  )
+
+  .get(
+    "/hackathons/:id/rounds/:roundId/winner-picker",
+    async ({ principal, params }) => {
+      requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
+      if (!isValidUuid(params.roundId)) {
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+      }
+
+      const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+      const result = await checkHackathonOrganizer(params.id, principal.tenantId)
+
+      if (result.status === "not_found") {
+        return new Response(JSON.stringify({ error: "Hackathon not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+      }
+      if (result.status === "not_authorized") {
+        return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
+      }
+
+      const { listRoundWinnerPicker } = await import("@/lib/services/judging")
+      const data = await listRoundWinnerPicker(params.id, params.roundId)
+      return data
+    },
+    {
+      detail: {
+        summary: "List winner picker data",
+        description:
+          "Returns the projects in a final round along with the (non-screening) prizes attached to that round and each project's current prize assignments. Used by the manual winner picker.",
+      },
+    }
+  )
+
   .post(
     "/hackathons/:id/rounds/:roundId/advance",
     async ({ principal, params, body }) => {
@@ -913,6 +1073,53 @@ export const dashboardJudgingRoutes = new Elysia()
         summary: "Advance submissions",
         description:
           "Advances submissions from this round to the next. Pass `auto: true` to use the screening prize's scores and the round's top-N rule; otherwise pass explicit submissionIds.",
+      },
+    }
+  )
+
+  .delete(
+    "/hackathons/:id/rounds/:roundId/advance",
+    async ({ principal, params, body }) => {
+      requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+      if (
+        !isValidUuid(params.roundId) ||
+        !isValidUuid(body.toRoundId) ||
+        body.submissionIds.some((sid) => !isValidUuid(sid))
+      ) {
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+      }
+
+      const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+      const result = await checkHackathonOrganizer(params.id, principal.tenantId)
+
+      if (result.status === "not_found") {
+        return new Response(JSON.stringify({ error: "Hackathon not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+      }
+      if (result.status === "not_authorized") {
+        return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
+      }
+
+      if (body.submissionIds.length === 0) {
+        return new Response(
+          JSON.stringify({ error: "submissionIds is required" }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
+      const { unadvanceSubmissions } = await import("@/lib/services/judging")
+      const removed = await unadvanceSubmissions(body.toRoundId, body.submissionIds)
+
+      return removed
+    },
+    {
+      body: t.Object({
+        toRoundId: t.String({ description: "Target round ID to remove submissions from" }),
+        submissionIds: t.Array(t.String(), { description: "Submission IDs to remove from the target round" }),
+      }),
+      detail: {
+        summary: "Unadvance submissions",
+        description:
+          "Removes submissions from the target round's pool. Use to undo a manual pick before the round is closed.",
       },
     }
   )

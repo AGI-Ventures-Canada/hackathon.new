@@ -1200,6 +1200,11 @@ curl -s -X DELETE "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/rounds/$ROUN
 Scope: `hackathons:write`
 
 ```bash
+# List candidates for the manual-advance picker (current round's submissions
+# with any screening scores and whether each is already in the target round)
+curl -s "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/rounds/$ROUND_ID/advance-candidates?toRoundId=uuid" \
+  -H "Authorization: Bearer $API_KEY" | jq .
+
 # Auto-advance using the round's top-N rule and screening prize scores
 curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/rounds/$ROUND_ID/advance" \
   -H "Authorization: Bearer $API_KEY" \
@@ -1211,6 +1216,12 @@ curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/rounds/$ROUND_
   -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{ "toRoundId": "uuid", "submissionIds": ["sub-1", "sub-2"] }' | jq .
+
+# Remove submissions from the target round (undo a manual pick before close)
+curl -s -X DELETE "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/rounds/$ROUND_ID/advance" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "toRoundId": "uuid", "submissionIds": ["sub-1"] }' | jq .
 ```
 
 ---

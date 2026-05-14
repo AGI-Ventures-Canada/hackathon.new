@@ -40,6 +40,9 @@ const {
   getWeightedScoreAssignmentCounts,
   autoAssignSubmissionToRoomJudges,
   syncRoomSubmissionsToJudges,
+  listAdvanceCandidates,
+  listRoundWinnerPicker,
+  unadvanceSubmissions,
 } = await import("@/lib/services/judging")
 
 describe("Judging Service", () => {
@@ -2826,4 +2829,190 @@ describe("Judging Service", () => {
     })
   })
 
+  describe("listAdvanceCandidates", () => {
+    const HACK = "11111111-1111-1111-1111-111111111111"
+    const FROM_ROUND = "22222222-2222-2222-2222-222222222222"
+    const TO_ROUND = "33333333-3333-3333-3333-333333333333"
+
+    function buildHandlers(opts: {
+      roundSubs?: Array<{ submission_id: string }>
+      submissions?: Array<{ id: string; title: string; team_id: string | null; teams: { name: string } | null }>
+      toRoundSubs?: Array<{ submission_id: string }>
+      prizes?: Array<{ id: string; name: string; is_screening: boolean; round_id: string | null }>
+      results?: Array<{ submission_id: string; prize_id: string; weighted_score: number; judge_count: number }>
+    }) {
+      let roundSubsCallCount = 0
+      setMockFromImplementation((table) => {
+        if (table === "round_submissions") {
+          roundSubsCallCount++
+          if (roundSubsCallCount === 1) {
+            return createChainableMock({ data: opts.roundSubs ?? [], error: null })
+          }
+          return createChainableMock({ data: opts.toRoundSubs ?? [], error: null })
+        }
+        if (table === "submissions") {
+          return createChainableMock({ data: opts.submissions ?? [], error: null })
+        }
+        if (table === "prizes") {
+          return createChainableMock({ data: opts.prizes ?? [], error: null })
+        }
+        if (table === "hackathon_results") {
+          return createChainableMock({ data: opts.results ?? [], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+    }
+
+    it("returns submissions sorted by score desc with already-advanced flag", async () => {
+      buildHandlers({
+        roundSubs: [{ submission_id: "s1" }, { submission_id: "s2" }, { submission_id: "s3" }],
+        submissions: [
+          { id: "s1", title: "Alpha", team_id: "t1", teams: { name: "Alphas" } },
+          { id: "s2", title: "Beta", team_id: "t2", teams: { name: "Betas" } },
+          { id: "s3", title: "Gamma", team_id: "t3", teams: { name: "Gammas" } },
+        ],
+        toRoundSubs: [{ submission_id: "s2" }],
+        prizes: [{ id: "p1", name: "Screening", is_screening: true, round_id: FROM_ROUND }],
+        results: [
+          { submission_id: "s1", prize_id: "p1", weighted_score: 8.5, judge_count: 3 },
+          { submission_id: "s2", prize_id: "p1", weighted_score: 9.2, judge_count: 3 },
+        ],
+      })
+
+      const candidates = await listAdvanceCandidates(HACK, FROM_ROUND, TO_ROUND)
+
+      expect(candidates).toHaveLength(3)
+      expect(candidates[0].submissionId).toBe("s2")
+      expect(candidates[0].score).toBe(9.2)
+      expect(candidates[0].alreadyAdvanced).toBe(true)
+      expect(candidates[1].submissionId).toBe("s1")
+      expect(candidates[1].alreadyAdvanced).toBe(false)
+      expect(candidates[2].submissionId).toBe("s3")
+      expect(candidates[2].score).toBeNull()
+      expect(candidates[2].teamName).toBe("Gammas")
+    })
+
+    it("returns empty when round has no submissions", async () => {
+      buildHandlers({
+        roundSubs: [],
+        submissions: [],
+      })
+      const result = await listAdvanceCandidates(HACK, FROM_ROUND, TO_ROUND)
+      expect(result).toEqual([])
+    })
+
+    it("returns candidates with no scores when no screening prize exists", async () => {
+      buildHandlers({
+        roundSubs: [{ submission_id: "s1" }],
+        submissions: [{ id: "s1", title: "Alpha", team_id: "t1", teams: { name: "Alphas" } }],
+        prizes: [],
+      })
+      const result = await listAdvanceCandidates(HACK, FROM_ROUND, TO_ROUND)
+      expect(result).toHaveLength(1)
+      expect(result[0].score).toBeNull()
+      expect(result[0].judgeCount).toBe(0)
+    })
+  })
+
+  describe("unadvanceSubmissions", () => {
+    const TO_ROUND = "44444444-4444-4444-4444-444444444444"
+
+    it("returns 0 removed when given an empty submissionIds list", async () => {
+      const result = await unadvanceSubmissions(TO_ROUND, [])
+      expect(result.removedCount).toBe(0)
+    })
+
+    it("returns count when the delete succeeds", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({ data: null, error: null })
+      )
+      const result = await unadvanceSubmissions(TO_ROUND, ["s1", "s2"])
+      expect(result.removedCount).toBe(2)
+    })
+
+    it("throws when the delete fails", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({ data: null, error: { message: "boom" } })
+      )
+      await expect(unadvanceSubmissions(TO_ROUND, ["s1"])).rejects.toThrow(
+        /Failed to unadvance submissions/
+      )
+    })
+  })
+
+  describe("listRoundWinnerPicker", () => {
+    const HACK = "11111111-1111-1111-1111-111111111111"
+    const ROUND = "22222222-2222-2222-2222-222222222222"
+
+    function buildHandlers(opts: {
+      roundSubs?: Array<{ submission_id: string }>
+      prizes?: Array<{ id: string; name: string }>
+      submissions?: Array<{ id: string; title: string; team_id: string | null; teams: { name: string } | null }>
+      assignments?: Array<{ prize_id: string; submission_id: string }>
+      results?: Array<{ submission_id: string; prize_id: string; weighted_score: number; judge_count: number }>
+    }) {
+      setMockFromImplementation((table) => {
+        if (table === "round_submissions") {
+          return createChainableMock({ data: opts.roundSubs ?? [], error: null })
+        }
+        if (table === "prizes") {
+          return createChainableMock({ data: opts.prizes ?? [], error: null })
+        }
+        if (table === "submissions") {
+          return createChainableMock({ data: opts.submissions ?? [], error: null })
+        }
+        if (table === "prize_assignments") {
+          return createChainableMock({ data: opts.assignments ?? [], error: null })
+        }
+        if (table === "hackathon_results") {
+          return createChainableMock({ data: opts.results ?? [], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+    }
+
+    it("returns empty prizes and projects when nothing is configured", async () => {
+      buildHandlers({})
+      const result = await listRoundWinnerPicker(HACK, ROUND)
+      expect(result.prizes).toEqual([])
+      expect(result.projects).toEqual([])
+    })
+
+    it("returns projects sorted by score with assignments and prize scores", async () => {
+      buildHandlers({
+        roundSubs: [{ submission_id: "s1" }, { submission_id: "s2" }],
+        prizes: [
+          { id: "p1", name: "Best Overall" },
+          { id: "p2", name: "Most Innovative" },
+        ],
+        submissions: [
+          { id: "s1", title: "Alpha", team_id: "t1", teams: { name: "Alphas" } },
+          { id: "s2", title: "Beta", team_id: "t2", teams: { name: "Betas" } },
+        ],
+        assignments: [{ prize_id: "p1", submission_id: "s2" }],
+        results: [
+          { submission_id: "s1", prize_id: "p1", weighted_score: 0.8, judge_count: 3 },
+          { submission_id: "s2", prize_id: "p1", weighted_score: 0.9, judge_count: 3 },
+        ],
+      })
+
+      const result = await listRoundWinnerPicker(HACK, ROUND)
+      expect(result.prizes).toHaveLength(2)
+      expect(result.projects[0].submissionId).toBe("s2")
+      expect(result.projects[0].prizeIds).toEqual(["p1"])
+      expect(result.projects[0].score).toBe(0.9)
+      expect(result.projects[1].submissionId).toBe("s1")
+      expect(result.projects[1].prizeIds).toEqual([])
+    })
+
+    it("returns prizes but no projects when the round pool is empty", async () => {
+      buildHandlers({
+        roundSubs: [],
+        prizes: [{ id: "p1", name: "Best Overall" }],
+      })
+      const result = await listRoundWinnerPicker(HACK, ROUND)
+      expect(result.prizes).toHaveLength(1)
+      expect(result.projects).toEqual([])
+    })
+  })
 })

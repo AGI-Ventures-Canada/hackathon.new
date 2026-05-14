@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useCallback, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -37,6 +37,8 @@ import {
 import { RoundsPresetDialog, type RoundsPresetKind } from "./rounds-preset-dialog"
 import { RoundFormDialog } from "./round-form-dialog"
 import { AdvanceFinalistsDialog } from "./advance-finalists-dialog"
+import { ManualAdvanceList } from "./manual-advance-list"
+import { ManualWinnerList } from "./manual-winner-list"
 import type { RoundData } from "./rounds-types"
 
 interface RoundsSectionProps {
@@ -51,6 +53,9 @@ export function RoundsSection({ hackathonId, rounds }: RoundsSectionProps) {
   const [editRound, setEditRound] = useState<RoundData | null>(null)
   const [deleteRound, setDeleteRound] = useState<RoundData | null>(null)
   const [advanceFromRound, setAdvanceFromRound] = useState<RoundData | null>(null)
+  const [closeRound, setCloseRound] = useState<RoundData | null>(null)
+  const [closing, setClosing] = useState(false)
+  const [pickedCounts, setPickedCounts] = useState<Record<string, number>>({})
   const [hiddenRounds, setHiddenRounds] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
 
@@ -97,6 +102,46 @@ export function RoundsSection({ hackathonId, rounds }: RoundsSectionProps) {
       router.refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to activate round")
+    }
+  }
+
+  const handlePickedCountChange = useCallback((toRoundId: string, count: number) => {
+    setPickedCounts((prev) => {
+      if (prev[toRoundId] === count) return prev
+      return { ...prev, [toRoundId]: count }
+    })
+  }, [])
+
+  async function handleCloseAndStartNext(round: RoundData, next: RoundData) {
+    setError(null)
+    setClosing(true)
+    try {
+      const completeRes = await fetch(
+        `/api/dashboard/hackathons/${hackathonId}/rounds/${round.id}/complete`,
+        { method: "POST" }
+      )
+      if (!completeRes.ok) {
+        const data = await completeRes.json().catch(() => ({}))
+        throw new Error(data.error || `Failed to close ${round.name}`)
+      }
+
+      const activateRes = await fetch(
+        `/api/dashboard/hackathons/${hackathonId}/rounds/${next.id}/activate`,
+        { method: "POST" }
+      )
+      if (!activateRes.ok) {
+        const data = await activateRes.json().catch(() => ({}))
+        throw new Error(
+          data.error || `Closed ${round.name}, but failed to start ${next.name}`
+        )
+      }
+
+      setCloseRound(null)
+      router.refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong")
+    } finally {
+      setClosing(false)
     }
   }
 
@@ -158,6 +203,23 @@ export function RoundsSection({ hackathonId, rounds }: RoundsSectionProps) {
                 round.advancement === "top_n" &&
                 nextRound &&
                 round.screeningPrizeId
+              const canManualAdvance =
+                round.status === "active" &&
+                round.advancement === "manual" &&
+                nextRound
+              const canPickWinners =
+                round.status === "active" &&
+                round.advancement === "manual" &&
+                !nextRound &&
+                round.prizeCount > 0
+              const optimisticNextCount = nextRound
+                ? pickedCounts[nextRound.id] ?? nextRound.submissionCount
+                : 0
+              const canCloseAndStartNext =
+                round.status === "active" &&
+                nextRound &&
+                optimisticNextCount > 0 &&
+                nextRound.status === "planned"
 
               return (
                 <div key={round.id}>
@@ -195,6 +257,15 @@ export function RoundsSection({ hackathonId, rounds }: RoundsSectionProps) {
                             <span className="sm:hidden">Advance</span>
                           </Button>
                         )}
+                        {canCloseAndStartNext && (
+                          <Button size="sm" onClick={() => setCloseRound(round)}>
+                            <CheckCircle2 className="mr-2 size-3" />
+                            <span className="hidden sm:inline">
+                              Close round and start {nextRound.name}
+                            </span>
+                            <span className="sm:hidden">Close & start next</span>
+                          </Button>
+                        )}
 
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -222,6 +293,27 @@ export function RoundsSection({ hackathonId, rounds }: RoundsSectionProps) {
                         </DropdownMenu>
                       </div>
                     </div>
+
+                    {canManualAdvance && (
+                      <ManualAdvanceList
+                        hackathonId={hackathonId}
+                        fromRound={{ id: round.id, name: round.name }}
+                        toRound={{
+                          id: nextRound.id,
+                          name: nextRound.name,
+                          submissionCount: nextRound.submissionCount,
+                        }}
+                        onPickedCountChange={handlePickedCountChange}
+                      />
+                    )}
+                    {canPickWinners && (
+                      <ManualWinnerList
+                        hackathonId={hackathonId}
+                        roundId={round.id}
+                        roundName={round.name}
+                        submissionCount={round.submissionCount}
+                      />
+                    )}
                   </div>
 
                   {nextRound && (
@@ -285,6 +377,44 @@ export function RoundsSection({ hackathonId, rounds }: RoundsSectionProps) {
               if (!open) setAdvanceFromRound(null)
             }}
           />
+        )
+      })()}
+
+      {closeRound && (() => {
+        const idx = visibleRounds.findIndex((r) => r.id === closeRound.id)
+        const next = visibleRounds[idx + 1]
+        if (!next) return null
+        const advancedCount = next.submissionCount
+        return (
+          <AlertDialog
+            open={!!closeRound}
+            onOpenChange={(open) => {
+              if (!open && !closing) setCloseRound(null)
+            }}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  Close {closeRound.name} and start {next.name}?
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  {advancedCount} project{advancedCount === 1 ? "" : "s"} will move on to {next.name}. Judges can&apos;t change scores in {closeRound.name} once it&apos;s closed.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={closing}>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={closing}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    handleCloseAndStartNext(closeRound, next)
+                  }}
+                >
+                  Close and start {next.name}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         )
       })()}
 

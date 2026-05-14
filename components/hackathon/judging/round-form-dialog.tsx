@@ -124,6 +124,7 @@ export function RoundFormDialog({
           advancementConfig:
             r.advancement_config ?? r.advancementConfig ?? advancementConfig,
           prizeCount: 0,
+          submissionCount: 0,
           screeningPrizeId: null,
         }
         onSuccess?.(created)

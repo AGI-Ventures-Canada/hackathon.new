@@ -151,6 +151,13 @@ mock.module("@/components/ui/dropdown-menu", () => ({
     h("button", { type: "button", role: "menuitemradio", "data-value": value, onClick: onSelect }, children),
   DropdownMenuSeparator: () => h("hr"),
   DropdownMenuPortal: ({ children }: { children: React.ReactNode }) => children,
+  DropdownMenuCheckboxItem: ({ children, checked, onCheckedChange, onSelect, className }: { children: React.ReactNode; checked?: boolean; onCheckedChange?: (checked: boolean) => void; onSelect?: (e: { preventDefault: () => void }) => void; className?: string }) => {
+    const handle = () => {
+      onSelect?.({ preventDefault: () => {} })
+      onCheckedChange?.(!checked)
+    }
+    return h("button", { type: "button", role: "menuitemcheckbox", "aria-checked": checked, onClick: handle, className }, children)
+  },
 }))
 
 mock.module("@/components/ui/popover", () => ({
