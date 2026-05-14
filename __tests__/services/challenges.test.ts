@@ -27,6 +27,7 @@ const {
   tagSubmissionChallenges,
   getSubmissionChallengeIds,
   listChallengeIdsForSubmissions,
+  resolveSubmissionChallengeIds,
 } = await import("@/lib/services/challenges")
 
 const hackathonId = "11111111-1111-1111-1111-111111111111"
@@ -784,6 +785,72 @@ describe("Challenges Service", () => {
       const result = await tagSubmissionChallenges("s1", ["c1"])
 
       expect(result).toBe(false)
+    })
+  })
+
+  describe("resolveSubmissionChallengeIds", () => {
+    function mockReleasedChallenges(rows: Array<{ id: string; released: boolean }>) {
+      mockTableQuery(
+        "challenges",
+        mockSuccess(
+          rows.map((r) => makeRow({ id: r.id, released_at: r.released ? "2026-05-14T00:00:00Z" : null })),
+        ),
+      )
+    }
+
+    it("returns empty when zero challenges are released", async () => {
+      mockReleasedChallenges([{ id: "c1", released: false }])
+
+      const result = await resolveSubmissionChallengeIds(hackathonId, undefined)
+
+      expect(result.ok).toBe(true)
+      if (result.ok) expect(result.challengeIds).toEqual([])
+    })
+
+    it("auto-tags the single released challenge when only one exists", async () => {
+      mockReleasedChallenges([{ id: "c1", released: true }, { id: "c2", released: false }])
+
+      const result = await resolveSubmissionChallengeIds(hackathonId, undefined)
+
+      expect(result.ok).toBe(true)
+      if (result.ok) expect(result.challengeIds).toEqual(["c1"])
+    })
+
+    it("rejects with challenge_required when multiple released and none provided", async () => {
+      mockReleasedChallenges([
+        { id: "c1", released: true },
+        { id: "c2", released: true },
+      ])
+
+      const result = await resolveSubmissionChallengeIds(hackathonId, undefined)
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.code).toBe("challenge_required")
+    })
+
+    it("accepts provided IDs when multiple released and IDs are all released", async () => {
+      mockReleasedChallenges([
+        { id: "c1", released: true },
+        { id: "c2", released: true },
+      ])
+
+      const result = await resolveSubmissionChallengeIds(hackathonId, ["c1"])
+
+      expect(result.ok).toBe(true)
+      if (result.ok) expect(result.challengeIds).toEqual(["c1"])
+    })
+
+    it("rejects when provided IDs include an unreleased challenge", async () => {
+      mockReleasedChallenges([
+        { id: "c1", released: true },
+        { id: "c2", released: true },
+        { id: "c3", released: false },
+      ])
+
+      const result = await resolveSubmissionChallengeIds(hackathonId, ["c1", "c3"])
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.code).toBe("invalid_challenge_id")
     })
   })
 

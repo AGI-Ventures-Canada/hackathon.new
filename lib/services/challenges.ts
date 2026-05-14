@@ -693,6 +693,46 @@ export async function tagSubmissionChallenges(
   return true
 }
 
+export type SubmissionChallengeResolution =
+  | { ok: true; challengeIds: string[] }
+  | { ok: false; code: "challenge_required" | "invalid_challenge_id"; message: string }
+
+export async function resolveSubmissionChallengeIds(
+  hackathonId: string,
+  providedIds: string[] | undefined,
+): Promise<SubmissionChallengeResolution> {
+  const released = (await listChallenges(hackathonId)).filter((c) => !!c.releasedAt)
+
+  if (released.length === 0) {
+    return { ok: true, challengeIds: [] }
+  }
+
+  if (released.length === 1) {
+    return { ok: true, challengeIds: [released[0].id] }
+  }
+
+  if (!providedIds || providedIds.length === 0) {
+    return {
+      ok: false,
+      code: "challenge_required",
+      message: "Pick which challenge this project is for.",
+    }
+  }
+
+  const releasedIds = new Set(released.map((c) => c.id))
+  for (const id of providedIds) {
+    if (!releasedIds.has(id)) {
+      return {
+        ok: false,
+        code: "invalid_challenge_id",
+        message: "One of the picked challenges is not available.",
+      }
+    }
+  }
+
+  return { ok: true, challengeIds: providedIds }
+}
+
 export async function listChallengeIdsForSubmissions(
   submissionIds: string[],
 ): Promise<Map<string, string[]>> {

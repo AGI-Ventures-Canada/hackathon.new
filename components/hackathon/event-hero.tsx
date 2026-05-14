@@ -30,6 +30,8 @@ interface RegistrationProps {
   termsContent?: string | null;
   termsHash?: string | null;
   submission?: Submission | null;
+  releasedChallenges?: { id: string; title: string }[];
+  initialChallengeIds?: string[];
   onRegistrationSuccess?: () => void;
   teamSizeWarning?: string | null;
 }
@@ -481,6 +483,8 @@ export function EventHero({
             isRegistered={registrationProps.isRegistered}
             submission={registrationProps.submission ?? null}
             teamSizeWarning={registrationProps.teamSizeWarning}
+            releasedChallenges={registrationProps.releasedChallenges ?? []}
+            initialChallengeIds={registrationProps.initialChallengeIds ?? []}
           />
           {tabsSlot}
         </div>

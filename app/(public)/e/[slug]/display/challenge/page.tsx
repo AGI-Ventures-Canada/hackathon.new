@@ -29,7 +29,6 @@ export default async function DisplayChallengePage({ params }: PageProps) {
     <FullscreenChallenge
       slug={slug}
       initialChallenges={challenges}
-      initialReleased={!!hackathon.challenge_released_at}
       hackathonName={hackathon.name}
     />
   )

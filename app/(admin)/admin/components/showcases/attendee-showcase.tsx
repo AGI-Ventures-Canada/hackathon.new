@@ -118,11 +118,7 @@ export function AttendeeShowcase({ data }: { data: ShowcaseData }) {
         title="Challenge section"
         description="Released challenges with optional resource links."
       >
-        <ChallengeSection
-          challenges={data.challenges}
-          releasedAt={hackathon.challenge_released_at ?? new Date().toISOString()}
-          showResources
-        />
+        <ChallengeSection challenges={data.challenges} showResources />
       </ShowcaseSection>
 
       <ShowcaseSection

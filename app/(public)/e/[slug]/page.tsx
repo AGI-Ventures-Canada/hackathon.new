@@ -17,7 +17,7 @@ import {
 
 type PageProps = {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ lang?: string }>
+  searchParams: Promise<{ lang?: string; tab?: string }>
 }
 
 export async function generateMetadata({ params, searchParams }: PageProps): Promise<Metadata> {
@@ -44,7 +44,7 @@ export async function generateMetadata({ params, searchParams }: PageProps): Pro
 
 export default async function EventPage({ params, searchParams }: PageProps) {
   const { slug } = await params
-  const { lang } = await searchParams
+  const { lang, tab } = await searchParams
   const { orgId, userId } = await auth()
 
   const rawHackathon = await getPublicHackathon(slug, { includeUnpublished: true })
@@ -156,6 +156,12 @@ export default async function EventPage({ params, searchParams }: PageProps) {
     listChallenges(hackathon.id),
   ])
 
+  let submissionChallengeIds: string[] = []
+  if (submission) {
+    const { getSubmissionChallengeIds } = await import("@/lib/services/challenges")
+    submissionChallengeIds = await getSubmissionChallengeIds(submission.id)
+  }
+
   let viewerPerks: import("@/lib/services/perks").Perk[] = []
   const perksNone = hackathon.perks_none ?? false
   if (!perksNone && teamInfo) {
@@ -215,6 +221,8 @@ export default async function EventPage({ params, searchParams }: PageProps) {
         currentUserId={userId}
         availableLocales={locales}
         currentLocale={currentLocale}
+        initialTab={tab ?? null}
+        submissionChallengeIds={submissionChallengeIds}
       />
     </div>
   )

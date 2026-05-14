@@ -106,6 +106,8 @@ interface SubmissionButtonProps {
   isRegistered: boolean
   submission: Submission | null
   teamSizeWarning?: string | null
+  releasedChallenges?: { id: string; title: string }[]
+  initialChallengeIds?: string[]
 }
 
 export function SubmissionButton({
@@ -114,6 +116,8 @@ export function SubmissionButton({
   isRegistered,
   submission: initialSubmission,
   teamSizeWarning,
+  releasedChallenges = [],
+  initialChallengeIds = [],
 }: SubmissionButtonProps) {
   const { isSignedIn, isLoaded } = useUser()
   const router = useRouter()
@@ -133,6 +137,10 @@ export function SubmissionButton({
   const [liveAppUrl, setLiveAppUrl] = useState(submission?.live_app_url || "")
   const [demoVideoUrl, setDemoVideoUrl] = useState(submission?.demo_video_url || "")
   const [description, setDescription] = useState(submission?.description || "")
+  const [selectedChallengeId, setSelectedChallengeId] = useState<string | null>(
+    initialChallengeIds[0] ?? null,
+  )
+  const challengePickerRequired = releasedChallenges.length >= 2
   const [screenshots, setScreenshots] = useState<ScreenshotDraftItem[]>(() =>
     getInitialScreenshotDrafts(initialSubmission)
   )
@@ -602,6 +610,8 @@ export function SubmissionButton({
       already_submitted: "You have already submitted. Edit your existing submission.",
       invalid_github_url: "Please enter a valid GitHub repository URL.",
       invalid_demo_video_url: "Please enter a valid video link.",
+      challenge_required: "Pick which challenge this project is for.",
+      invalid_challenge_id: "One of the picked challenges is not available.",
       no_file: "Please select a screenshot to upload.",
       invalid_file_type: "Please select a PNG, JPEG, or WebP image.",
       file_too_large: "Screenshot must be smaller than 10MB.",
@@ -611,8 +621,13 @@ export function SubmissionButton({
   }
 
   function validateStep(step: SubmissionStep): string | null {
-    if (step === "title" && !title.trim()) {
-      return "Title is required"
+    if (step === "title") {
+      if (challengePickerRequired && !selectedChallengeId) {
+        return "Pick which challenge this project is for"
+      }
+      if (!title.trim()) {
+        return "Title is required"
+      }
     }
 
     if (step === "githubUrl") {
@@ -719,6 +734,11 @@ export function SubmissionButton({
       const normalizedLiveAppUrl = normalizeOptionalUrl(liveAppUrl)
       const normalizedDemoVideoUrl = normalizeOptionalUrl(demoVideoUrl)
       const method = submission ? "PATCH" : "POST"
+      const challengeIds = challengePickerRequired
+        ? (selectedChallengeId ? [selectedChallengeId] : [])
+        : releasedChallenges.length === 1
+          ? [releasedChallenges[0].id]
+          : []
       const response = await fetch(`/api/public/hackathons/${hackathonSlug}/submissions`, {
         method,
         headers: { "Content-Type": "application/json" },
@@ -728,6 +748,7 @@ export function SubmissionButton({
           githubUrl: normalizedGithubUrl,
           liveAppUrl: normalizedLiveAppUrl,
           demoVideoUrl: normalizedDemoVideoUrl,
+          ...(releasedChallenges.length > 0 ? { challengeIds } : {}),
         }),
       })
 
@@ -847,22 +868,40 @@ export function SubmissionButton({
           <form onSubmit={handleFormSubmit} onKeyDown={handleKeyDown} className="space-y-4" autoComplete="off">
             <FieldGroup>
               {currentStep === 0 && (
-                <Field>
-                  <FieldLabel htmlFor="submission-title">Title</FieldLabel>
-                  <Input
-                    id="submission-title"
-                    name="title"
-                    placeholder="My Awesome Project"
-                    value={title}
-                    onChange={(e) => handleChange(setTitle, e.target.value)}
-                    maxLength={100}
-                    autoComplete="off"
-                    autoFocus
-                    data-1p-ignore
-                    data-lpignore="true"
-                    data-form-type="other"
-                  />
-                </Field>
+                <>
+                  {challengePickerRequired && (
+                    <Field>
+                      <FieldLabel htmlFor="submission-challenge">Which challenge?</FieldLabel>
+                      <select
+                        id="submission-challenge"
+                        value={selectedChallengeId ?? ""}
+                        onChange={(e) => setSelectedChallengeId(e.target.value || null)}
+                        className="border-input bg-background ring-offset-background focus-visible:ring-ring h-9 w-full rounded-md border px-3 py-1 text-sm shadow-xs transition-colors focus-visible:ring-1 focus-visible:outline-hidden"
+                      >
+                        <option value="" disabled>Pick one</option>
+                        {releasedChallenges.map((c) => (
+                          <option key={c.id} value={c.id}>{c.title}</option>
+                        ))}
+                      </select>
+                    </Field>
+                  )}
+                  <Field>
+                    <FieldLabel htmlFor="submission-title">Title</FieldLabel>
+                    <Input
+                      id="submission-title"
+                      name="title"
+                      placeholder="My Awesome Project"
+                      value={title}
+                      onChange={(e) => handleChange(setTitle, e.target.value)}
+                      maxLength={100}
+                      autoComplete="off"
+                      autoFocus
+                      data-1p-ignore
+                      data-lpignore="true"
+                      data-form-type="other"
+                    />
+                  </Field>
+                </>
               )}
 
               {currentStep === 1 && (

@@ -71,6 +71,8 @@ interface HackathonPreviewClientProps {
   currentUserId?: string | null
   availableLocales?: string[]
   currentLocale?: string
+  initialTab?: string | null
+  submissionChallengeIds?: string[]
   onFormSave?: (data: Record<string, unknown>) => Promise<boolean>
   onBannerChange?: (imageUrl: string | null) => void | Promise<void>
   onAuthRequired?: () => void
@@ -95,6 +97,8 @@ function HackathonPreviewContent({
   currentUserId = null,
   availableLocales,
   currentLocale,
+  initialTab = null,
+  submissionChallengeIds = [],
   onFormSave,
   onBannerChange,
   onAuthRequired,
@@ -151,14 +155,36 @@ function HackathonPreviewContent({
     const interval = setInterval(tick, 30_000)
     return () => clearInterval(interval)
   }, [])
+  const mostRecentReleaseAt = useMemo(() => {
+    const stamps = challenges
+      .map((c) => c.releasedAt)
+      .filter((s): s is string => !!s)
+    if (stamps.length === 0) return null
+    return stamps.sort().slice(-1)[0]
+  }, [challenges])
   const isChallengesFreshlyReleased = useMemo(() => {
     if (!isClient) return false
-    if (!hackathon.challenge_released_at) return false
+    if (!mostRecentReleaseAt) return false
     if (!nowIso) return false
-    const releasedAt = new Date(hackathon.challenge_released_at).getTime()
+    const releasedAt = new Date(mostRecentReleaseAt).getTime()
     const now = new Date(nowIso).getTime()
     return now - releasedAt < 24 * 60 * 60 * 1000
-  }, [isClient, hackathon.challenge_released_at, nowIso])
+  }, [isClient, mostRecentReleaseAt, nowIso])
+
+  const visibleChallenges = useMemo(() => {
+    if (isEditable) return challenges
+    return challenges.filter((c) => !!c.releasedAt || !!c.scheduledReleaseAt || !!c.releaseLinkedTo)
+  }, [challenges, isEditable])
+  const hasVisibleChallenges = visibleChallenges.length > 0
+
+  const resolvedInitialTab = useMemo(() => {
+    if (initialTab === "challenges" && hasVisibleChallenges) return "challenges"
+    if (initialTab === "schedule") return "schedule"
+    if (initialTab === "perks" && viewerPerks.length > 0) return "perks"
+    if (initialTab === "community" && (isEditable || (isRegistered && !!hackathon.community_url))) return "community"
+    if (isChallengesFreshlyReleased && hasVisibleChallenges) return "challenges"
+    return "overview"
+  }, [initialTab, hasVisibleChallenges, viewerPerks.length, isEditable, isRegistered, hackathon.community_url, isChallengesFreshlyReleased])
 
   const rename = useTeamRename(hackathon.id, teamInfo?.team.id ?? "", teamInfo?.team.name ?? "")
   const isFormingCaptain = teamInfo?.isCaptain && teamInfo.team.status === "forming"
@@ -597,15 +623,15 @@ function HackathonPreviewContent({
       <section className="py-12 border-t">
         <div className="mx-auto max-w-4xl px-4">
           <Tabs
-            key={isChallengesFreshlyReleased ? "tabs-fresh" : "tabs-default"}
-            defaultValue={isChallengesFreshlyReleased ? "challenges" : "overview"}
+            key={`${resolvedInitialTab}-${isChallengesFreshlyReleased ? "fresh" : "default"}`}
+            defaultValue={resolvedInitialTab}
             className="w-full"
           >
             <div className="overflow-x-auto overflow-y-hidden">
               <TabsList variant="line">
                 <TabsTrigger value="overview">Overview</TabsTrigger>
                 <TabsTrigger value="schedule">Schedule</TabsTrigger>
-                {challenges.length > 0 && (
+                {hasVisibleChallenges && (
                   <TabsTrigger value="challenges">
                     <span className="flex items-center gap-1.5">
                       Challenges
@@ -717,12 +743,9 @@ function HackathonPreviewContent({
               )}
             </TabsContent>
 
-            {challenges.length > 0 && (
+            {hasVisibleChallenges && (
               <TabsContent value="challenges" className="mt-6">
-                <ChallengeSection
-                  challenges={challenges}
-                  releasedAt={hackathon.challenge_released_at}
-                />
+                <ChallengeSection challenges={visibleChallenges} />
               </TabsContent>
             )}
 
@@ -828,6 +851,10 @@ function HackathonPreviewContent({
         termsContent: hackathon.terms_content ?? null,
         termsHash: hackathon.terms_hash ?? null,
         submission,
+        releasedChallenges: challenges
+          .filter((c) => !!c.releasedAt)
+          .map((c) => ({ id: c.id, title: c.title })),
+        initialChallengeIds: submissionChallengeIds,
         onRegistrationSuccess: handleRegistrationSuccess,
         teamSizeWarning: teamInfo ? (getTeamSizeWarning({
           memberCount: teamInfo.members.length,

@@ -501,6 +501,15 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
+      const { resolveSubmissionChallengeIds } = await import("@/lib/services/challenges")
+      const resolution = await resolveSubmissionChallengeIds(hackathon.id, body.challengeIds)
+      if (!resolution.ok) {
+        return new Response(
+          JSON.stringify({ error: resolution.message, code: resolution.code }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
       const submission = await createSubmission(
         hackathon.id,
         participant.participantId,
@@ -514,7 +523,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
           metadata: teamSizeWarning
             ? { teamSizeWarning, teamMemberCount }
             : undefined,
-          challengeIds: body.challengeIds,
+          challengeIds: resolution.challengeIds,
         }
       )
 
@@ -638,6 +647,19 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
+      let resolvedChallengeIds: string[] | undefined
+      if (body.challengeIds !== undefined) {
+        const { resolveSubmissionChallengeIds } = await import("@/lib/services/challenges")
+        const resolution = await resolveSubmissionChallengeIds(hackathon.id, body.challengeIds)
+        if (!resolution.ok) {
+          return new Response(
+            JSON.stringify({ error: resolution.message, code: resolution.code }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          )
+        }
+        resolvedChallengeIds = resolution.challengeIds
+      }
+
       const submission = await updateSubmission(
         existing.id,
         participant.participantId,
@@ -648,7 +670,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
           githubUrl: normalizedGithubUrl,
           liveAppUrl: normalizedLiveAppUrl,
           demoVideoUrl: normalizedDemoVideoUrl,
-          challengeIds: body.challengeIds,
+          challengeIds: resolvedChallengeIds,
         }
       )
 
