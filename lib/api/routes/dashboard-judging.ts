@@ -916,8 +916,16 @@ export const dashboardJudgingRoutes = new Elysia()
       }
 
       const { assignPrize, prizeBelongsToHackathon } = await import("@/lib/services/prizes")
-      if (!(await prizeBelongsToHackathon(params.id, params.prizeId))) {
+      const { submissionBelongsToHackathon } = await import("@/lib/services/submissions")
+      const [prizeOk, submissionOk] = await Promise.all([
+        prizeBelongsToHackathon(params.id, params.prizeId),
+        submissionBelongsToHackathon(params.id, body.submissionId),
+      ])
+      if (!prizeOk) {
         return new Response(JSON.stringify({ error: "Prize not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+      }
+      if (!submissionOk) {
+        return new Response(JSON.stringify({ error: "Submission not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
       }
 
       const assignment = await assignPrize(params.prizeId, body.submissionId)
@@ -969,8 +977,16 @@ export const dashboardJudgingRoutes = new Elysia()
       }
 
       const { removePrizeAssignment, prizeBelongsToHackathon } = await import("@/lib/services/prizes")
-      if (!(await prizeBelongsToHackathon(params.id, params.prizeId))) {
+      const { submissionBelongsToHackathon } = await import("@/lib/services/submissions")
+      const [prizeOk, submissionOk] = await Promise.all([
+        prizeBelongsToHackathon(params.id, params.prizeId),
+        submissionBelongsToHackathon(params.id, params.submissionId),
+      ])
+      if (!prizeOk) {
         return new Response(JSON.stringify({ error: "Prize not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+      }
+      if (!submissionOk) {
+        return new Response(JSON.stringify({ error: "Submission not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
       }
 
       const success = await removePrizeAssignment(params.prizeId, params.submissionId)
@@ -1132,7 +1148,11 @@ export const dashboardJudgingRoutes = new Elysia()
       }
 
       const { unadvanceSubmissions, roundBelongsToHackathon } = await import("@/lib/services/judging")
-      if (!(await roundBelongsToHackathon(params.id, body.toRoundId))) {
+      const [fromOk, toOk] = await Promise.all([
+        roundBelongsToHackathon(params.id, params.roundId),
+        roundBelongsToHackathon(params.id, body.toRoundId),
+      ])
+      if (!fromOk || !toOk) {
         return new Response(JSON.stringify({ error: "Round not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
       }
 

@@ -350,6 +350,20 @@ export async function getHackathonSubmissions(
   }))
 }
 
+export async function submissionBelongsToHackathon(
+  hackathonId: string,
+  submissionId: string
+): Promise<boolean> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const { data } = await client
+    .from("submissions")
+    .select("id")
+    .eq("id", submissionId)
+    .eq("hackathon_id", hackathonId)
+    .maybeSingle()
+  return !!data
+}
+
 export async function getSubmittedHackathonIds(
   clerkUserId: string
 ): Promise<Set<string>> {
