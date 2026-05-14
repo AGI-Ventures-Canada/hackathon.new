@@ -109,6 +109,7 @@ export function ManualWinnerList({ hackathonId, roundName, roundId, submissionCo
     })
     setError(null)
 
+    let previousWinnerUnassigned = false
     try {
       if (currentlyWins) {
         await fetch(
@@ -121,6 +122,7 @@ export function ManualWinnerList({ hackathonId, roundName, roundId, submissionCo
             `/api/dashboard/hackathons/${hackathonId}/prizes/${prizeId}/assign/${previousWinner.submissionId}`,
             { method: "DELETE" }
           ).then(assertOk)
+          previousWinnerUnassigned = true
         }
         await fetch(`/api/dashboard/hackathons/${hackathonId}/prizes/${prizeId}/assign`, {
           method: "POST",
@@ -131,7 +133,16 @@ export function ManualWinnerList({ hackathonId, roundName, roundId, submissionCo
       router.refresh()
     } catch (err) {
       setData(snapshot)
-      setError(err instanceof Error ? err.message : "Failed to save winner")
+      const baseMessage =
+        err instanceof Error ? err.message : "Failed to save winner"
+      if (previousWinnerUnassigned) {
+        setError(
+          `${baseMessage}. The previous winner was unassigned on the server — re-assign manually if needed.`
+        )
+        router.refresh()
+      } else {
+        setError(baseMessage)
+      }
     } finally {
       setPending((prev) => {
         const next = new Set(prev)

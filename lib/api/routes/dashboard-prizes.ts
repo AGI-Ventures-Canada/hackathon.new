@@ -317,13 +317,7 @@ export const dashboardPrizesRoutes = new Elysia()
       })
     }
 
-    const { assignPrize, prizeBelongsToHackathon } = await import("@/lib/services/prizes")
-    if (!(await prizeBelongsToHackathon(params.id, params.prizeId))) {
-      return new Response(JSON.stringify({ error: "Prize not found" }), {
-        status: 404,
-        headers: { "Content-Type": "application/json" },
-      })
-    }
+    const { assignPrize } = await import("@/lib/services/prizes")
     const assignment = await assignPrize(params.prizeId, (body as { submissionId: string }).submissionId)
 
     if (!assignment) {
@@ -367,13 +361,7 @@ export const dashboardPrizesRoutes = new Elysia()
       })
     }
 
-    const { removePrizeAssignment, prizeBelongsToHackathon } = await import("@/lib/services/prizes")
-    if (!(await prizeBelongsToHackathon(params.id, params.prizeId))) {
-      return new Response(JSON.stringify({ error: "Prize not found" }), {
-        status: 404,
-        headers: { "Content-Type": "application/json" },
-      })
-    }
+    const { removePrizeAssignment } = await import("@/lib/services/prizes")
     const success = await removePrizeAssignment(params.prizeId, params.submissionId)
 
     if (!success) {
