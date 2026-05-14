@@ -3,6 +3,7 @@ import {
   createChainableMock,
   resetSupabaseMocks,
   setMockFromImplementation,
+  type ChainableMock,
 } from "../lib/supabase-mock"
 
 const { deleteTeam, setTeamCaptain } = await import("@/lib/services/hackathons")
@@ -62,7 +63,7 @@ describe("deleteTeam", () => {
     if ("error" in result) expect(result.code).toBe("status_locked")
   })
 
-  it("blocks delete when a submission exists", async () => {
+  it("blocks delete when a submitted submission exists", async () => {
     setMockFromImplementation(
       tableImpl({
         teams: { data: { id: "team_1", hackathon_id: "h_1", hackathons: { status: "active" } }, error: null },
@@ -73,6 +74,48 @@ describe("deleteTeam", () => {
     const result = await deleteTeam("team_1", "h_1")
     expect(result.success).toBeUndefined()
     if ("error" in result) expect(result.code).toBe("submission_exists")
+  })
+
+  it("filters submission lookup by status='submitted' (drafts/withdrawn don't block)", async () => {
+    const submissionsChain = createChainableMock({ data: null, error: null, count: 0 })
+    const invitationsChain = createChainableMock({ data: [], error: null })
+    setMockFromImplementation((table: string): ChainableMock => {
+      if (table === "teams") {
+        return createChainableMock({
+          data: { id: "team_1", hackathon_id: "h_1", hackathons: { status: "active" } },
+          error: null,
+        })
+      }
+      if (table === "submissions") return submissionsChain
+      if (table === "team_invitations") return invitationsChain
+      return createChainableMock({ data: null, error: null, count: 0 })
+    })
+
+    await deleteTeam("team_1", "h_1")
+
+    const submissionEqCalls = submissionsChain.eq.mock.calls as unknown as unknown[][]
+    expect(submissionEqCalls).toContainEqual(["status", "submitted"])
+  })
+
+  it("sets updated_at when cancelling pending invitations on delete", async () => {
+    const invitationsChain = createChainableMock({ data: [{ id: "i_1" }], error: null })
+    setMockFromImplementation((table: string): ChainableMock => {
+      if (table === "teams") {
+        return createChainableMock({
+          data: { id: "team_1", hackathon_id: "h_1", hackathons: { status: "active" } },
+          error: null,
+        })
+      }
+      if (table === "team_invitations") return invitationsChain
+      return createChainableMock({ data: null, error: null, count: 0 })
+    })
+
+    await deleteTeam("team_1", "h_1")
+
+    const updateCalls = invitationsChain.update.mock.calls as unknown as unknown[][]
+    const updateCall = updateCalls[0]?.[0] as Record<string, unknown> | undefined
+    expect(updateCall?.status).toBe("cancelled")
+    expect(typeof updateCall?.updated_at).toBe("string")
   })
 
   it("deletes the team and cascades members, invites, and room assignments", async () => {

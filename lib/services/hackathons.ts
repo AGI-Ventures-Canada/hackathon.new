@@ -906,6 +906,7 @@ export async function deleteTeam(teamId: string, hackathonId: string): Promise<D
     .from("submissions")
     .select("id", { count: "exact", head: true })
     .eq("team_id", teamId)
+    .eq("status", "submitted")
 
   if (submissionErr) {
     console.error("Failed to check team submissions:", submissionErr)
@@ -939,7 +940,7 @@ export async function deleteTeam(teamId: string, hackathonId: string): Promise<D
 
   const { data: cancelledInvites, error: inviteErr } = await client
     .from("team_invitations")
-    .update({ status: "cancelled" })
+    .update({ status: "cancelled", updated_at: new Date().toISOString() })
     .eq("team_id", teamId)
     .eq("status", "pending")
     .select("id")
