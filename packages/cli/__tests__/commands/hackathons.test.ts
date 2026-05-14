@@ -5,8 +5,10 @@ const mockFetch = mock<typeof globalThis.fetch>()
 const originalFetch = globalThis.fetch
 
 const mockConfirm = mock(() => Promise.resolve(false))
+const mockText = mock((opts: { initialValue?: string }) => Promise.resolve(opts?.initialValue ?? ""))
 mock.module("@clack/prompts", () => ({
   confirm: mockConfirm,
+  text: mockText,
   isCancel: () => false,
   log: { info: () => {}, warn: () => {}, success: () => {} },
 }))
