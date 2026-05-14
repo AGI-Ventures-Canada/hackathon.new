@@ -1129,6 +1129,12 @@ export const dashboardJudgingRoutes = new Elysia()
     "/hackathons/:id/rounds/:roundId/advance",
     async ({ principal, params, body }) => {
       requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+      if (body.submissionIds.length === 0) {
+        return new Response(
+          JSON.stringify({ error: "submissionIds is required" }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        )
+      }
       if (
         !isValidUuid(params.roundId) ||
         !isValidUuid(body.toRoundId) ||
@@ -1156,13 +1162,6 @@ export const dashboardJudgingRoutes = new Elysia()
         return new Response(JSON.stringify({ error: "Round not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
       }
 
-      if (body.submissionIds.length === 0) {
-        return new Response(
-          JSON.stringify({ error: "submissionIds is required" }),
-          { status: 400, headers: { "Content-Type": "application/json" } }
-        )
-      }
-
       const removed = await unadvanceSubmissions(body.toRoundId, body.submissionIds)
 
       return removed
@@ -1170,7 +1169,7 @@ export const dashboardJudgingRoutes = new Elysia()
     {
       body: t.Object({
         toRoundId: t.String({ description: "Target round ID to remove submissions from" }),
-        submissionIds: t.Array(t.String(), { description: "Submission IDs to remove from the target round" }),
+        submissionIds: t.Array(t.String(), { minItems: 1, description: "Submission IDs to remove from the target round" }),
       }),
       detail: {
         summary: "Unadvance submissions",

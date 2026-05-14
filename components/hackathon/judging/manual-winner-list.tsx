@@ -137,7 +137,7 @@ export function ManualWinnerList({ hackathonId, roundName, roundId, submissionCo
         err instanceof Error ? err.message : "Failed to save winner"
       if (previousWinnerUnassigned) {
         setError(
-          `${baseMessage}. The previous winner was unassigned on the server — re-assign manually if needed.`
+          `${baseMessage}. The old winner was removed but we couldn't save the new one — try again or pick a winner manually.`
         )
         router.refresh()
       } else {
