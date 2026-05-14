@@ -7,7 +7,7 @@ export type GhostItem = {
   title: string
   startsAt: string
   endsAt: string
-  triggerType: "challenge_release" | "submission_deadline" | null
+  triggerType: "submission_deadline" | null
 }
 
 export function buildGhostItems(startsAt: string, endsAt: string): GhostItem[] {
@@ -24,12 +24,6 @@ export function buildGhostItems(startsAt: string, endsAt: string): GhostItem[] {
       startsAt: start.toISOString(),
       endsAt: offset(start, 30),
       triggerType: null,
-    },
-    {
-      title: "Challenge Release",
-      startsAt: start.toISOString(),
-      endsAt: start.toISOString(),
-      triggerType: "challenge_release",
     },
     {
       title: "Hacking Begins",

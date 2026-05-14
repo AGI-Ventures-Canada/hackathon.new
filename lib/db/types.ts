@@ -934,7 +934,6 @@ export type Database = {
           anonymous_judging: boolean
           auto_assign_by_room: boolean
           banner_url: string | null
-          challenge_released_at: string | null
           community_label: string | null
           community_url: string | null
           created_at: string
@@ -978,7 +977,6 @@ export type Database = {
           anonymous_judging?: boolean
           auto_assign_by_room?: boolean
           banner_url?: string | null
-          challenge_released_at?: string | null
           community_label?: string | null
           community_url?: string | null
           created_at?: string
@@ -1022,7 +1020,6 @@ export type Database = {
           anonymous_judging?: boolean
           auto_assign_by_room?: boolean
           banner_url?: string | null
-          challenge_released_at?: string | null
           community_label?: string | null
           community_url?: string | null
           created_at?: string
@@ -3156,7 +3153,6 @@ export type Database = {
           anonymous_judging: boolean
           auto_assign_by_room: boolean
           banner_url: string | null
-          challenge_released_at: string | null
           community_label: string | null
           community_url: string | null
           created_at: string

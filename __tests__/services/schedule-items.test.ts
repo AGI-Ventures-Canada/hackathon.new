@@ -200,21 +200,20 @@ describe("getTriggerItem", () => {
 })
 
 describe("buildDefaultAgendaItems", () => {
-  it("returns 6 items with correct trigger types", () => {
+  it("returns 5 items with correct trigger types", () => {
     const items = buildDefaultAgendaItems("2026-04-10T09:00:00Z", "2026-04-10T18:00:00Z")
-    expect(items).toHaveLength(6)
+    expect(items).toHaveLength(5)
     expect(items[0].title).toBe("Opening Kickoff")
-    expect(items[1].title).toBe("Challenge Release")
-    expect(items[1].triggerType).toBe("challenge_release")
-    expect(items[3].title).toBe("Submissions Close & Judging Starts")
-    expect(items[3].triggerType).toBe("submission_deadline")
-    expect(items[5].title).toBe("Awards Ceremony")
+    expect(items[1].title).toBe("Hacking Begins")
+    expect(items[2].title).toBe("Submissions Close & Judging Starts")
+    expect(items[2].triggerType).toBe("submission_deadline")
+    expect(items[4].title).toBe("Awards Ceremony")
   })
 
   it("derives times from start and end dates", () => {
     const items = buildDefaultAgendaItems("2026-04-10T09:00:00Z", "2026-04-10T18:00:00Z")
     expect(items[0].startsAt).toBe("2026-04-10T09:00:00.000Z")
-    expect(items[3].startsAt).toBe("2026-04-10T18:00:00.000Z")
+    expect(items[2].startsAt).toBe("2026-04-10T18:00:00.000Z")
   })
 
   it("non-trigger items have no triggerType", () => {
@@ -223,12 +222,11 @@ describe("buildDefaultAgendaItems", () => {
     expect(nonTrigger).toHaveLength(4)
   })
 
-  it("returns 6 items with default times when dates are null", () => {
+  it("returns 5 items with default times when dates are null", () => {
     const items = buildDefaultAgendaItems(null, null)
-    expect(items).toHaveLength(6)
+    expect(items).toHaveLength(5)
     expect(items[0].title).toBe("Opening Kickoff")
-    expect(items[1].triggerType).toBe("challenge_release")
-    expect(items[3].triggerType).toBe("submission_deadline")
+    expect(items[2].triggerType).toBe("submission_deadline")
   })
 
   it("sets submission deadline to the hackathon end time", () => {

@@ -134,7 +134,6 @@ export interface Hackathon {
   feedback_survey_sent_at: string | null
   feedback_survey_url: string | null
   phase: HackathonPhase | null
-  challenge_released_at: string | null
   perks_none: boolean
   community_url: string | null
   community_label: string | null

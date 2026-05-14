@@ -161,7 +161,6 @@ type ProviderProps = {
   status: HackathonStatus;
   phase: HackathonPhase | null;
   challengeExists: boolean;
-  challengeReleasedAt: string | null;
   challenges: Challenge[];
   scheduleItems: ScheduleItem[];
   startsAt: string | null;
@@ -184,7 +183,6 @@ export function ActionItemsProvider({
   status: serverStatus,
   phase: serverPhase,
   challengeExists,
-  challengeReleasedAt,
   challenges: serverChallenges,
   scheduleItems: serverScheduleItems,
   startsAt: serverStartsAt,
@@ -1023,17 +1021,12 @@ export function ActionItemsProvider({
           <ScheduleEditor
             hackathonId={hackathonId}
             scheduleItems={scheduleItems}
-            challengeReleasedAt={challengeReleasedAt}
-            challengeExists={liveChallengeExists}
             hackathonStartsAt={serverStartsAt}
             hackathonEndsAt={liveEndsAt}
             hackathonStatus={liveStatus}
             hideHeader
             onEditTriggerItem={(item) => {
-              if (item.trigger_type === "challenge_release") {
-                setAgendaDialogOpen(false);
-                router.push(`/e/${slug}/manage?tab=challenges`);
-              } else if (item.trigger_type === "submission_deadline") {
+              if (item.trigger_type === "submission_deadline") {
                 setSubmissionDeadlineDialogItem(null);
                 submissionDeadlineRef.current?.openDialog();
               }

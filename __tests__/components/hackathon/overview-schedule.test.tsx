@@ -14,16 +14,6 @@ const regularItem = {
   trigger_type: null,
 }
 
-const challengeReleaseItem = {
-  id: "item-2",
-  title: "Challenge Release",
-  starts_at: "2030-04-10T09:30:00Z",
-  ends_at: null,
-  location: null,
-  sort_order: 1,
-  trigger_type: "challenge_release" as const,
-}
-
 const submissionDeadlineItem = {
   id: "item-3",
   title: "Submissions Close",
@@ -34,7 +24,7 @@ const submissionDeadlineItem = {
   trigger_type: "submission_deadline" as const,
 }
 
-const allItems = [regularItem, challengeReleaseItem, submissionDeadlineItem]
+const allItems = [regularItem, submissionDeadlineItem]
 
 const { OverviewSchedule } = await import(
   "@/components/hackathon/overview-schedule"
@@ -46,27 +36,14 @@ const { ScheduleEditor } = await import(
 const defaultProps = {
   hackathonId: "hack-1",
   scheduleItems: allItems,
-  challengeReleasedAt: null as string | null,
   challengeExists: true,
 }
 
 describe("OverviewSchedule (interactive agenda)", () => {
-  it("renders all schedule items when challenge exists", () => {
+  it("renders all schedule items", () => {
     render(<OverviewSchedule {...defaultProps} />)
     expect(screen.getByText("Opening Kickoff")).toBeDefined()
-    expect(screen.getByText("Challenge Release")).toBeDefined()
     expect(screen.getByText("Submissions Close")).toBeDefined()
-  })
-
-  it("hides challenge_release item when no challenge exists", () => {
-    render(<OverviewSchedule {...defaultProps} challengeExists={false} challengeReleasedAt={null} />)
-    expect(screen.getByText("Opening Kickoff")).toBeDefined()
-    expect(screen.queryByText("Challenge Release")).toBeNull()
-  })
-
-  it("shows challenge_release item when challenge has been released", () => {
-    render(<OverviewSchedule {...defaultProps} challengeExists={false} challengeReleasedAt="2026-04-10T09:00:00Z" />)
-    expect(screen.getByText("Challenge Release")).toBeDefined()
   })
 
   it("renders the Agenda header with Add button", () => {
@@ -87,7 +64,7 @@ describe("OverviewSchedule (interactive agenda)", () => {
   })
 
   it("does not show Release Now or Create Challenge buttons on timeline", () => {
-    render(<OverviewSchedule {...defaultProps} challengeExists={true} challengeReleasedAt={null} />)
+    render(<OverviewSchedule {...defaultProps} challengeExists={true} />)
     expect(screen.queryByText("Release Now")).toBeNull()
     expect(screen.queryByText("Create Challenge")).toBeNull()
     expect(screen.queryByText("Scheduled")).toBeNull()
@@ -126,7 +103,7 @@ describe("OverviewSchedule (interactive agenda)", () => {
     const { container } = render(
       <OverviewSchedule
         {...defaultProps}
-        scheduleItems={[challengeReleaseItem]}
+        scheduleItems={[submissionDeadlineItem]}
       />
     )
     const trashButtons = container.querySelectorAll('button .lucide-trash2')
@@ -138,14 +115,14 @@ describe("OverviewSchedule (interactive agenda)", () => {
     render(
       <ScheduleEditor
         {...defaultProps}
-        scheduleItems={[challengeReleaseItem]}
+        scheduleItems={[submissionDeadlineItem]}
         onEditTriggerItem={onEditTrigger}
       />
     )
-    const row = screen.getByText("Challenge Release").closest("[role=button]")
+    const row = screen.getByText("Submissions Close").closest("[role=button]")
     if (row) fireEvent.click(row)
     expect(onEditTrigger).toHaveBeenCalledTimes(1)
-    expect(onEditTrigger.mock.calls[0][0].trigger_type).toBe("challenge_release")
+    expect(onEditTrigger.mock.calls[0][0].trigger_type).toBe("submission_deadline")
     expect(screen.queryByText("Edit agenda item")).toBeNull()
   })
 
@@ -153,10 +130,10 @@ describe("OverviewSchedule (interactive agenda)", () => {
     render(
       <ScheduleEditor
         {...defaultProps}
-        scheduleItems={[challengeReleaseItem]}
+        scheduleItems={[submissionDeadlineItem]}
       />
     )
-    const row = screen.getByText("Challenge Release").closest("[role=button]")
+    const row = screen.getByText("Submissions Close").closest("[role=button]")
     if (row) fireEvent.click(row)
     expect(screen.getByText("Edit agenda item")).toBeDefined()
   })
@@ -169,22 +146,6 @@ describe("OverviewSchedule (interactive agenda)", () => {
     const wrapper = trashButton!.parentElement!
     const handled = fireEvent.click(wrapper)
     expect(handled).toBe(true)
-    expect(screen.queryByText("Edit agenda item")).toBeNull()
-  })
-
-  it("makes released challenge items read-only (no click, no edit/delete buttons)", () => {
-    render(
-      <ScheduleEditor
-        {...defaultProps}
-        scheduleItems={[challengeReleaseItem]}
-        challengeReleasedAt="2030-04-10T09:45:00Z"
-        onEditTriggerItem={mock(() => {})}
-      />,
-    )
-    expect(screen.getByText("Released")).toBeDefined()
-    expect(screen.getByText("Challenge Release").closest("[role=button]")).toBeNull()
-    const row = screen.getByText("Challenge Release").closest("div")!
-    fireEvent.click(row)
     expect(screen.queryByText("Edit agenda item")).toBeNull()
   })
 
@@ -240,23 +201,4 @@ describe("OverviewSchedule (interactive agenda)", () => {
     expect(screen.getByText("Submissions Close")).toBeDefined()
   })
 
-  it("shows released challenge under the actual release time, not scheduled time", () => {
-    render(
-      <ScheduleEditor
-        {...defaultProps}
-        scheduleItems={[challengeReleaseItem]}
-        challengeReleasedAt="2030-04-10T14:30:00Z"
-      />,
-    )
-    const releasedTime = new Date("2030-04-10T14:30:00Z").toLocaleTimeString(undefined, {
-      hour: "numeric",
-      minute: "2-digit",
-    })
-    const scheduledTime = new Date("2030-04-10T09:30:00Z").toLocaleTimeString(undefined, {
-      hour: "numeric",
-      minute: "2-digit",
-    })
-    expect(screen.getByText(releasedTime)).toBeDefined()
-    expect(screen.queryByText(scheduledTime)).toBeNull()
-  })
 })

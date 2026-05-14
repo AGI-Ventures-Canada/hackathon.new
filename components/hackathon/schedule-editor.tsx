@@ -49,7 +49,6 @@ import type { ScheduleItem } from "@/lib/services/schedule-items"
 
 const TRIGGER_TOOLTIPS: Record<string, string> = {
   submission_deadline: "This is an automated event. When this time arrives, submissions are locked and the judging phase begins. Participants can no longer submit or edit projects after this point.",
-  challenge_release: "This is an automated event. When this time arrives, the challenge is released and becomes visible to all participants. You need to create a challenge first for this to take effect.",
   event_start: "This is an automated event. When this time arrives, your hackathon flips from Published to Live. Attendees see the event as active and things like the timer start counting. Change this by editing the event start date.",
   event_end: "This is an automated event. When this time arrives, your hackathon ends. If you have judging set up, it moves into the judging phase. Otherwise it's marked complete. Change this by editing the event end date.",
 }
@@ -62,7 +61,7 @@ export type ScheduleItemData = {
   ends_at: string | null
   location: string | null
   sort_order: number
-  trigger_type: "challenge_release" | "submission_deadline" | "event_start" | "event_end" | null
+  trigger_type: "submission_deadline" | "event_start" | "event_end" | null
 }
 
 const VIRTUAL_ID_EVENT_START = "__virtual_event_start"
@@ -166,8 +165,7 @@ function isCurrent(item: ScheduleItemData, now: string | null): boolean {
 export type ScheduleEditorProps = {
   hackathonId: string
   scheduleItems: ScheduleItem[]
-  challengeReleasedAt: string | null
-  challengeExists: boolean
+  challengeExists?: boolean
   hackathonStartsAt?: string | null
   hackathonEndsAt?: string | null
   hackathonStatus?: string
@@ -177,7 +175,7 @@ export type ScheduleEditorProps = {
   onScheduleChange?: (items: ScheduleItemData[]) => void
 }
 
-export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challengeReleasedAt, challengeExists, hackathonStartsAt, hackathonEndsAt, hackathonStatus, hideHeader, onEditTriggerItem, onAddChallenge, onScheduleChange }: ScheduleEditorProps) {
+export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challengeExists, hackathonStartsAt, hackathonEndsAt, hackathonStatus, hideHeader, onEditTriggerItem, onAddChallenge, onScheduleChange }: ScheduleEditorProps) {
   const router = useRouter()
   const isMobile = useIsMobile()
   const [now, setNow] = useState<string | null>(null)
@@ -190,9 +188,7 @@ export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challe
   const [allItems, setAllItems] = useState<ScheduleItemData[]>(serverItems as ScheduleItemData[])
   useEffect(() => { setAllItems(serverItems as ScheduleItemData[]) }, [serverItems])
   const items = useMemo(() => {
-    const base = challengeExists || challengeReleasedAt
-      ? allItems
-      : allItems.filter((i) => i.trigger_type !== "challenge_release")
+    const base = allItems
     const virtual: ScheduleItemData[] = []
     const terminalStatuses = new Set(["active", "judging", "completed", "archived"])
     if (hackathonStartsAt && !terminalStatuses.has(hackathonStatus ?? "")) {
@@ -231,17 +227,8 @@ export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challe
       })
     }
     return [...base, ...virtual]
-  }, [allItems, challengeExists, challengeReleasedAt, hackathonStartsAt, hackathonEndsAt, hackathonStatus])
-  const groupingItems = useMemo(
-    () =>
-      items.map((i) =>
-        i.trigger_type === "challenge_release" && challengeReleasedAt
-          ? { ...i, starts_at: challengeReleasedAt }
-          : i,
-      ),
-    [items, challengeReleasedAt],
-  )
-  const dateGroups = useMemo(() => groupByDateAndTime(groupingItems), [groupingItems])
+  }, [allItems, hackathonStartsAt, hackathonEndsAt, hackathonStatus])
+  const dateGroups = useMemo(() => groupByDateAndTime(items), [items])
   const [error, setError] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<ScheduleItemData | null>(null)
@@ -462,12 +449,11 @@ export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challe
                           const current = isCurrent(item, now)
                           const isTrigger = !!item.trigger_type
                           const isVirtual = isVirtualItem(item.id)
-                          const isReleased = item.trigger_type === "challenge_release" && !!challengeReleasedAt
-                          const isInteractive = !isReleased && !isVirtual
+                          const isInteractive = !isVirtual
                           return (
                             <div
                               key={item.id}
-                              className={`group relative ${current ? "rounded-md bg-primary/5 -mx-2 px-2" : ""} ${isReleased ? "opacity-50" : ""}`}
+                              className={`group relative ${current ? "rounded-md bg-primary/5 -mx-2 px-2" : ""}`}
                             >
                               <div
                                 className={`flex items-start gap-2 ${isInteractive ? "cursor-pointer" : ""}`}
@@ -480,9 +466,7 @@ export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challe
                                   <div className="flex min-h-10 items-center gap-2 flex-wrap">
                                     <p className="text-sm font-medium truncate">{item.title}</p>
                                     {current && <Badge variant="secondary">Now</Badge>}
-                                    {isReleased ? (
-                                      <Badge variant="secondary" className="text-xs">Released</Badge>
-                                    ) : isTrigger && item.trigger_type ? (
+                                    {isTrigger && item.trigger_type ? (
                                       isMobile ? (
                                         <Popover>
                                           <PopoverTrigger asChild>

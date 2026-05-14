@@ -12,7 +12,6 @@ interface RpcPollRow {
   description: string | null
   banner_url: string | null
   challenge_count: number | null
-  challenge_released_at: string | null
   results_published_at: string | null
   starts_at: string | null
   ends_at: string | null
@@ -29,7 +28,6 @@ interface RpcPollRow {
   prize_count: number
   judge_display_count: number
   mentor_open_count: number
-  challenge_release_time: string | null
   pending_judge_invitation_count: number
   planned_round_count: number | null
   active_round_count: number | null

@@ -25,7 +25,6 @@ type Props = {
   hackathonId: string
   stats: QuickStats
   scheduleItems: ScheduleItem[]
-  challengeReleasedAt: string | null
   challengeExists: boolean
   hackathonStartsAt?: string | null
   hackathonEndsAt?: string | null
@@ -46,7 +45,7 @@ function StatCard({ icon: Icon, value, label, href }: { icon: typeof Users; valu
   return inner
 }
 
-export function OrganizerOverview({ slug, hackathonId, stats, scheduleItems, challengeReleasedAt, challengeExists, hackathonStartsAt, hackathonEndsAt, hackathonStatus }: Props) {
+export function OrganizerOverview({ slug, hackathonId, stats, scheduleItems, challengeExists, hackathonStartsAt, hackathonEndsAt, hackathonStatus }: Props) {
   const judgingValue = stats.judgingProgress.totalAssignments > 0
     ? `${Math.round((stats.judgingProgress.completedAssignments / stats.judgingProgress.totalAssignments) * 100)}%`
     : "—"
@@ -74,7 +73,6 @@ export function OrganizerOverview({ slug, hackathonId, stats, scheduleItems, cha
           <OverviewSchedule
             hackathonId={hackathonId}
             scheduleItems={scheduleItems}
-            challengeReleasedAt={challengeReleasedAt}
             challengeExists={challengeExists}
             hackathonStartsAt={hackathonStartsAt}
             hackathonEndsAt={hackathonEndsAt}

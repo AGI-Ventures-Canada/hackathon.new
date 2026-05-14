@@ -171,7 +171,6 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
         status={hackathon.status}
         phase={hackathon.phase}
         challengeExists={challengeExists}
-        challengeReleasedAt={hackathon.challenge_released_at}
         challenges={challenges}
         scheduleItems={scheduleItems}
         startsAt={hackathon.starts_at}
@@ -270,7 +269,6 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
                     mentorQueue: overviewStats.mentorQueue,
                   }}
                   scheduleItems={scheduleItems}
-                  challengeReleasedAt={hackathon.challenge_released_at}
                   challengeExists={challengeExists}
                   hackathonStartsAt={hackathon.starts_at}
                   hackathonEndsAt={hackathon.ends_at}

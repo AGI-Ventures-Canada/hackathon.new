@@ -342,7 +342,6 @@ type HackathonForDispatch = {
   name: string
   slug: string
   status: string
-  challenge_released_at: string | null
 }
 
 async function fetchHackathonForDispatch(
@@ -351,7 +350,7 @@ async function fetchHackathonForDispatch(
 ): Promise<HackathonForDispatch | null> {
   const { data, error } = await client
     .from("hackathons")
-    .select("id, tenant_id, name, slug, status, challenge_released_at")
+    .select("id, tenant_id, name, slug, status")
     .eq("id", hackathonId)
     .single()
   if (error || !data) return null
@@ -376,22 +375,6 @@ async function markChallengesReleased(
     return []
   }
   return (data ?? []).map(toChallenge)
-}
-
-async function backfillHackathonReleasedAt(
-  client: SupabaseClient,
-  hackathonId: string,
-  tenantId: string,
-  releasedAt: string,
-  existingHackathonReleasedAt: string | null,
-): Promise<void> {
-  if (existingHackathonReleasedAt) return
-  await client
-    .from("hackathons")
-    .update({ challenge_released_at: releasedAt, updated_at: releasedAt })
-    .eq("id", hackathonId)
-    .eq("tenant_id", tenantId)
-    .is("challenge_released_at", null)
 }
 
 async function dispatchReleaseNotification(
@@ -450,14 +433,6 @@ export async function releaseChallenge(
   const [released] = await markChallengesReleased(client, [challengeId], releasedAt)
   if (!released) return null
 
-  await backfillHackathonReleasedAt(
-    client,
-    hackathonId,
-    tenantId,
-    releasedAt,
-    hackathon.challenge_released_at,
-  )
-
   if (options?.dispatchNotification !== false) {
     await dispatchReleaseNotification(hackathon, [released], options?.trigger ?? "manual")
   }
@@ -490,14 +465,6 @@ export async function releaseLinkedChallenges(
   const released = await markChallengesReleased(client, ids, releasedAt)
   if (released.length === 0) return []
 
-  await backfillHackathonReleasedAt(
-    client,
-    hackathonId,
-    tenantId,
-    releasedAt,
-    hackathon.challenge_released_at,
-  )
-
   const triggerDefault: ReleaseTrigger =
     linkedTo === "event_publish" ? "event_publish" : "event_start"
   if (options?.dispatchNotification !== false) {
@@ -529,14 +496,6 @@ export async function releaseAllUnreleasedChallenges(
   const releasedAt = new Date().toISOString()
   const released = await markChallengesReleased(client, ids, releasedAt)
   if (released.length === 0) return []
-
-  await backfillHackathonReleasedAt(
-    client,
-    hackathonId,
-    tenantId,
-    releasedAt,
-    hackathon.challenge_released_at,
-  )
 
   if (options?.dispatchNotification !== false) {
     await dispatchReleaseNotification(hackathon, released, options?.trigger ?? "manual")
@@ -591,14 +550,6 @@ export async function processScheduledChallengeReleases(): Promise<ScheduledChal
 
       const released = await markChallengesReleased(client, ids, nowIso)
       if (released.length === 0) continue
-
-      await backfillHackathonReleasedAt(
-        client,
-        hackathonId,
-        hackathon.tenant_id,
-        nowIso,
-        hackathon.challenge_released_at,
-      )
 
       await dispatchReleaseNotification(hackathon, released, "scheduled")
 

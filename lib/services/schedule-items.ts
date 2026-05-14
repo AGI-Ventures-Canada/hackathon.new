@@ -10,8 +10,8 @@ export type ScheduleItem = {
   ends_at: string | null
   location: string | null
   sort_order: number
-  trigger_type: "challenge_release" | "submission_deadline" | null
-  linked_to: "event_start" | "event_end" | "event_publish" | null
+  trigger_type: "submission_deadline" | null
+  linked_to: "event_start" | "event_end" | null
   created_at: string
   updated_at: string
 }
@@ -23,7 +23,7 @@ export type CreateScheduleItemInput = {
   endsAt?: string
   location?: string
   sortOrder?: number
-  triggerType?: "challenge_release" | "submission_deadline" | null
+  triggerType?: "submission_deadline" | null
 }
 
 export type UpdateScheduleItemInput = {
@@ -33,7 +33,7 @@ export type UpdateScheduleItemInput = {
   endsAt?: string | null
   location?: string | null
   sortOrder?: number
-  linkedTo?: "event_start" | "event_end" | "event_publish" | null
+  linkedTo?: "event_start" | "event_end" | null
 }
 
 export async function listScheduleItems(hackathonId: string): Promise<ScheduleItem[]> {
@@ -150,7 +150,6 @@ export function buildDefaultAgendaItems(startsAt: string | null, endsAt: string 
 
   return [
     { title: "Opening Kickoff", startsAt: start.toISOString(), endsAt: offset(start, 30) },
-    { title: "Challenge Release", startsAt: start.toISOString(), endsAt: start.toISOString(), triggerType: "challenge_release" },
     { title: "Hacking Begins", startsAt: offset(start, 30), endsAt: offset(start, 60) },
     { title: "Submissions Close & Judging Starts", startsAt: end.toISOString(), endsAt: end.toISOString(), triggerType: "submission_deadline" },
     { title: "Presentations", startsAt: offset(end, -30), endsAt: end.toISOString() },
@@ -160,7 +159,7 @@ export function buildDefaultAgendaItems(startsAt: string | null, endsAt: string 
 
 export async function getTriggerItem(
   hackathonId: string,
-  triggerType: "challenge_release" | "submission_deadline"
+  triggerType: "submission_deadline"
 ): Promise<ScheduleItem | null> {
   const client = getSupabase() as unknown as SupabaseClient
 

@@ -7,7 +7,7 @@ import { setPhase } from "@/lib/services/phases"
 import { listRooms, createRoom, updateRoom, deleteRoom, addTeamToRoom, removeTeamFromRoom, togglePresented, setRoomTimer, clearRoomTimer, pauseRoomTimer, resumeRoomTimer, addJudgeToRoom, removeJudgeFromRoom, setAutoAssignByRoom, getAutoAssignByRoom } from "@/lib/services/rooms"
 import { listCategories, createCategory, updateCategory, deleteCategory } from "@/lib/services/categories"
 import { listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, publishAnnouncement, unpublishAnnouncement, scheduleAnnouncement, type CreateAnnouncementInput, type UpdateAnnouncementInput } from "@/lib/services/announcements"
-import { listScheduleItems, createScheduleItem, updateScheduleItem, deleteScheduleItem, getTriggerItem } from "@/lib/services/schedule-items"
+import { listScheduleItems, createScheduleItem, updateScheduleItem, deleteScheduleItem } from "@/lib/services/schedule-items"
 import { listTeamsWithMembers, createTeamWithMembers, modifyTeamMembers, bulkAssignTeams, deleteTeam, setTeamCaptain } from "@/lib/services/hackathons"
 import { listHackathonPeople, peopleToCsvRows } from "@/lib/services/hackathon-people"
 import { toCsv } from "@/lib/utils/csv"
@@ -1289,13 +1289,13 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if ("error" in authErr) return authErr
-    const b = body as { title: string; startsAt: string; description?: string; endsAt?: string; location?: string; sortOrder?: number; triggerType?: "challenge_release" | "submission_deadline" | null }
+    const b = body as { title: string; startsAt: string; description?: string; endsAt?: string; location?: string; sortOrder?: number; triggerType?: "submission_deadline" | null }
     const item = await createScheduleItem(params.id, b)
     if (!item) { set.status = 400; return { error: "Failed to create schedule item" } }
     await logAudit({ principal, action: "schedule_item.created", resourceType: "schedule_item", resourceId: item.id, metadata: { hackathonId: params.id, title: b.title } })
     return item
   }, {
-    body: t.Object({ title: t.String(), startsAt: t.String(), description: t.Optional(t.String()), endsAt: t.Optional(t.String()), location: t.Optional(t.String()), sortOrder: t.Optional(t.Number()), triggerType: t.Optional(t.Union([t.Literal("challenge_release"), t.Literal("submission_deadline"), t.Null()])) }),
+    body: t.Object({ title: t.String(), startsAt: t.String(), description: t.Optional(t.String()), endsAt: t.Optional(t.String()), location: t.Optional(t.String()), sortOrder: t.Optional(t.Number()), triggerType: t.Optional(t.Union([t.Literal("submission_deadline"), t.Null()])) }),
     detail: { summary: "Create schedule item" },
   })
   .patch("/hackathons/:id/schedule/:itemId", async ({ params, body, principal, set }) => {
@@ -1303,20 +1303,13 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     if (!isValidUuid(params.itemId)) { set.status = 400; return { error: "Invalid schedule item ID" } }
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if ("error" in authErr) return authErr
-    const b = body as { title?: string; startsAt?: string; description?: string | null; endsAt?: string | null; location?: string | null; sortOrder?: number; linkedTo?: "event_start" | "event_end" | "event_publish" | null }
-    if (b.linkedTo === "event_publish") {
-      const triggerItem = await getTriggerItem(params.id, "challenge_release")
-      if (triggerItem?.id !== params.itemId) {
-        set.status = 400
-        return { error: "event_publish link is only valid on challenge_release items" }
-      }
-    }
+    const b = body as { title?: string; startsAt?: string; description?: string | null; endsAt?: string | null; location?: string | null; sortOrder?: number; linkedTo?: "event_start" | "event_end" | null }
     const item = await updateScheduleItem(params.itemId, params.id, b)
     if (!item) { set.status = 400; return { error: "Failed to update schedule item" } }
     await logAudit({ principal, action: "schedule_item.updated", resourceType: "schedule_item", resourceId: params.itemId, metadata: { hackathonId: params.id } })
     return item
   }, {
-    body: t.Object({ title: t.Optional(t.String()), startsAt: t.Optional(t.String()), description: t.Optional(t.String()), endsAt: t.Optional(t.String()), location: t.Optional(t.String()), sortOrder: t.Optional(t.Number()), linkedTo: t.Optional(t.Union([t.Literal("event_start"), t.Literal("event_end"), t.Literal("event_publish"), t.Null()])) }),
+    body: t.Object({ title: t.Optional(t.String()), startsAt: t.Optional(t.String()), description: t.Optional(t.String()), endsAt: t.Optional(t.String()), location: t.Optional(t.String()), sortOrder: t.Optional(t.Number()), linkedTo: t.Optional(t.Union([t.Literal("event_start"), t.Literal("event_end"), t.Null()])) }),
     detail: { summary: "Update schedule item" },
   })
   .delete("/hackathons/:id/schedule/:itemId", async ({ params, principal, set }) => {
@@ -1326,7 +1319,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     if ("error" in authErr) return authErr
     const items = await listScheduleItems(params.id)
     const item = items.find((i) => i.id === params.itemId)
-    if (item?.trigger_type) { set.status = 400; return { error: `Cannot delete ${item.trigger_type === "challenge_release" ? "challenge release" : "submission deadline"} — this item is required` } }
+    if (item?.trigger_type === "submission_deadline") { set.status = 400; return { error: "Cannot delete submission deadline — this item is required" } }
     const ok = await deleteScheduleItem(params.itemId, params.id)
     if (!ok) { set.status = 400; return { error: "Failed to delete schedule item" } }
     await logAudit({ principal, action: "schedule_item.deleted", resourceType: "schedule_item", resourceId: params.itemId, metadata: { hackathonId: params.id } })
