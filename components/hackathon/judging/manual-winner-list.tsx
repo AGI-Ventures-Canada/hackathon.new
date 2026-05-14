@@ -14,29 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { ChevronDown, Loader2, Search, Trophy } from "lucide-react"
 import { assertOk, assertOkJson } from "@/lib/utils/fetch"
-
-type WinnerPickerPrize = { id: string; name: string }
-type PrizeScore = {
-  prizeId: string
-  prizeName: string
-  score: number
-  judgeCount: number
-}
-
-type WinnerPickerProject = {
-  submissionId: string
-  projectTitle: string
-  teamId: string | null
-  teamName: string | null
-  prizeIds: string[]
-  score: number | null
-  judgeCount: number
-  prizeScores: PrizeScore[]
-}
-type WinnerPickerData = {
-  prizes: WinnerPickerPrize[]
-  projects: WinnerPickerProject[]
-}
+import type { WinnerPickerData } from "@/lib/services/judging"
 
 interface ManualWinnerListProps {
   hackathonId: string
@@ -124,7 +102,11 @@ export function ManualWinnerList({ hackathonId, roundName, roundId, submissionCo
       return p
     })
     setData({ ...data, projects: nextProjects })
-    setPending((prev) => new Set(prev).add(submissionId))
+    setPending((prev) => {
+      const next = new Set(prev).add(submissionId)
+      if (previousWinner && !currentlyWins) next.add(previousWinner.submissionId)
+      return next
+    })
     setError(null)
 
     try {
@@ -154,6 +136,7 @@ export function ManualWinnerList({ hackathonId, roundName, roundId, submissionCo
       setPending((prev) => {
         const next = new Set(prev)
         next.delete(submissionId)
+        if (previousWinner) next.delete(previousWinner.submissionId)
         return next
       })
     }

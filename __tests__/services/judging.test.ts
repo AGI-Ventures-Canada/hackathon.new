@@ -2922,12 +2922,26 @@ describe("Judging Service", () => {
       expect(result.removedCount).toBe(0)
     })
 
-    it("returns count when the delete succeeds", async () => {
+    it("returns count of rows actually deleted", async () => {
       setMockFromImplementation(() =>
-        createChainableMock({ data: null, error: null })
+        createChainableMock({
+          data: [{ submission_id: "s1" }, { submission_id: "s2" }],
+          error: null,
+        })
       )
       const result = await unadvanceSubmissions(TO_ROUND, ["s1", "s2"])
       expect(result.removedCount).toBe(2)
+    })
+
+    it("returns the deleted-row count, not the input count, when some IDs weren't in the round", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({
+          data: [{ submission_id: "s1" }],
+          error: null,
+        })
+      )
+      const result = await unadvanceSubmissions(TO_ROUND, ["s1", "s-missing"])
+      expect(result.removedCount).toBe(1)
     })
 
     it("throws when the delete fails", async () => {

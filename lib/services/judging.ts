@@ -1438,17 +1438,18 @@ export async function unadvanceSubmissions(
 
   if (submissionIds.length === 0) return { removedCount: 0 }
 
-  const { error } = await client
+  const { data, error } = await client
     .from("round_submissions")
     .delete()
     .eq("round_id", toRoundId)
     .in("submission_id", submissionIds)
+    .select("submission_id")
 
   if (error) {
     throw new Error(`Failed to unadvance submissions: ${error.message}`)
   }
 
-  return { removedCount: submissionIds.length }
+  return { removedCount: (data ?? []).length }
 }
 
 export type AutoAdvanceResult =

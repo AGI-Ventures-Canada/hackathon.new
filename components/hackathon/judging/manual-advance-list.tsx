@@ -7,24 +7,7 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Loader2, Search } from "lucide-react"
 import { assertOkJson } from "@/lib/utils/fetch"
-
-type PrizeScore = {
-  prizeId: string
-  prizeName: string
-  score: number
-  judgeCount: number
-}
-
-type AdvanceCandidate = {
-  submissionId: string
-  projectTitle: string
-  teamId: string | null
-  teamName: string | null
-  score: number | null
-  judgeCount: number
-  prizeScores: PrizeScore[]
-  alreadyAdvanced: boolean
-}
+import type { AdvanceCandidate } from "@/lib/services/judging"
 
 interface ManualAdvanceListProps {
   hackathonId: string

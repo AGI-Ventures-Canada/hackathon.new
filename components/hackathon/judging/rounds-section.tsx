@@ -34,6 +34,7 @@ import {
   CheckCircle2,
   ArrowRight,
 } from "lucide-react"
+import { assertOk } from "@/lib/utils/fetch"
 import { RoundsPresetDialog, type RoundsPresetKind } from "./rounds-preset-dialog"
 import { RoundFormDialog } from "./round-form-dialog"
 import { AdvanceFinalistsDialog } from "./advance-finalists-dialog"
@@ -116,23 +117,28 @@ export function RoundsSection({ hackathonId, rounds }: RoundsSectionProps) {
     setError(null)
     setClosing(true)
     try {
-      const completeRes = await fetch(
-        `/api/dashboard/hackathons/${hackathonId}/rounds/${round.id}/complete`,
-        { method: "POST" }
-      )
-      if (!completeRes.ok) {
-        const data = await completeRes.json().catch(() => ({}))
-        throw new Error(data.error || `Failed to close ${round.name}`)
+      try {
+        await fetch(
+          `/api/dashboard/hackathons/${hackathonId}/rounds/${round.id}/complete`,
+          { method: "POST" }
+        ).then(assertOk)
+      } catch (err) {
+        throw new Error(
+          err instanceof Error && err.message
+            ? err.message
+            : `Failed to close ${round.name}`
+        )
       }
 
-      const activateRes = await fetch(
-        `/api/dashboard/hackathons/${hackathonId}/rounds/${next.id}/activate`,
-        { method: "POST" }
-      )
-      if (!activateRes.ok) {
-        const data = await activateRes.json().catch(() => ({}))
+      try {
+        await fetch(
+          `/api/dashboard/hackathons/${hackathonId}/rounds/${next.id}/activate`,
+          { method: "POST" }
+        ).then(assertOk)
+      } catch (err) {
+        const base = `Closed ${round.name}, but failed to start ${next.name}`
         throw new Error(
-          data.error || `Closed ${round.name}, but failed to start ${next.name}`
+          err instanceof Error && err.message ? `${base}: ${err.message}` : base
         )
       }
 
