@@ -212,7 +212,8 @@ export function RoundsSection({ hackathonId, rounds }: RoundsSectionProps) {
               const canManualAdvance =
                 round.status === "active" &&
                 round.advancement === "manual" &&
-                nextRound
+                nextRound &&
+                nextRound.status === "planned"
               const canPickWinners =
                 round.status === "active" &&
                 round.advancement === "manual" &&

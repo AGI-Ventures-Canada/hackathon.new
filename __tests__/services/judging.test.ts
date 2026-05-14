@@ -43,6 +43,7 @@ const {
   listAdvanceCandidates,
   listRoundWinnerPicker,
   unadvanceSubmissions,
+  roundBelongsToHackathon,
 } = await import("@/lib/services/judging")
 
 describe("Judging Service", () => {
@@ -3027,6 +3028,28 @@ describe("Judging Service", () => {
       const result = await listRoundWinnerPicker(HACK, ROUND)
       expect(result.prizes).toHaveLength(1)
       expect(result.projects).toEqual([])
+    })
+  })
+
+  describe("roundBelongsToHackathon", () => {
+    it("returns true when the round belongs to the hackathon", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({ data: { id: "r1" }, error: null })
+      )
+
+      const result = await roundBelongsToHackathon("h1", "r1")
+
+      expect(result).toBe(true)
+    })
+
+    it("returns false when the round does not belong to the hackathon", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({ data: null, error: null })
+      )
+
+      const result = await roundBelongsToHackathon("h1", "r1")
+
+      expect(result).toBe(false)
     })
   })
 })
