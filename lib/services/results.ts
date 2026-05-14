@@ -1,6 +1,10 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
-import type { HackathonResult } from "@/lib/db/hackathon-types"
+import type {
+  HackathonResult,
+  PrizeJudgingStyle,
+  PrizeType,
+} from "@/lib/db/hackathon-types"
 
 export type ResultWithDetails = HackathonResult & {
   submissionTitle: string
@@ -470,4 +474,318 @@ export async function getPublicResultsWithDetails(
     judgeCount: r.judge_count,
     prizes: r.prizes,
   }))
+}
+
+export type PerPrizeTeamResult = {
+  rank: number | null
+  submissionId: string
+  submissionTitle: string
+  teamName: string | null
+  totalScore: number | null
+  weightedScore: number | null
+  judgeCount: number
+  isAssignedWinner: boolean
+}
+
+export type PrizeResultsGroup = {
+  prizeId: string
+  prizeName: string
+  prizeType: PrizeType
+  judgingStyle: PrizeJudgingStyle | null
+  mode: "per_prize" | "unified" | "manual"
+  results: PerPrizeTeamResult[]
+}
+
+type PrizeRow = {
+  id: string
+  name: string
+  type: PrizeType
+  judging_style: PrizeJudgingStyle | null
+  display_order: number
+  is_screening: boolean
+}
+
+type ScoreRow = {
+  score: number
+  criteria_id: string
+  judge_assignment_id: string
+}
+
+type AssignmentRow = {
+  id: string
+  submission_id: string
+  prize_id: string | null
+  assignment_kind: "per_prize" | "unified_weighted_score"
+  is_complete: boolean
+}
+
+type SubmissionMeta = {
+  id: string
+  title: string
+  team_id: string | null
+}
+
+function rankResults(rows: PerPrizeTeamResult[]): PerPrizeTeamResult[] {
+  const sorted = [...rows].sort((a, b) => {
+    const aw = a.weightedScore ?? -Infinity
+    const bw = b.weightedScore ?? -Infinity
+    if (bw !== aw) return bw - aw
+    const at = a.totalScore ?? -Infinity
+    const bt = b.totalScore ?? -Infinity
+    return bt - at
+  })
+  let lastWeighted: number | null = null
+  let lastTotal: number | null = null
+  let currentRank = 0
+  let processed = 0
+  for (const row of sorted) {
+    processed += 1
+    if (
+      lastWeighted === null ||
+      row.weightedScore !== lastWeighted ||
+      row.totalScore !== lastTotal
+    ) {
+      currentRank = processed
+      lastWeighted = row.weightedScore
+      lastTotal = row.totalScore
+    }
+    row.rank = currentRank
+  }
+  return sorted
+}
+
+export async function getResultsByPrize(
+  hackathonId: string
+): Promise<PrizeResultsGroup[]> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data: prizesData } = await client
+    .from("prizes")
+    .select("id, name, type, judging_style, display_order, is_screening")
+    .eq("hackathon_id", hackathonId)
+    .order("display_order")
+
+  const prizes = ((prizesData ?? []) as PrizeRow[]).filter((p) => !p.is_screening)
+  if (prizes.length === 0) return []
+
+  const { data: assignmentsData } = await client
+    .from("judge_assignments")
+    .select("id, submission_id, prize_id, assignment_kind, is_complete")
+    .eq("hackathon_id", hackathonId)
+    .eq("is_complete", true)
+
+  const assignments = (assignmentsData ?? []) as AssignmentRow[]
+  const assignmentIds = assignments.map((a) => a.id)
+
+  let scores: ScoreRow[] = []
+  if (assignmentIds.length > 0) {
+    const { data: scoresData } = await client
+      .from("scores")
+      .select("score, criteria_id, judge_assignment_id")
+      .in("judge_assignment_id", assignmentIds)
+    scores = (scoresData ?? []) as ScoreRow[]
+  }
+
+  const { data: criteriaData } = await client
+    .from("judging_criteria")
+    .select("id, weight, prize_id")
+    .eq("hackathon_id", hackathonId)
+
+  const criteriaWeights = new Map<string, number>()
+  for (const c of (criteriaData ?? []) as Array<{ id: string; weight: number }>) {
+    criteriaWeights.set(c.id, Number(c.weight) || 0)
+  }
+
+  const submissionIdSet = new Set<string>()
+  for (const a of assignments) submissionIdSet.add(a.submission_id)
+
+  const { data: prizeAssignmentsData } = await client
+    .from("prize_assignments")
+    .select("prize_id, submission_id, assigned_at")
+    .in(
+      "prize_id",
+      prizes.map((p) => p.id)
+    )
+    .order("assigned_at", { ascending: true })
+
+  const manualWinners = new Map<string, string[]>()
+  for (const pa of (prizeAssignmentsData ?? []) as Array<{
+    prize_id: string
+    submission_id: string
+    assigned_at: string | null
+  }>) {
+    submissionIdSet.add(pa.submission_id)
+    const list = manualWinners.get(pa.prize_id) ?? []
+    list.push(pa.submission_id)
+    manualWinners.set(pa.prize_id, list)
+  }
+
+  const { data: overallResultsData } = await client
+    .from("hackathon_results")
+    .select("submission_id, total_score, weighted_score, judge_count, rank")
+    .eq("hackathon_id", hackathonId)
+
+  const overallBySubmission = new Map<
+    string,
+    { totalScore: number | null; weightedScore: number | null; judgeCount: number; rank: number }
+  >()
+  for (const r of (overallResultsData ?? []) as Array<{
+    submission_id: string
+    total_score: number | null
+    weighted_score: number | null
+    judge_count: number
+    rank: number
+  }>) {
+    submissionIdSet.add(r.submission_id)
+    overallBySubmission.set(r.submission_id, {
+      totalScore: r.total_score,
+      weightedScore: r.weighted_score,
+      judgeCount: r.judge_count,
+      rank: r.rank,
+    })
+  }
+
+  const submissionIds = Array.from(submissionIdSet)
+  let submissions: SubmissionMeta[] = []
+  if (submissionIds.length > 0) {
+    const { data: submissionsData } = await client
+      .from("submissions")
+      .select("id, title, team_id")
+      .in("id", submissionIds)
+    submissions = (submissionsData ?? []) as SubmissionMeta[]
+  }
+  const submissionsById = new Map(submissions.map((s) => [s.id, s]))
+
+  const teamIds = submissions
+    .map((s) => s.team_id)
+    .filter((id): id is string => id !== null)
+
+  const teamsById = new Map<string, string>()
+  if (teamIds.length > 0) {
+    const { data: teamsData } = await client
+      .from("teams")
+      .select("id, name")
+      .in("id", teamIds)
+    for (const t of (teamsData ?? []) as Array<{ id: string; name: string }>) {
+      teamsById.set(t.id, t.name)
+    }
+  }
+
+  function makeRow(submissionId: string, partial: Partial<PerPrizeTeamResult>): PerPrizeTeamResult | null {
+    const sub = submissionsById.get(submissionId)
+    if (!sub) return null
+    return {
+      rank: null,
+      submissionId,
+      submissionTitle: sub.title,
+      teamName: sub.team_id ? teamsById.get(sub.team_id) ?? null : null,
+      totalScore: null,
+      weightedScore: null,
+      judgeCount: 0,
+      isAssignedWinner: false,
+      ...partial,
+    }
+  }
+
+  const scoresByAssignment = new Map<string, ScoreRow[]>()
+  for (const s of scores) {
+    const list = scoresByAssignment.get(s.judge_assignment_id) ?? []
+    list.push(s)
+    scoresByAssignment.set(s.judge_assignment_id, list)
+  }
+
+  const groups: PrizeResultsGroup[] = []
+
+  for (const prize of prizes) {
+    const isManual =
+      prize.judging_style === "crowd_vote" || prize.judging_style === "judges_pick"
+
+    if (isManual) {
+      const winnerIds = manualWinners.get(prize.id) ?? []
+      const rows = winnerIds
+        .map((sid) => makeRow(sid, { isAssignedWinner: true }))
+        .filter((r): r is PerPrizeTeamResult => r !== null)
+      groups.push({
+        prizeId: prize.id,
+        prizeName: prize.name,
+        prizeType: prize.type,
+        judgingStyle: prize.judging_style,
+        mode: "manual",
+        results: rows,
+      })
+      continue
+    }
+
+    const perPrizeAssignments = assignments.filter(
+      (a) => a.assignment_kind === "per_prize" && a.prize_id === prize.id
+    )
+
+    if (perPrizeAssignments.length > 0) {
+      const bySubmission = new Map<
+        string,
+        { totalScore: number; weightedSum: number; weightSum: number; judgeAssignmentIds: Set<string> }
+      >()
+      for (const a of perPrizeAssignments) {
+        const assignmentScores = scoresByAssignment.get(a.id) ?? []
+        if (assignmentScores.length === 0) continue
+        const entry = bySubmission.get(a.submission_id) ?? {
+          totalScore: 0,
+          weightedSum: 0,
+          weightSum: 0,
+          judgeAssignmentIds: new Set<string>(),
+        }
+        entry.judgeAssignmentIds.add(a.id)
+        for (const s of assignmentScores) {
+          const w = criteriaWeights.get(s.criteria_id) ?? 0
+          entry.totalScore += s.score
+          entry.weightedSum += s.score * w
+          entry.weightSum += w
+        }
+        bySubmission.set(a.submission_id, entry)
+      }
+
+      const rows: PerPrizeTeamResult[] = []
+      for (const [submissionId, agg] of bySubmission.entries()) {
+        const row = makeRow(submissionId, {
+          totalScore: agg.totalScore,
+          weightedScore:
+            agg.weightSum > 0 ? agg.weightedSum / agg.weightSum : null,
+          judgeCount: agg.judgeAssignmentIds.size,
+        })
+        if (row) rows.push(row)
+      }
+
+      groups.push({
+        prizeId: prize.id,
+        prizeName: prize.name,
+        prizeType: prize.type,
+        judgingStyle: prize.judging_style,
+        mode: "per_prize",
+        results: rankResults(rows),
+      })
+      continue
+    }
+
+    const rows: PerPrizeTeamResult[] = []
+    for (const [submissionId, overall] of overallBySubmission.entries()) {
+      const row = makeRow(submissionId, {
+        rank: overall.rank,
+        totalScore: overall.totalScore,
+        weightedScore: overall.weightedScore,
+        judgeCount: overall.judgeCount,
+      })
+      if (row) rows.push(row)
+    }
+    rows.sort((a, b) => (a.rank ?? Infinity) - (b.rank ?? Infinity))
+    groups.push({
+      prizeId: prize.id,
+      prizeName: prize.name,
+      prizeType: prize.type,
+      judgingStyle: prize.judging_style,
+      mode: "unified",
+      results: rows,
+    })
+  }
+
+  return groups
 }

@@ -14,6 +14,7 @@ const {
   unpublishResults,
   getPublicResults,
   getPublicResultsWithDetails,
+  getResultsByPrize,
 } = await import("@/lib/services/results")
 
 const mockResult: HackathonResult = {
@@ -731,6 +732,245 @@ describe("Results Service", () => {
 
       expect(participantsQueried).toBe(false)
       expect(result![0].members).toEqual([])
+    })
+  })
+
+  describe("getResultsByPrize", () => {
+    it("returns empty array when there are no prizes", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "prizes") {
+          return createChainableMock({ data: [], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await getResultsByPrize("h1")
+      expect(result).toEqual([])
+    })
+
+    it("aggregates per-prize scores and ranks teams by weighted score", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "prizes") {
+          return createChainableMock({
+            data: [
+              {
+                id: "prize1",
+                name: "Best Overall",
+                type: "score",
+                judging_style: "weighted_score",
+                display_order: 0,
+                is_screening: false,
+              },
+            ],
+            error: null,
+          })
+        }
+        if (table === "judge_assignments") {
+          return createChainableMock({
+            data: [
+              { id: "ja1", submission_id: "sub1", prize_id: "prize1", assignment_kind: "per_prize", is_complete: true },
+              { id: "ja2", submission_id: "sub1", prize_id: "prize1", assignment_kind: "per_prize", is_complete: true },
+              { id: "ja3", submission_id: "sub2", prize_id: "prize1", assignment_kind: "per_prize", is_complete: true },
+            ],
+            error: null,
+          })
+        }
+        if (table === "scores") {
+          return createChainableMock({
+            data: [
+              { judge_assignment_id: "ja1", criteria_id: "c1", score: 8 },
+              { judge_assignment_id: "ja1", criteria_id: "c2", score: 9 },
+              { judge_assignment_id: "ja2", criteria_id: "c1", score: 9 },
+              { judge_assignment_id: "ja2", criteria_id: "c2", score: 8 },
+              { judge_assignment_id: "ja3", criteria_id: "c1", score: 5 },
+              { judge_assignment_id: "ja3", criteria_id: "c2", score: 6 },
+            ],
+            error: null,
+          })
+        }
+        if (table === "judging_criteria") {
+          return createChainableMock({
+            data: [
+              { id: "c1", weight: 1, prize_id: "prize1" },
+              { id: "c2", weight: 1, prize_id: "prize1" },
+            ],
+            error: null,
+          })
+        }
+        if (table === "prize_assignments") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "hackathon_results") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "submissions") {
+          return createChainableMock({
+            data: [
+              { id: "sub1", title: "Alpha", team_id: "t1" },
+              { id: "sub2", title: "Beta", team_id: "t2" },
+            ],
+            error: null,
+          })
+        }
+        if (table === "teams") {
+          return createChainableMock({
+            data: [
+              { id: "t1", name: "Team Alpha" },
+              { id: "t2", name: "Team Beta" },
+            ],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const groups = await getResultsByPrize("h1")
+      expect(groups).toHaveLength(1)
+      const [group] = groups
+      expect(group.mode).toBe("per_prize")
+      expect(group.results).toHaveLength(2)
+      expect(group.results[0].submissionTitle).toBe("Alpha")
+      expect(group.results[0].rank).toBe(1)
+      expect(group.results[0].judgeCount).toBe(2)
+      expect(group.results[0].totalScore).toBe(34)
+      expect(group.results[0].weightedScore).toBe(8.5)
+      expect(group.results[1].submissionTitle).toBe("Beta")
+      expect(group.results[1].rank).toBe(2)
+      expect(group.results[1].judgeCount).toBe(1)
+    })
+
+    it("falls back to overall hackathon_results for prizes without per-prize assignments", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "prizes") {
+          return createChainableMock({
+            data: [
+              {
+                id: "prize-unified",
+                name: "Grand Prize",
+                type: "score",
+                judging_style: "weighted_score",
+                display_order: 0,
+                is_screening: false,
+              },
+            ],
+            error: null,
+          })
+        }
+        if (table === "judge_assignments") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "scores") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "judging_criteria") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "prize_assignments") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "hackathon_results") {
+          return createChainableMock({
+            data: [
+              { submission_id: "sub1", total_score: 85, weighted_score: 8.5, judge_count: 3, rank: 1 },
+              { submission_id: "sub2", total_score: 70, weighted_score: 7.0, judge_count: 3, rank: 2 },
+            ],
+            error: null,
+          })
+        }
+        if (table === "submissions") {
+          return createChainableMock({
+            data: [
+              { id: "sub1", title: "Alpha", team_id: null },
+              { id: "sub2", title: "Beta", team_id: null },
+            ],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const groups = await getResultsByPrize("h1")
+      expect(groups).toHaveLength(1)
+      expect(groups[0].mode).toBe("unified")
+      expect(groups[0].results).toHaveLength(2)
+      expect(groups[0].results[0].rank).toBe(1)
+      expect(groups[0].results[0].weightedScore).toBe(8.5)
+    })
+
+    it("returns assigned winners for manual prize styles", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "prizes") {
+          return createChainableMock({
+            data: [
+              {
+                id: "prize-crowd",
+                name: "Crowd Favorite",
+                type: "crowd",
+                judging_style: "crowd_vote",
+                display_order: 0,
+                is_screening: false,
+              },
+            ],
+            error: null,
+          })
+        }
+        if (table === "judge_assignments") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "scores") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "judging_criteria") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "prize_assignments") {
+          return createChainableMock({
+            data: [{ prize_id: "prize-crowd", submission_id: "sub1" }],
+            error: null,
+          })
+        }
+        if (table === "hackathon_results") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "submissions") {
+          return createChainableMock({
+            data: [{ id: "sub1", title: "Crowd Pick", team_id: null }],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const groups = await getResultsByPrize("h1")
+      expect(groups).toHaveLength(1)
+      expect(groups[0].mode).toBe("manual")
+      expect(groups[0].results).toHaveLength(1)
+      expect(groups[0].results[0].isAssignedWinner).toBe(true)
+      expect(groups[0].results[0].submissionTitle).toBe("Crowd Pick")
+    })
+
+    it("excludes screening prizes", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "prizes") {
+          return createChainableMock({
+            data: [
+              {
+                id: "screening",
+                name: "Screening",
+                type: "score",
+                judging_style: "weighted_score",
+                display_order: 0,
+                is_screening: true,
+              },
+            ],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const groups = await getResultsByPrize("h1")
+      expect(groups).toEqual([])
     })
   })
 })
