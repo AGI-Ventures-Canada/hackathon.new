@@ -12,7 +12,7 @@ import type { AdvanceCandidate } from "@/lib/services/judging"
 interface ManualAdvanceListProps {
   hackathonId: string
   fromRound: { id: string; name: string }
-  toRound: { id: string; name: string; submissionCount: number }
+  toRound: { id: string; name: string }
   onPickedCountChange?: (toRoundId: string, count: number) => void
 }
 
@@ -113,6 +113,9 @@ export function ManualAdvanceList({
   const hasAnyScore = candidates?.some((c) => c.score !== null) ?? false
 
   if (candidates === null) {
+    if (error) {
+      return <div className="border-t pt-3 text-xs text-destructive">{error}</div>
+    }
     return (
       <div className="flex items-center gap-2 border-t pt-3 text-xs text-muted-foreground">
         <Loader2 className="size-3 animate-spin" />
