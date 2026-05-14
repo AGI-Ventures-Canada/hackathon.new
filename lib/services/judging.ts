@@ -1430,6 +1430,20 @@ export async function listRoundWinnerPicker(
   return { prizes, projects }
 }
 
+export async function roundBelongsToHackathon(
+  hackathonId: string,
+  roundId: string
+): Promise<boolean> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const { data } = await client
+    .from("judging_rounds")
+    .select("id")
+    .eq("id", roundId)
+    .eq("hackathon_id", hackathonId)
+    .maybeSingle()
+  return !!data
+}
+
 export async function unadvanceSubmissions(
   toRoundId: string,
   submissionIds: string[]

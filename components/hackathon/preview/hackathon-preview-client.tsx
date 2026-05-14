@@ -242,9 +242,9 @@ function HackathonPreviewContent({
 
   const isJudge = participantRole === "judge"
 
-  const judgeStatus = isJudge && (
+  const judgeStatus = isJudge && isPersonalWorkspace && (
     <div className="flex items-center gap-3">
-      {hasJudgeAssignments && isPersonalWorkspace && (
+      {hasJudgeAssignments && (
         <Button
           onClick={() => router.push(`/e/${hackathon.slug}/judge`)}
         >

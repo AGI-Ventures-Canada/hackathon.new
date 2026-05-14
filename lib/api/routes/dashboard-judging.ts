@@ -873,7 +873,15 @@ export const dashboardJudgingRoutes = new Elysia()
         return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
       }
 
-      const { listAdvanceCandidates } = await import("@/lib/services/judging")
+      const { listAdvanceCandidates, roundBelongsToHackathon } = await import("@/lib/services/judging")
+      const [fromOk, toOk] = await Promise.all([
+        roundBelongsToHackathon(params.id, params.roundId),
+        roundBelongsToHackathon(params.id, query.toRoundId),
+      ])
+      if (!fromOk || !toOk) {
+        return new Response(JSON.stringify({ error: "Round not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+      }
+
       const candidates = await listAdvanceCandidates(params.id, params.roundId, query.toRoundId)
       return { candidates }
     },
@@ -907,7 +915,11 @@ export const dashboardJudgingRoutes = new Elysia()
         return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
       }
 
-      const { assignPrize } = await import("@/lib/services/prizes")
+      const { assignPrize, prizeBelongsToHackathon } = await import("@/lib/services/prizes")
+      if (!(await prizeBelongsToHackathon(params.id, params.prizeId))) {
+        return new Response(JSON.stringify({ error: "Prize not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+      }
+
       const assignment = await assignPrize(params.prizeId, body.submissionId)
 
       if (!assignment) {
@@ -956,7 +968,11 @@ export const dashboardJudgingRoutes = new Elysia()
         return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
       }
 
-      const { removePrizeAssignment } = await import("@/lib/services/prizes")
+      const { removePrizeAssignment, prizeBelongsToHackathon } = await import("@/lib/services/prizes")
+      if (!(await prizeBelongsToHackathon(params.id, params.prizeId))) {
+        return new Response(JSON.stringify({ error: "Prize not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+      }
+
       const success = await removePrizeAssignment(params.prizeId, params.submissionId)
 
       if (!success) {
@@ -1002,7 +1018,11 @@ export const dashboardJudgingRoutes = new Elysia()
         return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
       }
 
-      const { listRoundWinnerPicker } = await import("@/lib/services/judging")
+      const { listRoundWinnerPicker, roundBelongsToHackathon } = await import("@/lib/services/judging")
+      if (!(await roundBelongsToHackathon(params.id, params.roundId))) {
+        return new Response(JSON.stringify({ error: "Round not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+      }
+
       const data = await listRoundWinnerPicker(params.id, params.roundId)
       return data
     },
@@ -1019,6 +1039,9 @@ export const dashboardJudgingRoutes = new Elysia()
     "/hackathons/:id/rounds/:roundId/advance",
     async ({ principal, params, body }) => {
       requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+      if (!isValidUuid(params.roundId) || !isValidUuid(body.toRoundId)) {
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+      }
 
       const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
       const result = await checkHackathonOrganizer(params.id, principal.tenantId)
@@ -1028,6 +1051,15 @@ export const dashboardJudgingRoutes = new Elysia()
       }
       if (result.status === "not_authorized") {
         return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
+      }
+
+      const { roundBelongsToHackathon } = await import("@/lib/services/judging")
+      const [fromOk, toOk] = await Promise.all([
+        roundBelongsToHackathon(params.id, params.roundId),
+        roundBelongsToHackathon(params.id, body.toRoundId),
+      ])
+      if (!fromOk || !toOk) {
+        return new Response(JSON.stringify({ error: "Round not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
       }
 
       if (body.auto) {
@@ -1099,6 +1131,11 @@ export const dashboardJudgingRoutes = new Elysia()
         return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
       }
 
+      const { unadvanceSubmissions, roundBelongsToHackathon } = await import("@/lib/services/judging")
+      if (!(await roundBelongsToHackathon(params.id, body.toRoundId))) {
+        return new Response(JSON.stringify({ error: "Round not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+      }
+
       if (body.submissionIds.length === 0) {
         return new Response(
           JSON.stringify({ error: "submissionIds is required" }),
@@ -1106,7 +1143,6 @@ export const dashboardJudgingRoutes = new Elysia()
         )
       }
 
-      const { unadvanceSubmissions } = await import("@/lib/services/judging")
       const removed = await unadvanceSubmissions(body.toRoundId, body.submissionIds)
 
       return removed
