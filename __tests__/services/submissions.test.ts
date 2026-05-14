@@ -13,6 +13,7 @@ const {
   createSubmission,
   updateSubmission,
   getTeamMemberCount,
+  submissionBelongsToHackathon,
 } = await import("@/lib/services/submissions")
 
 const mockSubmission: Submission = {
@@ -461,6 +462,28 @@ describe("Submissions Service", () => {
 
       const result = await getTeamMemberCount("team-1")
       expect(result).toBe(0)
+    })
+  })
+
+  describe("submissionBelongsToHackathon", () => {
+    it("returns true when the submission belongs to the hackathon", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({ data: { id: "s1" }, error: null })
+      )
+
+      const result = await submissionBelongsToHackathon("h1", "s1")
+
+      expect(result).toBe(true)
+    })
+
+    it("returns false when the submission does not belong to the hackathon", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({ data: null, error: null })
+      )
+
+      const result = await submissionBelongsToHackathon("h1", "s1")
+
+      expect(result).toBe(false)
     })
   })
 })

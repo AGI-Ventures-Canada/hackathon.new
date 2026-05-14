@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -29,11 +29,17 @@ export function ManualWinnerList({ hackathonId, roundName, roundId }: ManualWinn
   const [pending, setPending] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
 
+  const refetchData = useCallback(
+    () =>
+      fetch(`/api/dashboard/hackathons/${hackathonId}/rounds/${roundId}/winner-picker`)
+        .then(assertOkJson<WinnerPickerData>),
+    [hackathonId, roundId]
+  )
+
   useEffect(() => {
     let cancelled = false
     setError(null)
-    fetch(`/api/dashboard/hackathons/${hackathonId}/rounds/${roundId}/winner-picker`)
-      .then(assertOkJson<WinnerPickerData>)
+    refetchData()
       .then((res) => {
         if (cancelled) return
         setData(res)
@@ -45,7 +51,7 @@ export function ManualWinnerList({ hackathonId, roundName, roundId }: ManualWinn
     return () => {
       cancelled = true
     }
-  }, [hackathonId, roundId])
+  }, [refetchData])
 
   const filtered = useMemo(() => {
     if (!data) return []
@@ -126,15 +132,18 @@ export function ManualWinnerList({ hackathonId, roundName, roundId }: ManualWinn
       }
       router.refresh()
     } catch (err) {
-      setData(snapshot)
       const baseMessage =
         err instanceof Error ? err.message : "Failed to save winner"
       if (previousWinnerUnassigned) {
         setError(
           `${baseMessage}. The old winner was removed but we couldn't save the new one — try again or pick a winner manually.`
         )
+        refetchData()
+          .then(setData)
+          .catch(() => setData(snapshot))
         router.refresh()
       } else {
+        setData(snapshot)
         setError(baseMessage)
       }
     } finally {

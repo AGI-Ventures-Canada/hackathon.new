@@ -16,6 +16,7 @@ const {
   listPrizeAssignments,
   autoAssignPrizes,
   reorderPrizes,
+  prizeBelongsToHackathon,
 } = await import("@/lib/services/prizes")
 
 const mockPrize: Prize = {
@@ -689,6 +690,28 @@ describe("Prizes Service", () => {
       const result = await reorderPrizes("h1", [])
 
       expect(result).toBe(true)
+    })
+  })
+
+  describe("prizeBelongsToHackathon", () => {
+    it("returns true when the prize belongs to the hackathon", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({ data: { id: "p1" }, error: null })
+      )
+
+      const result = await prizeBelongsToHackathon("h1", "p1")
+
+      expect(result).toBe(true)
+    })
+
+    it("returns false when the prize does not belong to the hackathon", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({ data: null, error: null })
+      )
+
+      const result = await prizeBelongsToHackathon("h1", "p1")
+
+      expect(result).toBe(false)
     })
   })
 })
