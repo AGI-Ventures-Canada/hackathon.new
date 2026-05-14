@@ -203,6 +203,7 @@ export default async function EventPage({ params, searchParams }: PageProps) {
         participantCount={participantCount}
         showActionBar={isOrganizer}
         hasJudgeAssignments={judgeAssignments.length > 0}
+        isPersonalWorkspace={!orgId}
         submission={submission}
         submissions={gallerySubmissions}
         teamInfo={teamInfo}

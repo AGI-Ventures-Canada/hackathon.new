@@ -14,5 +14,6 @@ export type RoundData = {
   advancement: AdvancementRule
   advancementConfig: AdvancementConfig
   prizeCount: number
+  submissionCount: number
   screeningPrizeId: string | null
 }

@@ -1165,6 +1165,118 @@ async function getTeamIdsInRoom(client: SupabaseClient, roomId: string): Promise
   return (data ?? []).map((rt: { team_id: string }) => rt.team_id)
 }
 
+export type PrizeScore = {
+  prizeId: string
+  prizeName: string
+  score: number
+  judgeCount: number
+}
+
+export type AdvanceCandidate = {
+  submissionId: string
+  projectTitle: string
+  teamId: string | null
+  teamName: string | null
+  score: number | null
+  judgeCount: number
+  prizeScores: PrizeScore[]
+  alreadyAdvanced: boolean
+}
+
+export async function listAdvanceCandidates(
+  hackathonId: string,
+  fromRoundId: string,
+  toRoundId: string
+): Promise<AdvanceCandidate[]> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const submissionIds = await getRoundPool(hackathonId, fromRoundId)
+  if (submissionIds.length === 0) return []
+
+  const { data: submissions } = await client
+    .from("submissions")
+    .select("id, title, team_id, teams(name)")
+    .in("id", submissionIds)
+
+  const { data: toRows } = await client
+    .from("round_submissions")
+    .select("submission_id")
+    .eq("round_id", toRoundId)
+  const alreadyAdvanced = new Set((toRows ?? []).map((r) => r.submission_id))
+
+  const { data: scorablePrizes } = await client
+    .from("prizes")
+    .select("id, name, is_screening, round_id")
+    .eq("hackathon_id", hackathonId)
+    .in("round_id", [fromRoundId, toRoundId])
+    .not("judging_style", "is", null)
+
+  type PrizeRow = { id: string; name: string; is_screening: boolean; round_id: string | null }
+  const prizeRows = (scorablePrizes as PrizeRow[]) ?? []
+  const prizeNameById = new Map(prizeRows.map((p) => [p.id, p.name]))
+  const prizeIds = prizeRows.map((p) => p.id)
+
+  const prizeScoresByCandidate = new Map<string, PrizeScore[]>()
+  if (prizeIds.length > 0) {
+    const { data: results } = await client
+      .from("hackathon_results")
+      .select("submission_id, prize_id, weighted_score, judge_count")
+      .in("prize_id", prizeIds)
+      .in("submission_id", submissionIds)
+    for (const r of results ?? []) {
+      if (!r.submission_id || !r.prize_id) continue
+      const list = prizeScoresByCandidate.get(r.submission_id) ?? []
+      list.push({
+        prizeId: r.prize_id,
+        prizeName: prizeNameById.get(r.prize_id) ?? "Prize",
+        score: r.weighted_score ?? 0,
+        judgeCount: r.judge_count ?? 0,
+      })
+      prizeScoresByCandidate.set(r.submission_id, list)
+    }
+    for (const list of prizeScoresByCandidate.values()) {
+      list.sort((a, b) => b.score - a.score)
+    }
+  }
+
+  type SubmissionRow = {
+    id: string
+    title: string | null
+    team_id: string | null
+    teams: { name: string | null } | { name: string | null }[] | null
+  }
+  const candidates: AdvanceCandidate[] = ((submissions as SubmissionRow[]) ?? []).map((s) => {
+    const team = Array.isArray(s.teams) ? s.teams[0] : s.teams
+    const prizeScores = prizeScoresByCandidate.get(s.id) ?? []
+    const aggregateScore =
+      prizeScores.length > 0
+        ? prizeScores.reduce((sum, ps) => sum + ps.score, 0) / prizeScores.length
+        : null
+    const aggregateJudgeCount = prizeScores.reduce((max, ps) => Math.max(max, ps.judgeCount), 0)
+    return {
+      submissionId: s.id,
+      projectTitle: s.title ?? "Untitled project",
+      teamId: s.team_id,
+      teamName: team?.name ?? null,
+      score: aggregateScore,
+      judgeCount: aggregateJudgeCount,
+      prizeScores,
+      alreadyAdvanced: alreadyAdvanced.has(s.id),
+    }
+  })
+
+  candidates.sort((a, b) => {
+    if (a.score !== null && b.score === null) return -1
+    if (a.score === null && b.score !== null) return 1
+    if (a.score !== null && b.score !== null && a.score !== b.score) {
+      return b.score - a.score
+    }
+    return a.projectTitle.localeCompare(b.projectTitle)
+  })
+
+  return candidates
+}
+
 export async function advanceSubmissions(
   fromRoundId: string,
   toRoundId: string,
@@ -1189,6 +1301,169 @@ export async function advanceSubmissions(
   }
 
   return { advancedCount: submissionIds.length }
+}
+
+export type WinnerPickerPrize = {
+  id: string
+  name: string
+}
+
+export type WinnerPickerProject = {
+  submissionId: string
+  projectTitle: string
+  teamId: string | null
+  teamName: string | null
+  prizeIds: string[]
+  score: number | null
+  judgeCount: number
+  prizeScores: PrizeScore[]
+}
+
+export type WinnerPickerData = {
+  prizes: WinnerPickerPrize[]
+  projects: WinnerPickerProject[]
+}
+
+export async function listRoundWinnerPicker(
+  hackathonId: string,
+  roundId: string
+): Promise<WinnerPickerData> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const submissionIds = await getRoundPool(hackathonId, roundId)
+
+  const { data: prizeRows } = await client
+    .from("prizes")
+    .select("id, name")
+    .eq("hackathon_id", hackathonId)
+    .eq("round_id", roundId)
+    .eq("is_screening", false)
+    .not("judging_style", "is", null)
+    .order("display_order", { ascending: true })
+
+  const prizes: WinnerPickerPrize[] = (prizeRows ?? []).map((p) => ({
+    id: p.id,
+    name: p.name,
+  }))
+
+  if (submissionIds.length === 0) {
+    return { prizes, projects: [] }
+  }
+
+  const { data: submissionRows } = await client
+    .from("submissions")
+    .select("id, title, team_id, teams(name)")
+    .in("id", submissionIds)
+
+  const assignmentsBySubmission = new Map<string, string[]>()
+  const prizeScoresBySubmission = new Map<string, PrizeScore[]>()
+  if (prizes.length > 0) {
+    const prizeIds = prizes.map((p) => p.id)
+    const prizeNameById = new Map(prizes.map((p) => [p.id, p.name]))
+    const { data: assignments } = await client
+      .from("prize_assignments")
+      .select("prize_id, submission_id")
+      .in("prize_id", prizeIds)
+      .in("submission_id", submissionIds)
+    for (const a of assignments ?? []) {
+      const list = assignmentsBySubmission.get(a.submission_id) ?? []
+      list.push(a.prize_id)
+      assignmentsBySubmission.set(a.submission_id, list)
+    }
+
+    const { data: resultRows } = await client
+      .from("hackathon_results")
+      .select("submission_id, prize_id, weighted_score, judge_count")
+      .in("prize_id", prizeIds)
+      .in("submission_id", submissionIds)
+    for (const r of resultRows ?? []) {
+      if (!r.submission_id || !r.prize_id) continue
+      const list = prizeScoresBySubmission.get(r.submission_id) ?? []
+      list.push({
+        prizeId: r.prize_id,
+        prizeName: prizeNameById.get(r.prize_id) ?? "Prize",
+        score: r.weighted_score ?? 0,
+        judgeCount: r.judge_count ?? 0,
+      })
+      prizeScoresBySubmission.set(r.submission_id, list)
+    }
+    for (const list of prizeScoresBySubmission.values()) {
+      list.sort((a, b) => b.score - a.score)
+    }
+  }
+
+  type SubmissionRow = {
+    id: string
+    title: string | null
+    team_id: string | null
+    teams: { name: string | null } | { name: string | null }[] | null
+  }
+  const projects: WinnerPickerProject[] = ((submissionRows as SubmissionRow[]) ?? []).map((s) => {
+    const team = Array.isArray(s.teams) ? s.teams[0] : s.teams
+    const prizeScores = prizeScoresBySubmission.get(s.id) ?? []
+    const aggregateScore =
+      prizeScores.length > 0
+        ? prizeScores.reduce((sum, ps) => sum + ps.score, 0) / prizeScores.length
+        : null
+    const aggregateJudgeCount = prizeScores.reduce((max, ps) => Math.max(max, ps.judgeCount), 0)
+    return {
+      submissionId: s.id,
+      projectTitle: s.title ?? "Untitled project",
+      teamId: s.team_id,
+      teamName: team?.name ?? null,
+      prizeIds: assignmentsBySubmission.get(s.id) ?? [],
+      score: aggregateScore,
+      judgeCount: aggregateJudgeCount,
+      prizeScores,
+    }
+  })
+
+  projects.sort((a, b) => {
+    if (a.score !== null && b.score === null) return -1
+    if (a.score === null && b.score !== null) return 1
+    if (a.score !== null && b.score !== null && a.score !== b.score) {
+      return b.score - a.score
+    }
+    return a.projectTitle.localeCompare(b.projectTitle)
+  })
+
+  return { prizes, projects }
+}
+
+export async function roundBelongsToHackathon(
+  hackathonId: string,
+  roundId: string
+): Promise<boolean> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const { data } = await client
+    .from("judging_rounds")
+    .select("id")
+    .eq("id", roundId)
+    .eq("hackathon_id", hackathonId)
+    .maybeSingle()
+  return !!data
+}
+
+export async function unadvanceSubmissions(
+  toRoundId: string,
+  submissionIds: string[]
+): Promise<{ removedCount: number }> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  if (submissionIds.length === 0) return { removedCount: 0 }
+
+  const { data, error } = await client
+    .from("round_submissions")
+    .delete()
+    .eq("round_id", toRoundId)
+    .in("submission_id", submissionIds)
+    .select("submission_id")
+
+  if (error) {
+    throw new Error(`Failed to unadvance submissions: ${error.message}`)
+  }
+
+  return { removedCount: (data ?? []).length }
 }
 
 export type AutoAdvanceResult =

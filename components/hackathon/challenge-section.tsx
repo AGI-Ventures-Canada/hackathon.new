@@ -51,7 +51,9 @@ export function ChallengeSection({ challenges, releasedAt, showResources = false
             </CardHeader>
             <CardContent className="space-y-4">
               {challenge.description && (
-                <MarkdownContent>{challenge.description}</MarkdownContent>
+                <MarkdownContent className="prose-headings:text-primary">
+                  {challenge.description}
+                </MarkdownContent>
               )}
               {showResources && challenge.resources.length > 0 && (
                 <div className="flex flex-wrap gap-2">

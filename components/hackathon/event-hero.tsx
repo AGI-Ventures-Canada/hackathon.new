@@ -57,6 +57,7 @@ interface EventHeroProps {
   hideRegistrationButton?: boolean;
   isOrganizer?: boolean;
   isJudge?: boolean;
+  isPersonalWorkspace?: boolean;
   hackathonSlug?: string;
   tabsSlot?: React.ReactNode;
   statusSlot?: React.ReactNode;
@@ -201,6 +202,7 @@ export function EventHero({
   hideRegistrationButton = false,
   isOrganizer = false,
   isJudge = false,
+  isPersonalWorkspace = false,
   hackathonSlug,
   tabsSlot,
   statusSlot,
@@ -443,7 +445,7 @@ export function EventHero({
               Manage
             </Link>
           </Button>
-          {isJudge && (
+          {isJudge && isPersonalWorkspace && (
             <Button variant="outline" asChild>
               <Link href={`/e/${hackathonSlug}/judge`}>
                 <Scale className="size-4" />
