@@ -163,7 +163,6 @@ type ProviderProps = {
   challengeExists: boolean;
   challengeReleasedAt: string | null;
   challenges: Challenge[];
-  challengeReleaseItem: ScheduleItem | null;
   scheduleItems: ScheduleItem[];
   startsAt: string | null;
   endsAt: string | null;
@@ -187,7 +186,6 @@ export function ActionItemsProvider({
   challengeExists,
   challengeReleasedAt,
   challenges: serverChallenges,
-  challengeReleaseItem,
   scheduleItems: serverScheduleItems,
   startsAt: serverStartsAt,
   endsAt: serverEndsAt,
@@ -957,11 +955,9 @@ export function ActionItemsProvider({
         hackathonId={hackathonId}
         challenge={challenges[0] ?? null}
         onSaved={handleChallengeSaved}
-        releaseScheduleItem={challengeReleaseItem}
         hackathonStartsAt={liveStartsAt}
         hackathonEndsAt={liveEndsAt}
         hackathonStatus={liveStatus}
-        alreadyReleased={!!challengeReleasedAt}
       />
       <AlertDialog
         open={!!releaseChallengeDialogItem}

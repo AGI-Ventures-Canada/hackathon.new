@@ -91,7 +91,11 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
 
   const submissionCount = submissions.length
   const challengeExists = challenges.length > 0
-  const challengeReleaseItem = scheduleItems.find((s) => s.trigger_type === "challenge_release")
+  const challengeAnyReleased = challenges.some((c) => c.releasedAt)
+  const nextChallengeReleaseTime = challenges
+    .filter((c) => !c.releasedAt && c.scheduledReleaseAt)
+    .map((c) => c.scheduledReleaseAt as string)
+    .sort()[0] ?? null
   const roundsSummary = rounds.reduce(
     (acc, r) => {
       if (r.status === "planned") acc.plannedCount += 1
@@ -113,9 +117,9 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     prizeCount: prizes.length,
     judgeDisplayCount,
     mentorQueue: overviewStats.mentorQueue,
-    challengeReleased: overviewStats.challengeReleased,
+    challengeReleased: challengeAnyReleased || overviewStats.challengeReleased,
     challengeExists,
-    challengeReleaseTime: challengeReleaseItem?.starts_at ?? null,
+    challengeReleaseTime: nextChallengeReleaseTime,
     resultsPublishedAt: hackathon.results_published_at,
     description: hackathon.description,
     bannerUrl: hackathon.banner_url,
@@ -169,7 +173,6 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
         challengeExists={challengeExists}
         challengeReleasedAt={hackathon.challenge_released_at}
         challenges={challenges}
-        challengeReleaseItem={challengeReleaseItem ?? null}
         scheduleItems={scheduleItems}
         startsAt={hackathon.starts_at}
         endsAt={hackathon.ends_at}
@@ -280,8 +283,6 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
               <ChallengesTab
                 hackathonId={hackathon.id}
                 initialChallenges={challenges}
-                releasedAt={hackathon.challenge_released_at}
-                releaseScheduleItem={challengeReleaseItem ?? null}
                 hackathonStartsAt={hackathon.starts_at}
                 hackathonEndsAt={hackathon.ends_at}
                 hackathonStatus={hackathon.status}

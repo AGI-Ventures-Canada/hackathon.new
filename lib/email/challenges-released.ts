@@ -14,7 +14,7 @@ export async function buildChallengesReleasedEmail(
   hackathonSlug: string,
   challenges: ChallengeSummary[]
 ): Promise<EmailContent> {
-  const eventUrl = buildEventUrl(hackathonSlug)
+  const eventUrl = buildEventUrl(hackathonSlug, "?tab=challenges")
   const tag = sanitizeTag(hackathonName)
 
   const { html, text } = await renderEmail(

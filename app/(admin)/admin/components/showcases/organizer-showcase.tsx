@@ -360,11 +360,9 @@ export function OrganizerShowcase({ data }: { data: ShowcaseData }) {
             hackathonId={hackathon.id}
             challenge={data.challenges[0] ?? null}
             onSaved={(c) => record(`Saved challenge: ${c.title}`)}
-            releaseScheduleItem={null}
             hackathonStartsAt={hackathon.starts_at}
             hackathonEndsAt={hackathon.ends_at}
             hackathonStatus={hackathon.status}
-            alreadyReleased={!!hackathon.challenge_released_at}
           />
         </ShowcaseStack>
       </ShowcaseSection>

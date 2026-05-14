@@ -22,9 +22,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { normalizeUrl } from "@/lib/utils/url"
-import { assertOk } from "@/lib/utils/fetch"
 import type { Challenge, ChallengeResource } from "@/lib/services/challenges"
-import type { ScheduleItem } from "@/lib/services/schedule-items"
 import type { HackathonStatus } from "@/lib/db/hackathon-types"
 
 type ReleaseMode = "live" | "publish" | "custom"
@@ -35,11 +33,9 @@ type Props = {
   hackathonId: string
   challenge: Challenge | null
   onSaved: (challenge: Challenge) => void
-  releaseScheduleItem: ScheduleItem | null
   hackathonStartsAt: string | null
   hackathonEndsAt: string | null
   hackathonStatus: HackathonStatus
-  alreadyReleased: boolean
 }
 
 function formatBound(iso: string): string {
@@ -52,25 +48,31 @@ function formatBound(iso: string): string {
   })
 }
 
+function deriveInitialMode(challenge: Challenge | null): ReleaseMode {
+  if (!challenge) return "live"
+  if (challenge.releaseLinkedTo === "event_publish") return "publish"
+  if (challenge.releaseLinkedTo === "event_start") return "live"
+  if (challenge.scheduledReleaseAt) return "custom"
+  return "live"
+}
+
 export function ChallengeEditorDialog({
   open,
   onOpenChange,
   hackathonId,
   challenge,
   onSaved,
-  releaseScheduleItem,
   hackathonStartsAt,
   hackathonEndsAt,
   hackathonStatus,
-  alreadyReleased,
 }: Props) {
+  const alreadyReleased = !!challenge?.releasedAt
+
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
   const [resources, setResources] = useState<ChallengeResource[]>([])
   const [releaseMode, setReleaseMode] = useState<ReleaseMode>("live")
   const [customReleaseAt, setCustomReleaseAt] = useState<Date | null>(null)
-  const [initialReleaseMode, setInitialReleaseMode] = useState<ReleaseMode>("live")
-  const [initialCustomReleaseIso, setInitialCustomReleaseIso] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -81,20 +83,14 @@ export function ChallengeEditorDialog({
     setResources(challenge?.resources ?? [])
     setError(null)
 
-    const linkedTo = releaseScheduleItem?.linked_to ?? null
-    const initialMode: ReleaseMode = !releaseScheduleItem
-      ? "live"
-      : linkedTo === "event_publish"
-        ? "publish"
-        : linkedTo === "event_start"
-          ? "live"
-          : "custom"
-    const initialIso = releaseScheduleItem?.starts_at ?? null
+    const initialMode = deriveInitialMode(challenge)
     setReleaseMode(initialMode)
-    setCustomReleaseAt(initialMode === "custom" && initialIso ? new Date(initialIso) : null)
-    setInitialReleaseMode(initialMode)
-    setInitialCustomReleaseIso(initialMode === "custom" ? initialIso : null)
-  }, [open, challenge, releaseScheduleItem])
+    setCustomReleaseAt(
+      initialMode === "custom" && challenge?.scheduledReleaseAt
+        ? new Date(challenge.scheduledReleaseAt)
+        : null,
+    )
+  }, [open, challenge])
 
   const startsAtDate = hackathonStartsAt ? new Date(hackathonStartsAt) : null
   const endsAtDate = hackathonEndsAt ? new Date(hackathonEndsAt) : null
@@ -134,51 +130,31 @@ export function ChallengeEditorDialog({
 
   async function handleSave() {
     if (!title.trim()) return
-    if (!releaseTimingValid) return
+    if (!alreadyReleased && !releaseTimingValid) return
     setSaving(true)
     setError(null)
     try {
-      if (!alreadyReleased && releaseScheduleItem) {
-        const modeChanged = releaseMode !== initialReleaseMode
-        const customStartsAt = customReleaseAt?.toISOString() ?? null
-        const startsChanged =
-          releaseMode === "custom" && customStartsAt !== initialCustomReleaseIso
-
-        if (modeChanged || startsChanged) {
-          const linkedTo: "event_start" | "event_publish" | null =
-            releaseMode === "live"
-              ? "event_start"
-              : releaseMode === "publish"
-                ? "event_publish"
-                : null
-          const patchBody: { startsAt?: string; linkedTo: typeof linkedTo } = {
-            linkedTo,
-          }
-          if (releaseMode === "live") {
-            patchBody.startsAt = hackathonStartsAt ?? releaseScheduleItem.starts_at
-          } else if (releaseMode === "custom" && customStartsAt) {
-            patchBody.startsAt = customStartsAt
-          }
-
-          await fetch(
-            `/api/dashboard/hackathons/${hackathonId}/schedule/${releaseScheduleItem.id}`,
-            {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(patchBody),
-            },
-          ).then(assertOk)
-        }
-      }
-
       const cleanedResources = resources
         .map((r) => ({ label: r.label.trim(), url: normalizeUrl(r.url.trim()) }))
         .filter((r) => r.url.length > 0)
 
-      const body = {
+      const body: Record<string, unknown> = {
         title: title.trim(),
         description: description.trim() ? description : null,
         resources: cleanedResources,
+      }
+
+      if (!alreadyReleased) {
+        if (releaseMode === "live") {
+          body.releaseLinkedTo = "event_start"
+          body.scheduledReleaseAt = null
+        } else if (releaseMode === "publish") {
+          body.releaseLinkedTo = "event_publish"
+          body.scheduledReleaseAt = null
+        } else {
+          body.releaseLinkedTo = null
+          body.scheduledReleaseAt = customReleaseAt?.toISOString() ?? null
+        }
       }
 
       const url = challenge
@@ -300,10 +276,10 @@ export function ChallengeEditorDialog({
             )}
           </div>
 
-          {!alreadyReleased && releaseScheduleItem && (
+          {!alreadyReleased && (
             <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
               <Label htmlFor="challenge-release-mode" className="text-sm font-medium">
-                When should challenges unlock?
+                When should this challenge unlock?
               </Label>
               <Select
                 value={releaseMode}
@@ -322,14 +298,14 @@ export function ChallengeEditorDialog({
               </Select>
               <p className="text-xs text-muted-foreground">
                 {releaseMode === "live"
-                  ? "Challenges unlock the moment your hackathon starts."
+                  ? "Unlocks the moment your hackathon starts."
                   : releaseMode === "publish"
                     ? hackathonStatus === "published"
-                      ? "Your event is already published — saving will unlock challenges right away."
+                      ? "Your event is already published — saving will unlock this challenge right away."
                       : isPastPublishing
                         ? "Your event is past publishing — pick another option to auto-release."
-                        : "Challenges unlock as soon as you publish the event."
-                    : "Pick the exact moment challenges unlock."}
+                        : "Unlocks as soon as you publish the event."
+                    : "Pick the exact moment this challenge unlocks."}
               </p>
               {releaseMode === "custom" && (
                 <div className="space-y-1">
@@ -365,7 +341,7 @@ export function ChallengeEditorDialog({
             </Button>
             <Button
               type="submit"
-              disabled={saving || !title.trim() || !releaseTimingValid}
+              disabled={saving || !title.trim() || (!alreadyReleased && !releaseTimingValid)}
             >
               {saving && <Loader2 className="animate-spin" />}
               Save challenge

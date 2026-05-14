@@ -45,7 +45,7 @@ export default function ChallengesReleasedEmail({
 
 ChallengesReleasedEmail.PreviewProps = {
   hackathonName: "AI Innovation Hackathon 2026",
-  eventUrl: "https://getoatmeal.com/e/ai-innovation-2026",
+  eventUrl: "https://getoatmeal.com/e/ai-innovation-2026?tab=challenges",
   challenges: [
     {
       title: "Build a Smarter Inbox",
