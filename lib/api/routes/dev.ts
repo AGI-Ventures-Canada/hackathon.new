@@ -106,7 +106,7 @@ export const devRoutes = new Elysia({ prefix: "/dev" })
       const db = await getDb()
       const hid = params.id
 
-      const [teams, submissions, criteria, judges, assignments, rooms, prizes, categories, hackathon, mentorRequests, prizeTracks] = await Promise.all([
+      const [teams, submissions, criteria, judges, assignments, rooms, prizes, categories, hackathon, mentorRequests, prizeTracks, releasedChallengeCount] = await Promise.all([
         db.from("teams").select("id", { count: "exact", head: true }).eq("hackathon_id", hid).in("captain_clerk_user_id", SEED_USERS),
         db.from("submissions").select("id", { count: "exact", head: true }).eq("hackathon_id", hid),
         db.from("judging_criteria").select("id", { count: "exact", head: true }).eq("hackathon_id", hid),
@@ -115,9 +115,10 @@ export const devRoutes = new Elysia({ prefix: "/dev" })
         db.from("rooms").select("id", { count: "exact", head: true }).eq("hackathon_id", hid),
         db.from("prizes").select("id", { count: "exact", head: true }).eq("hackathon_id", hid),
         db.from("submission_categories").select("id", { count: "exact", head: true }).eq("hackathon_id", hid),
-        db.from("hackathons").select("challenge_released_at, results_published_at").eq("id", hid).single(),
+        db.from("hackathons").select("results_published_at").eq("id", hid).single(),
         db.from("mentor_requests").select("id", { count: "exact", head: true }).eq("hackathon_id", hid),
         db.from("prize_tracks").select("id", { count: "exact", head: true }).eq("hackathon_id", hid),
+        db.from("challenges").select("id", { count: "exact", head: true }).eq("hackathon_id", hid).not("released_at", "is", null),
       ])
 
       const scoredAssignments = assignments.data?.filter((a) => a.is_complete)?.length ?? 0
@@ -132,7 +133,7 @@ export const devRoutes = new Elysia({ prefix: "/dev" })
         rooms: rooms.count ?? 0,
         prizes: prizes.count ?? 0,
         categories: categories.count ?? 0,
-        challengeReleased: !!hackathon.data?.challenge_released_at,
+        challengeReleased: (releasedChallengeCount.count ?? 0) > 0,
         resultsPublished: !!hackathon.data?.results_published_at,
         mentorRequests: mentorRequests.count ?? 0,
         prizeTracks: prizeTracks.count ?? 0,
@@ -568,20 +569,16 @@ export const devRoutes = new Elysia({ prefix: "/dev" })
 
       const db = await getDb()
       await db.from("challenges").delete().eq("hackathon_id", params.id)
+      const releasedAt = new Date().toISOString()
       const { error: insertErr } = await db.from("challenges").insert({
         hackathon_id: params.id,
         title: "Build an AI Agent That Solves a Real Problem",
         description: "Create an AI-powered agent that addresses a genuine pain point. Your solution should demonstrate autonomous decision-making, tool usage, and real-world applicability. Bonus points for creative use of MCP, multi-modal inputs, or novel agentic patterns.",
         resources: [],
         sort_order: 0,
+        released_at: releasedAt,
       })
       if (insertErr) { set.status = 500; return { error: "Failed" } }
-      const { error } = await db
-        .from("hackathons")
-        .update({ challenge_released_at: new Date().toISOString() })
-        .eq("id", params.id)
-
-      if (error) { set.status = 500; return { error: "Failed" } }
       return { released: true }
     },
   )
@@ -795,10 +792,8 @@ export const devRoutes = new Elysia({ prefix: "/dev" })
         description: null,
         resources: [],
         sort_order: 0,
+        released_at: new Date().toISOString(),
       })
-      await db.from("hackathons").update({
-        challenge_released_at: new Date().toISOString(),
-      }).eq("id", params.id)
 
       return { teams: teamIds.length, prizes: prizesSeeded, rooms: roomIds.length, message: "Full seed complete" }
     },

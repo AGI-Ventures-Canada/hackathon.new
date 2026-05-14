@@ -18,13 +18,13 @@ export async function getLiveStats(hackathonId: string): Promise<LiveStats | nul
 
   const { data: hackathon, error: hErr } = await client
     .from("hackathons")
-    .select("status, phase, challenge_released_at")
+    .select("status, phase")
     .eq("id", hackathonId)
     .single()
 
   if (hErr || !hackathon) return null
 
-  const [teamResult, subResult, assignResult, completeResult, roomsResult, roomTeamsResult, mentorOpenResult, mentorClaimedResult] = await Promise.all([
+  const [teamResult, subResult, assignResult, completeResult, roomsResult, roomTeamsResult, mentorOpenResult, mentorClaimedResult, releasedChallengeResult] = await Promise.all([
     client.from("teams").select("id", { count: "exact", head: true }).eq("hackathon_id", hackathonId).neq("status", "disbanded"),
     client.from("submissions").select("id", { count: "exact", head: true }).eq("hackathon_id", hackathonId).eq("status", "submitted"),
     client.from("judge_assignments").select("id, round_id", { count: "exact", head: true }).eq("hackathon_id", hackathonId),
@@ -33,6 +33,7 @@ export async function getLiveStats(hackathonId: string): Promise<LiveStats | nul
     client.from("room_teams").select("room_id, has_presented"),
     client.from("mentor_requests").select("id", { count: "exact", head: true }).eq("hackathon_id", hackathonId).eq("status", "open"),
     client.from("mentor_requests").select("id", { count: "exact", head: true }).eq("hackathon_id", hackathonId).eq("status", "claimed"),
+    client.from("challenges").select("id", { count: "exact", head: true }).eq("hackathon_id", hackathonId).not("released_at", "is", null),
   ])
 
   const rooms = roomsResult.data ?? []
@@ -64,6 +65,6 @@ export async function getLiveStats(hackathonId: string): Promise<LiveStats | nul
       open: mentorOpenResult.count ?? 0,
       claimed: mentorClaimedResult.count ?? 0,
     },
-    challengeReleased: !!hackathon.challenge_released_at,
+    challengeReleased: (releasedChallengeResult.count ?? 0) > 0,
   }
 }

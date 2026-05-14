@@ -11,22 +11,22 @@ export type ManageOverviewStats = {
 export async function getManageOverviewStats(hackathonId: string): Promise<ManageOverviewStats> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const [participantResult, teamResult, mentorOpenResult, hackathonResult] = await Promise.all([
+  const [participantResult, teamResult, mentorOpenResult, releasedChallengeResult] = await Promise.all([
     client.from("hackathon_participants").select("id", { count: "exact", head: true }).eq("hackathon_id", hackathonId),
     client.from("teams").select("id", { count: "exact", head: true }).eq("hackathon_id", hackathonId).neq("status", "disbanded"),
     client.from("mentor_requests").select("id", { count: "exact", head: true }).eq("hackathon_id", hackathonId).eq("status", "open"),
-    client.from("hackathons").select("challenge_released_at").eq("id", hackathonId).single(),
+    client.from("challenges").select("id", { count: "exact", head: true }).eq("hackathon_id", hackathonId).not("released_at", "is", null),
   ])
 
   if (participantResult.error) console.error("Failed to count participants:", participantResult.error)
   if (teamResult.error) console.error("Failed to count teams:", teamResult.error)
   if (mentorOpenResult.error) console.error("Failed to count mentor requests:", mentorOpenResult.error)
-  if (hackathonResult.error) console.error("Failed to fetch hackathon:", hackathonResult.error)
+  if (releasedChallengeResult.error) console.error("Failed to count released challenges:", releasedChallengeResult.error)
 
   return {
     participantCount: participantResult.count ?? 0,
     teamCount: teamResult.count ?? 0,
     mentorQueue: { open: mentorOpenResult.count ?? 0 },
-    challengeReleased: !!hackathonResult.data?.challenge_released_at,
+    challengeReleased: (releasedChallengeResult.count ?? 0) > 0,
   }
 }

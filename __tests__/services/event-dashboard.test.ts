@@ -19,9 +19,10 @@ describe("event-dashboard service", () => {
   describe("getLiveStats", () => {
     it("returns aggregated stats", async () => {
       setMockFromImplementation((table) => {
-        if (table === "hackathons") return createChainableMock(mockSuccess({ status: "active", phase: "build", challenge_released_at: null }))
+        if (table === "hackathons") return createChainableMock(mockSuccess({ status: "active", phase: "build" }))
         if (table === "rooms") return createChainableMock(mockSuccess([]))
         if (table === "room_teams") return createChainableMock(mockSuccess([]))
+        if (table === "challenges") return createChainableMock({ data: null, error: null, count: 0 })
         return createChainableMock({ data: null, error: null, count: 3 })
       })
 
@@ -46,9 +47,10 @@ describe("event-dashboard service", () => {
         { room_id: "r1", has_presented: false },
       ]
       setMockFromImplementation((table) => {
-        if (table === "hackathons") return createChainableMock(mockSuccess({ status: "judging", phase: "preliminaries", challenge_released_at: "2026-04-01" }))
+        if (table === "hackathons") return createChainableMock(mockSuccess({ status: "judging", phase: "preliminaries" }))
         if (table === "rooms") return createChainableMock(mockSuccess(rooms))
         if (table === "room_teams") return createChainableMock(mockSuccess(roomTeams))
+        if (table === "challenges") return createChainableMock({ data: null, error: null, count: 2 })
         return createChainableMock({ data: null, error: null, count: 0 })
       })
 

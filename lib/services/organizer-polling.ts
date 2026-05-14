@@ -43,9 +43,13 @@ interface RpcPollRow {
 export async function buildOrganizerPollPayload(hackathonId: string): Promise<OrganizerPollResponse | null> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { data, error } = await client.rpc("get_organizer_poll_data", {
-    p_hackathon_id: hackathonId,
-  })
+  const [{ data, error }, { data: challengeRows }] = await Promise.all([
+    client.rpc("get_organizer_poll_data", { p_hackathon_id: hackathonId }),
+    client
+      .from("challenges")
+      .select("released_at, scheduled_release_at")
+      .eq("hackathon_id", hackathonId),
+  ])
 
   if (error || !data) return null
 
@@ -55,6 +59,13 @@ export async function buildOrganizerPollPayload(hackathonId: string): Promise<Or
     starts_at: r.starts_at,
     ends_at: r.ends_at,
   })
+
+  const challenges = (challengeRows ?? []) as Array<{ released_at: string | null; scheduled_release_at: string | null }>
+  const challengeReleased = challenges.some((c) => !!c.released_at)
+  const nextScheduledReleaseTime = challenges
+    .filter((c) => !c.released_at && c.scheduled_release_at)
+    .map((c) => c.scheduled_release_at as string)
+    .sort()[0] ?? null
 
   return {
     status,
@@ -71,9 +82,9 @@ export async function buildOrganizerPollPayload(hackathonId: string): Promise<Or
     prizeCount: r.prize_count ?? 0,
     judgeDisplayCount: r.judge_display_count ?? 0,
     mentorQueue: { open: r.mentor_open_count ?? 0 },
-    challengeReleased: !!r.challenge_released_at,
+    challengeReleased,
     challengeExists: (r.challenge_count ?? 0) > 0,
-    challengeReleaseTime: r.challenge_release_time ?? null,
+    challengeReleaseTime: nextScheduledReleaseTime,
     resultsPublishedAt: r.results_published_at,
     description: r.description,
     bannerUrl: r.banner_url,

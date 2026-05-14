@@ -1,10 +1,22 @@
 import { describe, it, expect, beforeEach } from "bun:test"
 import {
+  createChainableMock,
   resetSupabaseMocks,
-  mockRpcCall,
+  setMockFromImplementation,
+  setMockRpcImplementation,
   mockSuccess,
   mockError,
 } from "../lib/supabase-mock"
+
+function mockOrganizerPoll(rpcResult: { data?: unknown; error?: { message: string } | null }, challenges: Array<{ released_at: string | null; scheduled_release_at: string | null }> = []) {
+  setMockRpcImplementation(() => createChainableMock(rpcResult))
+  setMockFromImplementation((table) => {
+    if (table === "challenges") {
+      return createChainableMock({ data: challenges, error: null })
+    }
+    return createChainableMock({ data: null, error: null })
+  })
+}
 
 const { buildOrganizerPollPayload } = await import(
   "@/lib/services/organizer-polling"
@@ -19,7 +31,6 @@ function makeRpcPayload(overrides: Record<string, unknown> = {}) {
     description: "A test hackathon",
     banner_url: "https://example.com/banner.png",
     challenge_count: 1,
-    challenge_released_at: "2026-04-28T10:00:00Z",
     results_published_at: null,
     starts_at: "2099-04-28T09:00:00Z",
     ends_at: "2099-04-28T17:00:00Z",
@@ -36,7 +47,6 @@ function makeRpcPayload(overrides: Record<string, unknown> = {}) {
     prize_count: 2,
     judge_display_count: 3,
     mentor_open_count: 1,
-    challenge_release_time: null,
     pending_judge_invitation_count: 0,
     planned_round_count: 0,
     active_round_count: 0,
@@ -52,7 +62,7 @@ describe("Organizer Polling Service", () => {
 
   describe("buildOrganizerPollPayload", () => {
     it("returns null when RPC errors", async () => {
-      mockRpcCall("get_organizer_poll_data", mockError("Not found"))
+      mockOrganizerPoll(mockError("Not found"))
 
       const result = await buildOrganizerPollPayload(hackathonId)
 
@@ -60,7 +70,7 @@ describe("Organizer Polling Service", () => {
     })
 
     it("returns null when RPC returns no data", async () => {
-      mockRpcCall("get_organizer_poll_data", mockSuccess(null))
+      mockOrganizerPoll(mockSuccess(null))
 
       const result = await buildOrganizerPollPayload(hackathonId)
 
@@ -68,7 +78,9 @@ describe("Organizer Polling Service", () => {
     })
 
     it("returns correct ActionItemsInput shape for a basic hackathon", async () => {
-      mockRpcCall("get_organizer_poll_data", mockSuccess(makeRpcPayload()))
+      mockOrganizerPoll(mockSuccess(makeRpcPayload()), [
+        { released_at: "2026-04-28T10:00:00Z", scheduled_release_at: null },
+      ])
 
       const result = await buildOrganizerPollPayload(hackathonId)
 
@@ -101,10 +113,15 @@ describe("Organizer Polling Service", () => {
       expect(result!.pendingJudgeInvitationCount).toBe(0)
     })
 
-    it("handles challenge schedule item lookup", async () => {
-      mockRpcCall("get_organizer_poll_data", mockSuccess(
-        makeRpcPayload({ challenge_release_time: "2026-04-28T11:00:00Z" })
-      ))
+    it("derives challengeReleaseTime from the next scheduled unreleased challenge", async () => {
+      mockOrganizerPoll(
+        mockSuccess(makeRpcPayload()),
+        [
+          { released_at: null, scheduled_release_at: "2026-04-28T11:00:00Z" },
+          { released_at: null, scheduled_release_at: "2026-04-28T13:00:00Z" },
+          { released_at: "2026-04-28T10:00:00Z", scheduled_release_at: null },
+        ],
+      )
 
       const result = await buildOrganizerPollPayload(hackathonId)
 
@@ -128,7 +145,7 @@ describe("Organizer Polling Service", () => {
     })
 
     it("maps round counts into rounds summary", async () => {
-      mockRpcCall("get_organizer_poll_data", mockSuccess(makeRpcPayload({
+      mockOrganizerPoll(mockSuccess(makeRpcPayload({
         planned_round_count: 2,
         active_round_count: 1,
         complete_round_count: 0,
@@ -141,7 +158,7 @@ describe("Organizer Polling Service", () => {
     })
 
     it("defaults round counts to 0 when null", async () => {
-      mockRpcCall("get_organizer_poll_data", mockSuccess(makeRpcPayload({
+      mockOrganizerPoll(mockSuccess(makeRpcPayload({
         planned_round_count: null,
         active_round_count: null,
         complete_round_count: null,
@@ -154,7 +171,7 @@ describe("Organizer Polling Service", () => {
     })
 
     it("includes pending judge invitation count", async () => {
-      mockRpcCall("get_organizer_poll_data", mockSuccess(
+      mockOrganizerPoll(mockSuccess(
         makeRpcPayload({ pending_judge_invitation_count: 7 })
       ))
 
@@ -165,7 +182,7 @@ describe("Organizer Polling Service", () => {
     })
 
     it("defaults counts to 0 when null", async () => {
-      mockRpcCall("get_organizer_poll_data", mockSuccess(makeRpcPayload({
+      mockOrganizerPoll(mockSuccess(makeRpcPayload({
         submission_count: null,
         unassigned_submission_count: null,
         participant_count: null,
@@ -196,7 +213,7 @@ describe("Organizer Polling Service", () => {
     })
 
     it("maps unassigned_submission_count when present", async () => {
-      mockRpcCall("get_organizer_poll_data", mockSuccess(
+      mockOrganizerPoll(mockSuccess(
         makeRpcPayload({ unassigned_submission_count: 4 })
       ))
 
@@ -206,11 +223,11 @@ describe("Organizer Polling Service", () => {
       expect(result!.unassignedSubmissionCount).toBe(4)
     })
 
-    it("sets challengeReleased to false when challenge_released_at is null", async () => {
-      mockRpcCall("get_organizer_poll_data", mockSuccess(makeRpcPayload({
-        challenge_released_at: null,
-        challenge_count: 1,
-      })))
+    it("sets challengeReleased to false when no challenge has released_at", async () => {
+      mockOrganizerPoll(
+        mockSuccess(makeRpcPayload({ challenge_count: 1 })),
+        [{ released_at: null, scheduled_release_at: "2026-04-28T11:00:00Z" }],
+      )
 
       const result = await buildOrganizerPollPayload(hackathonId)
 
@@ -220,9 +237,8 @@ describe("Organizer Polling Service", () => {
     })
 
     it("sets challengeExists to false when challenge_count is zero", async () => {
-      mockRpcCall("get_organizer_poll_data", mockSuccess(makeRpcPayload({
+      mockOrganizerPoll(mockSuccess(makeRpcPayload({
         challenge_count: 0,
-        challenge_released_at: null,
       })))
 
       const result = await buildOrganizerPollPayload(hackathonId)
@@ -233,7 +249,7 @@ describe("Organizer Polling Service", () => {
     })
 
     it("includes feedback survey fields when present", async () => {
-      mockRpcCall("get_organizer_poll_data", mockSuccess(makeRpcPayload({
+      mockOrganizerPoll(mockSuccess(makeRpcPayload({
         status: "completed",
         phase: null,
         results_published_at: "2026-04-29T12:00:00Z",

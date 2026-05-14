@@ -18,6 +18,7 @@ function createMockChains(overrides: {
   judgingComplete?: number | null
   mentorCount?: number | null
   rooms?: Record<string, unknown>[] | null
+  challenges?: Record<string, unknown>[]
 } = {}) {
   const {
     hackathon = {
@@ -25,7 +26,6 @@ function createMockChains(overrides: {
       phase: "build",
       starts_at: "2026-04-28T09:00:00Z",
       ends_at: "2026-04-28T17:00:00Z",
-      challenge_released_at: "2026-04-28T10:00:00Z",
     },
     hackathonError = null,
     submissionCount = 5,
@@ -34,6 +34,7 @@ function createMockChains(overrides: {
     judgingComplete = 8,
     mentorCount = 3,
     rooms = [],
+    challenges = [],
   } = overrides
 
   const chains: Record<string, ReturnType<typeof createChainableMock>> = {
@@ -42,7 +43,7 @@ function createMockChains(overrides: {
     teams: createChainableMock({ data: null, error: null, count: teamCount }),
     rooms: createChainableMock({ data: rooms, error: null }),
     mentor_requests: createChainableMock({ data: null, error: null, count: mentorCount }),
-    challenges: createChainableMock({ data: [], error: null }),
+    challenges: createChainableMock({ data: challenges, error: null }),
   }
 
   let judgeCallCount = 0
@@ -93,7 +94,6 @@ describe("Polling Service", () => {
           phase: "preliminaries",
           starts_at: "2026-04-28T09:00:00Z",
           ends_at: "2026-04-28T17:00:00Z",
-          challenge_released_at: null,
         },
       })
 
@@ -102,27 +102,55 @@ describe("Polling Service", () => {
       expect(result!.timers.global).toBeUndefined()
     })
 
-    it("includes challenge info when released", async () => {
-      createMockChains()
+    it("includes challenge info when at least one challenge has released", async () => {
+      createMockChains({
+        challenges: [
+          {
+            id: "c1",
+            hackathon_id: hackathonId,
+            title: "First",
+            description: null,
+            resources: [],
+            sort_order: 0,
+            created_at: "",
+            updated_at: "",
+            released_at: "2026-04-28T10:00:00Z",
+            scheduled_release_at: null,
+            release_linked_to: null,
+          },
+        ],
+      })
 
       const result = await buildPollPayload(hackathonId)
 
-      expect(result!.challenge).toEqual({
-        released: true,
-        releasedAt: "2026-04-28T10:00:00Z",
-        challenges: [],
-      })
+      expect(result!.challenge!.released).toBe(true)
+      expect(result!.challenge!.releasedAt).toBe("2026-04-28T10:00:00Z")
+      expect(result!.challenge!.challenges).toHaveLength(1)
     })
 
-    it("shows challenge as not released when no released_at", async () => {
+    it("shows challenge as not released when no challenge has released_at", async () => {
       createMockChains({
         hackathon: {
           status: "active",
           phase: "build",
           starts_at: "2026-04-28T09:00:00Z",
           ends_at: "2026-04-28T17:00:00Z",
-          challenge_released_at: null,
         },
+        challenges: [
+          {
+            id: "c1",
+            hackathon_id: hackathonId,
+            title: "First",
+            description: null,
+            resources: [],
+            sort_order: 0,
+            created_at: "",
+            updated_at: "",
+            released_at: null,
+            scheduled_release_at: null,
+            release_linked_to: "event_start",
+          },
+        ],
       })
 
       const result = await buildPollPayload(hackathonId)

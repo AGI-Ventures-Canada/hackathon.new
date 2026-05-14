@@ -51,13 +51,19 @@ export async function buildPollPayload(hackathonId: string): Promise<PollRespons
 
   const { data: hackathon, error: hErr } = await client
     .from("hackathons")
-    .select("status, phase, starts_at, ends_at, challenge_released_at")
+    .select("status, phase, starts_at, ends_at")
     .eq("id", hackathonId)
     .single()
 
   if (hErr || !hackathon) return null
 
   const challenges = await listChallenges(hackathonId)
+  const releasedTimestamps = challenges
+    .map((c) => c.releasedAt)
+    .filter((s): s is string => !!s)
+  const earliestReleasedAt = releasedTimestamps.length > 0
+    ? releasedTimestamps.sort()[0]
+    : null
 
   const { count: submissionCount } = await client
     .from("submissions")
@@ -131,8 +137,8 @@ export async function buildPollPayload(hackathonId: string): Promise<PollRespons
       })),
     },
     challenge: {
-      released: !!hackathon.challenge_released_at,
-      releasedAt: hackathon.challenge_released_at,
+      released: earliestReleasedAt !== null,
+      releasedAt: earliestReleasedAt,
       challenges,
     },
     stats: {

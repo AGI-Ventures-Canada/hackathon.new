@@ -23,8 +23,8 @@ describe("getManageOverviewStats", () => {
       if (table === "mentor_requests") {
         return createChainableMock({ data: null, error: null, count: 3 })
       }
-      if (table === "hackathons") {
-        return createChainableMock({ data: { challenge_released_at: "2026-04-01T00:00:00Z" }, error: null })
+      if (table === "challenges") {
+        return createChainableMock({ data: null, error: null, count: 2 })
       }
       return createChainableMock({ data: null, error: null })
     })
@@ -50,10 +50,10 @@ describe("getManageOverviewStats", () => {
     expect(result.challengeReleased).toBe(false)
   })
 
-  it("returns challengeReleased false when not released", async () => {
+  it("returns challengeReleased false when no challenges have released_at", async () => {
     setMockFromImplementation((table) => {
-      if (table === "hackathons") {
-        return createChainableMock({ data: { challenge_released_at: null }, error: null })
+      if (table === "challenges") {
+        return createChainableMock({ data: null, error: null, count: 0 })
       }
       return createChainableMock({ data: null, error: null, count: 0 })
     })
