@@ -59,6 +59,7 @@ interface HackathonPreviewClientProps {
   participantCount?: number
   showActionBar?: boolean
   hasJudgeAssignments?: boolean
+  isPersonalWorkspace?: boolean
   submission?: Submission | null
   submissions?: GallerySubmission[]
   teamInfo?: ParticipantTeamInfo
@@ -82,6 +83,7 @@ function HackathonPreviewContent({
   participantCount = 0,
   showActionBar = false,
   hasJudgeAssignments = false,
+  isPersonalWorkspace = false,
   submission = null,
   submissions = [],
   teamInfo = null,
@@ -240,7 +242,7 @@ function HackathonPreviewContent({
 
   const isJudge = participantRole === "judge"
 
-  const judgeStatus = isJudge && (
+  const judgeStatus = isJudge && isPersonalWorkspace && (
     <div className="flex items-center gap-3">
       {hasJudgeAssignments && (
         <Button
@@ -802,6 +804,7 @@ function HackathonPreviewContent({
       hideRegistrationButton={isJudge}
       isOrganizer={isEditable && !editMode}
       isJudge={isJudge}
+      isPersonalWorkspace={isPersonalWorkspace}
       hackathonSlug={hackathon.slug}
       statusSlot={(isEditable && editMode) ? undefined : statusSlot}
       bannerSlot={bannerEditSlot}
@@ -857,6 +860,7 @@ export function HackathonPreviewClient({
   participantCount,
   showActionBar = false,
   hasJudgeAssignments = false,
+  isPersonalWorkspace = false,
   submission,
   submissions,
   teamInfo,
@@ -881,6 +885,7 @@ export function HackathonPreviewClient({
         participantCount={participantCount}
         showActionBar={showActionBar}
         hasJudgeAssignments={hasJudgeAssignments}
+        isPersonalWorkspace={isPersonalWorkspace}
         submission={submission}
         submissions={submissions}
         teamInfo={teamInfo}

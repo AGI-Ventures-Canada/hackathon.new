@@ -35,6 +35,7 @@ export function JudgeShowcase({ data }: { data: ShowcaseData }) {
       advancement: "top_n",
       advancementConfig: { topN: 10 },
       prizeCount: 2,
+      submissionCount: 0,
       screeningPrizeId: null,
     },
     {
@@ -46,6 +47,7 @@ export function JudgeShowcase({ data }: { data: ShowcaseData }) {
       advancement: "manual",
       advancementConfig: {},
       prizeCount: 1,
+      submissionCount: 0,
       screeningPrizeId: null,
     },
   ]

@@ -65,6 +65,7 @@ export type AuditAction =
   | "prize.created"
   | "prize.deleted"
   | "prize.assigned"
+  | "prize.unassigned"
   | "prize_track.created"
   | "prize_track.deleted"
   | "prize_track.results_calculated"

@@ -100,6 +100,7 @@ export async function JudgingTabContent({
     advancement: r.advancement,
     advancementConfig: r.advancementConfig,
     prizeCount: r.prizeCount,
+    submissionCount: r.submissionCount,
     screeningPrizeId: r.screeningPrizeId,
   }))
 

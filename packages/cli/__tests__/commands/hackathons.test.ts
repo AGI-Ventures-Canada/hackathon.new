@@ -7,6 +7,7 @@ const originalFetch = globalThis.fetch
 const mockConfirm = mock(() => Promise.resolve(false))
 mock.module("@clack/prompts", () => ({
   confirm: mockConfirm,
+  text: mock(() => Promise.resolve("")),
   isCancel: () => false,
   log: { info: () => {}, warn: () => {}, success: () => {} },
 }))
@@ -255,7 +256,16 @@ describe("hackathons commands", () => {
       const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
       const { runHackathonsCreate } = await import("../../src/commands/hackathons/create")
 
-      await expect(runHackathonsCreate(client, ["--name", "New Hack"])).rejects.toThrow("exit")
+      await expect(
+        runHackathonsCreate(client, [
+          "--name",
+          "New Hack",
+          "--slug",
+          "new-hack",
+          "--description",
+          "test",
+        ])
+      ).rejects.toThrow("exit")
 
       expect(mockConfirm).toHaveBeenCalled()
       expect(mockFetch).toHaveBeenCalledTimes(1)

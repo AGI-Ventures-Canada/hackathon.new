@@ -142,6 +142,20 @@ export async function deletePrize(
   return true
 }
 
+export async function prizeBelongsToHackathon(
+  hackathonId: string,
+  prizeId: string
+): Promise<boolean> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const { data } = await client
+    .from("prizes")
+    .select("id")
+    .eq("id", prizeId)
+    .eq("hackathon_id", hackathonId)
+    .maybeSingle()
+  return !!data
+}
+
 export async function assignPrize(
   prizeId: string,
   submissionId: string,
