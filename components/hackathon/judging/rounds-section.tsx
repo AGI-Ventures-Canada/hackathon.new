@@ -317,7 +317,6 @@ export function RoundsSection({ hackathonId, rounds }: RoundsSectionProps) {
                         hackathonId={hackathonId}
                         roundId={round.id}
                         roundName={round.name}
-                        submissionCount={round.submissionCount}
                       />
                     )}
                   </div>
