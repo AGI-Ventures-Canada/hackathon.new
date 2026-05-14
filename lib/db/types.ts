@@ -260,7 +260,10 @@ export type Database = {
           description: string | null
           hackathon_id: string
           id: string
+          release_linked_to: string | null
+          released_at: string | null
           resources: Json
+          scheduled_release_at: string | null
           sort_order: number
           title: string
           updated_at: string
@@ -270,7 +273,10 @@ export type Database = {
           description?: string | null
           hackathon_id: string
           id?: string
+          release_linked_to?: string | null
+          released_at?: string | null
           resources?: Json
+          scheduled_release_at?: string | null
           sort_order?: number
           title: string
           updated_at?: string
@@ -280,7 +286,10 @@ export type Database = {
           description?: string | null
           hackathon_id?: string
           id?: string
+          release_linked_to?: string | null
+          released_at?: string | null
           resources?: Json
+          scheduled_release_at?: string | null
           sort_order?: number
           title?: string
           updated_at?: string
