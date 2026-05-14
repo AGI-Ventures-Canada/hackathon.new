@@ -86,47 +86,34 @@ export async function executeTransition(
 
   if (toStatus === "published" || toStatus === "active") {
     try {
-      const { getTriggerItem } = await import("./schedule-items")
-      const triggerItem = await getTriggerItem(
-        hackathonId,
-        "challenge_release"
-      )
-      if (triggerItem) {
-        const linkedToEventPublish = triggerItem.linked_to === "event_publish"
-        const linkedToEventStart =
-          toStatus === "active" && triggerItem.linked_to === "event_start"
-        const customTimePassed =
-          toStatus === "active" &&
-          triggerItem.linked_to === null &&
-          triggerItem.starts_at <= new Date().toISOString()
-        const shouldRelease =
-          linkedToEventPublish || linkedToEventStart || customTimePassed
-
-        if (shouldRelease) {
-          const releaseTrigger: "event_publish" | "event_start" | "scheduled" =
-            linkedToEventPublish
-              ? "event_publish"
-              : linkedToEventStart
-                ? "event_start"
-                : "scheduled"
-          const { releaseChallenges, listChallenges } = await import(
-            "./challenges"
-          )
-          const released = await releaseChallenges(hackathonId, tenantId, {
-            dispatchNotification: false,
-            trigger: releaseTrigger,
-          })
-          if (released) {
-            const items = await listChallenges(hackathonId)
-            if (items.length > 0) {
-              coincidentChallenges = items.map((c) => ({
-                title: c.title,
-                description: c.description,
-              }))
-            }
-          }
-        }
+      const { releaseLinkedChallenges, processScheduledChallengeReleases } =
+        await import("./challenges")
+      const released: Array<{ title: string; description: string | null }> = []
+      if (toStatus === "published") {
+        const r = await releaseLinkedChallenges(
+          hackathonId,
+          tenantId,
+          "event_publish",
+          { dispatchNotification: false, trigger: "event_publish" },
+        )
+        released.push(...r.map((c) => ({ title: c.title, description: c.description })))
       }
+      if (toStatus === "active") {
+        const r = await releaseLinkedChallenges(
+          hackathonId,
+          tenantId,
+          "event_start",
+          { dispatchNotification: false, trigger: "event_start" },
+        )
+        released.push(...r.map((c) => ({ title: c.title, description: c.description })))
+        await processScheduledChallengeReleases().catch((err) =>
+          console.error(
+            `Failed to process scheduled challenge releases for ${hackathonId}:`,
+            err,
+          ),
+        )
+      }
+      if (released.length > 0) coincidentChallenges = released
     } catch (err) {
       console.error(
         `Failed to evaluate challenge release for ${hackathonId}:`,

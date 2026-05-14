@@ -6,6 +6,8 @@ export type ChallengeResource = {
   url: string
 }
 
+export type ReleaseLinkedTo = "event_start" | "event_publish"
+
 export type Challenge = {
   id: string
   hackathonId: string
@@ -15,12 +17,17 @@ export type Challenge = {
   sortOrder: number
   createdAt: string
   updatedAt: string
+  releasedAt: string | null
+  scheduledReleaseAt: string | null
+  releaseLinkedTo: ReleaseLinkedTo | null
 }
 
 export type ChallengeInput = {
   title: string
   description?: string | null
   resources?: ChallengeResource[]
+  scheduledReleaseAt?: string | null
+  releaseLinkedTo?: ReleaseLinkedTo | null
 }
 
 type ChallengeRow = {
@@ -32,6 +39,9 @@ type ChallengeRow = {
   sort_order: number
   created_at: string
   updated_at: string
+  released_at: string | null
+  scheduled_release_at: string | null
+  release_linked_to: string | null
 }
 
 function normalizeResources(raw: unknown): ChallengeResource[] {
@@ -45,6 +55,11 @@ function normalizeResources(raw: unknown): ChallengeResource[] {
     .filter((r) => r.url.length > 0)
 }
 
+function normalizeLinkedTo(raw: string | null): ReleaseLinkedTo | null {
+  if (raw === "event_start" || raw === "event_publish") return raw
+  return null
+}
+
 function toChallenge(row: ChallengeRow): Challenge {
   return {
     id: row.id,
@@ -55,6 +70,9 @@ function toChallenge(row: ChallengeRow): Challenge {
     sortOrder: row.sort_order,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    releasedAt: row.released_at,
+    scheduledReleaseAt: row.scheduled_release_at,
+    releaseLinkedTo: normalizeLinkedTo(row.release_linked_to),
   }
 }
 
@@ -122,6 +140,32 @@ async function assertHackathonOwnership(
   return !error && !!data
 }
 
+async function resolveScheduledReleaseFields(
+  client: SupabaseClient,
+  hackathonId: string,
+  scheduledReleaseAt: string | null | undefined,
+  releaseLinkedTo: ReleaseLinkedTo | null | undefined,
+): Promise<{ scheduled_release_at: string | null; release_linked_to: ReleaseLinkedTo | null }> {
+  if (releaseLinkedTo === "event_publish") {
+    return { scheduled_release_at: null, release_linked_to: "event_publish" }
+  }
+  if (releaseLinkedTo === "event_start") {
+    const { data } = await client
+      .from("hackathons")
+      .select("starts_at")
+      .eq("id", hackathonId)
+      .single()
+    return {
+      scheduled_release_at: (data?.starts_at as string | null) ?? null,
+      release_linked_to: "event_start",
+    }
+  }
+  if (typeof scheduledReleaseAt === "string" && scheduledReleaseAt.length > 0) {
+    return { scheduled_release_at: scheduledReleaseAt, release_linked_to: null }
+  }
+  return { scheduled_release_at: null, release_linked_to: null }
+}
+
 export async function createChallenge(
   hackathonId: string,
   tenantId: string,
@@ -142,6 +186,16 @@ export async function createChallenge(
 
   const nextOrder = (maxRow?.sort_order ?? -1) + 1
 
+  const scheduleFields =
+    input.scheduledReleaseAt !== undefined || input.releaseLinkedTo !== undefined
+      ? await resolveScheduledReleaseFields(
+          client,
+          hackathonId,
+          input.scheduledReleaseAt,
+          input.releaseLinkedTo,
+        )
+      : await resolveScheduledReleaseFields(client, hackathonId, null, "event_start")
+
   const { data, error } = await client
     .from("challenges")
     .insert({
@@ -150,6 +204,8 @@ export async function createChallenge(
       description: input.description ?? null,
       resources: input.resources ?? [],
       sort_order: nextOrder,
+      scheduled_release_at: scheduleFields.scheduled_release_at,
+      release_linked_to: scheduleFields.release_linked_to,
     })
     .select("*")
     .single()
@@ -179,14 +235,39 @@ export async function updateChallenge(
   if (patch.description !== undefined) update.description = patch.description
   if (patch.resources !== undefined) update.resources = patch.resources
 
+  if (patch.scheduledReleaseAt !== undefined || patch.releaseLinkedTo !== undefined) {
+    const fields = await resolveScheduledReleaseFields(
+      client,
+      hackathonId,
+      patch.scheduledReleaseAt,
+      patch.releaseLinkedTo,
+    )
+    update.scheduled_release_at = fields.scheduled_release_at
+    update.release_linked_to = fields.release_linked_to
+  }
+
   const { data, error } = await client
     .from("challenges")
     .update(update)
     .eq("id", challengeId)
+    .is("released_at", null)
     .select("*")
     .single()
 
   if (error || !data) {
+    if (patch.title !== undefined || patch.description !== undefined || patch.resources !== undefined) {
+      const contentOnly: Record<string, unknown> = { updated_at: new Date().toISOString() }
+      if (patch.title !== undefined) contentOnly.title = patch.title
+      if (patch.description !== undefined) contentOnly.description = patch.description
+      if (patch.resources !== undefined) contentOnly.resources = patch.resources
+      const { data: contentData, error: contentErr } = await client
+        .from("challenges")
+        .update(contentOnly)
+        .eq("id", challengeId)
+        .select("*")
+        .single()
+      if (!contentErr && contentData) return toChallenge(contentData)
+    }
     console.error("Failed to update challenge:", error)
     return null
   }
@@ -253,173 +334,220 @@ export async function reorderChallenges(
   return true
 }
 
-async function releaseChallengesIfAny(
-  client: SupabaseClient,
-  hackathonId: string,
-  tenantId: string,
-): Promise<boolean> {
-  const { count, error: countErr } = await client
-    .from("challenges")
-    .select("id", { count: "exact", head: true })
-    .eq("hackathon_id", hackathonId)
+export type ReleaseTrigger = "manual" | "scheduled" | "event_publish" | "event_start"
 
-  if (countErr) {
-    console.error("Failed to count challenges:", countErr)
-    return false
-  }
-  if (!count || count === 0) return false
-
-  const { error } = await client
-    .from("hackathons")
-    .update({
-      challenge_released_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", hackathonId)
-    .eq("tenant_id", tenantId)
-
-  if (error) {
-    console.error("Failed to release challenges:", error)
-    return false
-  }
-
-  return true
-}
-
-export type ReleaseChallengesOptions = {
-  dispatchNotification?: boolean
-  trigger?: "manual" | "scheduled" | "event_publish" | "event_start"
-}
-
-type ReleasableHackathon = {
-  challenge_released_at: string | null
+type HackathonForDispatch = {
+  id: string
+  tenant_id: string
   name: string
   slug: string
   status: string
+  challenge_released_at: string | null
 }
 
-async function releaseChallengesWithHackathon(
+async function fetchHackathonForDispatch(
+  client: SupabaseClient,
+  hackathonId: string,
+): Promise<HackathonForDispatch | null> {
+  const { data, error } = await client
+    .from("hackathons")
+    .select("id, tenant_id, name, slug, status, challenge_released_at")
+    .eq("id", hackathonId)
+    .single()
+  if (error || !data) return null
+  return data as unknown as HackathonForDispatch
+}
+
+async function markChallengesReleased(
+  client: SupabaseClient,
+  challengeIds: string[],
+  releasedAt: string,
+): Promise<Challenge[]> {
+  if (challengeIds.length === 0) return []
+  const { data, error } = await client
+    .from("challenges")
+    .update({ released_at: releasedAt, updated_at: releasedAt })
+    .in("id", challengeIds)
+    .is("released_at", null)
+    .select("*")
+
+  if (error) {
+    console.error("Failed to mark challenges released:", error)
+    return []
+  }
+  return (data ?? []).map(toChallenge)
+}
+
+async function backfillHackathonReleasedAt(
   client: SupabaseClient,
   hackathonId: string,
   tenantId: string,
-  hackathon: ReleasableHackathon,
-  options?: ReleaseChallengesOptions,
-): Promise<boolean> {
-  if (hackathon.challenge_released_at) return true
-
-  const released = await releaseChallengesIfAny(client, hackathonId, tenantId)
-  if (!released) return false
-
-  const dispatchNotification = options?.dispatchNotification ?? true
-  const eligibleStatus =
-    hackathon.status === "published" || hackathon.status === "active"
-
-  if (dispatchNotification && eligibleStatus) {
-    try {
-      const challenges = await listChallenges(hackathonId)
-      if (challenges.length > 0) {
-        const { dispatchChallengesReleasedNotifications } = await import(
-          "./notification-dispatcher"
-        )
-        dispatchChallengesReleasedNotifications({
-          hackathonId,
-          tenantId,
-          hackathon: {
-            name: hackathon.name,
-            slug: hackathon.slug,
-          },
-          challenges: challenges.map((c) => ({
-            title: c.title,
-            description: c.description,
-          })),
-          trigger: options?.trigger ?? "manual",
-        }).catch((err) => {
-          console.error(
-            `Failed to dispatch challenges-released notifications for ${hackathonId}:`,
-            err,
-          )
-        })
-      }
-    } catch (err) {
-      console.error(
-        `Failed to load challenges for release notification ${hackathonId}:`,
-        err,
-      )
-    }
-  }
-
-  return true
-}
-
-export async function releaseChallenges(
-  hackathonId: string,
-  tenantId: string,
-  options?: ReleaseChallengesOptions,
-): Promise<boolean> {
-  const client = getSupabase() as unknown as SupabaseClient
-
-  const { data: hackathon, error: fetchErr } = await client
+  releasedAt: string,
+  existingHackathonReleasedAt: string | null,
+): Promise<void> {
+  if (existingHackathonReleasedAt) return
+  await client
     .from("hackathons")
-    .select("challenge_released_at, name, slug, status")
+    .update({ challenge_released_at: releasedAt, updated_at: releasedAt })
     .eq("id", hackathonId)
     .eq("tenant_id", tenantId)
-    .single()
+    .is("challenge_released_at", null)
+}
 
-  if (fetchErr || !hackathon) {
-    console.error("Failed to fetch hackathon for challenge release:", fetchErr)
-    return false
+async function dispatchReleaseNotification(
+  hackathon: HackathonForDispatch,
+  challenges: Challenge[],
+  trigger: ReleaseTrigger,
+): Promise<void> {
+  if (challenges.length === 0) return
+  const eligibleStatus =
+    hackathon.status === "published" || hackathon.status === "active"
+  if (!eligibleStatus) return
+
+  try {
+    const { dispatchChallengesReleasedNotifications } = await import(
+      "./notification-dispatcher"
+    )
+    dispatchChallengesReleasedNotifications({
+      hackathonId: hackathon.id,
+      tenantId: hackathon.tenant_id,
+      hackathon: { name: hackathon.name, slug: hackathon.slug },
+      challenges: challenges.map((c) => ({ title: c.title, description: c.description })),
+      trigger,
+    }).catch((err) => {
+      console.error(
+        `Failed to dispatch challenges-released notifications for ${hackathon.id}:`,
+        err,
+      )
+    })
+  } catch (err) {
+    console.error(
+      `Failed to start challenges-released dispatch for ${hackathon.id}:`,
+      err,
+    )
   }
-
-  return releaseChallengesWithHackathon(
-    client,
-    hackathonId,
-    tenantId,
-    hackathon,
-    options,
-  )
 }
 
-type PublishLinkRow = {
-  linked_to: string | null
-  hackathons: ReleasableHackathon & { tenant_id: string }
+export type ReleaseOptions = {
+  dispatchNotification?: boolean
+  trigger?: ReleaseTrigger
 }
 
-export async function maybeReleaseChallengesForPublishLink(
-  hackathonId: string,
+export async function releaseChallenge(
+  challengeId: string,
   tenantId: string,
-): Promise<boolean> {
+  options?: ReleaseOptions,
+): Promise<Challenge | null> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { data, error: fetchErr } = await client
-    .from("hackathon_schedule_items")
-    .select(
-      "linked_to, hackathons!inner(tenant_id, status, challenge_released_at, name, slug)",
-    )
-    .eq("hackathon_id", hackathonId)
-    .eq("trigger_type", "challenge_release")
-    .eq("hackathons.tenant_id", tenantId)
-    .maybeSingle()
+  const hackathonId = await assertChallengeOwnership(client, challengeId, tenantId)
+  if (!hackathonId) return null
 
-  if (fetchErr) {
-    console.error("Failed to fetch trigger item for publish-link release:", fetchErr)
-    return false
-  }
-  const row = data as unknown as PublishLinkRow | null
-  if (!row || row.linked_to !== "event_publish") return false
-  if (row.hackathons.status !== "published") return false
+  const hackathon = await fetchHackathonForDispatch(client, hackathonId)
+  if (!hackathon) return null
 
-  return releaseChallengesWithHackathon(
+  const releasedAt = new Date().toISOString()
+  const [released] = await markChallengesReleased(client, [challengeId], releasedAt)
+  if (!released) return null
+
+  await backfillHackathonReleasedAt(
     client,
     hackathonId,
     tenantId,
-    row.hackathons,
-    { trigger: "event_publish" },
+    releasedAt,
+    hackathon.challenge_released_at,
   )
+
+  if (options?.dispatchNotification !== false) {
+    await dispatchReleaseNotification(hackathon, [released], options?.trigger ?? "manual")
+  }
+
+  return released
+}
+
+export async function releaseLinkedChallenges(
+  hackathonId: string,
+  tenantId: string,
+  linkedTo: ReleaseLinkedTo,
+  options?: ReleaseOptions,
+): Promise<Challenge[]> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const hackathon = await fetchHackathonForDispatch(client, hackathonId)
+  if (!hackathon || hackathon.tenant_id !== tenantId) return []
+
+  const { data: pending } = await client
+    .from("challenges")
+    .select("id")
+    .eq("hackathon_id", hackathonId)
+    .eq("release_linked_to", linkedTo)
+    .is("released_at", null)
+
+  const ids = (pending ?? []).map((r) => r.id as string)
+  if (ids.length === 0) return []
+
+  const releasedAt = new Date().toISOString()
+  const released = await markChallengesReleased(client, ids, releasedAt)
+  if (released.length === 0) return []
+
+  await backfillHackathonReleasedAt(
+    client,
+    hackathonId,
+    tenantId,
+    releasedAt,
+    hackathon.challenge_released_at,
+  )
+
+  const triggerDefault: ReleaseTrigger =
+    linkedTo === "event_publish" ? "event_publish" : "event_start"
+  if (options?.dispatchNotification !== false) {
+    await dispatchReleaseNotification(hackathon, released, options?.trigger ?? triggerDefault)
+  }
+
+  return released
+}
+
+export async function releaseAllUnreleasedChallenges(
+  hackathonId: string,
+  tenantId: string,
+  options?: ReleaseOptions,
+): Promise<Challenge[]> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const hackathon = await fetchHackathonForDispatch(client, hackathonId)
+  if (!hackathon || hackathon.tenant_id !== tenantId) return []
+
+  const { data: pending } = await client
+    .from("challenges")
+    .select("id")
+    .eq("hackathon_id", hackathonId)
+    .is("released_at", null)
+
+  const ids = (pending ?? []).map((r) => r.id as string)
+  if (ids.length === 0) return []
+
+  const releasedAt = new Date().toISOString()
+  const released = await markChallengesReleased(client, ids, releasedAt)
+  if (released.length === 0) return []
+
+  await backfillHackathonReleasedAt(
+    client,
+    hackathonId,
+    tenantId,
+    releasedAt,
+    hackathon.challenge_released_at,
+  )
+
+  if (options?.dispatchNotification !== false) {
+    await dispatchReleaseNotification(hackathon, released, options?.trigger ?? "manual")
+  }
+
+  return released
 }
 
 export type ScheduledChallengeReleaseResult = {
   processed: number
-  releases: Array<{ hackathonId: string }>
+  releases: Array<{ hackathonId: string; challengeIds: string[] }>
   errors: string[]
 }
 
@@ -432,55 +560,53 @@ export async function processScheduledChallengeReleases(): Promise<ScheduledChal
     errors: [],
   }
 
-  const { data: hackathons, error: hackErr } = await client
-    .from("hackathons")
-    .select("id, tenant_id")
-    .eq("status", "active")
-    .is("challenge_released_at", null)
-
-  if (hackErr) {
-    result.errors.push(`Failed to fetch active hackathons: ${hackErr.message}`)
-    return result
-  }
-  if (!hackathons || hackathons.length === 0) return result
-
-  const hackathonIds = hackathons.map((h) => h.id as string)
-  const tenantById = new Map<string, string>(
-    hackathons.map((h) => [h.id as string, h.tenant_id as string]),
-  )
-
-  const { data: items, error: itemsErr } = await client
-    .from("hackathon_schedule_items")
-    .select("hackathon_id, starts_at, linked_to")
-    .in("hackathon_id", hackathonIds)
-    .eq("trigger_type", "challenge_release")
-
-  if (itemsErr) {
-    result.errors.push(`Failed to fetch challenge_release items: ${itemsErr.message}`)
-    return result
-  }
-  if (!items || items.length === 0) return result
-
   const nowIso = new Date().toISOString()
-  for (const item of items) {
-    if (item.linked_to !== null) continue
-    if (typeof item.starts_at !== "string" || item.starts_at > nowIso) continue
+  const { data: due, error } = await client
+    .from("challenges")
+    .select("id, hackathon_id")
+    .is("released_at", null)
+    .is("release_linked_to", null)
+    .not("scheduled_release_at", "is", null)
+    .lte("scheduled_release_at", nowIso)
 
-    const hackathonId = item.hackathon_id as string
-    const tenantId = tenantById.get(hackathonId)
-    if (!tenantId) continue
+  if (error) {
+    result.errors.push(`Failed to fetch due challenges: ${error.message}`)
+    return result
+  }
+  if (!due || due.length === 0) return result
 
+  const byHackathon = new Map<string, string[]>()
+  for (const row of due) {
+    const hackathonId = row.hackathon_id as string
+    const list = byHackathon.get(hackathonId) ?? []
+    list.push(row.id as string)
+    byHackathon.set(hackathonId, list)
+  }
+
+  for (const [hackathonId, ids] of byHackathon) {
     try {
-      const released = await releaseChallenges(hackathonId, tenantId, {
-        trigger: "scheduled",
-      })
-      if (released) {
-        result.processed++
-        result.releases.push({ hackathonId })
-      }
+      const hackathon = await fetchHackathonForDispatch(client, hackathonId)
+      if (!hackathon) continue
+      if (hackathon.status !== "active" && hackathon.status !== "published") continue
+
+      const released = await markChallengesReleased(client, ids, nowIso)
+      if (released.length === 0) continue
+
+      await backfillHackathonReleasedAt(
+        client,
+        hackathonId,
+        hackathon.tenant_id,
+        nowIso,
+        hackathon.challenge_released_at,
+      )
+
+      await dispatchReleaseNotification(hackathon, released, "scheduled")
+
+      result.processed += released.length
+      result.releases.push({ hackathonId, challengeIds: released.map((c) => c.id) })
     } catch (err) {
       result.errors.push(
-        `Failed to release challenges for ${hackathonId}: ${err instanceof Error ? err.message : String(err)}`,
+        `Failed to release scheduled challenges for ${hackathonId}: ${err instanceof Error ? err.message : String(err)}`,
       )
     }
   }
@@ -520,7 +646,7 @@ export async function tagSubmissionChallenges(
 
     const { data: validChallenges, error: valErr } = await client
       .from("challenges")
-      .select("id")
+      .select("id, released_at")
       .eq("hackathon_id", submission.hackathon_id)
       .in("id", challengeIds)
 
@@ -529,9 +655,13 @@ export async function tagSubmissionChallenges(
       return false
     }
 
-    const validIds = new Set((validChallenges ?? []).map((r) => r.id))
-    if (validIds.size !== challengeIds.length) {
+    const validRows = validChallenges ?? []
+    if (validRows.length !== challengeIds.length) {
       console.error("One or more challenge IDs do not belong to submission's hackathon")
+      return false
+    }
+    if (validRows.some((r) => r.released_at === null)) {
+      console.error("Cannot tag submission with an unreleased challenge")
       return false
     }
   }

@@ -246,6 +246,9 @@ export const mockChallenges: Challenge[] = [
     sortOrder: 0,
     createdAt: iso(now),
     updatedAt: iso(now),
+    releasedAt: null,
+    scheduledReleaseAt: null,
+    releaseLinkedTo: "event_start",
   },
   {
     id: "challenge-2",
@@ -256,6 +259,9 @@ export const mockChallenges: Challenge[] = [
     sortOrder: 1,
     createdAt: iso(now),
     updatedAt: iso(now),
+    releasedAt: null,
+    scheduledReleaseAt: null,
+    releaseLinkedTo: "event_start",
   },
 ]
 

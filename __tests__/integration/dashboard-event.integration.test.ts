@@ -50,7 +50,7 @@ mock.module("@/lib/services/hackathon-people", () => ({
   peopleToCsvRows: mockPeopleToCsvRows,
 }))
 
-const mockMaybeReleaseChallengesForPublishLink = mock(() => Promise.resolve(false))
+const mockReleaseLinkedChallenges = mock(() => Promise.resolve([] as unknown[]))
 
 mock.module("@/lib/services/challenges", () => ({
   listChallenges: mock(() => Promise.resolve([])),
@@ -58,8 +58,10 @@ mock.module("@/lib/services/challenges", () => ({
   updateChallenge: mock(() => Promise.resolve(null)),
   deleteChallenge: mock(() => Promise.resolve(false)),
   reorderChallenges: mock(() => Promise.resolve(false)),
-  releaseChallenges: mock(() => Promise.resolve(false)),
-  maybeReleaseChallengesForPublishLink: mockMaybeReleaseChallengesForPublishLink,
+  releaseChallenge: mock(() => Promise.resolve(null)),
+  releaseLinkedChallenges: mockReleaseLinkedChallenges,
+  releaseAllUnreleasedChallenges: mock(() => Promise.resolve([])),
+  getChallengeById: mock(() => Promise.resolve(null)),
 }))
 
 mock.module("@/lib/services/phases", () => ({
@@ -164,7 +166,8 @@ describe("Dashboard Event Routes Integration Tests", () => {
     mockUpdateScheduleItem.mockReset()
     mockDeleteScheduleItem.mockReset()
     mockGetTriggerItem.mockReset()
-    mockMaybeReleaseChallengesForPublishLink.mockReset()
+    mockReleaseLinkedChallenges.mockReset()
+    mockReleaseLinkedChallenges.mockResolvedValue([])
     mockListHackathonPeople.mockReset()
     mockPeopleToCsvRows.mockReset()
     mockListHackathonPeople.mockResolvedValue([])
@@ -702,8 +705,9 @@ describe("Dashboard Event Routes Integration Tests", () => {
   })
 
   describe("POST /api/dashboard/hackathons/:id/challenges", () => {
-    it("fires maybeReleaseChallengesForPublishLink after a successful create", async () => {
+    it("fires releaseLinkedChallenges(event_publish) when the new challenge is linked to event_publish", async () => {
       mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockReleaseLinkedChallenges.mockClear()
       const challengesModule = await import("@/lib/services/challenges")
       const mockCreate = challengesModule.createChallenge as unknown as ReturnType<typeof mock>
       mockCreate.mockResolvedValueOnce({
@@ -715,18 +719,21 @@ describe("Dashboard Event Routes Integration Tests", () => {
         sortOrder: 0,
         createdAt: "2026-04-28T00:00:00Z",
         updatedAt: "2026-04-28T00:00:00Z",
+        releasedAt: null,
+        scheduledReleaseAt: null,
+        releaseLinkedTo: "event_publish",
       })
 
       const res = await app.handle(
         new Request(`${baseUrl}/challenges`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: "Build something" }),
+          body: JSON.stringify({ title: "Build something", releaseLinkedTo: "event_publish" }),
         })
       )
 
       expect(res.status).toBe(200)
-      expect(mockMaybeReleaseChallengesForPublishLink).toHaveBeenCalledWith(hackathonId, "tenant-123")
+      expect(mockReleaseLinkedChallenges).toHaveBeenCalledWith(hackathonId, "tenant-123", "event_publish")
     })
   })
 

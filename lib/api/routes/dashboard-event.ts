@@ -21,9 +21,12 @@ import {
   updateChallenge,
   deleteChallenge,
   reorderChallenges,
-  releaseChallenges,
-  maybeReleaseChallengesForPublishLink,
+  releaseChallenge,
+  releaseLinkedChallenges,
+  releaseAllUnreleasedChallenges,
+  getChallengeById,
 } from "@/lib/services/challenges"
+import type { ReleaseLinkedTo } from "@/lib/services/challenges"
 import {
   listPerks,
   createPerk,
@@ -933,12 +936,26 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if ("error" in authErr) return authErr
-    const b = body as { title: string; description?: string | null; resources?: { label: string; url: string }[] }
+    const b = body as {
+      title: string
+      description?: string | null
+      resources?: { label: string; url: string }[]
+      scheduledReleaseAt?: string | null
+      releaseLinkedTo?: ReleaseLinkedTo | null
+    }
     const created = await createChallenge(params.id, principal.tenantId, b)
     if (!created) { set.status = 400; return { error: "Failed to create challenge" } }
     await logAudit({ principal, action: "challenge.created", resourceType: "challenge", resourceId: created.id, metadata: { hackathonId: params.id, title: b.title } })
 
-    await maybeReleaseChallengesForPublishLink(params.id, principal.tenantId)
+    if (created.releaseLinkedTo === "event_publish") {
+      const released = await releaseLinkedChallenges(
+        params.id,
+        principal.tenantId,
+        "event_publish",
+      )
+      const refreshed = released.find((c) => c.id === created.id)
+      if (refreshed) return { challenge: refreshed }
+    }
 
     return { challenge: created }
   }, {
@@ -946,6 +963,8 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       title: t.String({ description: "Challenge title" }),
       description: t.Optional(t.Union([t.String(), t.Null()])),
       resources: t.Optional(t.Array(t.Object({ label: t.String(), url: t.String() }))),
+      scheduledReleaseAt: t.Optional(t.Union([t.String(), t.Null()])),
+      releaseLinkedTo: t.Optional(t.Union([t.Literal("event_start"), t.Literal("event_publish"), t.Null()])),
     }),
     detail: { summary: "Create challenge" },
   })
@@ -966,7 +985,13 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if ("error" in authErr) return authErr
     if (!isValidUuid(params.cid)) { set.status = 404; return { error: "Challenge not found" } }
-    const b = body as { title?: string; description?: string | null; resources?: { label: string; url: string }[] }
+    const b = body as {
+      title?: string
+      description?: string | null
+      resources?: { label: string; url: string }[]
+      scheduledReleaseAt?: string | null
+      releaseLinkedTo?: ReleaseLinkedTo | null
+    }
     const updated = await updateChallenge(params.cid, principal.tenantId, b)
     if (!updated) { set.status = 400; return { error: "Failed to update challenge" } }
     await logAudit({ principal, action: "challenge.updated", resourceType: "challenge", resourceId: params.cid, metadata: { hackathonId: params.id } })
@@ -976,6 +1001,8 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       title: t.Optional(t.String()),
       description: t.Optional(t.Union([t.String(), t.Null()])),
       resources: t.Optional(t.Array(t.Object({ label: t.String(), url: t.String() }))),
+      scheduledReleaseAt: t.Optional(t.Union([t.String(), t.Null()])),
+      releaseLinkedTo: t.Optional(t.Union([t.Literal("event_start"), t.Literal("event_publish"), t.Null()])),
     }),
     detail: { summary: "Update challenge" },
   })
@@ -993,11 +1020,24 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if ("error" in authErr) return authErr
-    const ok = await releaseChallenges(params.id, principal.tenantId)
-    if (!ok) { set.status = 400; return { error: "Failed to release challenges. Ensure at least one challenge exists." } }
-    await logAudit({ principal, action: "challenge.released", resourceType: "challenge", resourceId: params.id, metadata: { hackathonId: params.id } })
-    return { success: true }
-  }, { detail: { summary: "Release challenges" } })
+    const released = await releaseAllUnreleasedChallenges(params.id, principal.tenantId)
+    if (released.length === 0) { set.status = 400; return { error: "Failed to release challenges. Ensure at least one unreleased challenge exists." } }
+    await logAudit({ principal, action: "challenge.released", resourceType: "challenge", resourceId: params.id, metadata: { hackathonId: params.id, challengeIds: released.map((c) => c.id) } })
+    return { success: true, released: released.length }
+  }, { detail: { summary: "Release all unreleased challenges" } })
+  .post("/hackathons/:id/challenges/:cid/release", async ({ params, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if ("error" in authErr) return authErr
+    if (!isValidUuid(params.cid)) { set.status = 404; return { error: "Challenge not found" } }
+    const existing = await getChallengeById(params.cid)
+    if (!existing || existing.hackathonId !== params.id) { set.status = 404; return { error: "Challenge not found" } }
+    if (existing.releasedAt) return { challenge: existing }
+    const released = await releaseChallenge(params.cid, principal.tenantId)
+    if (!released) { set.status = 400; return { error: "Failed to release challenge" } }
+    await logAudit({ principal, action: "challenge.released", resourceType: "challenge", resourceId: params.cid, metadata: { hackathonId: params.id } })
+    return { challenge: released }
+  }, { detail: { summary: "Release a single challenge" } })
   // --- Perks (sponsor API keys, credits, coupons) ---
   .get("/hackathons/:id/perks", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
@@ -1274,10 +1314,6 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     const item = await updateScheduleItem(params.itemId, params.id, b)
     if (!item) { set.status = 400; return { error: "Failed to update schedule item" } }
     await logAudit({ principal, action: "schedule_item.updated", resourceType: "schedule_item", resourceId: params.itemId, metadata: { hackathonId: params.id } })
-
-    if (b.linkedTo === "event_publish") {
-      await maybeReleaseChallengesForPublishLink(params.id, principal.tenantId)
-    }
     return item
   }, {
     body: t.Object({ title: t.Optional(t.String()), startsAt: t.Optional(t.String()), description: t.Optional(t.String()), endsAt: t.Optional(t.String()), location: t.Optional(t.String()), sortOrder: t.Optional(t.Number()), linkedTo: t.Optional(t.Union([t.Literal("event_start"), t.Literal("event_end"), t.Literal("event_publish"), t.Null()])) }),

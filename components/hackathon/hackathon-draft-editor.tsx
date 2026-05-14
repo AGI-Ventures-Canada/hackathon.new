@@ -275,6 +275,9 @@ export function HackathonDraftEditor({
         sortOrder: i,
         createdAt: "draft",
         updatedAt: "draft",
+        releasedAt: null,
+        scheduledReleaseAt: null,
+        releaseLinkedTo: "event_start" as const,
       })),
     [state.challenges]
   )
