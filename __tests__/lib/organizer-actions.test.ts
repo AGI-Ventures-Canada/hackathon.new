@@ -246,11 +246,13 @@ describe("getOrganizerActionItems", () => {
     })
 
     it("shows ready-to-go-live when dates and location are set", () => {
+      const futureStart = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+      const futureEnd = new Date(Date.now() + 8 * 24 * 60 * 60 * 1000).toISOString()
       const items = getOrganizerActionItems(makeInput({
         status: "published",
         participantCount: 0,
-        startsAt: "2026-05-01T00:00:00Z",
-        endsAt: "2026-05-02T00:00:00Z",
+        startsAt: futureStart,
+        endsAt: futureEnd,
         locationType: "virtual",
       }))
       const item = items.find((i) => i.id === "ready-to-go-live")
@@ -261,12 +263,27 @@ describe("getOrganizerActionItems", () => {
     })
 
     it("does not show ready-to-go-live when location is missing", () => {
+      const futureStart = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+      const futureEnd = new Date(Date.now() + 8 * 24 * 60 * 60 * 1000).toISOString()
       const items = getOrganizerActionItems(makeInput({
         status: "published",
         participantCount: 0,
-        startsAt: "2026-05-01T00:00:00Z",
-        endsAt: "2026-05-02T00:00:00Z",
+        startsAt: futureStart,
+        endsAt: futureEnd,
         locationType: null,
+      }))
+      expect(items.find((i) => i.id === "ready-to-go-live")).toBeUndefined()
+    })
+
+    it("does not show ready-to-go-live when event has already started", () => {
+      const pastStart = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+      const futureEnd = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+      const items = getOrganizerActionItems(makeInput({
+        status: "published",
+        participantCount: 0,
+        startsAt: pastStart,
+        endsAt: futureEnd,
+        locationType: "virtual",
       }))
       expect(items.find((i) => i.id === "ready-to-go-live")).toBeUndefined()
     })
@@ -636,8 +653,8 @@ describe("getOrganizerActionItems", () => {
       const pubItems = getOrganizerActionItems(makeInput({
         status: "published",
         participantCount: 5,
-        startsAt: "2026-05-01T00:00:00Z",
-        endsAt: "2026-05-02T00:00:00Z",
+        startsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        endsAt: new Date(Date.now() + 8 * 24 * 60 * 60 * 1000).toISOString(),
         locationType: "virtual",
       }))
       const goLiveItem = pubItems.find((i) => i.id === "ready-to-go-live")
@@ -765,8 +782,8 @@ describe("getOrganizerActionItems", () => {
     it("excludes transition actions from previous phases", () => {
       const items = getOrganizerActionItems(makeInput({
         status: "published",
-        startsAt: "2026-05-01T00:00:00Z",
-        endsAt: "2026-05-02T00:00:00Z",
+        startsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        endsAt: new Date(Date.now() + 8 * 24 * 60 * 60 * 1000).toISOString(),
         locationType: "virtual",
       }))
       expect(items.find((i) => i.id === "ready-to-publish")).toBeUndefined()
