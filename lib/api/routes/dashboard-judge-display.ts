@@ -1,6 +1,7 @@
 import { Elysia, t } from "elysia"
 import { resolvePrincipal, requirePrincipal } from "@/lib/auth/principal"
 import { logAudit } from "@/lib/services/audit"
+import { getDisplayName } from "@/lib/utils/person-display"
 
 export const dashboardJudgeDisplayRoutes = new Elysia()
   .derive(async ({ request }) => {
@@ -84,6 +85,11 @@ export const dashboardJudgeDisplayRoutes = new Elysia()
           if (!resolvedHeadshotUrl && user.imageUrl) resolvedHeadshotUrl = user.imageUrl
         }
       }
+      resolvedName = getDisplayName({
+        name: resolvedName,
+        email: body.email ?? null,
+        fallback: "Judge",
+      })
 
       const { createJudgeDisplayProfile } = await import("@/lib/services/judge-display")
       const createResult = await createJudgeDisplayProfile(params.id, {

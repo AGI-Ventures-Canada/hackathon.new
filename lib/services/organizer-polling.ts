@@ -2,6 +2,7 @@ import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { ActionItemsInput } from "@/lib/utils/organizer-actions"
 import type { HackathonStatus, HackathonPhase } from "@/lib/db/hackathon-types"
+import { getEffectiveStatus } from "@/lib/utils/timeline"
 
 export type OrganizerPollResponse = ActionItemsInput
 
@@ -49,9 +50,14 @@ export async function buildOrganizerPollPayload(hackathonId: string): Promise<Or
   if (error || !data) return null
 
   const r = data as RpcPollRow
+  const status = getEffectiveStatus({
+    status: r.status as HackathonStatus,
+    starts_at: r.starts_at,
+    ends_at: r.ends_at,
+  })
 
   return {
-    status: r.status as HackathonStatus,
+    status,
     phase: r.phase as HackathonPhase | null,
     submissionCount: r.submission_count ?? 0,
     unassignedSubmissionCount: r.unassigned_submission_count ?? 0,

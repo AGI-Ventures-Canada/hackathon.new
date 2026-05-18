@@ -272,9 +272,6 @@ export function ActionItemsProvider({
   // Pin poll data to the server fingerprint at arrival time so a router.refresh() that lands mid-poll invalidates the snapshot on the next render.
   const isPollFresh = !!pollData && pollFingerprint === serverFingerprint;
 
-  const actionItems = isPollFresh && pollData
-    ? getOrganizerActionItems(pollData)
-    : serverActionItems;
   const liveChallengeExists = isPollFresh && pollData
     ? pollData.challengeExists
     : challengeExists;
@@ -298,6 +295,9 @@ export function ActionItemsProvider({
     }
   }, [baseEffectiveStatus, optimisticStage]);
   const effectiveStatus = applyOptimisticStage(baseEffectiveStatus, optimisticStage);
+  const actionItems = isPollFresh && pollData
+    ? getOrganizerActionItems({ ...pollData, status: effectiveStatus })
+    : serverActionItems;
 
   const [completedIds, setCompletedIds] = useState<Set<string>>(() => {
     if (typeof window === "undefined") return new Set<string>();
