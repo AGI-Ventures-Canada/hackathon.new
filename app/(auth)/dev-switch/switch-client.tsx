@@ -60,36 +60,34 @@ export function DevSwitchClient({
 
     async function doSwitch() {
       try {
-        async function clearActiveOrganization() {
-          try {
-            await setActive({ organization: null })
-          } catch (err) {
-            if (!isStaleSessionError(err)) throw err
-            console.warn("Ignoring stale Clerk organization during dev switch:", err)
-          }
-        }
-
         async function activateSession(sessionId: string) {
+          if (!org) {
+            try {
+              await setActive({ session: sessionId })
+            } catch (err) {
+              if (!isStaleSessionError(err)) throw err
+              console.warn("Retrying dev switch after stale Clerk session activation:", err)
+              await setActive({ session: sessionId })
+            }
+            return
+          }
+
           try {
             await setActive({
               session: sessionId,
-              organization: org ?? null,
+              organization: org,
             })
           } catch (err) {
-            if (org || !isStaleSessionError(err)) throw err
-            console.warn("Retrying dev switch after clearing stale Clerk organization:", err)
-            await clearActiveOrganization()
+            if (!isStaleSessionError(err)) throw err
+            console.warn("Retrying dev switch after stale Clerk organization activation:", err)
             await setActive({
               session: sessionId,
-              organization: null,
+              organization: org,
             })
           }
         }
 
         if (isSignedIn) {
-          if (!org) {
-            await clearActiveOrganization()
-          }
           try {
             if (session?.id) {
               await signOut({ sessionId: session.id })

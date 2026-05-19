@@ -73,7 +73,6 @@ describe("DevSwitchClient", () => {
     await waitFor(() => expect(mockSetActive).toHaveBeenCalledTimes(1))
     expect(mockSetActive).toHaveBeenCalledWith({
       session: "session_abc",
-      organization: null,
     })
   })
 
@@ -96,14 +95,12 @@ describe("DevSwitchClient", () => {
     expect(mockSignOut).toHaveBeenCalledWith({ sessionId: "sess_current" })
   })
 
-  it("clears the active organization before switching to a no-org persona", async () => {
+  it("does not send an organization when switching to a no-org persona", async () => {
     g.__clerkState.isSignedIn = true
     render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
-    await waitFor(() => expect(mockSetActive).toHaveBeenCalledTimes(2))
-    expect(mockSetActive).toHaveBeenNthCalledWith(1, { organization: null })
-    expect(mockSetActive).toHaveBeenNthCalledWith(2, {
+    await waitFor(() => expect(mockSetActive).toHaveBeenCalledTimes(1))
+    expect(mockSetActive).toHaveBeenCalledWith({
       session: "session_abc",
-      organization: null,
     })
   })
 
@@ -115,36 +112,12 @@ describe("DevSwitchClient", () => {
     await waitFor(() =>
       expect(mockSetActive).toHaveBeenCalledWith({
         session: "session_abc",
-        organization: null,
       })
     )
     expect(replaceCalls).toEqual(["/e/demo"])
   })
 
-  it("continues when clearing the old organization returns a stale Clerk error", async () => {
-    g.__clerkState.isSignedIn = true
-    mockSetActive.mockImplementationOnce(() =>
-      Promise.reject({
-        status: 403,
-        errors: [{
-          code: "organization_not_found_or_unauthorized",
-          long_message: "Given organization not found, or you don't have permission to access the organization",
-        }],
-      })
-    ).mockImplementation(() => Promise.resolve())
-
-    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
-    await waitFor(() => expect(signInCreate).toHaveBeenCalled())
-    await waitFor(() =>
-      expect(mockSetActive).toHaveBeenCalledWith({
-        session: "session_abc",
-        organization: null,
-      })
-    )
-    expect(replaceCalls).toEqual(["/e/demo"])
-  })
-
-  it("retries session activation when Clerk keeps a stale organization", async () => {
+  it("retries no-org session activation after a stale Clerk error", async () => {
     mockSetActive.mockImplementationOnce(() =>
       Promise.reject({
         status: 404,
@@ -156,15 +129,12 @@ describe("DevSwitchClient", () => {
     ).mockImplementation(() => Promise.resolve())
 
     render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
-    await waitFor(() => expect(mockSetActive).toHaveBeenCalledTimes(3))
+    await waitFor(() => expect(mockSetActive).toHaveBeenCalledTimes(2))
     expect(mockSetActive).toHaveBeenNthCalledWith(1, {
       session: "session_abc",
-      organization: null,
     })
-    expect(mockSetActive).toHaveBeenNthCalledWith(2, { organization: null })
-    expect(mockSetActive).toHaveBeenNthCalledWith(3, {
+    expect(mockSetActive).toHaveBeenNthCalledWith(2, {
       session: "session_abc",
-      organization: null,
     })
     expect(replaceCalls).toEqual(["/e/demo"])
   })
@@ -180,7 +150,6 @@ describe("DevSwitchClient", () => {
     await waitFor(() =>
       expect(mockSetActive).toHaveBeenCalledWith({
         session: "session_abc",
-        organization: null,
       })
     )
     expect(replaceCalls).toEqual(["/e/demo"])

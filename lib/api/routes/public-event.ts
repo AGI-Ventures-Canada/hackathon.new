@@ -47,6 +47,9 @@ export const publicEventRoutes = new Elysia({ prefix: "/public" })
     const { getParticipantWithTeam } = await import("@/lib/services/submissions")
     const participant = await getParticipantWithTeam(hackathon!.id, principal.userId)
     if (!participant) { set.status = 403; return { error: "Not a participant" } }
+    if (participant.teamStatus === "pending_approval") {
+      return pendingTeamApprovalResponse(set)
+    }
 
     const { url } = body as { url: string }
     const submission = await submitSocialUrl(hackathon!.id, participant.participantId, participant.teamId, url)

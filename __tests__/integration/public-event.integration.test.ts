@@ -6,6 +6,7 @@ const mockResolvePrincipal = mock(() => Promise.resolve({ kind: "anon" }))
 const mockGetParticipantWithTeam = mock(() => Promise.resolve(null))
 const mockListPerks = mock(() => Promise.resolve([]))
 const mockIsPerkReleased = mock(() => true)
+const mockSubmitSocialUrl = mock(() => Promise.resolve(null))
 
 class MockAuthError extends Error {
   constructor(
@@ -40,6 +41,10 @@ mock.module("@/lib/auth/principal", () => ({
 
 mock.module("@/lib/services/submissions", () => ({
   getParticipantWithTeam: mockGetParticipantWithTeam,
+}))
+
+mock.module("@/lib/services/social-submissions", () => ({
+  submitSocialUrl: mockSubmitSocialUrl,
 }))
 
 mock.module("@/lib/services/perks", () => ({
@@ -92,10 +97,12 @@ describe("Public Event Routes Integration Tests", () => {
     mockGetParticipantWithTeam.mockReset()
     mockListPerks.mockReset()
     mockIsPerkReleased.mockReset()
+    mockSubmitSocialUrl.mockReset()
     mockResolvePrincipal.mockResolvedValue({ kind: "anon" })
     mockGetParticipantWithTeam.mockResolvedValue(null)
     mockListPerks.mockResolvedValue([])
     mockIsPerkReleased.mockReturnValue(true)
+    mockSubmitSocialUrl.mockResolvedValue(null)
   })
 
   describe("GET /api/public/hackathons/:slug/poll", () => {
@@ -156,6 +163,59 @@ describe("Public Event Routes Integration Tests", () => {
       expect(mockBuildPollPayload).toHaveBeenCalledWith(
         "11111111-1111-1111-1111-111111111111"
       )
+    })
+  })
+
+  describe("POST /api/public/hackathons/:slug/social-submit", () => {
+    const url = "http://localhost/api/public/hackathons/build-os26/social-submit"
+
+    it("submits a social URL for approved team members", async () => {
+      const submission = { id: "social_1", url: "https://example.com/post" }
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockResolvePrincipal.mockResolvedValue({ kind: "user", userId: "user_1" })
+      mockGetParticipantWithTeam.mockResolvedValue({
+        participantId: "participant_1",
+        teamId: "team_1",
+        teamStatus: "forming",
+      })
+      mockSubmitSocialUrl.mockResolvedValue(submission)
+
+      const res = await app.handle(new Request(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: "https://example.com/post" }),
+      }))
+      const data = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(data).toEqual(submission)
+      expect(mockSubmitSocialUrl).toHaveBeenCalledWith(
+        mockHackathon.id,
+        "participant_1",
+        "team_1",
+        "https://example.com/post"
+      )
+    })
+
+    it("blocks social URLs for teams waiting for approval", async () => {
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockResolvePrincipal.mockResolvedValue({ kind: "user", userId: "user_1" })
+      mockGetParticipantWithTeam.mockResolvedValue({
+        participantId: "participant_1",
+        teamId: "team_1",
+        teamStatus: "pending_approval",
+      })
+
+      const res = await app.handle(new Request(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: "https://example.com/post" }),
+      }))
+      const data = await res.json()
+
+      expect(res.status).toBe(403)
+      expect(data.code).toBe("team_pending_approval")
+      expect(mockSubmitSocialUrl).not.toHaveBeenCalled()
     })
   })
 
