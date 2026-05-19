@@ -159,6 +159,10 @@ function formatTeamStatus(status: string): string {
   if (status === "locked") return "Locked"
   if (status === "disbanded") return "Removed"
   return status
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ")
 }
 
 export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: initialMin, allowSolo: initialSolo, requireTeamApproval: initialApproval, hackathonStatus }: TeamsTabProps) {

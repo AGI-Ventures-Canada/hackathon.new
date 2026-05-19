@@ -1033,14 +1033,15 @@ async function notifyReviewedTeamMembers({
   try {
     const { data: hackathon, error } = await client
       .from("hackathons")
-      .select("name, slug")
+      .select("name, slug, status")
       .eq("id", hackathonId)
       .maybeSingle()
 
     if (error || !hackathon?.name || !hackathon?.slug) {
-      console.error("Failed to load hackathon for team deny notifications:", error)
+      console.error(`Failed to load hackathon for team ${review} notifications:`, error)
       return 0
     }
+    if (hackathon.status === "draft") return 0
 
     const clerk = await clerkClient()
     const recipients: string[] = []

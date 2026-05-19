@@ -289,6 +289,43 @@ describe("team approvals", () => {
     })
   })
 
+  it("does not email team members while the hackathon is a draft", async () => {
+    setMockFromImplementation(
+      tableImpl({
+        hackathons: { data: { name: "Hack One", slug: "hack-one", status: "draft" }, error: null },
+        hackathon_participants: {
+          data: [
+            { clerk_user_id: "user_1" },
+          ],
+          error: null,
+        },
+      })
+    )
+    setMockRpcImplementation(() =>
+      Promise.resolve({
+        data: [{
+          success: true,
+          error_code: null,
+          error_message: null,
+          team_id: "team_1",
+          team_name: "Team One",
+          team_status: "forming",
+        }],
+        error: null,
+      })
+    )
+
+    const result = await approvePendingTeam("team_1", "h_1")
+
+    expect(result).toEqual({
+      success: true,
+      team: { id: "team_1", name: "Team One", status: "forming" },
+      membersNotified: 0,
+    })
+    expect(mockClerkClient).not.toHaveBeenCalled()
+    expect(mockSendTeamApprovedEmails).not.toHaveBeenCalled()
+  })
+
   it("rejects approve when team is not pending", async () => {
     setMockRpcImplementation(() =>
       Promise.resolve({

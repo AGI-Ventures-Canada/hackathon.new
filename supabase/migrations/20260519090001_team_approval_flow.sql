@@ -106,3 +106,6 @@ BEGIN
   RETURN QUERY SELECT TRUE, v_new_participant_id, v_new_team_id, NULL::TEXT, NULL::TEXT;
 END;
 $$;
+
+COMMENT ON FUNCTION register_for_hackathon(UUID, TEXT, TEXT)
+  IS 'Extends the register_for_hackathon baseline from 20260415000006_published_allows_registration.sql with require_team_approval.';
