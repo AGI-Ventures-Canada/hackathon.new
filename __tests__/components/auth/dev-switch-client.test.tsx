@@ -128,6 +128,17 @@ describe("DevSwitchClient", () => {
     expect(replaceCalls).toEqual([])
   })
 
+  it("shows an error for unknown failures that only say not found", async () => {
+    g.__clerkState.isSignedIn = true
+    mockSignOut.mockImplementation(() => Promise.reject(new Error("not found")))
+    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
+    await waitFor(() => {
+      expect(screen.getByText("not found")).toBeDefined()
+    })
+    expect(signInCreate).not.toHaveBeenCalled()
+    expect(replaceCalls).toEqual([])
+  })
+
   it("does not sign out when user is not signed in", async () => {
     render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
     await waitFor(() => expect(signInCreate).toHaveBeenCalled())
