@@ -25,14 +25,12 @@ import {
   type SubmissionScreenshotSlot,
 } from "@/lib/utils/submission-screenshots"
 
-function pendingTeamResponse() {
-  return new Response(
-    JSON.stringify({
-      error: "Your team is waiting for approval before it can submit.",
-      code: "team_pending_approval",
-    }),
-    { status: 403, headers: { "Content-Type": "application/json" } }
-  )
+function pendingTeamResponse(set: { status?: number | string }) {
+  set.status = 403
+  return {
+    error: "Your team is waiting for approval before it can submit.",
+    code: "team_pending_approval",
+  }
 }
 
 export const publicRoutes = new Elysia({ prefix: "/public" })
@@ -412,7 +410,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
   })
   .post(
     "/hackathons/:slug/submissions",
-    async ({ params, body }) => {
+    async ({ params, body, set }) => {
       const { userId } = await auth()
 
       if (!userId) {
@@ -448,7 +446,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       }
 
       if (participant.teamStatus === "pending_approval") {
-        return pendingTeamResponse()
+        return pendingTeamResponse(set)
       }
 
       const existing = await getExistingSubmission(
@@ -565,7 +563,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
   )
   .patch(
     "/hackathons/:slug/submissions",
-    async ({ params, body }) => {
+    async ({ params, body, set }) => {
       const { userId } = await auth()
 
       if (!userId) {
@@ -601,7 +599,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       }
 
       if (participant.teamStatus === "pending_approval") {
-        return pendingTeamResponse()
+        return pendingTeamResponse(set)
       }
 
       const existing = await getExistingSubmission(
@@ -701,7 +699,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       }),
     }
   )
-  .post("/hackathons/:slug/submissions/screenshot", async ({ params, request }) => {
+  .post("/hackathons/:slug/submissions/screenshot", async ({ params, request, set }) => {
     const { userId } = await auth()
 
     if (!userId) {
@@ -737,7 +735,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     }
 
     if (participant.teamStatus === "pending_approval") {
-      return pendingTeamResponse()
+      return pendingTeamResponse(set)
     }
 
     const existing = await getExistingSubmission(
@@ -828,7 +826,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       description: "Uploads a screenshot image for the user's submission. Accepts PNG, JPEG, or WebP (max 10MB).",
     },
   })
-  .delete("/hackathons/:slug/submissions/screenshot", async ({ params, request }) => {
+  .delete("/hackathons/:slug/submissions/screenshot", async ({ params, request, set }) => {
     const { userId } = await auth()
 
     if (!userId) {
@@ -864,7 +862,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     }
 
     if (participant.teamStatus === "pending_approval") {
-      return pendingTeamResponse()
+      return pendingTeamResponse(set)
     }
 
     const existing = await getExistingSubmission(

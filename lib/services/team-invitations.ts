@@ -1,12 +1,15 @@
 import { supabase as getSupabase } from "@/lib/db/client"
-import type { TeamInvitation } from "@/lib/db/hackathon-types"
+import type { TeamInvitation, TeamStatus } from "@/lib/db/hackathon-types"
 import { randomBytes } from "crypto"
 import { checkRoleConflict } from "@/lib/services/role-conflict"
 import { isValidUuid } from "@/lib/utils/uuid"
 
 const INVITATION_EXPIRY_DAYS = 7
 const INVITATION_EXPIRY_MS = INVITATION_EXPIRY_DAYS * 24 * 60 * 60 * 1000
-const TEAM_STATUSES_OPEN_FOR_INVITES = new Set(["forming", "pending_approval"])
+const TEAM_STATUSES_OPEN_FOR_INVITES: ReadonlySet<TeamStatus> = new Set<TeamStatus>([
+  "forming",
+  "pending_approval",
+])
 
 export type CreateInvitationInput = {
   teamId: string

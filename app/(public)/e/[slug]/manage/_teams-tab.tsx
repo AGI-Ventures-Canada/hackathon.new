@@ -181,6 +181,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const tempIdCounter = useRef(0)
+  const denySnapshotRef = useRef<Team[] | null>(null)
   const [editingTeam, setEditingTeam] = useState<Team | null>(null)
   const [deletingTeam, setDeletingTeam] = useState<Team | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -363,6 +364,32 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
     },
   })
 
+  const { execute: denyTeam, error: denyError } = useOptimisticMutation<Team, void>({
+    fn: (team) =>
+      fetch(`/api/dashboard/hackathons/${hackathonId}/teams/${team.id}/deny`, {
+        method: "POST",
+      }).then(assertOk),
+    onOptimistic: (team) => {
+      denySnapshotRef.current = teams
+      setTeams((prev) => prev.filter((t) => t.id !== team.id))
+      setDenyingTeam(null)
+    },
+    onRevert: (team) => {
+      const snapshot = denySnapshotRef.current
+      if (snapshot) {
+        setTeams(snapshot)
+      } else {
+        setTeams((prev) => prev.some((t) => t.id === team.id) ? prev : [...prev, team])
+      }
+    },
+    onSuccess: () => {
+      denySnapshotRef.current = null
+    },
+    onError: () => {
+      denySnapshotRef.current = null
+    },
+  })
+
   function deleteBlockReason(team: Team): string | null {
     if (hackathonStatus && STATUS_LOCKS_TEAM_DELETE.has(hackathonStatus)) {
       return "Teams can't be deleted once judging has started"
@@ -393,19 +420,8 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
     void approveTeam(team)
   }
 
-  async function handleDenyTeam(team: Team) {
-    const snapshot = teams
-    setTeams((prev) => prev.filter((t) => t.id !== team.id))
-    setDenyingTeam(null)
-    try {
-      await fetch(`/api/dashboard/hackathons/${hackathonId}/teams/${team.id}/deny`, {
-        method: "POST",
-      }).then(assertOk)
-      router.refresh()
-    } catch (err) {
-      setTeams(snapshot)
-      showActionError(err instanceof Error ? err.message : "Failed to deny team")
-    }
+  function handleDenyTeam(team: Team) {
+    void denyTeam(team)
   }
 
   async function handleRemoveMember(team: Team, member: TeamMember) {
@@ -611,9 +627,9 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         </div>
       )}
       {roomError && <p className="text-sm text-destructive">{roomError}</p>}
-      {(actionError || remindError || approveError) && (
+      {(actionError || remindError || approveError || denyError) && (
         <p className="text-sm text-destructive">
-          {[actionError, remindError, approveError].filter(Boolean).join(" · ")}
+          {[actionError, remindError, approveError, denyError].filter(Boolean).join(" · ")}
         </p>
       )}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

@@ -62,6 +62,7 @@ export function DevSwitchClient({
             }
           } catch (err) {
             if (!isStaleSessionError(err)) throw err
+            console.warn("Ignoring stale Clerk session during dev switch sign-out:", err)
           }
         }
 

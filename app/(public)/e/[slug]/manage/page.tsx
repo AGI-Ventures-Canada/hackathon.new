@@ -108,6 +108,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     unassignedSubmissionCount,
     participantCount: overviewStats.participantCount,
     teamCount: overviewStats.teamCount,
+    pendingTeamApprovalCount: overviewStats.pendingTeamApprovalCount,
     judgingProgress,
     judgeCount,
     prizeCount: prizes.length,

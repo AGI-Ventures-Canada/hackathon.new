@@ -949,11 +949,12 @@ export async function denyPendingTeam(teamId: string, hackathonId: string): Prom
   const memberClerkUserIds = (row.member_clerk_user_ids ?? [])
     .filter((id): id is string => Boolean(id))
 
-  const membersNotified = await notifyDeniedTeamMembers({
+  const membersNotified = await notifyReviewedTeamMembers({
     client,
     hackathonId,
     teamName: row.team_name,
     memberClerkUserIds,
+    review: "denied",
   })
 
   return {
@@ -963,26 +964,6 @@ export async function denyPendingTeam(teamId: string, hackathonId: string): Prom
     invitesCancelled: row.invites_cancelled ?? 0,
     membersNotified,
   }
-}
-
-async function notifyDeniedTeamMembers({
-  client,
-  hackathonId,
-  teamName,
-  memberClerkUserIds,
-}: {
-  client: SupabaseClient
-  hackathonId: string
-  teamName: string
-  memberClerkUserIds: string[]
-}): Promise<number> {
-  return notifyReviewedTeamMembers({
-    client,
-    hackathonId,
-    teamName,
-    memberClerkUserIds,
-    review: "denied",
-  })
 }
 
 async function notifyReviewedTeamMembers({

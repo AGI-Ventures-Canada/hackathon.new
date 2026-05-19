@@ -124,6 +124,7 @@ export type ActionItemsInput = {
   unassignedSubmissionCount: number
   participantCount: number
   teamCount: number
+  pendingTeamApprovalCount: number
   judgingProgress: { totalAssignments: number; completedAssignments: number }
   judgeCount: number
   prizeCount: number
@@ -278,6 +279,24 @@ function judgesLabel(input: ActionItemsInput): string {
   const pending = input.pendingJudgeInvitationCount
   if (pending > 0) return `Judges invited (${pending} pending)`
   return "Judges invited"
+}
+
+function addPendingTeamApprovalAction(items: ActionItem[], input: ActionItemsInput) {
+  const count = input.pendingTeamApprovalCount
+  if (count <= 0) return
+
+  items.push(autoAction({
+    id: "review-pending-teams",
+    severity: "urgent",
+    tab: "teams",
+    ctaLabel: "Review",
+    isComplete: false,
+    pending: {
+      label: `${count} team${count === 1 ? "" : "s"} waiting for approval`,
+      hint: "Approve or deny them before they can submit",
+    },
+    completed: { label: "No teams waiting for approval", hint: "Every team is handled" },
+  }))
 }
 
 const JUDGES_TOOLTIP = "Judges review and score submissions after the hackathon ends. Invite them early so they can prepare. You can assign judges to specific prize categories and they'll receive email notifications when judging begins."
@@ -448,6 +467,8 @@ function addCommunityLinkAction(items: ActionItem[], input: ActionItemsInput) {
 }
 
 function addPublishedActions(items: ActionItem[], input: ActionItemsInput) {
+  addPendingTeamApprovalAction(items, input)
+
   items.push(manualAction({
     id: "promote-event",
     label: "Promote your event",
@@ -548,6 +569,8 @@ function addShowcaseAction(items: ActionItem[], input: ActionItemsInput) {
 }
 
 function addActiveActions(items: ActionItem[], input: ActionItemsInput) {
+  addPendingTeamApprovalAction(items, input)
+
   addChallengeActions(items, input)
   addShowcaseAction(items, input)
 

@@ -18,7 +18,14 @@ describe("getManageOverviewStats", () => {
         return createChainableMock({ data: null, error: null, count: 25 })
       }
       if (table === "teams") {
-        return createChainableMock({ data: null, error: null, count: 8 })
+        const chain = createChainableMock({ data: null, error: null, count: 8 })
+        chain.eq.mockImplementation((column: string, value: string) => {
+          if (column === "status" && value === "pending_approval") {
+            return createChainableMock({ data: null, error: null, count: 2 })
+          }
+          return chain
+        })
+        return chain
       }
       if (table === "mentor_requests") {
         return createChainableMock({ data: null, error: null, count: 3 })
@@ -33,6 +40,7 @@ describe("getManageOverviewStats", () => {
 
     expect(result.participantCount).toBe(25)
     expect(result.teamCount).toBe(8)
+    expect(result.pendingTeamApprovalCount).toBe(2)
     expect(result.mentorQueue.open).toBe(3)
     expect(result.challengeReleased).toBe(true)
   })
@@ -46,6 +54,7 @@ describe("getManageOverviewStats", () => {
 
     expect(result.participantCount).toBe(0)
     expect(result.teamCount).toBe(0)
+    expect(result.pendingTeamApprovalCount).toBe(0)
     expect(result.mentorQueue.open).toBe(0)
     expect(result.challengeReleased).toBe(false)
   })
