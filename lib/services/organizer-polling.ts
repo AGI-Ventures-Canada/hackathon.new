@@ -23,7 +23,7 @@ interface RpcPollRow {
   unassigned_submission_count: number | null
   participant_count: number
   team_count: number
-  pending_team_approval_count: number | null
+  pending_team_approval_count: number
   assignment_total: number
   assignment_complete: number
   judge_count: number
