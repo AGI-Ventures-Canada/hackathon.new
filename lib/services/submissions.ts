@@ -12,6 +12,12 @@ export type ParticipantInfo = {
   teamStatus: TeamStatus | null
 }
 
+type ParticipantWithTeamRow = {
+  id: string
+  team_id: string | null
+  teams: { status: TeamStatus | null } | Array<{ status: TeamStatus | null }> | null
+}
+
 export async function getParticipantWithTeam(
   hackathonId: string,
   clerkUserId: string
@@ -33,10 +39,13 @@ export async function getParticipantWithTeam(
     return null
   }
 
+  const participant: ParticipantWithTeamRow = data
+  const team = Array.isArray(participant.teams) ? participant.teams[0] : participant.teams
+
   return {
-    participantId: data.id,
-    teamId: data.team_id,
-    teamStatus: (data as unknown as { teams?: { status?: TeamStatus } | null }).teams?.status ?? null,
+    participantId: participant.id,
+    teamId: participant.team_id,
+    teamStatus: team?.status ?? null,
   }
 }
 
