@@ -1,6 +1,11 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
-import type { Hackathon, HackathonParticipant, TeamStatus } from "@/lib/db/hackathon-types"
+import {
+  ORGANIZER_CREATED_TEAM_STATUS,
+  type Hackathon,
+  type HackathonParticipant,
+  type TeamStatus,
+} from "@/lib/db/hackathon-types"
 import { sortByStartDate } from "@/lib/utils/format"
 import { generateSlug } from "@/lib/utils/slug"
 import { clerkClient } from "@clerk/nextjs/server"
@@ -708,7 +713,7 @@ export async function createTeamWithMembers(
           name: input.name,
           captain_clerk_user_id: captainClerkUserId,
           invite_code: crypto.randomUUID().slice(0, 8),
-          status: "forming",
+          status: ORGANIZER_CREATED_TEAM_STATUS,
         })
         .select("id, name")
         .single()
@@ -771,7 +776,7 @@ async function createPendingTeamWithInvite(
       captain_clerk_user_id: null,
       pending_captain_email: input.captainEmail.toLowerCase(),
       invite_code: crypto.randomUUID().slice(0, 8),
-      status: "forming",
+      status: ORGANIZER_CREATED_TEAM_STATUS,
     })
     .select("id, name")
     .single()

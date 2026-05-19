@@ -57,7 +57,7 @@ import { getVideoEmbedInfo } from "@/lib/utils/video-embed"
 import { getDisplayName } from "@/lib/utils/person-display"
 import { SubmissionMedia } from "@/components/hackathon/submission-media"
 import { SubmissionLinks } from "@/components/hackathon/submission-links"
-import { TEAM_STATUS_LABELS, type TeamStatus } from "@/lib/db/hackathon-types"
+import { APPROVED_TEAM_STATUS, TEAM_STATUS_LABELS, type TeamStatus } from "@/lib/db/hackathon-types"
 
 type TeamMember = {
   clerkUserId: string
@@ -378,7 +378,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
       }).then(assertOkJson<ReviewTeamResponse>),
     onOptimistic: (team) => {
       setActionSuccess(null)
-      setTeams((prev) => prev.map((t) => (t.id === team.id ? { ...t, status: "forming" } : t)))
+      setTeams((prev) => prev.map((t) => (t.id === team.id ? { ...t, status: APPROVED_TEAM_STATUS } : t)))
     },
     onRevert: (team) => {
       setTeams((prev) => prev.map((t) => (t.id === team.id ? team : t)))

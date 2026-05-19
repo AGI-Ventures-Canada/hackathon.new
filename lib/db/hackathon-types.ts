@@ -21,11 +21,14 @@ export type SubmissionStatus =
 
 export type TeamStatus = "forming" | "pending_approval" | "locked" | "disbanded"
 
+export const APPROVED_TEAM_STATUS = "forming" satisfies TeamStatus
+export const ORGANIZER_CREATED_TEAM_STATUS = "forming" satisfies TeamStatus
+
 export const TEAM_STATUS_LABELS = {
   forming: "Forming",
   pending_approval: "Waiting for approval",
   locked: "Locked",
-  disbanded: "Removed",
+  disbanded: "Denied or removed",
 } satisfies Record<TeamStatus, string>
 
 export type InvitationStatus =
