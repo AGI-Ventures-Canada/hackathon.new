@@ -185,7 +185,6 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
   const [deletingTeam, setDeletingTeam] = useState<Team | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [denyingTeam, setDenyingTeam] = useState<Team | null>(null)
-  const [denying, setDenying] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [reinviteTarget, setReinviteTarget] = useState<{ team: Team; invitationId: string; previousEmail: string } | null>(null)
   const [reinviteEmail, setReinviteEmail] = useState("")
@@ -395,7 +394,6 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
   }
 
   async function handleDenyTeam(team: Team) {
-    setDenying(true)
     const snapshot = teams
     setTeams((prev) => prev.filter((t) => t.id !== team.id))
     setDenyingTeam(null)
@@ -407,8 +405,6 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
     } catch (err) {
       setTeams(snapshot)
       showActionError(err instanceof Error ? err.message : "Failed to deny team")
-    } finally {
-      setDenying(false)
     }
   }
 
@@ -759,7 +755,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={!!denyingTeam} onOpenChange={(open) => { if (!open && !denying) setDenyingTeam(null) }}>
+      <AlertDialog open={!!denyingTeam} onOpenChange={(open) => { if (!open) setDenyingTeam(null) }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Deny team &quot;{denyingTeam?.name}&quot;?</AlertDialogTitle>
@@ -768,12 +764,11 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={denying}>Keep team</AlertDialogCancel>
+            <AlertDialogCancel>Keep team</AlertDialogCancel>
             <AlertDialogAction
               onClick={(e) => { e.preventDefault(); if (denyingTeam) void handleDenyTeam(denyingTeam) }}
-              disabled={denying}
             >
-              {denying ? "Denying..." : "Deny team"}
+              Deny team
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
