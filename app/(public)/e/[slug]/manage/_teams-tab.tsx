@@ -154,10 +154,6 @@ const STATUS_LOCKS_TEAM_DELETE = new Set(["judging", "completed", "archived"])
 
 const UNASSIGNED_ROOM = "__unassigned__"
 
-function formatTeamStatus(status: TeamStatus): string {
-  return TEAM_STATUS_LABELS[status]
-}
-
 export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: initialMin, allowSolo: initialSolo, requireTeamApproval: initialApproval, hackathonStatus }: TeamsTabProps) {
   const router = useRouter()
   const ctx = useActionItemsOptional()
@@ -848,7 +844,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                         <TableCell className="font-medium">{team.name}</TableCell>
                         <TableCell>
                           <Badge variant="secondary" className="font-normal">
-                            {formatTeamStatus(team.status)}
+                            {TEAM_STATUS_LABELS[team.status]}
                           </Badge>
                         </TableCell>
                         <TableCell>
