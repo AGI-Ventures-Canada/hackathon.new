@@ -228,12 +228,17 @@ describe("team approvals", () => {
   })
 
   it("approves a pending team", async () => {
-    setMockFromImplementation(
-      tableImpl({
-        teams: [
-          { data: { id: "team_1", name: "Team One", status: "pending_approval" }, error: null },
-          { data: { id: "team_1", name: "Team One", status: "forming" }, error: null },
-        ],
+    setMockRpcImplementation(() =>
+      Promise.resolve({
+        data: [{
+          success: true,
+          error_code: null,
+          error_message: null,
+          team_id: "team_1",
+          team_name: "Team One",
+          team_status: "forming",
+        }],
+        error: null,
       })
     )
 
@@ -245,9 +250,17 @@ describe("team approvals", () => {
   })
 
   it("rejects approve when team is not pending", async () => {
-    setMockFromImplementation(
-      tableImpl({
-        teams: { data: { id: "team_1", name: "Team One", status: "forming" }, error: null },
+    setMockRpcImplementation(() =>
+      Promise.resolve({
+        data: [{
+          success: false,
+          error_code: "not_pending",
+          error_message: "This team is not waiting for approval",
+          team_id: "team_1",
+          team_name: "Team One",
+          team_status: "forming",
+        }],
+        error: null,
       })
     )
 

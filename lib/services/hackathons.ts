@@ -654,6 +654,15 @@ export type ReviewTeamResult =
   | { success: true; team: { id: string; name: string; status: TeamStatus }; membersUnassigned?: number; invitesCancelled?: number; membersNotified?: number }
   | { error: string; code: "not_found" | "not_pending" | "failed" }
 
+type ApprovePendingTeamRpcRow = {
+  success: boolean
+  error_code: "not_found" | "not_pending" | null
+  error_message: string | null
+  team_id: string | null
+  team_name: string | null
+  team_status: TeamStatus | null
+}
+
 type DenyPendingTeamRpcRow = {
   success: boolean
   error_code: "not_found" | "not_pending" | null
@@ -849,36 +858,38 @@ async function createPendingTeamWithInvite(
 export async function approvePendingTeam(teamId: string, hackathonId: string): Promise<ReviewTeamResult> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { data: team, error: teamErr } = await client
-    .from("teams")
-    .select("id, name, status")
-    .eq("id", teamId)
-    .eq("hackathon_id", hackathonId)
-    .single()
+  const { data, error } = await client.rpc("approve_pending_team", {
+    p_team_id: teamId,
+    p_hackathon_id: hackathonId,
+  })
 
-  if (teamErr || !team) {
-    return { error: "Team not found", code: "not_found" }
-  }
-
-  if (team.status !== "pending_approval") {
-    return { error: "This team is not waiting for approval", code: "not_pending" }
-  }
-
-  const { data: updated, error: updateErr } = await client
-    .from("teams")
-    .update({ status: "forming", updated_at: new Date().toISOString() })
-    .eq("id", teamId)
-    .eq("hackathon_id", hackathonId)
-    .eq("status", "pending_approval")
-    .select("id, name, status")
-    .single()
-
-  if (updateErr || !updated) {
-    console.error("Failed to approve team:", updateErr)
+  if (error) {
+    console.error("Failed to approve team:", error)
     return { error: "Failed to approve team", code: "failed" }
   }
 
-  return { success: true, team: updated as { id: string; name: string; status: TeamStatus } }
+  const row = Array.isArray(data) ? data[0] as ApprovePendingTeamRpcRow | undefined : data as ApprovePendingTeamRpcRow | null
+  if (!row) {
+    console.error("Failed to approve team: empty RPC result")
+    return { error: "Failed to approve team", code: "failed" }
+  }
+
+  if (!row.success) {
+    return {
+      error: row.error_message ?? "Failed to approve team",
+      code: row.error_code ?? "failed",
+    }
+  }
+
+  if (!row.team_id || !row.team_name || !row.team_status) {
+    console.error("Failed to approve team: incomplete RPC result", row)
+    return { error: "Failed to approve team", code: "failed" }
+  }
+
+  return {
+    success: true,
+    team: { id: row.team_id, name: row.team_name, status: row.team_status },
+  }
 }
 
 export async function denyPendingTeam(teamId: string, hackathonId: string): Promise<ReviewTeamResult> {

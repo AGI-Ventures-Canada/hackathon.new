@@ -6,6 +6,7 @@ import { isValidUuid } from "@/lib/utils/uuid"
 
 const INVITATION_EXPIRY_DAYS = 7
 const INVITATION_EXPIRY_MS = INVITATION_EXPIRY_DAYS * 24 * 60 * 60 * 1000
+const TEAM_STATUSES_OPEN_FOR_INVITES = new Set(["forming", "pending_approval"])
 
 export type CreateInvitationInput = {
   teamId: string
@@ -60,6 +61,10 @@ export async function createTeamInvitation(
 
   if (team.status === "disbanded") {
     return { success: false, error: "Team has been disbanded", code: "team_disbanded" }
+  }
+
+  if (!TEAM_STATUSES_OPEN_FOR_INVITES.has(team.status)) {
+    return { success: false, error: "Team can't receive invites", code: "team_not_open" }
   }
 
   const { data: hackathon, error: hackathonError } = await client

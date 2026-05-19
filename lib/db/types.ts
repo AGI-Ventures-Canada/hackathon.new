@@ -3060,6 +3060,17 @@ export type Database = {
           success: boolean
         }[]
       }
+      approve_pending_team: {
+        Args: { p_hackathon_id: string; p_team_id: string }
+        Returns: {
+          error_code: string | null
+          error_message: string | null
+          success: boolean
+          team_id: string | null
+          team_name: string | null
+          team_status: Database["public"]["Enums"]["team_status"] | null
+        }[]
+      }
       calculate_results: {
         Args: { p_hackathon_id: string }
         Returns: {

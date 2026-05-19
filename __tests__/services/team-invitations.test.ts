@@ -182,6 +182,41 @@ describe("Team Invitations Service", () => {
       }
     })
 
+    it("allows teams waiting for approval to invite members", async () => {
+      let teamInvitationCalls = 0
+      setMockFromImplementation((table) => {
+        if (table === "teams") {
+          return createChainableMock({ data: { ...mockTeam, status: "pending_approval" }, error: null })
+        }
+        if (table === "hackathons") {
+          return createChainableMock({ data: mockHackathon, error: null })
+        }
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: null, error: null, count: 1 })
+        }
+        if (table === "team_invitations") {
+          teamInvitationCalls++
+          if (teamInvitationCalls <= 2) {
+            return createChainableMock({ data: null, error: null, count: 0 })
+          }
+          return createChainableMock({ data: mockInvitation, error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await createTeamInvitation({
+        teamId: "team_1",
+        hackathonId: "h1",
+        email: "invitee@example.com",
+        invitedByClerkUserId: "user_captain",
+      })
+
+      expect(result.success).toBe(true)
+      if (result.success) {
+        expect(result.invitation.id).toBe("inv_1")
+      }
+    })
+
     it("returns error when hackathon not found", async () => {
       setMockFromImplementation((table) => {
         if (table === "teams") {
