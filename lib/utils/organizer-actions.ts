@@ -662,6 +662,7 @@ function addActiveActions(items: ActionItem[], input: ActionItemsInput) {
 }
 
 function addJudgingActions(items: ActionItem[], input: ActionItemsInput) {
+  addPendingTeamApprovalAction(items, input)
   addShowcaseAction(items, input)
   if (
     input.rounds.plannedCount > 0 &&
@@ -737,6 +738,7 @@ function addJudgingActions(items: ActionItem[], input: ActionItemsInput) {
 }
 
 function addCompletedActions(items: ActionItem[], input: ActionItemsInput) {
+  addPendingTeamApprovalAction(items, input)
   addShowcaseAction(items, input)
   const resultsPublished = !!input.resultsPublishedAt
   items.push(autoAction({
