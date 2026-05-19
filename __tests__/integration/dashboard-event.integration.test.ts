@@ -369,7 +369,9 @@ describe("Dashboard Event Routes Integration Tests", () => {
       expect(res.status).toBe(200)
       expect(data.team.status).toBe("forming")
       expect(data.membersNotified).toBe(2)
-      expect(mockApprovePendingTeam).toHaveBeenCalledWith(teamId, hackathonId)
+      expect(mockApprovePendingTeam).toHaveBeenCalledWith(teamId, hackathonId, {
+        notificationHackathon: { id: "h1", tenant_id: "tenant-123" },
+      })
     })
 
     it("returns 409 when the team is not waiting", async () => {
@@ -414,7 +416,9 @@ describe("Dashboard Event Routes Integration Tests", () => {
       expect(data.membersUnassigned).toBe(2)
       expect(data.invitesCancelled).toBe(1)
       expect(data.membersNotified).toBe(2)
-      expect(mockDenyPendingTeam).toHaveBeenCalledWith(teamId, hackathonId)
+      expect(mockDenyPendingTeam).toHaveBeenCalledWith(teamId, hackathonId, {
+        notificationHackathon: { id: "h1", tenant_id: "tenant-123" },
+      })
     })
 
     it("returns 409 when the team is not waiting", async () => {

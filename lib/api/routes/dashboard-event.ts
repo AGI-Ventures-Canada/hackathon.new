@@ -683,7 +683,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if ("error" in authErr) return authErr
 
-    const result = await approvePendingTeam(params.teamId, params.id)
+    const result = await approvePendingTeam(params.teamId, params.id, { notificationHackathon: authErr.hackathon })
     if ("error" in result) {
       set.status =
         result.code === "not_found" ? 404 :
@@ -712,7 +712,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if ("error" in authErr) return authErr
 
-    const result = await denyPendingTeam(params.teamId, params.id)
+    const result = await denyPendingTeam(params.teamId, params.id, { notificationHackathon: authErr.hackathon })
     if ("error" in result) {
       set.status =
         result.code === "not_found" ? 404 :

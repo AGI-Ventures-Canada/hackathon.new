@@ -867,7 +867,11 @@ async function createPendingTeamWithInvite(
   return { team, invited: true, queued: isDraft }
 }
 
-export async function approvePendingTeam(teamId: string, hackathonId: string): Promise<ReviewTeamResult> {
+export async function approvePendingTeam(
+  teamId: string,
+  hackathonId: string,
+  options: { notificationHackathon?: TeamReviewHackathon } = {}
+): Promise<ReviewTeamResult> {
   const client = getSupabase() as unknown as SupabaseClient
 
   const { data, error } = await client.rpc("approve_pending_team", {
@@ -907,6 +911,7 @@ export async function approvePendingTeam(teamId: string, hackathonId: string): P
     teamName: row.team_name,
     acceptedMemberClerkUserIds: memberClerkUserIds,
     review: "approved",
+    hackathon: options.notificationHackathon,
   })
 
   return {

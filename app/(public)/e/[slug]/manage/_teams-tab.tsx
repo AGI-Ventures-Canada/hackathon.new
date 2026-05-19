@@ -809,7 +809,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
           <AlertDialogHeader>
             <AlertDialogTitle>Deny team &quot;{denyingTeam?.name}&quot;?</AlertDialogTitle>
             <AlertDialogDescription>
-              Members will be moved back to no team. Pending invites will be canceled. This can&apos;t be undone.
+              They&apos;ll go back to no team and can join or start another. Pending invites will be canceled.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
