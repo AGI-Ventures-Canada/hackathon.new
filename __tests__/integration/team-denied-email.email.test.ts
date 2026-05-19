@@ -62,27 +62,37 @@ describe("Team review email", () => {
     expect(callArgs.tags).toContainEqual({ name: "type", value: "team_denied" })
   })
 
-  it("dedupes team approval recipient emails", async () => {
+  it("sends each normalized team approval recipient email", async () => {
     const sent = await sendTeamApprovedEmails({
-      recipients: ["PERSON@example.com", "person@example.com", "other@example.com"],
+      recipients: ["PERSON@example.com", " person@example.com ", "other@example.com", ""],
       teamName: "Awesome Team",
       hackathonName: "AI Hackathon",
       hackathonSlug: "ai-hackathon",
     })
 
-    expect(sent).toBe(2)
-    expect(mockSendEmail).toHaveBeenCalledTimes(2)
+    expect(sent).toBe(3)
+    expect(mockSendEmail).toHaveBeenCalledTimes(3)
+    expect(mockSendEmail.mock.calls.map((call) => call[0].to)).toEqual([
+      "person@example.com",
+      "person@example.com",
+      "other@example.com",
+    ])
   })
 
-  it("dedupes team denial recipient emails", async () => {
+  it("sends each normalized team denial recipient email", async () => {
     const sent = await sendTeamDeniedEmails({
-      recipients: ["PERSON@example.com", "person@example.com", "other@example.com"],
+      recipients: ["PERSON@example.com", " person@example.com ", "other@example.com", ""],
       teamName: "Awesome Team",
       hackathonName: "AI Hackathon",
       hackathonSlug: "ai-hackathon",
     })
 
-    expect(sent).toBe(2)
-    expect(mockSendEmail).toHaveBeenCalledTimes(2)
+    expect(sent).toBe(3)
+    expect(mockSendEmail).toHaveBeenCalledTimes(3)
+    expect(mockSendEmail.mock.calls.map((call) => call[0].to)).toEqual([
+      "person@example.com",
+      "person@example.com",
+      "other@example.com",
+    ])
   })
 })

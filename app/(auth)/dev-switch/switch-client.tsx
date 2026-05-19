@@ -41,33 +41,47 @@ function isStaleSessionError(
   return status === 401 || status === 404
 }
 
+function retryAfterSignOutUrl(token: string, redirect: string, org: string | null): string {
+  const params = new URLSearchParams({
+    token,
+    redirect,
+    signed_out: "1",
+  })
+  if (org) params.set("org", org)
+  return `/dev-switch?${params.toString()}`
+}
+
 export function DevSwitchClient({
   token,
   redirect,
   org,
+  signedOut,
 }: {
   token: string
   redirect: string
   org: string | null
+  signedOut: boolean
 }) {
-  const { signIn, isLoaded: signInLoaded } = useSignIn()
+  const { signIn, isLoaded: signInLoaded, setActive: setSignInActive } = useSignIn()
   const { isSignedIn, isLoaded: userLoaded } = useUser()
   const { session, isLoaded: sessionLoaded } = useSession()
-  const { signOut, setActive } = useClerk()
+  const { signOut, setActive: setClerkActive } = useClerk()
   const [error, setError] = useState<string | null>(null)
   const started = useRef(false)
 
   useEffect(() => {
-    if (!signInLoaded || !userLoaded || !sessionLoaded || !signIn) return
+    if (!signInLoaded || !userLoaded || !sessionLoaded || !signIn || !setSignInActive) return
     if (started.current) return
     started.current = true
+    const activeSignIn = signIn
+    const activateSignInSession = setSignInActive
 
     async function doSwitch() {
       try {
         async function clearActiveOrganization() {
           if (org) return
           try {
-            await setActive({ organization: null })
+            await setClerkActive({ organization: null })
           } catch (err) {
             if (!isStaleSessionError(err, { allowStaleOrganization: true })) throw err
             console.warn("Ignoring stale Clerk organization during dev switch:", err)
@@ -77,45 +91,49 @@ export function DevSwitchClient({
         async function activateSession(sessionId: string) {
           if (!org) {
             try {
-              await setActive({ session: sessionId, organization: null })
+              await activateSignInSession({ session: sessionId, organization: null, redirectUrl: redirect })
             } catch (err) {
               if (!isStaleSessionError(err, { allowStaleOrganization: true })) throw err
               console.warn("Retrying dev switch after stale Clerk session activation:", err)
-              await setActive({ session: sessionId, organization: null })
+              await activateSignInSession({ session: sessionId, organization: null, redirectUrl: redirect })
             }
             return
           }
 
           try {
-            await setActive({
+            await activateSignInSession({
               session: sessionId,
               organization: org,
+              redirectUrl: redirect,
             })
           } catch (err) {
             if (!isStaleSessionError(err)) throw err
             console.warn("Retrying dev switch after stale Clerk organization activation:", err)
-            await setActive({
+            await activateSignInSession({
               session: sessionId,
               organization: org,
+              redirectUrl: redirect,
             })
           }
         }
 
-        if (isSignedIn) {
+        if (isSignedIn && !signedOut) {
           await clearActiveOrganization()
           try {
+            const redirectUrl = retryAfterSignOutUrl(token, redirect, org)
             if (session?.id) {
-              await signOut({ sessionId: session.id })
+              await signOut({ sessionId: session.id, redirectUrl })
             } else {
-              await signOut()
+              await signOut({ redirectUrl })
             }
+            return
           } catch (err) {
             if (!isStaleSessionError(err, { allowStaleOrganization: true })) throw err
             console.warn("Ignoring stale Clerk session during dev switch sign-out:", err)
           }
         }
 
-        const result = await signIn!.create({
+        const result = await activeSignIn.create({
           strategy: "ticket",
           ticket: token,
         })
@@ -126,7 +144,6 @@ export function DevSwitchClient({
             return
           }
           await activateSession(result.createdSessionId)
-          window.location.replace(redirect)
         } else {
           setError(`Unexpected sign-in status: ${result.status}`)
         }
@@ -137,7 +154,7 @@ export function DevSwitchClient({
     }
 
     doSwitch()
-  }, [signInLoaded, userLoaded, sessionLoaded, signIn, isSignedIn, signOut, session?.id, token, redirect, org, setActive])
+  }, [signInLoaded, userLoaded, sessionLoaded, signIn, setSignInActive, isSignedIn, signedOut, signOut, session?.id, token, redirect, org, setClerkActive])
 
   if (error) {
     return (

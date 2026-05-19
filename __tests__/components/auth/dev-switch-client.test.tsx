@@ -36,6 +36,7 @@ beforeEach(() => {
   signInCreate.mockClear()
   mockSetActive.mockImplementation(() => Promise.resolve())
   mockSetActive.mockClear()
+  mockSignInSetActive.mockImplementation(() => Promise.resolve())
   mockSignInSetActive.mockClear()
   mockSignOut.mockImplementation(() => Promise.resolve())
   mockSignOut.mockClear()
@@ -58,73 +59,95 @@ afterEach(() => {
 
 describe("DevSwitchClient", () => {
   it("signs in via ticket and redirects", async () => {
-    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
+    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} signedOut={false} />)
     await waitFor(() => {
       expect(signInCreate).toHaveBeenCalledWith({
         strategy: "ticket",
         ticket: "ticket_xyz",
       })
     })
-    await waitFor(() => expect(replaceCalls).toEqual(["/e/demo"]))
+    await waitFor(() =>
+      expect(mockSignInSetActive).toHaveBeenCalledWith({
+        session: "session_abc",
+        organization: null,
+        redirectUrl: "/e/demo",
+      })
+    )
   })
 
   it("activates session and clears organization when org is null", async () => {
-    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
-    await waitFor(() => expect(mockSetActive).toHaveBeenCalledTimes(1))
-    expect(mockSetActive).toHaveBeenCalledWith({
+    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} signedOut={false} />)
+    await waitFor(() => expect(mockSignInSetActive).toHaveBeenCalledTimes(1))
+    expect(mockSignInSetActive).toHaveBeenCalledWith({
       session: "session_abc",
       organization: null,
+      redirectUrl: "/e/demo",
     })
   })
 
   it("activates session with organization when org is provided", async () => {
     render(
-      <DevSwitchClient token="ticket_xyz" redirect="/e/demo" org="org_tenant_123" />
+      <DevSwitchClient token="ticket_xyz" redirect="/e/demo" org="org_tenant_123" signedOut={false} />
     )
-    await waitFor(() => expect(mockSetActive).toHaveBeenCalledTimes(1))
-    expect(mockSetActive).toHaveBeenCalledWith({
+    await waitFor(() => expect(mockSignInSetActive).toHaveBeenCalledTimes(1))
+    expect(mockSignInSetActive).toHaveBeenCalledWith({
       session: "session_abc",
       organization: "org_tenant_123",
+      redirectUrl: "/e/demo",
     })
   })
 
-  it("signs out an already-signed-in user before creating the ticket session", async () => {
+  it("signs out an already-signed-in user and reloads before creating the ticket session", async () => {
     g.__clerkState.isSignedIn = true
-    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
-    await waitFor(() => expect(signInCreate).toHaveBeenCalled())
+    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} signedOut={false} />)
+    await waitFor(() => expect(mockSignOut).toHaveBeenCalledTimes(1))
     expect(mockSignOut).toHaveBeenCalledTimes(1)
-    expect(mockSignOut).toHaveBeenCalledWith({ sessionId: "sess_current" })
+    expect(mockSignOut).toHaveBeenCalledWith({
+      sessionId: "sess_current",
+      redirectUrl: "/dev-switch?token=ticket_xyz&redirect=%2Fe%2Fdemo&signed_out=1",
+    })
+    expect(signInCreate).not.toHaveBeenCalled()
   })
 
   it("clears the organization when switching to a no-org persona", async () => {
     g.__clerkState.isSignedIn = true
-    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
-    await waitFor(() => expect(mockSetActive).toHaveBeenCalledTimes(2))
+    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} signedOut={false} />)
+    await waitFor(() => expect(mockSignOut).toHaveBeenCalledTimes(1))
+    expect(mockSetActive).toHaveBeenCalledTimes(1)
     expect(mockSetActive).toHaveBeenNthCalledWith(1, {
       organization: null,
     })
-    expect(mockSetActive).toHaveBeenNthCalledWith(2, {
+    expect(mockSignInSetActive).not.toHaveBeenCalled()
+  })
+
+  it("continues ticket sign-in after the signed-out redirect", async () => {
+    g.__clerkState.isSignedIn = true
+    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} signedOut={true} />)
+    await waitFor(() => expect(signInCreate).toHaveBeenCalled())
+    expect(mockSignOut).not.toHaveBeenCalled()
+    expect(mockSignInSetActive).toHaveBeenCalledWith({
       session: "session_abc",
       organization: null,
+      redirectUrl: "/e/demo",
     })
   })
 
   it("continues when the old session is already gone", async () => {
     g.__clerkState.isSignedIn = true
     mockSignOut.mockImplementation(() => Promise.reject({ status: 404 }))
-    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
+    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} signedOut={false} />)
     await waitFor(() => expect(signInCreate).toHaveBeenCalled())
     await waitFor(() =>
-      expect(mockSetActive).toHaveBeenCalledWith({
+      expect(mockSignInSetActive).toHaveBeenCalledWith({
         session: "session_abc",
         organization: null,
+        redirectUrl: "/e/demo",
       })
     )
-    expect(replaceCalls).toEqual(["/e/demo"])
   })
 
   it("retries no-org session activation after a stale Clerk error", async () => {
-    mockSetActive.mockImplementationOnce(() => Promise.resolve())
+    mockSignInSetActive
       .mockImplementationOnce(() =>
       Promise.reject({
         status: 404,
@@ -135,21 +158,18 @@ describe("DevSwitchClient", () => {
       })
     ).mockImplementation(() => Promise.resolve())
 
-    g.__clerkState.isSignedIn = true
-    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
-    await waitFor(() => expect(mockSetActive).toHaveBeenCalledTimes(3))
-    expect(mockSetActive).toHaveBeenNthCalledWith(1, {
-      organization: null,
-    })
-    expect(mockSetActive).toHaveBeenNthCalledWith(2, {
+    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} signedOut={false} />)
+    await waitFor(() => expect(mockSignInSetActive).toHaveBeenCalledTimes(2))
+    expect(mockSignInSetActive).toHaveBeenNthCalledWith(1, {
       session: "session_abc",
       organization: null,
+      redirectUrl: "/e/demo",
     })
-    expect(mockSetActive).toHaveBeenNthCalledWith(3, {
+    expect(mockSignInSetActive).toHaveBeenNthCalledWith(2, {
       session: "session_abc",
       organization: null,
+      redirectUrl: "/e/demo",
     })
-    expect(replaceCalls).toEqual(["/e/demo"])
   })
 
   it("continues when Clerk returns a stale-session 403 code", async () => {
@@ -158,19 +178,19 @@ describe("DevSwitchClient", () => {
       status: 403,
       errors: [{ code: "session_not_found", message: "not found or unauthorized" }],
     }))
-    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
+    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} signedOut={false} />)
     await waitFor(() => expect(signInCreate).toHaveBeenCalled())
     await waitFor(() =>
-      expect(mockSetActive).toHaveBeenCalledWith({
+      expect(mockSignInSetActive).toHaveBeenCalledWith({
         session: "session_abc",
         organization: null,
+        redirectUrl: "/e/demo",
       })
     )
-    expect(replaceCalls).toEqual(["/e/demo"])
   })
 
   it("does not hide a missing requested organization", async () => {
-    mockSetActive.mockImplementationOnce(() =>
+    mockSignInSetActive.mockImplementationOnce(() =>
       Promise.reject({
         status: 403,
         errors: [{
@@ -180,12 +200,12 @@ describe("DevSwitchClient", () => {
       })
     )
     render(
-      <DevSwitchClient token="ticket_xyz" redirect="/e/demo" org="org_missing" />
+      <DevSwitchClient token="ticket_xyz" redirect="/e/demo" org="org_missing" signedOut={false} />
     )
     await waitFor(() => {
       expect(screen.getByText("Sign-in failed")).toBeDefined()
     })
-    expect(mockSetActive).toHaveBeenCalledTimes(1)
+    expect(mockSignInSetActive).toHaveBeenCalledTimes(1)
     expect(replaceCalls).toEqual([])
   })
 
@@ -195,7 +215,7 @@ describe("DevSwitchClient", () => {
       status: 403,
       errors: [{ message: "missing permission" }],
     }))
-    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
+    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} signedOut={false} />)
     await waitFor(() => {
       expect(screen.getByText("Sign-in failed")).toBeDefined()
     })
@@ -206,7 +226,7 @@ describe("DevSwitchClient", () => {
   it("shows an error for unknown failures that only say not found", async () => {
     g.__clerkState.isSignedIn = true
     mockSignOut.mockImplementation(() => Promise.reject(new Error("not found")))
-    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
+    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} signedOut={false} />)
     await waitFor(() => {
       expect(screen.getByText("not found")).toBeDefined()
     })
@@ -215,14 +235,14 @@ describe("DevSwitchClient", () => {
   })
 
   it("does not sign out when user is not signed in", async () => {
-    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
+    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} signedOut={false} />)
     await waitFor(() => expect(signInCreate).toHaveBeenCalled())
     expect(mockSignOut).not.toHaveBeenCalled()
   })
 
   it("shows an error message when sign-in returns a non-complete status", async () => {
     signInCreateImpl = () => Promise.resolve({ status: "needs_first_factor" })
-    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
+    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} signedOut={false} />)
     await waitFor(() => {
       expect(screen.getByText(/Unexpected sign-in status/)).toBeDefined()
     })
@@ -231,7 +251,7 @@ describe("DevSwitchClient", () => {
 
   it("shows an error message when Clerk completes without a session", async () => {
     signInCreateImpl = () => Promise.resolve({ status: "complete", createdSessionId: null })
-    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
+    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} signedOut={false} />)
     await waitFor(() => {
       expect(screen.getByText("No session was created.")).toBeDefined()
     })
@@ -241,17 +261,16 @@ describe("DevSwitchClient", () => {
 
   it("shows an error message when sign-in throws", async () => {
     signInCreateImpl = () => Promise.reject(new Error("Ticket expired"))
-    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
+    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} signedOut={false} />)
     await waitFor(() => {
       expect(screen.getByText("Ticket expired")).toBeDefined()
     })
-    expect(mockSetActive).not.toHaveBeenCalled()
     expect(mockSignInSetActive).not.toHaveBeenCalled()
   })
 
   it("waits for Clerk to load before attempting sign-in", async () => {
     g.__clerkState.signInLoaded = false
-    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
+    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} signedOut={false} />)
     expect(signInCreate).not.toHaveBeenCalled()
   })
 })
