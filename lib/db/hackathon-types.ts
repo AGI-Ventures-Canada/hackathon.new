@@ -27,7 +27,7 @@ export const TEAM_STATUS_LABELS = {
   forming: "Forming",
   pending_approval: "Waiting for approval",
   locked: "Locked",
-  disbanded: "Denied or removed",
+  disbanded: "No longer active",
 } satisfies Record<TeamStatus, string>
 
 export type InvitationStatus =

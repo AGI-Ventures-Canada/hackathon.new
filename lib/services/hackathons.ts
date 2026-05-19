@@ -991,11 +991,11 @@ export async function denyPendingTeamsForClosedHackathon(
 
   for (const team of teams ?? []) {
     const result = await denyPendingTeam(team.id, hackathonId)
-    if ("success" in result && result.success) {
+    if ("success" in result) {
       denied++
-    } else {
-      failed.push({ teamId: team.id, code: "error" in result ? result.code : "failed" })
+      continue
     }
+    failed.push({ teamId: team.id, code: result.code })
   }
 
   return { denied, failed }

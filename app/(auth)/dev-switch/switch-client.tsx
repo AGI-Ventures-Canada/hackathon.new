@@ -28,21 +28,17 @@ function isStaleSessionError(
 ): boolean {
   const status = getErrorStatus(err)
   const codes = getErrorCodes(err)
-  if (codes.includes("organization_not_found_or_unauthorized")) {
-    return options.allowStaleOrganization === true
-  }
-  if (
-    codes.some(
+  if (codes.length > 0) {
+    if (codes.includes("organization_not_found_or_unauthorized")) {
+      return options.allowStaleOrganization === true
+    }
+    return codes.some(
       (code) =>
         code.includes("session") &&
         (code.includes("not_found") || code.includes("unauthorized"))
     )
-  ) {
-    return true
   }
-  if (codes.length > 0 && status === 403) return false
-  if (status === 401 || status === 404) return true
-  return false
+  return status === 401 || status === 404
 }
 
 export function DevSwitchClient({

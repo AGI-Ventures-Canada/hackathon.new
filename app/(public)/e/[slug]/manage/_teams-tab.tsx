@@ -371,6 +371,10 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
     return `${safeCount} ${safeCount === 1 ? singular : plural}`
   }
 
+  function teamStatusLabel(status: TeamStatus): string {
+    return status === "disbanded" ? "Denied" : TEAM_STATUS_LABELS[status]
+  }
+
   const { execute: approveTeam, error: approveError } = useOptimisticMutation<Team, ReviewTeamResponse>({
     fn: (team) =>
       fetch(`/api/dashboard/hackathons/${hackathonId}/teams/${team.id}/approve`, {
@@ -893,7 +897,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                         <TableCell className="font-medium">{team.name}</TableCell>
                         <TableCell>
                           <Badge variant="secondary" className="font-normal">
-                            {TEAM_STATUS_LABELS[team.status]}
+                            {teamStatusLabel(team.status)}
                           </Badge>
                         </TableCell>
                         <TableCell>
