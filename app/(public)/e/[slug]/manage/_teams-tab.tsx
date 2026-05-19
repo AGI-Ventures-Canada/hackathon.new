@@ -57,6 +57,7 @@ import { getVideoEmbedInfo } from "@/lib/utils/video-embed"
 import { getDisplayName } from "@/lib/utils/person-display"
 import { SubmissionMedia } from "@/components/hackathon/submission-media"
 import { SubmissionLinks } from "@/components/hackathon/submission-links"
+import { TEAM_STATUS_LABELS, type TeamStatus } from "@/lib/db/hackathon-types"
 
 type TeamMember = {
   clerkUserId: string
@@ -89,7 +90,7 @@ type TeamPendingInvitation = {
 type Team = {
   id: string
   name: string
-  status: string
+  status: TeamStatus
   mode: "in_person" | "virtual" | null
   captainClerkUserId: string | null
   pendingCaptainEmail: string | null
@@ -153,16 +154,8 @@ const STATUS_LOCKS_TEAM_DELETE = new Set(["judging", "completed", "archived"])
 
 const UNASSIGNED_ROOM = "__unassigned__"
 
-function formatTeamStatus(status: string): string {
-  if (status === "pending_approval") return "Waiting for approval"
-  if (status === "forming") return "Active"
-  if (status === "locked") return "Locked"
-  if (status === "disbanded") return "Removed"
-  return status
-    .split("_")
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ")
+function formatTeamStatus(status: TeamStatus): string {
+  return TEAM_STATUS_LABELS[status]
 }
 
 export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: initialMin, allowSolo: initialSolo, requireTeamApproval: initialApproval, hackathonStatus }: TeamsTabProps) {
@@ -181,7 +174,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const tempIdCounter = useRef(0)
-  const denySnapshotRef = useRef<Team[] | null>(null)
+  const denySnapshotsRef = useRef(new Map<string, Team[]>())
   const [editingTeam, setEditingTeam] = useState<Team | null>(null)
   const [deletingTeam, setDeletingTeam] = useState<Team | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -371,25 +364,25 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
       }).then(assertOk),
     onOptimistic: (team) => {
       setTeams((prev) => {
-        denySnapshotRef.current = prev
+        denySnapshotsRef.current.set(team.id, prev)
         return prev.filter((t) => t.id !== team.id)
       })
       setDenyingTeam(null)
     },
     onRevert: (team) => {
-      const snapshot = denySnapshotRef.current
+      const snapshot = denySnapshotsRef.current.get(team.id)
       if (snapshot) {
         setTeams(snapshot)
       } else {
         setTeams((prev) => prev.some((t) => t.id === team.id) ? prev : [...prev, team])
       }
-      denySnapshotRef.current = null
+      denySnapshotsRef.current.delete(team.id)
     },
-    onSuccess: () => {
-      denySnapshotRef.current = null
+    onSuccess: (_response, team) => {
+      denySnapshotsRef.current.delete(team.id)
     },
-    onError: () => {
-      denySnapshotRef.current = null
+    onError: (_error, team) => {
+      denySnapshotsRef.current.delete(team.id)
     },
   })
 

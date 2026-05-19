@@ -47,6 +47,7 @@ const mockHackathon = {
   id: "h1",
   status: "active",
   ends_at: null,
+  registration_closes_at: null,
   max_team_size: 5,
 }
 
@@ -292,6 +293,36 @@ describe("Team Invitations Service", () => {
       expect(result.success).toBe(false)
       if (!result.success) {
         expect(result.code).toBe("hackathon_ended")
+      }
+    })
+
+    it("returns error when registration has closed", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "teams") {
+          return createChainableMock({ data: mockTeam, error: null })
+        }
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: {
+              ...mockHackathon,
+              registration_closes_at: new Date(Date.now() - 60_000).toISOString(),
+            },
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await createTeamInvitation({
+        teamId: "team_1",
+        hackathonId: "h1",
+        email: "test@example.com",
+        invitedByClerkUserId: "user_captain",
+      })
+
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.code).toBe("registration_closed")
       }
     })
 

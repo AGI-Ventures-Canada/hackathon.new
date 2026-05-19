@@ -3,6 +3,7 @@ import type { TeamInvitation, TeamStatus } from "@/lib/db/hackathon-types"
 import { randomBytes } from "crypto"
 import { checkRoleConflict } from "@/lib/services/role-conflict"
 import { isValidUuid } from "@/lib/utils/uuid"
+import { canInviteTeamMembers } from "@/lib/utils/team-invite"
 
 const INVITATION_EXPIRY_DAYS = 7
 const INVITATION_EXPIRY_MS = INVITATION_EXPIRY_DAYS * 24 * 60 * 60 * 1000
@@ -68,7 +69,7 @@ export async function createTeamInvitation(
 
   const { data: hackathon, error: hackathonError } = await client
     .from("hackathons")
-    .select("id, status, ends_at, max_team_size")
+    .select("id, status, ends_at, registration_closes_at, max_team_size")
     .eq("id", input.hackathonId)
     .single()
 
@@ -78,6 +79,14 @@ export async function createTeamInvitation(
 
   if (hackathon.status === "completed" || hackathon.status === "archived") {
     return { success: false, error: "Hackathon has ended", code: "hackathon_ended" }
+  }
+
+  if (!canInviteTeamMembers({
+    isFormingCaptain: true,
+    registrationClosesAt: hackathon.registration_closes_at,
+    nowIso: new Date().toISOString(),
+  })) {
+    return { success: false, error: "Registration has closed", code: "registration_closed" }
   }
 
   const { count: memberCount } = await client
