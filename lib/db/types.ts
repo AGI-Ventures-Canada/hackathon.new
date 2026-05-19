@@ -951,6 +951,7 @@ export type Database = {
           registration_closes_at: string | null
           registration_opens_at: string | null
           require_location_verification: boolean
+          require_team_approval: boolean
           require_terms_acceptance: boolean
           results_announcement_sent_at: string | null
           results_published_at: string | null
@@ -995,6 +996,7 @@ export type Database = {
           registration_closes_at?: string | null
           registration_opens_at?: string | null
           require_location_verification?: boolean
+          require_team_approval?: boolean
           require_terms_acceptance?: boolean
           results_announcement_sent_at?: string | null
           results_published_at?: string | null
@@ -1039,6 +1041,7 @@ export type Database = {
           registration_closes_at?: string | null
           registration_opens_at?: string | null
           require_location_verification?: boolean
+          require_team_approval?: boolean
           require_terms_acceptance?: boolean
           results_announcement_sent_at?: string | null
           results_published_at?: string | null
@@ -3173,6 +3176,7 @@ export type Database = {
           registration_closes_at: string | null
           registration_opens_at: string | null
           require_location_verification: boolean
+          require_team_approval: boolean
           require_terms_acceptance: boolean
           results_announcement_sent_at: string | null
           results_published_at: string | null
@@ -3252,7 +3256,7 @@ export type Database = {
         | "rejected"
         | "winner"
       team_mode: "in_person" | "virtual"
-      team_status: "forming" | "locked" | "disbanded"
+      team_status: "forming" | "pending_approval" | "locked" | "disbanded"
       track_intent:
         | "overall_winner"
         | "sponsor_prize"
@@ -3464,7 +3468,7 @@ export const Constants = {
         "winner",
       ],
       team_mode: ["in_person", "virtual"],
-      team_status: ["forming", "locked", "disbanded"],
+      team_status: ["forming", "pending_approval", "locked", "disbanded"],
       track_intent: [
         "overall_winner",
         "sponsor_prize",
@@ -3488,4 +3492,3 @@ export const Constants = {
     },
   },
 } as const
-

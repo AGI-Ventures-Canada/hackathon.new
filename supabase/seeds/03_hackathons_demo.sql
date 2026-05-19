@@ -3,7 +3,7 @@
 -- Depends on: tenants
 -- ============================================================================
 
-INSERT INTO hackathons (id, tenant_id, name, slug, description, rules, starts_at, ends_at, registration_opens_at, registration_closes_at, status, min_team_size, max_team_size, allow_solo, created_at, updated_at)
+INSERT INTO hackathons (id, tenant_id, name, slug, description, rules, starts_at, ends_at, registration_opens_at, registration_closes_at, status, min_team_size, max_team_size, allow_solo, require_team_approval, created_at, updated_at)
 VALUES
   (
     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
@@ -40,6 +40,7 @@ All participants get free API credits from our sponsors. Check the [AI SDK docs]
     1,
     4,
     true,
+    false,
     now() - interval '14 days',
     now()
   ),
@@ -62,13 +63,14 @@ All participants get free API credits from our sponsors. Check the [AI SDK docs]
     2,
     5,
     false,
+    false,
     now() - interval '7 days',
     now()
   )
 ON CONFLICT (id) DO NOTHING;
 
 -- Tavily hackathon
-INSERT INTO hackathons (id, tenant_id, name, slug, description, rules, starts_at, ends_at, registration_opens_at, registration_closes_at, status, min_team_size, max_team_size, allow_solo, created_at, updated_at)
+INSERT INTO hackathons (id, tenant_id, name, slug, description, rules, starts_at, ends_at, registration_opens_at, registration_closes_at, status, min_team_size, max_team_size, allow_solo, require_team_approval, created_at, updated_at)
 VALUES
   (
     'cccccccc-cccc-cccc-cccc-cccccccccccc',
@@ -89,13 +91,14 @@ VALUES
     1,
     3,
     true,
+    false,
     now() - interval '10 days',
     now()
   )
 ON CONFLICT (id) DO NOTHING;
 
 -- Anthropic hackathon
-INSERT INTO hackathons (id, tenant_id, name, slug, description, rules, starts_at, ends_at, registration_opens_at, registration_closes_at, status, min_team_size, max_team_size, allow_solo, created_at, updated_at)
+INSERT INTO hackathons (id, tenant_id, name, slug, description, rules, starts_at, ends_at, registration_opens_at, registration_closes_at, status, min_team_size, max_team_size, allow_solo, require_team_approval, created_at, updated_at)
 VALUES
   (
     'dddddddd-dddd-dddd-dddd-dddddddddddd',
@@ -116,6 +119,7 @@ VALUES
     1,
     4,
     true,
+    false,
     now() - interval '5 days',
     now()
   )

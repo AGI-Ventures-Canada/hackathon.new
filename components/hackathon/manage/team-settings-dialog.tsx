@@ -17,6 +17,7 @@ type TeamSettingsData = {
   minTeamSize: number
   maxTeamSize: number
   allowSolo: boolean
+  requireTeamApproval: boolean
 }
 
 type Preset = {
@@ -56,16 +57,17 @@ export function TeamSettingsDialog({ open, onOpenChange, hackathonId, initialDat
   const [customMin, setCustomMin] = useState(initialData.minTeamSize)
   const [customMax, setCustomMax] = useState(initialData.maxTeamSize)
   const [allowSolo, setAllowSolo] = useState(initialData.allowSolo)
+  const [requireTeamApproval, setRequireTeamApproval] = useState(initialData.requireTeamApproval)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   function getValues(): TeamSettingsData {
     if (selected === "custom") {
-      return { minTeamSize: customMin, maxTeamSize: customMax, allowSolo }
+      return { minTeamSize: customMin, maxTeamSize: customMax, allowSolo, requireTeamApproval }
     }
     const preset = PRESETS.find((p) => p.key === selected)
     if (!preset) return initialData
-    return { minTeamSize: preset.min, maxTeamSize: preset.max, allowSolo }
+    return { minTeamSize: preset.min, maxTeamSize: preset.max, allowSolo, requireTeamApproval }
   }
 
   function handlePresetClick(key: string) {
@@ -110,7 +112,8 @@ export function TeamSettingsDialog({ open, onOpenChange, hackathonId, initialDat
   const isDirty =
     values.minTeamSize !== initialData.minTeamSize ||
     values.maxTeamSize !== initialData.maxTeamSize ||
-    values.allowSolo !== initialData.allowSolo
+    values.allowSolo !== initialData.allowSolo ||
+    values.requireTeamApproval !== initialData.requireTeamApproval
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -190,6 +193,16 @@ export function TeamSettingsDialog({ open, onOpenChange, hackathonId, initialDat
             onCheckedChange={(checked) => { setAllowSolo(checked); setError(null) }}
           />
         </div>
+        <div className="flex items-center justify-between py-1">
+          <div>
+            <p className="text-sm font-medium">Review new teams</p>
+            <p className="text-xs text-muted-foreground">You approve teams before they can submit</p>
+          </div>
+          <Switch
+            checked={requireTeamApproval}
+            onCheckedChange={(checked) => { setRequireTeamApproval(checked); setError(null) }}
+          />
+        </div>
         {error && <p className="text-destructive text-xs">{error}</p>}
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
@@ -205,8 +218,9 @@ export function TeamSettingsDialog({ open, onOpenChange, hackathonId, initialDat
 }
 
 export function teamSettingsSummary(data: TeamSettingsData): string {
-  const { minTeamSize, maxTeamSize, allowSolo } = data
+  const { minTeamSize, maxTeamSize, allowSolo, requireTeamApproval } = data
   const range = minTeamSize === maxTeamSize ? `${minTeamSize}` : `${minTeamSize}\u2013${maxTeamSize}`
   const solo = allowSolo ? ", solo allowed" : ""
-  return `${range} people per team${solo}`
+  const approval = requireTeamApproval ? ", review on" : ""
+  return `${range} people per team${solo}${approval}`
 }

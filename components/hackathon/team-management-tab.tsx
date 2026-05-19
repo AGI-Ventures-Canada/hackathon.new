@@ -36,7 +36,7 @@ export function TeamManagementTab({ teamInfo, hackathonId, maxTeamSize, location
     handleKeyDown: renameHandleKeyDown,
   } = useTeamRename(hackathonId, teamInfo.team.id, teamInfo.team.name)
   const teamMode = useTeamMode(hackathonId, teamInfo.team.id, teamInfo.team.mode ?? null)
-  const canEdit = teamInfo.isCaptain && teamInfo.team.status === "forming"
+  const canEdit = teamInfo.isCaptain && (teamInfo.team.status === "forming" || teamInfo.team.status === "pending_approval")
   const showModePicker = locationType === "hybrid"
 
   const { execute: handleCancelInvitation } = useOptimisticMutation({
@@ -133,10 +133,16 @@ export function TeamManagementTab({ teamInfo, hackathonId, maxTeamSize, location
               <CardDescription>
                 {teamInfo.members.length} member{teamInfo.members.length !== 1 ? "s" : ""}
                 {teamInfo.team.status === "locked" && " · Team locked"}
+                {teamInfo.team.status === "pending_approval" && " · Waiting for approval"}
               </CardDescription>
               {teamInfo.isCaptain && (
                 <p className="text-xs text-muted-foreground mt-1">
                   You&apos;re the team captain &mdash; you can invite members and manage your team.
+                </p>
+              )}
+              {teamInfo.team.status === "pending_approval" && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Your team can invite people, but it can&apos;t submit yet.
                 </p>
               )}
               {renameError && (
@@ -191,7 +197,7 @@ export function TeamManagementTab({ teamInfo, hackathonId, maxTeamSize, location
                 </div>
               )}
             </div>
-            {teamInfo.isCaptain && teamInfo.team.status === "forming" && (
+            {canEdit && (
               <TeamInviteDialog
                 teamId={teamInfo.team.id}
                 hackathonId={hackathonId}

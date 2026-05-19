@@ -27,6 +27,7 @@ const mockHackathon: Hackathon = {
   min_team_size: 1,
   max_team_size: 5,
   allow_solo: true,
+  require_team_approval: false,
   status: "registration_open",
   banner_url: "https://example.com/banner.png",
   metadata: {},
@@ -303,6 +304,7 @@ describe("Public Hackathons Service", () => {
           min_team_size: 2,
           max_team_size: 4,
           allow_solo: false,
+          require_team_approval: true,
         },
         error: null,
       })
@@ -313,6 +315,7 @@ describe("Public Hackathons Service", () => {
         minTeamSize: 2,
         maxTeamSize: 4,
         allowSolo: false,
+        requireTeamApproval: true,
       })
 
       expect(result).not.toBeNull()
@@ -320,6 +323,7 @@ describe("Public Hackathons Service", () => {
       expect(result?.min_team_size).toBe(2)
       expect(result?.max_team_size).toBe(4)
       expect(result?.allow_solo).toBe(false)
+      expect(result?.require_team_approval).toBe(true)
     })
 
     it("sets maxParticipants to null for unlimited", async () => {

@@ -354,6 +354,7 @@ export async function updateHackathonSettings(
     minTeamSize?: number
     maxTeamSize?: number
     allowSolo?: boolean
+    requireTeamApproval?: boolean
     communityUrl?: string | null
     communityLabel?: string | null
     requireTermsAcceptance?: boolean
@@ -384,6 +385,7 @@ export async function updateHackathonSettings(
   if (updates.minTeamSize !== undefined) updateData.min_team_size = updates.minTeamSize
   if (updates.maxTeamSize !== undefined) updateData.max_team_size = updates.maxTeamSize
   if (updates.allowSolo !== undefined) updateData.allow_solo = updates.allowSolo
+  if (updates.requireTeamApproval !== undefined) updateData.require_team_approval = updates.requireTeamApproval
   if (updates.communityUrl !== undefined) updateData.community_url = updates.communityUrl
   if (updates.communityLabel !== undefined) updateData.community_label = updates.communityLabel
   if (updates.requireTermsAcceptance !== undefined) updateData.require_terms_acceptance = updates.requireTermsAcceptance

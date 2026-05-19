@@ -82,6 +82,7 @@ async function createTestHackathon(opts: {
       min_team_size: 1,
       max_team_size: 4,
       allow_solo: true,
+      require_team_approval: false,
       anonymous_judging: opts.anonymousJudging ?? false,
       results_published_at: opts.resultsPublishedAt ?? null,
     })

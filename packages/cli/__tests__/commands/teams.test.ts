@@ -109,6 +109,41 @@ describe("teams commands", () => {
     })
   })
 
+  describe("approve", () => {
+    it("POSTs to approve a waiting team", async () => {
+      mockFetch.mockResolvedValueOnce(jsonResponse({ success: true, team: { id: "t1", name: "Alpha", status: "forming" } }))
+      const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
+      const { runTeamsApprove } = await import("../../src/commands/teams/approve")
+      await runTeamsApprove(client, hackathonId, "t1", { json: false })
+
+      const url = mockFetch.mock.calls[0][0] as string
+      const init = mockFetch.mock.calls[0][1] as RequestInit
+      expect(url).toContain(`/api/dashboard/hackathons/${hackathonId}/teams/t1/approve`)
+      expect(init.method).toBe("POST")
+    })
+  })
+
+  describe("deny", () => {
+    it("POSTs to deny a waiting team", async () => {
+      mockFetch.mockResolvedValueOnce(
+        jsonResponse({
+          success: true,
+          team: { id: "t1", name: "Alpha", status: "disbanded" },
+          membersUnassigned: 2,
+          invitesCancelled: 1,
+        })
+      )
+      const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
+      const { runTeamsDeny } = await import("../../src/commands/teams/deny")
+      await runTeamsDeny(client, hackathonId, "t1", { json: false })
+
+      const url = mockFetch.mock.calls[0][0] as string
+      const init = mockFetch.mock.calls[0][1] as RequestInit
+      expect(url).toContain(`/api/dashboard/hackathons/${hackathonId}/teams/t1/deny`)
+      expect(init.method).toBe("POST")
+    })
+  })
+
   describe("assign-room", () => {
     it("POSTs teamId to rooms/:id/teams", async () => {
       mockFetch.mockResolvedValueOnce(jsonResponse({ success: true }))

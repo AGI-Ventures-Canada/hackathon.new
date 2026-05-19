@@ -142,6 +142,7 @@ export interface Team {
   id: string
   hackathonId: string
   name: string
+  status?: string
   mode?: "in_person" | "virtual" | null
   roomId?: string | null
   roomName?: string | null

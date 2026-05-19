@@ -28,6 +28,7 @@ export async function runTeamsList(
 
   const rows = data.teams.map((t) => ({
     name: t.name,
+    status: t.status ?? "—",
     mode: t.mode ?? "—",
     members: t.members?.length ?? 0,
     room: t.roomName ?? "—",
@@ -37,6 +38,7 @@ export async function runTeamsList(
   console.log(
     formatTable(rows, [
       { key: "name", label: "Name" },
+      { key: "status", label: "Status" },
       { key: "mode", label: "Mode" },
       { key: "members", label: "Members" },
       { key: "room", label: "Room" },

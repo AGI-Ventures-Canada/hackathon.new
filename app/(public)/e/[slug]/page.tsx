@@ -158,7 +158,10 @@ export default async function EventPage({ params, searchParams }: PageProps) {
 
   let viewerPerks: import("@/lib/services/perks").Perk[] = []
   const perksNone = hackathon.perks_none ?? false
-  if (!perksNone && teamInfo) {
+  const isPendingTeam = teamInfo?.team.status === "pending_approval"
+  const viewerChallenges = isPendingTeam ? [] : challenges
+
+  if (!perksNone && teamInfo && !isPendingTeam) {
     const { listPerks, isPerkReleased } = await import("@/lib/services/perks")
     const all = await listPerks(hackathon.id)
     const now = new Date()
@@ -210,7 +213,7 @@ export default async function EventPage({ params, searchParams }: PageProps) {
         publicResults={publicResults}
         scheduleItems={scheduleItems}
         announcements={publishedAnnouncements}
-        challenges={challenges}
+        challenges={viewerChallenges}
         viewerPerks={viewerPerks}
         currentUserId={userId}
         availableLocales={locales}

@@ -222,6 +222,33 @@ describe("Public Screenshot Routes", () => {
       })
       expect(mockCreateSubmission).not.toHaveBeenCalled()
     })
+
+    it("blocks pending teams from submitting", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockGetParticipantWithTeam.mockResolvedValue({
+        participantId: "p1",
+        teamId: "team1",
+        teamStatus: "pending_approval",
+      })
+
+      const res = await app.handle(
+        new Request("http://localhost/api/public/hackathons/test-hackathon/submissions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: "Project Atlas",
+            description: "A helper for teams.",
+            githubUrl: "github.com/acme/atlas",
+          }),
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(403)
+      expect(data.code).toBe("team_pending_approval")
+      expect(mockCreateSubmission).not.toHaveBeenCalled()
+    })
   })
 
   describe("PATCH /api/public/hackathons/:slug/submissions", () => {

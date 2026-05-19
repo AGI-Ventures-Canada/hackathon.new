@@ -25,6 +25,16 @@ import {
   type SubmissionScreenshotSlot,
 } from "@/lib/utils/submission-screenshots"
 
+function pendingTeamResponse() {
+  return new Response(
+    JSON.stringify({
+      error: "Your team is waiting for approval before it can submit.",
+      code: "team_pending_approval",
+    }),
+    { status: 403, headers: { "Content-Type": "application/json" } }
+  )
+}
+
 export const publicRoutes = new Elysia({ prefix: "/public" })
   .get("/health", () => ({
     status: "ok",
@@ -437,6 +447,10 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
+      if (participant.teamStatus === "pending_approval") {
+        return pendingTeamResponse()
+      }
+
       const existing = await getExistingSubmission(
         hackathon.id,
         participant.participantId,
@@ -586,6 +600,10 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
+      if (participant.teamStatus === "pending_approval") {
+        return pendingTeamResponse()
+      }
+
       const existing = await getExistingSubmission(
         hackathon.id,
         participant.participantId,
@@ -718,6 +736,10 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
+    if (participant.teamStatus === "pending_approval") {
+      return pendingTeamResponse()
+    }
+
     const existing = await getExistingSubmission(
       hackathon.id,
       participant.participantId,
@@ -839,6 +861,10 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         JSON.stringify({ error: "Not registered", code: "not_registered" }),
         { status: 403, headers: { "Content-Type": "application/json" } }
       )
+    }
+
+    if (participant.teamStatus === "pending_approval") {
+      return pendingTeamResponse()
     }
 
     const existing = await getExistingSubmission(

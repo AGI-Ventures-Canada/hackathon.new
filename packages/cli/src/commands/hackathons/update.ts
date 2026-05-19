@@ -7,6 +7,7 @@ interface UpdateOptions {
   name?: string
   slug?: string
   description?: string
+  requireTeamApproval?: boolean
   json?: boolean
 }
 
@@ -23,6 +24,12 @@ export function parseUpdateOptions(args: string[]): UpdateOptions {
       case "--description":
         options.description = args[++i]
         break
+      case "--require-team-approval":
+        options.requireTeamApproval = true
+        break
+      case "--no-require-team-approval":
+        options.requireTeamApproval = false
+        break
       case "--json":
         options.json = true
         break
@@ -37,20 +44,21 @@ export async function runHackathonsUpdate(
   args: string[]
 ): Promise<void> {
   if (!idOrSlug) {
-    console.error("Usage: hackathon events update <id-or-slug> [--name ...] [--slug ...] [--description ...]")
+    console.error("Usage: hackathon events update <id-or-slug> [--name ...] [--slug ...] [--description ...] [--require-team-approval|--no-require-team-approval]")
     process.exit(1)
   }
 
   const options = parseUpdateOptions(args)
   const id = await resolveHackathonId(client, idOrSlug)
 
-  const body: Record<string, string> = {}
+  const body: Record<string, string | boolean> = {}
   if (options.name) body.name = options.name
   if (options.slug) body.slug = options.slug
   if (options.description) body.description = options.description
+  if (options.requireTeamApproval !== undefined) body.requireTeamApproval = options.requireTeamApproval
 
   if (Object.keys(body).length === 0) {
-    console.error("Error: provide at least one field to update (--name, --slug, --description)")
+    console.error("Error: provide at least one field to update")
     process.exit(1)
   }
 

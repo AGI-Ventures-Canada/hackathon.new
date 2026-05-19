@@ -74,6 +74,29 @@ mock.module("@/lib/services/phases", () => ({
   getPhase: mock(() => Promise.resolve("build")),
 }))
 
+const mockApprovePendingTeam = mock(() =>
+  Promise.resolve({ success: true as const, team: { id: "22222222-2222-2222-2222-222222222222", name: "Team One", status: "forming" } })
+)
+const mockDenyPendingTeam = mock(() =>
+  Promise.resolve({
+    success: true as const,
+    team: { id: "22222222-2222-2222-2222-222222222222", name: "Team One", status: "disbanded" },
+    membersUnassigned: 2,
+    invitesCancelled: 1,
+  })
+)
+
+mock.module("@/lib/services/hackathons", () => ({
+  listTeamsWithMembers: mock(() => Promise.resolve([])),
+  createTeamWithMembers: mock(() => Promise.resolve(null)),
+  modifyTeamMembers: mock(() => Promise.resolve(null)),
+  bulkAssignTeams: mock(() => Promise.resolve({ assigned: 0 })),
+  deleteTeam: mock(() => Promise.resolve({ success: true, membersUnassigned: 0, invitesCancelled: 0, roomsCleared: 0 })),
+  setTeamCaptain: mock(() => Promise.resolve({ success: true })),
+  approvePendingTeam: mockApprovePendingTeam,
+  denyPendingTeam: mockDenyPendingTeam,
+}))
+
 const mockCheckHackathonOrganizer = mock(() =>
   Promise.resolve({ status: "authorized" as const, hackathon: { id: "h1", tenant_id: "tenant-123" } })
 )
@@ -165,12 +188,21 @@ describe("Dashboard Event Routes Integration Tests", () => {
     mockDeleteScheduleItem.mockReset()
     mockGetTriggerItem.mockReset()
     mockMaybeReleaseChallengesForPublishLink.mockReset()
+    mockApprovePendingTeam.mockReset()
+    mockDenyPendingTeam.mockReset()
     mockListHackathonPeople.mockReset()
     mockPeopleToCsvRows.mockReset()
     mockListHackathonPeople.mockResolvedValue([])
     mockPeopleToCsvRows.mockImplementation((people: unknown) => people as Record<string, string>[])
 
     mockSetPhase.mockResolvedValue({ success: true })
+    mockApprovePendingTeam.mockResolvedValue({ success: true, team: { id: "22222222-2222-2222-2222-222222222222", name: "Team One", status: "forming" } })
+    mockDenyPendingTeam.mockResolvedValue({
+      success: true,
+      team: { id: "22222222-2222-2222-2222-222222222222", name: "Team One", status: "disbanded" },
+      membersUnassigned: 2,
+      invitesCancelled: 1,
+    })
     mockCheckHackathonOrganizer.mockResolvedValue({
       status: "authorized" as const,
       hackathon: { id: "h1", tenant_id: "tenant-123" },
@@ -312,6 +344,54 @@ describe("Dashboard Event Routes Integration Tests", () => {
   const announcementId = "22222222-2222-2222-2222-222222222222"
   const itemId = "33333333-3333-3333-3333-333333333333"
   const baseUrl = `http://localhost/api/dashboard/hackathons/${hackathonId}`
+
+  describe("POST /api/dashboard/hackathons/:id/teams/:teamId/approve", () => {
+    const teamId = "22222222-2222-2222-2222-222222222222"
+
+    it("approves a waiting team for an organizer", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+
+      const res = await app.handle(
+        new Request(`${baseUrl}/teams/${teamId}/approve`, { method: "POST" })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(data.team.status).toBe("forming")
+      expect(mockApprovePendingTeam).toHaveBeenCalledWith(teamId, hackathonId)
+    })
+
+    it("returns 409 when the team is not waiting", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockApprovePendingTeam.mockResolvedValueOnce({ error: "This team is not waiting for approval", code: "not_pending" })
+
+      const res = await app.handle(
+        new Request(`${baseUrl}/teams/${teamId}/approve`, { method: "POST" })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(409)
+      expect(data.code).toBe("not_pending")
+    })
+  })
+
+  describe("POST /api/dashboard/hackathons/:id/teams/:teamId/deny", () => {
+    const teamId = "22222222-2222-2222-2222-222222222222"
+
+    it("denies a waiting team for an organizer", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+
+      const res = await app.handle(
+        new Request(`${baseUrl}/teams/${teamId}/deny`, { method: "POST" })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(data.membersUnassigned).toBe(2)
+      expect(data.invitesCancelled).toBe(1)
+      expect(mockDenyPendingTeam).toHaveBeenCalledWith(teamId, hackathonId)
+    })
+  })
 
   describe("GET /api/dashboard/hackathons/:id/announcements", () => {
     it("lists announcements for authenticated organizer", async () => {

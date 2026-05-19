@@ -4,7 +4,7 @@ import { Fragment, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { assertOk, assertOkJson } from "@/lib/utils/fetch"
 import {
-  Loader2, Plus, Users, ChevronRight, FileText, Crown, Mail, Settings2, MoreHorizontal, Pencil, Trash2, Bell, X, UserMinus,
+  Loader2, Plus, Users, ChevronRight, FileText, Crown, Mail, Settings2, MoreHorizontal, Pencil, Trash2, Bell, X, UserMinus, Check, Ban,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -144,6 +144,7 @@ type TeamsTabProps = {
   maxTeamSize: number
   minTeamSize: number
   allowSolo: boolean
+  requireTeamApproval: boolean
   hackathonStatus: string | null
 }
 
@@ -151,7 +152,15 @@ const STATUS_LOCKS_TEAM_DELETE = new Set(["judging", "completed", "archived"])
 
 const UNASSIGNED_ROOM = "__unassigned__"
 
-export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: initialMin, allowSolo: initialSolo, hackathonStatus }: TeamsTabProps) {
+function formatTeamStatus(status: string): string {
+  if (status === "pending_approval") return "Waiting for approval"
+  if (status === "forming") return "Active"
+  if (status === "locked") return "Locked"
+  if (status === "disbanded") return "Removed"
+  return status
+}
+
+export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: initialMin, allowSolo: initialSolo, requireTeamApproval: initialApproval, hackathonStatus }: TeamsTabProps) {
   const router = useRouter()
   const ctx = useActionItemsOptional()
   const [teams, setTeams] = useState<Team[]>([])
@@ -170,6 +179,8 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
   const [editingTeam, setEditingTeam] = useState<Team | null>(null)
   const [deletingTeam, setDeletingTeam] = useState<Team | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [denyingTeam, setDenyingTeam] = useState<Team | null>(null)
+  const [denying, setDenying] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [reinviteTarget, setReinviteTarget] = useState<{ team: Team; invitationId: string; previousEmail: string } | null>(null)
   const [reinviteEmail, setReinviteEmail] = useState("")
@@ -290,7 +301,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
     const tempTeam: Team = {
       id: tempId,
       name,
-      status: "active",
+      status: "forming",
       mode: null,
       captainClerkUserId: null,
       pendingCaptainEmail: email,
@@ -358,6 +369,38 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
       showActionError(err instanceof Error ? err.message : "Failed to delete team")
     } finally {
       setDeleting(false)
+    }
+  }
+
+  async function handleApproveTeam(team: Team) {
+    const snapshot = teams
+    setTeams((prev) => prev.map((t) => (t.id === team.id ? { ...t, status: "forming" } : t)))
+    try {
+      await fetch(`/api/dashboard/hackathons/${hackathonId}/teams/${team.id}/approve`, {
+        method: "POST",
+      }).then(assertOk)
+      router.refresh()
+    } catch (err) {
+      setTeams(snapshot)
+      showActionError(err instanceof Error ? err.message : "Failed to approve team")
+    }
+  }
+
+  async function handleDenyTeam(team: Team) {
+    setDenying(true)
+    const snapshot = teams
+    setTeams((prev) => prev.filter((t) => t.id !== team.id))
+    setDenyingTeam(null)
+    try {
+      await fetch(`/api/dashboard/hackathons/${hackathonId}/teams/${team.id}/deny`, {
+        method: "POST",
+      }).then(assertOk)
+      router.refresh()
+    } catch (err) {
+      setTeams(snapshot)
+      showActionError(err instanceof Error ? err.message : "Failed to deny team")
+    } finally {
+      setDenying(false)
     }
   }
 
@@ -546,7 +589,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
       >
         <div className="flex items-center gap-2">
           <Settings2 className="size-4 text-muted-foreground" />
-          <span className="text-sm">{teamSettingsSummary({ minTeamSize: initialMin, maxTeamSize: initialMax, allowSolo: initialSolo })}</span>
+          <span className="text-sm">{teamSettingsSummary({ minTeamSize: initialMin, maxTeamSize: initialMax, allowSolo: initialSolo, requireTeamApproval: initialApproval })}</span>
         </div>
         <span className="text-sm text-muted-foreground">Edit</span>
       </button>
@@ -554,7 +597,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         open={settingsDialogOpen}
         onOpenChange={setSettingsDialogOpen}
         hackathonId={hackathonId}
-        initialData={{ minTeamSize: initialMin, maxTeamSize: initialMax, allowSolo: initialSolo }}
+        initialData={{ minTeamSize: initialMin, maxTeamSize: initialMax, allowSolo: initialSolo, requireTeamApproval: initialApproval }}
       />
 
       {inviteSuccess && (
@@ -575,7 +618,8 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
             ? "No teams yet"
             : (() => {
                 const submittedCount = teams.filter((t) => t.submission).length
-                return `${teams.length} team${teams.length === 1 ? "" : "s"} · ${submittedCount} submitted`
+                const pendingCount = teams.filter((t) => t.status === "pending_approval").length
+                return `${teams.length} team${teams.length === 1 ? "" : "s"} · ${submittedCount} submitted${pendingCount > 0 ? ` · ${pendingCount} waiting` : ""}`
               })()}
         </p>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -707,6 +751,26 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         </AlertDialogContent>
       </AlertDialog>
 
+      <AlertDialog open={!!denyingTeam} onOpenChange={(open) => { if (!open && !denying) setDenyingTeam(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Deny team &quot;{denyingTeam?.name}&quot;?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Members will be moved back to no team. Pending invites will be canceled. This can&apos;t be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={denying}>Keep team</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); if (denyingTeam) void handleDenyTeam(denyingTeam) }}
+              disabled={denying}
+            >
+              {denying ? "Denying..." : "Deny team"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <Dialog open={!!reinviteTarget} onOpenChange={(open) => { if (!open && !reinviteBusy) setReinviteTarget(null) }}>
         <DialogContent>
           <DialogHeader>
@@ -777,7 +841,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                         <TableCell className="font-medium">{team.name}</TableCell>
                         <TableCell>
                           <Badge variant="secondary" className="font-normal">
-                            {team.status}
+                            {formatTeamStatus(team.status)}
                           </Badge>
                         </TableCell>
                         <TableCell>
@@ -829,6 +893,19 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
+                                {team.status === "pending_approval" && (
+                                  <>
+                                    <DropdownMenuItem onSelect={() => handleApproveTeam(team)}>
+                                      <Check className="size-4" />
+                                      Approve team
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem variant="destructive" onSelect={() => setDenyingTeam(team)}>
+                                      <Ban className="size-4" />
+                                      Deny team
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                  </>
+                                )}
                                 <DropdownMenuItem onSelect={() => setEditingTeam(team)}>
                                   <Pencil className="size-4" />
                                   Edit team

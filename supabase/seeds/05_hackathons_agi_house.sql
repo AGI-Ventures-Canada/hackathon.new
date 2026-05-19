@@ -3,7 +3,7 @@
 -- Depends on: tenants
 -- ============================================================================
 
-INSERT INTO hackathons (id, tenant_id, name, slug, description, rules, starts_at, ends_at, registration_opens_at, registration_closes_at, status, min_team_size, max_team_size, allow_solo, created_at, updated_at)
+INSERT INTO hackathons (id, tenant_id, name, slug, description, rules, starts_at, ends_at, registration_opens_at, registration_closes_at, status, min_team_size, max_team_size, allow_solo, require_team_approval, created_at, updated_at)
 VALUES
   (
     'aaa10001-aaa1-aaa1-aaa1-aaa10001aaa1',
@@ -25,6 +25,7 @@ VALUES
     1,
     4,
     true,
+    false,
     now() - interval '45 days',
     now()
   ),
@@ -48,6 +49,7 @@ VALUES
     1,
     3,
     true,
+    false,
     now() - interval '65 days',
     now()
   ),
@@ -71,6 +73,7 @@ VALUES
     1,
     4,
     true,
+    false,
     now() - interval '85 days',
     now()
   ),
@@ -93,6 +96,7 @@ VALUES
     'published',
     2,
     5,
+    false,
     false,
     now() - interval '10 days',
     now()
@@ -117,6 +121,7 @@ VALUES
     1,
     6,
     true,
+    false,
     now() - interval '3 days',
     now()
   ),
@@ -139,6 +144,7 @@ VALUES
     'published',
     2,
     4,
+    false,
     false,
     now() - interval '1 day',
     now()

@@ -9,6 +9,7 @@ import { autoAssignSubmissionToRoomJudges, ROOM_ROUTING_STATUSES } from "@/lib/s
 export type ParticipantInfo = {
   participantId: string
   teamId: string | null
+  teamStatus: string | null
 }
 
 export async function getParticipantWithTeam(
@@ -18,7 +19,7 @@ export async function getParticipantWithTeam(
   const client = getSupabase() as unknown as SupabaseClient
   const { data, error } = await client
     .from("hackathon_participants")
-    .select("id, team_id")
+    .select("id, team_id, teams(status)")
     .eq("hackathon_id", hackathonId)
     .eq("clerk_user_id", clerkUserId)
     .maybeSingle()
@@ -35,6 +36,7 @@ export async function getParticipantWithTeam(
   return {
     participantId: data.id,
     teamId: data.team_id,
+    teamStatus: (data as unknown as { teams?: { status?: string } | null }).teams?.status ?? null,
   }
 }
 

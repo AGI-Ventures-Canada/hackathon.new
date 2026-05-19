@@ -1,6 +1,6 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
-import type { Hackathon, HackathonParticipant } from "@/lib/db/hackathon-types"
+import type { Hackathon, HackathonParticipant, TeamStatus } from "@/lib/db/hackathon-types"
 import { sortByStartDate } from "@/lib/utils/format"
 import { generateSlug } from "@/lib/utils/slug"
 import { clerkClient } from "@clerk/nextjs/server"
@@ -171,6 +171,7 @@ export async function createHackathon(
       min_team_size: 1,
       max_team_size: 5,
       allow_solo: true,
+      require_team_approval: false,
       metadata: {},
     })
     .select()
@@ -343,7 +344,7 @@ export type ParticipantTeamInfo = {
   team: {
     id: string
     name: string
-    status: "forming" | "locked" | "disbanded"
+    status: TeamStatus
     inviteCode: string
     captainClerkUserId: string
     mode: "in_person" | "virtual" | null
@@ -649,6 +650,10 @@ export type CreateTeamResult =
   | { team: { id: string; name: string }; invited: true; queued?: boolean }
   | { error: string }
 
+export type ReviewTeamResult =
+  | { success: true; team: { id: string; name: string; status: TeamStatus }; membersUnassigned?: number; invitesCancelled?: number }
+  | { error: string; code: "not_found" | "not_pending" | "failed" }
+
 export async function createTeamWithMembers(
   hackathonId: string,
   input: { name: string; captainEmail: string; organizerClerkUserId?: string }
@@ -826,6 +831,126 @@ async function createPendingTeamWithInvite(
   }
 
   return { team, invited: true, queued: isDraft }
+}
+
+export async function approvePendingTeam(teamId: string, hackathonId: string): Promise<ReviewTeamResult> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data: team, error: teamErr } = await client
+    .from("teams")
+    .select("id, name, status")
+    .eq("id", teamId)
+    .eq("hackathon_id", hackathonId)
+    .single()
+
+  if (teamErr || !team) {
+    return { error: "Team not found", code: "not_found" }
+  }
+
+  if (team.status !== "pending_approval") {
+    return { error: "This team is not waiting for approval", code: "not_pending" }
+  }
+
+  const { data: updated, error: updateErr } = await client
+    .from("teams")
+    .update({ status: "forming", updated_at: new Date().toISOString() })
+    .eq("id", teamId)
+    .eq("hackathon_id", hackathonId)
+    .eq("status", "pending_approval")
+    .select("id, name, status")
+    .single()
+
+  if (updateErr || !updated) {
+    console.error("Failed to approve team:", updateErr)
+    return { error: "Failed to approve team", code: "failed" }
+  }
+
+  return { success: true, team: updated as { id: string; name: string; status: TeamStatus } }
+}
+
+export async function denyPendingTeam(teamId: string, hackathonId: string): Promise<ReviewTeamResult> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data: team, error: teamErr } = await client
+    .from("teams")
+    .select("id, name, status")
+    .eq("id", teamId)
+    .eq("hackathon_id", hackathonId)
+    .single()
+
+  if (teamErr || !team) {
+    return { error: "Team not found", code: "not_found" }
+  }
+
+  if (team.status !== "pending_approval") {
+    return { error: "This team is not waiting for approval", code: "not_pending" }
+  }
+
+  const now = new Date().toISOString()
+  const { count: memberCount, error: memberCountErr } = await client
+    .from("hackathon_participants")
+    .select("id", { count: "exact", head: true })
+    .eq("team_id", teamId)
+    .eq("hackathon_id", hackathonId)
+
+  if (memberCountErr) {
+    console.error("Failed to count pending team members:", memberCountErr)
+    return { error: "Failed to deny team", code: "failed" }
+  }
+
+  const { error: memberErr } = await client
+    .from("hackathon_participants")
+    .update({ team_id: null })
+    .eq("team_id", teamId)
+    .eq("hackathon_id", hackathonId)
+
+  if (memberErr) {
+    console.error("Failed to unassign denied team members:", memberErr)
+    return { error: "Failed to deny team", code: "failed" }
+  }
+
+  const { data: cancelledInvites, error: inviteErr } = await client
+    .from("team_invitations")
+    .update({ status: "cancelled", updated_at: now })
+    .eq("team_id", teamId)
+    .eq("hackathon_id", hackathonId)
+    .eq("status", "pending")
+    .select("id")
+
+  if (inviteErr) {
+    console.error("Failed to cancel denied team invitations:", inviteErr)
+    return { error: "Failed to deny team", code: "failed" }
+  }
+
+  const { data: updated, error: updateErr } = await client
+    .from("teams")
+    .update({ status: "disbanded", updated_at: now })
+    .eq("id", teamId)
+    .eq("hackathon_id", hackathonId)
+    .eq("status", "pending_approval")
+    .select("id, name, status")
+    .single()
+
+  if (updateErr || !updated) {
+    console.error("Failed to deny team:", updateErr)
+    return { error: "Failed to deny team", code: "failed" }
+  }
+
+  if (cancelledInvites && cancelledInvites.length > 0) {
+    const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
+    for (const inv of cancelledInvites as Array<{ id: string }>) {
+      cancelRemindersForEntity("team_invitation", inv.id).catch((err) =>
+        console.error(`Failed to cancel reminders for team_invitation ${inv.id}:`, err)
+      )
+    }
+  }
+
+  return {
+    success: true,
+    team: updated as { id: string; name: string; status: TeamStatus },
+    membersUnassigned: memberCount ?? 0,
+    invitesCancelled: cancelledInvites?.length ?? 0,
+  }
 }
 
 export async function modifyTeamMembers(

@@ -32,6 +32,7 @@ interface RegistrationProps {
   submission?: Submission | null;
   onRegistrationSuccess?: () => void;
   teamSizeWarning?: string | null;
+  canSubmit?: boolean;
 }
 
 interface EventHeroProps {
@@ -475,13 +476,15 @@ export function EventHero({
               />
             </Suspense>
           )}
-          <SubmissionButton
-            hackathonSlug={registrationProps.hackathonSlug}
-            status={registrationProps.status}
-            isRegistered={registrationProps.isRegistered}
-            submission={registrationProps.submission ?? null}
-            teamSizeWarning={registrationProps.teamSizeWarning}
-          />
+          {registrationProps.canSubmit !== false && (
+            <SubmissionButton
+              hackathonSlug={registrationProps.hackathonSlug}
+              status={registrationProps.status}
+              isRegistered={registrationProps.isRegistered}
+              submission={registrationProps.submission ?? null}
+              teamSizeWarning={registrationProps.teamSizeWarning}
+            />
+          )}
           {tabsSlot}
         </div>
       )}

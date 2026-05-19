@@ -1239,6 +1239,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       minTeamSize: hackathon.min_team_size,
       maxTeamSize: hackathon.max_team_size,
       allowSolo: hackathon.allow_solo,
+      requireTeamApproval: hackathon.require_team_approval,
       anonymousJudging: hackathon.anonymous_judging,
       judgingMode: hackathon.judging_mode,
       resultsPublishedAt: hackathon.results_published_at,
@@ -1375,6 +1376,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         body.locationLongitude !== undefined || body.requireLocationVerification !== undefined ||
         body.maxParticipants !== undefined || body.minTeamSize !== undefined ||
         body.maxTeamSize !== undefined || body.allowSolo !== undefined ||
+        body.requireTeamApproval !== undefined ||
         body.communityUrl !== undefined || body.communityLabel !== undefined ||
         body.requireTermsAcceptance !== undefined || body.termsContent !== undefined
 
@@ -1407,6 +1409,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           minTeamSize: body.minTeamSize,
           maxTeamSize: body.maxTeamSize,
           allowSolo: body.allowSolo,
+          requireTeamApproval: body.requireTeamApproval,
           communityUrl: normalizeOptionalUrl(body.communityUrl),
           requireTermsAcceptance: body.requireTermsAcceptance,
           termsContent: body.termsContent,
@@ -1464,6 +1467,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           minTeamSize: body.minTeamSize,
           maxTeamSize: body.maxTeamSize,
           allowSolo: body.allowSolo,
+          requireTeamApproval: body.requireTeamApproval,
           communityUrl: normalizeOptionalUrl(body.communityUrl),
           communityLabel: body.communityLabel,
           requireTermsAcceptance: body.requireTermsAcceptance,
@@ -1628,6 +1632,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         minTeamSize: h.min_team_size,
         maxTeamSize: h.max_team_size,
         allowSolo: h.allow_solo,
+        requireTeamApproval: h.require_team_approval,
         anonymousJudging: h.anonymous_judging,
         judgingMode: h.judging_mode,
         requireTermsAcceptance: h.require_terms_acceptance ?? false,
@@ -1670,6 +1675,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         minTeamSize: t.Optional(t.Number()),
         maxTeamSize: t.Optional(t.Number()),
         allowSolo: t.Optional(t.Boolean()),
+        requireTeamApproval: t.Optional(t.Boolean()),
         communityUrl: t.Optional(t.Union([t.String(), t.Null()])),
         communityLabel: t.Optional(t.Union([t.String(), t.Null()])),
         requireTermsAcceptance: t.Optional(t.Boolean({ description: "When true, attendees and judges must accept the hackathon terms before registering or accepting an invite." })),

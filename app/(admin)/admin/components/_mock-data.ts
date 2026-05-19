@@ -41,6 +41,7 @@ export const mockHackathon: Hackathon = {
   min_team_size: 1,
   max_team_size: 5,
   allow_solo: true,
+  require_team_approval: false,
   status: "registration_open",
   banner_url: null,
   location_type: "hybrid",

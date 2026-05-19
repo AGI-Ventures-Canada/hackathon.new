@@ -6,7 +6,7 @@ import {
   type ChainableMock,
 } from "../lib/supabase-mock"
 
-const { deleteTeam, setTeamCaptain } = await import("@/lib/services/hackathons")
+const { deleteTeam, setTeamCaptain, approvePendingTeam, denyPendingTeam } = await import("@/lib/services/hackathons")
 
 type SupaResult = { data: unknown; error: { message: string } | null; count?: number | null }
 
@@ -207,5 +207,63 @@ describe("setTeamCaptain", () => {
 
     const result = await setTeamCaptain("team_1", "h_1", "user_new")
     expect(result).toEqual({ success: true, team: { id: "team_1", name: "Team One", mode: "in_person" } })
+  })
+})
+
+describe("team approvals", () => {
+  beforeEach(() => {
+    resetSupabaseMocks()
+  })
+
+  it("approves a pending team", async () => {
+    setMockFromImplementation(
+      tableImpl({
+        teams: [
+          { data: { id: "team_1", name: "Team One", status: "pending_approval" }, error: null },
+          { data: { id: "team_1", name: "Team One", status: "forming" }, error: null },
+        ],
+      })
+    )
+
+    const result = await approvePendingTeam("team_1", "h_1")
+    expect(result).toEqual({
+      success: true,
+      team: { id: "team_1", name: "Team One", status: "forming" },
+    })
+  })
+
+  it("rejects approve when team is not pending", async () => {
+    setMockFromImplementation(
+      tableImpl({
+        teams: { data: { id: "team_1", name: "Team One", status: "forming" }, error: null },
+      })
+    )
+
+    const result = await approvePendingTeam("team_1", "h_1")
+    expect(result).toEqual({ error: "This team is not waiting for approval", code: "not_pending" })
+  })
+
+  it("denies a pending team and unassigns people", async () => {
+    setMockFromImplementation(
+      tableImpl({
+        teams: [
+          { data: { id: "team_1", name: "Team One", status: "pending_approval" }, error: null },
+          { data: { id: "team_1", name: "Team One", status: "disbanded" }, error: null },
+        ],
+        hackathon_participants: [
+          { data: null, error: null, count: 2 },
+          { data: null, error: null },
+        ],
+        team_invitations: { data: [{ id: "inv_1" }], error: null },
+      })
+    )
+
+    const result = await denyPendingTeam("team_1", "h_1")
+    expect(result).toEqual({
+      success: true,
+      team: { id: "team_1", name: "Team One", status: "disbanded" },
+      membersUnassigned: 2,
+      invitesCancelled: 1,
+    })
   })
 })

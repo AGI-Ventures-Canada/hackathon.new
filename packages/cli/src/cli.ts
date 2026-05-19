@@ -172,6 +172,8 @@ const BANNER = `
     teams create <id>                        Create a team (--name --captain-email)
     teams update <id> <tid>                  Update team name/mode
     teams update-members <id> <tid>          Add/remove team members (--add a,b --remove c)
+    teams approve <id> <tid>                 Approve a waiting team
+    teams deny <id> <tid>                    Deny a waiting team
     teams assign-room <id> <rid>             Assign team to room (--team <tid>)
     teams unassign-room <id> <rid> <tid>     Remove team from room
 
@@ -766,6 +768,16 @@ async function main() {
           case "update-members": {
             const { runTeamsUpdateMembers } = await import("./commands/teams/update-members.js")
             await runTeamsUpdateMembers(client, rest[2], rest[3], rest.slice(4))
+            break
+          }
+          case "approve": {
+            const { runTeamsApprove } = await import("./commands/teams/approve.js")
+            await runTeamsApprove(client, rest[2], rest[3], { json: flags.json })
+            break
+          }
+          case "deny": {
+            const { runTeamsDeny } = await import("./commands/teams/deny.js")
+            await runTeamsDeny(client, rest[2], rest[3], { json: flags.json })
             break
           }
           case "assign-room": {
