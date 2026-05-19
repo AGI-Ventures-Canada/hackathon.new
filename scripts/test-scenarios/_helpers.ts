@@ -13,6 +13,8 @@ export const supabase: SupabaseClient = createClient(supabaseUrl, supabaseServic
 
 export const DEV_USER_ID = process.env.SCENARIO_DEV_USER_ID ?? "user_38vEFI8UesKwM07qIuFNqEzFavS"
 
+export type TeamStatus = "forming" | "pending_approval" | "locked" | "disbanded"
+
 export async function promptForOptionalTenantId(): Promise<string | undefined> {
   const rl = readline.createInterface({
     input: process.stdin,
@@ -121,6 +123,7 @@ export async function createTestHackathon(opts: {
   endsAt: Date
   registrationOpensAt?: Date
   registrationClosesAt?: Date
+  requireTeamApproval?: boolean
   anonymousJudging?: boolean
   resultsPublishedAt?: string | null
   judgingMode?: string
@@ -142,7 +145,7 @@ export async function createTestHackathon(opts: {
       min_team_size: 1,
       max_team_size: 4,
       allow_solo: true,
-      require_team_approval: false,
+      require_team_approval: opts.requireTeamApproval ?? false,
       anonymous_judging: opts.anonymousJudging ?? false,
       results_published_at: opts.resultsPublishedAt ?? null,
       judging_mode: opts.judgingMode ?? "points",
@@ -193,16 +196,20 @@ export async function registerParticipant(
 export async function createTeamWithMembers(
   hackathonId: string,
   captainUserId: string,
-  memberUserIds: string[]
+  memberUserIds: string[],
+  opts: {
+    name?: string
+    status?: TeamStatus
+  } = {}
 ): Promise<string> {
   const { data: team, error: teamError } = await supabase
     .from("teams")
     .insert({
       hackathon_id: hackathonId,
-      name: friendlyTeamName(captainUserId),
+      name: opts.name ?? friendlyTeamName(captainUserId),
       captain_clerk_user_id: captainUserId,
       invite_code: crypto.randomUUID().slice(0, 8),
-      status: "forming",
+      status: opts.status ?? "forming",
     })
     .select("id")
     .single()

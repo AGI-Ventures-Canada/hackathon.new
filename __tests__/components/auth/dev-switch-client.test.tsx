@@ -132,18 +132,17 @@ describe("DevSwitchClient", () => {
     })
   })
 
-  it("continues when the old session is already gone", async () => {
+  it("reloads the handoff when the old session is already gone", async () => {
     g.__clerkState.isSignedIn = true
     mockSignOut.mockImplementation(() => Promise.reject({ status: 404 }))
     render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} signedOut={false} />)
-    await waitFor(() => expect(signInCreate).toHaveBeenCalled())
     await waitFor(() =>
-      expect(mockSignInSetActive).toHaveBeenCalledWith({
-        session: "session_abc",
-        organization: null,
-        redirectUrl: "/e/demo",
-      })
+      expect(replaceCalls).toEqual([
+        "/dev-switch?token=ticket_xyz&redirect=%2Fe%2Fdemo&signed_out=1",
+      ])
     )
+    expect(signInCreate).not.toHaveBeenCalled()
+    expect(mockSignInSetActive).not.toHaveBeenCalled()
   })
 
   it("retries no-org session activation after a stale Clerk error", async () => {
@@ -172,21 +171,20 @@ describe("DevSwitchClient", () => {
     })
   })
 
-  it("continues when Clerk returns a stale-session 403 code", async () => {
+  it("reloads the handoff when Clerk returns a stale-session 403 code", async () => {
     g.__clerkState.isSignedIn = true
     mockSignOut.mockImplementation(() => Promise.reject({
       status: 403,
       errors: [{ code: "session_not_found", message: "not found or unauthorized" }],
     }))
     render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} signedOut={false} />)
-    await waitFor(() => expect(signInCreate).toHaveBeenCalled())
     await waitFor(() =>
-      expect(mockSignInSetActive).toHaveBeenCalledWith({
-        session: "session_abc",
-        organization: null,
-        redirectUrl: "/e/demo",
-      })
+      expect(replaceCalls).toEqual([
+        "/dev-switch?token=ticket_xyz&redirect=%2Fe%2Fdemo&signed_out=1",
+      ])
     )
+    expect(signInCreate).not.toHaveBeenCalled()
+    expect(mockSignInSetActive).not.toHaveBeenCalled()
   })
 
   it("does not hide a missing requested organization", async () => {

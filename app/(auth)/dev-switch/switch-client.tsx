@@ -119,8 +119,8 @@ export function DevSwitchClient({
 
         if (isSignedIn && !signedOut) {
           await clearActiveOrganization()
+          const redirectUrl = retryAfterSignOutUrl(token, redirect, org)
           try {
-            const redirectUrl = retryAfterSignOutUrl(token, redirect, org)
             if (session?.id) {
               await signOut({ sessionId: session.id, redirectUrl })
             } else {
@@ -130,6 +130,8 @@ export function DevSwitchClient({
           } catch (err) {
             if (!isStaleSessionError(err, { allowStaleOrganization: true })) throw err
             console.warn("Ignoring stale Clerk session during dev switch sign-out:", err)
+            window.location.replace(redirectUrl)
+            return
           }
         }
 

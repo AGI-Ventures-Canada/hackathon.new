@@ -1,21 +1,11 @@
 import { describe, expect, it, afterEach } from "bun:test"
+import { SCENARIOS } from "@/lib/dev/scenarios"
 
 const { listScenarios, runScenario } = await import("@/lib/services/admin-scenarios")
 
-const ATTENDEE_SCENARIOS = [
-  "attendee-captain-pending-invite",
-  "attendee-invite-expired",
-  "attendee-invite-declined",
-  "attendee-team-at-capacity",
-  "attendee-invited-to-team",
-  "attendee-solo-submitted",
-  "attendee-submitted-then-left",
-  "attendee-announcements-audiences",
-  "attendee-perks-mixed",
-  "attendee-winner-pending-claim",
-]
+const SCENARIO_NAMES = SCENARIOS.map((scenario) => scenario.name)
 
-describe("admin-scenarios attendee wiring", () => {
+describe("admin-scenarios wiring", () => {
   const originalVercelEnv = process.env.VERCEL_ENV
 
   afterEach(() => {
@@ -27,7 +17,7 @@ describe("admin-scenarios attendee wiring", () => {
   })
 
   describe("listScenarios", () => {
-    it.each(ATTENDEE_SCENARIOS)("registers %s in SCENARIOS metadata", (name) => {
+    it.each(SCENARIO_NAMES)("registers %s in SCENARIOS metadata", (name) => {
       const scenarios = listScenarios()
       const found = scenarios.find((s) => s.name === name)
       expect(found).toBeDefined()
@@ -37,7 +27,7 @@ describe("admin-scenarios attendee wiring", () => {
   })
 
   describe("runScenario dispatch", () => {
-    it.each(ATTENDEE_SCENARIOS)("has a registered runner for %s", async (name) => {
+    it.each(SCENARIO_NAMES)("has a registered runner for %s", async (name) => {
       delete process.env.VERCEL_ENV
       try {
         await runScenario(name)
