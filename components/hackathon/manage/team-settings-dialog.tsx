@@ -196,7 +196,7 @@ export function TeamSettingsDialog({ open, onOpenChange, hackathonId, initialDat
         <div className="flex items-center justify-between py-1">
           <div>
             <p className="text-sm font-medium">Review new teams</p>
-            <p className="text-xs text-muted-foreground">You approve teams before they can submit</p>
+            <p className="text-xs text-muted-foreground">Only new teams wait. Current teams stay as they are.</p>
           </div>
           <Switch
             checked={requireTeamApproval}

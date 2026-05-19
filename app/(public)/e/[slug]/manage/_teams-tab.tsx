@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { assertOk, assertOkJson } from "@/lib/utils/fetch"
+import { useOptimisticMutation } from "@/hooks/use-optimistic-mutation"
 import {
   Loader2, Plus, Users, ChevronRight, FileText, Crown, Mail, Settings2, MoreHorizontal, Pencil, Trash2, Bell, X, UserMinus, Check, Ban,
 } from "lucide-react"
@@ -346,6 +347,19 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
     setTimeout(() => setActionError(null), 8000)
   }
 
+  const { execute: approveTeam, error: approveError } = useOptimisticMutation<Team, void>({
+    fn: (team) =>
+      fetch(`/api/dashboard/hackathons/${hackathonId}/teams/${team.id}/approve`, {
+        method: "POST",
+      }).then(assertOk),
+    onOptimistic: (team) => {
+      setTeams((prev) => prev.map((t) => (t.id === team.id ? { ...t, status: "forming" } : t)))
+    },
+    onRevert: (team) => {
+      setTeams((prev) => prev.map((t) => (t.id === team.id ? team : t)))
+    },
+  })
+
   function deleteBlockReason(team: Team): string | null {
     if (hackathonStatus && STATUS_LOCKS_TEAM_DELETE.has(hackathonStatus)) {
       return "Teams can't be deleted once judging has started"
@@ -372,18 +386,8 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
     }
   }
 
-  async function handleApproveTeam(team: Team) {
-    const snapshot = teams
-    setTeams((prev) => prev.map((t) => (t.id === team.id ? { ...t, status: "forming" } : t)))
-    try {
-      await fetch(`/api/dashboard/hackathons/${hackathonId}/teams/${team.id}/approve`, {
-        method: "POST",
-      }).then(assertOk)
-      router.refresh()
-    } catch (err) {
-      setTeams(snapshot)
-      showActionError(err instanceof Error ? err.message : "Failed to approve team")
-    }
+  function handleApproveTeam(team: Team) {
+    void approveTeam(team)
   }
 
   async function handleDenyTeam(team: Team) {
@@ -607,9 +611,9 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         </div>
       )}
       {roomError && <p className="text-sm text-destructive">{roomError}</p>}
-      {(actionError || remindError) && (
+      {(actionError || remindError || approveError) && (
         <p className="text-sm text-destructive">
-          {[actionError, remindError].filter(Boolean).join(" · ")}
+          {[actionError, remindError, approveError].filter(Boolean).join(" · ")}
         </p>
       )}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

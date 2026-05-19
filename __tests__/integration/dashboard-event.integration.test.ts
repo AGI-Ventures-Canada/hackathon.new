@@ -403,6 +403,19 @@ describe("Dashboard Event Routes Integration Tests", () => {
       expect(data.membersNotified).toBe(2)
       expect(mockDenyPendingTeam).toHaveBeenCalledWith(teamId, hackathonId)
     })
+
+    it("returns 409 when the team is not waiting", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockDenyPendingTeam.mockResolvedValueOnce({ error: "This team is not waiting for approval", code: "not_pending" })
+
+      const res = await app.handle(
+        new Request(`${baseUrl}/teams/${teamId}/deny`, { method: "POST" })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(409)
+      expect(data.code).toBe("not_pending")
+    })
   })
 
   describe("GET /api/dashboard/hackathons/:id/announcements", () => {
