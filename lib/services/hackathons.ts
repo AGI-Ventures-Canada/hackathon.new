@@ -989,13 +989,28 @@ export async function denyPendingTeamsForClosedHackathon(
   const failed: Array<{ teamId: string; code: string }> = []
   let denied = 0
 
-  for (const team of teams ?? []) {
-    const result = await denyPendingTeam(team.id, hackathonId)
+  const closeouts = await Promise.allSettled(
+    (teams ?? []).map((team) =>
+      denyPendingTeam(team.id, hackathonId)
+        .then((result) => ({ teamId: team.id, result }))
+        .catch((error: unknown) => Promise.reject({ teamId: team.id, error }))
+    )
+  )
+
+  for (const closeout of closeouts) {
+    if (closeout.status === "rejected") {
+      const reason = closeout.reason as { teamId?: unknown; error?: unknown }
+      console.error("Failed to close pending team:", reason.error ?? reason)
+      failed.push({ teamId: typeof reason.teamId === "string" ? reason.teamId : "*", code: "failed" })
+      continue
+    }
+
+    const { teamId, result } = closeout.value
     if ("success" in result) {
       denied++
       continue
     }
-    failed.push({ teamId: team.id, code: result.code })
+    failed.push({ teamId, code: result.code })
   }
 
   return { denied, failed }
@@ -1030,23 +1045,40 @@ async function notifyReviewedTeamMembers({
     if (hackathon.status === "draft") return 0
 
     const clerk = await clerkClient()
-    const recipients: string[] = []
+    const { sendTeamApprovedEmails, sendTeamDeniedEmails } = await import("@/lib/email/team-review")
+    const sendEmails = review === "approved" ? sendTeamApprovedEmails : sendTeamDeniedEmails
+    const seenRecipients = new Set<string>()
     const uniqueUserIds = [...new Set(memberClerkUserIds)]
+    let sent = 0
 
     for (let i = 0; i < uniqueUserIds.length; i += 100) {
       const batch = uniqueUserIds.slice(i, i + 100)
-      const users = await clerk.users.getUserList({ userId: batch, limit: 100 })
+      let users: Awaited<ReturnType<typeof clerk.users.getUserList>>
+      try {
+        users = await clerk.users.getUserList({ userId: batch, limit: 100 })
+      } catch (err) {
+        console.error(`Failed to load ${review} team notification recipients:`, err)
+        continue
+      }
+      const recipients: string[] = []
       for (const user of users.data) {
         const email = user.primaryEmailAddress?.emailAddress ?? user.emailAddresses[0]?.emailAddress
-        if (email) recipients.push(email)
+        const normalizedEmail = email?.trim().toLowerCase()
+        if (normalizedEmail && !seenRecipients.has(normalizedEmail)) {
+          seenRecipients.add(normalizedEmail)
+          recipients.push(normalizedEmail)
+        }
+      }
+
+      if (recipients.length === 0) continue
+      try {
+        sent += await sendEmails({ recipients, teamName, hackathonName: hackathon.name, hackathonSlug: hackathon.slug })
+      } catch (err) {
+        console.error(`Failed to send ${review} team notification batch:`, err)
       }
     }
 
-    if (recipients.length === 0) return 0
-
-    const { sendTeamApprovedEmails, sendTeamDeniedEmails } = await import("@/lib/email/team-review")
-    const sendEmails = review === "approved" ? sendTeamApprovedEmails : sendTeamDeniedEmails
-    return sendEmails({ recipients, teamName, hackathonName: hackathon.name, hackathonSlug: hackathon.slug })
+    return sent
   } catch (err) {
     console.error(`Failed to notify ${review} team members:`, err)
     return 0
