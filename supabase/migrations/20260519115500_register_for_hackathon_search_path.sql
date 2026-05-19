@@ -1,9 +1,4 @@
-ALTER TABLE hackathons
-  ADD COLUMN IF NOT EXISTS require_team_approval boolean NOT NULL DEFAULT false;
-
-CREATE INDEX IF NOT EXISTS idx_teams_hackathon_status ON teams(hackathon_id, status);
-
-CREATE OR REPLACE FUNCTION register_for_hackathon(
+CREATE OR REPLACE FUNCTION public.register_for_hackathon(
   p_hackathon_id UUID,
   p_clerk_user_id TEXT,
   p_team_name TEXT DEFAULT NULL
@@ -27,12 +22,12 @@ DECLARE
   v_new_team_id UUID;
   v_invite_code TEXT;
   v_final_team_name TEXT;
-  v_team_status team_status;
+  v_team_status public.team_status;
   v_now TIMESTAMPTZ := NOW();
 BEGIN
   SELECT id, status, registration_opens_at, registration_closes_at, max_participants, require_team_approval
   INTO v_hackathon
-  FROM hackathons
+  FROM public.hackathons
   WHERE id = p_hackathon_id
   FOR UPDATE;
 
@@ -60,7 +55,7 @@ BEGIN
     RETURN;
   END IF;
 
-  PERFORM 1 FROM hackathon_participants
+  PERFORM 1 FROM public.hackathon_participants
   WHERE hackathon_id = p_hackathon_id
     AND clerk_user_id = p_clerk_user_id
     AND role = 'judge';
@@ -73,7 +68,7 @@ BEGIN
   END IF;
 
   SELECT id INTO v_existing_registration
-  FROM hackathon_participants
+  FROM public.hackathon_participants
   WHERE hackathon_id = p_hackathon_id AND clerk_user_id = p_clerk_user_id;
 
   IF v_existing_registration IS NOT NULL THEN
@@ -83,7 +78,7 @@ BEGIN
 
   IF v_hackathon.max_participants IS NOT NULL THEN
     SELECT COUNT(*) INTO v_participant_count
-    FROM hackathon_participants
+    FROM public.hackathon_participants
     WHERE hackathon_id = p_hackathon_id AND role = 'participant';
 
     IF v_participant_count >= v_hackathon.max_participants THEN
@@ -94,13 +89,13 @@ BEGIN
 
   v_final_team_name := COALESCE(p_team_name, 'My Team');
   v_invite_code := encode(gen_random_bytes(6), 'hex');
-  v_team_status := CASE WHEN v_hackathon.require_team_approval THEN 'pending_approval'::team_status ELSE 'forming'::team_status END;
+  v_team_status := CASE WHEN v_hackathon.require_team_approval THEN 'pending_approval'::public.team_status ELSE 'forming'::public.team_status END;
 
-  INSERT INTO teams (hackathon_id, name, captain_clerk_user_id, invite_code, status)
+  INSERT INTO public.teams (hackathon_id, name, captain_clerk_user_id, invite_code, status)
   VALUES (p_hackathon_id, v_final_team_name, p_clerk_user_id, v_invite_code, v_team_status)
   RETURNING id INTO v_new_team_id;
 
-  INSERT INTO hackathon_participants (hackathon_id, clerk_user_id, role, team_id)
+  INSERT INTO public.hackathon_participants (hackathon_id, clerk_user_id, role, team_id)
   VALUES (p_hackathon_id, p_clerk_user_id, 'participant', v_new_team_id)
   RETURNING id INTO v_new_participant_id;
 
@@ -108,5 +103,5 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION register_for_hackathon(UUID, TEXT, TEXT)
-  IS 'Extends the register_for_hackathon baseline from 20260415000006_published_allows_registration.sql with require_team_approval.';
+COMMENT ON FUNCTION public.register_for_hackathon(UUID, TEXT, TEXT)
+  IS 'Sets a fixed search_path for the team approval registration function.';

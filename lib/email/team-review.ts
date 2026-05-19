@@ -3,19 +3,16 @@ import { buildEventUrl, getReplyToAddress, renderEmail, sanitizeTag } from "./ut
 import TeamApprovedEmail from "@/emails/team-approved"
 import TeamDeniedEmail from "@/emails/team-denied"
 
-export type SendTeamApprovedInput = {
+type TeamReviewEmailInput = {
   to: string
   teamName: string
   hackathonName: string
   hackathonSlug: string
 }
 
-export type SendTeamDeniedInput = {
-  to: string
-  teamName: string
-  hackathonName: string
-  hackathonSlug: string
-}
+export type SendTeamApprovedInput = TeamReviewEmailInput
+
+export type SendTeamDeniedInput = TeamReviewEmailInput
 
 export async function sendTeamApprovedEmail(
   input: SendTeamApprovedInput
