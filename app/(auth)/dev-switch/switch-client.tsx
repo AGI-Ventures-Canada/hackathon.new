@@ -26,8 +26,10 @@ function getErrorMessage(err: unknown): string {
 
 function isStaleSessionError(err: unknown): boolean {
   const status = getErrorStatus(err)
-  if (status === 401 || status === 403 || status === 404) return true
-  return /not found|unauthorized|forbidden/i.test(getErrorMessage(err))
+  const message = getErrorMessage(err)
+  if (status === 401 || status === 404) return true
+  if (status === 403) return /not found|unauthorized/i.test(message)
+  return /not found|unauthorized/i.test(message)
 }
 
 export function DevSwitchClient({

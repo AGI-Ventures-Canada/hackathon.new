@@ -1,5 +1,4 @@
-import { supabase as getSupabase } from "@/lib/db/client"
-import type { SupabaseClient } from "@supabase/supabase-js"
+import { buildOrganizerPollPayload } from "@/lib/services/organizer-polling"
 
 export type ManageOverviewStats = {
   participantCount: number
@@ -10,27 +9,22 @@ export type ManageOverviewStats = {
 }
 
 export async function getManageOverviewStats(hackathonId: string): Promise<ManageOverviewStats> {
-  const client = getSupabase() as unknown as SupabaseClient
-
-  const [participantResult, teamResult, pendingTeamResult, mentorOpenResult, hackathonResult] = await Promise.all([
-    client.from("hackathon_participants").select("id", { count: "exact", head: true }).eq("hackathon_id", hackathonId),
-    client.from("teams").select("id", { count: "exact", head: true }).eq("hackathon_id", hackathonId).neq("status", "disbanded"),
-    client.from("teams").select("id", { count: "exact", head: true }).eq("hackathon_id", hackathonId).eq("status", "pending_approval"),
-    client.from("mentor_requests").select("id", { count: "exact", head: true }).eq("hackathon_id", hackathonId).eq("status", "open"),
-    client.from("hackathons").select("challenge_released_at").eq("id", hackathonId).single(),
-  ])
-
-  if (participantResult.error) console.error("Failed to count participants:", participantResult.error)
-  if (teamResult.error) console.error("Failed to count teams:", teamResult.error)
-  if (pendingTeamResult.error) console.error("Failed to count teams waiting for approval:", pendingTeamResult.error)
-  if (mentorOpenResult.error) console.error("Failed to count mentor requests:", mentorOpenResult.error)
-  if (hackathonResult.error) console.error("Failed to fetch hackathon:", hackathonResult.error)
+  const payload = await buildOrganizerPollPayload(hackathonId)
+  if (!payload) {
+    return {
+      participantCount: 0,
+      teamCount: 0,
+      pendingTeamApprovalCount: 0,
+      mentorQueue: { open: 0 },
+      challengeReleased: false,
+    }
+  }
 
   return {
-    participantCount: participantResult.count ?? 0,
-    teamCount: teamResult.count ?? 0,
-    pendingTeamApprovalCount: pendingTeamResult.count ?? 0,
-    mentorQueue: { open: mentorOpenResult.count ?? 0 },
-    challengeReleased: !!hackathonResult.data?.challenge_released_at,
+    participantCount: payload.participantCount,
+    teamCount: payload.teamCount,
+    pendingTeamApprovalCount: payload.pendingTeamApprovalCount,
+    mentorQueue: payload.mentorQueue,
+    challengeReleased: payload.challengeReleased,
   }
 }

@@ -62,10 +62,6 @@ export async function createTeamInvitation(
     return { success: false, error: "Team is locked", code: "team_locked" }
   }
 
-  if (team.status === "disbanded") {
-    return { success: false, error: "Team has been disbanded", code: "team_disbanded" }
-  }
-
   if (!TEAM_STATUSES_OPEN_FOR_INVITES.has(team.status)) {
     return { success: false, error: "Team can't receive invites", code: "team_not_open" }
   }

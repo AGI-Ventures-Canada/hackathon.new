@@ -102,6 +102,32 @@ describe("DevSwitchClient", () => {
     expect(replaceCalls).toEqual(["/e/demo"])
   })
 
+  it("continues when Clerk returns stale-session 403 text", async () => {
+    g.__clerkState.isSignedIn = true
+    mockSignOut.mockImplementation(() => Promise.reject({
+      status: 403,
+      errors: [{ message: "not found or unauthorized" }],
+    }))
+    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
+    await waitFor(() => expect(signInCreate).toHaveBeenCalled())
+    await waitFor(() => expect(mockSetActive).toHaveBeenCalledWith({ session: "session_abc" }))
+    expect(replaceCalls).toEqual(["/e/demo"])
+  })
+
+  it("shows an error for non-stale Clerk 403 failures", async () => {
+    g.__clerkState.isSignedIn = true
+    mockSignOut.mockImplementation(() => Promise.reject({
+      status: 403,
+      errors: [{ message: "missing permission" }],
+    }))
+    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
+    await waitFor(() => {
+      expect(screen.getByText("Sign-in failed")).toBeDefined()
+    })
+    expect(signInCreate).not.toHaveBeenCalled()
+    expect(replaceCalls).toEqual([])
+  })
+
   it("does not sign out when user is not signed in", async () => {
     render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
     await waitFor(() => expect(signInCreate).toHaveBeenCalled())

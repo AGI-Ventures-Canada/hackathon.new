@@ -163,7 +163,7 @@ describe("Team Invitations Service", () => {
       }
     })
 
-    it("returns error when team is disbanded", async () => {
+    it("returns not open when team is disbanded", async () => {
       const disbandedTeam = { ...mockTeam, status: "disbanded" }
       setMockFromImplementation(() =>
         createChainableMock({ data: disbandedTeam, error: null })
@@ -178,7 +178,7 @@ describe("Team Invitations Service", () => {
 
       expect(result.success).toBe(false)
       if (!result.success) {
-        expect(result.code).toBe("team_disbanded")
+        expect(result.code).toBe("team_not_open")
       }
     })
 

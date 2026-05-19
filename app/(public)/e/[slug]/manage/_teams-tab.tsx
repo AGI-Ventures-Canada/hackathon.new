@@ -370,8 +370,10 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         method: "POST",
       }).then(assertOk),
     onOptimistic: (team) => {
-      denySnapshotRef.current = teams
-      setTeams((prev) => prev.filter((t) => t.id !== team.id))
+      setTeams((prev) => {
+        denySnapshotRef.current = prev
+        return prev.filter((t) => t.id !== team.id)
+      })
       setDenyingTeam(null)
     },
     onRevert: (team) => {
