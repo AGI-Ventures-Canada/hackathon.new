@@ -68,11 +68,12 @@ describe("DevSwitchClient", () => {
     await waitFor(() => expect(replaceCalls).toEqual(["/e/demo"]))
   })
 
-  it("activates session without organization when org is null", async () => {
+  it("activates session and clears organization when org is null", async () => {
     render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
     await waitFor(() => expect(mockSetActive).toHaveBeenCalledTimes(1))
     expect(mockSetActive).toHaveBeenCalledWith({
       session: "session_abc",
+      organization: null,
     })
   })
 
@@ -95,12 +96,13 @@ describe("DevSwitchClient", () => {
     expect(mockSignOut).toHaveBeenCalledWith({ sessionId: "sess_current" })
   })
 
-  it("does not send an organization when switching to a no-org persona", async () => {
+  it("clears the organization when switching to a no-org persona", async () => {
     g.__clerkState.isSignedIn = true
     render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
     await waitFor(() => expect(mockSetActive).toHaveBeenCalledTimes(1))
     expect(mockSetActive).toHaveBeenCalledWith({
       session: "session_abc",
+      organization: null,
     })
   })
 
@@ -112,6 +114,7 @@ describe("DevSwitchClient", () => {
     await waitFor(() =>
       expect(mockSetActive).toHaveBeenCalledWith({
         session: "session_abc",
+        organization: null,
       })
     )
     expect(replaceCalls).toEqual(["/e/demo"])
@@ -132,27 +135,50 @@ describe("DevSwitchClient", () => {
     await waitFor(() => expect(mockSetActive).toHaveBeenCalledTimes(2))
     expect(mockSetActive).toHaveBeenNthCalledWith(1, {
       session: "session_abc",
+      organization: null,
     })
     expect(mockSetActive).toHaveBeenNthCalledWith(2, {
       session: "session_abc",
+      organization: null,
     })
     expect(replaceCalls).toEqual(["/e/demo"])
   })
 
-  it("continues when Clerk returns stale-session 403 text", async () => {
+  it("continues when Clerk returns a stale-session 403 code", async () => {
     g.__clerkState.isSignedIn = true
     mockSignOut.mockImplementation(() => Promise.reject({
       status: 403,
-      errors: [{ message: "not found or unauthorized" }],
+      errors: [{ code: "session_not_found", message: "not found or unauthorized" }],
     }))
     render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
     await waitFor(() => expect(signInCreate).toHaveBeenCalled())
     await waitFor(() =>
       expect(mockSetActive).toHaveBeenCalledWith({
         session: "session_abc",
+        organization: null,
       })
     )
     expect(replaceCalls).toEqual(["/e/demo"])
+  })
+
+  it("does not hide a missing requested organization", async () => {
+    mockSetActive.mockImplementationOnce(() =>
+      Promise.reject({
+        status: 403,
+        errors: [{
+          code: "organization_not_found_or_unauthorized",
+          long_message: "Given organization not found, or you don't have permission to access the organization",
+        }],
+      })
+    )
+    render(
+      <DevSwitchClient token="ticket_xyz" redirect="/e/demo" org="org_missing" />
+    )
+    await waitFor(() => {
+      expect(screen.getByText("Sign-in failed")).toBeDefined()
+    })
+    expect(mockSetActive).toHaveBeenCalledTimes(1)
+    expect(replaceCalls).toEqual([])
   })
 
   it("shows an error for non-stale Clerk 403 failures", async () => {

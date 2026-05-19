@@ -180,6 +180,15 @@ export async function executeTransition(
   }
 
   if (toStatus === "completed" || toStatus === "archived") {
+    const { denyPendingTeamsForClosedHackathon } = await import("./hackathons")
+    const closeout = await denyPendingTeamsForClosedHackathon(hackathonId)
+    if (closeout.failed.length > 0) {
+      console.error(
+        `Failed to close ${closeout.failed.length} pending team(s) for hackathon ${hackathonId}:`,
+        closeout.failed
+      )
+    }
+
     const { cancelRemindersForEntity } = await import("./smart-reminders")
     cancelRemindersForEntity("hackathon_event", hackathonId).catch((err) =>
       console.error(`Failed to cancel pre-event reminders for hackathon ${hackathonId}:`, err)
@@ -248,4 +257,3 @@ export async function processAutoTransitions(): Promise<AutoTransitionResult> {
 
   return result
 }
-

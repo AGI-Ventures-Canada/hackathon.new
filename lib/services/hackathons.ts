@@ -1,7 +1,7 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import {
-  ORGANIZER_CREATED_TEAM_STATUS,
+  APPROVED_TEAM_STATUS,
   type Hackathon,
   type HackathonParticipant,
   type TeamStatus,
@@ -713,7 +713,7 @@ export async function createTeamWithMembers(
           name: input.name,
           captain_clerk_user_id: captainClerkUserId,
           invite_code: crypto.randomUUID().slice(0, 8),
-          status: ORGANIZER_CREATED_TEAM_STATUS,
+          status: APPROVED_TEAM_STATUS,
         })
         .select("id, name")
         .single()
@@ -776,7 +776,7 @@ async function createPendingTeamWithInvite(
       captain_clerk_user_id: null,
       pending_captain_email: input.captainEmail.toLowerCase(),
       invite_code: crypto.randomUUID().slice(0, 8),
-      status: ORGANIZER_CREATED_TEAM_STATUS,
+      status: APPROVED_TEAM_STATUS,
     })
     .select("id, name")
     .single()
@@ -969,6 +969,36 @@ export async function denyPendingTeam(teamId: string, hackathonId: string): Prom
     invitesCancelled: row.invites_cancelled ?? 0,
     membersNotified,
   }
+}
+
+export async function denyPendingTeamsForClosedHackathon(
+  hackathonId: string
+): Promise<{ denied: number; failed: Array<{ teamId: string; code: string }> }> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const { data: teams, error } = await client
+    .from("teams")
+    .select("id")
+    .eq("hackathon_id", hackathonId)
+    .eq("status", "pending_approval")
+
+  if (error) {
+    console.error("Failed to list pending teams for closeout:", error)
+    return { denied: 0, failed: [{ teamId: "*", code: "list_failed" }] }
+  }
+
+  const failed: Array<{ teamId: string; code: string }> = []
+  let denied = 0
+
+  for (const team of teams ?? []) {
+    const result = await denyPendingTeam(team.id, hackathonId)
+    if ("success" in result && result.success) {
+      denied++
+    } else {
+      failed.push({ teamId: team.id, code: "error" in result ? result.code : "failed" })
+    }
+  }
+
+  return { denied, failed }
 }
 
 async function notifyReviewedTeamMembers({

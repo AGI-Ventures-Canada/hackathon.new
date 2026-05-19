@@ -13,27 +13,35 @@ function getErrorStatus(err: unknown): number | null {
   return typeof statusCode === "number" ? statusCode : null
 }
 
-function getErrorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message
-  if (!err || typeof err !== "object") return String(err)
-  const errors = (err as { errors?: Array<{
-    message?: unknown
-    longMessage?: unknown
-    long_message?: unknown
-    code?: unknown
-  }> }).errors
-  if (!Array.isArray(errors)) return String(err)
+function getErrorCodes(err: unknown): string[] {
+  if (!err || typeof err !== "object") return []
+  const errors = (err as { errors?: Array<{ code?: unknown }> }).errors
+  if (!Array.isArray(errors)) return []
   return errors
-    .flatMap((entry) => [entry.message, entry.longMessage, entry.long_message, entry.code])
-    .filter((message): message is string => typeof message === "string")
-    .join(" ")
+    .map((entry) => entry.code)
+    .filter((code): code is string => typeof code === "string")
 }
 
-function isStaleSessionError(err: unknown): boolean {
+function isStaleSessionError(
+  err: unknown,
+  options: { allowStaleOrganization?: boolean } = {}
+): boolean {
   const status = getErrorStatus(err)
-  const message = getErrorMessage(err)
+  const codes = getErrorCodes(err)
+  if (codes.includes("organization_not_found_or_unauthorized")) {
+    return options.allowStaleOrganization === true
+  }
+  if (
+    codes.some(
+      (code) =>
+        code.includes("session") &&
+        (code.includes("not_found") || code.includes("unauthorized"))
+    )
+  ) {
+    return true
+  }
+  if (codes.length > 0 && status === 403) return false
   if (status === 401 || status === 404) return true
-  if (status === 403) return /not[ _-]found|unauthorized/i.test(message)
   return false
 }
 
@@ -63,11 +71,11 @@ export function DevSwitchClient({
         async function activateSession(sessionId: string) {
           if (!org) {
             try {
-              await setActive({ session: sessionId })
+              await setActive({ session: sessionId, organization: null })
             } catch (err) {
-              if (!isStaleSessionError(err)) throw err
+              if (!isStaleSessionError(err, { allowStaleOrganization: true })) throw err
               console.warn("Retrying dev switch after stale Clerk session activation:", err)
-              await setActive({ session: sessionId })
+              await setActive({ session: sessionId, organization: null })
             }
             return
           }
@@ -95,7 +103,7 @@ export function DevSwitchClient({
               await signOut()
             }
           } catch (err) {
-            if (!isStaleSessionError(err)) throw err
+            if (!isStaleSessionError(err, { allowStaleOrganization: true })) throw err
             console.warn("Ignoring stale Clerk session during dev switch sign-out:", err)
           }
         }

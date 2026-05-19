@@ -17,7 +17,13 @@ mock.module("@/lib/email/team-review", () => ({
   sendTeamDeniedEmails: mockSendTeamDeniedEmails,
 }))
 
-const { deleteTeam, setTeamCaptain, approvePendingTeam, denyPendingTeam } = await import("@/lib/services/hackathons")
+const {
+  deleteTeam,
+  setTeamCaptain,
+  approvePendingTeam,
+  denyPendingTeam,
+  denyPendingTeamsForClosedHackathon,
+} = await import("@/lib/services/hackathons")
 
 type SupaResult = { data: unknown; error: { message: string } | null; count?: number | null }
 
@@ -430,5 +436,70 @@ describe("team approvals", () => {
 
     const result = await denyPendingTeam("team_1", "h_1")
     expect(result).toEqual({ error: "This team is not waiting for approval", code: "not_pending" })
+  })
+
+  it("denies all pending teams when a hackathon closes", async () => {
+    setMockFromImplementation(
+      tableImpl({
+        teams: { data: [{ id: "team_1" }, { id: "team_2" }], error: null },
+        hackathons: { data: { name: "Hack One", slug: "hack-one", status: "completed" }, error: null },
+      })
+    )
+    setMockRpcImplementation((_, params) => {
+      const teamId = (params as { p_team_id: string }).p_team_id
+      return Promise.resolve({
+        data: [{
+          success: true,
+          error_code: null,
+          error_message: null,
+          team_id: teamId,
+          team_name: teamId === "team_1" ? "Team One" : "Team Two",
+          team_status: "disbanded",
+          members_unassigned: 0,
+          invites_cancelled: 0,
+          cancelled_invitation_ids: [],
+          member_clerk_user_ids: [],
+        }],
+        error: null,
+      })
+    })
+
+    const result = await denyPendingTeamsForClosedHackathon("h_1")
+
+    expect(result).toEqual({ denied: 2, failed: [] })
+  })
+
+  it("reports pending closeout failures without stopping later teams", async () => {
+    setMockFromImplementation(
+      tableImpl({
+        teams: { data: [{ id: "team_1" }, { id: "team_2" }], error: null },
+        hackathons: { data: { name: "Hack One", slug: "hack-one", status: "completed" }, error: null },
+      })
+    )
+    setMockRpcImplementation((_, params) => {
+      const teamId = (params as { p_team_id: string }).p_team_id
+      return Promise.resolve({
+        data: [{
+          success: teamId === "team_2",
+          error_code: teamId === "team_1" ? "not_pending" : null,
+          error_message: teamId === "team_1" ? "This team is not waiting for approval" : null,
+          team_id: teamId,
+          team_name: teamId === "team_1" ? "Team One" : "Team Two",
+          team_status: teamId === "team_1" ? "forming" : "disbanded",
+          members_unassigned: 0,
+          invites_cancelled: 0,
+          cancelled_invitation_ids: [],
+          member_clerk_user_ids: [],
+        }],
+        error: null,
+      })
+    })
+
+    const result = await denyPendingTeamsForClosedHackathon("h_1")
+
+    expect(result).toEqual({
+      denied: 1,
+      failed: [{ teamId: "team_1", code: "not_pending" }],
+    })
   })
 })
