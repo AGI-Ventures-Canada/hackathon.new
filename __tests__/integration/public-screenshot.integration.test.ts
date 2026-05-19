@@ -245,7 +245,7 @@ describe("Public Screenshot Routes", () => {
       )
       const data = await res.json()
 
-      expect(res.status).toBe(403)
+      expect(res.status).toBe(409)
       expect(data.code).toBe("team_pending_approval")
       expect(mockCreateSubmission).not.toHaveBeenCalled()
     })
@@ -326,7 +326,7 @@ describe("Public Screenshot Routes", () => {
       )
       const data = await res.json()
 
-      expect(res.status).toBe(403)
+      expect(res.status).toBe(409)
       expect(data.code).toBe("team_pending_approval")
       expect(mockGetExistingSubmission).not.toHaveBeenCalled()
       expect(mockUpdateSubmission).not.toHaveBeenCalled()
@@ -430,7 +430,7 @@ describe("Public Screenshot Routes", () => {
       )
       const data = await res.json()
 
-      expect(res.status).toBe(403)
+      expect(res.status).toBe(409)
       expect(data.code).toBe("team_pending_approval")
       expect(mockGetExistingSubmission).not.toHaveBeenCalled()
       expect(mockUploadScreenshot).not.toHaveBeenCalled()

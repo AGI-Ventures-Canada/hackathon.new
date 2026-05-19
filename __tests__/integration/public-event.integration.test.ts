@@ -213,7 +213,7 @@ describe("Public Event Routes Integration Tests", () => {
       }))
       const data = await res.json()
 
-      expect(res.status).toBe(403)
+      expect(res.status).toBe(409)
       expect(data.code).toBe("team_pending_approval")
       expect(mockSubmitSocialUrl).not.toHaveBeenCalled()
     })
@@ -252,7 +252,7 @@ describe("Public Event Routes Integration Tests", () => {
       const res = await app.handle(new Request(url))
       const data = await res.json()
 
-      expect(res.status).toBe(403)
+      expect(res.status).toBe(409)
       expect(data.code).toBe("team_pending_approval")
       expect(mockListPerks).not.toHaveBeenCalled()
     })

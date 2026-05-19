@@ -603,7 +603,7 @@ function HackathonPreviewContent({
       <section className="py-12 border-t">
         <div className="mx-auto max-w-4xl px-4">
           <Tabs
-            key={!isPendingTeam && isChallengesFreshlyReleased ? "tabs-fresh" : "tabs-default"}
+            key={isChallengesFreshlyReleased ? "tabs-fresh" : "tabs-default"}
             defaultValue={!isPendingTeam && isChallengesFreshlyReleased ? "challenges" : "overview"}
             className="w-full"
           >
