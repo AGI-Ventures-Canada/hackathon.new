@@ -2,6 +2,20 @@ import { describe, expect, it, mock, beforeEach } from "bun:test"
 
 const mockGetPublicHackathon = mock(() => Promise.resolve(null))
 const mockBuildPollPayload = mock(() => Promise.resolve(null))
+const mockResolvePrincipal = mock(() => Promise.resolve({ kind: "anon" }))
+const mockGetParticipantWithTeam = mock(() => Promise.resolve(null))
+const mockListPerks = mock(() => Promise.resolve([]))
+const mockIsPerkReleased = mock(() => true)
+
+class MockAuthError extends Error {
+  constructor(
+    message: string,
+    public statusCode: number = 401
+  ) {
+    super(message)
+    this.name = "AuthError"
+  }
+}
 
 mock.module("@/lib/services/public-hackathons", () => ({
   getPublicHackathon: mockGetPublicHackathon,
@@ -17,6 +31,20 @@ mock.module("@/lib/services/announcements", () => ({
 
 mock.module("@/lib/services/schedule-items", () => ({
   listScheduleItems: mock(() => Promise.resolve([])),
+}))
+
+mock.module("@/lib/auth/principal", () => ({
+  resolvePrincipal: mockResolvePrincipal,
+  AuthError: MockAuthError,
+}))
+
+mock.module("@/lib/services/submissions", () => ({
+  getParticipantWithTeam: mockGetParticipantWithTeam,
+}))
+
+mock.module("@/lib/services/perks", () => ({
+  listPerks: mockListPerks,
+  isPerkReleased: mockIsPerkReleased,
 }))
 
 const { Elysia } = await import("elysia")
@@ -60,6 +88,14 @@ describe("Public Event Routes Integration Tests", () => {
   beforeEach(() => {
     mockGetPublicHackathon.mockReset()
     mockBuildPollPayload.mockReset()
+    mockResolvePrincipal.mockReset()
+    mockGetParticipantWithTeam.mockReset()
+    mockListPerks.mockReset()
+    mockIsPerkReleased.mockReset()
+    mockResolvePrincipal.mockResolvedValue({ kind: "anon" })
+    mockGetParticipantWithTeam.mockResolvedValue(null)
+    mockListPerks.mockResolvedValue([])
+    mockIsPerkReleased.mockReturnValue(true)
   })
 
   describe("GET /api/public/hackathons/:slug/poll", () => {
@@ -120,6 +156,45 @@ describe("Public Event Routes Integration Tests", () => {
       expect(mockBuildPollPayload).toHaveBeenCalledWith(
         "11111111-1111-1111-1111-111111111111"
       )
+    })
+  })
+
+  describe("GET /api/public/hackathons/:slug/perks", () => {
+    const url = "http://localhost/api/public/hackathons/build-os26/perks"
+
+    it("returns released perks for approved team members", async () => {
+      const perk = { id: "perk_1", title: "Credits" }
+      mockGetPublicHackathon.mockResolvedValue({ ...mockHackathon, starts_at: "2026-04-28T10:00:00Z" })
+      mockResolvePrincipal.mockResolvedValue({ kind: "user", userId: "user_1" })
+      mockGetParticipantWithTeam.mockResolvedValue({
+        participantId: "participant_1",
+        teamId: "team_1",
+        teamStatus: "forming",
+      })
+      mockListPerks.mockResolvedValue([perk])
+
+      const res = await app.handle(new Request(url))
+      const data = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(data.perks).toEqual([perk])
+    })
+
+    it("blocks perks for teams waiting for approval", async () => {
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockResolvePrincipal.mockResolvedValue({ kind: "user", userId: "user_1" })
+      mockGetParticipantWithTeam.mockResolvedValue({
+        participantId: "participant_1",
+        teamId: "team_1",
+        teamStatus: "pending_approval",
+      })
+
+      const res = await app.handle(new Request(url))
+      const data = await res.json()
+
+      expect(res.status).toBe(403)
+      expect(data.code).toBe("team_pending_approval")
+      expect(mockListPerks).not.toHaveBeenCalled()
     })
   })
 })

@@ -102,6 +102,14 @@ type Team = {
   room: { id: string; name: string } | null
 }
 
+type ReviewTeamResponse = {
+  success: true
+  team: { id: string; name: string; status: TeamStatus }
+  membersUnassigned?: number
+  invitesCancelled?: number
+  membersNotified?: number
+}
+
 function getTeamMemberName(member: TeamMember): string {
   return getDisplayName({
     name: member.displayName,
@@ -182,6 +190,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
   const [reinviteError, setReinviteError] = useState<string | null>(null)
   const [remindError, setRemindError] = useState<string | null>(null)
   const [remindPendingIds, setRemindPendingIds] = useState<Set<string>>(new Set())
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null)
 
   useEffect(() => {
     if (!ctx) return
@@ -340,25 +349,45 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
     setTimeout(() => setActionError(null), 8000)
   }
 
-  const { execute: approveTeam, error: approveError } = useOptimisticMutation<Team, void>({
+  function showActionSuccess(message: string) {
+    setActionSuccess(message)
+    setTimeout(() => setActionSuccess(null), 5000)
+  }
+
+  function notifiedText(count: number | undefined): string {
+    const safeCount = count ?? 0
+    return `${safeCount} member${safeCount === 1 ? "" : "s"} notified`
+  }
+
+  function countText(count: number | undefined, singular: string, plural: string): string {
+    const safeCount = count ?? 0
+    return `${safeCount} ${safeCount === 1 ? singular : plural}`
+  }
+
+  const { execute: approveTeam, error: approveError } = useOptimisticMutation<Team, ReviewTeamResponse>({
     fn: (team) =>
       fetch(`/api/dashboard/hackathons/${hackathonId}/teams/${team.id}/approve`, {
         method: "POST",
-      }).then(assertOk),
+      }).then(assertOkJson<ReviewTeamResponse>),
     onOptimistic: (team) => {
+      setActionSuccess(null)
       setTeams((prev) => prev.map((t) => (t.id === team.id ? { ...t, status: "forming" } : t)))
     },
     onRevert: (team) => {
       setTeams((prev) => prev.map((t) => (t.id === team.id ? team : t)))
     },
+    onSuccess: (response, team) => {
+      showActionSuccess(`Approved ${team.name}. ${notifiedText(response.membersNotified)}.`)
+    },
   })
 
-  const { execute: denyTeam, error: denyError } = useOptimisticMutation<Team, void>({
+  const { execute: denyTeam, error: denyError } = useOptimisticMutation<Team, ReviewTeamResponse>({
     fn: (team) =>
       fetch(`/api/dashboard/hackathons/${hackathonId}/teams/${team.id}/deny`, {
         method: "POST",
-      }).then(assertOk),
+      }).then(assertOkJson<ReviewTeamResponse>),
     onOptimistic: (team) => {
+      setActionSuccess(null)
       setTeams((prev) => {
         denySnapshotsRef.current.set(team.id, prev)
         return prev.filter((t) => t.id !== team.id)
@@ -376,6 +405,13 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
     },
     onSuccess: (_response, team) => {
       denySnapshotsRef.current.delete(team.id)
+      showActionSuccess(
+        `Denied ${team.name}. ${[
+          countText(_response.membersUnassigned, "member moved", "members moved"),
+          countText(_response.invitesCancelled, "invite canceled", "invites canceled"),
+          notifiedText(_response.membersNotified),
+        ].join(", ")}.`
+      )
     },
     onError: (_error, team) => {
       denySnapshotsRef.current.delete(team.id)
@@ -608,6 +644,12 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         <div className="flex items-center gap-2 rounded-lg border bg-muted/50 px-4 py-3 text-sm">
           <Mail className="size-4 text-muted-foreground" />
           {inviteSuccess}
+        </div>
+      )}
+      {actionSuccess && (
+        <div className="flex items-center gap-2 rounded-lg border bg-muted/50 px-4 py-3 text-sm">
+          <Check className="size-4 text-muted-foreground" />
+          {actionSuccess}
         </div>
       )}
       {roomError && <p className="text-sm text-destructive">{roomError}</p>}

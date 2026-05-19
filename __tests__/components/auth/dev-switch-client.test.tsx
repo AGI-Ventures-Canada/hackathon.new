@@ -71,7 +71,10 @@ describe("DevSwitchClient", () => {
   it("activates session without organization when org is null", async () => {
     render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
     await waitFor(() => expect(mockSetActive).toHaveBeenCalledTimes(1))
-    expect(mockSetActive).toHaveBeenCalledWith({ session: "session_abc" })
+    expect(mockSetActive).toHaveBeenCalledWith({
+      session: "session_abc",
+      organization: null,
+    })
   })
 
   it("activates session with organization when org is provided", async () => {
@@ -98,7 +101,12 @@ describe("DevSwitchClient", () => {
     mockSignOut.mockImplementation(() => Promise.reject({ status: 404 }))
     render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
     await waitFor(() => expect(signInCreate).toHaveBeenCalled())
-    await waitFor(() => expect(mockSetActive).toHaveBeenCalledWith({ session: "session_abc" }))
+    await waitFor(() =>
+      expect(mockSetActive).toHaveBeenCalledWith({
+        session: "session_abc",
+        organization: null,
+      })
+    )
     expect(replaceCalls).toEqual(["/e/demo"])
   })
 
@@ -110,7 +118,12 @@ describe("DevSwitchClient", () => {
     }))
     render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
     await waitFor(() => expect(signInCreate).toHaveBeenCalled())
-    await waitFor(() => expect(mockSetActive).toHaveBeenCalledWith({ session: "session_abc" }))
+    await waitFor(() =>
+      expect(mockSetActive).toHaveBeenCalledWith({
+        session: "session_abc",
+        organization: null,
+      })
+    )
     expect(replaceCalls).toEqual(["/e/demo"])
   })
 

@@ -76,7 +76,7 @@ export function DevSwitchClient({
         if (result.status === "complete") {
           await setActive({
             session: result.createdSessionId,
-            ...(org ? { organization: org } : {}),
+            organization: org ?? null,
           })
           window.location.replace(redirect)
         } else {

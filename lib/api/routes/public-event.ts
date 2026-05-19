@@ -18,6 +18,14 @@ async function resolveHackathonBySlug(slug: string, set: { status?: number | str
   return { error: null, hackathon }
 }
 
+function pendingTeamResponse(set: { status?: number | string }) {
+  set.status = 403
+  return {
+    error: "Your team is waiting for approval before it can view perks.",
+    code: "team_pending_approval",
+  }
+}
+
 export const publicEventRoutes = new Elysia({ prefix: "/public" })
   .get("/hackathons/:slug/poll", async ({ params, set }) => {
     const { error, hackathon } = await resolveHackathonBySlug(params.slug, set)
@@ -144,6 +152,9 @@ export const publicEventRoutes = new Elysia({ prefix: "/public" })
     if (!participant || !participant.teamId) {
       set.status = 403
       return { error: "You must be on a team to view perks" }
+    }
+    if (participant.teamStatus === "pending_approval") {
+      return pendingTeamResponse(set)
     }
 
     const { listPerks, isPerkReleased } = await import("@/lib/services/perks")

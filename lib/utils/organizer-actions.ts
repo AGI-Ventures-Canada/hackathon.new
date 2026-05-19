@@ -284,7 +284,7 @@ function judgesLabel(input: ActionItemsInput): string {
 function addPendingTeamApprovalAction(items: ActionItem[], input: ActionItemsInput) {
   const count = input.pendingTeamApprovalCount
   if (count <= 0) return
-  if (input.status === "judging" || input.status === "completed") return
+  if (input.status === "judging" || input.status === "completed" || input.status === "archived") return
 
   items.push(autoAction({
     id: "review-pending-teams",
