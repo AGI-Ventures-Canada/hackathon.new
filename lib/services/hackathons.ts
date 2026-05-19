@@ -905,7 +905,7 @@ export async function approvePendingTeam(teamId: string, hackathonId: string): P
     client,
     hackathonId,
     teamName: row.team_name,
-    memberClerkUserIds,
+    acceptedMemberClerkUserIds: memberClerkUserIds,
     review: "approved",
   })
 
@@ -968,7 +968,7 @@ export async function denyPendingTeam(
     client,
     hackathonId,
     teamName: row.team_name,
-    memberClerkUserIds,
+    acceptedMemberClerkUserIds: memberClerkUserIds,
     review: "denied",
     hackathon: options.notificationHackathon,
   })
@@ -1046,18 +1046,18 @@ async function notifyReviewedTeamMembers({
   client,
   hackathonId,
   teamName,
-  memberClerkUserIds,
+  acceptedMemberClerkUserIds,
   review,
   hackathon: providedHackathon,
 }: {
   client: SupabaseClient
   hackathonId: string
   teamName: string
-  memberClerkUserIds: string[]
+  acceptedMemberClerkUserIds: string[]
   review: "approved" | "denied"
   hackathon?: TeamReviewHackathon
 }): Promise<number> {
-  if (memberClerkUserIds.length === 0) return 0
+  if (acceptedMemberClerkUserIds.length === 0) return 0
 
   try {
     let hackathon = providedHackathon
@@ -1085,7 +1085,7 @@ async function notifyReviewedTeamMembers({
     const { sendTeamApprovedEmails, sendTeamDeniedEmails } = await import("@/lib/email/team-review")
     const sendEmails = review === "approved" ? sendTeamApprovedEmails : sendTeamDeniedEmails
     const seenRecipients = new Set<string>()
-    const uniqueUserIds = [...new Set(memberClerkUserIds)]
+    const uniqueUserIds = [...new Set(acceptedMemberClerkUserIds)]
     let sent = 0
 
     for (let i = 0; i < uniqueUserIds.length; i += 100) {
