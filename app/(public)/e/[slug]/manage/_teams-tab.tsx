@@ -423,9 +423,6 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         ])
       )
     },
-    onError: (_error, team) => {
-      denySnapshotsRef.current.delete(team.id)
-    },
   })
 
   function deleteBlockReason(team: Team): string | null {
