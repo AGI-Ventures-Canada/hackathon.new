@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION deny_pending_team(
+CREATE OR REPLACE FUNCTION public.deny_pending_team(
   p_team_id UUID,
   p_hackathon_id UUID
 )
@@ -8,7 +8,7 @@ RETURNS TABLE(
   error_message TEXT,
   team_id UUID,
   team_name TEXT,
-  team_status team_status,
+  team_status public.team_status,
   members_unassigned INTEGER,
   invites_cancelled INTEGER,
   cancelled_invitation_ids UUID[],
@@ -28,7 +28,7 @@ DECLARE
 BEGIN
   SELECT t.id, t.name, t.status
   INTO v_team
-  FROM teams t
+  FROM public.teams t
   WHERE t.id = p_team_id
     AND t.hackathon_id = p_hackathon_id
   FOR UPDATE;
@@ -40,7 +40,7 @@ BEGIN
       'Team not found'::TEXT,
       NULL::UUID,
       NULL::TEXT,
-      NULL::team_status,
+      NULL::public.team_status,
       0,
       0,
       ARRAY[]::UUID[],
@@ -48,7 +48,7 @@ BEGIN
     RETURN;
   END IF;
 
-  IF v_team.status <> 'pending_approval'::team_status THEN
+  IF v_team.status <> 'pending_approval'::public.team_status THEN
     RETURN QUERY SELECT
       FALSE,
       'not_pending'::TEXT,
@@ -70,36 +70,36 @@ BEGIN
     ),
     COUNT(*)::INTEGER
   INTO v_member_clerk_user_ids, v_members_unassigned
-  FROM hackathon_participants hp
+  FROM public.hackathon_participants hp
   WHERE hp.team_id = p_team_id
     AND hp.hackathon_id = p_hackathon_id;
 
   SELECT COALESCE(ARRAY_AGG(ti.id ORDER BY ti.id), ARRAY[]::UUID[])
   INTO v_cancelled_invitation_ids
-  FROM team_invitations ti
+  FROM public.team_invitations ti
   WHERE ti.team_id = p_team_id
     AND ti.hackathon_id = p_hackathon_id
     AND ti.status = 'pending';
 
-  UPDATE hackathon_participants hp
+  UPDATE public.hackathon_participants hp
   SET team_id = NULL
   WHERE hp.team_id = p_team_id
     AND hp.hackathon_id = p_hackathon_id;
 
-  UPDATE team_invitations ti
+  UPDATE public.team_invitations ti
   SET status = 'cancelled',
       updated_at = v_now
   WHERE ti.id = ANY(v_cancelled_invitation_ids);
 
   GET DIAGNOSTICS v_invites_cancelled = ROW_COUNT;
 
-  UPDATE teams t
-  SET status = 'disbanded'::team_status,
+  UPDATE public.teams t
+  SET status = 'disbanded'::public.team_status,
       captain_clerk_user_id = NULL,
       updated_at = v_now
   WHERE t.id = p_team_id
     AND t.hackathon_id = p_hackathon_id
-    AND t.status = 'pending_approval'::team_status
+    AND t.status = 'pending_approval'::public.team_status
   RETURNING t.id, t.name, t.status
   INTO v_team;
 
@@ -120,3 +120,6 @@ BEGIN
     v_member_clerk_user_ids;
 END;
 $$;
+
+REVOKE ALL ON FUNCTION public.deny_pending_team(UUID, UUID) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.deny_pending_team(UUID, UUID) TO service_role;

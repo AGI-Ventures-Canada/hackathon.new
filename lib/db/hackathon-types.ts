@@ -22,7 +22,7 @@ export type SubmissionStatus =
 export type TeamStatus = "forming" | "pending_approval" | "locked" | "disbanded"
 
 export const TEAM_STATUS_LABELS = {
-  forming: "Active",
+  forming: "Forming",
   pending_approval: "Waiting for approval",
   locked: "Locked",
   disbanded: "Removed",
