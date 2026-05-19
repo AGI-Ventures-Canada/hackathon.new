@@ -9,12 +9,12 @@ import {
   type ChainableMock,
 } from "../lib/supabase-mock"
 
-const mockSendTeamDeniedEmails = mock(() => Promise.resolve(2))
-const mockSendTeamApprovedEmails = mock(() => Promise.resolve(2))
+const mockSendTeamDeniedEmail = mock(() => Promise.resolve({ success: true }))
+const mockSendTeamApprovedEmail = mock(() => Promise.resolve({ success: true }))
 
 mock.module("@/lib/email/team-review", () => ({
-  sendTeamApprovedEmails: mockSendTeamApprovedEmails,
-  sendTeamDeniedEmails: mockSendTeamDeniedEmails,
+  sendTeamApprovedEmail: mockSendTeamApprovedEmail,
+  sendTeamDeniedEmail: mockSendTeamDeniedEmail,
 }))
 
 const {
@@ -231,10 +231,10 @@ describe("team approvals", () => {
   beforeEach(() => {
     resetSupabaseMocks()
     resetClerkMocks()
-    mockSendTeamApprovedEmails.mockClear()
-    mockSendTeamApprovedEmails.mockResolvedValue(2)
-    mockSendTeamDeniedEmails.mockClear()
-    mockSendTeamDeniedEmails.mockResolvedValue(2)
+    mockSendTeamApprovedEmail.mockClear()
+    mockSendTeamApprovedEmail.mockResolvedValue({ success: true })
+    mockSendTeamDeniedEmail.mockClear()
+    mockSendTeamDeniedEmail.mockResolvedValue({ success: true })
   })
 
   it("approves a pending team", async () => {
@@ -289,8 +289,15 @@ describe("team approvals", () => {
       team: { id: "team_1", name: "Team One", status: "forming" },
       membersNotified: 2,
     })
-    expect(mockSendTeamApprovedEmails).toHaveBeenCalledWith({
-      recipients: ["one@example.com", "two@example.com"],
+    expect(mockSendTeamApprovedEmail).toHaveBeenCalledTimes(2)
+    expect(mockSendTeamApprovedEmail).toHaveBeenNthCalledWith(1, {
+      to: "one@example.com",
+      teamName: "Team One",
+      hackathonName: "Hack One",
+      hackathonSlug: "hack-one",
+    })
+    expect(mockSendTeamApprovedEmail).toHaveBeenNthCalledWith(2, {
+      to: "two@example.com",
       teamName: "Team One",
       hackathonName: "Hack One",
       hackathonSlug: "hack-one",
@@ -333,7 +340,68 @@ describe("team approvals", () => {
       membersNotified: 0,
     })
     expect(mockClerkClient).not.toHaveBeenCalled()
-    expect(mockSendTeamApprovedEmails).not.toHaveBeenCalled()
+    expect(mockSendTeamApprovedEmail).not.toHaveBeenCalled()
+  })
+
+  it("sends one approval email per unique member email", async () => {
+    setMockFromImplementation(
+      tableImpl({
+        hackathons: { data: { name: "Hack One", slug: "hack-one" }, error: null },
+        hackathon_participants: {
+          data: [
+            { clerk_user_id: "user_1" },
+            { clerk_user_id: "user_2" },
+            { clerk_user_id: "user_3" },
+          ],
+          error: null,
+        },
+      })
+    )
+    setMockRpcImplementation(() =>
+      Promise.resolve({
+        data: [{
+          success: true,
+          error_code: null,
+          error_message: null,
+          team_id: "team_1",
+          team_name: "Team One",
+          team_status: "forming",
+          member_clerk_user_ids: ["user_1", "user_2", "user_3"],
+        }],
+        error: null,
+      })
+    )
+    mockClerkClient.mockImplementation(() =>
+      Promise.resolve({
+        organizations: {
+          getOrganization: mock(() => Promise.resolve({ name: "Test Org" })),
+        },
+        users: {
+          getUserList: mock(() =>
+            Promise.resolve({
+              data: [
+                { primaryEmailAddress: { emailAddress: "one@example.com" }, emailAddresses: [] },
+                { primaryEmailAddress: { emailAddress: " One@example.com " }, emailAddresses: [] },
+                { primaryEmailAddress: { emailAddress: "two@example.com" }, emailAddresses: [] },
+              ],
+            })
+          ),
+        },
+      })
+    )
+
+    const result = await approvePendingTeam("team_1", "h_1")
+
+    expect(result).toEqual({
+      success: true,
+      team: { id: "team_1", name: "Team One", status: "forming" },
+      membersNotified: 2,
+    })
+    expect(mockSendTeamApprovedEmail).toHaveBeenCalledTimes(2)
+    expect(mockSendTeamApprovedEmail.mock.calls.map((call) => call[0].to)).toEqual([
+      "one@example.com",
+      "two@example.com",
+    ])
   })
 
   it("rejects approve when team is not pending", async () => {
@@ -406,8 +474,15 @@ describe("team approvals", () => {
       invitesCancelled: 1,
       membersNotified: 2,
     })
-    expect(mockSendTeamDeniedEmails).toHaveBeenCalledWith({
-      recipients: ["one@example.com", "two@example.com"],
+    expect(mockSendTeamDeniedEmail).toHaveBeenCalledTimes(2)
+    expect(mockSendTeamDeniedEmail).toHaveBeenNthCalledWith(1, {
+      to: "one@example.com",
+      teamName: "Team One",
+      hackathonName: "Hack One",
+      hackathonSlug: "hack-one",
+    })
+    expect(mockSendTeamDeniedEmail).toHaveBeenNthCalledWith(2, {
+      to: "two@example.com",
       teamName: "Team One",
       hackathonName: "Hack One",
       hackathonSlug: "hack-one",

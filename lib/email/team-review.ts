@@ -67,35 +67,3 @@ export async function sendTeamDeniedEmail(
 
   return { success: result !== null }
 }
-
-export async function sendTeamApprovedEmails(
-  input: Omit<SendTeamApprovedInput, "to"> & { recipients: string[] }
-): Promise<number> {
-  const recipients = input.recipients.map((email) => email.trim().toLowerCase()).filter(Boolean)
-  const results = await Promise.all(
-    recipients.map((to) => sendTeamApprovedEmail({
-      to,
-      teamName: input.teamName,
-      hackathonName: input.hackathonName,
-      hackathonSlug: input.hackathonSlug,
-    }))
-  )
-
-  return results.filter((result) => result.success).length
-}
-
-export async function sendTeamDeniedEmails(
-  input: Omit<SendTeamDeniedInput, "to"> & { recipients: string[] }
-): Promise<number> {
-  const recipients = input.recipients.map((email) => email.trim().toLowerCase()).filter(Boolean)
-  const results = await Promise.all(
-    recipients.map((to) => sendTeamDeniedEmail({
-      to,
-      teamName: input.teamName,
-      hackathonName: input.hackathonName,
-      hackathonSlug: input.hackathonSlug,
-    }))
-  )
-
-  return results.filter((result) => result.success).length
-}

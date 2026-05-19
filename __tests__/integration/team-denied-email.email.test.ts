@@ -15,7 +15,7 @@ mock.module("@/lib/email/resend", () => ({
   sendEmail: mockSendEmail,
 }))
 
-const { sendTeamApprovedEmail, sendTeamApprovedEmails, sendTeamDeniedEmail, sendTeamDeniedEmails } = await import("@/lib/email/team-review")
+const { sendTeamApprovedEmail, sendTeamDeniedEmail } = await import("@/lib/email/team-review")
 
 describe("Team review email", () => {
   beforeEach(() => {
@@ -60,39 +60,5 @@ describe("Team review email", () => {
     expect(callArgs.text).toContain("join another team")
     expect(callArgs.replyTo).toBe("help@example.com")
     expect(callArgs.tags).toContainEqual({ name: "type", value: "team_denied" })
-  })
-
-  it("sends each normalized team approval recipient email", async () => {
-    const sent = await sendTeamApprovedEmails({
-      recipients: ["PERSON@example.com", " person@example.com ", "other@example.com", ""],
-      teamName: "Awesome Team",
-      hackathonName: "AI Hackathon",
-      hackathonSlug: "ai-hackathon",
-    })
-
-    expect(sent).toBe(3)
-    expect(mockSendEmail).toHaveBeenCalledTimes(3)
-    expect(mockSendEmail.mock.calls.map((call) => call[0].to)).toEqual([
-      "person@example.com",
-      "person@example.com",
-      "other@example.com",
-    ])
-  })
-
-  it("sends each normalized team denial recipient email", async () => {
-    const sent = await sendTeamDeniedEmails({
-      recipients: ["PERSON@example.com", " person@example.com ", "other@example.com", ""],
-      teamName: "Awesome Team",
-      hackathonName: "AI Hackathon",
-      hackathonSlug: "ai-hackathon",
-    })
-
-    expect(sent).toBe(3)
-    expect(mockSendEmail).toHaveBeenCalledTimes(3)
-    expect(mockSendEmail.mock.calls.map((call) => call[0].to)).toEqual([
-      "person@example.com",
-      "person@example.com",
-      "other@example.com",
-    ])
   })
 })

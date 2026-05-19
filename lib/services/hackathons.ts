@@ -1081,9 +1081,11 @@ async function notifyReviewedTeamMembers({
     }
     if (hackathon.status === "draft") return 0
 
+    const hackathonName = hackathon.name
+    const hackathonSlug = hackathon.slug
     const clerk = await clerkClient()
-    const { sendTeamApprovedEmails, sendTeamDeniedEmails } = await import("@/lib/email/team-review")
-    const sendEmails = review === "approved" ? sendTeamApprovedEmails : sendTeamDeniedEmails
+    const { sendTeamApprovedEmail, sendTeamDeniedEmail } = await import("@/lib/email/team-review")
+    const sendEmail = review === "approved" ? sendTeamApprovedEmail : sendTeamDeniedEmail
     const seenRecipients = new Set<string>()
     const uniqueUserIds = [...new Set(acceptedMemberClerkUserIds)]
     let sent = 0
@@ -1109,7 +1111,17 @@ async function notifyReviewedTeamMembers({
 
       if (recipients.length === 0) continue
       try {
-        sent += await sendEmails({ recipients, teamName, hackathonName: hackathon.name, hackathonSlug: hackathon.slug })
+        const results = await Promise.all(
+          recipients.map((to) =>
+            sendEmail({
+              to,
+              teamName,
+              hackathonName,
+              hackathonSlug,
+            })
+          )
+        )
+        sent += results.filter((result) => result.success).length
       } catch (err) {
         console.error(`Failed to send ${review} team notification batch:`, err)
       }
