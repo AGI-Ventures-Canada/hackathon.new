@@ -3090,6 +3090,21 @@ export type Database = {
         Args: { p_hackathon_id: string }
         Returns: number
       }
+      deny_pending_team: {
+        Args: { p_hackathon_id: string; p_team_id: string }
+        Returns: {
+          cancelled_invitation_ids: string[]
+          error_code: string | null
+          error_message: string | null
+          invites_cancelled: number
+          member_clerk_user_ids: string[]
+          members_unassigned: number
+          success: boolean
+          team_id: string | null
+          team_name: string | null
+          team_status: Database["public"]["Enums"]["team_status"] | null
+        }[]
+      }
       effective_hackathon_status: {
         Args: {
           ends_at: string

@@ -729,6 +729,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
         hackathonId: params.id,
         membersUnassigned: result.membersUnassigned ?? 0,
         invitesCancelled: result.invitesCancelled ?? 0,
+        membersNotified: result.membersNotified ?? 0,
       },
     })
 
@@ -737,6 +738,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       team: result.team,
       membersUnassigned: result.membersUnassigned ?? 0,
       invitesCancelled: result.invitesCancelled ?? 0,
+      membersNotified: result.membersNotified ?? 0,
     }
   }, {
     detail: { summary: "Deny a team waiting for review" },

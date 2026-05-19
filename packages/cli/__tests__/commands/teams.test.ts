@@ -141,6 +141,8 @@ describe("teams commands", () => {
       const init = mockFetch.mock.calls[0][1] as RequestInit
       expect(url).toContain(`/api/dashboard/hackathons/${hackathonId}/teams/t1/deny`)
       expect(init.method).toBe("POST")
+      expect(consoleLogSpy.mock.calls[0][0]).toContain("2 members unassigned")
+      expect(consoleLogSpy.mock.calls[0][0]).toContain("1 invite cancelled")
     })
   })
 

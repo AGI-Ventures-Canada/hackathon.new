@@ -1,10 +1,19 @@
-import { describe, it, expect, beforeEach } from "bun:test"
+import { describe, it, expect, beforeEach, mock } from "bun:test"
 import {
   createChainableMock,
+  mockClerkClient,
   resetSupabaseMocks,
+  resetClerkMocks,
   setMockFromImplementation,
+  setMockRpcImplementation,
   type ChainableMock,
 } from "../lib/supabase-mock"
+
+const mockSendTeamDeniedEmails = mock(() => Promise.resolve(2))
+
+mock.module("@/lib/email/team-review", () => ({
+  sendTeamDeniedEmails: mockSendTeamDeniedEmails,
+}))
 
 const { deleteTeam, setTeamCaptain, approvePendingTeam, denyPendingTeam } = await import("@/lib/services/hackathons")
 
@@ -213,6 +222,9 @@ describe("setTeamCaptain", () => {
 describe("team approvals", () => {
   beforeEach(() => {
     resetSupabaseMocks()
+    resetClerkMocks()
+    mockSendTeamDeniedEmails.mockClear()
+    mockSendTeamDeniedEmails.mockResolvedValue(2)
   })
 
   it("approves a pending team", async () => {
@@ -246,15 +258,41 @@ describe("team approvals", () => {
   it("denies a pending team and unassigns people", async () => {
     setMockFromImplementation(
       tableImpl({
-        teams: [
-          { data: { id: "team_1", name: "Team One", status: "pending_approval" }, error: null },
-          { data: { id: "team_1", name: "Team One", status: "disbanded" }, error: null },
-        ],
-        hackathon_participants: [
-          { data: null, error: null, count: 2 },
-          { data: null, error: null },
-        ],
-        team_invitations: { data: [{ id: "inv_1" }], error: null },
+        hackathons: { data: { name: "Hack One", slug: "hack-one" }, error: null },
+      })
+    )
+    setMockRpcImplementation(() =>
+      Promise.resolve({
+        data: [{
+          success: true,
+          error_code: null,
+          error_message: null,
+          team_id: "team_1",
+          team_name: "Team One",
+          team_status: "disbanded",
+          members_unassigned: 2,
+          invites_cancelled: 1,
+          cancelled_invitation_ids: ["inv_1"],
+          member_clerk_user_ids: ["user_1", "user_2"],
+        }],
+        error: null,
+      })
+    )
+    mockClerkClient.mockImplementation(() =>
+      Promise.resolve({
+        organizations: {
+          getOrganization: mock(() => Promise.resolve({ name: "Test Org" })),
+        },
+        users: {
+          getUserList: mock(() =>
+            Promise.resolve({
+              data: [
+                { primaryEmailAddress: { emailAddress: "one@example.com" }, emailAddresses: [] },
+                { primaryEmailAddress: { emailAddress: "two@example.com" }, emailAddresses: [] },
+              ],
+            })
+          ),
+        },
       })
     )
 
@@ -264,6 +302,36 @@ describe("team approvals", () => {
       team: { id: "team_1", name: "Team One", status: "disbanded" },
       membersUnassigned: 2,
       invitesCancelled: 1,
+      membersNotified: 2,
     })
+    expect(mockSendTeamDeniedEmails).toHaveBeenCalledWith({
+      recipients: ["one@example.com", "two@example.com"],
+      teamName: "Team One",
+      hackathonName: "Hack One",
+      hackathonSlug: "hack-one",
+    })
+  })
+
+  it("returns not_pending from the deny RPC", async () => {
+    setMockRpcImplementation(() =>
+      Promise.resolve({
+        data: [{
+          success: false,
+          error_code: "not_pending",
+          error_message: "This team is not waiting for approval",
+          team_id: "team_1",
+          team_name: "Team One",
+          team_status: "forming",
+          members_unassigned: 0,
+          invites_cancelled: 0,
+          cancelled_invitation_ids: [],
+          member_clerk_user_ids: [],
+        }],
+        error: null,
+      })
+    )
+
+    const result = await denyPendingTeam("team_1", "h_1")
+    expect(result).toEqual({ error: "This team is not waiting for approval", code: "not_pending" })
   })
 })

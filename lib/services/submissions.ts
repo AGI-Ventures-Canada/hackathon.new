@@ -1,6 +1,6 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
-import type { Submission } from "@/lib/db/hackathon-types"
+import type { Submission, TeamStatus } from "@/lib/db/hackathon-types"
 import type { Json } from "@/lib/db/types"
 import { trackEvent } from "@/lib/analytics/posthog"
 import { tagSubmissionChallenges } from "@/lib/services/challenges"
@@ -9,7 +9,7 @@ import { autoAssignSubmissionToRoomJudges, ROOM_ROUTING_STATUSES } from "@/lib/s
 export type ParticipantInfo = {
   participantId: string
   teamId: string | null
-  teamStatus: string | null
+  teamStatus: TeamStatus | null
 }
 
 export async function getParticipantWithTeam(
@@ -36,7 +36,7 @@ export async function getParticipantWithTeam(
   return {
     participantId: data.id,
     teamId: data.team_id,
-    teamStatus: (data as unknown as { teams?: { status?: string } | null }).teams?.status ?? null,
+    teamStatus: (data as unknown as { teams?: { status?: TeamStatus } | null }).teams?.status ?? null,
   }
 }
 

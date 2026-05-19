@@ -83,6 +83,7 @@ const mockDenyPendingTeam = mock(() =>
     team: { id: "22222222-2222-2222-2222-222222222222", name: "Team One", status: "disbanded" },
     membersUnassigned: 2,
     invitesCancelled: 1,
+    membersNotified: 2,
   })
 )
 
@@ -202,6 +203,7 @@ describe("Dashboard Event Routes Integration Tests", () => {
       team: { id: "22222222-2222-2222-2222-222222222222", name: "Team One", status: "disbanded" },
       membersUnassigned: 2,
       invitesCancelled: 1,
+      membersNotified: 2,
     })
     mockCheckHackathonOrganizer.mockResolvedValue({
       status: "authorized" as const,
@@ -389,6 +391,7 @@ describe("Dashboard Event Routes Integration Tests", () => {
       expect(res.status).toBe(200)
       expect(data.membersUnassigned).toBe(2)
       expect(data.invitesCancelled).toBe(1)
+      expect(data.membersNotified).toBe(2)
       expect(mockDenyPendingTeam).toHaveBeenCalledWith(teamId, hackathonId)
     })
   })

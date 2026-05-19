@@ -21,6 +21,7 @@ export async function runTeamsDeny(
     team: { id: string; name: string; status: string }
     membersUnassigned: number
     invitesCancelled: number
+    membersNotified?: number
   }>(`/api/dashboard/hackathons/${hackathonId}/teams/${teamId}/deny`, {})
 
   if (options.json) {
@@ -28,5 +29,11 @@ export async function runTeamsDeny(
     return
   }
 
-  console.log(formatSuccess(`Denied team "${response.team.name}"`))
+  const members = formatCount(response.membersUnassigned, "member", "members")
+  const invites = formatCount(response.invitesCancelled, "invite", "invites")
+  console.log(formatSuccess(`Denied team "${response.team.name}" (${members} unassigned, ${invites} cancelled)`))
+}
+
+function formatCount(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`
 }
