@@ -661,6 +661,7 @@ type ApprovePendingTeamRpcRow = {
   team_id: string | null
   team_name: string | null
   team_status: TeamStatus | null
+  member_clerk_user_ids: Array<string | null> | null
 }
 
 type DenyPendingTeamRpcRow = {
@@ -886,11 +887,15 @@ export async function approvePendingTeam(teamId: string, hackathonId: string): P
     return { error: "Failed to approve team", code: "failed" }
   }
 
-  const membersNotified = await notifyApprovedTeamMembers({
+  const memberClerkUserIds = (row.member_clerk_user_ids ?? [])
+    .filter((id): id is string => Boolean(id))
+
+  const membersNotified = await notifyReviewedTeamMembers({
     client,
     hackathonId,
-    teamId: row.team_id,
     teamName: row.team_name,
+    memberClerkUserIds,
+    review: "approved",
   })
 
   return {
@@ -977,41 +982,6 @@ async function notifyDeniedTeamMembers({
     teamName,
     memberClerkUserIds,
     review: "denied",
-  })
-}
-
-async function notifyApprovedTeamMembers({
-  client,
-  hackathonId,
-  teamId,
-  teamName,
-}: {
-  client: SupabaseClient
-  hackathonId: string
-  teamId: string
-  teamName: string
-}): Promise<number> {
-  const { data: members, error } = await client
-    .from("hackathon_participants")
-    .select("clerk_user_id")
-    .eq("hackathon_id", hackathonId)
-    .eq("team_id", teamId)
-
-  if (error) {
-    console.error("Failed to load team members for approval notifications:", error)
-    return 0
-  }
-
-  const memberClerkUserIds = ((members ?? []) as Array<{ clerk_user_id: string | null }>)
-    .map((member) => member.clerk_user_id)
-    .filter((id): id is string => Boolean(id))
-
-  return notifyReviewedTeamMembers({
-    client,
-    hackathonId,
-    teamName,
-    memberClerkUserIds,
-    review: "approved",
   })
 }
 

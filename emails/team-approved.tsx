@@ -20,7 +20,7 @@ export default function TeamApprovedEmail({
       preview={`Team "${teamName}" was approved for ${hackathonName}`}
       eventUrl={eventUrl}
       hackathonName={hackathonName}
-      footerText="Your team is ready."
+      footerText="You're all set."
     >
       <Text
         style={{

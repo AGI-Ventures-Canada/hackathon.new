@@ -1,3 +1,5 @@
+DROP FUNCTION IF EXISTS approve_pending_team(UUID, UUID);
+
 CREATE OR REPLACE FUNCTION approve_pending_team(
   p_team_id UUID,
   p_hackathon_id UUID

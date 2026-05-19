@@ -3069,6 +3069,7 @@ export type Database = {
           team_id: string | null
           team_name: string | null
           team_status: Database["public"]["Enums"]["team_status"] | null
+          member_clerk_user_ids: string[]
         }[]
       }
       calculate_results: {
