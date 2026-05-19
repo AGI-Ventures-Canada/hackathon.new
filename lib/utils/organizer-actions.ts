@@ -284,16 +284,19 @@ function judgesLabel(input: ActionItemsInput): string {
 function addPendingTeamApprovalAction(items: ActionItem[], input: ActionItemsInput) {
   const count = input.pendingTeamApprovalCount
   if (count <= 0) return
+  const isPastActive = input.status === "judging" || input.status === "completed"
 
   items.push(autoAction({
     id: "review-pending-teams",
-    severity: "urgent",
+    severity: isPastActive ? "info" : "urgent",
     tab: "teams",
     ctaLabel: "Review",
     isComplete: false,
     pending: {
       label: `${count} team${count === 1 ? "" : "s"} waiting for approval`,
-      hint: "Approve or deny them before they can submit",
+      hint: isPastActive
+        ? "Clear the list when you have time"
+        : "Approve or deny them before they can submit",
     },
     completed: { label: "No teams waiting for approval", hint: "Every team is handled" },
   }))

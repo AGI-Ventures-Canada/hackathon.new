@@ -416,14 +416,6 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
     }
   }
 
-  function handleApproveTeam(team: Team) {
-    void approveTeam(team)
-  }
-
-  function handleDenyTeam(team: Team) {
-    void denyTeam(team)
-  }
-
   async function handleRemoveMember(team: Team, member: TeamMember) {
     const snapshotMembers = team.members
     const snapshotCaptain = team.captainClerkUserId
@@ -782,7 +774,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
           <AlertDialogFooter>
             <AlertDialogCancel>Keep team</AlertDialogCancel>
             <AlertDialogAction
-              onClick={(e) => { e.preventDefault(); if (denyingTeam) void handleDenyTeam(denyingTeam) }}
+              onClick={(e) => { e.preventDefault(); if (denyingTeam) void denyTeam(denyingTeam) }}
             >
               Deny team
             </AlertDialogAction>
@@ -914,7 +906,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                               <DropdownMenuContent align="end">
                                 {team.status === "pending_approval" && (
                                   <>
-                                    <DropdownMenuItem onSelect={() => handleApproveTeam(team)}>
+                                    <DropdownMenuItem onSelect={() => { void approveTeam(team) }}>
                                       <Check className="size-4" />
                                       Approve team
                                     </DropdownMenuItem>

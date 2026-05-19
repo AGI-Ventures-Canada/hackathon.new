@@ -311,6 +311,7 @@ describe("getOrganizerActionItems", () => {
       expect(item).toBeDefined()
       expect(item?.label).toBe("2 teams waiting for approval")
       expect(item?.hint).toBe("Approve or deny them before they can submit")
+      expect(item?.severity).toBe("urgent")
       expect(item?.tab).toBe("teams")
       expect(item?.ctaLabel).toBe("Review")
     })
@@ -370,6 +371,7 @@ describe("getOrganizerActionItems", () => {
       const item = findPending(items, "review-pending-teams")
       expect(item).toBeDefined()
       expect(item?.label).toBe("1 team waiting for approval")
+      expect(item?.severity).toBe("urgent")
       expect(item?.tab).toBe("teams")
     })
 
@@ -513,6 +515,8 @@ describe("getOrganizerActionItems", () => {
       const item = findPending(items, "review-pending-teams")
       expect(item).toBeDefined()
       expect(item?.label).toBe("2 teams waiting for approval")
+      expect(item?.severity).toBe("info")
+      expect(item?.hint).toBe("Clear the list when you have time")
       expect(item?.tab).toBe("teams")
     })
 
@@ -587,6 +591,8 @@ describe("getOrganizerActionItems", () => {
       const item = findPending(items, "review-pending-teams")
       expect(item).toBeDefined()
       expect(item?.label).toBe("1 team waiting for approval")
+      expect(item?.severity).toBe("info")
+      expect(item?.hint).toBe("Clear the list when you have time")
       expect(item?.tab).toBe("teams")
     })
 
