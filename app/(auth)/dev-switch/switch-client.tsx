@@ -1,9 +1,34 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { useSignIn, useUser, useClerk } from "@clerk/nextjs"
+import { useSignIn, useUser, useClerk, useSession } from "@clerk/nextjs"
 import { Loader2 } from "lucide-react"
 import Link from "next/link"
+
+function getErrorStatus(err: unknown): number | null {
+  if (!err || typeof err !== "object") return null
+  const status = (err as { status?: unknown; statusCode?: unknown }).status
+  if (typeof status === "number") return status
+  const statusCode = (err as { statusCode?: unknown }).statusCode
+  return typeof statusCode === "number" ? statusCode : null
+}
+
+function getErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message
+  if (!err || typeof err !== "object") return String(err)
+  const errors = (err as { errors?: Array<{ message?: unknown; longMessage?: unknown }> }).errors
+  if (!Array.isArray(errors)) return String(err)
+  return errors
+    .flatMap((entry) => [entry.message, entry.longMessage])
+    .filter((message): message is string => typeof message === "string")
+    .join(" ")
+}
+
+function isStaleSessionError(err: unknown): boolean {
+  const status = getErrorStatus(err)
+  if (status === 401 || status === 403 || status === 404) return true
+  return /not found|unauthorized|forbidden/i.test(getErrorMessage(err))
+}
 
 export function DevSwitchClient({
   token,
@@ -14,21 +39,30 @@ export function DevSwitchClient({
   redirect: string
   org: string | null
 }) {
-  const { signIn, isLoaded: signInLoaded, setActive } = useSignIn()
+  const { signIn, isLoaded: signInLoaded } = useSignIn()
   const { isSignedIn, isLoaded: userLoaded } = useUser()
-  const { signOut } = useClerk()
+  const { session, isLoaded: sessionLoaded } = useSession()
+  const { signOut, setActive } = useClerk()
   const [error, setError] = useState<string | null>(null)
   const started = useRef(false)
 
   useEffect(() => {
-    if (!signInLoaded || !userLoaded || !signIn) return
+    if (!signInLoaded || !userLoaded || !sessionLoaded || !signIn) return
     if (started.current) return
     started.current = true
 
     async function doSwitch() {
       try {
         if (isSignedIn) {
-          await signOut()
+          try {
+            if (session?.id) {
+              await signOut({ sessionId: session.id })
+            } else {
+              await signOut()
+            }
+          } catch (err) {
+            if (!isStaleSessionError(err)) throw err
+          }
         }
 
         const result = await signIn!.create({
@@ -37,7 +71,7 @@ export function DevSwitchClient({
         })
 
         if (result.status === "complete") {
-          await setActive!({
+          await setActive({
             session: result.createdSessionId,
             ...(org ? { organization: org } : {}),
           })
@@ -52,7 +86,7 @@ export function DevSwitchClient({
     }
 
     doSwitch()
-  }, [signInLoaded, userLoaded, signIn, isSignedIn, signOut, token, redirect, org, setActive])
+  }, [signInLoaded, userLoaded, sessionLoaded, signIn, isSignedIn, signOut, session?.id, token, redirect, org, setActive])
 
   if (error) {
     return (

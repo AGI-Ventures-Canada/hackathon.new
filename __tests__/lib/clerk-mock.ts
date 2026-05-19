@@ -18,6 +18,8 @@ export function resetClerkState() {
     imageUrl: null,
   }
   clerkState.isLoaded = true
+  clerkState.sessionLoaded = true
+  clerkState.session = { id: "sess_123" }
   clerkState.organization = null
   clerkState.memberships = []
   clerkState.setActive.mockClear()
@@ -52,7 +54,11 @@ export const clerkMock = {
     openOrganizationProfile: clerkState.openOrganizationProfile,
     signOut: clerkState.signOut,
     client: clerkState.client,
-    setActive: clerkState.signInSetActive,
+    setActive: clerkState.setActive,
+  }),
+  useSession: () => ({
+    session: clerkState.session,
+    isLoaded: clerkState.sessionLoaded,
   }),
   useOrganization: () => ({
     organization: clerkState.organization,

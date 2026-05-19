@@ -9,7 +9,8 @@ let signInCreateImpl: (...args: unknown[]) => Promise<unknown> = () =>
 
 const signInCreate = mock((...args: unknown[]) => signInCreateImpl(...args))
 
-const mockSetActive = g.__clerkState.signInSetActive
+const mockSetActive = g.__clerkState.setActive
+const mockSignInSetActive = g.__clerkState.signInSetActive
 const mockSignOut = g.__clerkState.signOut
 
 const replaceCalls: string[] = []
@@ -26,12 +27,17 @@ beforeEach(() => {
   g.__clerkState.signInLoaded = true
   g.__clerkState.signIn = { create: signInCreate }
   g.__clerkState.isLoaded = true
+  g.__clerkState.sessionLoaded = true
+  g.__clerkState.session = { id: "sess_current" }
   g.__clerkState.isSignedIn = false
 
   signInCreateImpl = () =>
     Promise.resolve({ status: "complete", createdSessionId: "session_abc" })
   signInCreate.mockClear()
+  mockSetActive.mockImplementation(() => Promise.resolve())
   mockSetActive.mockClear()
+  mockSignInSetActive.mockClear()
+  mockSignOut.mockImplementation(() => Promise.resolve())
   mockSignOut.mockClear()
   replaceCalls.length = 0
   Object.defineProperty(window, "location", {
@@ -84,6 +90,16 @@ describe("DevSwitchClient", () => {
     render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
     await waitFor(() => expect(signInCreate).toHaveBeenCalled())
     expect(mockSignOut).toHaveBeenCalledTimes(1)
+    expect(mockSignOut).toHaveBeenCalledWith({ sessionId: "sess_current" })
+  })
+
+  it("continues when the old session is already gone", async () => {
+    g.__clerkState.isSignedIn = true
+    mockSignOut.mockImplementation(() => Promise.reject({ status: 404 }))
+    render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
+    await waitFor(() => expect(signInCreate).toHaveBeenCalled())
+    await waitFor(() => expect(mockSetActive).toHaveBeenCalledWith({ session: "session_abc" }))
+    expect(replaceCalls).toEqual(["/e/demo"])
   })
 
   it("does not sign out when user is not signed in", async () => {
@@ -108,6 +124,7 @@ describe("DevSwitchClient", () => {
       expect(screen.getByText("Ticket expired")).toBeDefined()
     })
     expect(mockSetActive).not.toHaveBeenCalled()
+    expect(mockSignInSetActive).not.toHaveBeenCalled()
   })
 
   it("waits for Clerk to load before attempting sign-in", async () => {
