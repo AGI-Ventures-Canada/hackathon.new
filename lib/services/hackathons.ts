@@ -673,7 +673,7 @@ type DenyPendingTeamRpcRow = {
   members_unassigned: number | null
   invites_cancelled: number | null
   cancelled_invitation_ids: string[] | null
-  member_clerk_user_ids: string[] | null
+  member_clerk_user_ids: Array<string | null> | null
 }
 
 export async function createTeamWithMembers(
@@ -941,11 +941,14 @@ export async function denyPendingTeam(teamId: string, hackathonId: string): Prom
     }
   }
 
+  const memberClerkUserIds = (row.member_clerk_user_ids ?? [])
+    .filter((id): id is string => Boolean(id))
+
   const membersNotified = await notifyDeniedTeamMembers({
     client,
     hackathonId,
     teamName: row.team_name,
-    memberClerkUserIds: row.member_clerk_user_ids ?? [],
+    memberClerkUserIds,
   })
 
   return {

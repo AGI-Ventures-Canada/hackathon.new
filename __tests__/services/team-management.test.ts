@@ -326,9 +326,17 @@ describe("team approvals", () => {
           members_unassigned: 2,
           invites_cancelled: 1,
           cancelled_invitation_ids: ["inv_1"],
-          member_clerk_user_ids: ["user_1", "user_2"],
+          member_clerk_user_ids: ["user_1", null, "user_2"],
         }],
         error: null,
+      })
+    )
+    const mockGetUserList = mock(() =>
+      Promise.resolve({
+        data: [
+          { primaryEmailAddress: { emailAddress: "one@example.com" }, emailAddresses: [] },
+          { primaryEmailAddress: { emailAddress: "two@example.com" }, emailAddresses: [] },
+        ],
       })
     )
     mockClerkClient.mockImplementation(() =>
@@ -337,14 +345,7 @@ describe("team approvals", () => {
           getOrganization: mock(() => Promise.resolve({ name: "Test Org" })),
         },
         users: {
-          getUserList: mock(() =>
-            Promise.resolve({
-              data: [
-                { primaryEmailAddress: { emailAddress: "one@example.com" }, emailAddresses: [] },
-                { primaryEmailAddress: { emailAddress: "two@example.com" }, emailAddresses: [] },
-              ],
-            })
-          ),
+          getUserList: mockGetUserList,
         },
       })
     )
@@ -363,6 +364,7 @@ describe("team approvals", () => {
       hackathonName: "Hack One",
       hackathonSlug: "hack-one",
     })
+    expect(mockGetUserList).toHaveBeenCalledWith({ userId: ["user_1", "user_2"], limit: 100 })
   })
 
   it("returns not_pending from the deny RPC", async () => {

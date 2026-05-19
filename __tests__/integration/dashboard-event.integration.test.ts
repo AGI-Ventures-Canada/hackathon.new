@@ -416,6 +416,19 @@ describe("Dashboard Event Routes Integration Tests", () => {
       expect(res.status).toBe(409)
       expect(data.code).toBe("not_pending")
     })
+
+    it("returns 404 when the team is missing", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockDenyPendingTeam.mockResolvedValueOnce({ error: "Team not found", code: "not_found" })
+
+      const res = await app.handle(
+        new Request(`${baseUrl}/teams/${teamId}/deny`, { method: "POST" })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(404)
+      expect(data.code).toBe("not_found")
+    })
   })
 
   describe("GET /api/dashboard/hackathons/:id/announcements", () => {

@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION deny_pending_team(
+CREATE OR REPLACE FUNCTION public.deny_pending_team(
   p_team_id UUID,
   p_hackathon_id UUID
 )
