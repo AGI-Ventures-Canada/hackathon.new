@@ -305,6 +305,32 @@ describe("Public Screenshot Routes", () => {
       })
       expect(mockUpdateSubmission).not.toHaveBeenCalled()
     })
+
+    it("blocks pending teams from updating a submission", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockGetParticipantWithTeam.mockResolvedValue({
+        participantId: "p1",
+        teamId: "team1",
+        teamStatus: "pending_approval",
+      })
+
+      const res = await app.handle(
+        new Request("http://localhost/api/public/hackathons/test-hackathon/submissions", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: "Updated Atlas",
+          }),
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(403)
+      expect(data.code).toBe("team_pending_approval")
+      expect(mockGetExistingSubmission).not.toHaveBeenCalled()
+      expect(mockUpdateSubmission).not.toHaveBeenCalled()
+    })
   })
 
   describe("POST /api/public/hackathons/:slug/submissions/screenshot", () => {
@@ -382,6 +408,32 @@ describe("Public Screenshot Routes", () => {
 
       expect(res.status).toBe(403)
       expect(data.code).toBe("not_registered")
+    })
+
+    it("blocks pending teams from uploading a screenshot", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockGetParticipantWithTeam.mockResolvedValue({
+        participantId: "p1",
+        teamId: "team1",
+        teamStatus: "pending_approval",
+      })
+
+      const formData = new FormData()
+      formData.append("file", new Blob(["test"], { type: "image/png" }), "screenshot.png")
+
+      const res = await app.handle(
+        new Request("http://localhost/api/public/hackathons/test-hackathon/submissions/screenshot", {
+          method: "POST",
+          body: formData,
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(403)
+      expect(data.code).toBe("team_pending_approval")
+      expect(mockGetExistingSubmission).not.toHaveBeenCalled()
+      expect(mockUploadScreenshot).not.toHaveBeenCalled()
     })
 
     it("returns 400 when no submission exists", async () => {

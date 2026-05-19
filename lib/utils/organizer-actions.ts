@@ -284,19 +284,17 @@ function judgesLabel(input: ActionItemsInput): string {
 function addPendingTeamApprovalAction(items: ActionItem[], input: ActionItemsInput) {
   const count = input.pendingTeamApprovalCount
   if (count <= 0) return
-  const isPastActive = input.status === "judging" || input.status === "completed"
+  if (input.status === "judging" || input.status === "completed") return
 
   items.push(autoAction({
     id: "review-pending-teams",
-    severity: isPastActive ? "info" : "urgent",
+    severity: "urgent",
     tab: "teams",
     ctaLabel: "Review",
     isComplete: false,
     pending: {
       label: `${count} team${count === 1 ? "" : "s"} waiting for approval`,
-      hint: isPastActive
-        ? "Clear the list when you have time"
-        : "Approve or deny them before they can submit",
+      hint: "Approve or deny them before they can submit",
     },
     completed: { label: "No teams waiting for approval", hint: "Every team is handled" },
   }))
@@ -665,7 +663,6 @@ function addActiveActions(items: ActionItem[], input: ActionItemsInput) {
 }
 
 function addJudgingActions(items: ActionItem[], input: ActionItemsInput) {
-  addPendingTeamApprovalAction(items, input)
   addShowcaseAction(items, input)
   if (
     input.rounds.plannedCount > 0 &&
@@ -741,7 +738,6 @@ function addJudgingActions(items: ActionItem[], input: ActionItemsInput) {
 }
 
 function addCompletedActions(items: ActionItem[], input: ActionItemsInput) {
-  addPendingTeamApprovalAction(items, input)
   addShowcaseAction(items, input)
   const resultsPublished = !!input.resultsPublishedAt
   items.push(autoAction({

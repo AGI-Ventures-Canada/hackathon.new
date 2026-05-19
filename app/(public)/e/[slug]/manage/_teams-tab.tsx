@@ -381,6 +381,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
       } else {
         setTeams((prev) => prev.some((t) => t.id === team.id) ? prev : [...prev, team])
       }
+      denySnapshotRef.current = null
     },
     onSuccess: () => {
       denySnapshotRef.current = null

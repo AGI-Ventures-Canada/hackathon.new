@@ -505,7 +505,7 @@ describe("getOrganizerActionItems", () => {
       expect(item?.severity).toBe("urgent")
     })
 
-    it("shows teams waiting for approval while judging", () => {
+    it("does not show teams waiting for approval while judging", () => {
       const items = getOrganizerActionItems(makeInput({
         status: "judging",
         judgeCount: 3,
@@ -513,11 +513,7 @@ describe("getOrganizerActionItems", () => {
       }))
 
       const item = findPending(items, "review-pending-teams")
-      expect(item).toBeDefined()
-      expect(item?.label).toBe("2 teams waiting for approval")
-      expect(item?.severity).toBe("info")
-      expect(item?.hint).toBe("Clear the list when you have time")
-      expect(item?.tab).toBe("teams")
+      expect(item).toBeUndefined()
     })
 
     it("shows judging progress percentage", () => {
@@ -582,18 +578,14 @@ describe("getOrganizerActionItems", () => {
   })
 
   describe("completed status", () => {
-    it("shows teams waiting for approval after the event ends", () => {
+    it("does not show teams waiting for approval after the event ends", () => {
       const items = getOrganizerActionItems(makeInput({
         status: "completed",
         pendingTeamApprovalCount: 1,
       }))
 
       const item = findPending(items, "review-pending-teams")
-      expect(item).toBeDefined()
-      expect(item?.label).toBe("1 team waiting for approval")
-      expect(item?.severity).toBe("info")
-      expect(item?.hint).toBe("Clear the list when you have time")
-      expect(item?.tab).toBe("teams")
+      expect(item).toBeUndefined()
     })
 
     it("flags unpublished results as urgent with hint", () => {
