@@ -64,6 +64,16 @@ export function DevSwitchClient({
 
     async function doSwitch() {
       try {
+        async function clearActiveOrganization() {
+          if (org) return
+          try {
+            await setActive({ organization: null })
+          } catch (err) {
+            if (!isStaleSessionError(err, { allowStaleOrganization: true })) throw err
+            console.warn("Ignoring stale Clerk organization during dev switch:", err)
+          }
+        }
+
         async function activateSession(sessionId: string) {
           if (!org) {
             try {
@@ -92,6 +102,7 @@ export function DevSwitchClient({
         }
 
         if (isSignedIn) {
+          await clearActiveOrganization()
           try {
             if (session?.id) {
               await signOut({ sessionId: session.id })

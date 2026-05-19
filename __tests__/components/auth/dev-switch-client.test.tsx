@@ -99,8 +99,11 @@ describe("DevSwitchClient", () => {
   it("clears the organization when switching to a no-org persona", async () => {
     g.__clerkState.isSignedIn = true
     render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
-    await waitFor(() => expect(mockSetActive).toHaveBeenCalledTimes(1))
-    expect(mockSetActive).toHaveBeenCalledWith({
+    await waitFor(() => expect(mockSetActive).toHaveBeenCalledTimes(2))
+    expect(mockSetActive).toHaveBeenNthCalledWith(1, {
+      organization: null,
+    })
+    expect(mockSetActive).toHaveBeenNthCalledWith(2, {
       session: "session_abc",
       organization: null,
     })
@@ -121,7 +124,8 @@ describe("DevSwitchClient", () => {
   })
 
   it("retries no-org session activation after a stale Clerk error", async () => {
-    mockSetActive.mockImplementationOnce(() =>
+    mockSetActive.mockImplementationOnce(() => Promise.resolve())
+      .mockImplementationOnce(() =>
       Promise.reject({
         status: 404,
         errors: [{
@@ -131,13 +135,17 @@ describe("DevSwitchClient", () => {
       })
     ).mockImplementation(() => Promise.resolve())
 
+    g.__clerkState.isSignedIn = true
     render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} />)
-    await waitFor(() => expect(mockSetActive).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(mockSetActive).toHaveBeenCalledTimes(3))
     expect(mockSetActive).toHaveBeenNthCalledWith(1, {
-      session: "session_abc",
       organization: null,
     })
     expect(mockSetActive).toHaveBeenNthCalledWith(2, {
+      session: "session_abc",
+      organization: null,
+    })
+    expect(mockSetActive).toHaveBeenNthCalledWith(3, {
       session: "session_abc",
       organization: null,
     })

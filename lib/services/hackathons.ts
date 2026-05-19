@@ -682,6 +682,12 @@ type DenyPendingTeamRpcRow = {
   member_clerk_user_ids: Array<string | null> | null
 }
 
+type TeamReviewHackathon = {
+  name: string | null
+  slug: string | null
+  status: string | null
+}
+
 export async function createTeamWithMembers(
   hackathonId: string,
   input: { name: string; captainEmail: string; organizerClerkUserId?: string }
@@ -910,7 +916,11 @@ export async function approvePendingTeam(teamId: string, hackathonId: string): P
   }
 }
 
-export async function denyPendingTeam(teamId: string, hackathonId: string): Promise<ReviewTeamResult> {
+export async function denyPendingTeam(
+  teamId: string,
+  hackathonId: string,
+  options: { notificationHackathon?: TeamReviewHackathon } = {}
+): Promise<ReviewTeamResult> {
   const client = getSupabase() as unknown as SupabaseClient
 
   const { data, error } = await client.rpc("deny_pending_team", {
@@ -960,6 +970,7 @@ export async function denyPendingTeam(teamId: string, hackathonId: string): Prom
     teamName: row.team_name,
     memberClerkUserIds,
     review: "denied",
+    hackathon: options.notificationHackathon,
   })
 
   return {
@@ -986,16 +997,31 @@ export async function denyPendingTeamsForClosedHackathon(
     return { denied: 0, failed: [{ teamId: "*", code: "list_failed" }] }
   }
 
-  const failed: Array<{ teamId: string; code: string }> = []
-  let denied = 0
+  const pendingTeams = teams ?? []
+  let notificationHackathon: TeamReviewHackathon | undefined
+  if (pendingTeams.length > 0) {
+    const { data: hackathon, error: hackathonError } = await client
+      .from("hackathons")
+      .select("name, slug, status")
+      .eq("id", hackathonId)
+      .maybeSingle()
+    if (hackathonError) {
+      console.error("Failed to load hackathon for pending team closeout notifications:", hackathonError)
+    } else if (hackathon) {
+      notificationHackathon = hackathon
+    }
+  }
 
   const closeouts = await Promise.allSettled(
-    (teams ?? []).map((team) =>
-      denyPendingTeam(team.id, hackathonId)
+    pendingTeams.map((team) =>
+      denyPendingTeam(team.id, hackathonId, { notificationHackathon })
         .then((result) => ({ teamId: team.id, result }))
         .catch((error: unknown) => Promise.reject({ teamId: team.id, error }))
     )
   )
+
+  const failed: Array<{ teamId: string; code: string }> = []
+  let denied = 0
 
   for (const closeout of closeouts) {
     if (closeout.status === "rejected") {
@@ -1022,24 +1048,35 @@ async function notifyReviewedTeamMembers({
   teamName,
   memberClerkUserIds,
   review,
+  hackathon: providedHackathon,
 }: {
   client: SupabaseClient
   hackathonId: string
   teamName: string
   memberClerkUserIds: string[]
   review: "approved" | "denied"
+  hackathon?: TeamReviewHackathon
 }): Promise<number> {
   if (memberClerkUserIds.length === 0) return 0
 
   try {
-    const { data: hackathon, error } = await client
-      .from("hackathons")
-      .select("name, slug, status")
-      .eq("id", hackathonId)
-      .maybeSingle()
+    let hackathon = providedHackathon
+    if (!hackathon) {
+      const { data, error } = await client
+        .from("hackathons")
+        .select("name, slug, status")
+        .eq("id", hackathonId)
+        .maybeSingle()
 
-    if (error || !hackathon?.name || !hackathon?.slug) {
-      console.error(`Failed to load hackathon for team ${review} notifications:`, error)
+      if (error) {
+        console.error(`Failed to load hackathon for team ${review} notifications:`, error)
+        return 0
+      }
+      hackathon = data ?? undefined
+    }
+
+    if (!hackathon?.name || !hackathon?.slug) {
+      console.error(`Failed to load hackathon for team ${review} notifications`)
       return 0
     }
     if (hackathon.status === "draft") return 0

@@ -69,7 +69,8 @@ BEGIN
   SELECT id, status
   INTO v_team
   FROM teams
-  WHERE id = v_invitation.team_id;
+  WHERE id = v_invitation.team_id
+  FOR UPDATE;
 
   IF v_team.status = 'locked' THEN
     RETURN QUERY SELECT FALSE, NULL::UUID, NULL::UUID, 'team_locked'::TEXT, 'Team is locked'::TEXT;
