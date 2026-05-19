@@ -221,6 +221,6 @@ export function teamSettingsSummary(data: TeamSettingsData): string {
   const { minTeamSize, maxTeamSize, allowSolo, requireTeamApproval } = data
   const range = minTeamSize === maxTeamSize ? `${minTeamSize}` : `${minTeamSize}\u2013${maxTeamSize}`
   const solo = allowSolo ? ", solo allowed" : ""
-  const approval = requireTeamApproval ? ", approval on" : ""
+  const approval = requireTeamApproval ? ", review required" : ""
   return `${range} people per team${solo}${approval}`
 }

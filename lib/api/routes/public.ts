@@ -24,14 +24,7 @@ import {
   MAX_SUBMISSION_SCREENSHOTS,
   type SubmissionScreenshotSlot,
 } from "@/lib/utils/submission-screenshots"
-
-function pendingTeamResponse(set: { status?: number | string }) {
-  set.status = 403
-  return {
-    error: "Your team is waiting for approval before it can submit.",
-    code: "team_pending_approval",
-  }
-}
+import { pendingTeamApprovalResponse } from "@/lib/api/responses"
 
 export const publicRoutes = new Elysia({ prefix: "/public" })
   .get("/health", () => ({
@@ -446,7 +439,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       }
 
       if (participant.teamStatus === "pending_approval") {
-        return pendingTeamResponse(set)
+        return pendingTeamApprovalResponse(set)
       }
 
       const existing = await getExistingSubmission(
@@ -599,7 +592,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       }
 
       if (participant.teamStatus === "pending_approval") {
-        return pendingTeamResponse(set)
+        return pendingTeamApprovalResponse(set)
       }
 
       const existing = await getExistingSubmission(
@@ -735,7 +728,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     }
 
     if (participant.teamStatus === "pending_approval") {
-      return pendingTeamResponse(set)
+      return pendingTeamApprovalResponse(set)
     }
 
     const existing = await getExistingSubmission(
@@ -862,7 +855,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     }
 
     if (participant.teamStatus === "pending_approval") {
-      return pendingTeamResponse(set)
+      return pendingTeamApprovalResponse(set)
     }
 
     const existing = await getExistingSubmission(

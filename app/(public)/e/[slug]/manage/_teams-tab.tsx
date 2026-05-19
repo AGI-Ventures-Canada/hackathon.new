@@ -354,13 +354,20 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
     setTimeout(() => setActionSuccess(null), 5000)
   }
 
-  function notifiedText(count: number | undefined): string {
+  function formatActionSuccess(action: string, details: Array<string | null>): string {
+    const visibleDetails = details.filter((detail): detail is string => Boolean(detail))
+    return visibleDetails.length ? `${action}. ${visibleDetails.join(", ")}.` : `${action}.`
+  }
+
+  function notifiedText(count: number | undefined): string | null {
     const safeCount = count ?? 0
+    if (safeCount <= 0) return null
     return `${safeCount} member${safeCount === 1 ? "" : "s"} notified`
   }
 
-  function countText(count: number | undefined, singular: string, plural: string): string {
+  function countText(count: number | undefined, singular: string, plural: string): string | null {
     const safeCount = count ?? 0
+    if (safeCount <= 0) return null
     return `${safeCount} ${safeCount === 1 ? singular : plural}`
   }
 
@@ -377,7 +384,10 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
       setTeams((prev) => prev.map((t) => (t.id === team.id ? team : t)))
     },
     onSuccess: (response, team) => {
-      showActionSuccess(`Approved ${team.name}. ${notifiedText(response.membersNotified)}.`)
+      setTeams((prev) =>
+        prev.map((t) => (t.id === team.id ? { ...t, name: response.team.name, status: response.team.status } : t))
+      )
+      showActionSuccess(formatActionSuccess(`Approved ${response.team.name}`, [notifiedText(response.membersNotified)]))
     },
   })
 
@@ -406,11 +416,11 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
     onSuccess: (_response, team) => {
       denySnapshotsRef.current.delete(team.id)
       showActionSuccess(
-        `Denied ${team.name}. ${[
+        formatActionSuccess(`Denied ${team.name}`, [
           countText(_response.membersUnassigned, "member moved", "members moved"),
           countText(_response.invitesCancelled, "invite canceled", "invites canceled"),
           notifiedText(_response.membersNotified),
-        ].join(", ")}.`
+        ])
       )
     },
     onError: (_error, team) => {

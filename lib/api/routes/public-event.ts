@@ -8,6 +8,7 @@ import { submitSocialUrl } from "@/lib/services/social-submissions"
 import { createMentorRequest, listMentorQueue, claimRequest, resolveRequest } from "@/lib/services/mentor-requests"
 import { getWinnerPageData } from "@/lib/services/winner-pages"
 import { resolvePrincipal } from "@/lib/auth/principal"
+import { pendingTeamApprovalResponse } from "@/lib/api/responses"
 
 async function resolveHackathonBySlug(slug: string, set: { status?: number | string }) {
   const hackathon = await getPublicHackathon(slug)
@@ -16,14 +17,6 @@ async function resolveHackathonBySlug(slug: string, set: { status?: number | str
     return { error: "Hackathon not found" as const, hackathon: null }
   }
   return { error: null, hackathon }
-}
-
-function pendingTeamResponse(set: { status?: number | string }) {
-  set.status = 403
-  return {
-    error: "Your team is waiting for approval before it can view perks.",
-    code: "team_pending_approval",
-  }
 }
 
 export const publicEventRoutes = new Elysia({ prefix: "/public" })
@@ -154,7 +147,7 @@ export const publicEventRoutes = new Elysia({ prefix: "/public" })
       return { error: "You must be on a team to view perks" }
     }
     if (participant.teamStatus === "pending_approval") {
-      return pendingTeamResponse(set)
+      return pendingTeamApprovalResponse(set)
     }
 
     const { listPerks, isPerkReleased } = await import("@/lib/services/perks")
