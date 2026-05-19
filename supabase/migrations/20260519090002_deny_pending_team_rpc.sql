@@ -93,6 +93,9 @@ BEGIN
 
   GET DIAGNOSTICS v_invites_cancelled = ROW_COUNT;
 
+  DELETE FROM public.room_teams rt
+  WHERE rt.team_id = p_team_id;
+
   UPDATE public.teams t
   SET status = 'disbanded'::public.team_status,
       captain_clerk_user_id = NULL,
