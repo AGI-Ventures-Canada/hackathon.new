@@ -886,9 +886,17 @@ export async function approvePendingTeam(teamId: string, hackathonId: string): P
     return { error: "Failed to approve team", code: "failed" }
   }
 
+  const membersNotified = await notifyApprovedTeamMembers({
+    client,
+    hackathonId,
+    teamId: row.team_id,
+    teamName: row.team_name,
+  })
+
   return {
     success: true,
     team: { id: row.team_id, name: row.team_name, status: row.team_status },
+    membersNotified,
   }
 }
 
@@ -960,6 +968,63 @@ async function notifyDeniedTeamMembers({
   teamName: string
   memberClerkUserIds: string[]
 }): Promise<number> {
+  return notifyReviewedTeamMembers({
+    client,
+    hackathonId,
+    teamName,
+    memberClerkUserIds,
+    review: "denied",
+  })
+}
+
+async function notifyApprovedTeamMembers({
+  client,
+  hackathonId,
+  teamId,
+  teamName,
+}: {
+  client: SupabaseClient
+  hackathonId: string
+  teamId: string
+  teamName: string
+}): Promise<number> {
+  const { data: members, error } = await client
+    .from("hackathon_participants")
+    .select("clerk_user_id")
+    .eq("hackathon_id", hackathonId)
+    .eq("team_id", teamId)
+
+  if (error) {
+    console.error("Failed to load team members for approval notifications:", error)
+    return 0
+  }
+
+  const memberClerkUserIds = ((members ?? []) as Array<{ clerk_user_id: string | null }>)
+    .map((member) => member.clerk_user_id)
+    .filter((id): id is string => Boolean(id))
+
+  return notifyReviewedTeamMembers({
+    client,
+    hackathonId,
+    teamName,
+    memberClerkUserIds,
+    review: "approved",
+  })
+}
+
+async function notifyReviewedTeamMembers({
+  client,
+  hackathonId,
+  teamName,
+  memberClerkUserIds,
+  review,
+}: {
+  client: SupabaseClient
+  hackathonId: string
+  teamName: string
+  memberClerkUserIds: string[]
+  review: "approved" | "denied"
+}): Promise<number> {
   if (memberClerkUserIds.length === 0) return 0
 
   try {
@@ -989,15 +1054,11 @@ async function notifyDeniedTeamMembers({
 
     if (recipients.length === 0) return 0
 
-    const { sendTeamDeniedEmails } = await import("@/lib/email/team-review")
-    return sendTeamDeniedEmails({
-      recipients,
-      teamName,
-      hackathonName: hackathon.name,
-      hackathonSlug: hackathon.slug,
-    })
+    const { sendTeamApprovedEmails, sendTeamDeniedEmails } = await import("@/lib/email/team-review")
+    const sendEmails = review === "approved" ? sendTeamApprovedEmails : sendTeamDeniedEmails
+    return sendEmails({ recipients, teamName, hackathonName: hackathon.name, hackathonSlug: hackathon.slug })
   } catch (err) {
-    console.error("Failed to notify denied team members:", err)
+    console.error(`Failed to notify ${review} team members:`, err)
     return 0
   }
 }

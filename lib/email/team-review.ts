@@ -1,12 +1,47 @@
 import { sendEmail } from "./resend"
 import { buildEventUrl, getReplyToAddress, renderEmail, sanitizeTag } from "./utils"
+import TeamApprovedEmail from "@/emails/team-approved"
 import TeamDeniedEmail from "@/emails/team-denied"
+
+export type SendTeamApprovedInput = {
+  to: string
+  teamName: string
+  hackathonName: string
+  hackathonSlug: string
+}
 
 export type SendTeamDeniedInput = {
   to: string
   teamName: string
   hackathonName: string
   hackathonSlug: string
+}
+
+export async function sendTeamApprovedEmail(
+  input: SendTeamApprovedInput
+): Promise<{ success: boolean }> {
+  const eventUrl = buildEventUrl(input.hackathonSlug)
+  const { html, text } = await renderEmail(
+    TeamApprovedEmail({
+      teamName: input.teamName,
+      hackathonName: input.hackathonName,
+      eventUrl,
+    })
+  )
+
+  const result = await sendEmail({
+    to: input.to,
+    subject: `Your team was approved for ${input.hackathonName}`,
+    html,
+    text,
+    replyTo: getReplyToAddress(),
+    tags: [
+      { name: "type", value: "team_approved" },
+      { name: "hackathon", value: sanitizeTag(input.hackathonName) },
+    ],
+  })
+
+  return { success: result !== null }
 }
 
 export async function sendTeamDeniedEmail(
@@ -34,6 +69,25 @@ export async function sendTeamDeniedEmail(
   })
 
   return { success: result !== null }
+}
+
+export async function sendTeamApprovedEmails(
+  input: Omit<SendTeamApprovedInput, "to"> & { recipients: string[] }
+): Promise<number> {
+  const uniqueRecipients = [...new Set(input.recipients.map((email) => email.trim().toLowerCase()).filter(Boolean))]
+  let sent = 0
+
+  for (const to of uniqueRecipients) {
+    const result = await sendTeamApprovedEmail({
+      to,
+      teamName: input.teamName,
+      hackathonName: input.hackathonName,
+      hackathonSlug: input.hackathonSlug,
+    })
+    if (result.success) sent++
+  }
+
+  return sent
 }
 
 export async function sendTeamDeniedEmails(

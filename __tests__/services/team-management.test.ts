@@ -10,8 +10,10 @@ import {
 } from "../lib/supabase-mock"
 
 const mockSendTeamDeniedEmails = mock(() => Promise.resolve(2))
+const mockSendTeamApprovedEmails = mock(() => Promise.resolve(2))
 
 mock.module("@/lib/email/team-review", () => ({
+  sendTeamApprovedEmails: mockSendTeamApprovedEmails,
   sendTeamDeniedEmails: mockSendTeamDeniedEmails,
 }))
 
@@ -223,11 +225,25 @@ describe("team approvals", () => {
   beforeEach(() => {
     resetSupabaseMocks()
     resetClerkMocks()
+    mockSendTeamApprovedEmails.mockClear()
+    mockSendTeamApprovedEmails.mockResolvedValue(2)
     mockSendTeamDeniedEmails.mockClear()
     mockSendTeamDeniedEmails.mockResolvedValue(2)
   })
 
   it("approves a pending team", async () => {
+    setMockFromImplementation(
+      tableImpl({
+        hackathons: { data: { name: "Hack One", slug: "hack-one" }, error: null },
+        hackathon_participants: {
+          data: [
+            { clerk_user_id: "user_1" },
+            { clerk_user_id: "user_2" },
+          ],
+          error: null,
+        },
+      })
+    )
     setMockRpcImplementation(() =>
       Promise.resolve({
         data: [{
@@ -241,11 +257,35 @@ describe("team approvals", () => {
         error: null,
       })
     )
+    mockClerkClient.mockImplementation(() =>
+      Promise.resolve({
+        organizations: {
+          getOrganization: mock(() => Promise.resolve({ name: "Test Org" })),
+        },
+        users: {
+          getUserList: mock(() =>
+            Promise.resolve({
+              data: [
+                { primaryEmailAddress: { emailAddress: "one@example.com" }, emailAddresses: [] },
+                { primaryEmailAddress: { emailAddress: "two@example.com" }, emailAddresses: [] },
+              ],
+            })
+          ),
+        },
+      })
+    )
 
     const result = await approvePendingTeam("team_1", "h_1")
     expect(result).toEqual({
       success: true,
       team: { id: "team_1", name: "Team One", status: "forming" },
+      membersNotified: 2,
+    })
+    expect(mockSendTeamApprovedEmails).toHaveBeenCalledWith({
+      recipients: ["one@example.com", "two@example.com"],
+      teamName: "Team One",
+      hackathonName: "Hack One",
+      hackathonSlug: "hack-one",
     })
   })
 

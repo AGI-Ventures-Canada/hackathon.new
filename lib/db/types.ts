@@ -3061,7 +3061,7 @@ export type Database = {
         }[]
       }
       approve_pending_team: {
-        Args: { p_hackathon_id: string; p_team_id: string }
+        Args: { p_team_id: string; p_hackathon_id: string }
         Returns: {
           error_code: string | null
           error_message: string | null
@@ -3102,7 +3102,7 @@ export type Database = {
         Returns: number
       }
       deny_pending_team: {
-        Args: { p_hackathon_id: string; p_team_id: string }
+        Args: { p_team_id: string; p_hackathon_id: string }
         Returns: {
           cancelled_invitation_ids: string[]
           error_code: string | null

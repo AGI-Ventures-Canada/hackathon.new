@@ -75,7 +75,11 @@ mock.module("@/lib/services/phases", () => ({
 }))
 
 const mockApprovePendingTeam = mock(() =>
-  Promise.resolve({ success: true as const, team: { id: "22222222-2222-2222-2222-222222222222", name: "Team One", status: "forming" } })
+  Promise.resolve({
+    success: true as const,
+    team: { id: "22222222-2222-2222-2222-222222222222", name: "Team One", status: "forming" },
+    membersNotified: 2,
+  })
 )
 const mockDenyPendingTeam = mock(() =>
   Promise.resolve({
@@ -197,7 +201,11 @@ describe("Dashboard Event Routes Integration Tests", () => {
     mockPeopleToCsvRows.mockImplementation((people: unknown) => people as Record<string, string>[])
 
     mockSetPhase.mockResolvedValue({ success: true })
-    mockApprovePendingTeam.mockResolvedValue({ success: true, team: { id: "22222222-2222-2222-2222-222222222222", name: "Team One", status: "forming" } })
+    mockApprovePendingTeam.mockResolvedValue({
+      success: true,
+      team: { id: "22222222-2222-2222-2222-222222222222", name: "Team One", status: "forming" },
+      membersNotified: 2,
+    })
     mockDenyPendingTeam.mockResolvedValue({
       success: true,
       team: { id: "22222222-2222-2222-2222-222222222222", name: "Team One", status: "disbanded" },
@@ -360,6 +368,7 @@ describe("Dashboard Event Routes Integration Tests", () => {
 
       expect(res.status).toBe(200)
       expect(data.team.status).toBe("forming")
+      expect(data.membersNotified).toBe(2)
       expect(mockApprovePendingTeam).toHaveBeenCalledWith(teamId, hackathonId)
     })
 

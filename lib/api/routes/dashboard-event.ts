@@ -696,10 +696,10 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       action: "team.approved",
       resourceType: "team",
       resourceId: params.teamId,
-      metadata: { hackathonId: params.id },
+      metadata: { hackathonId: params.id, membersNotified: result.membersNotified ?? 0 },
     })
 
-    return { success: true, team: result.team }
+    return { success: true, team: result.team, membersNotified: result.membersNotified ?? 0 }
   }, {
     detail: { summary: "Approve a team waiting for review" },
   })
