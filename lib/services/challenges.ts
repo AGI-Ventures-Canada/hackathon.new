@@ -161,6 +161,9 @@ async function resolveScheduledReleaseFields(
     }
   }
   if (typeof scheduledReleaseAt === "string" && scheduledReleaseAt.length > 0) {
+    if (!Number.isFinite(Date.parse(scheduledReleaseAt))) {
+      return { scheduled_release_at: null, release_linked_to: null }
+    }
     return { scheduled_release_at: scheduledReleaseAt, release_linked_to: null }
   }
   return { scheduled_release_at: null, release_linked_to: null }
