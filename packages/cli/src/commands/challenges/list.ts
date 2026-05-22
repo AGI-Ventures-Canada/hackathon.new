@@ -26,10 +26,24 @@ export async function runChallengesList(
     return
   }
 
+  const rows = data.challenges.map((c) => ({
+    ...c,
+    release: c.releasedAt
+      ? "Released"
+      : c.releaseLinkedTo === "event_start"
+        ? "On event start"
+        : c.releaseLinkedTo === "event_publish"
+          ? "On publish"
+          : c.scheduledReleaseAt
+            ? new Date(c.scheduledReleaseAt).toLocaleString()
+            : "—",
+  }))
+
   console.log(
-    formatTable(data.challenges, [
+    formatTable(rows, [
       { key: "title", label: "Title" },
       { key: "description", label: "Description" },
+      { key: "release", label: "Release" },
       { key: "id", label: "ID" },
     ])
   )

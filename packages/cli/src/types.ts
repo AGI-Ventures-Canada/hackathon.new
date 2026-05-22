@@ -170,6 +170,9 @@ export interface Challenge {
   description?: string | null
   resources?: Array<{ label: string; url: string }>
   displayOrder?: number
+  releasedAt?: string | null
+  scheduledReleaseAt?: string | null
+  releaseLinkedTo?: "event_start" | "event_publish" | null
   createdAt?: string
 }
 

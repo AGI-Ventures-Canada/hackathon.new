@@ -480,7 +480,7 @@ curl -s -X POST "$BASE_URL/api/dashboard/import/event" \
 | `rules` | No | Combined event rules / code of conduct |
 | `prizes` | No | Array of `{ name, description?, value? }` |
 | `challenges` | No | Array of `{ title, description?, resources? }` — tracks/themes participants build for |
-| `agendaItems` | No | Array of `{ title, startsAt, description?, endsAt?, location?, speakers? }`. Passing a non-empty agenda replaces the auto-seeded default sessions (trigger items like `challenge_release` and `submission_deadline` are preserved). Items without `startsAt` are skipped. |
+| `agendaItems` | No | Array of `{ title, startsAt, description?, endsAt?, location?, speakers? }`. Passing a non-empty agenda replaces the auto-seeded default sessions (trigger items like `submission_deadline` are preserved). Items without `startsAt` are skipped. |
 
 **Response:**
 
@@ -1404,7 +1404,6 @@ The `linkedTo` field on `PATCH` controls how the item is bound to the hackathon 
 |-------|--------|
 | `event_start` | `starts_at` stays in sync with the hackathon's start time |
 | `event_end` | `starts_at` stays in sync with the hackathon's end time |
-| `event_publish` | Status-only link (no time sync). For `challenge_release` items, fires the release when the hackathon transitions to `published` |
 | `null` | Item uses its own `starts_at` value |
 
 ---
