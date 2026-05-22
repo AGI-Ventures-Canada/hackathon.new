@@ -132,7 +132,7 @@ describe("Organizer Polling Service", () => {
     it("returns effective status when event dates make it live", async () => {
       const startsAt = new Date(Date.now() - 60 * 60 * 1000).toISOString()
       const endsAt = new Date(Date.now() + 60 * 60 * 1000).toISOString()
-      mockRpcCall("get_organizer_poll_data", mockSuccess(makeRpcPayload({
+      mockOrganizerPoll(mockSuccess(makeRpcPayload({
         status: "published",
         starts_at: startsAt,
         ends_at: endsAt,

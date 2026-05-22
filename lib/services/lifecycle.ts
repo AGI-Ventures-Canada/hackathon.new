@@ -108,7 +108,7 @@ export async function executeTransition(
         released.push(...r.map((c) => ({ title: c.title, description: c.description })))
         await processScheduledChallengeReleases().catch((err) =>
           console.error(
-            `Failed to process scheduled challenge releases for ${hackathonId}:`,
+            `Global scheduled challenge release sweep failed (triggered by activation of ${hackathonId}):`,
             err,
           ),
         )
