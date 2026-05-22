@@ -228,6 +228,11 @@ export async function updateChallenge(
   const hackathonId = await assertChallengeOwnership(client, challengeId, tenantId)
   if (!hackathonId) return null
 
+  const hasContentPatch =
+    patch.title !== undefined || patch.description !== undefined || patch.resources !== undefined
+  const hasReleasePatch =
+    patch.scheduledReleaseAt !== undefined || patch.releaseLinkedTo !== undefined
+
   const update: Record<string, unknown> = {
     updated_at: new Date().toISOString(),
   }
@@ -235,7 +240,7 @@ export async function updateChallenge(
   if (patch.description !== undefined) update.description = patch.description
   if (patch.resources !== undefined) update.resources = patch.resources
 
-  if (patch.scheduledReleaseAt !== undefined || patch.releaseLinkedTo !== undefined) {
+  if (hasReleasePatch) {
     const fields = await resolveScheduledReleaseFields(
       client,
       hackathonId,
@@ -246,33 +251,35 @@ export async function updateChallenge(
     update.release_linked_to = fields.release_linked_to
   }
 
-  const { data, error } = await client
-    .from("challenges")
-    .update(update)
-    .eq("id", challengeId)
-    .is("released_at", null)
-    .select("*")
-    .single()
+  // Only gate on released_at when the patch actually touches release timing.
+  // For content-only patches, allow updates on released challenges too.
+  let query = client.from("challenges").update(update).eq("id", challengeId)
+  if (hasReleasePatch) query = query.is("released_at", null)
+  const { data, error } = await query.select("*").single()
 
-  if (error || !data) {
-    if (patch.title !== undefined || patch.description !== undefined || patch.resources !== undefined) {
-      const contentOnly: Record<string, unknown> = { updated_at: new Date().toISOString() }
-      if (patch.title !== undefined) contentOnly.title = patch.title
-      if (patch.description !== undefined) contentOnly.description = patch.description
-      if (patch.resources !== undefined) contentOnly.resources = patch.resources
-      const { data: contentData, error: contentErr } = await client
-        .from("challenges")
-        .update(contentOnly)
-        .eq("id", challengeId)
-        .select("*")
-        .single()
-      if (!contentErr && contentData) return toChallenge(contentData)
-    }
-    console.error("Failed to update challenge:", error)
+  if (data) return toChallenge(data)
+
+  // Release-timing patch hit a released challenge: fall back to content-only.
+  // Only treat as fallback if we actually have content to write — and don't
+  // mask transient errors on plain content updates.
+  if (hasReleasePatch && hasContentPatch) {
+    const contentOnly: Record<string, unknown> = { updated_at: new Date().toISOString() }
+    if (patch.title !== undefined) contentOnly.title = patch.title
+    if (patch.description !== undefined) contentOnly.description = patch.description
+    if (patch.resources !== undefined) contentOnly.resources = patch.resources
+    const { data: contentData, error: contentErr } = await client
+      .from("challenges")
+      .update(contentOnly)
+      .eq("id", challengeId)
+      .select("*")
+      .single()
+    if (!contentErr && contentData) return toChallenge(contentData)
+    console.error("Failed to update challenge (content fallback):", contentErr)
     return null
   }
 
-  return toChallenge(data)
+  console.error("Failed to update challenge:", error)
+  return null
 }
 
 export async function deleteChallenge(
