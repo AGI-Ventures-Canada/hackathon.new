@@ -323,7 +323,6 @@ describe("Challenges Service", () => {
     function mockReleaseChallengeFlow(opts: {
       ownershipTenant?: string
       hackathonStatus?: string
-      hackathonChallengeReleasedAt?: string | null
       releasedRow?: Record<string, unknown> | null
     } = {}) {
       const status = opts.hackathonStatus ?? "published"
@@ -358,7 +357,6 @@ describe("Challenges Service", () => {
               name: "Test Hack",
               slug: "test-hack",
               status,
-              challenge_released_at: opts.hackathonChallengeReleasedAt ?? null,
             },
             error: null,
           })

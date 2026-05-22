@@ -59,10 +59,11 @@ const announcementAudienceType = t.Union([
   t.Literal("not_submitted"),
 ])
 
+const ISO_DATE_TIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/
+
 function isValidIsoDateString(value: unknown): boolean {
-  if (typeof value !== "string" || value.length === 0) return false
-  const ms = Date.parse(value)
-  return Number.isFinite(ms)
+  if (typeof value !== "string" || !ISO_DATE_TIME_RE.test(value)) return false
+  return Number.isFinite(Date.parse(value))
 }
 
 async function checkOrganizer(hackathonId: string, tenantId: string, set: { status?: number | string }) {
