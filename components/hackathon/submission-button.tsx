@@ -6,6 +6,13 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Dialog } from "@/components/ui/dialog"
 import {
   Field,
@@ -872,17 +879,19 @@ export function SubmissionButton({
                   {challengePickerRequired && (
                     <Field>
                       <FieldLabel htmlFor="submission-challenge">Which challenge?</FieldLabel>
-                      <select
-                        id="submission-challenge"
+                      <Select
                         value={selectedChallengeId ?? ""}
-                        onChange={(e) => setSelectedChallengeId(e.target.value || null)}
-                        className="border-input bg-background ring-offset-background focus-visible:ring-ring h-9 w-full rounded-md border px-3 py-1 text-sm shadow-xs transition-colors focus-visible:ring-1 focus-visible:outline-hidden"
+                        onValueChange={(v) => setSelectedChallengeId(v || null)}
                       >
-                        <option value="" disabled>Pick one</option>
-                        {releasedChallenges.map((c) => (
-                          <option key={c.id} value={c.id}>{c.title}</option>
-                        ))}
-                      </select>
+                        <SelectTrigger id="submission-challenge" className="w-full">
+                          <SelectValue placeholder="Pick one" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {releasedChallenges.map((c) => (
+                            <SelectItem key={c.id} value={c.id}>{c.title}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </Field>
                   )}
                   <Field>

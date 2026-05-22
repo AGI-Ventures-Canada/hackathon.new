@@ -106,6 +106,9 @@ export async function executeTransition(
           { dispatchNotification: false, trigger: "event_start" },
         )
         released.push(...r.map((c) => ({ title: c.title, description: c.description })))
+        // Global sweep is intentional: activation is a natural trigger to catch
+        // up any time-scheduled releases the cron may have missed (or that fell
+        // due at the same moment). Scope is all hackathons, not just this one.
         await processScheduledChallengeReleases().catch((err) =>
           console.error(
             `Global scheduled challenge release sweep failed (triggered by activation of ${hackathonId}):`,

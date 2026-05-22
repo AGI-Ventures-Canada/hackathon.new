@@ -995,6 +995,17 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     const updated = await updateChallenge(params.cid, principal.tenantId, b)
     if (!updated) { set.status = 400; return { error: "Failed to update challenge" } }
     await logAudit({ principal, action: "challenge.updated", resourceType: "challenge", resourceId: params.cid, metadata: { hackathonId: params.id } })
+
+    if (updated.releaseLinkedTo === "event_publish" && !updated.releasedAt) {
+      const released = await releaseLinkedChallenges(
+        params.id,
+        principal.tenantId,
+        "event_publish",
+      )
+      const refreshed = released.find((c) => c.id === updated.id)
+      if (refreshed) return { challenge: refreshed }
+    }
+
     return { challenge: updated }
   }, {
     body: t.Object({
