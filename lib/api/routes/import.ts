@@ -151,7 +151,7 @@ export const dashboardImportRoutes = new Elysia({ prefix: "/dashboard/import" })
     {
       detail: {
         summary: "Create hackathon from imported event data",
-        description: "Creates a new hackathon from structured event data (Luma or any external source). Pass sourceUrl to preserve import attribution. Pass agendaItems to populate the schedule — importing a non-empty agenda replaces the auto-seeded default sessions (trigger items like challenge_release and submission_deadline are preserved). Requires hackathons:write scope.",
+        description: "Creates a new hackathon from structured event data (Luma or any external source). Pass sourceUrl to preserve import attribution. Pass agendaItems to populate the schedule — importing a non-empty agenda replaces the auto-seeded default sessions (the submission_deadline trigger item is preserved). Requires hackathons:write scope.",
         tags: ["dashboard"],
       },
       body: t.Object({

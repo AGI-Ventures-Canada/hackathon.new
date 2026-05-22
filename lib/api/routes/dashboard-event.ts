@@ -59,6 +59,12 @@ const announcementAudienceType = t.Union([
   t.Literal("not_submitted"),
 ])
 
+function isValidIsoDateString(value: unknown): boolean {
+  if (typeof value !== "string" || value.length === 0) return false
+  const ms = Date.parse(value)
+  return Number.isFinite(ms)
+}
+
 async function checkOrganizer(hackathonId: string, tenantId: string, set: { status?: number | string }) {
   const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
   const check = await checkHackathonOrganizer(hackathonId, tenantId)
@@ -943,6 +949,10 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       scheduledReleaseAt?: string | null
       releaseLinkedTo?: ReleaseLinkedTo | null
     }
+    if (b.scheduledReleaseAt && !isValidIsoDateString(b.scheduledReleaseAt)) {
+      set.status = 400
+      return { error: "scheduledReleaseAt must be a valid ISO date-time string" }
+    }
     const created = await createChallenge(params.id, principal.tenantId, b)
     if (!created) { set.status = 400; return { error: "Failed to create challenge" } }
     await logAudit({ principal, action: "challenge.created", resourceType: "challenge", resourceId: created.id, metadata: { hackathonId: params.id, title: b.title } })
@@ -991,6 +1001,10 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       resources?: { label: string; url: string }[]
       scheduledReleaseAt?: string | null
       releaseLinkedTo?: ReleaseLinkedTo | null
+    }
+    if (b.scheduledReleaseAt && !isValidIsoDateString(b.scheduledReleaseAt)) {
+      set.status = 400
+      return { error: "scheduledReleaseAt must be a valid ISO date-time string" }
     }
     const updated = await updateChallenge(params.cid, principal.tenantId, b)
     if (!updated) { set.status = 400; return { error: "Failed to update challenge" } }

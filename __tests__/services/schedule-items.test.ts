@@ -11,7 +11,6 @@ const {
   updateScheduleItem,
   deleteScheduleItem,
   getSubmissionDeadline,
-  getTriggerItem,
   buildDefaultAgendaItems,
 } = await import("@/lib/services/schedule-items")
 
@@ -169,32 +168,6 @@ describe("getSubmissionDeadline", () => {
     setMockFromImplementation(() => chain)
 
     const result = await getSubmissionDeadline("hack-1")
-    expect(result).toBeNull()
-  })
-})
-
-describe("getTriggerItem", () => {
-  beforeEach(() => {
-    resetSupabaseMocks()
-  })
-
-  it("returns the trigger item for a given type", async () => {
-    const chain = createChainableMock({
-      data: { id: "item-1", title: "Challenge Release", starts_at: "2026-04-10T09:00:00Z", trigger_type: "challenge_release" },
-      error: null,
-    })
-    setMockFromImplementation(() => chain)
-
-    const result = await getTriggerItem("hack-1", "challenge_release")
-    expect(result).not.toBeNull()
-    expect(result?.trigger_type).toBe("challenge_release")
-  })
-
-  it("returns null when no trigger item exists", async () => {
-    const chain = createChainableMock({ data: null, error: { message: "not found", code: "PGRST116" } })
-    setMockFromImplementation(() => chain)
-
-    const result = await getTriggerItem("hack-1", "challenge_release")
     expect(result).toBeNull()
   })
 })

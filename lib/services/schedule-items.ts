@@ -157,19 +157,3 @@ export function buildDefaultAgendaItems(startsAt: string | null, endsAt: string 
   ]
 }
 
-export async function getTriggerItem(
-  hackathonId: string,
-  triggerType: "submission_deadline"
-): Promise<ScheduleItem | null> {
-  const client = getSupabase() as unknown as SupabaseClient
-
-  const { data, error } = await client
-    .from("hackathon_schedule_items")
-    .select("*")
-    .eq("hackathon_id", hackathonId)
-    .eq("trigger_type", triggerType)
-    .single()
-
-  if (error || !data) return null
-  return data as ScheduleItem
-}

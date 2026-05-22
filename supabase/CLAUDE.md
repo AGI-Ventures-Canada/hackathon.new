@@ -155,9 +155,9 @@ CREATE POLICY "Deny all access to new_table" ON new_table FOR ALL USING (false);
 
 ## Auto-seeded Agenda Items
 
-A PostgreSQL AFTER INSERT trigger (`trg_hackathon_seed_agenda`) on the `hackathons` table automatically creates 6 default agenda items for every new hackathon: Opening Kickoff, Challenge Release, Hacking Begins, Submissions Close, Presentations, and Awards Ceremony. The trigger function `seed_default_agenda_items()` derives times from `starts_at` / `ends_at` (with fallback defaults if null).
+A PostgreSQL AFTER INSERT trigger (`trg_hackathon_seed_agenda`) on the `hackathons` table automatically creates 5 default agenda items for every new hackathon: Opening Kickoff, Hacking Begins, Submissions Close & Judging Starts, Presentations, and Awards Ceremony. The trigger function `seed_default_agenda_items()` derives times from `starts_at` / `ends_at` (with fallback defaults if null). Challenge release timing lives on each `challenges` row (`released_at` / `scheduled_release_at` / `release_linked_to`), not as a schedule item.
 
-**Do not manually insert default agenda items in application code** — the trigger handles all creation paths including seed data, imports, and test scenarios. The `challenge_release` and `submission_deadline` items use `ON CONFLICT DO NOTHING` via the partial unique index to stay idempotent.
+**Do not manually insert default agenda items in application code** — the trigger handles all creation paths including seed data, imports, and test scenarios. The `submission_deadline` item uses `ON CONFLICT DO NOTHING` via the partial unique index to stay idempotent.
 
 ## Supabase Branching
 
