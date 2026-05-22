@@ -521,7 +521,8 @@ function addPublishedActions(items: ActionItem[], input: ActionItemsInput) {
 
   const hasDates = !!input.startsAt && !!input.endsAt
   const hasLocation = !!input.locationType
-  if (hasDates && hasLocation) {
+  const eventHasStarted = !!input.startsAt && new Date(input.startsAt).getTime() <= Date.now()
+  if (hasDates && hasLocation && !eventHasStarted) {
     items.push(transitionAction({
       id: "ready-to-go-live",
       label: "Ready to go live",
