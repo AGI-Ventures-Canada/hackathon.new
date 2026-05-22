@@ -232,7 +232,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if ("error" in authErr) return authErr
     if (!isValidUuid(params.roomId)) { set.status = 400; return { error: "Invalid room id" } }
-    const { judgeParticipantId } = body as { judgeParticipantId: string }
+    const { judgeParticipantId } = body
     if (!isValidUuid(judgeParticipantId)) { set.status = 400; return { error: "Invalid judge id" } }
     const result = await addJudgeToRoom(params.roomId, params.id, judgeParticipantId)
     if (!result.ok) { set.status = 400; return { error: "Failed to add judge to room" } }
@@ -280,7 +280,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if ("error" in authErr) return authErr
-    const { enabled } = body as { enabled: boolean }
+    const { enabled } = body
     const ok = await setAutoAssignByRoom(params.id, enabled)
     if (!ok) { set.status = 400; return { error: "Failed to update setting" } }
     await logAudit({ principal, action: "hackathon.auto_assign_by_room.updated", resourceType: "hackathon", resourceId: params.id, metadata: { hackathonId: params.id, enabled } })
@@ -460,11 +460,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       }
     }
 
-    const { name, mode, captainClerkUserId } = body as {
-      name?: string
-      mode?: "in_person" | "virtual" | null
-      captainClerkUserId?: string
-    }
+    const { name, mode, captainClerkUserId } = body
     if (name !== undefined && (!name.trim() || name.length > 100)) {
       set.status = 400
       return { error: "Team name must be 1-100 characters" }
