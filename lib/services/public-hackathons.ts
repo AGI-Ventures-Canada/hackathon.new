@@ -1,6 +1,15 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
-import type { Hackathon, TenantProfile, HackathonSponsor, HackathonStatus, HackathonJudgeDisplay, Prize, JudgingMode } from "@/lib/db/hackathon-types"
+import {
+  DEFAULT_TEAM_STATUS,
+  type Hackathon,
+  type TenantProfile,
+  type HackathonSponsor,
+  type HackathonStatus,
+  type HackathonJudgeDisplay,
+  type Prize,
+  type JudgingMode,
+} from "@/lib/db/hackathon-types"
 import { currentTermsHash } from "@/lib/services/hackathon-terms"
 
 export type PublicPrize = Omit<Prize, "distribution_method" | "monetary_value" | "currency">
@@ -402,6 +411,19 @@ export async function updateHackathonSettings(
   if (error) {
     console.error("Failed to update hackathon settings:", error)
     return null
+  }
+
+  if (updates.requireTeamApproval === false) {
+    const { error: teamError } = await client
+      .from("teams")
+      .update({ status: DEFAULT_TEAM_STATUS })
+      .eq("hackathon_id", hackathonId)
+      .eq("status", "pending_approval")
+
+    if (teamError) {
+      console.error("Failed to approve waiting teams after disabling review:", teamError)
+      return null
+    }
   }
 
   return data as unknown as Hackathon
