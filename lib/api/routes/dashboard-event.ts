@@ -15,8 +15,7 @@ import {
   createSubmissionExport,
   getExportById,
   listExportsForHackathon,
-  DEFAULT_EXPORT_FILTERS,
-  type ExportFilters,
+  mergeExportFilters,
 } from "@/lib/services/submission-exports"
 import { supabase as getSupabase } from "@/lib/db/client"
 import { listRounds, createRound, updateRound, deleteRound, activateRound } from "@/lib/services/judging-rounds"
@@ -387,13 +386,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       return { error: "Exports are only available for completed hackathons." }
     }
 
-    const b = (body ?? {}) as Partial<ExportFilters>
-    const filters: ExportFilters = {
-      winnersOnly: b.winnersOnly ?? DEFAULT_EXPORT_FILTERS.winnersOnly,
-      includeDrafts: b.includeDrafts ?? DEFAULT_EXPORT_FILTERS.includeDrafts,
-      includeJudgeNotes:
-        b.includeJudgeNotes ?? DEFAULT_EXPORT_FILTERS.includeJudgeNotes,
-    }
+    const filters = mergeExportFilters(body ?? {})
 
     const result = await createSubmissionExport(params.id, principal.userId, filters)
     if (!result.success) {
@@ -401,7 +394,11 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       return { error: result.error, code: result.code }
     }
 
-    const markFailedOnEnqueueError = async (err: unknown) => {
+    try {
+      const { start } = await import("workflow/api")
+      const { exportSubmissionsWorkflow } = await import("@/lib/workflows/export-submissions")
+      await start(exportSubmissionsWorkflow, [{ exportId: result.exportId }])
+    } catch (err) {
       console.error("Failed to start export-submissions workflow:", err)
       const { markExportFailed } = await import("@/lib/services/submission-exports")
       await markExportFailed(
@@ -410,16 +407,6 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       ).catch((markErr) =>
         console.error("Failed to mark export as failed:", markErr)
       )
-    }
-
-    try {
-      const { start } = await import("workflow/api")
-      const { exportSubmissionsWorkflow } = await import("@/lib/workflows/export-submissions")
-      start(exportSubmissionsWorkflow, [{ exportId: result.exportId }]).catch(
-        markFailedOnEnqueueError
-      )
-    } catch (err) {
-      await markFailedOnEnqueueError(err)
     }
 
     await logAudit({
@@ -494,6 +481,11 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     if (!exportRow || exportRow.hackathon_id !== params.id) {
       set.status = 404
       return { error: "Export not found" }
+    }
+
+    if (exportRow.status === "expired") {
+      set.status = 410
+      return { error: "This export has expired. Generate a new one." }
     }
 
     if (exportRow.status !== "ready" || !exportRow.storage_path) {

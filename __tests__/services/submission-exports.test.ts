@@ -13,6 +13,8 @@ const {
   markExportReady,
   markExportFailed,
   collectExportUserIds,
+  mergeExportFilters,
+  DEFAULT_EXPORT_FILTERS,
 } = await import("@/lib/services/submission-exports")
 
 const HACKATHON_ID = "11111111-1111-1111-1111-111111111111"
@@ -150,6 +152,24 @@ describe("export status transitions", () => {
       createChainableMock({ data: null, error: null })
     )
     await markExportFailed(EXPORT_ID, "boom")
+  })
+})
+
+describe("mergeExportFilters", () => {
+  it("fills missing fields with defaults", () => {
+    expect(mergeExportFilters(null)).toEqual(DEFAULT_EXPORT_FILTERS)
+    expect(mergeExportFilters({})).toEqual(DEFAULT_EXPORT_FILTERS)
+    expect(mergeExportFilters({ winnersOnly: true })).toEqual({
+      ...DEFAULT_EXPORT_FILTERS,
+      winnersOnly: true,
+    })
+  })
+
+  it("preserves explicitly-set falsey values", () => {
+    expect(mergeExportFilters({ includeJudgeNotes: false })).toEqual({
+      ...DEFAULT_EXPORT_FILTERS,
+      includeJudgeNotes: false,
+    })
   })
 })
 

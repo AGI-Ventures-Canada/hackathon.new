@@ -62,7 +62,10 @@ export async function buildAndUploadExport(
   const images = await downloadAllImages(payload)
   const csvBuffer = Buffer.from(buildCsv(payload), "utf-8")
   const pdfBuffer = await renderSubmissionsExportPdf(payload)
-  const jsonBuffer = Buffer.from(JSON.stringify(payload, null, 2), "utf-8")
+  const jsonBuffer = Buffer.from(
+    JSON.stringify(buildJsonPayload(payload), null, 2),
+    "utf-8"
+  )
   const readmeBuffer = Buffer.from(buildReadme(payload), "utf-8")
 
   const zip = new JSZip()
@@ -396,8 +399,20 @@ function formatJudgeNotes(
     .join(" || ")
 }
 
+function buildJsonPayload(payload: EnrichedExportPayload): EnrichedExportPayload {
+  if (payload.filters.includeJudgeNotes) return payload
+  const trimmedUsers: ExportUserDirectory = {}
+  for (const [id, user] of Object.entries(payload.users)) {
+    trimmedUsers[id] = { name: user.name, email: null }
+  }
+  return { ...payload, users: trimmedUsers }
+}
+
 function buildReadme(payload: EnrichedExportPayload): string {
   const filters = describeFilters(payload.filters)
+  const usersLine = payload.filters.includeJudgeNotes
+    ? "- `data.json` includes a `users` directory mapping every participant and judge to their name **and email** — treat this file as sensitive and share it only with people who already have access to that information."
+    : "- `data.json` includes a `users` directory with names only. Emails are omitted because judge notes weren't included; re-run with judge notes enabled to include emails."
   return `# Submissions Export — ${payload.hackathon.name}
 
 Generated: ${payload.generatedAt}
@@ -419,7 +434,7 @@ ${filters}
 - Demo videos are linked in the CSV/JSON but not downloaded.
 - Image downloads that timed out or failed are skipped silently.
 - Member and judge names come from Clerk at export time and may differ from how they appear in the live event page if a user has since updated their profile.
-- \`data.json\` includes a \`users\` directory mapping every participant and judge to their name and email — treat this file as sensitive and share it only with people who already have access to that information.
+${usersLine}
 `
 }
 

@@ -14,7 +14,7 @@ import { assertOkJson } from "@/lib/utils/fetch"
 
 export type ExportListItem = {
   id: string
-  status: "pending" | "processing" | "ready" | "failed"
+  status: "pending" | "processing" | "ready" | "failed" | "expired"
   submissionCount: number | null
   fileSizeBytes: number | null
   createdAt: string
@@ -67,6 +67,13 @@ function StatusBadge({ status }: { status: ExportListItem["status"] }) {
       <Badge variant="destructive" className="gap-1">
         <AlertCircle className="size-3" />
         Failed
+      </Badge>
+    )
+  }
+  if (status === "expired") {
+    return (
+      <Badge variant="outline" className="gap-1 text-muted-foreground">
+        Expired
       </Badge>
     )
   }

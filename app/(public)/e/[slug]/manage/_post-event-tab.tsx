@@ -23,7 +23,7 @@ export async function PostEventTabContent({
   hackathonStatus,
   activePtab,
 }: PostEventTabContentProps) {
-  const [fulfillments, fulfillmentSummary, reminders, exports] = await Promise.all([
+  const [fulfillments, fulfillmentSummary, reminders, submissionExports] = await Promise.all([
     listFulfillments(hackathonId),
     getFulfillmentSummary(hackathonId),
     listReminders(hackathonId),
@@ -75,9 +75,9 @@ export async function PostEventTabContent({
       {hackathonStatus === "completed" ? (
         <PostEventExports
           hackathonId={hackathonId}
-          initialExports={exports.map((e) => ({
+          initialExports={submissionExports.map((e) => ({
             id: e.id,
-            status: e.status as "pending" | "processing" | "ready" | "failed",
+            status: e.status as "pending" | "processing" | "ready" | "failed" | "expired",
             submissionCount: e.submission_count,
             fileSizeBytes: e.file_size_bytes,
             createdAt: e.created_at,

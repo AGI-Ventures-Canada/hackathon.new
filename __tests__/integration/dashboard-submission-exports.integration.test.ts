@@ -56,15 +56,24 @@ const mockCreateSubmissionExport = mock(() =>
 const mockGetExportById = mock(() => Promise.resolve(null as unknown))
 const mockListExportsForHackathon = mock(() => Promise.resolve([] as unknown[]))
 
+const DEFAULTS = {
+  winnersOnly: false,
+  includeDrafts: false,
+  includeJudgeNotes: true,
+}
+
 mock.module("@/lib/services/submission-exports", () => ({
   createSubmissionExport: mockCreateSubmissionExport,
   getExportById: mockGetExportById,
   listExportsForHackathon: mockListExportsForHackathon,
-  DEFAULT_EXPORT_FILTERS: {
-    winnersOnly: false,
-    includeDrafts: false,
-    includeJudgeNotes: true,
-  },
+  DEFAULT_EXPORT_FILTERS: DEFAULTS,
+  mergeExportFilters: (raw: Record<string, unknown> | null | undefined) => ({
+    winnersOnly: (raw?.winnersOnly as boolean) ?? DEFAULTS.winnersOnly,
+    includeDrafts: (raw?.includeDrafts as boolean) ?? DEFAULTS.includeDrafts,
+    includeJudgeNotes:
+      (raw?.includeJudgeNotes as boolean) ?? DEFAULTS.includeJudgeNotes,
+  }),
+  markExportFailed: mock(() => Promise.resolve()),
 }))
 
 const mockLogAudit = mock(() => Promise.resolve(null))

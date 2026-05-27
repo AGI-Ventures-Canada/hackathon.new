@@ -17,6 +17,18 @@ export const DEFAULT_EXPORT_FILTERS: ExportFilters = {
   includeJudgeNotes: true,
 }
 
+export function mergeExportFilters(
+  raw: Partial<ExportFilters> | null | undefined
+): ExportFilters {
+  const r = raw ?? {}
+  return {
+    winnersOnly: r.winnersOnly ?? DEFAULT_EXPORT_FILTERS.winnersOnly,
+    includeDrafts: r.includeDrafts ?? DEFAULT_EXPORT_FILTERS.includeDrafts,
+    includeJudgeNotes:
+      r.includeJudgeNotes ?? DEFAULT_EXPORT_FILTERS.includeJudgeNotes,
+  }
+}
+
 export type CreateExportResult =
   | { success: true; exportId: string }
   | { success: false; code: "active_export_exists" | "insert_failed"; error: string }
@@ -159,6 +171,64 @@ export async function listExportsForHackathon(
   return (data ?? []) as unknown as SubmissionExport[]
 }
 
+export type PurgeExpiredExportsResult = {
+  scanned: number
+  storageDeleted: number
+  rowsUpdated: number
+  errors: string[]
+}
+
+export async function purgeExpiredExports(): Promise<PurgeExpiredExportsResult> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const result: PurgeExpiredExportsResult = {
+    scanned: 0,
+    storageDeleted: 0,
+    rowsUpdated: 0,
+    errors: [],
+  }
+
+  const { data: rows, error } = await client
+    .from("submission_exports")
+    .select("id, storage_path")
+    .eq("status", "ready")
+    .not("storage_path", "is", null)
+    .not("expires_at", "is", null)
+    .lt("expires_at", new Date().toISOString())
+    .limit(500)
+
+  if (error) {
+    result.errors.push(`select_failed: ${error.message}`)
+    return result
+  }
+
+  const expired = (rows ?? []) as { id: string; storage_path: string }[]
+  result.scanned = expired.length
+  if (expired.length === 0) return result
+
+  const storagePaths = expired.map((r) => r.storage_path)
+  const { error: removeError } = await client.storage
+    .from("exports")
+    .remove(storagePaths)
+  if (removeError) {
+    result.errors.push(`storage_remove_failed: ${removeError.message}`)
+  } else {
+    result.storageDeleted = storagePaths.length
+  }
+
+  const expiredIds = expired.map((r) => r.id)
+  const { error: updateError } = await client
+    .from("submission_exports")
+    .update({ status: "expired", storage_path: null })
+    .in("id", expiredIds)
+  if (updateError) {
+    result.errors.push(`update_failed: ${updateError.message}`)
+  } else {
+    result.rowsUpdated = expiredIds.length
+  }
+
+  return result
+}
+
 export async function markExportProcessing(exportId: string): Promise<void> {
   const client = getSupabase() as unknown as SupabaseClient
   const { error } = await client
@@ -212,7 +282,7 @@ export async function loadExportPayload(
   const exportRow = await getExportById(exportId)
   if (!exportRow) return null
 
-  const filters = parseFilters(exportRow.filters)
+  const filters = mergeExportFilters(exportRow.filters as Partial<ExportFilters>)
 
   const { data: hackathon, error: hackathonError } = await client
     .from("hackathons")
@@ -308,16 +378,6 @@ export async function loadExportPayload(
     filters,
     generatedAt: new Date().toISOString(),
     submissions: rows,
-  }
-}
-
-function parseFilters(raw: unknown): ExportFilters {
-  const parsed = (raw ?? {}) as Partial<ExportFilters>
-  return {
-    winnersOnly: parsed.winnersOnly ?? DEFAULT_EXPORT_FILTERS.winnersOnly,
-    includeDrafts: parsed.includeDrafts ?? DEFAULT_EXPORT_FILTERS.includeDrafts,
-    includeJudgeNotes:
-      parsed.includeJudgeNotes ?? DEFAULT_EXPORT_FILTERS.includeJudgeNotes,
   }
 }
 
@@ -507,21 +567,31 @@ async function loadSocialSubmissions(
 
   if (teamIds.length === 0 && participantIds.length === 0) return {}
 
-  const orClauses: string[] = []
-  if (teamIds.length) orClauses.push(`team_id.in.(${teamIds.join(",")})`)
-  if (participantIds.length)
-    orClauses.push(`participant_id.in.(${participantIds.join(",")})`)
+  const socialSelect =
+    "team_id, participant_id, url, platform, og_title, og_description, og_image_url"
 
-  const { data } = await client
-    .from("social_media_submissions")
-    .select(
-      "team_id, participant_id, url, platform, og_title, og_description, og_image_url"
-    )
-    .eq("status", "approved")
-    .or(orClauses.join(","))
+  const [teamSocialRes, participantSocialRes] = await Promise.all([
+    teamIds.length
+      ? client
+          .from("social_media_submissions")
+          .select(socialSelect)
+          .eq("status", "approved")
+          .in("team_id", teamIds)
+      : Promise.resolve({ data: [] }),
+    participantIds.length
+      ? client
+          .from("social_media_submissions")
+          .select(socialSelect)
+          .eq("status", "approved")
+          .is("team_id", null)
+          .in("participant_id", participantIds)
+      : Promise.resolve({ data: [] }),
+  ])
+
+  const data = [...(teamSocialRes.data ?? []), ...(participantSocialRes.data ?? [])]
 
   const out: Record<string, ExportSubmissionRow["socialSubmissions"]> = {}
-  for (const social of data ?? []) {
+  for (const social of data) {
     const matching = projectSubmissions.filter((s) => {
       if (social.team_id && s.team_id === social.team_id) return true
       if (

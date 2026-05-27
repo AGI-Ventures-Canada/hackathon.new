@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS submission_exports (
   requested_by_user_id text NOT NULL,
   filters jsonb NOT NULL DEFAULT '{}'::jsonb,
   status text NOT NULL DEFAULT 'pending'
-    CHECK (status IN ('pending', 'processing', 'ready', 'failed')),
+    CHECK (status IN ('pending', 'processing', 'ready', 'failed', 'expired')),
   storage_path text,
   file_size_bytes bigint,
   submission_count integer,
