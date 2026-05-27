@@ -1,5 +1,6 @@
 "use step"
 
+import { fetch } from "workflow"
 import JSZip from "jszip"
 import type {
   EnrichedExportPayload,
@@ -224,17 +225,16 @@ async function downloadImage(
     console.warn(`Refusing to download image with disallowed URL: ${url}`)
     return null
   }
+  const controller = new AbortController()
+  const timeout = setTimeout(
+    () => controller.abort(),
+    IMAGE_DOWNLOAD_TIMEOUT_MS
+  )
   try {
-    const controller = new AbortController()
-    const timeout = setTimeout(
-      () => controller.abort(),
-      IMAGE_DOWNLOAD_TIMEOUT_MS
-    )
     const response = await fetch(url, {
       signal: controller.signal,
       redirect: "error",
     })
-    clearTimeout(timeout)
 
     if (!response.ok) return null
 
@@ -283,6 +283,8 @@ async function downloadImage(
   } catch (err) {
     console.warn(`Failed to download image ${url}:`, err)
     return null
+  } finally {
+    clearTimeout(timeout)
   }
 }
 
