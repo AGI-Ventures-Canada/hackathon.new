@@ -7,10 +7,11 @@ import { TabsUrlSync } from "@/components/ui/tabs-url-sync"
 
 interface PostEventSubTabsProps {
   activePtab: string
+  showExports: boolean
   children: [ReactNode, ReactNode, ReactNode]
 }
 
-export function PostEventSubTabs({ activePtab, children }: PostEventSubTabsProps) {
+export function PostEventSubTabs({ activePtab, showExports, children }: PostEventSubTabsProps) {
   const [fulfillmentContent, feedbackContent, exportsContent] = children
 
   return (
@@ -19,7 +20,9 @@ export function PostEventSubTabs({ activePtab, children }: PostEventSubTabsProps
         <TabsList>
           <TabsTrigger value="fulfillment"><Gift className="size-4" /><span className="hidden sm:inline">Prizes</span></TabsTrigger>
           <TabsTrigger value="feedback"><MessageSquare className="size-4" /><span className="hidden sm:inline">Feedback</span></TabsTrigger>
-          <TabsTrigger value="exports"><Download className="size-4" /><span className="hidden sm:inline">Exports</span></TabsTrigger>
+          {showExports && (
+            <TabsTrigger value="exports"><Download className="size-4" /><span className="hidden sm:inline">Exports</span></TabsTrigger>
+          )}
         </TabsList>
       </div>
 
@@ -31,9 +34,11 @@ export function PostEventSubTabs({ activePtab, children }: PostEventSubTabsProps
         {feedbackContent}
       </TabsContent>
 
-      <TabsContent value="exports" forceMount className="data-[state=inactive]:hidden">
-        {exportsContent}
-      </TabsContent>
+      {showExports && (
+        <TabsContent value="exports" forceMount className="data-[state=inactive]:hidden">
+          {exportsContent}
+        </TabsContent>
+      )}
     </TabsUrlSync>
   )
 }

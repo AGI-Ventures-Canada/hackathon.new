@@ -86,7 +86,9 @@ export async function buildAndUploadExport(
   })
 
   const datePart = new Date().toISOString().split("T")[0]
-  const storagePath = `${payload.hackathon.id}/${exportId}/submissions-export-${payload.hackathon.slug}-${datePart}.zip`
+  const safeSlug =
+    payload.hackathon.slug.toLowerCase().replace(/[^a-z0-9-]/g, "-") || "hackathon"
+  const storagePath = `${payload.hackathon.id}/${exportId}/submissions-export-${safeSlug}-${datePart}.zip`
 
   const client = getSupabase()
   const { error } = await client.storage
@@ -246,6 +248,11 @@ async function downloadImage(
 
     const contentType = response.headers.get("content-type") ?? ""
     const extension = inferExtension(contentType, url)
+    if (extension === "bin") {
+      console.warn(
+        `Image ${url} saved as .bin (unrecognized content-type: ${contentType || "<none>"})`
+      )
+    }
     const arrayBuffer = await response.arrayBuffer()
     if (arrayBuffer.byteLength > IMAGE_MAX_BYTES) {
       console.warn(

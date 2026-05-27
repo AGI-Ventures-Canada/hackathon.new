@@ -24,6 +24,7 @@ export async function PostEventTabContent({
   activePtab,
 }: PostEventTabContentProps) {
   const isCompleted = hackathonStatus === "completed"
+  const resolvedPtab = !isCompleted && activePtab === "exports" ? "fulfillment" : activePtab
   const [fulfillments, fulfillmentSummary, reminders, submissionExports] = await Promise.all([
     listFulfillments(hackathonId),
     getFulfillmentSummary(hackathonId),
@@ -32,7 +33,7 @@ export async function PostEventTabContent({
   ])
 
   return (
-    <PostEventSubTabs activePtab={activePtab}>
+    <PostEventSubTabs activePtab={resolvedPtab} showExports={isCompleted}>
       <PrizeFulfillmentTracker
         hackathonId={hackathonId}
         resultsPublishedAt={resultsPublishedAt}
@@ -87,11 +88,7 @@ export async function PostEventTabContent({
             errorMessage: e.error_message,
           }))}
         />
-      ) : (
-        <div className="rounded-md border border-dashed p-6 text-sm text-muted-foreground">
-          Exports unlock once the hackathon is marked complete.
-        </div>
-      )}
+      ) : null}
     </PostEventSubTabs>
   )
 }
