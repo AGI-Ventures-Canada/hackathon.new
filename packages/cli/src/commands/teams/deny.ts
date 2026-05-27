@@ -1,5 +1,5 @@
 import type { OatmealClient } from "../../client.js"
-import { formatJson, formatSuccess } from "../../output.js"
+import { formatCount, formatJson, formatSuccess } from "../../output.js"
 
 interface TeamReviewOptions {
   json?: boolean
@@ -32,8 +32,4 @@ export async function runTeamsDeny(
   const members = formatCount(response.membersUnassigned, "member", "members")
   const invites = formatCount(response.invitesCancelled, "invite", "invites")
   console.log(formatSuccess(`Denied team "${response.team.name}" (${members} unassigned, ${invites} cancelled)`))
-}
-
-function formatCount(count: number, singular: string, plural: string): string {
-  return `${count} ${count === 1 ? singular : plural}`
 }
