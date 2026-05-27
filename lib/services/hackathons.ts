@@ -1,7 +1,7 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import {
-  APPROVED_TEAM_STATUS,
+  DEFAULT_TEAM_STATUS,
   type Hackathon,
   type HackathonParticipant,
   type TeamStatus,
@@ -719,7 +719,7 @@ export async function createTeamWithMembers(
           name: input.name,
           captain_clerk_user_id: captainClerkUserId,
           invite_code: crypto.randomUUID().slice(0, 8),
-          status: APPROVED_TEAM_STATUS,
+          status: DEFAULT_TEAM_STATUS,
         })
         .select("id, name")
         .single()
@@ -782,7 +782,7 @@ async function createPendingTeamWithInvite(
       captain_clerk_user_id: null,
       pending_captain_email: input.captainEmail.toLowerCase(),
       invite_code: crypto.randomUUID().slice(0, 8),
-      status: APPROVED_TEAM_STATUS,
+      status: DEFAULT_TEAM_STATUS,
     })
     .select("id, name")
     .single()
