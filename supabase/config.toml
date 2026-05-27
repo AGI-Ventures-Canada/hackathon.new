@@ -71,6 +71,11 @@ public = true
 file_size_limit = "5MiB"
 allowed_mime_types = ["image/png", "image/jpeg", "image/webp"]
 
+[storage.buckets.exports]
+public = false
+file_size_limit = "500MiB"
+allowed_mime_types = ["application/zip"]
+
 [auth]
 enabled = true
 site_url = "http://127.0.0.1:3000"

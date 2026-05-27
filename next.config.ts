@@ -17,6 +17,7 @@ const nextConfig: NextConfig = {
     "zod",
     "@react-email/components",
     "@react-email/render",
+    "@react-pdf/renderer",
   ],
   async rewrites() {
     return [
