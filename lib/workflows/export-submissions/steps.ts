@@ -225,7 +225,10 @@ async function downloadImage(
       () => controller.abort(),
       IMAGE_DOWNLOAD_TIMEOUT_MS
     )
-    const response = await fetch(url, { signal: controller.signal })
+    const response = await fetch(url, {
+      signal: controller.signal,
+      redirect: "error",
+    })
     clearTimeout(timeout)
 
     if (!response.ok) return null
