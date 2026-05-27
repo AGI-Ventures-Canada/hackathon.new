@@ -201,6 +201,45 @@ describe("failExport", () => {
     expect(arg.hackathonName).toBe("Hack")
   })
 
+  it("sanitizes paths and URLs out of the error message", async () => {
+    pendingFromCall.push(() =>
+      Promise.resolve({ data: { requested_by_user_id: "u1" } })
+    )
+    pendingFromCall.push(() =>
+      Promise.resolve({ data: { hackathon: { name: "Hack", slug: "hack" } } })
+    )
+
+    const raw =
+      "Upload failed: /var/lib/internal/secret.zip then https://internal.host/path?x=1 timed out"
+    await failExport(EXPORT_ID, raw)
+
+    const storedArg = mockMarkExportFailed.mock.calls[0]!
+    const storedMessage = storedArg[1] as string
+    expect(storedMessage).not.toContain("/var/lib")
+    expect(storedMessage).not.toContain("internal.host")
+    expect(storedMessage).toContain("[path]")
+    expect(storedMessage).toContain("[link]")
+
+    const emailArg = mockSendExportFailedEmail.mock.calls[0]![0] as Record<string, unknown>
+    expect(emailArg.errorMessage).toBe(storedMessage)
+  })
+
+  it("truncates long error messages", async () => {
+    pendingFromCall.push(() =>
+      Promise.resolve({ data: { requested_by_user_id: "u1" } })
+    )
+    pendingFromCall.push(() =>
+      Promise.resolve({ data: { hackathon: { name: "Hack", slug: "hack" } } })
+    )
+
+    const longMessage = "x".repeat(1000)
+    await failExport(EXPORT_ID, longMessage)
+
+    const storedMessage = mockMarkExportFailed.mock.calls[0]![1] as string
+    expect(storedMessage.length).toBeLessThanOrEqual(240)
+    expect(storedMessage.endsWith("…")).toBe(true)
+  })
+
   it("skips email when requester has no email on file", async () => {
     pendingFromCall.push(() =>
       Promise.resolve({ data: { requested_by_user_id: "u_unknown" } })

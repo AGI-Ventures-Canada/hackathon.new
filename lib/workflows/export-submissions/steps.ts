@@ -16,7 +16,7 @@ import {
 } from "@/lib/services/submission-exports"
 import { resolveClerkUsers } from "@/lib/services/clerk-users"
 import { supabase as getSupabase } from "@/lib/db/client"
-import { toCsv } from "@/lib/utils/csv"
+import { toCsv, type CsvColumn } from "@/lib/utils/csv"
 import { renderSubmissionsExportPdf } from "@/pdfs/submissions-export"
 import { sendExportReadyEmail, sendExportFailedEmail } from "@/lib/email/submission-exports"
 
@@ -136,7 +136,8 @@ export async function failExport(
   exportId: string,
   errorMessage: string
 ): Promise<void> {
-  await markExportFailed(exportId, errorMessage)
+  const safeMessage = sanitizeErrorMessage(errorMessage)
+  await markExportFailed(exportId, safeMessage)
 
   const recipient = await getRequesterEmail(exportId)
   if (!recipient) return
@@ -149,8 +150,18 @@ export async function failExport(
     recipientName: recipient.name,
     hackathonName: hackathon.name,
     hackathonSlug: hackathon.slug,
-    errorMessage,
+    errorMessage: safeMessage,
   })
+}
+
+function sanitizeErrorMessage(message: string): string {
+  const collapsed = message.replace(/\s+/g, " ").trim()
+  const stripped = collapsed
+    .replace(/https?:\/\/\S+/gi, "[link]")
+    .replace(/(?:^|\s)(\/[A-Za-z0-9._\-\/]+)/g, " [path]")
+    .replace(/[A-Za-z]:\\[\\A-Za-z0-9._\-]+/g, "[path]")
+  const max = 240
+  return stripped.length > max ? `${stripped.slice(0, max - 1).trimEnd()}…` : stripped
 }
 
 type DownloadedImage = { path: string; buffer: Buffer }
@@ -186,6 +197,10 @@ async function downloadImage(
   url: string,
   pathWithoutExtension: string
 ): Promise<DownloadedImage | null> {
+  if (!isAllowedDownloadUrl(url)) {
+    console.warn(`Refusing to download image with disallowed URL: ${url}`)
+    return null
+  }
   try {
     const controller = new AbortController()
     const timeout = setTimeout(
@@ -208,6 +223,16 @@ async function downloadImage(
     console.warn(`Failed to download image ${url}:`, err)
     return null
   }
+}
+
+function isAllowedDownloadUrl(rawUrl: string): boolean {
+  let parsed: URL
+  try {
+    parsed = new URL(rawUrl)
+  } catch {
+    return false
+  }
+  return parsed.protocol === "http:" || parsed.protocol === "https:"
 }
 
 function inferExtension(contentType: string, url: string): string {
@@ -242,33 +267,40 @@ function buildCsv(payload: EnrichedExportPayload): string {
     weightedScore: string | number
     judgeCount: string | number
     judgeScores: string
-    judgeNotes: string
+    judgeNotes?: string
     socialLinks: string
     submittedAt: string
   }
 
-  const rows: Row[] = payload.submissions.map((s) => ({
-    rank: s.result?.rank ?? "",
-    title: s.title,
-    status: s.status,
-    team: s.team?.name ?? "",
-    teamMembers: formatMembers(s, payload.users),
-    description: s.description ?? "",
-    githubUrl: s.githubUrl ?? "",
-    liveAppUrl: s.liveAppUrl ?? "",
-    demoVideoUrl: s.demoVideoUrl ?? "",
-    screenshotUrl: s.screenshotUrl ?? "",
-    prizes: s.prizes.map((p) => p.name).join(" | "),
-    totalScore: s.result?.totalScore ?? "",
-    weightedScore: s.result?.weightedScore ?? "",
-    judgeCount: s.result?.judgeCount ?? "",
-    judgeScores: formatScores(s, payload.users),
-    judgeNotes: formatJudgeNotes(s, payload.users),
-    socialLinks: s.socialSubmissions.map((soc) => soc.url).join(" | "),
-    submittedAt: s.createdAt,
-  }))
+  const includeJudgeNotes = payload.filters.includeJudgeNotes
 
-  return toCsv(rows, [
+  const rows: Row[] = payload.submissions.map((s) => {
+    const row: Row = {
+      rank: s.result?.rank ?? "",
+      title: s.title,
+      status: s.status,
+      team: s.team?.name ?? "",
+      teamMembers: formatMembers(s, payload.users),
+      description: s.description ?? "",
+      githubUrl: s.githubUrl ?? "",
+      liveAppUrl: s.liveAppUrl ?? "",
+      demoVideoUrl: s.demoVideoUrl ?? "",
+      screenshotUrl: s.screenshotUrl ?? "",
+      prizes: s.prizes.map((p) => p.name).join(" | "),
+      totalScore: s.result?.totalScore ?? "",
+      weightedScore: s.result?.weightedScore ?? "",
+      judgeCount: s.result?.judgeCount ?? "",
+      judgeScores: formatScores(s, payload.users),
+      socialLinks: s.socialSubmissions.map((soc) => soc.url).join(" | "),
+      submittedAt: s.createdAt,
+    }
+    if (includeJudgeNotes) {
+      row.judgeNotes = formatJudgeNotes(s, payload.users)
+    }
+    return row
+  })
+
+  const columns: CsvColumn<Row>[] = [
     { key: "rank", header: "Rank" },
     { key: "title", header: "Title" },
     { key: "status", header: "Status" },
@@ -284,10 +316,16 @@ function buildCsv(payload: EnrichedExportPayload): string {
     { key: "weightedScore", header: "Weighted Score" },
     { key: "judgeCount", header: "Judge Count" },
     { key: "judgeScores", header: "Judge Scores" },
-    { key: "judgeNotes", header: "Judge Notes" },
+  ]
+  if (includeJudgeNotes) {
+    columns.push({ key: "judgeNotes", header: "Judge Notes" })
+  }
+  columns.push(
     { key: "socialLinks", header: "Social Submission Links" },
-    { key: "submittedAt", header: "Submitted At" },
-  ])
+    { key: "submittedAt", header: "Submitted At" }
+  )
+
+  return toCsv(rows, columns)
 }
 
 function formatMembers(
@@ -355,6 +393,7 @@ ${filters}
 - Demo videos are linked in the CSV/JSON but not downloaded.
 - Image downloads that timed out or failed are skipped silently.
 - Member and judge names come from Clerk at export time and may differ from how they appear in the live event page if a user has since updated their profile.
+- \`data.json\` includes a \`users\` directory mapping every participant and judge to their name and email — treat this file as sensitive and share it only with people who already have access to that information.
 `
 }
 
