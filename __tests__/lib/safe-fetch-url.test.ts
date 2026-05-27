@@ -19,6 +19,7 @@ describe("isAllowedDownloadUrl", () => {
     expect(isAllowedDownloadUrl("http://127.0.0.1/x")).toBe(false)
     expect(isAllowedDownloadUrl("http://127.5.5.5/x")).toBe(false)
     expect(isAllowedDownloadUrl("http://0.0.0.0/x")).toBe(false)
+    expect(isAllowedDownloadUrl("http://0.1.2.3/x")).toBe(false)
     expect(isAllowedDownloadUrl("http://[::1]/x")).toBe(false)
   })
 

@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Loader2, Download, AlertCircle, CheckCircle2 } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 import { useOptimisticMutation } from "@/hooks/use-optimistic-mutation"
+import { useOptimisticList } from "@/hooks/use-optimistic-list"
 import { assertOkJson } from "@/lib/utils/fetch"
 
 export type ExportListItem = {
@@ -84,9 +85,17 @@ export function PostEventExports({
   hackathonId: string
   initialExports: ExportListItem[]
 }) {
-  const [exports, setExports] = useState<ExportListItem[]>(initialExports)
   const [filters, setFilters] = useState<ExportFilters>(DEFAULT_FILTERS)
   const [showAll, setShowAll] = useState(false)
+  const [optimisticId, setOptimisticId] = useState<string | null>(null)
+
+  const list = useOptimisticList<ExportListItem>({
+    items: initialExports,
+    getId: (e) => e.id,
+  })
+  const exports = list.visibleItems
+    .slice()
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 
   const hasActiveExport = exports.some(
     (e) => e.status === "pending" || e.status === "processing"
@@ -104,32 +113,30 @@ export function PostEventExports({
       }).then(assertOkJson<{ exportId: string }>)
     },
     onOptimistic: () => {
-      const optimisticId = `pending-${Date.now()}`
-      setExports((prev) => [
-        {
-          id: optimisticId,
-          status: "pending",
-          submissionCount: null,
-          fileSizeBytes: null,
-          createdAt: new Date().toISOString(),
-          readyAt: null,
-          expiresAt: null,
-          errorMessage: null,
-        },
-        ...prev,
-      ])
+      const tempId = `pending-${Date.now()}`
+      setOptimisticId(tempId)
+      list.addPendingItem({
+        id: tempId,
+        status: "pending",
+        submissionCount: null,
+        fileSizeBytes: null,
+        createdAt: new Date().toISOString(),
+        readyAt: null,
+        expiresAt: null,
+        errorMessage: null,
+      })
     },
-    onSuccess: (response) => {
-      setExports((prev) =>
-        prev.map((e) =>
-          e.id.startsWith("pending-")
-            ? { ...e, id: response.exportId, status: "processing" }
-            : e
-        )
-      )
+    onSuccess: () => {
+      if (optimisticId) {
+        list.removePendingItem(optimisticId)
+        setOptimisticId(null)
+      }
     },
     onRevert: () => {
-      setExports((prev) => prev.filter((e) => !e.id.startsWith("pending-")))
+      if (optimisticId) {
+        list.removePendingItem(optimisticId)
+        setOptimisticId(null)
+      }
     },
     refreshOnSuccess: true,
   })
