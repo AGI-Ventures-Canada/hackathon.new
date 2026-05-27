@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -88,7 +88,7 @@ export function PostEventExports({
 }) {
   const [filters, setFilters] = useState<ExportFilters>(DEFAULT_FILTERS)
   const [showAll, setShowAll] = useState(false)
-  const [optimisticId, setOptimisticId] = useState<string | null>(null)
+  const optimisticIdRef = useRef<string | null>(null)
 
   const list = useOptimisticList<ExportListItem>({
     items: initialExports,
@@ -115,7 +115,7 @@ export function PostEventExports({
     },
     onOptimistic: () => {
       const tempId = `pending-${Date.now()}`
-      setOptimisticId(tempId)
+      optimisticIdRef.current = tempId
       list.addPendingItem({
         id: tempId,
         status: "pending",
@@ -128,15 +128,15 @@ export function PostEventExports({
       })
     },
     onSuccess: () => {
-      if (optimisticId) {
-        list.removePendingItem(optimisticId)
-        setOptimisticId(null)
+      if (optimisticIdRef.current) {
+        list.removePendingItem(optimisticIdRef.current)
+        optimisticIdRef.current = null
       }
     },
     onRevert: () => {
-      if (optimisticId) {
-        list.removePendingItem(optimisticId)
-        setOptimisticId(null)
+      if (optimisticIdRef.current) {
+        list.removePendingItem(optimisticIdRef.current)
+        optimisticIdRef.current = null
       }
     },
     refreshOnSuccess: true,

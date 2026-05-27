@@ -253,16 +253,27 @@ async function downloadImage(
         `Image ${url} saved as .bin (unrecognized content-type: ${contentType || "<none>"})`
       )
     }
-    const arrayBuffer = await response.arrayBuffer()
-    if (arrayBuffer.byteLength > IMAGE_MAX_BYTES) {
-      console.warn(
-        `Skipping image ${url}: downloaded ${arrayBuffer.byteLength} bytes exceeds ${IMAGE_MAX_BYTES}`
-      )
-      return null
+
+    if (!response.body) return null
+    const reader = response.body.getReader()
+    const chunks: Uint8Array[] = []
+    let total = 0
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      total += value.byteLength
+      if (total > IMAGE_MAX_BYTES) {
+        console.warn(
+          `Skipping image ${url}: streamed ${total} bytes exceeds ${IMAGE_MAX_BYTES}`
+        )
+        controller.abort()
+        return null
+      }
+      chunks.push(value)
     }
     return {
       path: `${pathWithoutExtension}.${extension}`,
-      buffer: Buffer.from(arrayBuffer),
+      buffer: Buffer.concat(chunks),
     }
   } catch (err) {
     console.warn(`Failed to download image ${url}:`, err)
