@@ -198,6 +198,8 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
     return () => ctx.unregisterTabAction("review-team-settings")
   }, [ctx])
 
+  useEffect(() => () => denySnapshotsRef.current.clear(), [])
+
   async function fetchTeams() {
     try {
       setLoading(true)
