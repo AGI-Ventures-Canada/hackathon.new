@@ -41,7 +41,7 @@ const MAX_VISIBLE = 3
 
 function formatExpires(iso: string | null): string {
   if (!iso) return ""
-  return new Date(iso).toLocaleDateString(undefined, {
+  return new Date(iso).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
   })

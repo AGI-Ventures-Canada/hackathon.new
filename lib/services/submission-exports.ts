@@ -1,6 +1,6 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
-import type { Tables } from "@/lib/db/types"
+import type { Json, Tables } from "@/lib/db/types"
 import type { SubmissionStatus } from "@/lib/db/hackathon-types"
 
 export type SubmissionExport = Tables<"submission_exports">
@@ -129,14 +129,14 @@ export async function createSubmissionExport(
   requestedByUserId: string,
   filters: ExportFilters
 ): Promise<CreateExportResult> {
-  const client = getSupabase() as unknown as SupabaseClient
+  const client = getSupabase()
 
   const { data, error } = await client
     .from("submission_exports")
     .insert({
       hackathon_id: hackathonId,
       requested_by_user_id: requestedByUserId,
-      filters: filters as unknown as Record<string, unknown>,
+      filters: filters as unknown as Json,
       status: "pending",
     })
     .select("id")
@@ -160,7 +160,7 @@ export async function createSubmissionExport(
 export async function getExportById(
   exportId: string
 ): Promise<SubmissionExport | null> {
-  const client = getSupabase() as unknown as SupabaseClient
+  const client = getSupabase()
   const { data, error } = await client
     .from("submission_exports")
     .select("*")
@@ -178,7 +178,7 @@ export async function listExportsForHackathon(
   hackathonId: string,
   limit: number = 10
 ): Promise<SubmissionExport[]> {
-  const client = getSupabase() as unknown as SupabaseClient
+  const client = getSupabase()
   const { data, error } = await client
     .from("submission_exports")
     .select("*")
@@ -201,7 +201,7 @@ export type PurgeExpiredExportsResult = {
 }
 
 export async function purgeExpiredExports(): Promise<PurgeExpiredExportsResult> {
-  const client = getSupabase() as unknown as SupabaseClient
+  const client = getSupabase()
   const result: PurgeExpiredExportsResult = {
     scanned: 0,
     storageDeleted: 0,
@@ -260,7 +260,7 @@ export async function purgeExpiredExports(): Promise<PurgeExpiredExportsResult> 
 }
 
 export async function markExportProcessing(exportId: string): Promise<void> {
-  const client = getSupabase() as unknown as SupabaseClient
+  const client = getSupabase()
   const { error } = await client
     .from("submission_exports")
     .update({ status: "processing" })
@@ -277,7 +277,7 @@ export async function markExportReady(
     expiresAt: string
   }
 ): Promise<void> {
-  const client = getSupabase() as unknown as SupabaseClient
+  const client = getSupabase()
   const { error } = await client
     .from("submission_exports")
     .update({
@@ -296,7 +296,7 @@ export async function markExportFailed(
   exportId: string,
   errorMessage: string
 ): Promise<void> {
-  const client = getSupabase() as unknown as SupabaseClient
+  const client = getSupabase()
   const { error } = await client
     .from("submission_exports")
     .update({ status: "failed", error_message: errorMessage })
@@ -307,7 +307,7 @@ export async function markExportFailed(
 export async function loadExportPayload(
   exportId: string
 ): Promise<ExportPayload | null> {
-  const client = getSupabase() as unknown as SupabaseClient
+  const client = getSupabase()
 
   const exportRow = await getExportById(exportId)
   if (!exportRow) return null

@@ -46,7 +46,11 @@ port = 54426
 
 [storage]
 enabled = true
-file_size_limit = "50MiB"
+# Acts as the platform-wide ceiling for every bucket — no bucket below can
+# declare a higher limit than this. Sized to the largest bucket (exports at
+# 500MiB). New buckets must declare their own `file_size_limit` explicitly;
+# do not rely on this as a default.
+file_size_limit = "500MiB"
 
 [storage.s3_protocol]
 enabled = true
