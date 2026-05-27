@@ -258,18 +258,23 @@ async function downloadImage(
     const reader = response.body.getReader()
     const chunks: Uint8Array[] = []
     let total = 0
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      total += value.byteLength
-      if (total > IMAGE_MAX_BYTES) {
-        console.warn(
-          `Skipping image ${url}: streamed ${total} bytes exceeds ${IMAGE_MAX_BYTES}`
-        )
-        controller.abort()
-        return null
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        total += value.byteLength
+        if (total > IMAGE_MAX_BYTES) {
+          console.warn(
+            `Skipping image ${url}: streamed ${total} bytes exceeds ${IMAGE_MAX_BYTES}`
+          )
+          await reader.cancel()
+          controller.abort()
+          return null
+        }
+        chunks.push(value)
       }
-      chunks.push(value)
+    } finally {
+      reader.releaseLock()
     }
     return {
       path: `${pathWithoutExtension}.${extension}`,

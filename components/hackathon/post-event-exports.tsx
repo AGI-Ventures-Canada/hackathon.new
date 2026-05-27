@@ -1,6 +1,7 @@
 "use client"
 
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
+import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -89,6 +90,7 @@ export function PostEventExports({
   const [filters, setFilters] = useState<ExportFilters>(DEFAULT_FILTERS)
   const [showAll, setShowAll] = useState(false)
   const optimisticIdRef = useRef<string | null>(null)
+  const router = useRouter()
 
   const list = useOptimisticList<ExportListItem>({
     items: initialExports,
@@ -101,6 +103,12 @@ export function PostEventExports({
   const hasActiveExport = exports.some(
     (e) => e.status === "pending" || e.status === "processing"
   )
+
+  useEffect(() => {
+    if (!hasActiveExport) return
+    const interval = setInterval(() => router.refresh(), 5000)
+    return () => clearInterval(interval)
+  }, [hasActiveExport, router])
 
   const { execute: requestExport, isPending, error, clearError } = useOptimisticMutation<
     ExportFilters,
