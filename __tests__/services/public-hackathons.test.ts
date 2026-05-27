@@ -348,7 +348,7 @@ describe("Public Hackathons Service", () => {
       expect(teamsChain.eq).toHaveBeenCalledWith("status", "pending_approval")
     })
 
-    it("returns null when waiting teams cannot be moved after team review is turned off", async () => {
+    it("still returns the saved hackathon when waiting teams cannot be moved after team review is turned off", async () => {
       const hackathonChain = createChainableMock({
         data: { ...mockHackathon, require_team_approval: false },
         error: null,
@@ -364,7 +364,7 @@ describe("Public Hackathons Service", () => {
         requireTeamApproval: false,
       })
 
-      expect(result).toBeNull()
+      expect(result?.require_team_approval).toBe(false)
     })
 
     it("sets maxParticipants to null for unlimited", async () => {

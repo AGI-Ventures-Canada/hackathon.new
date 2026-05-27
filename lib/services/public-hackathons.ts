@@ -422,7 +422,6 @@ export async function updateHackathonSettings(
 
     if (teamError) {
       console.error("Failed to approve waiting teams after disabling review:", teamError)
-      return null
     }
   }
 
