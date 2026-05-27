@@ -146,6 +146,8 @@ export type AuditAction =
   | "reminder.sent"
   | "reminder.cancelled"
   | "people.exported_csv"
+  | "submission_export.requested"
+  | "submission_export.downloaded"
 
 export type LogAuditInput = {
   principal: Exclude<Principal, { kind: "anon" }>

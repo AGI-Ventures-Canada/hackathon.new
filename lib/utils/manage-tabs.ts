@@ -2,7 +2,7 @@ export const VALID_TABS = ["action-items", "overview", "challenges", "perks", "e
 export const VALID_ETABS = ["announcements", "mentors", "social", "email"] as const
 export const VALID_MTABS = ["rooms", "activity", "terms"] as const
 export const VALID_JTABS = ["setup", "judges", "rounds", "prizes", "assignments", "results"] as const
-export const VALID_PTABS = ["fulfillment", "feedback"] as const
+export const VALID_PTABS = ["fulfillment", "feedback", "exports"] as const
 
 export type ManageTab = (typeof VALID_TABS)[number]
 export type ManageEtab = (typeof VALID_ETABS)[number]
@@ -20,6 +20,7 @@ export function resolveTab(tab: string | undefined, validTabs: readonly string[]
   if (tab === "judges" || tab === "prizes") return "judging"
   if (tab === "fulfillment") return "post-event"
   if (tab === "feedback") return "post-event"
+  if (tab === "exports") return "post-event"
   if (tab === "rooms") return "miscs"
   if (tab === "activity") return "miscs"
   if (tab === "submissions") return "teams"

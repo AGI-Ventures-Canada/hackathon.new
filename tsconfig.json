@@ -31,5 +31,5 @@
     ".source/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "scripts", "packages"]
+  "exclude": ["node_modules", "scripts", "packages", "tmp"]
 }

@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/reminders",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/purge-exports",
+      "schedule": "0 3 * * *"
     }
   ]
 }

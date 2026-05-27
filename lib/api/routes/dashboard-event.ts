@@ -11,6 +11,13 @@ import { listScheduleItems, createScheduleItem, updateScheduleItem, deleteSchedu
 import { listTeamsWithMembers, createTeamWithMembers, modifyTeamMembers, bulkAssignTeams, deleteTeam, setTeamCaptain } from "@/lib/services/hackathons"
 import { listHackathonPeople, peopleToCsvRows } from "@/lib/services/hackathon-people"
 import { toCsv } from "@/lib/utils/csv"
+import {
+  createSubmissionExport,
+  getExportById,
+  listExportsForHackathon,
+  mergeExportFilters,
+} from "@/lib/services/submission-exports"
+import { supabase as getSupabase } from "@/lib/db/client"
 import { listRounds, createRound, updateRound, deleteRound, activateRound } from "@/lib/services/judging-rounds"
 import { syncRoomSubmissionsToJudges } from "@/lib/services/judging"
 import { listSocialSubmissions, reviewSocialSubmission } from "@/lib/services/social-submissions"
@@ -367,6 +374,160 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     detail: {
       summary: "Export people roster as CSV",
       description: "Downloads the full roster (attendees, judges, mentors, organizers, plus pending invites) as a CSV file for record keeping.",
+    },
+  })
+  .post("/hackathons/:id/exports", async ({ params, body, principal, set }) => {
+    requirePrincipal(principal, ["user"], ["hackathons:write"])
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if ("error" in authErr) return authErr
+
+    if (authErr.hackathon.status !== "completed") {
+      set.status = 400
+      return { error: "Exports are only available for completed hackathons." }
+    }
+
+    const filters = mergeExportFilters(body ?? {})
+
+    const result = await createSubmissionExport(params.id, principal.userId, filters)
+    if (!result.success) {
+      set.status = result.code === "active_export_exists" ? 409 : 500
+      return { error: result.error, code: result.code }
+    }
+
+    let status: "pending" | "failed" = "pending"
+    let errorMessage: string | undefined
+    try {
+      const { start } = await import("workflow/api")
+      const { exportSubmissionsWorkflow } = await import("@/lib/workflows/export-submissions")
+      await start(exportSubmissionsWorkflow, [{ exportId: result.exportId }])
+    } catch (err) {
+      console.error("Failed to start export-submissions workflow:", err)
+      status = "failed"
+      errorMessage = "Export could not start. Please try again."
+      const { markExportFailed } = await import("@/lib/services/submission-exports")
+      await markExportFailed(result.exportId, errorMessage).catch((markErr) =>
+        console.error("Failed to mark export as failed:", markErr)
+      )
+    }
+
+    await logAudit({
+      principal,
+      action: "submission_export.requested",
+      resourceType: "hackathon",
+      resourceId: params.id,
+      metadata: { exportId: result.exportId, filters, status },
+    })
+
+    return errorMessage
+      ? { exportId: result.exportId, status, error: errorMessage }
+      : { exportId: result.exportId, status }
+  }, {
+    body: t.Optional(t.Object({
+      winnersOnly: t.Optional(t.Boolean()),
+      includeDrafts: t.Optional(t.Boolean()),
+      includeJudgeNotes: t.Optional(t.Boolean()),
+    })),
+    detail: {
+      summary: "Start a submissions export",
+      description: "Queues a background job that packages all submission data, screenshots, and judge feedback into a ZIP. The organizer is emailed when it's ready.",
+    },
+  })
+  .get("/hackathons/:id/exports", async ({ params, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if ("error" in authErr) return authErr
+
+    const exports = await listExportsForHackathon(params.id)
+    return {
+      exports: exports.map((e) => ({
+        id: e.id,
+        status: e.status,
+        submissionCount: e.submission_count,
+        fileSizeBytes: e.file_size_bytes,
+        createdAt: e.created_at,
+        readyAt: e.ready_at,
+        expiresAt: e.expires_at,
+        errorMessage: e.error_message,
+      })),
+    }
+  }, {
+    detail: {
+      summary: "List recent submission exports",
+      description: "Returns the latest exports for the hackathon so the organizer can re-download or see what's in progress.",
+    },
+  })
+  .get("/hackathons/:id/exports/:exportId/download", async ({ params, principal, request, set }) => {
+    if (principal.kind === "anon") {
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL
+      if (!appUrl) {
+        console.error("NEXT_PUBLIC_APP_URL not set, cannot redirect export download to sign-in")
+        set.status = 500
+        return { error: "App URL is not configured." }
+      }
+      const redirectBack = encodeURIComponent(new URL(request.url).pathname)
+      return new Response(null, {
+        status: 302,
+        headers: { Location: `${appUrl}/sign-in?redirect_url=${redirectBack}` },
+      })
+    }
+
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if ("error" in authErr) return authErr
+
+    if (!isValidUuid(params.exportId)) {
+      set.status = 404
+      return { error: "Export not found" }
+    }
+
+    const exportRow = await getExportById(params.exportId)
+    if (!exportRow || exportRow.hackathon_id !== params.id) {
+      set.status = 404
+      return { error: "Export not found" }
+    }
+
+    if (exportRow.status === "expired") {
+      set.status = 410
+      return { error: "This export has expired. Generate a new one." }
+    }
+
+    if (exportRow.status !== "ready" || !exportRow.storage_path) {
+      set.status = 409
+      return { error: `Export is ${exportRow.status}, not ready for download.` }
+    }
+
+    if (exportRow.expires_at && new Date(exportRow.expires_at).getTime() < Date.now()) {
+      set.status = 410
+      return { error: "This export has expired. Generate a new one." }
+    }
+
+    const client = getSupabase()
+    const { data, error } = await client.storage
+      .from("exports")
+      .createSignedUrl(exportRow.storage_path, 3600)
+
+    if (error || !data?.signedUrl) {
+      console.error("Failed to sign export download URL:", error)
+      set.status = 500
+      return { error: "Failed to prepare download link." }
+    }
+
+    await logAudit({
+      principal,
+      action: "submission_export.downloaded",
+      resourceType: "hackathon",
+      resourceId: params.id,
+      metadata: { exportId: exportRow.id },
+    })
+
+    return new Response(null, {
+      status: 302,
+      headers: { Location: data.signedUrl },
+    })
+  }, {
+    detail: {
+      summary: "Download a submissions export",
+      description: "Redirects to a one-hour signed URL for the export ZIP. The link in the export-ready email points here.",
     },
   })
   .get("/hackathons/:id/teams", async ({ params, principal, set }) => {

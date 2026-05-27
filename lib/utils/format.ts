@@ -54,6 +54,15 @@ export function formatDateTimeDisplay(date: string | Date): string {
   return `${dateStr} at ${timeStr}`
 }
 
+export function formatFileSize(bytes: number | null | undefined): string {
+  if (bytes === null || bytes === undefined) return ""
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024)
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
+}
+
 export function sortByStartDate<T extends { starts_at: string | null }>(
   items: T[],
   descending = false
