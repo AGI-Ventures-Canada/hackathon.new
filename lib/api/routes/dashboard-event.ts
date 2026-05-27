@@ -394,17 +394,18 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       return { error: result.error, code: result.code }
     }
 
+    let status: "pending" | "failed" = "pending"
+    let errorMessage: string | undefined
     try {
       const { start } = await import("workflow/api")
       const { exportSubmissionsWorkflow } = await import("@/lib/workflows/export-submissions")
       await start(exportSubmissionsWorkflow, [{ exportId: result.exportId }])
     } catch (err) {
       console.error("Failed to start export-submissions workflow:", err)
+      status = "failed"
+      errorMessage = "Export could not start. Please try again."
       const { markExportFailed } = await import("@/lib/services/submission-exports")
-      await markExportFailed(
-        result.exportId,
-        "Export could not start. Please try again."
-      ).catch((markErr) =>
+      await markExportFailed(result.exportId, errorMessage).catch((markErr) =>
         console.error("Failed to mark export as failed:", markErr)
       )
     }
@@ -414,10 +415,12 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       action: "submission_export.requested",
       resourceType: "hackathon",
       resourceId: params.id,
-      metadata: { exportId: result.exportId, filters },
+      metadata: { exportId: result.exportId, filters, status },
     })
 
-    return { exportId: result.exportId, status: "pending" }
+    return errorMessage
+      ? { exportId: result.exportId, status, error: errorMessage }
+      : { exportId: result.exportId, status }
   }, {
     body: t.Optional(t.Object({
       winnersOnly: t.Optional(t.Boolean()),

@@ -356,7 +356,7 @@ export async function loadExportPayload(
     loadTeams(client, submissions),
     loadResults(client, exportRow.hackathon_id, submissionIds),
     loadPrizeAssignments(client, submissionIds),
-    loadJudgeData(client, submissionIds),
+    loadJudgeData(client, exportRow.hackathon_id, submissionIds),
     loadSocialSubmissions(
       client,
       submissions.map((s) => ({
@@ -500,6 +500,7 @@ async function loadPrizeAssignments(
 
 async function loadJudgeData(
   client: SupabaseClient,
+  hackathonId: string,
   submissionIds: string[]
 ): Promise<{
   scores: Record<string, ExportSubmissionRow["scores"]>
@@ -531,7 +532,10 @@ async function loadJudgeData(
           .select("id, clerk_user_id")
           .in("id", judgeParticipantIds)
       : Promise.resolve({ data: [] }),
-    client.from("judging_criteria").select("id, name"),
+    client
+      .from("judging_criteria")
+      .select("id, name")
+      .eq("hackathon_id", hackathonId),
   ])
 
   const judgeClerkByParticipantId = new Map(

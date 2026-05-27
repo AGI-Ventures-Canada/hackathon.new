@@ -55,6 +55,7 @@ const mockCreateSubmissionExport = mock(() =>
 )
 const mockGetExportById = mock(() => Promise.resolve(null as unknown))
 const mockListExportsForHackathon = mock(() => Promise.resolve([] as unknown[]))
+const mockMarkExportFailed = mock(() => Promise.resolve())
 
 const DEFAULTS = {
   winnersOnly: false,
@@ -73,7 +74,7 @@ mock.module("@/lib/services/submission-exports", () => ({
     includeJudgeNotes:
       (raw?.includeJudgeNotes as boolean) ?? DEFAULTS.includeJudgeNotes,
   }),
-  markExportFailed: mock(() => Promise.resolve()),
+  markExportFailed: mockMarkExportFailed,
 }))
 
 const mockLogAudit = mock(() => Promise.resolve(null))
@@ -136,6 +137,8 @@ function resetAll() {
   mockLogAudit.mockReset()
   mockCreateSignedUrl.mockReset()
   mockStart.mockReset()
+  mockMarkExportFailed.mockReset()
+  mockMarkExportFailed.mockResolvedValue(undefined)
   mockCheckHackathonOrganizer.mockResolvedValue(completedOrganizerCheck)
   mockListExportsForHackathon.mockResolvedValue([])
   mockCreateSubmissionExport.mockResolvedValue({ success: true, exportId: EXPORT_ID } as unknown)
@@ -207,6 +210,26 @@ describe("POST /api/dashboard/hackathons/:id/exports", () => {
     expect(filtersArg.includeJudgeNotes).toBe(true)
     expect(mockStart).toHaveBeenCalledTimes(1)
     expect(mockLogAudit).toHaveBeenCalledTimes(1)
+  })
+
+  it("returns status=failed when workflow start throws", async () => {
+    mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+    mockStart.mockRejectedValue(new Error("workflow runtime down"))
+
+    const res = await app.handle(
+      new Request(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      })
+    )
+    const data = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(data.exportId).toBe(EXPORT_ID)
+    expect(data.status).toBe("failed")
+    expect(typeof data.error).toBe("string")
+    expect(mockMarkExportFailed).toHaveBeenCalledTimes(1)
   })
 
   it("returns 409 when an export is already pending", async () => {

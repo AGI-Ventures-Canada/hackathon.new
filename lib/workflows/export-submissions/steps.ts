@@ -269,9 +269,8 @@ function inferExtension(contentType: string, url: string): string {
   if (contentType.includes("jpeg") || contentType.includes("jpg")) return "jpg"
   if (contentType.includes("webp")) return "webp"
   if (contentType.includes("gif")) return "gif"
-  if (contentType.includes("svg")) return "svg"
 
-  const urlMatch = /\.(png|jpe?g|webp|gif|svg)(?:\?|$)/i.exec(url)
+  const urlMatch = /\.(png|jpe?g|webp|gif)(?:\?|$)/i.exec(url)
   if (urlMatch) {
     const ext = urlMatch[1].toLowerCase()
     return ext === "jpeg" ? "jpg" : ext
