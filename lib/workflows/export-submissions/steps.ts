@@ -196,12 +196,11 @@ async function downloadAllImages(
   }
 
   const results: DownloadedImage[] = []
-  let cursor = 0
+  const queue = [...jobs]
   async function worker() {
-    while (true) {
-      const next = cursor++
-      if (next >= jobs.length) return
-      const job = jobs[next]
+    while (queue.length > 0) {
+      const job = queue.shift()
+      if (!job) return
       const result = await downloadImage(job.url, job.path)
       if (result) results.push(result)
     }

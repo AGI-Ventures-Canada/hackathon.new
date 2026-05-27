@@ -23,11 +23,12 @@ export async function PostEventTabContent({
   hackathonStatus,
   activePtab,
 }: PostEventTabContentProps) {
+  const isCompleted = hackathonStatus === "completed"
   const [fulfillments, fulfillmentSummary, reminders, submissionExports] = await Promise.all([
     listFulfillments(hackathonId),
     getFulfillmentSummary(hackathonId),
     listReminders(hackathonId),
-    listExportsForHackathon(hackathonId),
+    isCompleted ? listExportsForHackathon(hackathonId) : Promise.resolve([]),
   ])
 
   return (
@@ -72,7 +73,7 @@ export async function PostEventTabContent({
           createdAt: r.created_at,
         }))}
       />
-      {hackathonStatus === "completed" ? (
+      {isCompleted ? (
         <PostEventExports
           hackathonId={hackathonId}
           initialExports={submissionExports.map((e) => ({
