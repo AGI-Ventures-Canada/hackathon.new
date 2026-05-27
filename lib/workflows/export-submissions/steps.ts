@@ -17,11 +17,13 @@ import {
 import { resolveClerkUsers } from "@/lib/services/clerk-users"
 import { supabase as getSupabase } from "@/lib/db/client"
 import { toCsv, type CsvColumn } from "@/lib/utils/csv"
+import { isAllowedDownloadUrl } from "@/lib/utils/safe-fetch-url"
 import { renderSubmissionsExportPdf } from "@/pdfs/submissions-export"
 import { sendExportReadyEmail, sendExportFailedEmail } from "@/lib/email/submission-exports"
 
 const EXPORTS_BUCKET = "exports"
 const IMAGE_DOWNLOAD_TIMEOUT_MS = 10_000
+const IMAGE_DOWNLOAD_CONCURRENCY = 10
 const EXPORT_TTL_DAYS = 30
 
 export async function loadExportData(
@@ -169,28 +171,43 @@ type DownloadedImage = { path: string; buffer: Buffer }
 async function downloadAllImages(
   payload: EnrichedExportPayload
 ): Promise<DownloadedImage[]> {
-  const tasks: Promise<DownloadedImage | null>[] = []
+  const jobs: { url: string; path: string }[] = []
 
   for (const submission of payload.submissions) {
     if (submission.screenshotUrl) {
-      tasks.push(
-        downloadImage(submission.screenshotUrl, `media/${submission.id}/screenshot`)
-      )
+      jobs.push({
+        url: submission.screenshotUrl,
+        path: `media/${submission.id}/screenshot`,
+      })
     }
     submission.socialSubmissions.forEach((social, idx) => {
       if (social.ogImageUrl) {
-        tasks.push(
-          downloadImage(
-            social.ogImageUrl,
-            `media/${submission.id}/social-${idx + 1}-og`
-          )
-        )
+        jobs.push({
+          url: social.ogImageUrl,
+          path: `media/${submission.id}/social-${idx + 1}-og`,
+        })
       }
     })
   }
 
-  const results = await Promise.all(tasks)
-  return results.filter((r): r is DownloadedImage => r !== null)
+  const results: DownloadedImage[] = []
+  let cursor = 0
+  async function worker() {
+    while (true) {
+      const next = cursor++
+      if (next >= jobs.length) return
+      const job = jobs[next]
+      const result = await downloadImage(job.url, job.path)
+      if (result) results.push(result)
+    }
+  }
+
+  const workers = Array.from(
+    { length: Math.min(IMAGE_DOWNLOAD_CONCURRENCY, jobs.length) },
+    () => worker()
+  )
+  await Promise.all(workers)
+  return results
 }
 
 async function downloadImage(
@@ -225,15 +242,6 @@ async function downloadImage(
   }
 }
 
-function isAllowedDownloadUrl(rawUrl: string): boolean {
-  let parsed: URL
-  try {
-    parsed = new URL(rawUrl)
-  } catch {
-    return false
-  }
-  return parsed.protocol === "http:" || parsed.protocol === "https:"
-}
 
 function inferExtension(contentType: string, url: string): string {
   if (contentType.includes("png")) return "png"
