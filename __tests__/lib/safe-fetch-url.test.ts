@@ -35,6 +35,13 @@ describe("isAllowedDownloadUrl", () => {
     )
   })
 
+  it("rejects IPv4-mapped IPv6 representations of private addresses", () => {
+    expect(isAllowedDownloadUrl("http://[::ffff:127.0.0.1]/x")).toBe(false)
+    expect(isAllowedDownloadUrl("http://[::ffff:10.0.0.1]/x")).toBe(false)
+    expect(isAllowedDownloadUrl("http://[::ffff:192.168.1.1]/x")).toBe(false)
+    expect(isAllowedDownloadUrl("http://[::ffff:169.254.169.254]/x")).toBe(false)
+  })
+
   it("allows public addresses outside the private 172 range", () => {
     expect(isAllowedDownloadUrl("http://172.15.0.1/x")).toBe(true)
     expect(isAllowedDownloadUrl("http://172.32.0.1/x")).toBe(true)

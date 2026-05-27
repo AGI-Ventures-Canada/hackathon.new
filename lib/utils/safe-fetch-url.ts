@@ -10,6 +10,7 @@ const BLOCKED_HOST_PATTERNS: RegExp[] = [
   /^fc[0-9a-f]{2}:/i,
   /^fd[0-9a-f]{2}:/i,
   /^fe80:/i,
+  /^::ffff:/i,
 ]
 
 export function isAllowedDownloadUrl(rawUrl: string): boolean {

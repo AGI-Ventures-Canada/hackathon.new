@@ -24,6 +24,7 @@ import { sendExportReadyEmail, sendExportFailedEmail } from "@/lib/email/submiss
 const EXPORTS_BUCKET = "exports"
 const IMAGE_DOWNLOAD_TIMEOUT_MS = 10_000
 const IMAGE_DOWNLOAD_CONCURRENCY = 10
+const IMAGE_MAX_BYTES = 20 * 1024 * 1024
 const EXPORT_TTL_DAYS = 30
 
 export async function loadExportData(
@@ -229,9 +230,23 @@ async function downloadImage(
 
     if (!response.ok) return null
 
+    const declaredLength = Number(response.headers.get("content-length") ?? 0)
+    if (declaredLength > IMAGE_MAX_BYTES) {
+      console.warn(
+        `Skipping image ${url}: content-length ${declaredLength} exceeds ${IMAGE_MAX_BYTES}`
+      )
+      return null
+    }
+
     const contentType = response.headers.get("content-type") ?? ""
     const extension = inferExtension(contentType, url)
     const arrayBuffer = await response.arrayBuffer()
+    if (arrayBuffer.byteLength > IMAGE_MAX_BYTES) {
+      console.warn(
+        `Skipping image ${url}: downloaded ${arrayBuffer.byteLength} bytes exceeds ${IMAGE_MAX_BYTES}`
+      )
+      return null
+    }
     return {
       path: `${pathWithoutExtension}.${extension}`,
       buffer: Buffer.from(arrayBuffer),
