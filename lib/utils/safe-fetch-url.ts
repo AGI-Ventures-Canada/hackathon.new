@@ -13,6 +13,12 @@ const BLOCKED_HOST_PATTERNS: RegExp[] = [
   /^::ffff:/i,
 ]
 
+// Known gap: validation runs against the hostname string before DNS
+// resolution, so a public-looking hostname whose A record is later flipped
+// to a private address can slip through (DNS rebinding). Fully closing this
+// requires a custom resolver that fetches the IP and re-checks it against
+// BLOCKED_HOST_PATTERNS. Acceptable for organizer-triggered exports of
+// participant-controlled URLs in 2026; revisit if scope widens.
 export function isAllowedDownloadUrl(rawUrl: string): boolean {
   let parsed: URL
   try {
