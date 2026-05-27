@@ -10,6 +10,7 @@ import { Loader2, Download, AlertCircle, CheckCircle2 } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 import { useOptimisticMutation } from "@/hooks/use-optimistic-mutation"
 import { useOptimisticList } from "@/hooks/use-optimistic-list"
+import { useIsClient } from "@/hooks/use-is-client"
 import { assertOkJson } from "@/lib/utils/fetch"
 import { formatFileSize } from "@/lib/utils/format"
 
@@ -283,9 +284,10 @@ function ExportRow({
     detailParts.push(formatFileSize(exp.fileSizeBytes))
   }
 
-  const relativeTime = formatDistanceToNow(new Date(exp.createdAt), {
-    addSuffix: true,
-  })
+  const isClient = useIsClient()
+  const relativeTime = isClient
+    ? formatDistanceToNow(new Date(exp.createdAt), { addSuffix: true })
+    : ""
 
   return (
     <div className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between">
@@ -297,9 +299,11 @@ function ExportRow({
           )}
         </div>
         <div className="text-xs text-muted-foreground">
-          Requested {relativeTime}
+          {relativeTime && <>Requested {relativeTime}</>}
           {exp.status === "ready" && exp.expiresAt && (
-            <> · download expires {formatExpires(exp.expiresAt)}</>
+            <>
+              {relativeTime ? " · " : ""}download expires {formatExpires(exp.expiresAt)}
+            </>
           )}
         </div>
         {exp.status === "failed" && exp.errorMessage && (

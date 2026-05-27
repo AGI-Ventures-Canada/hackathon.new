@@ -453,13 +453,23 @@ async function getRequesterEmail(
     .select("requested_by_user_id")
     .eq("id", exportId)
     .maybeSingle()
-  if (!row) return null
+  if (!row) {
+    console.warn(
+      `Export ${exportId}: notification skipped, submission_exports row not found`
+    )
+    return null
+  }
 
   const { displayNames, emails } = await resolveClerkUsers([
     row.requested_by_user_id,
   ])
   const email = emails[row.requested_by_user_id]
-  if (!email) return null
+  if (!email) {
+    console.warn(
+      `Export ${exportId}: notification skipped, no Clerk email for requester ${row.requested_by_user_id}`
+    )
+    return null
+  }
   return { email, name: displayNames[row.requested_by_user_id] ?? null }
 }
 
