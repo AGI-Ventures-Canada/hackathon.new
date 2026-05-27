@@ -83,6 +83,7 @@ export async function createTeamInvitation(
 
   if (!canInviteTeamMembers({
     isFormingCaptain: true,
+    hackathonStatus: hackathon.status,
     registrationClosesAt: hackathon.registration_closes_at,
     nowIso: new Date().toISOString(),
   })) {

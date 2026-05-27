@@ -7,6 +7,7 @@ const mockGetParticipantWithTeam = mock(() => Promise.resolve(null))
 const mockListPerks = mock(() => Promise.resolve([]))
 const mockIsPerkReleased = mock(() => true)
 const mockSubmitSocialUrl = mock(() => Promise.resolve(null))
+const mockCreateMentorRequest = mock(() => Promise.resolve(null))
 
 class MockAuthError extends Error {
   constructor(
@@ -45,6 +46,13 @@ mock.module("@/lib/services/submissions", () => ({
 
 mock.module("@/lib/services/social-submissions", () => ({
   submitSocialUrl: mockSubmitSocialUrl,
+}))
+
+mock.module("@/lib/services/mentor-requests", () => ({
+  createMentorRequest: mockCreateMentorRequest,
+  listMentorQueue: mock(() => Promise.resolve([])),
+  claimRequest: mock(() => Promise.resolve(true)),
+  resolveRequest: mock(() => Promise.resolve(true)),
 }))
 
 mock.module("@/lib/services/perks", () => ({
@@ -98,11 +106,13 @@ describe("Public Event Routes Integration Tests", () => {
     mockListPerks.mockReset()
     mockIsPerkReleased.mockReset()
     mockSubmitSocialUrl.mockReset()
+    mockCreateMentorRequest.mockReset()
     mockResolvePrincipal.mockResolvedValue({ kind: "anon" })
     mockGetParticipantWithTeam.mockResolvedValue(null)
     mockListPerks.mockResolvedValue([])
     mockIsPerkReleased.mockReturnValue(true)
     mockSubmitSocialUrl.mockResolvedValue(null)
+    mockCreateMentorRequest.mockResolvedValue(null)
   })
 
   describe("GET /api/public/hackathons/:slug/poll", () => {
@@ -255,6 +265,59 @@ describe("Public Event Routes Integration Tests", () => {
       expect(res.status).toBe(409)
       expect(data.code).toBe("team_pending_approval")
       expect(mockListPerks).not.toHaveBeenCalled()
+    })
+  })
+
+  describe("POST /api/public/hackathons/:slug/mentor-request", () => {
+    const url = "http://localhost/api/public/hackathons/build-os26/mentor-request"
+
+    it("creates mentor requests for approved team members", async () => {
+      const request = { id: "mentor_1", status: "open" }
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockResolvePrincipal.mockResolvedValue({ kind: "user", userId: "user_1" })
+      mockGetParticipantWithTeam.mockResolvedValue({
+        participantId: "participant_1",
+        teamId: "team_1",
+        teamStatus: "forming",
+      })
+      mockCreateMentorRequest.mockResolvedValue(request)
+
+      const res = await app.handle(new Request(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category: "API", description: "Need help" }),
+      }))
+      const data = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(data).toEqual(request)
+      expect(mockCreateMentorRequest).toHaveBeenCalledWith(
+        mockHackathon.id,
+        "participant_1",
+        "team_1",
+        { category: "API", description: "Need help" }
+      )
+    })
+
+    it("blocks mentor requests for teams waiting for approval", async () => {
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockResolvePrincipal.mockResolvedValue({ kind: "user", userId: "user_1" })
+      mockGetParticipantWithTeam.mockResolvedValue({
+        participantId: "participant_1",
+        teamId: "team_1",
+        teamStatus: "pending_approval",
+      })
+
+      const res = await app.handle(new Request(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category: "API", description: "Need help" }),
+      }))
+      const data = await res.json()
+
+      expect(res.status).toBe(409)
+      expect(data.code).toBe("team_pending_approval")
+      expect(mockCreateMentorRequest).not.toHaveBeenCalled()
     })
   })
 })

@@ -305,6 +305,7 @@ describe("Team Invitations Service", () => {
           return createChainableMock({
             data: {
               ...mockHackathon,
+              status: "registration_open",
               registration_closes_at: new Date(Date.now() - 60_000).toISOString(),
             },
             error: null,
@@ -323,6 +324,48 @@ describe("Team Invitations Service", () => {
       expect(result.success).toBe(false)
       if (!result.success) {
         expect(result.code).toBe("registration_closed")
+      }
+    })
+
+    it("allows team invites during active events after registration closes", async () => {
+      let teamInvitationCalls = 0
+      setMockFromImplementation((table) => {
+        if (table === "teams") {
+          return createChainableMock({ data: mockTeam, error: null })
+        }
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: {
+              ...mockHackathon,
+              status: "active",
+              registration_closes_at: new Date(Date.now() - 60_000).toISOString(),
+            },
+            error: null,
+          })
+        }
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: null, error: null, count: 1 })
+        }
+        if (table === "team_invitations") {
+          teamInvitationCalls++
+          if (teamInvitationCalls <= 2) {
+            return createChainableMock({ data: null, error: null, count: 0 })
+          }
+          return createChainableMock({ data: mockInvitation, error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await createTeamInvitation({
+        teamId: "team_1",
+        hackathonId: "h1",
+        email: "invitee@example.com",
+        invitedByClerkUserId: "user_captain",
+      })
+
+      expect(result.success).toBe(true)
+      if (result.success) {
+        expect(result.invitation.email).toBe("invitee@example.com")
       }
     })
 

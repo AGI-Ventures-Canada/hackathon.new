@@ -165,6 +165,7 @@ function HackathonPreviewContent({
   const canManageTeam = teamInfo?.isCaptain && (teamInfo.team.status === "forming" || teamInfo.team.status === "pending_approval")
   const canInviteTeamMembers = getCanInviteTeamMembers({
     isFormingCaptain: canManageTeam,
+    hackathonStatus: hackathon.status,
     registrationClosesAt: hackathon.registration_closes_at,
     nowIso,
   })
