@@ -8,6 +8,7 @@ import type {
   ExportUserDirectory,
 } from "@/lib/services/submission-exports"
 import {
+  buildJsonExportPayload,
   collectExportUserIds,
   loadExportPayload,
   markExportFailed,
@@ -63,7 +64,7 @@ export async function buildAndUploadExport(
   const csvBuffer = Buffer.from(buildCsv(payload), "utf-8")
   const pdfBuffer = await renderSubmissionsExportPdf(payload)
   const jsonBuffer = Buffer.from(
-    JSON.stringify(buildJsonPayload(payload), null, 2),
+    JSON.stringify(buildJsonExportPayload(payload), null, 2),
     "utf-8"
   )
   const readmeBuffer = Buffer.from(buildReadme(payload), "utf-8")
@@ -399,20 +400,11 @@ function formatJudgeNotes(
     .join(" || ")
 }
 
-function buildJsonPayload(payload: EnrichedExportPayload): EnrichedExportPayload {
-  if (payload.filters.includeJudgeNotes) return payload
-  const trimmedUsers: ExportUserDirectory = {}
-  for (const [id, user] of Object.entries(payload.users)) {
-    trimmedUsers[id] = { name: user.name, email: null }
-  }
-  return { ...payload, users: trimmedUsers }
-}
-
 function buildReadme(payload: EnrichedExportPayload): string {
   const filters = describeFilters(payload.filters)
   const usersLine = payload.filters.includeJudgeNotes
     ? "- `data.json` includes a `users` directory mapping every participant and judge to their name **and email** — treat this file as sensitive and share it only with people who already have access to that information."
-    : "- `data.json` includes a `users` directory with names only. Emails are omitted because judge notes weren't included; re-run with judge notes enabled to include emails."
+    : "- `data.json` includes a `users` directory. Team member emails are kept (they also appear inline in `submissions.csv`); judge emails are omitted because judge notes weren't included. Re-run with judge notes enabled to include judge emails."
   return `# Submissions Export — ${payload.hackathon.name}
 
 Generated: ${payload.generatedAt}

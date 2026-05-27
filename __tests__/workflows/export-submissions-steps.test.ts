@@ -5,20 +5,24 @@ const mockMarkExportProcessing = mock(() => Promise.resolve())
 const mockMarkExportReady = mock(() => Promise.resolve())
 const mockMarkExportFailed = mock(() => Promise.resolve())
 
+function teamIdSet(payload: {
+  submissions: { team?: { members: { clerkUserId: string }[] } | null }[]
+}) {
+  const ids = new Set<string>()
+  for (const s of payload.submissions) {
+    for (const m of s.team?.members ?? []) ids.add(m.clerkUserId)
+  }
+  return ids
+}
+
 mock.module("@/lib/services/submission-exports", () => ({
   loadExportPayload: mockLoadExportPayload,
   markExportProcessing: mockMarkExportProcessing,
   markExportReady: mockMarkExportReady,
   markExportFailed: mockMarkExportFailed,
-  collectExportUserIds: (payload: {
-    submissions: { team?: { members: { clerkUserId: string }[] } | null }[]
-  }) => {
-    const ids = new Set<string>()
-    for (const s of payload.submissions) {
-      for (const m of s.team?.members ?? []) ids.add(m.clerkUserId)
-    }
-    return Array.from(ids)
-  },
+  collectExportUserIds: (payload: Parameters<typeof teamIdSet>[0]) =>
+    Array.from(teamIdSet(payload)),
+  buildJsonExportPayload: <T,>(payload: T) => payload,
 }))
 
 const mockResolveClerkUsers = mock(() =>
@@ -251,4 +255,5 @@ describe("failExport", () => {
     expect(mockSendExportFailedEmail).not.toHaveBeenCalled()
   })
 })
+
 

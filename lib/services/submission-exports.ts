@@ -102,6 +102,28 @@ export function collectExportUserIds(payload: ExportPayload): string[] {
   return Array.from(ids)
 }
 
+export function collectTeamMemberUserIds(payload: ExportPayload): Set<string> {
+  const ids = new Set<string>()
+  for (const sub of payload.submissions) {
+    for (const member of sub.team?.members ?? []) ids.add(member.clerkUserId)
+  }
+  return ids
+}
+
+export function buildJsonExportPayload(
+  payload: EnrichedExportPayload
+): EnrichedExportPayload {
+  if (payload.filters.includeJudgeNotes) return payload
+  const teamMemberIds = collectTeamMemberUserIds(payload)
+  const trimmedUsers: ExportUserDirectory = {}
+  for (const [id, user] of Object.entries(payload.users)) {
+    trimmedUsers[id] = teamMemberIds.has(id)
+      ? user
+      : { name: user.name, email: null }
+  }
+  return { ...payload, users: trimmedUsers }
+}
+
 export async function createSubmissionExport(
   hackathonId: string,
   requestedByUserId: string,
@@ -206,24 +228,32 @@ export async function purgeExpiredExports(): Promise<PurgeExpiredExportsResult> 
   if (expired.length === 0) return result
 
   const storagePaths = expired.map((r) => r.storage_path)
-  const { error: removeError } = await client.storage
+  const { data: removed, error: removeError } = await client.storage
     .from("exports")
     .remove(storagePaths)
   if (removeError) {
     result.errors.push(`storage_remove_failed: ${removeError.message}`)
-  } else {
-    result.storageDeleted = storagePaths.length
+    return result
   }
 
-  const expiredIds = expired.map((r) => r.id)
+  const removedPaths = new Set(
+    ((removed ?? []) as { name: string }[]).map((r) => r.name)
+  )
+  const idsToExpire = expired
+    .filter((r) => removedPaths.has(r.storage_path))
+    .map((r) => r.id)
+  result.storageDeleted = idsToExpire.length
+
+  if (idsToExpire.length === 0) return result
+
   const { error: updateError } = await client
     .from("submission_exports")
     .update({ status: "expired", storage_path: null })
-    .in("id", expiredIds)
+    .in("id", idsToExpire)
   if (updateError) {
     result.errors.push(`update_failed: ${updateError.message}`)
   } else {
-    result.rowsUpdated = expiredIds.length
+    result.rowsUpdated = idsToExpire.length
   }
 
   return result
