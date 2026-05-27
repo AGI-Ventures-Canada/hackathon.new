@@ -11,6 +11,7 @@ import { formatDistanceToNow } from "date-fns"
 import { useOptimisticMutation } from "@/hooks/use-optimistic-mutation"
 import { useOptimisticList } from "@/hooks/use-optimistic-list"
 import { assertOkJson } from "@/lib/utils/fetch"
+import { formatFileSize } from "@/lib/utils/format"
 
 export type ExportListItem = {
   id: string
@@ -36,14 +37,6 @@ const DEFAULT_FILTERS: ExportFilters = {
 }
 
 const MAX_VISIBLE = 3
-
-function formatFileSize(bytes: number | null): string {
-  if (bytes === null) return ""
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
-}
 
 function formatExpires(iso: string | null): string {
   if (!iso) return ""

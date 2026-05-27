@@ -1,3 +1,7 @@
+// The ::ffff: pattern relies on URL parser normalisation: the WHATWG parser
+// rewrites both ::ffff:127.0.0.1 and 0:0:0:0:0:ffff:7f00:1 into the canonical
+// ::ffff:7f00:1 form before this regex runs. Keep the URL-parse step intact
+// when editing — bypassing it would let the hex-group form slip past.
 const BLOCKED_HOST_PATTERNS: RegExp[] = [
   /^localhost$/i,
   /^127\./,
