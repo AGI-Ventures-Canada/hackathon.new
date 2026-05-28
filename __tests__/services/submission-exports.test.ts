@@ -402,4 +402,58 @@ describe("loadExportPayload loader errors", () => {
       /loadSocialSubmissions: team query failed: social db down/
     )
   })
+
+  it("throws when loadJudgeData scores query fails", async () => {
+    const assignment = {
+      id: "55555555-5555-5555-5555-555555555555",
+      submission_id: baseSubmission.id,
+      notes: null,
+      judge_participant_id: "66666666-6666-6666-6666-666666666666",
+    }
+    setupBaseQueries({
+      judge_assignments: mockSuccess([assignment]),
+      scores: mockError("scores db down"),
+    })
+    await expect(loadExportPayload(EXPORT_ID)).rejects.toThrow(
+      /loadJudgeData: scores query failed: scores db down/
+    )
+  })
+
+  it("throws when loadJudgeData judges query fails", async () => {
+    const assignment = {
+      id: "55555555-5555-5555-5555-555555555555",
+      submission_id: baseSubmission.id,
+      notes: null,
+      judge_participant_id: "66666666-6666-6666-6666-666666666666",
+    }
+    setupBaseQueries({
+      submissions: mockSuccess([{ ...baseSubmission, team_id: null }]),
+      judge_assignments: mockSuccess([assignment]),
+      hackathon_participants: mockError("judges db down"),
+    })
+    await expect(loadExportPayload(EXPORT_ID)).rejects.toThrow(
+      /loadJudgeData: judges query failed: judges db down/
+    )
+  })
+
+  it("throws when loadJudgeData criteria query fails", async () => {
+    setupBaseQueries({
+      judging_criteria: mockError("criteria db down"),
+    })
+    await expect(loadExportPayload(EXPORT_ID)).rejects.toThrow(
+      /loadJudgeData: criteria query failed: criteria db down/
+    )
+  })
+
+  it("throws when loadSocialSubmissions participant query fails", async () => {
+    setupBaseQueries({
+      submissions: mockSuccess([
+        { ...baseSubmission, team_id: null, participant_id: "77777777-7777-7777-7777-777777777777" },
+      ]),
+      social_media_submissions: mockError("participant social db down"),
+    })
+    await expect(loadExportPayload(EXPORT_ID)).rejects.toThrow(
+      /loadSocialSubmissions: participant query failed: participant social db down/
+    )
+  })
 })
