@@ -497,6 +497,8 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     }
 
     if (exportRow.expires_at && new Date(exportRow.expires_at).getTime() < Date.now()) {
+      // Defense-in-depth: the purge cron flips status to "expired" once a day,
+      // so this catches the window between TTL elapsing and the next cron run.
       set.status = 410
       return { error: "This export has expired. Generate a new one." }
     }
