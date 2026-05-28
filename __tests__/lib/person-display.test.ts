@@ -7,6 +7,14 @@ describe("person display helpers", () => {
     expect(nameFromEmail("grace-hopper+judge@example.com")).toBe("Grace Hopper")
   })
 
+  it("returns the caller-supplied fallback for degenerate emails", () => {
+    expect(nameFromEmail("@example.com")).toBe("Unknown")
+    expect(nameFromEmail("@example.com", "Judge")).toBe("Judge")
+    expect(getDisplayName({ email: "@example.com", fallback: "Unknown member" })).toBe(
+      "Unknown member"
+    )
+  })
+
   it("detects likely email addresses", () => {
     expect(isLikelyEmail("ada@example.com")).toBe(true)
     expect(isLikelyEmail("Ada Lovelace")).toBe(false)
