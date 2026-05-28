@@ -1,11 +1,16 @@
 import { supabase as getSupabase } from "@/lib/db/client"
-import type { TeamInvitation } from "@/lib/db/hackathon-types"
+import type { TeamInvitation, TeamStatus } from "@/lib/db/hackathon-types"
 import { randomBytes } from "crypto"
 import { checkRoleConflict } from "@/lib/services/role-conflict"
 import { isValidUuid } from "@/lib/utils/uuid"
+import { canInviteTeamMembers } from "@/lib/utils/team-invite"
 
 const INVITATION_EXPIRY_DAYS = 7
 const INVITATION_EXPIRY_MS = INVITATION_EXPIRY_DAYS * 24 * 60 * 60 * 1000
+const TEAM_STATUSES_OPEN_FOR_INVITES: ReadonlySet<TeamStatus> = new Set<TeamStatus>([
+  "forming",
+  "pending_approval",
+])
 
 export type CreateInvitationInput = {
   teamId: string
@@ -58,13 +63,13 @@ export async function createTeamInvitation(
     return { success: false, error: "Team is locked", code: "team_locked" }
   }
 
-  if (team.status === "disbanded") {
-    return { success: false, error: "Team has been disbanded", code: "team_disbanded" }
+  if (!TEAM_STATUSES_OPEN_FOR_INVITES.has(team.status)) {
+    return { success: false, error: "Team can't receive invites", code: "team_not_open" }
   }
 
   const { data: hackathon, error: hackathonError } = await client
     .from("hackathons")
-    .select("id, status, ends_at, max_team_size")
+    .select("id, status, ends_at, registration_closes_at, max_team_size")
     .eq("id", input.hackathonId)
     .single()
 
@@ -74,6 +79,15 @@ export async function createTeamInvitation(
 
   if (hackathon.status === "completed" || hackathon.status === "archived") {
     return { success: false, error: "Hackathon has ended", code: "hackathon_ended" }
+  }
+
+  if (!canInviteTeamMembers({
+    isFormingCaptain: true,
+    hackathonStatus: hackathon.status,
+    registrationClosesAt: hackathon.registration_closes_at,
+    nowIso: new Date().toISOString(),
+  })) {
+    return { success: false, error: "Registration has closed", code: "registration_closed" }
   }
 
   const { count: memberCount } = await client

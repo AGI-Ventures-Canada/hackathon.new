@@ -8,6 +8,7 @@ import { submitSocialUrl } from "@/lib/services/social-submissions"
 import { createMentorRequest, listMentorQueue, claimRequest, resolveRequest } from "@/lib/services/mentor-requests"
 import { getWinnerPageData } from "@/lib/services/winner-pages"
 import { resolvePrincipal } from "@/lib/auth/principal"
+import { pendingTeamApprovalResponse } from "@/lib/api/responses"
 
 async function resolveHackathonBySlug(slug: string, set: { status?: number | string }) {
   const hackathon = await getPublicHackathon(slug)
@@ -46,6 +47,9 @@ export const publicEventRoutes = new Elysia({ prefix: "/public" })
     const { getParticipantWithTeam } = await import("@/lib/services/submissions")
     const participant = await getParticipantWithTeam(hackathon!.id, principal.userId)
     if (!participant) { set.status = 403; return { error: "Not a participant" } }
+    if (participant.teamStatus === "pending_approval") {
+      return pendingTeamApprovalResponse(set)
+    }
 
     const { url } = body as { url: string }
     const submission = await submitSocialUrl(hackathon!.id, participant.participantId, participant.teamId, url)
@@ -66,6 +70,9 @@ export const publicEventRoutes = new Elysia({ prefix: "/public" })
     const { getParticipantWithTeam } = await import("@/lib/services/submissions")
     const participant = await getParticipantWithTeam(hackathon!.id, principal.userId)
     if (!participant) { set.status = 403; return { error: "Not a participant" } }
+    if (participant.teamStatus === "pending_approval") {
+      return pendingTeamApprovalResponse(set)
+    }
 
     const { category, description } = body as { category?: string; description?: string }
     const req = await createMentorRequest(hackathon!.id, participant.participantId, participant.teamId, { category, description })
@@ -144,6 +151,9 @@ export const publicEventRoutes = new Elysia({ prefix: "/public" })
     if (!participant || !participant.teamId) {
       set.status = 403
       return { error: "You must be on a team to view perks" }
+    }
+    if (participant.teamStatus === "pending_approval") {
+      return pendingTeamApprovalResponse(set)
     }
 
     const { listPerks, isPerkReleased } = await import("@/lib/services/perks")

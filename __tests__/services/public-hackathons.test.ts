@@ -27,6 +27,7 @@ const mockHackathon: Hackathon = {
   min_team_size: 1,
   max_team_size: 5,
   allow_solo: true,
+  require_team_approval: false,
   status: "registration_open",
   banner_url: "https://example.com/banner.png",
   metadata: {},
@@ -303,6 +304,7 @@ describe("Public Hackathons Service", () => {
           min_team_size: 2,
           max_team_size: 4,
           allow_solo: false,
+          require_team_approval: true,
         },
         error: null,
       })
@@ -313,6 +315,7 @@ describe("Public Hackathons Service", () => {
         minTeamSize: 2,
         maxTeamSize: 4,
         allowSolo: false,
+        requireTeamApproval: true,
       })
 
       expect(result).not.toBeNull()
@@ -320,6 +323,48 @@ describe("Public Hackathons Service", () => {
       expect(result?.min_team_size).toBe(2)
       expect(result?.max_team_size).toBe(4)
       expect(result?.allow_solo).toBe(false)
+      expect(result?.require_team_approval).toBe(true)
+    })
+
+    it("moves waiting teams to forming when team review is turned off", async () => {
+      const hackathonChain = createChainableMock({
+        data: { ...mockHackathon, require_team_approval: false },
+        error: null,
+      })
+      const teamsChain = createChainableMock({ data: null, error: null })
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") return hackathonChain
+        if (table === "teams") return teamsChain
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await updateHackathonSettings("h1", "t1", {
+        requireTeamApproval: false,
+      })
+
+      expect(result?.require_team_approval).toBe(false)
+      expect(teamsChain.update).toHaveBeenCalledWith({ status: "forming" })
+      expect(teamsChain.eq).toHaveBeenCalledWith("hackathon_id", "h1")
+      expect(teamsChain.eq).toHaveBeenCalledWith("status", "pending_approval")
+    })
+
+    it("still returns the saved hackathon when waiting teams cannot be moved after team review is turned off", async () => {
+      const hackathonChain = createChainableMock({
+        data: { ...mockHackathon, require_team_approval: false },
+        error: null,
+      })
+      const teamsChain = createChainableMock({ data: null, error: { message: "DB error" } })
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") return hackathonChain
+        if (table === "teams") return teamsChain
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await updateHackathonSettings("h1", "t1", {
+        requireTeamApproval: false,
+      })
+
+      expect(result?.require_team_approval).toBe(false)
     })
 
     it("sets maxParticipants to null for unlimited", async () => {

@@ -256,6 +256,7 @@ export function OrganizerShowcase({ data }: { data: ShowcaseData }) {
               minTeamSize: hackathon.min_team_size,
               maxTeamSize: hackathon.max_team_size,
               allowSolo: hackathon.allow_solo,
+              requireTeamApproval: hackathon.require_team_approval ?? false,
             }}
             onSaved={() => record("Saved team settings")}
           />

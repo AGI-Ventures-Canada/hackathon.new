@@ -1,5 +1,5 @@
 import { supabase as getSupabase } from "@/lib/db/client"
-import type { HackathonStatus } from "@/lib/db/hackathon-types"
+import type { HackathonStatus, TeamStatus } from "@/lib/db/hackathon-types"
 import { getOrCreateTenant } from "@/lib/services/tenants"
 import { getSeedUserIds, findPersonaByUserId, getPersonaUserId } from "@/lib/dev/test-personas"
 import { SCENARIOS } from "@/lib/dev/scenarios"
@@ -62,6 +62,7 @@ async function createTestHackathon(opts: {
   endsAt: Date
   registrationOpensAt?: Date
   registrationClosesAt?: Date
+  requireTeamApproval?: boolean
   anonymousJudging?: boolean
   resultsPublishedAt?: string | null
 }): Promise<string> {
@@ -82,6 +83,7 @@ async function createTestHackathon(opts: {
       min_team_size: 1,
       max_team_size: 4,
       allow_solo: true,
+      require_team_approval: opts.requireTeamApproval ?? false,
       anonymous_judging: opts.anonymousJudging ?? false,
       results_published_at: opts.resultsPublishedAt ?? null,
     })
@@ -127,7 +129,11 @@ async function registerParticipant(
 async function createTeamWithMembers(
   hackathonId: string,
   captainUserId: string,
-  memberUserIds: string[]
+  memberUserIds: string[],
+  opts: {
+    name?: string
+    status?: TeamStatus
+  } = {}
 ): Promise<string> {
   const db = getSupabase()
 
@@ -135,10 +141,10 @@ async function createTeamWithMembers(
     .from("teams")
     .insert({
       hackathon_id: hackathonId,
-      name: `Team ${captainUserId.slice(-3)}`,
+      name: opts.name ?? `Team ${captainUserId.slice(-3)}`,
       captain_clerk_user_id: captainUserId,
       invite_code: crypto.randomUUID().slice(0, 8),
-      status: "forming",
+      status: opts.status ?? "forming",
     })
     .select("id")
     .single()
@@ -337,7 +343,25 @@ async function removeTeamMember(hackathonId: string, clerkUserId: string): Promi
 }
 
 function getDevUserId(): string {
-  return process.env.SCENARIO_DEV_USER_ID ?? getSeedUsers()[0]
+  return getPersonaUserId("user1") ?? process.env.SCENARIO_DEV_USER_ID ?? getSeedUsers()[0]
+}
+
+function getTeamApprovalUsers(): string[] {
+  return [
+    getDevUserId(),
+    ...getSeedUsers(),
+    "seed_user_alice_001",
+    "seed_user_bob_002",
+    "seed_user_carol_003",
+    "seed_user_dave_004",
+    "seed_user_eve_005",
+    "seed_user_frank_006",
+    "seed_user_grace_007",
+    "seed_user_harper_008",
+    "seed_user_isaac_009",
+    "seed_user_jules_010",
+    "seed_user_kai_011",
+  ].filter((userId, index, users) => users.indexOf(userId) === index)
 }
 
 const scenarioRunners: Record<string, (tenantId?: string, principalOrgId?: string | null, options?: ScenarioOptions) => Promise<{ hackathonId: string; slug: string; tenantId: string }>> = {
@@ -447,6 +471,89 @@ const scenarioRunners: Record<string, (tenantId?: string, principalOrgId?: strin
         await db.from("hackathons").update({ status: "judging" }).eq("id", hackathonId)
       }
     }
+
+    return { hackathonId, slug, tenantId }
+  },
+
+  "team-approval-review": async (overrideTenantId, principalOrgId) => {
+    const tenantId = await resolveScenarioTenant(overrideTenantId, principalOrgId)
+    const now = new Date()
+    const slug = uniqueSlug("test-team-approval-review")
+    const hackathonId = await createTestHackathon({
+      tenantId,
+      slug,
+      name: "Team Approval Review",
+      status: "active",
+      startsAt: new Date(now.getTime() - 2 * 86400000),
+      endsAt: new Date(now.getTime() + 5 * 86400000),
+      requireTeamApproval: true,
+    })
+    const users = getTeamApprovalUsers()
+
+    await createTeamWithMembers(hackathonId, users[0], [users[1]], {
+      name: "Approved Builders",
+    })
+    await createTeamWithMembers(hackathonId, users[2], [users[3], users[4]], {
+      name: "Approved Launch Crew",
+    })
+    await createTeamWithMembers(hackathonId, users[5], [], {
+      name: "Solo Approved",
+    })
+
+    const pendingWithInvite = await createTeamWithMembers(hackathonId, users[6], [users[7]], {
+      name: "Needs a Look",
+      status: "pending_approval",
+    })
+    await createPendingInvitation(
+      pendingWithInvite,
+      hackathonId,
+      "pending-designer@example.com",
+      { invitedBy: users[6] }
+    )
+
+    await createTeamWithMembers(hackathonId, users[8], [], {
+      name: "Waiting Solo",
+      status: "pending_approval",
+    })
+    await createTeamWithMembers(hackathonId, users[9], [users[10]], {
+      name: "Waiting With Members",
+      status: "pending_approval",
+    })
+
+    return { hackathonId, slug, tenantId }
+  },
+
+  "attendee-team-pending-approval": async (overrideTenantId, principalOrgId) => {
+    const tenantId = await resolveScenarioTenant(overrideTenantId, principalOrgId)
+    const now = new Date()
+    const slug = uniqueSlug("test-attendee-team-pending-approval")
+    const hackathonId = await createTestHackathon({
+      tenantId,
+      slug,
+      name: "Pending Team Approval",
+      status: "active",
+      startsAt: new Date(now.getTime() - 1 * 86400000),
+      endsAt: new Date(now.getTime() + 6 * 86400000),
+      requireTeamApproval: true,
+    })
+    const users = getTeamApprovalUsers()
+    const devUser = users[0]
+
+    const devTeamId = await createTeamWithMembers(hackathonId, devUser, [users[1]], {
+      name: "Dev Team Waiting",
+      status: "pending_approval",
+    })
+    await createPendingInvitation(devTeamId, hackathonId, "future-member@example.com", {
+      invitedBy: devUser,
+    })
+
+    await createTeamWithMembers(hackathonId, users[2], [users[3]], {
+      name: "Already Approved",
+    })
+    await createTeamWithMembers(hackathonId, users[4], [], {
+      name: "Another Pending Team",
+      status: "pending_approval",
+    })
 
     return { hackathonId, slug, tenantId }
   },

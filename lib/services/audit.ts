@@ -92,6 +92,8 @@ export type AuditAction =
   | "team.created"
   | "team.captain_invited"
   | "team.captain_changed"
+  | "team.approved"
+  | "team.denied"
   | "team.deleted"
   | "team.members_modified"
   | "team.bulk_assigned"

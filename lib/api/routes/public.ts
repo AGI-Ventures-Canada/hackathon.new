@@ -24,6 +24,7 @@ import {
   MAX_SUBMISSION_SCREENSHOTS,
   type SubmissionScreenshotSlot,
 } from "@/lib/utils/submission-screenshots"
+import { pendingTeamApprovalResponse } from "@/lib/api/responses"
 
 export const publicRoutes = new Elysia({ prefix: "/public" })
   .get("/health", () => ({
@@ -402,7 +403,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
   })
   .post(
     "/hackathons/:slug/submissions",
-    async ({ params, body }) => {
+    async ({ params, body, set }) => {
       const { userId } = await auth()
 
       if (!userId) {
@@ -435,6 +436,10 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
           JSON.stringify({ error: "You must register before submitting", code: "not_registered" }),
           { status: 403, headers: { "Content-Type": "application/json" } }
         )
+      }
+
+      if (participant.teamStatus === "pending_approval") {
+        return pendingTeamApprovalResponse(set)
       }
 
       const existing = await getExistingSubmission(
@@ -551,7 +556,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
   )
   .patch(
     "/hackathons/:slug/submissions",
-    async ({ params, body }) => {
+    async ({ params, body, set }) => {
       const { userId } = await auth()
 
       if (!userId) {
@@ -584,6 +589,10 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
           JSON.stringify({ error: "You must register before submitting", code: "not_registered" }),
           { status: 403, headers: { "Content-Type": "application/json" } }
         )
+      }
+
+      if (participant.teamStatus === "pending_approval") {
+        return pendingTeamApprovalResponse(set)
       }
 
       const existing = await getExistingSubmission(
@@ -683,7 +692,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       }),
     }
   )
-  .post("/hackathons/:slug/submissions/screenshot", async ({ params, request }) => {
+  .post("/hackathons/:slug/submissions/screenshot", async ({ params, request, set }) => {
     const { userId } = await auth()
 
     if (!userId) {
@@ -716,6 +725,10 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         JSON.stringify({ error: "You must register before uploading", code: "not_registered" }),
         { status: 403, headers: { "Content-Type": "application/json" } }
       )
+    }
+
+    if (participant.teamStatus === "pending_approval") {
+      return pendingTeamApprovalResponse(set)
     }
 
     const existing = await getExistingSubmission(
@@ -806,7 +819,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       description: "Uploads a screenshot image for the user's submission. Accepts PNG, JPEG, or WebP (max 10MB).",
     },
   })
-  .delete("/hackathons/:slug/submissions/screenshot", async ({ params, request }) => {
+  .delete("/hackathons/:slug/submissions/screenshot", async ({ params, request, set }) => {
     const { userId } = await auth()
 
     if (!userId) {
@@ -839,6 +852,10 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         JSON.stringify({ error: "Not registered", code: "not_registered" }),
         { status: 403, headers: { "Content-Type": "application/json" } }
       )
+    }
+
+    if (participant.teamStatus === "pending_approval") {
+      return pendingTeamApprovalResponse(set)
     }
 
     const existing = await getExistingSubmission(

@@ -46,6 +46,8 @@ bun run scripts/test-scenario.ts <scenario>
 | `registered-no-team` | Dev user registered, no team yet, registration open |
 | `team-formed` | Dev user is captain with 2 members + 1 pending invite, hackathon active |
 | `submitted` | Dev user's team has a submitted project, hackathon ends in 2 days |
+| `team-approval-review` | Organizer sees approved teams and teams waiting for approval |
+| `attendee-team-pending-approval` | Dev user is captain of a team waiting for approval |
 | `judging` | 5 teams with submissions, 3 judges assigned, no scores yet |
 | `judging-in-progress` | Same as above but ~60% of assignments scored |
 | `results-ready` | All submissions scored, results calculated, 3 prizes defined (not yet assigned) |

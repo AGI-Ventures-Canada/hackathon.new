@@ -30,6 +30,7 @@ function makeRpcPayload(overrides: Record<string, unknown> = {}) {
     unassigned_submission_count: 0,
     participant_count: 20,
     team_count: 10,
+    pending_team_approval_count: 0,
     assignment_total: 20,
     assignment_complete: 8,
     judge_count: 3,
@@ -79,6 +80,7 @@ describe("Organizer Polling Service", () => {
       expect(result!.unassignedSubmissionCount).toBe(0)
       expect(result!.participantCount).toBe(20)
       expect(result!.teamCount).toBe(10)
+      expect(result!.pendingTeamApprovalCount).toBe(0)
       expect(result!.judgingProgress).toEqual({
         totalAssignments: 20,
         completedAssignments: 8,
@@ -164,12 +166,24 @@ describe("Organizer Polling Service", () => {
       expect(result!.pendingJudgeInvitationCount).toBe(7)
     })
 
+    it("includes teams waiting for approval count", async () => {
+      mockRpcCall("get_organizer_poll_data", mockSuccess(
+        makeRpcPayload({ pending_team_approval_count: 3 })
+      ))
+
+      const result = await buildOrganizerPollPayload(hackathonId)
+
+      expect(result).not.toBeNull()
+      expect(result!.pendingTeamApprovalCount).toBe(3)
+    })
+
     it("defaults counts to 0 when null", async () => {
       mockRpcCall("get_organizer_poll_data", mockSuccess(makeRpcPayload({
         submission_count: null,
         unassigned_submission_count: null,
         participant_count: null,
         team_count: null,
+        pending_team_approval_count: null,
         assignment_total: null,
         assignment_complete: null,
         judge_count: null,
@@ -186,6 +200,7 @@ describe("Organizer Polling Service", () => {
       expect(result!.unassignedSubmissionCount).toBe(0)
       expect(result!.participantCount).toBe(0)
       expect(result!.teamCount).toBe(0)
+      expect(result!.pendingTeamApprovalCount).toBe(0)
       expect(result!.judgingProgress.totalAssignments).toBe(0)
       expect(result!.judgingProgress.completedAssignments).toBe(0)
       expect(result!.judgeCount).toBe(0)

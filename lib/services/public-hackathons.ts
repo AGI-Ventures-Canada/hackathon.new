@@ -1,6 +1,15 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
-import type { Hackathon, TenantProfile, HackathonSponsor, HackathonStatus, HackathonJudgeDisplay, Prize, JudgingMode } from "@/lib/db/hackathon-types"
+import {
+  DEFAULT_TEAM_STATUS,
+  type Hackathon,
+  type TenantProfile,
+  type HackathonSponsor,
+  type HackathonStatus,
+  type HackathonJudgeDisplay,
+  type Prize,
+  type JudgingMode,
+} from "@/lib/db/hackathon-types"
 import { currentTermsHash } from "@/lib/services/hackathon-terms"
 
 export type PublicPrize = Omit<Prize, "distribution_method" | "monetary_value" | "currency">
@@ -354,6 +363,7 @@ export async function updateHackathonSettings(
     minTeamSize?: number
     maxTeamSize?: number
     allowSolo?: boolean
+    requireTeamApproval?: boolean
     communityUrl?: string | null
     communityLabel?: string | null
     requireTermsAcceptance?: boolean
@@ -384,6 +394,7 @@ export async function updateHackathonSettings(
   if (updates.minTeamSize !== undefined) updateData.min_team_size = updates.minTeamSize
   if (updates.maxTeamSize !== undefined) updateData.max_team_size = updates.maxTeamSize
   if (updates.allowSolo !== undefined) updateData.allow_solo = updates.allowSolo
+  if (updates.requireTeamApproval !== undefined) updateData.require_team_approval = updates.requireTeamApproval
   if (updates.communityUrl !== undefined) updateData.community_url = updates.communityUrl
   if (updates.communityLabel !== undefined) updateData.community_label = updates.communityLabel
   if (updates.requireTermsAcceptance !== undefined) updateData.require_terms_acceptance = updates.requireTermsAcceptance
@@ -400,6 +411,18 @@ export async function updateHackathonSettings(
   if (error) {
     console.error("Failed to update hackathon settings:", error)
     return null
+  }
+
+  if (updates.requireTeamApproval === false) {
+    const { error: teamError } = await client
+      .from("teams")
+      .update({ status: DEFAULT_TEAM_STATUS })
+      .eq("hackathon_id", hackathonId)
+      .eq("status", "pending_approval")
+
+    if (teamError) {
+      console.error("Failed to approve waiting teams after disabling review:", teamError)
+    }
   }
 
   return data as unknown as Hackathon

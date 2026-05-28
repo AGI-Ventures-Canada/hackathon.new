@@ -1,6 +1,11 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
-import type { Hackathon, HackathonParticipant } from "@/lib/db/hackathon-types"
+import {
+  DEFAULT_TEAM_STATUS,
+  type Hackathon,
+  type HackathonParticipant,
+  type TeamStatus,
+} from "@/lib/db/hackathon-types"
 import { sortByStartDate } from "@/lib/utils/format"
 import { generateSlug } from "@/lib/utils/slug"
 import { clerkClient } from "@clerk/nextjs/server"
@@ -171,6 +176,7 @@ export async function createHackathon(
       min_team_size: 1,
       max_team_size: 5,
       allow_solo: true,
+      require_team_approval: false,
       metadata: {},
     })
     .select()
@@ -343,7 +349,7 @@ export type ParticipantTeamInfo = {
   team: {
     id: string
     name: string
-    status: "forming" | "locked" | "disbanded"
+    status: TeamStatus
     inviteCode: string
     captainClerkUserId: string
     mode: "in_person" | "virtual" | null
@@ -649,6 +655,39 @@ export type CreateTeamResult =
   | { team: { id: string; name: string }; invited: true; queued?: boolean }
   | { error: string }
 
+export type ReviewTeamResult =
+  | { success: true; team: { id: string; name: string; status: TeamStatus }; membersUnassigned?: number; invitesCancelled?: number; membersNotified?: number }
+  | { error: string; code: "not_found" | "not_pending" | "failed" }
+
+type ApprovePendingTeamRpcRow = {
+  success: boolean
+  error_code: "not_found" | "not_pending" | null
+  error_message: string | null
+  team_id: string | null
+  team_name: string | null
+  team_status: TeamStatus | null
+  member_clerk_user_ids: Array<string | null> | null
+}
+
+type DenyPendingTeamRpcRow = {
+  success: boolean
+  error_code: "not_found" | "not_pending" | null
+  error_message: string | null
+  team_id: string | null
+  team_name: string | null
+  team_status: TeamStatus | null
+  members_unassigned: number | null
+  invites_cancelled: number | null
+  cancelled_invitation_ids: string[] | null
+  member_clerk_user_ids: Array<string | null> | null
+}
+
+type TeamReviewHackathon = {
+  name: string | null
+  slug: string | null
+  status: string | null
+}
+
 export async function createTeamWithMembers(
   hackathonId: string,
   input: { name: string; captainEmail: string; organizerClerkUserId?: string }
@@ -680,7 +719,7 @@ export async function createTeamWithMembers(
           name: input.name,
           captain_clerk_user_id: captainClerkUserId,
           invite_code: crypto.randomUUID().slice(0, 8),
-          status: "forming",
+          status: DEFAULT_TEAM_STATUS,
         })
         .select("id, name")
         .single()
@@ -743,7 +782,7 @@ async function createPendingTeamWithInvite(
       captain_clerk_user_id: null,
       pending_captain_email: input.captainEmail.toLowerCase(),
       invite_code: crypto.randomUUID().slice(0, 8),
-      status: "forming",
+      status: DEFAULT_TEAM_STATUS,
     })
     .select("id, name")
     .single()
@@ -826,6 +865,278 @@ async function createPendingTeamWithInvite(
   }
 
   return { team, invited: true, queued: isDraft }
+}
+
+export async function approvePendingTeam(
+  teamId: string,
+  hackathonId: string,
+  options: { notificationHackathon?: TeamReviewHackathon } = {}
+): Promise<ReviewTeamResult> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data, error } = await client.rpc("approve_pending_team", {
+    p_team_id: teamId,
+    p_hackathon_id: hackathonId,
+  })
+
+  if (error) {
+    console.error("Failed to approve team:", error)
+    return { error: "Failed to approve team", code: "failed" }
+  }
+
+  const row = Array.isArray(data) ? data[0] as ApprovePendingTeamRpcRow | undefined : data as ApprovePendingTeamRpcRow | null
+  if (!row) {
+    console.error("Failed to approve team: empty RPC result")
+    return { error: "Failed to approve team", code: "failed" }
+  }
+
+  if (!row.success) {
+    return {
+      error: row.error_message ?? "Failed to approve team",
+      code: row.error_code ?? "failed",
+    }
+  }
+
+  if (!row.team_id || !row.team_name || !row.team_status) {
+    console.error("Failed to approve team: incomplete RPC result", row)
+    return { error: "Failed to approve team", code: "failed" }
+  }
+
+  const memberClerkUserIds = (row.member_clerk_user_ids ?? [])
+    .filter((id): id is string => Boolean(id))
+
+  const membersNotified = await notifyReviewedTeamMembers({
+    client,
+    hackathonId,
+    teamName: row.team_name,
+    acceptedMemberClerkUserIds: memberClerkUserIds,
+    review: "approved",
+    hackathon: options.notificationHackathon,
+  })
+
+  return {
+    success: true,
+    team: { id: row.team_id, name: row.team_name, status: row.team_status },
+    membersNotified,
+  }
+}
+
+export async function denyPendingTeam(
+  teamId: string,
+  hackathonId: string,
+  options: { notificationHackathon?: TeamReviewHackathon } = {}
+): Promise<ReviewTeamResult> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data, error } = await client.rpc("deny_pending_team", {
+    p_team_id: teamId,
+    p_hackathon_id: hackathonId,
+  })
+
+  if (error) {
+    console.error("Failed to deny team:", error)
+    return { error: "Failed to deny team", code: "failed" }
+  }
+
+  const row = Array.isArray(data) ? data[0] as DenyPendingTeamRpcRow | undefined : data as DenyPendingTeamRpcRow | null
+  if (!row) {
+    console.error("Failed to deny team: empty RPC result")
+    return { error: "Failed to deny team", code: "failed" }
+  }
+
+  if (!row.success) {
+    return {
+      error: row.error_message ?? "Failed to deny team",
+      code: row.error_code ?? "failed",
+    }
+  }
+
+  if (!row.team_id || !row.team_name || !row.team_status) {
+    console.error("Failed to deny team: incomplete RPC result", row)
+    return { error: "Failed to deny team", code: "failed" }
+  }
+
+  const cancelledInvitationIds = row.cancelled_invitation_ids ?? []
+  if (cancelledInvitationIds.length > 0) {
+    const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
+    for (const invitationId of cancelledInvitationIds) {
+      cancelRemindersForEntity("team_invitation", invitationId).catch((err) =>
+        console.error(`Failed to cancel reminders for team_invitation ${invitationId}:`, err)
+      )
+    }
+  }
+
+  const memberClerkUserIds = (row.member_clerk_user_ids ?? [])
+    .filter((id): id is string => Boolean(id))
+
+  const membersNotified = await notifyReviewedTeamMembers({
+    client,
+    hackathonId,
+    teamName: row.team_name,
+    acceptedMemberClerkUserIds: memberClerkUserIds,
+    review: "denied",
+    hackathon: options.notificationHackathon,
+  })
+
+  return {
+    success: true,
+    team: { id: row.team_id, name: row.team_name, status: row.team_status },
+    membersUnassigned: row.members_unassigned ?? 0,
+    invitesCancelled: row.invites_cancelled ?? 0,
+    membersNotified,
+  }
+}
+
+export async function denyPendingTeamsForClosedHackathon(
+  hackathonId: string
+): Promise<{ denied: number; failed: Array<{ teamId: string; code: string }> }> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const { data: teams, error } = await client
+    .from("teams")
+    .select("id")
+    .eq("hackathon_id", hackathonId)
+    .eq("status", "pending_approval")
+
+  if (error) {
+    console.error("Failed to list pending teams for closeout:", error)
+    return { denied: 0, failed: [{ teamId: "*", code: "list_failed" }] }
+  }
+
+  const pendingTeams = teams ?? []
+  let notificationHackathon: TeamReviewHackathon | undefined
+  if (pendingTeams.length > 0) {
+    const { data: hackathon, error: hackathonError } = await client
+      .from("hackathons")
+      .select("name, slug, status")
+      .eq("id", hackathonId)
+      .maybeSingle()
+    if (hackathonError) {
+      console.error("Failed to load hackathon for pending team closeout notifications:", hackathonError)
+    } else if (hackathon) {
+      notificationHackathon = hackathon
+    }
+  }
+
+  const closeouts = await Promise.allSettled(
+    pendingTeams.map((team) =>
+      denyPendingTeam(team.id, hackathonId, { notificationHackathon })
+        .then((result) => ({ teamId: team.id, result }))
+        .catch((error: unknown) => Promise.reject({ teamId: team.id, error }))
+    )
+  )
+
+  const failed: Array<{ teamId: string; code: string }> = []
+  let denied = 0
+
+  for (const closeout of closeouts) {
+    if (closeout.status === "rejected") {
+      const reason = closeout.reason as { teamId?: unknown; error?: unknown }
+      console.error("Failed to close pending team:", reason.error ?? reason)
+      failed.push({ teamId: typeof reason.teamId === "string" ? reason.teamId : "*", code: "failed" })
+      continue
+    }
+
+    const { teamId, result } = closeout.value
+    if ("success" in result) {
+      denied++
+      continue
+    }
+    failed.push({ teamId, code: result.code })
+  }
+
+  return { denied, failed }
+}
+
+async function notifyReviewedTeamMembers({
+  client,
+  hackathonId,
+  teamName,
+  acceptedMemberClerkUserIds,
+  review,
+  hackathon: providedHackathon,
+}: {
+  client: SupabaseClient
+  hackathonId: string
+  teamName: string
+  acceptedMemberClerkUserIds: string[]
+  review: "approved" | "denied"
+  hackathon?: TeamReviewHackathon
+}): Promise<number> {
+  if (acceptedMemberClerkUserIds.length === 0) return 0
+
+  try {
+    let hackathon = providedHackathon
+    if (!hackathon) {
+      const { data, error } = await client
+        .from("hackathons")
+        .select("name, slug, status")
+        .eq("id", hackathonId)
+        .maybeSingle()
+
+      if (error) {
+        console.error(`Failed to load hackathon for team ${review} notifications:`, error)
+        return 0
+      }
+      hackathon = data ?? undefined
+    }
+
+    if (!hackathon?.name || !hackathon?.slug) {
+      console.error(`Failed to load hackathon for team ${review} notifications`)
+      return 0
+    }
+    if (hackathon.status === "draft") return 0
+
+    const hackathonName = hackathon.name
+    const hackathonSlug = hackathon.slug
+    const clerk = await clerkClient()
+    const { sendTeamApprovedEmail, sendTeamDeniedEmail } = await import("@/lib/email/team-review")
+    const sendEmail = review === "approved" ? sendTeamApprovedEmail : sendTeamDeniedEmail
+    const seenRecipients = new Set<string>()
+    const uniqueUserIds = [...new Set(acceptedMemberClerkUserIds)]
+    let sent = 0
+
+    for (let i = 0; i < uniqueUserIds.length; i += 100) {
+      const batch = uniqueUserIds.slice(i, i + 100)
+      let users: Awaited<ReturnType<typeof clerk.users.getUserList>>
+      try {
+        users = await clerk.users.getUserList({ userId: batch, limit: 100 })
+      } catch (err) {
+        console.error(`Failed to load ${review} team notification recipients:`, err)
+        continue
+      }
+      const recipients: string[] = []
+      for (const user of users.data) {
+        const email = user.primaryEmailAddress?.emailAddress ?? user.emailAddresses[0]?.emailAddress
+        const normalizedEmail = email?.trim().toLowerCase()
+        if (normalizedEmail && !seenRecipients.has(normalizedEmail)) {
+          seenRecipients.add(normalizedEmail)
+          recipients.push(normalizedEmail)
+        }
+      }
+
+      if (recipients.length === 0) continue
+      try {
+        const results = await Promise.all(
+          recipients.map((to) =>
+            sendEmail({
+              to,
+              teamName,
+              hackathonName,
+              hackathonSlug,
+            })
+          )
+        )
+        sent += results.filter((result) => result.success).length
+      } catch (err) {
+        console.error(`Failed to send ${review} team notification batch:`, err)
+      }
+    }
+
+    return sent
+  } catch (err) {
+    console.error(`Failed to notify ${review} team members:`, err)
+    return 0
+  }
 }
 
 export async function modifyTeamMembers(

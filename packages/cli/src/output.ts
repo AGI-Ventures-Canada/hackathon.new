@@ -70,3 +70,7 @@ export function formatSuccess(message: string): string {
 export function formatWarning(message: string): string {
   return color(pc.yellow, `⚠ ${message}`)
 }
+
+export function formatCount(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`
+}

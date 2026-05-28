@@ -23,6 +23,7 @@ interface RpcPollRow {
   unassigned_submission_count: number | null
   participant_count: number
   team_count: number
+  pending_team_approval_count: number
   assignment_total: number
   assignment_complete: number
   judge_count: number
@@ -63,6 +64,7 @@ export async function buildOrganizerPollPayload(hackathonId: string): Promise<Or
     unassignedSubmissionCount: r.unassigned_submission_count ?? 0,
     participantCount: r.participant_count ?? 0,
     teamCount: r.team_count ?? 0,
+    pendingTeamApprovalCount: r.pending_team_approval_count ?? 0,
     judgingProgress: {
       totalAssignments: r.assignment_total ?? 0,
       completedAssignments: r.assignment_complete ?? 0,

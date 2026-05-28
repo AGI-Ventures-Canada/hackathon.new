@@ -19,7 +19,16 @@ export type SubmissionStatus =
   | "rejected"
   | "winner"
 
-export type TeamStatus = "forming" | "locked" | "disbanded"
+export type TeamStatus = "forming" | "pending_approval" | "locked" | "disbanded"
+
+export const DEFAULT_TEAM_STATUS = "forming" satisfies TeamStatus
+
+export const TEAM_STATUS_LABELS = {
+  forming: "Forming",
+  pending_approval: "Waiting for approval",
+  locked: "Locked",
+  disbanded: "No longer active",
+} satisfies Record<TeamStatus, string>
 
 export type InvitationStatus =
   | "pending"
@@ -118,6 +127,7 @@ export interface Hackathon {
   min_team_size: number
   max_team_size: number
   allow_solo: boolean
+  require_team_approval: boolean
   status: HackathonStatus
   banner_url: string | null
   location_type: "in_person" | "virtual" | "hybrid" | null

@@ -1,4 +1,4 @@
-export type ScenarioCategory = "lifecycle" | "judging" | "results" | "attendee"
+export type ScenarioCategory = "lifecycle" | "teams" | "judging" | "results" | "attendee"
 export type ScenarioPersona = "organizer" | "participant" | "judge"
 
 export type ScenarioDef = {
@@ -40,6 +40,22 @@ export const SCENARIOS: ScenarioDef[] = [
     label: "Project Submitted",
     description: "Team has a submitted project",
     category: "lifecycle",
+    defaultPersona: "participant",
+    defaultRoute: (s) => `/e/${s}`,
+  },
+  {
+    name: "team-approval-review",
+    label: "Team approval review",
+    description: "Current event with approved and waiting teams",
+    category: "teams",
+    defaultPersona: "organizer",
+    defaultRoute: (s) => `/e/${s}/manage`,
+  },
+  {
+    name: "attendee-team-pending-approval",
+    label: "Team waiting approval",
+    description: "Captain is waiting for organizer approval",
+    category: "teams",
     defaultPersona: "participant",
     defaultRoute: (s) => `/e/${s}`,
   },
@@ -157,6 +173,7 @@ export function getScenario(name: string): ScenarioDef | undefined {
 
 export const CATEGORY_LABELS: Record<ScenarioCategory, string> = {
   lifecycle: "Lifecycle",
+  teams: "Teams",
   judging: "Judging",
   results: "Results",
   attendee: "Attendee journeys",
