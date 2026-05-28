@@ -21,8 +21,8 @@ function makeRpcPayload(overrides: Record<string, unknown> = {}) {
     challenge_count: 1,
     challenge_released_at: "2026-04-28T10:00:00Z",
     results_published_at: null,
-    starts_at: "2026-04-28T09:00:00Z",
-    ends_at: "2026-04-28T17:00:00Z",
+    starts_at: "2099-04-28T09:00:00Z",
+    ends_at: "2099-04-28T17:00:00Z",
     location_type: "in_person",
     feedback_survey_url: null,
     feedback_survey_sent_at: null,
@@ -93,8 +93,8 @@ describe("Organizer Polling Service", () => {
       expect(result!.resultsPublishedAt).toBeNull()
       expect(result!.description).toBe("A test hackathon")
       expect(result!.bannerUrl).toBe("https://example.com/banner.png")
-      expect(result!.startsAt).toBe("2026-04-28T09:00:00Z")
-      expect(result!.endsAt).toBe("2026-04-28T17:00:00Z")
+      expect(result!.startsAt).toBe("2099-04-28T09:00:00Z")
+      expect(result!.endsAt).toBe("2099-04-28T17:00:00Z")
       expect(result!.locationType).toBe("in_person")
       expect(result!.feedbackSurveyUrl).toBeNull()
       expect(result!.feedbackSurveySentAt).toBeNull()
@@ -110,6 +110,21 @@ describe("Organizer Polling Service", () => {
 
       expect(result).not.toBeNull()
       expect(result!.challengeReleaseTime).toBe("2026-04-28T11:00:00Z")
+    })
+
+    it("returns effective status when event dates make it live", async () => {
+      const startsAt = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+      const endsAt = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+      mockRpcCall("get_organizer_poll_data", mockSuccess(makeRpcPayload({
+        status: "published",
+        starts_at: startsAt,
+        ends_at: endsAt,
+      })))
+
+      const result = await buildOrganizerPollPayload(hackathonId)
+
+      expect(result).not.toBeNull()
+      expect(result!.status).toBe("active")
     })
 
     it("maps round counts into rounds summary", async () => {

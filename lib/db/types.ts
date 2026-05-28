@@ -2649,6 +2649,59 @@ export type Database = {
           },
         ]
       }
+      submission_exports: {
+        Row: {
+          created_at: string
+          error_message: string | null
+          expires_at: string | null
+          file_size_bytes: number | null
+          filters: Json
+          hackathon_id: string
+          id: string
+          ready_at: string | null
+          requested_by_user_id: string
+          status: string
+          storage_path: string | null
+          submission_count: number | null
+        }
+        Insert: {
+          created_at?: string
+          error_message?: string | null
+          expires_at?: string | null
+          file_size_bytes?: number | null
+          filters?: Json
+          hackathon_id: string
+          id?: string
+          ready_at?: string | null
+          requested_by_user_id: string
+          status?: string
+          storage_path?: string | null
+          submission_count?: number | null
+        }
+        Update: {
+          created_at?: string
+          error_message?: string | null
+          expires_at?: string | null
+          file_size_bytes?: number | null
+          filters?: Json
+          hackathon_id?: string
+          id?: string
+          ready_at?: string | null
+          requested_by_user_id?: string
+          status?: string
+          storage_path?: string | null
+          submission_count?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "submission_exports_hackathon_id_fkey"
+            columns: ["hackathon_id"]
+            isOneToOne: false
+            referencedRelation: "hackathons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       submissions: {
         Row: {
           created_at: string

@@ -53,6 +53,7 @@ import {
 } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
 import { getVideoEmbedInfo } from "@/lib/utils/video-embed"
+import { getDisplayName } from "@/lib/utils/person-display"
 import { SubmissionMedia } from "@/components/hackathon/submission-media"
 import { SubmissionLinks } from "@/components/hackathon/submission-links"
 
@@ -97,6 +98,14 @@ type Team = {
   members: TeamMember[]
   submission: TeamSubmission | null
   room: { id: string; name: string } | null
+}
+
+function getTeamMemberName(member: TeamMember): string {
+  return getDisplayName({
+    name: member.displayName,
+    email: member.email,
+    fallback: "Unknown member",
+  })
 }
 
 function TeamSubmissionPanel({ submission }: { submission: TeamSubmission }) {
@@ -864,14 +873,14 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                                       return (
                                         <div className="flex items-center gap-2 text-sm">
                                           <Mail className="size-3 text-muted-foreground shrink-0" />
-                                          <span className="text-muted-foreground truncate">{captainEmail}</span>
+                                          <span className="min-w-0 flex-1 break-all text-muted-foreground">{captainEmail}</span>
                                           {team.pendingCaptainRemindedAt ? (
-                                            <Badge variant="secondary" className="ml-auto font-normal">
+                                            <Badge variant="secondary" className="shrink-0 font-normal">
                                               <Bell className="mr-1 size-3" />
                                               Reminded
                                             </Badge>
                                           ) : (
-                                            <Badge variant="secondary" className="ml-auto font-normal">Pending</Badge>
+                                            <Badge variant="secondary" className="shrink-0 font-normal">Pending</Badge>
                                           )}
                                           <Button
                                             variant="ghost"
@@ -915,22 +924,25 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                                       <ul className="flex flex-col gap-1.5">
                                         {team.members.map((m) => {
                                           const isCaptain = m.clerkUserId === team.captainClerkUserId
+                                          const memberName = getTeamMemberName(m)
                                           return (
-                                            <li key={m.clerkUserId} className="flex items-center gap-2 text-sm">
+                                            <li key={m.clerkUserId} className="flex items-start gap-2 text-sm">
                                               {isCaptain ? (
-                                                <Crown className="size-3 text-primary shrink-0" />
+                                                <Crown className="mt-1 size-3 shrink-0 text-primary" />
                                               ) : (
                                                 <span className="size-3 shrink-0" />
                                               )}
-                                              <span className="font-medium">{m.displayName || m.clerkUserId}</span>
-                                              {m.email && (
-                                                <span className="text-muted-foreground text-xs truncate">
-                                                  {m.email}
-                                                </span>
-                                              )}
+                                              <span className="min-w-0 flex-1">
+                                                <span className="block font-medium break-words">{memberName}</span>
+                                                {m.email && (
+                                                  <span className="block text-xs text-muted-foreground break-all">
+                                                    {m.email}
+                                                  </span>
+                                                )}
+                                              </span>
                                               <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
-                                                  <Button variant="ghost" size="icon" className="ml-auto size-6" aria-label={`Actions for ${m.displayName ?? m.clerkUserId}`}>
+                                                  <Button variant="ghost" size="icon" className="size-6 shrink-0" aria-label={`Actions for ${memberName}`}>
                                                     <MoreHorizontal className="size-3.5" />
                                                   </Button>
                                                 </DropdownMenuTrigger>
@@ -960,14 +972,14 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                                         {team.pendingInvitations.filter((i) => !i.isCaptainInvite).map((inv) => (
                                           <li key={inv.id} className="flex items-center gap-2 text-sm">
                                             <Mail className="size-3 text-muted-foreground shrink-0" />
-                                            <span className="text-muted-foreground truncate">{inv.email}</span>
+                                            <span className="min-w-0 flex-1 break-all text-muted-foreground">{inv.email}</span>
                                             {inv.remindedAt ? (
-                                              <Badge variant="secondary" className="ml-auto font-normal">
+                                              <Badge variant="secondary" className="shrink-0 font-normal">
                                                 <Bell className="mr-1 size-3" />
                                                 Reminded
                                               </Badge>
                                             ) : (
-                                              <Badge variant="secondary" className="ml-auto font-normal">Pending</Badge>
+                                              <Badge variant="secondary" className="shrink-0 font-normal">Pending</Badge>
                                             )}
                                             <Button
                                               variant="ghost"

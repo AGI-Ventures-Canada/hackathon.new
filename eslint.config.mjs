@@ -46,6 +46,8 @@ const eslintConfig = defineConfig([
     ".claude/worktrees/**",
     // agent-browser session data (Chrome profile, extensions)
     ".auth/**",
+    // Local scratch (gitignored)
+    "tmp/**",
   ]),
 ]);
 

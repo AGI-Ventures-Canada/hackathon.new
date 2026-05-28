@@ -1,7 +1,9 @@
 import { listFulfillments, getFulfillmentSummary } from "@/lib/services/prize-fulfillment"
 import { listReminders } from "@/lib/services/post-event-reminders"
+import { listExportsForHackathon } from "@/lib/services/submission-exports"
 import { PrizeFulfillmentTracker } from "@/components/hackathon/prizes/prize-fulfillment-tracker"
 import { PostEventPanel } from "@/components/hackathon/post-event-panel"
+import { PostEventExports } from "@/components/hackathon/post-event-exports"
 import { PostEventSubTabs } from "./_post-event-sub-tabs"
 
 export type PostEventTabContentProps = {
@@ -9,6 +11,7 @@ export type PostEventTabContentProps = {
   resultsPublishedAt: string | null
   feedbackSurveySentAt: string | null
   feedbackSurveyUrl: string | null
+  hackathonStatus: string
   activePtab: string
 }
 
@@ -17,16 +20,20 @@ export async function PostEventTabContent({
   resultsPublishedAt,
   feedbackSurveySentAt,
   feedbackSurveyUrl,
+  hackathonStatus,
   activePtab,
 }: PostEventTabContentProps) {
-  const [fulfillments, fulfillmentSummary, reminders] = await Promise.all([
+  const isCompleted = hackathonStatus === "completed"
+  const resolvedPtab = !isCompleted && activePtab === "exports" ? "fulfillment" : activePtab
+  const [fulfillments, fulfillmentSummary, reminders, submissionExports] = await Promise.all([
     listFulfillments(hackathonId),
     getFulfillmentSummary(hackathonId),
     listReminders(hackathonId),
+    isCompleted ? listExportsForHackathon(hackathonId) : Promise.resolve([]),
   ])
 
   return (
-    <PostEventSubTabs activePtab={activePtab}>
+    <PostEventSubTabs activePtab={resolvedPtab} showExports={isCompleted}>
       <PrizeFulfillmentTracker
         hackathonId={hackathonId}
         resultsPublishedAt={resultsPublishedAt}
@@ -67,6 +74,21 @@ export async function PostEventTabContent({
           createdAt: r.created_at,
         }))}
       />
+      {isCompleted ? (
+        <PostEventExports
+          hackathonId={hackathonId}
+          initialExports={submissionExports.map((e) => ({
+            id: e.id,
+            status: e.status as "pending" | "processing" | "ready" | "failed" | "expired",
+            submissionCount: e.submission_count,
+            fileSizeBytes: e.file_size_bytes,
+            createdAt: e.created_at,
+            readyAt: e.ready_at,
+            expiresAt: e.expires_at,
+            errorMessage: e.error_message,
+          }))}
+        />
+      ) : null}
     </PostEventSubTabs>
   )
 }

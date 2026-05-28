@@ -139,7 +139,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
   const hasJudgingSetup = prizes.length > 0 || judgeCount > 0 || rounds.length > 0
   const jtabFallback = hasJudgingSetup ? DEFAULT_JTAB : "setup"
   const activeJtab = resolveTab(jtab, VALID_JTABS, jtabFallback) as "setup" | "judges" | "rounds" | "prizes" | "assignments" | "results"
-  const ptabFallback = tab === "fulfillment" ? "fulfillment" : tab === "feedback" ? "feedback" : undefined
+  const ptabFallback = tab === "fulfillment" ? "fulfillment" : tab === "feedback" ? "feedback" : tab === "exports" ? "exports" : undefined
   const activePtab = resolveTab(ptab ?? ptabFallback, VALID_PTABS, DEFAULT_PTAB)
 
   const submissionsForSelect = submissions.map((s) => ({ id: s.id, title: s.title }))
@@ -330,6 +330,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
                   resultsPublishedAt={hackathon.results_published_at}
                   feedbackSurveySentAt={hackathon.feedback_survey_sent_at ?? null}
                   feedbackSurveyUrl={hackathon.feedback_survey_url ?? null}
+                  hackathonStatus={hackathon.status}
                   activePtab={activePtab}
                 />
               </Suspense>
