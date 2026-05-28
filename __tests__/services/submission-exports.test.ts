@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach } from "bun:test"
 import {
   createChainableMock,
+  mockMultiTableQuery,
+  mockError,
+  mockSuccess,
   resetSupabaseMocks,
   setMockFromImplementation,
 } from "../lib/supabase-mock"
@@ -9,6 +12,7 @@ const {
   createSubmissionExport,
   getExportById,
   listExportsForHackathon,
+  loadExportPayload,
   markExportProcessing,
   markExportReady,
   markExportFailed,
@@ -305,5 +309,97 @@ describe("buildJsonExportPayload", () => {
     expect(out.users.judge1?.email).toBeNull()
     expect(out.users.judge2?.email).toBeNull()
     expect(out.users.judge1?.name).toBe("Judge One")
+  })
+})
+
+describe("loadExportPayload loader errors", () => {
+  beforeEach(() => resetSupabaseMocks())
+
+  const baseSubmission = {
+    id: "33333333-3333-3333-3333-333333333333",
+    title: "Test Project",
+    description: null,
+    status: "submitted",
+    github_url: null,
+    live_app_url: null,
+    demo_video_url: null,
+    screenshot_url: null,
+    created_at: "2026-05-27T00:00:00Z",
+    team_id: "44444444-4444-4444-4444-444444444444",
+    participant_id: null,
+  }
+
+  const baseExportRow = {
+    id: EXPORT_ID,
+    hackathon_id: HACKATHON_ID,
+    filters: DEFAULT_EXPORT_FILTERS,
+    status: "processing",
+  }
+
+  const baseHackathon = {
+    id: HACKATHON_ID,
+    name: "Test",
+    slug: "test",
+    starts_at: null,
+    ends_at: null,
+  }
+
+  function setupBaseQueries(overrides: Record<string, ReturnType<typeof mockSuccess> | ReturnType<typeof mockError>>) {
+    mockMultiTableQuery({
+      submission_exports: mockSuccess(baseExportRow),
+      hackathons: mockSuccess(baseHackathon),
+      submissions: mockSuccess([baseSubmission]),
+      teams: mockSuccess([{ id: baseSubmission.team_id, name: "Team A" }]),
+      hackathon_participants: mockSuccess([]),
+      hackathon_results: mockSuccess([]),
+      prize_assignments: mockSuccess([]),
+      judge_assignments: mockSuccess([]),
+      scores: mockSuccess([]),
+      judging_criteria: mockSuccess([]),
+      social_media_submissions: mockSuccess([]),
+      ...overrides,
+    })
+  }
+
+  it("throws when loadTeams teams query fails", async () => {
+    setupBaseQueries({ teams: mockError("teams db down") })
+    await expect(loadExportPayload(EXPORT_ID)).rejects.toThrow(
+      /loadTeams: teams query failed: teams db down/
+    )
+  })
+
+  it("throws when loadTeams members query fails", async () => {
+    setupBaseQueries({ hackathon_participants: mockError("members db down") })
+    await expect(loadExportPayload(EXPORT_ID)).rejects.toThrow(
+      /loadTeams: members query failed: members db down/
+    )
+  })
+
+  it("throws when loadResults query fails", async () => {
+    setupBaseQueries({ hackathon_results: mockError("results db down") })
+    await expect(loadExportPayload(EXPORT_ID)).rejects.toThrow(
+      /loadResults: results db down/
+    )
+  })
+
+  it("throws when loadPrizeAssignments query fails", async () => {
+    setupBaseQueries({ prize_assignments: mockError("prizes db down") })
+    await expect(loadExportPayload(EXPORT_ID)).rejects.toThrow(
+      /loadPrizeAssignments: prizes db down/
+    )
+  })
+
+  it("throws when loadJudgeData assignments query fails", async () => {
+    setupBaseQueries({ judge_assignments: mockError("assignments db down") })
+    await expect(loadExportPayload(EXPORT_ID)).rejects.toThrow(
+      /loadJudgeData: assignments query failed: assignments db down/
+    )
+  })
+
+  it("throws when loadSocialSubmissions team query fails", async () => {
+    setupBaseQueries({ social_media_submissions: mockError("social db down") })
+    await expect(loadExportPayload(EXPORT_ID)).rejects.toThrow(
+      /loadSocialSubmissions: team query failed: social db down/
+    )
   })
 })
