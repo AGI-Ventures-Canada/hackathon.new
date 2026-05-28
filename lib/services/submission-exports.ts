@@ -424,15 +424,17 @@ async function loadTeams(
   )
   if (teamIds.length === 0) return {}
 
-  const { data: teams } = await client
+  const { data: teams, error: teamsError } = await client
     .from("teams")
     .select("id, name")
     .in("id", teamIds)
+  if (teamsError) throw new Error(`loadTeams: teams query failed: ${teamsError.message}`)
 
-  const { data: members } = await client
+  const { data: members, error: membersError } = await client
     .from("hackathon_participants")
     .select("team_id, role, clerk_user_id")
     .in("team_id", teamIds)
+  if (membersError) throw new Error(`loadTeams: members query failed: ${membersError.message}`)
 
   const result: Record<string, NonNullable<ExportSubmissionRow["team"]>> = {}
   for (const team of teams ?? []) {
@@ -456,11 +458,12 @@ async function loadResults(
 ): Promise<Record<string, NonNullable<ExportSubmissionRow["result"]>>> {
   if (submissionIds.length === 0) return {}
 
-  const { data: results } = await client
+  const { data: results, error } = await client
     .from("hackathon_results")
     .select("submission_id, rank, total_score, weighted_score, judge_count")
     .eq("hackathon_id", hackathonId)
     .in("submission_id", submissionIds)
+  if (error) throw new Error(`loadResults: ${error.message}`)
 
   const out: Record<string, NonNullable<ExportSubmissionRow["result"]>> = {}
   for (const r of results ?? []) {
@@ -480,10 +483,11 @@ async function loadPrizeAssignments(
 ): Promise<Record<string, ExportSubmissionRow["prizes"]>> {
   if (submissionIds.length === 0) return {}
 
-  const { data } = await client
+  const { data, error } = await client
     .from("prize_assignments")
     .select("submission_id, prize:prizes!prize_id(id, name, value)")
     .in("submission_id", submissionIds)
+  if (error) throw new Error(`loadPrizeAssignments: ${error.message}`)
 
   const out: Record<string, ExportSubmissionRow["prizes"]> = {}
   for (const row of data ?? []) {
@@ -508,10 +512,13 @@ async function loadJudgeData(
 }> {
   if (submissionIds.length === 0) return { scores: {}, notes: {} }
 
-  const { data: assignments } = await client
+  const { data: assignments, error: assignmentsError } = await client
     .from("judge_assignments")
     .select("id, submission_id, notes, judge_participant_id")
     .in("submission_id", submissionIds)
+  if (assignmentsError) {
+    throw new Error(`loadJudgeData: assignments query failed: ${assignmentsError.message}`)
+  }
 
   const assignmentList = assignments ?? []
   const assignmentIds = assignmentList.map((a) => a.id)
@@ -525,18 +532,21 @@ async function loadJudgeData(
           .from("scores")
           .select("judge_assignment_id, criteria_id, score")
           .in("judge_assignment_id", assignmentIds)
-      : Promise.resolve({ data: [] }),
+      : Promise.resolve({ data: [], error: null }),
     judgeParticipantIds.length
       ? client
           .from("hackathon_participants")
           .select("id, clerk_user_id")
           .in("id", judgeParticipantIds)
-      : Promise.resolve({ data: [] }),
+      : Promise.resolve({ data: [], error: null }),
     client
       .from("judging_criteria")
       .select("id, name")
       .eq("hackathon_id", hackathonId),
   ])
+  if (scoresRes.error) throw new Error(`loadJudgeData: scores query failed: ${scoresRes.error.message}`)
+  if (judgesRes.error) throw new Error(`loadJudgeData: judges query failed: ${judgesRes.error.message}`)
+  if (criteriaRes.error) throw new Error(`loadJudgeData: criteria query failed: ${criteriaRes.error.message}`)
 
   const judgeClerkByParticipantId = new Map(
     (judgesRes.data ?? []).map((p) => [p.id, p.clerk_user_id])
@@ -611,7 +621,7 @@ async function loadSocialSubmissions(
           .select(socialSelect)
           .eq("status", "approved")
           .in("team_id", teamIds)
-      : Promise.resolve({ data: [] }),
+      : Promise.resolve({ data: [], error: null }),
     participantIds.length
       ? client
           .from("social_media_submissions")
@@ -619,8 +629,14 @@ async function loadSocialSubmissions(
           .eq("status", "approved")
           .is("team_id", null)
           .in("participant_id", participantIds)
-      : Promise.resolve({ data: [] }),
+      : Promise.resolve({ data: [], error: null }),
   ])
+  if (teamSocialRes.error) {
+    throw new Error(`loadSocialSubmissions: team query failed: ${teamSocialRes.error.message}`)
+  }
+  if (participantSocialRes.error) {
+    throw new Error(`loadSocialSubmissions: participant query failed: ${participantSocialRes.error.message}`)
+  }
 
   const data = [...(teamSocialRes.data ?? []), ...(participantSocialRes.data ?? [])]
 

@@ -118,7 +118,7 @@ describe("sendExportFailedEmail", () => {
     expect(call.subject).toBe("AI Hack 2026 export didn't finish")
     expect(call.html).toContain("storage quota exceeded")
     expect(call.html).toContain(
-      "https://example.com/e/ai-hack-2026/manage?tab=post-event"
+      "https://example.com/e/ai-hack-2026/manage?tab=post-event&amp;ptab=exports"
     )
     expect(call.tags).toContainEqual({
       name: "type",

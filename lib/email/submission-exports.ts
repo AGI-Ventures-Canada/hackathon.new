@@ -83,7 +83,7 @@ export async function sendExportFailedEmail(
     return { success: false }
   }
 
-  const retryUrl = `${process.env.NEXT_PUBLIC_APP_URL}/e/${input.hackathonSlug}/manage?tab=post-event`
+  const retryUrl = `${process.env.NEXT_PUBLIC_APP_URL}/e/${input.hackathonSlug}/manage?tab=post-event&ptab=exports`
   const eventUrl = buildEventUrl(input.hackathonSlug)
 
   const { html, text } = await renderEmail(
