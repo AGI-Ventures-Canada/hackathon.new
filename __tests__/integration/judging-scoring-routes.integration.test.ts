@@ -59,6 +59,7 @@ mock.module("@/lib/services/submissions", () => ({
   updateSubmission: mock(() => Promise.resolve({ id: "sub123" })),
   getHackathonSubmissions: mock(() => Promise.resolve([])),
   getTeamMemberCount: mock(() => Promise.resolve(0)),
+  notifySubmissionMembers: mock(() => Promise.resolve(0)),
 }))
 
 const VALID_SUBMISSION_ID = "33333333-3333-3333-3333-333333333333"

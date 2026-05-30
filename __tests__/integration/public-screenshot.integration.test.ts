@@ -54,6 +54,7 @@ const mockCreateSubmission = mock(() => Promise.resolve({ id: "new-sub" }))
 const mockUpdateSubmission = mock(() => Promise.resolve({ id: "sub123" }))
 const mockGetSubmissionForParticipant = mock(() => Promise.resolve(null))
 const mockGetHackathonSubmissions = mock(() => Promise.resolve([]))
+const mockNotifySubmissionMembers = mock(() => Promise.resolve(0))
 
 mock.module("@/lib/services/submissions", () => ({
   getParticipantWithTeam: mockGetParticipantWithTeam,
@@ -63,6 +64,7 @@ mock.module("@/lib/services/submissions", () => ({
   updateSubmission: mockUpdateSubmission,
   getHackathonSubmissions: mockGetHackathonSubmissions,
   getTeamMemberCount: mock(() => Promise.resolve(0)),
+  notifySubmissionMembers: mockNotifySubmissionMembers,
 }))
 
 const mockUploadScreenshot = mock(() => Promise.resolve({ url: "https://storage.test/screenshot.webp", path: "sub123/screenshot.webp" }))
@@ -151,6 +153,8 @@ describe("Public Screenshot Routes", () => {
     mockDeleteScreenshot.mockReset()
     mockGetSubmissionForParticipant.mockReset()
     mockGetHackathonSubmissions.mockReset()
+    mockNotifySubmissionMembers.mockReset()
+    mockNotifySubmissionMembers.mockImplementation(() => Promise.resolve(0))
 
     mockCreateSubmission.mockImplementation(() => Promise.resolve({ id: "new-sub" }))
     mockUpdateSubmission.mockImplementation(() => Promise.resolve({ id: "sub123" }))
@@ -192,6 +196,12 @@ describe("Public Screenshot Routes", () => {
           demoVideoUrl: "https://youtube.com/watch?v=atlas-demo",
         })
       )
+      expect(mockNotifySubmissionMembers).toHaveBeenCalledWith({
+        hackathonId: "h1",
+        participantId: "p1",
+        teamId: null,
+        projectTitle: "Project Atlas",
+      })
     })
 
     it("rejects an invalid video link", async () => {
