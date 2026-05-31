@@ -240,6 +240,53 @@ describe("SubmissionButton", () => {
     })
   })
 
+  it("shows a disabled 'Waiting for team approval' button when the team is pending approval", () => {
+    render(
+      <SubmissionButton
+        hackathonSlug="test-hackathon"
+        status="active"
+        isRegistered
+        submission={null}
+        pendingTeamApproval
+      />
+    )
+
+    const button = screen.getByRole("button", { name: /Waiting for team approval/i })
+    expect(button).toBeDefined()
+    expect((button as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.queryByRole("button", { name: "Submit Project" })).toBeNull()
+  })
+
+  it("does not open the submission dialog when the team is pending approval", () => {
+    render(
+      <SubmissionButton
+        hackathonSlug="test-hackathon"
+        status="active"
+        isRegistered
+        submission={null}
+        pendingTeamApproval
+      />
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: /Waiting for team approval/i }))
+    expect(screen.queryByRole("dialog")).toBeNull()
+  })
+
+  it("renders the submit button when the team is not pending approval", () => {
+    render(
+      <SubmissionButton
+        hackathonSlug="test-hackathon"
+        status="active"
+        isRegistered
+        submission={null}
+        pendingTeamApproval={false}
+      />
+    )
+
+    expect(screen.getByRole("button", { name: "Submit Project" })).toBeDefined()
+    expect(screen.queryByRole("button", { name: /Waiting for team approval/i })).toBeNull()
+  })
+
   it("does not claim screenshots changed when the first upload fails", async () => {
     mockFetch.mockImplementation((input) => {
       const url = String(input)
