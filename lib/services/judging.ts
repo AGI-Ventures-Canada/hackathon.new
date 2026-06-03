@@ -1167,6 +1167,9 @@ export async function getActiveRoundId(hackathonId: string): Promise<string | nu
   return (data as { id: string } | null)?.id ?? null
 }
 
+// Returns null when no round is active OR the active round has no round_submissions yet.
+// Callers treat null as "no scoping" and fall back to the full submitted pool, matching
+// getRoundPool semantics (the screening / single-round case where advancement hasn't run).
 export async function getActiveRoundFinalistIds(hackathonId: string): Promise<string[] | null> {
   const activeRoundId = await getActiveRoundId(hackathonId)
   if (!activeRoundId) return null
@@ -4048,6 +4051,8 @@ export async function assignWeightedScoreJudge(
     return { success: true, assignedCount: 0 }
   }
 
+  // Resolves the active round in two steps rather than via getActiveRoundFinalistIds because
+  // we need activeRoundId separately to tag inserted assignment rows.
   const activeRoundId = await getActiveRoundId(hackathonId)
   const finalistIds = activeRoundId ? await getRoundSubmissions(activeRoundId) : []
   const scopeToFinalists = activeRoundId !== null && finalistIds.length > 0
