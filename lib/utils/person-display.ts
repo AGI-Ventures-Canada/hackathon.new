@@ -1,7 +1,12 @@
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const CLERK_USER_ID_PATTERN = /^user_[A-Za-z0-9]+$/
 
 export function isLikelyEmail(value: string | null | undefined): boolean {
   return EMAIL_PATTERN.test(value?.trim() ?? "")
+}
+
+export function isClerkUserId(value: string | null | undefined): boolean {
+  return CLERK_USER_ID_PATTERN.test(value?.trim() ?? "")
 }
 
 export function nameFromEmail(email: string, fallback = "Unknown"): string {
@@ -29,7 +34,7 @@ export function getDisplayName({
   fallback?: string
 }): string {
   const trimmedName = name?.trim()
-  if (trimmedName) {
+  if (trimmedName && !isClerkUserId(trimmedName)) {
     return isLikelyEmail(trimmedName) ? nameFromEmail(trimmedName, fallback) : trimmedName
   }
 

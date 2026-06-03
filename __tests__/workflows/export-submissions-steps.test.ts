@@ -22,7 +22,6 @@ mock.module("@/lib/services/submission-exports", () => ({
   markExportFailed: mockMarkExportFailed,
   collectExportUserIds: (payload: Parameters<typeof teamIdSet>[0]) =>
     Array.from(teamIdSet(payload)),
-  buildJsonExportPayload: <T,>(payload: T) => payload,
 }))
 
 const mockResolveClerkUsers = mock(() =>
@@ -143,6 +142,21 @@ describe("loadExportData", () => {
   it("throws when the export row is missing", async () => {
     mockLoadExportPayload.mockImplementation(() => Promise.resolve(null))
     await expect(loadExportData(EXPORT_ID)).rejects.toThrow(/not found/)
+  })
+
+  it("nulls out Clerk-default user_ names so the JSON directory shows only emails", async () => {
+    mockLoadExportPayload.mockImplementation(() => Promise.resolve(basePayload))
+    mockResolveClerkUsers.mockImplementation(() =>
+      Promise.resolve({
+        displayNames: { u1: "Alice", u2: "user_2abc123XYZ" },
+        emails: { u1: "alice@x.com", u2: "bob@x.com" },
+      })
+    )
+
+    const enriched = await loadExportData(EXPORT_ID)
+    expect(enriched.users.u1?.name).toBe("Alice")
+    expect(enriched.users.u2?.name).toBeNull()
+    expect(enriched.users.u2?.email).toBe("bob@x.com")
   })
 })
 

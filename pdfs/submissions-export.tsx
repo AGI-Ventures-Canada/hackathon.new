@@ -14,6 +14,7 @@ import type {
   ExportSubmissionRow,
   ExportUserDirectory,
 } from "@/lib/services/submission-exports"
+import { formatJudgeLabel, formatMemberLabel } from "@/lib/workflows/export-submissions/format"
 
 const colors = {
   text: "#0f172a",
@@ -247,13 +248,9 @@ function SubmissionSection({
   index: number
   filters: ExportFilters
 }) {
-  const memberLines = (submission.team?.members ?? []).map((m) => {
-    const user = users[m.clerkUserId]
-    const name = user?.name ?? m.clerkUserId
-    const email = user?.email
-    const role = m.role !== "participant" ? ` (${m.role})` : ""
-    return `${name}${email ? ` <${email}>` : ""}${role}`
-  })
+  const memberLines = (submission.team?.members ?? []).map((m) =>
+    formatMemberLabel(m, users)
+  )
 
   const prizeLabels = submission.prizes.map((p) => p.name)
   const rankLine = submission.result
@@ -346,12 +343,11 @@ function SubmissionSection({
             <Text style={[styles.tableHeaderCell, styles.colScore]}>Score</Text>
           </View>
           {submission.scores.map((score, i) => {
-            const judge = score.judgeClerkUserId ? users[score.judgeClerkUserId] : null
-            const judgeName = judge?.name ?? score.judgeClerkUserId ?? "Unknown"
+            const judgeLabel = formatJudgeLabel(score.judgeClerkUserId ?? null, users)
             const isLast = i === submission.scores.length - 1
             return (
               <View key={i} style={isLast ? styles.tableRowLast : styles.tableRow}>
-                <Text style={[styles.tableCell, styles.colJudge]}>{judgeName}</Text>
+                <Text style={[styles.tableCell, styles.colJudge]}>{judgeLabel}</Text>
                 <Text style={[styles.tableCell, styles.colCriterion]}>{score.criteriaName}</Text>
                 <Text style={[styles.tableCell, styles.colScore]}>
                   {formatScore(score.score)}
@@ -369,11 +365,10 @@ function SubmissionSection({
           <Text style={styles.sectionLabel}>Judge notes</Text>
           {submission.judgeNotes.length > 0 ? (
             submission.judgeNotes.map((note, i) => {
-              const judge = note.judgeClerkUserId ? users[note.judgeClerkUserId] : null
-              const judgeName = judge?.name ?? note.judgeClerkUserId ?? "Unknown judge"
+              const judgeLabel = formatJudgeLabel(note.judgeClerkUserId ?? null, users)
               return (
                 <View key={i} style={styles.noteBlock}>
-                  <Text style={styles.noteAuthor}>{judgeName}</Text>
+                  <Text style={styles.noteAuthor}>{judgeLabel}</Text>
                   <Text style={styles.noteBody}>{note.notes}</Text>
                 </View>
               )
