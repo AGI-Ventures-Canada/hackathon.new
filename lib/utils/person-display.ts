@@ -34,12 +34,13 @@ export function getDisplayName({
   fallback?: string
 }): string {
   const trimmedName = name?.trim()
-  if (trimmedName && !isClerkUserId(trimmedName)) {
-    return isLikelyEmail(trimmedName) ? nameFromEmail(trimmedName, fallback) : trimmedName
+  if (trimmedName && !isClerkUserId(trimmedName) && !isLikelyEmail(trimmedName)) {
+    return trimmedName
   }
 
   const trimmedEmail = email?.trim()
-  if (trimmedEmail) return nameFromEmail(trimmedEmail, fallback)
+  if (trimmedEmail && isLikelyEmail(trimmedEmail)) return trimmedEmail
+  if (trimmedName && isLikelyEmail(trimmedName)) return trimmedName
 
   return fallback
 }
