@@ -11,6 +11,7 @@ import {
   type JudgingMode,
 } from "@/lib/db/hackathon-types"
 import { currentTermsHash } from "@/lib/services/hackathon-terms"
+import { notifyReviewedTeamMembers } from "@/lib/services/hackathons"
 
 export type PublicPrize = Omit<Prize, "distribution_method" | "monetary_value" | "currency">
 export const PUBLISHED_STATUSES: HackathonStatus[] = ["published", "registration_open", "active", "judging", "completed"]
@@ -436,6 +437,13 @@ async function autoPromotePendingTeams(
     return
   }
 
+  const promoted = (pendingTeams ?? []) as Array<{
+    id: string
+    name: string
+    hackathon_participants: { clerk_user_id: string }[] | null
+  }>
+  if (promoted.length === 0) return
+
   const { error: updateError } = await client
     .from("teams")
     .update({ status: DEFAULT_TEAM_STATUS })
@@ -447,14 +455,6 @@ async function autoPromotePendingTeams(
     return
   }
 
-  const promoted = (pendingTeams ?? []) as Array<{
-    id: string
-    name: string
-    hackathon_participants: { clerk_user_id: string }[] | null
-  }>
-  if (promoted.length === 0) return
-
-  const { notifyReviewedTeamMembers } = await import("@/lib/services/hackathons")
   const notificationHackathon = {
     name: hackathon.name,
     slug: hackathon.slug,
