@@ -7,6 +7,7 @@ import { useOptimisticList } from "@/hooks/use-optimistic-list"
 import { useOptimisticMutation } from "@/hooks/use-optimistic-mutation"
 import { usePrizeJudgeAssignments } from "@/hooks/use-prize-judge-assignments"
 import { assertOk } from "@/lib/utils/fetch"
+import { toCsv } from "@/lib/utils/csv"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
@@ -39,7 +40,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import type { PrizeResultsGroup } from "@/lib/services/results"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { TabsUrlSync } from "@/components/ui/tabs-url-sync"
 import { JudgingSetupWizard } from "./judging-setup-wizard"
@@ -71,6 +73,7 @@ import {
   ClipboardList,
   Copy,
   Check,
+  Download,
 } from "lucide-react"
 import { useActionItemsOptional } from "@/components/hackathon/manage/action-items-context"
 import { AddJudgeDialog, type AddJudgeResult } from "./add-judge-dialog"
@@ -184,6 +187,7 @@ interface JudgingTabClientProps {
     rooms: { id: string; name: string; submissionCount: number }[]
     countsByJudge: Record<string, { all: number; byRoom: Record<string, number> }>
   }
+  resultsByPrize?: PrizeResultsGroup[]
 }
 
 const getPrizeId = (p: PrizeData) => p.id
@@ -212,6 +216,7 @@ export function JudgingTabClient({
   activeJtab,
   coreCriteria = [],
   weightedAssignmentSummary,
+  resultsByPrize = [],
 }: JudgingTabClientProps) {
   const router = useRouter()
   const [showAddJudge, setShowAddJudge] = useState(false)
@@ -575,7 +580,9 @@ export function JudgingTabClient({
           {prizes.length > 0 || results.length > 0 ? (
             <ResultsSection
               hackathonId={hackathonId}
+              slug={slug}
               results={results}
+              resultsByPrize={resultsByPrize}
               isPublished={isPublished}
               publishing={publishing}
               publishDialogOpen={publishDialogOpen}
@@ -1262,7 +1269,9 @@ function groupPrizesByRound(
 
 function ResultsSection({
   hackathonId: _hackathonId,
+  slug,
   results,
+  resultsByPrize,
   isPublished,
   publishing,
   publishDialogOpen,
@@ -1272,7 +1281,9 @@ function ResultsSection({
   incompleteAssignments,
 }: {
   hackathonId: string
+  slug: string
   results: ResultData[]
+  resultsByPrize: PrizeResultsGroup[]
   isPublished: boolean
   publishing: boolean
   publishDialogOpen: boolean
@@ -1281,6 +1292,56 @@ function ResultsSection({
   onUnpublish: () => void
   incompleteAssignments: number
 }) {
+  const [activePrizeTab, setActivePrizeTab] = useState<string>(
+    resultsByPrize[0]?.prizeId ?? ""
+  )
+  const selectedPrizeTab = resultsByPrize.some((g) => g.prizeId === activePrizeTab)
+    ? activePrizeTab
+    : (resultsByPrize[0]?.prizeId ?? "")
+
+  const hasAnyScored = results.length > 0
+
+  const exportableRows = resultsByPrize.flatMap((group) =>
+    group.results.map((r) => ({
+      Prize: group.prizeName,
+      Mode: group.mode,
+      Style: group.judgingStyle ?? "",
+      Rank: r.rank !== null ? r.rank : "",
+      Project: r.submissionTitle,
+      Team: r.teamName ?? "",
+      "Weighted score": r.weightedScore !== null ? Number(r.weightedScore).toFixed(2) : "",
+      "Total score": r.totalScore !== null ? Number(r.totalScore).toFixed(2) : "",
+      Judges: r.judgeCount,
+      "Assigned winner": r.isAssignedWinner ? "yes" : "",
+    }))
+  )
+
+  const handleExportCsv = () => {
+    const csv = toCsv(exportableRows, [
+      { key: "Prize", header: "Prize" },
+      { key: "Mode", header: "Mode" },
+      { key: "Style", header: "Style" },
+      { key: "Rank", header: "Rank" },
+      { key: "Project", header: "Project" },
+      { key: "Team", header: "Team" },
+      { key: "Weighted score", header: "Weighted score" },
+      { key: "Total score", header: "Total score" },
+      { key: "Judges", header: "Judges" },
+      { key: "Assigned winner", header: "Assigned winner" },
+    ])
+    const safeSlug = (slug || "hackathon").replace(/[^a-z0-9-]/gi, "") || "hackathon"
+    const today = new Date().toISOString().slice(0, 10)
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `${safeSlug}-results-${today}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1289,11 +1350,21 @@ function ResultsSection({
           Results
           {isPublished ? (
             <Badge>Published</Badge>
-          ) : results.length > 0 ? (
+          ) : hasAnyScored ? (
             <Badge variant="outline">Live</Badge>
           ) : null}
         </h3>
         <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleExportCsv}
+            disabled={exportableRows.length === 0}
+          >
+            <Download className="mr-2 size-4" />
+            <span className="hidden sm:inline">Download CSV</span>
+            <span className="sm:hidden">CSV</span>
+          </Button>
           {isPublished ? (
             <AlertDialog>
               <AlertDialogTrigger asChild>
@@ -1316,7 +1387,7 @@ function ResultsSection({
           ) : (
             <AlertDialog open={publishDialogOpen} onOpenChange={onPublishDialogChange}>
               <AlertDialogTrigger asChild>
-                <Button size="sm" disabled={publishing || results.length === 0}>
+                <Button size="sm" disabled={publishing || !hasAnyScored}>
                   {publishing ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Globe className="mr-2 size-4" />}
                   Publish
                 </Button>
@@ -1344,7 +1415,7 @@ function ResultsSection({
         </p>
       )}
 
-      {results.length === 0 ? (
+      {resultsByPrize.length === 0 ? (
         <Card className="border-dashed">
           <CardContent className="py-8 text-center">
             <p className="text-sm text-muted-foreground">
@@ -1353,41 +1424,104 @@ function ResultsSection({
           </CardContent>
         </Card>
       ) : (
+        <Tabs value={selectedPrizeTab} onValueChange={setActivePrizeTab}>
+          <div className="overflow-x-auto scrollbar-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none]">
+            <TabsList variant="line">
+              {resultsByPrize.map((group) => (
+                <TabsTrigger key={group.prizeId} value={group.prizeId}>
+                  {group.prizeName}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </div>
+          {resultsByPrize.map((group) => (
+            <TabsContent key={group.prizeId} value={group.prizeId} className="mt-4">
+              <PrizeResultsTable group={group} />
+            </TabsContent>
+          ))}
+        </Tabs>
+      )}
+    </div>
+  )
+}
+
+function PrizeResultsTable({ group }: { group: PrizeResultsGroup }) {
+  if (group.results.length === 0) {
+    return (
+      <Card className="border-dashed">
+        <CardContent className="py-8 text-center">
+          <p className="text-sm text-muted-foreground">
+            {group.mode === "manual"
+              ? "No winners picked for this prize yet."
+              : "No scores for this prize yet."}
+          </p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (group.mode === "manual") {
+    const hint =
+      group.judgingStyle === "crowd_vote"
+        ? "Picked by the crowd"
+        : "Picked by judges"
+    return (
+      <div className="space-y-3">
+        <p className="text-sm text-muted-foreground">{hint}</p>
         <div className="rounded-lg border overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[60px]">Rank</TableHead>
-                <TableHead>Submission</TableHead>
+                <TableHead>Project</TableHead>
                 <TableHead>Team</TableHead>
-                <TableHead className="text-right">Score</TableHead>
-                <TableHead className="text-right">Judges</TableHead>
-                <TableHead>Prizes</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {results.map((r) => (
-                <TableRow key={r.id}>
-                  <TableCell className="font-bold text-lg">#{r.rank}</TableCell>
+              {group.results.map((r) => (
+                <TableRow key={r.submissionId}>
                   <TableCell className="font-medium">{r.submissionTitle}</TableCell>
                   <TableCell className="text-muted-foreground">{r.teamName || "\u2014"}</TableCell>
-                  <TableCell className="text-right font-mono">
-                    {r.weightedScore !== null ? Number(r.weightedScore).toFixed(2) : "\u2014"}
-                  </TableCell>
-                  <TableCell className="text-right">{r.judgeCount}</TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap gap-1">
-                      {r.prizes.map((p) => (
-                        <Badge key={p.id} variant="secondary">{p.name}</Badge>
-                      ))}
-                    </div>
-                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </div>
-      )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-lg border overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-[60px]">Rank</TableHead>
+            <TableHead>Project</TableHead>
+            <TableHead>Team</TableHead>
+            <TableHead className="text-right">Weighted score</TableHead>
+            <TableHead className="text-right">Total score</TableHead>
+            <TableHead className="text-right">Judges</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {group.results.map((r) => (
+            <TableRow key={r.submissionId}>
+              <TableCell className="font-bold text-lg">
+                {r.rank !== null ? `#${r.rank}` : "\u2014"}
+              </TableCell>
+              <TableCell className="font-medium">{r.submissionTitle}</TableCell>
+              <TableCell className="text-muted-foreground">{r.teamName || "\u2014"}</TableCell>
+              <TableCell className="text-right font-mono">
+                {r.weightedScore !== null ? Number(r.weightedScore).toFixed(2) : "\u2014"}
+              </TableCell>
+              <TableCell className="text-right font-mono">
+                {r.totalScore !== null ? Number(r.totalScore).toFixed(2) : "\u2014"}
+              </TableCell>
+              <TableCell className="text-right">{r.judgeCount}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
     </div>
   )
 }
