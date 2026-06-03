@@ -13,7 +13,6 @@ import { Trash2, Loader2, Plus, Building2 } from "lucide-react"
 import { EmailChipsInput, type EmailEntry } from "./email-chips-input"
 import { JudgeHeadshotUpload } from "./judge-headshot-upload"
 import type { HackathonJudgeDisplay } from "@/lib/db/hackathon-types"
-import { nameFromEmail } from "@/lib/utils/person-display"
 
 interface JudgesEditFormProps {
   hackathonId: string
@@ -261,9 +260,10 @@ export function JudgesEditForm({
       const addResults = await Promise.allSettled(
         emailEntries.map(async (entry) => {
           const clerkUser = entry.clerkUser ?? resolvedMap.get(entry.email) ?? null
-          const name = clerkUser
-            ? [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") || nameFromEmail(entry.email)
-            : nameFromEmail(entry.email)
+          const clerkName = clerkUser
+            ? [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ")
+            : ""
+          const name = clerkName || entry.email
 
           const res = await fetch(
             `/api/dashboard/hackathons/${hackathonId}/judges/display`,
