@@ -1156,6 +1156,24 @@ export async function getRoundPool(hackathonId: string, roundId: string | null):
   return (data ?? []).map((s) => s.id)
 }
 
+export async function getActiveRoundId(hackathonId: string): Promise<string | null> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const { data } = await client
+    .from("judging_rounds")
+    .select("id")
+    .eq("hackathon_id", hackathonId)
+    .eq("status", "active")
+    .maybeSingle()
+  return (data as { id: string } | null)?.id ?? null
+}
+
+export async function getActiveRoundFinalistIds(hackathonId: string): Promise<string[] | null> {
+  const activeRoundId = await getActiveRoundId(hackathonId)
+  if (!activeRoundId) return null
+  const subs = await getRoundSubmissions(activeRoundId)
+  return subs.length > 0 ? subs : null
+}
+
 async function getTeamIdsInRoom(client: SupabaseClient, roomId: string): Promise<string[]> {
   const { data } = await client
     .from("room_teams")
@@ -3104,7 +3122,7 @@ export async function getJudgeAssignments(
 
   const judgeTeamId = (participant as { team_id: string | null }).team_id
 
-  const { data: assignments, error } = await client
+  const { data: assignmentsRaw, error } = await client
     .from("judge_assignments")
     .select(`
       id, submission_id, is_complete, notes, viewed_at, prize_id, assignment_kind,
@@ -3114,7 +3132,14 @@ export async function getJudgeAssignments(
     .eq("judge_participant_id", participant.id)
     .order("assigned_at")
 
-  if (error || !assignments) return []
+  if (error || !assignmentsRaw) return []
+
+  const finalistIds = await getActiveRoundFinalistIds(hackathonId)
+  const assignments = finalistIds
+    ? assignmentsRaw.filter((a: Record<string, unknown>) =>
+        finalistIds.includes(a.submission_id as string)
+      )
+    : assignmentsRaw
 
   const prizeIds = [...new Set(assignments.map((a: Record<string, unknown>) => a.prize_id).filter(Boolean))] as string[]
   const prizeMap: Record<string, { name: string; judging_style: string | null }> = {}
@@ -4023,6 +4048,10 @@ export async function assignWeightedScoreJudge(
     return { success: true, assignedCount: 0 }
   }
 
+  const activeRoundId = await getActiveRoundId(hackathonId)
+  const finalistIds = activeRoundId ? await getRoundSubmissions(activeRoundId) : []
+  const scopeToFinalists = activeRoundId !== null && finalistIds.length > 0
+
   let submissionsQuery = client
     .from("submissions")
     .select("id, team_id")
@@ -4031,6 +4060,10 @@ export async function assignWeightedScoreJudge(
 
   if (roomTeamIds) {
     submissionsQuery = submissionsQuery.in("team_id", roomTeamIds)
+  }
+
+  if (scopeToFinalists) {
+    submissionsQuery = submissionsQuery.in("id", finalistIds)
   }
 
   const { data: submissions } = await submissionsQuery
@@ -4052,7 +4085,7 @@ export async function assignWeightedScoreJudge(
       judge_participant_id: judgeParticipantId,
       submission_id: s.id,
       prize_id: null,
-      round_id: null,
+      round_id: scopeToFinalists ? activeRoundId : null,
       assignment_kind: "unified_weighted_score",
     }))
 
@@ -4096,24 +4129,33 @@ export async function getWeightedScoreAssignmentSummary(
 ): Promise<WeightedScoreRoomSummary> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const [submissionsResult, roomsResult, roomTeamsResult, assignmentsResult] = await Promise.all([
-    client.from("submissions").select("id, team_id").eq("hackathon_id", hackathonId),
-    client.from("rooms").select("id, name, display_order").eq("hackathon_id", hackathonId).order("display_order"),
-    client
-      .from("room_teams")
-      .select("room_id, team_id, rooms!inner(hackathon_id)")
-      .eq("rooms.hackathon_id", hackathonId),
-    client
-      .from("judge_assignments")
-      .select("judge_participant_id, submission_id")
-      .eq("hackathon_id", hackathonId)
-      .eq("assignment_kind", "unified_weighted_score"),
-  ])
+  const [submissionsResult, roomsResult, roomTeamsResult, assignmentsResult, finalistIds] =
+    await Promise.all([
+      client.from("submissions").select("id, team_id").eq("hackathon_id", hackathonId),
+      client.from("rooms").select("id, name, display_order").eq("hackathon_id", hackathonId).order("display_order"),
+      client
+        .from("room_teams")
+        .select("room_id, team_id, rooms!inner(hackathon_id)")
+        .eq("rooms.hackathon_id", hackathonId),
+      client
+        .from("judge_assignments")
+        .select("judge_participant_id, submission_id")
+        .eq("hackathon_id", hackathonId)
+        .eq("assignment_kind", "unified_weighted_score"),
+      getActiveRoundFinalistIds(hackathonId),
+    ])
 
-  const submissions = (submissionsResult.data ?? []) as { id: string; team_id: string | null }[]
+  const allSubmissions = (submissionsResult.data ?? []) as { id: string; team_id: string | null }[]
+  const submissions = finalistIds
+    ? allSubmissions.filter((s) => finalistIds.includes(s.id))
+    : allSubmissions
   const rooms = (roomsResult.data ?? []) as { id: string; name: string; display_order: number }[]
   const allRoomTeams = (roomTeamsResult.data ?? []) as { room_id: string; team_id: string }[]
-  const assignments = (assignmentsResult.data ?? []) as { judge_participant_id: string; submission_id: string }[]
+  const finalistSet = finalistIds ? new Set(finalistIds) : null
+  const assignments = ((assignmentsResult.data ?? []) as {
+    judge_participant_id: string
+    submission_id: string
+  }[]).filter((a) => !finalistSet || finalistSet.has(a.submission_id))
 
   const roomIdSet = new Set(rooms.map((r) => r.id))
   const teamIdToRoomId: Record<string, string> = {}
