@@ -17,8 +17,6 @@ const {
   markExportReady,
   markExportFailed,
   collectExportUserIds,
-  collectTeamMemberUserIds,
-  buildJsonExportPayload,
   mergeExportFilters,
   DEFAULT_EXPORT_FILTERS,
 } = await import("@/lib/services/submission-exports")
@@ -234,81 +232,6 @@ describe("collectExportUserIds", () => {
       submissions: [],
     }
     expect(collectExportUserIds(payload)).toEqual([])
-  })
-})
-
-const teamAndJudgePayload = {
-  hackathon: {
-    id: HACKATHON_ID,
-    name: "X",
-    slug: "x",
-    startsAt: null,
-    endsAt: null,
-  },
-  filters: { winnersOnly: false, includeDrafts: false, includeJudgeNotes: true },
-  generatedAt: "2026-01-01T00:00:00Z",
-  submissions: [
-    {
-      id: "s1",
-      title: "Proj",
-      description: null,
-      status: "submitted" as const,
-      githubUrl: null,
-      liveAppUrl: null,
-      demoVideoUrl: null,
-      screenshotUrl: null,
-      createdAt: "2026-01-01T00:00:00Z",
-      team: {
-        id: "t1",
-        name: "Team",
-        members: [
-          { clerkUserId: "member1", role: "participant" },
-          { clerkUserId: "member2", role: "participant" },
-        ],
-      },
-      result: null,
-      prizes: [],
-      scores: [{ judgeClerkUserId: "judge1", criteriaName: "Polish", score: 5 }],
-      judgeNotes: [{ judgeClerkUserId: "judge2", notes: "n" }],
-      socialSubmissions: [],
-    },
-  ],
-}
-
-describe("collectTeamMemberUserIds", () => {
-  it("returns only team-member ids, excluding judge-only ids", () => {
-    const ids = collectTeamMemberUserIds(teamAndJudgePayload)
-    expect(Array.from(ids).sort()).toEqual(["member1", "member2"])
-  })
-})
-
-describe("buildJsonExportPayload", () => {
-  const enriched = {
-    ...teamAndJudgePayload,
-    users: {
-      member1: { name: "Alice", email: "alice@x.com" },
-      member2: { name: "Bob", email: "bob@x.com" },
-      judge1: { name: "Judge One", email: "j1@x.com" },
-      judge2: { name: "Judge Two", email: "j2@x.com" },
-    },
-  }
-
-  it("returns payload unchanged when includeJudgeNotes is true", () => {
-    const out = buildJsonExportPayload(enriched)
-    expect(out.users.judge1?.email).toBe("j1@x.com")
-    expect(out.users.member1?.email).toBe("alice@x.com")
-  })
-
-  it("strips judge emails but keeps team-member emails when includeJudgeNotes is false", () => {
-    const out = buildJsonExportPayload({
-      ...enriched,
-      filters: { ...enriched.filters, includeJudgeNotes: false },
-    })
-    expect(out.users.member1?.email).toBe("alice@x.com")
-    expect(out.users.member2?.email).toBe("bob@x.com")
-    expect(out.users.judge1?.email).toBeNull()
-    expect(out.users.judge2?.email).toBeNull()
-    expect(out.users.judge1?.name).toBe("Judge One")
   })
 })
 

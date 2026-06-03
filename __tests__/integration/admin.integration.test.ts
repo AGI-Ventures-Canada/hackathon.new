@@ -699,6 +699,26 @@ describe("Admin API Routes", () => {
       expect(data.loginUrl).toContain("&org=org_default_scenario")
     })
 
+    it("does not use SCENARIO_ORG_ID for attendee personas by default", async () => {
+      mockResolvePrincipal.mockResolvedValue(adminPrincipal)
+      process.env.TEST_USER_1_ID = "user_attendee_test"
+      process.env.SCENARIO_ORG_ID = "org_default_scenario"
+
+      const res = await app.handle(
+        new Request("http://localhost/api/admin/scenario-switch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ persona: "user1", redirect: "/e/demo" }),
+        })
+      )
+      const data = await res.json()
+
+      delete process.env.TEST_USER_1_ID
+      delete process.env.SCENARIO_ORG_ID
+      expect(res.status).toBe(200)
+      expect(data.loginUrl).not.toContain("&org=")
+    })
+
     it("skips org activation when org_id is explicitly null", async () => {
       mockResolvePrincipal.mockResolvedValue(adminPrincipal)
       process.env.SCENARIO_DEV_USER_ID = "user_organizer_test"

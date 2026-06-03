@@ -1,0 +1,3 @@
+-- No-op placeholder retained for Supabase preview branches that applied this
+-- migration version during review. The final deny_pending_team definition is
+-- squashed into 20260519090002_deny_pending_team_rpc.sql.

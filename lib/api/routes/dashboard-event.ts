@@ -8,7 +8,7 @@ import { listRooms, createRoom, updateRoom, deleteRoom, addTeamToRoom, removeTea
 import { listCategories, createCategory, updateCategory, deleteCategory } from "@/lib/services/categories"
 import { listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, publishAnnouncement, unpublishAnnouncement, scheduleAnnouncement, type CreateAnnouncementInput, type UpdateAnnouncementInput } from "@/lib/services/announcements"
 import { listScheduleItems, createScheduleItem, updateScheduleItem, deleteScheduleItem, getTriggerItem } from "@/lib/services/schedule-items"
-import { listTeamsWithMembers, createTeamWithMembers, modifyTeamMembers, bulkAssignTeams, deleteTeam, setTeamCaptain } from "@/lib/services/hackathons"
+import { listTeamsWithMembers, createTeamWithMembers, modifyTeamMembers, bulkAssignTeams, deleteTeam, setTeamCaptain, approvePendingTeam, denyPendingTeam } from "@/lib/services/hackathons"
 import { listHackathonPeople, peopleToCsvRows } from "@/lib/services/hackathon-people"
 import { toCsv } from "@/lib/utils/csv"
 import {
@@ -615,9 +615,9 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
         set.status = 403
         return { error: "Only the team captain or an organizer can rename a team" }
       }
-      if (team.status !== "forming") {
+      if (team.status !== "forming" && team.status !== "pending_approval") {
         set.status = 409
-        return { error: "Team name can only be changed while the team is forming" }
+        return { error: "Team name can only be changed before the team is locked" }
       }
     }
 
@@ -834,6 +834,75 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   }, {
     body: t.Object({ email: t.String({ format: "email" }) }),
     detail: { summary: "Replace the pending captain invitation email" },
+  })
+  .post("/hackathons/:id/teams/:teamId/approve", async ({ params, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+    if (!isValidUuid(params.teamId)) {
+      set.status = 400
+      return { error: "Invalid team ID" }
+    }
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if ("error" in authErr) return authErr
+
+    const result = await approvePendingTeam(params.teamId, params.id, { notificationHackathon: authErr.hackathon })
+    if ("error" in result) {
+      set.status =
+        result.code === "not_found" ? 404 :
+        result.code === "not_pending" ? 409 : 500
+      return { error: result.error, code: result.code }
+    }
+
+    await logAudit({
+      principal,
+      action: "team.approved",
+      resourceType: "team",
+      resourceId: params.teamId,
+      metadata: { hackathonId: params.id, membersNotified: result.membersNotified ?? 0 },
+    })
+
+    return { success: true, team: result.team, membersNotified: result.membersNotified ?? 0 }
+  }, {
+    detail: { summary: "Approve a team waiting for review" },
+  })
+  .post("/hackathons/:id/teams/:teamId/deny", async ({ params, principal, set }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+    if (!isValidUuid(params.teamId)) {
+      set.status = 400
+      return { error: "Invalid team ID" }
+    }
+    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+    if ("error" in authErr) return authErr
+
+    const result = await denyPendingTeam(params.teamId, params.id, { notificationHackathon: authErr.hackathon })
+    if ("error" in result) {
+      set.status =
+        result.code === "not_found" ? 404 :
+        result.code === "not_pending" ? 409 : 500
+      return { error: result.error, code: result.code }
+    }
+
+    await logAudit({
+      principal,
+      action: "team.denied",
+      resourceType: "team",
+      resourceId: params.teamId,
+      metadata: {
+        hackathonId: params.id,
+        membersUnassigned: result.membersUnassigned ?? 0,
+        invitesCancelled: result.invitesCancelled ?? 0,
+        membersNotified: result.membersNotified ?? 0,
+      },
+    })
+
+    return {
+      success: true,
+      team: result.team,
+      membersUnassigned: result.membersUnassigned ?? 0,
+      invitesCancelled: result.invitesCancelled ?? 0,
+      membersNotified: result.membersNotified ?? 0,
+    }
+  }, {
+    detail: { summary: "Deny a team waiting for review" },
   })
   .delete("/hackathons/:id/teams/:teamId", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])

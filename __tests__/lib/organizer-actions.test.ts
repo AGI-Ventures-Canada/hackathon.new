@@ -16,6 +16,7 @@ function makeInput(overrides: Partial<Parameters<typeof getOrganizerActionItems>
     unassignedSubmissionCount: 0,
     participantCount: 0,
     teamCount: 0,
+    pendingTeamApprovalCount: 0,
     judgingProgress: { totalAssignments: 0, completedAssignments: 0 },
     judgeCount: 0,
     prizeCount: 0,
@@ -300,6 +301,20 @@ describe("getOrganizerActionItems", () => {
       expect(item?.ctaLabel).toBe("Review")
       expect(item?.close.kind).toBe("dismiss")
     })
+
+    it("shows teams waiting for approval", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "published",
+        pendingTeamApprovalCount: 2,
+      }))
+      const item = findPending(items, "review-pending-teams")
+      expect(item).toBeDefined()
+      expect(item?.label).toBe("2 teams waiting for approval")
+      expect(item?.hint).toBe("Approve or deny them before they can submit")
+      expect(item?.severity).toBe("urgent")
+      expect(item?.tab).toBe("teams")
+      expect(item?.ctaLabel).toBe("Review")
+    })
   })
 
   describe("active status", () => {
@@ -343,6 +358,21 @@ describe("getOrganizerActionItems", () => {
       const item = items.find((i) => i.id === "mentor-requests")
       expect(item).toBeDefined()
       expect(item?.label).toContain("3")
+    })
+
+    it("shows teams waiting for approval while active", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "active",
+        challengeReleased: true,
+        judgeCount: 2,
+        pendingTeamApprovalCount: 1,
+      }))
+
+      const item = findPending(items, "review-pending-teams")
+      expect(item).toBeDefined()
+      expect(item?.label).toBe("1 team waiting for approval")
+      expect(item?.severity).toBe("urgent")
+      expect(item?.tab).toBe("teams")
     })
 
     it("marks all auto-close items completed when everything is set up", () => {
@@ -475,6 +505,17 @@ describe("getOrganizerActionItems", () => {
       expect(item?.severity).toBe("urgent")
     })
 
+    it("does not show teams waiting for approval while judging", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "judging",
+        judgeCount: 3,
+        pendingTeamApprovalCount: 2,
+      }))
+
+      const item = findPending(items, "review-pending-teams")
+      expect(item).toBeUndefined()
+    })
+
     it("shows judging progress percentage", () => {
       const items = getOrganizerActionItems(makeInput({
         status: "judging",
@@ -537,6 +578,16 @@ describe("getOrganizerActionItems", () => {
   })
 
   describe("completed status", () => {
+    it("does not show teams waiting for approval after the event ends", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "completed",
+        pendingTeamApprovalCount: 1,
+      }))
+
+      const item = findPending(items, "review-pending-teams")
+      expect(item).toBeUndefined()
+    })
+
     it("flags unpublished results as urgent with hint", () => {
       const items = getOrganizerActionItems(makeInput({
         status: "completed",

@@ -3,8 +3,9 @@
 import { Fragment, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { assertOk, assertOkJson } from "@/lib/utils/fetch"
+import { useOptimisticMutation } from "@/hooks/use-optimistic-mutation"
 import {
-  Loader2, Plus, Users, ChevronRight, FileText, Crown, Mail, Settings2, MoreHorizontal, Pencil, Trash2, Bell, X, UserMinus,
+  Loader2, Plus, Users, ChevronRight, FileText, Crown, Mail, Settings2, MoreHorizontal, Pencil, Trash2, Bell, X, UserMinus, Check, Ban,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -56,6 +57,7 @@ import { getVideoEmbedInfo } from "@/lib/utils/video-embed"
 import { getDisplayName } from "@/lib/utils/person-display"
 import { SubmissionMedia } from "@/components/hackathon/submission-media"
 import { SubmissionLinks } from "@/components/hackathon/submission-links"
+import { DEFAULT_TEAM_STATUS, TEAM_STATUS_LABELS, type TeamStatus } from "@/lib/db/hackathon-types"
 
 type TeamMember = {
   clerkUserId: string
@@ -88,7 +90,7 @@ type TeamPendingInvitation = {
 type Team = {
   id: string
   name: string
-  status: string
+  status: TeamStatus
   mode: "in_person" | "virtual" | null
   captainClerkUserId: string | null
   pendingCaptainEmail: string | null
@@ -98,6 +100,14 @@ type Team = {
   members: TeamMember[]
   submission: TeamSubmission | null
   room: { id: string; name: string } | null
+}
+
+type ReviewTeamResponse = {
+  success: true
+  team: { id: string; name: string; status: TeamStatus }
+  membersUnassigned?: number
+  invitesCancelled?: number
+  membersNotified?: number
 }
 
 function getTeamMemberName(member: TeamMember): string {
@@ -144,6 +154,7 @@ type TeamsTabProps = {
   maxTeamSize: number
   minTeamSize: number
   allowSolo: boolean
+  requireTeamApproval: boolean
   hackathonStatus: string | null
 }
 
@@ -151,7 +162,7 @@ const STATUS_LOCKS_TEAM_DELETE = new Set(["judging", "completed", "archived"])
 
 const UNASSIGNED_ROOM = "__unassigned__"
 
-export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: initialMin, allowSolo: initialSolo, hackathonStatus }: TeamsTabProps) {
+export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: initialMin, allowSolo: initialSolo, requireTeamApproval: initialApproval, hackathonStatus }: TeamsTabProps) {
   const router = useRouter()
   const ctx = useActionItemsOptional()
   const [teams, setTeams] = useState<Team[]>([])
@@ -167,9 +178,11 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const tempIdCounter = useRef(0)
+  const denySnapshotsRef = useRef(new Map<string, Team[]>())
   const [editingTeam, setEditingTeam] = useState<Team | null>(null)
   const [deletingTeam, setDeletingTeam] = useState<Team | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [denyingTeam, setDenyingTeam] = useState<Team | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [reinviteTarget, setReinviteTarget] = useState<{ team: Team; invitationId: string; previousEmail: string } | null>(null)
   const [reinviteEmail, setReinviteEmail] = useState("")
@@ -177,12 +190,15 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
   const [reinviteError, setReinviteError] = useState<string | null>(null)
   const [remindError, setRemindError] = useState<string | null>(null)
   const [remindPendingIds, setRemindPendingIds] = useState<Set<string>>(new Set())
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null)
 
   useEffect(() => {
     if (!ctx) return
     ctx.registerTabAction("review-team-settings", () => setSettingsDialogOpen(true))
     return () => ctx.unregisterTabAction("review-team-settings")
   }, [ctx])
+
+  useEffect(() => () => denySnapshotsRef.current.clear(), [])
 
   async function fetchTeams() {
     try {
@@ -290,7 +306,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
     const tempTeam: Team = {
       id: tempId,
       name,
-      status: "active",
+      status: "forming",
       mode: null,
       captainClerkUserId: null,
       pendingCaptainEmail: email,
@@ -334,6 +350,82 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
     setActionError(message)
     setTimeout(() => setActionError(null), 8000)
   }
+
+  function showActionSuccess(message: string) {
+    setActionSuccess(message)
+    setTimeout(() => setActionSuccess(null), 5000)
+  }
+
+  function formatActionSuccess(action: string, details: Array<string | null>): string {
+    const visibleDetails = details.filter((detail): detail is string => Boolean(detail))
+    return visibleDetails.length ? `${action}. ${visibleDetails.join(", ")}.` : `${action}.`
+  }
+
+  function notifiedText(count: number | undefined): string | null {
+    const safeCount = count ?? 0
+    if (safeCount <= 0) return null
+    return `${safeCount} member${safeCount === 1 ? "" : "s"} notified`
+  }
+
+  function countText(count: number | undefined, singular: string, plural: string): string | null {
+    const safeCount = count ?? 0
+    if (safeCount <= 0) return null
+    return `${safeCount} ${safeCount === 1 ? singular : plural}`
+  }
+
+  const { execute: approveTeam, error: approveError } = useOptimisticMutation<Team, ReviewTeamResponse>({
+    fn: (team) =>
+      fetch(`/api/dashboard/hackathons/${hackathonId}/teams/${team.id}/approve`, {
+        method: "POST",
+      }).then(assertOkJson<ReviewTeamResponse>),
+    onOptimistic: (team) => {
+      setActionSuccess(null)
+      setTeams((prev) => prev.map((t) => (t.id === team.id ? { ...t, status: DEFAULT_TEAM_STATUS } : t)))
+    },
+    onRevert: (team) => {
+      setTeams((prev) => prev.map((t) => (t.id === team.id ? team : t)))
+    },
+    onSuccess: (response, team) => {
+      setTeams((prev) =>
+        prev.map((t) => (t.id === team.id ? { ...t, name: response.team.name, status: response.team.status } : t))
+      )
+      showActionSuccess(formatActionSuccess(`Approved ${response.team.name}`, [notifiedText(response.membersNotified)]))
+    },
+  })
+
+  const { execute: denyTeam, error: denyError } = useOptimisticMutation<Team, ReviewTeamResponse>({
+    fn: (team) =>
+      fetch(`/api/dashboard/hackathons/${hackathonId}/teams/${team.id}/deny`, {
+        method: "POST",
+      }).then(assertOkJson<ReviewTeamResponse>),
+    onOptimistic: (team) => {
+      setActionSuccess(null)
+      setTeams((prev) => {
+        denySnapshotsRef.current.set(team.id, prev)
+        return prev.filter((t) => t.id !== team.id)
+      })
+      setDenyingTeam(null)
+    },
+    onRevert: (team) => {
+      const snapshot = denySnapshotsRef.current.get(team.id)
+      if (snapshot) {
+        setTeams(snapshot)
+      } else {
+        setTeams((prev) => prev.some((t) => t.id === team.id) ? prev : [...prev, team])
+      }
+      denySnapshotsRef.current.delete(team.id)
+    },
+    onSuccess: (_response, team) => {
+      denySnapshotsRef.current.delete(team.id)
+      showActionSuccess(
+        formatActionSuccess(`Denied ${team.name}`, [
+          countText(_response.membersUnassigned, "member moved", "members moved"),
+          countText(_response.invitesCancelled, "invite canceled", "invites canceled"),
+          notifiedText(_response.membersNotified),
+        ])
+      )
+    },
+  })
 
   function deleteBlockReason(team: Team): string | null {
     if (hackathonStatus && STATUS_LOCKS_TEAM_DELETE.has(hackathonStatus)) {
@@ -546,7 +638,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
       >
         <div className="flex items-center gap-2">
           <Settings2 className="size-4 text-muted-foreground" />
-          <span className="text-sm">{teamSettingsSummary({ minTeamSize: initialMin, maxTeamSize: initialMax, allowSolo: initialSolo })}</span>
+          <span className="text-sm">{teamSettingsSummary({ minTeamSize: initialMin, maxTeamSize: initialMax, allowSolo: initialSolo, requireTeamApproval: initialApproval })}</span>
         </div>
         <span className="text-sm text-muted-foreground">Edit</span>
       </button>
@@ -554,7 +646,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         open={settingsDialogOpen}
         onOpenChange={setSettingsDialogOpen}
         hackathonId={hackathonId}
-        initialData={{ minTeamSize: initialMin, maxTeamSize: initialMax, allowSolo: initialSolo }}
+        initialData={{ minTeamSize: initialMin, maxTeamSize: initialMax, allowSolo: initialSolo, requireTeamApproval: initialApproval }}
       />
 
       {inviteSuccess && (
@@ -563,10 +655,16 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
           {inviteSuccess}
         </div>
       )}
+      {actionSuccess && (
+        <div className="flex items-center gap-2 rounded-lg border bg-muted/50 px-4 py-3 text-sm">
+          <Check className="size-4 text-muted-foreground" />
+          {actionSuccess}
+        </div>
+      )}
       {roomError && <p className="text-sm text-destructive">{roomError}</p>}
-      {(actionError || remindError) && (
+      {(actionError || remindError || approveError || denyError) && (
         <p className="text-sm text-destructive">
-          {[actionError, remindError].filter(Boolean).join(" · ")}
+          {[actionError, remindError, approveError, denyError].filter(Boolean).join(" · ")}
         </p>
       )}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -575,7 +673,8 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
             ? "No teams yet"
             : (() => {
                 const submittedCount = teams.filter((t) => t.submission).length
-                return `${teams.length} team${teams.length === 1 ? "" : "s"} · ${submittedCount} submitted`
+                const pendingCount = teams.filter((t) => t.status === "pending_approval").length
+                return `${teams.length} team${teams.length === 1 ? "" : "s"} · ${submittedCount} submitted${pendingCount > 0 ? ` · ${pendingCount} waiting` : ""}`
               })()}
         </p>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -707,6 +806,25 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         </AlertDialogContent>
       </AlertDialog>
 
+      <AlertDialog open={!!denyingTeam} onOpenChange={(open) => { if (!open) setDenyingTeam(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Deny team &quot;{denyingTeam?.name}&quot;?</AlertDialogTitle>
+            <AlertDialogDescription>
+              They&apos;ll go back to no team and can join or start another. Pending invites will be canceled.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep team</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); if (denyingTeam) void denyTeam(denyingTeam) }}
+            >
+              Deny team
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <Dialog open={!!reinviteTarget} onOpenChange={(open) => { if (!open && !reinviteBusy) setReinviteTarget(null) }}>
         <DialogContent>
           <DialogHeader>
@@ -777,7 +895,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                         <TableCell className="font-medium">{team.name}</TableCell>
                         <TableCell>
                           <Badge variant="secondary" className="font-normal">
-                            {team.status}
+                            {TEAM_STATUS_LABELS[team.status]}
                           </Badge>
                         </TableCell>
                         <TableCell>
@@ -829,6 +947,19 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
+                                {team.status === "pending_approval" && (
+                                  <>
+                                    <DropdownMenuItem onSelect={() => { void approveTeam(team) }}>
+                                      <Check className="size-4" />
+                                      Approve team
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem variant="destructive" onSelect={() => setDenyingTeam(team)}>
+                                      <Ban className="size-4" />
+                                      Deny team
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                  </>
+                                )}
                                 <DropdownMenuItem onSelect={() => setEditingTeam(team)}>
                                   <Pencil className="size-4" />
                                   Edit team

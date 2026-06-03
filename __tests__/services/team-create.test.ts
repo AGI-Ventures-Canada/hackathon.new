@@ -203,6 +203,31 @@ describe("createTeamWithMembers", () => {
       expect(mockMarkTeamInvitationEmailed).not.toHaveBeenCalled()
     })
 
+    it("bypasses participant approval for organizer-created registered teams", async () => {
+      mockClerkUserList([{ id: "user_captain", email: "captain@example.com" }])
+      const participantChain = createChainableMock({ data: { id: "p_1", team_id: null }, error: null })
+      const teamChain = createChainableMock({ data: { id: "team_1", name: "T" }, error: null })
+      const hackathonChain = createChainableMock({ data: { require_team_approval: true }, error: null })
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants") return participantChain
+        if (table === "teams") return teamChain
+        if (table === "hackathons") return hackathonChain
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await createTeamWithMembers("h1", {
+        name: "T",
+        captainEmail: "captain@example.com",
+      })
+
+      expect("team" in result).toBe(true)
+      expect(teamChain.insert).toHaveBeenCalledWith(expect.objectContaining({
+        status: "forming",
+      }))
+      expect(hackathonChain.select).not.toHaveBeenCalled()
+      expect(mockSendTeamInvitationEmail).not.toHaveBeenCalled()
+    })
+
     it("errors when the participant is already on a team", async () => {
       mockClerkUserList([{ id: "user_captain", email: "captain@example.com" }])
       setMockFromImplementation(

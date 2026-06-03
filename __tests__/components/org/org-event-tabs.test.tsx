@@ -4,6 +4,9 @@ import userEvent from "@testing-library/user-event"
 import { OrgEventTabs } from "@/components/org/org-event-tabs"
 import type { HackathonWithRole } from "@/components/org/hackathon-grid"
 
+const DAY_MS = 24 * 60 * 60 * 1000
+const now = Date.now()
+
 function makeHackathon(
   overrides: Partial<HackathonWithRole> & { status: HackathonWithRole["status"] }
 ): HackathonWithRole {
@@ -13,10 +16,10 @@ function makeHackathon(
     name: "Test Hackathon",
     description: null,
     banner_url: null,
-    starts_at: "2026-06-01T00:00:00Z",
-    ends_at: "2026-06-03T00:00:00Z",
-    registration_opens_at: "2026-05-01T00:00:00Z",
-    registration_closes_at: "2026-05-28T00:00:00Z",
+    starts_at: new Date(now - DAY_MS).toISOString(),
+    ends_at: new Date(now + 2 * DAY_MS).toISOString(),
+    registration_opens_at: new Date(now - 30 * DAY_MS).toISOString(),
+    registration_closes_at: new Date(now - 2 * DAY_MS).toISOString(),
     role: "organizer",
     ...overrides,
   }

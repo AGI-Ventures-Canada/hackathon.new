@@ -161,9 +161,11 @@ function HackathonPreviewContent({
   }, [isClient, hackathon.challenge_released_at, nowIso])
 
   const rename = useTeamRename(hackathon.id, teamInfo?.team.id ?? "", teamInfo?.team.name ?? "")
-  const isFormingCaptain = teamInfo?.isCaptain && teamInfo.team.status === "forming"
+  const isPendingTeam = teamInfo?.team.status === "pending_approval"
+  const canManageTeam = teamInfo?.isCaptain && (teamInfo.team.status === "forming" || teamInfo.team.status === "pending_approval")
   const canInviteTeamMembers = getCanInviteTeamMembers({
-    isFormingCaptain,
+    isFormingCaptain: canManageTeam,
+    hackathonStatus: hackathon.status,
     registrationClosesAt: hackathon.registration_closes_at,
     nowIso,
   })
@@ -262,10 +264,15 @@ function HackathonPreviewContent({
         teamInfo={teamInfo}
         hackathonId={hackathon.id}
         maxTeamSize={hackathon.max_team_size ?? 5}
-        canRenameTeam={Boolean(isFormingCaptain)}
+        canRenameTeam={Boolean(canManageTeam)}
         canInviteTeamMembers={canInviteTeamMembers}
         rename={rename}
       />
+      {isPendingTeam && (
+        <div className="rounded-md border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+          Your team is waiting for approval. You can invite teammates, but you can&apos;t submit yet.
+        </div>
+      )}
       {rename.error && (
         <p className="text-xs text-destructive px-3">{rename.error}</p>
       )}
@@ -598,14 +605,14 @@ function HackathonPreviewContent({
         <div className="mx-auto max-w-4xl px-4">
           <Tabs
             key={isChallengesFreshlyReleased ? "tabs-fresh" : "tabs-default"}
-            defaultValue={isChallengesFreshlyReleased ? "challenges" : "overview"}
+            defaultValue={!isPendingTeam && isChallengesFreshlyReleased ? "challenges" : "overview"}
             className="w-full"
           >
             <div className="overflow-x-auto overflow-y-hidden">
               <TabsList variant="line">
                 <TabsTrigger value="overview">Overview</TabsTrigger>
                 <TabsTrigger value="schedule">Schedule</TabsTrigger>
-                {challenges.length > 0 && (
+                {!isPendingTeam && challenges.length > 0 && (
                   <TabsTrigger value="challenges">
                     <span className="flex items-center gap-1.5">
                       Challenges
@@ -617,10 +624,10 @@ function HackathonPreviewContent({
                     </span>
                   </TabsTrigger>
                 )}
-                {viewerPerks.length > 0 && (
+                {!isPendingTeam && viewerPerks.length > 0 && (
                   <TabsTrigger value="perks">Perks</TabsTrigger>
                 )}
-                {(isEditable || (isRegistered && !!hackathon.community_url)) && (
+                {(isEditable || (isRegistered && !isPendingTeam && !!hackathon.community_url)) && (
                   <TabsTrigger value="community">Community</TabsTrigger>
                 )}
               </TabsList>
@@ -717,7 +724,7 @@ function HackathonPreviewContent({
               )}
             </TabsContent>
 
-            {challenges.length > 0 && (
+            {!isPendingTeam && challenges.length > 0 && (
               <TabsContent value="challenges" className="mt-6">
                 <ChallengeSection
                   challenges={challenges}
@@ -726,7 +733,7 @@ function HackathonPreviewContent({
               </TabsContent>
             )}
 
-            {viewerPerks.length > 0 && (
+            {!isPendingTeam && viewerPerks.length > 0 && (
               <TabsContent value="perks" className="mt-6">
                 <PerksSection
                   perks={viewerPerks}
@@ -735,7 +742,7 @@ function HackathonPreviewContent({
               </TabsContent>
             )}
 
-            {(isEditable || (isRegistered && !!hackathon.community_url)) && (
+            {(isEditable || (isRegistered && !isPendingTeam && !!hackathon.community_url)) && (
               <TabsContent value="community" className="mt-6">
                 {communityBlock}
               </TabsContent>
@@ -829,6 +836,7 @@ function HackathonPreviewContent({
         termsHash: hackathon.terms_hash ?? null,
         submission,
         onRegistrationSuccess: handleRegistrationSuccess,
+        canSubmit: !isPendingTeam,
         teamSizeWarning: teamInfo ? (getTeamSizeWarning({
           memberCount: teamInfo.members.length,
           minTeamSize: hackathon.min_team_size,

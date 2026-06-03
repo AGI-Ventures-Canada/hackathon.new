@@ -12,8 +12,13 @@ const SERVICE_MOCK_ISOLATED_TESTS = [
   "__tests__/services/team-invitations.test.ts",
   "__tests__/services/team-create.test.ts",
   "__tests__/services/team-invitations-organizer.test.ts",
+  "__tests__/services/public-hackathons.test.ts",
 ]
 const serviceMockSet = new Set(SERVICE_MOCK_ISOLATED_TESTS)
+
+const SERVICE_MOCK_PUBLIC_HACKATHONS_TESTS = [
+  "__tests__/services/public-hackathons.test.ts",
+]
 
 // lifecycle.test.ts mocks @/lib/services/notification-dispatcher, which
 // pollutes the actual dispatcher module when run in the same process as
@@ -114,6 +119,10 @@ const groups: Group[] = [
   {
     name: "services (service-mock isolated: team-invitations-organizer)",
     args: SERVICE_MOCK_TEAM_INVITATIONS_ORGANIZER_TESTS,
+  },
+  {
+    name: "services (service-mock isolated: public-hackathons)",
+    args: SERVICE_MOCK_PUBLIC_HACKATHONS_TESTS,
   },
   {
     name: "services (storage-mock isolated: storage)",

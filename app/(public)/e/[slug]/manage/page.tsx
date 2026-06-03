@@ -108,6 +108,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     unassignedSubmissionCount,
     participantCount: overviewStats.participantCount,
     teamCount: overviewStats.teamCount,
+    pendingTeamApprovalCount: overviewStats.pendingTeamApprovalCount,
     judgingProgress,
     judgeCount,
     prizeCount: prizes.length,
@@ -188,6 +189,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
           minTeamSize: hackathon.min_team_size ?? 1,
           maxTeamSize: hackathon.max_team_size ?? 5,
           allowSolo: hackathon.allow_solo ?? true,
+          requireTeamApproval: hackathon.require_team_approval ?? false,
         }}
         communityInitialData={{
           url: hackathon.community_url ?? null,
@@ -342,6 +344,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
                 maxTeamSize={hackathon.max_team_size ?? 5}
                 minTeamSize={hackathon.min_team_size ?? 1}
                 allowSolo={hackathon.allow_solo ?? true}
+                requireTeamApproval={hackathon.require_team_approval ?? false}
                 hackathonStatus={hackathon.status}
               />
             </TabsContent>

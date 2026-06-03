@@ -85,6 +85,8 @@ mock.module("@/lib/services/hackathons", () => ({
   bulkAssignTeams: mock(() => Promise.resolve({ assigned: 0 })),
   deleteTeam: mock(() => Promise.resolve({ success: true, membersUnassigned: 0, invitesCancelled: 0, roomsCleared: 0 })),
   setTeamCaptain: mock(() => Promise.resolve({ success: true })),
+  approvePendingTeam: mock(() => Promise.resolve({ success: true, team: { id: "team-1", name: "Team", status: "forming" } })),
+  denyPendingTeam: mock(() => Promise.resolve({ success: true, team: { id: "team-1", name: "Team", status: "disbanded" }, membersUnassigned: 0, invitesCancelled: 0 })),
 }))
 
 mock.module("@/lib/services/rooms", () => ({

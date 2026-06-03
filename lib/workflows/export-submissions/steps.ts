@@ -5,11 +5,9 @@ import JSZip from "jszip"
 import type {
   EnrichedExportPayload,
   ExportFilters,
-  ExportSubmissionRow,
   ExportUserDirectory,
 } from "@/lib/services/submission-exports"
 import {
-  buildJsonExportPayload,
   collectExportUserIds,
   loadExportPayload,
   markExportFailed,
@@ -19,6 +17,12 @@ import {
 import { resolveClerkUsers } from "@/lib/services/clerk-users"
 import { supabase as getSupabase } from "@/lib/db/client"
 import { toCsv, type CsvColumn } from "@/lib/utils/csv"
+import {
+  formatJudgeNotes,
+  formatMembers,
+  formatScores,
+} from "@/lib/workflows/export-submissions/format"
+import { isClerkUserId } from "@/lib/utils/person-display"
 import { isAllowedDownloadUrl } from "@/lib/utils/safe-fetch-url"
 import { renderSubmissionsExportPdf } from "@/pdfs/submissions-export"
 import { sendExportReadyEmail, sendExportFailedEmail } from "@/lib/email/submission-exports"
@@ -42,8 +46,9 @@ export async function loadExportData(
   const { displayNames, emails } = await resolveClerkUsers(userIds)
   const users: ExportUserDirectory = {}
   for (const id of userIds) {
+    const rawName = displayNames[id] ?? null
     users[id] = {
-      name: displayNames[id] ?? null,
+      name: rawName && !isClerkUserId(rawName) ? rawName : null,
       email: emails[id] ?? null,
     }
   }
@@ -64,10 +69,7 @@ export async function buildAndUploadExport(
   const images = await downloadAllImages(payload)
   const csvBuffer = Buffer.from(buildCsv(payload), "utf-8")
   const pdfBuffer = await renderSubmissionsExportPdf(payload)
-  const jsonBuffer = Buffer.from(
-    JSON.stringify(buildJsonExportPayload(payload), null, 2),
-    "utf-8"
-  )
+  const jsonBuffer = Buffer.from(JSON.stringify(payload, null, 2), "utf-8")
   const readmeBuffer = Buffer.from(buildReadme(payload), "utf-8")
 
   const zip = new JSZip()
@@ -381,53 +383,10 @@ function buildCsv(payload: EnrichedExportPayload): string {
   return toCsv(rows, columns)
 }
 
-function formatMembers(
-  submission: ExportSubmissionRow,
-  users: ExportUserDirectory
-): string {
-  const members = submission.team?.members ?? []
-  return members
-    .map((m) => {
-      const user = users[m.clerkUserId]
-      const name = user?.name ?? m.clerkUserId
-      const email = user?.email ? ` <${user.email}>` : ""
-      const role = m.role !== "participant" ? ` (${m.role})` : ""
-      return `${name}${email}${role}`
-    })
-    .join(" | ")
-}
-
-function formatScores(
-  submission: ExportSubmissionRow,
-  users: ExportUserDirectory
-): string {
-  return submission.scores
-    .map((s) => {
-      const judge = s.judgeClerkUserId ? users[s.judgeClerkUserId] : null
-      const judgeName = judge?.name ?? s.judgeClerkUserId ?? "Unknown judge"
-      return `${judgeName} — ${s.criteriaName}: ${s.score}`
-    })
-    .join(" | ")
-}
-
-function formatJudgeNotes(
-  submission: ExportSubmissionRow,
-  users: ExportUserDirectory
-): string {
-  return submission.judgeNotes
-    .map((n) => {
-      const judge = n.judgeClerkUserId ? users[n.judgeClerkUserId] : null
-      const judgeName = judge?.name ?? n.judgeClerkUserId ?? "Unknown judge"
-      return `[${judgeName}] ${n.notes}`
-    })
-    .join(" || ")
-}
-
 function buildReadme(payload: EnrichedExportPayload): string {
   const filters = describeFilters(payload.filters)
-  const usersLine = payload.filters.includeJudgeNotes
-    ? "- `data.json` includes a `users` directory mapping every participant and judge to their name **and email** — treat this file as sensitive and share it only with people who already have access to that information."
-    : "- `data.json` includes a `users` directory. Team member emails are kept (they also appear inline in `submissions.csv`); judge emails are omitted because judge notes weren't included. Re-run with judge notes enabled to include judge emails."
+  const usersLine =
+    "- `data.json` includes a `users` directory mapping every participant and judge to their name **and email** — these also appear inline in `submissions.csv` and `submissions.pdf`. Treat the export as sensitive and share it only with people who already have access to that information."
   return `# Submissions Export — ${payload.hackathon.name}
 
 Generated: ${payload.generatedAt}

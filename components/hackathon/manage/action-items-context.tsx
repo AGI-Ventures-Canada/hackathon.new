@@ -143,6 +143,7 @@ type TeamSettingsInitialData = {
   minTeamSize: number;
   maxTeamSize: number;
   allowSolo: boolean;
+  requireTeamApproval: boolean;
 };
 
 type LocationInitialData = {

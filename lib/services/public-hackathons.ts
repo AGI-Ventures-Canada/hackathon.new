@@ -1,7 +1,17 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
-import type { Hackathon, TenantProfile, HackathonSponsor, HackathonStatus, HackathonJudgeDisplay, Prize, JudgingMode } from "@/lib/db/hackathon-types"
+import {
+  DEFAULT_TEAM_STATUS,
+  type Hackathon,
+  type TenantProfile,
+  type HackathonSponsor,
+  type HackathonStatus,
+  type HackathonJudgeDisplay,
+  type Prize,
+  type JudgingMode,
+} from "@/lib/db/hackathon-types"
 import { currentTermsHash } from "@/lib/services/hackathon-terms"
+import { notifyReviewedTeamMembers } from "@/lib/services/hackathons"
 
 export type PublicPrize = Omit<Prize, "distribution_method" | "monetary_value" | "currency">
 export const PUBLISHED_STATUSES: HackathonStatus[] = ["published", "registration_open", "active", "judging", "completed"]
@@ -354,6 +364,7 @@ export async function updateHackathonSettings(
     minTeamSize?: number
     maxTeamSize?: number
     allowSolo?: boolean
+    requireTeamApproval?: boolean
     communityUrl?: string | null
     communityLabel?: string | null
     requireTermsAcceptance?: boolean
@@ -384,6 +395,7 @@ export async function updateHackathonSettings(
   if (updates.minTeamSize !== undefined) updateData.min_team_size = updates.minTeamSize
   if (updates.maxTeamSize !== undefined) updateData.max_team_size = updates.maxTeamSize
   if (updates.allowSolo !== undefined) updateData.allow_solo = updates.allowSolo
+  if (updates.requireTeamApproval !== undefined) updateData.require_team_approval = updates.requireTeamApproval
   if (updates.communityUrl !== undefined) updateData.community_url = updates.communityUrl
   if (updates.communityLabel !== undefined) updateData.community_label = updates.communityLabel
   if (updates.requireTermsAcceptance !== undefined) updateData.require_terms_acceptance = updates.requireTermsAcceptance
@@ -402,7 +414,69 @@ export async function updateHackathonSettings(
     return null
   }
 
+  if (updates.requireTeamApproval === false) {
+    await autoPromotePendingTeams(client, hackathonId, data as unknown as Hackathon)
+  }
+
   return data as unknown as Hackathon
+}
+
+async function autoPromotePendingTeams(
+  client: SupabaseClient,
+  hackathonId: string,
+  hackathon: Hackathon
+): Promise<void> {
+  const { data: pendingTeams, error: listError } = await client
+    .from("teams")
+    .select("id, name, hackathon_participants(clerk_user_id)")
+    .eq("hackathon_id", hackathonId)
+    .eq("status", "pending_approval")
+
+  if (listError) {
+    console.error("Failed to list waiting teams before disabling review:", listError)
+    return
+  }
+
+  const promoted = (pendingTeams ?? []) as Array<{
+    id: string
+    name: string
+    hackathon_participants: { clerk_user_id: string }[] | null
+  }>
+  if (promoted.length === 0) return
+
+  const { error: updateError } = await client
+    .from("teams")
+    .update({ status: DEFAULT_TEAM_STATUS })
+    .eq("hackathon_id", hackathonId)
+    .eq("status", "pending_approval")
+
+  if (updateError) {
+    console.error("Failed to approve waiting teams after disabling review:", updateError)
+    return
+  }
+
+  const notificationHackathon = {
+    name: hackathon.name,
+    slug: hackathon.slug,
+    status: hackathon.status,
+  }
+
+  await Promise.all(
+    promoted.map((team) =>
+      notifyReviewedTeamMembers({
+        client,
+        hackathonId,
+        teamName: team.name,
+        acceptedMemberClerkUserIds: (team.hackathon_participants ?? []).map(
+          (m) => m.clerk_user_id
+        ),
+        review: "approved",
+        hackathon: notificationHackathon,
+      }).catch((err) =>
+        console.error(`Failed to notify auto-promoted team ${team.id}:`, err)
+      )
+    )
+  )
 }
 
 export async function updateHackathonTranslation(

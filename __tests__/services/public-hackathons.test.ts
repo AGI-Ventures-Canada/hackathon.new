@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "bun:test"
+import { describe, it, expect, beforeEach, mock } from "bun:test"
 import type { Hackathon } from "@/lib/db/hackathon-types"
 import {
   createChainableMock,
@@ -7,6 +7,11 @@ import {
   setMockRpcImplementation,
   mockMultiTableQuery,
 } from "../lib/supabase-mock"
+
+const mockNotifyReviewedTeamMembers = mock(() => Promise.resolve(0))
+mock.module("@/lib/services/hackathons", () => ({
+  notifyReviewedTeamMembers: mockNotifyReviewedTeamMembers,
+}))
 
 const { getPublicHackathon, listPublicHackathons, getHackathonByIdForOrganizer, checkHackathonOrganizer, updateHackathonSettings, updateHackathonTranslation, deleteHackathon } = await import(
   "@/lib/services/public-hackathons"
@@ -27,6 +32,7 @@ const mockHackathon: Hackathon = {
   min_team_size: 1,
   max_team_size: 5,
   allow_solo: true,
+  require_team_approval: false,
   status: "registration_open",
   banner_url: "https://example.com/banner.png",
   metadata: {},
@@ -303,6 +309,7 @@ describe("Public Hackathons Service", () => {
           min_team_size: 2,
           max_team_size: 4,
           allow_solo: false,
+          require_team_approval: true,
         },
         error: null,
       })
@@ -313,6 +320,7 @@ describe("Public Hackathons Service", () => {
         minTeamSize: 2,
         maxTeamSize: 4,
         allowSolo: false,
+        requireTeamApproval: true,
       })
 
       expect(result).not.toBeNull()
@@ -320,6 +328,98 @@ describe("Public Hackathons Service", () => {
       expect(result?.min_team_size).toBe(2)
       expect(result?.max_team_size).toBe(4)
       expect(result?.allow_solo).toBe(false)
+      expect(result?.require_team_approval).toBe(true)
+    })
+
+    it("moves waiting teams to forming and notifies their members when team review is turned off", async () => {
+      mockNotifyReviewedTeamMembers.mockClear()
+      const hackathonChain = createChainableMock({
+        data: { ...mockHackathon, require_team_approval: false },
+        error: null,
+      })
+      const teamsChain = createChainableMock({
+        data: [
+          { id: "team-1", name: "Alpha", hackathon_participants: [{ clerk_user_id: "u1" }] },
+          { id: "team-2", name: "Beta", hackathon_participants: [] },
+        ],
+        error: null,
+      })
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") return hackathonChain
+        if (table === "teams") return teamsChain
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await updateHackathonSettings("h1", "t1", {
+        requireTeamApproval: false,
+      })
+
+      expect(result?.require_team_approval).toBe(false)
+      expect(teamsChain.select).toHaveBeenCalledWith(
+        "id, name, hackathon_participants(clerk_user_id)"
+      )
+      expect(teamsChain.update).toHaveBeenCalledWith({ status: "forming" })
+      expect(teamsChain.eq).toHaveBeenCalledWith("hackathon_id", "h1")
+      expect(teamsChain.eq).toHaveBeenCalledWith("status", "pending_approval")
+
+      expect(mockNotifyReviewedTeamMembers).toHaveBeenCalledTimes(2)
+      const calls = mockNotifyReviewedTeamMembers.mock.calls as Array<
+        [
+          {
+            teamName: string
+            acceptedMemberClerkUserIds: string[]
+            review: "approved" | "denied"
+          },
+        ]
+      >
+      const alphaCall = calls.find((c) => c[0].teamName === "Alpha")?.[0]
+      expect(alphaCall?.review).toBe("approved")
+      expect(alphaCall?.acceptedMemberClerkUserIds).toEqual(["u1"])
+      const betaCall = calls.find((c) => c[0].teamName === "Beta")?.[0]
+      expect(betaCall?.acceptedMemberClerkUserIds).toEqual([])
+    })
+
+    it("still returns the saved hackathon when waiting teams cannot be moved after team review is turned off", async () => {
+      mockNotifyReviewedTeamMembers.mockClear()
+      const hackathonChain = createChainableMock({
+        data: { ...mockHackathon, require_team_approval: false },
+        error: null,
+      })
+      const teamsChain = createChainableMock({ data: null, error: { message: "DB error" } })
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") return hackathonChain
+        if (table === "teams") return teamsChain
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await updateHackathonSettings("h1", "t1", {
+        requireTeamApproval: false,
+      })
+
+      expect(result?.require_team_approval).toBe(false)
+      expect(mockNotifyReviewedTeamMembers).not.toHaveBeenCalled()
+    })
+
+    it("skips the UPDATE and notify step when there are no waiting teams", async () => {
+      mockNotifyReviewedTeamMembers.mockClear()
+      const hackathonChain = createChainableMock({
+        data: { ...mockHackathon, require_team_approval: false },
+        error: null,
+      })
+      const teamsChain = createChainableMock({ data: [], error: null })
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") return hackathonChain
+        if (table === "teams") return teamsChain
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await updateHackathonSettings("h1", "t1", {
+        requireTeamApproval: false,
+      })
+
+      expect(result?.require_team_approval).toBe(false)
+      expect(teamsChain.update).not.toHaveBeenCalled()
+      expect(mockNotifyReviewedTeamMembers).not.toHaveBeenCalled()
     })
 
     it("sets maxParticipants to null for unlimited", async () => {

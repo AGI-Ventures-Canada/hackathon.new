@@ -350,7 +350,11 @@ export const adminRoutes = new Elysia({ prefix: "/admin" })
       })
 
       const orgId =
-        body.org_id !== undefined ? body.org_id : (process.env.SCENARIO_ORG_ID ?? null)
+        body.org_id !== undefined
+          ? body.org_id
+          : body.persona === "organizer"
+            ? (process.env.SCENARIO_ORG_ID ?? null)
+            : null
       const base = `/dev-switch?token=${token.token}&redirect=${encodeURIComponent(safeRedirectUrl(body.redirect))}`
       const loginUrl = orgId ? `${base}&org=${encodeURIComponent(orgId)}` : base
 
@@ -364,7 +368,7 @@ export const adminRoutes = new Elysia({ prefix: "/admin" })
       }),
       detail: {
         summary: "Switch to test persona",
-        description: "Generate a sign-in token for a test persona and return a login URL. Admin-only, dev/staging only. Org activation precedence: explicit body.org_id (including null) > SCENARIO_ORG_ID env > none.",
+        description: "Generate a sign-in token for a test persona and return a login URL. Admin-only, dev/staging only. Org activation precedence: explicit body.org_id (including null) > SCENARIO_ORG_ID env for organizer > none.",
       },
     }
   )

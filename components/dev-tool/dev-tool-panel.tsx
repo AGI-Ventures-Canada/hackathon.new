@@ -157,6 +157,7 @@ export function DevToolPanel({
           body: JSON.stringify({
             persona: personaMap[scenario.defaultPersona] ?? "organizer",
             redirect,
+            org_id: scenario.defaultPersona === "organizer" ? undefined : null,
           }),
         })
         if (switchRes.ok) {
@@ -184,6 +185,7 @@ export function DevToolPanel({
         body: JSON.stringify({
           persona: persona.key,
           redirect: window.location.pathname,
+          org_id: persona.key === "organizer" ? undefined : null,
         }),
       })
       if (!res.ok) {

@@ -22,6 +22,16 @@ mock.module("@/lib/services/schedule-items", () => ({
   getTriggerItem: mockGetTriggerItem,
 }))
 
+const mockDenyPendingTeamsForClosedHackathon = mock(() => Promise.resolve({ denied: 0, failed: [] }))
+mock.module("@/lib/services/hackathons", () => ({
+  denyPendingTeamsForClosedHackathon: mockDenyPendingTeamsForClosedHackathon,
+}))
+
+const mockCancelRemindersForEntity = mock(() => Promise.resolve())
+mock.module("@/lib/services/smart-reminders", () => ({
+  cancelRemindersForEntity: mockCancelRemindersForEntity,
+}))
+
 const { executeTransition, processAutoTransitions } = await import(
   "@/lib/services/lifecycle"
 )
@@ -36,6 +46,10 @@ describe("Lifecycle Service", () => {
     mockListChallenges.mockImplementation(() => Promise.resolve([]))
     mockGetTriggerItem.mockClear()
     mockGetTriggerItem.mockResolvedValue(null)
+    mockDenyPendingTeamsForClosedHackathon.mockClear()
+    mockDenyPendingTeamsForClosedHackathon.mockResolvedValue({ denied: 0, failed: [] })
+    mockCancelRemindersForEntity.mockClear()
+    mockCancelRemindersForEntity.mockResolvedValue(undefined)
   })
 
   describe("executeTransition", () => {
@@ -127,6 +141,42 @@ describe("Lifecycle Service", () => {
       })
 
       expect(result.success).toBe(true)
+    })
+
+    it.each([
+      ["active", "completed"],
+      ["completed", "archived"],
+    ] as const)("denies pending teams when transitioning %s → %s", async (fromStatus, toStatus) => {
+      const hackathon = {
+        id: "h1",
+        tenant_id: "t1",
+        name: "Test Hack",
+        slug: "test-hack",
+        status: toStatus,
+      }
+
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_transitions") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "hackathons") {
+          return createChainableMock({ data: hackathon, error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await executeTransition({
+        hackathonId: "h1",
+        tenantId: "t1",
+        fromStatus,
+        toStatus,
+        trigger: "manual",
+        triggeredBy: "user1",
+      })
+
+      expect(result.success).toBe(true)
+      expect(mockDenyPendingTeamsForClosedHackathon).toHaveBeenCalledWith("h1")
+      expect(mockCancelRemindersForEntity).toHaveBeenCalledWith("hackathon_event", "h1")
     })
 
     it("dispatches notifications for status with mapped event", async () => {

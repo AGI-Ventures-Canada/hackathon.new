@@ -1,5 +1,10 @@
 import { describe, expect, it } from "bun:test"
-import { getDisplayName, isLikelyEmail, nameFromEmail } from "@/lib/utils/person-display"
+import {
+  getDisplayName,
+  isClerkUserId,
+  isLikelyEmail,
+  nameFromEmail,
+} from "@/lib/utils/person-display"
 
 describe("person display helpers", () => {
   it("turns email addresses into readable names", () => {
@@ -25,5 +30,22 @@ describe("person display helpers", () => {
     expect(getDisplayName({ name: "alan.turing@example.com" })).toBe("Alan Turing")
     expect(getDisplayName({ email: "katherine.johnson@example.com" })).toBe("Katherine Johnson")
     expect(getDisplayName({ fallback: "Unknown member" })).toBe("Unknown member")
+  })
+
+  it("detects Clerk user_id strings", () => {
+    expect(isClerkUserId("user_2abc123XYZ")).toBe(true)
+    expect(isClerkUserId("user_")).toBe(false)
+    expect(isClerkUserId("Ada Lovelace")).toBe(false)
+    expect(isClerkUserId("ada@example.com")).toBe(false)
+    expect(isClerkUserId(null)).toBe(false)
+  })
+
+  it("treats Clerk user_id as no name and falls back to email", () => {
+    expect(
+      getDisplayName({ name: "user_2abc123XYZ", email: "ada.lovelace@example.com" })
+    ).toBe("Ada Lovelace")
+    expect(
+      getDisplayName({ name: "user_2abc123XYZ", fallback: "Unknown member" })
+    ).toBe("Unknown member")
   })
 })

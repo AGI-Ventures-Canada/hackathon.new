@@ -51,11 +51,12 @@ describe("Submissions Service", () => {
       expect(result).not.toBeNull()
       expect(result?.participantId).toBe("p1")
       expect(result?.teamId).toBeNull()
+      expect(result?.teamStatus).toBeNull()
     })
 
     it("returns participant info with team when in a team", async () => {
       const chain = createChainableMock({
-        data: { id: "p1", team_id: "team1" },
+        data: { id: "p1", team_id: "team1", teams: { status: "forming" } },
         error: null,
       })
       setMockFromImplementation(() => chain)
@@ -65,6 +66,7 @@ describe("Submissions Service", () => {
       expect(result).not.toBeNull()
       expect(result?.participantId).toBe("p1")
       expect(result?.teamId).toBe("team1")
+      expect(result?.teamStatus).toBe("forming")
     })
 
     it("returns null when not registered", async () => {

@@ -97,6 +97,7 @@ function stateToHackathon(state: DraftState): PublicHackathon {
     min_team_size: 1,
     max_team_size: 5,
     allow_solo: true,
+    require_team_approval: false,
     status: "draft",
     phase: null,
     challenge_released_at: null,

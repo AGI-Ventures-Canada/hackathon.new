@@ -951,6 +951,7 @@ export type Database = {
           registration_closes_at: string | null
           registration_opens_at: string | null
           require_location_verification: boolean
+          require_team_approval: boolean
           require_terms_acceptance: boolean
           results_announcement_sent_at: string | null
           results_published_at: string | null
@@ -995,6 +996,7 @@ export type Database = {
           registration_closes_at?: string | null
           registration_opens_at?: string | null
           require_location_verification?: boolean
+          require_team_approval?: boolean
           require_terms_acceptance?: boolean
           results_announcement_sent_at?: string | null
           results_published_at?: string | null
@@ -1039,6 +1041,7 @@ export type Database = {
           registration_closes_at?: string | null
           registration_opens_at?: string | null
           require_location_verification?: boolean
+          require_team_approval?: boolean
           require_terms_acceptance?: boolean
           results_announcement_sent_at?: string | null
           results_published_at?: string | null
@@ -3110,6 +3113,18 @@ export type Database = {
           success: boolean
         }[]
       }
+      approve_pending_team: {
+        Args: { p_team_id: string; p_hackathon_id: string }
+        Returns: {
+          error_code: string | null
+          error_message: string | null
+          success: boolean
+          team_id: string | null
+          team_name: string | null
+          team_status: Database["public"]["Enums"]["team_status"] | null
+          member_clerk_user_ids: string[]
+        }[]
+      }
       calculate_results: {
         Args: { p_hackathon_id: string }
         Returns: {
@@ -3139,6 +3154,21 @@ export type Database = {
       count_unassigned_submissions: {
         Args: { p_hackathon_id: string }
         Returns: number
+      }
+      deny_pending_team: {
+        Args: { p_team_id: string; p_hackathon_id: string }
+        Returns: {
+          cancelled_invitation_ids: string[]
+          error_code: string | null
+          error_message: string | null
+          invites_cancelled: number
+          member_clerk_user_ids: string[]
+          members_unassigned: number
+          success: boolean
+          team_id: string | null
+          team_name: string | null
+          team_status: Database["public"]["Enums"]["team_status"] | null
+        }[]
       }
       effective_hackathon_status: {
         Args: {
@@ -3226,6 +3256,7 @@ export type Database = {
           registration_closes_at: string | null
           registration_opens_at: string | null
           require_location_verification: boolean
+          require_team_approval: boolean
           require_terms_acceptance: boolean
           results_announcement_sent_at: string | null
           results_published_at: string | null
@@ -3305,7 +3336,7 @@ export type Database = {
         | "rejected"
         | "winner"
       team_mode: "in_person" | "virtual"
-      team_status: "forming" | "locked" | "disbanded"
+      team_status: "forming" | "pending_approval" | "locked" | "disbanded"
       track_intent:
         | "overall_winner"
         | "sponsor_prize"
@@ -3517,7 +3548,7 @@ export const Constants = {
         "winner",
       ],
       team_mode: ["in_person", "virtual"],
-      team_status: ["forming", "locked", "disbanded"],
+      team_status: ["forming", "pending_approval", "locked", "disbanded"],
       track_intent: [
         "overall_winner",
         "sponsor_prize",
@@ -3541,4 +3572,3 @@ export const Constants = {
     },
   },
 } as const
-

@@ -1,6 +1,6 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
-import type { Submission } from "@/lib/db/hackathon-types"
+import type { Submission, TeamStatus } from "@/lib/db/hackathon-types"
 import type { Json } from "@/lib/db/types"
 import { trackEvent } from "@/lib/analytics/posthog"
 import { tagSubmissionChallenges } from "@/lib/services/challenges"
@@ -9,6 +9,13 @@ import { autoAssignSubmissionToRoomJudges, ROOM_ROUTING_STATUSES } from "@/lib/s
 export type ParticipantInfo = {
   participantId: string
   teamId: string | null
+  teamStatus: TeamStatus | null
+}
+
+type ParticipantWithTeamRow = {
+  id: string
+  team_id: string | null
+  teams: { status: TeamStatus | null } | Array<{ status: TeamStatus | null }> | null
 }
 
 export async function getParticipantWithTeam(
@@ -18,7 +25,7 @@ export async function getParticipantWithTeam(
   const client = getSupabase() as unknown as SupabaseClient
   const { data, error } = await client
     .from("hackathon_participants")
-    .select("id, team_id")
+    .select("id, team_id, teams(status)")
     .eq("hackathon_id", hackathonId)
     .eq("clerk_user_id", clerkUserId)
     .maybeSingle()
@@ -32,9 +39,13 @@ export async function getParticipantWithTeam(
     return null
   }
 
+  const participant: ParticipantWithTeamRow = data
+  const team = Array.isArray(participant.teams) ? participant.teams[0] : participant.teams
+
   return {
-    participantId: data.id,
-    teamId: data.team_id,
+    participantId: participant.id,
+    teamId: participant.team_id,
+    teamStatus: team?.status ?? null,
   }
 }
 

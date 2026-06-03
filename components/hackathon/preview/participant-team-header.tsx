@@ -59,6 +59,9 @@ export function ParticipantTeamHeader({
               {teamInfo?.isCaptain && (
                 <Badge variant="secondary">Team captain</Badge>
               )}
+              {teamInfo?.team.status === "pending_approval" && (
+                <Badge variant="outline">Waiting for approval</Badge>
+              )}
             </div>
             {teamInfo && (
               <div className="min-w-0">
