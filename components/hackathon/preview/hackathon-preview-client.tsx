@@ -244,7 +244,7 @@ function HackathonPreviewContent({
 
   const isJudge = participantRole === "judge"
 
-  const judgeStatus = isJudge && isPersonalWorkspace && (
+  const judgeStatus = isJudge && (
     <div className="flex items-center gap-3">
       {hasJudgeAssignments && (
         <Button

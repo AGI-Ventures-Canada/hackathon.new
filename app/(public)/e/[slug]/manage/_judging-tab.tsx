@@ -1,6 +1,6 @@
 import { listPrizes, listJudges, getJudgingProgress, listRounds, listCoreCriteria, listPrizeCriteriaByPrizeIds, getWeightedScoreAssignmentSummary } from "@/lib/services/judging"
 import { listJudgeInvitations } from "@/lib/services/judge-invitations"
-import { calculateResults, getResults } from "@/lib/services/results"
+import { calculateResults, getResults, getResultsByPrize } from "@/lib/services/results"
 import { JudgingTabClient } from "@/components/hackathon/judging/judging-tab-client"
 import type { ManageJtab } from "@/lib/utils/manage-tabs"
 
@@ -33,7 +33,7 @@ export async function JudgingTabContent({
     .map((p) => p.id)
   const hasWeightedPrizes = weightedPrizeIds.length > 0
 
-  const [judges, progress, rounds, pendingInvitations, results, coreCriteria, weightedAssignmentSummary, weightedPrizeCriteriaMap] = await Promise.all([
+  const [judges, progress, rounds, pendingInvitations, results, coreCriteria, weightedAssignmentSummary, weightedPrizeCriteriaMap, resultsByPrize] = await Promise.all([
     listJudges(hackathonId),
     getJudgingProgress(hackathonId),
     listRounds(hackathonId),
@@ -42,6 +42,7 @@ export async function JudgingTabContent({
     listCoreCriteria(hackathonId),
     hasWeightedPrizes ? getWeightedScoreAssignmentSummary(hackathonId) : Promise.resolve(undefined),
     listPrizeCriteriaByPrizeIds(weightedPrizeIds),
+    getResultsByPrize(hackathonId),
   ])
 
   const prizesForClient = visiblePrizes.map((p) => ({
@@ -140,6 +141,7 @@ export async function JudgingTabContent({
       activeJtab={activeJtab}
       coreCriteria={coreCriteria}
       weightedAssignmentSummary={weightedAssignmentSummary}
+      resultsByPrize={resultsByPrize}
     />
   )
 }
