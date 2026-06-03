@@ -102,28 +102,6 @@ export function collectExportUserIds(payload: ExportPayload): string[] {
   return Array.from(ids)
 }
 
-export function collectTeamMemberUserIds(payload: ExportPayload): Set<string> {
-  const ids = new Set<string>()
-  for (const sub of payload.submissions) {
-    for (const member of sub.team?.members ?? []) ids.add(member.clerkUserId)
-  }
-  return ids
-}
-
-export function buildJsonExportPayload(
-  payload: EnrichedExportPayload
-): EnrichedExportPayload {
-  if (payload.filters.includeJudgeNotes) return payload
-  const teamMemberIds = collectTeamMemberUserIds(payload)
-  const trimmedUsers: ExportUserDirectory = {}
-  for (const [id, user] of Object.entries(payload.users)) {
-    trimmedUsers[id] = teamMemberIds.has(id)
-      ? user
-      : { name: user.name, email: null }
-  }
-  return { ...payload, users: trimmedUsers }
-}
-
 export async function createSubmissionExport(
   hackathonId: string,
   requestedByUserId: string,
