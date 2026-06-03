@@ -38,7 +38,7 @@ export async function fetchRecipientEmails(
 
   for (let i = 0; i < clerkUserIds.length; i += 100) {
     const batch = clerkUserIds.slice(i, i + 100)
-    const users = await clerk.users.getUserList({ userId: batch })
+    const users = await clerk.users.getUserList({ userId: batch, limit: 100 })
     for (const user of users.data) {
       const email = user.emailAddresses[0]?.emailAddress
       if (email) emails.push(email)

@@ -74,7 +74,7 @@ export async function sendResultsAnnouncementEmails(hackathonId: string): Promis
 
   for (let i = 0; i < nonWinnerIds.length; i += 100) {
     const batch = nonWinnerIds.slice(i, i + 100)
-    const users = await clerk.users.getUserList({ userId: batch })
+    const users = await clerk.users.getUserList({ userId: batch, limit: 100 })
 
     const emailPromises = users.data.map(async (user) => {
       const email = user.primaryEmailAddress?.emailAddress
