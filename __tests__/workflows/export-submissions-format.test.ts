@@ -48,16 +48,10 @@ const baseSubmission: ExportSubmissionRow = {
 
 const users: ExportUserDirectory = {
   u_named: { name: "Ada Lovelace", email: "ada@example.com" },
-  u_clerk_default: {
-    name: "user_2abc123XYZ",
-    email: "grace.hopper@example.com",
-  },
+  u_clerk_default: { name: null, email: "grace.hopper@example.com" },
   u_no_name: { name: null, email: "katherine.johnson@example.com" },
   judge_named: { name: "Alan Turing", email: "alan@example.com" },
-  judge_clerk_default: {
-    name: "user_2xyz789ABC",
-    email: "claude.shannon@example.com",
-  },
+  judge_clerk_default: { name: null, email: "claude.shannon@example.com" },
   judge_no_name: { name: null, email: "linus@example.com" },
 }
 
@@ -67,10 +61,9 @@ describe("formatMembers", () => {
     expect(out).toContain("Ada Lovelace <ada@example.com>")
   })
 
-  it("shows only the email when Clerk's name is the user_ default", () => {
+  it("shows only the email when the name was normalized away upstream (e.g. Clerk's user_ default)", () => {
     const out = formatMembers(baseSubmission, users)
     expect(out).toContain("grace.hopper@example.com (captain)")
-    expect(out).not.toContain("user_2abc123XYZ")
   })
 
   it("shows only the email when Clerk has no name", () => {
@@ -93,7 +86,7 @@ describe("formatJudgeLabel", () => {
     )
   })
 
-  it("shows only the email when Clerk's name is the user_ default", () => {
+  it("shows only the email when the name was normalized away upstream", () => {
     expect(formatJudgeLabel("judge_clerk_default", users)).toBe(
       "claude.shannon@example.com"
     )
@@ -116,7 +109,6 @@ describe("formatScores", () => {
     expect(out).toContain("claude.shannon@example.com — Polish: 4")
     expect(out).toContain("linus@example.com — Polish: 3")
     expect(out).toContain("Unknown judge — Polish: 2")
-    expect(out).not.toContain("user_2xyz789ABC")
   })
 })
 
@@ -126,6 +118,5 @@ describe("formatJudgeNotes", () => {
     expect(out).toContain("[Alan Turing <alan@example.com>] great")
     expect(out).toContain("[claude.shannon@example.com] needs work")
     expect(out).toContain("[Unknown judge] anon")
-    expect(out).not.toContain("user_2xyz789ABC")
   })
 })

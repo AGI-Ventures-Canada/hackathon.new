@@ -2,7 +2,7 @@ import type {
   ExportSubmissionRow,
   ExportUserDirectory,
 } from "@/lib/services/submission-exports"
-import { isClerkUserId, isLikelyEmail } from "@/lib/utils/person-display"
+import { isLikelyEmail } from "@/lib/utils/person-display"
 
 function formatPerson(
   user: { name: string | null; email: string | null } | null | undefined,
@@ -10,7 +10,7 @@ function formatPerson(
 ): string {
   const name = user?.name?.trim()
   const email = user?.email?.trim()
-  const hasRealName = !!name && !isClerkUserId(name) && !isLikelyEmail(name)
+  const hasRealName = !!name && !isLikelyEmail(name)
 
   if (hasRealName && email) return `${name} <${email}>`
   if (hasRealName) return name as string
