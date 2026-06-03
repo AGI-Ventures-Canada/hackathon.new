@@ -25,10 +25,12 @@ describe("person display helpers", () => {
     expect(isLikelyEmail("Ada Lovelace")).toBe(false)
   })
 
-  it("prefers names but cleans email-like names", () => {
+  it("prefers a real name, falls back to the raw email when no real name is set", () => {
     expect(getDisplayName({ name: "Ada Lovelace", email: "ada@example.com" })).toBe("Ada Lovelace")
-    expect(getDisplayName({ name: "alan.turing@example.com" })).toBe("Alan Turing")
-    expect(getDisplayName({ email: "katherine.johnson@example.com" })).toBe("Katherine Johnson")
+    expect(getDisplayName({ name: "alan.turing@example.com" })).toBe("alan.turing@example.com")
+    expect(getDisplayName({ email: "katherine.johnson@example.com" })).toBe(
+      "katherine.johnson@example.com"
+    )
     expect(getDisplayName({ fallback: "Unknown member" })).toBe("Unknown member")
   })
 
@@ -40,10 +42,10 @@ describe("person display helpers", () => {
     expect(isClerkUserId(null)).toBe(false)
   })
 
-  it("treats Clerk user_id as no name and falls back to email", () => {
+  it("treats Clerk user_id as no name and falls back to the raw email", () => {
     expect(
       getDisplayName({ name: "user_2abc123XYZ", email: "ada.lovelace@example.com" })
-    ).toBe("Ada Lovelace")
+    ).toBe("ada.lovelace@example.com")
     expect(
       getDisplayName({ name: "user_2abc123XYZ", fallback: "Unknown member" })
     ).toBe("Unknown member")

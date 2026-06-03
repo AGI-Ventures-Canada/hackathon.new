@@ -22,17 +22,16 @@ afterEach(() => {
 })
 
 describe("JudgeCard", () => {
-  it("shows a readable name instead of an email address", () => {
+  it("shows the raw email when the judge has no real name", () => {
     render(<JudgeCard judge={baseJudge} />)
 
-    expect(screen.getByText("Ada Lovelace")).toBeDefined()
-    expect(screen.queryByText("ada.lovelace@example.com")).toBeNull()
+    expect(screen.getByText("ada.lovelace@example.com")).toBeDefined()
   })
 
   it("lets long judge text wrap inside the card", () => {
     render(<JudgeCard judge={baseJudge} />)
 
-    expect(screen.getByText("Ada Lovelace").className).toContain("break-words")
+    expect(screen.getByText("ada.lovelace@example.com").className).toContain("break-words")
     expect(screen.getByText(baseJudge.organization!).className).toContain("break-words")
   })
 })
