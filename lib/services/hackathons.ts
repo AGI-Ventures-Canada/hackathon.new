@@ -682,7 +682,7 @@ type DenyPendingTeamRpcRow = {
   member_clerk_user_ids: Array<string | null> | null
 }
 
-type TeamReviewHackathon = {
+export type TeamReviewHackathon = {
   name: string | null
   slug: string | null
   status: string | null
@@ -924,7 +924,10 @@ export async function approvePendingTeam(
 export async function denyPendingTeam(
   teamId: string,
   hackathonId: string,
-  options: { notificationHackathon?: TeamReviewHackathon } = {}
+  options: {
+    notificationHackathon?: TeamReviewHackathon
+    skipNotifications?: boolean
+  } = {}
 ): Promise<ReviewTeamResult> {
   const client = getSupabase() as unknown as SupabaseClient
 
@@ -969,14 +972,16 @@ export async function denyPendingTeam(
   const memberClerkUserIds = (row.member_clerk_user_ids ?? [])
     .filter((id): id is string => Boolean(id))
 
-  const membersNotified = await notifyReviewedTeamMembers({
-    client,
-    hackathonId,
-    teamName: row.team_name,
-    acceptedMemberClerkUserIds: memberClerkUserIds,
-    review: "denied",
-    hackathon: options.notificationHackathon,
-  })
+  const membersNotified = options.skipNotifications
+    ? 0
+    : await notifyReviewedTeamMembers({
+        client,
+        hackathonId,
+        teamName: row.team_name,
+        acceptedMemberClerkUserIds: memberClerkUserIds,
+        review: "denied",
+        hackathon: options.notificationHackathon,
+      })
 
   return {
     success: true,
@@ -1003,23 +1008,10 @@ export async function denyPendingTeamsForClosedHackathon(
   }
 
   const pendingTeams = teams ?? []
-  let notificationHackathon: TeamReviewHackathon | undefined
-  if (pendingTeams.length > 0) {
-    const { data: hackathon, error: hackathonError } = await client
-      .from("hackathons")
-      .select("name, slug, status")
-      .eq("id", hackathonId)
-      .maybeSingle()
-    if (hackathonError) {
-      console.error("Failed to load hackathon for pending team closeout notifications:", hackathonError)
-    } else if (hackathon) {
-      notificationHackathon = hackathon
-    }
-  }
 
   const closeouts = await Promise.allSettled(
     pendingTeams.map((team) =>
-      denyPendingTeam(team.id, hackathonId, { notificationHackathon })
+      denyPendingTeam(team.id, hackathonId, { skipNotifications: true })
         .then((result) => ({ teamId: team.id, result }))
         .catch((error: unknown) => Promise.reject({ teamId: team.id, error }))
     )
@@ -1047,7 +1039,7 @@ export async function denyPendingTeamsForClosedHackathon(
   return { denied, failed }
 }
 
-async function notifyReviewedTeamMembers({
+export async function notifyReviewedTeamMembers({
   client,
   hackathonId,
   teamName,
