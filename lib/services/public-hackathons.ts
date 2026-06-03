@@ -11,6 +11,7 @@ import {
   type JudgingMode,
 } from "@/lib/db/hackathon-types"
 import { currentTermsHash } from "@/lib/services/hackathon-terms"
+import { notifyReviewedTeamMembers } from "@/lib/services/hackathons"
 
 export type PublicPrize = Omit<Prize, "distribution_method" | "monetary_value" | "currency">
 export const PUBLISHED_STATUSES: HackathonStatus[] = ["published", "registration_open", "active", "judging", "completed"]
@@ -414,18 +415,68 @@ export async function updateHackathonSettings(
   }
 
   if (updates.requireTeamApproval === false) {
-    const { error: teamError } = await client
-      .from("teams")
-      .update({ status: DEFAULT_TEAM_STATUS })
-      .eq("hackathon_id", hackathonId)
-      .eq("status", "pending_approval")
-
-    if (teamError) {
-      console.error("Failed to approve waiting teams after disabling review:", teamError)
-    }
+    await autoPromotePendingTeams(client, hackathonId, data as unknown as Hackathon)
   }
 
   return data as unknown as Hackathon
+}
+
+async function autoPromotePendingTeams(
+  client: SupabaseClient,
+  hackathonId: string,
+  hackathon: Hackathon
+): Promise<void> {
+  const { data: pendingTeams, error: listError } = await client
+    .from("teams")
+    .select("id, name, hackathon_participants(clerk_user_id)")
+    .eq("hackathon_id", hackathonId)
+    .eq("status", "pending_approval")
+
+  if (listError) {
+    console.error("Failed to list waiting teams before disabling review:", listError)
+    return
+  }
+
+  const promoted = (pendingTeams ?? []) as Array<{
+    id: string
+    name: string
+    hackathon_participants: { clerk_user_id: string }[] | null
+  }>
+  if (promoted.length === 0) return
+
+  const { error: updateError } = await client
+    .from("teams")
+    .update({ status: DEFAULT_TEAM_STATUS })
+    .eq("hackathon_id", hackathonId)
+    .eq("status", "pending_approval")
+
+  if (updateError) {
+    console.error("Failed to approve waiting teams after disabling review:", updateError)
+    return
+  }
+
+  const notificationHackathon = {
+    name: hackathon.name,
+    slug: hackathon.slug,
+    status: hackathon.status,
+  }
+
+  await Promise.all(
+    promoted.map((team) =>
+      notifyReviewedTeamMembers({
+        client,
+        hackathonId,
+        teamName: team.name,
+        acceptedMemberClerkUserIds: (team.hackathon_participants ?? []).map(
+          (m) => m.clerk_user_id
+        ),
+        review: "approved",
+        hackathon: notificationHackathon,
+      }).catch((err) =>
+        console.error(`Failed to notify auto-promoted team ${team.id}:`, err)
+      )
+    )
+  )
 }
 
 export async function updateHackathonTranslation(

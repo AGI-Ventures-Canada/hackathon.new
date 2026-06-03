@@ -542,6 +542,7 @@ describe("team approvals", () => {
     const result = await denyPendingTeamsForClosedHackathon("h_1")
 
     expect(result).toEqual({ denied: 2, failed: [] })
+    expect(mockSendTeamDeniedEmail).not.toHaveBeenCalled()
   })
 
   it("reports pending closeout failures without stopping later teams", async () => {
