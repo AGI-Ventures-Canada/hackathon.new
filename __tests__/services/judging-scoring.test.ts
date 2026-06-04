@@ -37,6 +37,7 @@ function mockCriteriaRows() {
       id: CRITERIA_ID_1,
       name: "Innovation",
       description: "How novel",
+      min_score: 1,
       max_score: 10,
       weight: 2.0,
       category: "core",
@@ -46,6 +47,7 @@ function mockCriteriaRows() {
       id: CRITERIA_ID_2,
       name: "Execution",
       description: "How polished",
+      min_score: 0,
       max_score: 10,
       weight: 1.0,
       category: "bonus",
@@ -135,6 +137,7 @@ describe("Judging Scoring Service", () => {
 
       const c1 = result!.criteria[0]
       expect(c1.name).toBe("Innovation")
+      expect(c1.min_score).toBe(1)
       expect(c1.max_score).toBe(10)
       expect(c1.weight).toBe(2.0)
       expect(c1.category).toBe("core")
@@ -144,6 +147,7 @@ describe("Judging Scoring Service", () => {
 
       const c2 = result!.criteria[1]
       expect(c2.name).toBe("Execution")
+      expect(c2.min_score).toBe(0)
       expect(c2.currentScore).toBeNull()
       expect(c2.rubricLevels).toHaveLength(0)
     })
@@ -405,6 +409,52 @@ describe("Judging Scoring Service", () => {
         ASSIGNMENT_ID,
         MOCK_OWNERSHIP,
         [{ criteriaId: CRITERIA_ID_1, score: 10 }],
+        ""
+      )
+
+      expect(result).toEqual({ success: true })
+    })
+
+    it("rejects score below min_score for weighted-style criteria", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "judging_criteria") {
+          return createChainableMock({
+            data: [{ id: CRITERIA_ID_1, min_score: 1, max_score: 10 }],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await submitScores(
+        ASSIGNMENT_ID,
+        MOCK_OWNERSHIP,
+        [{ criteriaId: CRITERIA_ID_1, score: 0 }],
+        ""
+      )
+
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.code).toBe("invalid_score")
+        expect(result.error).toContain("minimum 1")
+      }
+    })
+
+    it("accepts score exactly at min_score", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "judging_criteria") {
+          return createChainableMock({
+            data: [{ id: CRITERIA_ID_1, min_score: 1, max_score: 10 }],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await submitScores(
+        ASSIGNMENT_ID,
+        MOCK_OWNERSHIP,
+        [{ criteriaId: CRITERIA_ID_1, score: 1 }],
         ""
       )
 
