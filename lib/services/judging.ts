@@ -4099,6 +4099,157 @@ export async function getWeightedScoreAssignmentSummary(
   }
 }
 
+export type JudgeSubmissionAssignmentRow = {
+  submissionId: string
+  projectTitle: string
+  teamId: string | null
+  teamName: string | null
+  isAssigned: boolean
+  isOwnTeam: boolean
+}
+
+export async function listJudgeSubmissionAssignments(
+  hackathonId: string,
+  judgeParticipantId: string
+): Promise<JudgeSubmissionAssignmentRow[]> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data: judge } = await client
+    .from("hackathon_participants")
+    .select("id, team_id")
+    .eq("id", judgeParticipantId)
+    .eq("hackathon_id", hackathonId)
+    .maybeSingle()
+
+  if (!judge) return []
+
+  const judgeTeamId = (judge as { team_id: string | null }).team_id
+
+  const [submissionsResult, assignmentsResult] = await Promise.all([
+    client
+      .from("submissions")
+      .select("id, title, team_id, teams(name)")
+      .eq("hackathon_id", hackathonId)
+      .eq("status", "submitted"),
+    client
+      .from("judge_assignments")
+      .select("submission_id")
+      .eq("hackathon_id", hackathonId)
+      .eq("judge_participant_id", judgeParticipantId)
+      .eq("assignment_kind", "unified_weighted_score"),
+  ])
+
+  type SubmissionRow = {
+    id: string
+    title: string | null
+    team_id: string | null
+    teams: { name: string | null } | { name: string | null }[] | null
+  }
+
+  const assigned = new Set(
+    (assignmentsResult.data ?? []).map((a) => (a as { submission_id: string }).submission_id)
+  )
+
+  const submissions = (submissionsResult.data as SubmissionRow[]) ?? []
+
+  return submissions
+    .map((s) => {
+      const team = Array.isArray(s.teams) ? s.teams[0] : s.teams
+      return {
+        submissionId: s.id,
+        projectTitle: s.title ?? "Untitled project",
+        teamId: s.team_id,
+        teamName: team?.name ?? null,
+        isAssigned: assigned.has(s.id),
+        isOwnTeam: !!(judgeTeamId && s.team_id && judgeTeamId === s.team_id),
+      }
+    })
+    .sort((a, b) => a.projectTitle.localeCompare(b.projectTitle))
+}
+
+export async function assignJudgeToSubmission(
+  hackathonId: string,
+  judgeParticipantId: string,
+  submissionId: string
+): Promise<{ success: true; alreadyAssigned: boolean } | { success: false; error: string }> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const [judgeResult, submissionResult] = await Promise.all([
+    client
+      .from("hackathon_participants")
+      .select("id, team_id")
+      .eq("id", judgeParticipantId)
+      .eq("hackathon_id", hackathonId)
+      .maybeSingle(),
+    client
+      .from("submissions")
+      .select("id, team_id")
+      .eq("id", submissionId)
+      .eq("hackathon_id", hackathonId)
+      .maybeSingle(),
+  ])
+
+  if (!judgeResult.data) return { success: false, error: "Judge not found" }
+  if (!submissionResult.data) return { success: false, error: "Project not found" }
+
+  const judgeTeamId = (judgeResult.data as { team_id: string | null }).team_id
+  const submissionTeamId = (submissionResult.data as { team_id: string | null }).team_id
+  if (judgeTeamId && submissionTeamId && judgeTeamId === submissionTeamId) {
+    return { success: false, error: "Judges can't score their own team's project" }
+  }
+
+  const { data: existing } = await client
+    .from("judge_assignments")
+    .select("id")
+    .eq("hackathon_id", hackathonId)
+    .eq("judge_participant_id", judgeParticipantId)
+    .eq("submission_id", submissionId)
+    .eq("assignment_kind", "unified_weighted_score")
+    .maybeSingle()
+
+  if (existing) return { success: true, alreadyAssigned: true }
+
+  const { error } = await client.from("judge_assignments").insert({
+    hackathon_id: hackathonId,
+    judge_participant_id: judgeParticipantId,
+    submission_id: submissionId,
+    prize_id: null,
+    round_id: null,
+    assignment_kind: "unified_weighted_score",
+  })
+
+  if (error) {
+    console.error("Failed to assign judge to submission:", error)
+    return { success: false, error: error.message }
+  }
+
+  return { success: true, alreadyAssigned: false }
+}
+
+export async function unassignJudgeFromSubmission(
+  hackathonId: string,
+  judgeParticipantId: string,
+  submissionId: string
+): Promise<{ success: true; removed: boolean } | { success: false; error: string }> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data: rows, error } = await client
+    .from("judge_assignments")
+    .delete()
+    .eq("hackathon_id", hackathonId)
+    .eq("judge_participant_id", judgeParticipantId)
+    .eq("submission_id", submissionId)
+    .eq("assignment_kind", "unified_weighted_score")
+    .select("id")
+
+  if (error) {
+    console.error("Failed to unassign judge from submission:", error)
+    return { success: false, error: error.message }
+  }
+
+  return { success: true, removed: (rows ?? []).length > 0 }
+}
+
 export type JudgeSummaryEntry = {
   submissionId: string
   title: string
