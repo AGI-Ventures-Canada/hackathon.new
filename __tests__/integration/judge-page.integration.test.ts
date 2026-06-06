@@ -10,6 +10,14 @@ const mockNotFound = mock(() => {
 mock.module("next/navigation", () => ({
   redirect: mockRedirect,
   notFound: mockNotFound,
+  useRouter: () => ({
+    refresh: mock(() => {}),
+    push: mock(() => {}),
+    replace: mock(() => {}),
+    back: mock(() => {}),
+    forward: mock(() => {}),
+    prefetch: mock(() => {}),
+  }),
 }))
 
 const mockAuth = mock(() => Promise.resolve({ userId: null, orgId: null }))

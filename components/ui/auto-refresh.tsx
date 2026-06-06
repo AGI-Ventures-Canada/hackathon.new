@@ -5,13 +5,18 @@ import { useRouter } from "next/navigation"
 
 interface AutoRefreshProps {
   enabled?: boolean
+  intervalMs?: number
 }
 
-function getRandomInterval() {
-  return 2500 + Math.random() * 1000
+const DEFAULT_INTERVAL_MS = 3000
+const JITTER_RATIO = 1 / 6
+
+function getRandomInterval(baseMs: number) {
+  const jitter = baseMs * JITTER_RATIO
+  return baseMs - jitter + Math.random() * jitter * 2
 }
 
-export function AutoRefresh({ enabled = true }: AutoRefreshProps) {
+export function AutoRefresh({ enabled = true, intervalMs = DEFAULT_INTERVAL_MS }: AutoRefreshProps) {
   const router = useRouter()
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
   const mountedRef = useRef(true)
@@ -34,7 +39,7 @@ export function AutoRefresh({ enabled = true }: AutoRefreshProps) {
         if (!mountedRef.current) return
         router.refresh()
         scheduleRefresh()
-      }, getRandomInterval())
+      }, getRandomInterval(intervalMs))
     }
 
     const handleVisibilityChange = () => {
@@ -55,7 +60,7 @@ export function AutoRefresh({ enabled = true }: AutoRefreshProps) {
       stopPolling()
       document.removeEventListener("visibilitychange", handleVisibilityChange)
     }
-  }, [router, enabled])
+  }, [router, enabled, intervalMs])
 
   return null
 }
