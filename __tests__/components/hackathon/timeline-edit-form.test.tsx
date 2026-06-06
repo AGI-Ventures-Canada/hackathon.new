@@ -1,6 +1,6 @@
 import React from "react"
 import { describe, expect, it, beforeEach, afterEach, mock } from "bun:test"
-import { render, screen, cleanup, fireEvent } from "@testing-library/react"
+import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react"
 mock.module("@/components/hackathon/preview/edit-context", () => ({
   useEditOptional: () => null,
   useEdit: () => { throw new Error("useEdit must be used within EditProvider") },
@@ -75,6 +75,28 @@ describe("TimelineEditForm", () => {
     const onSave = mock(() => Promise.resolve(true))
     render(<TimelineEditForm initialData={emptyData} onSave={onSave} />)
     expect(onSave).not.toHaveBeenCalled()
+  })
+
+  it("saves the late signup setting when it changes", async () => {
+    const onSave = mock(() => Promise.resolve(true))
+    render(
+      <TimelineEditForm
+        initialData={{ ...baseData, allowLateRegistration: true }}
+        onSave={onSave}
+      />
+    )
+
+    const lateSignupSwitch = screen.getByRole("switch", {
+      name: "Let people join after the event starts",
+    })
+    expect(lateSignupSwitch.getAttribute("aria-checked")).toBe("true")
+
+    fireEvent.click(lateSignupSwitch)
+    expect(lateSignupSwitch.getAttribute("aria-checked")).toBe("false")
+    fireEvent.click(screen.getByText("Save & exit"))
+
+    await waitFor(() => expect(onSave).toHaveBeenCalled())
+    expect(onSave.mock.calls[0][0].allowLateRegistration).toBe(false)
   })
 
   it("shows keyboard shortcut hints", () => {

@@ -93,6 +93,7 @@ function stateToHackathon(state: DraftState): PublicHackathon {
     ends_at: state.endsAt,
     registration_opens_at: null,
     registration_closes_at: null,
+    allow_late_registration: true,
     max_participants: null,
     min_team_size: 1,
     max_team_size: 5,

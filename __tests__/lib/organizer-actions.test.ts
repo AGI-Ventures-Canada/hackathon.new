@@ -30,6 +30,8 @@ function makeInput(overrides: Partial<Parameters<typeof getOrganizerActionItems>
     bannerUrl: null,
     startsAt: null,
     endsAt: null,
+    registrationClosesAt: null,
+    allowLateRegistration: true,
     locationType: null,
     feedbackSurveyUrl: null,
     feedbackSurveySentAt: null,
@@ -488,6 +490,37 @@ describe("getOrganizerActionItems", () => {
       }))
 
       expect(items.find((i) => i.id === "unassigned-submissions")).toBeUndefined()
+    })
+
+    it("shows a late signup todo when people cannot join after the event starts", () => {
+      const now = Date.now()
+      const items = getOrganizerActionItems(makeInput({
+        status: "active",
+        startsAt: new Date(now - 2 * 60 * 60 * 1000).toISOString(),
+        endsAt: new Date(now + 6 * 60 * 60 * 1000).toISOString(),
+        registrationClosesAt: new Date(now - 60 * 60 * 1000).toISOString(),
+        allowLateRegistration: false,
+      }))
+
+      const item = findPending(items, "allow-late-registration")
+      expect(item).toBeDefined()
+      expect(item?.label).toBe("People can't join after the event starts")
+      expect(item?.tab).toBe("edit")
+      expect(item?.action).toBe("open-dates-dialog")
+      expect(item?.ctaLabel).toBe("Fix")
+    })
+
+    it("does not show a late signup todo when late signups are on", () => {
+      const now = Date.now()
+      const items = getOrganizerActionItems(makeInput({
+        status: "active",
+        startsAt: new Date(now - 2 * 60 * 60 * 1000).toISOString(),
+        endsAt: new Date(now + 6 * 60 * 60 * 1000).toISOString(),
+        registrationClosesAt: new Date(now - 60 * 60 * 1000).toISOString(),
+        allowLateRegistration: true,
+      }))
+
+      expect(items.find((i) => i.id === "allow-late-registration")).toBeUndefined()
     })
   })
 

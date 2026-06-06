@@ -58,6 +58,7 @@ export async function createHackathonFromImport(
       ends_at: input.endsAt,
       registration_opens_at: input.registrationOpensAt ?? null,
       registration_closes_at: input.registrationClosesAt ?? null,
+      allow_late_registration: true,
       location_type: input.locationType,
       location_name: input.locationName,
       location_url: input.locationUrl,

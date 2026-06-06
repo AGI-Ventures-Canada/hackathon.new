@@ -28,6 +28,7 @@ const mockHackathon: Hackathon = {
   ends_at: "2026-02-17T18:00:00Z",
   registration_opens_at: "2026-02-01T00:00:00Z",
   registration_closes_at: "2026-02-14T23:59:59Z",
+  allow_late_registration: true,
   max_participants: 100,
   min_team_size: 1,
   max_team_size: 5,
@@ -299,6 +300,27 @@ describe("Public Hackathons Service", () => {
       })
 
       expect(result?.banner_url).toBe("https://new.com/banner.png")
+    })
+
+    it("updates late registration setting", async () => {
+      let updatePayload: Record<string, unknown> | null = null
+      const chain = createChainableMock({
+        data: { ...mockHackathon, allow_late_registration: false },
+        error: null,
+      })
+      const originalUpdate = chain.update
+      chain.update = mock((payload: Record<string, unknown>) => {
+        updatePayload = payload
+        return originalUpdate(payload)
+      }) as typeof chain.update
+      setMockFromImplementation(() => chain)
+
+      const result = await updateHackathonSettings("h1", "t1", {
+        allowLateRegistration: false,
+      })
+
+      expect(result?.allow_late_registration).toBe(false)
+      expect(updatePayload).toEqual({ allow_late_registration: false })
     })
 
     it("updates team and participant settings", async () => {

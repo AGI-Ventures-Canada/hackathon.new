@@ -76,9 +76,11 @@ export function AttendeeShowcase({ data }: { data: ShowcaseData }) {
             registrationProps={{
               hackathonSlug: hackathon.slug,
               status: hackathon.status,
+              startsAt: hackathon.starts_at,
               endsAt: hackathon.ends_at,
               registrationOpensAt: hackathon.registration_opens_at,
               registrationClosesAt: hackathon.registration_closes_at,
+              allowLateRegistration: hackathon.allow_late_registration,
               maxParticipants: hackathon.max_participants,
               participantCount: 42,
               isRegistered: false,
@@ -146,9 +148,11 @@ export function AttendeeShowcase({ data }: { data: ShowcaseData }) {
             <RegistrationButton
               hackathonSlug={hackathon.slug}
               status={hackathon.status}
+              startsAt={hackathon.starts_at}
               endsAt={hackathon.ends_at}
               registrationOpensAt={hackathon.registration_opens_at}
               registrationClosesAt={hackathon.registration_closes_at}
+              allowLateRegistration={hackathon.allow_late_registration}
               maxParticipants={hackathon.max_participants}
               participantCount={42}
               isRegistered={false}
@@ -159,9 +163,11 @@ export function AttendeeShowcase({ data }: { data: ShowcaseData }) {
             <RegistrationButton
               hackathonSlug={hackathon.slug}
               status={hackathon.status}
+              startsAt={hackathon.starts_at}
               endsAt={hackathon.ends_at}
               registrationOpensAt={hackathon.registration_opens_at}
               registrationClosesAt={hackathon.registration_closes_at}
+              allowLateRegistration={hackathon.allow_late_registration}
               maxParticipants={hackathon.max_participants}
               participantCount={42}
               isRegistered

@@ -80,6 +80,7 @@ async function createTestHackathon(opts: {
       ends_at: opts.endsAt.toISOString(),
       registration_opens_at: (opts.registrationOpensAt ?? new Date(Date.now() - 14 * 86400000)).toISOString(),
       registration_closes_at: (opts.registrationClosesAt ?? opts.startsAt).toISOString(),
+      allow_late_registration: true,
       min_team_size: 1,
       max_team_size: 4,
       allow_solo: true,

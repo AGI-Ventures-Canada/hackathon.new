@@ -139,6 +139,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       endsAt: hackathon.ends_at,
       registrationOpensAt: hackathon.registration_opens_at,
       registrationClosesAt: hackathon.registration_closes_at,
+      allowLateRegistration: hackathon.allow_late_registration,
       requireTermsAcceptance: Boolean(termsHash),
       termsContent: termsHash ? hackathon.terms_content : null,
       termsHash,

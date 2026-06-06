@@ -69,7 +69,7 @@ export async function createTeamInvitation(
 
   const { data: hackathon, error: hackathonError } = await client
     .from("hackathons")
-    .select("id, status, ends_at, registration_closes_at, max_team_size")
+    .select("id, status, starts_at, ends_at, registration_closes_at, allow_late_registration, max_team_size")
     .eq("id", input.hackathonId)
     .single()
 
@@ -84,7 +84,10 @@ export async function createTeamInvitation(
   if (!canInviteTeamMembers({
     isFormingCaptain: true,
     hackathonStatus: hackathon.status,
+    startsAt: hackathon.starts_at,
+    endsAt: hackathon.ends_at,
     registrationClosesAt: hackathon.registration_closes_at,
+    allowLateRegistration: hackathon.allow_late_registration,
     nowIso: new Date().toISOString(),
   })) {
     return { success: false, error: "Registration has closed", code: "registration_closed" }

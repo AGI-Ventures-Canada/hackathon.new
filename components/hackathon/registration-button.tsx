@@ -12,9 +12,11 @@ import { TermsAcceptanceBlock } from "@/components/hackathon/terms-acceptance-bl
 interface RegistrationButtonProps {
   hackathonSlug: string
   status: HackathonStatus
+  startsAt: string | null
   endsAt: string | null
   registrationOpensAt: string | null
   registrationClosesAt: string | null
+  allowLateRegistration?: boolean
   maxParticipants: number | null
   participantCount: number
   isRegistered: boolean
@@ -31,9 +33,11 @@ const openStatuses: HackathonStatus[] = ["published", "registration_open", "acti
 export function RegistrationButton({
   hackathonSlug,
   status,
+  startsAt,
   endsAt,
   registrationOpensAt,
   registrationClosesAt,
+  allowLateRegistration = true,
   maxParticipants,
   participantCount,
   isRegistered: initialIsRegistered,
@@ -73,9 +77,17 @@ export function RegistrationButton({
   }
 
   const now = new Date()
+  const eventStartsAt = startsAt ? new Date(startsAt) : null
   const opensAt = registrationOpensAt ? new Date(registrationOpensAt) : null
   const closesAt = registrationClosesAt ? new Date(registrationClosesAt) : null
   const eventEndsAt = endsAt ? new Date(endsAt) : null
+  const canRegisterLate = Boolean(
+    allowLateRegistration &&
+    eventStartsAt &&
+    now >= eventStartsAt &&
+    (!eventEndsAt || now <= eventEndsAt) &&
+    openStatuses.includes(status)
+  )
 
   if (blockedStatuses.includes(status)) {
     const blockedMessage: Record<string, string> = {
@@ -110,7 +122,7 @@ export function RegistrationButton({
     )
   }
 
-  if (closesAt && now > closesAt) {
+  if (closesAt && now > closesAt && !canRegisterLate) {
     return (
       <div className="flex flex-col gap-1.5">
         <Button disabled variant="secondary" size="lg">

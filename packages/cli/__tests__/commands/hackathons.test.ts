@@ -305,6 +305,17 @@ describe("hackathons commands", () => {
       expect(JSON.parse(init.body as string)).toEqual({ requireTeamApproval: true })
     })
 
+    it("sends late registration setting flags", async () => {
+      const uuid = "12345678-1234-1234-1234-123456789012"
+      mockFetch.mockResolvedValueOnce(jsonResponse({ id: uuid, name: "Updated Hack" }))
+      const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
+      const { runHackathonsUpdate } = await import("../../src/commands/hackathons/update")
+      await runHackathonsUpdate(client, uuid, ["--no-allow-late-registration"])
+
+      const init = mockFetch.mock.calls[0][1] as RequestInit
+      expect(JSON.parse(init.body as string)).toEqual({ allowLateRegistration: false })
+    })
+
     it("--json outputs full hackathon returned by PATCH", async () => {
       const uuid = "12345678-1234-1234-1234-123456789012"
       const hackathon = { id: uuid, name: "Updated Hack", slug: "updated-hack" }

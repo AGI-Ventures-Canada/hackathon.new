@@ -1235,6 +1235,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       endsAt: hackathon.ends_at,
       registrationOpensAt: hackathon.registration_opens_at,
       registrationClosesAt: hackathon.registration_closes_at,
+      allowLateRegistration: hackathon.allow_late_registration,
       maxParticipants: hackathon.max_participants,
       minTeamSize: hackathon.min_team_size,
       maxTeamSize: hackathon.max_team_size,
@@ -1370,6 +1371,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       const hasOtherFields = body.bannerUrl !== undefined || body.name !== undefined ||
         body.description !== undefined || body.rules !== undefined ||
         body.startsAt !== undefined || body.endsAt !== undefined ||
+        body.allowLateRegistration !== undefined ||
         body.anonymousJudging !== undefined || body.judgingMode !== undefined ||
         body.locationType !== undefined || body.locationName !== undefined ||
         body.locationUrl !== undefined || body.locationLatitude !== undefined ||
@@ -1397,6 +1399,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           bannerUrl: body.bannerUrl,
           startsAt: body.startsAt,
           endsAt: body.endsAt,
+          allowLateRegistration: body.allowLateRegistration,
           status: hasStatusTransition ? undefined : body.status as "draft" | "published" | "registration_open" | "active" | "judging" | "completed" | "archived" | undefined,
           anonymousJudging: body.anonymousJudging,
           judgingMode: body.judgingMode as "points" | "subjective" | "rubric" | undefined,
@@ -1454,6 +1457,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           rules: body.rules,
           startsAt: body.startsAt,
           endsAt: body.endsAt,
+          allowLateRegistration: body.allowLateRegistration,
           status: hasStatusTransition ? undefined : body.status as "draft" | "published" | "registration_open" | "active" | "judging" | "completed" | "archived" | undefined,
           anonymousJudging: body.anonymousJudging,
           judgingMode: body.judgingMode as "points" | "subjective" | "rubric" | undefined,
@@ -1628,6 +1632,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         endsAt: h.ends_at,
         registrationOpensAt: h.registration_opens_at,
         registrationClosesAt: h.registration_closes_at,
+        allowLateRegistration: h.allow_late_registration,
         maxParticipants: h.max_participants,
         minTeamSize: h.min_team_size,
         maxTeamSize: h.max_team_size,
@@ -1654,6 +1659,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         rules: t.Optional(t.Union([t.String(), t.Null()])),
         startsAt: t.Optional(t.Union([t.String(), t.Null()])),
         endsAt: t.Optional(t.Union([t.String(), t.Null()])),
+        allowLateRegistration: t.Optional(t.Boolean()),
         status: t.Optional(t.Union([
           t.Literal("draft"),
           t.Literal("published"),

@@ -176,6 +176,7 @@ export async function createHackathon(
       min_team_size: 1,
       max_team_size: 5,
       allow_solo: true,
+      allow_late_registration: true,
       require_team_approval: false,
       metadata: {},
     })

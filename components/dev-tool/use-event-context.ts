@@ -13,6 +13,7 @@ export type EventContext = {
   endsAt: string | null
   registrationOpensAt: string | null
   registrationClosesAt: string | null
+  allowLateRegistration: boolean
   refetch: () => void
 }
 
@@ -50,6 +51,7 @@ export function useEventContext(): EventContext | null {
           endsAt: json.ends_at,
           registrationOpensAt: json.registration_opens_at,
           registrationClosesAt: json.registration_closes_at,
+          allowLateRegistration: json.allow_late_registration ?? true,
         })
       } catch (err) {
         if ((err as Error).name !== "AbortError") {

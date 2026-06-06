@@ -32,6 +32,7 @@ const mockHackathon: Hackathon = {
   ends_at: null,
   registration_opens_at: null,
   registration_closes_at: null,
+  allow_late_registration: true,
   max_participants: null,
   min_team_size: 1,
   max_team_size: 5,

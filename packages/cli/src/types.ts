@@ -27,6 +27,7 @@ export interface Hackathon {
   phase?: string
   startsAt?: string
   endsAt?: string
+  allowLateRegistration?: boolean
   createdAt?: string
   updatedAt?: string
 }
