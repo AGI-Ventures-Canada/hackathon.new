@@ -351,6 +351,7 @@ export async function updateHackathonSettings(
     endsAt?: string | null
     registrationOpensAt?: string | null
     registrationClosesAt?: string | null
+    allowLateRegistration?: boolean
     status?: HackathonStatus
     anonymousJudging?: boolean
     judgingMode?: JudgingMode
@@ -382,6 +383,7 @@ export async function updateHackathonSettings(
   if (updates.endsAt !== undefined) updateData.ends_at = updates.endsAt
   if (updates.registrationOpensAt !== undefined) updateData.registration_opens_at = updates.registrationOpensAt
   if (updates.registrationClosesAt !== undefined) updateData.registration_closes_at = updates.registrationClosesAt
+  if (updates.allowLateRegistration !== undefined) updateData.allow_late_registration = updates.allowLateRegistration
   if (updates.status !== undefined) updateData.status = updates.status
   if (updates.anonymousJudging !== undefined) updateData.anonymous_judging = updates.anonymousJudging
   if (updates.judgingMode !== undefined) updateData.judging_mode = updates.judgingMode

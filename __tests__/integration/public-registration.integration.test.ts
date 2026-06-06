@@ -82,6 +82,7 @@ const mockHackathon = {
   ends_at: "2026-03-02T00:00:00Z",
   registration_opens_at: "2026-01-01T00:00:00Z",
   registration_closes_at: "2026-02-28T00:00:00Z",
+  allow_late_registration: true,
   organizer: {
     id: "t1",
     name: "Test Org",

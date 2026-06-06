@@ -123,6 +123,7 @@ export interface Hackathon {
   ends_at: string | null
   registration_opens_at: string | null
   registration_closes_at: string | null
+  allow_late_registration: boolean
   max_participants: number | null
   min_team_size: number
   max_team_size: number

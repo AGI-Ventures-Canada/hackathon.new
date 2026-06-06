@@ -3,7 +3,7 @@
 -- Depends on: tenants
 -- ============================================================================
 
-INSERT INTO hackathons (id, tenant_id, name, slug, description, rules, starts_at, ends_at, registration_opens_at, registration_closes_at, status, min_team_size, max_team_size, allow_solo, require_team_approval, created_at, updated_at)
+INSERT INTO hackathons (id, tenant_id, name, slug, description, rules, starts_at, ends_at, registration_opens_at, registration_closes_at, allow_late_registration, status, min_team_size, max_team_size, allow_solo, require_team_approval, created_at, updated_at)
 VALUES
   (
     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
@@ -36,6 +36,7 @@ All participants get free API credits from our sponsors. Check the [AI SDK docs]
     now() - interval '14 days',
     now() - interval '45 days',
     now() - interval '18 days',
+    true,
     'completed',
     1,
     4,
@@ -59,6 +60,7 @@ All participants get free API credits from our sponsors. Check the [AI SDK docs]
     now() + interval '62 days',
     now(),
     now() + interval '55 days',
+    true,
     'published',
     2,
     5,
@@ -70,7 +72,7 @@ All participants get free API credits from our sponsors. Check the [AI SDK docs]
 ON CONFLICT (id) DO NOTHING;
 
 -- Tavily hackathon
-INSERT INTO hackathons (id, tenant_id, name, slug, description, rules, starts_at, ends_at, registration_opens_at, registration_closes_at, status, min_team_size, max_team_size, allow_solo, require_team_approval, created_at, updated_at)
+INSERT INTO hackathons (id, tenant_id, name, slug, description, rules, starts_at, ends_at, registration_opens_at, registration_closes_at, allow_late_registration, status, min_team_size, max_team_size, allow_solo, require_team_approval, created_at, updated_at)
 VALUES
   (
     'cccccccc-cccc-cccc-cccc-cccccccccccc',
@@ -87,6 +89,7 @@ VALUES
     now() - interval '31 days',
     now() - interval '50 days',
     now() - interval '34 days',
+    true,
     'completed',
     1,
     3,
@@ -98,7 +101,7 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- Anthropic hackathon
-INSERT INTO hackathons (id, tenant_id, name, slug, description, rules, starts_at, ends_at, registration_opens_at, registration_closes_at, status, min_team_size, max_team_size, allow_solo, require_team_approval, created_at, updated_at)
+INSERT INTO hackathons (id, tenant_id, name, slug, description, rules, starts_at, ends_at, registration_opens_at, registration_closes_at, allow_late_registration, status, min_team_size, max_team_size, allow_solo, require_team_approval, created_at, updated_at)
 VALUES
   (
     'dddddddd-dddd-dddd-dddd-dddddddddddd',
@@ -115,6 +118,7 @@ VALUES
     now() + interval '47 days',
     now() + interval '7 days',
     now() + interval '40 days',
+    true,
     'published',
     1,
     4,

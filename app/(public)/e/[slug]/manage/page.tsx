@@ -122,6 +122,8 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     bannerUrl: hackathon.banner_url,
     startsAt: hackathon.starts_at,
     endsAt: hackathon.ends_at,
+    registrationClosesAt: hackathon.registration_closes_at,
+    allowLateRegistration: hackathon.allow_late_registration,
     locationType: hackathon.location_type ?? null,
     feedbackSurveyUrl: hackathon.feedback_survey_url ?? null,
     feedbackSurveySentAt: hackathon.feedback_survey_sent_at ?? null,
@@ -174,6 +176,8 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
         scheduleItems={scheduleItems}
         startsAt={hackathon.starts_at}
         endsAt={hackathon.ends_at}
+        registrationClosesAt={hackathon.registration_closes_at}
+        allowLateRegistration={hackathon.allow_late_registration}
         description={hackathon.description}
         descriptionLocale={descriptionLocale}
         bannerUrl={hackathon.banner_url}

@@ -74,7 +74,7 @@ ON CONFLICT DO NOTHING;
 -- Depends on: tenants
 -- ============================================================================
 
-INSERT INTO hackathons (id, tenant_id, name, slug, description, rules, starts_at, ends_at, registration_opens_at, registration_closes_at, status, min_team_size, max_team_size, allow_solo, require_team_approval, created_at, updated_at)
+INSERT INTO hackathons (id, tenant_id, name, slug, description, rules, starts_at, ends_at, registration_opens_at, registration_closes_at, allow_late_registration, status, min_team_size, max_team_size, allow_solo, require_team_approval, created_at, updated_at)
 VALUES
   (
     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
@@ -107,6 +107,7 @@ All participants get free API credits from our sponsors. Check the [AI SDK docs]
     now() - interval '14 days',
     now() - interval '45 days',
     now() - interval '18 days',
+    true,
     'completed',
     1,
     4,
@@ -130,6 +131,7 @@ All participants get free API credits from our sponsors. Check the [AI SDK docs]
     now() + interval '62 days',
     now(),
     now() + interval '55 days',
+    true,
     'published',
     2,
     5,
@@ -141,7 +143,7 @@ All participants get free API credits from our sponsors. Check the [AI SDK docs]
 ON CONFLICT (id) DO NOTHING;
 
 -- Tavily hackathon
-INSERT INTO hackathons (id, tenant_id, name, slug, description, rules, starts_at, ends_at, registration_opens_at, registration_closes_at, status, min_team_size, max_team_size, allow_solo, require_team_approval, created_at, updated_at)
+INSERT INTO hackathons (id, tenant_id, name, slug, description, rules, starts_at, ends_at, registration_opens_at, registration_closes_at, allow_late_registration, status, min_team_size, max_team_size, allow_solo, require_team_approval, created_at, updated_at)
 VALUES
   (
     'cccccccc-cccc-cccc-cccc-cccccccccccc',
@@ -158,6 +160,7 @@ VALUES
     now() - interval '31 days',
     now() - interval '50 days',
     now() - interval '34 days',
+    true,
     'completed',
     1,
     3,
@@ -169,7 +172,7 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- Anthropic hackathon
-INSERT INTO hackathons (id, tenant_id, name, slug, description, rules, starts_at, ends_at, registration_opens_at, registration_closes_at, status, min_team_size, max_team_size, allow_solo, require_team_approval, created_at, updated_at)
+INSERT INTO hackathons (id, tenant_id, name, slug, description, rules, starts_at, ends_at, registration_opens_at, registration_closes_at, allow_late_registration, status, min_team_size, max_team_size, allow_solo, require_team_approval, created_at, updated_at)
 VALUES
   (
     'dddddddd-dddd-dddd-dddd-dddddddddddd',
@@ -186,6 +189,7 @@ VALUES
     now() + interval '47 days',
     now() + interval '7 days',
     now() + interval '40 days',
+    true,
     'published',
     1,
     4,
@@ -200,7 +204,7 @@ ON CONFLICT (id) DO NOTHING;
 -- Depends on: tenants
 -- ============================================================================
 
-INSERT INTO hackathons (id, tenant_id, name, slug, description, rules, starts_at, ends_at, registration_opens_at, registration_closes_at, status, min_team_size, max_team_size, allow_solo, require_team_approval, created_at, updated_at)
+INSERT INTO hackathons (id, tenant_id, name, slug, description, rules, starts_at, ends_at, registration_opens_at, registration_closes_at, allow_late_registration, status, min_team_size, max_team_size, allow_solo, require_team_approval, created_at, updated_at)
 VALUES
   (
     'a1a1a1a1-a1a1-a1a1-a1a1-a1a1a1a1a1a1',
@@ -218,6 +222,7 @@ VALUES
     now() + interval '22 days',
     now() - interval '5 days',
     now() + interval '18 days',
+    true,
     'published',
     1,
     5,
@@ -242,6 +247,7 @@ VALUES
     now() + interval '52 days',
     now() + interval '10 days',
     now() + interval '45 days',
+    true,
     'published',
     2,
     6,
@@ -266,6 +272,7 @@ VALUES
     now() + interval '77 days',
     now() + interval '20 days',
     now() + interval '70 days',
+    true,
     'published',
     1,
     4,
@@ -290,6 +297,7 @@ VALUES
     now() + interval '37 days',
     now() - interval '2 days',
     now() + interval '32 days',
+    true,
     'published',
     1,
     4,
@@ -314,6 +322,7 @@ VALUES
     now() + interval '91 days',
     now() + interval '30 days',
     now() + interval '85 days',
+    true,
     'published',
     2,
     5,
@@ -338,6 +347,7 @@ VALUES
     now() + interval '14 days',
     now() - interval '7 days',
     now() + interval '10 days',
+    true,
     'published',
     1,
     4,
@@ -362,6 +372,7 @@ VALUES
     now() + interval '62 days',
     now() + interval '15 days',
     now() + interval '55 days',
+    true,
     'published',
     1,
     5,
@@ -386,6 +397,7 @@ VALUES
     now() + interval '102 days',
     now() + interval '40 days',
     now() + interval '95 days',
+    true,
     'published',
     2,
     6,
@@ -410,6 +422,7 @@ VALUES
     now() + interval '122 days',
     now() + interval '50 days',
     now() + interval '115 days',
+    true,
     'published',
     2,
     5,
@@ -434,6 +447,7 @@ VALUES
     now() - interval '60 days',
     now() - interval '80 days',
     now() - interval '64 days',
+    true,
     'completed',
     1,
     3,
@@ -458,6 +472,7 @@ VALUES
     now() + interval '26 days',
     now() + interval '3 days',
     now() + interval '23 days',
+    true,
     'published',
     1,
     4,
@@ -482,6 +497,7 @@ VALUES
     now() + interval '17 days',
     now() - interval '3 days',
     now() + interval '13 days',
+    true,
     'published',
     1,
     4,
@@ -496,7 +512,7 @@ ON CONFLICT (id) DO NOTHING;
 -- Depends on: tenants
 -- ============================================================================
 
-INSERT INTO hackathons (id, tenant_id, name, slug, description, rules, starts_at, ends_at, registration_opens_at, registration_closes_at, status, min_team_size, max_team_size, allow_solo, require_team_approval, created_at, updated_at)
+INSERT INTO hackathons (id, tenant_id, name, slug, description, rules, starts_at, ends_at, registration_opens_at, registration_closes_at, allow_late_registration, status, min_team_size, max_team_size, allow_solo, require_team_approval, created_at, updated_at)
 VALUES
   (
     'aaa10001-aaa1-aaa1-aaa1-aaa10001aaa1',
@@ -514,6 +530,7 @@ VALUES
     now() - interval '22 days',
     now() - interval '40 days',
     now() - interval '25 days',
+    true,
     'completed',
     1,
     4,
@@ -538,6 +555,7 @@ VALUES
     now() - interval '43 days',
     now() - interval '60 days',
     now() - interval '46 days',
+    true,
     'completed',
     1,
     3,
@@ -562,6 +580,7 @@ VALUES
     now() - interval '64 days',
     now() - interval '80 days',
     now() - interval '67 days',
+    true,
     'completed',
     1,
     4,
@@ -586,6 +605,7 @@ VALUES
     now() + interval '21 days',
     now() - interval '5 days',
     now() + interval '18 days',
+    true,
     'published',
     2,
     5,
@@ -610,6 +630,7 @@ VALUES
     now() + interval '47 days',
     now() + interval '5 days',
     now() + interval '40 days',
+    true,
     'published',
     1,
     6,
@@ -634,6 +655,7 @@ VALUES
     now() + interval '72 days',
     now() + interval '20 days',
     now() + interval '65 days',
+    true,
     'published',
     2,
     4,
@@ -648,7 +670,7 @@ ON CONFLICT (id) DO NOTHING;
 -- Depends on: tenants
 -- ============================================================================
 
-INSERT INTO hackathons (id, tenant_id, name, slug, description, rules, starts_at, ends_at, registration_opens_at, registration_closes_at, status, min_team_size, max_team_size, allow_solo, require_team_approval, created_at, updated_at)
+INSERT INTO hackathons (id, tenant_id, name, slug, description, rules, starts_at, ends_at, registration_opens_at, registration_closes_at, allow_late_registration, status, min_team_size, max_team_size, allow_solo, require_team_approval, created_at, updated_at)
 VALUES
   (
     'aa11aa11-aa11-aa11-aa11-aa11aa11aa11',
@@ -665,6 +687,7 @@ VALUES
     now() - interval '24 days',
     now() - interval '45 days',
     now() - interval '27 days',
+    true,
     'completed',
     1,
     3,
@@ -688,6 +711,7 @@ VALUES
     now() + interval '32 days',
     now() - interval '3 days',
     now() + interval '25 days',
+    true,
     'published',
     1,
     4,
@@ -711,6 +735,7 @@ VALUES
     now() + interval '57 days',
     now() + interval '10 days',
     now() + interval '50 days',
+    true,
     'published',
     1,
     4,
@@ -734,6 +759,7 @@ VALUES
     now() + interval '83 days',
     now() + interval '25 days',
     now() + interval '75 days',
+    true,
     'published',
     2,
     4,
@@ -757,6 +783,7 @@ VALUES
     now() - interval '38 days',
     now() - interval '60 days',
     now() - interval '42 days',
+    true,
     'completed',
     1,
     3,
@@ -780,6 +807,7 @@ VALUES
     now() + interval '42 days',
     now() + interval '5 days',
     now() + interval '35 days',
+    true,
     'published',
     1,
     5,
@@ -803,6 +831,7 @@ VALUES
     now() + interval '72 days',
     now() + interval '15 days',
     now() + interval '65 days',
+    true,
     'published',
     1,
     4,
@@ -826,6 +855,7 @@ VALUES
     now() + interval '97 days',
     now() + interval '35 days',
     now() + interval '90 days',
+    true,
     'published',
     1,
     6,

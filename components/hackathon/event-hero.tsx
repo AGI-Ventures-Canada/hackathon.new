@@ -19,9 +19,11 @@ import { formatDateRange } from "@/lib/utils/format";
 interface RegistrationProps {
   hackathonSlug: string;
   status: HackathonStatus;
+  startsAt: string | null;
   endsAt: string | null;
   registrationOpensAt: string | null;
   registrationClosesAt: string | null;
+  allowLateRegistration?: boolean;
   maxParticipants: number | null;
   participantCount: number;
   isRegistered: boolean;
@@ -462,9 +464,11 @@ export function EventHero({
               <RegistrationButton
                 hackathonSlug={registrationProps.hackathonSlug}
                 status={status}
+                startsAt={registrationProps.startsAt}
                 endsAt={registrationProps.endsAt}
                 registrationOpensAt={registrationProps.registrationOpensAt}
                 registrationClosesAt={registrationProps.registrationClosesAt}
+                allowLateRegistration={registrationProps.allowLateRegistration}
                 maxParticipants={registrationProps.maxParticipants}
                 participantCount={registrationProps.participantCount}
                 isRegistered={registrationProps.isRegistered}

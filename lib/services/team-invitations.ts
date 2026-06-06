@@ -1,6 +1,5 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { TeamInvitation, TeamStatus } from "@/lib/db/hackathon-types"
-import { randomBytes } from "crypto"
 import { checkRoleConflict } from "@/lib/services/role-conflict"
 import { isValidUuid } from "@/lib/utils/uuid"
 import { canInviteTeamMembers } from "@/lib/utils/team-invite"
@@ -11,6 +10,12 @@ const TEAM_STATUSES_OPEN_FOR_INVITES: ReadonlySet<TeamStatus> = new Set<TeamStat
   "forming",
   "pending_approval",
 ])
+
+function createInvitationToken(): string {
+  const bytes = new Uint8Array(32)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")
+}
 
 export type CreateInvitationInput = {
   teamId: string
@@ -69,7 +74,7 @@ export async function createTeamInvitation(
 
   const { data: hackathon, error: hackathonError } = await client
     .from("hackathons")
-    .select("id, status, ends_at, registration_closes_at, max_team_size")
+    .select("id, status, starts_at, ends_at, registration_closes_at, allow_late_registration, max_team_size")
     .eq("id", input.hackathonId)
     .single()
 
@@ -84,7 +89,10 @@ export async function createTeamInvitation(
   if (!canInviteTeamMembers({
     isFormingCaptain: true,
     hackathonStatus: hackathon.status,
+    startsAt: hackathon.starts_at,
+    endsAt: hackathon.ends_at,
     registrationClosesAt: hackathon.registration_closes_at,
+    allowLateRegistration: hackathon.allow_late_registration,
     nowIso: new Date().toISOString(),
   })) {
     return { success: false, error: "Registration has closed", code: "registration_closed" }
@@ -133,7 +141,7 @@ export async function createTeamInvitation(
     // the conflict will be caught at acceptance time
   }
 
-  const token = randomBytes(32).toString("base64url")
+  const token = createInvitationToken()
 
   const { data: invitation, error: insertError } = await client
     .from("team_invitations")
@@ -404,7 +412,7 @@ export async function replaceTeamCaptainInvitation(
     }
   }
 
-  const token = randomBytes(32).toString("base64url")
+  const token = createInvitationToken()
   const expiresAt = new Date(Date.now() + INVITATION_EXPIRY_MS).toISOString()
 
   const { data: invitation, error: insertError } = await client

@@ -7,6 +7,7 @@ interface UpdateOptions {
   name?: string
   slug?: string
   description?: string
+  allowLateRegistration?: boolean
   requireTeamApproval?: boolean
   json?: boolean
 }
@@ -23,6 +24,12 @@ export function parseUpdateOptions(args: string[]): UpdateOptions {
         break
       case "--description":
         options.description = args[++i]
+        break
+      case "--allow-late-registration":
+        options.allowLateRegistration = true
+        break
+      case "--no-allow-late-registration":
+        options.allowLateRegistration = false
         break
       case "--require-team-approval":
         options.requireTeamApproval = true
@@ -44,7 +51,7 @@ export async function runHackathonsUpdate(
   args: string[]
 ): Promise<void> {
   if (!idOrSlug) {
-    console.error("Usage: hackathon events update <id-or-slug> [--name ...] [--slug ...] [--description ...] [--require-team-approval|--no-require-team-approval]")
+    console.error("Usage: hackathon events update <id-or-slug> [--name ...] [--slug ...] [--description ...] [--allow-late-registration|--no-allow-late-registration] [--require-team-approval|--no-require-team-approval]")
     process.exit(1)
   }
 
@@ -55,6 +62,7 @@ export async function runHackathonsUpdate(
   if (options.name) body.name = options.name
   if (options.slug) body.slug = options.slug
   if (options.description) body.description = options.description
+  if (options.allowLateRegistration !== undefined) body.allowLateRegistration = options.allowLateRegistration
   if (options.requireTeamApproval !== undefined) body.requireTeamApproval = options.requireTeamApproval
 
   if (Object.keys(body).length === 0) {

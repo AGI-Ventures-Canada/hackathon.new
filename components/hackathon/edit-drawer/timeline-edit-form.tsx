@@ -13,6 +13,7 @@ import {
   FieldDescription,
   FieldGroup,
 } from "@/components/ui/field"
+import { Switch } from "@/components/ui/switch"
 import { Kbd, KbdGroup } from "@/components/ui/kbd"
 import { startOfDay } from "date-fns"
 import { Undo2 } from "lucide-react"
@@ -24,11 +25,13 @@ interface TimelineEditFormProps {
   initialData: {
     startsAt: string | null
     endsAt: string | null
+    allowLateRegistration?: boolean | null
   }
   onSaveAndNext?: () => void
   onSave?: (data: {
     startsAt: Date | null
     endsAt: Date | null
+    allowLateRegistration: boolean
   }) => Promise<boolean>
   onCancel?: () => void
 }
@@ -50,6 +53,9 @@ export function TimelineEditForm({ hackathonId, initialData, onSaveAndNext, onSa
     from: parseDate(initialData.startsAt),
     to: parseDate(initialData.endsAt),
   })
+  const [allowLateRegistration, setAllowLateRegistration] = useState(
+    initialData.allowLateRegistration ?? true
+  )
 
   function rangeChanged(range: DateTimeRange, fromInitial: string | null, toInitial: string | null): boolean {
     const fromEqual = !range.from && !fromInitial ? true : range.from && fromInitial ? range.from.getTime() === new Date(fromInitial).getTime() : false
@@ -58,12 +64,14 @@ export function TimelineEditForm({ hackathonId, initialData, onSaveAndNext, onSa
   }
 
   const isDirty = rangeChanged(hackathonRange, initialData.startsAt, initialData.endsAt)
+    || allowLateRegistration !== (initialData.allowLateRegistration ?? true)
 
   function handleReset() {
     setHackathonRange({
       from: parseDate(initialData.startsAt),
       to: parseDate(initialData.endsAt),
     })
+    setAllowLateRegistration(initialData.allowLateRegistration ?? true)
     setError(null)
   }
 
@@ -86,6 +94,7 @@ export function TimelineEditForm({ hackathonId, initialData, onSaveAndNext, onSa
         return await onSave({
           startsAt: hackathonRange.from || null,
           endsAt: hackathonRange.to || null,
+          allowLateRegistration,
         })
       }
 
@@ -95,6 +104,7 @@ export function TimelineEditForm({ hackathonId, initialData, onSaveAndNext, onSa
         body: JSON.stringify({
           startsAt: hackathonRange.from || null,
           endsAt: hackathonRange.to || null,
+          allowLateRegistration,
         }),
       })
 
@@ -156,6 +166,22 @@ export function TimelineEditForm({ hackathonId, initialData, onSaveAndNext, onSa
         <FieldDescription>
           Set when the event starts and ends
         </FieldDescription>
+
+        <Field className="flex flex-row items-center justify-between gap-4 rounded-lg border p-4">
+          <div className="space-y-1">
+            <FieldLabel htmlFor="allow-late-registration">
+              Let people join after the event starts
+            </FieldLabel>
+            <FieldDescription>
+              Keep signups open during the event for walk-ins and late teams.
+            </FieldDescription>
+          </div>
+          <Switch
+            id="allow-late-registration"
+            checked={allowLateRegistration}
+            onCheckedChange={setAllowLateRegistration}
+          />
+        </Field>
 
         {error && (
           <p className="text-destructive text-sm">{error}</p>

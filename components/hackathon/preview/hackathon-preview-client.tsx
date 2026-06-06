@@ -166,7 +166,10 @@ function HackathonPreviewContent({
   const canInviteTeamMembers = getCanInviteTeamMembers({
     isFormingCaptain: canManageTeam,
     hackathonStatus: hackathon.status,
+    startsAt: hackathon.starts_at,
+    endsAt: hackathon.ends_at,
     registrationClosesAt: hackathon.registration_closes_at,
+    allowLateRegistration: hackathon.allow_late_registration,
     nowIso,
   })
 
@@ -786,11 +789,13 @@ function HackathonPreviewContent({
           initialData={{
             startsAt: hackathon.starts_at,
             endsAt: hackathon.ends_at,
+            allowLateRegistration: hackathon.allow_late_registration,
           }}
           onSaveAndNext={() => handleSaveAndNext("dates")}
           onSave={onFormSave ? (data) => onFormSave({
             startsAt: data.startsAt?.toISOString() ?? null,
             endsAt: data.endsAt?.toISOString() ?? null,
+            allowLateRegistration: data.allowLateRegistration,
           }) : undefined}
         />
       ) : undefined}
@@ -824,9 +829,11 @@ function HackathonPreviewContent({
       registrationProps={(isEditable && editMode) ? undefined : isJudge ? undefined : {
         hackathonSlug: hackathon.slug,
         status: hackathon.status,
+        startsAt: hackathon.starts_at,
         endsAt: hackathon.ends_at,
         registrationOpensAt: hackathon.registration_opens_at,
         registrationClosesAt: hackathon.registration_closes_at,
+        allowLateRegistration: hackathon.allow_late_registration,
         maxParticipants: hackathon.max_participants,
         participantCount,
         isRegistered,

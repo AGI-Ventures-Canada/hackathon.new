@@ -149,7 +149,7 @@ export const devRoutes = new Elysia({ prefix: "/dev" })
       const db = await getDb()
       const { data, error } = await db
         .from("hackathons")
-        .select("id, slug, name, status, phase, starts_at, ends_at, registration_opens_at, registration_closes_at")
+        .select("id, slug, name, status, phase, starts_at, ends_at, registration_opens_at, registration_closes_at, allow_late_registration")
         .eq("slug", params.slug)
         .single()
 
@@ -697,6 +697,7 @@ export const devRoutes = new Elysia({ prefix: "/dev" })
         ends_at: new Date(now.getTime() + 6 * 3600000).toISOString(),
         registration_opens_at: new Date(now.getTime() - 7 * 86400000).toISOString(),
         registration_closes_at: new Date(now.getTime() - 2 * 3600000).toISOString(),
+        allow_late_registration: true,
       }).eq("id", params.id)
 
       await db.from("teams")

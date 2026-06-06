@@ -3,7 +3,7 @@
 -- Depends on: tenants
 -- ============================================================================
 
-INSERT INTO hackathons (id, tenant_id, name, slug, description, rules, starts_at, ends_at, registration_opens_at, registration_closes_at, status, min_team_size, max_team_size, allow_solo, require_team_approval, created_at, updated_at)
+INSERT INTO hackathons (id, tenant_id, name, slug, description, rules, starts_at, ends_at, registration_opens_at, registration_closes_at, allow_late_registration, status, min_team_size, max_team_size, allow_solo, require_team_approval, created_at, updated_at)
 VALUES
   (
     'aaa10001-aaa1-aaa1-aaa1-aaa10001aaa1',
@@ -21,6 +21,7 @@ VALUES
     now() - interval '22 days',
     now() - interval '40 days',
     now() - interval '25 days',
+    true,
     'completed',
     1,
     4,
@@ -45,6 +46,7 @@ VALUES
     now() - interval '43 days',
     now() - interval '60 days',
     now() - interval '46 days',
+    true,
     'completed',
     1,
     3,
@@ -69,6 +71,7 @@ VALUES
     now() - interval '64 days',
     now() - interval '80 days',
     now() - interval '67 days',
+    true,
     'completed',
     1,
     4,
@@ -93,6 +96,7 @@ VALUES
     now() + interval '21 days',
     now() - interval '5 days',
     now() + interval '18 days',
+    true,
     'published',
     2,
     5,
@@ -117,6 +121,7 @@ VALUES
     now() + interval '47 days',
     now() + interval '5 days',
     now() + interval '40 days',
+    true,
     'published',
     1,
     6,
@@ -141,6 +146,7 @@ VALUES
     now() + interval '72 days',
     now() + interval '20 days',
     now() + interval '65 days',
+    true,
     'published',
     2,
     4,
