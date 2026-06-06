@@ -37,6 +37,7 @@ export const mockHackathon: Hackathon = {
   ends_at: addDays(16),
   registration_opens_at: addDays(-2),
   registration_closes_at: addDays(13),
+  allow_late_registration: true,
   max_participants: 200,
   min_team_size: 1,
   max_team_size: 5,

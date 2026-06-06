@@ -139,11 +139,17 @@ export async function sendWinnerEmails(hackathonId: string): Promise<number> {
   if (memberUserIds.length === 0) return 0
 
   const clerk = await clerkClient()
-  const users = await clerk.users.getUserList({ userId: memberUserIds })
   const tag = sanitizeTag(hackathon.name)
   const resultsUrl = `${baseUrl}/e/${hackathon.slug}`
 
-  const emailPromises = users.data
+  const resolvedUsers: Awaited<ReturnType<typeof clerk.users.getUserList>>["data"] = []
+  for (let i = 0; i < memberUserIds.length; i += 100) {
+    const batch = memberUserIds.slice(i, i + 100)
+    const page = await clerk.users.getUserList({ userId: batch, limit: 100 })
+    resolvedUsers.push(...page.data)
+  }
+
+  const emailPromises = resolvedUsers
     .flatMap((user) => {
       const email = user.primaryEmailAddress?.emailAddress
       if (!email) return []

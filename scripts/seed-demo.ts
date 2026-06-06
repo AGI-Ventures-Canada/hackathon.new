@@ -167,6 +167,7 @@ Prizes:
         ends_at: new Date("2026-02-17T18:00:00Z").toISOString(),
         registration_opens_at: new Date("2026-02-01T00:00:00Z").toISOString(),
         registration_closes_at: new Date("2026-02-14T23:59:59Z").toISOString(),
+        allow_late_registration: true,
       })
       .eq("id", existingHackathon.id)
 
@@ -202,6 +203,7 @@ Prizes:
         ends_at: new Date("2026-02-17T18:00:00Z").toISOString(),
         registration_opens_at: new Date("2026-02-01T00:00:00Z").toISOString(),
         registration_closes_at: new Date("2026-02-14T23:59:59Z").toISOString(),
+        allow_late_registration: true,
         min_team_size: 1,
         max_team_size: 4,
         allow_solo: true,

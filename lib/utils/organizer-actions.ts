@@ -138,6 +138,8 @@ export type ActionItemsInput = {
   bannerUrl: string | null
   startsAt: string | null
   endsAt: string | null
+  registrationClosesAt?: string | null
+  allowLateRegistration?: boolean
   locationType: "in_person" | "virtual" | "hybrid" | null
   feedbackSurveyUrl: string | null
   feedbackSurveySentAt: string | null
@@ -297,6 +299,37 @@ function addPendingTeamApprovalAction(items: ActionItem[], input: ActionItemsInp
       hint: "Approve or deny them before they can submit",
     },
     completed: { label: "No teams waiting for approval", hint: "Every team is handled" },
+  }))
+}
+
+function addLateRegistrationAction(items: ActionItem[], input: ActionItemsInput) {
+  if (input.allowLateRegistration !== false) return
+  if (!input.startsAt || !input.registrationClosesAt) return
+
+  const now = Date.now()
+  const startsAt = new Date(input.startsAt).getTime()
+  const closesAt = new Date(input.registrationClosesAt).getTime()
+  const endsAt = input.endsAt ? new Date(input.endsAt).getTime() : null
+
+  if (now < startsAt || now <= closesAt) return
+  if (endsAt && now > endsAt) return
+
+  items.push(autoAction({
+    id: "allow-late-registration",
+    severity: "urgent",
+    tab: "edit",
+    action: "open-dates-dialog",
+    ctaLabel: "Fix",
+    tooltip: "People can still join after the event starts when late signups are on. Turn this on for walk-ins and last-minute teams.",
+    isComplete: false,
+    pending: {
+      label: "People can't join after the event starts",
+      hint: "Turn on late signups if walk-ins should join",
+    },
+    completed: {
+      label: "Late signups are on",
+      hint: "People can join while the event is live",
+    },
   }))
 }
 
@@ -571,6 +604,7 @@ function addShowcaseAction(items: ActionItem[], input: ActionItemsInput) {
 
 function addActiveActions(items: ActionItem[], input: ActionItemsInput) {
   addPendingTeamApprovalAction(items, input)
+  addLateRegistrationAction(items, input)
 
   addChallengeActions(items, input)
   addShowcaseAction(items, input)

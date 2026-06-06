@@ -46,8 +46,10 @@ const mockTeam = {
 const mockHackathon = {
   id: "h1",
   status: "active",
+  starts_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
   ends_at: null,
   registration_closes_at: null,
+  allow_late_registration: true,
   max_team_size: 5,
 }
 
@@ -306,6 +308,7 @@ describe("Team Invitations Service", () => {
             data: {
               ...mockHackathon,
               status: "registration_open",
+              starts_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
               registration_closes_at: new Date(Date.now() - 60_000).toISOString(),
             },
             error: null,
@@ -366,6 +369,38 @@ describe("Team Invitations Service", () => {
       expect(result.success).toBe(true)
       if (result.success) {
         expect(result.invitation.email).toBe("invitee@example.com")
+      }
+    })
+
+    it("blocks team invites after registration closes when late signups are off", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "teams") {
+          return createChainableMock({ data: mockTeam, error: null })
+        }
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: {
+              ...mockHackathon,
+              status: "active",
+              registration_closes_at: new Date(Date.now() - 60_000).toISOString(),
+              allow_late_registration: false,
+            },
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await createTeamInvitation({
+        teamId: "team_1",
+        hackathonId: "h1",
+        email: "invitee@example.com",
+        invitedByClerkUserId: "user_captain",
+      })
+
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.code).toBe("registration_closed")
       }
     })
 

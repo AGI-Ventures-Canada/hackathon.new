@@ -23,6 +23,8 @@ function makeRpcPayload(overrides: Record<string, unknown> = {}) {
     results_published_at: null,
     starts_at: "2099-04-28T09:00:00Z",
     ends_at: "2099-04-28T17:00:00Z",
+    registration_closes_at: "2099-04-28T09:00:00Z",
+    allow_late_registration: true,
     location_type: "in_person",
     feedback_survey_url: null,
     feedback_survey_sent_at: null,
@@ -97,6 +99,8 @@ describe("Organizer Polling Service", () => {
       expect(result!.bannerUrl).toBe("https://example.com/banner.png")
       expect(result!.startsAt).toBe("2099-04-28T09:00:00Z")
       expect(result!.endsAt).toBe("2099-04-28T17:00:00Z")
+      expect(result!.registrationClosesAt).toBe("2099-04-28T09:00:00Z")
+      expect(result!.allowLateRegistration).toBe(true)
       expect(result!.locationType).toBe("in_person")
       expect(result!.feedbackSurveyUrl).toBeNull()
       expect(result!.feedbackSurveySentAt).toBeNull()

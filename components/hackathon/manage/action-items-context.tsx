@@ -168,6 +168,8 @@ type ProviderProps = {
   scheduleItems: ScheduleItem[];
   startsAt: string | null;
   endsAt: string | null;
+  registrationClosesAt: string | null;
+  allowLateRegistration: boolean;
   description: string | null;
   descriptionLocale: string | null;
   bannerUrl: string | null;
@@ -192,6 +194,8 @@ export function ActionItemsProvider({
   scheduleItems: serverScheduleItems,
   startsAt: serverStartsAt,
   endsAt: serverEndsAt,
+  registrationClosesAt: serverRegistrationClosesAt,
+  allowLateRegistration: serverAllowLateRegistration,
   description,
   descriptionLocale,
   bannerUrl: serverBannerUrl,
@@ -278,6 +282,12 @@ export function ActionItemsProvider({
     : challengeExists;
   const liveEndsAt = isPollFresh && pollData ? pollData.endsAt : serverEndsAt;
   const liveStartsAt = isPollFresh && pollData ? pollData.startsAt : serverStartsAt;
+  const liveRegistrationClosesAt = isPollFresh && pollData
+    ? pollData.registrationClosesAt ?? null
+    : serverRegistrationClosesAt;
+  const liveAllowLateRegistration = isPollFresh && pollData
+    ? pollData.allowLateRegistration ?? true
+    : serverAllowLateRegistration;
   const liveStatus = (
     isPollFresh && pollData ? pollData.status : serverStatus
   ) as HackathonStatus;
@@ -297,7 +307,12 @@ export function ActionItemsProvider({
   }, [baseEffectiveStatus, optimisticStage]);
   const effectiveStatus = applyOptimisticStage(baseEffectiveStatus, optimisticStage);
   const actionItems = isPollFresh && pollData
-    ? getOrganizerActionItems({ ...pollData, status: effectiveStatus })
+    ? getOrganizerActionItems({
+        ...pollData,
+        status: effectiveStatus,
+        registrationClosesAt: liveRegistrationClosesAt,
+        allowLateRegistration: liveAllowLateRegistration,
+      })
     : serverActionItems;
 
   const [completedIds, setCompletedIds] = useState<Set<string>>(() => {
@@ -887,12 +902,14 @@ export function ActionItemsProvider({
             initialData={{
               startsAt: liveStartsAt,
               endsAt: liveEndsAt,
+              allowLateRegistration: liveAllowLateRegistration,
             }}
             onCancel={() => setDatesDialogItem(null)}
             onSave={(data) =>
               saveSettingsForAction(datesDialogItem, {
                 startsAt: data.startsAt?.toISOString() ?? null,
                 endsAt: data.endsAt?.toISOString() ?? null,
+                allowLateRegistration: data.allowLateRegistration,
               })
             }
           />

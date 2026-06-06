@@ -921,6 +921,7 @@ export type Database = {
       }
       hackathons: {
         Row: {
+          allow_late_registration: boolean
           allow_solo: boolean | null
           anonymous_judging: boolean
           auto_assign_by_room: boolean
@@ -966,6 +967,7 @@ export type Database = {
           winner_emails_sent_at: string | null
         }
         Insert: {
+          allow_late_registration?: boolean
           allow_solo?: boolean | null
           anonymous_judging?: boolean
           auto_assign_by_room?: boolean
@@ -1011,6 +1013,7 @@ export type Database = {
           winner_emails_sent_at?: string | null
         }
         Update: {
+          allow_late_registration?: boolean
           allow_solo?: boolean | null
           anonymous_judging?: boolean
           auto_assign_by_room?: boolean
@@ -3226,6 +3229,7 @@ export type Database = {
           p_tenant_id: string
         }
         Returns: {
+          allow_late_registration: boolean
           allow_solo: boolean | null
           anonymous_judging: boolean
           auto_assign_by_room: boolean
