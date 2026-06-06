@@ -88,15 +88,16 @@ git tag cli-v0.2.0
 git push origin main --tags
 ```
 
-### NPM_TOKEN setup
+### Authentication: Trusted Publishing (OIDC)
 
-The workflow needs an `NPM_TOKEN` GitHub secret to publish. Must be a **classic automation token** (not granular) to bypass 2FA.
+The workflow authenticates to npm via **Trusted Publishing** — GitHub mints a short-lived OIDC token per run, so there is **no `NPM_TOKEN` secret to manage and nothing to expire**. Publishes also get build provenance automatically.
 
-1. Go to https://www.npmjs.com/settings/toastedshibe/tokens → **Generate New Token** → **Classic Token**
-2. Select type: **Automation** (bypasses 2FA, required for CI)
-3. Click **Generate token** and copy the value
-4. Go to https://github.com/AGI-Ventures-Canada/oatmeal/settings/secrets/actions
-5. Create (or update) a secret named `NPM_TOKEN` with the copied value
+Requirements (already configured):
+- `permissions: id-token: write` on the job.
+- Runner on **Node 22 + npm ≥ 11.5.1** (trusted publishing needs npm ≥ 11.5.1 / Node ≥ 22.14.0).
+- A Trusted Publisher entry on the npm package (Settings → Trusted Publisher → GitHub Actions): org `AGI-Ventures-Canada`, repo `oatmeal`, workflow `publish-cli.yml`.
+
+If the workflow filename ever changes, update the Trusted Publisher entry to match, or publishes will fail to authenticate.
 
 ## Related: Hackathon Skills
 

@@ -2,6 +2,18 @@
   "name": "@agi-ventures-canada/hackathon-cli",
   "version": "0.2.6",
   "description": "CLI for the Oatmeal hackathon platform",
+  "keywords": [
+    "hackathon",
+    "cli",
+    "oatmeal"
+  ],
+  "homepage": "https://github.com/AGI-Ventures-Canada/oatmeal/tree/main/packages/cli#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AGI-Ventures-Canada/oatmeal.git",
+    "directory": "packages/cli"
+  },
+  "license": "AGPL-3.0-only",
   "type": "module",
   "bin": {
     "hackathon": "./bin/cli.mjs"
