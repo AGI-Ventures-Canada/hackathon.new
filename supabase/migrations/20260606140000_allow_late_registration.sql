@@ -114,7 +114,7 @@ BEGIN
   END IF;
 
   v_final_team_name := COALESCE(p_team_name, 'My Team');
-  v_invite_code := encode(gen_random_bytes(6), 'hex');
+  v_invite_code := encode(extensions.gen_random_bytes(6), 'hex');
   v_team_status := CASE WHEN v_hackathon.require_team_approval THEN 'pending_approval'::public.team_status ELSE 'forming'::public.team_status END;
 
   INSERT INTO public.teams (hackathon_id, name, captain_clerk_user_id, invite_code, status)
