@@ -16,6 +16,12 @@ type ParticipantWithHackathon = HackathonParticipant & {
   hackathons: Hackathon
 }
 
+function createToken(): string {
+  const bytes = new Uint8Array(32)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")
+}
+
 export async function listParticipatingHackathons(
   clerkUserId: string,
   options?: { search?: string }
@@ -793,8 +799,7 @@ async function createPendingTeamWithInvite(
     return { error: "Failed to create team" }
   }
 
-  const { randomBytes } = await import("crypto")
-  const token = randomBytes(32).toString("base64url")
+  const token = createToken()
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
 
   const { data: invitation, error: inviteError } = await client
