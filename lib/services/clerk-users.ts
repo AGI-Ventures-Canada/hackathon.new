@@ -26,7 +26,7 @@ export async function resolveClerkUsers(userIds: string[]): Promise<ClerkUserLoo
     const clerk = await clerkClient()
     for (let i = 0; i < realUserIds.length; i += 100) {
       const batch = realUserIds.slice(i, i + 100)
-      const users = await clerk.users.getUserList({ userId: batch })
+      const users = await clerk.users.getUserList({ userId: batch, limit: 100 })
       for (const user of users.data) {
         displayNames[user.id] = user.firstName
           ? `${user.firstName}${user.lastName ? ` ${user.lastName}` : ""}`
