@@ -11,8 +11,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -83,17 +84,19 @@ jobs:
         if: "startsWith(github.ref, 'refs/tags/cli-v') || steps.changes.outputs.changed == 'true'"
         run: cd packages/cli && bun run build
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         if: "startsWith(github.ref, 'refs/tags/cli-v') || steps.changes.outputs.changed == 'true'"
         with:
-          node-version: '20'
+          node-version: '22'
           registry-url: 'https://registry.npmjs.org'
+
+      - name: Upgrade npm for trusted publishing
+        if: "startsWith(github.ref, 'refs/tags/cli-v') || steps.changes.outputs.changed == 'true'"
+        run: npm install -g npm@latest
 
       - name: Publish to npm
         if: "startsWith(github.ref, 'refs/tags/cli-v') || steps.changes.outputs.changed == 'true'"
         run: cd packages/cli && npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Get version for tag-triggered runs
         if: "startsWith(github.ref, 'refs/tags/cli-v')"
