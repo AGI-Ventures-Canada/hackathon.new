@@ -2050,6 +2050,57 @@ export async function assertAssignmentWritable(
   }
 }
 
+export type ClearJudgeAssignmentsResult = {
+  success: boolean
+  removedCount: number
+  resultsStale: boolean
+}
+
+export async function clearAllJudgeAssignments(
+  hackathonId: string
+): Promise<ClearJudgeAssignmentsResult> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data: toDelete } = await client
+    .from("judge_assignments")
+    .select("id")
+    .eq("hackathon_id", hackathonId)
+
+  const removedCount = toDelete?.length ?? 0
+
+  if (removedCount === 0) {
+    return { success: true, removedCount: 0, resultsStale: false }
+  }
+
+  const { error: assignmentError } = await client
+    .from("judge_assignments")
+    .delete()
+    .eq("hackathon_id", hackathonId)
+
+  if (assignmentError) {
+    console.error("Failed to clear judge assignments:", assignmentError)
+    return { success: false, removedCount: 0, resultsStale: false }
+  }
+
+  const { error: prizeAssignmentError } = await client
+    .from("judge_prize_assignments")
+    .delete()
+    .eq("hackathon_id", hackathonId)
+
+  if (prizeAssignmentError) {
+    console.error("Failed to clear judge_prize_assignments:", prizeAssignmentError)
+  }
+
+  const { data: existingResults } = await client
+    .from("hackathon_results")
+    .select("id")
+    .eq("hackathon_id", hackathonId)
+    .limit(1)
+
+  const resultsStale = (existingResults?.length ?? 0) > 0
+  return { success: true, removedCount, resultsStale }
+}
+
 export async function removeJudgeFromPrize(
   hackathonId: string,
   judgeParticipantId: string,

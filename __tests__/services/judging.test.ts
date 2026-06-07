@@ -12,6 +12,7 @@ const {
   addJudge,
   listJudges,
   removeJudge,
+  clearAllJudgeAssignments,
   autoAssignJudges,
   assignWeightedScoreJudge,
   getWeightedScoreAssignmentSummary,
@@ -336,6 +337,103 @@ describe("Judging Service", () => {
       const result = await removeJudge("h1", "j1")
 
       expect(result.success).toBe(true)
+    })
+  })
+
+  describe("clearAllJudgeAssignments", () => {
+    it("returns success with zero count when there are no assignments", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "judge_assignments") {
+          return createChainableMock({ data: [], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await clearAllJudgeAssignments("h1")
+
+      expect(result.success).toBe(true)
+      expect(result.removedCount).toBe(0)
+      expect(result.resultsStale).toBe(false)
+    })
+
+    it("deletes assignments and prize-mappings, reports stale results when results exist", async () => {
+      let judgeAssignmentsCallCount = 0
+      setMockFromImplementation((table) => {
+        if (table === "judge_assignments") {
+          judgeAssignmentsCallCount++
+          if (judgeAssignmentsCallCount === 1) {
+            return createChainableMock({
+              data: [{ id: "a1" }, { id: "a2" }, { id: "a3" }],
+              error: null,
+            })
+          }
+          return createChainableMock({ data: null, error: null })
+        }
+        if (table === "judge_prize_assignments") {
+          return createChainableMock({ data: null, error: null })
+        }
+        if (table === "hackathon_results") {
+          return createChainableMock({ data: [{ id: "r1" }], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await clearAllJudgeAssignments("h1")
+
+      expect(result.success).toBe(true)
+      expect(result.removedCount).toBe(3)
+      expect(result.resultsStale).toBe(true)
+    })
+
+    it("returns failure when judge_assignments delete errors", async () => {
+      let judgeAssignmentsCallCount = 0
+      setMockFromImplementation((table) => {
+        if (table === "judge_assignments") {
+          judgeAssignmentsCallCount++
+          if (judgeAssignmentsCallCount === 1) {
+            return createChainableMock({ data: [{ id: "a1" }], error: null })
+          }
+          return createChainableMock({
+            data: null,
+            error: { message: "Delete failed" },
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await clearAllJudgeAssignments("h1")
+
+      expect(result.success).toBe(false)
+      expect(result.removedCount).toBe(0)
+    })
+
+    it("still succeeds when judge_prize_assignments cleanup fails", async () => {
+      let judgeAssignmentsCallCount = 0
+      setMockFromImplementation((table) => {
+        if (table === "judge_assignments") {
+          judgeAssignmentsCallCount++
+          if (judgeAssignmentsCallCount === 1) {
+            return createChainableMock({ data: [{ id: "a1" }], error: null })
+          }
+          return createChainableMock({ data: null, error: null })
+        }
+        if (table === "judge_prize_assignments") {
+          return createChainableMock({
+            data: null,
+            error: { message: "Cleanup failed" },
+          })
+        }
+        if (table === "hackathon_results") {
+          return createChainableMock({ data: [], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await clearAllJudgeAssignments("h1")
+
+      expect(result.success).toBe(true)
+      expect(result.removedCount).toBe(1)
+      expect(result.resultsStale).toBe(false)
     })
   })
 

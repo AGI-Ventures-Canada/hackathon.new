@@ -1502,6 +1502,39 @@ export const dashboardJudgingRoutes = new Elysia()
     }
   )
 
+  .delete("/hackathons/:id/judging/assignments", async ({ principal, params }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+
+    const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+    const result = await checkHackathonOrganizer(params.id, principal.tenantId)
+
+    if (result.status === "not_found") {
+      return new Response(JSON.stringify({ error: "Hackathon not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+    }
+    if (result.status === "not_authorized") {
+      return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
+    }
+
+    const { clearAllJudgeAssignments } = await import("@/lib/services/judging")
+    const clearResult = await clearAllJudgeAssignments(params.id)
+
+    if (!clearResult.success) {
+      return new Response(JSON.stringify({ error: "Failed to clear assignments" }), { status: 500, headers: { "Content-Type": "application/json" } })
+    }
+
+    logAudit({
+      principal,
+      action: "judging.assignments_cleared",
+      resourceType: "hackathon",
+      resourceId: params.id,
+      metadata: { removedCount: clearResult.removedCount },
+    })
+
+    return { success: true, removedCount: clearResult.removedCount, resultsStale: clearResult.resultsStale }
+  }, {
+    detail: { summary: "Clear all judge assignments", description: "Removes every judge-to-submission assignment for the hackathon. Use to recover from a bad mass-assignment." },
+  })
+
   .delete("/hackathons/:id/judging/judges/:participantId", async ({ principal, params }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
 
