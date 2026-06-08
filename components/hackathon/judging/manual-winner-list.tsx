@@ -12,9 +12,18 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { ChevronDown, Loader2, Search, Trophy } from "lucide-react"
 import { assertOk, assertOkJson } from "@/lib/utils/fetch"
 import type { WinnerPickerData } from "@/lib/services/judging"
+
+const ALL_PRIZES = "__all__"
 
 interface ManualWinnerListProps {
   hackathonId: string
@@ -26,6 +35,7 @@ export function ManualWinnerList({ hackathonId, roundName, roundId }: ManualWinn
   const router = useRouter()
   const [data, setData] = useState<WinnerPickerData | null>(null)
   const [search, setSearch] = useState("")
+  const [prizeFilter, setPrizeFilter] = useState<string>(ALL_PRIZES)
   const [pending, setPending] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
 
@@ -53,16 +63,44 @@ export function ManualWinnerList({ hackathonId, roundName, roundId }: ManualWinn
     }
   }, [refetchData])
 
+  useEffect(() => {
+    if (
+      prizeFilter !== ALL_PRIZES &&
+      data &&
+      !data.prizes.some((p) => p.id === prizeFilter)
+    ) {
+      setPrizeFilter(ALL_PRIZES)
+    }
+  }, [data, prizeFilter])
+
   const filtered = useMemo(() => {
     if (!data) return []
+    let projects = data.projects
+    if (prizeFilter !== ALL_PRIZES) {
+      projects = projects.filter(
+        (p) =>
+          p.prizeIds.includes(prizeFilter) ||
+          p.prizeScores.some((ps) => ps.prizeId === prizeFilter)
+      )
+      projects = [...projects].sort((a, b) => {
+        const aScore = a.prizeScores.find((ps) => ps.prizeId === prizeFilter)?.score
+        const bScore = b.prizeScores.find((ps) => ps.prizeId === prizeFilter)?.score
+        const aHas = aScore !== undefined
+        const bHas = bScore !== undefined
+        if (aHas && !bHas) return -1
+        if (!aHas && bHas) return 1
+        if (aHas && bHas && aScore !== bScore) return bScore! - aScore!
+        return a.projectTitle.localeCompare(b.projectTitle)
+      })
+    }
     const q = search.trim().toLowerCase()
-    if (!q) return data.projects
-    return data.projects.filter(
+    if (!q) return projects
+    return projects.filter(
       (p) =>
         p.projectTitle.toLowerCase().includes(q) ||
         (p.teamName?.toLowerCase().includes(q) ?? false)
     )
-  }, [data, search])
+  }, [data, search, prizeFilter])
 
   const assignedPrizeCount = useMemo(() => {
     if (!data) return 0
@@ -72,6 +110,13 @@ export function ManualWinnerList({ hackathonId, roundName, roundId }: ManualWinn
     }
     return assigned.size
   }, [data])
+
+  const selectedPrizeWinner = useMemo(() => {
+    if (!data || prizeFilter === ALL_PRIZES) return null
+    return (
+      data.projects.find((p) => p.prizeIds.includes(prizeFilter)) ?? null
+    )
+  }, [data, prizeFilter])
 
   function prizeNameById(id: string) {
     return data?.prizes.find((p) => p.id === id)?.name ?? "Prize"
@@ -191,39 +236,78 @@ export function ManualWinnerList({ hackathonId, roundName, roundId }: ManualWinn
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs font-medium">Pick winners</p>
         <span className="text-xs text-muted-foreground">
-          {assignedPrizeCount} of {data.prizes.length} prize{data.prizes.length === 1 ? "" : "s"} assigned
+          {prizeFilter === ALL_PRIZES
+            ? `${assignedPrizeCount} of ${data.prizes.length} prize${data.prizes.length === 1 ? "" : "s"} assigned`
+            : selectedPrizeWinner
+              ? `Winner: ${selectedPrizeWinner.projectTitle}`
+              : "No winner yet"}
         </span>
       </div>
 
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Search by project or team"
-          className="h-8 pl-8 text-sm"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+      <div className="flex flex-col gap-2 sm:flex-row">
+        {data.prizes.length > 1 && (
+          <Select value={prizeFilter} onValueChange={setPrizeFilter}>
+            <SelectTrigger size="sm" className="w-full text-sm sm:w-48">
+              <SelectValue placeholder="Filter by prize" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_PRIZES}>All prizes</SelectItem>
+              {data.prizes.map((prize) => (
+                <SelectItem key={prize.id} value={prize.id}>
+                  {prize.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search by project or team"
+            className="h-8 pl-8 text-sm"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
       </div>
 
       <ScrollArea className="h-96 rounded-md border bg-transparent dark:bg-input/30">
         {filtered.length === 0 ? (
           <div className="p-6 text-center text-xs text-muted-foreground">
-            No projects match your search.
+            {search.trim()
+              ? "No projects match your search."
+              : prizeFilter !== ALL_PRIZES
+                ? "No projects compete for this prize yet."
+                : "No projects match your search."}
           </div>
         ) : (
           <ul className="divide-y">
             {filtered.map((project) => {
               const isPending = pending.has(project.submissionId)
+              const isSelectedPrizeWinner =
+                prizeFilter !== ALL_PRIZES && project.prizeIds.includes(prizeFilter)
+              const visibleAssignedPrizeIds =
+                prizeFilter === ALL_PRIZES
+                  ? project.prizeIds
+                  : project.prizeIds.filter((id) => id !== prizeFilter)
               return (
                 <li key={project.submissionId} className="flex items-center gap-3 p-2.5">
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium">{project.projectTitle}</div>
+                    <div className="flex items-center gap-2">
+                      <div className="truncate text-sm font-medium">{project.projectTitle}</div>
+                      {isSelectedPrizeWinner && (
+                        <Badge variant="default" className="gap-1 text-xs">
+                          <Trophy className="size-3" />
+                          Winner
+                        </Badge>
+                      )}
+                    </div>
                     <div className="truncate text-xs text-muted-foreground">
                       {project.teamName ?? "No team"}
                     </div>
-                    {project.prizeIds.length > 0 && (
+                    {visibleAssignedPrizeIds.length > 0 && (
                       <div className="mt-1 flex flex-wrap gap-1">
-                        {project.prizeIds.map((id) => (
+                        {visibleAssignedPrizeIds.map((id) => (
                           <Badge key={id} variant="secondary" className="gap-1 text-xs">
                             <Trophy className="size-3" />
                             {prizeNameById(id)}
@@ -233,17 +317,25 @@ export function ManualWinnerList({ hackathonId, roundName, roundId }: ManualWinn
                     )}
                     {project.prizeScores.length > 0 && (
                       <div className="mt-1 flex flex-wrap gap-1">
-                        {project.prizeScores.map((ps) => (
-                          <span
-                            key={ps.prizeId}
-                            className="rounded border px-1.5 py-0.5 text-xs text-muted-foreground"
-                          >
-                            <span className="font-mono font-medium text-foreground">
-                              {Math.round(ps.score * 100)}%
-                            </span>{" "}
-                            {ps.prizeName}
-                          </span>
-                        ))}
+                        {project.prizeScores.map((ps) => {
+                          const isSelectedPrize =
+                            prizeFilter !== ALL_PRIZES && ps.prizeId === prizeFilter
+                          return (
+                            <span
+                              key={ps.prizeId}
+                              className={
+                                isSelectedPrize
+                                  ? "rounded border border-primary bg-primary/10 px-1.5 py-0.5 text-xs text-foreground"
+                                  : "rounded border px-1.5 py-0.5 text-xs text-muted-foreground"
+                              }
+                            >
+                              <span className="font-mono font-medium text-foreground">
+                                {Math.round(ps.score * 100)}%
+                              </span>{" "}
+                              {ps.prizeName}
+                            </span>
+                          )
+                        })}
                       </div>
                     )}
                   </div>
