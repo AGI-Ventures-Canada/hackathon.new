@@ -1,6 +1,49 @@
+import React from "react"
 import { describe, expect, it, mock, beforeEach, afterEach } from "bun:test"
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react"
 import { resetComponentMocks } from "../../../lib/component-mocks"
+
+let selectOnValueChange: ((v: string) => void) | null = null
+let selectCurrentValue = ""
+mock.module("@/components/ui/select", () => ({
+  Select: ({
+    value,
+    onValueChange,
+    children,
+  }: {
+    value: string
+    onValueChange?: (v: string) => void
+    children: React.ReactNode
+  }) => {
+    selectOnValueChange = onValueChange ?? null
+    selectCurrentValue = value
+    return <div data-testid="prize-filter-select">{children}</div>
+  },
+  SelectTrigger: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="prize-filter-trigger" role="combobox">
+      {children}
+    </div>
+  ),
+  SelectValue: () => <span data-testid="prize-filter-value">{selectCurrentValue}</span>,
+  SelectContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  SelectItem: ({
+    children,
+    value,
+  }: {
+    children: React.ReactNode
+    value: string
+  }) => (
+    <button
+      type="button"
+      role="option"
+      aria-label={typeof children === "string" ? children : undefined}
+      aria-selected={selectCurrentValue === value}
+      onClick={() => selectOnValueChange?.(value)}
+    >
+      {children}
+    </button>
+  ),
+}))
 
 type FetchHandler = (url: string, init?: RequestInit) => Promise<Response>
 
@@ -92,10 +135,23 @@ const baseProjects: WinnerPickerProject[] = [
   },
 ]
 
+function pickPrize(name: string) {
+  const options = screen.getAllByRole("option", { name })
+  fireEvent.click(options[0])
+}
+
+function getProjectTitles() {
+  return screen
+    .getAllByText(/^(Alpha|Bravo|Charlie) Project$/)
+    .map((el) => el.textContent ?? "")
+}
+
 describe("ManualWinnerList — per-prize filter", () => {
   beforeEach(() => {
     resetComponentMocks()
     mockFetch.mockClear()
+    selectOnValueChange = null
+    selectCurrentValue = ""
     setFetchData({ prizes: basePrizes, projects: baseProjects })
   })
 
@@ -106,7 +162,8 @@ describe("ManualWinnerList — per-prize filter", () => {
       <ManualWinnerList hackathonId="h1" roundId="r1" roundName="Finals" />
     )
     await screen.findByText("Alpha Project")
-    expect(screen.getByText("All prizes")).toBeDefined()
+    expect(screen.getByRole("option", { name: "All prizes" })).toBeDefined()
+    expect(screen.getByRole("option", { name: "Grand Prize" })).toBeDefined()
   })
 
   it("hides the prize filter when there is only one prize", async () => {
@@ -126,7 +183,7 @@ describe("ManualWinnerList — per-prize filter", () => {
       <ManualWinnerList hackathonId="h1" roundId="r1" roundName="Finals" />
     )
     await screen.findByText("Alpha Project")
-    expect(screen.queryByText("All prizes")).toBeNull()
+    expect(screen.queryByRole("option", { name: "All prizes" })).toBeNull()
   })
 
   it("filters projects to only those competing for the selected prize", async () => {
@@ -135,10 +192,7 @@ describe("ManualWinnerList — per-prize filter", () => {
     )
     await screen.findByText("Alpha Project")
 
-    const trigger = screen.getByText("All prizes")
-    fireEvent.click(trigger)
-    const designOption = await screen.findByRole("option", { name: "Best Design" })
-    fireEvent.click(designOption)
+    pickPrize("Best Design")
 
     await waitFor(() => {
       expect(screen.queryByText("Alpha Project")).toBeNull()
@@ -165,8 +219,7 @@ describe("ManualWinnerList — per-prize filter", () => {
     )
     await screen.findByText("Alpha Project")
 
-    fireEvent.click(screen.getByText("All prizes"))
-    fireEvent.click(await screen.findByRole("option", { name: "Best Design" }))
+    pickPrize("Best Design")
 
     await screen.findByText("No projects compete for this prize yet.")
   })
@@ -177,8 +230,7 @@ describe("ManualWinnerList — per-prize filter", () => {
     )
     await screen.findByText("Alpha Project")
 
-    fireEvent.click(screen.getByText("All prizes"))
-    fireEvent.click(await screen.findByRole("option", { name: "Grand Prize" }))
+    pickPrize("Grand Prize")
 
     await screen.findByText("Winner: Alpha Project")
   })
@@ -189,8 +241,7 @@ describe("ManualWinnerList — per-prize filter", () => {
     )
     await screen.findByText("Alpha Project")
 
-    fireEvent.click(screen.getByText("All prizes"))
-    fireEvent.click(await screen.findByRole("option", { name: "Runner Up" }))
+    pickPrize("Runner Up")
 
     await screen.findByText("No winner yet")
   })
@@ -201,13 +252,10 @@ describe("ManualWinnerList — per-prize filter", () => {
     )
     await screen.findByText("Alpha Project")
 
-    fireEvent.click(screen.getByText("All prizes"))
-    fireEvent.click(await screen.findByRole("option", { name: "Runner Up" }))
+    pickPrize("Runner Up")
 
     await waitFor(() => {
-      const titles = screen
-        .getAllByText(/Project$/)
-        .map((el) => el.textContent ?? "")
+      const titles = getProjectTitles()
       expect(titles[0]).toBe("Bravo Project")
       expect(titles[1]).toBe("Alpha Project")
     })
@@ -219,9 +267,7 @@ describe("ManualWinnerList — per-prize filter", () => {
     )
     await screen.findByText("Alpha Project")
 
-    const titles = screen
-      .getAllByText(/Project$/)
-      .map((el) => el.textContent ?? "")
+    const titles = getProjectTitles()
     expect(titles[0]).toBe("Alpha Project")
     expect(titles[1]).toBe("Bravo Project")
     expect(titles[2]).toBe("Charlie Project")
