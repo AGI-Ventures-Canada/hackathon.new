@@ -2,6 +2,11 @@ import React from "react"
 import { describe, expect, it, mock, beforeEach, afterEach } from "bun:test"
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react"
 import { resetComponentMocks } from "../../../lib/component-mocks"
+import type {
+  WinnerPickerData,
+  WinnerPickerPrize,
+  WinnerPickerProject,
+} from "@/lib/services/judging"
 
 let selectOnValueChange: ((v: string) => void) | null = null
 let selectCurrentValue = ""
@@ -56,28 +61,6 @@ globalThis.fetch = mockFetch as unknown as typeof fetch
 const { ManualWinnerList } = await import(
   "@/components/hackathon/judging/manual-winner-list"
 )
-
-type WinnerPickerPrize = { id: string; name: string }
-type PrizeScore = {
-  prizeId: string
-  prizeName: string
-  score: number
-  judgeCount: number
-}
-type WinnerPickerProject = {
-  submissionId: string
-  projectTitle: string
-  teamId: string | null
-  teamName: string | null
-  prizeIds: string[]
-  score: number | null
-  judgeCount: number
-  prizeScores: PrizeScore[]
-}
-type WinnerPickerData = {
-  prizes: WinnerPickerPrize[]
-  projects: WinnerPickerProject[]
-}
 
 function setFetchData(data: WinnerPickerData) {
   fetchHandler = (url) => {

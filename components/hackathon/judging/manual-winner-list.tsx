@@ -247,7 +247,7 @@ export function ManualWinnerList({ hackathonId, roundName, roundId }: ManualWinn
       <div className="flex flex-col gap-2 sm:flex-row">
         {data.prizes.length > 1 && (
           <Select value={prizeFilter} onValueChange={setPrizeFilter}>
-            <SelectTrigger size="sm" className="w-full text-sm sm:w-48">
+            <SelectTrigger size="sm" className="w-full sm:w-48">
               <SelectValue placeholder="Filter by prize" />
             </SelectTrigger>
             <SelectContent>
