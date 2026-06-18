@@ -82,14 +82,14 @@ export function ManualWinnerList({ hackathonId, roundName, roundId }: ManualWinn
           p.prizeIds.includes(prizeFilter) ||
           p.prizeScores.some((ps) => ps.prizeId === prizeFilter)
       )
-      projects = [...projects].sort((a, b) => {
+      projects.sort((a, b) => {
         const aScore = a.prizeScores.find((ps) => ps.prizeId === prizeFilter)?.score
         const bScore = b.prizeScores.find((ps) => ps.prizeId === prizeFilter)?.score
         const aHas = aScore !== undefined
         const bHas = bScore !== undefined
         if (aHas && !bHas) return -1
         if (!aHas && bHas) return 1
-        if (aHas && bHas && aScore !== bScore) return bScore! - aScore!
+        if (aHas && bHas && aScore !== bScore) return (bScore ?? 0) - (aScore ?? 0)
         return a.projectTitle.localeCompare(b.projectTitle)
       })
     }
@@ -276,9 +276,7 @@ export function ManualWinnerList({ hackathonId, roundName, roundId }: ManualWinn
           <div className="p-6 text-center text-xs text-muted-foreground">
             {search.trim()
               ? "No projects match your search."
-              : prizeFilter !== ALL_PRIZES
-                ? "No projects compete for this prize yet."
-                : "No projects match your search."}
+              : "No projects compete for this prize yet."}
           </div>
         ) : (
           <ul className="divide-y">
