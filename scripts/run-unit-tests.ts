@@ -159,8 +159,13 @@ const groups: Group[] = [
     args: ["__tests__/components/mobile-header.test.tsx"],
   },
   {
+    name: "workflows (export-submissions isolated)",
+    args: ["__tests__/workflows/export-submissions-steps.test.ts"],
+  },
+  {
     name: "workflows",
     args: ["__tests__/workflows"],
+    exclude: new Set(["__tests__/workflows/export-submissions-steps.test.ts"]),
   },
   {
     name: "email (resolve-emails)",
