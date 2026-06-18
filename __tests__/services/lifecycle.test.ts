@@ -28,8 +28,10 @@ mock.module("@/lib/services/hackathons", () => ({
 }))
 
 const mockCancelRemindersForEntity = mock(() => Promise.resolve())
+const mockScheduleReminders = mock(() => Promise.resolve(0))
 mock.module("@/lib/services/smart-reminders", () => ({
   cancelRemindersForEntity: mockCancelRemindersForEntity,
+  scheduleReminders: mockScheduleReminders,
 }))
 
 const { executeTransition, processAutoTransitions } = await import(
