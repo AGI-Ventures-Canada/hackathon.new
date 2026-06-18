@@ -85,11 +85,11 @@ export function ManualWinnerList({ hackathonId, roundName, roundId }: ManualWinn
       projects.sort((a, b) => {
         const aScore = a.prizeScores.find((ps) => ps.prizeId === prizeFilter)?.score
         const bScore = b.prizeScores.find((ps) => ps.prizeId === prizeFilter)?.score
-        const aHas = aScore !== undefined
-        const bHas = bScore !== undefined
-        if (aHas && !bHas) return -1
-        if (!aHas && bHas) return 1
-        if (aHas && bHas && aScore !== bScore) return (bScore ?? 0) - (aScore ?? 0)
+        if (aScore !== undefined && bScore === undefined) return -1
+        if (aScore === undefined && bScore !== undefined) return 1
+        if (aScore !== undefined && bScore !== undefined && aScore !== bScore) {
+          return bScore - aScore
+        }
         return a.projectTitle.localeCompare(b.projectTitle)
       })
     }
