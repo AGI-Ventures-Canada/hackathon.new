@@ -4114,18 +4114,13 @@ export async function listJudgeSubmissionAssignments(
 ): Promise<JudgeSubmissionAssignmentRow[]> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { data: judge } = await client
-    .from("hackathon_participants")
-    .select("id, team_id")
-    .eq("id", judgeParticipantId)
-    .eq("hackathon_id", hackathonId)
-    .maybeSingle()
-
-  if (!judge) return []
-
-  const judgeTeamId = (judge as { team_id: string | null }).team_id
-
-  const [submissionsResult, assignmentsResult] = await Promise.all([
+  const [judgeResult, submissionsResult, assignmentsResult] = await Promise.all([
+    client
+      .from("hackathon_participants")
+      .select("id, team_id")
+      .eq("id", judgeParticipantId)
+      .eq("hackathon_id", hackathonId)
+      .maybeSingle(),
     client
       .from("submissions")
       .select("id, title, team_id, teams(name)")
@@ -4138,6 +4133,10 @@ export async function listJudgeSubmissionAssignments(
       .eq("judge_participant_id", judgeParticipantId)
       .eq("assignment_kind", "unified_weighted_score"),
   ])
+
+  if (!judgeResult.data) return []
+
+  const judgeTeamId = (judgeResult.data as { team_id: string | null }).team_id
 
   type SubmissionRow = {
     id: string

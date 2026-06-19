@@ -219,7 +219,7 @@ export function AssignmentsSection({
                     >
                       <ListChecks className="mr-2 size-4" />
                       <span className="hidden sm:inline">Pick projects</span>
-                      <span className="sm:hidden">Pick</span>
+                      <span className="sm:hidden">Projects</span>
                     </Button>
                     <Button
                       size="sm"
