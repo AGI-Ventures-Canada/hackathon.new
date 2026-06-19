@@ -4121,7 +4121,7 @@ export async function listJudgeSubmissionAssignments(
 ): Promise<JudgeSubmissionAssignmentRow[]> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const [judgeResult, submissionsResult, assignmentsResult] = await Promise.all([
+  const [judgeResult, submissionsResult] = await Promise.all([
     client
       .from("hackathon_participants")
       .select("id, team_id")
@@ -4133,29 +4133,39 @@ export async function listJudgeSubmissionAssignments(
       .select("id, title, team_id, teams(name)")
       .eq("hackathon_id", hackathonId)
       .eq("status", "submitted"),
-    client
-      .from("judge_assignments")
-      .select("submission_id")
-      .eq("hackathon_id", hackathonId)
-      .eq("judge_participant_id", judgeParticipantId)
-      .eq("assignment_kind", "unified_weighted_score"),
   ])
 
-  const dbError = judgeResult.error ?? submissionsResult.error ?? assignmentsResult.error
-  if (dbError) {
-    console.error("Failed to list judge submission assignments:", dbError)
-    throw new Error(`Failed to list judge submission assignments: ${dbError.message}`)
+  const lookupError = judgeResult.error ?? submissionsResult.error
+  if (lookupError) {
+    console.error("Failed to list judge submission assignments:", lookupError)
+    throw new Error(`Failed to list judge submission assignments: ${lookupError.message}`)
   }
 
   if (!judgeResult.data) return []
 
   const judgeTeamId = (judgeResult.data as { team_id: string | null }).team_id
-
-  const assigned = new Set(
-    (assignmentsResult.data ?? []).map((a) => (a as { submission_id: string }).submission_id)
-  )
-
   const submissions = (submissionsResult.data as JudgeSubmissionAssignmentDbRow[]) ?? []
+  const submissionIds = submissions.map((s) => s.id)
+
+  const assigned = new Set<string>()
+  if (submissionIds.length > 0) {
+    const assignmentsResult = await client
+      .from("judge_assignments")
+      .select("submission_id")
+      .eq("hackathon_id", hackathonId)
+      .eq("judge_participant_id", judgeParticipantId)
+      .eq("assignment_kind", "unified_weighted_score")
+      .in("submission_id", submissionIds)
+
+    if (assignmentsResult.error) {
+      console.error("Failed to list judge submission assignments:", assignmentsResult.error)
+      throw new Error(`Failed to list judge submission assignments: ${assignmentsResult.error.message}`)
+    }
+
+    for (const row of assignmentsResult.data ?? []) {
+      assigned.add((row as { submission_id: string }).submission_id)
+    }
+  }
 
   return submissions
     .map((s) => {
@@ -4209,22 +4219,6 @@ export async function assignJudgeToSubmission(
     return { success: false, error: "Judges can't score their own team's project" }
   }
 
-  const { data: existing, error: existingError } = await client
-    .from("judge_assignments")
-    .select("id")
-    .eq("hackathon_id", hackathonId)
-    .eq("judge_participant_id", judgeParticipantId)
-    .eq("submission_id", submissionId)
-    .eq("assignment_kind", "unified_weighted_score")
-    .maybeSingle()
-
-  if (existingError) {
-    console.error("Failed to check existing assignment:", existingError)
-    return { success: false, error: existingError.message }
-  }
-
-  if (existing) return { success: true, alreadyAssigned: true }
-
   const { error } = await client.from("judge_assignments").insert({
     hackathon_id: hackathonId,
     judge_participant_id: judgeParticipantId,
@@ -4235,6 +4229,9 @@ export async function assignJudgeToSubmission(
   })
 
   if (error) {
+    if ((error as { code?: string }).code === "23505") {
+      return { success: true, alreadyAssigned: true }
+    }
     console.error("Failed to assign judge to submission:", error)
     return { success: false, error: error.message }
   }

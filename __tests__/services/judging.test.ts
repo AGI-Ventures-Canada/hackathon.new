@@ -1051,8 +1051,7 @@ describe("Judging Service", () => {
       expect(inserted?.assignment_kind).toBe("unified_weighted_score")
     })
 
-    it("returns alreadyAssigned when assignment exists", async () => {
-      let insertCalled = false
+    it("returns alreadyAssigned when the insert hits a unique-constraint conflict", async () => {
       setMockFromImplementation((table) => {
         if (table === "hackathon_participants") {
           return createChainableMock({ data: { id: "j1", team_id: null }, error: null })
@@ -1061,11 +1060,10 @@ describe("Judging Service", () => {
           return createChainableMock({ data: { id: "s1", team_id: "t1" }, error: null })
         }
         if (table === "judge_assignments") {
-          const m = createChainableMock({ data: { id: "a1" }, error: null })
-          m.insert = mock(() => {
-            insertCalled = true
-            return Promise.resolve({ data: null, error: null })
-          }) as typeof m.insert
+          const m = createChainableMock({ data: null, error: null })
+          m.insert = mock(() =>
+            Promise.resolve({ data: null, error: { code: "23505", message: "duplicate key" } })
+          ) as typeof m.insert
           return m
         }
         return createChainableMock({ data: null, error: null })
@@ -1075,7 +1073,6 @@ describe("Judging Service", () => {
 
       expect(result.success).toBe(true)
       if (result.success) expect(result.alreadyAssigned).toBe(true)
-      expect(insertCalled).toBe(false)
     })
 
     it("rejects when judge belongs to the project's team", async () => {
