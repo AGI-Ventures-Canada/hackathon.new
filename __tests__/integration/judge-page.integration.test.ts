@@ -126,7 +126,7 @@ describe("JudgePage", () => {
     mockGetJudgeAssignments.mockImplementation(() => Promise.resolve([mockAssignment]))
   })
 
-  it("redirects unauthenticated users to the event page", async () => {
+  it("redirects unauthenticated users to sign-in with a return URL", async () => {
     mockAuth.mockResolvedValue({ userId: null, orgId: null })
 
     let caught: unknown
@@ -136,7 +136,9 @@ describe("JudgePage", () => {
       caught = e
     }
 
-    expect(getRedirectUrl(caught)).toBe("/e/test-hackathon")
+    expect(getRedirectUrl(caught)).toBe(
+      `/sign-in?redirect_url=${encodeURIComponent("/e/test-hackathon/judge")}`
+    )
   })
 
   it("calls notFound when hackathon does not exist", async () => {

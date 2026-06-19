@@ -17,7 +17,7 @@ export default async function JudgePage({ params }: PageProps) {
   const { userId } = await auth()
 
   if (!userId) {
-    redirect(`/e/${slug}`)
+    redirect(`/sign-in?redirect_url=${encodeURIComponent(`/e/${slug}/judge`)}`)
   }
 
   const hackathon = await getPublicHackathon(slug, { includeUnpublished: true })
