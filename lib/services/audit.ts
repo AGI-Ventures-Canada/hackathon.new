@@ -55,6 +55,7 @@ export type AuditAction =
   | "judge_invitation.reminded"
   | "judge_invitation.cancelled"
   | "judging.auto_assigned"
+  | "judging.assignments_cleared"
   | "judging.track_assigned"
   | "judging.track_unassigned"
   | "rubric_level.created"
