@@ -1443,6 +1443,284 @@ describe("Judging Service", () => {
     })
   })
 
+  describe("finalist filtering (active round scoping)", () => {
+    it("assignWeightedScoreJudge: scopes to active round finalists when one exists", async () => {
+      let inserted: { submission_id: string; round_id: string | null }[] = []
+
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: { id: "j1", team_id: null }, error: null })
+        }
+        if (table === "judging_rounds") {
+          return createChainableMock({ data: { id: "round-finals" }, error: null })
+        }
+        if (table === "round_submissions") {
+          return createChainableMock({
+            data: [{ submission_id: "s2" }, { submission_id: "s4" }],
+            error: null,
+          })
+        }
+        if (table === "submissions") {
+          return createChainableMock({
+            data: [
+              { id: "s2", team_id: "t2" },
+              { id: "s4", team_id: "t4" },
+            ],
+            error: null,
+          })
+        }
+        if (table === "judge_assignments") {
+          const m = createChainableMock({ data: [], error: null })
+          m.insert = mock((rows: { submission_id: string; round_id: string | null }[]) => {
+            inserted = rows
+            return Promise.resolve({ data: null, error: null })
+          }) as typeof m.insert
+          return m
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await assignWeightedScoreJudge("h1", "j1")
+
+      expect(result.success).toBe(true)
+      expect(result.assignedCount).toBe(2)
+      expect(inserted.map((r) => r.submission_id).sort()).toEqual(["s2", "s4"])
+      for (const row of inserted) {
+        expect(row.round_id).toBe("round-finals")
+      }
+    })
+
+    it("assignWeightedScoreJudge: falls back to all submitted when no round is active", async () => {
+      let inserted: { submission_id: string; round_id: string | null }[] = []
+
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: { id: "j1", team_id: null }, error: null })
+        }
+        if (table === "judging_rounds") {
+          return createChainableMock({ data: null, error: null })
+        }
+        if (table === "submissions") {
+          return createChainableMock({
+            data: [
+              { id: "s1", team_id: "t1" },
+              { id: "s2", team_id: "t2" },
+            ],
+            error: null,
+          })
+        }
+        if (table === "judge_assignments") {
+          const m = createChainableMock({ data: [], error: null })
+          m.insert = mock((rows: { submission_id: string; round_id: string | null }[]) => {
+            inserted = rows
+            return Promise.resolve({ data: null, error: null })
+          }) as typeof m.insert
+          return m
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await assignWeightedScoreJudge("h1", "j1")
+
+      expect(result.success).toBe(true)
+      expect(result.assignedCount).toBe(2)
+      for (const row of inserted) {
+        expect(row.round_id).toBeNull()
+      }
+    })
+
+    it("getJudgeAssignments: hides non-finalist assignments when an active round has finalists", async () => {
+      let foundParticipant = false
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants" && !foundParticipant) {
+          foundParticipant = true
+          return createChainableMock({ data: { id: "j1", team_id: null }, error: null })
+        }
+        if (table === "judge_assignments") {
+          return createChainableMock({
+            data: [
+              {
+                id: "a-s1",
+                submission_id: "s1",
+                is_complete: false,
+                notes: "",
+                prize_id: null,
+                submission: { title: "Not advanced", description: null, github_url: null, live_app_url: null, screenshot_url: null, team_id: "tA" },
+              },
+              {
+                id: "a-s2",
+                submission_id: "s2",
+                is_complete: false,
+                notes: "",
+                prize_id: null,
+                submission: { title: "Finalist", description: null, github_url: null, live_app_url: null, screenshot_url: null, team_id: "tB" },
+              },
+            ],
+            error: null,
+          })
+        }
+        if (table === "judging_rounds") {
+          return createChainableMock({ data: { id: "round-finals" }, error: null })
+        }
+        if (table === "round_submissions") {
+          return createChainableMock({ data: [{ submission_id: "s2" }], error: null })
+        }
+        if (table === "teams") {
+          return createChainableMock({
+            data: [
+              { id: "tA", name: "Team A" },
+              { id: "tB", name: "Team B" },
+            ],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await getJudgeAssignments("h1", "user_123")
+
+      expect(result).toHaveLength(1)
+      expect(result[0].submissionId).toBe("s2")
+      expect(result[0].submissionTitle).toBe("Finalist")
+    })
+
+    it("getJudgeAssignments: returns every assignment when no round is active", async () => {
+      let foundParticipant = false
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants" && !foundParticipant) {
+          foundParticipant = true
+          return createChainableMock({ data: { id: "j1", team_id: null }, error: null })
+        }
+        if (table === "judge_assignments") {
+          return createChainableMock({
+            data: [
+              {
+                id: "a-s1",
+                submission_id: "s1",
+                is_complete: false,
+                notes: "",
+                prize_id: null,
+                submission: { title: "P1", description: null, github_url: null, live_app_url: null, screenshot_url: null, team_id: "tA" },
+              },
+              {
+                id: "a-s2",
+                submission_id: "s2",
+                is_complete: false,
+                notes: "",
+                prize_id: null,
+                submission: { title: "P2", description: null, github_url: null, live_app_url: null, screenshot_url: null, team_id: "tB" },
+              },
+            ],
+            error: null,
+          })
+        }
+        if (table === "judging_rounds") {
+          return createChainableMock({ data: null, error: null })
+        }
+        if (table === "teams") {
+          return createChainableMock({
+            data: [
+              { id: "tA", name: "Team A" },
+              { id: "tB", name: "Team B" },
+            ],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await getJudgeAssignments("h1", "user_123")
+
+      expect(result).toHaveLength(2)
+    })
+
+    it("getJudgeAssignments: returns every assignment when the active round has no finalists yet (screening / single-round)", async () => {
+      let foundParticipant = false
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants" && !foundParticipant) {
+          foundParticipant = true
+          return createChainableMock({ data: { id: "j1", team_id: null }, error: null })
+        }
+        if (table === "judge_assignments") {
+          return createChainableMock({
+            data: [
+              {
+                id: "a1",
+                submission_id: "s1",
+                is_complete: false,
+                notes: "",
+                prize_id: null,
+                submission: { title: "P1", description: null, github_url: null, live_app_url: null, screenshot_url: null, team_id: "tA" },
+              },
+            ],
+            error: null,
+          })
+        }
+        if (table === "judging_rounds") {
+          return createChainableMock({ data: { id: "round-screening" }, error: null })
+        }
+        if (table === "round_submissions") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "teams") {
+          return createChainableMock({ data: [{ id: "tA", name: "Team A" }], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await getJudgeAssignments("h1", "user_123")
+
+      expect(result).toHaveLength(1)
+    })
+
+    it("getWeightedScoreAssignmentSummary: reports finalist count when an active round has finalists", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "submissions") {
+          return createChainableMock({
+            data: [
+              { id: "s1", team_id: "t1" },
+              { id: "s2", team_id: "t2" },
+              { id: "s3", team_id: "t3" },
+              { id: "s4", team_id: "t4" },
+            ],
+            error: null,
+          })
+        }
+        if (table === "rooms") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "room_teams") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "judge_assignments") {
+          return createChainableMock({
+            data: [
+              { judge_participant_id: "j1", submission_id: "s1" },
+              { judge_participant_id: "j1", submission_id: "s2" },
+              { judge_participant_id: "j1", submission_id: "s3" },
+            ],
+            error: null,
+          })
+        }
+        if (table === "judging_rounds") {
+          return createChainableMock({ data: { id: "round-finals" }, error: null })
+        }
+        if (table === "round_submissions") {
+          return createChainableMock({
+            data: [{ submission_id: "s2" }, { submission_id: "s4" }],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const summary = await getWeightedScoreAssignmentSummary("h1")
+
+      expect(summary.totalSubmissionCount).toBe(2)
+      expect(summary.countsByJudge.j1).toEqual({ all: 1, byRoom: {} })
+    })
+  })
+
   describe("getJudgeAssignments", () => {
     it("returns all assignments for a specific judge with submission details", async () => {
       let foundParticipant = false
