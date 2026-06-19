@@ -16,15 +16,7 @@ import {
 import { Loader2, Search } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { assertOk, assertOkJson } from "@/lib/utils/fetch"
-
-type AssignmentRow = {
-  submissionId: string
-  projectTitle: string
-  teamId: string | null
-  teamName: string | null
-  isAssigned: boolean
-  isOwnTeam: boolean
-}
+import type { JudgeSubmissionAssignmentRow as AssignmentRow } from "@/lib/services/judging"
 
 interface PickProjectsDialogProps {
   hackathonId: string
