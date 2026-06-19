@@ -134,7 +134,7 @@ export function PickProjectsDialog({
         <DialogHeader>
           <DialogTitle>Pick projects for {judgeDisplayName}</DialogTitle>
           <DialogDescription>
-            Every submitted project is listed here — room filters don&rsquo;t apply. {assignedCount} of {rows.length} picked.
+            Every submitted project is listed here. {assignedCount} of {rows.length} picked.
           </DialogDescription>
         </DialogHeader>
 
