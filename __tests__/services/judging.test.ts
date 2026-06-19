@@ -1009,6 +1009,17 @@ describe("Judging Service", () => {
       const result = await listJudgeSubmissionAssignments("h1", "missing")
       expect(result).toEqual([])
     })
+
+    it("throws when a database query fails", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "submissions") {
+          return createChainableMock({ data: null, error: { message: "boom" } })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      await expect(listJudgeSubmissionAssignments("h1", "j1")).rejects.toThrow(/boom/)
+    })
   })
 
   describe("assignJudgeToSubmission", () => {

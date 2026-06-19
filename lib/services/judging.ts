@@ -4134,6 +4134,12 @@ export async function listJudgeSubmissionAssignments(
       .eq("assignment_kind", "unified_weighted_score"),
   ])
 
+  const dbError = judgeResult.error ?? submissionsResult.error ?? assignmentsResult.error
+  if (dbError) {
+    console.error("Failed to list judge submission assignments:", dbError)
+    throw new Error(`Failed to list judge submission assignments: ${dbError.message}`)
+  }
+
   if (!judgeResult.data) return []
 
   const judgeTeamId = (judgeResult.data as { team_id: string | null }).team_id
