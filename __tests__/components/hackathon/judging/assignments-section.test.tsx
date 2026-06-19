@@ -122,6 +122,24 @@ describe("AssignmentsSection mass-assign confirmation", () => {
     ).toBeDefined()
   })
 
+  it("does not open the dialog when every judge is already fully assigned", () => {
+    render(
+      <AssignmentsSection
+        hackathonId="h1"
+        judges={[judgeA, judgeB]}
+        totalSubmissionCount={2}
+        rooms={[]}
+        countsByJudge={{
+          p1: { all: 2, byRoom: {} },
+          p2: { all: 2, byRoom: {} },
+        }}
+        hasWeightedScoring={true}
+      />,
+    )
+
+    expect(screen.queryByText("Assign every judge")).toBeNull()
+  })
+
   it("shows the count of new picks and judges in the dialog body", () => {
     render(
       <AssignmentsSection

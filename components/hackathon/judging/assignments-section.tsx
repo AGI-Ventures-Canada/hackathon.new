@@ -155,8 +155,10 @@ export function AssignmentsSection({
           <Button
             size="sm"
             variant="outline"
-            onClick={() => setConfirmOpen(true)}
-            disabled={pending.size > 0}
+            onClick={() => {
+              if (pendingAssignmentCount > 0) setConfirmOpen(true)
+            }}
+            disabled={pending.size > 0 || pendingAssignmentCount === 0}
           >
             {pending.size > 0 ? (
               <Loader2 className="mr-2 size-4 animate-spin" />
