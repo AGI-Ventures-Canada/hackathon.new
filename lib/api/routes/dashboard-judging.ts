@@ -1912,6 +1912,17 @@ export const dashboardJudgingRoutes = new Elysia()
     if (!out.success) {
       return new Response(JSON.stringify({ error: out.error }), { status: 400, headers: { "Content-Type": "application/json" } })
     }
+
+    if (!out.alreadyAssigned) {
+      await logAudit({
+        principal,
+        action: "judge_assignment.created",
+        resourceType: "judge_assignment",
+        resourceId: `${params.participantId}:${params.submissionId}`,
+        metadata: { judgeParticipantId: params.participantId, submissionId: params.submissionId },
+      })
+    }
+
     return out
   }, {
     detail: { summary: "Assign judge to project", description: "Creates a unified weighted_score assignment for this judge and project. Idempotent — returns alreadyAssigned:true if the assignment already exists." },
@@ -1938,6 +1949,17 @@ export const dashboardJudgingRoutes = new Elysia()
     if (!out.success) {
       return new Response(JSON.stringify({ error: out.error }), { status: 400, headers: { "Content-Type": "application/json" } })
     }
+
+    if (out.removed) {
+      await logAudit({
+        principal,
+        action: "judge_assignment.deleted",
+        resourceType: "judge_assignment",
+        resourceId: `${params.participantId}:${params.submissionId}`,
+        metadata: { judgeParticipantId: params.participantId, submissionId: params.submissionId },
+      })
+    }
+
     return out
   }, {
     detail: { summary: "Unassign judge from project", description: "Removes the unified weighted_score assignment for this judge and project, if it exists." },

@@ -66,8 +66,10 @@ mock.module("@/lib/auth/principal", () => {
   }
 })
 
+const mockLogAudit = mock(() => Promise.resolve(null))
+
 mock.module("@/lib/services/audit", () => ({
-  logAudit: mock(() => Promise.resolve(null)),
+  logAudit: mockLogAudit,
 }))
 
 mock.module("@/lib/auth/resolve-adder-name", () => ({
@@ -117,6 +119,7 @@ describe("dashboard judge↔submission assignment routes", () => {
     mockAssignJudgeToSubmission.mockResolvedValue({ success: true, alreadyAssigned: false })
     mockUnassignJudgeFromSubmission.mockReset()
     mockUnassignJudgeFromSubmission.mockResolvedValue({ success: true, removed: true })
+    mockLogAudit.mockClear()
   })
 
   describe("GET /judges/:participantId/submissions", () => {
@@ -186,6 +189,28 @@ describe("dashboard judge↔submission assignment routes", () => {
         JUDGE_ID,
         SUBMISSION_ID
       )
+      expect(mockLogAudit).toHaveBeenCalledTimes(1)
+      const auditArg = mockLogAudit.mock.calls[0][0] as { action: string }
+      expect(auditArg.action).toBe("judge_assignment.created")
+    })
+
+    it("does not audit when assignment already exists (idempotent)", async () => {
+      mockAssignJudgeToSubmission.mockResolvedValueOnce({
+        success: true,
+        alreadyAssigned: true,
+      })
+
+      const res = await app.handle(
+        new Request(
+          urlFor(
+            `/hackathons/${HACKATHON_ID}/judging/judges/${JUDGE_ID}/submissions/${SUBMISSION_ID}`
+          ),
+          { method: "POST" }
+        )
+      )
+
+      expect(res.status).toBe(200)
+      expect(mockLogAudit).not.toHaveBeenCalled()
     })
 
     it("returns 400 when service rejects (e.g. own team)", async () => {
@@ -242,6 +267,25 @@ describe("dashboard judge↔submission assignment routes", () => {
         JUDGE_ID,
         SUBMISSION_ID
       )
+      expect(mockLogAudit).toHaveBeenCalledTimes(1)
+      const auditArg = mockLogAudit.mock.calls[0][0] as { action: string }
+      expect(auditArg.action).toBe("judge_assignment.deleted")
+    })
+
+    it("does not audit when nothing was removed (no existing assignment)", async () => {
+      mockUnassignJudgeFromSubmission.mockResolvedValueOnce({ success: true, removed: false })
+
+      const res = await app.handle(
+        new Request(
+          urlFor(
+            `/hackathons/${HACKATHON_ID}/judging/judges/${JUDGE_ID}/submissions/${SUBMISSION_ID}`
+          ),
+          { method: "DELETE" }
+        )
+      )
+
+      expect(res.status).toBe(200)
+      expect(mockLogAudit).not.toHaveBeenCalled()
     })
 
     it("returns 404 when judge id is not a UUID", async () => {
