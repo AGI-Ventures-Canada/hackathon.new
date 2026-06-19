@@ -13,8 +13,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { ClipboardList, Loader2, Info, MapPin } from "lucide-react"
+import { ClipboardList, Loader2, Info, MapPin, ListChecks } from "lucide-react"
 import { JudgePill } from "./judge-pill"
+import { PickProjectsDialog } from "./pick-projects-dialog"
 import { assertOk } from "@/lib/utils/fetch"
 
 type JudgeRow = {
@@ -55,6 +56,7 @@ export function AssignmentsSection({
   const [optimisticDelta, setOptimisticDelta] = useState<Record<string, number>>({})
   const [error, setError] = useState<string | null>(null)
   const [selectedRoom, setSelectedRoom] = useState<string>(ALL_ROOMS)
+  const [pickerJudge, setPickerJudge] = useState<JudgeRow | null>(null)
 
   const isAllRooms = selectedRoom === ALL_ROOMS
   const selectedRoomOption = isAllRooms ? null : rooms.find((r) => r.id === selectedRoom) ?? null
@@ -208,23 +210,35 @@ export function AssignmentsSection({
                       {count} / {scopeCount} {scopeCount === 1 ? "project" : "projects"}
                     </Badge>
                   </div>
-                  <Button
-                    size="sm"
-                    variant={fullyAssigned ? "ghost" : "outline"}
-                    onClick={() => assignJudge(judge.participantId)}
-                    disabled={isPending || scopeCount === 0 || fullyAssigned}
-                  >
-                    {isPending && <Loader2 className="mr-2 size-4 animate-spin" />}
-                    {fullyAssigned
-                      ? isAllRooms
-                        ? "All projects assigned"
-                        : "Room assigned"
-                      : count === 0
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setPickerJudge(judge)}
+                      disabled={totalSubmissionCount === 0}
+                    >
+                      <ListChecks className="mr-2 size-4" />
+                      <span className="hidden sm:inline">Pick projects</span>
+                      <span className="sm:hidden">Projects</span>
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={fullyAssigned ? "ghost" : "outline"}
+                      onClick={() => assignJudge(judge.participantId)}
+                      disabled={isPending || scopeCount === 0 || fullyAssigned}
+                    >
+                      {isPending && <Loader2 className="mr-2 size-4 animate-spin" />}
+                      {fullyAssigned
                         ? isAllRooms
-                          ? "Assign all projects"
-                          : `Assign ${selectedRoomOption?.name ?? "room"}`
-                        : "Assign remaining"}
-                  </Button>
+                          ? "All projects assigned"
+                          : "Room assigned"
+                        : count === 0
+                          ? isAllRooms
+                            ? "Assign all projects"
+                            : `Assign ${selectedRoomOption?.name ?? "room"}`
+                          : "Assign remaining"}
+                    </Button>
+                  </div>
                 </div>
               )
             })}
@@ -233,6 +247,18 @@ export function AssignmentsSection({
 
         {error && <p className="text-sm text-destructive">{error}</p>}
       </CardContent>
+
+      {pickerJudge && (
+        <PickProjectsDialog
+          hackathonId={hackathonId}
+          judgeParticipantId={pickerJudge.participantId}
+          judgeDisplayName={pickerJudge.displayName}
+          open={!!pickerJudge}
+          onOpenChange={(next) => {
+            if (!next) setPickerJudge(null)
+          }}
+        />
+      )}
     </Card>
   )
 }

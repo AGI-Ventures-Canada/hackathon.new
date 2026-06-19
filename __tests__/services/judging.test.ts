@@ -45,6 +45,9 @@ const {
   listRoundWinnerPicker,
   unadvanceSubmissions,
   roundBelongsToHackathon,
+  listJudgeSubmissionAssignments,
+  assignJudgeToSubmission,
+  unassignJudgeFromSubmission,
 } = await import("@/lib/services/judging")
 
 describe("Judging Service", () => {
@@ -1060,6 +1063,217 @@ describe("Judging Service", () => {
       expect(result.success).toBe(true)
       expect(inserted).toHaveLength(1)
       expect(inserted[0].submission_id).toBe("s2")
+    })
+  })
+
+  describe("listJudgeSubmissionAssignments", () => {
+    it("returns rows with assignment state and own-team flag", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: { id: "j1", team_id: "t-self" }, error: null })
+        }
+        if (table === "submissions") {
+          return createChainableMock({
+            data: [
+              { id: "s1", title: "Zed", team_id: "t-other", teams: { name: "Team Other" } },
+              { id: "s2", title: "Apple", team_id: "t-self", teams: { name: "Team Self" } },
+              { id: "s3", title: "Mango", team_id: "t-third", teams: { name: "Team Third" } },
+            ],
+            error: null,
+          })
+        }
+        if (table === "judge_assignments") {
+          return createChainableMock({ data: [{ submission_id: "s1" }], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await listJudgeSubmissionAssignments("h1", "j1")
+
+      expect(result.map((r) => r.submissionId)).toEqual(["s2", "s3", "s1"])
+      expect(result.find((r) => r.submissionId === "s1")?.isAssigned).toBe(true)
+      expect(result.find((r) => r.submissionId === "s2")?.isOwnTeam).toBe(true)
+      expect(result.find((r) => r.submissionId === "s3")?.isAssigned).toBe(false)
+    })
+
+    it("returns empty when judge is not found", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: null, error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await listJudgeSubmissionAssignments("h1", "missing")
+      expect(result).toEqual([])
+    })
+
+    it("throws when a database query fails", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "submissions") {
+          return createChainableMock({ data: null, error: { message: "boom" } })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      await expect(listJudgeSubmissionAssignments("h1", "j1")).rejects.toThrow(/boom/)
+    })
+  })
+
+  describe("assignJudgeToSubmission", () => {
+    it("inserts a new unified_weighted_score assignment", async () => {
+      let inserted: { submission_id: string; assignment_kind: string } | null = null
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: { id: "j1", team_id: null }, error: null })
+        }
+        if (table === "submissions") {
+          return createChainableMock({ data: { id: "s1", team_id: "t1" }, error: null })
+        }
+        if (table === "judge_assignments") {
+          const m = createChainableMock({ data: null, error: null })
+          m.insert = mock((row: { submission_id: string; assignment_kind: string }) => {
+            inserted = row
+            return Promise.resolve({ data: null, error: null })
+          }) as typeof m.insert
+          return m
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await assignJudgeToSubmission("h1", "j1", "s1")
+
+      expect(result.success).toBe(true)
+      if (result.success) expect(result.alreadyAssigned).toBe(false)
+      expect(inserted?.submission_id).toBe("s1")
+      expect(inserted?.assignment_kind).toBe("unified_weighted_score")
+    })
+
+    it("returns alreadyAssigned when the insert hits a unique-constraint conflict", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: { id: "j1", team_id: null }, error: null })
+        }
+        if (table === "submissions") {
+          return createChainableMock({ data: { id: "s1", team_id: "t1" }, error: null })
+        }
+        if (table === "judge_assignments") {
+          const m = createChainableMock({ data: null, error: null })
+          m.insert = mock(() =>
+            Promise.resolve({ data: null, error: { code: "23505", message: "duplicate key" } })
+          ) as typeof m.insert
+          return m
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await assignJudgeToSubmission("h1", "j1", "s1")
+
+      expect(result.success).toBe(true)
+      if (result.success) expect(result.alreadyAssigned).toBe(true)
+    })
+
+    it("rejects when judge belongs to the project's team", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: { id: "j1", team_id: "t1" }, error: null })
+        }
+        if (table === "submissions") {
+          return createChainableMock({ data: { id: "s1", team_id: "t1" }, error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await assignJudgeToSubmission("h1", "j1", "s1")
+
+      expect(result.success).toBe(false)
+      if (!result.success) expect(result.error).toContain("own team")
+    })
+
+    it("returns error when judge is missing", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: null, error: null })
+        }
+        if (table === "submissions") {
+          return createChainableMock({ data: { id: "s1", team_id: "t1" }, error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await assignJudgeToSubmission("h1", "missing", "s1")
+      expect(result.success).toBe(false)
+    })
+
+    it("returns error when submission is missing", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: { id: "j1", team_id: null }, error: null })
+        }
+        if (table === "submissions") {
+          return createChainableMock({ data: null, error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await assignJudgeToSubmission("h1", "j1", "missing")
+      expect(result.success).toBe(false)
+    })
+
+    it("surfaces DB errors from the parallel lookup instead of masking as not-found", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: null, error: { message: "lookup-boom" } })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await assignJudgeToSubmission("h1", "j1", "s1")
+      expect(result.success).toBe(false)
+      if (!result.success) expect(result.error).toContain("lookup-boom")
+    })
+  })
+
+  describe("unassignJudgeFromSubmission", () => {
+    it("removes the unified_weighted_score assignment", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "judge_assignments") {
+          return createChainableMock({ data: [{ id: "a1" }], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await unassignJudgeFromSubmission("h1", "j1", "s1")
+
+      expect(result.success).toBe(true)
+      if (result.success) expect(result.removed).toBe(true)
+    })
+
+    it("returns removed:false when no assignment matched", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "judge_assignments") {
+          return createChainableMock({ data: [], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await unassignJudgeFromSubmission("h1", "j1", "s1")
+
+      expect(result.success).toBe(true)
+      if (result.success) expect(result.removed).toBe(false)
+    })
+
+    it("returns failure on database error", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "judge_assignments") {
+          return createChainableMock({ data: null, error: { message: "boom" } })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await unassignJudgeFromSubmission("h1", "j1", "s1")
+
+      expect(result.success).toBe(false)
     })
   })
 

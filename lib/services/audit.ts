@@ -58,6 +58,8 @@ export type AuditAction =
   | "judging.assignments_cleared"
   | "judging.track_assigned"
   | "judging.track_unassigned"
+  | "judge_assignment.created"
+  | "judge_assignment.deleted"
   | "rubric_level.created"
   | "rubric_level.updated"
   | "rubric_level.deleted"
