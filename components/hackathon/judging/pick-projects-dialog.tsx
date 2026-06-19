@@ -88,10 +88,10 @@ export function PickProjectsDialog({
         r.submissionId === row.submissionId ? { ...r, isAssigned: nextAssigned } : r
       )
     )
-    setHasChanges(true)
     try {
       const url = `/api/dashboard/hackathons/${hackathonId}/judging/judges/${judgeParticipantId}/submissions/${row.submissionId}`
       await fetch(url, { method: nextAssigned ? "POST" : "DELETE" }).then(assertOk)
+      setHasChanges(true)
     } catch (err) {
       setRows((prev) =>
         prev.map((r) =>
@@ -163,9 +163,11 @@ export function PickProjectsDialog({
               <ul className="divide-y">
                 {filtered.map((row) => {
                   const isLoading = toggling.has(row.submissionId)
+                  const checkboxId = `pick-project-${row.submissionId}`
                   return (
                     <li key={row.submissionId}>
                       <label
+                        htmlFor={checkboxId}
                         className={cn(
                           "flex items-center gap-3 p-2.5",
                           row.isOwnTeam
@@ -177,6 +179,7 @@ export function PickProjectsDialog({
                           <Loader2 className="size-4 animate-spin text-muted-foreground" />
                         ) : (
                           <Checkbox
+                            id={checkboxId}
                             checked={row.isAssigned}
                             disabled={row.isOwnTeam}
                             onCheckedChange={() => toggle(row)}
