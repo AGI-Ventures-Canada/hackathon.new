@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Loader2, Search } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { assertOk, assertOkJson } from "@/lib/utils/fetch"
 
 type AssignmentRow = {
@@ -173,9 +174,12 @@ export function PickProjectsDialog({
                   return (
                     <li key={row.submissionId}>
                       <label
-                        className={`flex items-center gap-3 p-2.5 ${
-                          row.isOwnTeam ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-muted/50"
-                        }`}
+                        className={cn(
+                          "flex items-center gap-3 p-2.5",
+                          row.isOwnTeam
+                            ? "cursor-not-allowed opacity-50"
+                            : "cursor-pointer hover:bg-muted/50"
+                        )}
                       >
                         {isLoading ? (
                           <Loader2 className="size-4 animate-spin text-muted-foreground" />
