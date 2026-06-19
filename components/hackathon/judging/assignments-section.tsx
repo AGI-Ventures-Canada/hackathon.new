@@ -7,6 +7,16 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -57,6 +67,7 @@ export function AssignmentsSection({
   const [error, setError] = useState<string | null>(null)
   const [selectedRoom, setSelectedRoom] = useState<string>(ALL_ROOMS)
   const [pickerJudge, setPickerJudge] = useState<JudgeRow | null>(null)
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
   const isAllRooms = selectedRoom === ALL_ROOMS
   const selectedRoomOption = isAllRooms ? null : rooms.find((r) => r.id === selectedRoom) ?? null
@@ -123,6 +134,13 @@ export function AssignmentsSection({
     scopeCount > 0 &&
     judges.every((j) => counts(j.participantId) >= scopeCount)
 
+  const pendingJudges = judges.filter((j) => counts(j.participantId) < scopeCount)
+  const pendingAssignmentCount = pendingJudges.reduce(
+    (sum, j) => sum + Math.max(0, scopeCount - counts(j.participantId)),
+    0,
+  )
+  const willOverrideRoomScoping = isAllRooms && rooms.length > 0
+
   const scopeLabel = isAllRooms ? "project" : `project from ${selectedRoomOption?.name ?? "room"}`
   const scopeLabelPlural = isAllRooms ? "projects" : `projects from ${selectedRoomOption?.name ?? "room"}`
 
@@ -134,7 +152,12 @@ export function AssignmentsSection({
           Project assignments
         </CardTitle>
         {judges.length > 0 && scopeCount > 0 && !allAssigned && (
-          <Button size="sm" variant="outline" onClick={assignAll} disabled={pending.size > 0}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setConfirmOpen(true)}
+            disabled={pending.size > 0}
+          >
             {pending.size > 0 ? (
               <Loader2 className="mr-2 size-4 animate-spin" />
             ) : null}
@@ -259,6 +282,36 @@ export function AssignmentsSection({
           }}
         />
       )}
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {isAllRooms
+                ? "Give every judge all projects?"
+                : `Give every judge the ${selectedRoomOption?.name ?? "room"} projects?`}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {`This adds ${pendingAssignmentCount} new ${pendingAssignmentCount === 1 ? "pick" : "picks"} across ${pendingJudges.length} ${pendingJudges.length === 1 ? "judge" : "judges"}.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {willOverrideRoomScoping && (
+            <Alert>
+              <Info className="size-4" />
+              <AlertDescription>
+                Heads up: you have rooms set up. This skips room scoping and gives every
+                judge every project. Pick a room above if you want to stay scoped to a room.
+              </AlertDescription>
+            </Alert>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void assignAll()}>
+              Yes, assign them
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   )
 }
