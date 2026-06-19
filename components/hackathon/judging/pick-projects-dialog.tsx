@@ -143,6 +143,7 @@ export function PickProjectsDialog({
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search projects or teams"
               className="pl-9"
+              autoFocus
               autoComplete="off"
               data-1p-ignore
               data-lpignore="true"
