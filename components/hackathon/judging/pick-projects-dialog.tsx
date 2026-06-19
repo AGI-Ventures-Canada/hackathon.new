@@ -74,6 +74,7 @@ export function PickProjectsDialog({
       }
       setSearchQuery("")
       setError(null)
+      setRows([])
     }
     onOpenChange(nextOpen)
   }
