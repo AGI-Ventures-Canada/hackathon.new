@@ -95,10 +95,10 @@ export function PickProjectsDialog({
         r.submissionId === row.submissionId ? { ...r, isAssigned: nextAssigned } : r
       )
     )
+    setHasChanges(true)
     try {
       const url = `/api/dashboard/hackathons/${hackathonId}/judging/judges/${judgeParticipantId}/submissions/${row.submissionId}`
       await fetch(url, { method: nextAssigned ? "POST" : "DELETE" }).then(assertOk)
-      setHasChanges(true)
     } catch (err) {
       setRows((prev) =>
         prev.map((r) =>

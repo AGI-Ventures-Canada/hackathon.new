@@ -4108,6 +4108,13 @@ export type JudgeSubmissionAssignmentRow = {
   isOwnTeam: boolean
 }
 
+type JudgeSubmissionAssignmentDbRow = {
+  id: string
+  title: string | null
+  team_id: string | null
+  teams: { name: string | null } | { name: string | null }[] | null
+}
+
 export async function listJudgeSubmissionAssignments(
   hackathonId: string,
   judgeParticipantId: string
@@ -4144,18 +4151,11 @@ export async function listJudgeSubmissionAssignments(
 
   const judgeTeamId = (judgeResult.data as { team_id: string | null }).team_id
 
-  type SubmissionRow = {
-    id: string
-    title: string | null
-    team_id: string | null
-    teams: { name: string | null } | { name: string | null }[] | null
-  }
-
   const assigned = new Set(
     (assignmentsResult.data ?? []).map((a) => (a as { submission_id: string }).submission_id)
   )
 
-  const submissions = (submissionsResult.data as SubmissionRow[]) ?? []
+  const submissions = (submissionsResult.data as JudgeSubmissionAssignmentDbRow[]) ?? []
 
   return submissions
     .map((s) => {
