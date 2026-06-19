@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Dialog,
   DialogContent,
@@ -11,7 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Loader2, Search, Check } from "lucide-react"
+import { Loader2, Search } from "lucide-react"
 import { assertOk, assertOkJson } from "@/lib/utils/fetch"
 
 type AssignmentRow = {
@@ -131,7 +133,7 @@ export function PickProjectsDialog({
         <DialogHeader>
           <DialogTitle>Pick projects for {judgeDisplayName}</DialogTitle>
           <DialogDescription>
-            {assignedCount} of {rows.length} projects assigned. Tap a row to add or remove.
+            Every submitted project is listed here — room filters don&rsquo;t apply. {assignedCount} of {rows.length} picked.
           </DialogDescription>
         </DialogHeader>
 
@@ -164,37 +166,39 @@ export function PickProjectsDialog({
               No projects match &ldquo;{searchQuery}&rdquo;.
             </p>
           ) : (
-            <div className="space-y-1 max-h-96 overflow-y-auto">
-              {filtered.map((row) => {
-                const isLoading = toggling.has(row.submissionId)
-                return (
-                  <button
-                    key={row.submissionId}
-                    type="button"
-                    onClick={() => toggle(row)}
-                    disabled={isLoading || row.isOwnTeam}
-                    className="flex items-center gap-3 w-full rounded-lg p-2 text-left hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{row.projectTitle}</p>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {row.teamName ?? "No team"}
-                        {row.isOwnTeam ? " — judge's own team" : ""}
-                      </p>
-                    </div>
-                    {isLoading ? (
-                      <Loader2 className="size-4 animate-spin text-muted-foreground shrink-0" />
-                    ) : row.isAssigned ? (
-                      <div className="flex items-center justify-center size-5 rounded bg-primary text-primary-foreground shrink-0">
-                        <Check className="size-3" />
-                      </div>
-                    ) : (
-                      <div className="size-5 rounded border shrink-0" />
-                    )}
-                  </button>
-                )
-              })}
-            </div>
+            <ScrollArea className="h-96 rounded-md border">
+              <ul className="divide-y">
+                {filtered.map((row) => {
+                  const isLoading = toggling.has(row.submissionId)
+                  return (
+                    <li key={row.submissionId}>
+                      <label
+                        className={`flex items-center gap-3 p-2.5 ${
+                          row.isOwnTeam ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-muted/50"
+                        }`}
+                      >
+                        {isLoading ? (
+                          <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                        ) : (
+                          <Checkbox
+                            checked={row.isAssigned}
+                            disabled={row.isOwnTeam}
+                            onCheckedChange={() => toggle(row)}
+                          />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium">{row.projectTitle}</div>
+                          <div className="truncate text-xs text-muted-foreground">
+                            {row.teamName ?? "No team"}
+                            {row.isOwnTeam ? " — judge's own team" : ""}
+                          </div>
+                        </div>
+                      </label>
+                    </li>
+                  )
+                })}
+              </ul>
+            </ScrollArea>
           )}
 
           {error && <p className="text-sm text-destructive">{error}</p>}
