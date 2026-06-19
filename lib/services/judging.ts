@@ -4194,6 +4194,12 @@ export async function assignJudgeToSubmission(
       .maybeSingle(),
   ])
 
+  const lookupError = judgeResult.error ?? submissionResult.error
+  if (lookupError) {
+    console.error("Failed to look up judge/submission for assignment:", lookupError)
+    return { success: false, error: lookupError.message }
+  }
+
   if (!judgeResult.data) return { success: false, error: "Judge not found" }
   if (!submissionResult.data) return { success: false, error: "Project not found" }
 
@@ -4203,7 +4209,7 @@ export async function assignJudgeToSubmission(
     return { success: false, error: "Judges can't score their own team's project" }
   }
 
-  const { data: existing } = await client
+  const { data: existing, error: existingError } = await client
     .from("judge_assignments")
     .select("id")
     .eq("hackathon_id", hackathonId)
@@ -4211,6 +4217,11 @@ export async function assignJudgeToSubmission(
     .eq("submission_id", submissionId)
     .eq("assignment_kind", "unified_weighted_score")
     .maybeSingle()
+
+  if (existingError) {
+    console.error("Failed to check existing assignment:", existingError)
+    return { success: false, error: existingError.message }
+  }
 
   if (existing) return { success: true, alreadyAssigned: true }
 

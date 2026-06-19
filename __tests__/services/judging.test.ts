@@ -1124,6 +1124,19 @@ describe("Judging Service", () => {
       const result = await assignJudgeToSubmission("h1", "j1", "missing")
       expect(result.success).toBe(false)
     })
+
+    it("surfaces DB errors from the parallel lookup instead of masking as not-found", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: null, error: { message: "lookup-boom" } })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await assignJudgeToSubmission("h1", "j1", "s1")
+      expect(result.success).toBe(false)
+      if (!result.success) expect(result.error).toContain("lookup-boom")
+    })
   })
 
   describe("unassignJudgeFromSubmission", () => {
