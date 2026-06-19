@@ -143,4 +143,87 @@ describe("JudgeAssignmentsCard", () => {
     fireEvent.click(screen.getByText("Focus"))
     expect(screen.getByText("1 of 2")).toBeDefined()
   })
+
+  it("shows newly assigned submissions when assignments prop updates", () => {
+    const { rerender } = render(
+      <JudgeAssignmentsCard
+        hackathonSlug="test-hack"
+        assignments={baseAssignments}
+      />
+    )
+    fireEvent.click(screen.getByText("List"))
+    expect(screen.queryByText("Project Gamma")).toBeNull()
+
+    const updatedAssignments = [
+      ...baseAssignments,
+      {
+        id: "a3",
+        submissionId: "s3",
+        submissionTitle: "Project Gamma",
+        submissionDescription: "Desc C",
+        submissionGithubUrl: null,
+        submissionLiveAppUrl: null,
+        submissionDemoVideoUrl: null,
+        submissionScreenshotUrl: null,
+        teamName: "Team C",
+        teamMemberCount: 4,
+        isComplete: false,
+        notes: "",
+        viewedAt: null,
+      },
+    ]
+
+    rerender(
+      <JudgeAssignmentsCard
+        hackathonSlug="test-hack"
+        assignments={updatedAssignments}
+      />
+    )
+
+    expect(screen.getByText("Project Gamma")).toBeDefined()
+  })
+
+  it("removes unassigned submissions when assignments prop updates", () => {
+    const { rerender } = render(
+      <JudgeAssignmentsCard
+        hackathonSlug="test-hack"
+        assignments={baseAssignments}
+      />
+    )
+    fireEvent.click(screen.getByText("List"))
+    expect(screen.getByText("Project Beta")).toBeDefined()
+
+    rerender(
+      <JudgeAssignmentsCard
+        hackathonSlug="test-hack"
+        assignments={[baseAssignments[0]]}
+      />
+    )
+
+    expect(screen.queryByText("Project Beta")).toBeNull()
+    expect(screen.getByText("Project Alpha")).toBeDefined()
+  })
+
+  it("picks up server-confirmed completions when assignments prop updates", () => {
+    const { rerender } = render(
+      <JudgeAssignmentsCard
+        hackathonSlug="test-hack"
+        assignments={baseAssignments}
+      />
+    )
+    fireEvent.click(screen.getByText("List"))
+
+    const completedAssignments = baseAssignments.map((a) =>
+      a.id === "a1" ? { ...a, isComplete: true } : a
+    )
+    rerender(
+      <JudgeAssignmentsCard
+        hackathonSlug="test-hack"
+        assignments={completedAssignments}
+      />
+    )
+
+    expect(screen.queryByText("Pending")).toBeNull()
+    expect(screen.getAllByText("Scored").length).toBeGreaterThanOrEqual(2)
+  })
 })

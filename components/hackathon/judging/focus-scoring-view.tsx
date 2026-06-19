@@ -39,10 +39,18 @@ export function FocusScoringView({
   teamSettings,
   summaryHref,
 }: FocusScoringViewProps) {
-  const [completedIds, setCompletedIds] = useState<Set<string>>(initialCompletedIds)
+  const [locallyCompletedIds, setLocallyCompletedIds] = useState<Set<string>>(new Set())
 
-  const firstUnscored = assignments.findIndex((a) => !initialCompletedIds.has(a.id))
-  const [currentIndex, setCurrentIndex] = useState(firstUnscored >= 0 ? firstUnscored : 0)
+  const completedIds = useMemo(() => {
+    const next = new Set<string>(initialCompletedIds)
+    for (const id of locallyCompletedIds) next.add(id)
+    return next
+  }, [initialCompletedIds, locallyCompletedIds])
+
+  const [currentIndex, setCurrentIndex] = useState(() => {
+    const idx = assignments.findIndex((a) => !initialCompletedIds.has(a.id))
+    return idx >= 0 ? idx : 0
+  })
 
   const total = assignments.length
   const completed = completedIds.size
@@ -80,7 +88,7 @@ export function FocusScoringView({
   function handleScoreSubmitted() {
     const assignmentId = current.id
     const updatedIds = new Set([...completedIds, assignmentId])
-    setCompletedIds(updatedIds)
+    setLocallyCompletedIds((prev) => new Set(prev).add(assignmentId))
     onScoreSubmitted(assignmentId)
 
     const nextUnscored = assignments.findIndex(

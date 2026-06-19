@@ -3,7 +3,10 @@ import { auth } from "@clerk/nextjs/server"
 import { getPublicHackathon, PUBLISHED_STATUSES } from "@/lib/services/public-hackathons"
 import { JudgeAssignmentsCard } from "@/components/hackathon/judging/judge-assignments-card"
 import { PageHeader } from "@/components/page-header"
+import { AutoRefresh } from "@/components/ui/auto-refresh"
 import { Clock } from "lucide-react"
+
+const JUDGE_PAGE_REFRESH_INTERVAL_MS = 15000
 
 type PageProps = {
   params: Promise<{ slug: string }>
@@ -60,6 +63,7 @@ export default async function JudgePage({ params }: PageProps) {
 
   return (
     <div className="p-4 md:p-6 space-y-6">
+      <AutoRefresh intervalMs={JUDGE_PAGE_REFRESH_INTERVAL_MS} />
       <PageHeader
         breadcrumbs={[
           { label: hackathon.name, href: `/e/${slug}` },
