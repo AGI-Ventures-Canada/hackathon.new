@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test"
 import { render, screen, cleanup, fireEvent } from "@testing-library/react"
 import { resetComponentMocks } from "../../../lib/component-mocks"
+import type { RoundData } from "@/components/hackathon/judging/rounds-types"
 
 const originalFetch = globalThis.fetch
-const STABLE_ROUNDS: never[] = []
+const STABLE_ROUNDS: RoundData[] = []
 const STABLE_EXISTING = [{ id: "p1", name: "Grand Prize" }]
 
 const { AddPrizeDialog } = await import(

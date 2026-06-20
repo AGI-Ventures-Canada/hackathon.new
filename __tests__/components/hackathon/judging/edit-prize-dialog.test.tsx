@@ -116,4 +116,50 @@ describe("EditPrizeDialog null-style picker", () => {
     expect(screen.queryByText("How should judges score this prize?")).toBeNull()
     expect(screen.getByLabelText(/How many can each judge pick/i)).toBeDefined()
   })
+
+  it("hides the picker after picking 'Everyone votes' without showing style-specific inputs", () => {
+    render(
+      <EditPrizeDialog
+        hackathonId="h1"
+        prize={UNCONFIGURED_PRIZE}
+        onClose={() => {}}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: /Everyone votes/i }))
+
+    expect(screen.queryByText("How should judges score this prize?")).toBeNull()
+    expect(screen.queryByText("Sort groups")).toBeNull()
+    expect(screen.queryByLabelText(/How many can each judge pick/i)).toBeNull()
+  })
+
+  it("sends judgingStyle=crowd_vote with no criteria or buckets in the PATCH body", async () => {
+    let capturedBody: Record<string, unknown> | null = null
+    fetchImpl = async (_url, init) => {
+      if (init?.method === "PATCH" && init.body) {
+        capturedBody = JSON.parse(String(init.body))
+      }
+      return new Response(JSON.stringify({ prize: { id: "prize-1" } }), { status: 200 })
+    }
+
+    render(
+      <EditPrizeDialog
+        hackathonId="h1"
+        prize={UNCONFIGURED_PRIZE}
+        onClose={() => {}}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: /Everyone votes/i }))
+    fireEvent.click(screen.getByRole("button", { name: "Save" }))
+
+    await waitFor(() => {
+      expect(capturedBody).not.toBeNull()
+    })
+
+    expect(capturedBody?.judgingStyle).toBe("crowd_vote")
+    expect(capturedBody?.buckets).toBeUndefined()
+    expect(capturedBody?.criteria).toBeUndefined()
+    expect(capturedBody?.maxPicks).toBeUndefined()
+  })
 })

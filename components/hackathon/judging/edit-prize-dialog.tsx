@@ -371,10 +371,9 @@ export function EditPrizeDialog({
   }
 
   const open = prize !== null
-  const showPickedStyleBadge =
-    !!effectiveStyle && !!pickedStyle && !prize?.judgingStyle
+  const showPickedStyleBadge = !!pickedStyle && !prize?.judgingStyle
   const pickedStyleOption = showPickedStyleBadge
-    ? STYLE_OPTIONS.find((o) => o.value === effectiveStyle) ?? null
+    ? STYLE_OPTIONS.find((o) => o.value === pickedStyle) ?? null
     : null
   const PickedStyleIcon = pickedStyleOption?.icon ?? null
 
