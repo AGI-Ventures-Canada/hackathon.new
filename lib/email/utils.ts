@@ -63,6 +63,7 @@ function decodeHtmlEntities(text: string): string {
 export function htmlToPlainText(html: string): string {
   return decodeHtmlEntities(
     html
+      .replace(/<!--[\s\S]*?-->/g, "")
       .replace(/<style[\s\S]*?<\/style>/gi, "")
       .replace(/<script[\s\S]*?<\/script>/gi, "")
       .replace(/<\/(p|div|tr|h[1-6]|li)>/gi, "\n")

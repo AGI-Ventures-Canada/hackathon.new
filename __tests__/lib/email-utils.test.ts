@@ -211,6 +211,11 @@ describe("htmlToPlainText", () => {
     expect(htmlToPlainText(html)).toBe("Keep")
   })
 
+  it("strips HTML comments, including conditional comments containing '>'", () => {
+    expect(htmlToPlainText("<p>Hi<!-- secret --> there</p>")).toBe("Hi there")
+    expect(htmlToPlainText("<!--[if mso]><b>x</b><![endif]--><p>Real</p>")).toBe("Real")
+  })
+
   it("decodes common HTML entities", () => {
     expect(htmlToPlainText("<p>Tom &amp; Jerry &lt;3 &nbsp;you</p>")).toBe("Tom & Jerry <3 you")
   })
