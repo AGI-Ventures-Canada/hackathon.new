@@ -1519,7 +1519,18 @@ export const dashboardJudgingRoutes = new Elysia()
     const clearResult = await clearAllJudgeAssignments(params.id)
 
     if (!clearResult.success) {
-      return new Response(JSON.stringify({ error: "Failed to clear assignments" }), { status: 500, headers: { "Content-Type": "application/json" } })
+      const error =
+        clearResult.partialFailure === "prize_assignments"
+          ? "Cleared judge assignments but failed to clear prize assignments. Try again."
+          : "Failed to clear assignments"
+      return new Response(
+        JSON.stringify({
+          error,
+          removedCount: clearResult.removedCount,
+          partialFailure: clearResult.partialFailure ?? null,
+        }),
+        { status: 500, headers: { "Content-Type": "application/json" } }
+      )
     }
 
     logAudit({

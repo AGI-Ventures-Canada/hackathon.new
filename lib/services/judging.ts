@@ -2072,6 +2072,7 @@ export type ClearJudgeAssignmentsResult = {
   success: boolean
   removedCount: number
   resultsStale: boolean
+  partialFailure?: "prize_assignments"
 }
 
 export async function clearAllJudgeAssignments(
@@ -2107,6 +2108,12 @@ export async function clearAllJudgeAssignments(
 
   if (prizeAssignmentError) {
     console.error("Failed to clear judge_prize_assignments:", prizeAssignmentError)
+    return {
+      success: false,
+      removedCount,
+      resultsStale: false,
+      partialFailure: "prize_assignments",
+    }
   }
 
   const { data: existingResults } = await client
@@ -4215,6 +4222,14 @@ export async function listJudgeSubmissionAssignments(
 ): Promise<JudgeSubmissionAssignmentRow[]> {
   const client = getSupabase() as unknown as SupabaseClient
 
+  const finalistIds = await getActiveRoundFinalistIds(hackathonId)
+
+  const submissionsQuery = client
+    .from("submissions")
+    .select("id, title, team_id, teams(name)")
+    .eq("hackathon_id", hackathonId)
+    .eq("status", "submitted")
+
   const [judgeResult, submissionsResult] = await Promise.all([
     client
       .from("hackathon_participants")
@@ -4222,11 +4237,7 @@ export async function listJudgeSubmissionAssignments(
       .eq("id", judgeParticipantId)
       .eq("hackathon_id", hackathonId)
       .maybeSingle(),
-    client
-      .from("submissions")
-      .select("id, title, team_id, teams(name)")
-      .eq("hackathon_id", hackathonId)
-      .eq("status", "submitted"),
+    finalistIds ? submissionsQuery.in("id", finalistIds) : submissionsQuery,
   ])
 
   const lookupError = judgeResult.error ?? submissionsResult.error
@@ -4313,12 +4324,17 @@ export async function assignJudgeToSubmission(
     return { success: false, error: "Judges can't score their own team's project" }
   }
 
+  const activeRoundId = await getActiveRoundId(hackathonId)
+  const finalistIds = activeRoundId ? await getRoundSubmissions(activeRoundId) : []
+  const roundId =
+    activeRoundId && finalistIds.includes(submissionId) ? activeRoundId : null
+
   const { error } = await client.from("judge_assignments").insert({
     hackathon_id: hackathonId,
     judge_participant_id: judgeParticipantId,
     submission_id: submissionId,
     prize_id: null,
-    round_id: null,
+    round_id: roundId,
     assignment_kind: "unified_weighted_score",
   })
 
