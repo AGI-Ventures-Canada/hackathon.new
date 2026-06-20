@@ -169,6 +169,14 @@ describe("buildMailtoUnsubscribeHeaders", () => {
     })
   })
 
+  it("extracts the bare address from a 'Name <email>' fallback to avoid nested brackets", () => {
+    delete process.env.RESEND_REPLY_TO_EMAIL
+    process.env.RESEND_FROM_EMAIL = "Oatmeal <noreply@getoatmeal.com>"
+    expect(buildMailtoUnsubscribeHeaders()).toEqual({
+      "List-Unsubscribe": "<mailto:noreply@getoatmeal.com?subject=unsubscribe>",
+    })
+  })
+
   it("omits the one-click POST header (mailto-only is not RFC 8058 one-click)", () => {
     process.env.RESEND_REPLY_TO_EMAIL = "support@getoatmeal.com"
     expect(buildMailtoUnsubscribeHeaders()).not.toHaveProperty("List-Unsubscribe-Post")
