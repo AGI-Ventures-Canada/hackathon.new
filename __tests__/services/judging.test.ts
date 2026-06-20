@@ -1111,6 +1111,9 @@ describe("Judging Service", () => {
 
     it("throws when a database query fails", async () => {
       setMockFromImplementation((table) => {
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: { id: "j1", team_id: null }, error: null })
+        }
         if (table === "submissions") {
           return createChainableMock({ data: null, error: { message: "boom" } })
         }

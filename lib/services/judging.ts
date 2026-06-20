@@ -4222,7 +4222,22 @@ export async function listJudgeSubmissionAssignments(
 ): Promise<JudgeSubmissionAssignmentRow[]> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const finalistIds = await getActiveRoundFinalistIds(hackathonId)
+  const [judgeResult, finalistIds] = await Promise.all([
+    client
+      .from("hackathon_participants")
+      .select("id, team_id")
+      .eq("id", judgeParticipantId)
+      .eq("hackathon_id", hackathonId)
+      .maybeSingle(),
+    getActiveRoundFinalistIds(hackathonId),
+  ])
+
+  if (judgeResult.error) {
+    console.error("Failed to list judge submission assignments:", judgeResult.error)
+    throw new Error(`Failed to list judge submission assignments: ${judgeResult.error.message}`)
+  }
+
+  if (!judgeResult.data) return []
 
   const submissionsQuery = client
     .from("submissions")
@@ -4230,23 +4245,14 @@ export async function listJudgeSubmissionAssignments(
     .eq("hackathon_id", hackathonId)
     .eq("status", "submitted")
 
-  const [judgeResult, submissionsResult] = await Promise.all([
-    client
-      .from("hackathon_participants")
-      .select("id, team_id")
-      .eq("id", judgeParticipantId)
-      .eq("hackathon_id", hackathonId)
-      .maybeSingle(),
-    finalistIds ? submissionsQuery.in("id", finalistIds) : submissionsQuery,
-  ])
+  const submissionsResult = await (finalistIds
+    ? submissionsQuery.in("id", finalistIds)
+    : submissionsQuery)
 
-  const lookupError = judgeResult.error ?? submissionsResult.error
-  if (lookupError) {
-    console.error("Failed to list judge submission assignments:", lookupError)
-    throw new Error(`Failed to list judge submission assignments: ${lookupError.message}`)
+  if (submissionsResult.error) {
+    console.error("Failed to list judge submission assignments:", submissionsResult.error)
+    throw new Error(`Failed to list judge submission assignments: ${submissionsResult.error.message}`)
   }
-
-  if (!judgeResult.data) return []
 
   const judgeTeamId = (judgeResult.data as { team_id: string | null }).team_id
   const submissions = (submissionsResult.data as JudgeSubmissionAssignmentDbRow[]) ?? []
