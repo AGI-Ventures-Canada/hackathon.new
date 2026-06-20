@@ -341,14 +341,7 @@ export function UnifiedScoringPanel({
                         <p className="text-xs text-muted-foreground">{c.description}</p>
                       )}
                     </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      {c.prizeId && c.prizeName && (
-                        <Badge variant="outline" className="text-xs">
-                          {c.prizeName}
-                        </Badge>
-                      )}
-                      <Badge variant="secondary">{c.weight}%</Badge>
-                    </div>
+                    <Badge variant="secondary">{c.weight}%</Badge>
                   </div>
                   <div className="flex items-center gap-3">
                     <Slider
