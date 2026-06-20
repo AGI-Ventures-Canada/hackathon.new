@@ -334,14 +334,11 @@ export function UnifiedScoringPanel({
               </div>
               {g.criteria.map((c) => (
                 <div key={c.id} className="space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <Label className="text-sm font-medium">{c.name}</Label>
-                      {c.description && (
-                        <p className="text-xs text-muted-foreground">{c.description}</p>
-                      )}
-                    </div>
-                    <Badge variant="secondary">{c.weight}%</Badge>
+                  <div>
+                    <Label className="text-sm font-medium">{c.name}</Label>
+                    {c.description && (
+                      <p className="text-xs text-muted-foreground">{c.description}</p>
+                    )}
                   </div>
                   <div className="flex items-center gap-3">
                     <Slider
