@@ -64,6 +64,11 @@ const RADIX_ISOLATED_TESTS = [
 ]
 const radixSet = new Set(RADIX_ISOLATED_TESTS)
 
+const REGISTRATION_BUTTON_ISOLATED_TESTS = [
+  "__tests__/components/hackathon/registration-button.test.tsx",
+]
+const registrationButtonSet = new Set(REGISTRATION_BUTTON_ISOLATED_TESTS)
+
 async function resolveArgs(patterns: string[], exclude?: Set<string>): Promise<string[]> {
   const files: string[] = []
   for (const pattern of patterns) {
@@ -148,12 +153,16 @@ const groups: Group[] = [
       "__tests__/components/install-skill-button.test.tsx",
       "__tests__/components/homepage-hero.test.tsx",
     ],
-    exclude: radixSet,
+    exclude: new Set([...radixSet, ...registrationButtonSet]),
   },
   {
     name: "components (radix-isolated)",
     args: RADIX_ISOLATED_TESTS,
     preload: "./__tests__/lib/radix-mocks.ts",
+  },
+  {
+    name: "components (registration-button-isolated)",
+    args: REGISTRATION_BUTTON_ISOLATED_TESTS,
   },
   {
     name: "mobile-header (isolated)",
