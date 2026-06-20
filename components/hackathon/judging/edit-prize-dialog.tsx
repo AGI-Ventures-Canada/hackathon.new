@@ -13,68 +13,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import {
-  ArrowUpDown,
-  Award,
   ChevronRight,
-  ListChecks,
   Loader2,
   Plus,
-  Sliders,
   Trash2,
-  Vote,
 } from "lucide-react"
 import type { PrizeJudgingStyle } from "@/lib/db/hackathon-types"
-
-const STYLE_OPTIONS: {
-  value: PrizeJudgingStyle
-  label: string
-  description: string
-  detail: string
-  icon: typeof ArrowUpDown
-}[] = [
-  {
-    value: "bucket_sort",
-    label: "Sort into groups",
-    description: "Judges score by sorting each project into a group like great, okay, or not ready.",
-    detail: "Good for: grand prize or overall winner",
-    icon: ArrowUpDown,
-  },
-  {
-    value: "gate_check",
-    label: "Pass or fail",
-    description: "Judges score by giving each project a yes or no on a list of rules.",
-    detail: "Good for: “Best Use of [Product]” or rule-based prizes",
-    icon: ListChecks,
-  },
-  {
-    value: "crowd_vote",
-    label: "Everyone votes",
-    description: "Anyone at the event can vote. No judges needed.",
-    detail: "Good for: People's Choice or Audience Award",
-    icon: Vote,
-  },
-  {
-    value: "judges_pick",
-    label: "Judge's picks (by vibes)",
-    description: "No scoring. Each judge picks their favorites. Most picks wins.",
-    detail: "Example: 3 judges each pick 1 favorite from 6 finalists. The top-picked project wins.",
-    icon: Award,
-  },
-  {
-    value: "weighted_score",
-    label: "Weighted scoring",
-    description: "Judges rate each project on a set of categories you define, with a weight assigned to each.",
-    detail: "Good for: sponsor prizes with a custom rubric on top of shared criteria",
-    icon: Sliders,
-  },
-]
-
-const DEFAULT_BUCKETS = [
-  { level: 1, label: "Not Ready", description: "No working demo or unclear problem statement" },
-  { level: 2, label: "Solid Effort", description: "Working demo, clear problem, but incremental or execution has gaps" },
-  { level: 3, label: "Strong Contender", description: "Working demo, novel approach, good execution" },
-  { level: 4, label: "Outstanding", description: "Would invest in this team today. Exceptional on multiple dimensions" },
-]
+import { STYLE_OPTIONS, DEFAULT_BUCKETS } from "./judging-constants"
 
 type CriterionDraft = { id: string; name: string; description: string }
 type WeightedCriterionDraft = {
@@ -474,6 +419,29 @@ export function EditPrizeDialog({
                 data-form-type="other"
               />
             </div>
+
+            {effectiveStyle && pickedStyle && !prize.judgingStyle && (() => {
+              const selectedOption = STYLE_OPTIONS.find((o) => o.value === effectiveStyle)
+              if (!selectedOption) return null
+              const SelectedIcon = selectedOption.icon
+              return (
+                <div className="flex items-center justify-between gap-2 rounded-md bg-muted px-3 py-2 text-sm">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <SelectedIcon className="size-4 shrink-0" />
+                    <span className="font-medium truncate">{selectedOption.label}</span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-auto shrink-0 px-2 py-1 text-xs"
+                    onClick={() => setPickedStyle(null)}
+                  >
+                    Change
+                  </Button>
+                </div>
+              )
+            })()}
 
             {!effectiveStyle && (
               <div className="space-y-2">
