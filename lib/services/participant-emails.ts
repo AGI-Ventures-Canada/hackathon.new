@@ -7,52 +7,12 @@ import {
   getReplyToAddress,
   buildMailtoUnsubscribeHeaders,
   sanitizeTag,
+  htmlToPlainText,
 } from "@/lib/email/utils"
 
 export type BulkEmailResult = {
   sent: number
   failed: number
-}
-
-function decodeHtmlEntities(text: string): string {
-  const named: Record<string, string> = {
-    "&nbsp;": " ",
-    "&amp;": "&",
-    "&lt;": "<",
-    "&gt;": ">",
-    "&quot;": '"',
-    "&apos;": "'",
-    "&mdash;": "—",
-    "&ndash;": "–",
-    "&hellip;": "…",
-  }
-  return text
-    .replace(/&#x([0-9a-f]+);/gi, (m, hex) => codePointOr(m, parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (m, dec) => codePointOr(m, Number(dec)))
-    .replace(/&[a-z]+;/gi, (m) => named[m.toLowerCase()] ?? m)
-}
-
-function codePointOr(original: string, code: number): string {
-  if (!Number.isInteger(code) || code < 0 || code > 0x10ffff) return original
-  try {
-    return String.fromCodePoint(code)
-  } catch {
-    return original
-  }
-}
-
-export function htmlToPlainText(html: string): string {
-  return decodeHtmlEntities(
-    html
-      .replace(/<style[\s\S]*?<\/style>/gi, "")
-      .replace(/<script[\s\S]*?<\/script>/gi, "")
-      .replace(/<\/(p|div|tr|h[1-6]|li)>/gi, "\n")
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<[^>]+>/g, "")
-  )
-    .replace(/\n{3,}/g, "\n\n")
-    .replace(/[ \t]+/g, " ")
-    .trim()
 }
 
 export async function sendBulkEmail(
