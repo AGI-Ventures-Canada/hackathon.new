@@ -81,6 +81,7 @@ mock.module("@/lib/services/submissions", () => ({
   updateSubmission: mock(() => Promise.resolve(null)),
   getHackathonSubmissions: mock(() => Promise.resolve([])),
   getTeamMemberCount: mock(() => Promise.resolve(0)),
+  notifySubmissionMembers: mock(() => Promise.resolve(0)),
 }))
 
 mock.module("@/lib/utils/url", () => ({

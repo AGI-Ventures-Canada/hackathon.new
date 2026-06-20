@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { assertOkJson } from "@/lib/utils/fetch"
 import { Button } from "@/components/ui/button"
@@ -15,13 +15,9 @@ import {
 } from "@/components/ui/dialog"
 import {
   ArrowUpDown,
-  ListChecks,
-  Vote,
-  Award,
   ChevronRight,
   Plus,
   Trash2,
-  Sliders,
 } from "lucide-react"
 import {
   Select,
@@ -32,57 +28,7 @@ import {
 } from "@/components/ui/select"
 import type { PrizeJudgingStyle } from "@/lib/db/hackathon-types"
 import type { RoundData } from "./rounds-types"
-
-const STYLE_OPTIONS: {
-  value: PrizeJudgingStyle
-  label: string
-  description: string
-  detail: string
-  icon: typeof ArrowUpDown
-}[] = [
-  {
-    value: "bucket_sort",
-    label: "Sort into groups",
-    description: "Judges score by sorting each project into a group like great, okay, or not ready.",
-    detail: "Good for: grand prize or overall winner",
-    icon: ArrowUpDown,
-  },
-  {
-    value: "gate_check",
-    label: "Pass or fail",
-    description: "Judges score by giving each project a yes or no on a list of rules.",
-    detail: "Good for: “Best Use of [Product]” or rule-based prizes",
-    icon: ListChecks,
-  },
-  {
-    value: "crowd_vote",
-    label: "Everyone votes",
-    description: "Anyone at the event can vote. No judges needed.",
-    detail: "Good for: People's Choice or Audience Award",
-    icon: Vote,
-  },
-  {
-    value: "judges_pick",
-    label: "Judge's picks (by vibes)",
-    description: "No scoring. Each judge picks their favorites. Most picks wins.",
-    detail: "Example: 3 judges each pick 1 favorite from 6 finalists. The top-picked project wins.",
-    icon: Award,
-  },
-  {
-    value: "weighted_score",
-    label: "Weighted scoring",
-    description: "Judges rate each project on a set of categories you define, with a weight assigned to each.",
-    detail: "Good for: sponsor prizes with a custom rubric on top of shared criteria",
-    icon: Sliders,
-  },
-]
-
-const DEFAULT_BUCKETS = [
-  { level: 1, label: "Not Ready", description: "No working demo or unclear problem statement" },
-  { level: 2, label: "Solid Effort", description: "Working demo, clear problem, but incremental or execution has gaps" },
-  { level: 3, label: "Strong Contender", description: "Working demo, novel approach, good execution" },
-  { level: 4, label: "Outstanding", description: "Would invest in this team today. Exceptional on multiple dimensions" },
-]
+import { STYLE_OPTIONS, DEFAULT_BUCKETS } from "./judging-constants"
 
 type CreateStep = "style" | "details"
 
@@ -128,6 +74,8 @@ interface AddPrizeDialogProps {
   rounds?: RoundData[]
   coreWeightSum?: number
   coreCriteriaCount?: number
+  existingPrizes?: { id: string; name: string }[]
+  onEditExisting?: (prizeId: string) => void
 }
 
 function initialWeightedCriteria(): WeightedCriterionDraft[] {
@@ -159,6 +107,8 @@ export function AddPrizeDialog({
   rounds = [],
   coreWeightSum: coreWeightSumProp = 0,
   coreCriteriaCount: coreCriteriaCountProp = 0,
+  existingPrizes,
+  onEditExisting,
 }: AddPrizeDialogProps) {
   const router = useRouter()
   const visibleRounds = [...rounds].sort((a, b) => a.displayOrder - b.displayOrder)
@@ -482,6 +432,12 @@ export function AddPrizeDialog({
   const selectedOption = STYLE_OPTIONS.find((o) => o.value === form.judgingStyle)
   const SelectedIcon = selectedOption?.icon ?? ArrowUpDown
 
+  const duplicateMatch = useMemo(() => {
+    const typed = form.name.trim().toLowerCase()
+    if (!typed) return null
+    return existingPrizes?.find((p) => p.name.trim().toLowerCase() === typed) ?? null
+  }, [existingPrizes, form.name])
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className={step === "style" ? "sm:max-w-lg" : "sm:max-w-xl max-h-[90vh] overflow-y-auto"}>
@@ -575,6 +531,28 @@ export function AddPrizeDialog({
                 data-lpignore="true"
                 data-form-type="other"
               />
+              {duplicateMatch && (
+                <div className="flex items-start justify-between gap-2 rounded-md bg-muted px-3 py-2 text-sm">
+                  <p className="text-muted-foreground">
+                    You already have a prize called &ldquo;{duplicateMatch.name}&rdquo;.
+                  </p>
+                  {onEditExisting && (
+                    <Button
+                      type="button"
+                      variant="link"
+                      size="sm"
+                      className="h-auto shrink-0 p-0 text-xs"
+                      onClick={() => {
+                        const id = duplicateMatch.id
+                        handleOpenChange(false)
+                        onEditExisting(id)
+                      }}
+                    >
+                      Edit it instead
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="add-prize-value">Reward</Label>

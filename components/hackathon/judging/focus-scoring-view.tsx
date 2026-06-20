@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { BarChart3, ChevronLeft, ChevronRight, CheckCircle2 } from "lucide-react"
 import { ScoringPanel } from "./scoring-panel"
+import { UnifiedScoringPanel } from "./unified-scoring-panel"
 import { getTeamSizeWarning } from "@/lib/utils/team-size"
 import { usePrefetchAssignment } from "@/hooks/use-prefetch-assignment"
 
@@ -20,6 +21,7 @@ type FocusAssignment = {
   teamName: string | null
   teamMemberCount: number | null
   isComplete: boolean
+  assignmentKind?: "per_prize" | "unified_weighted_score"
 }
 
 interface FocusScoringViewProps {
@@ -39,10 +41,18 @@ export function FocusScoringView({
   teamSettings,
   summaryHref,
 }: FocusScoringViewProps) {
-  const [completedIds, setCompletedIds] = useState<Set<string>>(initialCompletedIds)
+  const [locallyCompletedIds, setLocallyCompletedIds] = useState<Set<string>>(new Set())
 
-  const firstUnscored = assignments.findIndex((a) => !initialCompletedIds.has(a.id))
-  const [currentIndex, setCurrentIndex] = useState(firstUnscored >= 0 ? firstUnscored : 0)
+  const completedIds = useMemo(() => {
+    const next = new Set<string>(initialCompletedIds)
+    for (const id of locallyCompletedIds) next.add(id)
+    return next
+  }, [initialCompletedIds, locallyCompletedIds])
+
+  const [currentIndex, setCurrentIndex] = useState(() => {
+    const idx = assignments.findIndex((a) => !initialCompletedIds.has(a.id))
+    return idx >= 0 ? idx : 0
+  })
 
   const total = assignments.length
   const completed = completedIds.size
@@ -80,7 +90,7 @@ export function FocusScoringView({
   function handleScoreSubmitted() {
     const assignmentId = current.id
     const updatedIds = new Set([...completedIds, assignmentId])
-    setCompletedIds(updatedIds)
+    setLocallyCompletedIds((prev) => new Set(prev).add(assignmentId))
     onScoreSubmitted(assignmentId)
 
     const nextUnscored = assignments.findIndex(
@@ -164,23 +174,43 @@ export function FocusScoringView({
         </Badge>
       </div>
 
-      <ScoringPanel
-        key={current.id}
-        hackathonSlug={hackathonSlug}
-        assignmentId={current.id}
-        onClose={goToNext}
-        onScoreSubmitted={handleScoreSubmitted}
-        cancelLabel="Skip"
-        prefetchedDetail={prefetchCache[current.id] ?? null}
-        teamSizeWarning={teamSettings && current.teamMemberCount != null
-          ? (getTeamSizeWarning({
-              memberCount: current.teamMemberCount,
-              minTeamSize: teamSettings.minTeamSize,
-              allowSolo: teamSettings.allowSolo,
-            })?.message ?? null)
-          : null
-        }
-      />
+      {current.assignmentKind === "unified_weighted_score" ? (
+        <UnifiedScoringPanel
+          key={current.id}
+          hackathonSlug={hackathonSlug}
+          assignmentId={current.id}
+          onClose={goToNext}
+          onScoreSubmitted={handleScoreSubmitted}
+          cancelLabel="Skip"
+          prefetchedDetail={prefetchCache[current.id] ?? null}
+          teamSizeWarning={teamSettings && current.teamMemberCount != null
+            ? (getTeamSizeWarning({
+                memberCount: current.teamMemberCount,
+                minTeamSize: teamSettings.minTeamSize,
+                allowSolo: teamSettings.allowSolo,
+              })?.message ?? null)
+            : null
+          }
+        />
+      ) : (
+        <ScoringPanel
+          key={current.id}
+          hackathonSlug={hackathonSlug}
+          assignmentId={current.id}
+          onClose={goToNext}
+          onScoreSubmitted={handleScoreSubmitted}
+          cancelLabel="Skip"
+          prefetchedDetail={prefetchCache[current.id] ?? null}
+          teamSizeWarning={teamSettings && current.teamMemberCount != null
+            ? (getTeamSizeWarning({
+                memberCount: current.teamMemberCount,
+                minTeamSize: teamSettings.minTeamSize,
+                allowSolo: teamSettings.allowSolo,
+              })?.message ?? null)
+            : null
+          }
+        />
+      )}
 
       <div className="flex items-center justify-center gap-2 pt-2 text-sm text-muted-foreground">
         <span>{completed}/{total} scored</span>

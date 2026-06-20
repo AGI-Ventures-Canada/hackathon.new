@@ -60,6 +60,7 @@ const RADIX_ISOLATED_TESTS = [
   "__tests__/components/org/org-event-tabs.test.tsx",
   "__tests__/components/dashboard/api-key-create-dialog.test.tsx",
   "__tests__/components/hackathon/judging/judges-section.test.tsx",
+  "__tests__/components/hackathon/judging/assignments-section.test.tsx",
 ]
 const radixSet = new Set(RADIX_ISOLATED_TESTS)
 
@@ -159,8 +160,13 @@ const groups: Group[] = [
     args: ["__tests__/components/mobile-header.test.tsx"],
   },
   {
+    name: "workflows (export-submissions isolated)",
+    args: ["__tests__/workflows/export-submissions-steps.test.ts"],
+  },
+  {
     name: "workflows",
     args: ["__tests__/workflows"],
+    exclude: new Set(["__tests__/workflows/export-submissions-steps.test.ts"]),
   },
   {
     name: "email (resolve-emails)",

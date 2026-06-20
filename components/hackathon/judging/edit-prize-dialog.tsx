@@ -12,8 +12,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Loader2, Plus, Trash2 } from "lucide-react"
+import {
+  ChevronRight,
+  Loader2,
+  Plus,
+  Trash2,
+} from "lucide-react"
 import type { PrizeJudgingStyle } from "@/lib/db/hackathon-types"
+import { STYLE_OPTIONS, DEFAULT_BUCKETS } from "./judging-constants"
 
 type CriterionDraft = { id: string; name: string; description: string }
 type WeightedCriterionDraft = {
@@ -102,10 +108,13 @@ export function EditPrizeDialog({
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [pickedStyle, setPickedStyle] = useState<PrizeJudgingStyle | null>(null)
+  const effectiveStyle: PrizeJudgingStyle | null = pickedStyle ?? prize?.judgingStyle ?? null
 
   useEffect(() => {
     if (!prize) return
     setError(null)
+    setPickedStyle(null)
     setForm({
       name: prize.name,
       description: prize.description ?? "",
@@ -228,7 +237,12 @@ export function EditPrizeDialog({
     let bucketsPayload: { level: number; label: string; description: string | null }[] | undefined
     let maxPicksPayload: number | undefined
 
-    if (prize.judgingStyle === "weighted_score") {
+    if (!effectiveStyle) {
+      setError("Pick how judges should score this prize")
+      return
+    }
+
+    if (effectiveStyle === "weighted_score") {
       const cleaned = form.weightedCriteria
         .map((c) => ({
           name: c.name.trim(),
@@ -256,7 +270,7 @@ export function EditPrizeDialog({
       criteriaPayload = cleaned
     }
 
-    if (prize.judgingStyle === "gate_check") {
+    if (effectiveStyle === "gate_check") {
       const cleaned = form.criteria
         .map((c) => ({ name: c.name.trim(), description: c.description.trim() || null }))
         .filter((c) => c.name.length > 0)
@@ -267,7 +281,7 @@ export function EditPrizeDialog({
       criteriaPayload = cleaned
     }
 
-    if (prize.judgingStyle === "bucket_sort") {
+    if (effectiveStyle === "bucket_sort") {
       const cleaned = form.buckets
         .map((b) => ({ level: b.level, label: b.label.trim(), description: b.description.trim() || null }))
         .filter((b) => b.label.length > 0)
@@ -278,7 +292,7 @@ export function EditPrizeDialog({
       bucketsPayload = cleaned
     }
 
-    if (prize.judgingStyle === "judges_pick") {
+    if (effectiveStyle === "judges_pick") {
       const parsed = parseInt(form.maxPicks, 10)
       if (!Number.isFinite(parsed) || parsed < 1 || parsed > 100) {
         setError("Max picks must be between 1 and 100")
@@ -300,7 +314,7 @@ export function EditPrizeDialog({
             name,
             description: form.description.trim() || null,
             value: form.value.trim() || null,
-            ...(prize.judgingStyle ? { judgingStyle: prize.judgingStyle } : {}),
+            judgingStyle: effectiveStyle,
             ...(criteriaPayload ? { criteria: criteriaPayload } : {}),
             ...(bucketsPayload ? { buckets: bucketsPayload } : {}),
             ...(maxPicksPayload !== undefined ? { maxPicks: maxPicksPayload } : {}),
@@ -357,6 +371,11 @@ export function EditPrizeDialog({
   }
 
   const open = prize !== null
+  const showPickedStyleBadge = !!pickedStyle && !prize?.judgingStyle
+  const pickedStyleOption = showPickedStyleBadge
+    ? STYLE_OPTIONS.find((o) => o.value === pickedStyle) ?? null
+    : null
+  const PickedStyleIcon = pickedStyleOption?.icon ?? null
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onClose() }}>
@@ -406,7 +425,79 @@ export function EditPrizeDialog({
               />
             </div>
 
-            {prize.judgingStyle === "gate_check" && (
+            {pickedStyleOption && PickedStyleIcon && (
+              <div className="flex items-center justify-between gap-2 rounded-md bg-muted px-3 py-2 text-sm">
+                <div className="flex items-center gap-2 min-w-0">
+                  <PickedStyleIcon className="size-4 shrink-0" />
+                  <span className="font-medium truncate">{pickedStyleOption.label}</span>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-auto shrink-0 px-2 py-1 text-xs"
+                  onClick={() => setPickedStyle(null)}
+                >
+                  Change
+                </Button>
+              </div>
+            )}
+
+            {!effectiveStyle && (
+              <div className="space-y-2">
+                <Label>How should judges score this prize?</Label>
+                <div className="space-y-2">
+                  {STYLE_OPTIONS.map((option) => {
+                    const Icon = option.icon
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => {
+                          setPickedStyle(option.value)
+                          if (option.value === "bucket_sort") {
+                            setForm({
+                              ...form,
+                              buckets: DEFAULT_BUCKETS.map((b) => ({
+                                id: nextDraftId(),
+                                level: b.level,
+                                label: b.label,
+                                description: b.description,
+                              })),
+                            })
+                          } else if (option.value === "gate_check") {
+                            setForm({
+                              ...form,
+                              criteria: [{ id: nextDraftId(), name: "", description: "" }],
+                            })
+                          } else if (option.value === "weighted_score") {
+                            setForm({
+                              ...form,
+                              weightedCriteria: [
+                                { id: nextDraftId(), name: "", description: "", weight: "", minScore: "1", maxScore: "10" },
+                              ],
+                            })
+                          }
+                        }}
+                        className="w-full rounded-lg border p-4 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <div className="flex items-start gap-3">
+                          <Icon className="size-5 mt-0.5 shrink-0 text-muted-foreground" />
+                          <div className="min-w-0 flex-1">
+                            <span className="font-medium">{option.label}</span>
+                            <p className="text-sm text-muted-foreground mt-0.5">{option.description}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">{option.detail}</p>
+                          </div>
+                          <ChevronRight className="size-4 mt-1 shrink-0 text-muted-foreground" />
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {effectiveStyle === "gate_check" && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div>
@@ -460,7 +551,7 @@ export function EditPrizeDialog({
               </div>
             )}
 
-            {prize.judgingStyle === "bucket_sort" && (
+            {effectiveStyle === "bucket_sort" && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div>
@@ -514,7 +605,7 @@ export function EditPrizeDialog({
               </div>
             )}
 
-            {prize.judgingStyle === "weighted_score" && (
+            {effectiveStyle === "weighted_score" && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div>
@@ -619,7 +710,7 @@ export function EditPrizeDialog({
               </div>
             )}
 
-            {prize.judgingStyle === "judges_pick" && (
+            {effectiveStyle === "judges_pick" && (
               <div className="space-y-2">
                 <Label htmlFor="edit-prize-max-picks">How many can each judge pick?</Label>
                 <Input

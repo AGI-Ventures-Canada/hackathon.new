@@ -180,6 +180,9 @@ export function JudgeAssignments({
   const [removingAssignmentId, setRemovingAssignmentId] = useState<string | null>(null)
   const [removeAssignmentError, setRemoveAssignmentError] = useState<string | null>(null)
 
+  const [clearingAssignments, setClearingAssignments] = useState(false)
+  const [clearAssignmentsError, setClearAssignmentsError] = useState<string | null>(null)
+
   const [sortColumn, setSortColumn] = useState<SortColumn | null>(null)
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc")
 
@@ -497,6 +500,30 @@ export function JudgeAssignments({
       setAutoAssignError(err instanceof Error ? err.message : "Something went wrong")
     } finally {
       setAutoAssigning(false)
+    }
+  }
+
+  async function handleClearAllAssignments() {
+    setClearingAssignments(true)
+    setClearAssignmentsError(null)
+
+    const previousAssignments = assignments
+    const previousJudges = judges
+    setAssignments([])
+    setJudges((prev) =>
+      prev.map((j) => ({ ...j, assignmentCount: 0, completedCount: 0 }))
+    )
+
+    try {
+      const res = await fetch(`${base}/assignments`, { method: "DELETE" })
+      if (!res.ok) throw new Error("Failed to clear assignments")
+      onMutation?.()
+    } catch {
+      setAssignments(previousAssignments)
+      setJudges(previousJudges)
+      setClearAssignmentsError("Failed to clear assignments")
+    } finally {
+      setClearingAssignments(false)
     }
   }
 
@@ -1037,15 +1064,56 @@ export function JudgeAssignments({
       </div>
 
       <div className="space-y-4">
-        <div>
-          <h3 className="text-lg font-semibold">Assignments</h3>
-          <p className="text-sm text-muted-foreground">
-            {assignments.length} total assignment{assignments.length !== 1 ? "s" : ""}
-          </p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-lg font-semibold">Assignments</h3>
+            <p className="text-sm text-muted-foreground">
+              {assignments.length} total assignment{assignments.length !== 1 ? "s" : ""}
+            </p>
+          </div>
+          {assignments.length > 0 && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-destructive"
+                  disabled={clearingAssignments}
+                >
+                  {clearingAssignments ? (
+                    <Loader2 className="mr-2 size-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="mr-2 size-4" />
+                  )}
+                  Clear all
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Clear all assignments?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This removes every judge-to-project assignment for this hackathon. Any scores already recorded will be deleted. This can&apos;t be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleClearAllAssignments}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    Clear all
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
         </div>
 
         {removeAssignmentError && (
           <p className="text-sm text-destructive">{removeAssignmentError}</p>
+        )}
+        {clearAssignmentsError && (
+          <p className="text-sm text-destructive">{clearAssignmentsError}</p>
         )}
 
         {assignments.length === 0 ? (

@@ -1502,6 +1502,50 @@ export const dashboardJudgingRoutes = new Elysia()
     }
   )
 
+  .delete("/hackathons/:id/judging/assignments", async ({ principal, params }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+
+    const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+    const result = await checkHackathonOrganizer(params.id, principal.tenantId)
+
+    if (result.status === "not_found") {
+      return new Response(JSON.stringify({ error: "Hackathon not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+    }
+    if (result.status === "not_authorized") {
+      return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
+    }
+
+    const { clearAllJudgeAssignments } = await import("@/lib/services/judging")
+    const clearResult = await clearAllJudgeAssignments(params.id)
+
+    if (!clearResult.success) {
+      const error =
+        clearResult.partialFailure === "prize_assignments"
+          ? "Cleared judge assignments but failed to clear prize assignments. Try again."
+          : "Failed to clear assignments"
+      return new Response(
+        JSON.stringify({
+          error,
+          removedCount: clearResult.removedCount,
+          partialFailure: clearResult.partialFailure ?? null,
+        }),
+        { status: 500, headers: { "Content-Type": "application/json" } }
+      )
+    }
+
+    logAudit({
+      principal,
+      action: "judging.assignments_cleared",
+      resourceType: "hackathon",
+      resourceId: params.id,
+      metadata: { removedCount: clearResult.removedCount },
+    })
+
+    return { success: true, removedCount: clearResult.removedCount, resultsStale: clearResult.resultsStale }
+  }, {
+    detail: { summary: "Clear all judge assignments", description: "Removes every judge-to-submission assignment for the hackathon. Use to recover from a bad mass-assignment." },
+  })
+
   .delete("/hackathons/:id/judging/judges/:participantId", async ({ principal, params }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
 
@@ -1866,4 +1910,101 @@ export const dashboardJudgingRoutes = new Elysia()
       roomId: t.Optional(t.String({ description: "Limit assignments to projects from this room only" })),
     }),
     detail: { summary: "Assign judge to unified scorecard", description: "Creates one unified weighted_score assignment per submission for this judge. When roomId is provided, only projects from that room are assigned." },
+  })
+
+  .get("/hackathons/:id/judging/judges/:participantId/submissions", async ({ principal, params }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
+
+    const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+    const result = await checkHackathonOrganizer(params.id, principal.tenantId)
+    if (result.status === "not_found") {
+      return new Response(JSON.stringify({ error: "Hackathon not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+    }
+    if (result.status === "not_authorized") {
+      return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
+    }
+
+    if (!isValidUuid(params.participantId)) {
+      return new Response(JSON.stringify({ error: "Judge not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+    }
+
+    const { listJudgeSubmissionAssignments } = await import("@/lib/services/judging")
+    const submissions = await listJudgeSubmissionAssignments(params.id, params.participantId)
+    return { submissions }
+  }, {
+    detail: { summary: "List judge submission assignments", description: "Lists every submitted project with whether this judge is currently assigned to score it." },
+  })
+
+  .post("/hackathons/:id/judging/judges/:participantId/submissions/:submissionId", async ({ principal, params }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+
+    const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+    const result = await checkHackathonOrganizer(params.id, principal.tenantId)
+    if (result.status === "not_found") {
+      return new Response(JSON.stringify({ error: "Hackathon not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+    }
+    if (result.status === "not_authorized") {
+      return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
+    }
+
+    if (!isValidUuid(params.participantId) || !isValidUuid(params.submissionId)) {
+      return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+    }
+
+    const { assignJudgeToSubmission } = await import("@/lib/services/judging")
+    const out = await assignJudgeToSubmission(params.id, params.participantId, params.submissionId)
+    if (!out.success) {
+      return new Response(JSON.stringify({ error: out.error }), { status: 400, headers: { "Content-Type": "application/json" } })
+    }
+
+    if (!out.alreadyAssigned) {
+      await logAudit({
+        principal,
+        action: "judge_assignment.created",
+        resourceType: "judge_assignment",
+        resourceId: `${params.participantId}:${params.submissionId}`,
+        metadata: { judgeParticipantId: params.participantId, submissionId: params.submissionId },
+      })
+    }
+
+    return out
+  }, {
+    detail: { summary: "Assign judge to project", description: "Creates a unified weighted_score assignment for this judge and project. Idempotent — returns alreadyAssigned:true if the assignment already exists." },
+  })
+
+  .delete("/hackathons/:id/judging/judges/:participantId/submissions/:submissionId", async ({ principal, params }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+
+    const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+    const result = await checkHackathonOrganizer(params.id, principal.tenantId)
+    if (result.status === "not_found") {
+      return new Response(JSON.stringify({ error: "Hackathon not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+    }
+    if (result.status === "not_authorized") {
+      return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
+    }
+
+    if (!isValidUuid(params.participantId) || !isValidUuid(params.submissionId)) {
+      return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
+    }
+
+    const { unassignJudgeFromSubmission } = await import("@/lib/services/judging")
+    const out = await unassignJudgeFromSubmission(params.id, params.participantId, params.submissionId)
+    if (!out.success) {
+      return new Response(JSON.stringify({ error: out.error }), { status: 400, headers: { "Content-Type": "application/json" } })
+    }
+
+    if (out.removed) {
+      await logAudit({
+        principal,
+        action: "judge_assignment.deleted",
+        resourceType: "judge_assignment",
+        resourceId: `${params.participantId}:${params.submissionId}`,
+        metadata: { judgeParticipantId: params.participantId, submissionId: params.submissionId },
+      })
+    }
+
+    return out
+  }, {
+    detail: { summary: "Unassign judge from project", description: "Removes the unified weighted_score assignment for this judge and project, if it exists." },
   })

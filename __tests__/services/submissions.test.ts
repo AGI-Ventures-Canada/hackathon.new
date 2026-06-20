@@ -1,10 +1,19 @@
-import { describe, it, expect, beforeEach } from "bun:test"
+import { describe, it, expect, beforeEach, mock } from "bun:test"
 import type { Submission } from "@/lib/db/hackathon-types"
 import {
   createChainableMock,
+  mockClerkClient,
   resetSupabaseMocks,
   setMockFromImplementation,
 } from "../lib/supabase-mock"
+
+const mockSendSubmissionConfirmationEmail = mock(() =>
+  Promise.resolve({ success: true })
+)
+
+mock.module("@/lib/email/submission-confirmation", () => ({
+  sendSubmissionConfirmationEmail: mockSendSubmissionConfirmationEmail,
+}))
 
 const {
   getParticipantWithTeam,
@@ -14,6 +23,7 @@ const {
   updateSubmission,
   getTeamMemberCount,
   submissionBelongsToHackathon,
+  notifySubmissionMembers,
 } = await import("@/lib/services/submissions")
 
 const mockSubmission: Submission = {
@@ -464,6 +474,206 @@ describe("Submissions Service", () => {
 
       const result = await getTeamMemberCount("team-1")
       expect(result).toBe(0)
+    })
+  })
+
+  describe("notifySubmissionMembers", () => {
+    beforeEach(() => {
+      mockSendSubmissionConfirmationEmail.mockClear()
+    })
+
+    it("sends a confirmation to the solo participant", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: { name: "AI Hack", slug: "ai-hack", status: "active" },
+            error: null,
+          })
+        }
+        if (table === "hackathon_participants") {
+          return createChainableMock({
+            data: { clerk_user_id: "user_solo" },
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      mockClerkClient.mockImplementation(() =>
+        Promise.resolve({
+          users: {
+            getUserList: mock(() =>
+              Promise.resolve({
+                data: [
+                  {
+                    primaryEmailAddress: { emailAddress: "solo@example.com" },
+                    emailAddresses: [{ emailAddress: "solo@example.com" }],
+                  },
+                ],
+              })
+            ),
+          },
+        } as never)
+      )
+
+      const sent = await notifySubmissionMembers({
+        hackathonId: "h1",
+        participantId: "p1",
+        teamId: null,
+        projectTitle: "Solo Project",
+      })
+
+      expect(sent).toBe(1)
+      expect(mockSendSubmissionConfirmationEmail).toHaveBeenCalledTimes(1)
+      expect(mockSendSubmissionConfirmationEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: "solo@example.com",
+          hackathonName: "AI Hack",
+          hackathonSlug: "ai-hack",
+          projectTitle: "Solo Project",
+          teamName: null,
+        })
+      )
+    })
+
+    it("sends a confirmation to every team member, deduped by email", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: { name: "AI Hack", slug: "ai-hack", status: "active" },
+            error: null,
+          })
+        }
+        if (table === "teams") {
+          return createChainableMock({
+            data: { name: "Neural Navigators" },
+            error: null,
+          })
+        }
+        if (table === "hackathon_participants") {
+          return createChainableMock({
+            data: [
+              { clerk_user_id: "user_a" },
+              { clerk_user_id: "user_b" },
+              { clerk_user_id: "user_a" },
+            ],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      mockClerkClient.mockImplementation(() =>
+        Promise.resolve({
+          users: {
+            getUserList: mock(() =>
+              Promise.resolve({
+                data: [
+                  {
+                    primaryEmailAddress: { emailAddress: "a@example.com" },
+                    emailAddresses: [{ emailAddress: "a@example.com" }],
+                  },
+                  {
+                    primaryEmailAddress: { emailAddress: "B@example.com" },
+                    emailAddresses: [{ emailAddress: "B@example.com" }],
+                  },
+                ],
+              })
+            ),
+          },
+        } as never)
+      )
+
+      const sent = await notifySubmissionMembers({
+        hackathonId: "h1",
+        participantId: "p1",
+        teamId: "team1",
+        projectTitle: "Team Project",
+      })
+
+      expect(sent).toBe(2)
+      expect(mockSendSubmissionConfirmationEmail).toHaveBeenCalledTimes(2)
+      const recipients = mockSendSubmissionConfirmationEmail.mock.calls.map(
+        (call) => (call[0] as { to: string }).to
+      )
+      expect(recipients.sort()).toEqual(["a@example.com", "b@example.com"])
+      expect(mockSendSubmissionConfirmationEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ teamName: "Neural Navigators" })
+      )
+    })
+
+    it("skips sending when hackathon status is draft", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: { name: "AI Hack", slug: "ai-hack", status: "draft" },
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const sent = await notifySubmissionMembers({
+        hackathonId: "h1",
+        participantId: "p1",
+        teamId: null,
+        projectTitle: "Solo Project",
+      })
+
+      expect(sent).toBe(0)
+      expect(mockSendSubmissionConfirmationEmail).not.toHaveBeenCalled()
+    })
+
+    it("returns 0 when no recipients resolve to an email", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: { name: "AI Hack", slug: "ai-hack", status: "active" },
+            error: null,
+          })
+        }
+        if (table === "hackathon_participants") {
+          return createChainableMock({
+            data: { clerk_user_id: "user_solo" },
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      mockClerkClient.mockImplementation(() =>
+        Promise.resolve({
+          users: {
+            getUserList: mock(() => Promise.resolve({ data: [] })),
+          },
+        } as never)
+      )
+
+      const sent = await notifySubmissionMembers({
+        hackathonId: "h1",
+        participantId: "p1",
+        teamId: null,
+        projectTitle: "Solo Project",
+      })
+
+      expect(sent).toBe(0)
+      expect(mockSendSubmissionConfirmationEmail).not.toHaveBeenCalled()
+    })
+
+    it("returns 0 when the hackathon row is missing", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({ data: null, error: null })
+      )
+
+      const sent = await notifySubmissionMembers({
+        hackathonId: "h1",
+        participantId: "p1",
+        teamId: null,
+        projectTitle: "Solo Project",
+      })
+
+      expect(sent).toBe(0)
+      expect(mockSendSubmissionConfirmationEmail).not.toHaveBeenCalled()
     })
   })
 

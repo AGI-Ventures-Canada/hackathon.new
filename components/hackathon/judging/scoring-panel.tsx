@@ -6,7 +6,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Slider } from "@/components/ui/slider"
-import { Badge } from "@/components/ui/badge"
 import { Loader2, ExternalLink, Github, Maximize2, AlertTriangle, Play } from "lucide-react"
 import { RubricLevelSelector } from "./rubric-level-selector"
 import Image from "next/image"
@@ -58,7 +57,7 @@ export function ScoringPanel({
       setDetail(data)
       const initialScores: Record<string, number | null> = {}
       for (const c of data.criteria ?? []) {
-        initialScores[c.id] = c.currentScore ?? ((c.rubricLevels?.length ?? 0) > 0 ? null : 0)
+        initialScores[c.id] = c.currentScore ?? ((c.rubricLevels?.length ?? 0) > 0 ? null : c.min_score)
       }
       setScores(initialScores)
       setNotes(data.notes ?? "")
@@ -263,18 +262,11 @@ export function ScoringPanel({
         <h4 className="text-sm font-semibold">Scoring</h4>
         {detail.criteria.map((c) => (
           <div key={c.id} className="space-y-2">
-            <div className="flex items-center justify-between">
-              <div>
-                <Label className="text-sm font-medium">{c.name}</Label>
-                {c.description && (
-                  <p className="text-xs text-muted-foreground">{c.description}</p>
-                )}
-              </div>
-              <Badge variant="secondary">
-                {c.rubricLevels && c.rubricLevels.length > 0
-                  ? ((c.category ?? "core") === "core" ? "2x" : "1x")
-                  : `${c.weight}x`}
-              </Badge>
+            <div>
+              <Label className="text-sm font-medium">{c.name}</Label>
+              {c.description && (
+                <p className="text-xs text-muted-foreground">{c.description}</p>
+              )}
             </div>
             {c.rubricLevels && c.rubricLevels.length > 0 ? (
               <RubricLevelSelector
@@ -290,22 +282,25 @@ export function ScoringPanel({
             ) : (
               <div className="flex items-center gap-3">
                 <Slider
-                  value={[scores[c.id] ?? 0]}
+                  value={[scores[c.id] ?? c.min_score]}
                   onValueChange={([val]) =>
                     setScores((prev) => ({ ...prev, [c.id]: val }))
                   }
-                  min={0}
+                  min={c.min_score}
                   max={c.max_score}
                   step={1}
                   className="flex-1"
                 />
                 <Input
                   type="number"
-                  min={0}
+                  min={c.min_score}
                   max={c.max_score}
-                  value={scores[c.id] ?? 0}
+                  value={scores[c.id] ?? c.min_score}
                   onChange={(e) => {
-                    const val = Math.max(0, Math.min(c.max_score, parseInt(e.target.value) || 0))
+                    const parsed = parseInt(e.target.value)
+                    const val = Number.isNaN(parsed)
+                      ? c.min_score
+                      : Math.max(c.min_score, Math.min(c.max_score, parsed))
                     setScores((prev) => ({ ...prev, [c.id]: val }))
                   }}
                   className="w-16 text-center"

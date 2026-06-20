@@ -50,10 +50,16 @@ export function JudgeAssignmentsCard({
 }: JudgeAssignmentsCardProps) {
   const [viewMode, setViewMode] = useState<"focus" | "list">("focus")
   const [openAssignmentId, setOpenAssignmentId] = useState<string | null>(null)
-  const [completedIds, setCompletedIds] = useState<Set<string>>(
-    new Set(assignments.filter((a) => a.isComplete).map((a) => a.id))
-  )
+  const [locallyCompletedIds, setLocallyCompletedIds] = useState<Set<string>>(new Set())
   const [page, setPage] = useState(0)
+
+  const completedIds = useMemo(() => {
+    const next = new Set<string>(locallyCompletedIds)
+    for (const a of assignments) {
+      if (a.isComplete) next.add(a.id)
+    }
+    return next
+  }, [assignments, locallyCompletedIds])
 
   const completed = completedIds.size
   const total = assignments.length
@@ -73,7 +79,7 @@ export function JudgeAssignmentsCard({
 
   function handleScoreSubmitted(assignmentId: string) {
     const updatedIds = new Set([...completedIds, assignmentId])
-    setCompletedIds(updatedIds)
+    setLocallyCompletedIds((prev) => new Set(prev).add(assignmentId))
 
     if (viewMode === "list") {
       const currentIdx = assignments.findIndex((a) => a.id === assignmentId)

@@ -480,15 +480,14 @@ export function EventHero({
               />
             </Suspense>
           )}
-          {registrationProps.canSubmit !== false && (
-            <SubmissionButton
-              hackathonSlug={registrationProps.hackathonSlug}
-              status={registrationProps.status}
-              isRegistered={registrationProps.isRegistered}
-              submission={registrationProps.submission ?? null}
-              teamSizeWarning={registrationProps.teamSizeWarning}
-            />
-          )}
+          <SubmissionButton
+            hackathonSlug={registrationProps.hackathonSlug}
+            status={registrationProps.status}
+            isRegistered={registrationProps.isRegistered}
+            submission={registrationProps.submission ?? null}
+            teamSizeWarning={registrationProps.teamSizeWarning}
+            pendingTeamApproval={registrationProps.canSubmit === false}
+          />
           {tabsSlot}
         </div>
       )}

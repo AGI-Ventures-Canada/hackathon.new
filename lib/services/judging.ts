@@ -90,7 +90,6 @@ export async function listPrizes(hackathonId: string): Promise<PrizeWithProgress
     .from("prizes")
     .select("*")
     .eq("hackathon_id", hackathonId)
-    .not("judging_style", "is", null)
     .order("display_order")
 
   if (error || !prizes) {
@@ -1156,6 +1155,25 @@ export async function getRoundPool(hackathonId: string, roundId: string | null):
   return (data ?? []).map((s) => s.id)
 }
 
+export async function getActiveRoundId(hackathonId: string): Promise<string | null> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const { data } = await client
+    .from("judging_rounds")
+    .select("id")
+    .eq("hackathon_id", hackathonId)
+    .eq("status", "active")
+    .maybeSingle()
+  return (data as { id: string } | null)?.id ?? null
+}
+
+// null = no scoping; caller falls back to full submitted pool.
+export async function getActiveRoundFinalistIds(hackathonId: string): Promise<string[] | null> {
+  const activeRoundId = await getActiveRoundId(hackathonId)
+  if (!activeRoundId) return null
+  const subs = await getRoundSubmissions(activeRoundId)
+  return subs.length > 0 ? subs : null
+}
+
 async function getTeamIdsInRoom(client: SupabaseClient, roomId: string): Promise<string[]> {
   const { data } = await client
     .from("room_teams")
@@ -2048,6 +2066,60 @@ export async function assertAssignmentWritable(
       assignmentKind: data.assignment_kind ?? "per_prize",
     },
   }
+}
+
+export type ClearJudgeAssignmentsResult = {
+  success: boolean
+  removedCount: number
+  resultsStale: boolean
+  partialFailure?: "prize_assignments"
+}
+
+export async function clearAllJudgeAssignments(
+  hackathonId: string
+): Promise<ClearJudgeAssignmentsResult> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data: deleted, error: assignmentError } = await client
+    .from("judge_assignments")
+    .delete()
+    .eq("hackathon_id", hackathonId)
+    .select("id")
+
+  if (assignmentError) {
+    console.error("Failed to clear judge assignments:", assignmentError)
+    return { success: false, removedCount: 0, resultsStale: false }
+  }
+
+  const removedCount = deleted?.length ?? 0
+
+  if (removedCount === 0) {
+    return { success: true, removedCount: 0, resultsStale: false }
+  }
+
+  const { error: prizeAssignmentError } = await client
+    .from("judge_prize_assignments")
+    .delete()
+    .eq("hackathon_id", hackathonId)
+
+  if (prizeAssignmentError) {
+    console.error("Failed to clear judge_prize_assignments:", prizeAssignmentError)
+    return {
+      success: false,
+      removedCount,
+      resultsStale: false,
+      partialFailure: "prize_assignments",
+    }
+  }
+
+  const { data: existingResults } = await client
+    .from("hackathon_results")
+    .select("id")
+    .eq("hackathon_id", hackathonId)
+    .limit(1)
+
+  const resultsStale = (existingResults?.length ?? 0) > 0
+  return { success: true, removedCount, resultsStale }
 }
 
 export async function removeJudgeFromPrize(
@@ -3053,7 +3125,7 @@ export async function getJudgeAssignments(
 
   const judgeTeamId = (participant as { team_id: string | null }).team_id
 
-  const { data: assignments, error } = await client
+  const { data: assignmentsRaw, error } = await client
     .from("judge_assignments")
     .select(`
       id, submission_id, is_complete, notes, viewed_at, prize_id, assignment_kind,
@@ -3063,7 +3135,14 @@ export async function getJudgeAssignments(
     .eq("judge_participant_id", participant.id)
     .order("assigned_at")
 
-  if (error || !assignments) return []
+  if (error || !assignmentsRaw) return []
+
+  const finalistIds = await getActiveRoundFinalistIds(hackathonId)
+  const assignments = finalistIds
+    ? assignmentsRaw.filter((a: Record<string, unknown>) =>
+        finalistIds.includes(a.submission_id as string)
+      )
+    : assignmentsRaw
 
   const prizeIds = [...new Set(assignments.map((a: Record<string, unknown>) => a.prize_id).filter(Boolean))] as string[]
   const prizeMap: Record<string, { name: string; judging_style: string | null }> = {}
@@ -3972,6 +4051,11 @@ export async function assignWeightedScoreJudge(
     return { success: true, assignedCount: 0 }
   }
 
+  // Two-step (not getActiveRoundFinalistIds) because we need activeRoundId for the insert.
+  const activeRoundId = await getActiveRoundId(hackathonId)
+  const finalistIds = activeRoundId ? await getRoundSubmissions(activeRoundId) : []
+  const scopeToFinalists = activeRoundId !== null && finalistIds.length > 0
+
   let submissionsQuery = client
     .from("submissions")
     .select("id, team_id")
@@ -3980,6 +4064,10 @@ export async function assignWeightedScoreJudge(
 
   if (roomTeamIds) {
     submissionsQuery = submissionsQuery.in("team_id", roomTeamIds)
+  }
+
+  if (scopeToFinalists) {
+    submissionsQuery = submissionsQuery.in("id", finalistIds)
   }
 
   const { data: submissions } = await submissionsQuery
@@ -4001,7 +4089,7 @@ export async function assignWeightedScoreJudge(
       judge_participant_id: judgeParticipantId,
       submission_id: s.id,
       prize_id: null,
-      round_id: null,
+      round_id: scopeToFinalists ? activeRoundId : null,
       assignment_kind: "unified_weighted_score",
     }))
 
@@ -4045,24 +4133,33 @@ export async function getWeightedScoreAssignmentSummary(
 ): Promise<WeightedScoreRoomSummary> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const [submissionsResult, roomsResult, roomTeamsResult, assignmentsResult] = await Promise.all([
-    client.from("submissions").select("id, team_id").eq("hackathon_id", hackathonId),
-    client.from("rooms").select("id, name, display_order").eq("hackathon_id", hackathonId).order("display_order"),
-    client
-      .from("room_teams")
-      .select("room_id, team_id, rooms!inner(hackathon_id)")
-      .eq("rooms.hackathon_id", hackathonId),
-    client
-      .from("judge_assignments")
-      .select("judge_participant_id, submission_id")
-      .eq("hackathon_id", hackathonId)
-      .eq("assignment_kind", "unified_weighted_score"),
-  ])
+  const [submissionsResult, roomsResult, roomTeamsResult, assignmentsResult, finalistIds] =
+    await Promise.all([
+      client.from("submissions").select("id, team_id").eq("hackathon_id", hackathonId),
+      client.from("rooms").select("id, name, display_order").eq("hackathon_id", hackathonId).order("display_order"),
+      client
+        .from("room_teams")
+        .select("room_id, team_id, rooms!inner(hackathon_id)")
+        .eq("rooms.hackathon_id", hackathonId),
+      client
+        .from("judge_assignments")
+        .select("judge_participant_id, submission_id")
+        .eq("hackathon_id", hackathonId)
+        .eq("assignment_kind", "unified_weighted_score"),
+      getActiveRoundFinalistIds(hackathonId),
+    ])
 
-  const submissions = (submissionsResult.data ?? []) as { id: string; team_id: string | null }[]
+  const allSubmissions = (submissionsResult.data ?? []) as { id: string; team_id: string | null }[]
+  const submissions = finalistIds
+    ? allSubmissions.filter((s) => finalistIds.includes(s.id))
+    : allSubmissions
   const rooms = (roomsResult.data ?? []) as { id: string; name: string; display_order: number }[]
   const allRoomTeams = (roomTeamsResult.data ?? []) as { room_id: string; team_id: string }[]
-  const assignments = (assignmentsResult.data ?? []) as { judge_participant_id: string; submission_id: string }[]
+  const finalistSet = finalistIds ? new Set(finalistIds) : null
+  const assignments = ((assignmentsResult.data ?? []) as {
+    judge_participant_id: string
+    submission_id: string
+  }[]).filter((a) => !finalistSet || finalistSet.has(a.submission_id))
 
   const roomIdSet = new Set(rooms.map((r) => r.id))
   const teamIdToRoomId: Record<string, string> = {}
@@ -4097,6 +4194,186 @@ export async function getWeightedScoreAssignmentSummary(
     })),
     countsByJudge,
   }
+}
+
+export type JudgeSubmissionAssignmentRow = {
+  submissionId: string
+  projectTitle: string
+  teamId: string | null
+  teamName: string | null
+  isAssigned: boolean
+  isOwnTeam: boolean
+}
+
+type JudgeSubmissionAssignmentDbRow = {
+  id: string
+  title: string | null
+  team_id: string | null
+  teams: { name: string | null } | { name: string | null }[] | null
+}
+
+export async function listJudgeSubmissionAssignments(
+  hackathonId: string,
+  judgeParticipantId: string
+): Promise<JudgeSubmissionAssignmentRow[]> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const [judgeResult, finalistIds] = await Promise.all([
+    client
+      .from("hackathon_participants")
+      .select("id, team_id")
+      .eq("id", judgeParticipantId)
+      .eq("hackathon_id", hackathonId)
+      .eq("role", "judge")
+      .maybeSingle(),
+    getActiveRoundFinalistIds(hackathonId),
+  ])
+
+  if (judgeResult.error) {
+    console.error("Failed to list judge submission assignments:", judgeResult.error)
+    throw new Error(`Failed to list judge submission assignments: ${judgeResult.error.message}`)
+  }
+
+  if (!judgeResult.data) return []
+
+  const submissionsQuery = client
+    .from("submissions")
+    .select("id, title, team_id, teams(name)")
+    .eq("hackathon_id", hackathonId)
+    .eq("status", "submitted")
+
+  const submissionsResult = await (finalistIds
+    ? submissionsQuery.in("id", finalistIds)
+    : submissionsQuery)
+
+  if (submissionsResult.error) {
+    console.error("Failed to list judge submission assignments:", submissionsResult.error)
+    throw new Error(`Failed to list judge submission assignments: ${submissionsResult.error.message}`)
+  }
+
+  const judgeTeamId = (judgeResult.data as { team_id: string | null }).team_id
+  const submissions = (submissionsResult.data as JudgeSubmissionAssignmentDbRow[]) ?? []
+  const submissionIds = submissions.map((s) => s.id)
+
+  const assigned = new Set<string>()
+  if (submissionIds.length > 0) {
+    const assignmentsResult = await client
+      .from("judge_assignments")
+      .select("submission_id")
+      .eq("hackathon_id", hackathonId)
+      .eq("judge_participant_id", judgeParticipantId)
+      .eq("assignment_kind", "unified_weighted_score")
+      .in("submission_id", submissionIds)
+
+    if (assignmentsResult.error) {
+      console.error("Failed to list judge submission assignments:", assignmentsResult.error)
+      throw new Error(`Failed to list judge submission assignments: ${assignmentsResult.error.message}`)
+    }
+
+    for (const row of assignmentsResult.data ?? []) {
+      assigned.add((row as { submission_id: string }).submission_id)
+    }
+  }
+
+  return submissions
+    .map((s) => {
+      const team = Array.isArray(s.teams) ? s.teams[0] : s.teams
+      return {
+        submissionId: s.id,
+        projectTitle: s.title ?? "Untitled project",
+        teamId: s.team_id,
+        teamName: team?.name ?? null,
+        isAssigned: assigned.has(s.id),
+        isOwnTeam: !!(judgeTeamId && s.team_id && judgeTeamId === s.team_id),
+      }
+    })
+    .sort((a, b) => a.projectTitle.localeCompare(b.projectTitle))
+}
+
+export async function assignJudgeToSubmission(
+  hackathonId: string,
+  judgeParticipantId: string,
+  submissionId: string
+): Promise<{ success: true; alreadyAssigned: boolean } | { success: false; error: string }> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const [judgeResult, submissionResult] = await Promise.all([
+    client
+      .from("hackathon_participants")
+      .select("id, team_id")
+      .eq("id", judgeParticipantId)
+      .eq("hackathon_id", hackathonId)
+      .maybeSingle(),
+    client
+      .from("submissions")
+      .select("id, team_id")
+      .eq("id", submissionId)
+      .eq("hackathon_id", hackathonId)
+      .maybeSingle(),
+  ])
+
+  const lookupError = judgeResult.error ?? submissionResult.error
+  if (lookupError) {
+    console.error("Failed to look up judge/submission for assignment:", lookupError)
+    return { success: false, error: lookupError.message }
+  }
+
+  if (!judgeResult.data) return { success: false, error: "Judge not found" }
+  if (!submissionResult.data) return { success: false, error: "Project not found" }
+
+  const judgeTeamId = (judgeResult.data as { team_id: string | null }).team_id
+  const submissionTeamId = (submissionResult.data as { team_id: string | null }).team_id
+  if (judgeTeamId && submissionTeamId && judgeTeamId === submissionTeamId) {
+    return { success: false, error: "Judges can't score their own team's project" }
+  }
+
+  const activeRoundId = await getActiveRoundId(hackathonId)
+  const finalistIds = activeRoundId ? await getRoundSubmissions(activeRoundId) : []
+  const roundId =
+    activeRoundId && finalistIds.includes(submissionId) ? activeRoundId : null
+
+  const { error } = await client.from("judge_assignments").insert({
+    hackathon_id: hackathonId,
+    judge_participant_id: judgeParticipantId,
+    submission_id: submissionId,
+    prize_id: null,
+    round_id: roundId,
+    assignment_kind: "unified_weighted_score",
+  })
+
+  if (error) {
+    if ((error as { code?: string }).code === "23505") {
+      return { success: true, alreadyAssigned: true }
+    }
+    console.error("Failed to assign judge to submission:", error)
+    return { success: false, error: error.message }
+  }
+
+  return { success: true, alreadyAssigned: false }
+}
+
+export async function unassignJudgeFromSubmission(
+  hackathonId: string,
+  judgeParticipantId: string,
+  submissionId: string
+): Promise<{ success: true; removed: boolean } | { success: false; error: string }> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data: rows, error } = await client
+    .from("judge_assignments")
+    .delete()
+    .eq("hackathon_id", hackathonId)
+    .eq("judge_participant_id", judgeParticipantId)
+    .eq("submission_id", submissionId)
+    .eq("assignment_kind", "unified_weighted_score")
+    .select("id")
+
+  if (error) {
+    console.error("Failed to unassign judge from submission:", error)
+    return { success: false, error: error.message }
+  }
+
+  return { success: true, removed: (rows ?? []).length > 0 }
 }
 
 export type JudgeSummaryEntry = {

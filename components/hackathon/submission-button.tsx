@@ -16,6 +16,7 @@ import {
 import { SteppedDialogContent } from "@/components/ui/stepped-dialog-content"
 import {
   AlertTriangle,
+  Clock,
   ExternalLink,
   FileText,
   Github,
@@ -106,6 +107,7 @@ interface SubmissionButtonProps {
   isRegistered: boolean
   submission: Submission | null
   teamSizeWarning?: string | null
+  pendingTeamApproval?: boolean
 }
 
 export function SubmissionButton({
@@ -114,6 +116,7 @@ export function SubmissionButton({
   isRegistered,
   submission: initialSubmission,
   teamSizeWarning,
+  pendingTeamApproval = false,
 }: SubmissionButtonProps) {
   const { isSignedIn, isLoaded } = useUser()
   const router = useRouter()
@@ -209,6 +212,15 @@ export function SubmissionButton({
       )
     }
     return null
+  }
+
+  if (pendingTeamApproval) {
+    return (
+      <Button disabled variant="outline" size="lg" title="Your team is waiting for organizer approval before you can submit.">
+        <Clock className="size-4" />
+        Waiting for team approval
+      </Button>
+    )
   }
 
   function revokePreviewUrl(url: string) {
