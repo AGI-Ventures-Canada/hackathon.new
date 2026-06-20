@@ -6,7 +6,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Slider } from "@/components/ui/slider"
-import { Badge } from "@/components/ui/badge"
 import { Loader2, ExternalLink, Github, Maximize2, AlertTriangle, Play } from "lucide-react"
 import { RubricLevelSelector } from "./rubric-level-selector"
 import Image from "next/image"
@@ -263,18 +262,11 @@ export function ScoringPanel({
         <h4 className="text-sm font-semibold">Scoring</h4>
         {detail.criteria.map((c) => (
           <div key={c.id} className="space-y-2">
-            <div className="flex items-center justify-between">
-              <div>
-                <Label className="text-sm font-medium">{c.name}</Label>
-                {c.description && (
-                  <p className="text-xs text-muted-foreground">{c.description}</p>
-                )}
-              </div>
-              <Badge variant="secondary">
-                {c.rubricLevels && c.rubricLevels.length > 0
-                  ? ((c.category ?? "core") === "core" ? "2x" : "1x")
-                  : `${c.weight}x`}
-              </Badge>
+            <div>
+              <Label className="text-sm font-medium">{c.name}</Label>
+              {c.description && (
+                <p className="text-xs text-muted-foreground">{c.description}</p>
+              )}
             </div>
             {c.rubricLevels && c.rubricLevels.length > 0 ? (
               <RubricLevelSelector
