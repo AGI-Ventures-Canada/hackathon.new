@@ -100,8 +100,8 @@ export function JudgeAssignmentsCard({
     setLocallyCompletedIds((prev) => new Set(prev).add(assignmentId))
 
     if (viewMode === "list") {
-      const currentIdx = assignments.findIndex((a) => a.id === assignmentId)
-      const nextUnscored = assignments.find(
+      const currentIdx = filtered.findIndex((a) => a.id === assignmentId)
+      const nextUnscored = filtered.find(
         (a, idx) => idx > currentIdx && !updatedIds.has(a.id)
       )
       if (nextUnscored) {

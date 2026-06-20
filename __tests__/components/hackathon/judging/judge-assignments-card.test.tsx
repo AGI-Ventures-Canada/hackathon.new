@@ -285,4 +285,43 @@ describe("JudgeAssignmentsCard", () => {
     )
     expect(screen.queryByLabelText("Search assignments")).toBeNull()
   })
+
+  it("auto-advances within the filtered list after a score, not to hidden assignments", () => {
+    const threeAssignments = [
+      baseAssignments[0],
+      baseAssignments[1],
+      {
+        id: "a3",
+        submissionId: "s3",
+        submissionTitle: "Project Charlie",
+        submissionDescription: "Desc C",
+        submissionGithubUrl: null,
+        submissionLiveAppUrl: null,
+        submissionDemoVideoUrl: null,
+        submissionScreenshotUrl: null,
+        teamName: "Team C",
+        teamMemberCount: 3,
+        isComplete: false,
+        notes: "",
+        viewedAt: null,
+      },
+    ]
+
+    render(
+      <JudgeAssignmentsCard
+        hackathonSlug="test-hack"
+        assignments={threeAssignments}
+      />
+    )
+    fireEvent.click(screen.getByText("List"))
+    fireEvent.change(screen.getByLabelText("Search assignments"), {
+      target: { value: "alpha" },
+    })
+
+    fireEvent.click(screen.getByText("Project Alpha"))
+    fireEvent.click(screen.getByTestId("mock-submit"))
+
+    expect(screen.queryByTestId("scoring-panel-a3")).toBeNull()
+    expect(screen.queryByText("Project Charlie")).toBeNull()
+  })
 })
