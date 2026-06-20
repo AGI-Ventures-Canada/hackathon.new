@@ -5,10 +5,7 @@ interface VideoEmbedProps {
 }
 
 export function VideoEmbed({ video }: VideoEmbedProps) {
-  const sandbox =
-    video.provider === "youtube"
-      ? "allow-scripts allow-same-origin allow-presentation allow-popups"
-      : "allow-scripts allow-presentation allow-popups"
+  const sandbox = "allow-scripts allow-same-origin allow-presentation allow-popups"
 
   return (
     <div className="aspect-video w-full overflow-hidden rounded-md bg-muted">
