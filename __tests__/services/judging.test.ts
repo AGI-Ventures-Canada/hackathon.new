@@ -360,17 +360,12 @@ describe("Judging Service", () => {
     })
 
     it("deletes assignments and prize-mappings, reports stale results when results exist", async () => {
-      let judgeAssignmentsCallCount = 0
       setMockFromImplementation((table) => {
         if (table === "judge_assignments") {
-          judgeAssignmentsCallCount++
-          if (judgeAssignmentsCallCount === 1) {
-            return createChainableMock({
-              data: [{ id: "a1" }, { id: "a2" }, { id: "a3" }],
-              error: null,
-            })
-          }
-          return createChainableMock({ data: null, error: null })
+          return createChainableMock({
+            data: [{ id: "a1" }, { id: "a2" }, { id: "a3" }],
+            error: null,
+          })
         }
         if (table === "judge_prize_assignments") {
           return createChainableMock({ data: null, error: null })
@@ -389,13 +384,8 @@ describe("Judging Service", () => {
     })
 
     it("returns failure when judge_assignments delete errors", async () => {
-      let judgeAssignmentsCallCount = 0
       setMockFromImplementation((table) => {
         if (table === "judge_assignments") {
-          judgeAssignmentsCallCount++
-          if (judgeAssignmentsCallCount === 1) {
-            return createChainableMock({ data: [{ id: "a1" }], error: null })
-          }
           return createChainableMock({
             data: null,
             error: { message: "Delete failed" },
@@ -411,14 +401,9 @@ describe("Judging Service", () => {
     })
 
     it("reports partial failure when judge_prize_assignments cleanup fails", async () => {
-      let judgeAssignmentsCallCount = 0
       setMockFromImplementation((table) => {
         if (table === "judge_assignments") {
-          judgeAssignmentsCallCount++
-          if (judgeAssignmentsCallCount === 1) {
-            return createChainableMock({ data: [{ id: "a1" }], error: null })
-          }
-          return createChainableMock({ data: null, error: null })
+          return createChainableMock({ data: [{ id: "a1" }], error: null })
         }
         if (table === "judge_prize_assignments") {
           return createChainableMock({
