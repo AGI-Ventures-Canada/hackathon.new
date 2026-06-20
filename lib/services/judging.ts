@@ -2080,25 +2080,21 @@ export async function clearAllJudgeAssignments(
 ): Promise<ClearJudgeAssignmentsResult> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { data: toDelete } = await client
-    .from("judge_assignments")
-    .select("id")
-    .eq("hackathon_id", hackathonId)
-
-  const removedCount = toDelete?.length ?? 0
-
-  if (removedCount === 0) {
-    return { success: true, removedCount: 0, resultsStale: false }
-  }
-
-  const { error: assignmentError } = await client
+  const { data: deleted, error: assignmentError } = await client
     .from("judge_assignments")
     .delete()
     .eq("hackathon_id", hackathonId)
+    .select("id")
 
   if (assignmentError) {
     console.error("Failed to clear judge assignments:", assignmentError)
     return { success: false, removedCount: 0, resultsStale: false }
+  }
+
+  const removedCount = deleted?.length ?? 0
+
+  if (removedCount === 0) {
+    return { success: true, removedCount: 0, resultsStale: false }
   }
 
   const { error: prizeAssignmentError } = await client
@@ -4228,6 +4224,7 @@ export async function listJudgeSubmissionAssignments(
       .select("id, team_id")
       .eq("id", judgeParticipantId)
       .eq("hackathon_id", hackathonId)
+      .eq("role", "judge")
       .maybeSingle(),
     getActiveRoundFinalistIds(hackathonId),
   ])
