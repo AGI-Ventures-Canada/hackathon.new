@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { BarChart3, ChevronLeft, ChevronRight, CheckCircle2 } from "lucide-react"
 import { ScoringPanel } from "./scoring-panel"
+import { UnifiedScoringPanel } from "./unified-scoring-panel"
 import { getTeamSizeWarning } from "@/lib/utils/team-size"
 import { usePrefetchAssignment } from "@/hooks/use-prefetch-assignment"
 
@@ -20,6 +21,7 @@ type FocusAssignment = {
   teamName: string | null
   teamMemberCount: number | null
   isComplete: boolean
+  assignmentKind?: "per_prize" | "unified_weighted_score"
 }
 
 interface FocusScoringViewProps {
@@ -172,23 +174,43 @@ export function FocusScoringView({
         </Badge>
       </div>
 
-      <ScoringPanel
-        key={current.id}
-        hackathonSlug={hackathonSlug}
-        assignmentId={current.id}
-        onClose={goToNext}
-        onScoreSubmitted={handleScoreSubmitted}
-        cancelLabel="Skip"
-        prefetchedDetail={prefetchCache[current.id] ?? null}
-        teamSizeWarning={teamSettings && current.teamMemberCount != null
-          ? (getTeamSizeWarning({
-              memberCount: current.teamMemberCount,
-              minTeamSize: teamSettings.minTeamSize,
-              allowSolo: teamSettings.allowSolo,
-            })?.message ?? null)
-          : null
-        }
-      />
+      {current.assignmentKind === "unified_weighted_score" ? (
+        <UnifiedScoringPanel
+          key={current.id}
+          hackathonSlug={hackathonSlug}
+          assignmentId={current.id}
+          onClose={goToNext}
+          onScoreSubmitted={handleScoreSubmitted}
+          cancelLabel="Skip"
+          prefetchedDetail={prefetchCache[current.id] ?? null}
+          teamSizeWarning={teamSettings && current.teamMemberCount != null
+            ? (getTeamSizeWarning({
+                memberCount: current.teamMemberCount,
+                minTeamSize: teamSettings.minTeamSize,
+                allowSolo: teamSettings.allowSolo,
+              })?.message ?? null)
+            : null
+          }
+        />
+      ) : (
+        <ScoringPanel
+          key={current.id}
+          hackathonSlug={hackathonSlug}
+          assignmentId={current.id}
+          onClose={goToNext}
+          onScoreSubmitted={handleScoreSubmitted}
+          cancelLabel="Skip"
+          prefetchedDetail={prefetchCache[current.id] ?? null}
+          teamSizeWarning={teamSettings && current.teamMemberCount != null
+            ? (getTeamSizeWarning({
+                memberCount: current.teamMemberCount,
+                minTeamSize: teamSettings.minTeamSize,
+                allowSolo: teamSettings.allowSolo,
+              })?.message ?? null)
+            : null
+          }
+        />
+      )}
 
       <div className="flex items-center justify-center gap-2 pt-2 text-sm text-muted-foreground">
         <span>{completed}/{total} scored</span>

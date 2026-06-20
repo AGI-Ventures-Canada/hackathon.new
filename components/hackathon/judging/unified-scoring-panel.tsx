@@ -306,57 +306,85 @@ export function UnifiedScoringPanel({
         )}
       </div>
 
-      <div className="space-y-6">
-        {groups.map((g) => (
-          <div key={g.prizeId ?? "core"} className="space-y-3">
-            <h4 className="text-sm font-semibold">
-              {g.prizeId == null ? "Core Weighted Categories" : g.prizeName}
-            </h4>
-            {g.criteria.map((c) => (
-              <div key={c.id} className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label className="text-sm font-medium">{c.name}</Label>
-                    {c.description && (
-                      <p className="text-xs text-muted-foreground">{c.description}</p>
-                    )}
-                  </div>
-                  <Badge variant="secondary">{c.weight}%</Badge>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Slider
-                    value={[scores[c.id] ?? Math.round((c.min_score + c.max_score) / 2)]}
-                    onValueChange={([val]) =>
-                      setScores((prev) => ({ ...prev, [c.id]: val }))
-                    }
-                    min={c.min_score}
-                    max={c.max_score}
-                    step={1}
-                    className="flex-1"
-                  />
-                  <Input
-                    type="number"
-                    min={c.min_score}
-                    max={c.max_score}
-                    value={scores[c.id] ?? Math.round((c.min_score + c.max_score) / 2)}
-                    onChange={(e) => {
-                      const val = Math.max(
-                        c.min_score,
-                        Math.min(c.max_score, parseInt(e.target.value) || c.min_score)
-                      )
-                      setScores((prev) => ({ ...prev, [c.id]: val }))
-                    }}
-                    className="w-16 text-center"
-                    autoComplete="off"
-                  />
-                  <span className="text-xs text-muted-foreground w-12 text-right">
-                    /{c.max_score}
+      <div className="space-y-4">
+        {groups.map((g) => {
+          const isCore = g.prizeId == null
+          const prizeSubtotal = isCore
+            ? null
+            : livePreview.perPrize.find((p) => p.prizeId === g.prizeId)?.score ?? null
+          return (
+            <div key={g.prizeId ?? "core"} className="space-y-3 rounded-lg border bg-card p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Badge variant={isCore ? "secondary" : "outline"}>
+                    {isCore ? "Core" : "Prize"}
+                  </Badge>
+                  <h4 className="text-sm font-semibold">
+                    {isCore ? "Core Weighted Categories" : g.prizeName}
+                  </h4>
+                  <span className="text-xs text-muted-foreground">
+                    {g.criteria.length} {g.criteria.length === 1 ? "category" : "categories"}
                   </span>
                 </div>
+                {prizeSubtotal != null && (
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    Score: <span className="font-medium text-foreground">{prizeSubtotal.toFixed(2)}</span>
+                  </span>
+                )}
               </div>
-            ))}
-          </div>
-        ))}
+              {g.criteria.map((c) => (
+                <div key={c.id} className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <Label className="text-sm font-medium">{c.name}</Label>
+                      {c.description && (
+                        <p className="text-xs text-muted-foreground">{c.description}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {c.prizeId && c.prizeName && (
+                        <Badge variant="outline" className="text-xs">
+                          {c.prizeName}
+                        </Badge>
+                      )}
+                      <Badge variant="secondary">{c.weight}%</Badge>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Slider
+                      value={[scores[c.id] ?? Math.round((c.min_score + c.max_score) / 2)]}
+                      onValueChange={([val]) =>
+                        setScores((prev) => ({ ...prev, [c.id]: val }))
+                      }
+                      min={c.min_score}
+                      max={c.max_score}
+                      step={1}
+                      className="flex-1"
+                    />
+                    <Input
+                      type="number"
+                      min={c.min_score}
+                      max={c.max_score}
+                      value={scores[c.id] ?? Math.round((c.min_score + c.max_score) / 2)}
+                      onChange={(e) => {
+                        const val = Math.max(
+                          c.min_score,
+                          Math.min(c.max_score, parseInt(e.target.value) || c.min_score)
+                        )
+                        setScores((prev) => ({ ...prev, [c.id]: val }))
+                      }}
+                      className="w-16 text-center"
+                      autoComplete="off"
+                    />
+                    <span className="text-xs text-muted-foreground w-12 text-right">
+                      /{c.max_score}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        })}
       </div>
 
       <div className="space-y-2 rounded-md border bg-muted/40 p-3">
