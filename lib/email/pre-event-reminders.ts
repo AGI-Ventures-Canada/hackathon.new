@@ -75,6 +75,16 @@ export type SendPreEventReminderInput = {
   hackathonName: string
   hackathonSlug: string
   deadlineDate: string
+  urgency: "low" | "medium" | "high"
+}
+
+const HIGH_URGENCY_SUBJECTS: Record<
+  SendPreEventReminderInput["reminderType"],
+  (name: string) => string
+> = {
+  registration_closing: (name) => `Registration closes today — ${name}`,
+  event_starting: (name) => `Starting today — ${name}`,
+  submission_due: (name) => `Submissions due today — ${name}`,
 }
 
 export async function sendPreEventReminderEmail(
@@ -92,7 +102,10 @@ export async function sendPreEventReminderEmail(
     day: "numeric",
   })
 
-  const subject = content.subject
+  const subject =
+    input.urgency === "high"
+      ? HIGH_URGENCY_SUBJECTS[input.reminderType](shortHackathonName(input.hackathonName))
+      : content.subject
 
   const recipients = await getRecipients(input.hackathonId, input.reminderType)
   let sent = 0

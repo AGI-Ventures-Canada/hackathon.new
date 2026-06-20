@@ -20,6 +20,20 @@ describe("htmlToPlainText", () => {
     expect(htmlToPlainText("<p>Tom &amp; Jerry &lt;3 &nbsp;you</p>")).toBe("Tom & Jerry <3 you")
   })
 
+  it("decodes quotes, dashes, and apostrophes", () => {
+    expect(htmlToPlainText("<p>&quot;Build&quot; &mdash; it&apos;s ready &ndash; go</p>")).toBe(
+      '"Build" — it\'s ready – go'
+    )
+  })
+
+  it("decodes decimal and hex numeric character references", () => {
+    expect(htmlToPlainText("<p>caf&#233; &#x2014; rest&#x6f;n</p>")).toBe("café — reston")
+  })
+
+  it("leaves unknown and out-of-range references untouched", () => {
+    expect(htmlToPlainText("<p>&copy; 2026 &#999999999;</p>")).toBe("&copy; 2026 &#999999999;")
+  })
+
   it("collapses excess blank lines and horizontal whitespace", () => {
     expect(htmlToPlainText("<div>A</div><div></div><div></div><div>B</div>")).toBe("A\n\nB")
     expect(htmlToPlainText("<p>spaced    out    text</p>")).toBe("spaced out text")

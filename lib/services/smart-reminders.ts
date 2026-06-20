@@ -391,6 +391,7 @@ async function dispatchReminderEmail(
       hackathonName: meta.hackathonName as string,
       hackathonSlug: meta.hackathonSlug as string,
       deadlineDate: meta.deadlineDate as string,
+      urgency: reminder.urgency,
     })
     return
   }
