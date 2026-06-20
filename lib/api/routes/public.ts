@@ -14,6 +14,7 @@ import {
   updateSubmission,
   getHackathonSubmissions,
   getTeamMemberCount,
+  notifySubmissionMembers,
 } from "@/lib/services/submissions"
 import { getTeamSizeWarning } from "@/lib/utils/team-size"
 import { currentTermsHash, recordTermsAcceptance } from "@/lib/services/hackathon-terms"
@@ -536,6 +537,13 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         event: "submission.created",
         timestamp: new Date().toISOString(),
         data: { hackathonId: hackathon.id, submissionId: submission.id, title: body.title },
+      }).catch(console.error)
+
+      notifySubmissionMembers({
+        hackathonId: hackathon.id,
+        participantId: participant.participantId,
+        teamId: participant.teamId,
+        projectTitle: body.title,
       }).catch(console.error)
 
       return { success: true, submissionId: submission.id, teamSizeWarning }

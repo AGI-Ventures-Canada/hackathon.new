@@ -361,6 +361,115 @@ export async function getHackathonSubmissions(
   }))
 }
 
+export async function notifySubmissionMembers(input: {
+  hackathonId: string
+  participantId: string
+  teamId: string | null
+  projectTitle: string
+}): Promise<number> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data: hackathon, error: hackathonError } = await client
+    .from("hackathons")
+    .select("name, slug, status")
+    .eq("id", input.hackathonId)
+    .maybeSingle()
+
+  if (hackathonError || !hackathon?.name || !hackathon?.slug) {
+    console.error("Failed to load hackathon for submission confirmation:", hackathonError)
+    return 0
+  }
+
+  if (hackathon.status === "draft") return 0
+
+  let teamName: string | null = null
+  let clerkUserIds: string[] = []
+
+  if (input.teamId) {
+    const [teamResult, membersResult] = await Promise.all([
+      client.from("teams").select("name").eq("id", input.teamId).maybeSingle(),
+      client
+        .from("hackathon_participants")
+        .select("clerk_user_id")
+        .eq("team_id", input.teamId)
+        .eq("role", "participant"),
+    ])
+
+    if (teamResult.data?.name) teamName = teamResult.data.name
+
+    clerkUserIds = (membersResult.data ?? [])
+      .map((m) => m.clerk_user_id)
+      .filter((id): id is string => !!id)
+  } else {
+    const { data: participant } = await client
+      .from("hackathon_participants")
+      .select("clerk_user_id")
+      .eq("id", input.participantId)
+      .maybeSingle()
+    if (participant?.clerk_user_id) {
+      clerkUserIds = [participant.clerk_user_id]
+    }
+  }
+
+  if (clerkUserIds.length === 0) return 0
+
+  const recipients: string[] = []
+  try {
+    const { clerkClient } = await import("@clerk/nextjs/server")
+    const clerk = await clerkClient()
+    const uniqueUserIds = [...new Set(clerkUserIds)]
+    const seen = new Set<string>()
+
+    for (let i = 0; i < uniqueUserIds.length; i += 100) {
+      const batch = uniqueUserIds.slice(i, i + 100)
+      const users = await clerk.users.getUserList({ userId: batch, limit: 100 })
+      for (const user of users.data) {
+        const email =
+          user.primaryEmailAddress?.emailAddress ?? user.emailAddresses[0]?.emailAddress
+        const normalized = email?.trim().toLowerCase()
+        if (normalized && !seen.has(normalized)) {
+          seen.add(normalized)
+          recipients.push(normalized)
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Failed to resolve submission confirmation recipients:", err)
+    return 0
+  }
+
+  if (recipients.length === 0) return 0
+
+  const { sendSubmissionConfirmationEmail } = await import(
+    "@/lib/email/submission-confirmation"
+  )
+
+  const hackathonName = hackathon.name
+  const hackathonSlug = hackathon.slug
+
+  let sent = 0
+  const results = await Promise.allSettled(
+    recipients.map((to) =>
+      sendSubmissionConfirmationEmail({
+        to,
+        hackathonName,
+        hackathonSlug,
+        projectTitle: input.projectTitle,
+        teamName,
+      })
+    )
+  )
+
+  for (const result of results) {
+    if (result.status === "fulfilled" && result.value.success) sent++
+    if (result.status === "rejected") {
+      console.error("Failed to send submission confirmation:", result.reason)
+    }
+  }
+
+  return sent
+}
+
 export async function submissionBelongsToHackathon(
   hackathonId: string,
   submissionId: string
