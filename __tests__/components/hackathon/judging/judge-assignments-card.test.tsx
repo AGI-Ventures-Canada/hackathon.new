@@ -226,4 +226,102 @@ describe("JudgeAssignmentsCard", () => {
     expect(screen.queryByText("Pending")).toBeNull()
     expect(screen.getAllByText("Scored").length).toBeGreaterThanOrEqual(2)
   })
+
+  it("filters the list by submission title", () => {
+    render(
+      <JudgeAssignmentsCard
+        hackathonSlug="test-hack"
+        assignments={baseAssignments}
+      />
+    )
+    fireEvent.click(screen.getByText("List"))
+    expect(screen.getByText("Project Alpha")).toBeDefined()
+    expect(screen.getByText("Project Beta")).toBeDefined()
+
+    fireEvent.change(screen.getByLabelText("Search assignments"), {
+      target: { value: "alpha" },
+    })
+    expect(screen.getByText("Project Alpha")).toBeDefined()
+    expect(screen.queryByText("Project Beta")).toBeNull()
+  })
+
+  it("filters the list by team name", () => {
+    render(
+      <JudgeAssignmentsCard
+        hackathonSlug="test-hack"
+        assignments={baseAssignments}
+      />
+    )
+    fireEvent.click(screen.getByText("List"))
+    fireEvent.change(screen.getByLabelText("Search assignments"), {
+      target: { value: "team b" },
+    })
+    expect(screen.getByText("Project Beta")).toBeDefined()
+    expect(screen.queryByText("Project Alpha")).toBeNull()
+  })
+
+  it("shows an empty state when nothing matches the query", () => {
+    render(
+      <JudgeAssignmentsCard
+        hackathonSlug="test-hack"
+        assignments={baseAssignments}
+      />
+    )
+    fireEvent.click(screen.getByText("List"))
+    fireEvent.change(screen.getByLabelText("Search assignments"), {
+      target: { value: "nonexistent-project" },
+    })
+    expect(screen.getByText(/No projects match/)).toBeDefined()
+    expect(screen.queryByText("Project Alpha")).toBeNull()
+    expect(screen.queryByText("Project Beta")).toBeNull()
+  })
+
+  it("does not render the search input in the default focus view", () => {
+    render(
+      <JudgeAssignmentsCard
+        hackathonSlug="test-hack"
+        assignments={baseAssignments}
+      />
+    )
+    expect(screen.queryByLabelText("Search assignments")).toBeNull()
+  })
+
+  it("auto-advances within the filtered list after a score, not to hidden assignments", () => {
+    const threeAssignments = [
+      baseAssignments[0],
+      baseAssignments[1],
+      {
+        id: "a3",
+        submissionId: "s3",
+        submissionTitle: "Project Charlie",
+        submissionDescription: "Desc C",
+        submissionGithubUrl: null,
+        submissionLiveAppUrl: null,
+        submissionDemoVideoUrl: null,
+        submissionScreenshotUrl: null,
+        teamName: "Team C",
+        teamMemberCount: 3,
+        isComplete: false,
+        notes: "",
+        viewedAt: null,
+      },
+    ]
+
+    render(
+      <JudgeAssignmentsCard
+        hackathonSlug="test-hack"
+        assignments={threeAssignments}
+      />
+    )
+    fireEvent.click(screen.getByText("List"))
+    fireEvent.change(screen.getByLabelText("Search assignments"), {
+      target: { value: "alpha" },
+    })
+
+    fireEvent.click(screen.getByText("Project Alpha"))
+    fireEvent.click(screen.getByTestId("mock-submit"))
+
+    expect(screen.queryByTestId("scoring-panel-a3")).toBeNull()
+    expect(screen.queryByText("Project Charlie")).toBeNull()
+  })
 })

@@ -4,7 +4,8 @@ import { useState, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Gavel, CheckCircle2, Circle, ChevronDown, ChevronLeft, ChevronRight, Focus, List, Eye, AlertTriangle } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Gavel, CheckCircle2, Circle, ChevronDown, ChevronLeft, ChevronRight, Focus, List, Eye, AlertTriangle, Search } from "lucide-react"
 import { getTeamSizeWarning } from "@/lib/utils/team-size"
 import { ScoringPanel } from "./scoring-panel"
 import { UnifiedScoringPanel } from "./unified-scoring-panel"
@@ -52,6 +53,7 @@ export function JudgeAssignmentsCard({
   const [openAssignmentId, setOpenAssignmentId] = useState<string | null>(null)
   const [locallyCompletedIds, setLocallyCompletedIds] = useState<Set<string>>(new Set())
   const [page, setPage] = useState(0)
+  const [query, setQuery] = useState("")
 
   const completedIds = useMemo(() => {
     const next = new Set<string>(locallyCompletedIds)
@@ -63,8 +65,24 @@ export function JudgeAssignmentsCard({
 
   const completed = completedIds.size
   const total = assignments.length
-  const totalPages = Math.ceil(total / PAGE_SIZE)
-  const pageAssignments = assignments.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return assignments
+    return assignments.filter(
+      (a) =>
+        a.submissionTitle.toLowerCase().includes(q) ||
+        (a.teamName?.toLowerCase().includes(q) ?? false)
+    )
+  }, [assignments, query])
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
+  const pageAssignments = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+
+  function handleQueryChange(value: string) {
+    setQuery(value)
+    setPage(0)
+  }
 
   const nextUnscoredId = useMemo(() => {
     if (!openAssignmentId) return null
@@ -82,8 +100,8 @@ export function JudgeAssignmentsCard({
     setLocallyCompletedIds((prev) => new Set(prev).add(assignmentId))
 
     if (viewMode === "list") {
-      const currentIdx = assignments.findIndex((a) => a.id === assignmentId)
-      const nextUnscored = assignments.find(
+      const currentIdx = filtered.findIndex((a) => a.id === assignmentId)
+      const nextUnscored = filtered.find(
         (a, idx) => idx > currentIdx && !updatedIds.has(a.id)
       )
       if (nextUnscored) {
@@ -143,93 +161,113 @@ export function JudgeAssignmentsCard({
           />
         ) : (
           <>
-            <div className="space-y-1">
-              {pageAssignments.map((a) => {
-                const isComplete = completedIds.has(a.id)
-                const isOpen = openAssignmentId === a.id
+            <div className="relative mb-3">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(e) => handleQueryChange(e.target.value)}
+                placeholder="Search projects or teams…"
+                className="pl-8"
+                aria-label="Search assignments"
+                autoComplete="off"
+                data-1p-ignore
+                data-lpignore="true"
+                data-form-type="other"
+              />
+            </div>
+            {filtered.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                No projects match &ldquo;{query.trim()}&rdquo;.
+              </p>
+            ) : (
+              <div className="space-y-1">
+                {pageAssignments.map((a) => {
+                  const isComplete = completedIds.has(a.id)
+                  const isOpen = openAssignmentId === a.id
 
-                return (
-                  <div key={a.id} className={`rounded-lg border ${isOpen ? "border-border" : "border-transparent"}`}>
-                    <Button
-                      variant="ghost"
-                      className="w-full justify-start gap-3 h-auto py-3"
-                      onClick={() => setOpenAssignmentId(isOpen ? null : a.id)}
-                    >
-                      {isComplete ? (
-                        <CheckCircle2 className="size-4 text-primary shrink-0" />
-                      ) : (
-                        <Circle className="size-4 text-muted-foreground shrink-0" />
-                      )}
-                      <div className="text-left flex-1">
-                        <p className="font-medium text-sm">{a.submissionTitle}</p>
-                        <div className="flex items-center gap-2">
-                          {a.teamName && (
-                            <p className="text-xs text-muted-foreground">{a.teamName}</p>
-                          )}
-                          {teamSettings && a.teamMemberCount != null && getTeamSizeWarning({
-                            memberCount: a.teamMemberCount,
-                            minTeamSize: teamSettings.minTeamSize,
-                            allowSolo: teamSettings.allowSolo,
-                          }) && (
-                            <Badge variant="destructive">
-                              <AlertTriangle className="size-3 mr-1" />
-                              Team size
-                            </Badge>
+                  return (
+                    <div key={a.id} className={`rounded-lg border ${isOpen ? "border-border" : "border-transparent"}`}>
+                      <Button
+                        variant="ghost"
+                        className="w-full justify-start gap-3 h-auto py-3"
+                        onClick={() => setOpenAssignmentId(isOpen ? null : a.id)}
+                      >
+                        {isComplete ? (
+                          <CheckCircle2 className="size-4 text-primary shrink-0" />
+                        ) : (
+                          <Circle className="size-4 text-muted-foreground shrink-0" />
+                        )}
+                        <div className="text-left flex-1">
+                          <p className="font-medium text-sm">{a.submissionTitle}</p>
+                          <div className="flex items-center gap-2">
+                            {a.teamName && (
+                              <p className="text-xs text-muted-foreground">{a.teamName}</p>
+                            )}
+                            {teamSettings && a.teamMemberCount != null && getTeamSizeWarning({
+                              memberCount: a.teamMemberCount,
+                              minTeamSize: teamSettings.minTeamSize,
+                              allowSolo: teamSettings.allowSolo,
+                            }) && (
+                              <Badge variant="destructive">
+                                <AlertTriangle className="size-3 mr-1" />
+                                Team size
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                        {!isComplete && a.viewedAt && (
+                          <Eye className="size-3.5 text-muted-foreground" />
+                        )}
+                        <Badge variant={isComplete ? "default" : "outline"}>
+                          {isComplete ? "Scored" : "Pending"}
+                        </Badge>
+                        <ChevronDown
+                          className={`size-4 text-muted-foreground shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`}
+                        />
+                      </Button>
+
+                      {isOpen && (
+                        <div className="border-t px-4 py-4">
+                          {a.assignmentKind === "unified_weighted_score" ? (
+                            <UnifiedScoringPanel
+                              hackathonSlug={hackathonSlug}
+                              assignmentId={a.id}
+                              onClose={() => setOpenAssignmentId(null)}
+                              onScoreSubmitted={() => handleScoreSubmitted(a.id)}
+                              prefetchedDetail={prefetchCache[a.id] ?? null}
+                              teamSizeWarning={teamSettings && a.teamMemberCount != null
+                                ? (getTeamSizeWarning({
+                                    memberCount: a.teamMemberCount,
+                                    minTeamSize: teamSettings.minTeamSize,
+                                    allowSolo: teamSettings.allowSolo,
+                                  })?.message ?? null)
+                                : null
+                              }
+                            />
+                          ) : (
+                            <ScoringPanel
+                              hackathonSlug={hackathonSlug}
+                              assignmentId={a.id}
+                              onClose={() => setOpenAssignmentId(null)}
+                              onScoreSubmitted={() => handleScoreSubmitted(a.id)}
+                              prefetchedDetail={prefetchCache[a.id] ?? null}
+                              teamSizeWarning={teamSettings && a.teamMemberCount != null
+                                ? (getTeamSizeWarning({
+                                    memberCount: a.teamMemberCount,
+                                    minTeamSize: teamSettings.minTeamSize,
+                                    allowSolo: teamSettings.allowSolo,
+                                  })?.message ?? null)
+                                : null
+                              }
+                            />
                           )}
                         </div>
-                      </div>
-                      {!isComplete && a.viewedAt && (
-                        <Eye className="size-3.5 text-muted-foreground" />
                       )}
-                      <Badge variant={isComplete ? "default" : "outline"}>
-                        {isComplete ? "Scored" : "Pending"}
-                      </Badge>
-                      <ChevronDown
-                        className={`size-4 text-muted-foreground shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`}
-                      />
-                    </Button>
-
-                    {isOpen && (
-                      <div className="border-t px-4 py-4">
-                        {a.assignmentKind === "unified_weighted_score" ? (
-                          <UnifiedScoringPanel
-                            hackathonSlug={hackathonSlug}
-                            assignmentId={a.id}
-                            onClose={() => setOpenAssignmentId(null)}
-                            onScoreSubmitted={() => handleScoreSubmitted(a.id)}
-                            prefetchedDetail={prefetchCache[a.id] ?? null}
-                            teamSizeWarning={teamSettings && a.teamMemberCount != null
-                              ? (getTeamSizeWarning({
-                                  memberCount: a.teamMemberCount,
-                                  minTeamSize: teamSettings.minTeamSize,
-                                  allowSolo: teamSettings.allowSolo,
-                                })?.message ?? null)
-                              : null
-                            }
-                          />
-                        ) : (
-                          <ScoringPanel
-                            hackathonSlug={hackathonSlug}
-                            assignmentId={a.id}
-                            onClose={() => setOpenAssignmentId(null)}
-                            onScoreSubmitted={() => handleScoreSubmitted(a.id)}
-                            prefetchedDetail={prefetchCache[a.id] ?? null}
-                            teamSizeWarning={teamSettings && a.teamMemberCount != null
-                              ? (getTeamSizeWarning({
-                                  memberCount: a.teamMemberCount,
-                                  minTeamSize: teamSettings.minTeamSize,
-                                  allowSolo: teamSettings.allowSolo,
-                                })?.message ?? null)
-                              : null
-                            }
-                          />
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
             {totalPages > 1 && (
               <div className="flex items-center justify-between mt-3 pt-3 border-t">
                 <span className="text-xs text-muted-foreground">
