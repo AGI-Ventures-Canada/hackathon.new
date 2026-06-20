@@ -1,0 +1,120 @@
+import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test"
+
+let sendEmailImpl: (input: unknown) => Promise<{ id: string } | null> = () =>
+  Promise.resolve({ id: "email_1" })
+const mockSendEmail = mock((input: unknown) => sendEmailImpl(input))
+
+mock.module("@/lib/email/resend", () => ({
+  sendEmail: mockSendEmail,
+}))
+
+const mockGetUserList = mock(() =>
+  Promise.resolve({
+    data: [{ emailAddresses: [{ emailAddress: "p1@test.com" }] }],
+  })
+)
+
+mock.module("@clerk/nextjs/server", () => ({
+  clerkClient: () => Promise.resolve({ users: { getUserList: mockGetUserList } }),
+}))
+
+let hackathonRow: { data: { name: string } | null; error: unknown } = {
+  data: { name: "AI Hackathon" },
+  error: null,
+}
+let participantsRow: { data: Array<{ clerk_user_id: string; role: string }>; error: unknown } = {
+  data: [{ clerk_user_id: "user_1", role: "participant" }],
+  error: null,
+}
+
+const mockSingle = mock(() => Promise.resolve(hackathonRow))
+
+function makeParticipantsQuery() {
+  const q: Record<string, unknown> = {
+    eq: mock(() => q),
+    in: mock(() => q),
+    then: (resolve: (v: unknown) => unknown) => resolve(participantsRow),
+  }
+  return q
+}
+
+const mockFrom = mock((table: string) => {
+  if (table === "hackathons") {
+    return { select: () => ({ eq: () => ({ single: mockSingle }) }) }
+  }
+  return { select: () => makeParticipantsQuery() }
+})
+
+mock.module("@/lib/db/client", () => ({
+  supabase: () => ({ from: mockFrom }),
+}))
+
+const { sendBulkEmail } = await import("@/lib/services/participant-emails")
+
+const savedReplyTo = process.env.RESEND_REPLY_TO_EMAIL
+const savedFrom = process.env.RESEND_FROM_EMAIL
+
+describe("sendBulkEmail", () => {
+  beforeEach(() => {
+    mockSendEmail.mockClear()
+    mockGetUserList.mockClear()
+    mockFrom.mockClear()
+    mockSingle.mockClear()
+    sendEmailImpl = () => Promise.resolve({ id: "email_1" })
+    hackathonRow = { data: { name: "AI Hackathon" }, error: null }
+    participantsRow = { data: [{ clerk_user_id: "user_1", role: "participant" }], error: null }
+    process.env.RESEND_REPLY_TO_EMAIL = "support@getoatmeal.com"
+    process.env.RESEND_FROM_EMAIL = "noreply@getoatmeal.com"
+  })
+
+  afterEach(() => {
+    if (savedReplyTo === undefined) delete process.env.RESEND_REPLY_TO_EMAIL
+    else process.env.RESEND_REPLY_TO_EMAIL = savedReplyTo
+    if (savedFrom === undefined) delete process.env.RESEND_FROM_EMAIL
+    else process.env.RESEND_FROM_EMAIL = savedFrom
+  })
+
+  it("sends with text fallback, replyTo, unsubscribe header, and tags", async () => {
+    const result = await sendBulkEmail("hack_1", {
+      subject: "Big update",
+      html: "<p>Hello <strong>team</strong></p>",
+    })
+
+    expect(result).toEqual({ sent: 1, failed: 0 })
+    expect(mockSendEmail).toHaveBeenCalledTimes(1)
+
+    const call = mockSendEmail.mock.calls[0][0] as Record<string, unknown>
+    expect(call.to).toBe("p1@test.com")
+    expect(call.subject).toBe("Big update")
+    expect(call.text).toBe("Hello team")
+    expect(call.replyTo).toBe("support@getoatmeal.com")
+    expect((call.headers as Record<string, string>)["List-Unsubscribe"]).toBe(
+      "<mailto:support@getoatmeal.com?subject=unsubscribe>"
+    )
+    expect(call.tags).toEqual([
+      { name: "type", value: "participant_broadcast" },
+      { name: "hackathon", value: "AI_Hackathon" },
+    ])
+  })
+
+  it("omits the hackathon tag when the hackathon name can't be resolved", async () => {
+    hackathonRow = { data: null, error: null }
+
+    const result = await sendBulkEmail("hack_missing", {
+      subject: "Heads up",
+      html: "<p>Body</p>",
+    })
+
+    expect(result).toEqual({ sent: 1, failed: 0 })
+    const call = mockSendEmail.mock.calls[0][0] as Record<string, unknown>
+    expect(call.tags).toEqual([{ name: "type", value: "participant_broadcast" }])
+  })
+
+  it("counts failures when a send returns null", async () => {
+    sendEmailImpl = () => Promise.resolve(null)
+
+    const result = await sendBulkEmail("hack_1", { subject: "x", html: "<p>x</p>" })
+
+    expect(result).toEqual({ sent: 0, failed: 1 })
+  })
+})

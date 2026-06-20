@@ -79,6 +79,14 @@ the mistake.
    after the first `|` and truncates on a word boundary. Bodies and event
    links keep the full name; only the subject is shortened.
 
+   **Exception: organizer-authored broadcast subjects.** `sendBulkEmail`
+   (`lib/services/participant-emails.ts`) sends a subject the organizer
+   typed themselves — it is free text, not a `…for ${hackathonName}`
+   template. Do **not** run `shortHackathonName()` over it: the helper would
+   truncate at the first `|` or at 45 chars and mangle a legitimate subject
+   like `Round 2 starts Monday | read this first`. Organizer-composed
+   subjects are passed through verbatim by design.
+
 ## Body
 
 10. **Don't repeat the link 5 times.** One primary CTA + one inline link is

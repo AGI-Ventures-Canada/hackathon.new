@@ -176,6 +176,10 @@ const groups: Group[] = [
     name: "email (sponsor-notifications)",
     args: ["__tests__/email/sponsor-notifications.test.ts"],
   },
+  {
+    name: "email (participant-emails-bulk)",
+    args: ["__tests__/email/participant-emails-bulk.test.ts"],
+  },
 ]
 
 for (const group of groups) {
