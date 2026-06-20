@@ -12,6 +12,16 @@ mock.module("@/components/hackathon/judging/scoring-panel", () => ({
   ),
 }))
 
+mock.module("@/components/hackathon/judging/unified-scoring-panel", () => ({
+  UnifiedScoringPanel: (props: { assignmentId: string; cancelLabel?: string; onClose: () => void; onScoreSubmitted: () => void }) => (
+    <div data-testid={`unified-scoring-panel-${props.assignmentId}`}>
+      <span data-testid="unified-cancel-label">{props.cancelLabel ?? "Cancel"}</span>
+      <button data-testid="unified-mock-submit" onClick={props.onScoreSubmitted}>Submit</button>
+      <button data-testid="unified-mock-close" onClick={props.onClose}>Close</button>
+    </div>
+  ),
+}))
+
 const { FocusScoringView } = await import(
   "@/components/hackathon/judging/focus-scoring-view"
 )
@@ -188,5 +198,52 @@ describe("FocusScoringView", () => {
     )
     expect(screen.getByText("Project Gamma")).toBeDefined()
     expect(screen.queryByText("Team")).toBeNull()
+  })
+
+  it("renders UnifiedScoringPanel for unified_weighted_score assignments", () => {
+    const unifiedAssignments = [
+      {
+        id: "u1",
+        submissionTitle: "Unified Project",
+        teamName: "Unified Team",
+        teamMemberCount: 3,
+        isComplete: false,
+        assignmentKind: "unified_weighted_score" as const,
+      },
+    ]
+    render(
+      <FocusScoringView
+        hackathonSlug="test-hack"
+        assignments={unifiedAssignments}
+        initialCompletedIds={new Set()}
+        onScoreSubmitted={onScoreSubmitted}
+      />
+    )
+    expect(screen.getByTestId("unified-scoring-panel-u1")).toBeDefined()
+    expect(screen.queryByTestId("scoring-panel-u1")).toBeNull()
+    expect(screen.getByTestId("unified-cancel-label").textContent).toBe("Skip")
+  })
+
+  it("falls back to ScoringPanel when assignmentKind is per_prize or missing", () => {
+    const mixedAssignments = [
+      {
+        id: "p1",
+        submissionTitle: "Per Prize Project",
+        teamName: null,
+        teamMemberCount: 2,
+        isComplete: false,
+        assignmentKind: "per_prize" as const,
+      },
+    ]
+    render(
+      <FocusScoringView
+        hackathonSlug="test-hack"
+        assignments={mixedAssignments}
+        initialCompletedIds={new Set()}
+        onScoreSubmitted={onScoreSubmitted}
+      />
+    )
+    expect(screen.getByTestId("scoring-panel-p1")).toBeDefined()
+    expect(screen.queryByTestId("unified-scoring-panel-p1")).toBeNull()
   })
 })
