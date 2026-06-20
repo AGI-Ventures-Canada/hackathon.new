@@ -410,7 +410,7 @@ describe("Judging Service", () => {
       expect(result.removedCount).toBe(0)
     })
 
-    it("still succeeds when judge_prize_assignments cleanup fails", async () => {
+    it("reports partial failure when judge_prize_assignments cleanup fails", async () => {
       let judgeAssignmentsCallCount = 0
       setMockFromImplementation((table) => {
         if (table === "judge_assignments") {
@@ -434,7 +434,8 @@ describe("Judging Service", () => {
 
       const result = await clearAllJudgeAssignments("h1")
 
-      expect(result.success).toBe(true)
+      expect(result.success).toBe(false)
+      expect(result.partialFailure).toBe("prize_assignments")
       expect(result.removedCount).toBe(1)
       expect(result.resultsStale).toBe(false)
     })
@@ -1110,6 +1111,9 @@ describe("Judging Service", () => {
 
     it("throws when a database query fails", async () => {
       setMockFromImplementation((table) => {
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: { id: "j1", team_id: null }, error: null })
+        }
         if (table === "submissions") {
           return createChainableMock({ data: null, error: { message: "boom" } })
         }
@@ -1117,6 +1121,50 @@ describe("Judging Service", () => {
       })
 
       await expect(listJudgeSubmissionAssignments("h1", "j1")).rejects.toThrow(/boom/)
+    })
+
+    it("scopes to active-round finalists when a round is active", async () => {
+      let appliedInClause: { column: string; values: readonly string[] } | null = null
+      setMockFromImplementation((table) => {
+        if (table === "judging_rounds") {
+          return createChainableMock({ data: { id: "round-1" }, error: null })
+        }
+        if (table === "round_submissions") {
+          return createChainableMock({
+            data: [{ submission_id: "s1" }, { submission_id: "s2" }],
+            error: null,
+          })
+        }
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: { id: "j1", team_id: null }, error: null })
+        }
+        if (table === "submissions") {
+          const m = createChainableMock({
+            data: [
+              { id: "s1", title: "Apple", team_id: "t1", teams: { name: "Team A" } },
+              { id: "s2", title: "Mango", team_id: "t2", teams: { name: "Team B" } },
+            ],
+            error: null,
+          })
+          const originalIn = m.in
+          m.in = mock(((column: string, values: readonly string[]) => {
+            appliedInClause = { column, values }
+            return originalIn.call(m, column, values)
+          }) as typeof m.in) as typeof m.in
+          return m
+        }
+        if (table === "judge_assignments") {
+          return createChainableMock({ data: [], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await listJudgeSubmissionAssignments("h1", "j1")
+
+      expect(appliedInClause).not.toBeNull()
+      expect(appliedInClause?.column).toBe("id")
+      expect(appliedInClause?.values).toEqual(["s1", "s2"])
+      expect(result.map((r) => r.submissionId).sort()).toEqual(["s1", "s2"])
     })
   })
 
@@ -1231,6 +1279,70 @@ describe("Judging Service", () => {
       const result = await assignJudgeToSubmission("h1", "j1", "s1")
       expect(result.success).toBe(false)
       if (!result.success) expect(result.error).toContain("lookup-boom")
+    })
+
+    it("sets round_id to the active round when the submission is a finalist", async () => {
+      let inserted: { round_id: string | null } | null = null
+      setMockFromImplementation((table) => {
+        if (table === "judging_rounds") {
+          return createChainableMock({ data: { id: "round-1" }, error: null })
+        }
+        if (table === "round_submissions") {
+          return createChainableMock({ data: [{ submission_id: "s1" }], error: null })
+        }
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: { id: "j1", team_id: null }, error: null })
+        }
+        if (table === "submissions") {
+          return createChainableMock({ data: { id: "s1", team_id: "t1" }, error: null })
+        }
+        if (table === "judge_assignments") {
+          const m = createChainableMock({ data: null, error: null })
+          m.insert = mock((row: { round_id: string | null }) => {
+            inserted = row
+            return Promise.resolve({ data: null, error: null })
+          }) as typeof m.insert
+          return m
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await assignJudgeToSubmission("h1", "j1", "s1")
+
+      expect(result.success).toBe(true)
+      expect(inserted?.round_id).toBe("round-1")
+    })
+
+    it("inserts with null round_id when the submission is not in the active round", async () => {
+      let inserted: { round_id: string | null } | null = null
+      setMockFromImplementation((table) => {
+        if (table === "judging_rounds") {
+          return createChainableMock({ data: { id: "round-1" }, error: null })
+        }
+        if (table === "round_submissions") {
+          return createChainableMock({ data: [{ submission_id: "s-other" }], error: null })
+        }
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: { id: "j1", team_id: null }, error: null })
+        }
+        if (table === "submissions") {
+          return createChainableMock({ data: { id: "s1", team_id: "t1" }, error: null })
+        }
+        if (table === "judge_assignments") {
+          const m = createChainableMock({ data: null, error: null })
+          m.insert = mock((row: { round_id: string | null }) => {
+            inserted = row
+            return Promise.resolve({ data: null, error: null })
+          }) as typeof m.insert
+          return m
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await assignJudgeToSubmission("h1", "j1", "s1")
+
+      expect(result.success).toBe(true)
+      expect(inserted?.round_id).toBeNull()
     })
   })
 
