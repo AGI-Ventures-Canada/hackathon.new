@@ -1,7 +1,7 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
-import { Heart } from "lucide-react"
+import { Heart, ExternalLink, Github, Play } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface VoteCardProps {
@@ -9,6 +9,9 @@ interface VoteCardProps {
   description: string | null
   screenshotUrl: string | null
   submitterName?: string
+  liveAppUrl?: string | null
+  githubUrl?: string | null
+  demoVideoUrl?: string | null
   voteCount: number
   isVoted: boolean
   disabled: boolean
@@ -20,11 +23,19 @@ export function VoteCard({
   description,
   screenshotUrl,
   submitterName,
+  liveAppUrl,
+  githubUrl,
+  demoVideoUrl,
   voteCount,
   isVoted,
   disabled,
   onVote,
 }: VoteCardProps) {
+  const links = [
+    { url: liveAppUrl, label: "Live demo", icon: ExternalLink },
+    { url: githubUrl, label: "Code", icon: Github },
+    { url: demoVideoUrl, label: "Video", icon: Play },
+  ].filter((link) => link.url)
   return (
     <div className={cn(
       "rounded-lg border overflow-hidden transition-colors",
@@ -50,6 +61,22 @@ export function VoteCard({
             <p className="text-sm text-muted-foreground line-clamp-2">{description}</p>
           )}
         </div>
+        {links.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {links.map(({ url, label, icon: Icon }) => (
+              <a
+                key={label}
+                href={url ?? undefined}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <Icon className="size-3" />
+                {label}
+              </a>
+            ))}
+          </div>
+        )}
         <div className="flex items-center justify-between">
           <span className="text-sm text-muted-foreground">
             {voteCount} {voteCount === 1 ? "vote" : "votes"}
