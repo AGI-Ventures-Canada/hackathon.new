@@ -23,6 +23,69 @@ export function buildUnsubscribeHeaders(unsubscribeUrl: string): Record<string, 
   }
 }
 
+export function buildMailtoUnsubscribeHeaders(): Record<string, string> | undefined {
+  const raw = process.env.RESEND_REPLY_TO_EMAIL || process.env.RESEND_FROM_EMAIL
+  if (!raw) return undefined
+  const mailto = extractEmailAddress(raw).replace(/[\r\n]/g, "")
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mailto)) return undefined
+  return {
+    "List-Unsubscribe": `<mailto:${mailto}?subject=unsubscribe>`,
+  }
+}
+
+function codePointOr(original: string, code: number): string {
+  if (!Number.isInteger(code) || code < 0 || code > 0x10ffff) return original
+  try {
+    return String.fromCodePoint(code)
+  } catch {
+    return original
+  }
+}
+
+function decodeHtmlEntities(text: string): string {
+  const named: Record<string, string> = {
+    "&nbsp;": " ",
+    "&amp;": "&",
+    "&lt;": "<",
+    "&gt;": ">",
+    "&quot;": '"',
+    "&apos;": "'",
+    "&mdash;": "—",
+    "&ndash;": "–",
+    "&hellip;": "…",
+  }
+  return text
+    .replace(/&#x([0-9a-f]+);/gi, (m, hex) => codePointOr(m, parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (m, dec) => codePointOr(m, Number(dec)))
+    .replace(/&[a-z]+;/gi, (m) => named[m.toLowerCase()] ?? m)
+}
+
+export function htmlToPlainText(html: string): string {
+  return decodeHtmlEntities(
+    html
+      .replace(/<!--[\s\S]*?-->/g, "")
+      .replace(/<style[\s\S]*?<\/style>/gi, "")
+      .replace(/<script[\s\S]*?<\/script>/gi, "")
+      .replace(/<\/(p|div|tr|h[1-6]|li)>/gi, "\n")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<[^>]+>/g, "")
+  )
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]+/g, " ")
+    .trim()
+}
+
+export function shortHackathonName(name: string, maxLength = 45): string {
+  const beforeSeparator = name.split("|")[0]
+  const trimmed = (beforeSeparator.trim() || name.replace(/\|/g, " ").trim())
+    .replace(/\s+/g, " ")
+  if (trimmed.length <= maxLength) return trimmed
+  const truncated = trimmed.slice(0, maxLength - 1).trimEnd()
+  const lastSpace = truncated.lastIndexOf(" ")
+  const head = lastSpace > 20 ? truncated.slice(0, lastSpace) : truncated
+  return `${head.trimEnd()}…`
+}
+
 export function sanitizeTag(name: string): string {
   return name
     .replace(/[^a-zA-Z0-9_-]/g, "_")

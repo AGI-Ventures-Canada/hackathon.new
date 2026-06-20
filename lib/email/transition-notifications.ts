@@ -1,4 +1,4 @@
-import { sanitizeTag, renderEmail, buildEventUrl } from "./utils"
+import { sanitizeTag, renderEmail, buildEventUrl, shortHackathonName } from "./utils"
 import type {
   ChallengeSummary,
   TransitionEvent,
@@ -44,9 +44,10 @@ export async function buildTransitionEmail(
     })
   )
 
+  const shortName = shortHackathonName(hackathonName)
   const subject = hasChallenges
-    ? `${hackathonName} is live — see the challenges`
-    : subjectMap[event](hackathonName)
+    ? `${shortName} is live — see the challenges`
+    : subjectMap[event](shortName)
 
   return { subject, html, text, tag }
 }

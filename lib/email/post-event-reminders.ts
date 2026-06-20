@@ -1,5 +1,12 @@
 import { sendEmail } from "./resend"
-import { sanitizeTag, renderEmail, buildEventUrl } from "./utils"
+import {
+  sanitizeTag,
+  renderEmail,
+  buildEventUrl,
+  getReplyToAddress,
+  buildMailtoUnsubscribeHeaders,
+  shortHackathonName,
+} from "./utils"
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { clerkClient } from "@clerk/nextjs/server"
@@ -17,7 +24,7 @@ type ReminderEmailInfo = {
 
 export function buildPrizeClaimReminderContent(hackathonName: string, hackathonSlug: string) {
   return {
-    subject: `Claim Your Prize — ${hackathonName}`,
+    subject: `Claim Your Prize — ${shortHackathonName(hackathonName)}`,
     heading: "Don't Forget Your Prize!",
     body: `you won a prize in ${hackathonName} but haven't claimed it yet. Check your winner notification email for a direct claim link, or contact the organizers.`,
     ctaLabel: "View Results",
@@ -31,7 +38,7 @@ export function buildOrganizerFulfillmentReminderContent(
   unfulfilledCount: number
 ) {
   return {
-    subject: `${unfulfilledCount} prizes awaiting fulfillment — ${hackathonName}`,
+    subject: `${unfulfilledCount} prizes awaiting fulfillment — ${shortHackathonName(hackathonName)}`,
     heading: "Prizes Awaiting Fulfillment",
     body: `you have ${unfulfilledCount} prize${unfulfilledCount === 1 ? "" : "s"} still awaiting fulfillment for ${hackathonName}. Keep your winners happy by completing prize delivery.`,
     ctaLabel: "Manage Fulfillment",
@@ -41,7 +48,7 @@ export function buildOrganizerFulfillmentReminderContent(
 
 export function buildPrizeClaimFollowupContent(hackathonName: string, hackathonSlug: string) {
   return {
-    subject: `Your prize is still waiting — ${hackathonName}`,
+    subject: `Your prize is still waiting — ${shortHackathonName(hackathonName)}`,
     heading: "Last Call for Your Prize!",
     body: `you won a prize in ${hackathonName} and it's still unclaimed. Don't miss out — check your winner notification email for a direct claim link, or reach out to the organizers before it expires.`,
     ctaLabel: "View Results",
@@ -56,7 +63,7 @@ export function buildWinnerUnresponsiveContent(
   unclaimedDetails: string
 ) {
   return {
-    subject: `${unclaimedCount} winner${unclaimedCount === 1 ? "" : "s"} unresponsive — ${hackathonName}`,
+    subject: `${unclaimedCount} winner${unclaimedCount === 1 ? "" : "s"} unresponsive — ${shortHackathonName(hackathonName)}`,
     heading: "Winners Need Follow-Up",
     body: `${unclaimedCount} prize winner${unclaimedCount === 1 ? " has" : "s have"} not claimed ${unclaimedCount === 1 ? "a" : "their"} prize${unclaimedCount === 1 ? "" : "s"} after 10 days: ${unclaimedDetails}. Consider reaching out directly or reassigning.`,
     ctaLabel: "Review Fulfillment",
@@ -66,7 +73,7 @@ export function buildWinnerUnresponsiveContent(
 
 export function buildFeedbackFollowupContent(hackathonName: string, surveyUrl: string) {
   return {
-    subject: `We still want to hear from you — ${hackathonName}`,
+    subject: `We still want to hear from you — ${shortHackathonName(hackathonName)}`,
     heading: "Your Feedback Matters",
     body: `we'd still love to hear your thoughts on ${hackathonName}. Your feedback helps make future events even better.`,
     ctaLabel: "Share Feedback",
@@ -215,6 +222,8 @@ export async function sendReminderEmails(
         subject: content.subject,
         html,
         text,
+        replyTo: getReplyToAddress(),
+        headers: buildMailtoUnsubscribeHeaders(),
         tags: [
           { name: "type", value: `reminder_${reminderType}` },
           { name: "hackathon", value: tag },
