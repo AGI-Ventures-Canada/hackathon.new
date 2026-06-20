@@ -395,10 +395,10 @@ export async function notifySubmissionMembers(input: {
         .eq("role", "participant"),
     ])
 
-    if (teamResult.data?.name) teamName = teamResult.data.name as string
+    if (teamResult.data?.name) teamName = teamResult.data.name
 
     clerkUserIds = (membersResult.data ?? [])
-      .map((m) => m.clerk_user_id as string | null)
+      .map((m) => m.clerk_user_id)
       .filter((id): id is string => !!id)
   } else {
     const { data: participant } = await client
@@ -407,7 +407,7 @@ export async function notifySubmissionMembers(input: {
       .eq("id", input.participantId)
       .maybeSingle()
     if (participant?.clerk_user_id) {
-      clerkUserIds = [participant.clerk_user_id as string]
+      clerkUserIds = [participant.clerk_user_id]
     }
   }
 
@@ -444,13 +444,16 @@ export async function notifySubmissionMembers(input: {
     "@/lib/email/submission-confirmation"
   )
 
+  const hackathonName = hackathon.name
+  const hackathonSlug = hackathon.slug
+
   let sent = 0
   const results = await Promise.allSettled(
     recipients.map((to) =>
       sendSubmissionConfirmationEmail({
         to,
-        hackathonName: hackathon.name as string,
-        hackathonSlug: hackathon.slug as string,
+        hackathonName,
+        hackathonSlug,
         projectTitle: input.projectTitle,
         teamName,
       })

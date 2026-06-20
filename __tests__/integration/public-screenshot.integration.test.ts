@@ -289,6 +289,7 @@ describe("Public Screenshot Routes", () => {
           demoVideoUrl: "https://youtu.be/atlas-demo",
         })
       )
+      expect(mockNotifySubmissionMembers).not.toHaveBeenCalled()
     })
 
     it("rejects an invalid video link", async () => {
