@@ -90,7 +90,6 @@ export async function listPrizes(hackathonId: string): Promise<PrizeWithProgress
     .from("prizes")
     .select("*")
     .eq("hackathon_id", hackathonId)
-    .not("judging_style", "is", null)
     .order("display_order")
 
   if (error || !prizes) {

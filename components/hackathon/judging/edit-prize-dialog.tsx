@@ -12,8 +12,69 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Loader2, Plus, Trash2 } from "lucide-react"
+import {
+  ArrowUpDown,
+  Award,
+  ChevronRight,
+  ListChecks,
+  Loader2,
+  Plus,
+  Sliders,
+  Trash2,
+  Vote,
+} from "lucide-react"
 import type { PrizeJudgingStyle } from "@/lib/db/hackathon-types"
+
+const STYLE_OPTIONS: {
+  value: PrizeJudgingStyle
+  label: string
+  description: string
+  detail: string
+  icon: typeof ArrowUpDown
+}[] = [
+  {
+    value: "bucket_sort",
+    label: "Sort into groups",
+    description: "Judges score by sorting each project into a group like great, okay, or not ready.",
+    detail: "Good for: grand prize or overall winner",
+    icon: ArrowUpDown,
+  },
+  {
+    value: "gate_check",
+    label: "Pass or fail",
+    description: "Judges score by giving each project a yes or no on a list of rules.",
+    detail: "Good for: “Best Use of [Product]” or rule-based prizes",
+    icon: ListChecks,
+  },
+  {
+    value: "crowd_vote",
+    label: "Everyone votes",
+    description: "Anyone at the event can vote. No judges needed.",
+    detail: "Good for: People's Choice or Audience Award",
+    icon: Vote,
+  },
+  {
+    value: "judges_pick",
+    label: "Judge's picks (by vibes)",
+    description: "No scoring. Each judge picks their favorites. Most picks wins.",
+    detail: "Example: 3 judges each pick 1 favorite from 6 finalists. The top-picked project wins.",
+    icon: Award,
+  },
+  {
+    value: "weighted_score",
+    label: "Weighted scoring",
+    description: "Judges rate each project on a set of categories you define, with a weight assigned to each.",
+    detail: "Good for: sponsor prizes with a custom rubric on top of shared criteria",
+    icon: Sliders,
+  },
+]
+
+const DEFAULT_BUCKETS = [
+  { level: 1, label: "Not Ready", description: "No working demo or unclear problem statement" },
+  { level: 2, label: "Solid Effort", description: "Working demo, clear problem, but incremental or execution has gaps" },
+  { level: 3, label: "Strong Contender", description: "Working demo, novel approach, good execution" },
+  { level: 4, label: "Outstanding", description: "Would invest in this team today. Exceptional on multiple dimensions" },
+]
 
 type CriterionDraft = { id: string; name: string; description: string }
 type WeightedCriterionDraft = {
@@ -102,10 +163,13 @@ export function EditPrizeDialog({
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [pickedStyle, setPickedStyle] = useState<PrizeJudgingStyle | null>(null)
+  const effectiveStyle: PrizeJudgingStyle | null = pickedStyle ?? prize?.judgingStyle ?? null
 
   useEffect(() => {
     if (!prize) return
     setError(null)
+    setPickedStyle(null)
     setForm({
       name: prize.name,
       description: prize.description ?? "",
@@ -228,7 +292,12 @@ export function EditPrizeDialog({
     let bucketsPayload: { level: number; label: string; description: string | null }[] | undefined
     let maxPicksPayload: number | undefined
 
-    if (prize.judgingStyle === "weighted_score") {
+    if (!effectiveStyle) {
+      setError("Pick how judges should score this prize")
+      return
+    }
+
+    if (effectiveStyle === "weighted_score") {
       const cleaned = form.weightedCriteria
         .map((c) => ({
           name: c.name.trim(),
@@ -256,7 +325,7 @@ export function EditPrizeDialog({
       criteriaPayload = cleaned
     }
 
-    if (prize.judgingStyle === "gate_check") {
+    if (effectiveStyle === "gate_check") {
       const cleaned = form.criteria
         .map((c) => ({ name: c.name.trim(), description: c.description.trim() || null }))
         .filter((c) => c.name.length > 0)
@@ -267,7 +336,7 @@ export function EditPrizeDialog({
       criteriaPayload = cleaned
     }
 
-    if (prize.judgingStyle === "bucket_sort") {
+    if (effectiveStyle === "bucket_sort") {
       const cleaned = form.buckets
         .map((b) => ({ level: b.level, label: b.label.trim(), description: b.description.trim() || null }))
         .filter((b) => b.label.length > 0)
@@ -278,7 +347,7 @@ export function EditPrizeDialog({
       bucketsPayload = cleaned
     }
 
-    if (prize.judgingStyle === "judges_pick") {
+    if (effectiveStyle === "judges_pick") {
       const parsed = parseInt(form.maxPicks, 10)
       if (!Number.isFinite(parsed) || parsed < 1 || parsed > 100) {
         setError("Max picks must be between 1 and 100")
@@ -300,7 +369,7 @@ export function EditPrizeDialog({
             name,
             description: form.description.trim() || null,
             value: form.value.trim() || null,
-            ...(prize.judgingStyle ? { judgingStyle: prize.judgingStyle } : {}),
+            judgingStyle: effectiveStyle,
             ...(criteriaPayload ? { criteria: criteriaPayload } : {}),
             ...(bucketsPayload ? { buckets: bucketsPayload } : {}),
             ...(maxPicksPayload !== undefined ? { maxPicks: maxPicksPayload } : {}),
@@ -406,7 +475,61 @@ export function EditPrizeDialog({
               />
             </div>
 
-            {prize.judgingStyle === "gate_check" && (
+            {!effectiveStyle && (
+              <div className="space-y-2">
+                <Label>How should judges score this prize?</Label>
+                <div className="space-y-2">
+                  {STYLE_OPTIONS.map((option) => {
+                    const Icon = option.icon
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => {
+                          setPickedStyle(option.value)
+                          if (option.value === "bucket_sort") {
+                            setForm({
+                              ...form,
+                              buckets: DEFAULT_BUCKETS.map((b) => ({
+                                id: nextDraftId(),
+                                level: b.level,
+                                label: b.label,
+                                description: b.description,
+                              })),
+                            })
+                          } else if (option.value === "gate_check") {
+                            setForm({
+                              ...form,
+                              criteria: [{ id: nextDraftId(), name: "", description: "" }],
+                            })
+                          } else if (option.value === "weighted_score") {
+                            setForm({
+                              ...form,
+                              weightedCriteria: [
+                                { id: nextDraftId(), name: "", description: "", weight: "", minScore: "1", maxScore: "10" },
+                              ],
+                            })
+                          }
+                        }}
+                        className="w-full rounded-lg border p-4 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <div className="flex items-start gap-3">
+                          <Icon className="size-5 mt-0.5 shrink-0 text-muted-foreground" />
+                          <div className="min-w-0 flex-1">
+                            <span className="font-medium">{option.label}</span>
+                            <p className="text-sm text-muted-foreground mt-0.5">{option.description}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">{option.detail}</p>
+                          </div>
+                          <ChevronRight className="size-4 mt-1 shrink-0 text-muted-foreground" />
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {effectiveStyle === "gate_check" && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div>
@@ -460,7 +583,7 @@ export function EditPrizeDialog({
               </div>
             )}
 
-            {prize.judgingStyle === "bucket_sort" && (
+            {effectiveStyle === "bucket_sort" && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div>
@@ -514,7 +637,7 @@ export function EditPrizeDialog({
               </div>
             )}
 
-            {prize.judgingStyle === "weighted_score" && (
+            {effectiveStyle === "weighted_score" && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div>
@@ -619,7 +742,7 @@ export function EditPrizeDialog({
               </div>
             )}
 
-            {prize.judgingStyle === "judges_pick" && (
+            {effectiveStyle === "judges_pick" && (
               <div className="space-y-2">
                 <Label htmlFor="edit-prize-max-picks">How many can each judge pick?</Label>
                 <Input

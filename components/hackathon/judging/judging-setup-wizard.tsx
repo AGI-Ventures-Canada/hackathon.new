@@ -520,6 +520,8 @@ export function JudgingSetupWizard({
         rounds={visibleRounds}
         coreWeightSum={coreWeightSum}
         coreCriteriaCount={coreCriteria.length}
+        existingPrizes={visiblePrizes.map((p) => ({ id: p.id, name: p.name }))}
+        onEditExisting={onEditPrize}
       />
       <AddJudgeDialog
         hackathonId={hackathonId}

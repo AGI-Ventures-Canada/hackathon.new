@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { assertOkJson } from "@/lib/utils/fetch"
 import { Button } from "@/components/ui/button"
@@ -128,6 +128,8 @@ interface AddPrizeDialogProps {
   rounds?: RoundData[]
   coreWeightSum?: number
   coreCriteriaCount?: number
+  existingPrizes?: { id: string; name: string }[]
+  onEditExisting?: (prizeId: string) => void
 }
 
 function initialWeightedCriteria(): WeightedCriterionDraft[] {
@@ -159,6 +161,8 @@ export function AddPrizeDialog({
   rounds = [],
   coreWeightSum: coreWeightSumProp = 0,
   coreCriteriaCount: coreCriteriaCountProp = 0,
+  existingPrizes,
+  onEditExisting,
 }: AddPrizeDialogProps) {
   const router = useRouter()
   const visibleRounds = [...rounds].sort((a, b) => a.displayOrder - b.displayOrder)
@@ -482,6 +486,12 @@ export function AddPrizeDialog({
   const selectedOption = STYLE_OPTIONS.find((o) => o.value === form.judgingStyle)
   const SelectedIcon = selectedOption?.icon ?? ArrowUpDown
 
+  const duplicateMatch = useMemo(() => {
+    const typed = form.name.trim().toLowerCase()
+    if (!typed) return null
+    return existingPrizes?.find((p) => p.name.trim().toLowerCase() === typed) ?? null
+  }, [existingPrizes, form.name])
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className={step === "style" ? "sm:max-w-lg" : "sm:max-w-xl max-h-[90vh] overflow-y-auto"}>
@@ -575,6 +585,28 @@ export function AddPrizeDialog({
                 data-lpignore="true"
                 data-form-type="other"
               />
+              {duplicateMatch && (
+                <div className="flex items-start justify-between gap-2 rounded-md bg-muted px-3 py-2 text-sm">
+                  <p className="text-muted-foreground">
+                    You already have a prize called &ldquo;{duplicateMatch.name}&rdquo;.
+                  </p>
+                  {onEditExisting && (
+                    <Button
+                      type="button"
+                      variant="link"
+                      size="sm"
+                      className="h-auto shrink-0 p-0 text-xs"
+                      onClick={() => {
+                        const id = duplicateMatch.id
+                        handleOpenChange(false)
+                        onEditExisting(id)
+                      }}
+                    >
+                      Edit it instead
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="add-prize-value">Reward</Label>
