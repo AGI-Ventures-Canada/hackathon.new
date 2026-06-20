@@ -132,7 +132,7 @@ describe("shortHackathonName", () => {
     const result = shortHackathonName(
       "The Worldwide Collegiate Artificial Intelligence Builders Championship"
     )
-    expect(result.length).toBeLessThanOrEqual(46)
+    expect(result.length).toBeLessThanOrEqual(45)
     expect(result.endsWith("…")).toBe(true)
     expect(result).not.toContain("  ")
   })

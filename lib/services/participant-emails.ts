@@ -25,11 +25,18 @@ export async function sendBulkEmail(
 ): Promise<BulkEmailResult> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { data: hackathon } = await client
+  const { data: hackathon, error: hackathonError } = await client
     .from("hackathons")
     .select("name")
     .eq("id", hackathonId)
     .single()
+
+  if (hackathonError) {
+    console.error(
+      `[participant-emails] Could not resolve hackathon name for ${hackathonId}; broadcast will send without a hackathon tag:`,
+      hackathonError
+    )
+  }
 
   let query = client
     .from("hackathon_participants")

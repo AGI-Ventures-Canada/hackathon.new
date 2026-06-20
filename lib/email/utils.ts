@@ -80,7 +80,7 @@ export function shortHackathonName(name: string, maxLength = 45): string {
   const trimmed = (beforeSeparator.trim() || name.replace(/\|/g, " ").trim())
     .replace(/\s+/g, " ")
   if (trimmed.length <= maxLength) return trimmed
-  const truncated = trimmed.slice(0, maxLength).trimEnd()
+  const truncated = trimmed.slice(0, maxLength - 1).trimEnd()
   const lastSpace = truncated.lastIndexOf(" ")
   const head = lastSpace > 20 ? truncated.slice(0, lastSpace) : truncated
   return `${head.trimEnd()}…`
