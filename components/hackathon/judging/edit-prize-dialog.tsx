@@ -371,6 +371,12 @@ export function EditPrizeDialog({
   }
 
   const open = prize !== null
+  const showPickedStyleBadge =
+    !!effectiveStyle && !!pickedStyle && !prize?.judgingStyle
+  const pickedStyleOption = showPickedStyleBadge
+    ? STYLE_OPTIONS.find((o) => o.value === effectiveStyle) ?? null
+    : null
+  const PickedStyleIcon = pickedStyleOption?.icon ?? null
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onClose() }}>
@@ -420,28 +426,23 @@ export function EditPrizeDialog({
               />
             </div>
 
-            {effectiveStyle && pickedStyle && !prize.judgingStyle && (() => {
-              const selectedOption = STYLE_OPTIONS.find((o) => o.value === effectiveStyle)
-              if (!selectedOption) return null
-              const SelectedIcon = selectedOption.icon
-              return (
-                <div className="flex items-center justify-between gap-2 rounded-md bg-muted px-3 py-2 text-sm">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <SelectedIcon className="size-4 shrink-0" />
-                    <span className="font-medium truncate">{selectedOption.label}</span>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-auto shrink-0 px-2 py-1 text-xs"
-                    onClick={() => setPickedStyle(null)}
-                  >
-                    Change
-                  </Button>
+            {pickedStyleOption && PickedStyleIcon && (
+              <div className="flex items-center justify-between gap-2 rounded-md bg-muted px-3 py-2 text-sm">
+                <div className="flex items-center gap-2 min-w-0">
+                  <PickedStyleIcon className="size-4 shrink-0" />
+                  <span className="font-medium truncate">{pickedStyleOption.label}</span>
                 </div>
-              )
-            })()}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-auto shrink-0 px-2 py-1 text-xs"
+                  onClick={() => setPickedStyle(null)}
+                >
+                  Change
+                </Button>
+              </div>
+            )}
 
             {!effectiveStyle && (
               <div className="space-y-2">
