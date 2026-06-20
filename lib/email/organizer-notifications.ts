@@ -1,5 +1,13 @@
 import { sendEmail } from "./resend"
-import { renderEmail, sanitizeTag, resolveEmailsForTenant, buildEventUrl } from "./utils"
+import {
+  renderEmail,
+  sanitizeTag,
+  resolveEmailsForTenant,
+  buildEventUrl,
+  getReplyToAddress,
+  buildMailtoUnsubscribeHeaders,
+  shortHackathonName,
+} from "./utils"
 import OrganizerClaimNotificationEmail from "@/emails/organizer-claim-notification"
 
 export async function sendOrganizerClaimNotification(params: {
@@ -58,9 +66,11 @@ export async function sendOrganizerClaimNotification(params: {
   for (const email of emails) {
     const result = await sendEmail({
       to: email,
-      subject: `Prize claimed: ${prizeName} — ${hackathonName}`,
+      subject: `Prize claimed: ${prizeName} — ${shortHackathonName(hackathonName)}`,
       html,
       text,
+      replyTo: getReplyToAddress(),
+      headers: buildMailtoUnsubscribeHeaders(),
       tags: [
         { name: "type", value: "organizer_claim_notification" },
         { name: "hackathon", value: tag },

@@ -3,10 +3,31 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import type { ParticipantRole } from "@/lib/db/hackathon-types"
 import { clerkClient } from "@clerk/nextjs/server"
 import { sendEmail } from "@/lib/email/resend"
+import {
+  getReplyToAddress,
+  buildMailtoUnsubscribeHeaders,
+  sanitizeTag,
+} from "@/lib/email/utils"
 
 export type BulkEmailResult = {
   sent: number
   failed: number
+}
+
+export function htmlToPlainText(html: string): string {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<\/(p|div|tr|h[1-6]|li)>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]+/g, " ")
+    .trim()
 }
 
 export async function sendBulkEmail(
@@ -18,6 +39,12 @@ export async function sendBulkEmail(
   }
 ): Promise<BulkEmailResult> {
   const client = getSupabase() as unknown as SupabaseClient
+
+  const { data: hackathon } = await client
+    .from("hackathons")
+    .select("name")
+    .eq("id", hackathonId)
+    .single()
 
   let query = client
     .from("hackathon_participants")
@@ -54,11 +81,25 @@ export async function sendBulkEmail(
   let sent = 0
   let failed = 0
 
+  const text = htmlToPlainText(input.html)
+  const replyTo = getReplyToAddress()
+  const headers = buildMailtoUnsubscribeHeaders()
+  const tags = [
+    { name: "type", value: "participant_broadcast" },
+    ...(hackathon?.name
+      ? [{ name: "hackathon", value: sanitizeTag(hackathon.name) }]
+      : []),
+  ]
+
   for (const email of emails) {
     const result = await sendEmail({
       to: email,
       subject: input.subject,
       html: input.html,
+      text,
+      replyTo,
+      headers,
+      tags,
     })
     if (result) {
       sent++

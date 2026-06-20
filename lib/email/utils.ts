@@ -23,6 +23,25 @@ export function buildUnsubscribeHeaders(unsubscribeUrl: string): Record<string, 
   }
 }
 
+export function buildMailtoUnsubscribeHeaders(): Record<string, string> | undefined {
+  const mailto = process.env.RESEND_REPLY_TO_EMAIL || process.env.RESEND_FROM_EMAIL
+  if (!mailto) return undefined
+  return {
+    "List-Unsubscribe": `<mailto:${mailto}?subject=unsubscribe>`,
+  }
+}
+
+export function shortHackathonName(name: string, maxLength = 45): string {
+  const beforeSeparator = name.split("|")[0]
+  const trimmed = (beforeSeparator.trim() || name.replace(/\|/g, " ").trim())
+    .replace(/\s+/g, " ")
+  if (trimmed.length <= maxLength) return trimmed
+  const truncated = trimmed.slice(0, maxLength).trimEnd()
+  const lastSpace = truncated.lastIndexOf(" ")
+  const head = lastSpace > 20 ? truncated.slice(0, lastSpace) : truncated
+  return `${head.trimEnd()}…`
+}
+
 export function sanitizeTag(name: string): string {
   return name
     .replace(/[^a-zA-Z0-9_-]/g, "_")

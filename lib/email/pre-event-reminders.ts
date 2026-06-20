@@ -1,5 +1,12 @@
 import { sendEmail } from "./resend"
-import { sanitizeTag, renderEmail, formatTimeLeft } from "./utils"
+import {
+  sanitizeTag,
+  renderEmail,
+  formatTimeLeft,
+  getReplyToAddress,
+  buildMailtoUnsubscribeHeaders,
+  shortHackathonName,
+} from "./utils"
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { clerkClient } from "@clerk/nextjs/server"
@@ -24,7 +31,7 @@ export function buildRegistrationClosingContent(
     deadlineLabel: "Registration closes",
     ctaLabel: "Register Now",
     ctaUrl: `${process.env.NEXT_PUBLIC_APP_URL}/e/${hackathonSlug}`,
-    subject: `Registration closing soon \u2014 ${hackathonName}`,
+    subject: `Registration closing soon \u2014 ${shortHackathonName(hackathonName)}`,
   }
 }
 
@@ -38,7 +45,7 @@ export function buildEventStartingContent(
     deadlineLabel: "Event starts",
     ctaLabel: "View Event",
     ctaUrl: `${process.env.NEXT_PUBLIC_APP_URL}/e/${hackathonSlug}`,
-    subject: `Starting soon \u2014 ${hackathonName}`,
+    subject: `Starting soon \u2014 ${shortHackathonName(hackathonName)}`,
   }
 }
 
@@ -52,7 +59,7 @@ export function buildSubmissionDueContent(
     deadlineLabel: "Projects due",
     ctaLabel: "Submit Project",
     ctaUrl: `${process.env.NEXT_PUBLIC_APP_URL}/e/${hackathonSlug}`,
-    subject: `Submissions closing soon \u2014 ${hackathonName}`,
+    subject: `Submissions closing soon \u2014 ${shortHackathonName(hackathonName)}`,
   }
 }
 
@@ -68,7 +75,6 @@ export type SendPreEventReminderInput = {
   hackathonName: string
   hackathonSlug: string
   deadlineDate: string
-  urgency: "low" | "medium" | "high"
 }
 
 export async function sendPreEventReminderEmail(
@@ -86,10 +92,7 @@ export async function sendPreEventReminderEmail(
     day: "numeric",
   })
 
-  const subject =
-    input.urgency === "high"
-      ? `Last chance \u2014 ${content.subject}`
-      : content.subject
+  const subject = content.subject
 
   const recipients = await getRecipients(input.hackathonId, input.reminderType)
   let sent = 0
@@ -114,6 +117,8 @@ export async function sendPreEventReminderEmail(
       subject,
       html,
       text,
+      replyTo: getReplyToAddress(),
+      headers: buildMailtoUnsubscribeHeaders(),
       tags: [
         { name: "type", value: `pre_event_${input.reminderType}` },
         { name: "hackathon", value: sanitizeTag(input.hackathonName) },

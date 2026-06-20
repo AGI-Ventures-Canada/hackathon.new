@@ -1,5 +1,11 @@
 import { sendEmail } from "./resend"
-import { sanitizeTag, renderEmail } from "./utils"
+import {
+  sanitizeTag,
+  renderEmail,
+  getReplyToAddress,
+  buildMailtoUnsubscribeHeaders,
+  shortHackathonName,
+} from "./utils"
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { clerkClient } from "@clerk/nextjs/server"
@@ -94,9 +100,11 @@ export async function sendResultsAnnouncementEmails(hackathonId: string): Promis
 
       return sendEmail({
         to: email,
-        subject: `Results Published — ${hackathon.name}`,
+        subject: `Results Published — ${shortHackathonName(hackathon.name)}`,
         html,
         text,
+        replyTo: getReplyToAddress(),
+        headers: buildMailtoUnsubscribeHeaders(),
         tags: [
           { name: "type", value: "results_announcement" },
           { name: "hackathon", value: tag },

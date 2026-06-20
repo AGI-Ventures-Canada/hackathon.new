@@ -23,12 +23,23 @@ the mistake.
    (Gmail, Outlook, Yahoo) require them on bulk/transactional mail, and
    missing them is the single biggest spam-folder predictor we've seen.
 
-4. **Point `List-Unsubscribe` at a *dedicated* unsubscribe URL.** It must
-   stop the user receiving more of the same kind of email when POSTed
-   (RFC 8058 one-click). It must not be the action URL of the email itself
-   — pointing it at the invite-accept URL turns one-click unsubscribe into
-   one-click *accept*. See `/api/public/invitations/:token/unsubscribe` for
-   the right shape: auth-free, token-scoped, idempotent.
+4. **Point `List-Unsubscribe` at a *dedicated* unsubscribe URL when one
+   exists.** It must stop the user receiving more of the same kind of email
+   when POSTed (RFC 8058 one-click). It must not be the action URL of the
+   email itself — pointing it at the invite-accept URL turns one-click
+   unsubscribe into one-click *accept*. See
+   `/api/public/invitations/:token/unsubscribe` for the right shape:
+   auth-free, token-scoped, idempotent.
+
+   **If the email type has no token-scoped unsubscribe endpoint** (most of
+   them don't — the one-click flow is bespoke to team invitations), use
+   `buildMailtoUnsubscribeHeaders()` from [`utils.ts`](utils.ts) instead. It
+   emits a `mailto:`-only `List-Unsubscribe` header pointing at the reply
+   address — RFC-valid, shows the Unsubscribe affordance in Gmail/Apple
+   Mail, and never 404s. It deliberately omits `List-Unsubscribe-Post`,
+   which is only valid alongside an `https` one-click endpoint. Do **not**
+   point a one-click POST header at a route that doesn't exist — a 404 when
+   a mailbox provider probes it is worse than no header at all.
 
 5. **Include `tags` on every send.** They power Resend's delivery
    dashboards and let us slice deliverability by template + hackathon.
@@ -59,6 +70,14 @@ the mistake.
 9. **Keep it under ~60 characters.** Long subjects get truncated and
    look spammy in mobile previews. The reminder subject we shipped is
    `Your "${teamName}" invite expires soon` — short, factual, no panic.
+
+   **Never interpolate a raw `hackathonName` into a subject.** Event names
+   are long and often contain `|` (e.g. `Hackers & Healers | AI in
+   Healthcare Co-Design Hackathon`), which both blows past 60 characters
+   and reads as bulk/marketing mail. Wrap every name in a subject with
+   `shortHackathonName()` from [`utils.ts`](utils.ts) — it drops everything
+   after the first `|` and truncates on a word boundary. Bodies and event
+   links keep the full name; only the subject is shortened.
 
 ## Body
 

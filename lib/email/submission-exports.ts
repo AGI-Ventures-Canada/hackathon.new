@@ -4,6 +4,8 @@ import {
   getReplyToAddress,
   renderEmail,
   sanitizeTag,
+  buildMailtoUnsubscribeHeaders,
+  shortHackathonName,
 } from "./utils"
 import { formatFileSize } from "@/lib/utils/format"
 import SubmissionExportReadyEmail from "@/emails/submission-export-ready"
@@ -62,10 +64,11 @@ export async function sendExportReadyEmail(
 
   const result = await sendEmail({
     to: input.to,
-    subject: `Your ${input.hackathonName} export is ready`,
+    subject: `Your ${shortHackathonName(input.hackathonName)} export is ready`,
     html,
     text,
     replyTo: getReplyToAddress(),
+    headers: buildMailtoUnsubscribeHeaders(),
     tags: [
       { name: "type", value: "submission_export_ready" },
       { name: "hackathon", value: sanitizeTag(input.hackathonName) },
@@ -98,10 +101,11 @@ export async function sendExportFailedEmail(
 
   const result = await sendEmail({
     to: input.to,
-    subject: `${input.hackathonName} export didn't finish`,
+    subject: `${shortHackathonName(input.hackathonName)} export didn't finish`,
     html,
     text,
     replyTo: getReplyToAddress(),
+    headers: buildMailtoUnsubscribeHeaders(),
     tags: [
       { name: "type", value: "submission_export_failed" },
       { name: "hackathon", value: sanitizeTag(input.hackathonName) },

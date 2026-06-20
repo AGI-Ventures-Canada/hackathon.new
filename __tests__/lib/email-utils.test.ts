@@ -1,8 +1,10 @@
-import { describe, it, expect } from "bun:test"
+import { describe, it, expect, afterEach } from "bun:test"
 import {
   extractEmailAddress,
   formatFromAddress,
   formatTimeLeft,
+  shortHackathonName,
+  buildMailtoUnsubscribeHeaders,
 } from "@/lib/email/utils"
 
 describe("formatTimeLeft", () => {
@@ -107,5 +109,73 @@ describe("formatFromAddress", () => {
     expect(formatFromAddress("Renée", "hello@example.com")).toBe(
       '"Renée" <hello@example.com>'
     )
+  })
+})
+
+describe("shortHackathonName", () => {
+  it("returns a short name unchanged", () => {
+    expect(shortHackathonName("AI Hackathon")).toBe("AI Hackathon")
+  })
+
+  it("drops everything after the first pipe", () => {
+    expect(
+      shortHackathonName("Hackers & Healers | AI in Healthcare Co-Design Hackathon")
+    ).toBe("Hackers & Healers")
+  })
+
+  it("collapses internal whitespace", () => {
+    expect(shortHackathonName("Big   Build   Weekend")).toBe("Big Build Weekend")
+  })
+
+  it("truncates a long name on a word boundary with an ellipsis", () => {
+    const result = shortHackathonName(
+      "The Worldwide Collegiate Artificial Intelligence Builders Championship"
+    )
+    expect(result.length).toBeLessThanOrEqual(46)
+    expect(result.endsWith("…")).toBe(true)
+    expect(result).not.toContain("  ")
+  })
+
+  it("falls back to the trimmed full name when the part before the pipe is empty", () => {
+    expect(shortHackathonName("| Edge Case")).toBe("Edge Case")
+  })
+})
+
+describe("buildMailtoUnsubscribeHeaders", () => {
+  const originalReplyTo = process.env.RESEND_REPLY_TO_EMAIL
+  const originalFrom = process.env.RESEND_FROM_EMAIL
+
+  afterEach(() => {
+    if (originalReplyTo === undefined) delete process.env.RESEND_REPLY_TO_EMAIL
+    else process.env.RESEND_REPLY_TO_EMAIL = originalReplyTo
+    if (originalFrom === undefined) delete process.env.RESEND_FROM_EMAIL
+    else process.env.RESEND_FROM_EMAIL = originalFrom
+  })
+
+  it("prefers the reply-to address", () => {
+    process.env.RESEND_REPLY_TO_EMAIL = "support@getoatmeal.com"
+    process.env.RESEND_FROM_EMAIL = "noreply@getoatmeal.com"
+    expect(buildMailtoUnsubscribeHeaders()).toEqual({
+      "List-Unsubscribe": "<mailto:support@getoatmeal.com?subject=unsubscribe>",
+    })
+  })
+
+  it("falls back to the from address", () => {
+    delete process.env.RESEND_REPLY_TO_EMAIL
+    process.env.RESEND_FROM_EMAIL = "noreply@getoatmeal.com"
+    expect(buildMailtoUnsubscribeHeaders()).toEqual({
+      "List-Unsubscribe": "<mailto:noreply@getoatmeal.com?subject=unsubscribe>",
+    })
+  })
+
+  it("omits the one-click POST header (mailto-only is not RFC 8058 one-click)", () => {
+    process.env.RESEND_REPLY_TO_EMAIL = "support@getoatmeal.com"
+    expect(buildMailtoUnsubscribeHeaders()).not.toHaveProperty("List-Unsubscribe-Post")
+  })
+
+  it("returns undefined when no sender address is configured", () => {
+    delete process.env.RESEND_REPLY_TO_EMAIL
+    delete process.env.RESEND_FROM_EMAIL
+    expect(buildMailtoUnsubscribeHeaders()).toBeUndefined()
   })
 })

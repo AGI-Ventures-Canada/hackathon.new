@@ -16,6 +16,9 @@ export async function sendChallengesReleasedEmail(
     "@/lib/email/challenges-released"
   )
   const { sendEmail } = await import("@/lib/email/resend")
+  const { getReplyToAddress, buildMailtoUnsubscribeHeaders } = await import(
+    "@/lib/email/utils"
+  )
 
   const { subject, html, text, tag } = await buildChallengesReleasedEmail(
     input.hackathonName,
@@ -28,6 +31,8 @@ export async function sendChallengesReleasedEmail(
     subject,
     html,
     text,
+    replyTo: getReplyToAddress(),
+    headers: buildMailtoUnsubscribeHeaders(),
     tags: [
       { name: "type", value: "challenges_released" },
       { name: "hackathon", value: tag },
