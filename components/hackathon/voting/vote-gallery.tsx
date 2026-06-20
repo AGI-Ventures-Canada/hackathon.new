@@ -9,6 +9,9 @@ interface Submission {
   description: string | null
   screenshotUrl: string | null
   submitterName?: string
+  liveAppUrl: string | null
+  githubUrl: string | null
+  demoVideoUrl: string | null
 }
 
 interface VoteGalleryProps {
@@ -99,6 +102,9 @@ export function VoteGallery({
             description={submission.description}
             screenshotUrl={submission.screenshotUrl}
             submitterName={submission.submitterName}
+            liveAppUrl={submission.liveAppUrl}
+            githubUrl={submission.githubUrl}
+            demoVideoUrl={submission.demoVideoUrl}
             voteCount={count}
             isVoted={isVoted}
             disabled={!isSignedIn || voting}
