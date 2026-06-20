@@ -35,7 +35,9 @@ export function VoteCard({
     { url: liveAppUrl, label: "Live demo", icon: ExternalLink },
     { url: githubUrl, label: "Code", icon: Github },
     { url: demoVideoUrl, label: "Video", icon: Play },
-  ].filter((link) => link.url)
+  ].filter((link): link is { url: string; label: string; icon: typeof Heart } =>
+    Boolean(link.url)
+  )
   return (
     <div className={cn(
       "rounded-lg border overflow-hidden transition-colors",
@@ -66,7 +68,7 @@ export function VoteCard({
             {links.map(({ url, label, icon: Icon }) => (
               <a
                 key={label}
-                href={url ?? undefined}
+                href={url}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
