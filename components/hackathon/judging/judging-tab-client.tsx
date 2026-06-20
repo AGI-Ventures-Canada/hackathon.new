@@ -645,6 +645,11 @@ export function JudgingTabClient({
         onOpenChange={setShowAddPrize}
         rounds={rounds}
         coreWeightSum={coreCriteria.reduce((acc, c) => acc + c.weight, 0)}
+        existingPrizes={prizes.map((p) => ({ id: p.id, name: p.name }))}
+        onEditExisting={(prizeId) => {
+          const prize = prizes.find((p) => p.id === prizeId)
+          if (prize) handleEditPrize(prize)
+        }}
       />
     </div>
   )
@@ -1156,6 +1161,22 @@ function PrizeCard({
             </AlertDialog>
           </div>
         </div>
+
+        {!prize.judgingStyle && (
+          <div className="flex items-center justify-between gap-2 rounded-md border border-dashed bg-muted/40 p-3 text-sm">
+            <p className="text-muted-foreground">
+              Pick how judges should score this prize.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => onEditPrize(prize)}
+            >
+              Pick a style
+            </Button>
+          </div>
+        )}
 
         {prize.judgingStyle === "gate_check" && prize.criteria && prize.criteria.length > 0 && (
           <div className="rounded-md border bg-muted/30 p-3 space-y-1.5">
