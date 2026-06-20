@@ -27,6 +27,7 @@ export function buildMailtoUnsubscribeHeaders(): Record<string, string> | undefi
   const raw = process.env.RESEND_REPLY_TO_EMAIL || process.env.RESEND_FROM_EMAIL
   if (!raw) return undefined
   const mailto = extractEmailAddress(raw).replace(/[\r\n]/g, "")
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mailto)) return undefined
   return {
     "List-Unsubscribe": `<mailto:${mailto}?subject=unsubscribe>`,
   }

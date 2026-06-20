@@ -188,11 +188,11 @@ describe("buildMailtoUnsubscribeHeaders", () => {
     expect(buildMailtoUnsubscribeHeaders()).toBeUndefined()
   })
 
-  it("strips CR/LF from the address to prevent header injection", () => {
+  it("fails safe (returns undefined) for a malformed or injected address", () => {
     process.env.RESEND_REPLY_TO_EMAIL = "support@getoatmeal.com\r\nBcc: evil@x.com"
-    expect(buildMailtoUnsubscribeHeaders()).toEqual({
-      "List-Unsubscribe": "<mailto:support@getoatmeal.comBcc: evil@x.com?subject=unsubscribe>",
-    })
+    expect(buildMailtoUnsubscribeHeaders()).toBeUndefined()
+    process.env.RESEND_REPLY_TO_EMAIL = "not-an-email"
+    expect(buildMailtoUnsubscribeHeaders()).toBeUndefined()
   })
 })
 
