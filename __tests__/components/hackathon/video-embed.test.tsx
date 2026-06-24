@@ -7,22 +7,12 @@ afterEach(() => {
 })
 
 describe("VideoEmbed", () => {
-  it("allows same-origin for YouTube embeds", () => {
-    render(
-      <VideoEmbed
-        video={{
-          provider: "youtube",
-          embedUrl: "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ",
-          title: "YouTube video",
-        }}
-      />
-    )
-
-    const iframe = screen.getByTitle("YouTube video")
-    expect(iframe.getAttribute("sandbox")).toContain("allow-same-origin")
-  })
-
   it.each([
+    {
+      provider: "youtube" as const,
+      embedUrl: "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ",
+      title: "YouTube video",
+    },
     {
       provider: "loom" as const,
       embedUrl: "https://www.loom.com/embed/abc123",
@@ -33,14 +23,13 @@ describe("VideoEmbed", () => {
       embedUrl: "https://player.vimeo.com/video/123456",
       title: "Vimeo video",
     },
-  ])("sandboxes $provider iframes without same-origin access", (video) => {
+  ])("renders $provider embeds with same-origin so the player can load", (video) => {
     render(
       <VideoEmbed video={video} />
     )
 
     const iframe = screen.getByTitle(video.title)
     expect(iframe.getAttribute("src")).toBe(video.embedUrl)
-    expect(iframe.getAttribute("sandbox")).toBe("allow-scripts allow-presentation allow-popups")
-    expect(iframe.getAttribute("sandbox")).not.toContain("allow-same-origin")
+    expect(iframe.getAttribute("sandbox")).toBe("allow-scripts allow-same-origin allow-presentation allow-popups")
   })
 })

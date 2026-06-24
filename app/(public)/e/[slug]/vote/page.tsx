@@ -55,6 +55,9 @@ export default async function VotePage({ params }: PageProps) {
           description: s.description,
           screenshotUrl: s.screenshot_url,
           submitterName: s.submitter_name,
+          liveAppUrl: s.live_app_url,
+          githubUrl: s.github_url,
+          demoVideoUrl: s.demo_video_url,
         }))}
         voteCounts={voteCounts}
         userVote={userVote}
