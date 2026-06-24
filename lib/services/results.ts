@@ -442,6 +442,7 @@ export async function getPublicResultsWithDetails(
         const clerk = await clerkClient()
         const clerkUsers = await clerk.users.getUserList({
           userId: members.map((m) => m.clerk_user_id),
+          limit: 100,
         })
         const nameMap = Object.fromEntries(
           clerkUsers.data.map((u) => [

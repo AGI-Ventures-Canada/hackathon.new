@@ -1,5 +1,12 @@
 import { sendEmail } from "./resend"
-import { renderEmail, sanitizeTag, buildEventUrl } from "./utils"
+import {
+  renderEmail,
+  sanitizeTag,
+  buildEventUrl,
+  getReplyToAddress,
+  buildMailtoUnsubscribeHeaders,
+  shortHackathonName,
+} from "./utils"
 import PrizeShippedEmail from "@/emails/prize-shipped"
 
 export async function sendPrizeShippedEmail(params: {
@@ -24,9 +31,11 @@ export async function sendPrizeShippedEmail(params: {
 
   const result = await sendEmail({
     to: recipientEmail,
-    subject: `Your prize is on its way — ${hackathonName}`,
+    subject: `Your prize is on its way — ${shortHackathonName(hackathonName)}`,
     html,
     text,
+    replyTo: getReplyToAddress(),
+    headers: buildMailtoUnsubscribeHeaders(),
     tags: [
       { name: "type", value: "prize_shipped" },
       { name: "hackathon", value: sanitizeTag(hackathonName) },

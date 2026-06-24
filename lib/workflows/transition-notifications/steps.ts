@@ -65,6 +65,9 @@ export async function sendTransitionEmail(
     "@/lib/email/transition-notifications"
   )
   const { sendEmail } = await import("@/lib/email/resend")
+  const { getReplyToAddress, buildMailtoUnsubscribeHeaders } = await import(
+    "@/lib/email/utils"
+  )
 
   const hasChallenges = !!input.challenges && input.challenges.length > 0
   const { subject, html, text, tag } = await buildTransitionEmail(
@@ -83,6 +86,8 @@ export async function sendTransitionEmail(
     subject,
     html,
     text,
+    replyTo: getReplyToAddress(),
+    headers: buildMailtoUnsubscribeHeaders(),
     tags: [
       {
         name: "type",

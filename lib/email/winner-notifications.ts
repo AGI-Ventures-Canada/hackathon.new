@@ -1,5 +1,11 @@
 import { sendEmail } from "./resend"
-import { sanitizeTag, renderEmail } from "./utils"
+import {
+  sanitizeTag,
+  renderEmail,
+  getReplyToAddress,
+  buildMailtoUnsubscribeHeaders,
+  shortHackathonName,
+} from "./utils"
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { clerkClient } from "@clerk/nextjs/server"
@@ -182,9 +188,11 @@ export async function sendWinnerEmails(hackathonId: string): Promise<number> {
 
         return sendEmail({
           to: email,
-          subject: `${ordinal(info.rank)} Place — ${hackathon.name} Results`,
+          subject: `${ordinal(info.rank)} Place — ${shortHackathonName(hackathon.name)} Results`,
           html,
           text,
+          replyTo: getReplyToAddress(),
+          headers: buildMailtoUnsubscribeHeaders(),
           tags: [
             { name: "type", value: "winner_notification" },
             { name: "hackathon", value: tag },
@@ -268,7 +276,7 @@ export async function sendPrizeClaimEmail(
   if (clerkUserIds.length === 0) return 0
 
   const clerk = await clerkClient()
-  const users = await clerk.users.getUserList({ userId: clerkUserIds })
+  const users = await clerk.users.getUserList({ userId: clerkUserIds, limit: 100 })
   const tag = sanitizeTag(hackathon.name)
   const resultsUrl = `${baseUrl}/e/${hackathon.slug}`
   const claimUrl = claimToken ? `${baseUrl}/prizes/claim/${claimToken}` : null
@@ -298,9 +306,11 @@ export async function sendPrizeClaimEmail(
 
     const result = await sendEmail({
       to: email,
-      subject: `You Won a Prize — ${hackathon.name}`,
+      subject: `You Won a Prize — ${shortHackathonName(hackathon.name)}`,
       html,
       text,
+      replyTo: getReplyToAddress(),
+      headers: buildMailtoUnsubscribeHeaders(),
       tags: [
         { name: "type", value: "prize_claim_notification" },
         { name: "hackathon", value: tag },

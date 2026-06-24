@@ -43,6 +43,7 @@ import {
 } from "@/lib/services/perks"
 import { getLiveStats } from "@/lib/services/event-dashboard"
 import { sendBulkEmail } from "@/lib/services/participant-emails"
+import { getEffectiveStatus } from "@/lib/utils/timeline"
 import type { HackathonPhase, ParticipantRole } from "@/lib/db/hackathon-types"
 
 const VALID_PHASES: HackathonPhase[] = [
@@ -381,7 +382,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if ("error" in authErr) return authErr
 
-    if (authErr.hackathon.status !== "completed") {
+    if (getEffectiveStatus(authErr.hackathon) !== "completed") {
       set.status = 400
       return { error: "Exports are only available for completed hackathons." }
     }

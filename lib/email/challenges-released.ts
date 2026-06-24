@@ -1,4 +1,4 @@
-import { sanitizeTag, renderEmail, buildEventUrl } from "./utils"
+import { sanitizeTag, renderEmail, buildEventUrl, shortHackathonName } from "./utils"
 import type { ChallengeSummary } from "@/lib/db/hackathon-types"
 import ChallengesReleasedEmail from "@/emails/challenges-released"
 
@@ -22,7 +22,7 @@ export async function buildChallengesReleasedEmail(
   )
 
   return {
-    subject: `Challenges for ${hackathonName} are live`,
+    subject: `Challenges for ${shortHackathonName(hackathonName)} are live`,
     html,
     text,
     tag,

@@ -132,6 +132,14 @@ export function RegistrationButton({
           <Lock className="size-3 shrink-0" />
           Registration closed {closesAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
         </div>
+        {!isSignedIn && (
+          <Link
+            href={`/sign-in?redirect_url=${encodeURIComponent(pathname)}`}
+            className="text-xs text-primary hover:text-primary/80"
+          >
+            Already signed up? Sign in
+          </Link>
+        )}
       </div>
     )
   }

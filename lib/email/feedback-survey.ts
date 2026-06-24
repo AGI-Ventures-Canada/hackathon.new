@@ -1,5 +1,12 @@
 import { sendEmail } from "./resend"
-import { sanitizeTag, renderEmail, buildEventUrl } from "./utils"
+import {
+  sanitizeTag,
+  renderEmail,
+  buildEventUrl,
+  getReplyToAddress,
+  buildMailtoUnsubscribeHeaders,
+  shortHackathonName,
+} from "./utils"
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { clerkClient } from "@clerk/nextjs/server"
@@ -45,7 +52,7 @@ export async function sendFeedbackSurveyEmails(
 
   for (let i = 0; i < clerkUserIds.length; i += 100) {
     const batch = clerkUserIds.slice(i, i + 100)
-    const users = await clerk.users.getUserList({ userId: batch })
+    const users = await clerk.users.getUserList({ userId: batch, limit: 100 })
 
     for (const user of users.data) {
       const email = user.primaryEmailAddress?.emailAddress
@@ -66,9 +73,11 @@ export async function sendFeedbackSurveyEmails(
 
       const result = await sendEmail({
         to: email,
-        subject: `Share Your Feedback — ${hackathon.name}`,
+        subject: `Share Your Feedback — ${shortHackathonName(hackathon.name)}`,
         html,
         text,
+        replyTo: getReplyToAddress(),
+        headers: buildMailtoUnsubscribeHeaders(),
         tags: [
           { name: "type", value: "feedback_survey" },
           { name: "hackathon", value: tag },

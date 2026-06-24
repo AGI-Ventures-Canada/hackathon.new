@@ -1,8 +1,11 @@
-import { describe, it, expect } from "bun:test"
+import { describe, it, expect, afterEach } from "bun:test"
 import {
   extractEmailAddress,
   formatFromAddress,
   formatTimeLeft,
+  shortHackathonName,
+  buildMailtoUnsubscribeHeaders,
+  htmlToPlainText,
 } from "@/lib/email/utils"
 
 describe("formatTimeLeft", () => {
@@ -107,5 +110,136 @@ describe("formatFromAddress", () => {
     expect(formatFromAddress("Renée", "hello@example.com")).toBe(
       '"Renée" <hello@example.com>'
     )
+  })
+})
+
+describe("shortHackathonName", () => {
+  it("returns a short name unchanged", () => {
+    expect(shortHackathonName("AI Hackathon")).toBe("AI Hackathon")
+  })
+
+  it("drops everything after the first pipe", () => {
+    expect(
+      shortHackathonName("Hackers & Healers | AI in Healthcare Co-Design Hackathon")
+    ).toBe("Hackers & Healers")
+  })
+
+  it("collapses internal whitespace", () => {
+    expect(shortHackathonName("Big   Build   Weekend")).toBe("Big Build Weekend")
+  })
+
+  it("truncates a long name on a word boundary with an ellipsis", () => {
+    const result = shortHackathonName(
+      "The Worldwide Collegiate Artificial Intelligence Builders Championship"
+    )
+    expect(result.length).toBeLessThanOrEqual(45)
+    expect(result.endsWith("…")).toBe(true)
+    expect(result).not.toContain("  ")
+  })
+
+  it("falls back to the trimmed full name when the part before the pipe is empty", () => {
+    expect(shortHackathonName("| Edge Case")).toBe("Edge Case")
+  })
+})
+
+describe("buildMailtoUnsubscribeHeaders", () => {
+  const originalReplyTo = process.env.RESEND_REPLY_TO_EMAIL
+  const originalFrom = process.env.RESEND_FROM_EMAIL
+
+  afterEach(() => {
+    if (originalReplyTo === undefined) delete process.env.RESEND_REPLY_TO_EMAIL
+    else process.env.RESEND_REPLY_TO_EMAIL = originalReplyTo
+    if (originalFrom === undefined) delete process.env.RESEND_FROM_EMAIL
+    else process.env.RESEND_FROM_EMAIL = originalFrom
+  })
+
+  it("prefers the reply-to address", () => {
+    process.env.RESEND_REPLY_TO_EMAIL = "support@getoatmeal.com"
+    process.env.RESEND_FROM_EMAIL = "noreply@getoatmeal.com"
+    expect(buildMailtoUnsubscribeHeaders()).toEqual({
+      "List-Unsubscribe": "<mailto:support@getoatmeal.com?subject=unsubscribe>",
+    })
+  })
+
+  it("falls back to the from address", () => {
+    delete process.env.RESEND_REPLY_TO_EMAIL
+    process.env.RESEND_FROM_EMAIL = "noreply@getoatmeal.com"
+    expect(buildMailtoUnsubscribeHeaders()).toEqual({
+      "List-Unsubscribe": "<mailto:noreply@getoatmeal.com?subject=unsubscribe>",
+    })
+  })
+
+  it("extracts the bare address from a 'Name <email>' fallback to avoid nested brackets", () => {
+    delete process.env.RESEND_REPLY_TO_EMAIL
+    process.env.RESEND_FROM_EMAIL = "Oatmeal <noreply@getoatmeal.com>"
+    expect(buildMailtoUnsubscribeHeaders()).toEqual({
+      "List-Unsubscribe": "<mailto:noreply@getoatmeal.com?subject=unsubscribe>",
+    })
+  })
+
+  it("omits the one-click POST header (mailto-only is not RFC 8058 one-click)", () => {
+    process.env.RESEND_REPLY_TO_EMAIL = "support@getoatmeal.com"
+    expect(buildMailtoUnsubscribeHeaders()).not.toHaveProperty("List-Unsubscribe-Post")
+  })
+
+  it("returns undefined when no sender address is configured", () => {
+    delete process.env.RESEND_REPLY_TO_EMAIL
+    delete process.env.RESEND_FROM_EMAIL
+    expect(buildMailtoUnsubscribeHeaders()).toBeUndefined()
+  })
+
+  it("fails safe (returns undefined) for a malformed or injected address", () => {
+    process.env.RESEND_REPLY_TO_EMAIL = "support@getoatmeal.com\r\nBcc: evil@x.com"
+    expect(buildMailtoUnsubscribeHeaders()).toBeUndefined()
+    process.env.RESEND_REPLY_TO_EMAIL = "not-an-email"
+    expect(buildMailtoUnsubscribeHeaders()).toBeUndefined()
+  })
+})
+
+describe("htmlToPlainText", () => {
+  it("strips tags and keeps the text", () => {
+    expect(htmlToPlainText("<p>Hello <strong>world</strong></p>")).toBe("Hello world")
+  })
+
+  it("turns block-level closes and <br> into newlines", () => {
+    expect(htmlToPlainText("<p>One</p><p>Two</p>")).toBe("One\nTwo")
+    expect(htmlToPlainText("Line one<br/>Line two")).toBe("Line one\nLine two")
+  })
+
+  it("removes style and script blocks entirely", () => {
+    const html = "<style>.x{color:red}</style><p>Keep</p><script>alert(1)</script>"
+    expect(htmlToPlainText(html)).toBe("Keep")
+  })
+
+  it("strips HTML comments, including conditional comments containing '>'", () => {
+    expect(htmlToPlainText("<p>Hi<!-- secret --> there</p>")).toBe("Hi there")
+    expect(htmlToPlainText("<!--[if mso]><b>x</b><![endif]--><p>Real</p>")).toBe("Real")
+  })
+
+  it("decodes common HTML entities", () => {
+    expect(htmlToPlainText("<p>Tom &amp; Jerry &lt;3 &nbsp;you</p>")).toBe("Tom & Jerry <3 you")
+  })
+
+  it("decodes quotes, dashes, and apostrophes", () => {
+    expect(htmlToPlainText("<p>&quot;Build&quot; &mdash; it&apos;s ready &ndash; go</p>")).toBe(
+      '"Build" — it\'s ready – go'
+    )
+  })
+
+  it("decodes decimal and hex numeric character references", () => {
+    expect(htmlToPlainText("<p>caf&#233; &#x2014; rest&#x6f;n</p>")).toBe("café — reston")
+  })
+
+  it("leaves unknown and out-of-range references untouched", () => {
+    expect(htmlToPlainText("<p>&copy; 2026 &#999999999;</p>")).toBe("&copy; 2026 &#999999999;")
+  })
+
+  it("collapses excess blank lines and horizontal whitespace", () => {
+    expect(htmlToPlainText("<div>A</div><div></div><div></div><div>B</div>")).toBe("A\n\nB")
+    expect(htmlToPlainText("<p>spaced    out    text</p>")).toBe("spaced out text")
+  })
+
+  it("returns an empty string for markup with no text", () => {
+    expect(htmlToPlainText("<div></div>")).toBe("")
   })
 })
