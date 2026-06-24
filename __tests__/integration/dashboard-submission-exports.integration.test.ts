@@ -188,6 +188,33 @@ describe("POST /api/dashboard/hackathons/:id/exports", () => {
     expect(mockCreateSubmissionExport).not.toHaveBeenCalled()
   })
 
+  it("allows export when the event has ended but stored status was never advanced", async () => {
+    mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+    mockCheckHackathonOrganizer.mockResolvedValue({
+      status: "ok" as const,
+      hackathon: {
+        id: HACKATHON_ID,
+        tenant_id: "tenant-123",
+        status: "registration_open",
+        starts_at: "2020-01-01T00:00:00Z",
+        ends_at: "2020-01-02T00:00:00Z",
+      } as unknown,
+    })
+
+    const res = await app.handle(
+      new Request(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      })
+    )
+    const data = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(data.exportId).toBe(EXPORT_ID)
+    expect(mockCreateSubmissionExport).toHaveBeenCalledTimes(1)
+  })
+
   it("creates an export, starts the workflow, and audits", async () => {
     mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
 
