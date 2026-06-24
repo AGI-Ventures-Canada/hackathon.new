@@ -940,5 +940,39 @@ describe("Hackathons Service", () => {
       expect(result[0].pendingCaptainInvitationId).toBe("inv_captain_first")
       expect(result[0].pendingCaptainRemindedAt).toBe("2026-05-02T10:00:00Z")
     })
+
+    it("requests a full page of users so more than 10 members resolve", async () => {
+      const memberIds = Array.from({ length: 25 }, (_, i) => `user_${i}`)
+      mockTables({
+        teams: [
+          { id: "team_1", name: "Rocket", status: "active", mode: null, captain_clerk_user_id: "user_0", pending_captain_email: null },
+        ],
+        participants: memberIds.map((id) => ({ clerk_user_id: id, role: "participant", team_id: "team_1" })),
+      })
+
+      let capturedArgs: { userId: string[]; limit?: number } | null = null
+      mockClerkClient.mockResolvedValueOnce({
+        users: {
+          getUserList: (args: { userId: string[]; limit?: number }) => {
+            capturedArgs = args
+            return Promise.resolve({
+              data: memberIds.map((id) => ({
+                id,
+                firstName: id,
+                lastName: null,
+                username: null,
+                emailAddresses: [{ emailAddress: `${id}@example.com` }],
+              })),
+            })
+          },
+        },
+      } as never)
+
+      const result = await listTeamsWithMembers("h1")
+
+      expect(capturedArgs!.limit).toBe(100)
+      expect(result[0].members).toHaveLength(25)
+      expect(result[0].members.every((m) => m.displayName !== null)).toBe(true)
+    })
   })
 })

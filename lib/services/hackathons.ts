@@ -432,7 +432,7 @@ export async function getParticipantTeamInfo(
   if (memberUserIds.length > 0) {
     try {
       const client = await clerkClient()
-      const users = await client.users.getUserList({ userId: memberUserIds })
+      const users = await client.users.getUserList({ userId: memberUserIds, limit: 100 })
       for (const user of users.data) {
         const displayName = user.firstName
           ? `${user.firstName}${user.lastName ? ` ${user.lastName}` : ""}`
@@ -620,7 +620,7 @@ export async function listTeamsWithMembers(hackathonId: string): Promise<TeamWit
         const clerk = await clerkClient()
         for (let i = 0; i < realUserIds.length; i += 100) {
           const batch = realUserIds.slice(i, i + 100)
-          const users = await clerk.users.getUserList({ userId: batch })
+          const users = await clerk.users.getUserList({ userId: batch, limit: 100 })
           for (const user of users.data) {
             userDisplayNames[user.id] = user.firstName
               ? `${user.firstName}${user.lastName ? ` ${user.lastName}` : ""}`
