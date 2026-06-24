@@ -276,7 +276,7 @@ export async function sendPrizeClaimEmail(
   if (clerkUserIds.length === 0) return 0
 
   const clerk = await clerkClient()
-  const users = await clerk.users.getUserList({ userId: clerkUserIds })
+  const users = await clerk.users.getUserList({ userId: clerkUserIds, limit: 100 })
   const tag = sanitizeTag(hackathon.name)
   const resultsUrl = `${baseUrl}/e/${hackathon.slug}`
   const claimUrl = claimToken ? `${baseUrl}/prizes/claim/${claimToken}` : null
