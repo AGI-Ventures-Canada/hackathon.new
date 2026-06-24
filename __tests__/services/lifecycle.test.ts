@@ -214,6 +214,39 @@ describe("Lifecycle Service", () => {
       expect(mockDispatch).not.toHaveBeenCalled()
     })
 
+    it("allows the auto path to finalize an ended event stuck in published", async () => {
+      const hackathon = {
+        id: "h1",
+        tenant_id: "t1",
+        name: "Test Hack",
+        slug: "test-hack",
+        status: "completed",
+      }
+
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_transitions") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "hackathons") {
+          return createChainableMock({ data: hackathon, error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await executeTransition({
+        hackathonId: "h1",
+        tenantId: "t1",
+        fromStatus: "published",
+        toStatus: "completed",
+        trigger: "auto",
+        triggeredBy: "system",
+      })
+
+      expect(result.success).toBe(true)
+      expect(mockDenyPendingTeamsForClosedHackathon).toHaveBeenCalledWith("h1")
+      expect(mockDispatch).not.toHaveBeenCalled()
+    })
+
     it("still notifies on a normal auto active → completed", async () => {
       const hackathon = {
         id: "h1",

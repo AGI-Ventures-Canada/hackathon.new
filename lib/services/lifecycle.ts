@@ -47,11 +47,12 @@ export async function executeTransition(
     input
 
   const validTargets = VALID_TRANSITIONS[fromStatus]
-  const isAutoTimeCompletion =
-    trigger === "auto" && toStatus === "completed" && fromStatus !== "archived"
   const isSkipAheadCompletion =
-    isAutoTimeCompletion && !validTargets?.includes(toStatus)
-  if (!isAutoTimeCompletion && !validTargets?.includes(toStatus)) {
+    trigger === "auto" &&
+    toStatus === "completed" &&
+    fromStatus !== "archived" &&
+    !validTargets?.includes(toStatus)
+  if (!isSkipAheadCompletion && !validTargets?.includes(toStatus)) {
     return {
       success: false,
       error: `Invalid transition from ${fromStatus} to ${toStatus}`,
