@@ -1,4 +1,5 @@
 import { describe, expect, it, mock, beforeEach } from "bun:test"
+import type { Hackathon } from "@/lib/db/hackathon-types"
 
 const mockResolvePrincipal = mock(() => Promise.resolve({ kind: "anon" } as unknown))
 
@@ -198,7 +199,10 @@ describe("POST /api/dashboard/hackathons/:id/exports", () => {
         status: "registration_open",
         starts_at: "2020-01-01T00:00:00Z",
         ends_at: "2020-01-02T00:00:00Z",
-      } as unknown,
+      } satisfies Pick<
+        Hackathon,
+        "id" | "tenant_id" | "status" | "starts_at" | "ends_at"
+      >,
     })
 
     const res = await app.handle(
