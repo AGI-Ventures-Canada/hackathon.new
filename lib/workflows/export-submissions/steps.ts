@@ -24,7 +24,10 @@ import {
 } from "@/lib/workflows/export-submissions/format"
 import { isClerkUserId } from "@/lib/utils/person-display"
 import { isAllowedDownloadUrl } from "@/lib/utils/safe-fetch-url"
-import { renderSubmissionsExportPdf } from "@/pdfs/submissions-export"
+import {
+  renderSubmissionsExportPdf,
+  type ExportScreenshotMap,
+} from "@/pdfs/submissions-export"
 import { sendExportReadyEmail, sendExportFailedEmail } from "@/lib/email/submission-exports"
 
 const EXPORTS_BUCKET = "exports"
@@ -32,6 +35,7 @@ const IMAGE_DOWNLOAD_TIMEOUT_MS = 10_000
 const IMAGE_DOWNLOAD_CONCURRENCY = 10
 const IMAGE_MAX_BYTES = 20 * 1024 * 1024
 const EXPORT_TTL_DAYS = 30
+const PDF_SCREENSHOT_MAX_EDGE = 1200
 
 export async function loadExportData(
   exportId: string
@@ -67,8 +71,9 @@ export async function buildAndUploadExport(
   payload: EnrichedExportPayload
 ): Promise<ExportUploadResult> {
   const images = await downloadAllImages(payload)
+  const screenshots = await buildPdfScreenshotMap(images)
   const csvBuffer = Buffer.from(buildCsv(payload), "utf-8")
-  const pdfBuffer = await renderSubmissionsExportPdf(payload)
+  const pdfBuffer = await renderSubmissionsExportPdf(payload, screenshots)
   const jsonBuffer = Buffer.from(JSON.stringify(payload, null, 2), "utf-8")
   const readmeBuffer = Buffer.from(buildReadme(payload), "utf-8")
 
@@ -177,6 +182,43 @@ function sanitizeErrorMessage(message: string): string {
 }
 
 type DownloadedImage = { path: string; buffer: Buffer }
+
+const SCREENSHOT_PATH_PATTERN = /^media\/([^/]+)\/screenshot\.[^/]+$/
+
+export async function buildPdfScreenshotMap(
+  images: DownloadedImage[]
+): Promise<ExportScreenshotMap> {
+  const screenshots = images.filter((image) =>
+    SCREENSHOT_PATH_PATTERN.test(image.path)
+  )
+  if (screenshots.length === 0) return {}
+
+  const { default: sharp } = await import("sharp")
+  const map: ExportScreenshotMap = {}
+
+  for (const image of screenshots) {
+    const submissionId = SCREENSHOT_PATH_PATTERN.exec(image.path)?.[1]
+    if (!submissionId) continue
+    try {
+      const data = await sharp(image.buffer)
+        .resize(PDF_SCREENSHOT_MAX_EDGE, PDF_SCREENSHOT_MAX_EDGE, {
+          fit: "inside",
+          withoutEnlargement: true,
+        })
+        .png()
+        .toBuffer()
+      map[submissionId] = { data, format: "png" }
+    } catch (err) {
+      console.warn(
+        `Skipping PDF screenshot for submission ${submissionId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      )
+    }
+  }
+
+  return map
+}
 
 async function downloadAllImages(
   payload: EnrichedExportPayload
@@ -399,7 +441,7 @@ ${filters}
 ## Files
 
 - \`submissions.csv\` — flat row-per-submission spreadsheet with all key fields.
-- \`submissions.pdf\` — human-readable report.
+- \`submissions.pdf\` — human-readable report with project screenshots embedded.
 - \`data.json\` — full structured data (highest fidelity).
 - \`media/<submission-id>/\` — downloaded screenshots and social media OG images.
 
