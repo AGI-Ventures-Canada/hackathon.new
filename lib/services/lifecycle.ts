@@ -47,7 +47,12 @@ export async function executeTransition(
     input
 
   const validTargets = VALID_TRANSITIONS[fromStatus]
-  if (!validTargets?.includes(toStatus)) {
+  const isSkipAheadCompletion =
+    trigger === "auto" &&
+    toStatus === "completed" &&
+    fromStatus !== "archived" &&
+    !validTargets?.includes(toStatus)
+  if (!isSkipAheadCompletion && !validTargets?.includes(toStatus)) {
     return {
       success: false,
       error: `Invalid transition from ${fromStatus} to ${toStatus}`,
@@ -136,7 +141,7 @@ export async function executeTransition(
   }
 
   const event = STATUS_TO_EVENT[toStatus]
-  if (event) {
+  if (event && !isSkipAheadCompletion) {
     const { dispatchTransitionNotifications } = await import(
       "./notification-dispatcher"
     )
