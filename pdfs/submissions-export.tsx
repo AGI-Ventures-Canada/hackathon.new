@@ -341,7 +341,7 @@ function SubmissionSection({
         !submission.liveAppUrl &&
         !submission.demoVideoUrl &&
         !(submission.screenshotUrl && !screenshot) && (
-          <Text style={styles.empty}>No links provided.</Text>
+          <Text style={styles.empty}>No external links provided.</Text>
         )}
 
       {submission.socialSubmissions.length > 0 && (
