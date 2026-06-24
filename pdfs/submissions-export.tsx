@@ -4,6 +4,7 @@ import {
   Page,
   View,
   Text,
+  Image,
   StyleSheet,
   Link,
   pdf,
@@ -15,6 +16,10 @@ import type {
   ExportUserDirectory,
 } from "@/lib/services/submission-exports"
 import { formatJudgeLabel, formatMemberLabel } from "@/lib/workflows/export-submissions/format"
+
+export type ExportScreenshot = { data: Buffer; format: "png" | "jpg" }
+
+export type ExportScreenshotMap = Record<string, ExportScreenshot>
 
 const colors = {
   text: "#0f172a",
@@ -39,6 +44,7 @@ const styles = StyleSheet.create({
   coverTitle: {
     fontSize: 28,
     fontFamily: "Helvetica-Bold",
+    lineHeight: 1.2,
     marginBottom: 14,
   },
   coverSubtitle: {
@@ -90,6 +96,7 @@ const styles = StyleSheet.create({
   submissionTitle: {
     fontSize: 18,
     fontFamily: "Helvetica-Bold",
+    lineHeight: 1.2,
     marginBottom: 6,
   },
   submissionTeam: {
@@ -108,6 +115,15 @@ const styles = StyleSheet.create({
   paragraph: {
     fontSize: 10,
     marginBottom: 4,
+  },
+  screenshot: {
+    marginTop: 4,
+    maxWidth: "100%",
+    maxHeight: 320,
+    objectFit: "contain",
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 4,
   },
   link: {
     color: colors.accent,
@@ -211,7 +227,7 @@ function CoverPage({ payload }: { payload: EnrichedExportPayload }) {
 
       <Text style={styles.coverMetaLabel}>Event window</Text>
       <Text style={styles.coverMetaValue}>
-        {formatDateOnly(payload.hackathon.startsAt)} → {formatDateOnly(payload.hackathon.endsAt)}
+        {formatDateOnly(payload.hackathon.startsAt)} to {formatDateOnly(payload.hackathon.endsAt)}
       </Text>
 
       <Text style={styles.coverMetaLabel}>Submissions included</Text>
@@ -242,11 +258,13 @@ function SubmissionSection({
   users,
   index,
   filters,
+  screenshot,
 }: {
   submission: ExportSubmissionRow
   users: ExportUserDirectory
   index: number
   filters: ExportFilters
+  screenshot: ExportScreenshot | undefined
 }) {
   const memberLines = (submission.team?.members ?? []).map((m) =>
     formatMemberLabel(m, users)
@@ -291,6 +309,13 @@ function SubmissionSection({
         {submission.description?.trim() || "No description provided."}
       </Text>
 
+      {screenshot && (
+        <>
+          <Text style={styles.sectionLabel}>Screenshot</Text>
+          <Image style={styles.screenshot} src={screenshot} />
+        </>
+      )}
+
       <Text style={styles.sectionLabel}>Links</Text>
       {submission.githubUrl && (
         <Text style={styles.linkLine}>
@@ -307,7 +332,7 @@ function SubmissionSection({
           Demo video: <Link style={styles.link} src={submission.demoVideoUrl}>{submission.demoVideoUrl}</Link>
         </Text>
       )}
-      {submission.screenshotUrl && (
+      {submission.screenshotUrl && !screenshot && (
         <Text style={styles.linkLine}>
           Screenshot: <Link style={styles.link} src={submission.screenshotUrl}>{submission.screenshotUrl}</Link>
         </Text>
@@ -315,8 +340,8 @@ function SubmissionSection({
       {!submission.githubUrl &&
         !submission.liveAppUrl &&
         !submission.demoVideoUrl &&
-        !submission.screenshotUrl && (
-          <Text style={styles.empty}>No links provided.</Text>
+        !(submission.screenshotUrl && !screenshot) && (
+          <Text style={styles.empty}>No external links provided.</Text>
         )}
 
       {submission.socialSubmissions.length > 0 && (
@@ -390,7 +415,13 @@ function SubmissionSection({
   )
 }
 
-function SubmissionsExportDocument({ payload }: { payload: EnrichedExportPayload }) {
+function SubmissionsExportDocument({
+  payload,
+  screenshots,
+}: {
+  payload: EnrichedExportPayload
+  screenshots: ExportScreenshotMap
+}) {
   return (
     <Document
       title={`${payload.hackathon.name} — Submissions Export`}
@@ -405,6 +436,7 @@ function SubmissionsExportDocument({ payload }: { payload: EnrichedExportPayload
           users={payload.users}
           index={i}
           filters={payload.filters}
+          screenshot={screenshots[submission.id]}
         />
       ))}
     </Document>
@@ -412,9 +444,12 @@ function SubmissionsExportDocument({ payload }: { payload: EnrichedExportPayload
 }
 
 export async function renderSubmissionsExportPdf(
-  payload: EnrichedExportPayload
+  payload: EnrichedExportPayload,
+  screenshots: ExportScreenshotMap = {}
 ): Promise<Buffer> {
-  const instance = pdf(<SubmissionsExportDocument payload={payload} />)
+  const instance = pdf(
+    <SubmissionsExportDocument payload={payload} screenshots={screenshots} />
+  )
   const stream = await instance.toBuffer()
   return await streamToBuffer(stream)
 }
