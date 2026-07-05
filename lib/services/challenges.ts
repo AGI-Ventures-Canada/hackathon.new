@@ -435,7 +435,7 @@ export async function processScheduledChallengeReleases(): Promise<ScheduledChal
   const { data: hackathons, error: hackErr } = await client
     .from("hackathons")
     .select("id, tenant_id")
-    .eq("status", "active")
+    .in("status", ["published", "active"])
     .is("challenge_released_at", null)
 
   if (hackErr) {
