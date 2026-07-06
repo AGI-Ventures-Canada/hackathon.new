@@ -589,7 +589,49 @@ describe("Challenges Service", () => {
       expect(result.releases).toEqual([{ hackathonId }])
     })
 
-    it("skips hackathons where the trigger item is still linked to event_start", async () => {
+    it("releases challenges for event_start linked items whose time has passed", async () => {
+      const past = new Date(Date.now() - 60_000).toISOString()
+
+      let hackathonCalls = 0
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          hackathonCalls++
+          if (hackathonCalls === 1) {
+            return createChainableMock({
+              data: [{ id: hackathonId, tenant_id: tenantId }],
+              error: null,
+            })
+          }
+          return createChainableMock({
+            data: { challenge_released_at: null },
+            error: null,
+          })
+        }
+        if (table === "hackathon_schedule_items") {
+          return createChainableMock({
+            data: [
+              {
+                hackathon_id: hackathonId,
+                starts_at: past,
+                linked_to: "event_start",
+              },
+            ],
+            error: null,
+          })
+        }
+        if (table === "challenges") {
+          return createChainableMock({ data: null, error: null, count: 1 })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await processScheduledChallengeReleases()
+
+      expect(result.processed).toBe(1)
+      expect(result.releases).toEqual([{ hackathonId }])
+    })
+
+    it("skips hackathons where the trigger item is linked to event_publish", async () => {
       const past = new Date(Date.now() - 60_000).toISOString()
 
       setMockFromImplementation((table) => {
@@ -605,7 +647,7 @@ describe("Challenges Service", () => {
               {
                 hackathon_id: hackathonId,
                 starts_at: past,
-                linked_to: "event_start",
+                linked_to: "event_publish",
               },
             ],
             error: null,

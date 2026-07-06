@@ -463,7 +463,7 @@ export async function processScheduledChallengeReleases(): Promise<ScheduledChal
 
   const nowIso = new Date().toISOString()
   for (const item of items) {
-    if (item.linked_to !== null) continue
+    if (item.linked_to !== null && item.linked_to !== "event_start") continue
     if (typeof item.starts_at !== "string" || item.starts_at > nowIso) continue
 
     const hackathonId = item.hackathon_id as string
@@ -471,8 +471,9 @@ export async function processScheduledChallengeReleases(): Promise<ScheduledChal
     if (!tenantId) continue
 
     try {
+      const trigger = item.linked_to === "event_start" ? "event_start" : "scheduled"
       const released = await releaseChallenges(hackathonId, tenantId, {
-        trigger: "scheduled",
+        trigger,
       })
       if (released) {
         result.processed++
