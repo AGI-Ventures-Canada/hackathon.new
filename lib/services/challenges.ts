@@ -312,7 +312,10 @@ async function releaseChallengesWithHackathon(
 
   const dispatchNotification = options?.dispatchNotification ?? true
   const eligibleStatus =
-    hackathon.status === "published" || hackathon.status === "active"
+    hackathon.status === "published" ||
+    hackathon.status === "registration_open" ||
+    hackathon.status === "active" ||
+    hackathon.status === "judging"
 
   if (dispatchNotification && eligibleStatus) {
     try {
@@ -435,7 +438,7 @@ export async function processScheduledChallengeReleases(): Promise<ScheduledChal
   const { data: hackathons, error: hackErr } = await client
     .from("hackathons")
     .select("id, tenant_id")
-    .eq("status", "active")
+    .not("status", "in", "(draft,completed,archived)")
     .is("challenge_released_at", null)
 
   if (hackErr) {

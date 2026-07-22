@@ -334,6 +334,37 @@ describe("Challenges Service", () => {
       expect(result).toBe(true)
     })
 
+    it("dispatches notifications when releasing during registration_open", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: {
+              challenge_released_at: null,
+              name: "Test Hack",
+              slug: "test-hack",
+              status: "registration_open",
+            },
+            error: null,
+          })
+        }
+        if (table === "challenges") {
+          return createChainableMock({
+            data: [makeRow()],
+            error: null,
+            count: 1,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await releaseChallenges(hackathonId, tenantId, {
+        trigger: "scheduled",
+      })
+
+      expect(result).toBe(true)
+      expect(mockDispatchChallengesReleased).toHaveBeenCalledTimes(1)
+    })
+
     it("returns true and is a noop when already released", async () => {
       mockTableQuery(
         "hackathons",
