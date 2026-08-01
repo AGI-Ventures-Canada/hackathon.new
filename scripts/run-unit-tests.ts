@@ -151,7 +151,6 @@ const groups: Group[] = [
       "__tests__/components/auth/sign-up-form.test.tsx",
       "__tests__/components/cli-auth-org-gate.test.tsx",
       "__tests__/components/install-skill-button.test.tsx",
-      "__tests__/components/homepage-hero.test.tsx",
     ],
     exclude: new Set([...radixSet, ...registrationButtonSet]),
   },

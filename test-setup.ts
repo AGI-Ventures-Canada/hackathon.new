@@ -22,12 +22,13 @@ g.__nextNavState = {
     forward: mock(() => {}),
   },
 }
+g.__nextNavRedirect = mock(() => {})
 
 mock.module("next/navigation", () => ({
   usePathname: () => g.__nextNavState.pathname,
   useSearchParams: () => g.__nextNavState.searchParams,
   useRouter: () => g.__nextNavState.router,
-  redirect: mock(() => {}),
+  redirect: g.__nextNavRedirect,
   notFound: mock(() => {}),
 }))
 
