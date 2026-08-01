@@ -28,7 +28,7 @@ export default function AgentNotificationEmail({
     <OatmealLayout
       heading="Agent Run Notification"
       preview={`Agent "${agentName}" ${typeLabels[type].toLowerCase()}`}
-      footerText="This is an automated notification from your Oatmeal agent."
+      footerText="This is an automated notification from your hackathon.new agent."
     >
       <InfoBox label="Agent">
         <Text style={{ margin: "0", fontSize: fontSize.lg, fontWeight: 600 }}>

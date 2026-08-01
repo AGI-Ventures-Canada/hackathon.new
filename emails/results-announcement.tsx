@@ -42,5 +42,5 @@ export default function ResultsAnnouncementEmail({
 ResultsAnnouncementEmail.PreviewProps = {
   participantName: "Jordan",
   hackathonName: "AI Innovation Hackathon 2026",
-  resultsUrl: "https://getoatmeal.com/e/ai-innovation-2026",
+  resultsUrl: "https://hackathon.new/e/ai-innovation-2026",
 } satisfies ResultsAnnouncementEmailProps

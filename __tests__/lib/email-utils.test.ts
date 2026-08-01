@@ -52,7 +52,7 @@ describe("extractEmailAddress", () => {
   })
 
   it("extracts the address from a Name <email> form", () => {
-    expect(extractEmailAddress("Oatmeal <hello@example.com>")).toBe("hello@example.com")
+    expect(extractEmailAddress("Acme <hello@example.com>")).toBe("hello@example.com")
   })
 
   it("trims whitespace around the address", () => {
@@ -101,7 +101,7 @@ describe("formatFromAddress", () => {
   })
 
   it("uses the inner address when given a Name <email> base", () => {
-    expect(formatFromAddress("Sarah", "Oatmeal <hello@example.com>")).toBe(
+    expect(formatFromAddress("Sarah", "Acme <hello@example.com>")).toBe(
       "Sarah <hello@example.com>"
     )
   })
@@ -154,31 +154,31 @@ describe("buildMailtoUnsubscribeHeaders", () => {
   })
 
   it("prefers the reply-to address", () => {
-    process.env.RESEND_REPLY_TO_EMAIL = "support@getoatmeal.com"
-    process.env.RESEND_FROM_EMAIL = "noreply@getoatmeal.com"
+    process.env.RESEND_REPLY_TO_EMAIL = "support@hackathon.new"
+    process.env.RESEND_FROM_EMAIL = "noreply@hackathon.new"
     expect(buildMailtoUnsubscribeHeaders()).toEqual({
-      "List-Unsubscribe": "<mailto:support@getoatmeal.com?subject=unsubscribe>",
+      "List-Unsubscribe": "<mailto:support@hackathon.new?subject=unsubscribe>",
     })
   })
 
   it("falls back to the from address", () => {
     delete process.env.RESEND_REPLY_TO_EMAIL
-    process.env.RESEND_FROM_EMAIL = "noreply@getoatmeal.com"
+    process.env.RESEND_FROM_EMAIL = "noreply@hackathon.new"
     expect(buildMailtoUnsubscribeHeaders()).toEqual({
-      "List-Unsubscribe": "<mailto:noreply@getoatmeal.com?subject=unsubscribe>",
+      "List-Unsubscribe": "<mailto:noreply@hackathon.new?subject=unsubscribe>",
     })
   })
 
   it("extracts the bare address from a 'Name <email>' fallback to avoid nested brackets", () => {
     delete process.env.RESEND_REPLY_TO_EMAIL
-    process.env.RESEND_FROM_EMAIL = "Oatmeal <noreply@getoatmeal.com>"
+    process.env.RESEND_FROM_EMAIL = "hackathon.new <noreply@hackathon.new>"
     expect(buildMailtoUnsubscribeHeaders()).toEqual({
-      "List-Unsubscribe": "<mailto:noreply@getoatmeal.com?subject=unsubscribe>",
+      "List-Unsubscribe": "<mailto:noreply@hackathon.new?subject=unsubscribe>",
     })
   })
 
   it("omits the one-click POST header (mailto-only is not RFC 8058 one-click)", () => {
-    process.env.RESEND_REPLY_TO_EMAIL = "support@getoatmeal.com"
+    process.env.RESEND_REPLY_TO_EMAIL = "support@hackathon.new"
     expect(buildMailtoUnsubscribeHeaders()).not.toHaveProperty("List-Unsubscribe-Post")
   })
 
@@ -189,7 +189,7 @@ describe("buildMailtoUnsubscribeHeaders", () => {
   })
 
   it("fails safe (returns undefined) for a malformed or injected address", () => {
-    process.env.RESEND_REPLY_TO_EMAIL = "support@getoatmeal.com\r\nBcc: evil@x.com"
+    process.env.RESEND_REPLY_TO_EMAIL = "support@hackathon.new\r\nBcc: evil@x.com"
     expect(buildMailtoUnsubscribeHeaders()).toBeUndefined()
     process.env.RESEND_REPLY_TO_EMAIL = "not-an-email"
     expect(buildMailtoUnsubscribeHeaders()).toBeUndefined()

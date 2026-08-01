@@ -50,7 +50,7 @@ PostEventReminderEmail.PreviewProps = {
   participantName: "Sarah",
   body: "you won a prize in AI Innovation Hackathon 2026 but haven't claimed it yet. Visit the results page to see your prizes and follow up with the organizers.",
   ctaLabel: "View Results",
-  ctaUrl: "https://getoatmeal.com/e/ai-innovation-2026",
+  ctaUrl: "https://hackathon.new/e/ai-innovation-2026",
   hackathonName: "AI Innovation Hackathon 2026",
-  eventUrl: "https://getoatmeal.com/e/ai-innovation-2026",
+  eventUrl: "https://hackathon.new/e/ai-innovation-2026",
 } satisfies PostEventReminderEmailProps

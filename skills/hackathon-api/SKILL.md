@@ -1,6 +1,6 @@
 ---
 name: hackathon-api
-description: Interact with the Oatmeal hackathon platform directly via its REST API using curl commands. Use when the user asks to make direct API calls, test endpoints, debug API responses, call the Oatmeal API programmatically, import from Luma via URL, configure prize tracks or judging rounds, send announcements, release sponsor perks, or run a hybrid hackathon — including phrasings like "curl the hackathon API", "test api", or when the user mentions `oatmeal` in a hackathon-management context.
+description: Interact with hackathon.new directly via its REST API using curl commands. Use when the user asks to make direct API calls, test endpoints, debug API responses, call the hackathon.new API programmatically, import from Luma via URL, configure prize tracks or judging rounds, send announcements, release sponsor perks, or run a hybrid hackathon — including phrasings like "curl the hackathon API", "test api", or when the user mentions `hackathon.new` or the former name `oatmeal` in a hackathon-management context.
 allowed-tools: Read Bash(curl:*) Bash(jq:*) Bash(export:*)
 metadata:
   model: sonnet
@@ -8,7 +8,7 @@ metadata:
 
 # Hackathon API — Direct REST API Access
 
-Interact with the Oatmeal hackathon platform directly via its REST API using `curl` commands. Use this skill when you need raw API access, are debugging endpoints, testing integrations, or building custom scripts against the Oatmeal API.
+Interact with hackathon.new directly via its REST API using `curl` commands. Use this skill when you need raw API access, are debugging endpoints, testing integrations, or building custom scripts against the hackathon.new API.
 
 **For CLI usage, use the `hackathon-cli` skill instead.** This skill is for direct HTTP/REST API interaction.
 
@@ -28,20 +28,20 @@ Interact with the Oatmeal hackathon platform directly via its REST API using `cu
 - User asks to release sponsor perks or sponsor credits
 - User asks to import a hackathon from a Luma or external event URL
 - User asks to set up webhooks, integrations, or scheduled jobs
-- User mentions "oatmeal" in the context of hackathon management
+- User mentions "hackathon.new" or the former name "oatmeal" in the context of hackathon management
 - User gives natural language commands like "make me a hackathon on Sunday from 7am to 9pm"
 
 ## When NOT to Activate
 
-- User is working on the Oatmeal codebase itself (editing source code, running tests, etc.)
+- User is working on the hackathon.new codebase itself (editing source code, running tests, etc.)
 - User is asking about general hackathon concepts unrelated to the platform
-- User is working with the Oatmeal web dashboard UI directly
+- User is working with the hackathon.new web dashboard UI directly
 
 ## Prerequisites
 
 Before making API calls, the user needs:
 
-1. **A running Oatmeal instance** — either local (`http://localhost:3000`) or production (`https://getoatmeal.com`)
+1. **A running hackathon.new instance** — either local (`http://localhost:3000`) or production (`https://hackathon.new`)
 2. **An API key** — obtained from the dashboard at `/hackathons` > Settings > API Keys
 3. **An organization** — the user must belong to a Clerk organization
 
@@ -53,7 +53,7 @@ curl -s "http://localhost:3000/api/public/health" | jq .
 
 Expected: `{"status":"ok","timestamp":"..."}`
 
-If this fails, the Oatmeal server is not running. The user needs to start it with `bun dev` (if local) or provide their production URL.
+If this fails, the hackathon.new server is not running. The user needs to start it with `bun dev` (if local) or provide their production URL.
 
 ### Step 2: Set Up Authentication
 

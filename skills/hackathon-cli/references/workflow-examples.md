@@ -264,7 +264,7 @@ hackathon prizes create $HACKATHON_ID --name "First Place" --value "$1,000"
 
 ## Local Development
 
-When working on the Oatmeal codebase, use `bun cli` instead of `hackathon`:
+When working on the hackathon.new codebase, use `bun cli` instead of `hackathon`:
 
 ```bash
 # Start local server

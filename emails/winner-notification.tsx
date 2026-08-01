@@ -138,12 +138,12 @@ WinnerNotificationEmail.PreviewProps = {
   submissionTitle: "SmartRoute AI",
   rank: "1st",
   hackathonName: "AI Innovation Hackathon 2026",
-  resultsUrl: "https://getoatmeal.com/e/ai-innovation-2026",
+  resultsUrl: "https://hackathon.new/e/ai-innovation-2026",
   prizes: [
     {
       name: "Best AI Application",
       value: "$2,000",
-      claimUrl: "https://getoatmeal.com/prizes/claim/tk1",
+      claimUrl: "https://hackathon.new/prizes/claim/tk1",
     },
     {
       name: "Most Innovative",
@@ -151,7 +151,7 @@ WinnerNotificationEmail.PreviewProps = {
       claimUrl: null,
     },
   ],
-  primaryClaimUrl: "https://getoatmeal.com/prizes/claim/tk1",
+  primaryClaimUrl: "https://hackathon.new/prizes/claim/tk1",
   hackathonStartsAt: "2026-04-20T08:30:00Z",
   hackathonEndsAt: "2026-04-22T17:00:00Z",
 } satisfies WinnerNotificationEmailProps

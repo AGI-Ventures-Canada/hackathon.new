@@ -49,7 +49,7 @@ export const extractEventPageData = cache(async function extractEventPageData(
   try {
     response = await fetch(url, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; OatmealBot/1.0; +https://oatmeal.sh)",
+        "User-Agent": "Mozilla/5.0 (compatible; HackathonNewBot/1.0; +https://hackathon.new)",
       },
       signal: AbortSignal.timeout(8000),
     })

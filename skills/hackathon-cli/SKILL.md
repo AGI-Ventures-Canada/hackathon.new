@@ -6,9 +6,9 @@ metadata:
   model: sonnet
 ---
 
-# Hackathon CLI — Oatmeal Command-Line Tool
+# Hackathon CLI — hackathon.new Command-Line Tool
 
-Manage the Oatmeal hackathon platform from the terminal using the `hackathon` CLI (`@agi-ventures-canada/hackathon-cli`). This skill guides AI agents through using the CLI to create hackathons, manage judges and judging rounds, configure prize tracks, add sponsors and perks, invite teams, broadcast announcements, schedule the event, and publish results.
+Manage hackathon.new from the terminal using the `hackathon` CLI (`@agi-ventures-canada/hackathon-cli`). This skill guides AI agents through using the CLI to create hackathons, manage judges and judging rounds, configure prize tracks, add sponsors and perks, invite teams, broadcast announcements, schedule the event, and publish results.
 
 **For direct REST API access (curl commands, debugging endpoints), use the `hackathon-api` skill instead.**
 
@@ -29,14 +29,14 @@ Manage the Oatmeal hackathon platform from the terminal using the `hackathon` CL
 - User asks to import a hackathon from a Luma event URL
 - User asks to calculate or publish results
 - User gives natural language commands like "make me a hackathon on Sunday from 7am to 9pm"
-- User mentions "oatmeal" in the context of hackathon management
+- User mentions "hackathon.new" or the former name "oatmeal" in the context of hackathon management
 
 ## When NOT to Activate
 
 - User wants to make direct REST API calls or curl commands (use `hackathon-api`)
-- User is working on the Oatmeal codebase itself (editing source code, running tests)
+- User is working on the hackathon.new codebase itself (editing source code, running tests)
 - User is asking about general hackathon concepts (use `hackathon-organizer` or `hackathon-attendee`)
-- User is working with the Oatmeal web dashboard UI directly
+- User is working with the hackathon.new web dashboard UI directly
 
 ## Installation
 

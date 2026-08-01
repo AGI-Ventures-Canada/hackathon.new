@@ -64,7 +64,7 @@ OrganizerClaimNotificationEmail.PreviewProps = {
   prizeName: "Best AI Application",
   hackathonName: "AI Innovation Hackathon 2026",
   fulfillmentUrl:
-    "https://getoatmeal.com/e/ai-innovation-2026/manage?tab=post-event",
-  eventUrl: "https://getoatmeal.com/e/ai-innovation-2026",
+    "https://hackathon.new/e/ai-innovation-2026/manage?tab=post-event",
+  eventUrl: "https://hackathon.new/e/ai-innovation-2026",
   prizeValue: "5000",
 } satisfies OrganizerClaimNotificationEmailProps

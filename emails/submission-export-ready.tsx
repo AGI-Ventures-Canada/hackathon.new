@@ -99,6 +99,6 @@ SubmissionExportReadyEmail.PreviewProps = {
   submissionCount: 42,
   fileSizeLabel: "18.4 MB",
   expiresLabel: "June 26, 2026",
-  downloadUrl: "https://getoatmeal.com/api/hackathons/abc/exports/xyz/download",
-  eventUrl: "https://getoatmeal.com/e/ai-innovation-2026",
+  downloadUrl: "https://hackathon.new/api/hackathons/abc/exports/xyz/download",
+  eventUrl: "https://hackathon.new/e/ai-innovation-2026",
 } satisfies SubmissionExportReadyEmailProps

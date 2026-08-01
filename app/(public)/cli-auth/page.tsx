@@ -9,8 +9,8 @@ import { logAudit } from "@/lib/services/audit"
 import type { Metadata } from "next"
 
 export const metadata: Metadata = {
-  title: "CLI Authentication | Oatmeal",
-  description: "Authorize the Oatmeal CLI to access your account.",
+  title: "CLI Authentication | hackathon.new",
+  description: "Authorize the hackathon.new CLI to access your account.",
 }
 
 type PageProps = {
@@ -27,7 +27,7 @@ export default async function CliAuthPage({ searchParams }: PageProps) {
           <h1 className="text-2xl font-bold mb-2">Invalid Link</h1>
           <p className="text-muted-foreground">
             This CLI authentication link is invalid or has expired. Please run{" "}
-            <code className="bg-muted px-1.5 py-0.5 rounded text-sm">oatmeal login</code>{" "}
+            <code className="bg-muted px-1.5 py-0.5 rounded text-sm">hackathon login</code>{" "}
             again from your terminal.
           </p>
         </div>

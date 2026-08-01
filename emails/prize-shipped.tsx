@@ -70,5 +70,5 @@ PrizeShippedEmail.PreviewProps = {
   prizeName: "Best AI Application",
   hackathonName: "AI Innovation Hackathon 2026",
   trackingNumber: "1Z999AA10123456784",
-  eventUrl: "https://getoatmeal.com/e/ai-innovation-2026",
+  eventUrl: "https://hackathon.new/e/ai-innovation-2026",
 } satisfies PrizeShippedEmailProps

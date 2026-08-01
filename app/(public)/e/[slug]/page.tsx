@@ -37,7 +37,7 @@ export async function generateMetadata({ params, searchParams }: PageProps): Pro
   const translated = applyHackathonTranslation(hackathon, currentLocale)
 
   return {
-    title: `${translated.name} | Oatmeal`,
+    title: `${translated.name} | hackathon.new`,
     description: translated.description || `Join ${translated.name} hackathon`,
   }
 }

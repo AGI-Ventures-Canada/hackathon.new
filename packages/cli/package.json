@@ -1,10 +1,11 @@
 {
   "name": "@agi-ventures-canada/hackathon-cli",
   "version": "0.2.8",
-  "description": "CLI for the Oatmeal hackathon platform",
+  "description": "CLI for the hackathon.new platform",
   "keywords": [
     "hackathon",
     "cli",
+    "hackathon.new",
     "oatmeal"
   ],
   "homepage": "https://github.com/AGI-Ventures-Canada/oatmeal/tree/main/packages/cli#readme",

@@ -51,7 +51,7 @@ the mistake.
 6. **Verify `RESEND_FROM_EMAIL` points at a domain set up in Resend with
    DKIM + SPF.** The default `onboarding@resend.dev` is shared across every
    Resend trial account and is heavily filtered. Production should send
-   from `noreply@getoatmeal.com` (or another verified domain).
+   from `noreply@hackathon.new` (or another verified domain).
 
 ## Subject lines
 
@@ -93,7 +93,7 @@ the mistake.
     plenty. Excess link density is a strong spam signal.
 
 11. **Match the visible text and the `href`.** "Click here" pointing at
-    `https://getoatmeal.com/invite/<token>` is fine; "click here" pointing
+    `https://hackathon.new/invite/<token>` is fine; "click here" pointing
     at a tracker that redirects to a third-party domain is not.
 
 12. **Always include an unsubscribe line in the visible body for any

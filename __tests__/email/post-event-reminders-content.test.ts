@@ -12,7 +12,7 @@ const {
 
 describe("Post-Event Reminder Content Builders", () => {
   beforeEach(() => {
-    process.env.NEXT_PUBLIC_APP_URL = "https://test.oatmeal.com"
+    process.env.NEXT_PUBLIC_APP_URL = "https://test.hackathon.new"
   })
 
   afterEach(() => {
@@ -28,7 +28,7 @@ describe("Post-Event Reminder Content Builders", () => {
       const content = buildPrizeClaimReminderContent("Hack Day", "hack-day")
       expect(content.subject).toContain("Hack Day")
       expect(content.heading).toBe("Don't Forget Your Prize!")
-      expect(content.ctaUrl).toBe("https://test.oatmeal.com/e/hack-day")
+      expect(content.ctaUrl).toBe("https://test.hackathon.new/e/hack-day")
     })
   })
 

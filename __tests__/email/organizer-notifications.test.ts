@@ -202,7 +202,7 @@ describe("sendOrganizerClaimNotification", () => {
   })
 
   it("includes fulfillment URL in rendered email", async () => {
-    process.env.NEXT_PUBLIC_APP_URL = "https://test.getoatmeal.com"
+    process.env.NEXT_PUBLIC_APP_URL = "https://test.hackathon.new"
 
     let callCount = 0
     mockSingle.mockImplementation(() => {
@@ -226,7 +226,7 @@ describe("sendOrganizerClaimNotification", () => {
 
     expect(mockSendEmail).toHaveBeenCalledTimes(1)
     const call = mockSendEmail.mock.calls[0]![0] as Record<string, unknown>
-    expect((call.html as string)).toContain("https://test.getoatmeal.com/e/ai-hack-2026/manage")
+    expect((call.html as string)).toContain("https://test.hackathon.new/e/ai-hack-2026/manage")
   })
 
   it("uses correct Resend tags", async () => {

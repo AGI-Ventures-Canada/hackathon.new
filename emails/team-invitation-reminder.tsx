@@ -60,7 +60,7 @@ TeamInvitationReminderEmail.PreviewProps = {
   inviterName: "Sarah Chen",
   teamName: "Neural Navigators",
   hackathonName: "AI Innovation Hackathon 2026",
-  acceptUrl: "https://getoatmeal.com/invite/abc123",
+  acceptUrl: "https://hackathon.new/invite/abc123",
   expiresDate: "Friday, April 17, 2026",
   timeLeft: "3 days",
 } satisfies TeamInvitationReminderEmailProps

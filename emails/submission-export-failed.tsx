@@ -71,6 +71,6 @@ SubmissionExportFailedEmail.PreviewProps = {
   recipientName: "Alex",
   hackathonName: "AI Innovation Hackathon 2026",
   errorMessage: "Failed to upload export ZIP: storage quota exceeded",
-  retryUrl: "https://getoatmeal.com/hackathons/abc?tab=post-event",
-  eventUrl: "https://getoatmeal.com/e/ai-innovation-2026",
+  retryUrl: "https://hackathon.new/hackathons/abc?tab=post-event",
+  eventUrl: "https://hackathon.new/e/ai-innovation-2026",
 } satisfies SubmissionExportFailedEmailProps

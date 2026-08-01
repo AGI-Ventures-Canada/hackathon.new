@@ -6,7 +6,7 @@ All endpoints use JSON request/response bodies unless noted. Authentication via 
 
 ```
 Local:      http://localhost:3000
-Production: https://getoatmeal.com
+Production: https://hackathon.new
 ```
 
 ---

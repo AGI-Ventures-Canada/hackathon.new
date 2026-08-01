@@ -149,7 +149,7 @@ export function OatmealLayout({
                   textDecoration: "none",
                 }}
               >
-                Oatmeal
+                hackathon.new
               </Link>
             </Text>
             <Text

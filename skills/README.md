@@ -1,6 +1,6 @@
 # Hackathon Skills
 
-AI agent skills for hackathon management on the [Oatmeal](https://github.com/AGI-Ventures-Canada/oatmeal) platform.
+AI agent skills for hackathon management on [hackathon.new](https://hackathon.new).
 
 ## Install
 
@@ -15,7 +15,7 @@ Only the public skills in this `skills/` directory are meant for normal installs
 | Skill | Description |
 |-------|-------------|
 | **hackathon-cli** | Manage hackathons from the terminal using the `hackathon` CLI |
-| **hackathon-api** | Interact with the Oatmeal platform via its REST API using curl |
+| **hackathon-api** | Interact with hackathon.new via its REST API using curl |
 | **hackathon-organizer** | Tips, tricks, and best practices for organizing hackathons |
 | **hackathon-attendee** | Tips, tricks, and best practices for hackathon participants |
 

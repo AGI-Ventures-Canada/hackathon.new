@@ -1,6 +1,6 @@
-# Oatmeal API Reference
+# hackathon.new API Reference
 
-Reference guide for the Oatmeal hackathon platform REST API. All endpoints use JSON request/response bodies unless noted.
+Reference guide for the hackathon.new REST API. All endpoints use JSON request/response bodies unless noted.
 
 ## Setup
 
@@ -1567,7 +1567,7 @@ curl -s "$BASE_URL/api/v1/whoami" \
   "tenantSlug": "acme-labs",
   "tenantType": "organization",
   "keyId": "uuid",
-  "keyName": "Oatmeal CLI (localhost, 2026-05-04)",
+  "keyName": "hackathon.new CLI (localhost, 2026-05-04)",
   "scopes": ["hackathons:read", "hackathons:write"]
 }
 ```

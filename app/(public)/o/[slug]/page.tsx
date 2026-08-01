@@ -21,8 +21,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   }
 
   return {
-    title: `${tenant.name} | Oatmeal`,
-    description: tenant.description || `${tenant.name} on Oatmeal`,
+    title: `${tenant.name} | hackathon.new`,
+    description: tenant.description || `${tenant.name} on hackathon.new`,
   }
 }
 
