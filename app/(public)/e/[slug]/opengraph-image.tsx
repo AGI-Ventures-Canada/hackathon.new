@@ -155,7 +155,7 @@ export default async function Image({ params }: Props) {
             color: "#666",
           }}
         >
-          oatmeal.dev
+          hackathon.new
         </div>
       </div>
     ),

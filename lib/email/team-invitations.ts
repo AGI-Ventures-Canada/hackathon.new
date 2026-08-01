@@ -21,7 +21,7 @@ function buildPersonalizedFrom(inviterName: string): string | undefined {
   if (!baseFrom) return undefined
   const trimmed = inviterName.trim()
   if (!trimmed || GENERIC_INVITER_NAMES.has(trimmed.toLowerCase())) return undefined
-  return formatFromAddress(`${trimmed} via Oatmeal`, baseFrom)
+  return formatFromAddress(`${trimmed} via hackathon.new`, baseFrom)
 }
 
 export type SendTeamInvitationInput = {

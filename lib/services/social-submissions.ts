@@ -36,7 +36,7 @@ function detectPlatform(url: string): string | null {
 export async function fetchOgMetadata(url: string): Promise<OgMetadata> {
   try {
     const res = await fetch(url, {
-      headers: { "User-Agent": "OatmealBot/1.0 (+https://getoatmeal.com)" },
+      headers: { "User-Agent": "HackathonNewBot/1.0 (+https://hackathon.new)" },
       signal: AbortSignal.timeout(5000),
     })
     if (!res.ok) return { title: null, description: null, imageUrl: null }

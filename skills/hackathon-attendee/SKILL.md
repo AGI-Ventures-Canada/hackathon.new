@@ -26,7 +26,7 @@ Everything you need to know to prepare for, compete in, and get the most out of 
 ## When NOT to Activate
 
 - User is organizing a hackathon (use `hackathon-organizer` instead)
-- User is managing a hackathon on the Oatmeal platform (use `hackathon-cli` or `hackathon-api`)
+- User is managing a hackathon on hackathon.new (use `hackathon-cli` or `hackathon-api`)
 - User is writing hackathon platform code
 
 ## Before the Hackathon

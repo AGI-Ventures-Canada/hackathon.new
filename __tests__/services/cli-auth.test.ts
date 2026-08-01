@@ -7,7 +7,7 @@ import {
 
 const mockCreateApiKey = mock(() =>
   Promise.resolve({
-    apiKey: { id: "key-1", name: "Oatmeal CLI (test, 2026-03-08)" },
+    apiKey: { id: "key-1", name: "hackathon.new CLI (test, 2026-03-08)" },
     rawKey: "sk_live_test123",
   })
 )

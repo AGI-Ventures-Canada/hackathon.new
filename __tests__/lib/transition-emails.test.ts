@@ -5,7 +5,7 @@ describe("Transition Email Templates", () => {
   const originalAppUrl = process.env.NEXT_PUBLIC_APP_URL
 
   beforeEach(() => {
-    process.env.NEXT_PUBLIC_APP_URL = "https://test.getoatmeal.com"
+    process.env.NEXT_PUBLIC_APP_URL = "https://test.hackathon.new"
   })
 
   afterEach(() => {
@@ -22,7 +22,7 @@ describe("Transition Email Templates", () => {
     expect(email.subject).toContain("AI Hackathon")
     expect(email.subject).toContain("live")
     expect(email.html).toContain("AI Hackathon")
-    expect(email.html).toContain("https://test.getoatmeal.com/e/ai-hackathon")
+    expect(email.html).toContain("https://test.hackathon.new/e/ai-hackathon")
     expect(email.html).toContain("Is Live!")
     expect(email.text).toContain("AI Hackathon")
     expect(email.tag).toBe("AI_Hackathon")
@@ -33,7 +33,7 @@ describe("Transition Email Templates", () => {
 
     expect(email.subject).toContain("Judging")
     expect(email.html).toContain("Judging Has Begun")
-    expect(email.html).toContain("https://test.getoatmeal.com/e/code-jam")
+    expect(email.html).toContain("https://test.hackathon.new/e/code-jam")
     expect(email.text).toContain("Judging is now underway")
   })
 

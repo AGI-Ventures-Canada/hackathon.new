@@ -374,7 +374,7 @@ Add a sponsor.
 | `--custom-tier-label` | No | Free-form tier label (overrides `--tier` label in UI) |
 | `--website` | No | Sponsor website URL |
 | `--logo-url` | No | Existing logo URL (skip for local upload) |
-| `--sponsor-tenant-id` | No | Link to an Oatmeal tenant (so the sponsor can self-manage) |
+| `--sponsor-tenant-id` | No | Link to a hackathon.new tenant (so the sponsor can self-manage) |
 | `--use-org-assets` | No | Copy org logo/description instead of requiring upload |
 
 ### `hackathon sponsors update <hackathon-id> <sponsor-id>`

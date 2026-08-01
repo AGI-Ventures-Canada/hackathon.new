@@ -18,9 +18,9 @@ export const api = new Elysia({ prefix: "/api" })
       path: "/swagger",
       documentation: {
         info: {
-          title: "Oatmeal API",
+          title: "hackathon.new API",
           version: "1.0.0",
-          description: `API for the Oatmeal hackathon platform.
+          description: `API for the hackathon.new platform.
 
 ## Authentication
 

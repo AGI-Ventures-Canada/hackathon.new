@@ -61,6 +61,6 @@ SponsorClaimNotificationEmail.PreviewProps = {
   winnerName: "Jane Smith",
   prizeName: "Best AI Application",
   hackathonName: "AI Innovation Hackathon 2026",
-  eventUrl: "https://getoatmeal.com/e/ai-innovation-2026",
+  eventUrl: "https://hackathon.new/e/ai-innovation-2026",
   prizeValue: "5000",
 } satisfies SponsorClaimNotificationEmailProps

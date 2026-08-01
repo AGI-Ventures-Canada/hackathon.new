@@ -425,7 +425,7 @@ function SubmissionsExportDocument({
   return (
     <Document
       title={`${payload.hackathon.name} — Submissions Export`}
-      author="Oatmeal"
+      author="hackathon.new"
       subject="Hackathon submissions export"
     >
       <CoverPage payload={payload} />

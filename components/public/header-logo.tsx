@@ -8,7 +8,7 @@ export function HeaderLogo() {
 
   return (
     <Link href={isSignedIn ? "/home" : "/"} className="font-bold text-xl">
-      Oatmeal
+      hackathon.new
     </Link>
   )
 }

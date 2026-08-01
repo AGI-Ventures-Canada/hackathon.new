@@ -108,7 +108,7 @@ export function MobileHeader() {
           <span className="sr-only">Open menu</span>
         </Button>
         <Link href={isSignedIn ? "/home" : "/"} className="font-bold text-lg">
-          Oatmeal
+          hackathon.new
         </Link>
         {isSignedIn && user && (
           <button
@@ -144,7 +144,7 @@ export function MobileHeader() {
       >
         {/* Menu header */}
         <div className="flex items-center justify-between px-5 py-4">
-          <span className="font-bold text-lg">Oatmeal</span>
+          <span className="font-bold text-lg">hackathon.new</span>
           <Button variant="ghost" size="icon-sm" onClick={close}>
             <X className="size-5" />
             <span className="sr-only">Close menu</span>

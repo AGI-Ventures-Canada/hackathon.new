@@ -41,7 +41,7 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult 
   const fromEmail = input.from ?? process.env.RESEND_FROM_EMAIL
   if (!fromEmail) {
     console.error(
-      "RESEND_FROM_EMAIL environment variable is not set. Add it to .env.local (e.g. RESEND_FROM_EMAIL=noreply@getoatmeal.com)"
+      "RESEND_FROM_EMAIL environment variable is not set. Add it to .env.local (e.g. RESEND_FROM_EMAIL=noreply@hackathon.new)"
     )
     return null
   }

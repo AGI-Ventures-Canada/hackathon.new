@@ -77,7 +77,7 @@ function createAuthenticatedClient(flags: GlobalFlags): OatmealClient {
 }
 
 const BANNER = `
-  ${pc.bold("hackathon")} — CLI for the Oatmeal hackathon platform
+  ${pc.bold("hackathon")} — CLI for hackathon.new
 
   ${pc.dim("USAGE")}
     hackathon <command> [options]

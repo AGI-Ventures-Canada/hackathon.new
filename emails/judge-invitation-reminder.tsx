@@ -58,7 +58,7 @@ export default function JudgeInvitationReminderEmail({
 JudgeInvitationReminderEmail.PreviewProps = {
   inviterName: "Alex Ivany",
   hackathonName: "AI Innovation Hackathon 2026",
-  acceptUrl: "https://getoatmeal.com/judge-invite/xyz789",
+  acceptUrl: "https://hackathon.new/judge-invite/xyz789",
   expiresDate: "Friday, April 17, 2026",
   timeLeft: "3 days",
 } satisfies JudgeInvitationReminderEmailProps

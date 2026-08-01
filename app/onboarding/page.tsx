@@ -23,7 +23,7 @@ export default async function OnboardingPage({
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4">
       <div className="mb-8 text-center">
-        <h1 className="font-bold text-2xl text-foreground">Welcome to Oatmeal</h1>
+        <h1 className="font-bold text-2xl text-foreground">Welcome to hackathon.new</h1>
         <p className="text-muted-foreground text-sm mt-1">
           Create an organization or continue with your personal account
         </p>

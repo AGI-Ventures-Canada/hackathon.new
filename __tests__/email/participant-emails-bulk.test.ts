@@ -63,8 +63,8 @@ describe("sendBulkEmail", () => {
     sendEmailImpl = () => Promise.resolve({ id: "email_1" })
     hackathonRow = { data: { name: "AI Hackathon" }, error: null }
     participantsRow = { data: [{ clerk_user_id: "user_1", role: "participant" }], error: null }
-    process.env.RESEND_REPLY_TO_EMAIL = "support@getoatmeal.com"
-    process.env.RESEND_FROM_EMAIL = "noreply@getoatmeal.com"
+    process.env.RESEND_REPLY_TO_EMAIL = "support@hackathon.new"
+    process.env.RESEND_FROM_EMAIL = "noreply@hackathon.new"
   })
 
   afterEach(() => {
@@ -87,9 +87,9 @@ describe("sendBulkEmail", () => {
     expect(call.to).toBe("p1@test.com")
     expect(call.subject).toBe("Big update")
     expect(call.text).toBe("Hello team")
-    expect(call.replyTo).toBe("support@getoatmeal.com")
+    expect(call.replyTo).toBe("support@hackathon.new")
     expect((call.headers as Record<string, string>)["List-Unsubscribe"]).toBe(
-      "<mailto:support@getoatmeal.com?subject=unsubscribe>"
+      "<mailto:support@hackathon.new?subject=unsubscribe>"
     )
     expect(call.tags).toEqual([
       { name: "type", value: "participant_broadcast" },

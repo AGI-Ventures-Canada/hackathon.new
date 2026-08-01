@@ -134,7 +134,7 @@ function formatInvitation(invitation: ClerkOrganizationInvitationResource): Orga
 }
 
 function getOrganizationInviteRedirectUrl(): string {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://getoatmeal.com"
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://hackathon.new"
   return new URL("/home", appUrl).toString()
 }
 

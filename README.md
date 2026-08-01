@@ -1,4 +1,4 @@
-# Oatmeal
+# hackathon.new
 
 [![Vercel](https://img.shields.io/badge/Vercel-Deployed-black?logo=vercel)](https://vercel.com)
 [![CI](https://github.com/AGI-Ventures-Canada/oatmeal/actions/workflows/ci.yml/badge.svg)](https://github.com/AGI-Ventures-Canada/oatmeal/actions/workflows/ci.yml)
@@ -6,7 +6,7 @@
 [![Bun](https://img.shields.io/badge/Bun-Runtime-f9f1e1?logo=bun)](https://bun.sh/)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org/)
 
-**Oatmeal is the platform for running hackathons end-to-end — registration, teams, judging, prizes, and results.**
+**hackathon.new is the platform for running hackathons end-to-end — registration, teams, judging, prizes, and results.**
 
 Organizers launch an event in minutes, attendees form teams and submit projects, judges score with configurable rubrics, and winners are selected with transparent math. Run it in person, virtually, or both — from the dashboard, the CLI, an AI agent, or the API.
 
