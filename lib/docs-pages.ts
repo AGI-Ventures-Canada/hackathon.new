@@ -5,13 +5,13 @@ export type DocPage = {
 }
 
 export const DOC_PAGES: DocPage[] = [
-  { title: "Introduction", description: "Documentation for the Oatmeal hackathon platform.", url: "/docs" },
+  { title: "Introduction", description: "Documentation for the hackathon.new platform.", url: "/docs" },
   { title: "Getting Started", description: "Set up authentication and make your first API call.", url: "/docs/getting-started" },
   { title: "Authentication", description: "Understand the authentication modes and choose the right one for your use case.", url: "/docs/authentication" },
-  { title: "Oatmeal CLI", description: "Install and use the Oatmeal CLI to manage hackathons from your terminal.", url: "/docs/cli" },
+  { title: "hackathon.new CLI", description: "Install and use the hackathon.new CLI to manage hackathons from your terminal.", url: "/docs/cli" },
   { title: "CLI Getting Started", description: "Authenticate and run your first CLI commands.", url: "/docs/cli/getting-started" },
   { title: "API Keys Setup", description: "Create, configure, and manage API keys for programmatic access.", url: "/docs/guides/api-keys-setup" },
-  { title: "CLI for CI/CD & Automation", description: "Use the Oatmeal CLI in scripts, CI pipelines, and automated workflows.", url: "/docs/guides/cli-automation" },
+  { title: "CLI for CI/CD & Automation", description: "Use the hackathon.new CLI in scripts, CI pipelines, and automated workflows.", url: "/docs/guides/cli-automation" },
   { title: "Browsing Hackathons", description: "Discover hackathons, view submissions, and check results from the terminal.", url: "/docs/guides/cli-browsing" },
   { title: "Managing Judges & Scoring", description: "Set up judging criteria, manage judges, and handle scoring assignments from the CLI.", url: "/docs/guides/cli-judging" },
   { title: "CLI for Event Organizers", description: "Run a hackathon end-to-end from the command line.", url: "/docs/guides/cli-organizer" },
@@ -39,9 +39,9 @@ export const DOC_PAGES: DocPage[] = [
   { title: "Submissions API", description: "Create, update, and browse project submissions via the REST API.", url: "/docs/sdk/submissions" },
   { title: "Webhooks API", description: "Register and manage webhook endpoints via the REST API.", url: "/docs/sdk/webhooks" },
   { title: "Hackathon Skills", description: "Installable AI agent skills for hackathon management, planning, and participation.", url: "/docs/skills" },
-  { title: "Hackathon API Skill", description: "AI skill for interacting with the Oatmeal REST API directly via curl commands.", url: "/docs/skills/hackathon-api" },
+  { title: "Hackathon API Skill", description: "AI skill for interacting with the hackathon.new REST API directly via curl commands.", url: "/docs/skills/hackathon-api" },
   { title: "Hackathon Attendee Skill", description: "AI skill with tips and best practices for hackathon participants.", url: "/docs/skills/hackathon-attendee" },
-  { title: "Hackathon CLI Skill", description: "AI skill for managing hackathons from the terminal using the Oatmeal CLI tool.", url: "/docs/skills/hackathon-cli" },
+  { title: "Hackathon CLI Skill", description: "AI skill for managing hackathons from the terminal using the hackathon.new CLI tool.", url: "/docs/skills/hackathon-cli" },
   { title: "Hackathon Organizer Skill", description: "AI skill with best practices and tips for planning and running successful hackathons.", url: "/docs/skills/hackathon-organizer" },
 ]
 

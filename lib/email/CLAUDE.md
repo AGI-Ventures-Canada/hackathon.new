@@ -74,7 +74,7 @@ export default function MyEmail({ name, actionUrl }: MyEmailProps) {
 
 MyEmail.PreviewProps = {
   name: "Jane",
-  actionUrl: "https://getoatmeal.com/action",
+  actionUrl: "https://hackathon.new/action",
 } satisfies MyEmailProps
 ```
 

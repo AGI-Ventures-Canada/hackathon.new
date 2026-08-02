@@ -44,7 +44,7 @@ describe("Team Invitation Email", () => {
   beforeEach(() => {
     resetMocks()
     process.env.NEXT_PUBLIC_APP_URL = "https://example.com"
-    process.env.RESEND_FROM_EMAIL = "noreply@getoatmeal.com"
+    process.env.RESEND_FROM_EMAIL = "noreply@hackathon.new"
   })
 
   afterEach(() => {
@@ -257,14 +257,14 @@ describe("Team Invitation Email", () => {
       await sendTeamInvitationEmail(validInput)
 
       const callArgs = mockSendEmail.mock.calls[0][0]
-      expect(callArgs.from).toBe("John Doe via Oatmeal <noreply@getoatmeal.com>")
+      expect(callArgs.from).toBe('"John Doe via hackathon.new" <noreply@hackathon.new>')
     })
 
     it("quotes the from display name when it has special characters", async () => {
       await sendTeamInvitationEmail({ ...validInput, inviterName: "Doe, Jane" })
 
       const callArgs = mockSendEmail.mock.calls[0][0]
-      expect(callArgs.from).toBe('"Doe, Jane via Oatmeal" <noreply@getoatmeal.com>')
+      expect(callArgs.from).toBe('"Doe, Jane via hackathon.new" <noreply@hackathon.new>')
     })
 
     it("omits a personalized from when inviter name is the generic fallback", async () => {

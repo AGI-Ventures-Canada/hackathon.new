@@ -2,10 +2,10 @@ import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test"
 import { renderHook, act, waitFor, cleanup } from "@testing-library/react"
 
 const mockRefresh = mock(() => {})
-
-mock.module("next/navigation", () => ({
-  useRouter: () => ({ refresh: mockRefresh }),
-}))
+const navigationState = (globalThis as typeof globalThis & {
+  __nextNavState: { router: { refresh: typeof mockRefresh } }
+}).__nextNavState
+navigationState.router.refresh = mockRefresh
 
 const mockFetch = mock<(url: string, init?: RequestInit) => Promise<Response>>(
   () => Promise.resolve(new Response(null, { status: 200 })),

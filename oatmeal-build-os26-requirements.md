@@ -1,8 +1,8 @@
-# Oatmeal Feature Requirements: Build OS26
+# hackathon.new Feature Requirements: Build OS26
 
 ## Purpose
 
-This document specifies 13 features Oatmeal needs to support Build OS26, a full-day hackathon for AI-native startup founders hosted by Mila (Quebec AI Institute) on April 28, 2026 in Montreal. The event is organized by Mila Ventures and will host 60-90 curated participants across 30+ teams competing for $30K in prizes over a 5-hour build window.
+This document specifies 13 features hackathon.new needs to support Build OS26, a full-day hackathon for AI-native startup founders hosted by Mila (Quebec AI Institute) on April 28, 2026 in Montreal. The event is organized by Mila Ventures and will host 60-90 curated participants across 30+ teams competing for $30K in prizes over a 5-hour build window.
 
 Build OS26 is a startup competition, not a coding competition. Both technical and business founders compete. Every attendee builds. There is no audience. The event enforces a "Laptops Open or Don't Come" policy, a build-from-scratch rule, and a curated guest list where every person was specifically chosen.
 
@@ -78,7 +78,7 @@ Submissions must be immediately accessible to judges. Within minutes of the free
 
 **Who it's for:** Judges (6), Organizer, MC
 
-**What it does:** After submissions close, Oatmeal routes approximately 15 teams to each of the 2 simultaneous pitch rooms. Each room has 3 assigned judges. The system enforces 4-minute slots per team: 2 minutes for the demo, 2 minutes for Q&A.
+**What it does:** After submissions close, hackathon.new routes approximately 15 teams to each of the 2 simultaneous pitch rooms. Each room has 3 assigned judges. The system enforces 4-minute slots per team: 2 minutes for the demo, 2 minutes for Q&A.
 
 The routing should be configurable by the organizer. Default behavior: split teams evenly across rooms, keeping teams competing in the same prize category distributed across both rooms (so judges in each room see a mix of Technical and Business submissions).
 
@@ -94,7 +94,7 @@ A team queue display shows the presentation order so teams in the hallway know w
 
 **Who it's for:** Judges (6), Organizer
 
-**What it does:** Oatmeal provides judges with a structured scoring interface for two prize categories:
+**What it does:** hackathon.new provides judges with a structured scoring interface for two prize categories:
 
 **Best Technical Build** rubric:
 - Technical ambition (how hard was the problem they chose?)

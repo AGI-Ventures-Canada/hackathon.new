@@ -1,6 +1,6 @@
 ---
 name: posthog-analytics
-description: PostHog analytics setup, patterns, and troubleshooting for the Oatmeal platform. Use when debugging missing PostHog events, adding new tracked events, modifying the /t proxy, or troubleshooting analytics on production.
+description: PostHog analytics setup, patterns, and troubleshooting for hackathon.new. Use when debugging missing PostHog events, adding new tracked events, modifying the /t proxy, or troubleshooting analytics on production.
 allowed-tools: Read Glob Grep Bash(curl:*) Bash(vercel:*) Bash(git:*) Bash(bun:*) Write Edit
 metadata:
   internal: true
@@ -76,8 +76,8 @@ No PostHog SDK or env vars are needed in the CLI package.
 
 2. **Check the key is baked into the client JS bundle:**
    ```bash
-   curl -sL https://www.getoatmeal.com | grep -o '/_next/static/chunks/[^"]*\.js[^"]*' | while read chunk; do
-     result=$(curl -sL "https://www.getoatmeal.com${chunk}" 2>&1 | grep -c 'phc_')
+   curl -sL https://hackathon.new | grep -o '/_next/static/chunks/[^"]*\.js[^"]*' | while read chunk; do
+     result=$(curl -sL "https://hackathon.new${chunk}" 2>&1 | grep -c 'phc_')
      if [ "$result" -gt "0" ]; then echo "Key found in $chunk"; break; fi
    done
    ```
@@ -85,13 +85,13 @@ No PostHog SDK or env vars are needed in the CLI package.
 
 3. **Check the /t proxy returns 200:**
    ```bash
-   curl -s "https://www.getoatmeal.com/t/decide" | head -20
+   curl -s "https://hackathon.new/t/decide" | head -20
    ```
    Should return JSON from PostHog, not a redirect or error.
 
 4. **Test sending an event directly:**
    ```bash
-   curl -s -X POST "https://www.getoatmeal.com/t/e" \
+   curl -s -X POST "https://hackathon.new/t/e" \
      -H "Content-Type: application/json" \
      -d '{"api_key":"YOUR_KEY","event":"test","properties":{"distinct_id":"debug"}}'
    ```
@@ -99,7 +99,7 @@ No PostHog SDK or env vars are needed in the CLI package.
 
 5. **Check for trailing slash redirects:**
    ```bash
-   curl -sI -X POST "https://www.getoatmeal.com/t/e/" | grep -i "HTTP\|location"
+   curl -sI -X POST "https://hackathon.new/t/e/" | grep -i "HTTP\|location"
    ```
    If you see a 308 redirect, `skipTrailingSlashRedirect: true` is missing from `next.config.ts`.
 

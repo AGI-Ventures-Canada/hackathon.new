@@ -106,7 +106,7 @@ describe("MobileHeader", () => {
       render(<MobileHeader />)
       const header = getHeader()
       expect(within(header).getByText("Open menu")).toBeDefined()
-      expect(within(header).getByText("Oatmeal")).toBeDefined()
+      expect(within(header).getByText("hackathon.new")).toBeDefined()
     })
 
     it("shows user avatar initial when signed in without image", () => {

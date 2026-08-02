@@ -1,6 +1,6 @@
 ---
 name: local-dev-setup
-description: Helps set up local development environment for the Oatmeal project. Use when someone asks how to run the project locally, set up local database, start local Supabase, configure .env or environment variables, get env keys, run dev server, install dependencies, or troubleshoot local setup issues.
+description: Helps set up the local development environment for hackathon.new. Use when someone asks how to run the project locally, set up local database, start local Supabase, configure .env or environment variables, get env keys, run dev server, install dependencies, or troubleshoot local setup issues.
 allowed-tools: Read Glob Bash(bun:*) Bash(bunx:*) Bash(supabase:*) Bash(git:*) Bash(which:*) Bash(brew:*) Bash(node:*) Bash(npx:*) Bash(docker:*) Bash(curl:*) Bash(open:*) Bash(cat:*) Bash(cp:*) Bash(ls:*) Bash(lsof:*) Bash(kill:*) Bash(rm:-rf node_modules*)
 metadata:
   internal: true
@@ -8,7 +8,7 @@ metadata:
 
 # Developer Onboarding
 
-Guide new developers through setting up the Oatmeal project interactively. Work through each step, verify completion, and troubleshoot issues as they arise.
+Guide new developers through setting up hackathon.new interactively. Work through each step, verify completion, and troubleshoot issues as they arise.
 
 ## Automated Setup
 
@@ -68,7 +68,7 @@ ADMIN_ENABLED=true
 
 # Resend (email sending)
 RESEND_API_KEY=re_...
-RESEND_FROM_EMAIL=noreply@getoatmeal.com
+RESEND_FROM_EMAIL=noreply@hackathon.new
 
 # App URL (used for email links, invite URLs, etc.)
 NEXT_PUBLIC_APP_URL=http://localhost:3000

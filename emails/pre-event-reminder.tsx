@@ -63,7 +63,7 @@ PreEventReminderEmail.PreviewProps = {
   deadlineLabel: "Registration closes",
   timeLeft: "2 days",
   deadlineDate: "Friday, May 1, 2026",
-  ctaUrl: "https://getoatmeal.com/e/ai-innovation-2026",
+  ctaUrl: "https://hackathon.new/e/ai-innovation-2026",
   ctaLabel: "Register Now",
   heading: "Don\u2019t Miss Out!",
   body: "registration for AI Innovation Hackathon 2026 is closing soon. Make sure to sign up before the deadline.",

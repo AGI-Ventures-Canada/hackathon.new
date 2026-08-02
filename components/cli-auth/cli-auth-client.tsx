@@ -13,7 +13,7 @@ export function CliAuthClient({ result }: { result: { success: boolean; error?: 
           {result.error ?? "Something went wrong. Please try again."}
         </p>
         <p className="text-sm text-muted-foreground">
-          Run <code className="bg-muted px-1.5 py-0.5 rounded">oatmeal login</code>{" "}
+          Run <code className="bg-muted px-1.5 py-0.5 rounded">hackathon login</code>{" "}
           again from your terminal.
         </p>
       </div>

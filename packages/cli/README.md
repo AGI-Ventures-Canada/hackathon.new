@@ -1,6 +1,6 @@
 # @agi-ventures-canada/hackathon-cli
 
-Run hackathons from your terminal. This is the command-line companion to [Oatmeal](https://getoatmeal.com) — create events, manage teams, configure judging, pick winners, send announcements, and more.
+Run hackathons from your terminal. This is the command-line companion to [hackathon.new](https://hackathon.new) — create events, manage teams, configure judging, pick winners, send announcements, and more.
 
 ## Install
 
@@ -29,7 +29,7 @@ The API key is stored at `~/.hackathon/config.json` — log in once, use it from
 ### Which workspace does the CLI use?
 
 The CLI uses the workspace that is active in your browser when you run `hackathon login`.
-If your personal workspace is active, new events are created there. To create events for an organization, switch to that organization in Oatmeal, then run `hackathon login` again.
+If your personal workspace is active, new events are created there. To create events for an organization, switch to that organization in hackathon.new, then run `hackathon login` again.
 
 Check the saved workspace before creating anything:
 
@@ -40,9 +40,9 @@ hackathon whoami
 ### Pointing at a different environment
 
 ```bash
-hackathon login --base-url https://staging.getoatmeal.com
+hackathon login --base-url https://staging.hackathon.new
 hackathon login --base-url http://localhost:3000
-hackathon login                              # default: production (getoatmeal.com)
+hackathon login                              # default: production (hackathon.new)
 ```
 
 The base URL is saved with the key, so commands work against whatever environment you logged in to.
@@ -91,8 +91,8 @@ That gives your agent two relevant skills: `hackathon-cli` (this package) and `h
 
 ## Links
 
-- Platform: https://getoatmeal.com
-- Docs: https://getoatmeal.com/docs
+- Platform: https://hackathon.new
+- Docs: https://hackathon.new/docs
 - Source: https://github.com/AGI-Ventures-Canada/oatmeal (CLI lives in `packages/cli/`)
 - Skills: https://github.com/AGI-Ventures-Canada/oatmeal/tree/main/skills
 - Issues: https://github.com/AGI-Ventures-Canada/oatmeal/issues

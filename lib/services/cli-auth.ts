@@ -116,7 +116,7 @@ export async function completeCliAuthSession(
   }
 
   const date = new Date().toISOString().split("T")[0]
-  const keyName = `Oatmeal CLI (${hostname ?? "unknown"}, ${date})`
+  const keyName = `hackathon.new CLI (${hostname ?? "unknown"}, ${date})`
 
   const result = await createApiKey({
     tenantId,

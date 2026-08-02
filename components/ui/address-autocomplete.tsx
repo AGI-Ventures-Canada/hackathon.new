@@ -52,7 +52,7 @@ export function AddressAutocomplete({
         addressdetails: "0",
       })
       const res = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
-        headers: { "User-Agent": "Oatmeal Hackathon Platform" },
+        headers: { "User-Agent": "hackathon.new" },
       })
       if (res.ok) {
         const data: NominatimResult[] = await res.json()

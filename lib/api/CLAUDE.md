@@ -1,6 +1,6 @@
 # Elysia API Layer
 
-This directory contains the Elysia API server for the Oatmeal hackathon platform, handling all `/api/*` routes.
+This directory contains the Elysia API server for hackathon.new, handling all `/api/*` routes.
 
 ## Architecture
 

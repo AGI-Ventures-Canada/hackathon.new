@@ -16,7 +16,7 @@ describe("sendPrizeShippedEmail", () => {
   beforeEach(() => {
     mockSendEmail.mockClear()
     sendEmailImpl = () => Promise.resolve({ id: "email_123" })
-    process.env.NEXT_PUBLIC_APP_URL = "https://test.oatmeal.com"
+    process.env.NEXT_PUBLIC_APP_URL = "https://test.hackathon.new"
   })
 
   afterEach(() => {

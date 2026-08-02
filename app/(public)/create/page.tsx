@@ -2,7 +2,7 @@ import { CreateFromScratchEditor } from "@/components/hackathon/create-from-scra
 import type { Metadata } from "next"
 
 export const metadata: Metadata = {
-  title: "Create Hackathon | Oatmeal",
+  title: "Create Hackathon | hackathon.new",
   description: "Create a new hackathon from scratch.",
 }
 

@@ -67,9 +67,10 @@ mock.module("@/lib/db/client", () => ({
   supabase: () => ({ from: fromImpl, storage: { from: () => ({}) } }),
 }))
 
-const { loadExportData, finalizeExport, failExport } = await import(
-  "@/lib/workflows/export-submissions/steps"
-)
+const { loadExportData, finalizeExport, failExport, buildPdfScreenshotMap } =
+  await import("@/lib/workflows/export-submissions/steps")
+
+const { default: sharp } = await import("sharp")
 
 const HACKATHON_ID = "11111111-1111-1111-1111-111111111111"
 const EXPORT_ID = "22222222-2222-2222-2222-222222222222"
@@ -196,6 +197,51 @@ describe("finalizeExport", () => {
 
     expect(mockMarkExportReady).toHaveBeenCalledTimes(1)
     expect(mockSendExportReadyEmail).not.toHaveBeenCalled()
+  })
+})
+
+describe("buildPdfScreenshotMap", () => {
+  async function makeWebp(): Promise<Buffer> {
+    return sharp({
+      create: {
+        width: 64,
+        height: 48,
+        channels: 3,
+        background: { r: 20, g: 90, b: 180 },
+      },
+    })
+      .webp({ quality: 70 })
+      .toBuffer()
+  }
+
+  it("converts webp screenshots to png keyed by submission id", async () => {
+    const webp = await makeWebp()
+    const map = await buildPdfScreenshotMap([
+      { path: "media/sub-1/screenshot.webp", buffer: webp },
+    ])
+
+    expect(Object.keys(map)).toEqual(["sub-1"])
+    expect(map["sub-1"]!.format).toBe("png")
+    expect(map["sub-1"]!.data.subarray(1, 4).toString()).toBe("PNG")
+  })
+
+  it("ignores non-screenshot media (e.g. social OG images)", async () => {
+    const webp = await makeWebp()
+    const map = await buildPdfScreenshotMap([
+      { path: "media/sub-1/social-1-og.webp", buffer: webp },
+    ])
+    expect(map).toEqual({})
+  })
+
+  it("skips screenshots that fail to decode without throwing", async () => {
+    const map = await buildPdfScreenshotMap([
+      { path: "media/sub-1/screenshot.webp", buffer: Buffer.from("not an image") },
+    ])
+    expect(map).toEqual({})
+  })
+
+  it("returns an empty map when there are no images", async () => {
+    expect(await buildPdfScreenshotMap([])).toEqual({})
   })
 })
 

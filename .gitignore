@@ -91,3 +91,6 @@ supabase/.temp
 
 # email screenshots
 .github/email-screenshots/
+
+# generated DB types
+lib/db/types.ts

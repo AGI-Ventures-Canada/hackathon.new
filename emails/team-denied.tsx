@@ -51,5 +51,5 @@ export default function TeamDeniedEmail({
 TeamDeniedEmail.PreviewProps = {
   teamName: "Neural Navigators",
   hackathonName: "AI Innovation Hackathon 2026",
-  eventUrl: "https://getoatmeal.com/e/ai-innovation-2026",
+  eventUrl: "https://hackathon.new/e/ai-innovation-2026",
 } satisfies TeamDeniedEmailProps

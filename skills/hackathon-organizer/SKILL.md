@@ -21,11 +21,11 @@ Comprehensive guide for planning and running successful hackathons, from first-t
 - User asks about hackathon logistics, timelines, or budgets
 - User asks about sponsor outreach or management
 - User asks how to set up judging or prizes
-- User is planning an event on the Oatmeal platform and wants strategic advice
+- User is planning an event on hackathon.new and wants strategic advice
 
 ## When NOT to Activate
 
-- User wants to use the Oatmeal API to create/manage a hackathon (use `hackathon-cli` instead)
+- User wants to use the hackathon.new API to create/manage a hackathon (use `hackathon-cli` instead)
 - User is attending a hackathon as a participant (use `hackathon-attendee` instead)
 - User is writing hackathon platform code
 
@@ -41,7 +41,7 @@ Comprehensive guide for planning and running successful hackathons, from first-t
 
 ### 1-3 Months Before
 
-- **Open registration** — use a platform (like Oatmeal) to manage signups. Collect dietary restrictions, t-shirt sizes, and experience level
+- **Open registration** — use a platform like hackathon.new to manage signups. Collect dietary restrictions, t-shirt sizes, and experience level
 - **Recruit mentors and judges** — aim for 1 mentor per 5-8 teams and 1 judge per 10-15 submissions. Judges should have diverse backgrounds (technical, business, design)
 - **Plan the schedule** — include opening ceremony, hacking time, workshops, meals, fun activities, judging, and closing ceremony
 - **Order swag and supplies** — t-shirts, stickers, lanyards, extension cords, whiteboards, markers, snacks
@@ -150,7 +150,7 @@ Comprehensive guide for planning and running successful hackathons, from first-t
 - **Send thank-you emails** within 48 hours — to participants, sponsors, judges, mentors, and volunteers
 - **Share a highlight reel** — photos, videos, winning projects
 - **Collect feedback** — short survey (5-10 questions max) sent the day after
-- **Publish results** — use the Oatmeal platform to publish results publicly
+- **Publish results** — use hackathon.new to publish results publicly
 - **Write a retrospective** — what worked, what didn't, what to change. Share with your team
 - **Maintain community** — keep the Discord/Slack active. Announce the next event early
 

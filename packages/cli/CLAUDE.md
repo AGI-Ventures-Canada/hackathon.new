@@ -63,8 +63,8 @@ bun cli judging auto-assign <hackathon-id> --per-judge 3
 
 ## Environment Targets
 - Local: `--base-url http://localhost:3000`
-- Staging: `--base-url https://staging.getoatmeal.com`
-- Production: default (`https://getoatmeal.com`)
+- Staging: `--base-url https://staging.hackathon.new`
+- Production: default (`https://hackathon.new`)
 
 ## Build & Distribution
 

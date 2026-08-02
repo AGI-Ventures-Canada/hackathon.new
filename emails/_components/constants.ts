@@ -37,6 +37,5 @@ export const fontFamily =
 export const monoFontFamily =
   "'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', 'Courier New', monospace"
 
-export const brandUrl = "https://getoatmeal.com"
-export const supportEmail = "support@getoatmeal.com"
-
+export const brandUrl = "https://hackathon.new"
+export const supportEmail = "support@hackathon.new"

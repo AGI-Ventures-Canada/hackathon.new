@@ -25,8 +25,8 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "Oatmeal",
-  description: "Hackathon platform",
+  title: "hackathon.new",
+  description: "Run your hackathon from start to finish.",
 }
 
 async function shouldShowDevTool(): Promise<boolean> {
