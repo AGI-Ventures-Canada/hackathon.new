@@ -56,6 +56,7 @@ Required environment variables:
 # Clerk (authentication)
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
 CLERK_SECRET_KEY=sk_test_...
+CLERK_WEBHOOK_SIGNING_SECRET=whsec_...
 
 # API Key hashing (required for creating/verifying API keys)
 API_KEY_SECRET=<generate-with-openssl>
@@ -83,7 +84,7 @@ TAVILY_API_KEY=tvly-...
 # SUPABASE_SERVICE_ROLE_KEY=...
 ```
 
-**Get Clerk keys from:** https://dashboard.clerk.com → API Keys
+**Get Clerk keys from:** https://dashboard.clerk.com → API Keys. Get `CLERK_WEBHOOK_SIGNING_SECRET` from the Clerk webhook endpoint configured for `POST /api/webhooks/clerk` and the `email.created` event.
 
 **Generate API_KEY_SECRET and ENCRYPTION_KEY:** Both are 32-byte hex secrets. `API_KEY_SECRET` hashes API keys before storing them. `ENCRYPTION_KEY` encrypts API keys in CLI auth sessions (required for `hackathon login` to work). Generate both with:
 
