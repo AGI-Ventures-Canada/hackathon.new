@@ -38,6 +38,7 @@ emails/                              # React Email components
   agent-notification.tsx             # Agent run notification
 lib/email/
   resend.ts                          # Resend SDK wrapper (sendEmail, webhooks)
+  clerk-emails.ts                    # Forwards verified Clerk email events through Resend
   utils.ts                           # Shared sanitizeTag()
   team-invitations.ts                # Send logic + DB queries
   judge-invitations.ts               # Send logic for judge emails
@@ -153,6 +154,19 @@ Email arrives → Resend webhook → Verify signature →
   Store email → Find linked agent → Trigger run
 ```
 
+## Sending Clerk Emails Through Resend
+
+Clerk owns authentication and organization invitation state, but Oatmeal owns delivery:
+
+1. Configure `POST /api/webhooks/clerk` in the Clerk Dashboard and subscribe to `email.created`.
+2. Set `CLERK_WEBHOOK_SIGNING_SECRET` from that endpoint in every deployed environment.
+3. Send a Clerk test event and confirm the endpoint returns `200`.
+4. Disable **Delivered by Clerk** for each email template that Resend should deliver.
+
+The webhook verifies Clerk's signature, ignores messages already delivered by Clerk, and forwards Clerk's rendered HTML, plain text, recipient, and subject through `sendEmail()`. The Clerk email ID is used as the Resend idempotency key so webhook retries do not create duplicate messages.
+
+Do not disable Clerk delivery before the webhook and signing secret are live. Clerk configures delivery per template, so repeat the test for every template you move to Resend.
+
 ### Email Address Configuration
 
 ```typescript
@@ -196,6 +210,7 @@ const isValid = verifyResendWebhook(rawBody, {
 | `RESEND_FROM_EMAIL` | Default from address |
 | `RESEND_WEBHOOK_SECRET` | For verifying inbound webhooks |
 | `RESEND_RECEIVING_DOMAIN` | Domain for inbound email addresses |
+| `CLERK_WEBHOOK_SIGNING_SECRET` | Verifies Clerk `email.created` webhooks |
 
 ## Email-Triggered Agent Example
 

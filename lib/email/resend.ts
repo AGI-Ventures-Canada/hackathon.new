@@ -24,6 +24,7 @@ export type SendEmailInput = {
   replyTo?: string
   headers?: Record<string, string>
   tags?: Array<{ name: string; value: string }>
+  idempotencyKey?: string
 }
 
 export interface SendEmailResult {
@@ -61,7 +62,10 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult 
     if (input.headers) emailOptions.headers = input.headers
     if (input.tags) emailOptions.tags = input.tags
 
-    const { data, error } = await client.emails.send(emailOptions)
+    const { data, error } = await client.emails.send(
+      emailOptions,
+      input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : undefined
+    )
 
     if (error) {
       console.error("Failed to send email:", error)
