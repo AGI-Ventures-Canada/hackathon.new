@@ -188,6 +188,14 @@ const groups: Group[] = [
     name: "email (participant-emails-bulk)",
     args: ["__tests__/email/participant-emails-bulk.test.ts"],
   },
+  {
+    name: "email (Clerk forwarding)",
+    args: ["__tests__/email/clerk-emails.test.ts"],
+  },
+  {
+    name: "email (Resend wrapper)",
+    args: ["__tests__/email/resend-wrapper.test.ts"],
+  },
 ]
 
 for (const group of groups) {
