@@ -25,12 +25,17 @@ mock.module("@/components/ui/select", () => ({
     return <div data-testid="prize-filter-select">{children}</div>
   },
   SelectTrigger: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="prize-filter-trigger" role="combobox">
+    <div
+      data-testid="prize-filter-trigger"
+      role="combobox"
+      aria-controls="prize-filter-options"
+      aria-expanded="false"
+    >
       {children}
     </div>
   ),
   SelectValue: () => <span data-testid="prize-filter-value">{selectCurrentValue}</span>,
-  SelectContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  SelectContent: ({ children }: { children: React.ReactNode }) => <div id="prize-filter-options">{children}</div>,
   SelectItem: ({
     children,
     value,

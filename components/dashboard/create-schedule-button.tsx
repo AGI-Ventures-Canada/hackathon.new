@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
-// @ts-nocheck
 "use client"
 
 import { useState } from "react"
@@ -25,7 +23,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { AgentSelector } from "@/components/dashboard/agent-selector"
 
 const frequencies = [
   { value: "once", label: "Once" },
@@ -34,6 +31,12 @@ const frequencies = [
   { value: "weekly", label: "Weekly" },
   { value: "monthly", label: "Monthly" },
   { value: "cron", label: "Custom (Cron)" },
+]
+
+const jobTypes = [
+  { value: "echo", label: "Echo input" },
+  { value: "delay", label: "Delay" },
+  { value: "sdk-test", label: "SDK test" },
 ]
 
 const commonTimezones = [
@@ -58,12 +61,12 @@ export function CreateScheduleButton() {
   const [cronExpression, setCronExpression] = useState("")
   const [timezone, setTimezone] = useState("UTC")
   const [runTime, setRunTime] = useState("09:00")
-  const [agentId, setAgentId] = useState<string | undefined>()
+  const [jobType, setJobType] = useState("echo")
   const [prompt, setPrompt] = useState("")
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault()
-    if (!name.trim() || !agentId || loading) return
+    if (!name.trim() || !jobType || loading) return
 
     setLoading(true)
     try {
@@ -76,7 +79,7 @@ export function CreateScheduleButton() {
           cronExpression: frequency === "cron" ? cronExpression.trim() : undefined,
           timezone,
           runTime: frequency !== "cron" ? runTime : undefined,
-          agentId,
+          jobType,
           input: prompt.trim() ? { prompt: prompt.trim() } : undefined,
         }),
       })
@@ -88,7 +91,7 @@ export function CreateScheduleButton() {
         setCronExpression("")
         setTimezone("UTC")
         setRunTime("09:00")
-        setAgentId(undefined)
+        setJobType("echo")
         setPrompt("")
         router.refresh()
       }
@@ -97,7 +100,7 @@ export function CreateScheduleButton() {
     }
   }
 
-  const isValid = name.trim() && agentId && (frequency !== "cron" || cronExpression.trim())
+  const isValid = name.trim() && jobType && (frequency !== "cron" || cronExpression.trim())
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -121,7 +124,7 @@ export function CreateScheduleButton() {
           <DialogHeader>
             <DialogTitle>Create New Schedule</DialogTitle>
             <DialogDescription>
-              Schedule an agent to run automatically at specific intervals
+              Pick a job and when it should run.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
@@ -139,11 +142,19 @@ export function CreateScheduleButton() {
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="agent">Agent</Label>
-              <AgentSelector
-                value={agentId}
-                onValueChange={setAgentId}
-              />
+              <Label htmlFor="job-type">Job</Label>
+              <Select value={jobType} onValueChange={setJobType}>
+                <SelectTrigger id="job-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {jobTypes.map((job) => (
+                    <SelectItem key={job.value} value={job.value}>
+                      {job.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -214,7 +225,7 @@ export function CreateScheduleButton() {
             )}
 
             <div className="grid gap-2">
-              <Label htmlFor="prompt">Prompt (optional)</Label>
+              <Label htmlFor="prompt">Input (optional)</Label>
               <Textarea
                 id="prompt"
                 placeholder="Check for updates and send a summary"
@@ -223,7 +234,7 @@ export function CreateScheduleButton() {
                 onChange={(e) => setPrompt(e.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                Optional prompt to pass to the agent when triggered
+                This text is sent to the job when it runs.
               </p>
             </div>
           </div>

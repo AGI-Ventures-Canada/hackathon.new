@@ -1,10 +1,14 @@
-import { describe, expect, it, beforeEach } from "bun:test"
+import { describe, expect, it, beforeEach, mock } from "bun:test"
 import type { Webhook, WebhookEvent } from "@/lib/db/hackathon-types"
+import { isAllowedHttpsUrl } from "@/lib/utils/safe-fetch-url"
 import {
   createChainableMock,
   resetSupabaseMocks,
   setMockFromImplementation,
 } from "../lib/supabase-mock"
+
+const mockFetch = mock(() => Promise.resolve(new Response("ok")))
+globalThis.fetch = mockFetch as unknown as typeof fetch
 
 const {
   createWebhook,
@@ -16,6 +20,7 @@ const {
   incrementFailureCount,
   resetFailureCount,
   recordDelivery,
+  deliverWebhook,
 } = await import("@/lib/services/webhooks")
 
 const {
@@ -42,6 +47,8 @@ const mockWebhook: Webhook = {
 describe("Webhooks Service", () => {
   beforeEach(() => {
     resetSupabaseMocks()
+    mockFetch.mockReset()
+    mockFetch.mockResolvedValue(new Response("ok"))
   })
 
   describe("createWebhook", () => {
@@ -100,6 +107,48 @@ describe("Webhooks Service", () => {
 
       expect(result).not.toBeNull()
       expect(result?.webhook.events).toHaveLength(4)
+    })
+
+    it("rejects private webhook addresses before writing", async () => {
+      const chain = createChainableMock({ data: mockWebhook, error: null })
+      setMockFromImplementation(() => chain)
+
+      const result = await createWebhook({
+        tenantId: "tenant-123",
+        url: "http://127.0.0.1/webhook",
+        events: ["hackathon.created"],
+      })
+
+      expect(result).toBeNull()
+      expect(chain.insert).not.toHaveBeenCalled()
+    })
+  })
+
+  describe("deliverWebhook", () => {
+    it("rejects unsafe webhook URLs before sending", async () => {
+      const result = await deliverWebhook(
+        { ...mockWebhook, url: "http://169.254.169.254/latest/meta-data" },
+        "hackathon.created",
+        { id: "event-1" }
+      )
+
+      expect(result).toEqual({ success: false, error: "Unsafe webhook URL" })
+      expect(mockFetch).not.toHaveBeenCalled()
+    })
+
+    it("does not follow redirects", async () => {
+      mockFetch.mockResolvedValueOnce(new Response(null, {
+        status: 302,
+        headers: { location: "http://127.0.0.1/private" },
+      }))
+
+      const result = await deliverWebhook(mockWebhook, "hackathon.created", { id: "event-1" })
+
+      expect(result.success).toBe(false)
+      expect(mockFetch).toHaveBeenCalledWith(
+        mockWebhook.url,
+        expect.objectContaining({ redirect: "error" })
+      )
     })
   })
 
@@ -219,7 +268,7 @@ describe("Webhooks Service", () => {
   describe("deleteWebhook", () => {
     it("returns true on successful deletion", async () => {
       const chain = createChainableMock({
-        data: null,
+        data: [{ id: "wh-1" }],
         error: null,
       })
       setMockFromImplementation(() => chain)
@@ -227,6 +276,12 @@ describe("Webhooks Service", () => {
       const result = await deleteWebhook("wh-1", "tenant-123")
 
       expect(result).toBe(true)
+    })
+
+    it("returns false when the webhook is not in the tenant", async () => {
+      setMockFromImplementation(() => createChainableMock({ data: [], error: null }))
+
+      expect(await deleteWebhook("wh-other", "tenant-123")).toBe(false)
     })
 
     it("returns false on error", async () => {
@@ -535,7 +590,6 @@ describe("Webhook URL Validation", () => {
   const validUrls = [
     "https://example.com/webhook",
     "https://api.myapp.com/callbacks/agents",
-    "http://localhost:3000/dev/webhook",
     "https://hooks.slack.com/services/T00/B00/XXX",
     "https://sub.example.com/api/v1/hooks",
     "https://example.com:8080/webhook",
@@ -543,9 +597,7 @@ describe("Webhook URL Validation", () => {
 
   for (const url of validUrls) {
     it(`accepts valid URL: ${url}`, () => {
-      expect(() => new URL(url)).not.toThrow()
-      const parsed = new URL(url)
-      expect(["http:", "https:"]).toContain(parsed.protocol)
+      expect(isAllowedHttpsUrl(url)).toBe(true)
     })
   }
 
@@ -553,20 +605,14 @@ describe("Webhook URL Validation", () => {
     "not-a-url",
     "ftp://example.com/file",
     "://missing-protocol",
+    "http://localhost:3000/dev/webhook",
+    "http://example.com/webhook",
+    "http://169.254.169.254/latest/meta-data",
   ]
 
   for (const url of invalidUrls) {
     it(`rejects invalid URL: ${url}`, () => {
-      let isValid = true
-      try {
-        const parsed = new URL(url)
-        if (!["http:", "https:"].includes(parsed.protocol)) {
-          isValid = false
-        }
-      } catch {
-        isValid = false
-      }
-      expect(isValid).toBe(false)
+      expect(isAllowedHttpsUrl(url)).toBe(false)
     })
   }
 })

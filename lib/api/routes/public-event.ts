@@ -5,7 +5,7 @@ import { listCategories } from "@/lib/services/categories"
 import { listPublishedAnnouncements } from "@/lib/services/announcements"
 import { listScheduleItems } from "@/lib/services/schedule-items"
 import { submitSocialUrl } from "@/lib/services/social-submissions"
-import { createMentorRequest, listMentorQueue, claimRequest, resolveRequest } from "@/lib/services/mentor-requests"
+import { createMentorRequest, listMentorQueue, claimRequest, resolveRequest, getMentorParticipantId } from "@/lib/services/mentor-requests"
 import { getWinnerPageData } from "@/lib/services/winner-pages"
 import { resolvePrincipal } from "@/lib/auth/principal"
 import { pendingTeamApprovalResponse } from "@/lib/api/responses"
@@ -94,11 +94,10 @@ export const publicEventRoutes = new Elysia({ prefix: "/public" })
     const principal = await resolvePrincipal(request)
     if (principal.kind !== "user" && principal.kind !== "admin") { set.status = 401; return { error: "Authentication required" } }
 
-    const { getParticipantWithTeam } = await import("@/lib/services/submissions")
-    const participant = await getParticipantWithTeam(hackathon!.id, principal.userId)
-    if (!participant) { set.status = 403; return { error: "Not a mentor" } }
+    const mentorParticipantId = await getMentorParticipantId(hackathon!.id, principal.userId)
+    if (!mentorParticipantId) { set.status = 403; return { error: "Not a mentor" } }
 
-    const ok = await claimRequest(params.requestId, participant.participantId)
+    const ok = await claimRequest(params.requestId, mentorParticipantId, hackathon!.id)
     if (!ok) { set.status = 400; return { error: "Failed to claim request" } }
     return { success: true }
   }, { detail: { summary: "Claim mentor request" } })
@@ -109,11 +108,10 @@ export const publicEventRoutes = new Elysia({ prefix: "/public" })
     const principal = await resolvePrincipal(request)
     if (principal.kind !== "user" && principal.kind !== "admin") { set.status = 401; return { error: "Authentication required" } }
 
-    const { getParticipantWithTeam } = await import("@/lib/services/submissions")
-    const participant = await getParticipantWithTeam(hackathon!.id, principal.userId)
-    if (!participant) { set.status = 403; return { error: "Not a mentor" } }
+    const mentorParticipantId = await getMentorParticipantId(hackathon!.id, principal.userId)
+    if (!mentorParticipantId) { set.status = 403; return { error: "Not a mentor" } }
 
-    const ok = await resolveRequest(params.requestId, participant.participantId)
+    const ok = await resolveRequest(params.requestId, mentorParticipantId, hackathon!.id)
     if (!ok) { set.status = 400; return { error: "Failed to resolve request" } }
     return { success: true }
   }, { detail: { summary: "Resolve mentor request" } })

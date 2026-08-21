@@ -16,6 +16,7 @@ import { normalizeLocale } from "@/lib/utils/language"
 import type { Scope, UserPrincipal } from "@/lib/auth/types"
 import { ALL_SCOPES } from "@/lib/auth/types"
 import type { WebhookEvent, SponsorTier } from "@/lib/db/hackathon-types"
+import { isAllowedHttpsUrl } from "@/lib/utils/safe-fetch-url"
 
 function organizationAdminError(principal: UserPrincipal): Response | null {
   if (principal.orgRole === "org:admin") {
@@ -520,16 +521,8 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
 
       const webhookUrl = normalizeUrl(body.url)
 
-      try {
-        const parsedUrl = new URL(webhookUrl)
-        if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
-          return new Response(JSON.stringify({ error: "Webhook URL must use http or https" }), {
-            status: 400,
-            headers: { "Content-Type": "application/json" },
-          })
-        }
-      } catch {
-        return new Response(JSON.stringify({ error: "Invalid webhook URL" }), {
+      if (!isAllowedHttpsUrl(webhookUrl)) {
+        return new Response(JSON.stringify({ error: "Webhook URL must be a public https address" }), {
           status: 400,
           headers: { "Content-Type": "application/json" },
         })
@@ -614,6 +607,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         frequency: s.frequency,
         cronExpression: s.cron_expression,
         timezone: s.timezone,
+        runTime: s.run_time,
         jobType: s.job_type,
         isActive: s.is_active,
         nextRunAt: s.next_run_at,
@@ -640,6 +634,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         frequency: body.frequency,
         cronExpression: body.cronExpression,
         timezone: body.timezone,
+        runTime: body.runTime,
         jobType: body.jobType,
         input: body.input,
       })
@@ -680,7 +675,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         cronExpression: t.Optional(t.String()),
         timezone: t.Optional(t.String()),
         runTime: t.Optional(t.String()),
-        jobType: t.Optional(t.String()),
+        jobType: t.String({ minLength: 1 }),
         input: t.Optional(t.Record(t.String(), t.Unknown())),
       }),
     }
@@ -704,6 +699,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       frequency: schedule.frequency,
       cronExpression: schedule.cron_expression,
       timezone: schedule.timezone,
+      runTime: schedule.run_time,
       jobType: schedule.job_type,
       input: schedule.input,
       isActive: schedule.is_active,

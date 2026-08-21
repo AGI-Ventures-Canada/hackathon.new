@@ -1,5 +1,6 @@
 import { processAutoTransitions } from "@/lib/services/lifecycle"
 import { processScheduledChallengeReleases } from "@/lib/services/challenges"
+import { processDueSchedules } from "@/lib/services/schedules"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
@@ -10,9 +11,10 @@ export async function GET(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const [transitionsResult, releasesResult] = await Promise.allSettled([
+  const [transitionsResult, releasesResult, schedulesResult] = await Promise.allSettled([
     processAutoTransitions(),
     processScheduledChallengeReleases(),
+    processDueSchedules(),
   ])
   return Response.json({
     transitions:
@@ -23,5 +25,9 @@ export async function GET(request: Request) {
       releasesResult.status === "fulfilled"
         ? releasesResult.value
         : { error: String(releasesResult.reason) },
+    schedules:
+      schedulesResult.status === "fulfilled"
+        ? schedulesResult.value
+        : { error: String(schedulesResult.reason) },
   })
 }

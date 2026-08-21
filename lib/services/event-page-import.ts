@@ -1,6 +1,7 @@
 import { cache } from "react"
 import { normalizeUrl } from "@/lib/utils/url"
 import { normalizeLocale } from "@/lib/utils/language"
+import { fetchAllowedUrl, readResponseText } from "@/lib/utils/safe-fetch-url"
 
 export type EventPageData = {
   name: string
@@ -47,12 +48,14 @@ export const extractEventPageData = cache(async function extractEventPageData(
 
   let response: Response
   try {
-    response = await fetch(url, {
+    const fetched = await fetchAllowedUrl(url, {
       headers: {
         "User-Agent": "Mozilla/5.0 (compatible; HackathonNewBot/1.0; +https://hackathon.new)",
       },
       signal: AbortSignal.timeout(8000),
-    })
+    }, { requireHttps: true })
+    if (!fetched) return null
+    response = fetched
   } catch (err) {
     console.error(`Failed to fetch event page from ${url}:`, err)
     return null
@@ -60,7 +63,8 @@ export const extractEventPageData = cache(async function extractEventPageData(
 
   if (!response.ok) return null
 
-  const html = await response.text()
+  const html = await readResponseText(response, 2 * 1024 * 1024)
+  if (html === null) return null
   return parseEventPage(html)
 })
 

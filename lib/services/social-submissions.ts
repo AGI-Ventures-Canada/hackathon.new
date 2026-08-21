@@ -1,5 +1,7 @@
 import { supabase as getSupabase } from "@/lib/db/client"
+import { fetchAllowedUrl, isAllowedHttpsUrl, readResponseText } from "@/lib/utils/safe-fetch-url"
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { isValidUuid } from "@/lib/utils/uuid"
 
 export type SocialMediaSubmission = {
   id: string
@@ -23,35 +25,54 @@ export type OgMetadata = {
 }
 
 function detectPlatform(url: string): string | null {
-  const lower = url.toLowerCase()
-  if (lower.includes("twitter.com") || lower.includes("x.com")) return "twitter"
-  if (lower.includes("linkedin.com")) return "linkedin"
-  if (lower.includes("instagram.com")) return "instagram"
-  if (lower.includes("tiktok.com")) return "tiktok"
-  if (lower.includes("youtube.com") || lower.includes("youtu.be")) return "youtube"
-  if (lower.includes("facebook.com") || lower.includes("fb.com")) return "facebook"
+  let hostname: string
+  try {
+    hostname = new URL(url).hostname.toLowerCase()
+  } catch {
+    return null
+  }
+
+  const matches = (domain: string) => hostname === domain || hostname.endsWith(`.${domain}`)
+  if (matches("twitter.com") || matches("x.com")) return "twitter"
+  if (matches("linkedin.com")) return "linkedin"
+  if (matches("instagram.com")) return "instagram"
+  if (matches("tiktok.com")) return "tiktok"
+  if (matches("youtube.com") || matches("youtu.be")) return "youtube"
+  if (matches("facebook.com") || matches("fb.com")) return "facebook"
   return null
 }
 
 export async function fetchOgMetadata(url: string): Promise<OgMetadata> {
   try {
-    const res = await fetch(url, {
+    const res = await fetchAllowedUrl(url, {
       headers: { "User-Agent": "HackathonNewBot/1.0 (+https://hackathon.new)" },
       signal: AbortSignal.timeout(5000),
-    })
-    if (!res.ok) return { title: null, description: null, imageUrl: null }
+    }, { requireHttps: true })
+    if (!res?.ok) return { title: null, description: null, imageUrl: null }
 
-    const html = await res.text()
+    const html = await readResponseText(res, 1024 * 1024)
+    if (html === null) return { title: null, description: null, imageUrl: null }
     const getMetaContent = (property: string): string | null => {
       const regex = new RegExp(`<meta[^>]+(?:property|name)=["']${property}["'][^>]+content=["']([^"']*)["']`, "i")
       const altRegex = new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+(?:property|name)=["']${property}["']`, "i")
       return regex.exec(html)?.[1] ?? altRegex.exec(html)?.[1] ?? null
     }
 
+    const rawImageUrl = getMetaContent("og:image")
+    let imageUrl: string | null = null
+    if (rawImageUrl) {
+      try {
+        const resolvedImageUrl = new URL(rawImageUrl, res.url || url).toString()
+        imageUrl = isAllowedHttpsUrl(resolvedImageUrl) ? resolvedImageUrl : null
+      } catch {
+        imageUrl = null
+      }
+    }
+
     return {
       title: getMetaContent("og:title"),
       description: getMetaContent("og:description"),
-      imageUrl: getMetaContent("og:image"),
+      imageUrl,
     }
   } catch {
     return { title: null, description: null, imageUrl: null }
@@ -64,10 +85,21 @@ export async function submitSocialUrl(
   teamId: string | null,
   url: string
 ): Promise<SocialMediaSubmission | null> {
+  if (
+    !isValidUuid(hackathonId) ||
+    !isValidUuid(participantId) ||
+    (teamId !== null && !isValidUuid(teamId))
+  ) return null
+
   const client = getSupabase() as unknown as SupabaseClient
 
-  const platform = detectPlatform(url)
-  const og = await fetchOgMetadata(url)
+  if (!isAllowedHttpsUrl(url)) return null
+
+  const normalizedUrl = new URL(url).toString()
+
+  const platform = detectPlatform(normalizedUrl)
+  if (!platform) return null
+  const og = await fetchOgMetadata(normalizedUrl)
 
   const { data, error } = await client
     .from("social_media_submissions")
@@ -75,7 +107,7 @@ export async function submitSocialUrl(
       hackathon_id: hackathonId,
       participant_id: participantId,
       team_id: teamId,
-      url,
+      url: normalizedUrl,
       platform,
       og_title: og.title,
       og_description: og.description,
@@ -120,19 +152,25 @@ export async function listSocialSubmissions(
 
 export async function reviewSocialSubmission(
   submissionId: string,
+  hackathonId: string,
   status: "approved" | "rejected"
 ): Promise<boolean> {
+  if (!isValidUuid(submissionId) || !isValidUuid(hackathonId)) return false
+
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { error } = await client
+  const { data, error } = await client
     .from("social_media_submissions")
     .update({ status, reviewed_at: new Date().toISOString() })
     .eq("id", submissionId)
+    .eq("hackathon_id", hackathonId)
+    .select("id")
+    .maybeSingle()
 
   if (error) {
     console.error("Failed to review social submission:", error)
     return false
   }
 
-  return true
+  return Boolean(data)
 }

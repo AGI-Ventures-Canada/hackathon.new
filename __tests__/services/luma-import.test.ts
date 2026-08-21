@@ -149,6 +149,25 @@ describe("extractLumaEventData", () => {
     expect(result).toBeNull()
   })
 
+  it("blocks redirects to private services", async () => {
+    mockFetch.mockResolvedValueOnce(new Response(null, {
+      status: 302,
+      headers: { location: "http://127.0.0.1/private" },
+    }))
+
+    expect(await extractLumaEventData("unsafe-redirect")).toBeNull()
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+  })
+
+  it("rejects oversized pages", async () => {
+    mockFetch.mockResolvedValueOnce(new Response("", {
+      status: 200,
+      headers: { "content-length": String(2 * 1024 * 1024 + 1) },
+    }))
+
+    expect(await extractLumaEventData("oversized-page")).toBeNull()
+  })
+
   it("returns null when no JSON-LD found", async () => {
     mockFetch.mockResolvedValueOnce(new Response("<html><body>No data</body></html>", { status: 200 }))
 
