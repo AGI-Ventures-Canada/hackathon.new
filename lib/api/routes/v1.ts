@@ -6,6 +6,7 @@ import { checkRateLimit, defaultRateLimits, RateLimitError } from "@/lib/service
 import { trackEvent, isCliRequest, getCliVersion } from "@/lib/analytics/posthog"
 import type { Json } from "@/lib/db/types"
 import { normalizeUrl } from "@/lib/utils/url"
+import { isAllowedHttpsUrl } from "@/lib/utils/safe-fetch-url"
 
 export const v1Routes = new Elysia({ prefix: "/v1", tags: ["v1"] })
   .derive(async ({ request }) => {
@@ -262,16 +263,8 @@ export const v1Routes = new Elysia({ prefix: "/v1", tags: ["v1"] })
 
       const webhookUrl = normalizeUrl(body.url)
 
-      try {
-        const parsedUrl = new URL(webhookUrl)
-        if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
-          return new Response(JSON.stringify({ error: "Webhook URL must use http or https" }), {
-            status: 400,
-            headers: { "Content-Type": "application/json" },
-          })
-        }
-      } catch {
-        return new Response(JSON.stringify({ error: "Invalid webhook URL" }), {
+      if (!isAllowedHttpsUrl(webhookUrl)) {
+        return new Response(JSON.stringify({ error: "Webhook URL must be a public https address" }), {
           status: 400,
           headers: { "Content-Type": "application/json" },
         })

@@ -19,6 +19,8 @@ const {
   registerForHackathon,
   getParticipantTeamInfo,
   listTeamsWithMembers,
+  modifyTeamMembers,
+  bulkAssignTeams,
 } = await import("@/lib/services/hackathons")
 
 const mockHackathon: Hackathon = {
@@ -973,6 +975,75 @@ describe("Hackathons Service", () => {
       expect(capturedArgs!.limit).toBe(100)
       expect(result[0].members).toHaveLength(25)
       expect(result[0].members.every((m) => m.displayName !== null)).toBe(true)
+    })
+  })
+
+  describe("modifyTeamMembers", () => {
+    const hackathonId = "11111111-1111-1111-1111-111111111111"
+    const teamId = "22222222-2222-2222-2222-222222222222"
+
+    it("updates members only after verifying the team belongs to the hackathon", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "teams") return createChainableMock({ data: { id: "team_1" }, error: null })
+        if (table === "hackathon_participants") return createChainableMock({ data: [{ id: "participant_1" }], error: null })
+        return createChainableMock({ data: null, error: null })
+      })
+
+      expect(await modifyTeamMembers(teamId, hackathonId, { add: ["user_1"] })).toBe(true)
+    })
+
+    it("rejects a team from another hackathon", async () => {
+      setMockFromImplementation(() => createChainableMock({ data: null, error: null }))
+
+      expect(await modifyTeamMembers("33333333-3333-3333-3333-333333333333", hackathonId, { add: ["user_1"] })).toBe(false)
+    })
+
+    it("fails when a requested member was not updated", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "teams") return createChainableMock({ data: { id: "team_1" }, error: null })
+        return createChainableMock({ data: [], error: null })
+      })
+
+      expect(await modifyTeamMembers(teamId, hackathonId, { remove: ["user_missing"] })).toBe(false)
+    })
+  })
+
+  describe("bulkAssignTeams", () => {
+    const hackathonId = "11111111-1111-1111-1111-111111111111"
+    const teamId = "22222222-2222-2222-2222-222222222222"
+    const roomId = "33333333-3333-3333-3333-333333333333"
+
+    it("checks every team and room before calling the assignment RPC", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "teams") return createChainableMock({ data: [{ id: "team_1" }], error: null })
+        if (table === "rooms") return createChainableMock({ data: [{ id: "room_1" }], error: null })
+        return createChainableMock({ data: null, error: null })
+      })
+      setMockRpcImplementation(() => Promise.resolve({
+        data: [{ success: true, assigned_count: 1 }],
+        error: null,
+      }))
+
+      expect(await bulkAssignTeams(hackathonId, [{ teamId, roomId }])).toEqual({
+        success: true,
+        assignedCount: 1,
+      })
+    })
+
+    it("rejects assignments containing another event's resources", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "teams") return createChainableMock({ data: [{ id: "team_1" }], error: null })
+        if (table === "rooms") return createChainableMock({ data: [], error: null })
+        return createChainableMock({ data: null, error: null })
+      })
+
+      expect(await bulkAssignTeams(hackathonId, [{
+        teamId,
+        roomId: "44444444-4444-4444-4444-444444444444",
+      }])).toEqual({
+        success: false,
+        assignedCount: 0,
+      })
     })
   })
 })

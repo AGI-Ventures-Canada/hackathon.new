@@ -50,11 +50,17 @@ function extractPrompt(input: unknown): string {
 }
 
 function extractTimeFromSchedule(schedule: Schedule): string {
+  if (schedule.run_time) return schedule.run_time
   if (schedule.next_run_at) {
     const date = new Date(schedule.next_run_at)
-    // Use local time from the date since we display in the schedule's timezone
-    const hours = date.getHours().toString().padStart(2, "0")
-    const minutes = date.getMinutes().toString().padStart(2, "0")
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: schedule.timezone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(date)
+    const hours = parts.find((part) => part.type === "hour")?.value ?? "09"
+    const minutes = parts.find((part) => part.type === "minute")?.value ?? "00"
     return `${hours}:${minutes}`
   }
   return "09:00"

@@ -116,7 +116,10 @@ describe("createHackathonFromImport", () => {
 
     expect(result).not.toBeNull()
     expect(result!.id).toBe("h1")
-    expect(mockFetch).toHaveBeenCalledWith("https://images.lumacdn.com/test.png")
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://images.lumacdn.com/test.png",
+      expect.objectContaining({ redirect: "manual" })
+    )
     expect(mockStorageUpload).toHaveBeenCalled()
   })
 

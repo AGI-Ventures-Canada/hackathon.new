@@ -14,6 +14,7 @@ const {
   resolveRequest,
   cancelRequest,
   getQueueStats,
+  getMentorParticipantId,
 } = await import("@/lib/services/mentor-requests")
 
 const HACKATHON_ID = "11111111-1111-1111-1111-111111111111"
@@ -41,6 +42,10 @@ describe("mentor-requests service", () => {
       setMockFromImplementation(() => createChainableMock(mockError("Failed")))
       const result = await createMentorRequest(HACKATHON_ID, PARTICIPANT_ID, null, {})
       expect(result).toBeNull()
+    })
+
+    it("rejects malformed IDs before querying the database", async () => {
+      expect(await createMentorRequest("not-an-id", PARTICIPANT_ID, null, {})).toBeNull()
     })
   })
 
@@ -71,27 +76,53 @@ describe("mentor-requests service", () => {
 
   describe("claimRequest", () => {
     it("claims an open request", async () => {
-      setMockFromImplementation(() => createChainableMock({ data: null, error: null }))
-      expect(await claimRequest(REQUEST_ID, MENTOR_ID)).toBe(true)
+      setMockFromImplementation(() => createChainableMock(mockSuccess({ id: REQUEST_ID })))
+      expect(await claimRequest(REQUEST_ID, MENTOR_ID, HACKATHON_ID)).toBe(true)
     })
 
     it("returns false on error", async () => {
       setMockFromImplementation(() => createChainableMock(mockError("Failed")))
-      expect(await claimRequest(REQUEST_ID, MENTOR_ID)).toBe(false)
+      expect(await claimRequest(REQUEST_ID, MENTOR_ID, HACKATHON_ID)).toBe(false)
+    })
+
+    it("returns false when another mentor already claimed it", async () => {
+      setMockFromImplementation(() => createChainableMock(mockSuccess(null)))
+      expect(await claimRequest(REQUEST_ID, MENTOR_ID, HACKATHON_ID)).toBe(false)
     })
   })
 
   describe("resolveRequest", () => {
     it("resolves a claimed request", async () => {
-      setMockFromImplementation(() => createChainableMock({ data: null, error: null }))
-      expect(await resolveRequest(REQUEST_ID, MENTOR_ID)).toBe(true)
+      setMockFromImplementation(() => createChainableMock(mockSuccess({ id: REQUEST_ID })))
+      expect(await resolveRequest(REQUEST_ID, MENTOR_ID, HACKATHON_ID)).toBe(true)
+    })
+
+    it("does not resolve a request from another hackathon", async () => {
+      setMockFromImplementation(() => createChainableMock(mockSuccess(null)))
+      expect(await resolveRequest(REQUEST_ID, MENTOR_ID, HACKATHON_ID)).toBe(false)
     })
   })
 
   describe("cancelRequest", () => {
     it("cancels own request", async () => {
-      setMockFromImplementation(() => createChainableMock({ data: null, error: null }))
+      setMockFromImplementation(() => createChainableMock(mockSuccess({ id: REQUEST_ID })))
       expect(await cancelRequest(REQUEST_ID, PARTICIPANT_ID)).toBe(true)
+    })
+
+    it("rejects malformed IDs", async () => {
+      expect(await cancelRequest("not-an-id", PARTICIPANT_ID)).toBe(false)
+    })
+  })
+
+  describe("getMentorParticipantId", () => {
+    it("returns the mentor participant for this hackathon", async () => {
+      setMockFromImplementation(() => createChainableMock(mockSuccess({ id: MENTOR_ID })))
+      expect(await getMentorParticipantId(HACKATHON_ID, "user_mentor")).toBe(MENTOR_ID)
+    })
+
+    it("returns null for participants who are not mentors", async () => {
+      setMockFromImplementation(() => createChainableMock(mockSuccess(null)))
+      expect(await getMentorParticipantId(HACKATHON_ID, "user_attendee")).toBeNull()
     })
   })
 

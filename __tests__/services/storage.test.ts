@@ -469,7 +469,10 @@ describe("Storage Service", () => {
       )
 
       const result = await downloadAndUploadBanner("hackathon-123", "https://images.lumacdn.com/test.png")
-      expect(mockFetch).toHaveBeenCalledWith("https://images.lumacdn.com/test.png")
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://images.lumacdn.com/test.png",
+        expect.objectContaining({ redirect: "manual" })
+      )
       expect(result).not.toBeNull()
       expect(result?.path).toBe("hackathon-123/banner.webp")
     })
@@ -492,6 +495,30 @@ describe("Storage Service", () => {
 
       const result = await downloadAndUploadBanner("hackathon-123", "https://unreachable.com/img.png")
       expect(result).toBeNull()
+    })
+
+    it("blocks redirects to private addresses", async () => {
+      mockFetch.mockResolvedValueOnce(new Response(null, {
+        status: 302,
+        headers: { location: "http://169.254.169.254/latest/meta-data" },
+      }))
+
+      const result = await downloadAndUploadBanner("hackathon-123", "https://example.com/banner.png")
+
+      expect(result).toBeNull()
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+    })
+
+    it("rejects oversized downloads before processing", async () => {
+      mockFetch.mockResolvedValueOnce(new Response("", {
+        status: 200,
+        headers: { "content-length": String(5 * 1024 * 1024 + 1) },
+      }))
+
+      const result = await downloadAndUploadBanner("hackathon-123", "https://example.com/banner.png")
+
+      expect(result).toBeNull()
+      expect(mockSharp).not.toHaveBeenCalled()
     })
   })
 

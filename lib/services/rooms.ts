@@ -1,6 +1,7 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import { listJudges } from "@/lib/services/judging"
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { isValidUuid } from "@/lib/utils/uuid"
 
 export type Room = {
   id: string
@@ -181,22 +182,35 @@ export async function updateRoom(roomId: string, hackathonId: string, input: Upd
 export async function deleteRoom(roomId: string, hackathonId: string): Promise<boolean> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { error } = await client
+  const { data, error } = await client
     .from("rooms")
     .delete()
     .eq("id", roomId)
     .eq("hackathon_id", hackathonId)
+    .select("id")
 
   if (error) {
     console.error("Failed to delete room:", error)
     return false
   }
 
-  return true
+  return (data ?? []).length > 0
 }
 
-export async function addTeamToRoom(roomId: string, teamId: string): Promise<boolean> {
+export async function addTeamToRoom(
+  roomId: string,
+  teamId: string,
+  hackathonId: string
+): Promise<boolean> {
+  if (![roomId, teamId, hackathonId].every(isValidUuid)) return false
+
   const client = getSupabase() as unknown as SupabaseClient
+
+  const [roomMatches, teamMatches] = await Promise.all([
+    roomBelongsToHackathon(client, roomId, hackathonId),
+    teamBelongsToHackathon(client, teamId, hackathonId),
+  ])
+  if (!roomMatches || !teamMatches) return false
 
   const { error } = await client
     .from("room_teams")
@@ -210,21 +224,34 @@ export async function addTeamToRoom(roomId: string, teamId: string): Promise<boo
   return true
 }
 
-export async function removeTeamFromRoom(roomId: string, teamId: string): Promise<boolean> {
+export async function removeTeamFromRoom(
+  roomId: string,
+  teamId: string,
+  hackathonId: string
+): Promise<boolean> {
+  if (![roomId, teamId, hackathonId].every(isValidUuid)) return false
+
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { error } = await client
+  const [roomMatches, teamMatches] = await Promise.all([
+    roomBelongsToHackathon(client, roomId, hackathonId),
+    teamBelongsToHackathon(client, teamId, hackathonId),
+  ])
+  if (!roomMatches || !teamMatches) return false
+
+  const { data, error } = await client
     .from("room_teams")
     .delete()
     .eq("room_id", roomId)
     .eq("team_id", teamId)
+    .select("id")
 
   if (error) {
     console.error("Failed to remove team from room:", error)
     return false
   }
 
-  return true
+  return (data ?? []).length > 0
 }
 
 export async function getAutoAssignByRoom(hackathonId: string): Promise<boolean> {
@@ -269,6 +296,20 @@ async function roomBelongsToHackathon(
     .from("rooms")
     .select("id")
     .eq("id", roomId)
+    .eq("hackathon_id", hackathonId)
+    .maybeSingle()
+  return Boolean(data)
+}
+
+async function teamBelongsToHackathon(
+  client: SupabaseClient,
+  teamId: string,
+  hackathonId: string
+): Promise<boolean> {
+  const { data } = await client
+    .from("teams")
+    .select("id")
+    .eq("id", teamId)
     .eq("hackathon_id", hackathonId)
     .maybeSingle()
   return Boolean(data)
@@ -360,21 +401,35 @@ export async function removeJudgeFromRoom(
   return { ok: true, changed: (data ?? []).length > 0 }
 }
 
-export async function togglePresented(roomId: string, teamId: string, presented: boolean): Promise<boolean> {
+export async function togglePresented(
+  roomId: string,
+  teamId: string,
+  hackathonId: string,
+  presented: boolean
+): Promise<boolean> {
+  if (![roomId, teamId, hackathonId].every(isValidUuid)) return false
+
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { error } = await client
+  const [roomMatches, teamMatches] = await Promise.all([
+    roomBelongsToHackathon(client, roomId, hackathonId),
+    teamBelongsToHackathon(client, teamId, hackathonId),
+  ])
+  if (!roomMatches || !teamMatches) return false
+
+  const { data, error } = await client
     .from("room_teams")
     .update({ has_presented: presented })
     .eq("room_id", roomId)
     .eq("team_id", teamId)
+    .select("id")
 
   if (error) {
     console.error("Failed to toggle presented:", error)
     return false
   }
 
-  return true
+  return (data ?? []).length > 0
 }
 
 export async function setRoomTimer(

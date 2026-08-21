@@ -87,4 +87,23 @@ describe("extractEventPageData", () => {
       language: null,
       translationLinks: [],    })
   })
+
+  it("blocks redirects to private services", async () => {
+    mockFetch.mockResolvedValueOnce(new Response(null, {
+      status: 302,
+      headers: { location: "http://127.0.0.1/private" },
+    }))
+
+    expect(await extractEventPageData("https://example.com/unsafe-redirect")).toBeNull()
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+  })
+
+  it("rejects oversized event pages", async () => {
+    mockFetch.mockResolvedValueOnce(new Response("", {
+      status: 200,
+      headers: { "content-length": String(2 * 1024 * 1024 + 1) },
+    }))
+
+    expect(await extractEventPageData("https://example.com/oversized-event")).toBeNull()
+  })
 })

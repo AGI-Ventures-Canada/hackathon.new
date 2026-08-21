@@ -164,7 +164,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if ("error" in authErr) return authErr
     const { teamId } = body as { teamId: string }
-    const ok = await addTeamToRoom(params.roomId, teamId)
+    const ok = await addTeamToRoom(params.roomId, teamId, params.id)
     if (!ok) { set.status = 400; return { error: "Failed to add team to room" } }
     await logAudit({ principal, action: "room_team.added", resourceType: "room", resourceId: params.roomId, metadata: { hackathonId: params.id, teamId } })
     return { success: true }
@@ -176,7 +176,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if ("error" in authErr) return authErr
-    const ok = await removeTeamFromRoom(params.roomId, params.teamId)
+    const ok = await removeTeamFromRoom(params.roomId, params.teamId, params.id)
     if (!ok) { set.status = 400; return { error: "Failed to remove team from room" } }
     await logAudit({ principal, action: "room_team.removed", resourceType: "room", resourceId: params.roomId, metadata: { hackathonId: params.id, teamId: params.teamId } })
     return { success: true }
@@ -186,7 +186,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if ("error" in authErr) return authErr
     const { presented } = body as { presented: boolean }
-    const ok = await togglePresented(params.roomId, params.teamId, presented)
+    const ok = await togglePresented(params.roomId, params.teamId, params.id, presented)
     if (!ok) { set.status = 400; return { error: "Failed to update presentation status" } }
     await logAudit({ principal, action: "room_team.presented", resourceType: "room", resourceId: params.roomId, metadata: { hackathonId: params.id, teamId: params.teamId, presented } })
     return { success: true }
@@ -1140,7 +1140,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if ("error" in authErr) return authErr
     const { status } = body as { status: "approved" | "rejected" }
-    const ok = await reviewSocialSubmission(params.submissionId, status)
+    const ok = await reviewSocialSubmission(params.submissionId, params.id, status)
     if (!ok) { set.status = 400; return { error: "Failed to review submission" } }
     await logAudit({ principal, action: "social_submission.reviewed", resourceType: "social_submission", resourceId: params.submissionId, metadata: { hackathonId: params.id, status } })
     return { success: true }
