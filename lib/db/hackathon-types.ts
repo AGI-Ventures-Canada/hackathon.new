@@ -318,6 +318,7 @@ export interface Schedule {
   frequency: ScheduleFrequency
   cron_expression: string | null
   timezone: string
+  run_time: string | null
   input: Json | null
   is_active: boolean
   next_run_at: string | null

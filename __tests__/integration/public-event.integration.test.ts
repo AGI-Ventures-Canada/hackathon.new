@@ -8,6 +8,9 @@ const mockListPerks = mock(() => Promise.resolve([]))
 const mockIsPerkReleased = mock(() => true)
 const mockSubmitSocialUrl = mock(() => Promise.resolve(null))
 const mockCreateMentorRequest = mock(() => Promise.resolve(null))
+const mockGetMentorParticipantId = mock(() => Promise.resolve(null))
+const mockClaimRequest = mock(() => Promise.resolve(true))
+const mockResolveRequest = mock(() => Promise.resolve(true))
 
 class MockAuthError extends Error {
   constructor(
@@ -51,8 +54,9 @@ mock.module("@/lib/services/social-submissions", () => ({
 mock.module("@/lib/services/mentor-requests", () => ({
   createMentorRequest: mockCreateMentorRequest,
   listMentorQueue: mock(() => Promise.resolve([])),
-  claimRequest: mock(() => Promise.resolve(true)),
-  resolveRequest: mock(() => Promise.resolve(true)),
+  getMentorParticipantId: mockGetMentorParticipantId,
+  claimRequest: mockClaimRequest,
+  resolveRequest: mockResolveRequest,
 }))
 
 mock.module("@/lib/services/perks", () => ({
@@ -107,12 +111,18 @@ describe("Public Event Routes Integration Tests", () => {
     mockIsPerkReleased.mockReset()
     mockSubmitSocialUrl.mockReset()
     mockCreateMentorRequest.mockReset()
+    mockGetMentorParticipantId.mockReset()
+    mockClaimRequest.mockReset()
+    mockResolveRequest.mockReset()
     mockResolvePrincipal.mockResolvedValue({ kind: "anon" })
     mockGetParticipantWithTeam.mockResolvedValue(null)
     mockListPerks.mockResolvedValue([])
     mockIsPerkReleased.mockReturnValue(true)
     mockSubmitSocialUrl.mockResolvedValue(null)
     mockCreateMentorRequest.mockResolvedValue(null)
+    mockGetMentorParticipantId.mockResolvedValue(null)
+    mockClaimRequest.mockResolvedValue(true)
+    mockResolveRequest.mockResolvedValue(true)
   })
 
   describe("GET /api/public/hackathons/:slug/poll", () => {
@@ -318,6 +328,51 @@ describe("Public Event Routes Integration Tests", () => {
       expect(res.status).toBe(409)
       expect(data.code).toBe("team_pending_approval")
       expect(mockCreateMentorRequest).not.toHaveBeenCalled()
+    })
+  })
+
+  describe("mentor claim and resolve routes", () => {
+    it("blocks an attendee from claiming a mentor request", async () => {
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockResolvePrincipal.mockResolvedValue({ kind: "user", userId: "user_attendee" })
+      mockGetMentorParticipantId.mockResolvedValue(null)
+
+      const res = await app.handle(new Request(
+        "http://localhost/api/public/hackathons/build-os26/mentor-request/request_1/claim",
+        { method: "POST" }
+      ))
+
+      expect(res.status).toBe(403)
+      expect(mockClaimRequest).not.toHaveBeenCalled()
+    })
+
+    it("scopes mentor claims to the resolved hackathon", async () => {
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockResolvePrincipal.mockResolvedValue({ kind: "user", userId: "user_mentor" })
+      mockGetMentorParticipantId.mockResolvedValue("mentor_participant")
+
+      const res = await app.handle(new Request(
+        "http://localhost/api/public/hackathons/build-os26/mentor-request/request_1/claim",
+        { method: "POST" }
+      ))
+
+      expect(res.status).toBe(200)
+      expect(mockGetMentorParticipantId).toHaveBeenCalledWith(mockHackathon.id, "user_mentor")
+      expect(mockClaimRequest).toHaveBeenCalledWith("request_1", "mentor_participant", mockHackathon.id)
+    })
+
+    it("scopes mentor resolutions to the resolved hackathon", async () => {
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockResolvePrincipal.mockResolvedValue({ kind: "user", userId: "user_mentor" })
+      mockGetMentorParticipantId.mockResolvedValue("mentor_participant")
+
+      const res = await app.handle(new Request(
+        "http://localhost/api/public/hackathons/build-os26/mentor-request/request_1/resolve",
+        { method: "POST" }
+      ))
+
+      expect(res.status).toBe(200)
+      expect(mockResolveRequest).toHaveBeenCalledWith("request_1", "mentor_participant", mockHackathon.id)
     })
   })
 })

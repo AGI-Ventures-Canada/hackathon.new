@@ -478,6 +478,24 @@ describe("V1 API Routes Integration Tests", () => {
       })
       expect(mockLogAudit).toHaveBeenCalled()
     })
+
+    it("rejects webhook URLs that target private services", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockApiKeyPrincipal)
+
+      const res = await app.handle(
+        new Request("http://localhost/api/v1/webhooks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            url: "http://169.254.169.254/latest/meta-data",
+            events: ["hackathon.updated"],
+          }),
+        })
+      )
+
+      expect(res.status).toBe(400)
+      expect(mockCreateWebhook).not.toHaveBeenCalled()
+    })
   })
 
   describe("DELETE /api/v1/webhooks/:id", () => {

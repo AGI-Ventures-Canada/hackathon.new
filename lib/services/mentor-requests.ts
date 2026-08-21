@@ -1,5 +1,6 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { isValidUuid } from "@/lib/utils/uuid"
 
 export type MentorRequest = {
   id: string
@@ -33,6 +34,12 @@ export async function createMentorRequest(
   teamId: string | null,
   input: { category?: string; description?: string }
 ): Promise<MentorRequest | null> {
+  if (
+    !isValidUuid(hackathonId) ||
+    !isValidUuid(participantId) ||
+    (teamId !== null && !isValidUuid(teamId))
+  ) return null
+
   const client = getSupabase() as unknown as SupabaseClient
 
   const { data, error } = await client
@@ -56,6 +63,8 @@ export async function createMentorRequest(
 }
 
 export async function listMentorQueue(hackathonId: string): Promise<MentorRequestWithNames[]> {
+  if (!isValidUuid(hackathonId)) return []
+
   const client = getSupabase() as unknown as SupabaseClient
 
   const { data: requests, error } = await client
@@ -90,10 +99,39 @@ export async function listMentorQueue(hackathonId: string): Promise<MentorReques
   }))
 }
 
-export async function claimRequest(requestId: string, mentorParticipantId: string): Promise<boolean> {
+export async function getMentorParticipantId(
+  hackathonId: string,
+  clerkUserId: string
+): Promise<string | null> {
+  if (!isValidUuid(hackathonId)) return null
+
+  const client = getSupabase() as unknown as SupabaseClient
+  const { data, error } = await client
+    .from("hackathon_participants")
+    .select("id")
+    .eq("hackathon_id", hackathonId)
+    .eq("clerk_user_id", clerkUserId)
+    .eq("role", "mentor")
+    .maybeSingle()
+
+  if (error) {
+    console.error("Failed to find mentor:", error)
+    return null
+  }
+
+  return (data as { id: string } | null)?.id ?? null
+}
+
+export async function claimRequest(
+  requestId: string,
+  mentorParticipantId: string,
+  hackathonId: string
+): Promise<boolean> {
+  if (![requestId, mentorParticipantId, hackathonId].every(isValidUuid)) return false
+
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { error } = await client
+  const { data, error } = await client
     .from("mentor_requests")
     .update({
       status: "claimed",
@@ -101,54 +139,74 @@ export async function claimRequest(requestId: string, mentorParticipantId: strin
       claimed_at: new Date().toISOString(),
     })
     .eq("id", requestId)
+    .eq("hackathon_id", hackathonId)
     .eq("status", "open")
+    .select("id")
+    .maybeSingle()
 
   if (error) {
     console.error("Failed to claim mentor request:", error)
     return false
   }
 
-  return true
+  return Boolean(data)
 }
 
-export async function resolveRequest(requestId: string, mentorParticipantId: string): Promise<boolean> {
+export async function resolveRequest(
+  requestId: string,
+  mentorParticipantId: string,
+  hackathonId: string
+): Promise<boolean> {
+  if (![requestId, mentorParticipantId, hackathonId].every(isValidUuid)) return false
+
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { error } = await client
+  const { data, error } = await client
     .from("mentor_requests")
     .update({
       status: "resolved",
       resolved_at: new Date().toISOString(),
     })
     .eq("id", requestId)
+    .eq("hackathon_id", hackathonId)
     .eq("claimed_by_participant_id", mentorParticipantId)
+    .eq("status", "claimed")
+    .select("id")
+    .maybeSingle()
 
   if (error) {
     console.error("Failed to resolve mentor request:", error)
     return false
   }
 
-  return true
+  return Boolean(data)
 }
 
 export async function cancelRequest(requestId: string, participantId: string): Promise<boolean> {
+  if (![requestId, participantId].every(isValidUuid)) return false
+
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { error } = await client
+  const { data, error } = await client
     .from("mentor_requests")
     .update({ status: "cancelled" })
     .eq("id", requestId)
     .eq("requester_participant_id", participantId)
+    .in("status", ["open", "claimed"])
+    .select("id")
+    .maybeSingle()
 
   if (error) {
     console.error("Failed to cancel mentor request:", error)
     return false
   }
 
-  return true
+  return Boolean(data)
 }
 
 export async function getQueueStats(hackathonId: string): Promise<QueueStats> {
+  if (!isValidUuid(hackathonId)) return { open: 0, claimed: 0, resolved: 0 }
+
   const client = getSupabase() as unknown as SupabaseClient
 
   const [openResult, claimedResult, resolvedResult] = await Promise.all([

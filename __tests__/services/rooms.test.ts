@@ -116,9 +116,14 @@ describe("rooms service", () => {
 
   describe("deleteRoom", () => {
     it("deletes a room", async () => {
-      setMockFromImplementation(() => createChainableMock({ data: null, error: null }))
+      setMockFromImplementation(() => createChainableMock(mockSuccess([{ id: ROOM_ID }])))
       const result = await deleteRoom(ROOM_ID, HACKATHON_ID)
       expect(result).toBe(true)
+    })
+
+    it("returns false when the room is not in the hackathon", async () => {
+      setMockFromImplementation(() => createChainableMock(mockSuccess([])))
+      expect(await deleteRoom(ROOM_ID, HACKATHON_ID)).toBe(false)
     })
 
     it("returns false on error", async () => {
@@ -130,36 +135,65 @@ describe("rooms service", () => {
 
   describe("addTeamToRoom", () => {
     it("adds a team", async () => {
-      setMockFromImplementation(() => createChainableMock({ data: null, error: null }))
-      const result = await addTeamToRoom(ROOM_ID, TEAM_ID)
+      setMockFromImplementation((table) => {
+        if (table === "rooms" || table === "teams") return createChainableMock(mockSuccess({ id: "match" }))
+        return createChainableMock({ data: null, error: null })
+      })
+      const result = await addTeamToRoom(ROOM_ID, TEAM_ID, HACKATHON_ID)
       expect(result).toBe(true)
     })
 
     it("returns false on conflict", async () => {
-      setMockFromImplementation(() => createChainableMock(mockError("Unique constraint")))
-      const result = await addTeamToRoom(ROOM_ID, TEAM_ID)
+      setMockFromImplementation((table) => {
+        if (table === "rooms" || table === "teams") return createChainableMock(mockSuccess({ id: "match" }))
+        return createChainableMock(mockError("Unique constraint"))
+      })
+      const result = await addTeamToRoom(ROOM_ID, TEAM_ID, HACKATHON_ID)
+      expect(result).toBe(false)
+    })
+
+    it("rejects a room or team from another hackathon", async () => {
+      setMockFromImplementation((table) => createChainableMock(mockSuccess(table === "rooms" ? null : { id: TEAM_ID })))
+      const result = await addTeamToRoom(ROOM_ID, TEAM_ID, HACKATHON_ID)
       expect(result).toBe(false)
     })
   })
 
   describe("removeTeamFromRoom", () => {
     it("removes a team", async () => {
-      setMockFromImplementation(() => createChainableMock({ data: null, error: null }))
-      const result = await removeTeamFromRoom(ROOM_ID, TEAM_ID)
+      setMockFromImplementation((table) => {
+        if (table === "rooms" || table === "teams") return createChainableMock(mockSuccess({ id: "match" }))
+        return createChainableMock(mockSuccess([{ id: "room-team" }]))
+      })
+      const result = await removeTeamFromRoom(ROOM_ID, TEAM_ID, HACKATHON_ID)
       expect(result).toBe(true)
+    })
+
+    it("returns false when no assignment exists", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "rooms" || table === "teams") return createChainableMock(mockSuccess({ id: "match" }))
+        return createChainableMock(mockSuccess([]))
+      })
+      expect(await removeTeamFromRoom(ROOM_ID, TEAM_ID, HACKATHON_ID)).toBe(false)
     })
   })
 
   describe("togglePresented", () => {
     it("marks team as presented", async () => {
-      setMockFromImplementation(() => createChainableMock({ data: null, error: null }))
-      const result = await togglePresented(ROOM_ID, TEAM_ID, true)
+      setMockFromImplementation((table) => {
+        if (table === "rooms" || table === "teams") return createChainableMock(mockSuccess({ id: "match" }))
+        return createChainableMock(mockSuccess([{ id: "room-team" }]))
+      })
+      const result = await togglePresented(ROOM_ID, TEAM_ID, HACKATHON_ID, true)
       expect(result).toBe(true)
     })
 
     it("returns false on error", async () => {
-      setMockFromImplementation(() => createChainableMock(mockError("Update failed")))
-      const result = await togglePresented(ROOM_ID, TEAM_ID, true)
+      setMockFromImplementation((table) => {
+        if (table === "rooms" || table === "teams") return createChainableMock(mockSuccess({ id: "match" }))
+        return createChainableMock(mockError("Update failed"))
+      })
+      const result = await togglePresented(ROOM_ID, TEAM_ID, HACKATHON_ID, true)
       expect(result).toBe(false)
     })
   })

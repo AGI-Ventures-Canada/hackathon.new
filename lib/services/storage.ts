@@ -1,6 +1,7 @@
 import sharp from "sharp"
 import { supabase as getSupabase } from "@/lib/db/client"
 import { MAX_SUBMISSION_SCREENSHOTS } from "@/lib/utils/submission-screenshots"
+import { fetchAllowedUrl, isAllowedHttpsUrl, readResponseBytes } from "@/lib/utils/safe-fetch-url"
 
 const LOGOS_BUCKET = "logos"
 const BANNERS_BUCKET = "banners"
@@ -407,53 +408,32 @@ export async function downloadAndUploadBanner(
 ): Promise<UploadBannerResult | null> {
   if (!imageUrl) return null
 
-  // Validate URL scheme to prevent SSRF
-  try {
-    const url = new URL(imageUrl)
-    if (url.protocol !== "https:") {
-      console.warn(`Rejected non-HTTPS banner URL: ${imageUrl}`)
-      return null
-    }
-    // Block private IP ranges and localhost
-    const hostname = url.hostname.replace(/^\[|\]$/g, "").toLowerCase()
-    if (
-      hostname === "localhost" ||
-      hostname === "127.0.0.1" ||
-      hostname === "0.0.0.0" ||
-      hostname === "::1" ||
-      hostname === "0000:0000:0000:0000:0000:0000:0000:0001" ||
-      hostname.startsWith("192.168.") ||
-      hostname.startsWith("10.") ||
-      /^172\.(1[6-9]|2\d|3[01])\./.test(hostname) ||
-      /^169\.254\./.test(hostname) ||
-      hostname.startsWith("fc") ||
-      hostname.startsWith("fd") ||
-      hostname.startsWith("fe80")
-    ) {
-      console.warn(`Rejected private/internal banner URL: ${imageUrl}`)
-      return null
-    }
-  } catch (err) {
-    console.error(`Invalid banner URL: ${imageUrl}`, err)
+  if (!isAllowedHttpsUrl(imageUrl)) {
+    console.warn(`Rejected unsafe banner URL: ${imageUrl}`)
     return null
   }
 
-  let response: Response
+  let response: Response | null
   try {
-    response = await fetch(imageUrl)
+    response = await fetchAllowedUrl(
+      imageUrl,
+      { signal: AbortSignal.timeout(8000) },
+      { requireHttps: true }
+    )
   } catch (err) {
     console.error(`Failed to fetch banner image from ${imageUrl}:`, err)
     return null
   }
 
-  if (!response.ok) {
-    console.warn(`Banner image fetch returned ${response.status} for ${imageUrl}`)
+  if (!response?.ok) {
+    console.warn(`Banner image fetch returned ${response?.status ?? "no response"} for ${imageUrl}`)
     return null
   }
 
   try {
-    const arrayBuffer = await response.arrayBuffer()
-    const buffer = Buffer.from(arrayBuffer)
+    const bytes = await readResponseBytes(response, 5 * 1024 * 1024)
+    if (!bytes) return null
+    const buffer = Buffer.from(bytes)
     return await uploadBanner(hackathonId, buffer)
   } catch (err) {
     console.error(`Failed to process/upload banner for hackathon ${hackathonId}:`, err)

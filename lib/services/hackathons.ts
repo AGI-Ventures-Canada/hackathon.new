@@ -11,6 +11,7 @@ import { generateSlug } from "@/lib/utils/slug"
 import { clerkClient } from "@clerk/nextjs/server"
 import { trackEvent } from "@/lib/analytics/posthog"
 import { getSubmissionScreenshotUrls } from "@/lib/utils/submission-screenshots"
+import { isValidUuid } from "@/lib/utils/uuid"
 
 type ParticipantWithHackathon = HackathonParticipant & {
   hackathons: Hackathon
@@ -1142,25 +1143,41 @@ export async function modifyTeamMembers(
   hackathonId: string,
   changes: { add?: string[]; remove?: string[] }
 ): Promise<boolean> {
+  if (!isValidUuid(teamId) || !isValidUuid(hackathonId)) return false
+
   const client = getSupabase() as unknown as SupabaseClient
+
+  const { data: team, error: teamError } = await client
+    .from("teams")
+    .select("id")
+    .eq("id", teamId)
+    .eq("hackathon_id", hackathonId)
+    .maybeSingle()
+
+  if (teamError || !team) return false
 
   if (changes.add && changes.add.length > 0) {
     for (const clerkUserId of changes.add) {
-      await client
+      const { data, error } = await client
         .from("hackathon_participants")
         .update({ team_id: teamId })
         .eq("hackathon_id", hackathonId)
         .eq("clerk_user_id", clerkUserId)
+        .select("id")
+      if (error || !data || data.length === 0) return false
     }
   }
 
   if (changes.remove && changes.remove.length > 0) {
     for (const clerkUserId of changes.remove) {
-      await client
+      const { data, error } = await client
         .from("hackathon_participants")
         .update({ team_id: null })
         .eq("hackathon_id", hackathonId)
         .eq("clerk_user_id", clerkUserId)
+        .eq("team_id", teamId)
+        .select("id")
+      if (error || !data || data.length === 0) return false
     }
   }
 
@@ -1171,7 +1188,30 @@ export async function bulkAssignTeams(
   hackathonId: string,
   assignments: { teamId: string; roomId: string }[]
 ): Promise<{ success: boolean; assignedCount: number }> {
+  if (
+    !isValidUuid(hackathonId) ||
+    assignments.some(({ teamId, roomId }) => !isValidUuid(teamId) || !isValidUuid(roomId))
+  ) return { success: false, assignedCount: 0 }
+
   const client = getSupabase() as unknown as SupabaseClient
+
+  if (assignments.length === 0) return { success: true, assignedCount: 0 }
+
+  const teamIds = [...new Set(assignments.map(({ teamId }) => teamId))]
+  const roomIds = [...new Set(assignments.map(({ roomId }) => roomId))]
+  const [teamsResult, roomsResult] = await Promise.all([
+    client.from("teams").select("id").eq("hackathon_id", hackathonId).in("id", teamIds),
+    client.from("rooms").select("id").eq("hackathon_id", hackathonId).in("id", roomIds),
+  ])
+
+  if (
+    teamsResult.error ||
+    roomsResult.error ||
+    (teamsResult.data ?? []).length !== teamIds.length ||
+    (roomsResult.data ?? []).length !== roomIds.length
+  ) {
+    return { success: false, assignedCount: 0 }
+  }
 
   const { data, error } = await client.rpc("bulk_assign_teams", {
     p_hackathon_id: hackathonId,

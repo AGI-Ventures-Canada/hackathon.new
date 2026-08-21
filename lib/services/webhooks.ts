@@ -3,6 +3,7 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { Webhook, WebhookDelivery, WebhookEvent } from "@/lib/db/hackathon-types"
 import type { Json } from "@/lib/db/types"
+import { isAllowedHttpsUrl, readResponseText } from "@/lib/utils/safe-fetch-url"
 import { generateWebhookSecret, signWebhookPayload } from "./encryption"
 
 export type CreateWebhookInput = {
@@ -21,6 +22,8 @@ export interface WebhookDeliveryResult {
 export async function createWebhook(
   input: CreateWebhookInput
 ): Promise<{ webhook: Webhook; secret: string } | null> {
+  if (!isAllowedHttpsUrl(input.url)) return null
+
   const secret = generateWebhookSecret()
 
   const { data, error } = await getSupabase()
@@ -80,18 +83,19 @@ export async function deleteWebhook(
   webhookId: string,
   tenantId: string
 ): Promise<boolean> {
-  const { error } = await getSupabase()
+  const { data, error } = await getSupabase()
     .from("webhooks")
     .delete()
     .eq("id", webhookId)
     .eq("tenant_id", tenantId)
+    .select("id")
 
   if (error) {
     console.error("Failed to delete webhook:", error)
     return false
   }
 
-  return true
+  return (data ?? []).length > 0
 }
 
 export async function disableWebhook(webhookId: string): Promise<boolean> {
@@ -177,6 +181,10 @@ export async function deliverWebhook(
   event: WebhookEvent,
   payload: Json
 ): Promise<WebhookDeliveryResult> {
+  if (!isAllowedHttpsUrl(webhook.url)) {
+    return { success: false, error: "Unsafe webhook URL" }
+  }
+
   const body = JSON.stringify(payload)
   const signature = signWebhookPayload(webhook.secret, body)
 
@@ -190,9 +198,14 @@ export async function deliverWebhook(
         "X-Webhook-Timestamp": new Date().toISOString(),
       },
       body,
+      redirect: "error",
+      signal: AbortSignal.timeout(10000),
     })
 
-    const responseBody = await response.text()
+    const responseBody = await readResponseText(response, 64 * 1024)
+    if (responseBody === null) {
+      return { success: false, status: response.status, error: "Webhook response was too large" }
+    }
 
     if (response.ok) {
       await resetFailureCount(webhook.id)

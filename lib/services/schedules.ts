@@ -1,6 +1,7 @@
 import { supabase as getSupabase } from "@/lib/db/client"
-import type { Schedule, ScheduleFrequency } from "@/lib/db/hackathon-types"
+import type { Job, Schedule, ScheduleFrequency } from "@/lib/db/hackathon-types"
 import type { Json } from "@/lib/db/types"
+import { CronExpressionParser } from "cron-parser"
 
 export type CreateScheduleInput = {
   tenantId: string
@@ -9,7 +10,7 @@ export type CreateScheduleInput = {
   cronExpression?: string
   timezone?: string
   runTime?: string // HH:MM format
-  jobType?: string
+  jobType: string
   input?: Json
 }
 
@@ -31,12 +32,16 @@ export async function createSchedule(
     return null
   }
 
+  const timezone = input.timezone ?? "UTC"
+  if (!isValidTimezone(timezone)) return null
+
   const nextRunAt = calculateNextRun(
     input.frequency,
     input.cronExpression,
-    input.timezone ?? "UTC",
+    timezone,
     input.runTime
   )
+  if (nextRunAt === null) return null
 
   const { data, error } = await getSupabase()
     .from("schedules")
@@ -45,8 +50,9 @@ export async function createSchedule(
       name: input.name,
       frequency: input.frequency,
       cron_expression: input.cronExpression ?? null,
-      timezone: input.timezone ?? "UTC",
-      job_type: input.jobType ?? null,
+      timezone,
+      run_time: input.runTime ?? null,
+      job_type: input.jobType,
       input: input.input ?? null,
       next_run_at: nextRunAt?.toISOString() ?? null,
     })
@@ -102,6 +108,8 @@ export async function updateSchedule(
   tenantId: string,
   updates: UpdateScheduleInput
 ): Promise<Schedule | null> {
+  if (updates.timezone !== undefined && !isValidTimezone(updates.timezone)) return null
+
   const updateData: Record<string, unknown> = {
     updated_at: new Date().toISOString(),
   }
@@ -110,18 +118,25 @@ export async function updateSchedule(
   if (updates.frequency !== undefined) updateData.frequency = updates.frequency
   if (updates.cronExpression !== undefined) updateData.cron_expression = updates.cronExpression
   if (updates.timezone !== undefined) updateData.timezone = updates.timezone
+  if (updates.runTime !== undefined) updateData.run_time = updates.runTime
   if (updates.input !== undefined) updateData.input = updates.input
   if (updates.isActive !== undefined) updateData.is_active = updates.isActive
 
-  if (updates.frequency || updates.cronExpression || updates.timezone || updates.runTime) {
+  if (
+    updates.frequency !== undefined ||
+    updates.cronExpression !== undefined ||
+    updates.timezone !== undefined ||
+    updates.runTime !== undefined
+  ) {
     const schedule = await getScheduleById(scheduleId, tenantId)
     if (schedule) {
       const nextRunAt = calculateNextRun(
         updates.frequency ?? schedule.frequency,
         updates.cronExpression ?? schedule.cron_expression ?? undefined,
         updates.timezone ?? schedule.timezone,
-        updates.runTime
+        updates.runTime ?? schedule.run_time ?? undefined
       )
+      if (nextRunAt === null) return null
       updateData.next_run_at = nextRunAt?.toISOString() ?? null
     }
   }
@@ -146,13 +161,14 @@ export async function deleteSchedule(
   scheduleId: string,
   tenantId: string
 ): Promise<boolean> {
-  const { error } = await getSupabase()
+  const { data, error } = await getSupabase()
     .from("schedules")
     .delete()
     .eq("id", scheduleId)
     .eq("tenant_id", tenantId)
+    .select("id")
 
-  return !error
+  return !error && (data ?? []).length > 0
 }
 
 export async function getNextDueSchedules(limit: number = 100): Promise<Schedule[]> {
@@ -178,10 +194,20 @@ export async function markScheduleRun(scheduleId: string): Promise<Schedule | nu
 
   if (!schedule.data) return null
 
-  const s = schedule.data as Schedule
-  const nextRunAt = calculateNextRun(s.frequency, s.cron_expression ?? undefined, s.timezone)
+  return claimScheduleRun(schedule.data as Schedule)
+}
 
-  const { data, error } = await getSupabase()
+async function claimScheduleRun(schedule: Schedule): Promise<Schedule | null> {
+  const s = schedule
+  const nextRunAt = calculateNextRun(
+    s.frequency,
+    s.cron_expression ?? undefined,
+    s.timezone,
+    s.run_time ?? undefined
+  )
+  if (nextRunAt === null && s.frequency !== "once") return null
+
+  let query = getSupabase()
     .from("schedules")
     .update({
       last_run_at: new Date().toISOString(),
@@ -190,127 +216,157 @@ export async function markScheduleRun(scheduleId: string): Promise<Schedule | nu
       is_active: s.frequency === "once" ? false : s.is_active,
       updated_at: new Date().toISOString(),
     })
-    .eq("id", scheduleId)
-    .select()
-    .single()
+    .eq("id", s.id)
+    .eq("is_active", true)
 
-  if (error || !data) {
+  if (s.next_run_at) query = query.eq("next_run_at", s.next_run_at)
+
+  const { data, error } = await query
+    .select()
+    .maybeSingle()
+
+  if (error) {
     console.error("Failed to mark schedule run:", error)
     return null
   }
+  if (!data) return null
 
   return data as Schedule
+}
+
+export type ProcessDueSchedulesResult = {
+  found: number
+  started: number
+  failed: number
+}
+
+type ScheduleProcessorDependencies = {
+  createJob: (input: {
+    tenantId: string
+    type: string
+    input?: Json
+    idempotencyKey?: string
+  }) => Promise<Job | null>
+  startJobWorkflow: (job: Job) => Promise<string | null>
+}
+
+export async function processDueSchedules(
+  dependencies?: ScheduleProcessorDependencies
+): Promise<ProcessDueSchedulesResult> {
+  const schedules = await getNextDueSchedules()
+  const jobService = dependencies ?? await import("@/lib/services/jobs")
+  let started = 0
+  let failed = 0
+
+  for (const schedule of schedules) {
+    if (!schedule.job_type) {
+      failed += 1
+      continue
+    }
+
+    const claimed = await claimScheduleRun(schedule)
+    if (!claimed) continue
+
+    const job = await jobService.createJob({
+      tenantId: schedule.tenant_id,
+      type: schedule.job_type,
+      input: schedule.input ?? undefined,
+      idempotencyKey: `schedule:${schedule.id}:${schedule.next_run_at}`,
+    })
+    if (!job || !(await jobService.startJobWorkflow(job))) {
+      failed += 1
+      continue
+    }
+
+    started += 1
+  }
+
+  return { found: schedules.length, started, failed }
 }
 
 export function calculateNextRun(
   frequency: ScheduleFrequency,
   cronExpression?: string,
-  _timezone: string = "UTC",
+  timezone: string = "UTC",
   runTime?: string
 ): Date | null {
   const now = new Date()
+  if (!isValidTimezone(timezone)) return null
 
-  // Parse runTime if provided (default to 09:00)
-  let hours = 9
-  let minutes = 0
-  if (runTime) {
-    const [h, m] = runTime.split(":").map(Number)
-    if (!isNaN(h) && !isNaN(m)) {
-      hours = h
-      minutes = m
-    }
-  }
+  const parsedRunTime = parseRunTime(runTime)
+  if (!parsedRunTime) return null
+  const [hours, minutes] = parsedRunTime
 
   switch (frequency) {
     case "once":
-      return null
+      return new Date(now.getTime() + 60 * 1000)
 
     case "hourly":
       return new Date(now.getTime() + 60 * 60 * 1000)
 
     case "daily": {
-      const next = new Date(now)
-      next.setHours(hours, minutes, 0, 0)
-      if (next <= now) {
-        next.setDate(next.getDate() + 1)
-      }
-      return next
+      return parseCronExpression(`${minutes} ${hours} * * *`, timezone, now)
     }
 
     case "weekly": {
-      const next = new Date(now)
-      next.setHours(hours, minutes, 0, 0)
-      next.setDate(next.getDate() + 7)
-      return next
+      const weekday = new Intl.DateTimeFormat("en-US", {
+        timeZone: timezone,
+        weekday: "short",
+      }).format(now)
+      return parseCronExpression(
+        `${minutes} ${hours} * * ${weekday.toLowerCase()}`,
+        timezone,
+        new Date(now.getTime() + 24 * 60 * 60 * 1000)
+      )
     }
 
     case "monthly": {
-      const next = new Date(now)
-      next.setDate(1)
-      next.setMonth(next.getMonth() + 1)
-      next.setHours(hours, minutes, 0, 0)
-      return next
+      return parseCronExpression(`${minutes} ${hours} 1 * *`, timezone, now)
     }
 
     case "cron":
       if (!cronExpression) return null
-      return parseCronExpression(cronExpression)
+      return parseCronExpression(cronExpression, timezone, now)
 
     default:
       return null
   }
 }
 
-function parseCronExpression(expression: string): Date | null {
-  const parts = expression.split(" ")
+function parseCronExpression(
+  expression: string,
+  timezone: string,
+  currentDate: Date
+): Date | null {
+  const parts = expression.trim().split(/\s+/)
   if (parts.length !== 5) return null
 
-  const [minute, hour, dayOfMonth, month, dayOfWeek] = parts
-  const now = new Date()
-  const next = new Date(now)
-
   try {
-    if (minute !== "*") {
-      next.setMinutes(parseInt(minute, 10))
-    }
-    if (hour !== "*") {
-      next.setHours(parseInt(hour, 10))
-    }
-    if (dayOfMonth !== "*") {
-      next.setDate(parseInt(dayOfMonth, 10))
-    }
-    if (month !== "*") {
-      next.setMonth(parseInt(month, 10) - 1)
-    }
-
-    next.setSeconds(0)
-    next.setMilliseconds(0)
-
-    if (next <= now) {
-      if (minute !== "*" && hour === "*") {
-        next.setHours(next.getHours() + 1)
-      } else if (hour !== "*" && dayOfMonth === "*") {
-        next.setDate(next.getDate() + 1)
-      } else if (dayOfMonth !== "*" && month === "*") {
-        next.setMonth(next.getMonth() + 1)
-      } else if (month !== "*") {
-        next.setFullYear(next.getFullYear() + 1)
-      } else {
-        next.setMinutes(next.getMinutes() + 1)
-      }
-    }
-
-    if (dayOfWeek !== "*") {
-      const targetDay = parseInt(dayOfWeek, 10)
-      const currentDay = next.getDay()
-      const daysUntilTarget = (targetDay - currentDay + 7) % 7
-      if (daysUntilTarget > 0 || next <= now) {
-        next.setDate(next.getDate() + (daysUntilTarget || 7))
-      }
-    }
-
-    return next
+    return CronExpressionParser.parse(expression, {
+      currentDate,
+      tz: timezone,
+    }).next().toDate()
   } catch {
     return null
+  }
+}
+
+function parseRunTime(runTime?: string): [number, number] | null {
+  if (runTime === undefined) return [9, 0]
+  const match = /^(\d{2}):(\d{2})$/.exec(runTime)
+  if (!match) return null
+
+  const hours = Number(match[1])
+  const minutes = Number(match[2])
+  if (hours > 23 || minutes > 59) return null
+  return [hours, minutes]
+}
+
+function isValidTimezone(timezone: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format()
+    return true
+  } catch {
+    return false
   }
 }
