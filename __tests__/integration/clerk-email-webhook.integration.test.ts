@@ -95,12 +95,13 @@ describe("POST /api/webhooks/clerk", () => {
     expect(response.status).toBe(503)
   })
 
-  it("rejects incomplete email payloads", async () => {
+  it("acknowledges incomplete email payloads so Clerk does not retry them", async () => {
     forwardClerkEmailImpl = () =>
       Promise.resolve({ status: "invalid", reason: "missing_recipient" })
 
     const response = await POST(webhookRequest())
 
-    expect(response.status).toBe(422)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ received: true, status: "invalid" })
   })
 })
