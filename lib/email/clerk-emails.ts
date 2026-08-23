@@ -10,7 +10,10 @@ import {
 export type ForwardClerkEmailResult =
   | { status: "sent"; emailId: string }
   | { status: "skipped"; reason: "delivered_by_clerk" }
-  | { status: "invalid"; reason: "missing_recipient" | "missing_subject" | "missing_body" }
+  | {
+      status: "invalid"
+      reason: "missing_id" | "missing_recipient" | "missing_subject" | "missing_body"
+    }
   | { status: "failed" }
 
 function getEmailType(slug: string | null | undefined): string {
@@ -22,27 +25,31 @@ export async function forwardClerkEmail(email: EmailJSON): Promise<ForwardClerkE
     return { status: "skipped", reason: "delivered_by_clerk" }
   }
 
+  const emailId = email.id?.trim()
+  if (!emailId) return { status: "invalid", reason: "missing_id" }
+
   const to = email.to_email_address?.trim()
   if (!to) return { status: "invalid", reason: "missing_recipient" }
 
   const subject = email.subject?.trim()
   if (!subject) return { status: "invalid", reason: "missing_subject" }
 
-  const html = email.body?.trim()
-  if (!html) return { status: "invalid", reason: "missing_body" }
+  const html = email.body?.trim() || undefined
+  const text = email.body_plain?.trim() || (html ? htmlToPlainText(html) : undefined)
+  if (!html && !text) return { status: "invalid", reason: "missing_body" }
 
   const result = await sendEmail({
     to,
     subject,
     html,
-    text: email.body_plain?.trim() || htmlToPlainText(html),
+    text,
     replyTo: getReplyToAddress(),
     headers: buildMailtoUnsubscribeHeaders(),
     tags: [
       { name: "type", value: getEmailType(email.slug) },
       { name: "source", value: "clerk" },
     ],
-    idempotencyKey: `clerk-email/${email.id}`,
+    idempotencyKey: `clerk-email/${emailId}`,
   })
 
   if (!result) return { status: "failed" }
