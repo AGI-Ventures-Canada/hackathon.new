@@ -389,6 +389,17 @@ Templates live in `emails/` as React Email components. Send logic in `lib/email/
 
 ## Git Workflow
 
+### GitHub Account Enforcement
+
+**CRITICAL: Every commit and remote GitHub action in this repository must use the `alex-agiventures` account only.** Run `bun run git:setup-account` before committing and before any fetch, pull, push, `gh` command, PR action, or merge.
+
+- Repo-local identity must be `Alex Ivany <alex@agiventures.ca>` for both author and committer
+- `origin` must use `git@github.com-work:AGI-Ventures-Canada/oatmeal.git` for fetch and push
+- `gh api user --jq .login` must return exactly `alex-agiventures`
+- Never use the `alexivany` account, `alexander.ivany@gmail.com`, the default `github.com` SSH host, or a personal GitHub token
+- Never bypass `.githooks/pre-commit` or `.githooks/pre-push` with `--no-verify` or a different `core.hooksPath`
+- If verification fails, stop all Git and GitHub actions until the work account is active
+
 ### Starting New Work
 
 Automatically run before creating a feature branch:
