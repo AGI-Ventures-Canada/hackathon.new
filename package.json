@@ -24,7 +24,8 @@
     "cli:test": "bun test packages/cli/__tests__",
     "cli:build": "cd packages/cli && bun run build",
     "email:dev": "email dev --dir emails --port 3001",
-    "browser": "./scripts/browser.sh"
+    "browser": "./scripts/browser.sh",
+    "git:setup-account": "./scripts/setup-git-account.sh"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.12",

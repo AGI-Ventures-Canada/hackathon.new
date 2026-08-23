@@ -1,0 +1,91 @@
+#!/bin/sh
+set -eu
+
+expected_login="alex-agiventures"
+expected_name="Alex Ivany"
+expected_email="alex@agiventures.ca"
+expected_remote="git@github.com-work:AGI-Ventures-Canada/oatmeal.git"
+mode="${1:-all}"
+push_remote_name="${2:-origin}"
+push_remote_url="${3:-}"
+
+fail() {
+  printf 'GitHub account policy failed: %s\n' "$1" >&2
+  exit 1
+}
+
+verify_identity() {
+  local_name="$(git config --local --get user.name 2>/dev/null || true)"
+  local_email="$(git config --local --get user.email 2>/dev/null || true)"
+  [ "$local_name" = "$expected_name" ] || fail "repo-local user.name must be $expected_name"
+  [ "$local_email" = "$expected_email" ] || fail "repo-local user.email must be $expected_email"
+
+  author_ident="$(git var GIT_AUTHOR_IDENT 2>/dev/null || true)"
+  committer_ident="$(git var GIT_COMMITTER_IDENT 2>/dev/null || true)"
+  case "$author_ident" in
+    *"<$expected_email>"*) ;;
+    *) fail "effective author must use $expected_email" ;;
+  esac
+  case "$committer_ident" in
+    *"<$expected_email>"*) ;;
+    *) fail "effective committer must use $expected_email" ;;
+  esac
+}
+
+verify_remote() {
+  fetch_urls="$(git remote get-url --all origin 2>/dev/null || true)"
+  push_urls="$(git remote get-url --push --all origin 2>/dev/null || true)"
+  [ "$fetch_urls" = "$expected_remote" ] || fail "origin must have exactly one fetch URL: $expected_remote"
+  [ "$push_urls" = "$expected_remote" ] || fail "origin must have exactly one push URL: $expected_remote"
+}
+
+verify_push_target() {
+  [ -n "$push_remote_url" ] || push_remote_url="$(git remote get-url --push "$push_remote_name" 2>/dev/null || true)"
+  [ "$push_remote_url" = "$expected_remote" ] || fail "actual push target must be $expected_remote"
+}
+
+verify_github_login() {
+  command -v gh >/dev/null 2>&1 || fail "GitHub CLI is required"
+  login="$(gh api user --jq .login 2>/dev/null || true)"
+  [ "$login" = "$expected_login" ] || fail "active GitHub login must be $expected_login"
+}
+
+verify_pushed_commits() {
+  zero="0000000000000000000000000000000000000000"
+  while read -r local_ref local_sha remote_ref remote_sha; do
+    [ -n "${local_ref:-}" ] || continue
+    [ "$local_sha" != "$zero" ] || continue
+    for commit in $(git rev-list "$local_sha" --not --remotes=origin); do
+      author_email="$(git show -s --format='%ae' "$commit")"
+      committer_email="$(git show -s --format='%ce' "$commit")"
+      [ "$author_email" = "$expected_email" ] || fail "$commit author uses $author_email"
+      [ "$committer_email" = "$expected_email" ] || fail "$commit committer uses $committer_email"
+    done
+  done
+}
+
+case "$mode" in
+  commit)
+    verify_identity
+    ;;
+  remote)
+    verify_identity
+    verify_remote
+    verify_github_login
+    ;;
+  push)
+    verify_identity
+    verify_remote
+    verify_push_target
+    verify_github_login
+    verify_pushed_commits
+    ;;
+  all)
+    verify_identity
+    verify_remote
+    verify_github_login
+    ;;
+  *)
+    fail "unknown verification mode: $mode"
+    ;;
+esac
