@@ -31,7 +31,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       reason: result.reason,
       slug: event.data.slug,
     })
-    return Response.json({ error: "Email payload is incomplete." }, { status: 422 })
+    return Response.json({ received: true, status: result.status })
   }
 
   if (result.status === "failed") {

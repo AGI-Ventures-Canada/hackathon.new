@@ -69,6 +69,16 @@ describe("forwardClerkEmail", () => {
     expect(mockSendEmail.mock.calls[0]?.[0]).toMatchObject({ text: "Hello there" })
   })
 
+  it("forwards a text-only Clerk email", async () => {
+    const result = await forwardClerkEmail(buildEmail({ body: undefined, body_plain: "Open your invitation." }))
+
+    expect(result).toEqual({ status: "sent", emailId: "email_123" })
+    expect(mockSendEmail.mock.calls[0]?.[0]).toMatchObject({
+      html: undefined,
+      text: "Open your invitation.",
+    })
+  })
+
   it("does not duplicate an email already delivered by Clerk", async () => {
     const result = await forwardClerkEmail(buildEmail({ delivered_by_clerk: true }))
 
@@ -77,6 +87,10 @@ describe("forwardClerkEmail", () => {
   })
 
   it("rejects incomplete Clerk email payloads", async () => {
+    expect(await forwardClerkEmail(buildEmail({ id: "" }))).toEqual({
+      status: "invalid",
+      reason: "missing_id",
+    })
     expect(await forwardClerkEmail(buildEmail({ to_email_address: undefined }))).toEqual({
       status: "invalid",
       reason: "missing_recipient",
@@ -85,7 +99,11 @@ describe("forwardClerkEmail", () => {
       status: "invalid",
       reason: "missing_subject",
     })
-    expect(await forwardClerkEmail(buildEmail({ body: undefined }))).toEqual({
+    expect(await forwardClerkEmail(buildEmail({ body: undefined, body_plain: null }))).toEqual({
+      status: "invalid",
+      reason: "missing_body",
+    })
+    expect(await forwardClerkEmail(buildEmail({ body: " ", body_plain: " " }))).toEqual({
       status: "invalid",
       reason: "missing_body",
     })
