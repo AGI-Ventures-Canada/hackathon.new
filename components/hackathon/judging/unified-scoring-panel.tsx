@@ -201,6 +201,7 @@ export function UnifiedScoringPanel({
         throw new Error((data as { error?: string }).error || "Failed to submit scores")
       }
 
+      setDetail((current) => current ? { ...current, isComplete: true } : current)
       onScoreSubmitted()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to submit scores")
@@ -415,7 +416,7 @@ export function UnifiedScoringPanel({
       <div className="flex gap-2">
         <Button onClick={handleSubmit} disabled={submitting}>
           {submitting && <Loader2 className="mr-2 size-4 animate-spin" />}
-          Submit Scores
+          {detail.isComplete ? "Save changes" : "Submit scores"}
         </Button>
         <Button variant="outline" onClick={onClose}>
           {cancelLabel}

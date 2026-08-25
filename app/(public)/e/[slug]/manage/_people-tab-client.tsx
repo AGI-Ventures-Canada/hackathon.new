@@ -54,6 +54,15 @@ const UNASSIGNED = "__unassigned__"
 const ROLES: PersonRole[] = ["participant", "judge", "mentor", "organizer"]
 const LOCKED_STATUSES = new Set(["judging", "completed", "archived"])
 
+export function canChangePersonRole(
+  hackathonStatus: string | null,
+  currentRole: PersonRole,
+  nextRole: PersonRole,
+) {
+  if (!hackathonStatus || !LOCKED_STATUSES.has(hackathonStatus)) return true
+  return hackathonStatus === "judging" && currentRole === "participant" && nextRole === "judge"
+}
+
 function parsePendingId(id: string): { kind: "team" | "judge"; invitationId: string } | null {
   if (id.startsWith("team_invitation:")) return { kind: "team", invitationId: id.slice("team_invitation:".length) }
   if (id.startsWith("judge_invitation:")) return { kind: "judge", invitationId: id.slice("judge_invitation:".length) }
@@ -123,10 +132,17 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
 
   async function handleChangeRole(person: Person, nextRole: PersonRole) {
     if (person.role === nextRole) return
-    const droppingFromTeam = person.role === "participant" && nextRole !== "participant"
+    const droppingFromTeam =
+      person.role === "participant" &&
+      nextRole !== "participant" &&
+      nextRole !== "judge"
+    const handingOffCaptain =
+      person.role === "participant" &&
+      nextRole === "judge" &&
+      person.isCaptain
     const patch: Partial<Person> = droppingFromTeam
       ? { role: nextRole, teamId: null, teamName: null, isCaptain: false }
-      : { role: nextRole }
+      : { role: nextRole, ...(handingOffCaptain ? { isCaptain: false } : {}) }
     list.setLocalEdit(person.id, patch)
     try {
       await fetch(`/api/dashboard/hackathons/${hackathonId}/participants/${person.id}`, {
@@ -274,6 +290,9 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
                 const isPending = p.status === "pending"
                 const isTeamInvite = parsedPending?.kind === "team"
                 const isReminded = isPending && !!p.remindedAt
+                const canChangeAnyRole = ROLES.some(
+                  (role) => role !== p.role && canChangePersonRole(hackathonStatus, p.role, role)
+                )
                 return (
                   <TableRow key={p.id}>
                     <TableCell className="font-medium">
@@ -353,7 +372,7 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
                               </DropdownMenuSub>
                               )}
                               <DropdownMenuSub>
-                                <DropdownMenuSubTrigger disabled={isLocked}>
+                                <DropdownMenuSubTrigger disabled={!canChangeAnyRole}>
                                   <UserCog className="size-4" />
                                   Change role
                                 </DropdownMenuSubTrigger>
@@ -366,7 +385,13 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
                                     onValueChange={(v) => handleChangeRole(p, v as PersonRole)}
                                   >
                                     {ROLES.map((r) => (
-                                      <DropdownMenuRadioItem key={r} value={r}>{ROLE_LABEL[r]}</DropdownMenuRadioItem>
+                                      <DropdownMenuRadioItem
+                                        key={r}
+                                        value={r}
+                                        disabled={r !== p.role && !canChangePersonRole(hackathonStatus, p.role, r)}
+                                      >
+                                        {ROLE_LABEL[r]}
+                                      </DropdownMenuRadioItem>
                                     ))}
                                   </DropdownMenuRadioGroup>
                                 </DropdownMenuSubContent>

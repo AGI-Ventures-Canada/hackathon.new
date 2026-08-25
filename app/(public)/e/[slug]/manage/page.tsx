@@ -3,7 +3,7 @@ import { notFound } from "next/navigation"
 import { auth } from "@clerk/nextjs/server"
 import { getManageHackathon } from "@/lib/services/manage-hackathon"
 import { getHackathonSubmissions } from "@/lib/services/submissions"
-import { countJudges, countUnassignedSubmissions, getJudgingProgress, listPrizes, listRounds } from "@/lib/services/judging"
+import { countJudges, countUnassignedSubmissions, getJudgingProgress, getJudgingSetupStatus, listPrizes, listRounds } from "@/lib/services/judging"
 import { countPendingJudgeInvitations } from "@/lib/services/judge-invitations"
 import { countJudgeDisplayProfiles } from "@/lib/services/judge-display"
 import { getManageOverviewStats } from "@/lib/services/manage-overview"
@@ -73,6 +73,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     rounds,
     perks,
     unassignedSubmissionCount,
+    judgingSetupStatus,
   ] = await Promise.all([
     getHackathonSubmissions(hackathon.id),
     getJudgingProgress(hackathon.id),
@@ -87,6 +88,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     listRounds(hackathon.id),
     listPerks(hackathon.id),
     countUnassignedSubmissions(hackathon.id),
+    getJudgingSetupStatus(hackathon.id),
   ])
 
   const submissionCount = submissions.length
@@ -133,6 +135,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     rounds: roundsSummary,
     communityUrl: hackathon.community_url ?? null,
     termsContent: hackathon.terms_content ?? null,
+    judgingSetupReady: judgingSetupStatus.isReady,
   })
 
   const activeTab = resolveTab(tab, VALID_TABS, DEFAULT_TAB)
@@ -201,6 +204,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
         }}
         sponsors={hackathon.sponsors.map((s) => ({ id: s.id, name: s.name }))}
         rounds={roundsForDialogs}
+        judgingSetupIssues={judgingSetupStatus.issues}
       >
         <TabsUrlSync paramKey="tab" value={activeTab}>
           <ActionItemsLayout>
@@ -240,6 +244,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
                   status={hackathon.status}
                   submissionCount={submissionCount}
                   judgingProgress={judgingProgress}
+                  judgingSetupIssues={judgingSetupStatus.issues}
                   startsAt={hackathon.starts_at}
                   endsAt={hackathon.ends_at}
                   registrationOpensAt={hackathon.registration_opens_at}

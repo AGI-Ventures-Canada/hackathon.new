@@ -101,26 +101,6 @@ export function FocusScoringView({
     }
   }
 
-  if (allDone) {
-    return (
-      <div className="flex flex-col items-center gap-3 py-12">
-        <CheckCircle2 className="size-12 text-primary" />
-        <p className="text-lg font-semibold">All done!</p>
-        <p className="text-sm text-muted-foreground">
-          You&apos;ve scored all {total} assignments.
-        </p>
-        {summaryHref && (
-          <Button asChild variant="outline" size="sm" className="mt-2">
-            <Link href={summaryHref}>
-              <BarChart3 className="mr-2 size-4" />
-              View your summary
-            </Link>
-          </Button>
-        )}
-      </div>
-    )
-  }
-
   if (!current) return null
 
   const isCurrentComplete = completedIds.has(current.id)
@@ -128,6 +108,28 @@ export function FocusScoringView({
 
   return (
     <div className="space-y-4">
+      {allDone && (
+        <div className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-primary" />
+            <div>
+              <p className="text-sm font-medium">All scores are in.</p>
+              <p className="text-sm text-muted-foreground">
+                You can review and change them while judging is open.
+              </p>
+            </div>
+          </div>
+          {summaryHref && (
+            <Button asChild variant="outline" size="sm">
+              <Link href={summaryHref}>
+                <BarChart3 className="mr-2 size-4" />
+                View your summary
+              </Link>
+            </Button>
+          )}
+        </div>
+      )}
+
       <div className="flex items-center gap-3">
         <Button
           variant="outline"

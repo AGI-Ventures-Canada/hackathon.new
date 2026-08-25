@@ -149,6 +149,7 @@ export type ActionItemsInput = {
   rounds: { plannedCount: number; activeCount: number; completeCount: number }
   communityUrl?: string | null
   termsContent?: string | null
+  judgingSetupReady?: boolean
 }
 
 const STATUS_ORDER: HackathonStatus[] = ["draft", "published", "active", "judging", "completed"]
@@ -684,7 +685,32 @@ function addActiveActions(items: ActionItem[], input: ActionItemsInput) {
     }))
   }
 
-  if (input.submissionCount > 0 && hasJudges && input.challengeReleased) {
+  if (input.judgingSetupReady === false) {
+    items.push(autoAction({
+      id: "finish-scoring-setup",
+      severity: "urgent",
+      tab: "judging",
+      subtab: "setup",
+      subtabKey: "jtab",
+      ctaLabel: "Review scoring",
+      isComplete: false,
+      pending: {
+        label: "Finish scoring setup",
+        hint: "Fix the scoring rules before judging starts",
+      },
+      completed: {
+        label: "Scoring setup is ready",
+        hint: "Judges have complete scoring rules",
+      },
+    }))
+  }
+
+  if (
+    input.submissionCount > 0 &&
+    hasJudges &&
+    input.challengeReleased &&
+    input.judgingSetupReady !== false
+  ) {
     items.push(transitionAction({
       id: "ready-for-judging",
       label: "Ready to start judging",

@@ -1363,6 +1363,21 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         }
       }
 
+      if (body.status === "judging" && previousStatus === "active") {
+        const { getJudgingSetupStatus } = await import("@/lib/services/judging")
+        const setup = await getJudgingSetupStatus(params.id)
+        if (!setup.isReady) {
+          return new Response(
+            JSON.stringify({
+              error: `Finish scoring setup before judging starts. ${setup.issues.join(" ")}`,
+              code: "judging_setup_incomplete",
+              issues: setup.issues,
+            }),
+            { status: 409, headers: { "Content-Type": "application/json" } },
+          )
+        }
+      }
+
       const hasStatusTransition = previousStatus && body.status && body.status !== previousStatus
       const hasOtherFields = body.bannerUrl !== undefined || body.name !== undefined ||
         body.description !== undefined || body.rules !== undefined ||
@@ -1646,7 +1661,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
     {
       detail: {
         summary: "Update hackathon settings",
-        description: "Updates hackathon configuration. Requires hackathons:write scope.",
+        description: "Updates hackathon configuration. Starting judging requires complete scoring rules. Requires hackathons:write scope.",
       },
       body: t.Object({
         bannerUrl: t.Optional(t.Union([t.String(), t.Null()])),

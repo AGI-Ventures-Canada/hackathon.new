@@ -321,6 +321,9 @@ curl -s "$BASE_URL/api/public/hackathons/$SLUG/judging/assignments/$ASSIGNMENT_I
   "teamName": "Team Alpha",
   "isComplete": false,
   "notes": "",
+  "buckets": [],
+  "existingGateResponses": [],
+  "existingBucketId": null,
   "criteria": [
     {
       "id": "c1c2c3c4-...",
@@ -338,9 +341,10 @@ curl -s "$BASE_URL/api/public/hackathons/$SLUG/judging/assignments/$ASSIGNMENT_I
 
 ---
 
-### Submit scores for assignment
+### Save scores for assignment
 
 Requires Clerk session (judge must own the assignment). Hackathon must be in `judging` or `active` status.
+Send the request again to revise scores while judging is still open.
 
 ```bash
 curl -s -X POST "$BASE_URL/api/public/hackathons/$SLUG/judging/assignments/$ASSIGNMENT_ID/scores" \
@@ -351,6 +355,26 @@ curl -s -X POST "$BASE_URL/api/public/hackathons/$SLUG/judging/assignments/$ASSI
       { "criteriaId": "c1c2c3c4-...", "score": 8 }
     ],
     "notes": "Strong technical implementation"
+  }'
+```
+
+```json
+{ "success": true }
+```
+
+---
+
+### Save ranked judge picks
+
+Requires a Clerk session. Every project must be assigned to the current judge.
+
+```bash
+curl -s -X POST "$BASE_URL/api/public/hackathons/$SLUG/judging/picks" \
+  --cookie "clerk-session=..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prizeId": "p1p2p3p4-...",
+    "rankedSubmissionIds": ["s1s2s3s4-...", "s5s6s7s8-..."]
   }'
 ```
 
@@ -528,6 +552,8 @@ curl -s -X PATCH "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/settings" \
 ```
 
 **Valid statuses:** `draft`, `published`, `registration_open`, `active`, `judging`, `completed`, `archived`
+
+Starting `judging` returns `409 judging_setup_incomplete` until every scored prize has complete rules. The response includes an `issues` list with the changes needed.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -969,6 +995,21 @@ curl -s -X DELETE "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/judging/assi
 
 ---
 
+### Event people
+
+#### Change an attendee to a judge
+
+Scope: `hackathons:write`. This remains available during judging. Team links are kept so the judge can't score their own team.
+
+```bash
+curl -s -X PATCH "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/participants/$PARTICIPANT_ID" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"role":"judge"}' | jq .
+```
+
+---
+
 ### Teams
 
 #### Update team name
@@ -1230,7 +1271,7 @@ curl -s -X DELETE "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/rounds/$ROUN
 
 #### Calculate rankings
 
-Scope: `hackathons:write`. Computes rankings from judging scores.
+Scope: `hackathons:write`. Computes each prize ranking with its scoring style.
 
 ```bash
 curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/results/calculate" \

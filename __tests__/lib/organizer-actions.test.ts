@@ -438,6 +438,22 @@ describe("getOrganizerActionItems", () => {
       expect(items.find((i) => i.id === "ready-for-judging")).toBeUndefined()
     })
 
+    it("routes incomplete scoring setup back to judging", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "active",
+        submissionCount: 5,
+        judgeCount: 3,
+        challengeReleased: true,
+        judgingSetupReady: false,
+      }))
+
+      const item = items.find((i) => i.id === "finish-scoring-setup")
+      expect(item?.severity).toBe("urgent")
+      expect(item?.tab).toBe("judging")
+      expect(item?.subtab).toBe("setup")
+      expect(items.find((i) => i.id === "ready-for-judging")).toBeUndefined()
+    })
+
     it("flags unassigned submissions as urgent and routes to judging tab", () => {
       const items = getOrganizerActionItems(makeInput({
         status: "active",

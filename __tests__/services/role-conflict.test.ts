@@ -21,7 +21,7 @@ describe("checkRoleConflict", () => {
     expect(result.conflict).toBe(false)
   })
 
-  it("detects team member trying to become judge", async () => {
+  it("allows a team member to become a judge", async () => {
     setMockFromImplementation(() =>
       createChainableMock({
         data: { id: "p1", role: "participant", team_id: "team_1" },
@@ -30,14 +30,10 @@ describe("checkRoleConflict", () => {
     )
 
     const result = await checkRoleConflict("h1", "user_123", "judge")
-    expect(result.conflict).toBe(true)
-    if (result.conflict) {
-      expect(result.code).toBe("role_conflict")
-      expect(result.existingRole).toBe("participant")
-    }
+    expect(result.conflict).toBe(false)
   })
 
-  it("detects participant without team trying to become judge", async () => {
+  it("allows an attendee without a team to become a judge", async () => {
     setMockFromImplementation(() =>
       createChainableMock({
         data: { id: "p1", role: "participant", team_id: null },
@@ -46,11 +42,7 @@ describe("checkRoleConflict", () => {
     )
 
     const result = await checkRoleConflict("h1", "user_123", "judge")
-    expect(result.conflict).toBe(true)
-    if (result.conflict) {
-      expect(result.code).toBe("role_conflict")
-      expect(result.existingRole).toBe("participant")
-    }
+    expect(result.conflict).toBe(false)
   })
 
   it("detects judge trying to become participant", async () => {
