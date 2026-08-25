@@ -32,11 +32,12 @@ type Props = {
   hackathonId: string
   status: HackathonStatus
   endsAt: string | null
+  judgingSetupIssues: string[]
   onTransitioned?: () => void
 }
 
 export const TransitionConfirmDialog = forwardRef<TransitionConfirmDialogHandle, Props>(
-  function TransitionConfirmDialog({ hackathonId, status, endsAt, onTransitioned }, ref) {
+  function TransitionConfirmDialog({ hackathonId, status, endsAt, judgingSetupIssues, onTransitioned }, ref) {
     const router = useRouter()
     const { activeItems, setOptimisticStage } = useActionItems()
     const [pendingTarget, setPendingTarget] = useState<StageKey | null>(null)
@@ -172,9 +173,23 @@ export const TransitionConfirmDialog = forwardRef<TransitionConfirmDialogHandle,
               <p className="text-sm text-destructive">{error}</p>
             </div>
           )}
+          {pendingTarget === "judging" && judgingSetupIssues.length > 0 && (
+            <div className="flex items-start gap-3 rounded-md border border-destructive/50 bg-destructive/10 p-3">
+              <AlertTriangle className="size-5 shrink-0 text-destructive" />
+              <div className="text-sm text-destructive">
+                <p className="font-medium">Finish scoring setup first</p>
+                <ul className="mt-1 list-disc pl-4 text-destructive/80">
+                  {judgingSetupIssues.map((issue) => <li key={issue}>{issue}</li>)}
+                </ul>
+              </div>
+            </div>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={updating} onClick={closeDialog}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={(e) => { e.preventDefault(); commitTransition() }} disabled={updating}>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); commitTransition() }}
+              disabled={updating || (pendingTarget === "judging" && judgingSetupIssues.length > 0)}
+            >
               {updating && <Loader2 className="size-3.5 animate-spin mr-1.5" />}
               Confirm
             </AlertDialogAction>
