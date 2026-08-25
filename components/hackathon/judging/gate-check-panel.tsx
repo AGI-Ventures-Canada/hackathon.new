@@ -59,7 +59,7 @@ export function GateCheckPanel({
     return index >= 0 ? index : 0
   })
   const [detail, setDetail] = useState<AssignmentDetail | null>(null)
-  const [detailLoading, setDetailLoading] = useState(false)
+  const [detailLoading, setDetailLoading] = useState(initialAssignments.length > 0)
   const [error, setError] = useState<string | null>(null)
 
   const [gateResponses, setGateResponses] = useState<Record<string, boolean>>({})
@@ -164,6 +164,7 @@ export function GateCheckPanel({
       }
 
       setSubmitted(true)
+      setDetail((current) => current ? { ...current, isComplete: true } : current)
       setAssignments((prev) =>
         prev.map((a) =>
           a.id === detail.id ? { ...a, isComplete: true } : a
@@ -209,22 +210,6 @@ export function GateCheckPanel({
   }
 
   const scored = assignments.filter((a) => a.isComplete).length
-  const allDone = scored >= assignments.length
-
-  if (allDone && !detail) {
-    return (
-      <Card>
-        <CardContent className="flex flex-col items-center gap-3 py-12">
-          <CheckCircle2 className="size-10 text-primary" />
-          <p className="text-sm font-medium">All submissions checked</p>
-          <p className="text-xs text-muted-foreground">
-            {scored}/{assignments.length} complete
-          </p>
-        </CardContent>
-      </Card>
-    )
-  }
-
   const passCount = Object.values(gateResponses).filter(Boolean).length
   const totalGates = detail?.gates.length ?? 0
 
@@ -271,12 +256,17 @@ export function GateCheckPanel({
             <p className="text-sm font-medium">
               {passCount}/{totalGates} gates passed
             </p>
-            {currentIndex < assignments.length - 1 && (
-              <Button size="sm" variant="outline" onClick={goNext}>
-                Next Submission
-                <ChevronRight className="ml-1 size-4" />
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button size="sm" variant="outline" onClick={() => setSubmitted(false)}>
+                Edit response
               </Button>
-            )}
+              {currentIndex < assignments.length - 1 && (
+                <Button size="sm" variant="outline" onClick={goNext}>
+                  Next project
+                  <ChevronRight className="ml-1 size-4" />
+                </Button>
+              )}
+            </div>
           </div>
         ) : detail ? (
           <>
@@ -379,7 +369,7 @@ export function GateCheckPanel({
                 className="ml-auto"
               >
                 {submitting && <Loader2 className="mr-2 size-4 animate-spin" />}
-                Submit & Next
+                {detail.isComplete ? "Save changes" : "Submit & next"}
               </Button>
             </div>
           </>

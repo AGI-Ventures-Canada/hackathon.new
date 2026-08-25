@@ -482,8 +482,17 @@ describe("Judging Scoring Service", () => {
       }
     })
 
-    it("rejects submission when assignment is already complete", async () => {
+    it("updates scores when assignment is already complete", async () => {
       const completeOwnership = { hackathonId: HACKATHON_ID, prizeId: PRIZE_ID, isComplete: true, submissionId: SUBMISSION_ID, notes: "" }
+      setMockFromImplementation((table) => {
+        if (table === "judging_criteria") {
+          return createChainableMock({
+            data: [{ id: CRITERIA_ID_1, min_score: 0, max_score: 10 }],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
 
       const result = await submitScores(
         ASSIGNMENT_ID,
@@ -492,11 +501,7 @@ describe("Judging Scoring Service", () => {
         "notes"
       )
 
-      expect(result.success).toBe(false)
-      if (!result.success) {
-        expect(result.code).toBe("already_complete")
-        expect(result.error).toBe("Assignment is already complete")
-      }
+      expect(result).toEqual({ success: true })
     })
   })
 })

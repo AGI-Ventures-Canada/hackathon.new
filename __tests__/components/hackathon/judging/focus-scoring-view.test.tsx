@@ -150,7 +150,7 @@ describe("FocusScoringView", () => {
     expect(screen.getByText("2 of 3")).toBeDefined()
   })
 
-  it("shows completion state when all scored", () => {
+  it("keeps completed assignments open for review when all are scored", () => {
     render(
       <FocusScoringView
         hackathonSlug="test-hack"
@@ -159,8 +159,10 @@ describe("FocusScoringView", () => {
         onScoreSubmitted={onScoreSubmitted}
       />
     )
-    expect(screen.getByText("All done!")).toBeDefined()
-    expect(screen.getByText("You've scored all 3 assignments.")).toBeDefined()
+    expect(screen.getByText("All scores are in.")).toBeDefined()
+    expect(screen.getByText("You can review and change them while judging is open.")).toBeDefined()
+    expect(screen.getByTestId("scoring-panel-a1")).toBeDefined()
+    expect(screen.getByText("Scored")).toBeDefined()
   })
 
   it("passes cancelLabel='Skip' to ScoringPanel", () => {

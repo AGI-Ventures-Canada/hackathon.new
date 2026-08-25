@@ -3590,10 +3590,6 @@ export async function submitScores(
   scores: { criteriaId: string; score: number }[],
   notes: string
 ): Promise<SubmitScoresResult> {
-  if (ownership.isComplete) {
-    return { success: false, error: "Assignment is already complete", code: "already_complete" }
-  }
-
   const client = getSupabase() as unknown as SupabaseClient
 
   type CriterionRow = { id: string; min_score: number; max_score: number }
