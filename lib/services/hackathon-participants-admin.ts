@@ -66,6 +66,7 @@ async function promoteNextCaptain(
     .select("clerk_user_id, registered_at")
     .eq("team_id", teamId)
     .eq("hackathon_id", hackathonId)
+    .eq("role", "participant")
     .neq("clerk_user_id", excludeClerkUserId)
     .order("registered_at", { ascending: true })
     .limit(1)
@@ -221,7 +222,15 @@ export async function updateParticipantRole(
   const client = getSupabase() as unknown as SupabaseClient
   const participant = await fetchParticipant(client, participantId, hackathonId)
   if (!participant) return { error: "Person not found", code: "not_found" }
-  if (participant.hackathonStatus && LOCKED_STATUSES.has(participant.hackathonStatus)) {
+  const liveJudgePromotion =
+    participant.hackathonStatus === "judging" &&
+    participant.role === "participant" &&
+    role === "judge"
+  if (
+    participant.hackathonStatus &&
+    LOCKED_STATUSES.has(participant.hackathonStatus) &&
+    !liveJudgePromotion
+  ) {
     return { error: "Role changes are locked once judging has started", code: "status_locked" }
   }
 
@@ -239,7 +248,7 @@ export async function updateParticipantRole(
   }
 
   const updatePayload: Record<string, unknown> = { role }
-  if (leavingParticipantRole) updatePayload.team_id = null
+  if (leavingParticipantRole && role !== "judge") updatePayload.team_id = null
 
   const { error: updateErr } = await client
     .from("hackathon_participants")

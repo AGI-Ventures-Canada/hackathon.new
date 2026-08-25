@@ -62,7 +62,7 @@ describe("Judging Service", () => {
       let callCount = 0
       setMockFromImplementation(() => {
         callCount++
-        if (callCount <= 2) {
+        if (callCount === 1) {
           return createChainableMock({ data: null, error: null })
         }
         return createChainableMock({
@@ -100,13 +100,13 @@ describe("Judging Service", () => {
         callCount++
         if (callCount === 1) {
           return createChainableMock({
-            data: { id: "p1", role: "mentor", team_id: null },
+            data: { id: "p1", role: "mentor" },
             error: null,
           })
         }
         if (callCount === 2) {
           return createChainableMock({
-            data: { id: "p1", role: "mentor" },
+            data: { id: "p1", hackathon_id: "h1", clerk_user_id: "user_123", role: "mentor", team_id: null, registered_at: "2026-01-01", hackathons: { status: "active" } },
             error: null,
           })
         }
@@ -130,13 +130,13 @@ describe("Judging Service", () => {
         callCount++
         if (callCount === 1) {
           return createChainableMock({
-            data: { id: "p1", role: "mentor", team_id: null },
+            data: { id: "p1", role: "mentor" },
             error: null,
           })
         }
         if (callCount === 2) {
           return createChainableMock({
-            data: { id: "p1", role: "mentor" },
+            data: { id: "p1", hackathon_id: "h1", clerk_user_id: "user_123", role: "mentor", team_id: null, registered_at: "2026-01-01", hackathons: { status: "active" } },
             error: null,
           })
         }
@@ -158,7 +158,7 @@ describe("Judging Service", () => {
       let callCount = 0
       setMockFromImplementation(() => {
         callCount++
-        if (callCount <= 2) {
+        if (callCount === 1) {
           return createChainableMock({ data: null, error: null })
         }
         return createChainableMock({
@@ -175,20 +175,41 @@ describe("Judging Service", () => {
       }
     })
 
-    it("returns role_conflict when user is on a team", async () => {
+    it("converts an existing team member to a judge", async () => {
+      let participantCalls = 0
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants") {
+          participantCalls++
+          if (participantCalls === 1) {
+            return createChainableMock({ data: { id: "p1", role: "participant" }, error: null })
+          }
+          if (participantCalls === 2) {
+            return createChainableMock({
+              data: { id: "p1", hackathon_id: "h1", clerk_user_id: "user_123", role: "participant", team_id: "team_1", registered_at: "2026-01-01", hackathons: { status: "judging" } },
+              error: null,
+            })
+          }
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await addJudge("h1", "user_123")
+
+      expect(result.success).toBe(true)
+      if (result.success) {
+        expect(result.participant.id).toBe("p1")
+      }
+    })
+
+    it("returns lookup_failed when the current event role cannot be loaded", async () => {
       setMockFromImplementation(() =>
-        createChainableMock({
-          data: { id: "p1", role: "participant", team_id: "team_1" },
-          error: null,
-        })
+        createChainableMock({ data: null, error: { message: "DB error" } })
       )
 
       const result = await addJudge("h1", "user_123")
 
       expect(result.success).toBe(false)
-      if (!result.success) {
-        expect(result.code).toBe("role_conflict")
-      }
+      if (!result.success) expect(result.code).toBe("lookup_failed")
     })
   })
 

@@ -993,6 +993,21 @@ curl -s -X DELETE "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/judging/assi
 
 ---
 
+### Event people
+
+#### Change an attendee to a judge
+
+Scope: `hackathons:write`. This remains available during judging. Team links are kept so the judge can't score their own team.
+
+```bash
+curl -s -X PATCH "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/participants/$PARTICIPANT_ID" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"role":"judge"}' | jq .
+```
+
+---
+
 ### Teams
 
 #### Update team name

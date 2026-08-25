@@ -7,7 +7,6 @@ import type {
   PrizeJudgingStyle,
   PrizeAssignmentMode,
 } from "@/lib/db/hackathon-types"
-import { checkRoleConflict } from "@/lib/services/role-conflict"
 
 const DEFAULT_BUCKETS = [
   { level: 1, label: "Not Ready", description: "No working demo or unclear problem statement" },
@@ -1585,38 +1584,36 @@ export async function addJudge(
   hackathonId: string,
   clerkUserId: string
 ): Promise<AddJudgeResult> {
-  const roleCheck = await checkRoleConflict(hackathonId, clerkUserId, "judge")
-  if (roleCheck.conflict) {
-    return { success: false, error: roleCheck.error, code: roleCheck.code }
-  }
-
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { data: existing } = await client
+  const { data: existing, error: lookupError } = await client
     .from("hackathon_participants")
     .select("id, role")
     .eq("hackathon_id", hackathonId)
     .eq("clerk_user_id", clerkUserId)
     .maybeSingle()
 
+  if (lookupError) {
+    console.error("Failed to check existing judge:", lookupError)
+    return { success: false, error: "Failed to check event role", code: "lookup_failed" }
+  }
+
   if (existing) {
     if (existing.role === "judge") {
       return { success: false, error: "Already registered as a judge", code: "already_judge" }
     }
 
-    const { data: updated, error: updateError } = await client
-      .from("hackathon_participants")
-      .update({ role: "judge" })
-      .eq("id", existing.id)
-      .select()
-      .single()
-
-    if (updateError) {
-      console.error("Failed to update participant role:", updateError)
-      return { success: false, error: "Failed to update role", code: "update_failed" }
+    const { updateParticipantRole } = await import("@/lib/services/hackathon-participants-admin")
+    const updateResult = await updateParticipantRole(existing.id, hackathonId, "judge")
+    if ("error" in updateResult) {
+      return {
+        success: false,
+        error: updateResult.error,
+        code: updateResult.code === "failed" ? "update_failed" : updateResult.code,
+      }
     }
 
-    return { success: true, participant: { id: updated.id, clerkUserId } }
+    return { success: true, participant: { id: existing.id, clerkUserId } }
   }
 
   const { data: participant, error: insertError } = await client
