@@ -218,6 +218,9 @@ export function JudgeAssignmentsCard({
                         {!isComplete && a.viewedAt && (
                           <Eye className="size-3.5 text-muted-foreground" />
                         )}
+                        <span className="text-xs text-muted-foreground">
+                          {isComplete ? "Edit score" : "Score"}
+                        </span>
                         <Badge variant={isComplete ? "default" : "outline"}>
                           {isComplete ? "Scored" : "Pending"}
                         </Badge>

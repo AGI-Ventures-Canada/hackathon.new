@@ -67,7 +67,7 @@ export function BucketSortPanel({
     return index >= 0 ? index : 0
   })
   const [detail, setDetail] = useState<AssignmentDetail | null>(null)
-  const [detailLoading, setDetailLoading] = useState(false)
+  const [detailLoading, setDetailLoading] = useState(initialAssignments.length > 0)
   const [error, setError] = useState<string | null>(null)
 
   const [gateResponses, setGateResponses] = useState<Record<string, boolean>>({})
@@ -170,6 +170,7 @@ export function BucketSortPanel({
       }
 
       setSubmitted(true)
+      setDetail((current) => current ? { ...current, isComplete: true } : current)
       setAssignments((prev) =>
         prev.map((a) =>
           a.id === detail.id ? { ...a, isComplete: true } : a
@@ -215,22 +216,6 @@ export function BucketSortPanel({
   }
 
   const scored = assignments.filter((a) => a.isComplete).length
-  const allDone = scored >= assignments.length
-
-  if (allDone && !detail) {
-    return (
-      <Card>
-        <CardContent className="flex flex-col items-center gap-3 py-12">
-          <CheckCircle2 className="size-10 text-primary" />
-          <p className="text-sm font-medium">All submissions scored</p>
-          <p className="text-xs text-muted-foreground">
-            {scored}/{assignments.length} complete
-          </p>
-        </CardContent>
-      </Card>
-    )
-  }
-
   return (
     <Card onKeyDown={handleKeyDown} tabIndex={-1}>
       <CardHeader className="pb-3">
@@ -271,13 +256,18 @@ export function BucketSortPanel({
         ) : submitted ? (
           <div className="flex flex-col items-center gap-3 py-8">
             <CheckCircle2 className="size-10 text-primary" />
-            <p className="text-sm font-medium">Response submitted</p>
-            {currentIndex < assignments.length - 1 && (
-              <Button size="sm" variant="outline" onClick={goNext}>
-                Next Submission
-                <ChevronRight className="ml-1 size-4" />
+            <p className="text-sm font-medium">Response saved</p>
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button size="sm" variant="outline" onClick={() => setSubmitted(false)}>
+                Edit response
               </Button>
-            )}
+              {currentIndex < assignments.length - 1 && (
+                <Button size="sm" variant="outline" onClick={goNext}>
+                  Next project
+                  <ChevronRight className="ml-1 size-4" />
+                </Button>
+              )}
+            </div>
           </div>
         ) : detail ? (
           <>
@@ -425,7 +415,7 @@ export function BucketSortPanel({
                 className="ml-auto"
               >
                 {submitting && <Loader2 className="mr-2 size-4 animate-spin" />}
-                Submit & Next
+                {detail.isComplete ? "Save changes" : "Submit & next"}
               </Button>
             </div>
           </>

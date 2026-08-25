@@ -906,7 +906,7 @@ describe("Judging Scoring Routes", () => {
     it("returns 400 when submitScores fails", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
-      mockSubmitScores.mockResolvedValue({ success: false, error: "Already complete", code: "already_complete" })
+      mockSubmitScores.mockResolvedValue({ success: false, error: "Failed to save scores", code: "upsert_failed" })
 
       const res = await app.handle(
         new Request(scoresUrl("test-hackathon", VALID_ASSIGNMENT_ID), {
@@ -918,7 +918,34 @@ describe("Judging Scoring Routes", () => {
       const data = await res.json()
 
       expect(res.status).toBe(400)
-      expect(data.code).toBe("already_complete")
+      expect(data.code).toBe("upsert_failed")
+    })
+
+    it("updates a completed assignment while judging is open", async () => {
+      const completeOwnership = { ...mockOwnership, isComplete: true }
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockAssertAssignmentWritable.mockResolvedValue({
+        ok: true,
+        ownership: completeOwnership,
+      })
+
+      const res = await app.handle(
+        new Request(scoresUrl("test-hackathon", VALID_ASSIGNMENT_ID), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(validBody),
+        })
+      )
+
+      expect(res.status).toBe(200)
+      expect(mockSubmitScores).toHaveBeenCalledWith(
+        VALID_ASSIGNMENT_ID,
+        completeOwnership,
+        validBody.scores,
+        validBody.notes
+      )
+      expect(mockRecalculateForAssignment).toHaveBeenCalledWith(VALID_ASSIGNMENT_ID)
     })
 
     it("passes correct parameters to assertAssignmentWritable", async () => {

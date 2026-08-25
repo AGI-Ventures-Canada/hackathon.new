@@ -341,9 +341,10 @@ curl -s "$BASE_URL/api/public/hackathons/$SLUG/judging/assignments/$ASSIGNMENT_I
 
 ---
 
-### Submit scores for assignment
+### Save scores for assignment
 
 Requires Clerk session (judge must own the assignment). Hackathon must be in `judging` or `active` status.
+Send the request again to revise scores while judging is still open.
 
 ```bash
 curl -s -X POST "$BASE_URL/api/public/hackathons/$SLUG/judging/assignments/$ASSIGNMENT_ID/scores" \

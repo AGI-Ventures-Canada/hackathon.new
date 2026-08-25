@@ -132,6 +132,20 @@ describe("JudgeAssignmentsCard", () => {
     expect(screen.getByText("Scored")).toBeDefined()
   })
 
+  it("opens a completed assignment for editing in list view", () => {
+    render(
+      <JudgeAssignmentsCard
+        hackathonSlug="test-hack"
+        assignments={baseAssignments}
+      />
+    )
+    fireEvent.click(screen.getByText("List"))
+
+    expect(screen.getByText("Edit score")).toBeDefined()
+    fireEvent.click(screen.getByText("Project Beta"))
+    expect(screen.getByTestId("scoring-panel-a2")).toBeDefined()
+  })
+
   it("switches back to Focus view", () => {
     render(
       <JudgeAssignmentsCard

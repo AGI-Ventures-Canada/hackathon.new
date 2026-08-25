@@ -1548,8 +1548,8 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     },
     {
       detail: {
-        summary: "Submit scores for assignment",
-        description: "Submits rubric/criteria scores for a judging assignment and marks it complete.",
+        summary: "Save scores for assignment",
+        description: "Saves new or revised rubric and criteria scores, then marks the judging assignment complete.",
       },
       body: t.Object({
         scores: t.Array(t.Object({
@@ -1873,8 +1873,8 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     },
     {
       detail: {
-        summary: "Submit bucket sort response",
-        description: "Submits a bucket sort evaluation (gate responses + bucket placement) for a judging assignment.",
+        summary: "Save bucket sort response",
+        description: "Saves a new or revised bucket sort evaluation for a judging assignment.",
       },
       body: t.Object({
         gates: t.Optional(t.Array(t.Object({
@@ -1941,8 +1941,8 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     },
     {
       detail: {
-        summary: "Submit gate check response",
-        description: "Submits gate check evaluation (binary pass/fail per criterion) for a judging assignment.",
+        summary: "Save gate check response",
+        description: "Saves a new or revised gate check evaluation for a judging assignment.",
       },
       body: t.Object({
         gates: t.Array(t.Object({
