@@ -31,6 +31,7 @@ const {
   DEFAULT_CORE_CRITERIA,
   calculateWeightedScoreResults,
   calculateCoreOnlyResults,
+  calculatePrizeResults,
   getJudgeSummary,
   listCoreCriteria,
   listPrizeCriteria,
@@ -2948,6 +2949,85 @@ describe("Judging Service", () => {
           assignmentKind: "per_prize",
         })
       }
+    })
+  })
+
+  describe("calculatePrizeResults", () => {
+    it("stores a ranked result for each project in a bucket-style prize", async () => {
+      const inserted: Array<{
+        submission_id: string
+        rank: number
+        weighted_score: number
+        prize_id: string
+      }> = []
+
+      setMockFromImplementation((table) => {
+        if (table === "prizes") {
+          return createChainableMock({ data: { judging_style: "bucket_sort" }, error: null })
+        }
+        if (table === "judge_assignments") {
+          return createChainableMock({
+            data: [
+              { id: "a1", submission_id: "s1" },
+              { id: "a2", submission_id: "s2" },
+            ],
+            error: null,
+          })
+        }
+        if (table === "bucket_responses") {
+          return createChainableMock({
+            data: [
+              { judge_assignment_id: "a1", bucket_id: "top" },
+              { judge_assignment_id: "a2", bucket_id: "middle" },
+            ],
+            error: null,
+          })
+        }
+        if (table === "bucket_definitions") {
+          return createChainableMock({
+            data: [
+              { id: "top", level: 4 },
+              { id: "middle", level: 2 },
+            ],
+            error: null,
+          })
+        }
+        if (table === "hackathon_results") {
+          const chain = createChainableMock({ data: null, error: null })
+          chain.insert = mock((rows: typeof inserted) => {
+            inserted.push(...rows)
+            return Promise.resolve({ data: null, error: null })
+          }) as typeof chain.insert
+          return chain
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await calculatePrizeResults("h1", "p1")
+
+      expect(result).toEqual({ success: true, count: 2 })
+      expect(inserted.map((row) => row.submission_id)).toEqual(["s1", "s2"])
+      expect(inserted.map((row) => row.rank)).toEqual([1, 2])
+      expect(inserted.every((row) => row.prize_id === "p1")).toBe(true)
+    })
+
+    it("only counts crowd votes cast for the requested prize", async () => {
+      const crowdVotes = createChainableMock({
+        data: [{ submission_id: "s1" }],
+        error: null,
+      })
+      setMockFromImplementation((table) => {
+        if (table === "prizes") {
+          return createChainableMock({ data: { judging_style: "crowd_vote" }, error: null })
+        }
+        if (table === "crowd_votes") return crowdVotes
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await calculatePrizeResults("h1", "p1")
+
+      expect(result).toEqual({ success: true, count: 1 })
+      expect(crowdVotes.eq).toHaveBeenCalledWith("prize_id", "p1")
     })
   })
 

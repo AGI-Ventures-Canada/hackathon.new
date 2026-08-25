@@ -1253,7 +1253,7 @@ curl -s -X DELETE "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/rounds/$ROUN
 
 #### Calculate rankings
 
-Scope: `hackathons:write`. Computes rankings from judging scores.
+Scope: `hackathons:write`. Computes each prize ranking with its scoring style.
 
 ```bash
 curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/results/calculate" \

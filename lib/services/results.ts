@@ -5,6 +5,10 @@ import type {
   PrizeJudgingStyle,
   PrizeType,
 } from "@/lib/db/hackathon-types"
+import {
+  calculateCoreOnlyResults,
+  calculatePrizeResults,
+} from "@/lib/services/judging"
 
 export type ResultWithDetails = HackathonResult & {
   submissionTitle: string
@@ -48,6 +52,49 @@ export async function calculateResults(
 
   if (hackathon?.results_published_at) {
     return { success: true, count: -1 }
+  }
+
+  const { data: styledPrizes, error: prizesError } = await client
+    .from("prizes")
+    .select("id")
+    .eq("hackathon_id", hackathonId)
+    .not("judging_style", "is", null)
+
+  if (prizesError) {
+    console.error("Failed to load prizes for results:", prizesError)
+    return { success: false, error: "Failed to load prizes", code: "query_failed" }
+  }
+
+  if (styledPrizes && styledPrizes.length > 0) {
+    const { error: clearError } = await client
+      .from("hackathon_results")
+      .delete()
+      .eq("hackathon_id", hackathonId)
+      .is("prize_id", null)
+      .eq("result_kind", "prize")
+
+    if (clearError) {
+      console.error("Failed to clear old results:", clearError)
+      return { success: false, error: "Failed to clear old results", code: "delete_failed" }
+    }
+
+    const calculated = await Promise.all([
+      calculateCoreOnlyResults(hackathonId),
+      ...styledPrizes.map((prize) => calculatePrizeResults(hackathonId, prize.id)),
+    ])
+
+    if (calculated.some((result) => !result.success)) {
+      return {
+        success: false,
+        error: "Failed to calculate prize results",
+        code: "prize_calculation_failed",
+      }
+    }
+
+    return {
+      success: true,
+      count: calculated.reduce((count, result) => count + result.count, 0),
+    }
   }
 
   if (hackathon?.judging_mode === "subjective") {
@@ -493,7 +540,7 @@ export type PrizeResultsGroup = {
   prizeName: string
   prizeType: PrizeType
   judgingStyle: PrizeJudgingStyle | null
-  mode: "per_prize" | "unified" | "manual"
+  mode: "per_prize" | "unified" | "manual" | "calculated"
   results: PerPrizeTeamResult[]
 }
 
@@ -524,6 +571,16 @@ type SubmissionMeta = {
   id: string
   title: string
   team_id: string | null
+}
+
+type StoredResultRow = {
+  submission_id: string
+  prize_id: string | null
+  result_kind: "prize" | "core_only"
+  total_score: number | null
+  weighted_score: number | null
+  judge_count: number
+  rank: number
 }
 
 function rankResults(rows: PerPrizeTeamResult[]): PerPrizeTeamResult[] {
@@ -632,21 +689,22 @@ export async function getResultsByPrize(
 
   const { data: overallResultsData } = await client
     .from("hackathon_results")
-    .select("submission_id, total_score, weighted_score, judge_count, rank")
+    .select("submission_id, prize_id, result_kind, total_score, weighted_score, judge_count, rank")
     .eq("hackathon_id", hackathonId)
 
+  const storedResultsByPrize = new Map<string, StoredResultRow[]>()
   const overallBySubmission = new Map<
     string,
     { totalScore: number | null; weightedScore: number | null; judgeCount: number; rank: number }
   >()
-  for (const r of (overallResultsData ?? []) as Array<{
-    submission_id: string
-    total_score: number | null
-    weighted_score: number | null
-    judge_count: number
-    rank: number
-  }>) {
+  for (const r of (overallResultsData ?? []) as StoredResultRow[]) {
     submissionIdSet.add(r.submission_id)
+    if (r.prize_id) {
+      const rows = storedResultsByPrize.get(r.prize_id) ?? []
+      rows.push(r)
+      storedResultsByPrize.set(r.prize_id, rows)
+      continue
+    }
     overallBySubmission.set(r.submission_id, {
       totalScore: r.total_score,
       weightedScore: r.weighted_score,
@@ -707,12 +765,46 @@ export async function getResultsByPrize(
   const groups: PrizeResultsGroup[] = []
 
   for (const prize of prizes) {
+    const winnerIds = new Set(manualWinners.get(prize.id) ?? [])
+    const storedResults = storedResultsByPrize.get(prize.id) ?? []
+
+    if (storedResults.length > 0) {
+      const rows = storedResults
+        .map((stored) =>
+          makeRow(stored.submission_id, {
+            rank: stored.rank,
+            totalScore: stored.total_score,
+            weightedScore: stored.weighted_score,
+            judgeCount: stored.judge_count,
+            isAssignedWinner: winnerIds.has(stored.submission_id),
+          })
+        )
+        .filter((row): row is PerPrizeTeamResult => row !== null)
+
+      const storedSubmissionIds = new Set(rows.map((row) => row.submissionId))
+      for (const winnerId of winnerIds) {
+        if (storedSubmissionIds.has(winnerId)) continue
+        const winner = makeRow(winnerId, { isAssignedWinner: true })
+        if (winner) rows.push(winner)
+      }
+      rows.sort((a, b) => (a.rank ?? Infinity) - (b.rank ?? Infinity))
+
+      groups.push({
+        prizeId: prize.id,
+        prizeName: prize.name,
+        prizeType: prize.type,
+        judgingStyle: prize.judging_style,
+        mode: "calculated",
+        results: rows,
+      })
+      continue
+    }
+
     const isManual =
       prize.judging_style === "crowd_vote" || prize.judging_style === "judges_pick"
 
     if (isManual) {
-      const winnerIds = manualWinners.get(prize.id) ?? []
-      const rows = winnerIds
+      const rows = [...winnerIds]
         .map((sid) => makeRow(sid, { isAssignedWinner: true }))
         .filter((r): r is PerPrizeTeamResult => r !== null)
       groups.push({
