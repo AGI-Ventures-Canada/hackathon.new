@@ -1330,6 +1330,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         prizeId: a.prizeId,
         prizeName: a.prizeName,
         judgingStyle: a.judgingStyle,
+        maxPicks: a.maxPicks,
         selfJudging: a.selfJudging,
         assignmentKind: a.assignmentKind,
       })),
@@ -1624,6 +1625,13 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
+      if (hackathon.status !== "judging" && hackathon.status !== "active") {
+        return new Response(
+          JSON.stringify({ error: "Hackathon is not in judging phase", code: "not_judging" }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
       const { getRegistrationInfo } = await import("@/lib/services/hackathons")
       const regInfo = await getRegistrationInfo(hackathon.id, userId)
       if (regInfo.participantRole !== "judge" || !regInfo.participantId) {
@@ -1633,7 +1641,55 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
-      const typedBody = body as { prizeId: string; submissionId: string; rank?: number; reason?: string }
+      const typedBody = body as {
+        prizeId: string
+        submissionId?: string
+        rankedSubmissionIds?: string[]
+        rank?: number
+        reason?: string
+      }
+      if (
+        !isValidUuid(typedBody.prizeId) ||
+        (typedBody.submissionId !== undefined && !isValidUuid(typedBody.submissionId)) ||
+        typedBody.rankedSubmissionIds?.some((submissionId) => !isValidUuid(submissionId))
+      ) {
+        return new Response(
+          JSON.stringify({ error: "Invalid prize or project", code: "validation" }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
+      if (typedBody.rankedSubmissionIds) {
+        const { submitJudgesPick } = await import("@/lib/services/judging")
+        const result = await submitJudgesPick(
+          hackathon.id,
+          regInfo.participantId,
+          typedBody.prizeId,
+          typedBody.rankedSubmissionIds
+        )
+
+        if (!result.success) {
+          return new Response(
+            JSON.stringify({ error: result.error, code: result.code }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          )
+        }
+
+        const { calculatePrizeResults } = await import("@/lib/services/judging")
+        calculatePrizeResults(hackathon.id, typedBody.prizeId).catch((err) => {
+          console.error(`[judging] auto-recalculate failed for prize ${typedBody.prizeId}:`, err)
+        })
+
+        return { success: true }
+      }
+
+      if (!typedBody.submissionId) {
+        return new Response(
+          JSON.stringify({ error: "Pick a project", code: "validation" }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
       const { submitPick } = await import("@/lib/services/judge-picks")
       const result = await submitPick(
         hackathon.id,
@@ -1660,12 +1716,13 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     },
     {
       detail: {
-        summary: "Submit a judge pick",
-        description: "Submits a pick for a prize category in subjective judging mode.",
+        summary: "Submit judge picks",
+        description: "Saves one pick or a ranked list of picks for a prize assigned to the current judge.",
       },
       body: t.Object({
         prizeId: t.String(),
-        submissionId: t.String(),
+        submissionId: t.Optional(t.String()),
+        rankedSubmissionIds: t.Optional(t.Array(t.String())),
         rank: t.Optional(t.Number({ minimum: 1 })),
         reason: t.Optional(t.String()),
       }),

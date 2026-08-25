@@ -42,19 +42,23 @@ type AssignmentDetail = Assignment & {
 
 interface GateCheckPanelProps {
   hackathonSlug: string
-  roundId: string
+  prizeName: string
+  assignments: Assignment[]
   onComplete?: () => void
 }
 
 export function GateCheckPanel({
   hackathonSlug,
-  roundId,
+  prizeName,
+  assignments: initialAssignments,
   onComplete,
 }: GateCheckPanelProps) {
-  const [assignments, setAssignments] = useState<Assignment[]>([])
-  const [currentIndex, setCurrentIndex] = useState(0)
+  const [assignments, setAssignments] = useState<Assignment[]>(initialAssignments)
+  const [currentIndex, setCurrentIndex] = useState(() => {
+    const index = initialAssignments.findIndex((assignment) => !assignment.isComplete)
+    return index >= 0 ? index : 0
+  })
   const [detail, setDetail] = useState<AssignmentDetail | null>(null)
-  const [loading, setLoading] = useState(true)
   const [detailLoading, setDetailLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -62,30 +66,16 @@ export function GateCheckPanel({
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
 
-  const fetchAssignments = useCallback(async () => {
-    try {
-      const assignRes = await fetch(
-        `/api/public/hackathons/${hackathonSlug}/judging/assignments?roundId=${roundId}`
-      )
-
-      if (assignRes.ok) {
-        const assignData = await assignRes.json()
-        setAssignments(assignData.assignments ?? [])
-        const firstUnscored = (assignData.assignments ?? []).findIndex(
-          (a: Assignment) => !a.isComplete
-        )
-        setCurrentIndex(firstUnscored >= 0 ? firstUnscored : 0)
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong")
-    } finally {
-      setLoading(false)
-    }
-  }, [hackathonSlug, roundId])
-
   useEffect(() => {
-    fetchAssignments()
-  }, [fetchAssignments])
+    setAssignments((current) =>
+      initialAssignments.map((assignment) => ({
+        ...assignment,
+        isComplete:
+          assignment.isComplete ||
+          current.find((item) => item.id === assignment.id)?.isComplete === true,
+      }))
+    )
+  }, [initialAssignments])
 
   const fetchDetail = useCallback(
     async (assignmentId: string) => {
@@ -97,16 +87,22 @@ export function GateCheckPanel({
         )
         if (!res.ok) throw new Error("Failed to load assignment detail")
         const data = await res.json()
-        setDetail(data)
+        const nextDetail = {
+          ...data,
+          gates: (data.criteria ?? []).filter(
+            (criterion: { prizeId?: string | null }) => criterion.prizeId
+          ),
+        } as AssignmentDetail
+        setDetail(nextDetail)
 
         const existingGates: Record<string, boolean> = {}
-        if (data.existingGateResponses) {
-          for (const g of data.existingGateResponses) {
+        if (nextDetail.existingGateResponses) {
+          for (const g of nextDetail.existingGateResponses) {
             existingGates[g.criteriaId] = g.passed
           }
         }
         setGateResponses(existingGates)
-        setSubmitted(data.isComplete ?? false)
+        setSubmitted(nextDetail.isComplete ?? false)
       } catch (err) {
         setError(err instanceof Error ? err.message : "Something went wrong")
       } finally {
@@ -200,16 +196,6 @@ export function GateCheckPanel({
     if (e.key === "ArrowRight" && submitted) goNext()
   }
 
-  if (loading) {
-    return (
-      <Card>
-        <CardContent className="flex items-center justify-center py-12">
-          <Loader2 className="size-6 animate-spin text-muted-foreground" />
-        </CardContent>
-      </Card>
-    )
-  }
-
   if (assignments.length === 0) {
     return (
       <Card>
@@ -246,16 +232,19 @@ export function GateCheckPanel({
     <Card onKeyDown={handleKeyDown} tabIndex={-1}>
       <CardHeader className="pb-3">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" className="size-8" onClick={goPrev} disabled={currentIndex === 0}>
-              <ChevronLeft className="size-4" />
-            </Button>
-            <span className="text-sm text-muted-foreground">
-              {currentIndex + 1} of {assignments.length}
-            </span>
-            <Button variant="ghost" size="icon" className="size-8" onClick={goNext} disabled={currentIndex >= assignments.length - 1}>
-              <ChevronRight className="size-4" />
-            </Button>
+          <div>
+            <p className="font-medium">{prizeName}</p>
+            <div className="mt-2 flex items-center gap-3">
+              <Button variant="ghost" size="icon" className="size-8" onClick={goPrev} disabled={currentIndex === 0}>
+                <ChevronLeft className="size-4" />
+              </Button>
+              <span className="text-sm text-muted-foreground">
+                {currentIndex + 1} of {assignments.length}
+              </span>
+              <Button variant="ghost" size="icon" className="size-8" onClick={goNext} disabled={currentIndex >= assignments.length - 1}>
+                <ChevronRight className="size-4" />
+              </Button>
+            </div>
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span>{scored}/{assignments.length} checked</span>

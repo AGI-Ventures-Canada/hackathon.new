@@ -2,9 +2,14 @@ import { notFound, redirect } from "next/navigation"
 import { auth } from "@clerk/nextjs/server"
 import { getPublicHackathon, PUBLISHED_STATUSES } from "@/lib/services/public-hackathons"
 import { JudgeAssignmentsCard } from "@/components/hackathon/judging/judge-assignments-card"
+import { BucketSortPanel } from "@/components/hackathon/judging/bucket-sort-panel"
+import { GateCheckPanel } from "@/components/hackathon/judging/gate-check-panel"
+import { JudgesPickPanel } from "@/components/hackathon/judging/judges-pick-panel"
 import { PageHeader } from "@/components/page-header"
 import { AutoRefresh } from "@/components/ui/auto-refresh"
 import { Clock } from "lucide-react"
+import type { JudgePick } from "@/lib/db/hackathon-types"
+import { routeJudgeAssignments } from "@/lib/utils/judging-assignment-routing"
 
 const JUDGE_PAGE_REFRESH_INTERVAL_MS = 15000
 
@@ -57,6 +62,24 @@ export default async function JudgePage({ params }: PageProps) {
     judgeAssignments = judgeAssignments.map((a) => ({ ...a, teamName: null, teamMemberCount: null }))
   }
 
+  const {
+    scored: scoredAssignments,
+    bucketGroups,
+    gateGroups,
+    pickGroups,
+  } = routeJudgeAssignments(judgeAssignments)
+  const visibleAssignmentCount =
+    scoredAssignments.length +
+    bucketGroups.reduce((count, [, assignments]) => count + assignments.length, 0) +
+    gateGroups.reduce((count, [, assignments]) => count + assignments.length, 0) +
+    pickGroups.reduce((count, [, assignments]) => count + assignments.length, 0)
+
+  let judgePicks: JudgePick[] = []
+  if (pickGroups.length > 0 && registrationInfo.participantId) {
+    const { getJudgePicks } = await import("@/lib/services/judge-picks")
+    judgePicks = await getJudgePicks(hackathon.id, registrationInfo.participantId)
+  }
+
   const hasUnifiedAssignments = judgeAssignments.some(
     (a) => a.assignmentKind === "unified_weighted_score"
   )
@@ -70,23 +93,59 @@ export default async function JudgePage({ params }: PageProps) {
           { label: "Judging" },
         ]}
         title="Judging"
-        description="Review and score your assigned submissions"
+        description="Review your assigned projects"
       />
 
-      {judgeAssignments.length === 0 ? (
+      {visibleAssignmentCount === 0 ? (
         <p className="text-sm text-muted-foreground text-center py-12">
           You don&apos;t have any assignments yet.
         </p>
       ) : (
-        <JudgeAssignmentsCard
-          hackathonSlug={slug}
-          assignments={judgeAssignments}
-          teamSettings={{
-            minTeamSize: hackathon.min_team_size,
-            allowSolo: hackathon.allow_solo,
-          }}
-          summaryHref={hasUnifiedAssignments ? `/e/${slug}/judge/summary` : undefined}
-        />
+        <div className="space-y-6">
+          {pickGroups.map(([prizeId, assignments]) => (
+            <JudgesPickPanel
+              key={prizeId}
+              hackathonSlug={slug}
+              prizeId={prizeId}
+              prizeName={assignments[0]?.prizeName ?? "Judge's pick"}
+              maxPicks={Math.max(1, assignments[0]?.maxPicks ?? 1)}
+              assignments={assignments}
+              initialPicks={judgePicks
+                .filter((pick) => pick.prize_id === prizeId)
+                .map((pick) => ({ submissionId: pick.submission_id, rank: pick.rank }))}
+            />
+          ))}
+
+          {bucketGroups.map(([prizeId, assignments]) => (
+            <BucketSortPanel
+              key={prizeId}
+              hackathonSlug={slug}
+              prizeName={assignments[0]?.prizeName ?? "Project ranking"}
+              assignments={assignments}
+            />
+          ))}
+
+          {gateGroups.map(([prizeId, assignments]) => (
+            <GateCheckPanel
+              key={prizeId}
+              hackathonSlug={slug}
+              prizeName={assignments[0]?.prizeName ?? "Requirements check"}
+              assignments={assignments}
+            />
+          ))}
+
+          {scoredAssignments.length > 0 && (
+            <JudgeAssignmentsCard
+              hackathonSlug={slug}
+              assignments={scoredAssignments}
+              teamSettings={{
+                minTeamSize: hackathon.min_team_size,
+                allowSolo: hackathon.allow_solo,
+              }}
+              summaryHref={hasUnifiedAssignments ? `/e/${slug}/judge/summary` : undefined}
+            />
+          )}
+        </div>
       )}
     </div>
   )
