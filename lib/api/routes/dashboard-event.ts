@@ -1010,7 +1010,10 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
         t.Literal("organizer"),
       ])),
     }),
-    detail: { summary: "Update a participant's team or role" },
+    detail: {
+      summary: "Update a participant's team or role",
+      description: "Changes a person's team or role. During judging, an attendee can still become a judge so organizers can replace or add judges. Their team link is kept to prevent self-judging.",
+    },
   })
   .delete("/hackathons/:id/participants/:participantId", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])

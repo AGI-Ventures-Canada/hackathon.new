@@ -141,11 +141,64 @@ describe("updateParticipantRole", () => {
     expect(result).toEqual({ error: "Invalid role", code: "invalid_role" })
   })
 
-  it("rejects when status is judging", async () => {
+  it("rejects non-judge role changes when status is judging", async () => {
     setMockFromImplementation(tableImpl({
       hackathon_participants: { data: participantRow({ hackathonStatus: "judging" }), error: null },
     }))
+    const result = await updateParticipantRole(VALID_UUID, VALID_UUID, "mentor")
+    expect(result.success).toBeUndefined()
+    if ("error" in result) expect(result.code).toBe("status_locked")
+  })
+
+  it("allows an attendee to become a judge during judging", async () => {
+    setMockFromImplementation(tableImpl({
+      hackathon_participants: [
+        { data: participantRow({ hackathonStatus: "judging" }), error: null },
+        { data: null, error: null },
+      ],
+    }))
+
     const result = await updateParticipantRole(VALID_UUID, VALID_UUID, "judge")
+
+    expect(result).toEqual({ success: true, role: "judge", capacityHandedOff: false })
+  })
+
+  it("keeps the team link when an attendee becomes a judge", async () => {
+    let participantCalls = 0
+    let updatePayload: Record<string, unknown> | null = null
+    setMockFromImplementation((table) => {
+      if (table === "hackathon_participants") {
+        participantCalls++
+        const chain = createChainableMock(
+          participantCalls === 1
+            ? { data: participantRow({ team_id: "team_1" }), error: null }
+            : { data: null, error: null }
+        )
+        chain.update.mockImplementation((payload: Record<string, unknown>) => {
+          updatePayload = payload
+          return chain
+        })
+        return chain
+      }
+      if (table === "teams") {
+        return createChainableMock({ data: { captain_clerk_user_id: "user_2" }, error: null })
+      }
+      return createChainableMock({ data: null, error: null })
+    })
+
+    const result = await updateParticipantRole(VALID_UUID, VALID_UUID, "judge")
+
+    expect(result.success).toBe(true)
+    expect(updatePayload).toEqual({ role: "judge" })
+  })
+
+  it("keeps judge promotion locked after judging ends", async () => {
+    setMockFromImplementation(tableImpl({
+      hackathon_participants: { data: participantRow({ hackathonStatus: "completed" }), error: null },
+    }))
+
+    const result = await updateParticipantRole(VALID_UUID, VALID_UUID, "judge")
+
     expect(result.success).toBeUndefined()
     if ("error" in result) expect(result.code).toBe("status_locked")
   })

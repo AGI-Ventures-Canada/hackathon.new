@@ -531,7 +531,7 @@ describe("Judge Invitations Service", () => {
   })
 
   describe("acceptJudgeInvitation", () => {
-    it("returns role_conflict when user joined a team after invitation was sent", async () => {
+    it("converts a team member who accepts a judge invitation", async () => {
       setMockFromImplementation((table) => {
         if (table === "judge_invitations") {
           return createChainableMock({
@@ -553,10 +553,7 @@ describe("Judge Invitations Service", () => {
 
       const result = await acceptJudgeInvitation("test-token-123", "user_123", "judge@example.com")
 
-      expect(result.success).toBe(false)
-      if (!result.success) {
-        expect(result.code).toBe("role_conflict")
-      }
+      expect(result.success).toBe(true)
     })
   })
 
@@ -595,7 +592,7 @@ describe("Judge Invitations Service", () => {
   })
 
   describe("createJudgeInvitation - role conflict", () => {
-    it("returns role_conflict when invitee is already on a team", async () => {
+    it("allows inviting an attendee who is already on a team", async () => {
       const { mockClerkClient } = await import("../lib/supabase-mock")
       mockClerkClient.mockResolvedValueOnce({
         organizations: {
@@ -627,10 +624,7 @@ describe("Judge Invitations Service", () => {
         invitedByClerkUserId: "organizer_123",
       })
 
-      expect(result.success).toBe(false)
-      if (!result.success) {
-        expect(result.code).toBe("role_conflict")
-      }
+      expect(result.success).toBe(true)
     })
   })
 
