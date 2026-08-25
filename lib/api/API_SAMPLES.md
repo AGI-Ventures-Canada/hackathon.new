@@ -553,6 +553,8 @@ curl -s -X PATCH "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/settings" \
 
 **Valid statuses:** `draft`, `published`, `registration_open`, `active`, `judging`, `completed`, `archived`
 
+Starting `judging` returns `409 judging_setup_incomplete` until every scored prize has complete rules. The response includes an `issues` list with the changes needed.
+
 | Field | Type | Description |
 |-------|------|-------------|
 | `maxParticipants` | number or null | Maximum participants (null = unlimited) |

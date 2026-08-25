@@ -178,6 +178,7 @@ type ProviderProps = {
   communityInitialData: { url: string | null; label: string | null };
   sponsors: SponsorOption[];
   rounds: RoundData[];
+  judgingSetupIssues: string[];
   children: React.ReactNode;
 };
 
@@ -204,6 +205,7 @@ export function ActionItemsProvider({
   communityInitialData,
   sponsors,
   rounds,
+  judgingSetupIssues,
   children,
 }: ProviderProps) {
   const router = useRouter();
@@ -312,6 +314,7 @@ export function ActionItemsProvider({
         status: effectiveStatus,
         registrationClosesAt: liveRegistrationClosesAt,
         allowLateRegistration: liveAllowLateRegistration,
+        judgingSetupReady: !serverActionItems.some((item) => item.id === "finish-scoring-setup"),
       })
     : serverActionItems;
 
@@ -864,6 +867,7 @@ export function ActionItemsProvider({
         hackathonId={hackathonId}
         status={liveStatus}
         endsAt={liveEndsAt}
+        judgingSetupIssues={judgingSetupIssues}
         onTransitioned={refreshPoll}
       />
       <SubmissionDeadlineDialog

@@ -50,6 +50,13 @@ mock.module("@/lib/services/lifecycle", () => ({
   executeTransition: mockExecuteTransition,
 }))
 
+const mockGetJudgingSetupStatus = mock(() =>
+  Promise.resolve({ isReady: true, issues: [] as string[] })
+)
+mock.module("@/lib/services/judging", () => ({
+  getJudgingSetupStatus: mockGetJudgingSetupStatus,
+}))
+
 const mockSendPendingJudgeInvitationEmails = mock(() => Promise.resolve({ sent: 2, total: 2, failedEmails: [] }))
 
 mock.module("@/lib/services/judge-invitations", () => ({
@@ -238,6 +245,7 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - status change emails", 
     mockGetHackathonByIdForOrganizer.mockClear()
     mockUpdateHackathonSettings.mockClear()
     mockExecuteTransition.mockClear()
+    mockGetJudgingSetupStatus.mockClear()
     mockSendPendingJudgeInvitationEmails.mockClear()
     mockSendPendingTeamInvitationEmails.mockClear()
     mockLogAudit.mockClear()
@@ -249,6 +257,7 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - status change emails", 
 
     mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
     mockExecuteTransition.mockResolvedValue({ success: true, hackathon: { id: "h1" } })
+    mockGetJudgingSetupStatus.mockResolvedValue({ isReady: true, issues: [] })
     mockWorkflowStart.mockResolvedValue({ runId: "run_1" })
     mockFetchPendingNotifications.mockResolvedValue([])
   })
@@ -363,6 +372,28 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - status change emails", 
 
     expect(mockUpdateHackathonSettings).not.toHaveBeenCalled()
     expect(mockExecuteTransition).toHaveBeenCalledTimes(1)
+  })
+
+  it("blocks judging until scoring setup is complete", async () => {
+    mockCheckHackathonOrganizer.mockResolvedValue({
+      status: "ok",
+      hackathon: { ...mockHackathonResponse, status: "active" },
+    })
+    mockGetJudgingSetupStatus.mockResolvedValue({
+      isReady: false,
+      issues: ["Add at least two sort groups for Best Demo."],
+    })
+
+    const res = await patchSettings({ status: "judging" })
+    const body = await res.json()
+
+    expect(res.status).toBe(409)
+    expect(body).toEqual({
+      error: "Finish scoring setup before judging starts. Add at least two sort groups for Best Demo.",
+      code: "judging_setup_incomplete",
+      issues: ["Add at least two sort groups for Best Demo."],
+    })
+    expect(mockExecuteTransition).not.toHaveBeenCalled()
   })
 
   it("falls back to direct send when judge notifications workflow start() fails", async () => {

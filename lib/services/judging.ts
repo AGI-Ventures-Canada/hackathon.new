@@ -82,6 +82,126 @@ export type PrizeWithProgress = Prize & {
   sponsorName?: string | null
 }
 
+type JudgingSetupPrize = Pick<Prize, "id" | "name" | "judging_style" | "max_picks">
+
+type JudgingSetupCriterion = {
+  prize_id: string | null
+  weight: number
+  min_score: number
+  max_score: number
+}
+
+type JudgingSetupBucket = {
+  prize_id: string
+  label: string
+}
+
+export type JudgingSetupStatus = {
+  isReady: boolean
+  issues: string[]
+}
+
+export function evaluateJudgingSetup(
+  prizes: JudgingSetupPrize[],
+  criteria: JudgingSetupCriterion[],
+  buckets: JudgingSetupBucket[],
+): JudgingSetupStatus {
+  const judgedPrizes = prizes.filter((prize) => prize.judging_style !== null)
+  const issues: string[] = []
+
+  if (judgedPrizes.length === 0) {
+    issues.push("Pick how judges should score at least one prize.")
+  }
+
+  const coreCriteria = criteria.filter((criterion) => criterion.prize_id === null)
+
+  for (const prize of judgedPrizes) {
+    const prizeCriteria = criteria.filter((criterion) => criterion.prize_id === prize.id)
+
+    if (prize.judging_style === "weighted_score") {
+      const scoringCriteria = [...coreCriteria, ...prizeCriteria]
+      if (scoringCriteria.length === 0) {
+        issues.push(`Add score categories for ${prize.name}.`)
+        continue
+      }
+
+      if (scoringCriteria.some((criterion) => criterion.weight <= 0)) {
+        issues.push(`Give every score category for ${prize.name} a weight above 0.`)
+      }
+
+      if (scoringCriteria.some((criterion) => criterion.min_score >= criterion.max_score)) {
+        issues.push(`Fix the lowest and highest scores for ${prize.name}.`)
+      }
+
+      const totalWeight = scoringCriteria.reduce((sum, criterion) => sum + criterion.weight, 0)
+      if (Math.abs(totalWeight - 100) > 0.01) {
+        issues.push(`Make the score weights for ${prize.name} add up to 100%.`)
+      }
+    }
+
+    if (prize.judging_style === "gate_check" && prizeCriteria.length === 0) {
+      issues.push(`Add at least one check for ${prize.name}.`)
+    }
+
+    if (
+      prize.judging_style === "bucket_sort" &&
+      buckets.filter((bucket) => bucket.prize_id === prize.id && bucket.label.trim().length > 0).length < 2
+    ) {
+      issues.push(`Add at least two sort groups for ${prize.name}.`)
+    }
+
+    if (
+      prize.judging_style === "judges_pick" &&
+      (!prize.max_picks || prize.max_picks < 1 || prize.max_picks > 100)
+    ) {
+      issues.push(`Set picks for ${prize.name} between 1 and 100.`)
+    }
+  }
+
+  return { isReady: issues.length === 0, issues }
+}
+
+export async function getJudgingSetupStatus(hackathonId: string): Promise<JudgingSetupStatus> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const { data: prizes, error: prizesError } = await client
+    .from("prizes")
+    .select("id, name, judging_style, max_picks")
+    .eq("hackathon_id", hackathonId)
+
+  if (prizesError || !prizes) {
+    console.error("Failed to check judging prizes:", prizesError)
+    return { isReady: false, issues: ["We couldn't check scoring setup. Try again."] }
+  }
+
+  const bucketPrizeIds = prizes
+    .filter((prize) => prize.judging_style === "bucket_sort")
+    .map((prize) => prize.id)
+
+  const [criteriaResult, bucketsResult] = await Promise.all([
+    client
+      .from("judging_criteria")
+      .select("prize_id, weight, min_score, max_score")
+      .eq("hackathon_id", hackathonId),
+    bucketPrizeIds.length > 0
+      ? client
+          .from("bucket_definitions")
+          .select("prize_id, label")
+          .in("prize_id", bucketPrizeIds)
+      : Promise.resolve({ data: [] as JudgingSetupBucket[], error: null }),
+  ])
+
+  if (criteriaResult.error || bucketsResult.error) {
+    console.error("Failed to check judging rules:", criteriaResult.error ?? bucketsResult.error)
+    return { isReady: false, issues: ["We couldn't check scoring setup. Try again."] }
+  }
+
+  return evaluateJudgingSetup(
+    prizes as unknown as JudgingSetupPrize[],
+    (criteriaResult.data ?? []) as JudgingSetupCriterion[],
+    (bucketsResult.data ?? []) as JudgingSetupBucket[],
+  )
+}
+
 export async function listPrizes(hackathonId: string): Promise<PrizeWithProgress[]> {
   const client = getSupabase() as unknown as SupabaseClient
 

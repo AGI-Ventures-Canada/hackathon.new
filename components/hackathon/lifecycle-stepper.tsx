@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
+import { assertOk } from "@/lib/utils/fetch"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { Button } from "@/components/ui/button"
 import {
@@ -59,6 +60,7 @@ interface LifecycleStepperProps {
     judgeCount: number
     hasUnassignedSubmissions: boolean
   }
+  judgingSetupIssues?: string[]
   startsAt?: string | null
   endsAt?: string | null
   registrationOpensAt?: string | null
@@ -89,6 +91,7 @@ export function LifecycleStepper({
   submissionCount = 0,
   judgingProgress,
   judgingSetupStatus: _judgingSetupStatus,
+  judgingSetupIssues = [],
   startsAt,
   endsAt,
   registrationOpensAt: _registrationOpensAt,
@@ -110,6 +113,7 @@ export function LifecycleStepper({
   const [currentStatus, setCurrentStatus] = useState(status)
   const [updating, setUpdating] = useState(false)
   const [pendingTarget, setPendingTarget] = useState<PhaseKey | null>(null)
+  const [transitionError, setTransitionError] = useState<string | null>(null)
   const devOverrideUntil = useRef(0)
 
   useEffect(() => {
@@ -136,6 +140,7 @@ export function LifecycleStepper({
 
   async function commitStatusChange(newStatus: PhaseKey) {
     setUpdating(true)
+    setTransitionError(null)
     try {
       actionItems?.setOptimisticStage(newStatus)
       if (newStatus === "completed") {
@@ -155,6 +160,7 @@ export function LifecycleStepper({
           if (publishRes.ok) {
             setCurrentStatus(newStatus)
             router.refresh()
+            setPendingTarget(null)
             return
           }
         }
@@ -166,9 +172,10 @@ export function LifecycleStepper({
             body: JSON.stringify({ status: "completed" }),
           },
         )
-        if (!res.ok) throw new Error("Failed to update status")
+        await assertOk(res)
         setCurrentStatus(newStatus)
         router.refresh()
+        setPendingTarget(null)
         return
       }
 
@@ -197,19 +204,21 @@ export function LifecycleStepper({
           body: JSON.stringify(body),
         },
       )
-      if (!res.ok) throw new Error("Failed to update status")
+      await assertOk(res)
       setCurrentStatus(newStatus)
       router.refresh()
-    } catch {
+      setPendingTarget(null)
+    } catch (error) {
       actionItems?.setOptimisticStage(null)
+      setTransitionError(error instanceof Error ? error.message : "Something went wrong")
     } finally {
       setUpdating(false)
-      setPendingTarget(null)
     }
   }
 
   function requestTransition(target: PhaseKey) {
     if (target === phases[currentIndex]?.key || updating) return
+    setTransitionError(null)
     setPendingTarget(target)
   }
 
@@ -466,7 +475,12 @@ export function LifecycleStepper({
 
       <AlertDialog
         open={!!pendingTarget}
-        onOpenChange={(open) => !open && setPendingTarget(null)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingTarget(null)
+            setTransitionError(null)
+          }
+        }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -512,6 +526,23 @@ export function LifecycleStepper({
               </div>
             </div>
           )}
+          {pendingTarget === "judging" && judgingSetupIssues.length > 0 && (
+            <div className="flex items-start gap-3 rounded-md border border-destructive/50 bg-destructive/10 p-3">
+              <AlertTriangle className="size-5 shrink-0 text-destructive" />
+              <div className="text-sm text-destructive">
+                <p className="font-medium">Finish scoring setup first</p>
+                <ul className="mt-1 list-disc pl-4 text-destructive/80">
+                  {judgingSetupIssues.map((issue) => <li key={issue}>{issue}</li>)}
+                </ul>
+              </div>
+            </div>
+          )}
+          {transitionError && (
+            <div className="flex items-start gap-3 rounded-md border border-destructive/50 bg-destructive/10 p-3">
+              <AlertTriangle className="size-5 shrink-0 text-destructive" />
+              <p className="text-sm text-destructive">{transitionError}</p>
+            </div>
+          )}
           {pendingTarget === "completed" &&
             judgingProgress &&
             judgingProgress.totalAssignments > 0 &&
@@ -537,6 +568,7 @@ export function LifecycleStepper({
               disabled={
                 updating ||
                 (pendingTarget === "published" && !hasAllDates) ||
+                (pendingTarget === "judging" && judgingSetupIssues.length > 0) ||
                 (pendingTarget === "completed" &&
                   judgingProgress &&
                   judgingProgress.totalAssignments > 0 &&
