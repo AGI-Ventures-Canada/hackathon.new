@@ -116,6 +116,95 @@ describe("Results Service", () => {
       expect(result.success).toBe(true)
       if (result.success) expect(result.count).toBe(3)
     })
+
+    it("routes styled prizes through their dedicated calculators", async () => {
+      let prizeQueryCount = 0
+      let rpcCalled = false
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: { judging_mode: "rubric", results_published_at: null },
+            error: null,
+          })
+        }
+        if (table === "prizes") {
+          prizeQueryCount++
+          return createChainableMock({
+            data:
+              prizeQueryCount === 1
+                ? [{ id: "prize-bucket" }]
+                : { judging_style: "bucket_sort" },
+            error: null,
+          })
+        }
+        if (table === "hackathon_results") {
+          return createChainableMock({ data: null, error: null })
+        }
+        if (table === "judging_criteria" || table === "judge_assignments") {
+          return createChainableMock({ data: [], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+      setMockRpcImplementation(() => {
+        rpcCalled = true
+        return Promise.resolve({ data: null, error: null })
+      })
+
+      const result = await calculateResults("h1")
+
+      expect(result).toEqual({ success: true, count: 0 })
+      expect(prizeQueryCount).toBe(2)
+      expect(rpcCalled).toBe(false)
+    })
+
+    it("returns query_failed when prize styles cannot be loaded", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: { judging_mode: "rubric", results_published_at: null },
+            error: null,
+          })
+        }
+        if (table === "prizes") {
+          return createChainableMock({ data: null, error: { message: "DB error" } })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await calculateResults("h1")
+
+      expect(result).toEqual({
+        success: false,
+        error: "Failed to load prizes",
+        code: "query_failed",
+      })
+    })
+
+    it("stops when old event-wide results cannot be cleared", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: { judging_mode: "rubric", results_published_at: null },
+            error: null,
+          })
+        }
+        if (table === "prizes") {
+          return createChainableMock({ data: [{ id: "p1" }], error: null })
+        }
+        if (table === "hackathon_results") {
+          return createChainableMock({ data: null, error: { message: "DB error" } })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await calculateResults("h1")
+
+      expect(result).toEqual({
+        success: false,
+        error: "Failed to clear old results",
+        code: "delete_failed",
+      })
+    })
   })
 
   describe("getResults", () => {
@@ -1030,6 +1119,79 @@ describe("Results Service", () => {
       expect(groups[0].results).toHaveLength(1)
       expect(groups[0].results[0].isAssignedWinner).toBe(true)
       expect(groups[0].results[0].submissionTitle).toBe("Crowd Pick")
+    })
+
+    it("returns stored rankings for bucket and gate style prizes", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "prizes") {
+          return createChainableMock({
+            data: [
+              {
+                id: "prize-bucket",
+                name: "Best Overall",
+                type: "score",
+                judging_style: "bucket_sort",
+                display_order: 0,
+                is_screening: false,
+              },
+            ],
+            error: null,
+          })
+        }
+        if (table === "judge_assignments" || table === "scores" || table === "judging_criteria") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "prize_assignments") {
+          return createChainableMock({
+            data: [{ prize_id: "prize-bucket", submission_id: "sub2" }],
+            error: null,
+          })
+        }
+        if (table === "hackathon_results") {
+          return createChainableMock({
+            data: [
+              {
+                submission_id: "sub1",
+                prize_id: "prize-bucket",
+                result_kind: "prize",
+                total_score: 7,
+                weighted_score: 3.5,
+                judge_count: 2,
+                rank: 1,
+              },
+              {
+                submission_id: "sub2",
+                prize_id: "prize-bucket",
+                result_kind: "prize",
+                total_score: 5,
+                weighted_score: 2.5,
+                judge_count: 2,
+                rank: 2,
+              },
+            ],
+            error: null,
+          })
+        }
+        if (table === "submissions") {
+          return createChainableMock({
+            data: [
+              { id: "sub1", title: "Alpha", team_id: null },
+              { id: "sub2", title: "Beta", team_id: null },
+            ],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const groups = await getResultsByPrize("h1")
+
+      expect(groups).toHaveLength(1)
+      expect(groups[0].mode).toBe("calculated")
+      expect(groups[0].results.map((row) => row.submissionTitle)).toEqual(["Alpha", "Beta"])
+      expect(groups[0].results[0].weightedScore).toBe(3.5)
+      expect(groups[0].results[1].rank).toBe(2)
+      expect(groups[0].results[1].isAssignedWinner).toBe(true)
     })
 
     it("excludes screening prizes", async () => {

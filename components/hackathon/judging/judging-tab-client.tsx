@@ -1530,7 +1530,12 @@ function PrizeResultsTable({ group }: { group: PrizeResultsGroup }) {
               <TableCell className="font-bold text-lg">
                 {r.rank !== null ? `#${r.rank}` : "\u2014"}
               </TableCell>
-              <TableCell className="font-medium">{r.submissionTitle}</TableCell>
+              <TableCell className="font-medium">
+                <div className="flex items-center gap-2">
+                  {r.submissionTitle}
+                  {r.isAssignedWinner && <Badge variant="secondary">Winner</Badge>}
+                </div>
+              </TableCell>
               <TableCell className="text-muted-foreground">{r.teamName || "\u2014"}</TableCell>
               <TableCell className="text-right font-mono">
                 {r.weightedScore !== null ? Number(r.weightedScore).toFixed(2) : "\u2014"}

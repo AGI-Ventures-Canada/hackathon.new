@@ -2762,6 +2762,7 @@ export async function calculatePrizeResults(
     .from("prizes")
     .select("judging_style")
     .eq("id", prizeId)
+    .eq("hackathon_id", hackathonId)
     .single()
 
   if (!prize) return { success: false, count: 0 }
@@ -2804,6 +2805,7 @@ async function calculateBucketSortResults(
   const { data: assignments } = await client
     .from("judge_assignments")
     .select("id, submission_id")
+    .eq("hackathon_id", hackathonId)
     .eq("prize_id", prizeId)
     .eq("is_complete", true)
 
@@ -2842,7 +2844,7 @@ async function calculateBucketSortResults(
       total: totalLevel,
       judgeCount,
     }))
-    .sort((a, b) => b.avg - a.avg)
+    .sort((a, b) => b.avg - a.avg || b.total - a.total)
 
   return insertRankedResults(hackathonId, prizeId, ranked)
 }
@@ -2864,6 +2866,7 @@ async function calculateGateCheckResults(
   const { data: assignments } = await client
     .from("judge_assignments")
     .select("id, submission_id")
+    .eq("hackathon_id", hackathonId)
     .eq("prize_id", prizeId)
     .eq("is_complete", true)
 
@@ -2932,6 +2935,7 @@ async function calculateJudgesPickResults(
   const { data: picks } = await client
     .from("judge_picks")
     .select("judge_participant_id, submission_id, rank")
+    .eq("hackathon_id", hackathonId)
     .eq("prize_id", prizeId)
 
   if (!picks || picks.length === 0) return { success: true, count: 0 }
@@ -2976,6 +2980,7 @@ async function calculateCrowdVoteResults(
     .from("crowd_votes")
     .select("submission_id")
     .eq("hackathon_id", hackathonId)
+    .eq("prize_id", prizeId)
 
   if (!votes || votes.length === 0) return { success: true, count: 0 }
 
@@ -3007,7 +3012,12 @@ async function insertRankedResults(
 
   let currentRank = 1
   const inserts = ranked.map((r, i) => {
-    if (i > 0 && r.avg < ranked[i - 1].avg) currentRank = i + 1
+    if (
+      i > 0 &&
+      (r.avg !== ranked[i - 1].avg || r.total !== ranked[i - 1].total)
+    ) {
+      currentRank = i + 1
+    }
     return {
       hackathon_id: hackathonId,
       submission_id: r.sid,

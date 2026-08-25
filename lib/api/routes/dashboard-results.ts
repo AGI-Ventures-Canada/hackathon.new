@@ -48,7 +48,7 @@ export const dashboardResultsRoutes = new Elysia()
   }, {
     detail: {
       summary: "Calculate results",
-      description: "Calculates rankings from judging scores. Requires hackathons:write scope.",
+      description: "Calculates each prize ranking with its scoring style. Requires hackathons:write scope.",
     },
   })
   .get("/hackathons/:id/results", async ({ principal, params }) => {
