@@ -48,6 +48,7 @@ const {
   listJudgeSubmissionAssignments,
   assignJudgeToSubmission,
   unassignJudgeFromSubmission,
+  submitJudgesPick,
 } = await import("@/lib/services/judging")
 
 describe("Judging Service", () => {
@@ -3737,6 +3738,115 @@ describe("Judging Service", () => {
       const result = await roundBelongsToHackathon("h1", "r1")
 
       expect(result).toBe(false)
+    })
+  })
+
+  describe("submitJudgesPick", () => {
+    it("saves ranked picks and completes the prize assignments", async () => {
+      const picksChain = createChainableMock({ data: null, error: null })
+      const assignmentChain = createChainableMock({
+        data: [{ submission_id: "s1" }, { submission_id: "s2" }],
+        error: null,
+      })
+      setMockFromImplementation((table) => {
+        if (table === "prizes") {
+          return createChainableMock({ data: { id: "p1", max_picks: 2 }, error: null })
+        }
+        if (table === "judge_assignments") return assignmentChain
+        if (table === "judge_picks") return picksChain
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await submitJudgesPick("h1", "j1", "p1", ["s2", "s1"])
+
+      expect(result).toEqual({ success: true })
+      expect(picksChain.upsert).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            hackathon_id: "h1",
+            judge_participant_id: "j1",
+            prize_id: "p1",
+            submission_id: "s2",
+            rank: 1,
+          }),
+          expect.objectContaining({
+            hackathon_id: "h1",
+            judge_participant_id: "j1",
+            prize_id: "p1",
+            submission_id: "s1",
+            rank: 2,
+          }),
+        ],
+        { onConflict: "hackathon_id,judge_participant_id,prize_id,submission_id" }
+      )
+      expect(picksChain.not).toHaveBeenCalledWith("submission_id", "in", "(s2,s1)")
+      expect(assignmentChain.update).toHaveBeenCalled()
+    })
+
+    it("rejects projects that aren't assigned to the judge before replacing picks", async () => {
+      const picksChain = createChainableMock({ data: null, error: null })
+      setMockFromImplementation((table) => {
+        if (table === "prizes") {
+          return createChainableMock({ data: { id: "p1", max_picks: 2 }, error: null })
+        }
+        if (table === "judge_assignments") {
+          return createChainableMock({ data: [{ submission_id: "s1" }], error: null })
+        }
+        if (table === "judge_picks") return picksChain
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await submitJudgesPick("h1", "j1", "p1", ["s2"])
+
+      expect(result).toEqual({
+        success: false,
+        error: "One or more projects aren't assigned to you",
+        code: "not_assigned",
+      })
+      expect(picksChain.upsert).not.toHaveBeenCalled()
+    })
+
+    it("rejects more picks than the prize allows", async () => {
+      const assignmentChain = createChainableMock({ data: [], error: null })
+      setMockFromImplementation((table) => {
+        if (table === "prizes") {
+          return createChainableMock({ data: { id: "p1", max_picks: 1 }, error: null })
+        }
+        if (table === "judge_assignments") return assignmentChain
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await submitJudgesPick("h1", "j1", "p1", ["s1", "s2"])
+
+      expect(result).toEqual({
+        success: false,
+        error: "Pick up to 1 project",
+        code: "too_many_picks",
+      })
+      expect(assignmentChain.select).not.toHaveBeenCalled()
+    })
+
+    it("keeps older picks when the new picks fail to save", async () => {
+      const picksChain = createChainableMock({ data: null, error: { message: "DB error" } })
+      setMockFromImplementation((table) => {
+        if (table === "prizes") {
+          return createChainableMock({ data: { id: "p1", max_picks: 1 }, error: null })
+        }
+        if (table === "judge_assignments") {
+          return createChainableMock({ data: [{ submission_id: "s1" }], error: null })
+        }
+        if (table === "judge_picks") return picksChain
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await submitJudgesPick("h1", "j1", "p1", ["s1"])
+
+      expect(result).toEqual({
+        success: false,
+        error: "Failed to submit picks",
+        code: "insert_failed",
+      })
+      expect(picksChain.delete).not.toHaveBeenCalled()
     })
   })
 })

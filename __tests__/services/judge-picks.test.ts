@@ -72,11 +72,16 @@ describe("Judge Picks Service", () => {
 
   describe("submitPick", () => {
     it("creates a pick successfully", async () => {
-      const chain = createChainableMock({
+      const pickChain = createChainableMock({
         data: mockPick,
         error: null,
       })
-      setMockFromImplementation(() => chain)
+      setMockFromImplementation((table) => {
+        if (table === "prizes" || table === "submissions") {
+          return createChainableMock({ data: { id: table === "prizes" ? "p1" : "s1" }, error: null })
+        }
+        return pickChain
+      })
 
       const result = await submitPick("h1", "jp1", "p1", "s1", 1, "Great project")
       expect(result.success).toBe(true)
@@ -86,14 +91,37 @@ describe("Judge Picks Service", () => {
     })
 
     it("returns error on failure", async () => {
-      const chain = createChainableMock({
+      const pickChain = createChainableMock({
         data: null,
         error: { message: "DB error" },
       })
-      setMockFromImplementation(() => chain)
+      setMockFromImplementation((table) => {
+        if (table === "prizes" || table === "submissions") {
+          return createChainableMock({ data: { id: table === "prizes" ? "p1" : "s1" }, error: null })
+        }
+        return pickChain
+      })
 
       const result = await submitPick("h1", "jp1", "p1", "s1", 1)
       expect(result.success).toBe(false)
+    })
+
+    it("rejects a prize or project from another hackathon", async () => {
+      const pickChain = createChainableMock({ data: mockPick, error: null })
+      setMockFromImplementation((table) => {
+        if (table === "prizes") {
+          return createChainableMock({ data: null, error: null })
+        }
+        if (table === "submissions") {
+          return createChainableMock({ data: { id: "s1" }, error: null })
+        }
+        return pickChain
+      })
+
+      const result = await submitPick("h1", "jp1", "p1", "s1", 1)
+
+      expect(result).toEqual({ success: false, error: "Prize or project not found" })
+      expect(pickChain.upsert).not.toHaveBeenCalled()
     })
   })
 

@@ -2664,30 +2664,74 @@ export async function submitJudgesPick(
 ): Promise<{ success: true } | { success: false; error: string; code: string }> {
   const client = getSupabase() as unknown as SupabaseClient
 
+  const uniqueSubmissionIds = [...new Set(rankedSubmissionIds)]
+  if (uniqueSubmissionIds.length === 0) {
+    return { success: false, error: "Pick at least one project", code: "picks_required" }
+  }
+
+  const { data: prize } = await client
+    .from("prizes")
+    .select("id, max_picks")
+    .eq("id", prizeId)
+    .eq("hackathon_id", hackathonId)
+    .eq("judging_style", "judges_pick")
+    .maybeSingle()
+
+  if (!prize) {
+    return { success: false, error: "Prize not found", code: "prize_not_found" }
+  }
+
+  const maxPicks = Math.max(1, prize.max_picks ?? 1)
+  if (uniqueSubmissionIds.length > maxPicks) {
+    return {
+      success: false,
+      error: `Pick up to ${maxPicks} ${maxPicks === 1 ? "project" : "projects"}`,
+      code: "too_many_picks",
+    }
+  }
+
+  const { data: assignments } = await client
+    .from("judge_assignments")
+    .select("submission_id")
+    .eq("hackathon_id", hackathonId)
+    .eq("judge_participant_id", judgeParticipantId)
+    .eq("prize_id", prizeId)
+
+  const assignedSubmissionIds = new Set((assignments ?? []).map((assignment) => assignment.submission_id))
+  if (uniqueSubmissionIds.some((submissionId) => !assignedSubmissionIds.has(submissionId))) {
+    return {
+      success: false,
+      error: "One or more projects aren't assigned to you",
+      code: "not_assigned",
+    }
+  }
+
+  const inserts = uniqueSubmissionIds.map((submissionId, index) => ({
+    hackathon_id: hackathonId,
+    judge_participant_id: judgeParticipantId,
+    prize_id: prizeId,
+    submission_id: submissionId,
+    rank: index + 1,
+    updated_at: new Date().toISOString(),
+  }))
+
+  const { error: upsertError } = await client.from("judge_picks").upsert(inserts, {
+    onConflict: "hackathon_id,judge_participant_id,prize_id,submission_id",
+  })
+  if (upsertError) {
+    return { success: false, error: "Failed to submit picks", code: "insert_failed" }
+  }
+
   const { error: deleteError } = await client
     .from("judge_picks")
     .delete()
     .eq("hackathon_id", hackathonId)
     .eq("judge_participant_id", judgeParticipantId)
     .eq("prize_id", prizeId)
+    .not("submission_id", "in", `(${uniqueSubmissionIds.join(",")})`)
 
   if (deleteError) {
-    return { success: false, error: "Failed to clear existing picks", code: "delete_failed" }
-  }
-
-  if (rankedSubmissionIds.length > 0) {
-    const inserts = rankedSubmissionIds.map((sid, i) => ({
-      hackathon_id: hackathonId,
-      judge_participant_id: judgeParticipantId,
-      prize_id: prizeId,
-      submission_id: sid,
-      rank: i + 1,
-    }))
-
-    const { error } = await client.from("judge_picks").insert(inserts)
-    if (error) {
-      return { success: false, error: "Failed to submit picks", code: "insert_failed" }
-    }
+    return { success: false, error: "Failed to clear older picks", code: "delete_failed" }
   }
 
   const { error: completeError } = await client
@@ -3103,6 +3147,7 @@ export type JudgeAssignmentForJudge = {
   prizeId: string | null
   prizeName: string | null
   judgingStyle: PrizeJudgingStyle | null
+  maxPicks: number | null
   selfJudging: boolean
   assignmentKind: "per_prize" | "unified_weighted_score"
 }
@@ -3145,14 +3190,18 @@ export async function getJudgeAssignments(
     : assignmentsRaw
 
   const prizeIds = [...new Set(assignments.map((a: Record<string, unknown>) => a.prize_id).filter(Boolean))] as string[]
-  const prizeMap: Record<string, { name: string; judging_style: string | null }> = {}
+  const prizeMap: Record<string, { name: string; judging_style: string | null; max_picks: number | null }> = {}
   if (prizeIds.length > 0) {
     const { data: prizes } = await client
       .from("prizes")
-      .select("id, name, judging_style")
+      .select("id, name, judging_style, max_picks")
       .in("id", prizeIds)
     for (const p of prizes ?? []) {
-      prizeMap[p.id] = { name: p.name, judging_style: p.judging_style }
+      prizeMap[p.id] = {
+        name: p.name,
+        judging_style: p.judging_style,
+        max_picks: p.max_picks,
+      }
     }
   }
 
@@ -3221,6 +3270,7 @@ export async function getJudgeAssignments(
         : kind === "unified_weighted_score"
           ? "weighted_score"
           : null,
+      maxPicks: pid ? prizeMap[pid]?.max_picks ?? null : null,
       selfJudging,
       assignmentKind: kind,
     }
@@ -3316,6 +3366,14 @@ export type AssignmentDetail = {
   isComplete: boolean
   notes: string
   criteria: AssignmentDetailCriterion[]
+  buckets: {
+    id: string
+    level: number
+    label: string
+    description: string | null
+  }[]
+  existingGateResponses: { criteriaId: string; passed: boolean }[]
+  existingBucketId: string | null
   assignmentKind?: "per_prize" | "unified_weighted_score"
 }
 
@@ -3407,7 +3465,35 @@ export async function getAssignmentDetail(
     return ((data ?? []) as CriteriaRow[]).map((c) => ({ ...c, prize_id: null, prize_name: null }))
   }
 
-  const [teamName, criteria] = await Promise.all([teamNamePromise, fetchCriteria()])
+  const styleDetailsPromise = ownership.prizeId
+    ? Promise.all([
+        client
+          .from("bucket_definitions")
+          .select("id, level, label, description")
+          .eq("prize_id", ownership.prizeId)
+          .order("level"),
+        client
+          .from("binary_responses")
+          .select("criteria_id, passed")
+          .eq("judge_assignment_id", assignmentId),
+        client
+          .from("bucket_responses")
+          .select("bucket_id")
+          .eq("judge_assignment_id", assignmentId)
+          .maybeSingle(),
+      ])
+    : Promise.resolve([
+        { data: [] },
+        { data: [] },
+        { data: null },
+      ] as const)
+
+  const [teamName, criteria, styleDetails] = await Promise.all([
+    teamNamePromise,
+    fetchCriteria(),
+    styleDetailsPromise,
+  ])
+  const [bucketResult, gateResult, bucketResponseResult] = styleDetails
 
   const criteriaIds = criteria.map((c) => c.id)
 
@@ -3457,6 +3543,17 @@ export async function getAssignmentDetail(
     isComplete: ownership.isComplete,
     notes: ownership.notes,
     assignmentKind: ownership.assignmentKind ?? "per_prize",
+    buckets: (bucketResult.data ?? []).map((bucket) => ({
+      id: bucket.id,
+      level: bucket.level,
+      label: bucket.label,
+      description: bucket.description ?? null,
+    })),
+    existingGateResponses: (gateResult.data ?? []).map((response) => ({
+      criteriaId: response.criteria_id,
+      passed: response.passed,
+    })),
+    existingBucketId: bucketResponseResult.data?.bucket_id ?? null,
     criteria: criteria.map((c) => ({
       id: c.id,
       name: c.name,

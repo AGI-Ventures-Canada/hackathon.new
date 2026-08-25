@@ -321,6 +321,9 @@ curl -s "$BASE_URL/api/public/hackathons/$SLUG/judging/assignments/$ASSIGNMENT_I
   "teamName": "Team Alpha",
   "isComplete": false,
   "notes": "",
+  "buckets": [],
+  "existingGateResponses": [],
+  "existingBucketId": null,
   "criteria": [
     {
       "id": "c1c2c3c4-...",
@@ -351,6 +354,26 @@ curl -s -X POST "$BASE_URL/api/public/hackathons/$SLUG/judging/assignments/$ASSI
       { "criteriaId": "c1c2c3c4-...", "score": 8 }
     ],
     "notes": "Strong technical implementation"
+  }'
+```
+
+```json
+{ "success": true }
+```
+
+---
+
+### Save ranked judge picks
+
+Requires a Clerk session. Every project must be assigned to the current judge.
+
+```bash
+curl -s -X POST "$BASE_URL/api/public/hackathons/$SLUG/judging/picks" \
+  --cookie "clerk-session=..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prizeId": "p1p2p3p4-...",
+    "rankedSubmissionIds": ["s1s2s3s4-...", "s5s6s7s8-..."]
   }'
 ```
 

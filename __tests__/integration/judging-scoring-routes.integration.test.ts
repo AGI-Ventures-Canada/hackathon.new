@@ -33,11 +33,16 @@ mock.module("@/lib/services/public-hackathons", () => ({
   PUBLISHED_STATUSES: ["published", "registration_open", "active", "judging", "completed"],
 }))
 
+const mockGetRegistrationInfo = mock(
+  (): Promise<{ participantRole: string | null; participantId: string | null }> =>
+    Promise.resolve({ participantRole: null, participantId: null })
+)
+
 mock.module("@/lib/services/hackathons", () => ({
   registerForHackathon: mock(() => Promise.resolve({ success: true })),
   getParticipantCount: mock(() => Promise.resolve(0)),
   isUserRegistered: mock(() => Promise.resolve(false)),
-  getRegistrationInfo: mock(() => Promise.resolve({ participantRole: null })),
+  getRegistrationInfo: mockGetRegistrationInfo,
 }))
 
 mock.module("@/lib/services/tenant-profiles", () => ({
@@ -67,6 +72,8 @@ const mockVerifyAssignmentOwnership = mock(() => Promise.resolve({ hackathonId: 
 const mockRecalculateForAssignment = mock(() => Promise.resolve())
 const mockGetAssignmentDetail = mock(() => Promise.resolve(null))
 const mockSubmitScores = mock(() => Promise.resolve({ success: true }))
+const mockSubmitJudgesPick = mock(() => Promise.resolve({ success: true }))
+const mockCalculatePrizeResults = mock(() => Promise.resolve({ success: true, count: 1 }))
 const mockOwnership = { hackathonId: "22222222-2222-2222-2222-222222222222", prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" }
 const mockAssertAssignmentWritable = mock(() => Promise.resolve({ ok: true, ownership: mockOwnership } as { ok: true; ownership: typeof mockOwnership } | { ok: false; code: string; status: number; error: string }))
 
@@ -86,12 +93,13 @@ mock.module("@/lib/services/judging", () => ({
   getJudgeAssignments: mock(() => Promise.resolve([])),
   getAssignmentDetail: mockGetAssignmentDetail,
   submitScores: mockSubmitScores,
+  submitJudgesPick: mockSubmitJudgesPick,
   saveNotes: mock(() => Promise.resolve(true)),
   getJudgingSetupStatus: mock(() => Promise.resolve({ hasCriteria: false, allCriteriaHaveLevels: true, judgeCount: 0, hasSubmissions: false, hasUnassignedSubmissions: false, isReady: false })),
   verifyAssignmentOwnership: mockVerifyAssignmentOwnership,
   assertAssignmentWritable: mockAssertAssignmentWritable,
   recalculateForAssignment: mockRecalculateForAssignment,
-  calculatePrizeResults: mock(() => Promise.resolve({ ok: true })),
+  calculatePrizeResults: mockCalculatePrizeResults,
   removeJudgeFromPrize: mock(() => Promise.resolve({ removedCount: 0 })),
 }))
 
@@ -158,6 +166,9 @@ describe("Judging Scoring Routes", () => {
     mockRecalculateForAssignment.mockReset()
     mockGetAssignmentDetail.mockReset()
     mockSubmitScores.mockReset()
+    mockSubmitJudgesPick.mockReset()
+    mockCalculatePrizeResults.mockReset()
+    mockGetRegistrationInfo.mockReset()
     mockSubmitBucketSortResponse.mockReset()
     mockSubmitGateCheckResponse.mockReset()
     mockAssertAssignmentWritable.mockReset()
@@ -171,6 +182,56 @@ describe("Judging Scoring Routes", () => {
     mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" })
     mockRecalculateForAssignment.mockResolvedValue(undefined)
     mockSubmitScores.mockResolvedValue({ success: true })
+    mockSubmitJudgesPick.mockResolvedValue({ success: true })
+    mockCalculatePrizeResults.mockResolvedValue({ success: true, count: 1 })
+    mockGetRegistrationInfo.mockResolvedValue({ participantRole: "judge", participantId: "judge-1" })
+  })
+
+  describe("POST /api/public/hackathons/:slug/judging/picks", () => {
+    it("saves a ranked set of assigned projects", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_judge" })
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+
+      const prizeId = "44444444-4444-4444-4444-444444444444"
+      const response = await app.handle(
+        new Request("http://localhost/api/public/hackathons/test-hackathon/judging/picks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prizeId,
+            rankedSubmissionIds: [VALID_SUBMISSION_ID],
+          }),
+        })
+      )
+
+      expect(response.status).toBe(200)
+      expect(await response.json()).toEqual({ success: true })
+      expect(mockSubmitJudgesPick).toHaveBeenCalledWith(
+        mockHackathon.id,
+        "judge-1",
+        prizeId,
+        [VALID_SUBMISSION_ID]
+      )
+    })
+
+    it("rejects malformed project IDs before calling the service", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_judge" })
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+
+      const response = await app.handle(
+        new Request("http://localhost/api/public/hackathons/test-hackathon/judging/picks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prizeId: "44444444-4444-4444-4444-444444444444",
+            rankedSubmissionIds: ["not-a-uuid"],
+          }),
+        })
+      )
+
+      expect(response.status).toBe(400)
+      expect(mockSubmitJudgesPick).not.toHaveBeenCalled()
+    })
   })
 
   describe("POST /api/public/hackathons/:slug/judging/assignments/:assignmentId/bucket-sort", () => {

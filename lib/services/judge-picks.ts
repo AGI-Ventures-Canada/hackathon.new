@@ -57,6 +57,25 @@ export async function submitPick(
 ): Promise<SubmitPickResult> {
   const client = getSupabase() as unknown as SupabaseClient
 
+  const [{ data: prize }, { data: submission }] = await Promise.all([
+    client
+      .from("prizes")
+      .select("id")
+      .eq("id", prizeId)
+      .eq("hackathon_id", hackathonId)
+      .maybeSingle(),
+    client
+      .from("submissions")
+      .select("id")
+      .eq("id", submissionId)
+      .eq("hackathon_id", hackathonId)
+      .maybeSingle(),
+  ])
+
+  if (!prize || !submission) {
+    return { success: false, error: "Prize or project not found" }
+  }
+
   const { data, error } = await client
     .from("judge_picks")
     .upsert(
