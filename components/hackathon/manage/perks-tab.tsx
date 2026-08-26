@@ -18,6 +18,7 @@ import {
 import { PerkEditorDialog, type SponsorOption } from "./perk-editor-dialog"
 import type { Perk, PerkType } from "@/lib/services/perks"
 import { isPerkReleased } from "@/lib/services/perks"
+import { useIsClient } from "@/hooks/use-is-client"
 
 type Props = {
   hackathonId: string
@@ -41,27 +42,35 @@ const TYPE_LABEL: Record<PerkType, string> = {
   other: "Perk",
 }
 
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, {
+function formatDateTime(iso: string, timeZone?: string): string {
+  return new Date(iso).toLocaleString(timeZone ? "en-US" : undefined, {
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    timeZone,
   })
 }
 
-function releaseStatusText(perk: Perk, startsAt: string | null): string {
-  if (isPerkReleased(perk, startsAt)) {
-    if (perk.releasedAt) return `Released ${formatDateTime(perk.releasedAt)}`
+function releaseStatusText(
+  perk: Perk,
+  startsAt: string | null,
+  released: boolean,
+  timeZone?: string,
+): string {
+  if (released) {
+    if (perk.releasedAt) return `Released ${formatDateTime(perk.releasedAt, timeZone)}`
     return "Released"
   }
-  if (perk.scheduledReleaseAt) return `Releases ${formatDateTime(perk.scheduledReleaseAt)}`
-  if (startsAt) return `Releases when event starts (${formatDateTime(startsAt)})`
+  if (perk.scheduledReleaseAt) return `Releases ${formatDateTime(perk.scheduledReleaseAt, timeZone)}`
+  if (startsAt) return `Releases when event starts (${formatDateTime(startsAt, timeZone)})`
   return "Releases when event starts"
 }
 
 export function PerksTab({ hackathonId, initialPerks, sponsors, startsAt, perksNone: initialPerksNone }: Props) {
   const router = useRouter()
+  const isClient = useIsClient()
+  const displayTimeZone = isClient ? undefined : "UTC"
   const [perks, setPerks] = useState<Perk[]>(initialPerks)
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set())
   const [perksNone, setPerksNone] = useState(initialPerksNone)
@@ -260,7 +269,7 @@ export function PerksTab({ hackathonId, initialPerks, sponsors, startsAt, perksN
             <h3 className="text-sm font-semibold">{group.label}</h3>
             <div className="space-y-3">
               {group.perks.map((perk) => {
-                const released = isPerkReleased(perk, startsAt)
+                const released = Boolean(perk.releasedAt) || (isClient && isPerkReleased(perk, startsAt))
                 const Icon = TYPE_ICON[perk.type]
                 return (
                   <div key={perk.id} className="rounded-lg border bg-card p-4">
@@ -279,7 +288,9 @@ export function PerksTab({ hackathonId, initialPerks, sponsors, startsAt, perksN
                         {perk.description ? (
                           <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{perk.description}</p>
                         ) : null}
-                        <p className="mt-2 text-xs text-muted-foreground">{releaseStatusText(perk, startsAt)}</p>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          {releaseStatusText(perk, startsAt, released, displayTimeZone)}
+                        </p>
                       </div>
                       <div className="flex shrink-0 items-center gap-1">
                         {!released && (

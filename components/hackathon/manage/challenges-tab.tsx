@@ -19,6 +19,7 @@ import { ChallengeEditorDialog } from "./challenge-editor-dialog"
 import type { Challenge } from "@/lib/services/challenges"
 import type { ScheduleItem } from "@/lib/services/schedule-items"
 import type { HackathonStatus } from "@/lib/db/hackathon-types"
+import { useIsClient } from "@/hooks/use-is-client"
 import { useActionItemsOptional } from "./action-items-context"
 
 type Props = {
@@ -31,12 +32,13 @@ type Props = {
   hackathonStatus: HackathonStatus
 }
 
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleString(undefined, {
+function formatDate(dateStr: string, timeZone?: string): string {
+  return new Date(dateStr).toLocaleString(timeZone ? "en-US" : undefined, {
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    timeZone,
   })
 }
 
@@ -50,6 +52,8 @@ export function ChallengesTab({
   hackathonStatus,
 }: Props) {
   const router = useRouter()
+  const isClient = useIsClient()
+  const displayTimeZone = isClient ? undefined : "UTC"
   const actionItems = useActionItemsOptional()
   const [localChallenges, setLocalChallenges] = useState<Challenge[]>(initialChallenges)
   const challenges = actionItems?.manageWebMcpView.challenges ?? localChallenges
@@ -191,7 +195,7 @@ export function ChallengesTab({
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
             {challenges.length} challenge{challenges.length === 1 ? "" : "s"}
-            {releasedAt ? ` · released ${formatDate(releasedAt)}` : ""}
+            {releasedAt ? ` · released ${formatDate(releasedAt, displayTimeZone)}` : ""}
           </p>
           <div className="flex items-center gap-2">
             {!releasedAt && (

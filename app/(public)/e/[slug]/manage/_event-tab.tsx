@@ -48,6 +48,7 @@ import type {
 } from "@/lib/services/announcements"
 import type { HackathonStatus, HackathonPhase } from "@/lib/db/hackathon-types"
 import { useActionItemsOptional } from "@/components/hackathon/manage/action-items-context"
+import { useIsClient } from "@/hooks/use-is-client"
 
 type MentorQueueStats = {
   open: number
@@ -159,14 +160,26 @@ interface EventTabContentProps {
   hackathonPhase: HackathonPhase | null
 }
 
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleString(undefined, {
+function formatDate(dateStr: string, timeZone?: string): string {
+  return new Date(dateStr).toLocaleString(timeZone ? "en-US" : undefined, {
     month: "short",
     day: "numeric",
     year: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    timeZone,
   })
+}
+
+export function AnnouncementDateLabel({
+  label,
+  date,
+}: {
+  label: "Created" | "Sent"
+  date: string
+}) {
+  const isClient = useIsClient()
+  return <>{label} {formatDate(date, isClient ? undefined : "UTC")}</>
 }
 
 function MentorsSubTab({ hackathonId }: { hackathonId: string }) {
@@ -821,7 +834,11 @@ function AnnouncementsSubTab({ hackathonId, hackathonStatus, hackathonPhase }: {
             </div>
             <p className="text-xs text-muted-foreground line-clamp-2">{item.body}</p>
             <p className="text-xs text-muted-foreground mt-1">
-              {isDraft ? `Created ${formatDate(item.created_at)}` : `Sent ${formatDate(item.published_at!)}`}
+              {isDraft ? (
+                <AnnouncementDateLabel label="Created" date={item.created_at} />
+              ) : (
+                <AnnouncementDateLabel label="Sent" date={item.published_at!} />
+              )}
             </p>
           </div>
           <div className="flex items-center gap-1 shrink-0">

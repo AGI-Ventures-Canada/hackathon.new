@@ -1,6 +1,8 @@
 import React from "react"
 import { describe, it, expect, afterEach, mock } from "bun:test"
-import { render, screen, cleanup, fireEvent } from "@testing-library/react"
+import { act, render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react"
+import { hydrateRoot, type Root } from "react-dom/client"
+import { renderToString } from "react-dom/server"
 
 afterEach(cleanup)
 
@@ -258,5 +260,51 @@ describe("OverviewSchedule (interactive agenda)", () => {
     })
     expect(screen.getByText(releasedTime)).toBeDefined()
     expect(screen.queryByText(scheduledTime)).toBeNull()
+  })
+
+  it("hydrates agenda dates before switching to the browser time zone", async () => {
+    const originalTimeZone = process.env.TZ
+    const recoverableErrors: unknown[] = []
+    const container = document.createElement("div")
+    let hydratedRoot: Root | null = null
+    const props = {
+      ...defaultProps,
+      scheduleItems: [],
+      hackathonStartsAt: "2030-04-10T00:30:00Z",
+      hackathonEndsAt: "2030-04-11T21:00:00Z",
+      hackathonStatus: "draft",
+    }
+
+    try {
+      process.env.TZ = "UTC"
+      const serverHtml = renderToString(<ScheduleEditor {...props} />)
+      expect(serverHtml).toContain("12:30 AM")
+      expect(serverHtml).toContain("Wednesday, April 10")
+
+      process.env.TZ = "America/Toronto"
+      container.innerHTML = serverHtml
+      document.body.appendChild(container)
+      await act(async () => {
+        hydratedRoot = hydrateRoot(container, <ScheduleEditor {...props} />, {
+          onRecoverableError: (error) => recoverableErrors.push(error),
+        })
+      })
+
+      await waitFor(() => {
+        expect(container.textContent).toContain("8:30 PM")
+        expect(container.textContent).toContain("Tuesday, April 9")
+      })
+      expect(recoverableErrors).toEqual([])
+    } finally {
+      if (hydratedRoot) {
+        await act(async () => hydratedRoot?.unmount())
+      }
+      container.remove()
+      if (originalTimeZone === undefined) {
+        delete process.env.TZ
+      } else {
+        process.env.TZ = originalTimeZone
+      }
+    }
   })
 })

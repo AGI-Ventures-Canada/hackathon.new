@@ -50,6 +50,10 @@ import type { Challenge } from "@/lib/services/challenges"
 import { ChallengeSection } from "@/components/hackathon/challenge-section"
 import type { Perk } from "@/lib/services/perks"
 import { PerksSection } from "@/components/hackathon/perks-section"
+import {
+  formatPreviewScheduleTime,
+  getPendingInvitationTiming,
+} from "./preview-date-formatting"
 
 interface HackathonPreviewClientProps {
   hackathon: PublicHackathon
@@ -357,11 +361,12 @@ function HackathonPreviewContent({
               )
             })}
             {teamInfo.pendingInvitations.map((invitation) => {
-              const sentAt = new Date(invitation.createdAt)
-              const expiresAt = new Date(invitation.expiresAt)
-              const now = new Date()
-              const isExpired = expiresAt < now
-              const hoursLeft = Math.max(0, (expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60))
+              const invitationTiming = getPendingInvitationTiming({
+                createdAt: invitation.createdAt,
+                expiresAt: invitation.expiresAt,
+                isClient,
+                nowIso,
+              })
 
               return (
                 <Popover key={invitation.id}>
@@ -400,7 +405,7 @@ function HackathonPreviewContent({
                             />
                           </>
                         )}
-                        {!isExpired && !(invitation.remindedAt || remindedIds.has(invitation.id)) && (
+                        {!invitationTiming.isExpired && !(invitation.remindedAt || remindedIds.has(invitation.id)) && (
                           <Button
                             variant="ghost"
                             size="icon-xs"
@@ -433,18 +438,13 @@ function HackathonPreviewContent({
                       <div className="flex items-center gap-2 text-muted-foreground">
                         <Clock className="size-3.5 shrink-0" />
                         <span className="text-xs">
-                          Sent {sentAt.toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                          {invitationTiming.sentLabel}
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <CalendarClock className={`size-3.5 shrink-0 ${isExpired ? "text-destructive" : "text-muted-foreground"}`} />
-                        <span className={`text-xs ${isExpired ? "text-destructive" : "text-muted-foreground"}`}>
-                          {isExpired
-                            ? "Expired"
-                            : hoursLeft < 48
-                              ? `Expires in ${Math.ceil(hoursLeft)}h`
-                              : `Expires ${expiresAt.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`
-                          }
+                        <CalendarClock className={`size-3.5 shrink-0 ${invitationTiming.isExpired ? "text-destructive" : "text-muted-foreground"}`} />
+                        <span className={`text-xs ${invitationTiming.isExpired ? "text-destructive" : "text-muted-foreground"}`}>
+                          {invitationTiming.expiryLabel}
                         </span>
                       </div>
                       {(invitation.remindedAt || remindedIds.has(invitation.id)) && (
@@ -728,7 +728,7 @@ function HackathonPreviewContent({
                         className={`flex items-start gap-3 ${isCurrent ? "rounded-md bg-primary/5 -mx-2 px-2 py-1" : ""}`}
                       >
                         <span className="text-xs tabular-nums text-muted-foreground shrink-0 w-16 pt-0.5 text-right">
-                          {new Date(item.starts_at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+                          {formatPreviewScheduleTime(item.starts_at, isClient)}
                         </span>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
