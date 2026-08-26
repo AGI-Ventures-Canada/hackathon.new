@@ -18,6 +18,8 @@ if (webMcpOriginTrial?.renewalDue) {
   throw new Error("WEBMCP_ORIGIN_TRIAL_TOKEN expires within 30 days. Renew it before deploying.")
 }
 
+const sharpTraceFiles = ["node_modules/sharp/**/*", "node_modules/@img/**/*"]
+
 const nextConfig: NextConfig = {
   skipTrailingSlashRedirect: true,
   env: {
@@ -35,6 +37,10 @@ const nextConfig: NextConfig = {
     "@react-email/render",
     "@react-pdf/renderer",
   ],
+  outputFileTracingIncludes: {
+    "/api/\\[\\[\\.\\.\\.slugs\\]\\]": sharpTraceFiles,
+    "/.well-known/workflow/v1/step": sharpTraceFiles,
+  },
   async headers() {
     if (!webMcpOriginTrial) return []
     return [createWebMcpOriginTrialHeaderRule(webMcpOriginTrial)]

@@ -31,10 +31,12 @@ const mockSharpInstance = {
   toBuffer: mock(() => Promise.resolve(Buffer.alloc(100 * 1024))),
 }
 const mockSharp = mock(() => mockSharpInstance)
+let sharpModuleLoadCount = 0
 
-mock.module("sharp", () => ({
-  default: mockSharp,
-}))
+mock.module("sharp", () => {
+  sharpModuleLoadCount += 1
+  return { default: mockSharp }
+})
 
 const {
   ImageTooLargeError,
@@ -56,6 +58,7 @@ const {
   uploadJudgeHeadshot,
   deleteJudgeHeadshot,
 } = await import("@/lib/services/storage")
+const sharpModuleLoadsAtStorageImport = sharpModuleLoadCount
 
 describe("Storage Service", () => {
   beforeEach(() => {
@@ -75,6 +78,13 @@ describe("Storage Service", () => {
     mockGetPublicUrl.mockImplementation(() => ({ data: { publicUrl: "https://storage.test/file.webp" } }))
     mockSharpInstance.metadata.mockImplementation(() => Promise.resolve({ width: 800, height: 600 }))
     mockSharpInstance.toBuffer.mockImplementation(() => Promise.resolve(Buffer.alloc(100 * 1024)))
+  })
+
+  it("keeps Sharp unloaded for a no-image import", async () => {
+    expect(sharpModuleLoadsAtStorageImport).toBe(0)
+    expect(await downloadAndUploadBanner("hackathon-123", null)).toBeNull()
+    expect(mockFetch).not.toHaveBeenCalled()
+    expect(sharpModuleLoadCount).toBe(0)
   })
 
   describe("ImageTooLargeError", () => {

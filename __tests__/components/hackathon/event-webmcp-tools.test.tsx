@@ -310,6 +310,45 @@ describe("EventWebMcpTools", () => {
     }
   })
 
+  it("does not ask a signed-in viewer to sign in again", async () => {
+    const listener = (event: Event) => {
+      const preparedEvent = event as PrepareProjectEvent
+      preparedEvent.detail.acknowledge({ ok: true })
+    }
+    window.addEventListener(PREPARE_PROJECT_EVENT, listener)
+    try {
+      renderTools({
+        viewer: {
+          ...viewer,
+          registered: false,
+          role: null,
+          team: null,
+        },
+        isFormingCaptain: false,
+      })
+      await waitFor(() => expect(registered.has("prepare_project")).toBe(true))
+
+      await act(async () => {
+        await tool("prepare_project").execute({
+          title: "Early project",
+          githubUrl: "https://github.com/oatmeal/early-project",
+          liveAppUrl: "",
+          demoVideoUrl: "",
+          description: "Saved before registration.",
+        })
+      })
+
+      expect(screen.getByText(
+        "It’s saved in this browser. Register and finish your team setup when you’re ready.",
+      )).toBeDefined()
+      expect(screen.queryByText(
+        "It’s saved in this browser. Sign in and register when you’re ready.",
+      )).toBeNull()
+    } finally {
+      window.removeEventListener(PREPARE_PROJECT_EVENT, listener)
+    }
+  })
+
   it("rejects unsafe optional links and missing project listeners", async () => {
     renderTools({
       viewer: { ...viewer, signedIn: false, registered: false, team: null },

@@ -1,4 +1,3 @@
-import sharp from "sharp"
 import { supabase as getSupabase } from "@/lib/db/client"
 import { MAX_SUBMISSION_SCREENSHOTS } from "@/lib/utils/submission-screenshots"
 import {
@@ -26,6 +25,11 @@ const MAX_SCREENSHOT_SIZE = 500 * 1024 // 500KB
 
 export type LogoVariant = "light" | "dark"
 
+async function loadSharp() {
+  const { default: sharp } = await import("sharp")
+  return sharp
+}
+
 export interface UploadLogoResult {
   url: string
   path: string
@@ -50,6 +54,7 @@ export async function optimizeImage(
     return { buffer, mimeType }
   }
 
+  const sharp = await loadSharp()
   const image = sharp(buffer)
   const metadata = await image.metadata()
 
@@ -160,6 +165,7 @@ export interface UploadBannerResult {
 export async function optimizeBanner(
   buffer: Buffer
 ): Promise<{ buffer: Buffer; mimeType: string }> {
+  const sharp = await loadSharp()
   const image = sharp(buffer)
   const metadata = await image.metadata()
 
@@ -250,6 +256,7 @@ export interface UploadScreenshotResult {
 export async function optimizeScreenshot(
   buffer: Buffer
 ): Promise<{ buffer: Buffer; mimeType: string }> {
+  const sharp = await loadSharp()
   const image = sharp(buffer)
   const metadata = await image.metadata()
 
@@ -513,6 +520,7 @@ const MAX_HEADSHOT_HEIGHT = 400
 export async function optimizeHeadshot(
   buffer: Buffer
 ): Promise<{ buffer: Buffer; mimeType: string }> {
+  const sharp = await loadSharp()
   const image = sharp(buffer)
   const metadata = await image.metadata()
 

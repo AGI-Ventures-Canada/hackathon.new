@@ -221,7 +221,9 @@ export function EventWebMcpTools({
         <AlertDescription>
           {canOpenProjectReview
             ? "Check each field. You choose when to submit it."
-            : "It’s saved in this browser. Sign in and register when you’re ready."}
+            : viewer.signedIn
+              ? "It’s saved in this browser. Register and finish your team setup when you’re ready."
+              : "It’s saved in this browser. Sign in and register when you’re ready."}
         </AlertDescription>
       </Alert>
     </div>
