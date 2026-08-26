@@ -231,13 +231,25 @@ export async function createHackathonFromImport(
     onCreated?: (hackathon: Hackathon) => void
   } = {},
 ): Promise<Hackathon | null> {
-  const createdHackathon = await createHackathon(tenantId, {
+  let createdHackathon = await createHackathon(tenantId, {
     id: options.draftId,
     name: input.name,
     description: input.description,
     metadata: options.metadata,
   }, { track: false })
 
+  if (!createdHackathon && options.metadata) {
+    const requestedMarker = readAggregateCreationMarker({
+      metadata: options.metadata,
+    } as unknown as Hackathon)
+    if (isOwnedAggregateCreationMarker(requestedMarker)) {
+      createdHackathon = await recoverAmbiguousAggregateInsert(
+        tenantId,
+        options.draftId,
+        requestedMarker,
+      )
+    }
+  }
   if (!createdHackathon) return null
   let hackathon: Hackathon = options.metadata
     ? {
@@ -915,6 +927,43 @@ function aggregateMarkerOwnership(marker: OwnedAggregateCreationMarker) {
     contentFingerprint: marker.contentFingerprint,
     state: marker.state,
     attemptToken: marker.attemptToken,
+  }
+}
+
+async function recoverAmbiguousAggregateInsert(
+  tenantId: string,
+  draftId: string | undefined,
+  marker: OwnedAggregateCreationMarker,
+): Promise<Hackathon | null> {
+  try {
+    const client = getSupabase() as unknown as SupabaseClient
+    let query = client
+      .from("hackathons")
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .eq("status", "draft")
+      .contains("metadata", {
+        aggregate_creation: aggregateMarkerOwnership(marker),
+      })
+    if (draftId) query = query.eq("id", draftId)
+    const { data, error } = await query.maybeSingle()
+    if (error || !data) return null
+
+    const recovered = data as unknown as Hackathon
+    const recoveredMarker = readAggregateCreationMarker(recovered)
+    if (
+      recovered.tenant_id !== tenantId ||
+      recovered.status !== "draft" ||
+      (draftId !== undefined && recovered.id !== draftId) ||
+      !isOwnedAggregateCreationMarker(recoveredMarker) ||
+      !jsonbValuesEqual(
+        recoveredMarker as unknown as Json,
+        marker as unknown as Json,
+      )
+    ) return null
+    return recovered
+  } catch {
+    return null
   }
 }
 

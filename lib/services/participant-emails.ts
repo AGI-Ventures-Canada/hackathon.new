@@ -28,6 +28,7 @@ export async function sendBulkEmail(
     subject: string
     html: string
     recipientFilter?: ParticipantRole[]
+    deliveryId: string
   }
 ): Promise<BulkEmailResult> {
   const subject = input.subject.trim()
@@ -109,7 +110,7 @@ export async function sendBulkEmail(
       ? [{ name: "hackathon", value: sanitizeTag(hackathon.name) }]
       : []),
   ]
-  const messageKey = fingerprint(`${subject}\n${input.html}`)
+  const operationKey = fingerprint(input.deliveryId)
 
   for (let index = 0; index < uniqueEmails.length; index += 1) {
     const email = uniqueEmails[index]
@@ -122,7 +123,7 @@ export async function sendBulkEmail(
       replyTo,
       headers,
       tags,
-      idempotencyKey: `participant-broadcast/${hackathonId}/${messageKey}/${fingerprint(email)}`,
+      idempotencyKey: `participant-broadcast/${hackathonId}/${operationKey}/${fingerprint(email)}`,
     })
     if (result) {
       sent++

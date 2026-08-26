@@ -1,5 +1,6 @@
 import { describe, it, expect } from "bun:test"
 import {
+  isSafeExternalUrl,
   isHttpsUrlWithoutCredentials,
   normalizeOptionalUrl,
   normalizeImportUrl,
@@ -83,6 +84,73 @@ describe("normalizeOptionalUrl", () => {
 })
 
 describe("import URL safety", () => {
+  it("canonicalizes mixed-case HTTPS URLs", () => {
+    expect(normalizeImportUrl("HTTPS://Events.Example/path")).toBe(
+      "https://events.example/path"
+    )
+  })
+
+  it("rejects mixed-case HTTP and private hosts", () => {
+    const rejected = [
+      "HtTp://events.example/path",
+      "HtTp://169.254.169.254/latest/meta-data",
+      "HTTPS://127.1/private",
+      "HTTPS://LOCALHOST./private",
+      "HTTPS://service.internal/private",
+      "HTTPS://[::ffff:127.0.0.1]/private",
+    ]
+
+    for (const url of rejected) {
+      expect(normalizeImportUrl(url)).toBeNull()
+      expect(isSafeExternalUrl(url)).toBe(false)
+      expect(redactImportSourceUrl(url)).toBeNull()
+    }
+  })
+
+  it("rejects every reserved IPv4 range and local IPv6 form", () => {
+    const rejectedHosts = [
+      "0.1.2.3",
+      "10.1.2.3",
+      "100.64.0.1",
+      "100.127.255.255",
+      "169.254.1.1",
+      "172.16.0.1",
+      "172.31.255.255",
+      "192.0.0.1",
+      "192.168.1.1",
+      "198.18.0.1",
+      "198.19.255.255",
+      "224.0.0.1",
+      "[::]",
+      "[::1]",
+      "[fc00::1]",
+      "[fd00::1]",
+      "[fe80::1]",
+      "[ff00::1]",
+    ]
+
+    for (const host of rejectedHosts) {
+      expect(isSafeExternalUrl(`https://${host}/private`)).toBe(false)
+    }
+    expect(isSafeExternalUrl("https://203.0.113.8/public")).toBe(true)
+  })
+
+  it("rejects non-web schemes and ambiguous URL forms", () => {
+    const rejected = [
+      "ftp://events.example/file",
+      "javascript:alert(1)",
+      "//events.example/path",
+      "https:events.example/path",
+      "https://events.example\\@localhost/private",
+    ]
+
+    for (const url of rejected) {
+      expect(normalizeImportUrl(url)).toBeNull()
+      expect(isSafeExternalUrl(url)).toBe(false)
+      expect(redactImportSourceUrl(url)).toBeNull()
+    }
+  })
+
   it("accepts exactly 2,048 characters and rejects 2,049", () => {
     const prefix = "https://events.example/"
     const exact = `${prefix}${"a".repeat(2_048 - prefix.length)}`
@@ -111,6 +179,12 @@ describe("import URL safety", () => {
 
     expect(redacted).toBe(source)
     expect(redacted).toHaveLength(2_048)
+  })
+
+  it("rejects malformed and oversized attribution after redaction", () => {
+    expect(redactImportSourceUrl("https://[invalid/path")).toBeNull()
+    expect(redactImportSourceUrl(`https://events.example/${"a".repeat(2_049)}`)).toBeNull()
+    expect(isHttpsUrlWithoutCredentials("not a url")).toBe(false)
   })
 })
 

@@ -16,10 +16,11 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card"
-import { getTimelineState } from "@/lib/utils/timeline"
+import { getHydrationSafeTimelineState } from "@/lib/utils/timeline"
 import { formatDateRange } from "@/lib/utils/format"
 import type { HackathonMiniStats } from "@/lib/services/organizer-dashboard"
 import type { HackathonStatus } from "@/lib/db/hackathon-types"
+import { useIsClient } from "@/hooks/use-is-client"
 
 type Hackathon = {
   id: string
@@ -74,7 +75,9 @@ function UrgencySignals({ stats }: { stats: HackathonMiniStats }) {
 }
 
 export function NeedsAttentionCard({ hackathon, stats, urgent, role }: Props) {
-  const state = getTimelineState(hackathon as Parameters<typeof getTimelineState>[0])
+  const isClient = useIsClient()
+  const displayTimeZone = isClient ? undefined : "UTC"
+  const state = getHydrationSafeTimelineState(hackathon, isClient)
   const judgingPct = stats && stats.judgingTotal > 0
     ? Math.round((stats.judgingComplete / stats.judgingTotal) * 100)
     : null
@@ -107,7 +110,7 @@ export function NeedsAttentionCard({ hackathon, stats, urgent, role }: Props) {
           <div className="flex items-center gap-1.5 text-muted-foreground">
             <Calendar className="size-3.5 shrink-0" />
             <span className="text-sm">
-              {formatDateRange(hackathon.starts_at, hackathon.ends_at)}
+              {formatDateRange(hackathon.starts_at, hackathon.ends_at, displayTimeZone)}
             </span>
           </div>
           {stats && (

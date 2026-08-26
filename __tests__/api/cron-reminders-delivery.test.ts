@@ -61,6 +61,16 @@ describe("reminder cron delivery", () => {
     for (const worker of [mockScheduled, mockPostEvent, mockResults, mockTeams, mockJudges]) {
       expect(worker).toHaveBeenCalledTimes(1)
     }
+    const budgets = [
+      mockScheduled.mock.calls[0]?.[2],
+      mockPostEvent.mock.calls[0]?.[1],
+      mockResults.mock.calls[0]?.[1],
+      mockTeams.mock.calls[0]?.[1],
+      mockJudges.mock.calls[0]?.[1],
+    ] as Array<{ remainingRecipients: number; deadlineAt: number }>
+    expect(budgets.every((budget) => budget.remainingRecipients === 12)).toBe(true)
+    expect(budgets.every((budget) => budget.deadlineAt > Date.now())).toBe(true)
+    expect(new Set(budgets).size).toBe(5)
   })
 
   it("runs delivery workers sequentially to bound provider pressure", async () => {

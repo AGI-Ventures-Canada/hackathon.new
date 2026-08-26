@@ -78,6 +78,7 @@ describe("sendBulkEmail", () => {
     const result = await sendBulkEmail("hack_1", {
       subject: "Big update",
       html: "<p>Hello <strong>team</strong></p>",
+      deliveryId: "operation_1",
     })
 
     expect(result).toEqual({ sent: 1, failed: 0 })
@@ -104,6 +105,7 @@ describe("sendBulkEmail", () => {
     await expect(sendBulkEmail("hack_missing", {
       subject: "Heads up",
       html: "<p>Body</p>",
+      deliveryId: "operation_2",
     })).rejects.toThrow("Failed to load the event")
     expect(mockSendEmail).not.toHaveBeenCalled()
   })
@@ -111,7 +113,11 @@ describe("sendBulkEmail", () => {
   it("counts failures when a send returns null", async () => {
     sendEmailImpl = () => Promise.resolve(null)
 
-    const result = await sendBulkEmail("hack_1", { subject: "x", html: "<p>x</p>" })
+    const result = await sendBulkEmail("hack_1", {
+      subject: "x",
+      html: "<p>x</p>",
+      deliveryId: "operation_3",
+    })
 
     expect(result).toEqual({ sent: 0, failed: 1 })
   })
@@ -130,8 +136,19 @@ describe("sendBulkEmail", () => {
     await expect(sendBulkEmail("hack_1", {
       subject: "Too late",
       html: "<p>Body</p>",
+      deliveryId: "operation_4",
     })).rejects.toThrow("This event has ended")
     expect(mockSendEmail).not.toHaveBeenCalled()
     expect(mockGetUserList).not.toHaveBeenCalled()
+  })
+
+  it("uses the operation id so the same message can be sent again intentionally", async () => {
+    const input = { subject: "Same update", html: "<p>Same body</p>" }
+    await sendBulkEmail("hack_1", { ...input, deliveryId: "first_operation" })
+    await sendBulkEmail("hack_1", { ...input, deliveryId: "second_operation" })
+
+    const firstKey = (mockSendEmail.mock.calls[0][0] as Record<string, unknown>).idempotencyKey
+    const secondKey = (mockSendEmail.mock.calls[1][0] as Record<string, unknown>).idempotencyKey
+    expect(firstKey).not.toBe(secondKey)
   })
 })

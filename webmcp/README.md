@@ -50,21 +50,25 @@ Signed-out event data is published and audience-filtered. Results require `resul
 
 ## Origin trial
 
-`WEBMCP_ORIGIN_TRIAL_TOKEN` is optional and server-only. `app/layout.tsx` renders it as an origin-trial meta tag before client tools register. Tokens must match the exact origin. Preview and production use different Vercel environment values; tokens are never hardcoded.
+`WEBMCP_ORIGIN_TRIAL_TOKEN` is optional and server-only. `next.config.ts` decodes its WebMCP origin and sends it as an `Origin-Trial` response header only when the request host matches. Preview, staging, and production use different exact-origin Vercel values; tokens are never hardcoded. A deployment fails when a configured token is malformed, expired, or within 30 days of expiry.
+
+Keep origin isolation enabled and leave the `tools` Permissions Policy at its `self` default. Native Chrome verification uses `document.modelContext.getTools()` followed by `document.modelContext.executeTool(tool, JSON.stringify(args))`. A wrapper timeout is not proof of an app failure; retry with raw DevTools evaluation and `awaitPromise: true`.
 
 Approved target origins:
 
 - `https://oatmeal-git-feature-webmcp-organizer-tools-agi-ventures-canada.vercel.app`
+- `https://staging.hackathon.new`
 - `https://hackathon.new`
 
 Origin-trial operations record:
 
 | Exact origin | Vercel environment | Issue date | Expiry | Removal owner |
 |---|---|---|---|---|
-| `https://oatmeal-git-feature-webmcp-organizer-tools-agi-ventures-canada.vercel.app` | Preview | Pending configuration — token not enrolled | Pending configuration — token not enrolled | Oatmeal release owner |
-| `https://hackathon.new` | Production | Pending configuration — token not enrolled | Pending configuration — token not enrolled | Oatmeal release owner |
+| `https://oatmeal-git-feature-webmcp-organizer-tools-agi-ventures-canada.vercel.app` | Preview, branch `feature/webmcp-organizer-tools` | 2026-08-26 | 2026-11-17 00:00 UTC (Nov 16 Toronto) | Oatmeal release owner |
+| `https://staging.hackathon.new` | Custom environment `staging` | 2026-08-26 | 2026-11-17 00:00 UTC (Nov 16 Toronto) | Oatmeal release owner |
+| `https://hackathon.new` | Production | 2026-08-26 | 2026-11-17 00:00 UTC (Nov 16 Toronto) | Oatmeal release owner |
 
-Update the issue date and expiry from Chrome's enrollment record when each exact-origin token is configured. The removal owner removes the matching Vercel value when the trial expires or the browser no longer needs it.
+Keep the issue date and expiry in sync with Chrome's enrollment records. The removal owner removes the matching Vercel value when the trial expires or the browser no longer needs it.
 
 See [Chrome's origin-trial guide](https://developer.chrome.com/blog/ai-webmcp-origin-trial) and [troubleshooting guide](https://developer.chrome.com/docs/web-platform/origin-trial-troubleshooting/).
 

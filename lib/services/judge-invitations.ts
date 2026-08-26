@@ -7,6 +7,11 @@ import { paceBulkSend } from "@/lib/email/utils"
 import { isValidUuid } from "@/lib/utils/uuid"
 import { getNotificationDisposition } from "@/lib/utils/notification-lifecycle"
 import { withDeliveryLease } from "@/lib/services/delivery-lease"
+import {
+  consumeDeliverySlot,
+  hasDeliveryCapacity,
+  type DeliveryBudget,
+} from "@/lib/services/delivery-budget"
 
 const INVITATION_EXPIRY_DAYS = 7
 const INVITATION_EXPIRY_MS = INVITATION_EXPIRY_DAYS * 24 * 60 * 60 * 1000
@@ -423,6 +428,7 @@ export async function sendPendingJudgeInvitationEmails(
   inviterName: string,
   opts?: { hackathonSlug?: string; hackathonStartsAt?: string | null; hackathonEndsAt?: string | null },
   limit = 100,
+  budget?: DeliveryBudget,
 ): Promise<{ sent: number; total: number; failedEmails: string[] }> {
   const claimed = await withDeliveryLease(
     `judge-invitations:${hackathonId}`,
@@ -432,6 +438,7 @@ export async function sendPendingJudgeInvitationEmails(
       inviterName,
       opts,
       limit,
+      budget,
     ),
   )
   return claimed.acquired
@@ -445,6 +452,7 @@ async function sendPendingJudgeInvitationEmailsUnlocked(
   inviterName: string,
   opts: { hackathonSlug?: string; hackathonStartsAt?: string | null; hackathonEndsAt?: string | null } | undefined,
   limit: number,
+  budget?: DeliveryBudget,
 ): Promise<{ sent: number; total: number; failedEmails: string[] }> {
   const client = getSupabase() as unknown as SupabaseClient
   const now = new Date().toISOString()
@@ -491,12 +499,57 @@ async function sendPendingJudgeInvitationEmailsUnlocked(
   const invitations = pending as JudgeInvitation[]
   const failedEmails: string[] = []
   let sent = 0
+  let total = 0
   const { clerkClient } = await import("@clerk/nextjs/server")
   const clerk = await clerkClient()
 
   for (let index = 0; index < invitations.length; index += 1) {
-    const invitation = invitations[index]
+    if (!hasDeliveryCapacity(budget)) break
+    const listedInvitation = invitations[index]
     try {
+      const { data: currentInvitation, error: currentInvitationError } = await client
+        .from("judge_invitations")
+        .select("*")
+        .eq("id", listedInvitation.id)
+        .eq("hackathon_id", hackathonId)
+        .eq("status", "pending")
+        .is("emailed_at", null)
+        .gt("expires_at", new Date().toISOString())
+        .maybeSingle()
+      if (currentInvitationError) {
+        throw new Error(`Failed to revalidate judge invitation: ${currentInvitationError.message}`)
+      }
+      const invitation = Array.isArray(currentInvitation)
+        ? (currentInvitation as JudgeInvitation[]).find(
+            (candidate) => candidate.id === listedInvitation.id,
+          ) ?? null
+        : currentInvitation as JudgeInvitation | null
+      if (!invitation) continue
+      total++
+
+      const { data: currentHackathon, error: currentHackathonError } = await client
+        .from("hackathons")
+        .select("name, slug, status, starts_at, ends_at")
+        .eq("id", hackathonId)
+        .maybeSingle()
+      if (currentHackathonError) {
+        throw new Error(`Failed to revalidate judge invitation event: ${currentHackathonError.message}`)
+      }
+      if (!currentHackathon) {
+        await cancelPendingJudgeInvitation(invitation.id)
+        continue
+      }
+      const currentDisposition = getNotificationDisposition({
+        status: currentHackathon.status as HackathonStatus,
+        starts_at: currentHackathon.starts_at ?? null,
+        ends_at: currentHackathon.ends_at ?? null,
+      })
+      if (currentDisposition === "queue") break
+      if (currentDisposition === "reject") {
+        await cancelPendingJudgeInvitation(invitation.id)
+        continue
+      }
+
       const recipientUsers = await clerk.users.getUserList({
         emailAddress: [invitation.email.toLowerCase()],
         limit: 1,
@@ -520,15 +573,16 @@ async function sendPendingJudgeInvitationEmailsUnlocked(
 
       const emailInput = {
         to: invitation.email,
-        hackathonName,
+        hackathonName: currentHackathon.name ?? hackathonName,
         inviterName,
         inviteToken: invitation.token,
         expiresAt: invitation.expires_at,
-        hackathonSlug: opts?.hackathonSlug,
-        hackathonStartsAt: opts?.hackathonStartsAt,
-        hackathonEndsAt: opts?.hackathonEndsAt,
+        hackathonSlug: currentHackathon.slug ?? opts?.hackathonSlug,
+        hackathonStartsAt: currentHackathon.starts_at ?? opts?.hackathonStartsAt,
+        hackathonEndsAt: currentHackathon.ends_at ?? opts?.hackathonEndsAt,
         deliveryId: invitation.id,
       }
+      if (!consumeDeliverySlot(budget)) break
       await paceBulkSend(index)
       const result = await sendJudgeInvitationEmail(emailInput)
       if (!result.success) throw new Error("Invitation email was not accepted")
@@ -544,7 +598,7 @@ async function sendPendingJudgeInvitationEmailsUnlocked(
         new Date(invitation.expires_at),
         {
           email: invitation.email,
-          hackathonName,
+          hackathonName: currentHackathon.name ?? hackathonName,
           inviterName,
           inviteToken: invitation.token,
           expiresAt: invitation.expires_at,
@@ -554,18 +608,19 @@ async function sendPendingJudgeInvitationEmailsUnlocked(
       })
     } catch (error) {
       console.error(
-        `Failed to deliver pending judge invitation ${invitation.id} (hackathon=${hackathonId}):`,
+        `Failed to deliver pending judge invitation ${listedInvitation.id} (hackathon=${hackathonId}):`,
         error,
       )
-      failedEmails.push(invitation.email)
+      failedEmails.push(listedInvitation.email)
     }
   }
 
-  return { sent, total: invitations.length, failedEmails }
+  return { sent, total, failedEmails }
 }
 
 export async function retryPendingJudgeInvitationEmails(
   limit = 50,
+  budget?: DeliveryBudget,
 ): Promise<{ events: number; sent: number; failed: number }> {
   const client = getSupabase() as unknown as SupabaseClient
   const now = new Date().toISOString()
@@ -610,6 +665,7 @@ export async function retryPendingJudgeInvitationEmails(
   let remaining = limit
   let processedEvents = 0
   for (const [hackathonId, hackathon] of events) {
+    if (!hasDeliveryCapacity(budget)) break
     processedEvents++
     const result = await sendPendingJudgeInvitationEmails(
       hackathonId,
@@ -621,6 +677,7 @@ export async function retryPendingJudgeInvitationEmails(
         hackathonEndsAt: hackathon.ends_at,
       },
       remaining,
+      budget,
     )
     sent += result.sent
     failed += result.failedEmails.length

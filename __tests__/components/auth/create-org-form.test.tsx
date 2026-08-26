@@ -350,10 +350,14 @@ describe("CreateOrgForm", () => {
     })
 
     await waitFor(() => {
-      const patchCall = fetchMock.mock.calls.find(([url]) =>
-        String(url).includes("/org-profile"),
+      const patchCall = fetchMock.mock.calls.find(([url, init]) =>
+        String(url).includes("/org-profile") && init?.method === "PATCH",
       )
       expect(patchCall).toBeDefined()
+      expect(JSON.parse(String(patchCall?.[1]?.body))).toEqual({
+        slug: "acme-inc",
+        expectedOrganizationId: "org_new",
+      })
     })
     await waitFor(() => {
       expect(mockReplace).toHaveBeenCalledWith("/home")
@@ -694,6 +698,12 @@ describe("CreateOrgForm", () => {
     expect(
       fetchMock.mock.calls.some(([, init]) => init?.method === "PATCH"),
     ).toBe(false)
+    expect(fetchMock.mock.calls.some(([url, init]) =>
+      init?.method !== "PATCH" &&
+      String(url).includes(
+        "/org-profile?expectedOrganizationId=org_recovered",
+      )
+    )).toBe(true)
   })
 
   it("surfaces server slug patch error in the UI", async () => {

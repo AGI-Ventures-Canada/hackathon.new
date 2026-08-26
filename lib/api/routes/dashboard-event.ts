@@ -1445,7 +1445,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     if (!stats) { set.status = 404; return { error: "Hackathon not found" } }
     return stats
   }, { detail: { summary: "Get live event stats" } })
-  .post("/hackathons/:id/email-blast", async ({ params, body, principal, set }) => {
+  .post("/hackathons/:id/email-blast", async ({ params, body, principal, request, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
     const check = await checkHackathonOrganizer(params.id, principal.tenantId)
@@ -1466,8 +1466,21 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       set.status = lifecycleError.status
       return { error: lifecycleError.error, code: lifecycleError.code }
     }
+    const deliveryId = await getRequestIdempotencyFingerprint(
+      request,
+      crypto.randomUUID(),
+    )
+    if (!deliveryId.ok) {
+      set.status = 400
+      return { error: deliveryId.error, code: deliveryId.code }
+    }
     const { subject, html, recipientFilter } = body as { subject: string; html: string; recipientFilter?: ParticipantRole[] }
-    const result = await sendBulkEmail(params.id, { subject, html, recipientFilter })
+    const result = await sendBulkEmail(params.id, {
+      subject,
+      html,
+      recipientFilter,
+      deliveryId: deliveryId.fingerprint,
+    })
     await logAudit({
       principal,
       action: result.failed === 0 ? "email_blast.sent" : "email_blast.delivery_failed",

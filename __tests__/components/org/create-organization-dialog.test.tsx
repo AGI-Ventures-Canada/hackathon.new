@@ -10,6 +10,7 @@ import {
   clearOrganizationCreationAttempt,
   completeOrganizationCreationAttempt,
   createPendingOrganizationCreation,
+  loadOrganizationCreationAttempt,
   saveOrganizationCreationAttempt,
 } from "@/lib/auth/organization-creation"
 
@@ -305,6 +306,14 @@ describe("CreateOrganizationDialog", () => {
       name: "Acme Inc",
       slug: "acmecustomslug",
     })
+    const profilePatch = fetchMock.mock.calls.find(
+      ([url, init]) =>
+        String(url).includes("/org-profile") && init?.method === "PATCH",
+    )
+    expect(JSON.parse(String(profilePatch?.[1]?.body))).toEqual({
+      slug: "acmecustomslug",
+      expectedOrganizationId: "org_new",
+    })
   })
 
   it("shows invalid status for a malformed manual slug", async () => {
@@ -476,6 +485,41 @@ describe("CreateOrganizationDialog", () => {
       expect(onSuccess).toHaveBeenCalledTimes(1)
     })
     expect(mockCreateOrganization).toHaveBeenCalledTimes(1)
+  })
+
+  it("closes without destroying an organization found only by the all-memberships fallback", async () => {
+    profileOk = false
+    mockCreateOrganization.mockImplementationOnce(() =>
+      Promise.reject(new Error("Connection dropped")),
+    )
+    mockGetOrganizationMemberships.mockImplementation(() =>
+      Promise.resolve({
+        data: [
+          {
+            id: "membership_existing",
+            organization: {
+              ...createdOrganization,
+              name: "Acme Inc",
+              slug: "acme-inc",
+            },
+          },
+        ],
+        total_count: 1,
+      }),
+    )
+    const onOpenChange = mock((_open: boolean) => {})
+    render(<CreateOrganizationDialog open onOpenChange={onOpenChange} />)
+    await fillForm()
+
+    fireEvent.click(screen.getByRole("button", { name: "Create Organization" }))
+    expect(await screen.findByText("Slug save failed")).toBeDefined()
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+    expect(mockCreateOrganization).toHaveBeenCalledTimes(1)
+    expect(mockDestroy).not.toHaveBeenCalled()
+    expect(loadOrganizationCreationAttempt("user_123")).not.toBeNull()
   })
 
   it("recovers a stored organization attempt after the dialog remounts", async () => {
@@ -704,6 +748,10 @@ describe("CreateOrganizationDialog", () => {
     await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
     expect(mockCreateOrganization).toHaveBeenCalledTimes(1)
     expect(profileAttempts).toBe(1)
+    expect(fetchMock.mock.calls.some(([url, init]) =>
+      init?.method !== "PATCH" &&
+      String(url).includes("/org-profile?expectedOrganizationId=org_new")
+    )).toBe(true)
   })
 
   it("shows a retryable error when the committed profile cannot be checked", async () => {
@@ -806,7 +854,7 @@ describe("CreateOrganizationDialog", () => {
     expect(mockCreateOrganization).not.toHaveBeenCalled()
   })
 
-  it("cancels a recovered unfinished organization without creating it again", async () => {
+  it("closes while keeping a recovered unfinished organization and its attempt", async () => {
     const pending = createPendingOrganizationCreation("Acme Inc", [])
     expect(saveOrganizationCreationAttempt(
       "user_123",
@@ -834,10 +882,9 @@ describe("CreateOrganizationDialog", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
 
-    await waitFor(() => {
-      expect(mockDestroy).toHaveBeenCalledTimes(1)
-      expect(onOpenChange).toHaveBeenCalledWith(false)
-    })
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+    expect(mockDestroy).not.toHaveBeenCalled()
+    expect(loadOrganizationCreationAttempt("user_123")).not.toBeNull()
     expect(mockCreateOrganization).not.toHaveBeenCalled()
   })
 

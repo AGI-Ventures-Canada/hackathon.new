@@ -8,6 +8,9 @@ import { normalizeUrl, isSafeExternalUrl, redactImportSourceUrl } from "@/lib/ut
 import { extractExternalEventData, extractExternalRichContent, isLumaUrl } from "@/lib/services/external-import"
 import { RateLimitError } from "@/lib/services/rate-limit"
 import { consumePublicImportRateLimit } from "@/lib/services/public-import-rate-limit"
+import { normalizeLocale } from "@/lib/utils/language"
+
+const MAX_TRANSLATION_LINKS = 10
 
 function mergeTranslationLinks(
   a: { url: string; languageCode: string }[],
@@ -15,11 +18,21 @@ function mergeTranslationLinks(
 ): { url: string; languageCode: string }[] {
   const seen = new Set<string>()
   const out: { url: string; languageCode: string }[] = []
-  for (const link of [...a, ...b]) {
-    const key = normalizeUrl(link.url)
-    if (seen.has(key)) continue
-    seen.add(key)
-    out.push({ url: key, languageCode: link.languageCode })
+  for (const links of [a, b]) {
+    for (const link of links) {
+      if (out.length >= MAX_TRANSLATION_LINKS) return out
+      const url = normalizeUrl(link.url)
+      const languageCode = normalizeLocale(link.languageCode)
+      if (
+        url.length > 2048 ||
+        !languageCode ||
+        !isSafeExternalUrl(url) ||
+        !isLumaUrl(url)
+      ) continue
+      if (seen.has(url)) continue
+      seen.add(url)
+      out.push({ url, languageCode })
+    }
   }
   return out
 }
@@ -179,13 +192,17 @@ export const dashboardImportRoutes = new Elysia({ prefix: "/dashboard/import" })
         source,
         ...(redactedSourceUrl ? { sourceUrl: redactedSourceUrl } : {}),
       }
+      const translationLinks = mergeTranslationLinks(
+        body.translationLinks ?? [],
+        [],
+      )
       const finalizationInput = {
         tenantId: principal.tenantId,
         principal,
         hackathon,
         auditMetadata: sourceMetadata,
         webhookData: { hackathonId: hackathon.id, ...sourceMetadata },
-        ...(body.translationLinks?.length
+        ...(translationLinks.length
           ? {
               translations: {
                 primaryLocale: hackathon.default_locale ?? "en",
@@ -196,7 +213,7 @@ export const dashboardImportRoutes = new Elysia({ prefix: "/dashboard/import" })
                   location_name: body.locationName ?? null,
                   community_label: null,
                 },
-                translationLinks: body.translationLinks,
+                translationLinks,
               },
             }
           : {}),

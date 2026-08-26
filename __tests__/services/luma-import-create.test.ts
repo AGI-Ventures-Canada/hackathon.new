@@ -410,6 +410,158 @@ describe("createHackathonAggregate", () => {
     expect(completionUpdate.eq).toHaveBeenCalledWith("updated_at", baseUpdatedAt)
   })
 
+  it("recovers an omitted-draft insert after the database response is lost", async () => {
+    const recoveredId = "6e6e5230-41f8-4bf4-867f-ed47062e651d"
+    const baseUpdatedAt = "2026-08-26T12:00:00.000Z"
+    const slugLookup = createChainableMock({ data: null, error: null })
+    const insert = createChainableMock({
+      data: null,
+      error: { message: "response lost" },
+    })
+    const baseVersionUpdate = createChainableMock({
+      data: { id: recoveredId },
+      error: null,
+    })
+    const detailsUpdate = createChainableMock({
+      data: { id: recoveredId },
+      error: null,
+    })
+    const completionUpdate = createChainableMock({
+      data: { id: recoveredId },
+      error: null,
+    })
+    let recovery: ReturnType<typeof createChainableMock> | undefined
+    let call = 0
+    setMockFromImplementation(() => {
+      call += 1
+      if (call === 1) return slugLookup
+      if (call === 2) return insert
+      if (call === 3) {
+        const inserted = insert.insert.mock.calls[0]?.[0] as Record<string, unknown>
+        recovery = createChainableMock({
+          data: {
+            ...inserted,
+            id: recoveredId,
+            updated_at: baseUpdatedAt,
+          },
+          error: null,
+        })
+        return recovery
+      }
+      if (call === 4) return baseVersionUpdate
+      if (call === 5) return detailsUpdate
+      return completionUpdate
+    })
+
+    const result = await createHackathonAggregateWithResult(
+      "tenant-1",
+      aggregateInput,
+    )
+
+    expect(result.status).toBe("created")
+    expect(result.hackathon?.id).toBe(recoveredId)
+    expect(insert.insert).toHaveBeenCalledTimes(1)
+    expect(recovery?.contains).toHaveBeenCalledWith("metadata", {
+      aggregate_creation: expect.objectContaining({
+        contentFingerprint: aggregateFingerprint,
+        state: "building",
+        attemptToken: expect.any(String),
+      }),
+    })
+    expect(completionUpdate.update).toHaveBeenCalledWith({
+      metadata: expect.objectContaining({
+        aggregate_creation: expect.objectContaining({ state: "complete" }),
+      }),
+    })
+  })
+
+  it("recovers a bound draft insert after the database response is lost", async () => {
+    const draftId = "03a2320c-79c0-4a8c-8103-b74acd14da70"
+    const baseUpdatedAt = "2026-08-26T12:00:00.000Z"
+    const findExisting = createChainableMock({ data: null, error: null })
+    const findForeignCollision = createChainableMock({ data: null, error: null })
+    const slugLookup = createChainableMock({ data: null, error: null })
+    const insert = createChainableMock({
+      data: null,
+      error: { message: "response lost" },
+    })
+    const baseVersionUpdate = createChainableMock({ data: { id: draftId }, error: null })
+    const detailsUpdate = createChainableMock({ data: { id: draftId }, error: null })
+    const completionUpdate = createChainableMock({ data: { id: draftId }, error: null })
+    let recovery: ReturnType<typeof createChainableMock> | undefined
+    let call = 0
+    setMockFromImplementation(() => {
+      call += 1
+      if (call === 1) return findExisting
+      if (call === 2) return findForeignCollision
+      if (call === 3) return slugLookup
+      if (call === 4) return insert
+      if (call === 5) {
+        const inserted = insert.insert.mock.calls[0]?.[0] as Record<string, unknown>
+        recovery = createChainableMock({
+          data: { ...inserted, updated_at: baseUpdatedAt },
+          error: null,
+        })
+        return recovery
+      }
+      if (call === 6) return baseVersionUpdate
+      if (call === 7) return detailsUpdate
+      return completionUpdate
+    })
+
+    const result = await createHackathonAggregateWithResult("tenant-1", {
+      ...aggregateInput,
+      draftId,
+    })
+
+    expect(result.status).toBe("created")
+    expect(result.hackathon?.id).toBe(draftId)
+    expect(insert.insert).toHaveBeenCalledTimes(1)
+    expect(recovery?.eq).toHaveBeenCalledWith("id", draftId)
+  })
+
+  it("does not adopt an ambiguous insert owned by another attempt", async () => {
+    const slugLookup = createChainableMock({ data: null, error: null })
+    const insert = createChainableMock({
+      data: null,
+      error: { message: "response lost" },
+    })
+    let recovery: ReturnType<typeof createChainableMock> | undefined
+    let call = 0
+    setMockFromImplementation(() => {
+      call += 1
+      if (call === 1) return slugLookup
+      if (call === 2) return insert
+      const inserted = insert.insert.mock.calls[0]?.[0] as {
+        metadata: { aggregate_creation: Record<string, unknown> }
+      } & Record<string, unknown>
+      recovery = createChainableMock({
+        data: {
+          ...inserted,
+          id: "d70afc97-ea2d-4a14-a183-6e16c2a44308",
+          updated_at: "2026-08-26T12:00:00.000Z",
+          metadata: {
+            aggregate_creation: {
+              ...inserted.metadata.aggregate_creation,
+              attemptToken: "another-attempt",
+            },
+          },
+        },
+        error: null,
+      })
+      return recovery
+    })
+
+    const result = await createHackathonAggregateWithResult(
+      "tenant-1",
+      aggregateInput,
+    )
+
+    expect(result).toEqual({ status: "failed", hackathon: null })
+    expect(insert.insert).toHaveBeenCalledTimes(1)
+    expect(recovery?.update).not.toHaveBeenCalled()
+  })
+
   it("replays a completed draft ID without creating child records again", async () => {
     const draftId = "51ccb5e8-8bc2-490e-8af1-2e81f37396fc"
     const existing = {
@@ -514,8 +666,8 @@ describe("createHackathonAggregate", () => {
     let call = 0
     setMockFromImplementation(() => {
       call += 1
-      if (call <= 2 || call === 63) return emptyLookup
-      if (call === 64) return trustedCollision
+      if (call <= 2 || call === 63 || call === 64) return emptyLookup
+      if (call === 65) return trustedCollision
       const insertAttemptCall = (call - 3) % 3
       if (insertAttemptCall === 0) return slugLookup
       if (insertAttemptCall === 1) return insertCollision

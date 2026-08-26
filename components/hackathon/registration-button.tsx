@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Loader2, Check, CalendarClock, Lock, Users } from "lucide-react"
 import type { HackathonStatus } from "@/lib/db/hackathon-types"
 import { TermsAcceptanceBlock } from "@/components/hackathon/terms-acceptance-block"
+import { useIsClient } from "@/hooks/use-is-client"
 
 interface RegistrationButtonProps {
   hackathonSlug: string
@@ -48,6 +49,7 @@ export function RegistrationButton({
   onRegistrationSuccess,
 }: RegistrationButtonProps) {
   const { isSignedIn, isLoaded } = useUser()
+  const isClient = useIsClient()
   const pathname = usePathname()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -58,7 +60,7 @@ export function RegistrationButton({
   const [termsAccepted, setTermsAccepted] = useState(false)
   const needsTerms = Boolean(requireTermsAcceptance && termsContent && termsHash)
 
-  if (!isLoaded) {
+  if (!isClient || !isLoaded) {
     return (
       <Button disabled variant="secondary" size="lg">
         <Loader2 className="size-4 animate-spin" />

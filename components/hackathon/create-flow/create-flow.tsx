@@ -477,6 +477,7 @@ export function CreateFlow({
               size="sm"
               onClick={goBack}
               disabled={isSubmitting}
+              aria-label="Back"
               className="gap-1.5 text-muted-foreground"
             >
               <ArrowLeft className="size-4" />

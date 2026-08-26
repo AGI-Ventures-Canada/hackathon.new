@@ -1381,7 +1381,12 @@ export const dashboardJudgingRoutes = new Elysia()
                 addedByName,
                 hackathonStartsAt: hackathon.starts_at,
                 hackathonEndsAt: hackathon.ends_at,
-              }).catch(console.error)
+              }).catch((error) => {
+                console.error(
+                  `Failed to send judge-added notification ${addResult.participant.id}:`,
+                  error,
+                )
+              })
             } else {
               const addedByName = await resolveAdderName(principal, client)
               const { createJudgePendingNotification } = await import("@/lib/services/judge-invitations")
@@ -1464,7 +1469,7 @@ export const dashboardJudgingRoutes = new Elysia()
             action: "judge.added",
             resourceType: "hackathon",
             resourceId: params.id,
-            metadata: { judgeClerkUserId: existingUser.id, email: typedBody.email },
+            metadata: { judgeClerkUserId: existingUser.id },
           })
 
           return { participant: addResult.participant }
@@ -1556,7 +1561,11 @@ export const dashboardJudgingRoutes = new Elysia()
               : "judge.invited",
           resourceType: "hackathon",
           resourceId: params.id,
-          metadata: { email: typedBody.email, queued: delivery === "queued", delivery },
+          metadata: {
+            invitationId: invitationResult.invitation.id,
+            queued: delivery === "queued",
+            delivery,
+          },
         })
 
         return {

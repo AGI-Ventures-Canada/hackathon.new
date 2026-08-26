@@ -17,6 +17,7 @@ export type DispatchInput = {
   toStatus: string
   challenges?: ChallengeSummary[]
   sendEmail?: boolean
+  idempotencyKey?: string
 }
 
 const EVENT_TO_WEBHOOK: Record<TransitionEvent, WebhookEvent> = {
@@ -93,16 +94,25 @@ export async function dispatchTransitionNotifications(
   try {
     const { triggerWebhooks } = await import("@/lib/services/webhooks")
     const timestamp = new Date().toISOString()
-    triggerWebhooks(input.tenantId, webhookEvent, {
+    const webhookDelivery = triggerWebhooks(input.tenantId, webhookEvent, {
       event: webhookEvent,
       timestamp,
+      ...(input.idempotencyKey
+        ? { idempotencyKey: input.idempotencyKey }
+        : {}),
       data: {
         hackathonId: input.hackathonId,
         fromStatus: input.fromStatus,
         toStatus: input.toStatus,
         trigger: input.trigger,
       },
-    }).catch(console.error)
+    }, input.idempotencyKey
+      ? {
+          idempotencyKey: input.idempotencyKey,
+          requireRecorded: true,
+        }
+      : {}).catch(console.error)
+    if (input.idempotencyKey) await webhookDelivery
 
     if (hasChallenges) {
       triggerWebhooks(input.tenantId, "hackathon.challenges_released", {

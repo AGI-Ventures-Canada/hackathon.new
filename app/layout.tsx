@@ -7,7 +7,6 @@ import { ThemedClerkProvider } from "@/components/clerk-provider"
 import { PostHogProvider } from "@/components/posthog-provider"
 import { SearchCommand } from "@/components/search-command"
 import { DevTool } from "@/components/dev-tool/dev-tool"
-import { WebMcpOriginTrialMeta } from "@/components/webmcp-origin-trial-meta"
 import "./globals.css"
 
 const jetbrainsMono = JetBrains_Mono({
@@ -48,9 +47,6 @@ export default async function RootLayout({
   const showDevTool = await shouldShowDevTool()
   return (
     <html lang="en" className={jetbrainsMono.variable} suppressHydrationWarning>
-      <head>
-        <WebMcpOriginTrialMeta />
-      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >

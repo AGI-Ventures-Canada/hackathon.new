@@ -199,14 +199,25 @@ describe("Lifecycle Service", () => {
         slug: "test-hack",
         status: "completed",
       }
+      let hackathonCalls = 0
       let hackathonChain: ChainableMock | undefined
+      let resultsChain: ChainableMock | undefined
       setMockFromImplementation((table) => {
         if (table === "hackathon_transitions") {
           return createChainableMock({ data: [], error: null })
         }
-        const chain = createChainableMock({ data: hackathon, error: null })
-        hackathonChain ??= chain
-        return chain
+        if (table === "hackathon_results") {
+          resultsChain = createChainableMock({ data: [{ id: "result_1" }], error: null })
+          return resultsChain
+        }
+        hackathonCalls++
+        hackathonChain = createChainableMock({
+          data: hackathonCalls === 1
+            ? { status: "judging", results_published_at: null }
+            : hackathon,
+          error: null,
+        })
+        return hackathonChain
       })
 
       const result = await executeTransition({
@@ -227,6 +238,110 @@ describe("Lifecycle Service", () => {
         winner_emails_sent_at: null,
         results_announcement_sent_at: null,
       })
+      expect(resultsChain!.update).toHaveBeenCalledWith({
+        published_at: "2026-08-26T12:00:00.000Z",
+      })
+    })
+
+    it("rolls back staged result visibility when completion loses its status check", async () => {
+      const resultsChain = createChainableMock({ data: [{ id: "result_1" }], error: null })
+      let hackathonCalls = 0
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_results") return resultsChain
+        if (table === "hackathons") {
+          hackathonCalls++
+          return createChainableMock({
+            data: hackathonCalls === 2
+              ? null
+              : { status: "judging", results_published_at: null },
+            error: null,
+          })
+        }
+        return createChainableMock({ data: [], error: null })
+      })
+
+      const result = await executeTransition({
+        hackathonId: "h1",
+        tenantId: "t1",
+        fromStatus: "judging",
+        toStatus: "completed",
+        trigger: "manual",
+        triggeredBy: "system",
+        resultsPublication: { publishedAt: "2026-08-26T12:00:00.000Z" },
+      })
+
+      expect(result).toEqual(expect.objectContaining({
+        success: false,
+        code: "event_changed",
+      }))
+      expect(resultsChain.update).toHaveBeenNthCalledWith(1, {
+        published_at: "2026-08-26T12:00:00.000Z",
+      })
+      expect(resultsChain.update).toHaveBeenNthCalledWith(2, { published_at: null })
+    })
+
+    it("recovers completion when the committed event update response is lost", async () => {
+      const publishedAt = "2026-08-26T12:00:00.000Z"
+      let hackathonCalls = 0
+      let resultCalls = 0
+      const resultChains: ChainableMock[] = []
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          hackathonCalls++
+          if (hackathonCalls === 1) {
+            return createChainableMock({
+              data: { status: "judging", results_published_at: null },
+              error: null,
+            })
+          }
+          if (hackathonCalls === 2) {
+            const chain = createChainableMock({ data: null, error: null })
+            chain.then = (() => {
+              throw new Error("response lost")
+            }) as typeof chain.then
+            return chain
+          }
+          return createChainableMock({
+            data: {
+              id: "h1",
+              tenant_id: "t1",
+              name: "Test Hack",
+              slug: "test-hack",
+              status: "completed",
+              results_published_at: publishedAt,
+            },
+            error: null,
+          })
+        }
+        if (table === "hackathon_results") {
+          resultCalls++
+          const chain = createChainableMock({
+            data: resultCalls === 1
+              ? [{ id: "result_1" }]
+              : [{ id: "result_1", published_at: publishedAt }],
+            error: null,
+          })
+          resultChains.push(chain)
+          return chain
+        }
+        return createChainableMock({ data: [], error: null })
+      })
+
+      await expect(executeTransition({
+        hackathonId: "h1",
+        tenantId: "t1",
+        fromStatus: "judging",
+        toStatus: "completed",
+        trigger: "manual",
+        triggeredBy: "system",
+        resultsPublication: { publishedAt },
+      })).resolves.toEqual(expect.objectContaining({ success: true }))
+      expect(resultChains[0]?.update).toHaveBeenCalledTimes(1)
+      expect(resultChains.some((chain) =>
+        chain.update.mock.calls.some((call) =>
+          (call[0] as { published_at?: string | null }).published_at === null,
+        ),
+      )).toBe(false)
     })
 
     it("allows published → registration_open", async () => {

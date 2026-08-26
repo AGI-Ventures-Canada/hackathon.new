@@ -100,6 +100,7 @@ type ManageHackathonToolDependencies = {
   ) => void
   onNavigate: (href: string) => void
   onOpenTransition: (status: string) => void
+  onEventVersionUpdated?: (eventVersion: string) => void
 }
 
 const emptyInput = z.object({}).strict()
@@ -299,6 +300,14 @@ async function sendMutation<T>(
       body: JSON.stringify(options.body),
       signal: options.signal,
     })
+    if (
+      typeof result === "object" &&
+      result !== null &&
+      "updatedAt" in result &&
+      dateTime.safeParse(result.updatedAt).success
+    ) {
+      dependencies.onEventVersionUpdated?.(result.updatedAt as string)
+    }
     dependencies.onCommitted(options.optimistic, options.toCommitted(result))
     return result
   } catch (error) {
@@ -496,6 +505,7 @@ function createOrganizerWriteTools(
           slug: string
           description: string | null
           status: string
+          updatedAt: string
         }>(dependencies, {
           context,
           url: `/api/dashboard/hackathons/${context.hackathon.id}/settings`,
@@ -550,6 +560,7 @@ function createOrganizerWriteTools(
           name: string
           startsAt: string | null
           endsAt: string | null
+          updatedAt: string
         }>(dependencies, {
           context,
           url: `/api/dashboard/hackathons/${context.hackathon.id}/settings`,
@@ -878,27 +889,59 @@ export function createManageHackathonTools(
   dependencies: ManageHackathonToolDependencies,
   registrationStatus = dependencies.getContext().hackathon.status,
 ): WebMcpTool[] {
-  const tools = createReadTools(dependencies)
+  let sourceEventVersion = dependencies.getContext().hackathon.eventVersion
+  let currentEventVersion = sourceEventVersion
+  const supersededEventVersions = new Set<string>()
+  const adoptEventVersion = (eventVersion: string) => {
+    if (
+      eventVersion === currentEventVersion ||
+      supersededEventVersions.has(eventVersion)
+    ) return
+    supersededEventVersions.add(currentEventVersion)
+    currentEventVersion = eventVersion
+  }
+  const currentDependencies: ManageHackathonToolDependencies = {
+    ...dependencies,
+    getContext: () => {
+      const context = dependencies.getContext()
+      if (context.hackathon.eventVersion !== sourceEventVersion) {
+        sourceEventVersion = context.hackathon.eventVersion
+        adoptEventVersion(sourceEventVersion)
+      }
+      return {
+        ...context,
+        hackathon: {
+          ...context.hackathon,
+          eventVersion: currentEventVersion,
+        },
+      }
+    },
+    onEventVersionUpdated: (eventVersion) => {
+      adoptEventVersion(eventVersion)
+      dependencies.onEventVersionUpdated?.(currentEventVersion)
+    },
+  }
+  const tools = createReadTools(currentDependencies)
   if (
     WEBMCP_PRE_COMPLETION_STATUSES.some(
       (allowed) => allowed === registrationStatus,
     )
   ) {
     tools.push(
-      ...createOrganizerWriteTools(dependencies).filter(
+      ...createOrganizerWriteTools(currentDependencies).filter(
         (tool) =>
           registrationStatus === "draft" || !draftOnlyToolNames.has(tool.name),
       ),
     )
   }
   if (registrationStatus !== "archived") {
-    tools.push(createAnnouncementTool(dependencies))
+    tools.push(createAnnouncementTool(currentDependencies))
   }
   if (
     registrationStatus === "judging" ||
     registrationStatus === "completed"
   ) {
-    tools.push(createPublishReviewTool(dependencies))
+    tools.push(createPublishReviewTool(currentDependencies))
   }
   return tools
 }

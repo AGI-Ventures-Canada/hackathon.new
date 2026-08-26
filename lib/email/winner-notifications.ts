@@ -9,10 +9,19 @@ import {
 } from "./utils"
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
+import type { User } from "@clerk/backend"
 import { clerkClient } from "@clerk/nextjs/server"
 import WinnerNotificationEmail from "@/emails/winner-notification"
 import { createHash } from "node:crypto"
 import { getUnresolvedEmailDecision } from "@/lib/services/delivery-lease"
+import {
+  consumeDeliverySlot,
+  hasPendingDeliveryTasks,
+  markDeliveryTaskComplete,
+  runWithinDeliveryDeadline,
+  selectPendingDeliveryTasks,
+  type DeliveryBudget,
+} from "@/lib/services/delivery-budget"
 
 function recipientFingerprint(email: string): string {
   return createHash("sha256").update(email.trim().toLowerCase()).digest("hex").slice(0, 24)
@@ -34,9 +43,112 @@ type WinnerPrize = {
   claimToken: string | null
 }
 
+type WinnerSubmissionInfo = {
+  title: string
+  rank: number
+  submissionId: string
+}
+
+type WinnerDeliveryTask = {
+  userId: string
+  info: WinnerSubmissionInfo
+}
+
+type WinnerResult = Record<string, unknown> & {
+  rank: number
+}
+
+function winnerTaskKey(task: WinnerDeliveryTask): string {
+  return `${task.userId}/${task.info.submissionId}`
+}
+
+async function getWinnerDeliveryTasks(
+  client: SupabaseClient,
+  results: WinnerResult[],
+): Promise<WinnerDeliveryTask[]> {
+  const submissionsByUser: Record<string, WinnerSubmissionInfo[]> = {}
+  const teamSubmissionMap: Record<string, WinnerSubmissionInfo> = {}
+
+  for (const result of results) {
+    const submission = result.submission as {
+      id: string
+      title: string
+      team_id: string | null
+      participant_id: string | null
+    }
+    if (submission.team_id) {
+      teamSubmissionMap[submission.team_id] = {
+        title: submission.title,
+        rank: result.rank,
+        submissionId: submission.id,
+      }
+    }
+  }
+
+  const teamIds = Object.keys(teamSubmissionMap)
+  if (teamIds.length > 0) {
+    const { data: members, error: membersError } = await client
+      .from("hackathon_participants")
+      .select("clerk_user_id, team_id")
+      .in("team_id", teamIds)
+
+    if (membersError) {
+      throw new Error(`Failed to load winning team members: ${membersError.message}`)
+    }
+
+    for (const member of members ?? []) {
+      if (!member.team_id || !teamSubmissionMap[member.team_id]) continue
+      if (!submissionsByUser[member.clerk_user_id]) {
+        submissionsByUser[member.clerk_user_id] = []
+      }
+      submissionsByUser[member.clerk_user_id].push(teamSubmissionMap[member.team_id])
+    }
+  }
+
+  for (const result of results) {
+    const submission = result.submission as {
+      id: string
+      title: string
+      team_id: string | null
+      participant_id: string | null
+    }
+    if (submission.team_id !== null || !submission.participant_id) continue
+
+    const { data: participant, error: participantError } = await client
+      .from("hackathon_participants")
+      .select("clerk_user_id")
+      .eq("id", submission.participant_id)
+      .single()
+
+    if (participantError) {
+      throw new Error(`Failed to load a winning attendee: ${participantError.message}`)
+    }
+    if (!participant) continue
+    if (!submissionsByUser[participant.clerk_user_id]) {
+      submissionsByUser[participant.clerk_user_id] = []
+    }
+    submissionsByUser[participant.clerk_user_id].push({
+      title: submission.title,
+      rank: result.rank,
+      submissionId: submission.id,
+    })
+  }
+
+  const taskMap = new Map<string, WinnerDeliveryTask>()
+  for (const userId of Object.keys(submissionsByUser).sort()) {
+    for (const info of submissionsByUser[userId]
+      .sort((a, b) => a.submissionId.localeCompare(b.submissionId))) {
+      const task = { userId, info }
+      taskMap.set(winnerTaskKey(task), task)
+    }
+  }
+  return [...taskMap.values()]
+}
+
 export async function sendWinnerEmailsWithResult(
   hackathonId: string,
-): Promise<{ attempted: number; sent: number; failed: number }> {
+  budget?: DeliveryBudget,
+): Promise<{ attempted: number; sent: number; failed: number; deferred?: true }> {
   if (!process.env.NEXT_PUBLIC_APP_URL) {
     throw new Error("NEXT_PUBLIC_APP_URL is required for winner emails.")
   }
@@ -76,7 +188,7 @@ export async function sendWinnerEmailsWithResult(
   const submissionIds = results.map((r: Record<string, unknown>) => {
     const sub = r.submission as unknown as { id: string } | null
     return sub?.id
-  }).filter((id): id is string => id !== null)
+  }).filter((id): id is string => id != null)
 
   const { data: prizeAssignments } = await client
     .from("prize_assignments")
@@ -107,98 +219,74 @@ export async function sendWinnerEmailsWithResult(
     })
   }
 
-  const teamIds = results
-    .map((r: Record<string, unknown>) => {
-      const sub = r.submission as unknown as { team_id: string | null } | null
-      return sub?.team_id
-    })
-    .filter((id): id is string => id !== null)
-
-  const submissionsByUser: Record<string, { title: string; rank: number; submissionId: string }[]> = {}
-
-  if (teamIds.length > 0) {
-    const { data: members } = await client
-      .from("hackathon_participants")
-      .select("clerk_user_id, team_id")
-      .in("team_id", teamIds)
-
-    if (members) {
-      const teamSubmissionMap: Record<string, { title: string; rank: number; submissionId: string }> = {}
-      for (const r of results) {
-        const sub = (r as Record<string, unknown>).submission as unknown as { id: string; title: string; team_id: string | null }
-        if (sub.team_id) {
-          teamSubmissionMap[sub.team_id] = { title: sub.title, rank: r.rank, submissionId: sub.id }
-        }
-      }
-
-      for (const m of members) {
-        if (m.team_id && teamSubmissionMap[m.team_id]) {
-          if (!submissionsByUser[m.clerk_user_id]) submissionsByUser[m.clerk_user_id] = []
-          submissionsByUser[m.clerk_user_id].push(teamSubmissionMap[m.team_id])
-        }
-      }
-    }
-  }
-
-  for (const r of results) {
-    const sub = (r as Record<string, unknown>).submission as unknown as {
-      id: string; title: string; team_id: string | null; participant_id: string | null
-    }
-    if (sub.team_id === null && sub.participant_id) {
-      const { data: participant } = await client
-        .from("hackathon_participants")
-        .select("clerk_user_id")
-        .eq("id", sub.participant_id)
-        .single()
-
-      if (participant) {
-        if (!submissionsByUser[participant.clerk_user_id]) submissionsByUser[participant.clerk_user_id] = []
-        submissionsByUser[participant.clerk_user_id].push({
-          title: sub.title,
-          rank: r.rank,
-          submissionId: sub.id,
-        })
-      }
-    }
-  }
-
-  const memberUserIds = Object.keys(submissionsByUser)
-  if (memberUserIds.length === 0) return { attempted: 0, sent: 0, failed: 0 }
-
-  const clerk = await clerkClient()
   const tag = sanitizeTag(hackathon.name)
   const resultsUrl = `${baseUrl}/e/${hackathon.slug}`
+  const workKey = `winner:${hackathonId}:${publicationKey}`
+  const typedResults = results as WinnerResult[]
+  const allTasks = await getWinnerDeliveryTasks(client, typedResults)
+  const selection = await selectPendingDeliveryTasks(
+    workKey,
+    allTasks,
+    winnerTaskKey,
+    budget,
+  )
 
-  const resolvedUsers: Awaited<ReturnType<typeof clerk.users.getUserList>>["data"] = []
-  for (let i = 0; i < memberUserIds.length; i += 100) {
-    const batch = memberUserIds.slice(i, i + 100)
-    const page = await clerk.users.getUserList({ userId: batch, limit: 100 })
-    resolvedUsers.push(...page.data)
+  const resolvedUsers: User[] = []
+  const discoveredUserIds = new Set<string>()
+  const selectedUserIds = [...new Set(selection.tasks.map((task) => task.userId))]
+  let deferred = selection.deferred
+  if (selectedUserIds.length > 0) {
+    const clerk = await clerkClient()
+    for (let i = 0; i < selectedUserIds.length; i += 100) {
+      const batch = selectedUserIds.slice(i, i + 100)
+      const resolved = await runWithinDeliveryDeadline(
+        budget,
+        () => clerk.users.getUserList({ userId: batch, limit: 100 }),
+      )
+      if (!resolved.completed) {
+        deferred = true
+        break
+      }
+      batch.forEach((userId) => discoveredUserIds.add(userId))
+      resolvedUsers.push(...resolved.value.data)
+    }
   }
 
   const resolvedUsersById = new Map(resolvedUsers.map((user) => [user.id, user]))
-  const emailTasks: Array<{
-    email: string
-    info: { title: string; rank: number; submissionId: string }
-  }> = []
-  let unresolved = 0
-  for (const userId of memberUserIds) {
-    const submissions = submissionsByUser[userId] ?? []
-    const email = resolvedUsersById.get(userId)?.primaryEmailAddress?.emailAddress
-    if (!email) {
-      unresolved += submissions.length
-      continue
-    }
-    emailTasks.push(...submissions.map((info) => ({ email, info })))
-  }
+  const emailTasks = selection.tasks
+    .filter((task) => discoveredUserIds.has(task.userId))
+    .map((task) => ({
+      ...task,
+      email: resolvedUsersById.get(task.userId)?.primaryEmailAddress?.emailAddress ?? null,
+    }))
 
   let attempted = 0
   let sent = 0
   let failed = 0
+  let unresolved = 0
+  let unresolvedDecision: "retry" | "exhausted" | null = null
 
   for (let index = 0; index < emailTasks.length; index += 1) {
-    await paceBulkSend(index)
-    const { email, info } = emailTasks[index]
+    if (!consumeDeliverySlot(budget)) {
+      deferred = true
+      break
+    }
+
+    const task = emailTasks[index]
+    const { email, info } = task
+    if (!email) {
+      unresolved++
+      unresolvedDecision ??= await getUnresolvedEmailDecision(workKey)
+      if (unresolvedDecision === "retry") {
+        attempted++
+        failed++
+        if (budget) break
+        continue
+      }
+      await markDeliveryTaskComplete(workKey, winnerTaskKey(task))
+      continue
+    }
+    await paceBulkSend(attempted)
     attempted++
 
     try {
@@ -235,34 +323,41 @@ export async function sendWinnerEmailsWithResult(
           { name: "type", value: "winner_notification" },
           { name: "hackathon", value: tag },
         ],
-        idempotencyKey: `winner/${hackathonId}/${publicationKey}/${info.submissionId}/${recipientFingerprint(email)}`,
+        idempotencyKey: `winner/${hackathonId}/${publicationKey}/${info.submissionId}/${recipientFingerprint(task.userId)}`,
       })
 
-      if (result) sent++
-      else failed++
+      if (result) {
+        sent++
+        await markDeliveryTaskComplete(workKey, winnerTaskKey(task))
+      } else {
+        failed++
+        if (budget) break
+      }
     } catch {
       failed++
+      if (budget) break
     }
   }
 
-  if (unresolved > 0) {
-    const decision = await getUnresolvedEmailDecision(
-      `winner:${hackathonId}:${publicationKey}`,
+  if (unresolvedDecision === "exhausted") {
+    console.warn(
+      `Winner emails: ${unresolved} recipient record(s) remained unavailable after bounded retries for hackathon ${hackathonId}.`,
     )
-    if (decision === "retry") {
-      attempted += unresolved
-      failed += unresolved
-    } else {
-      console.warn(
-        `Winner emails: ${unresolved} recipient record(s) remained unavailable after bounded retries for hackathon ${hackathonId}.`,
-      )
-    }
   }
 
   if (failed > 0) {
     console.error(`Winner emails: ${sent} sent, ${failed} failed for hackathon ${hackathonId}`)
   }
-  return { attempted, sent, failed }
+  if (failed === 0 && !deferred) {
+    const refreshedTasks = await getWinnerDeliveryTasks(client, typedResults)
+    deferred = await hasPendingDeliveryTasks(
+      workKey,
+      refreshedTasks,
+      winnerTaskKey,
+      budget,
+    )
+  }
+  return deferred ? { attempted, sent, failed, deferred: true } : { attempted, sent, failed }
 }
 
 export async function sendWinnerEmails(hackathonId: string): Promise<number> {
@@ -318,17 +413,23 @@ export async function sendPrizeClaimEmail(
   const clerkUserIds: string[] = []
 
   if (submission.team_id) {
-    const { data: members } = await client
+    const { data: members, error: membersError } = await client
       .from("hackathon_participants")
       .select("clerk_user_id")
       .eq("team_id", submission.team_id)
+    if (membersError) {
+      throw new Error(`Failed to load prize-winning team members: ${membersError.message}`)
+    }
     if (members) clerkUserIds.push(...members.map((m) => m.clerk_user_id))
   } else if (submission.participant_id) {
-    const { data: participant } = await client
+    const { data: participant, error: participantError } = await client
       .from("hackathon_participants")
       .select("clerk_user_id")
       .eq("id", submission.participant_id)
       .single()
+    if (participantError) {
+      throw new Error(`Failed to load a prize-winning attendee: ${participantError.message}`)
+    }
     if (participant) clerkUserIds.push(participant.clerk_user_id)
   }
 

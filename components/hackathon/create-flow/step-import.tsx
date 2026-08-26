@@ -4,8 +4,9 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { Label } from "@/components/ui/label"
 import { ArrowRight, Globe, Loader2, PenLine } from "lucide-react"
-import { normalizeUrl } from "@/lib/utils/url"
+import { normalizeImportUrl } from "@/lib/utils/url"
 
 interface StepImportProps {
   onSkipToScratch: () => void
@@ -36,6 +37,8 @@ export function StepImport({
   const [error, setError] = useState<string | null>(null)
 
   function handleImport() {
+    if (loading) return
+
     const trimmed = url.trim()
     if (!trimmed) return
 
@@ -44,9 +47,14 @@ export function StepImport({
       return
     }
 
+    const normalized = normalizeImportUrl(trimmed)
+    if (!normalized) {
+      setError("Use a public HTTPS link with 2,048 characters or fewer.")
+      return
+    }
+
     setLoading(true)
     setError(null)
-    const normalized = normalizeUrl(trimmed)
     router.push(`/import?url=${encodeURIComponent(normalized)}`)
   }
 
@@ -63,47 +71,54 @@ export function StepImport({
         </div>
 
         <div className="space-y-3">
-          <div className="flex gap-2">
-            <Input
-              type="text"
-              inputMode="url"
-              placeholder="luma.com/your-event"
-              value={url}
-              onChange={(e) => {
-                setUrl(e.target.value)
-                if (error) setError(null)
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && url.trim()) {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  handleImport()
-                }
-              }}
-              className="h-14 text-lg"
-              autoFocus
-              autoComplete="off"
-              autoCapitalize="off"
-              spellCheck={false}
-              data-1p-ignore
-              data-lpignore="true"
-              data-form-type="other"
-            />
-            {url.trim() && (
-              <Button
-                type="button"
-                size="lg"
-                onClick={handleImport}
+          <div className="space-y-2">
+            <Label htmlFor="event-import-url">Event page URL</Label>
+            <div className="flex gap-2">
+              <Input
+                id="event-import-url"
+                type="text"
+                inputMode="url"
+                placeholder="luma.com/your-event"
+                value={url}
+                onChange={(e) => {
+                  setUrl(e.target.value)
+                  if (error) setError(null)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && url.trim()) {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    handleImport()
+                  }
+                }}
+                className="h-14 text-lg"
+                autoFocus
+                maxLength={2048}
+                autoComplete="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                data-1p-ignore
+                data-lpignore="true"
+                data-form-type="other"
                 disabled={loading}
-                className="h-14 px-4"
-              >
-                {loading ? (
-                  <Loader2 className="size-5 animate-spin" />
-                ) : (
-                  <ArrowRight className="size-5" />
-                )}
-              </Button>
-            )}
+              />
+              {url.trim() && (
+                <Button
+                  type="button"
+                  size="lg"
+                  onClick={handleImport}
+                  disabled={loading}
+                  aria-label={loading ? "Importing event" : "Import event"}
+                  className="h-14 px-4"
+                >
+                  {loading ? (
+                    <Loader2 className="size-5 animate-spin" />
+                  ) : (
+                    <ArrowRight className="size-5" />
+                  )}
+                </Button>
+              )}
+            </div>
           </div>
           {error && (
             <p className="text-sm text-destructive">{error}</p>

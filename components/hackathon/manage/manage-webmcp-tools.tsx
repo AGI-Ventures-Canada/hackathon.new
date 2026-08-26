@@ -171,7 +171,7 @@ export function ManageHackathonWebMcpTools({
     () =>
       createManageHackathonTools(
         {
-          getContext: actionRegistry.getContext,
+          getContext: () => actionRegistry.getContext(),
           fetcher: fetch,
           onOptimistic: (change) =>
             actionRegistry.dispatch("optimistic", change),
@@ -185,10 +185,7 @@ export function ManageHackathonWebMcpTools({
         },
         registrationStatus,
       ),
-    [
-      actionRegistry,
-      registrationStatus,
-    ],
+    [actionRegistry, registrationStatus],
   )
 
   useWebMcpTools(tools)

@@ -36,17 +36,42 @@ mock.module("@/lib/services/delivery-lease", () => ({
 
 function query(result: QueryResult) {
   const chain: Record<string, unknown> = {}
-  for (const method of ["select", "eq", "lte", "in", "is", "update"]) {
+  for (const method of ["select", "eq", "lte", "in", "is", "update", "upsert"]) {
     chain[method] = mock(() => chain)
   }
   chain.single = mock(() => chain)
+  chain.maybeSingle = mock(() => chain)
   chain.then = (resolve: (value: QueryResult) => unknown) => resolve(result)
   return chain
 }
 
 let fromImpl: (table: string) => ReturnType<typeof query> = () =>
   query({ data: null, error: null })
-const mockFrom = mock((table: string) => fromImpl(table))
+const progress = new Map<string, number>()
+
+function progressQuery() {
+  const chain = query({ data: [], error: null })
+  let selectedKeys: string[] = []
+  chain.in = mock((_column: string, keys: string[]) => {
+    selectedKeys = keys
+    return chain
+  })
+  chain.upsert = mock((value: { key: string; reset_at: number }) => {
+    progress.set(value.key, value.reset_at)
+    return chain
+  })
+  chain.then = (resolve: (value: QueryResult) => unknown) => resolve({
+    data: selectedKeys
+      .filter((key) => progress.has(key))
+      .map((key) => ({ key, reset_at: progress.get(key) })),
+    error: null,
+  })
+  return chain
+}
+
+const mockFrom = mock((table: string) =>
+  table === "rate_limits" ? progressQuery() : fromImpl(table),
+)
 
 mock.module("@/lib/db/client", () => ({
   supabase: () => ({ from: mockFrom }),
@@ -55,6 +80,7 @@ mock.module("@/lib/db/client", () => ({
 const { sendResultsAnnouncementEmailsWithResult } = await import(
   "@/lib/email/results-announcement"
 )
+const { createDeliveryBudget } = await import("@/lib/services/delivery-budget")
 
 const savedAppUrl = process.env.NEXT_PUBLIC_APP_URL
 
@@ -78,7 +104,7 @@ function configureRecipients() {
           error: null,
         })
       }
-      const updateQuery = query({ data: null, error: null })
+      const updateQuery = query({ data: { id: "hack_1" }, error: null })
       updateQueries.push(updateQuery)
       return updateQuery
     }
@@ -150,6 +176,7 @@ describe("sendResultsAnnouncementEmailsWithResult", () => {
     mockGetUnresolvedEmailDecision.mockClear()
     mockGetUnresolvedEmailDecision.mockResolvedValue("retry")
     mockFrom.mockClear()
+    progress.clear()
     sendEmailImpl = () => Promise.resolve({ id: "email_1" })
     fromImpl = () => query({ data: null, error: null })
   })
@@ -187,6 +214,93 @@ describe("sendResultsAnnouncementEmailsWithResult", () => {
     )
     expect(updateQueries).toHaveLength(1)
     expect(updateQueries[0]?.update).toHaveBeenCalledTimes(1)
+  })
+
+  it("resumes results delivery by stable recipient after an attendee is inserted", async () => {
+    let hackathonCall = 0
+    let attendeeIds = ["attendee_two", "attendee_three"]
+    fromImpl = (table) => {
+      if (table === "hackathons") {
+        hackathonCall++
+        return query({
+          data: hackathonCall === 1
+            ? {
+                name: "Build Together",
+                slug: "build-together",
+                status: "completed",
+                results_published_at: "2026-08-20T00:00:00.000Z",
+                results_announcement_sent_at: null,
+              }
+            : { id: "hack_1" },
+          error: null,
+        })
+      }
+      if (table === "hackathon_results") return query({ data: [], error: null })
+      return query({
+        data: attendeeIds.map((clerk_user_id) => ({ clerk_user_id })),
+        error: null,
+      })
+    }
+    mockGetUserList.mockResolvedValue({ data: [{
+      id: "attendee_three",
+      firstName: "Three",
+      primaryEmailAddress: { emailAddress: "three@example.com" },
+    }] })
+
+    await expect(sendResultsAnnouncementEmailsWithResult(
+      "hack_1",
+      createDeliveryBudget(1, Date.now() + 60_000),
+    )).resolves.toEqual({ attempted: 1, sent: 1, failed: 0, deferred: true })
+
+    hackathonCall = 0
+    attendeeIds = ["attendee_one", "attendee_two", "attendee_three"]
+    mockGetUserList.mockClear()
+    mockGetUserList.mockResolvedValue({ data: [
+      {
+        id: "attendee_one",
+        firstName: "One",
+        primaryEmailAddress: { emailAddress: "one@example.com" },
+      },
+      {
+        id: "attendee_two",
+        firstName: "Two",
+        primaryEmailAddress: { emailAddress: "two@example.com" },
+      },
+    ] })
+
+    await expect(sendResultsAnnouncementEmailsWithResult(
+      "hack_1",
+      createDeliveryBudget(2, Date.now() + 60_000),
+    )).resolves.toEqual({ attempted: 2, sent: 2, failed: 0 })
+    expect(mockGetUserList).toHaveBeenCalledWith({
+      userId: ["attendee_one", "attendee_two"],
+      limit: 100,
+    })
+  })
+
+  it("does not call Clerk after a results worker deadline expires", async () => {
+    fromImpl = (table) => {
+      if (table === "hackathons") {
+        return query({
+          data: {
+            name: "Build Together",
+            slug: "build-together",
+            status: "completed",
+            results_published_at: "2026-08-20T00:00:00.000Z",
+            results_announcement_sent_at: null,
+          },
+          error: null,
+        })
+      }
+      if (table === "hackathon_results") return query({ data: [], error: null })
+      return query({ data: [{ clerk_user_id: "attendee_one" }], error: null })
+    }
+
+    await expect(sendResultsAnnouncementEmailsWithResult(
+      "hack_1",
+      createDeliveryBudget(1, Date.now() - 1),
+    )).resolves.toEqual({ attempted: 0, sent: 0, failed: 0, deferred: true })
+    expect(mockGetUserList).not.toHaveBeenCalled()
   })
 
   it("leaves the checkpoint open when any provider delivery fails", async () => {
@@ -256,7 +370,7 @@ describe("sendResultsAnnouncementEmailsWithResult", () => {
         })
       }
       if (table === "hackathons") {
-        checkpoint = query({ data: null, error: null })
+        checkpoint = query({ data: { id: "hack_1" }, error: null })
         return checkpoint
       }
       return query({ data: [], error: null })

@@ -80,6 +80,7 @@ Create a new hackathon. Prompts interactively if flags omitted in TTY.
 | `--slug` | Yes | URL-safe identifier (auto-suggested from name in interactive mode) |
 | `--description` | No | Short description |
 | `--from-url` | No | Import from a supported public event page URL (`luma.com` / `lu.ma`). When used, CLI creates the hackathon from the external event data instead of the scratch flow. |
+| `--idempotency-key` | No | Reuse the same value when retrying after a lost response. This prevents a second event from being created. |
 
 ### `hackathon events get <id-or-slug>`
 

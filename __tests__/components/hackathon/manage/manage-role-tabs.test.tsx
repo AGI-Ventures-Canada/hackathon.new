@@ -154,6 +154,7 @@ const { TeamsTab } = await import(
 )
 
 const originalFetch = globalThis.fetch
+const pendingEmailOperationKey = "oatmeal:email-blast:pending:event-1"
 
 beforeEach(() => {
   actionContext = {
@@ -165,11 +166,13 @@ beforeEach(() => {
   registerTabAction.mockClear()
   unregisterTabAction.mockClear()
   replaceManageAnnouncements.mockClear()
+  sessionStorage.removeItem(pendingEmailOperationKey)
 })
 
 afterEach(() => {
   cleanup()
   globalThis.fetch = originalFetch
+  sessionStorage.removeItem(pendingEmailOperationKey)
 })
 
 describe("organizer role tabs", () => {
@@ -288,5 +291,147 @@ describe("organizer role tabs", () => {
         ),
       ).toBe(true),
     )
+  })
+
+  it("reuses a pending email operation after remount and clears it on success", async () => {
+    let attempts = 0
+    const fetchMock = mock(async (
+      input: RequestInfo | URL,
+      _init?: RequestInit,
+    ) => {
+      const url = String(input)
+      if (!url.endsWith("/email-blast")) {
+        throw new Error(`Unexpected request: ${url}`)
+      }
+      attempts += 1
+      if (attempts === 1) throw new Error("Connection lost")
+      return Response.json({ sent: 1, failed: 0 })
+    })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    render(
+      <EventTabContent
+        hackathonId="event-1"
+        activeEtab="email"
+        hackathonStatus="active"
+        hackathonPhase="build"
+      />,
+    )
+
+    fireEvent.change(screen.getByLabelText("Subject"), {
+      target: { value: "Important update" },
+    })
+    fireEvent.change(screen.getByLabelText("HTML Body"), {
+      target: { value: "<p>Please read this update.</p>" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Send Now" }))
+
+    expect(await screen.findByText("Connection lost")).toBeDefined()
+    const firstHeaders = fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>
+    const firstDeliveryId = firstHeaders["Idempotency-Key"]
+    if (!firstDeliveryId) throw new Error("Missing email delivery id")
+    expect(typeof firstDeliveryId).toBe("string")
+    expect(sessionStorage.getItem(pendingEmailOperationKey)).toContain(firstDeliveryId)
+
+    cleanup()
+    render(
+      <EventTabContent
+        hackathonId="event-1"
+        activeEtab="email"
+        hackathonStatus="active"
+        hackathonPhase="build"
+      />,
+    )
+
+    expect(await screen.findByDisplayValue("Important update")).toBeDefined()
+    expect(screen.getByDisplayValue("<p>Please read this update.</p>")).toBeDefined()
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Send Now" }))
+
+    expect(await screen.findByText("1 sent")).toBeDefined()
+    const secondHeaders = fetchMock.mock.calls[1]?.[1]?.headers as Record<string, string>
+    expect(secondHeaders["Idempotency-Key"]).toBe(firstDeliveryId)
+    expect(sessionStorage.getItem(pendingEmailOperationKey)).toBeNull()
+  })
+
+  it("freezes an email operation while its request is in flight", async () => {
+    let finishRequest: ((response: Response) => void) | undefined
+    const pendingRequest = new Promise<Response>((resolve) => {
+      finishRequest = resolve
+    })
+    const fetchMock = mock(() => pendingRequest)
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    render(
+      <EventTabContent
+        hackathonId="event-1"
+        activeEtab="email"
+        hackathonStatus="active"
+        hackathonPhase="build"
+      />,
+    )
+
+    const subjectInput = screen.getByLabelText("Subject") as HTMLInputElement
+    fireEvent.change(subjectInput, { target: { value: "Important update" } })
+    fireEvent.change(screen.getByLabelText("HTML Body"), {
+      target: { value: "<p>Please read this update.</p>" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Send Now" }))
+
+    await waitFor(() => expect(subjectInput.disabled).toBe(true))
+    fireEvent.keyDown(subjectInput, { key: "Enter", ctrlKey: true })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    finishRequest?.(Response.json({ sent: 1, failed: 0 }))
+    expect(await screen.findByText("1 sent")).toBeDefined()
+  })
+
+  it("keeps the same email operation available after a partial failure", async () => {
+    let attempts = 0
+    const fetchMock = mock(async (
+      _input: RequestInfo | URL,
+      _init?: RequestInit,
+    ) => {
+      attempts += 1
+      return Response.json(
+        attempts === 1
+          ? { sent: 1, failed: 1 }
+          : { sent: 2, failed: 0 },
+      )
+    })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    render(
+      <EventTabContent
+        hackathonId="event-1"
+        activeEtab="email"
+        hackathonStatus="active"
+        hackathonPhase="build"
+      />,
+    )
+
+    fireEvent.change(screen.getByLabelText("Subject"), {
+      target: { value: "Important update" },
+    })
+    fireEvent.change(screen.getByLabelText("HTML Body"), {
+      target: { value: "<p>Please read this update.</p>" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Send Now" }))
+
+    expect(await screen.findByText("1 sent, 1 failed")).toBeDefined()
+    expect(screen.getByDisplayValue("Important update")).toBeDefined()
+    const firstHeaders = fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>
+    expect(sessionStorage.getItem(pendingEmailOperationKey)).not.toBeNull()
+
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Send Now" }))
+
+    expect(await screen.findByText("2 sent")).toBeDefined()
+    const secondHeaders = fetchMock.mock.calls[1]?.[1]?.headers as Record<string, string>
+    expect(secondHeaders["Idempotency-Key"]).toBe(firstHeaders["Idempotency-Key"])
+    expect(sessionStorage.getItem(pendingEmailOperationKey)).toBeNull()
   })
 })

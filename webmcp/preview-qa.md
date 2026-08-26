@@ -30,7 +30,7 @@ Record the handoff owner and rotation date in the private submission record. Rot
 | Mentor | Public counts, verified queue, open, claimed by me, claimed by someone else, claim race | No public request text, exact role check, human claim/finish, stable conflict codes |
 | Sponsor | Signed out, verified sponsor, assigned prize, pending claim, fulfilled claim | Published-only data, exact sponsor access, no other sponsor details, human claim/fulfillment actions |
 | Email and cron | Draft queue, go-live flush, provider failure, retry, ended event, duplicate cron invocation, bad cron auth | Accurate queued/sent copy, no draft or ended-event send, stable provider key, bounded retry, partial failure surfaced |
-| Browser lifecycle | Navigation, role change, event lifecycle change, refresh, 375px viewport | Tool unregistration, no stale execution, visible UI match, no console errors, expected network only |
+| Browser lifecycle | Navigation, role change, event lifecycle change, refresh, 375px viewport | Exact-host `Origin-Trial` response header, origin isolation, tool unregistration, no stale execution, visible UI match, no console errors, expected network only |
 
 ## Network rules
 
@@ -38,3 +38,4 @@ Record the handoff owner and rotation date in the private submission record. Rot
 - One human final click makes exactly one request.
 - Never send a real invitation, publish real results, or load customer/contact data.
 - Capture the URL, deployment commit, role, lifecycle, tool call/result, visible UI, console, and network result for each row.
+- In native Chrome, evaluate `await document.modelContext.getTools()` and then `await document.modelContext.executeTool(tool, JSON.stringify(args))`. If a wrapper times out, repeat through raw DevTools evaluation with `awaitPromise: true` before treating it as an app failure.

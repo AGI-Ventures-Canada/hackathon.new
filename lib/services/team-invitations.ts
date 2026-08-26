@@ -7,6 +7,11 @@ import { canInviteTeamMembers } from "@/lib/utils/team-invite"
 import { getNotificationDisposition } from "@/lib/utils/notification-lifecycle"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { withDeliveryLease } from "@/lib/services/delivery-lease"
+import {
+  consumeDeliverySlot,
+  hasDeliveryCapacity,
+  type DeliveryBudget,
+} from "@/lib/services/delivery-budget"
 
 const INVITATION_EXPIRY_DAYS = 7
 const INVITATION_EXPIRY_MS = INVITATION_EXPIRY_DAYS * 24 * 60 * 60 * 1000
@@ -977,10 +982,11 @@ export async function markTeamInvitationEmailed(invitationId: string): Promise<v
 export async function sendPendingTeamInvitationEmails(
   hackathonId: string,
   limit = 100,
+  budget?: DeliveryBudget,
 ): Promise<{ sent: number; total: number; failedEmails: string[] }> {
   const claimed = await withDeliveryLease(
     `team-invitations:${hackathonId}`,
-    () => sendPendingTeamInvitationEmailsUnlocked(hackathonId, limit),
+    () => sendPendingTeamInvitationEmailsUnlocked(hackathonId, limit, budget),
   )
   return claimed.acquired
     ? claimed.value
@@ -990,6 +996,7 @@ export async function sendPendingTeamInvitationEmails(
 async function sendPendingTeamInvitationEmailsUnlocked(
   hackathonId: string,
   limit: number,
+  budget?: DeliveryBudget,
 ): Promise<{ sent: number; total: number; failedEmails: string[] }> {
   const client = getSupabase()
   const now = new Date().toISOString()
@@ -1013,14 +1020,6 @@ async function sendPendingTeamInvitationEmailsUnlocked(
 
   const { clerkClient } = await import("@clerk/nextjs/server")
   const clerk = await clerkClient()
-
-  const teamCache = new Map<string, TeamWithHackathon | null>()
-  const getTeam = async (teamId: string) => {
-    if (!teamCache.has(teamId)) {
-      teamCache.set(teamId, await getTeamWithHackathon(teamId))
-    }
-    return teamCache.get(teamId) ?? null
-  }
 
   const inviterCache = new Map<string, Promise<{ name: string; email?: string }>>()
   const resolveInviter = (clerkUserId: string): Promise<{ name: string; email?: string }> => {
@@ -1051,12 +1050,34 @@ async function sendPendingTeamInvitationEmailsUnlocked(
 
   const failedEmails: string[] = []
   let sent = 0
+  let total = 0
   const participantCountCache = new Map<string, number>()
 
   for (let index = 0; index < rows.length; index += 1) {
-    const invitation = rows[index]
+    if (!hasDeliveryCapacity(budget)) break
+    const listedInvitation = rows[index]
     try {
-      const teamInfo = await getTeam(invitation.team_id)
+      const { data: currentInvitation, error: currentInvitationError } = await client
+        .from("team_invitations")
+        .select("*")
+        .eq("id", listedInvitation.id)
+        .eq("hackathon_id", hackathonId)
+        .eq("status", "pending")
+        .is("emailed_at", null)
+        .gt("expires_at", new Date().toISOString())
+        .maybeSingle()
+      if (currentInvitationError) {
+        throw new Error(`Failed to revalidate team invitation: ${currentInvitationError.message}`)
+      }
+      const invitation = Array.isArray(currentInvitation)
+        ? (currentInvitation as TeamInvitation[]).find(
+            (candidate) => candidate.id === listedInvitation.id,
+          ) ?? null
+        : currentInvitation as TeamInvitation | null
+      if (!invitation) continue
+      total++
+
+      const teamInfo = await getTeamWithHackathon(invitation.team_id)
       if (!teamInfo) throw new Error("Team information is unavailable")
       const disposition = getNotificationDisposition({
         status: teamInfo.hackathon.status as HackathonStatus,
@@ -1146,6 +1167,7 @@ async function sendPendingTeamInvitationEmailsUnlocked(
 
       const inviter = await resolveInviter(invitation.invited_by_clerk_user_id)
 
+      if (!consumeDeliverySlot(budget)) break
       await paceBulkSend(index)
       const result = await sendTeamInvitationEmail({
         to: invitation.email,
@@ -1187,18 +1209,19 @@ async function sendPendingTeamInvitationEmailsUnlocked(
       })
     } catch (error) {
       console.error(
-        `Failed to deliver pending team invitation ${invitation.id} (hackathon=${hackathonId}):`,
+        `Failed to deliver pending team invitation ${listedInvitation.id} (hackathon=${hackathonId}):`,
         error,
       )
-      failedEmails.push(invitation.email)
+      failedEmails.push(listedInvitation.email)
     }
   }
 
-  return { sent, total: rows.length, failedEmails }
+  return { sent, total, failedEmails }
 }
 
 export async function retryPendingTeamInvitationEmails(
   limit = 50,
+  budget?: DeliveryBudget,
 ): Promise<{ events: number; sent: number; failed: number }> {
   const client = getSupabase()
   const now = new Date().toISOString()
@@ -1232,8 +1255,9 @@ export async function retryPendingTeamInvitationEmails(
   let remaining = limit
   let processedEvents = 0
   for (const hackathonId of eventIds) {
+    if (!hasDeliveryCapacity(budget)) break
     processedEvents++
-    const result = await sendPendingTeamInvitationEmails(hackathonId, remaining)
+    const result = await sendPendingTeamInvitationEmails(hackathonId, remaining, budget)
     sent += result.sent
     failed += result.failedEmails.length
     remaining -= result.total

@@ -8,6 +8,19 @@ import {
   mockClerkClient,
 } from "../lib/supabase-mock"
 
+class MockEventMutationLeaseError extends Error {
+  code = "event_busy"
+}
+
+const mockWithEventMutationLease = mock(
+  async <T>(_hackathonId: string, work: () => Promise<T>): Promise<T> => work(),
+)
+
+mock.module("@/lib/services/event-mutation-lease", () => ({
+  EventMutationLeaseError: MockEventMutationLeaseError,
+  withEventMutationLease: mockWithEventMutationLease,
+}))
+
 const {
   calculateResults,
   getResults,
@@ -32,9 +45,25 @@ const mockResult: HackathonResult = {
 describe("Results Service", () => {
   beforeEach(() => {
     resetSupabaseMocks()
+    mockWithEventMutationLease.mockClear()
   })
 
   describe("calculateResults", () => {
+    beforeEach(() => {
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: { judging_mode: "rubric", results_published_at: null },
+            error: null,
+          })
+        }
+        if (table === "prizes") {
+          return createChainableMock({ data: [], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+    })
+
     it("calculates results successfully", async () => {
       setMockRpcImplementation((fn) => {
         if (fn === "calculate_results") {
@@ -444,14 +473,25 @@ describe("Results Service", () => {
     it("unpublishes results successfully", async () => {
       let hackathonUpdate: Record<string, unknown> | null = null
       let hackathonCalls = 0
+      const current = {
+        id: "h1",
+        tenant_id: "t1",
+        status: "judging",
+        results_published_at: "2026-01-01T00:00:00.000Z",
+      }
       setMockFromImplementation((table) => {
         if (table === "hackathon_results") {
           return createChainableMock({ data: null, error: null })
         }
         if (table === "hackathons") {
           hackathonCalls++
-          const chain = createChainableMock({ data: null, error: null })
-          if (hackathonCalls === 1) {
+          const chain = createChainableMock({
+            data: hackathonCalls === 1
+              ? current
+              : { ...current, results_published_at: null },
+            error: null,
+          })
+          if (hackathonCalls === 2) {
             const originalUpdate = chain.update
             chain.update = mock((value: Record<string, unknown>) => {
               hackathonUpdate = value
@@ -475,6 +515,17 @@ describe("Results Service", () => {
 
     it("returns error when hackathon_results update fails", async () => {
       setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: {
+              id: "h1",
+              tenant_id: "t1",
+              status: "judging",
+              results_published_at: "2026-01-01T00:00:00.000Z",
+            },
+            error: null,
+          })
+        }
         if (table === "hackathon_results") {
           return createChainableMock({
             data: null,
@@ -491,15 +542,33 @@ describe("Results Service", () => {
     })
 
     it("returns error when hackathons status update fails", async () => {
+      let hackathonCalls = 0
+      let resultCalls = 0
+      const current = {
+        id: "h1",
+        tenant_id: "t1",
+        status: "judging",
+        results_published_at: "2026-01-01T00:00:00.000Z",
+      }
       setMockFromImplementation((table) => {
         if (table === "hackathon_results") {
-          return createChainableMock({ data: null, error: null })
+          resultCalls++
+          return createChainableMock({
+            data: resultCalls === 2
+              ? [{ id: "r1", published_at: null }]
+              : null,
+            error: null,
+          })
         }
         if (table === "hackathons") {
-          return createChainableMock({
-            data: null,
-            error: { message: "Update failed" },
-          })
+          hackathonCalls++
+          if (hackathonCalls === 2) {
+            return createChainableMock({
+              data: null,
+              error: { message: "Update failed" },
+            })
+          }
+          return createChainableMock({ data: current, error: null })
         }
         return createChainableMock({ data: null, error: null })
       })

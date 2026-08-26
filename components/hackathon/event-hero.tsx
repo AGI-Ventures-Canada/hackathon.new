@@ -1,3 +1,5 @@
+"use client";
+
 import { Suspense } from "react";
 import { OptimizedImage } from "@/components/ui/optimized-image";
 import Link from "next/link";
@@ -14,8 +16,9 @@ import { RegistrationButton } from "./registration-button";
 import { SubmissionButton } from "./submission-button";
 import { CountdownBadge } from "./countdown-badge";
 import { LanguageToggle } from "./language-toggle";
-import { getTimelineState } from "@/lib/utils/timeline";
+import { getHydrationSafeTimelineState } from "@/lib/utils/timeline";
 import { formatDateRange } from "@/lib/utils/format";
+import { useIsClient } from "@/hooks/use-is-client";
 
 interface RegistrationProps {
   hackathonSlug: string;
@@ -75,6 +78,7 @@ interface EventHeroProps {
 function formatTimeRange(
   startsAt: string | null,
   endsAt: string | null,
+  timeZone?: string,
 ): string | null {
   if (!startsAt || !endsAt) return null;
 
@@ -84,15 +88,13 @@ function formatTimeRange(
   const timeFormat: Intl.DateTimeFormatOptions = {
     hour: "numeric",
     minute: "2-digit",
+    ...(timeZone ? { timeZone } : {}),
   };
 
   const startTime = start.toLocaleTimeString("en-US", timeFormat);
   const endTime = end.toLocaleTimeString("en-US", timeFormat);
 
-  const sameDay =
-    start.getFullYear() === end.getFullYear() &&
-    start.getMonth() === end.getMonth() &&
-    start.getDate() === end.getDate();
+  const sameDay = formatCalendarDay(start, timeZone) === formatCalendarDay(end, timeZone);
 
   if (sameDay) {
     if (startTime === endTime) return null;
@@ -111,6 +113,7 @@ interface DurationInfo {
 function getDurationInfo(
   startsAt: string | null,
   endsAt: string | null,
+  timeZone?: string,
 ): DurationInfo | null {
   if (!startsAt || !endsAt) return null;
 
@@ -118,10 +121,7 @@ function getDurationInfo(
   const end = new Date(endsAt);
   const hours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
 
-  const startDay = start.getDate();
-  const endDay = end.getDate();
-  const crossesMidnight =
-    endDay !== startDay || end.getMonth() !== start.getMonth();
+  const crossesMidnight = formatCalendarDay(start, timeZone) !== formatCalendarDay(end, timeZone);
 
   if (hours <= 0) return null;
 
@@ -184,6 +184,15 @@ function getDurationInfo(
   };
 }
 
+function formatCalendarDay(date: Date, timeZone?: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    ...(timeZone ? { timeZone } : {}),
+  }).format(date);
+}
+
 export function EventHero({
   name,
   bannerUrl,
@@ -216,17 +225,20 @@ export function EventHero({
   availableLocales,
   currentLocale,
 }: EventHeroProps) {
-  const durationInfo = getDurationInfo(startsAt, endsAt);
-  const timeRange = formatTimeRange(startsAt, endsAt);
-  const timelineState = getTimelineState({
+  const isClient = useIsClient();
+  const displayTimeZone = isClient ? undefined : "UTC";
+  const durationInfo = getDurationInfo(startsAt, endsAt, displayTimeZone);
+  const timeRange = formatTimeRange(startsAt, endsAt, displayTimeZone);
+  const timelineState = getHydrationSafeTimelineState({
     status,
     registration_opens_at: registrationOpensAt,
     registration_closes_at: registrationClosesAt,
     starts_at: startsAt,
     ends_at: endsAt,
-  });
+  }, isClient);
 
   const showCountdown =
+    isClient &&
     isRegistered &&
     startsAt &&
     new Date(startsAt) > new Date() &&
@@ -237,7 +249,7 @@ export function EventHero({
   const datesContent = (
     <div className="flex flex-col gap-1">
       <p className="text-lg text-muted-foreground">
-        {formatDateRange(startsAt, endsAt)}
+        {formatDateRange(startsAt, endsAt, displayTimeZone)}
       </p>
       {timeRange && (
         <p className="text-sm text-muted-foreground flex items-center gap-1.5">

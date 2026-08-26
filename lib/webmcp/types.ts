@@ -46,6 +46,8 @@ export type WebMcpModelContext = {
     tool: WebMcpTool,
     options?: WebMcpRegisterOptions,
   ) => Promise<void>
+  getTools?: () => Promise<WebMcpTool[]>
+  executeTool?: (tool: WebMcpTool, input: string) => Promise<unknown>
 }
 
 export type WebMcpHandlerResult<T> = {

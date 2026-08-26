@@ -20,7 +20,7 @@ Run these commands to verify the developer has required tools:
 
 ```bash
 bun --version       # Need Bun 1.0+
-node --version      # Need Node.js 20.9+ (for Next.js 16)
+node --version      # Need Node.js 20.18.1+
 supabase --version  # Need Supabase CLI
 docker info         # Need Docker running (for local Supabase)
 ```
@@ -30,7 +30,7 @@ docker info         # Need Docker running (for local Supabase)
 | Tool | Install Command |
 |------|-----------------|
 | Bun | `curl -fsSL https://bun.sh/install \| bash` or `brew install oven-sh/bun/bun` |
-| Node.js | `brew install node@20` or [nodejs.org](https://nodejs.org) (v20.9+) |
+| Node.js | `brew install node@20` or [nodejs.org](https://nodejs.org) (v20.18.1+) |
 | Supabase CLI | `brew install supabase/tap/supabase` |
 | Docker | [Docker Desktop](https://www.docker.com/products/docker-desktop) |
 
@@ -76,7 +76,7 @@ RESEND_REPLY_TO_EMAIL=support@hackathon.new
 # App URL (used for email links, invite URLs, etc.)
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 
-# WebMCP origin trial (optional; use an exact-origin token on Vercel)
+# WebMCP origin trial (optional; use a different exact-origin token per Vercel host)
 # WEBMCP_ORIGIN_TRIAL_TOKEN=...
 
 # Tavily (optional - enables rich content extraction from Luma event pages)

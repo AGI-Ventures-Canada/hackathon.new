@@ -74,6 +74,16 @@ describe("formatDateRange", () => {
     const result = formatDateRange("2026-03-10T00:00:00Z", "2026-03-15T00:00:00Z")
     expect(result).toContain("–")
   })
+
+  it("uses an explicit time zone for hydration-safe date boundaries", () => {
+    expect(
+      formatDateRange(
+        "2026-10-25T00:30:00Z",
+        "2026-10-27T00:30:00Z",
+        "UTC",
+      ),
+    ).toBe("Oct 25 – 27, 2026")
+  })
 })
 
 describe("sortByStartDate", () => {

@@ -4,6 +4,7 @@ import { retryPendingResultEmails } from "@/lib/services/results"
 import { retryPendingTeamInvitationEmails } from "@/lib/services/team-invitations"
 import { retryPendingJudgeInvitationEmails } from "@/lib/services/judge-invitations"
 import { isAuthorizedCronRequest } from "@/lib/auth/cron"
+import { createDeliveryBudget } from "@/lib/services/delivery-budget"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -15,6 +16,17 @@ const CRON_BATCH_LIMITS = {
   teamInvitations: 20,
   judgeInvitations: 20,
 } as const
+
+const CRON_RECIPIENT_LIMIT = 12
+const WORKER_WINDOW_MS = 30_000
+const CRON_WORK_DEADLINE_MS = 250_000
+
+function createWorkerBudget(startedAt: number) {
+  return createDeliveryBudget(
+    CRON_RECIPIENT_LIMIT,
+    Math.min(startedAt + CRON_WORK_DEADLINE_MS, Date.now() + WORKER_WINDOW_MS),
+  )
+}
 
 async function settle<T>(work: () => Promise<T>): Promise<PromiseSettledResult<T>> {
   try {
@@ -29,13 +41,30 @@ export async function GET(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const scheduled = await settle(() => processPendingReminders(CRON_BATCH_LIMITS.scheduled))
-  const postEvent = await settle(() => processAllPendingReminders(CRON_BATCH_LIMITS.postEvent))
-  const results = await settle(() => retryPendingResultEmails(CRON_BATCH_LIMITS.results))
+  const startedAt = Date.now()
+  const scheduled = await settle(() => processPendingReminders(
+    CRON_BATCH_LIMITS.scheduled,
+    {},
+    createWorkerBudget(startedAt),
+  ))
+  const postEvent = await settle(() => processAllPendingReminders(
+    CRON_BATCH_LIMITS.postEvent,
+    createWorkerBudget(startedAt),
+  ))
+  const results = await settle(() => retryPendingResultEmails(
+    CRON_BATCH_LIMITS.results,
+    createWorkerBudget(startedAt),
+  ))
   const teamInvitations = await settle(() =>
-    retryPendingTeamInvitationEmails(CRON_BATCH_LIMITS.teamInvitations))
+    retryPendingTeamInvitationEmails(
+      CRON_BATCH_LIMITS.teamInvitations,
+      createWorkerBudget(startedAt),
+    ))
   const judgeInvitations = await settle(() =>
-    retryPendingJudgeInvitationEmails(CRON_BATCH_LIMITS.judgeInvitations))
+    retryPendingJudgeInvitationEmails(
+      CRON_BATCH_LIMITS.judgeInvitations,
+      createWorkerBudget(startedAt),
+    ))
 
   const hasFailures =
     scheduled.status === "rejected" ||

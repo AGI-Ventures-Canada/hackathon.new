@@ -1179,11 +1179,14 @@ describe("Dashboard Event Routes Integration Tests", () => {
   describe("POST /api/dashboard/hackathons/:id/email-blast", () => {
     const blastUrl = `${baseUrl}/email-blast`
 
-    function postBlast() {
+    function postBlast(idempotencyKey?: string) {
       return app.handle(
         new Request(blastUrl, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
+          },
           body: JSON.stringify({ subject: "Hi", html: "<p>Hi</p>" }),
         })
       )
@@ -1214,12 +1217,38 @@ describe("Dashboard Event Routes Integration Tests", () => {
       mockSendBulkEmail.mockClear()
       mockSendBulkEmail.mockResolvedValueOnce({ sent: 5 })
 
-      const res = await postBlast()
+      const res = await postBlast("send-blast-1")
       const data = await res.json()
 
       expect(res.status).toBe(200)
       expect(data.sent).toBe(5)
       expect(mockSendBulkEmail).toHaveBeenCalledTimes(1)
+      expect(mockSendBulkEmail).toHaveBeenCalledWith(
+        hackathonId,
+        expect.objectContaining({ deliveryId: expect.stringMatching(/^[a-f0-9]{24}$/) }),
+      )
+    })
+
+    it("rejects an invalid blast idempotency key", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockCheckHackathonOrganizer.mockResolvedValue({
+        status: "ok" as const,
+        hackathon: { id: hackathonId, tenant_id: "tenant-123", status: "active" },
+      })
+      mockSendBulkEmail.mockClear()
+
+      const res = await app.handle(new Request(blastUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": " ",
+        },
+        body: JSON.stringify({ subject: "Hi", html: "<p>Hi</p>" }),
+      }))
+
+      expect(res.status).toBe(400)
+      expect(await res.json()).toMatchObject({ code: "invalid_idempotency_key" })
+      expect(mockSendBulkEmail).not.toHaveBeenCalled()
     })
 
     it("blocks email blast after an event has effectively ended", async () => {

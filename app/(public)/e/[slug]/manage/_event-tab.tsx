@@ -70,6 +70,88 @@ type EmailResult = {
   failed: number
 }
 
+const EMAIL_AUDIENCE_ROLES = ["participant", "judge", "mentor"] as const
+type EmailAudienceRole = (typeof EMAIL_AUDIENCE_ROLES)[number]
+
+type PendingEmailOperation = {
+  version: 1
+  deliveryId: string
+  subject: string
+  html: string
+  roles: EmailAudienceRole[]
+}
+
+function pendingEmailOperationKey(hackathonId: string): string {
+  return `oatmeal:email-blast:pending:${hackathonId}`
+}
+
+function getEmailOperationStorage(): Storage | null {
+  if (typeof window === "undefined") return null
+  try {
+    return window.sessionStorage
+  } catch {
+    return null
+  }
+}
+
+function isPendingEmailOperation(value: unknown): value is PendingEmailOperation {
+  if (!value || typeof value !== "object") return false
+  const candidate = value as Partial<PendingEmailOperation>
+  return candidate.version === 1 &&
+    typeof candidate.deliveryId === "string" &&
+    candidate.deliveryId.length > 0 &&
+    candidate.deliveryId.length <= 200 &&
+    typeof candidate.subject === "string" &&
+    candidate.subject.trim().length > 0 &&
+    candidate.subject.length <= 200 &&
+    typeof candidate.html === "string" &&
+    candidate.html.trim().length > 0 &&
+    candidate.html.length <= 100_000 &&
+    Array.isArray(candidate.roles) &&
+    candidate.roles.every((role) => EMAIL_AUDIENCE_ROLES.includes(role))
+}
+
+function loadPendingEmailOperation(hackathonId: string): PendingEmailOperation | null {
+  const storage = getEmailOperationStorage()
+  if (!storage) return null
+  const key = pendingEmailOperationKey(hackathonId)
+  try {
+    const raw = storage.getItem(key)
+    if (!raw) return null
+    const parsed: unknown = JSON.parse(raw)
+    if (isPendingEmailOperation(parsed)) return parsed
+    storage.removeItem(key)
+    return null
+  } catch {
+    try {
+      storage.removeItem(key)
+    } catch {}
+    return null
+  }
+}
+
+function savePendingEmailOperation(
+  hackathonId: string,
+  operation: PendingEmailOperation,
+): boolean {
+  const storage = getEmailOperationStorage()
+  if (!storage) return false
+  try {
+    storage.setItem(pendingEmailOperationKey(hackathonId), JSON.stringify(operation))
+    return true
+  } catch {
+    return false
+  }
+}
+
+function clearPendingEmailOperation(hackathonId: string): void {
+  const storage = getEmailOperationStorage()
+  if (!storage) return
+  try {
+    storage.removeItem(pendingEmailOperationKey(hackathonId))
+  } catch {}
+}
+
 interface EventTabContentProps {
   hackathonId: string
   activeEtab: string
@@ -281,7 +363,7 @@ function SocialSubTab({ hackathonId }: { hackathonId: string }) {
 function EmailSubTab({ hackathonId }: { hackathonId: string }) {
   const [subject, setSubject] = useState("")
   const [html, setHtml] = useState("")
-  const [roles, setRoles] = useState<Record<string, boolean>>({
+  const [roles, setRoles] = useState<Record<EmailAudienceRole, boolean>>({
     participant: false,
     judge: false,
     mentor: false,
@@ -290,29 +372,60 @@ function EmailSubTab({ hackathonId }: { hackathonId: string }) {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<EmailResult | null>(null)
+  const deliveryIdRef = useRef<string | null>(null)
+  const sendInFlightRef = useRef(false)
 
-  const selectedRoles = Object.entries(roles)
-    .filter(([, checked]) => checked)
-    .map(([role]) => role)
+  useEffect(() => {
+    deliveryIdRef.current = null
+    const pending = loadPendingEmailOperation(hackathonId)
+    if (!pending) return
+    deliveryIdRef.current = pending.deliveryId
+    setSubject(pending.subject)
+    setHtml(pending.html)
+    setRoles({
+      participant: pending.roles.includes("participant"),
+      judge: pending.roles.includes("judge"),
+      mentor: pending.roles.includes("mentor"),
+    })
+  }, [hackathonId])
+
+  const selectedRoles = EMAIL_AUDIENCE_ROLES.filter((role) => roles[role])
 
   const recipientLabel = selectedRoles.length > 0
     ? selectedRoles.map((r) => `${r}s`).join(", ")
     : "all participants"
 
   async function handleSend() {
-    if (!subject.trim() || !html.trim()) return
+    if (sendInFlightRef.current || !subject.trim() || !html.trim()) return
+    setConfirmOpen(false)
+    const deliveryId = deliveryIdRef.current ?? crypto.randomUUID()
+    const operation: PendingEmailOperation = {
+      version: 1,
+      deliveryId,
+      subject,
+      html,
+      roles: [...selectedRoles],
+    }
+    if (!savePendingEmailOperation(hackathonId, operation)) {
+      setError("Turn on browser storage so we can safely send this email.")
+      return
+    }
+    deliveryIdRef.current = deliveryId
+    sendInFlightRef.current = true
     setSending(true)
     setError(null)
     setResult(null)
-    setConfirmOpen(false)
     try {
       const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/email-blast`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": deliveryId,
+        },
         body: JSON.stringify({
-          subject,
-          html,
-          recipientFilter: selectedRoles.length > 0 ? selectedRoles : undefined,
+          subject: operation.subject,
+          html: operation.html,
+          recipientFilter: operation.roles.length > 0 ? operation.roles : undefined,
         }),
       })
       if (!res.ok) {
@@ -321,12 +434,17 @@ function EmailSubTab({ hackathonId }: { hackathonId: string }) {
       }
       const data: EmailResult = await res.json()
       setResult(data)
-      setSubject("")
-      setHtml("")
-      setRoles({ participant: false, judge: false, mentor: false })
+      if (data.failed === 0) {
+        clearPendingEmailOperation(hackathonId)
+        deliveryIdRef.current = null
+        setSubject("")
+        setHtml("")
+        setRoles({ participant: false, judge: false, mentor: false })
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to send emails")
     } finally {
+      sendInFlightRef.current = false
       setSending(false)
     }
   }
@@ -338,8 +456,19 @@ function EmailSubTab({ hackathonId }: { hackathonId: string }) {
     }
   }
 
-  function toggleRole(role: string) {
+  function toggleRole(role: EmailAudienceRole) {
+    if (sending) return
+    if (deliveryIdRef.current) {
+      deliveryIdRef.current = null
+      clearPendingEmailOperation(hackathonId)
+    }
     setRoles((prev) => ({ ...prev, [role]: !prev[role] }))
+  }
+
+  function clearDeliveryIdentity() {
+    if (!deliveryIdRef.current) return
+    deliveryIdRef.current = null
+    clearPendingEmailOperation(hackathonId)
   }
 
   return (
@@ -350,7 +479,10 @@ function EmailSubTab({ hackathonId }: { hackathonId: string }) {
       </CardHeader>
       <CardContent>
         <form
-          onSubmit={(e) => { e.preventDefault(); setConfirmOpen(true) }}
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (!sending && !sendInFlightRef.current) setConfirmOpen(true)
+          }}
           onKeyDown={handleKeyDown}
           autoComplete="off"
           className="space-y-4"
@@ -361,13 +493,17 @@ function EmailSubTab({ hackathonId }: { hackathonId: string }) {
               id="email-subject"
               name="email-subject"
               value={subject}
-              onChange={(e) => setSubject(e.target.value)}
+              onChange={(e) => {
+                clearDeliveryIdentity()
+                setSubject(e.target.value)
+              }}
               placeholder="Email subject line"
               autoComplete="off"
               data-1p-ignore
               data-lpignore="true"
               data-form-type="other"
               autoFocus
+              disabled={sending}
             />
           </div>
           <div className="space-y-2">
@@ -376,24 +512,29 @@ function EmailSubTab({ hackathonId }: { hackathonId: string }) {
               id="email-body"
               name="email-body"
               value={html}
-              onChange={(e) => setHtml(e.target.value)}
+              onChange={(e) => {
+                clearDeliveryIdentity()
+                setHtml(e.target.value)
+              }}
               placeholder="<h1>Hello!</h1><p>Your email content here...</p>"
               rows={10}
               autoComplete="off"
               data-1p-ignore
               data-lpignore="true"
               data-form-type="other"
+              disabled={sending}
             />
           </div>
           <div className="space-y-2">
             <Label>Send to</Label>
             <div className="flex flex-wrap gap-4">
-              {(["participant", "judge", "mentor"] as const).map((role) => (
+              {EMAIL_AUDIENCE_ROLES.map((role) => (
                 <div key={role} className="flex items-center gap-2">
                   <Checkbox
                     id={`role-${role}`}
                     checked={roles[role]}
                     onCheckedChange={() => toggleRole(role)}
+                    disabled={sending}
                   />
                   <Label htmlFor={`role-${role}`} className="capitalize">
                     {role}s
@@ -430,7 +571,9 @@ function EmailSubTab({ hackathonId }: { hackathonId: string }) {
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleSend}>Send Now</AlertDialogAction>
+              <AlertDialogAction onClick={handleSend} disabled={sending}>
+                Send Now
+              </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>

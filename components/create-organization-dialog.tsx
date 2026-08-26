@@ -56,6 +56,7 @@ export function CreateOrganizationDialog({
   const [error, setError] = useState<string | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const createdOrgRef = useRef<CreatedOrganization | null>(null)
+  const destroyableOrganizationIdRef = useRef<string | null>(null)
   const profileSavedRef = useRef(false)
   const submitInFlightRef = useRef(false)
   const discardInFlightRef = useRef(false)
@@ -247,6 +248,7 @@ export function CreateOrganizationDialog({
           if (!org) {
             try {
               org = await createOrganization({ name: name.trim(), slug })
+              destroyableOrganizationIdRef.current = org.id
             } catch (creationError) {
               const recoveredNew = await reconcilePendingOrganization(
                 pending,
@@ -273,7 +275,9 @@ export function CreateOrganizationDialog({
           )
 
         if (profileWritePendingRef.current && !profileSavedRef.current) {
-          const profileRes = await fetch("/api/dashboard/org-profile")
+          const profileRes = await fetch(
+            `/api/dashboard/org-profile?expectedOrganizationId=${encodeURIComponent(org.id)}`,
+          )
           if (!profileRes.ok) {
             throw new Error(
               "We couldn't check the organization profile. Keep this window open and try again.",
@@ -327,7 +331,7 @@ export function CreateOrganizationDialog({
           const res = await fetch("/api/dashboard/org-profile", {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ slug }),
+            body: JSON.stringify({ slug, expectedOrganizationId: org.id }),
           })
 
           if (!res.ok) {
@@ -386,6 +390,7 @@ export function CreateOrganizationDialog({
     setSlugAvailable(null)
     setError(null)
     createdOrgRef.current = null
+    destroyableOrganizationIdRef.current = null
     pendingCreationRef.current = null
     profileSavedRef.current = false
     profileWritePendingRef.current = false
@@ -457,7 +462,9 @@ export function CreateOrganizationDialog({
             }
             try {
               await setActive({ organization: createdOrg.id })
-              const profileRes = await fetch("/api/dashboard/org-profile")
+              const profileRes = await fetch(
+                `/api/dashboard/org-profile?expectedOrganizationId=${encodeURIComponent(createdOrg.id)}`,
+              )
               if (!profileRes.ok) throw new Error("profile_check_failed")
               const profile = (await profileRes.json()) as { slug?: unknown }
               if (profile.slug === slug) {
@@ -488,6 +495,11 @@ export function CreateOrganizationDialog({
           }
         }
         if (createdOrg && !profileSavedRef.current) {
+          if (destroyableOrganizationIdRef.current !== createdOrg.id) {
+            resetForm()
+            onOpenChange(false)
+            return
+          }
           try {
             await createdOrg.destroy()
           } catch {
@@ -497,6 +509,7 @@ export function CreateOrganizationDialog({
             return
           }
           createdOrgRef.current = null
+          destroyableOrganizationIdRef.current = null
           try {
             await setActive?.({ organization: null })
           } catch {}

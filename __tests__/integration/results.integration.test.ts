@@ -163,37 +163,35 @@ describe("Results Integration - publishResults", () => {
     expect(result.error).toContain("No results calculated")
   })
 
-  it("returns error when results are already published", async () => {
-    let hackathonCallCount = 0
+  it("resumes side effects when a prior publication is already fully committed", async () => {
+    const publishedAt = "2026-03-01T00:00:00Z"
     mockFrom.mockImplementation((table: string) => {
       if (table === "hackathons") {
-        hackathonCallCount++
-        if (hackathonCallCount === 1) {
-          return createIntegrationChainableMock({
-            data: {
-              id: "h1",
-              status: "judging",
-              tenant_id: "t1",
-              results_published_at: "2026-03-01T00:00:00Z",
-            },
-            error: null,
-          })
-        }
         return createIntegrationChainableMock({
-          data: { results_published_at: "2026-03-01T00:00:00Z" },
+          data: {
+            id: "h1",
+            name: "Hack",
+            slug: "hack",
+            status: "completed",
+            tenant_id: "t1",
+            results_published_at: publishedAt,
+          },
           error: null,
         })
       }
       if (table === "hackathon_results") {
-        return createIntegrationChainableMock({ data: [{ id: "r1" }], error: null })
+        return createIntegrationChainableMock({
+          data: [{ id: "r1", published_at: publishedAt }],
+          error: null,
+        })
       }
       return createIntegrationChainableMock({ data: null, error: null })
     })
 
     const result = await publishResults("h1", "t1")
 
-    expect(result.success).toBe(false)
-    expect(result.error).toBe("Results are already published")
+    expect(result.success).toBe(true)
+    expect(mockSendWinnerEmails).toHaveBeenCalledWith("h1")
   })
 
   it("does not expose results or report success when completion fails", async () => {
@@ -241,11 +239,17 @@ describe("Results Integration - publishResults", () => {
 
   it("fails closed when a completed event cannot claim the publication gate", async () => {
     let hackathonCall = 0
+    const resultsChain = createIntegrationChainableMock({
+      data: [{ id: "r1" }],
+      error: null,
+    })
     mockFrom.mockImplementation((table: string) => {
       if (table === "hackathons") {
         hackathonCall++
         return createIntegrationChainableMock({
-          data: hackathonCall === 1
+          data: hackathonCall === 3
+            ? null
+            : hackathonCall <= 4
             ? {
                 id: "h1",
                 name: "Hack",
@@ -259,7 +263,7 @@ describe("Results Integration - publishResults", () => {
         })
       }
       if (table === "hackathon_results") {
-        return createIntegrationChainableMock({ data: [{ id: "r1" }], error: null })
+        return resultsChain
       }
       return createIntegrationChainableMock({ data: null, error: null })
     })
@@ -269,7 +273,85 @@ describe("Results Integration - publishResults", () => {
       success: false,
       error: "The event changed. Refresh the page and try again.",
     })
+    expect(resultsChain.update).toHaveBeenNthCalledWith(1, {
+      published_at: expect.any(String),
+    })
+    expect(resultsChain.update).toHaveBeenNthCalledWith(2, {
+      published_at: null,
+    })
     expect(mockSendWinnerEmails).not.toHaveBeenCalled()
+  })
+
+  it("recovers a committed publication when the event update response is lost", async () => {
+    let hackathonCall = 0
+    let resultsCall = 0
+    let publicationVersion = ""
+    mockFrom.mockImplementation((table: string) => {
+      if (table === "hackathons") {
+        hackathonCall++
+        if (hackathonCall <= 2) {
+          return createIntegrationChainableMock({
+            data: {
+              id: "h1",
+              name: "Hack",
+              slug: "hack",
+              status: "completed",
+              tenant_id: "t1",
+              results_published_at: null,
+            },
+            error: null,
+          })
+        }
+        if (hackathonCall === 3) {
+          const chain = createIntegrationChainableMock({ data: null, error: null })
+          chain.then = (() => {
+            throw new Error("response lost")
+          }) as typeof chain.then
+          return chain
+        }
+        return createIntegrationChainableMock({
+          data: {
+            id: "h1",
+            name: "Hack",
+            slug: "hack",
+            status: "completed",
+            tenant_id: "t1",
+            results_published_at: publicationVersion,
+          },
+          error: null,
+        })
+      }
+      if (table === "hackathon_results") {
+        resultsCall++
+        if (resultsCall === 1) {
+          return createIntegrationChainableMock({ data: [{ id: "r1" }], error: null })
+        }
+        if (resultsCall === 2) {
+          return createIntegrationChainableMock({
+            data: [{ id: "r1", published_at: null }],
+            error: null,
+          })
+        }
+        if (resultsCall === 3) {
+          const chain = createIntegrationChainableMock({ data: [{ id: "r1" }], error: null })
+          const originalUpdate = chain.update
+          chain.update = mock((value: { published_at: string }) => {
+            publicationVersion = value.published_at
+            return originalUpdate(value)
+          }) as typeof chain.update
+          return chain
+        }
+        return createIntegrationChainableMock({
+          data: [{ id: "r1", published_at: publicationVersion }],
+          error: null,
+        })
+      }
+      return createIntegrationChainableMock({ data: null, error: null })
+    })
+
+    await expect(publishResults("h1", "t1")).resolves.toEqual({ success: true })
+    expect(publicationVersion).not.toBe("")
+    expect(mockSendWinnerEmails).toHaveBeenCalledWith("h1")
   })
 
   it("starts a fresh winner delivery checkpoint for a new publication", async () => {
@@ -406,7 +488,7 @@ describe("Results Integration - retryPendingResultEmails", () => {
         })
       }
 
-      const chain = createIntegrationChainableMock({ data: null, error: null })
+      const chain = createIntegrationChainableMock({ data: { id: "hack_pending" }, error: null })
       updateChains.push(chain)
       return chain
     })
@@ -477,7 +559,7 @@ describe("Results Integration - retryPendingResultEmails", () => {
           error: null,
         })
       }
-      const chain = createIntegrationChainableMock({ data: null, error: null })
+      const chain = createIntegrationChainableMock({ data: { id: "hack_opted_out" }, error: null })
       updateChains.push(chain)
       return chain
     })

@@ -19,16 +19,17 @@ on:
 
 jobs:
   publish:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
       id-token: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: latest
 
@@ -74,18 +75,19 @@ jobs:
           NPM_VERSION="$NPM_OUTPUT"
           IFS='.' read -r NPM_MAJOR NPM_MINOR NPM_PATCH <<< "$NPM_VERSION"
           NPM_NEXT="$NPM_MAJOR.$NPM_MINOR.$((NPM_PATCH + 1))"
-          NEW_VERSION=$(printf '%s\n%s' "$PKG_VERSION" "$NPM_NEXT" | sort -V | tail -1)
-          if [ "$NEW_VERSION" = "$PKG_VERSION" ] && [ "$PKG_VERSION" != "$NPM_NEXT" ]; then
-            echo "package.json $PKG_VERSION is ahead of npm $NPM_VERSION → publishing as-is"
-          else
-            echo "Bumping to $NEW_VERSION (package.json was $PKG_VERSION, npm latest $NPM_VERSION)"
-            node -e "const p=require('./package.json'); p.version='$NEW_VERSION'; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2)+'\n')"
+          HIGHEST_VERSION=$(printf '%s\n%s' "$PKG_VERSION" "$NPM_NEXT" | sort -V | tail -1)
+          if [ "$HIGHEST_VERSION" != "$PKG_VERSION" ] || [ "$PKG_VERSION" = "$NPM_VERSION" ]; then
+            echo "packages/cli/package.json must be bumped in a pull request before publishing"
+            echo "package.json: $PKG_VERSION; npm: $NPM_VERSION; minimum next version: $NPM_NEXT"
+            exit 1
           fi
+          NEW_VERSION="$PKG_VERSION"
+          echo "Publishing package.json version $NEW_VERSION"
           echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Run CLI tests
         if: "startsWith(github.ref, 'refs/tags/cli-v') || steps.changes.outputs.changed == 'true'"
-        run: bun test packages/cli/__tests__/
+        run: bun cli:test
 
       - name: Type check
         if: "startsWith(github.ref, 'refs/tags/cli-v') || steps.changes.outputs.changed == 'true'"
@@ -95,7 +97,7 @@ jobs:
         if: "startsWith(github.ref, 'refs/tags/cli-v') || steps.changes.outputs.changed == 'true'"
         run: cd packages/cli && bun run build
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         if: "startsWith(github.ref, 'refs/tags/cli-v') || steps.changes.outputs.changed == 'true'"
         with:
           node-version: '22'
@@ -114,16 +116,9 @@ jobs:
         id: tag-version
         run: echo "version=${GITHUB_REF#refs/tags/cli-v}" >> "$GITHUB_OUTPUT"
 
-      - name: Tag release and push version bump
+      - name: Tag release
         if: "!startsWith(github.ref, 'refs/tags/cli-v') && steps.changes.outputs.changed == 'true'"
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          if ! git diff --quiet packages/cli/package.json; then
-            git add packages/cli/package.json
-            git commit -m "chore(cli): bump version to ${{ steps.version.outputs.version }}"
-            git push origin main
-          fi
           TAG="cli-v${{ steps.version.outputs.version }}"
           if ! git rev-parse "$TAG" >/dev/null 2>&1; then
             git tag "$TAG"

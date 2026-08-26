@@ -97,6 +97,9 @@ let onReverted = mock(
 )
 let onNavigate = mock((_href: string) => {})
 let onOpenTransition = mock((_status: string) => {})
+let onEventVersionUpdated = mock((eventVersion: string) => {
+  context.hackathon.eventVersion = eventVersion
+})
 
 function createTools() {
   return createManageHackathonTools({
@@ -107,6 +110,7 @@ function createTools() {
     onReverted,
     onNavigate,
     onOpenTransition,
+    onEventVersionUpdated,
   })
 }
 
@@ -148,6 +152,9 @@ beforeEach(() => {
   )
   onNavigate = mock((_href: string) => {})
   onOpenTransition = mock((_status: string) => {})
+  onEventVersionUpdated = mock((eventVersion: string) => {
+    context.hackathon.eventVersion = eventVersion
+  })
 })
 
 describe("createManageHackathonTools", () => {
@@ -530,6 +537,58 @@ describe("createManageHackathonTools", () => {
       endsAt: "2026-09-13T16:00:00.000Z",
     })
     expect(result.updated).not.toHaveProperty("starts_at")
+  })
+
+  it("adopts the server version before a consecutive settings write", async () => {
+    const nextVersion = "2026-08-25T15:01:00.000Z"
+    const newestVersion = "2026-08-25T15:02:00.000Z"
+    let requestCount = 0
+    fetcher = mock(async (_input, init) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+      requestCount += 1
+      if (body.name) {
+        return Response.json({
+          name: body.name,
+          slug: "build-day",
+          description: "Make something useful.",
+          status: "draft",
+          updatedAt: requestCount === 1
+            ? nextVersion
+            : "2026-08-25T15:03:00.000Z",
+        })
+      }
+      return Response.json({
+        name: "Agent event",
+        startsAt: body.startsAt,
+        endsAt: body.endsAt,
+        updatedAt: newestVersion,
+      })
+    })
+    const tools = createManageHackathonTools({
+      getContext: () => context,
+      fetcher,
+      onOptimistic,
+      onCommitted,
+      onReverted,
+      onNavigate,
+      onOpenTransition,
+    })
+
+    await execute(tools, "update_hackathon_details", { name: "Agent event" })
+    await execute(tools, "set_hackathon_timeline", {
+      startsAt: "2026-09-12T16:00:00.000Z",
+      endsAt: "2026-09-13T16:00:00.000Z",
+    })
+    context.hackathon.eventVersion = nextVersion
+    await execute(tools, "update_hackathon_details", { name: "Still current" })
+
+    const firstHeaders = fetcher.mock.calls[0][1]?.headers as Record<string, string>
+    const secondHeaders = fetcher.mock.calls[1][1]?.headers as Record<string, string>
+    const thirdHeaders = fetcher.mock.calls[2][1]?.headers as Record<string, string>
+    expect(firstHeaders["x-webmcp-event-version"]).toBe(baseContext.hackathon.eventVersion)
+    expect(secondHeaders["x-webmcp-event-version"]).toBe(nextVersion)
+    expect(thirdHeaders["x-webmcp-event-version"]).toBe(newestVersion)
+    expect(context.hackathon.eventVersion).toBe(nextVersion)
   })
 
   it("rejects a schedule item ending before it starts", async () => {

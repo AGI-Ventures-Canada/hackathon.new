@@ -2,6 +2,11 @@ import { supabase as getSupabase } from "@/lib/db/client"
 import { getNotificationDisposition } from "@/lib/utils/notification-lifecycle"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { withDeliveryLease } from "@/lib/services/delivery-lease"
+import {
+  consumeDeliverySlot,
+  hasDeliveryCapacity,
+  type DeliveryBudget,
+} from "@/lib/services/delivery-budget"
 
 export type Urgency = "low" | "medium" | "high"
 
@@ -221,16 +226,19 @@ export type ProcessResult = {
   errors: number
 }
 
+class DeliveryBudgetDeferredError extends Error {}
+
 export async function processPendingReminders(
   limit: number = 50,
   dependencies: {
     validate?: (reminder: ScheduledReminder) => Promise<boolean>
-    dispatch?: (reminder: ScheduledReminder) => Promise<boolean>
+    dispatch?: (reminder: ScheduledReminder, budget?: DeliveryBudget) => Promise<boolean>
   } = {},
+  budget?: DeliveryBudget,
 ): Promise<ProcessResult> {
   const claimed = await withDeliveryLease(
     "scheduled-reminders",
-    () => processPendingRemindersUnlocked(limit, dependencies),
+    () => processPendingRemindersUnlocked(limit, dependencies, budget),
   )
   return claimed.acquired
     ? claimed.value
@@ -241,8 +249,9 @@ async function processPendingRemindersUnlocked(
   limit: number,
   dependencies: {
     validate?: (reminder: ScheduledReminder) => Promise<boolean>
-    dispatch?: (reminder: ScheduledReminder) => Promise<boolean>
+    dispatch?: (reminder: ScheduledReminder, budget?: DeliveryBudget) => Promise<boolean>
   },
+  budget?: DeliveryBudget,
 ): Promise<ProcessResult> {
   const client = getSupabase() as unknown as SupabaseClient
   const now = new Date().toISOString()
@@ -262,9 +271,11 @@ async function processPendingRemindersUnlocked(
   }
 
   const pending = (reminders ?? []) as ScheduledReminder[]
-  const result: ProcessResult = { processed: pending.length, sent: 0, skipped: 0, errors: 0 }
+  const result: ProcessResult = { processed: 0, sent: 0, skipped: 0, errors: 0 }
 
   for (const reminder of pending) {
+    if (!hasDeliveryCapacity(budget)) break
+    result.processed++
     let deliveryAccepted = false
     try {
       const shouldSend = await (dependencies.validate ?? validateReminderEntity)(reminder)
@@ -274,7 +285,7 @@ async function processPendingRemindersUnlocked(
         continue
       }
 
-      const delivered = await (dependencies.dispatch ?? dispatchReminderEmail)(reminder)
+      const delivered = await (dependencies.dispatch ?? dispatchReminderEmail)(reminder, budget)
       if (delivered) {
         deliveryAccepted = true
         await markScheduledReminderSent(client, reminder.id)
@@ -284,6 +295,7 @@ async function processPendingRemindersUnlocked(
         result.skipped++
       }
     } catch (err) {
+      if (err instanceof DeliveryBudgetDeferredError) break
       const message = err instanceof Error ? err.message : String(err)
       console.error(
         `Failed to process reminder ${reminder.id} (entity=${reminder.entity_type}, entity_id=${reminder.entity_id}, hackathon=${reminder.hackathon_id}):`,
@@ -434,7 +446,8 @@ export function reminderDeliveryWasSent(
 }
 
 async function dispatchReminderEmail(
-  reminder: ScheduledReminder
+  reminder: ScheduledReminder,
+  budget?: DeliveryBudget,
 ): Promise<boolean> {
   const meta = reminder.metadata
 
@@ -442,6 +455,7 @@ async function dispatchReminderEmail(
     reminder.entity_type === "team_invitation" &&
     reminder.reminder_type === "invitation_reminder"
   ) {
+    if (!consumeDeliverySlot(budget)) throw new DeliveryBudgetDeferredError()
     requireMeta(meta, "email", "teamName", "hackathonName", "inviterName", "inviteToken", "expiresAt")
     const { sendTeamInvitationReminderEmail } = await import(
       "@/lib/email/team-invitations"
@@ -467,6 +481,7 @@ async function dispatchReminderEmail(
     reminder.entity_type === "judge_invitation" &&
     reminder.reminder_type === "invitation_reminder"
   ) {
+    if (!consumeDeliverySlot(budget)) throw new DeliveryBudgetDeferredError()
     requireMeta(meta, "email", "hackathonName", "inviterName", "inviteToken", "expiresAt")
     const { sendJudgeInvitationReminderEmail } = await import(
       "@/lib/email/judge-invitations"
@@ -499,7 +514,9 @@ async function dispatchReminderEmail(
       deadlineDate: meta.deadlineDate as string,
       urgency: reminder.urgency,
       deliveryId: reminder.id,
+      budget,
     })
+    if (delivery.deferred) throw new DeliveryBudgetDeferredError()
     if (hasReminderDeliveryFailure(delivery)) {
       throw new Error("One or more event reminder emails were not accepted")
     }

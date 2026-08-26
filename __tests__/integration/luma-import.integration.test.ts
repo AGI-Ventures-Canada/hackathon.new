@@ -267,7 +267,15 @@ describe("POST /api/dashboard/import/event (create from editor data)", () => {
           description: "From Luma",
           sourceUrl: "https://luma.com/test-event",
           defaultLocale: "fr",
-          translationLinks: [{ url: "https://luma.com/test-event-en", languageCode: "en" }],
+          translationLinks: [
+            { url: "https://luma.com/test-event-en", languageCode: "EN-us" },
+            { url: "https://luma.com/test-event-en", languageCode: "es" },
+            { url: "https://example.com/not-luma", languageCode: "fr" },
+            {
+              url: "https://luma.com/no-language",
+              languageCode: "definitely-invalid",
+            },
+          ],
         }),
       }),
     )
@@ -284,6 +292,15 @@ describe("POST /api/dashboard/import/event (create from editor data)", () => {
       expect.objectContaining({ draftId }),
     )
     expect(mockFinalizeHackathonCreation).toHaveBeenCalledTimes(1)
+    expect(mockFinalizeHackathonCreation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        translations: expect.objectContaining({
+          translationLinks: [
+            { url: "https://luma.com/test-event-en", languageCode: "en" },
+          ],
+        }),
+      }),
+    )
   })
 
   it("returns the imported event when its durable setup still needs retry", async () => {
@@ -1009,6 +1026,96 @@ describe("POST /api/dashboard/import/url (create from URL)", () => {
           translationLinks: [
             { url: "https://luma.com/test-event-en", languageCode: "en" },
           ],
+        }),
+      }),
+    )
+  })
+
+  it("validates, deduplicates, and caps translation links before finalization", async () => {
+    mockVerifyApiKey.mockResolvedValueOnce({
+      id: "key-1",
+      tenant_id: "tenant-1",
+      scopes: ["hackathons:write"],
+    })
+    mockExtractLumaEventData.mockResolvedValueOnce({
+      name: "Translated Event",
+      description: "Primary page",
+      startsAt: "2026-03-15T09:00:00-07:00",
+      endsAt: "2026-03-16T17:00:00-07:00",
+      locationType: "virtual",
+      locationName: null,
+      locationUrl: null,
+      imageUrl: null,
+      language: "en",
+      translationLinks: [
+        { url: "https://example.com/not-luma", languageCode: "fr" },
+        {
+          url: `https://luma.com/${"x".repeat(2050)}`,
+          languageCode: "fr",
+        },
+        {
+          url: "https://luma.com/no-language",
+          languageCode: "definitely-invalid",
+        },
+        ...Array.from({ length: 5 }, (_, index) => ({
+          url: `https://luma.com/event-${index}`,
+          languageCode: "FR-ca",
+        })),
+      ],
+    })
+    mockExtractLumaRichContent.mockResolvedValueOnce({
+      sponsors: [],
+      rules: null,
+      prizes: [],
+      challenges: [],
+      agendaItems: [],
+      cleanedDescription: null,
+      translationLinks: [
+        { url: "https://luma.com/event-0", languageCode: "es" },
+        ...Array.from({ length: 8 }, (_, index) => ({
+          url: `https://lu.ma/event-${index + 5}`,
+          languageCode: "EN-us",
+        })),
+      ],
+    })
+    mockCreateHackathonFromImport.mockResolvedValueOnce(created({
+      id: "translated-event",
+      name: "Translated Event",
+      slug: "translated-event",
+      default_locale: "en",
+    }))
+
+    const res = await api.handle(
+      new Request("http://localhost/api/dashboard/import/url", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer sk_live_test",
+        },
+        body: JSON.stringify({ url: "https://luma.com/translated-event" }),
+      }),
+    )
+
+    expect(res.status).toBe(200)
+    const expectedLinks = [
+      ...Array.from({ length: 5 }, (_, index) => ({
+        url: `https://luma.com/event-${index}`,
+        languageCode: "fr",
+      })),
+      ...Array.from({ length: 5 }, (_, index) => ({
+        url: `https://lu.ma/event-${index + 5}`,
+        languageCode: "en",
+      })),
+    ]
+    const workflowInput = mockStartHackathonCreationFinalizationWorkflow
+      .mock.calls[0]?.[0] as {
+        translations?: { translationLinks: { url: string; languageCode: string }[] }
+      }
+    expect(workflowInput.translations?.translationLinks).toEqual(expectedLinks)
+    expect(mockFinalizeHackathonCreation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        translations: expect.objectContaining({
+          translationLinks: expectedLinks,
         }),
       }),
     )

@@ -566,7 +566,9 @@ describe("Post-Event Reminders Service", () => {
           return createChainableMock(
             postEventCalls === 1
               ? { data: [reminder], error: null }
-              : { data: null, error: { message: "write failed" } },
+              : postEventCalls === 2
+                ? { data: reminder, error: null }
+                : { data: null, error: { message: "write failed" } },
           )
         }
         if (table === "hackathons") {
@@ -635,7 +637,7 @@ describe("Post-Event Reminders Service", () => {
       expect(mockSendReminderEmailsWithResult).not.toHaveBeenCalled()
     })
 
-    it("leaves a reactivated row pending when a worker holds an older publication", async () => {
+    it("cancels a row tied to an older results publication", async () => {
       const olderReminder = {
         ...reminder,
         metadata: {
@@ -643,6 +645,8 @@ describe("Post-Event Reminders Service", () => {
           publicationVersion: "2026-08-01T00:00:00.000Z",
         },
       }
+      let cancelChain: ReturnType<typeof createChainableMock> | null = null
+      let reminderCall = 0
       setMockFromImplementation((table) => table === "hackathons"
         ? createChainableMock({
             data: {
@@ -651,9 +655,23 @@ describe("Post-Event Reminders Service", () => {
             },
             error: null,
           })
-        : createChainableMock({ data: olderReminder, error: null }))
+        : (() => {
+            reminderCall++
+            if (reminderCall === 1) {
+              return createChainableMock({ data: olderReminder, error: null })
+            }
+            cancelChain = createChainableMock({ data: null, error: null })
+            return cancelChain
+          })())
 
       await expect(processReminder(olderReminder as never)).resolves.toBe(0)
+      expect(cancelChain?.update).toHaveBeenCalledWith({
+        cancelled_at: expect.any(String),
+        metadata: expect.objectContaining({
+          cancellationReason: "stale_publication",
+          cancelledPublicationVersion: "2026-08-01T00:00:00.000Z",
+        }),
+      })
       expect(mockSendReminderEmailsWithResult).not.toHaveBeenCalled()
     })
 
@@ -720,6 +738,7 @@ describe("Post-Event Reminders Service", () => {
         "organizers",
         expect.any(Function),
         "post-event/organizer_1",
+        undefined,
       )
       expect(mockSendReminderEmailsWithResult).toHaveBeenNthCalledWith(
         2,
@@ -728,6 +747,7 @@ describe("Post-Event Reminders Service", () => {
         "all_participants",
         expect.any(Function),
         "post-event/feedback_1",
+        undefined,
       )
       expect(mockGetFulfillmentSummary).toHaveBeenCalledWith("h1")
     })
@@ -764,6 +784,7 @@ describe("Post-Event Reminders Service", () => {
         "winners",
         expect.any(Function),
         expect.stringMatching(/^post-event\/r1\/[a-f0-9]{24}$/),
+        undefined,
       )
     })
 

@@ -98,7 +98,7 @@ claude
 
 Or manually:
 
-1. Install prerequisites: Bun, Node.js 20.9+, Supabase CLI, Docker
+1. Install prerequisites: Bun, Node.js 20.18.1+, Supabase CLI, Docker
 2. `bun install`
 3. Copy `.env.example` to `.env.local` and add Clerk keys
 4. `bun dev` (auto-starts local Supabase)

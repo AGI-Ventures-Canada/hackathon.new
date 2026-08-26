@@ -40,12 +40,6 @@ mock.module("@/components/dev-tool/dev-tool", () => ({
   DevTool: () => <div data-testid="dev-tool" />,
 }))
 
-mock.module("@/components/webmcp-origin-trial-meta", () => ({
-  WebMcpOriginTrialMeta: () => (
-    <meta data-testid="webmcp-origin-trial" content="test-token" />
-  ),
-}))
-
 const originalNodeEnv = process.env.NODE_ENV
 const originalAdminEnabled = process.env.ADMIN_ENABLED
 const { default: RootLayout, metadata } = await import("@/app/layout")
@@ -71,7 +65,7 @@ beforeEach(() => {
 afterAll(restoreEnvironment)
 
 describe("RootLayout", () => {
-  it("renders the shared providers and WebMCP origin-trial metadata", async () => {
+  it("renders the shared providers", async () => {
     const html = renderToStaticMarkup(
       await RootLayout({ children: <main>Event builder</main> }),
     )
@@ -80,7 +74,6 @@ describe("RootLayout", () => {
       title: "hackathon.new",
       description: "Run your hackathon from start to finish.",
     })
-    expect(html).toContain('data-testid="webmcp-origin-trial"')
     expect(html).toContain('data-testid="theme-provider"')
     expect(html).toContain('data-testid="clerk-provider"')
     expect(html).toContain('data-testid="posthog-provider"')

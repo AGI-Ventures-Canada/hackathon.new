@@ -11,6 +11,11 @@ import {
   EventMutationLeaseError,
   withEventMutationLease,
 } from "@/lib/services/event-mutation-lease"
+import {
+  compensateResultPublication,
+  readResultPublicationState,
+  stageResultPublication,
+} from "@/lib/services/result-publication"
 
 const VALID_TRANSITIONS: Record<HackathonStatus, HackathonStatus[]> = {
   draft: ["published", "registration_open"],
@@ -135,28 +140,132 @@ async function commitTransition(
     updateData.results_announcement_sent_at = null
   }
 
-  const { data: hackathon, error: updateError } = await client
-    .from("hackathons")
-    .update(updateData)
-    .eq("id", hackathonId)
-    .eq("tenant_id", tenantId)
-    .eq("status", fromStatus)
-    .select()
-    .maybeSingle()
+  if (input.resultsPublication) {
+    const { data: current, error: currentError } = await client
+      .from("hackathons")
+      .select("status, results_published_at")
+      .eq("id", hackathonId)
+      .eq("tenant_id", tenantId)
+      .maybeSingle()
+    if (currentError) {
+      return {
+        success: false,
+        error: "Failed to verify the event before publishing results",
+        code: "transition_unavailable",
+      }
+    }
+    if (
+      !current ||
+      current.status !== fromStatus ||
+      current.results_published_at
+    ) {
+      return {
+        success: false,
+        error: "Failed to update status: status has already changed",
+        code: "event_changed",
+      }
+    }
 
-  if (updateError) {
-    console.error("Failed to update hackathon status:", updateError)
-    return {
-      success: false,
-      error: "Failed to update status. Try again.",
-      code: "transition_unavailable",
+    const staged = await stageResultPublication(
+      client,
+      hackathonId,
+      input.resultsPublication.publishedAt,
+    )
+    if (!staged.success) {
+      return {
+        success: false,
+        error: staged.error,
+        code: "transition_unavailable",
+      }
     }
   }
-  if (!hackathon) {
-    return {
-      success: false,
+
+  let hackathon: unknown = null
+  let updateError: { message: string } | null = null
+  let updateFailure:
+    | {
+        error: string
+        code: "event_changed" | "transition_unavailable"
+        cause?: unknown
+      }
+    | undefined
+  try {
+    const updateResult = await client
+      .from("hackathons")
+      .update(updateData)
+      .eq("id", hackathonId)
+      .eq("tenant_id", tenantId)
+      .eq("status", fromStatus)
+      .select()
+      .maybeSingle()
+    hackathon = updateResult.data
+    updateError = updateResult.error
+  } catch (error) {
+    updateFailure = {
+      error: "Failed to update status. Try again.",
+      code: "transition_unavailable",
+      cause: error,
+    }
+  }
+
+  if (updateError) {
+    updateFailure = {
+      error: "Failed to update status. Try again.",
+      code: "transition_unavailable",
+      cause: updateError,
+    }
+  } else if (!hackathon && !updateFailure) {
+    updateFailure = {
       error: "Failed to update status: status has already changed",
       code: "event_changed",
+    }
+  }
+
+  if (updateFailure) {
+    if (input.resultsPublication) {
+      const publicationState = await readResultPublicationState(
+        client,
+        hackathonId,
+        tenantId,
+        input.resultsPublication.publishedAt,
+      )
+      if (publicationState.state === "committed") {
+        hackathon = publicationState.hackathon
+      } else {
+        if (publicationState.state === "not_committed") {
+          try {
+            await compensateResultPublication(
+              client,
+              hackathonId,
+              input.resultsPublication.publishedAt,
+            )
+          } catch (error) {
+            console.error("Failed to reconcile result publication:", error)
+            return {
+              success: false,
+              error: "Result publication could not be confirmed. Try again.",
+              code: "transition_unavailable",
+            }
+          }
+        }
+        if (updateFailure.cause) {
+          console.error("Failed to update hackathon status:", updateFailure.cause)
+        }
+        return {
+          success: false,
+          error: updateFailure.error,
+          code: updateFailure.code,
+        }
+      }
+    } else {
+      if (updateFailure.cause) {
+        console.error("Failed to update hackathon status:", updateFailure.cause)
+      }
+      return {
+        success: false,
+        error: updateFailure.error,
+        code: updateFailure.code,
+      }
     }
   }
 
@@ -175,7 +284,7 @@ async function commitTransition(
   }
 }
 
-async function runTransitionSideEffects(
+export async function runTransitionSideEffects(
   input: TransitionInput,
   hackathon: Hackathon,
   isSkipAheadCompletion: boolean,

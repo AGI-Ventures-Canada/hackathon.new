@@ -1,4 +1,13 @@
 const MAX_SAFE_REDIRECT_URL_LENGTH = 8_192
+const MAX_IMPORT_URL_LENGTH = 2_048
+
+const BLOCKED_EXTERNAL_HOST_PATTERNS = [
+  /(^|\.)localhost\.?$/i,
+  /(^|\.)local\.?$/i,
+  /(^|\.)internal\.?$/i,
+  /^host\.docker\.internal\.?$/i,
+  /^kubernetes\.default\.svc\.?$/i,
+]
 
 export function safeRedirectUrl(
   url: string | string[] | undefined,
@@ -58,14 +67,14 @@ export function isHttpsUrlWithoutCredentials(rawUrl: string): boolean {
 }
 
 export function normalizeImportUrl(input: string): string | null {
-  const normalized = normalizeUrl(input)
-  if (normalized.length > 2_048 || !isSafeExternalUrl(normalized)) return null
-  return normalized
+  const url = parseSafeExternalUrl(input)
+  if (url === null || url.href.length > MAX_IMPORT_URL_LENGTH) return null
+  return url.href
 }
 
 export function redactImportSourceUrl(input: string): string | null {
-  const normalized = normalizeUrl(input)
-  if (normalized.length > 2_048) return null
+  const normalized = normalizeExternalUrlInput(input)
+  if (normalized === null || normalized.length > MAX_IMPORT_URL_LENGTH) return null
   try {
     const url = new URL(normalized)
     url.username = ""
@@ -75,46 +84,71 @@ export function redactImportSourceUrl(input: string): string | null {
     if (!isSafeExternalUrl(url.toString())) return null
     const redacted = decodeURI(url.toString())
     if (/[\u0000-\u001f\u007f]/.test(redacted)) return null
-    return redacted.length <= 2_048 ? redacted : null
+    return redacted.length <= MAX_IMPORT_URL_LENGTH ? redacted : null
+  } catch {
+    return null
+  }
+}
+
+function isPrivateIpv4Hostname(hostname: string): boolean {
+  const octets = hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
+  if (octets === null) return false
+
+  const [a, b, c] = [Number(octets[1]), Number(octets[2]), Number(octets[3])]
+  return a === 0 ||
+    a === 10 ||
+    a === 127 ||
+    (a === 100 && b >= 64 && b <= 127) ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 0 && c === 0) ||
+    (a === 192 && b === 168) ||
+    (a === 198 && (b === 18 || b === 19)) ||
+    a >= 224
+}
+
+function isPrivateIpv6Hostname(hostname: string): boolean {
+  return hostname === "::" ||
+    hostname === "::1" ||
+    hostname.startsWith("::ffff:") ||
+    /^f[cd][0-9a-f]{2}/i.test(hostname) ||
+    /^fe[89ab][0-9a-f]/i.test(hostname) ||
+    /^ff[0-9a-f]{2}/i.test(hostname)
+}
+
+function normalizeExternalUrlInput(rawUrl: string): string | null {
+  const trimmed = rawUrl.trim()
+  const hasScheme = /^[a-z][a-z0-9+.-]*:/i.test(trimmed)
+  if (hasScheme && !/^https?:\/\//i.test(trimmed)) return null
+  if (trimmed.startsWith("//") || trimmed.includes("\\")) return null
+
+  const normalized = normalizeUrl(trimmed)
+  if (!normalized || /[\u0000-\u001f\u007f]/.test(normalized)) return null
+  return normalized
+}
+
+function parseSafeExternalUrl(rawUrl: string): URL | null {
+  const normalized = normalizeExternalUrlInput(rawUrl)
+  if (normalized === null) return null
+
+  try {
+    const url = new URL(normalized)
+
+    if (url.protocol !== "https:") return null
+    if (url.username || url.password) return null
+
+    const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "")
+
+    if (BLOCKED_EXTERNAL_HOST_PATTERNS.some((pattern) => pattern.test(hostname))) return null
+    if (hostname.includes(":") && isPrivateIpv6Hostname(hostname)) return null
+    if (isPrivateIpv4Hostname(hostname)) return null
+
+    return url
   } catch {
     return null
   }
 }
 
 export function isSafeExternalUrl(rawUrl: string): boolean {
-  try {
-    const url = new URL(rawUrl.startsWith("http") ? rawUrl : `https://${rawUrl}`)
-
-    if (url.protocol !== "https:") return false
-    if (url.username || url.password) return false
-
-    // URL constructor wraps IPv6 in brackets: new URL("https://[::1]/").hostname === "[::1]"
-    const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "")
-
-    if (hostname === "localhost" || hostname === "0.0.0.0") return false
-
-    if (hostname.includes(":")) {
-      // IPv6 loopback
-      if (hostname === "::1") return false
-      // IPv6 link-local: fe80::/10 (fe80 – febf)
-      if (/^fe[89ab][0-9a-f]/i.test(hostname)) return false
-      // IPv6 unique-local: fc00::/7 (fc__ and fd__)
-      if (/^f[cd][0-9a-f]{2}/i.test(hostname)) return false
-    }
-
-    const octets = hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
-    if (octets) {
-      const [a, b] = [Number(octets[1]), Number(octets[2])]
-      if (a === 127) return false
-      if (a === 10) return false
-      if (a === 172 && b >= 16 && b <= 31) return false
-      if (a === 192 && b === 168) return false
-      if (a === 169 && b === 254) return false
-      if (a === 100 && b >= 64 && b <= 127) return false
-    }
-
-    return true
-  } catch {
-    return false
-  }
+  return parseSafeExternalUrl(rawUrl) !== null
 }

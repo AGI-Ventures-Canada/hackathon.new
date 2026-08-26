@@ -416,7 +416,7 @@ describe("CreateFlow", () => {
 
       await waitFor(() => screen.getByText("2 / 5"))
 
-      fireEvent.click(screen.getByText("Back"))
+      fireEvent.click(screen.getByRole("button", { name: "Back" }))
 
       await waitFor(() => {
         expect(screen.getByText("1 / 5")).toBeDefined()

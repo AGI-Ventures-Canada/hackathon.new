@@ -3,6 +3,10 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import type { PostEventReminder } from "@/lib/db/hackathon-types"
 import { createHash } from "node:crypto"
 import { withDeliveryLease } from "@/lib/services/delivery-lease"
+import {
+  hasDeliveryCapacity,
+  type DeliveryBudget,
+} from "@/lib/services/delivery-budget"
 
 function publicationFingerprint(publicationVersion: string): string {
   return createHash("sha256").update(publicationVersion).digest("hex").slice(0, 24)
@@ -208,17 +212,26 @@ async function getPendingReminderForDelivery(
     throw new Error(`Failed to load pending post-event reminder: ${error.message}`)
   }
 
+  if (Array.isArray(data)) {
+    return (data as PostEventReminder[]).find(
+      (reminder) => reminder.id === reminderId,
+    ) ?? null
+  }
   return data as PostEventReminder | null
 }
 
 async function markReminderCancelled(
   reminderId: string,
   expectedScheduledFor?: string,
+  metadata?: Record<string, unknown>,
 ): Promise<void> {
   const client = getSupabase() as unknown as SupabaseClient
   let query = client
     .from("post_event_reminders")
-    .update({ cancelled_at: new Date().toISOString() })
+    .update({
+      cancelled_at: new Date().toISOString(),
+      ...(metadata ? { metadata } : {}),
+    })
     .eq("id", reminderId)
     .is("sent_at", null)
     .is("cancelled_at", null)
@@ -283,13 +296,27 @@ export async function markReminderSent(
   }
 }
 
-async function processPendingReminder(reminder: PostEventReminder): Promise<number> {
+async function processPendingReminder(
+  reminder: PostEventReminder,
+  budget?: DeliveryBudget,
+): Promise<{ sent: number; deferred: boolean }> {
   const lifecycle = await validateReminderLifecycle(reminder)
   if (lifecycle === "cancel") {
     await markReminderCancelled(reminder.id, reminder.scheduled_for)
-    return 0
+    return { sent: 0, deferred: false }
   }
-  if (lifecycle === "stale") return 0
+  if (lifecycle === "stale") {
+    const metadata = reminder.metadata as Record<string, unknown>
+    await markReminderCancelled(reminder.id, reminder.scheduled_for, {
+      ...metadata,
+      cancellationReason: "stale_publication",
+      cancelledPublicationVersion:
+        typeof metadata.publicationVersion === "string"
+          ? metadata.publicationVersion
+          : null,
+    })
+    return { sent: 0, deferred: false }
+  }
 
   const metadata = reminder.metadata as Record<string, unknown>
   const hackathonName = typeof metadata.hackathonName === "string"
@@ -315,7 +342,12 @@ async function processPendingReminder(reminder: PostEventReminder): Promise<numb
   const deliveryKey = publicationVersion
     ? `post-event/${reminder.id}/${publicationFingerprint(publicationVersion)}`
     : `post-event/${reminder.id}`
-  let summary = { eligible: 0, sent: 0, failed: 0 }
+  let summary: {
+    eligible: number
+    sent: number
+    failed: number
+    deferred?: true
+  } = { eligible: 0, sent: 0, failed: 0 }
 
   if (reminder.type === "prize_claim") {
     const content = buildPrizeClaimReminderContent(hackathonName, hackathonSlug)
@@ -325,6 +357,7 @@ async function processPendingReminder(reminder: PostEventReminder): Promise<numb
       reminder.recipient_filter,
       (name) => ({ ...content, hackathonName, participantName: name }),
       deliveryKey,
+      budget,
     )
   } else if (reminder.type === "organizer_fulfillment") {
     const { getFulfillmentSummary } = await import("@/lib/services/prize-fulfillment")
@@ -341,6 +374,7 @@ async function processPendingReminder(reminder: PostEventReminder): Promise<numb
         reminder.recipient_filter,
         (name) => ({ ...content, hackathonName, participantName: name }),
         deliveryKey,
+        budget,
       )
     }
   } else if (reminder.type === "feedback_followup") {
@@ -353,6 +387,7 @@ async function processPendingReminder(reminder: PostEventReminder): Promise<numb
         reminder.recipient_filter,
         (name) => ({ ...content, hackathonName, participantName: name }),
         deliveryKey,
+        budget,
       )
     }
   } else {
@@ -365,8 +400,10 @@ async function processPendingReminder(reminder: PostEventReminder): Promise<numb
     )
   }
 
+  if (summary.deferred) return { sent: summary.sent, deferred: true }
+
   await markReminderSent(reminder.id, reminder.scheduled_for)
-  return summary.sent
+  return { sent: summary.sent, deferred: false }
 }
 
 export async function processReminder(reminder: PostEventReminder): Promise<number> {
@@ -379,10 +416,13 @@ export async function processReminder(reminder: PostEventReminder): Promise<numb
     },
   )
   if (!claimed.acquired) throw new Error("This reminder is already being sent.")
-  return claimed.value
+  return claimed.value.sent
 }
 
-export async function processAllPendingReminders(limit = 50): Promise<{
+export async function processAllPendingReminders(
+  limit = 50,
+  budget?: DeliveryBudget,
+): Promise<{
   processed: number
   totalSent: number
   errors: number
@@ -393,14 +433,23 @@ export async function processAllPendingReminders(limit = 50): Promise<{
   let errors = 0
 
   for (const reminder of pending) {
+    if (!hasDeliveryCapacity(budget)) break
     try {
       const claimed = await withDeliveryLease(
         `post-event-reminder:${reminder.id}`,
-        () => processPendingReminder(reminder),
+        async () => {
+          const current = await getPendingReminderForDelivery(
+            reminder.id,
+            reminder.hackathon_id,
+          )
+          if (!current) return null
+          return processPendingReminder(current, budget)
+        },
       )
       if (!claimed.acquired) continue
-      const sent = claimed.value
-      totalSent += sent
+      if (!claimed.value) continue
+      totalSent += claimed.value.sent
+      if (claimed.value.deferred) break
       processed++
     } catch (err) {
       console.error(`Failed to process reminder ${reminder.id}:`, err)

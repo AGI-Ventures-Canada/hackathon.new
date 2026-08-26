@@ -661,6 +661,9 @@ describe("Judge Invitations Service", () => {
         if (invitationCalls === 2) {
           return createChainableMock({ data: [mockInvitation], error: null })
         }
+        if (invitationCalls === 3) {
+          return createChainableMock({ data: mockInvitation, error: null })
+        }
         return createChainableMock({ data: null, error: null })
       })
 

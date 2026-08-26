@@ -2609,8 +2609,19 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       }),
     }
   )
-  .get("/org-profile", async ({ principal }) => {
+  .get("/org-profile", async ({ principal, query }) => {
     requirePrincipal(principal, ["user", "api_key"], ["org:read"])
+
+    if (!matchesExpectedOrganization(principal, query.expectedOrganizationId)) {
+      return new Response(JSON.stringify({
+        error: "Your active organization changed. Review it and try again.",
+        code: "organization_context_changed",
+        retryable: true,
+      }), {
+        status: 409,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
 
     const { getPublicTenantById } = await import("@/lib/services/tenant-profiles")
     const tenant = await getPublicTenantById(principal.tenantId)
@@ -2635,11 +2646,25 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       summary: "Get organization profile",
       description: "Returns the tenant's profile. Requires org:read scope.",
     },
+    query: t.Object({
+      expectedOrganizationId: t.Optional(t.String({ minLength: 1, maxLength: 200 })),
+    }),
   })
   .patch(
     "/org-profile",
     async ({ principal, body }) => {
       requirePrincipal(principal, ["user", "api_key"], ["org:write"])
+
+      if (!matchesExpectedOrganization(principal, body.expectedOrganizationId)) {
+        return new Response(JSON.stringify({
+          error: "Your active organization changed. Review it and try again.",
+          code: "organization_context_changed",
+          retryable: true,
+        }), {
+          status: 409,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
 
       const { updateTenantProfile, isSlugAvailable } = await import("@/lib/services/tenant-profiles")
 
@@ -2694,6 +2719,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         description: "Updates the tenant profile. Slug uniqueness is validated. Requires org:write scope.",
       },
       body: t.Object({
+        expectedOrganizationId: t.Optional(t.String({ minLength: 1, maxLength: 200 })),
         name: t.Optional(t.String()),
         slug: t.Optional(t.String({ minLength: 3 })),
         logoUrl: t.Optional(t.Union([t.String(), t.Null()])),

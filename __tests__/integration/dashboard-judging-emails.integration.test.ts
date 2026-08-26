@@ -352,10 +352,13 @@ describe("POST /hackathons/:id/judging/judges - email notifications", () => {
       expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
         action: "judge.invited",
         metadata: expect.objectContaining({
-          email: "newjudge@example.com",
+          invitationId: "inv1",
           queued: false,
         }),
       }))
+      expect(mockLogAudit.mock.calls.flat().join(" ")).not.toContain(
+        "newjudge@example.com",
+      )
     })
 
     it("does not send invitation email when hackathon is draft", async () => {
@@ -377,7 +380,7 @@ describe("POST /hackathons/:id/judging/judges - email notifications", () => {
       expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
         action: "judge_invitation.queued",
         metadata: expect.objectContaining({
-          email: "newjudge@example.com",
+          invitationId: "inv1",
           queued: true,
         }),
       }))

@@ -51,8 +51,37 @@ export interface TimelineInput {
   ends_at?: string | null
 }
 
+const persistedTimelineStates = {
+  completed: { label: "Completed", variant: "outline" },
+  judging: { label: "Judging", variant: "default" },
+  active: { label: "Live", variant: "default" },
+  draft: { label: "Draft", variant: "secondary" },
+  archived: { label: "Archived", variant: "outline" },
+  published: { label: "Published", variant: "secondary" },
+  registration_open: { label: "Registration Open", variant: "default" },
+} satisfies Record<HackathonStatus, TimelineState>
+
+export function getPersistedTimelineState(status: HackathonStatus): TimelineState {
+  return persistedTimelineStates[status]
+}
+
+export function getHydrationSafeTimelineState(
+  hackathon: TimelineInput,
+  isClient: boolean,
+): TimelineState {
+  return isClient
+    ? getTimelineState(hackathon)
+    : getPersistedTimelineState(hackathon.status)
+}
+
 export function getTimelineState(hackathon: TimelineInput): TimelineState {
-  const now = new Date()
+  return getTimelineStateAt(hackathon, new Date())
+}
+
+export function getTimelineStateAt(
+  hackathon: TimelineInput,
+  now: Date,
+): TimelineState {
   const {
     status,
     registration_opens_at,

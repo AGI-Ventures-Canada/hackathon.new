@@ -247,7 +247,9 @@ export function CreateOrgForm({
           )
 
         if (profileWritePendingRef.current) {
-          const profileRes = await fetch("/api/dashboard/org-profile")
+          const profileRes = await fetch(
+            `/api/dashboard/org-profile?expectedOrganizationId=${encodeURIComponent(orgId)}`,
+          )
           if (!profileRes.ok) {
             throw new Error(
               "We couldn't check the organization profile. Keep this window open and try again.",
@@ -301,7 +303,7 @@ export function CreateOrgForm({
         const res = await fetch("/api/dashboard/org-profile", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ slug }),
+          body: JSON.stringify({ slug, expectedOrganizationId: orgId }),
         })
 
         if (!res.ok) {

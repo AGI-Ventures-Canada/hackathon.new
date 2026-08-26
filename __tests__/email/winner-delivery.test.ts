@@ -4,7 +4,7 @@ type QueryResult = { data: unknown; error: { message: string } | null }
 
 function query(result: QueryResult) {
   const chain: Record<string, unknown> = {}
-  for (const method of ["select", "eq", "lte", "in", "order"]) {
+  for (const method of ["select", "eq", "lte", "in", "order", "upsert"]) {
     chain[method] = mock(() => chain)
   }
   chain.single = mock(() => chain)
@@ -14,7 +14,31 @@ function query(result: QueryResult) {
 
 let fromImpl: (table: string) => ReturnType<typeof query> = () =>
   query({ data: null, error: null })
-const mockFrom = mock((table: string) => fromImpl(table))
+const progress = new Map<string, number>()
+
+function progressQuery() {
+  const chain = query({ data: [], error: null })
+  let selectedKeys: string[] = []
+  chain.in = mock((_column: string, keys: string[]) => {
+    selectedKeys = keys
+    return chain
+  })
+  chain.upsert = mock((value: { key: string; reset_at: number }) => {
+    progress.set(value.key, value.reset_at)
+    return chain
+  })
+  chain.then = (resolve: (value: QueryResult) => unknown) => resolve({
+    data: selectedKeys
+      .filter((key) => progress.has(key))
+      .map((key) => ({ key, reset_at: progress.get(key) })),
+    error: null,
+  })
+  return chain
+}
+
+const mockFrom = mock((table: string) =>
+  table === "rate_limits" ? progressQuery() : fromImpl(table),
+)
 mock.module("@/lib/db/client", () => ({ supabase: () => ({ from: mockFrom }) }))
 
 const mockGetUserList = mock(() => Promise.resolve({ data: [] as unknown[] }))
@@ -40,11 +64,13 @@ mock.module("@/lib/services/delivery-lease", () => ({
 }))
 
 const { sendWinnerEmailsWithResult } = await import("@/lib/email/winner-notifications")
+const { createDeliveryBudget } = await import("@/lib/services/delivery-budget")
 
 describe("winner result delivery", () => {
   beforeEach(() => {
     process.env.NEXT_PUBLIC_APP_URL = "https://preview.hackathon.new"
     mockFrom.mockClear()
+    progress.clear()
     mockGetUserList.mockClear()
     mockSendEmail.mockClear()
     mockGetClaimTokens.mockClear()
@@ -127,17 +153,116 @@ describe("winner result delivery", () => {
         failed: 1,
       })
       expect(mockSendEmail).toHaveBeenCalledTimes(2)
-      const first = mockSendEmail.mock.calls[0]?.[0]
-      expect(first?.html).toContain("prizes/claim/claim_1")
-      expect(first?.idempotencyKey).toMatch(
+      const claimDelivery = mockSendEmail.mock.calls
+        .map(([input]) => input)
+        .find((input) => String(input.idempotencyKey).includes("/submission_1/"))
+      expect(claimDelivery?.html).toContain("prizes/claim/claim_1")
+      expect(claimDelivery?.idempotencyKey).toMatch(
         /^winner\/hack_1\/[a-f0-9]{24}\/submission_1\/[a-f0-9]{24}$/
       )
-      expect(first?.idempotencyKey).not.toContain("team@example.com")
+      expect(claimDelivery?.idempotencyKey).not.toContain("team@example.com")
       expect(maxActive).toBe(1)
       expect(error).toHaveBeenCalledTimes(1)
     } finally {
       console.error = originalError
     }
+  })
+
+  it("tracks two winning projects for one user as separate stable tasks", async () => {
+    fromImpl = (table) => {
+      if (table === "hackathons") {
+        return query({ data: {
+          name: "Build Together",
+          slug: "build-together",
+          starts_at: "2026-09-01T13:00:00Z",
+          ends_at: "2026-09-02T21:00:00Z",
+          status: "completed",
+          results_published_at: "2026-08-20T00:00:00.000Z",
+          winner_emails_sent_at: null,
+        }, error: null })
+      }
+      if (table === "hackathon_results") {
+        return query({ data: [
+          {
+            rank: 1,
+            submission: {
+              id: "submission_1",
+              title: "First App",
+              team_id: "team_1",
+              participant_id: null,
+            },
+          },
+          {
+            rank: 2,
+            submission: {
+              id: "submission_2",
+              title: "Second App",
+              team_id: "team_2",
+              participant_id: null,
+            },
+          },
+        ], error: null })
+      }
+      if (table === "prize_assignments") return query({ data: [], error: null })
+      return query({ data: [
+        { clerk_user_id: "user_both", team_id: "team_1" },
+        { clerk_user_id: "user_both", team_id: "team_2" },
+      ], error: null })
+    }
+    mockGetUserList.mockResolvedValue({ data: [{
+      id: "user_both",
+      primaryEmailAddress: { emailAddress: "both@example.com" },
+    }] })
+
+    await expect(sendWinnerEmailsWithResult("hack_1")).resolves.toEqual({
+      attempted: 2,
+      sent: 2,
+      failed: 0,
+    })
+    expect(mockGetUserList).toHaveBeenCalledTimes(1)
+    expect(mockGetUserList).toHaveBeenCalledWith({ userId: ["user_both"], limit: 100 })
+    expect(mockSendEmail.mock.calls.map(([input]) => input.idempotencyKey)).toEqual([
+      expect.stringContaining("/submission_1/"),
+      expect.stringContaining("/submission_2/"),
+    ])
+  })
+
+  it("does not call Clerk after a winner worker deadline expires", async () => {
+    fromImpl = (table) => {
+      if (table === "hackathons") {
+        return query({ data: {
+          name: "Build Together",
+          slug: "build-together",
+          starts_at: "2026-09-01T13:00:00Z",
+          ends_at: "2026-09-02T21:00:00Z",
+          status: "completed",
+          results_published_at: "2026-08-20T00:00:00.000Z",
+          winner_emails_sent_at: null,
+        }, error: null })
+      }
+      if (table === "hackathon_results") {
+        return query({ data: [{
+          rank: 1,
+          submission: {
+            id: "submission_1",
+            title: "First App",
+            team_id: "team_1",
+            participant_id: null,
+          },
+        }], error: null })
+      }
+      if (table === "prize_assignments") return query({ data: [], error: null })
+      return query({
+        data: [{ clerk_user_id: "user_one", team_id: "team_1" }],
+        error: null,
+      })
+    }
+
+    await expect(sendWinnerEmailsWithResult(
+      "hack_1",
+      createDeliveryBudget(1, Date.now() - 1),
+    )).resolves.toEqual({ attempted: 0, sent: 0, failed: 0, deferred: true })
+    expect(mockGetUserList).not.toHaveBeenCalled()
   })
 
   it("fails closed without a public URL or published winner rows", async () => {
@@ -189,6 +314,52 @@ describe("winner result delivery", () => {
         failed: 0,
       })
     }
+    expect(mockSendEmail).not.toHaveBeenCalled()
+  })
+
+  it("does not checkpoint away a winning team when its members cannot be loaded", async () => {
+    fromImpl = (table) => {
+      if (table === "hackathons") return query({ data: {
+        name: "Hack",
+        slug: "hack",
+        status: "completed",
+        results_published_at: "2026-08-20T00:00:00.000Z",
+        winner_emails_sent_at: null,
+      }, error: null })
+      if (table === "hackathon_results") return query({ data: [{
+        rank: 1,
+        submission: { id: "submission_1", title: "Team App", team_id: "team_1", participant_id: null },
+      }], error: null })
+      if (table === "prize_assignments") return query({ data: [], error: null })
+      return query({ data: null, error: { message: "members unavailable" } })
+    }
+
+    await expect(sendWinnerEmailsWithResult("hack_1")).rejects.toThrow(
+      "Failed to load winning team members: members unavailable",
+    )
+    expect(mockSendEmail).not.toHaveBeenCalled()
+  })
+
+  it("does not checkpoint away a solo winner when the attendee cannot be loaded", async () => {
+    fromImpl = (table) => {
+      if (table === "hackathons") return query({ data: {
+        name: "Hack",
+        slug: "hack",
+        status: "completed",
+        results_published_at: "2026-08-20T00:00:00.000Z",
+        winner_emails_sent_at: null,
+      }, error: null })
+      if (table === "hackathon_results") return query({ data: [{
+        rank: 1,
+        submission: { id: "submission_1", title: "Solo App", team_id: null, participant_id: "participant_1" },
+      }], error: null })
+      if (table === "prize_assignments") return query({ data: [], error: null })
+      return query({ data: null, error: { message: "attendee unavailable" } })
+    }
+
+    await expect(sendWinnerEmailsWithResult("hack_1")).rejects.toThrow(
+      "Failed to load a winning attendee: attendee unavailable",
+    )
     expect(mockSendEmail).not.toHaveBeenCalled()
   })
 
