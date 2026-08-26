@@ -161,14 +161,20 @@ interface EventTabContentProps {
 }
 
 function formatDate(dateStr: string, timeZone?: string): string {
-  return new Date(dateStr).toLocaleString(timeZone ? "en-US" : undefined, {
+  const date = new Date(dateStr)
+  const locale = timeZone ? "en-US" : undefined
+  const dateLabel = date.toLocaleDateString(locale, {
     month: "short",
     day: "numeric",
     year: "numeric",
+    timeZone,
+  })
+  const timeLabel = date.toLocaleTimeString(locale, {
     hour: "numeric",
     minute: "2-digit",
     timeZone,
   })
+  return `${dateLabel}, ${timeLabel}`
 }
 
 export function AnnouncementDateLabel({

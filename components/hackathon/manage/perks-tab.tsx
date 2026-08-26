@@ -43,13 +43,19 @@ const TYPE_LABEL: Record<PerkType, string> = {
 }
 
 function formatDateTime(iso: string, timeZone?: string): string {
-  return new Date(iso).toLocaleString(timeZone ? "en-US" : undefined, {
+  const date = new Date(iso)
+  const locale = timeZone ? "en-US" : undefined
+  const dateLabel = date.toLocaleDateString(locale, {
     month: "short",
     day: "numeric",
+    timeZone,
+  })
+  const timeLabel = date.toLocaleTimeString(locale, {
     hour: "numeric",
     minute: "2-digit",
     timeZone,
   })
+  return `${dateLabel} at ${timeLabel}`
 }
 
 function releaseStatusText(
