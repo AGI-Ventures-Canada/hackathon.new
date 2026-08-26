@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { startTransition, useEffect, useMemo, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { usePrizeJudgeAssignments } from "@/hooks/use-prize-judge-assignments"
 import {
@@ -116,7 +116,11 @@ function firstIncompleteStep(
   return 4
 }
 
-export function JudgingSetupWizard({
+export function JudgingSetupWizard(props: Props) {
+  return <JudgingSetupWizardContent key={props.hackathonId} {...props} />
+}
+
+function JudgingSetupWizardContent({
   hackathonId,
   slug,
   prizes,
@@ -151,19 +155,27 @@ export function JudgingSetupWizard({
 
   useEffect(() => {
     const ids = new Set(prizes.map((p) => p.id))
-    setPendingPrizes((prev) => prev.filter((p) => !ids.has(p.id)))
+    startTransition(() => {
+      setPendingPrizes((prev) => prev.filter((p) => !ids.has(p.id)))
+    })
   }, [prizes])
   useEffect(() => {
     const ids = new Set(rounds.map((r) => r.id))
-    setPendingRounds((prev) => prev.filter((r) => !ids.has(r.id)))
+    startTransition(() => {
+      setPendingRounds((prev) => prev.filter((r) => !ids.has(r.id)))
+    })
   }, [rounds])
   useEffect(() => {
     const ids = new Set(judges.map((j) => j.participantId))
-    setPendingJudges((prev) => prev.filter((j) => !ids.has(j.participantId)))
+    startTransition(() => {
+      setPendingJudges((prev) => prev.filter((j) => !ids.has(j.participantId)))
+    })
   }, [judges])
   useEffect(() => {
     const ids = new Set(pendingInvitations.map((i) => i.id))
-    setPendingInvites((prev) => prev.filter((i) => !ids.has(i.id)))
+    startTransition(() => {
+      setPendingInvites((prev) => prev.filter((i) => !ids.has(i.id)))
+    })
   }, [pendingInvitations])
 
   const visiblePrizes = useMemo(
@@ -206,22 +218,27 @@ export function JudgingSetupWizard({
   )
 
   const storageKey = `wizard-step-${hackathonId}`
-  const initialStep = useMemo(() => {
-    if (typeof window !== "undefined") {
-      const saved = sessionStorage.getItem(storageKey)
-      if (saved) {
-        const parsed = Number(saved) as StepId
-        if (parsed >= 1 && parsed <= 4) return parsed
-      }
+  const [currentStep, setCurrentStepRaw] = useState<StepId>(() =>
+    firstIncompleteStep(visiblePrizes, visibleJudges, visibleRounds, roundsAcknowledged),
+  )
+  useEffect(() => {
+    let saved: string | null
+    try {
+      saved = sessionStorage.getItem(storageKey)
+    } catch {
+      return
     }
-    return firstIncompleteStep(visiblePrizes, visibleJudges, visibleRounds, roundsAcknowledged)
-    // Seed once on mount; after that the user drives navigation explicitly.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-  const [currentStep, setCurrentStepRaw] = useState<StepId>(initialStep)
+    if (!saved) return
+    const parsed = Number(saved)
+    if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 4) {
+      startTransition(() => setCurrentStepRaw(parsed as StepId))
+    }
+  }, [storageKey])
   const setCurrentStep = (step: StepId) => {
     setCurrentStepRaw(step)
-    sessionStorage.setItem(storageKey, String(step))
+    try {
+      sessionStorage.setItem(storageKey, String(step))
+    } catch {}
   }
   const [showPrizeDialog, setShowPrizeDialog] = useState(false)
   const [showJudgeDialog, setShowJudgeDialog] = useState(false)
