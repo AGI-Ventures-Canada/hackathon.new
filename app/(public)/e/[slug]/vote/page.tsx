@@ -4,6 +4,7 @@ import { getPublicHackathon } from "@/lib/services/public-hackathons"
 import { getHackathonSubmissions } from "@/lib/services/submissions"
 import { getVoteCounts, getUserVote } from "@/lib/services/crowd-voting"
 import { VoteGallery } from "@/components/hackathon/voting/vote-gallery"
+import { publicSubmitterName } from "@/lib/utils/anonymous-judging"
 
 type PageProps = {
   params: Promise<{ slug: string }>
@@ -54,7 +55,7 @@ export default async function VotePage({ params }: PageProps) {
           title: s.title,
           description: s.description,
           screenshotUrl: s.screenshot_url,
-          submitterName: s.submitter_name,
+          submitterName: publicSubmitterName(hackathon, s.submitter_name),
           liveAppUrl: s.live_app_url,
           githubUrl: s.github_url,
           demoVideoUrl: s.demo_video_url,

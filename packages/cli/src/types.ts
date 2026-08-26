@@ -97,6 +97,17 @@ export interface JudgeInvitation {
   createdAt?: string
 }
 
+export interface JudgeAddResponse {
+  participant?: Judge
+  invitation?: {
+    id: string
+    email: string
+    token?: string
+  }
+  queued?: boolean
+  delivery?: "sent" | "queued" | "failed"
+}
+
 export interface Prize {
   id: string
   hackathonId: string

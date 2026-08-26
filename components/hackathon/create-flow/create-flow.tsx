@@ -1,18 +1,23 @@
 "use client"
 
 import { useState, useCallback, useEffect, useRef } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useAuth, useOrganization } from "@clerk/nextjs"
 import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
 import { ArrowLeft, Loader2, X } from "lucide-react"
 import { SignInRequiredDialog } from "@/components/sign-in-required-dialog"
 import { OrgGateDialog } from "@/components/org-gate-dialog"
+import type { DraftEnvelope, DraftState } from "@/lib/hackathon-draft"
+import { useHackathonDraft } from "@/hooks/use-hackathon-draft"
+import { CreateDraftWebMcpTools } from "@/components/hackathon/create-draft-webmcp-tools"
+import { DraftReview } from "@/components/hackathon/draft-review"
+import { FetchResponseError } from "@/lib/utils/fetch"
+import { isValidSlugFormat } from "@/lib/utils/slug"
 import {
-  type DraftState,
-  loadSavedState,
-} from "@/components/hackathon/hackathon-draft-editor"
-import { addDays } from "date-fns"
+  getPendingCreatedEventNavigation,
+  rememberCreatedEventNavigation,
+} from "@/lib/created-event-navigation"
 import { CreateFlowProgress } from "./create-flow-progress"
 import { CreateFlowStep } from "./create-flow-step"
 import { StepImport } from "./step-import"
@@ -23,134 +28,245 @@ import { StepDescription } from "./step-description"
 import { useCreateFlowKeyboard } from "./use-create-flow-keyboard"
 
 const STORAGE_KEY = "oatmeal:create-from-scratch"
-const TOTAL_STEPS = 5
-
-function buildDefaultState(): DraftState {
-  const start = addDays(new Date(), 14)
-  start.setHours(8, 30, 0, 0)
-  const end = addDays(new Date(), 15)
-  end.setHours(17, 0, 0, 0)
-
-  return {
-    name: "",
-    description: null,
-    startsAt: start.toISOString(),
-    endsAt: end.toISOString(),
-    locationType: null,
-    locationName: null,
-    locationUrl: null,
-    imageUrl: null,
-    sponsors: [],
-    rules: null,
-    prizes: [],
-    challenges: [],
-    agendaItems: [],
-  }
-}
+const TOTAL_STEPS = 6
 
 interface CreateFlowProps {
-  onSubmit: (state: DraftState) => Promise<{ id: string; slug: string }>
-  onPatchSettings?: (
-    id: string,
-    data: Record<string, unknown>,
-  ) => Promise<void>
+  initialState: DraftState
+  createInitialStateAfterMount?: () => DraftState
+  onSubmit: (
+    state: DraftState,
+    draftId: string,
+    expectedOrganizationId: string,
+  ) => Promise<{ id: string; slug: string }>
 }
 
-export function CreateFlow({ onSubmit, onPatchSettings }: CreateFlowProps) {
+export function CreateFlow({
+  initialState,
+  createInitialStateAfterMount,
+  onSubmit,
+}: CreateFlowProps) {
   const router = useRouter()
+  const pathname = usePathname()
   const searchParams = useSearchParams()
-  const { isSignedIn, isLoaded } = useAuth()
+  const { isSignedIn, isLoaded, has } = useAuth()
   const { organization, isLoaded: isOrgLoaded } = useOrganization()
 
-  const [state, setState] = useState<DraftState>(() => {
-    return loadSavedState(STORAGE_KEY) ?? buildDefaultState()
+  const draft = useHackathonDraft({
+    initialState,
+    storageKey: STORAGE_KEY,
+    createInitialStateAfterMount,
   })
+  const {
+    state,
+    envelope,
+    hydrated,
+    persistenceStatus,
+    updateState,
+    patchState,
+    ensureSavedDraft,
+    getCurrentEnvelope,
+    preserveDraftAfterConflict,
+    clearSavedDraft,
+    conflictMessage,
+    hasStoredDraft,
+    recentCompletedEventSlug,
+  } = draft
   const [currentStep, setCurrentStep] = useState(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showSignInDialog, setShowSignInDialog] = useState(false)
   const [orgGateOpen, setOrgGateOpen] = useState(false)
   const [importMode, setImportMode] = useState<"choose" | "import">("choose")
-  const pendingSubmit = useRef(false)
+  const submitInFlightRef = useRef(false)
   const autoTriggeredRef = useRef(false)
-  const gatePromptedRef = useRef(false)
-
-  useEffect(() => {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ state, savedAt: Date.now() }),
-    )
-  }, [state])
+  const completedEventNavigationRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (autoTriggeredRef.current) return
-    if (!isLoaded || !isOrgLoaded) return
-    if (searchParams.get("edit") !== "true") return
-    if (!isSignedIn) return
+    if (!hydrated || hasStoredDraft === null) return
+    const shouldOpenReview =
+      searchParams.get("review") === "true" ||
+      searchParams.get("create") === "true" ||
+      searchParams.get("edit") === "true"
+    if (!shouldOpenReview) return
 
     autoTriggeredRef.current = true
-
-    if (organization) {
-      doSubmitRef.current()
-    } else {
-      pendingSubmit.current = true
-      setOrgGateOpen(true)
+    const nextSearchParams = new URLSearchParams(searchParams.toString())
+    nextSearchParams.delete("review")
+    nextSearchParams.delete("create")
+    nextSearchParams.delete("edit")
+    const nextSearch = nextSearchParams.toString()
+    router.replace(`${pathname}${nextSearch ? `?${nextSearch}` : ""}`)
+    if (!hasStoredDraft) {
+      setError(
+        recentCompletedEventSlug
+          ? "That draft already created an event. Open it below or start a new one."
+          : "We couldn't restore your saved draft. Start a new event.",
+      )
+      setCurrentStep(0)
+      return
     }
-  }, [isLoaded, isOrgLoaded, isSignedIn, organization, searchParams])
-
-  useEffect(() => {
-    if (gatePromptedRef.current) return
-    if (!isLoaded || !isOrgLoaded) return
-    if (!isSignedIn) return
-    if (organization) return
-    if (searchParams.get("edit") === "true") return
-    gatePromptedRef.current = true
-    setOrgGateOpen(true)
-  }, [isLoaded, isOrgLoaded, isSignedIn, organization, searchParams])
+    setError(null)
+    setCurrentStep(TOTAL_STEPS - 1)
+  }, [hasStoredDraft, hydrated, pathname, recentCompletedEventSlug, router, searchParams])
 
   const canSkip = state.name.trim().length > 0
+  const canCreateInActiveOrganization = Boolean(
+    organization && has?.({ role: "org:admin" }) === true,
+  )
+  const eventAlreadyCreated = persistenceStatus === "completed"
+  const canOpenCompletedEvent = eventAlreadyCreated && Boolean(recentCompletedEventSlug)
+  const openCreatedEvent = useCallback((slug: string) => {
+    rememberCreatedEventNavigation(slug)
+    completedEventNavigationRef.current = slug
+    router.replace(`/e/${encodeURIComponent(slug)}/manage`)
+  }, [router])
 
-  const doSubmit = useCallback(async () => {
-    if (!state.name.trim()) {
+  useEffect(() => {
+    if (
+      !recentCompletedEventSlug ||
+      (!eventAlreadyCreated && (
+        hasStoredDraft !== false ||
+        getPendingCreatedEventNavigation() !== recentCompletedEventSlug
+      ))
+    ) return
+    if (completedEventNavigationRef.current === recentCompletedEventSlug) return
+    openCreatedEvent(recentCompletedEventSlug)
+  }, [
+    eventAlreadyCreated,
+    hasStoredDraft,
+    openCreatedEvent,
+    recentCompletedEventSlug,
+  ])
+
+  const doSubmit = useCallback(async (submittedEnvelope: DraftEnvelope) => {
+    if (!submittedEnvelope.state.name.trim()) {
       setError("Hackathon name is required")
       return
     }
+    if (submitInFlightRef.current) return
 
+    submitInFlightRef.current = true
     setIsSubmitting(true)
     setError(null)
     try {
-      const { id, slug } = await onSubmit(state)
-
-      const hasExtras =
-        state.startsAt ||
-        state.endsAt ||
-        state.locationType ||
-        state.locationName ||
-        state.locationUrl
-      if (hasExtras && onPatchSettings) {
-        const patch: Record<string, unknown> = {}
-        if (state.startsAt) patch.startsAt = state.startsAt
-        if (state.endsAt) patch.endsAt = state.endsAt
-        if (state.locationType) patch.locationType = state.locationType
-        if (state.locationName) patch.locationName = state.locationName
-        if (state.locationUrl) patch.locationUrl = state.locationUrl
-        await onPatchSettings(id, patch)
+      const { slug } = await onSubmit(
+        submittedEnvelope.state,
+        submittedEnvelope.draftId,
+        organization!.id,
+      )
+      if (slug.length > 100 || !isValidSlugFormat(slug)) {
+        throw new Error("The event was created, but its page address was invalid. Keep this page open and try again.")
       }
-
-      localStorage.removeItem(STORAGE_KEY)
-      router.push(`/e/${slug}/manage`)
+      const completion = clearSavedDraft(submittedEnvelope, slug)
+      if (completion === "preservation_failed") {
+        setError(
+          "Your event was created, but newer edits aren't saved yet. Keep this page open and try again.",
+        )
+        return
+      }
+      if (completion === "completion_failed") {
+        console.warn("The completed event could not be recorded in browser storage.")
+      }
+      if (completion === "cleanup_failed") {
+        console.warn("The completed draft could not be cleared from browser storage.")
+      }
+      openCreatedEvent(slug)
     } catch (err) {
       console.error("Failed to create hackathon:", err)
+      if (err instanceof FetchResponseError && err.status === 401) {
+        const saveResult = ensureSavedDraft()
+        if (saveResult === "saved" || saveResult === "conflict") {
+          setShowSignInDialog(true)
+          return
+        }
+        setError(
+          saveResult === "completed"
+            ? "This event was created in another tab. Reload to start a new draft."
+            : "Your sign-in ended, but browser storage couldn't save your draft. Keep this page open and turn on browser storage.",
+        )
+        return
+      }
+      if (
+        err instanceof FetchResponseError &&
+        err.code === "draft_organization_conflict"
+      ) {
+        setError(
+          "This draft was already used with another organization. Switch back to the organization you first used, then try again.",
+        )
+        return
+      }
+      if (err instanceof FetchResponseError && err.code === "finalization_unscheduled") {
+        if (!err.committed || !err.existingEvent) {
+          setError(err.message)
+          return
+        }
+        const preservation = preserveDraftAfterConflict(
+          submittedEnvelope,
+          err.existingEvent.slug,
+        )
+        if (preservation === "preservation_failed") {
+          setError(
+            `${err.message} Your event is at /e/${err.existingEvent.slug}/manage. Keep this page open so your draft stays safe.`,
+          )
+          return
+        }
+        if (preservation === "completion_failed") {
+          console.warn("The completed event could not be recorded in browser storage.")
+        }
+        setError(
+          preservation === "preserved" || preservation === "already_rotated"
+            ? "Your event was created. We're opening it now. Newer edits are saved as a new draft."
+            : "Your event was created. We're opening it now.",
+        )
+        openCreatedEvent(err.existingEvent.slug)
+        return
+      }
+      if (err instanceof FetchResponseError && err.code === "draft_conflict") {
+        const preservation = preserveDraftAfterConflict(
+          submittedEnvelope,
+          err.existingEvent?.slug,
+          { rotateSubmittedDraft: true },
+        )
+        if (err.existingEvent) {
+          if (preservation === "preservation_failed") {
+            setError(
+              `This event was already created. Newer edits aren't saved yet. Keep this page open, then open /e/${err.existingEvent.slug}/manage in another tab.`,
+            )
+            return
+          }
+          setError(
+            preservation === "preserved" || preservation === "already_rotated"
+              ? "This event was already created. We're opening it now. Newer edits are saved as a new draft."
+              : "This event was already created. We're opening it now.",
+          )
+          openCreatedEvent(err.existingEvent.slug)
+          return
+        }
+        setError(
+          preservation === "preservation_failed"
+            ? "This event was already created. Keep this page open so newer edits aren't lost."
+            : preservation === "preserved" || preservation === "already_rotated"
+              ? "This event was already created. Newer edits are saved as a new draft."
+              : "This event was already created.",
+        )
+        return
+      }
       setError(
         err instanceof Error ? err.message : "Something went wrong. Please try again.",
       )
     } finally {
+      submitInFlightRef.current = false
       setIsSubmitting(false)
     }
-  }, [state, router, onSubmit, onPatchSettings])
-
-  const doSubmitRef = useRef(doSubmit)
-  doSubmitRef.current = doSubmit
+  }, [
+    openCreatedEvent,
+    onSubmit,
+    clearSavedDraft,
+    ensureSavedDraft,
+    preserveDraftAfterConflict,
+    organization,
+  ])
 
   const handleSubmit = useCallback(async () => {
     if (!state.name.trim()) {
@@ -159,19 +275,47 @@ export function CreateFlow({ onSubmit, onPatchSettings }: CreateFlowProps) {
       return
     }
 
+    if (!hydrated || !isLoaded || !isOrgLoaded) {
+      setError("Wait a moment while we restore your draft.")
+      return
+    }
+
+    const saveResult = ensureSavedDraft()
+    if (saveResult === "completed") {
+      setError("This event was created in another tab. Reload to start a new draft.")
+      return
+    }
+    if (saveResult === "conflict") {
+      setError("Review the newest draft before you create it.")
+      return
+    }
+    if (saveResult === "unavailable") {
+      setError("Turn on browser storage so we can safely create this event.")
+      return
+    }
+
     if (!isSignedIn) {
       setShowSignInDialog(true)
       return
     }
 
-    if (!organization) {
-      pendingSubmit.current = true
+    if (!canCreateInActiveOrganization) {
       setOrgGateOpen(true)
       return
     }
 
-    await doSubmit()
-  }, [state, isSignedIn, organization, doSubmit])
+    await doSubmit(getCurrentEnvelope())
+  }, [
+    state,
+    hydrated,
+    isLoaded,
+    isOrgLoaded,
+    isSignedIn,
+    ensureSavedDraft,
+    getCurrentEnvelope,
+    canCreateInActiveOrganization,
+    doSubmit,
+  ])
 
   const goNext = useCallback(() => {
     if (currentStep === 1 && !state.name.trim()) {
@@ -185,6 +329,11 @@ export function CreateFlow({ onSubmit, onPatchSettings }: CreateFlowProps) {
       void handleSubmit()
     }
   }, [currentStep, state.name, handleSubmit])
+
+  const openReview = useCallback(() => {
+    setError(null)
+    setCurrentStep(TOTAL_STEPS - 1)
+  }, [])
 
   const importKeyRef = useRef(0)
 
@@ -206,14 +355,28 @@ export function CreateFlow({ onSubmit, onPatchSettings }: CreateFlowProps) {
     }
   }, [router])
 
+  const isLastStep = currentStep === TOTAL_STEPS - 1
+  const submitFromKeyboard = useCallback(() => void handleSubmit(), [handleSubmit])
+
   useCreateFlowKeyboard({
     onNext: goNext,
-    onSkip: () => void handleSubmit(),
+    onSkip: openReview,
+    onPrimary: isLastStep ? submitFromKeyboard : undefined,
     onClose: handleClose,
-    canSkip,
+    canSkip: currentStep > 0 && !isLastStep && canSkip,
+    disabled: isSubmitting || eventAlreadyCreated || showSignInDialog || orgGateOpen,
   })
 
-  const isLastStep = currentStep === TOTAL_STEPS - 1
+  if (!hydrated) {
+    return (
+      <div className="flex flex-1 items-center justify-center bg-background" aria-busy="true">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" />
+          Restoring your draft…
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-1 flex-col bg-background overflow-y-auto">
@@ -226,6 +389,7 @@ export function CreateFlow({ onSubmit, onPatchSettings }: CreateFlowProps) {
                 variant="ghost"
                 size="sm"
                 onClick={handleClose}
+                disabled={isSubmitting}
                 className="gap-1.5 text-muted-foreground"
               >
                 <X className="size-4" />
@@ -236,15 +400,19 @@ export function CreateFlow({ onSubmit, onPatchSettings }: CreateFlowProps) {
             <CreateFlowProgress
               currentStep={currentStep - 1}
               totalSteps={TOTAL_STEPS - 1}
-              canSkip={canSkip}
-              onSkip={() => void handleSubmit()}
+              canSkip={canSkip && !isLastStep}
+              onSkip={openReview}
               onClose={handleClose}
+              skipLabel="Skip to review"
             />
           )}
         </div>
       </div>
 
-      <div className="flex flex-1 items-center overflow-y-auto px-4 py-8 sm:px-8">
+      <div
+        className="flex flex-1 items-center overflow-y-auto px-4 py-8 sm:px-8"
+        inert={isSubmitting ? true : undefined}
+      >
         <div className="mx-auto w-full max-w-2xl">
           <CreateFlowStep>
             {currentStep === 0 && (
@@ -252,13 +420,14 @@ export function CreateFlow({ onSubmit, onPatchSettings }: CreateFlowProps) {
                 key={importKeyRef.current}
                 onSkipToScratch={() => setCurrentStep(1)}
                 onModeChange={setImportMode}
+                savedDraftName={hasStoredDraft ? state.name.trim() || null : null}
               />
             )}
             {currentStep === 1 && (
               <StepName
                 value={state.name}
                 onChange={(name) => {
-                  setState((prev) => ({ ...prev, name }))
+                  updateState((prev) => ({ ...prev, name }))
                   if (error) setError(null)
                 }}
               />
@@ -268,7 +437,7 @@ export function CreateFlow({ onSubmit, onPatchSettings }: CreateFlowProps) {
                 startsAt={state.startsAt}
                 endsAt={state.endsAt}
                 onChange={(startsAt, endsAt) =>
-                  setState((prev) => ({ ...prev, startsAt, endsAt }))
+                  updateState((prev) => ({ ...prev, startsAt, endsAt }))
                 }
               />
             )}
@@ -277,21 +446,47 @@ export function CreateFlow({ onSubmit, onPatchSettings }: CreateFlowProps) {
                 locationType={state.locationType}
                 locationName={state.locationName}
                 locationUrl={state.locationUrl}
-                onChange={(data) => setState((prev) => ({ ...prev, ...data }))}
+                onChange={(data) => updateState((prev) => ({ ...prev, ...data }))}
               />
             )}
             {currentStep === 4 && (
               <StepDescription
                 value={state.description}
                 onChange={(description) =>
-                  setState((prev) => ({ ...prev, description }))
+                  updateState((prev) => ({ ...prev, description }))
                 }
               />
             )}
+            {currentStep === 5 && <DraftReview state={state} />}
           </CreateFlowStep>
 
           {error && (
             <p className="mt-4 text-center text-sm text-destructive">{error}</p>
+          )}
+          {conflictMessage && conflictMessage !== error && (
+            <p className="mt-4 text-center text-sm text-muted-foreground">
+              {conflictMessage}
+            </p>
+          )}
+          {recentCompletedEventSlug && !eventAlreadyCreated && (
+            <div className="mt-4 flex flex-col items-center gap-2 sm:flex-row sm:justify-center">
+              <p className="text-center text-sm text-muted-foreground">
+                Your last event was created.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => openCreatedEvent(recentCompletedEventSlug)}
+              >
+                Open Event
+              </Button>
+            </div>
+          )}
+          {persistenceStatus === "unavailable" && !error && (
+            <p className="mt-4 text-center text-sm text-destructive">
+              Turn on browser storage so we can safely create this event.
+            </p>
           )}
         </div>
       </div>
@@ -304,6 +499,8 @@ export function CreateFlow({ onSubmit, onPatchSettings }: CreateFlowProps) {
               variant="ghost"
               size="sm"
               onClick={goBack}
+              disabled={isSubmitting}
+              aria-label="Back"
               className="gap-1.5 text-muted-foreground"
             >
               <ArrowLeft className="size-4" />
@@ -317,11 +514,25 @@ export function CreateFlow({ onSubmit, onPatchSettings }: CreateFlowProps) {
                 <Button
                   type="button"
                   size="lg"
-                  onClick={isLastStep ? () => void handleSubmit() : goNext}
-                  disabled={isSubmitting}
+                  onClick={canOpenCompletedEvent && recentCompletedEventSlug
+                    ? () => openCreatedEvent(recentCompletedEventSlug)
+                    : isLastStep
+                      ? () => void handleSubmit()
+                      : goNext}
+                  disabled={
+                    !canOpenCompletedEvent && (
+                      isSubmitting ||
+                      eventAlreadyCreated ||
+                      !hydrated ||
+                      !isLoaded ||
+                      !isOrgLoaded
+                    )
+                  }
                 >
                   {isSubmitting ? (
                     <Loader2 className="size-4 animate-spin" />
+                  ) : eventAlreadyCreated ? (
+                    recentCompletedEventSlug ? "Open Event" : "Opening Event…"
                   ) : isLastStep ? (
                     "Create Event"
                   ) : (
@@ -338,20 +549,42 @@ export function CreateFlow({ onSubmit, onPatchSettings }: CreateFlowProps) {
         open={showSignInDialog}
         onOpenChange={setShowSignInDialog}
         description="Your draft has been saved. Sign in to create your hackathon."
-        redirectQuery="edit=true"
+        redirectQuery="review=true"
+        beforeNavigate={() => {
+          const result = ensureSavedDraft()
+          if (result === "saved" || result === "conflict") return true
+          return result === "completed"
+            ? "This event was created in another tab. Reload to start a new draft."
+            : "We couldn't save your draft. Keep this page open and turn on browser storage."
+        }}
       />
 
       <OrgGateDialog
         open={orgGateOpen}
-        onOpenChange={(open) => {
-          setOrgGateOpen(open)
-          if (!open) pendingSubmit.current = false
-        }}
-        onOrgSelected={() => {
-          if (pendingSubmit.current) {
-            pendingSubmit.current = false
-            doSubmitRef.current()
+        onOpenChange={setOrgGateOpen}
+        onOrgSelected={() => undefined}
+      />
+      <CreateDraftWebMcpTools
+        enabled={hydrated && !isSubmitting && !eventAlreadyCreated}
+        canOpenSignIn={Boolean(
+          isLoaded && !isSignedIn && persistenceStatus === "saved"
+        )}
+        envelope={envelope}
+        onPatch={patchState}
+        onOpenReview={openReview}
+        onOpenSignIn={() => {
+          const saveResult = ensureSavedDraft()
+          if (saveResult !== "saved") {
+            setError(
+              saveResult === "completed"
+                ? "This event was created in another tab. Reload to start a new draft."
+                : saveResult === "conflict"
+                ? "Review the newest draft before you continue."
+                : "Turn on browser storage so we can safely save this draft.",
+            )
+            return
           }
+          setShowSignInDialog(true)
         }}
       />
     </div>

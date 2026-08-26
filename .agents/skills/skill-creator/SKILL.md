@@ -2,6 +2,8 @@
 name: skill-creator
 description: Scaffold, test, and iteratively improve Agent Skills that conform to the agentskills.io specification. Use when the user asks to "create a skill", "make a skill", "add a skill", "write a SKILL.md", convert a workflow or script into a reusable skill, run evals to test a skill, benchmark skill performance with variance analysis, optimize a skill's description for better triggering accuracy, or split an oversized SKILL.md into smaller skills.
 allowed-tools: Read Write Edit Bash(mkdir:*) Bash(ls:*) Bash(wc:*) Bash(find:*) Bash(chmod:*) Bash(cp:*) Bash(python:*) Bash(python3:*) Bash(nohup:*) Bash(kill:*) Bash(open:*) Bash(tail:*) WebFetch
+metadata:
+  internal: true
 ---
 
 # Skill Creator

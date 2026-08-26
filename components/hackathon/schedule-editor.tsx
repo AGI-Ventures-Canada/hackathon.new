@@ -43,6 +43,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { useIsClient } from "@/hooks/use-is-client"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { MapPin, Plus, Pencil, Trash2, Loader2, Calendar, Zap } from "lucide-react"
 import type { ScheduleItem } from "@/lib/services/schedule-items"
@@ -105,28 +106,36 @@ function computeDefaults(items: ScheduleItemData[]): { startsAt: string; endsAt:
   return { startsAt: toLocalDatetime(start), endsAt: toLocalDatetime(end) }
 }
 
-function formatShortTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString(undefined, {
+function formatShortTime(iso: string, timeZone?: string): string {
+  return new Date(iso).toLocaleTimeString(timeZone ? "en-US" : undefined, {
     hour: "numeric",
     minute: "2-digit",
+    timeZone,
   })
 }
 
-function formatDateKey(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, {
+function formatDateKey(iso: string, timeZone?: string): string {
+  return new Date(iso).toLocaleDateString(timeZone ? "en-US" : undefined, {
     weekday: "long",
     month: "long",
     day: "numeric",
+    timeZone,
   })
 }
 
-function getDateKey(iso: string): string {
-  const d = new Date(iso)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+function getDateKey(iso: string, timeZone?: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone,
+  }).formatToParts(new Date(iso))
+  const calendar = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+  return `${calendar.year}-${calendar.month}-${calendar.day}`
 }
 
-function getTimeKey(iso: string): string {
-  return formatShortTime(iso)
+function getTimeKey(iso: string, timeZone?: string): string {
+  return formatShortTime(iso, timeZone)
 }
 
 type DateGroup = {
@@ -135,15 +144,15 @@ type DateGroup = {
   timeGroups: { timeKey: string; items: ScheduleItemData[] }[]
 }
 
-function groupByDateAndTime(items: ScheduleItemData[]): DateGroup[] {
+function groupByDateAndTime(items: ScheduleItemData[], timeZone?: string): DateGroup[] {
   const dateMap = new Map<string, { dateLabel: string; timeMap: Map<string, ScheduleItemData[]> }>()
   for (const item of items) {
-    const dk = getDateKey(item.starts_at)
+    const dk = getDateKey(item.starts_at, timeZone)
     if (!dateMap.has(dk)) {
-      dateMap.set(dk, { dateLabel: formatDateKey(item.starts_at), timeMap: new Map() })
+      dateMap.set(dk, { dateLabel: formatDateKey(item.starts_at, timeZone), timeMap: new Map() })
     }
     const { timeMap } = dateMap.get(dk)!
-    const tk = getTimeKey(item.starts_at)
+    const tk = getTimeKey(item.starts_at, timeZone)
     if (!timeMap.has(tk)) timeMap.set(tk, [])
     timeMap.get(tk)!.push(item)
   }
@@ -179,7 +188,9 @@ export type ScheduleEditorProps = {
 
 export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challengeReleasedAt, challengeExists, hackathonStartsAt, hackathonEndsAt, hackathonStatus, hideHeader, onEditTriggerItem, onAddChallenge, onScheduleChange }: ScheduleEditorProps) {
   const router = useRouter()
+  const isClient = useIsClient()
   const isMobile = useIsMobile()
+  const displayTimeZone = isClient ? undefined : "UTC"
   const [now, setNow] = useState<string | null>(null)
   useEffect(() => {
     setNow(new Date().toISOString())
@@ -241,7 +252,10 @@ export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challe
       ),
     [items, challengeReleasedAt],
   )
-  const dateGroups = useMemo(() => groupByDateAndTime(groupingItems), [groupingItems])
+  const dateGroups = useMemo(
+    () => groupByDateAndTime(groupingItems, displayTimeZone),
+    [groupingItems, displayTimeZone],
+  )
   const [error, setError] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<ScheduleItemData | null>(null)
@@ -462,8 +476,9 @@ export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challe
                           const current = isCurrent(item, now)
                           const isTrigger = !!item.trigger_type
                           const isVirtual = isVirtualItem(item.id)
+                          const isWebMcpPending = item.id.startsWith("webmcp-schedule-")
                           const isReleased = item.trigger_type === "challenge_release" && !!challengeReleasedAt
-                          const isInteractive = !isReleased && !isVirtual
+                          const isInteractive = !isReleased && !isVirtual && !isWebMcpPending
                           return (
                             <div
                               key={item.id}
@@ -480,6 +495,7 @@ export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challe
                                   <div className="flex min-h-10 items-center gap-2 flex-wrap">
                                     <p className="text-sm font-medium truncate">{item.title}</p>
                                     {current && <Badge variant="secondary">Now</Badge>}
+                                    {isWebMcpPending && <Badge variant="secondary">Saving</Badge>}
                                     {isReleased ? (
                                       <Badge variant="secondary" className="text-xs">Released</Badge>
                                     ) : isTrigger && item.trigger_type ? (

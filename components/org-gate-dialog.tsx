@@ -2,7 +2,7 @@
 
 import Image from "next/image"
 import { Loader2, Plus } from "lucide-react"
-import { useAuth, useOrganization, useOrganizationList } from "@clerk/nextjs"
+import { useAuth, useOrganizationList } from "@clerk/nextjs"
 import {
   Dialog,
   DialogContent,
@@ -12,64 +12,73 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { CreateOrganizationDialog } from "@/components/create-organization-dialog"
-import { useState } from "react"
+import { useRef, useState } from "react"
 
 type OrgGateDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onOrgSelected: () => void
+  onOrgSelected: () => void | Promise<void>
 }
 
 export function OrgGateDialog({ open, onOpenChange, onOrgSelected }: OrgGateDialogProps) {
   const { userMemberships, setActive, isLoaded } = useOrganizationList({
     userMemberships: { infinite: true },
   })
-  const { organization } = useOrganization()
   const { getToken } = useAuth()
   const [createOrgOpen, setCreateOrgOpen] = useState(false)
   const [switchingOrgId, setSwitchingOrgId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const switchInFlightRef = useRef(false)
 
-  function handleOpenChange(next: boolean) {
-    if (!next && !organization) {
-      return
-    }
-    onOpenChange(next)
-  }
-
-  const memberships = userMemberships?.data ?? []
+  const memberships = (userMemberships?.data ?? []).filter(
+    (membership) => membership.role === "org:admin",
+  )
   const hasMemberships = memberships.length > 0
   const showLoading = !isLoaded || (userMemberships?.isLoading ?? false)
 
   async function switchToOrg(orgId: string) {
-    if (switchingOrgId) return
+    if (switchInFlightRef.current) return
+    switchInFlightRef.current = true
     setSwitchingOrgId(orgId)
+    setError(null)
     try {
-      await setActive?.({ organization: orgId })
-      await getToken({ skipCache: true })
-      onOrgSelected()
+      if (!setActive) throw new Error("organization_switch_unavailable")
+      await setActive({ organization: orgId })
+      const token = await getToken({ skipCache: true })
+      if (!token) throw new Error("token_refresh_failed")
+      await onOrgSelected()
       onOpenChange(false)
+    } catch {
+      setError("We couldn't connect that organization. Try again.")
     } finally {
+      switchInFlightRef.current = false
       setSwitchingOrgId(null)
     }
   }
 
   return (
     <>
-      <Dialog open={open && !createOrgOpen} onOpenChange={handleOpenChange}>
+      <Dialog
+        open={open && !createOrgOpen}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && switchingOrgId) return
+          onOpenChange(nextOpen)
+        }}
+      >
         <DialogContent
           className="sm:max-w-md"
-          showCloseButton={Boolean(organization)}
-          onPointerDownOutside={(e) => {
-            if (!organization) e.preventDefault()
+          showCloseButton={switchingOrgId === null}
+          onEscapeKeyDown={(event) => {
+            if (switchingOrgId) event.preventDefault()
           }}
-          onEscapeKeyDown={(e) => {
-            if (!organization) e.preventDefault()
+          onPointerDownOutside={(event) => {
+            if (switchingOrgId) event.preventDefault()
           }}
         >
           <DialogHeader>
             <DialogTitle>Pick an organization</DialogTitle>
             <DialogDescription>
-              Hackathons live under organizations, not personal accounts. Switch to one of yours or make a new one.
+              Pick where to create your private event draft. You can cancel and keep editing.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
@@ -110,17 +119,17 @@ export function OrgGateDialog({ open, onOpenChange, onOrgSelected }: OrgGateDial
                         </Button>
                       )
                     })}
-                    {userMemberships?.hasNextPage && (
-                      <Button
-                        variant="ghost"
-                        className="w-full justify-start text-muted-foreground"
-                        onClick={() => userMemberships.fetchNext?.()}
-                        disabled={userMemberships.isFetching}
-                      >
-                        {userMemberships.isFetching ? "Loading…" : "Show more"}
-                      </Button>
-                    )}
                   </div>
+                )}
+                {userMemberships?.hasNextPage && (
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start text-muted-foreground"
+                    onClick={() => userMemberships.fetchNext?.()}
+                    disabled={userMemberships.isFetching}
+                  >
+                    {userMemberships.isFetching ? "Loading…" : "Show more"}
+                  </Button>
                 )}
                 <div>
                   <Button
@@ -133,8 +142,18 @@ export function OrgGateDialog({ open, onOpenChange, onOrgSelected }: OrgGateDial
                     {hasMemberships ? "Create a new organization" : "Create your first organization"}
                   </Button>
                 </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full"
+                  onClick={() => onOpenChange(false)}
+                  disabled={switchingOrgId !== null}
+                >
+                  Cancel
+                </Button>
               </>
             )}
+            {error && <p className="text-sm text-destructive">{error}</p>}
           </div>
         </DialogContent>
       </Dialog>
@@ -143,9 +162,10 @@ export function OrgGateDialog({ open, onOpenChange, onOrgSelected }: OrgGateDial
         open={createOrgOpen}
         onOpenChange={setCreateOrgOpen}
         onSuccess={async () => {
+          const token = await getToken({ skipCache: true })
+          if (!token) throw new Error("We couldn't refresh your sign-in. Try again.")
+          await onOrgSelected()
           setCreateOrgOpen(false)
-          await getToken({ skipCache: true })
-          onOrgSelected()
           onOpenChange(false)
         }}
       />

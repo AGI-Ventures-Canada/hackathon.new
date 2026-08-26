@@ -62,6 +62,7 @@ describe("Submissions Service", () => {
       expect(result?.participantId).toBe("p1")
       expect(result?.teamId).toBeNull()
       expect(result?.teamStatus).toBeNull()
+      expect(chain.eq).toHaveBeenCalledWith("role", "participant")
     })
 
     it("returns participant info with team when in a team", async () => {
@@ -479,7 +480,10 @@ describe("Submissions Service", () => {
 
   describe("notifySubmissionMembers", () => {
     beforeEach(() => {
-      mockSendSubmissionConfirmationEmail.mockClear()
+      mockSendSubmissionConfirmationEmail.mockReset()
+      mockSendSubmissionConfirmationEmail.mockImplementation(() =>
+        Promise.resolve({ success: true })
+      )
     })
 
     it("sends a confirmation to the solo participant", async () => {
@@ -537,6 +541,16 @@ describe("Submissions Service", () => {
     })
 
     it("sends a confirmation to every team member, deduped by email", async () => {
+      let inFlight = 0
+      let maxInFlight = 0
+      mockSendSubmissionConfirmationEmail.mockImplementation(async () => {
+        inFlight += 1
+        maxInFlight = Math.max(maxInFlight, inFlight)
+        await Promise.resolve()
+        inFlight -= 1
+        return { success: true }
+      })
+
       setMockFromImplementation((table) => {
         if (table === "hackathons") {
           return createChainableMock({
@@ -600,6 +614,69 @@ describe("Submissions Service", () => {
       expect(mockSendSubmissionConfirmationEmail).toHaveBeenCalledWith(
         expect.objectContaining({ teamName: "Neural Navigators" })
       )
+      expect(maxInFlight).toBe(1)
+    })
+
+    it("continues the paced recipient loop after one delivery rejects", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: { name: "AI Hack", slug: "ai-hack", status: "active" },
+            error: null,
+          })
+        }
+        if (table === "teams") {
+          return createChainableMock({
+            data: { name: "Neural Navigators" },
+            error: null,
+          })
+        }
+        if (table === "hackathon_participants") {
+          return createChainableMock({
+            data: [
+              { clerk_user_id: "user_a" },
+              { clerk_user_id: "user_b" },
+            ],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      mockClerkClient.mockImplementation(() =>
+        Promise.resolve({
+          users: {
+            getUserList: mock(() =>
+              Promise.resolve({
+                data: [
+                  {
+                    primaryEmailAddress: { emailAddress: "a@example.com" },
+                    emailAddresses: [{ emailAddress: "a@example.com" }],
+                  },
+                  {
+                    primaryEmailAddress: { emailAddress: "b@example.com" },
+                    emailAddresses: [{ emailAddress: "b@example.com" }],
+                  },
+                ],
+              })
+            ),
+          },
+        } as never)
+      )
+      mockSendSubmissionConfirmationEmail
+        .mockImplementationOnce(() => Promise.reject(new Error("Provider unavailable")))
+        .mockImplementationOnce(() => Promise.resolve({ success: true }))
+
+      const sent = await notifySubmissionMembers({
+        hackathonId: "h1",
+        submissionId: "submission-1",
+        participantId: "p1",
+        teamId: "team1",
+        projectTitle: "Team Project",
+      })
+
+      expect(sent).toBe(1)
+      expect(mockSendSubmissionConfirmationEmail).toHaveBeenCalledTimes(2)
     })
 
     it("skips sending when hackathon status is draft", async () => {

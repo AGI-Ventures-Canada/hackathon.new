@@ -60,11 +60,11 @@ export function EventDetailBox({
   return (
     <Section
       style={{
-        background: colors.infoBoxBg,
-        padding: `${spacing.md} ${spacing.lg}`,
+        backgroundColor: colors.infoBoxBg,
+        padding: spacing.lg,
         marginBottom: spacing.lg,
-        borderRadius: "8px",
-        borderLeft: `3px solid ${colors.accent}`,
+        borderRadius: "12px",
+        border: `1px solid ${colors.border}`,
       }}
     >
       <Text

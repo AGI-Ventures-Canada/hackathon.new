@@ -12,8 +12,69 @@ import WinnerNotificationEmail from "@/emails/winner-notification"
 import AgentNotificationEmail from "@/emails/agent-notification"
 import SponsorClaimNotificationEmail from "@/emails/sponsor-claim-notification"
 import OrganizerClaimNotificationEmail from "@/emails/organizer-claim-notification"
+import JudgeInvitationReminderEmail from "@/emails/judge-invitation-reminder"
+import PreEventReminderEmail from "@/emails/pre-event-reminder"
+import PrizeShippedEmail from "@/emails/prize-shipped"
+import SubmissionConfirmationEmail from "@/emails/submission-confirmation"
+import SubmissionExportFailedEmail from "@/emails/submission-export-failed"
+import SubmissionExportReadyEmail from "@/emails/submission-export-ready"
+import TeamApprovedEmail from "@/emails/team-approved"
+import TeamDeniedEmail from "@/emails/team-denied"
+import TeamInvitationReminderEmail from "@/emails/team-invitation-reminder"
 
 describe("Email Template Rendering", () => {
+  it("renders the shared Oatmeal card, wordmark, CTA, and info-box styles", async () => {
+    const { html } = await renderEmail(
+      TeamInvitationEmail(TeamInvitationEmail.PreviewProps)
+    )
+
+    expect(html).toContain("max-width:600px")
+    expect(html).toContain("background-color:#1C1917")
+    expect(html).toContain("border-radius:14px 14px 0 0")
+    expect(html).toContain("hackathon.new")
+    expect(html).toContain("font-size:32px")
+    expect(html).toContain("text-align:left")
+    expect(html).toContain("border-radius:10px")
+    expect(html).toContain("background-color:#A3631E")
+    expect(html).toContain("color:#57534E")
+    expect(html).toContain("background-color:#FAFAF9")
+    expect(html).toContain("border:1px solid #E7E5E4")
+  })
+
+  it("renders every preview through the shared layout with HTML and plain text", async () => {
+    const previews = [
+      AgentNotificationEmail(AgentNotificationEmail.PreviewProps),
+      ChallengesReleasedEmail(ChallengesReleasedEmail.PreviewProps),
+      FeedbackSurveyEmail(FeedbackSurveyEmail.PreviewProps),
+      JudgeAddedEmail(JudgeAddedEmail.PreviewProps),
+      JudgeInvitationEmail(JudgeInvitationEmail.PreviewProps),
+      JudgeInvitationReminderEmail(JudgeInvitationReminderEmail.PreviewProps),
+      OrganizerClaimNotificationEmail(OrganizerClaimNotificationEmail.PreviewProps),
+      PostEventReminderEmail(PostEventReminderEmail.PreviewProps),
+      PreEventReminderEmail(PreEventReminderEmail.PreviewProps),
+      PrizeShippedEmail(PrizeShippedEmail.PreviewProps),
+      ResultsAnnouncementEmail(ResultsAnnouncementEmail.PreviewProps),
+      SponsorClaimNotificationEmail(SponsorClaimNotificationEmail.PreviewProps),
+      SubmissionConfirmationEmail(SubmissionConfirmationEmail.PreviewProps),
+      SubmissionExportFailedEmail(SubmissionExportFailedEmail.PreviewProps),
+      SubmissionExportReadyEmail(SubmissionExportReadyEmail.PreviewProps),
+      TeamApprovedEmail(TeamApprovedEmail.PreviewProps),
+      TeamDeniedEmail(TeamDeniedEmail.PreviewProps),
+      TeamInvitationEmail(TeamInvitationEmail.PreviewProps),
+      TeamInvitationReminderEmail(TeamInvitationReminderEmail.PreviewProps),
+      TransitionNotificationEmail(TransitionNotificationEmail.PreviewProps),
+      WinnerNotificationEmail(WinnerNotificationEmail.PreviewProps),
+    ]
+
+    for (const preview of previews) {
+      const { html, text } = await renderEmail(preview)
+      expect(html).toContain("hackathon.new")
+      expect(html).toContain("max-width:600px")
+      expect(html).not.toContain("&amp;#x2019;")
+      expect(text.trim().length).toBeGreaterThan(0)
+    }
+  })
+
   it("renders team-invitation", async () => {
     const { html, text } = await renderEmail(
       TeamInvitationEmail(TeamInvitationEmail.PreviewProps)

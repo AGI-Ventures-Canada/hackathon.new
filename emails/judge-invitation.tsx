@@ -27,7 +27,7 @@ export default function JudgeInvitationEmail({
     <OatmealLayout
       heading="You're Invited to Judge!"
       preview={`${inviterName} invited you to judge ${hackathonName}`}
-      footerText="If you didn&#x2019;t expect this invitation, you can safely ignore this email."
+      footerText="If you didn’t expect this invitation, you can safely ignore this email."
       eventUrl={eventUrl}
       hackathonName={hackathonName}
     >
@@ -66,7 +66,7 @@ export default function JudgeInvitationEmail({
 }
 
 JudgeInvitationEmail.PreviewProps = {
-  inviterName: "Alex Ivany",
+  inviterName: "Jordan Lee",
   hackathonName: "AI Innovation Hackathon 2026",
   acceptUrl: "https://hackathon.new/judge-invite/xyz789",
   expiresDate: "Friday, April 17, 2026",

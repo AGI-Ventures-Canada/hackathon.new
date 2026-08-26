@@ -81,6 +81,7 @@ describe("sendJudgeNotification", () => {
 
     expect(mockSendJudgeAddedNotification).toHaveBeenCalledWith({
       to: "judge@example.com",
+      deliveryId: "notif1",
       hackathonName: "Test Hackathon",
       hackathonSlug: "test-hackathon",
       addedByName: "Organizer",
@@ -100,7 +101,7 @@ describe("sendJudgeNotification", () => {
         hackathonName: "Test Hackathon",
         hackathonSlug: "test-hackathon",
       })
-    ).rejects.toThrow("Failed to send email to judge@example.com")
+    ).rejects.toThrow("Failed to send judge notification notif1")
   })
 
   it("throws when sent_at DB update fails", async () => {
@@ -184,14 +185,25 @@ describe("sendJudgeNotificationsWorkflow", () => {
       .mockResolvedValueOnce({ success: false })
       .mockResolvedValueOnce({ success: true })
 
-    await expect(
-      sendJudgeNotificationsWorkflow({
-        hackathonId: "h1",
-        hackathonName: "Test",
-        hackathonSlug: "test",
-      })
-    ).rejects.toThrow("Only sent 2/3 judge notifications")
-    expect(mockSendJudgeAddedNotification).toHaveBeenCalledTimes(3)
+    const error = mock(() => {})
+    const originalError = console.error
+    console.error = error
+    try {
+      await expect(
+        sendJudgeNotificationsWorkflow({
+          hackathonId: "h1",
+          hackathonName: "Test",
+          hackathonSlug: "test",
+        })
+      ).rejects.toThrow("Only sent 2/3 judge notifications")
+      expect(mockSendJudgeAddedNotification).toHaveBeenCalledTimes(3)
+      expect(String(error.mock.calls[0]?.[0])).toBe(
+        "Failed to send judge notification n2:",
+      )
+      expect(error.mock.calls.flat().join(" ")).not.toContain("@example.com")
+    } finally {
+      console.error = originalError
+    }
   })
 
   it("passes hackathonName and hackathonSlug to each notification", async () => {

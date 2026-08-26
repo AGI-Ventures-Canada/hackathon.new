@@ -10,6 +10,8 @@ import { AutoRefresh } from "@/components/ui/auto-refresh"
 import { Clock } from "lucide-react"
 import type { JudgePick } from "@/lib/db/hackathon-types"
 import { routeJudgeAssignments } from "@/lib/utils/judging-assignment-routing"
+import { JudgeWebMcpTools } from "@/components/hackathon/judging/judge-webmcp-tools"
+import type { JudgeWebMcpAssignment } from "@/lib/webmcp/judge-tools"
 
 const JUDGE_PAGE_REFRESH_INTERVAL_MS = 15000
 
@@ -26,6 +28,7 @@ export default async function JudgePage({ params }: PageProps) {
   }
 
   const hackathon = await getPublicHackathon(slug, { includeUnpublished: true })
+
   if (!hackathon) {
     notFound()
   }
@@ -59,7 +62,13 @@ export default async function JudgePage({ params }: PageProps) {
   let judgeAssignments = await getJudgeAssignments(hackathon.id, userId)
 
   if (hackathon.anonymous_judging) {
-    judgeAssignments = judgeAssignments.map((a) => ({ ...a, teamName: null, teamMemberCount: null }))
+    judgeAssignments = judgeAssignments.map((assignment) => ({
+      ...assignment,
+      teamName: null,
+      teamMode: null,
+      teamMemberCount: null,
+      selfJudging: false,
+    }))
   }
 
   const {
@@ -84,69 +93,95 @@ export default async function JudgePage({ params }: PageProps) {
     (a) => a.assignmentKind === "unified_weighted_score"
   )
 
+  const webMcpAssignments: JudgeWebMcpAssignment[] = judgeAssignments.map((assignment) => ({
+    id: assignment.id,
+    submissionId: assignment.submissionId,
+    title: assignment.submissionTitle,
+    description: assignment.submissionDescription,
+    githubUrl: assignment.submissionGithubUrl,
+    liveAppUrl: assignment.submissionLiveAppUrl,
+    demoVideoUrl: assignment.submissionDemoVideoUrl,
+    teamName: assignment.teamName,
+    isComplete: assignment.isComplete,
+    notes: assignment.notes,
+    judgingStyle:
+      assignment.judgingStyle === "judges_pick" ||
+      assignment.judgingStyle === "bucket_sort" ||
+      assignment.judgingStyle === "gate_check"
+        ? assignment.judgingStyle
+        : "weighted_score",
+    prizeName: assignment.prizeName,
+  }))
+
   return (
-    <div className="p-4 md:p-6 space-y-6">
-      <AutoRefresh intervalMs={JUDGE_PAGE_REFRESH_INTERVAL_MS} />
-      <PageHeader
-        breadcrumbs={[
-          { label: hackathon.name, href: `/e/${slug}` },
-          { label: "Judging" },
-        ]}
-        title="Judging"
-        description="Review your assigned projects"
-      />
+    <JudgeWebMcpTools
+      slug={slug}
+      assignments={webMcpAssignments}
+      enabled={hackathon.status === "active" || hackathon.status === "judging"}
+    >
+      <div className="p-4 md:p-6 space-y-6">
+        <AutoRefresh intervalMs={JUDGE_PAGE_REFRESH_INTERVAL_MS} />
+        <PageHeader
+          breadcrumbs={[
+            { label: hackathon.name, href: `/e/${slug}` },
+            { label: "Judging" },
+          ]}
+          title="Judging"
+          description="Review your assigned projects"
+        />
 
-      {visibleAssignmentCount === 0 ? (
-        <p className="text-sm text-muted-foreground text-center py-12">
-          You don&apos;t have any assignments yet.
-        </p>
-      ) : (
-        <div className="space-y-6">
-          {pickGroups.map(([prizeId, assignments]) => (
-            <JudgesPickPanel
-              key={prizeId}
-              hackathonSlug={slug}
-              prizeId={prizeId}
-              prizeName={assignments[0]?.prizeName ?? "Judge's pick"}
-              maxPicks={Math.max(1, assignments[0]?.maxPicks ?? 1)}
-              assignments={assignments}
-              initialPicks={judgePicks
-                .filter((pick) => pick.prize_id === prizeId)
-                .map((pick) => ({ submissionId: pick.submission_id, rank: pick.rank }))}
-            />
-          ))}
+        {visibleAssignmentCount === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-12">
+            You don&apos;t have any assignments yet.
+          </p>
+        ) : (
+          <div className="space-y-6">
+            {pickGroups.map(([prizeId, assignments]) => (
+              <JudgesPickPanel
+                key={prizeId}
+                hackathonSlug={slug}
+                prizeId={prizeId}
+                prizeName={assignments[0]?.prizeName ?? "Judge's pick"}
+                maxPicks={Math.max(1, assignments[0]?.maxPicks ?? 1)}
+                assignments={assignments}
+                initialPicks={judgePicks
+                  .filter((pick) => pick.prize_id === prizeId)
+                  .map((pick) => ({ submissionId: pick.submission_id, rank: pick.rank }))}
+              />
+            ))}
 
-          {bucketGroups.map(([prizeId, assignments]) => (
-            <BucketSortPanel
-              key={prizeId}
-              hackathonSlug={slug}
-              prizeName={assignments[0]?.prizeName ?? "Project ranking"}
-              assignments={assignments}
-            />
-          ))}
+            {bucketGroups.map(([prizeId, assignments]) => (
+              <BucketSortPanel
+                key={prizeId}
+                hackathonSlug={slug}
+                prizeName={assignments[0]?.prizeName ?? "Project ranking"}
+                assignments={assignments}
+              />
+            ))}
 
-          {gateGroups.map(([prizeId, assignments]) => (
-            <GateCheckPanel
-              key={prizeId}
-              hackathonSlug={slug}
-              prizeName={assignments[0]?.prizeName ?? "Requirements check"}
-              assignments={assignments}
-            />
-          ))}
+            {gateGroups.map(([prizeId, assignments]) => (
+              <GateCheckPanel
+                key={prizeId}
+                hackathonSlug={slug}
+                prizeName={assignments[0]?.prizeName ?? "Requirements check"}
+                assignments={assignments}
+              />
+            ))}
 
-          {scoredAssignments.length > 0 && (
-            <JudgeAssignmentsCard
-              hackathonSlug={slug}
-              assignments={scoredAssignments}
-              teamSettings={{
-                minTeamSize: hackathon.min_team_size,
-                allowSolo: hackathon.allow_solo,
-              }}
-              summaryHref={hasUnifiedAssignments ? `/e/${slug}/judge/summary` : undefined}
-            />
-          )}
-        </div>
-      )}
-    </div>
+            {scoredAssignments.length > 0 && (
+              <JudgeAssignmentsCard
+                hackathonSlug={slug}
+                assignments={scoredAssignments}
+                teamSettings={{
+                  minTeamSize: hackathon.min_team_size,
+                  allowSolo: hackathon.allow_solo,
+                }}
+                summaryHref={hasUnifiedAssignments ? `/e/${slug}/judge/summary` : undefined}
+              />
+            )}
+          </div>
+        )}
+      </div>
+    </JudgeWebMcpTools>
   )
 }

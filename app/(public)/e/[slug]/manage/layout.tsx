@@ -1,5 +1,6 @@
 import { redirect, notFound } from "next/navigation"
 import { getManageHackathon } from "@/lib/services/manage-hackathon"
+import { CreatedEventNavigationAcknowledger } from "@/components/hackathon/created-event-navigation-acknowledger"
 
 type LayoutProps = {
   children: React.ReactNode
@@ -17,5 +18,10 @@ export default async function ManageLayout({ children, params }: LayoutProps) {
     notFound()
   }
 
-  return <div className="p-4 md:p-6">{children}</div>
+  return (
+    <div className="p-4 md:p-6">
+      <CreatedEventNavigationAcknowledger slug={slug} />
+      {children}
+    </div>
+  )
 }

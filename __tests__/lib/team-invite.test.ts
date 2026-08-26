@@ -72,13 +72,49 @@ describe("canInviteTeamMembers", () => {
     ).toBe(false)
   })
 
-  it("allows invites when there is no registration close time", () => {
+  it("fails closed without a clock even when there is no registration close time", () => {
     expect(
       canInviteTeamMembers({
         isFormingCaptain: true,
+        hackathonStatus: "registration_open",
         registrationClosesAt: null,
         nowIso: null,
       })
+    ).toBe(false)
+  })
+
+  it("allows invites without a close time while registration is open", () => {
+    expect(
+      canInviteTeamMembers({
+        isFormingCaptain: true,
+        hackathonStatus: "registration_open",
+        endsAt: "2026-05-12T12:00:00.000Z",
+        registrationClosesAt: null,
+        nowIso: "2026-05-11T12:00:00.000Z",
+      })
     ).toBe(true)
+  })
+
+  it("blocks invites after the event ends even without a close time", () => {
+    expect(
+      canInviteTeamMembers({
+        isFormingCaptain: true,
+        hackathonStatus: "active",
+        endsAt: "2026-05-11T12:00:00.000Z",
+        registrationClosesAt: null,
+        nowIso: "2026-05-11T12:00:00.000Z",
+      })
+    ).toBe(false)
+  })
+
+  it("blocks invites for a finished lifecycle even before the close time", () => {
+    expect(
+      canInviteTeamMembers({
+        isFormingCaptain: true,
+        hackathonStatus: "judging",
+        registrationClosesAt: "2026-05-12T12:00:00.000Z",
+        nowIso: "2026-05-11T12:00:00.000Z",
+      })
+    ).toBe(false)
   })
 })

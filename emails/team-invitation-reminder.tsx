@@ -2,7 +2,7 @@ import { Text } from "@react-email/components"
 import { OatmealLayout } from "./_components/oatmeal-layout"
 import { InfoBox } from "./_components/info-box"
 import { CTAButton } from "./_components/cta-button"
-import { colors } from "./_components/constants"
+import { colors, fontSize, spacing } from "./_components/constants"
 
 interface TeamInvitationReminderEmailProps {
   inviterName: string
@@ -26,14 +26,20 @@ export default function TeamInvitationReminderEmail({
       heading="Friendly Reminder — You're Invited!"
       preview={`Reminder: ${inviterName} invited you to join "${teamName}" for ${hackathonName}`}
     >
-      <Text style={{ fontSize: "14px", marginBottom: "24px", lineHeight: "1.6" }}>
+      <Text
+        style={{
+          fontSize: fontSize.base,
+          marginBottom: spacing.lg,
+          lineHeight: "1.6",
+        }}
+      >
         Just a heads-up — <strong>{inviterName}</strong> invited you to join
         team <strong>&ldquo;{teamName}&rdquo;</strong> for the{" "}
         <strong>{hackathonName}</strong> hackathon. Your spot is still open!
       </Text>
 
       <InfoBox label="Team">
-        <Text style={{ margin: "0", fontSize: "16px", fontWeight: 600 }}>
+        <Text style={{ margin: "0", fontSize: fontSize.base, fontWeight: 600 }}>
           {teamName}
         </Text>
       </InfoBox>
@@ -42,9 +48,9 @@ export default function TeamInvitationReminderEmail({
 
       <Text
         style={{
-          fontSize: "12px",
+          fontSize: fontSize.sm,
           color: colors.textMuted,
-          marginTop: "24px",
+          marginTop: spacing.lg,
           lineHeight: "1.5",
         }}
       >

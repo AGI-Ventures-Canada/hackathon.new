@@ -10,7 +10,7 @@ type PageProps = {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params
-  const hackathon = await getPublicHackathon(slug, { includeUnpublished: true })
+  const hackathon = await getPublicHackathon(slug)
 
   return {
     title: hackathon ? `Timer | ${hackathon.name}` : "Timer",
@@ -21,7 +21,7 @@ export default async function DisplayTimerPage({ params, searchParams }: PagePro
   const { slug } = await params
   const { room: roomId } = await searchParams
 
-  const hackathon = await getPublicHackathon(slug, { includeUnpublished: true })
+  const hackathon = await getPublicHackathon(slug)
   if (!hackathon) notFound()
 
   return (

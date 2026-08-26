@@ -1,5 +1,10 @@
 import { describe, expect, it, mock, beforeEach } from "bun:test"
-import { resetClerkMocks } from "../lib/supabase-mock"
+import {
+  createChainableMock,
+  resetClerkMocks,
+  resetSupabaseMocks,
+  setMockFromImplementation,
+} from "../lib/supabase-mock"
 
 const mockSetPhase = mock(() => Promise.resolve({ success: true }))
 
@@ -42,6 +47,14 @@ mock.module("@/lib/services/participant-emails", () => ({
   sendBulkEmail: mockSendBulkEmail,
 }))
 
+const mockGetQueueStats = mock(() =>
+  Promise.resolve({ open: 0, claimed: 0, resolved: 0 }),
+)
+
+mock.module("@/lib/services/mentor-requests", () => ({
+  getQueueStats: mockGetQueueStats,
+}))
+
 const mockListHackathonPeople = mock(() => Promise.resolve([] as unknown[]))
 const mockPeopleToCsvRows = mock((people: unknown[]) => people as Record<string, string>[])
 
@@ -51,10 +64,11 @@ mock.module("@/lib/services/hackathon-people", () => ({
 }))
 
 const mockMaybeReleaseChallengesForPublishLink = mock(() => Promise.resolve(false))
+const mockCreateChallenge = mock(() => Promise.resolve(null))
 
 mock.module("@/lib/services/challenges", () => ({
   listChallenges: mock(() => Promise.resolve([])),
-  createChallenge: mock(() => Promise.resolve(null)),
+  createChallenge: mockCreateChallenge,
   updateChallenge: mock(() => Promise.resolve(null)),
   deleteChallenge: mock(() => Promise.resolve(false)),
   reorderChallenges: mock(() => Promise.resolve(false)),
@@ -177,6 +191,7 @@ const mockUserPrincipal = {
 describe("Dashboard Event Routes Integration Tests", () => {
   beforeEach(() => {
     resetClerkMocks()
+    resetSupabaseMocks()
     mockResolvePrincipal.mockReset()
     mockSetPhase.mockReset()
     mockCheckHackathonOrganizer.mockReset()
@@ -193,14 +208,18 @@ describe("Dashboard Event Routes Integration Tests", () => {
     mockDeleteScheduleItem.mockReset()
     mockGetTriggerItem.mockReset()
     mockMaybeReleaseChallengesForPublishLink.mockReset()
+    mockCreateChallenge.mockReset()
     mockApprovePendingTeam.mockReset()
     mockDenyPendingTeam.mockReset()
     mockListHackathonPeople.mockReset()
     mockPeopleToCsvRows.mockReset()
+    mockGetQueueStats.mockReset()
     mockListHackathonPeople.mockResolvedValue([])
     mockPeopleToCsvRows.mockImplementation((people: unknown) => people as Record<string, string>[])
+    mockGetQueueStats.mockResolvedValue({ open: 0, claimed: 0, resolved: 0 })
 
     mockSetPhase.mockResolvedValue({ success: true })
+    mockCreateChallenge.mockResolvedValue(null)
     mockApprovePendingTeam.mockResolvedValue({
       success: true,
       team: { id: "22222222-2222-2222-2222-222222222222", name: "Team One", status: "forming" },
@@ -215,7 +234,34 @@ describe("Dashboard Event Routes Integration Tests", () => {
     })
     mockCheckHackathonOrganizer.mockResolvedValue({
       status: "authorized" as const,
-      hackathon: { id: "h1", tenant_id: "tenant-123" },
+      hackathon: {
+        id: "h1",
+        tenant_id: "tenant-123",
+        status: "draft",
+        updated_at: "2026-08-25T15:00:00.000Z",
+      },
+    })
+  })
+
+  describe("GET /api/dashboard/hackathons/:id/mentor-requests", () => {
+    const url = "http://localhost/api/dashboard/hackathons/11111111-1111-1111-1111-111111111111/mentor-requests"
+
+    it("returns aggregate mentor totals without request details", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockGetQueueStats.mockResolvedValue({ open: 2, claimed: 1, resolved: 4 })
+
+      const res = await app.handle(new Request(url))
+      const data = await res.json()
+      const serialized = JSON.stringify(data)
+
+      expect(res.status).toBe(200)
+      expect(data).toEqual({ stats: { open: 2, claimed: 1, resolved: 4 } })
+      expect(serialized).not.toContain("requests")
+      expect(serialized).not.toContain("participant")
+      expect(res.headers.get("Cache-Control")).toBe("private, no-store")
+      expect(mockGetQueueStats).toHaveBeenCalledWith(
+        "11111111-1111-1111-1111-111111111111",
+      )
     })
   })
 
@@ -370,7 +416,12 @@ describe("Dashboard Event Routes Integration Tests", () => {
       expect(data.team.status).toBe("forming")
       expect(data.membersNotified).toBe(2)
       expect(mockApprovePendingTeam).toHaveBeenCalledWith(teamId, hackathonId, {
-        notificationHackathon: { id: "h1", tenant_id: "tenant-123" },
+        notificationHackathon: {
+          id: "h1",
+          tenant_id: "tenant-123",
+          status: "draft",
+          updated_at: "2026-08-25T15:00:00.000Z",
+        },
       })
     })
 
@@ -417,7 +468,12 @@ describe("Dashboard Event Routes Integration Tests", () => {
       expect(data.invitesCancelled).toBe(1)
       expect(data.membersNotified).toBe(2)
       expect(mockDenyPendingTeam).toHaveBeenCalledWith(teamId, hackathonId, {
-        notificationHackathon: { id: "h1", tenant_id: "tenant-123" },
+        notificationHackathon: {
+          id: "h1",
+          tenant_id: "tenant-123",
+          status: "draft",
+          updated_at: "2026-08-25T15:00:00.000Z",
+        },
       })
     })
 
@@ -492,6 +548,77 @@ describe("Dashboard Event Routes Integration Tests", () => {
       expect(data.title).toBe("Update")
     })
 
+    it("uses the effective active status for a WebMCP announcement draft", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockCheckHackathonOrganizer.mockResolvedValue({
+        status: "authorized" as const,
+        hackathon: {
+          id: hackathonId,
+          tenant_id: "tenant-123",
+          status: "published",
+          starts_at: "2020-01-01T00:00:00.000Z",
+          ends_at: "2099-01-01T00:00:00.000Z",
+          updated_at: "2026-08-25T15:00:00.000Z",
+        },
+      })
+      mockCreateAnnouncement.mockResolvedValue({
+        id: announcementId,
+        hackathon_id: hackathonId,
+        title: "Update",
+        body: "New info",
+        priority: "normal",
+        published_at: null,
+      })
+
+      const res = await app.handle(
+        new Request(`${baseUrl}/announcements`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-webmcp-request": "1",
+            "x-webmcp-expected-status": "active",
+            "x-webmcp-event-version": "2026-08-25T15:00:00.000Z",
+          },
+          body: JSON.stringify({ title: "Update", body: "New info" }),
+        }),
+      )
+
+      expect(res.status).toBe(200)
+      expect(mockCreateAnnouncement).toHaveBeenCalledTimes(1)
+    })
+
+    it("rejects a stale WebMCP announcement after the event expires", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockCheckHackathonOrganizer.mockResolvedValue({
+        status: "authorized" as const,
+        hackathon: {
+          id: hackathonId,
+          tenant_id: "tenant-123",
+          status: "published",
+          starts_at: "2019-01-01T00:00:00.000Z",
+          ends_at: "2020-01-01T00:00:00.000Z",
+          updated_at: "2026-08-25T15:00:00.000Z",
+        },
+      })
+
+      const res = await app.handle(
+        new Request(`${baseUrl}/announcements`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-webmcp-request": "1",
+            "x-webmcp-expected-status": "active",
+            "x-webmcp-event-version": "2026-08-25T15:00:00.000Z",
+          },
+          body: JSON.stringify({ title: "Late update", body: "Too late" }),
+        }),
+      )
+
+      expect(res.status).toBe(409)
+      expect(await res.json()).toMatchObject({ code: "event_changed" })
+      expect(mockCreateAnnouncement).not.toHaveBeenCalled()
+    })
+
     it("returns 400 when creation fails", async () => {
       mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
       mockCreateAnnouncement.mockResolvedValue(null)
@@ -507,6 +634,63 @@ describe("Dashboard Event Routes Integration Tests", () => {
 
       expect(res.status).toBe(400)
       expect(data.error).toBe("Failed to create announcement")
+    })
+
+    it("returns a stable conflict while another event mutation holds the lease", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      let rateLimitCall = 0
+      setMockFromImplementation((table) => {
+        if (table !== "rate_limits") {
+          return createChainableMock({ data: null, error: null })
+        }
+        rateLimitCall += 1
+        return createChainableMock(
+          rateLimitCall === 2
+            ? { data: null, error: { message: "duplicate", code: "23505" } }
+            : { data: null, error: null },
+        )
+      })
+
+      const res = await app.handle(
+        new Request(`${baseUrl}/announcements`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Busy", body: "Try later" }),
+        }),
+      )
+
+      expect(res.status).toBe(409)
+      expect(await res.json()).toEqual({
+        error: "Another event change is still being saved.",
+        code: "event_busy",
+      })
+      expect(mockCheckHackathonOrganizer).not.toHaveBeenCalled()
+      expect(mockCreateAnnouncement).not.toHaveBeenCalled()
+    })
+
+    it("returns a stable retryable failure when the event lease is unavailable", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      setMockFromImplementation(() =>
+        createChainableMock({
+          data: null,
+          error: { message: "database unavailable" },
+        }),
+      )
+
+      const res = await app.handle(
+        new Request(`${baseUrl}/announcements`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Retry", body: "Try later" }),
+        }),
+      )
+
+      expect(res.status).toBe(503)
+      expect(await res.json()).toEqual({
+        error: "The event change lock is unavailable.",
+        code: "lease_unavailable",
+      })
+      expect(mockCreateAnnouncement).not.toHaveBeenCalled()
     })
   })
 
@@ -702,6 +886,104 @@ describe("Dashboard Event Routes Integration Tests", () => {
       expect(data.title).toBe("Lunch")
     })
 
+    it("lets WebMCP add an ordinary item before completion", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockCheckHackathonOrganizer.mockResolvedValue({
+        status: "authorized" as const,
+        hackathon: {
+          id: hackathonId,
+          tenant_id: "tenant-123",
+          status: "published",
+          starts_at: "2020-01-01T00:00:00.000Z",
+          ends_at: "2099-01-01T00:00:00.000Z",
+          updated_at: "2026-08-25T15:00:00.000Z",
+        },
+      })
+      mockCreateScheduleItem.mockResolvedValue({
+        id: itemId,
+        title: "Lunch",
+      })
+
+      const res = await app.handle(
+        new Request(`${baseUrl}/schedule`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-webmcp-request": "1",
+            "x-webmcp-expected-status": "active",
+            "x-webmcp-event-version": "2026-08-25T15:00:00.000Z",
+          },
+          body: JSON.stringify({
+            title: "Lunch",
+            startsAt: "2026-09-10T19:00:00.000Z",
+          }),
+        }),
+      )
+
+      expect(res.status).toBe(200)
+      expect(mockCreateScheduleItem).toHaveBeenCalledTimes(1)
+    })
+
+    it("rejects an expired WebMCP schedule write before creating it", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockCheckHackathonOrganizer.mockResolvedValue({
+        status: "authorized" as const,
+        hackathon: {
+          id: hackathonId,
+          tenant_id: "tenant-123",
+          status: "published",
+          starts_at: "2019-01-01T00:00:00.000Z",
+          ends_at: "2020-01-01T00:00:00.000Z",
+          updated_at: "2026-08-25T15:00:00.000Z",
+        },
+      })
+
+      const res = await app.handle(
+        new Request(`${baseUrl}/schedule`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-webmcp-request": "1",
+            "x-webmcp-expected-status": "active",
+            "x-webmcp-event-version": "2026-08-25T15:00:00.000Z",
+          },
+          body: JSON.stringify({
+            title: "Late item",
+            startsAt: "2026-09-10T19:00:00.000Z",
+          }),
+        }),
+      )
+
+      expect(res.status).toBe(409)
+      expect(await res.json()).toMatchObject({ code: "event_changed" })
+      expect(mockCreateScheduleItem).not.toHaveBeenCalled()
+    })
+
+    it("keeps WebMCP from adding a schedule trigger", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+
+      const res = await app.handle(
+        new Request(`${baseUrl}/schedule`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-webmcp-request": "1",
+            "x-webmcp-expected-status": "draft",
+            "x-webmcp-event-version": "2026-08-25T15:00:00.000Z",
+          },
+          body: JSON.stringify({
+            title: "Release",
+            startsAt: "2026-09-10T19:00:00.000Z",
+            triggerType: "challenge_release",
+          }),
+        }),
+      )
+
+      expect(res.status).toBe(400)
+      expect(await res.json()).toMatchObject({ code: "invalid_request" })
+      expect(mockCreateScheduleItem).not.toHaveBeenCalled()
+    })
+
     it("returns 400 when creation fails", async () => {
       mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
       mockCreateScheduleItem.mockResolvedValue(null)
@@ -839,9 +1121,7 @@ describe("Dashboard Event Routes Integration Tests", () => {
   describe("POST /api/dashboard/hackathons/:id/challenges", () => {
     it("fires maybeReleaseChallengesForPublishLink after a successful create", async () => {
       mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
-      const challengesModule = await import("@/lib/services/challenges")
-      const mockCreate = challengesModule.createChallenge as unknown as ReturnType<typeof mock>
-      mockCreate.mockResolvedValueOnce({
+      mockCreateChallenge.mockResolvedValueOnce({
         id: "c1",
         hackathonId,
         title: "Build something",
@@ -863,16 +1143,50 @@ describe("Dashboard Event Routes Integration Tests", () => {
       expect(res.status).toBe(200)
       expect(mockMaybeReleaseChallengesForPublishLink).toHaveBeenCalledWith(hackathonId, "tenant-123")
     })
+
+    it("rejects a stale WebMCP challenge before creating it", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockCheckHackathonOrganizer.mockResolvedValue({
+        status: "authorized" as const,
+        hackathon: {
+          id: hackathonId,
+          tenant_id: "tenant-123",
+          status: "published",
+          starts_at: "2019-01-01T00:00:00.000Z",
+          ends_at: "2020-01-01T00:00:00.000Z",
+          updated_at: "2026-08-25T16:00:00.000Z",
+        },
+      })
+
+      const res = await app.handle(
+        new Request(`${baseUrl}/challenges`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-webmcp-request": "1",
+            "x-webmcp-expected-status": "active",
+            "x-webmcp-event-version": "2026-08-25T15:00:00.000Z",
+          },
+          body: JSON.stringify({ title: "Blocked" }),
+        }),
+      )
+      expect(res.status).toBe(409)
+      expect(await res.json()).toMatchObject({ code: "event_changed" })
+      expect(mockCreateChallenge).not.toHaveBeenCalled()
+    })
   })
 
   describe("POST /api/dashboard/hackathons/:id/email-blast", () => {
     const blastUrl = `${baseUrl}/email-blast`
 
-    function postBlast() {
+    function postBlast(idempotencyKey?: string) {
       return app.handle(
         new Request(blastUrl, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
+          },
           body: JSON.stringify({ subject: "Hi", html: "<p>Hi</p>" }),
         })
       )
@@ -903,12 +1217,59 @@ describe("Dashboard Event Routes Integration Tests", () => {
       mockSendBulkEmail.mockClear()
       mockSendBulkEmail.mockResolvedValueOnce({ sent: 5 })
 
-      const res = await postBlast()
+      const res = await postBlast("send-blast-1")
       const data = await res.json()
 
       expect(res.status).toBe(200)
       expect(data.sent).toBe(5)
       expect(mockSendBulkEmail).toHaveBeenCalledTimes(1)
+      expect(mockSendBulkEmail).toHaveBeenCalledWith(
+        hackathonId,
+        expect.objectContaining({ deliveryId: expect.stringMatching(/^[a-f0-9]{24}$/) }),
+      )
+    })
+
+    it("rejects an invalid blast idempotency key", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockCheckHackathonOrganizer.mockResolvedValue({
+        status: "ok" as const,
+        hackathon: { id: hackathonId, tenant_id: "tenant-123", status: "active" },
+      })
+      mockSendBulkEmail.mockClear()
+
+      const res = await app.handle(new Request(blastUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": " ",
+        },
+        body: JSON.stringify({ subject: "Hi", html: "<p>Hi</p>" }),
+      }))
+
+      expect(res.status).toBe(400)
+      expect(await res.json()).toMatchObject({ code: "invalid_idempotency_key" })
+      expect(mockSendBulkEmail).not.toHaveBeenCalled()
+    })
+
+    it("blocks email blast after an event has effectively ended", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockCheckHackathonOrganizer.mockResolvedValue({
+        status: "ok" as const,
+        hackathon: {
+          id: hackathonId,
+          tenant_id: "tenant-123",
+          status: "active",
+          starts_at: "2020-01-01T00:00:00.000Z",
+          ends_at: "2020-01-02T00:00:00.000Z",
+        },
+      })
+      mockSendBulkEmail.mockClear()
+
+      const res = await postBlast()
+
+      expect(res.status).toBe(409)
+      expect(await res.json()).toMatchObject({ code: "hackathon_ended" })
+      expect(mockSendBulkEmail).not.toHaveBeenCalled()
     })
 
     it("returns 404 when hackathon not found", async () => {

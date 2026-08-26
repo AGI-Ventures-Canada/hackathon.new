@@ -51,6 +51,7 @@ describe("sendExportReadyEmail", () => {
       text: string
       tags: { name: string; value: string }[]
       replyTo?: string
+      idempotencyKey: string
     }
 
     expect(call.to).toBe("alex@example.com")
@@ -67,6 +68,10 @@ describe("sendExportReadyEmail", () => {
       value: "submission_export_ready",
     })
     expect(call.tags.some((t) => t.name === "hackathon")).toBe(true)
+    expect(call.idempotencyKey).toMatch(
+      /^submission-export-ready\/22222222-2222-2222-2222-222222222222\/[a-f0-9]{24}$/
+    )
+    expect(call.idempotencyKey).not.toContain("alex@example.com")
   })
 
   it("returns success: false when NEXT_PUBLIC_APP_URL is missing", async () => {
@@ -106,6 +111,7 @@ describe("sendExportFailedEmail", () => {
       hackathonName: "AI Hack 2026",
       hackathonSlug: "ai-hack-2026",
       errorMessage: "storage quota exceeded",
+      exportId: EXPORT_ID,
     })
 
     expect(result.success).toBe(true)
@@ -113,6 +119,7 @@ describe("sendExportFailedEmail", () => {
       subject: string
       html: string
       tags: { name: string; value: string }[]
+      idempotencyKey: string
     }
 
     expect(call.subject).toBe("AI Hack 2026 export didn't finish")
@@ -124,5 +131,9 @@ describe("sendExportFailedEmail", () => {
       name: "type",
       value: "submission_export_failed",
     })
+    expect(call.idempotencyKey).toMatch(
+      /^submission-export-failed\/22222222-2222-2222-2222-222222222222\/[a-f0-9]{24}$/
+    )
+    expect(call.idempotencyKey).not.toContain("alex@example.com")
   })
 })

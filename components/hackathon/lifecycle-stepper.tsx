@@ -110,6 +110,16 @@ export function LifecycleStepper({
   const router = useRouter()
   const isMobile = useIsMobile()
   const actionItems = useActionItemsOptional()
+  const visibleStartsAt = actionItems
+    ? actionItems.manageWebMcpView.timeline.startsAt
+    : startsAt
+  const visibleEndsAt = actionItems
+    ? actionItems.manageWebMcpView.timeline.endsAt
+    : endsAt
+  const visibleDescription = actionItems
+    ? actionItems.manageWebMcpView.details.description
+    : description
+  const visiblePrizeCount = actionItems?.manageWebMcpView.prizes.length ?? prizeCount
   const [currentStatus, setCurrentStatus] = useState(status)
   const [updating, setUpdating] = useState(false)
   const [pendingTarget, setPendingTarget] = useState<PhaseKey | null>(null)
@@ -194,7 +204,7 @@ export function LifecycleStepper({
         )
       }
 
-      const body = buildStatusTransitionBody(newStatus, endsAt)
+      const body = buildStatusTransitionBody(newStatus, visibleEndsAt)
 
       const res = await fetch(
         `/api/dashboard/hackathons/${hackathonId}/settings`,
@@ -305,20 +315,20 @@ export function LifecycleStepper({
     : null
 
   const missingDates = [
-    !startsAt && "Event starts",
-    !endsAt && "Event ends",
+    !visibleStartsAt && "Event starts",
+    !visibleEndsAt && "Event ends",
   ].filter(Boolean) as string[]
   const hasAllDates = missingDates.length === 0
 
   const goLiveWarnings = [
-    !description && "No description",
+    !visibleDescription && "No description",
     !bannerUrl && "No banner image",
     !locationType && "Location not set",
     (locationType === "in_person" || locationType === "hybrid") && !locationName && "Venue details missing",
     (locationType === "virtual" || locationType === "hybrid") && !locationUrl && "Virtual link missing",
     sponsorCount === 0 && "No sponsors",
     judgeDisplayCount === 0 && "No judges added",
-    prizeCount === 0 && "No prizes defined",
+    visiblePrizeCount === 0 && "No prizes defined",
   ].filter(Boolean) as string[]
 
   return (

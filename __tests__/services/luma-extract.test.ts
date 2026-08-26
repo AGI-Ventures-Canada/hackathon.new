@@ -106,12 +106,26 @@ describe("extractLumaRichContent", () => {
   })
 
   it("returns null when Tavily extraction fails", async () => {
-    mockExtract.mockRejectedValueOnce(new Error("Network error"))
+    const url = "https://example.com/event?token=rich-secret#private"
+    mockExtract.mockRejectedValueOnce(new Error(`Network error for ${url}`))
+    const originalConsoleError = console.error
+    const consoleError = mock(() => {})
+    console.error = consoleError
 
-    const result = await extractLumaRichContent("test")
+    let result: Awaited<ReturnType<typeof extractEventPageRichContent>>
+    try {
+      result = await extractEventPageRichContent(url)
+    } finally {
+      console.error = originalConsoleError
+    }
 
     expect(result).toBeNull()
     expect(mockGenerateObject).not.toHaveBeenCalled()
+    const output = JSON.stringify(consoleError.mock.calls)
+    expect(output).toContain("https://example.com/[redacted]")
+    expect(output).not.toContain("/event")
+    expect(output).not.toContain("rich-secret")
+    expect(output).not.toContain("#private")
   })
 
   it("returns null when Tavily returns no results", async () => {
@@ -153,7 +167,7 @@ describe("extractLumaRichContent", () => {
 
     expect(mockExtract).toHaveBeenCalledWith(
       ["https://luma.com/my-event/sub-path"],
-      expect.objectContaining({ extractDepth: "advanced", format: "markdown" })
+      expect.objectContaining({ extractDepth: "advanced", format: "markdown", timeout: 15 })
     )
   })
 
@@ -174,8 +188,28 @@ describe("extractLumaRichContent", () => {
         model: "mock-model",
         maxOutputTokens: 4096,
         prompt: expect.stringContaining("# Test Hackathon"),
+        timeout: 20_000,
       })
     )
+  })
+
+  it("caps extracted page content before sending it to the model", async () => {
+    mockExtract.mockResolvedValueOnce({
+      results: [{
+        url: "https://luma.com/large",
+        title: "Large event",
+        rawContent: `${"a".repeat(100_000)}private-tail`,
+      }],
+      failedResults: [],
+      responseTime: 0.5,
+      requestId: "req-large",
+    })
+
+    await extractLumaRichContent("large")
+
+    const prompt = (mockGenerateObject.mock.calls[0][0] as { prompt: string }).prompt
+    expect(prompt).not.toContain("private-tail")
+    expect(prompt.endsWith("a".repeat(100_000))).toBe(true)
   })
 
   it("prompts the model to extract agenda items", async () => {

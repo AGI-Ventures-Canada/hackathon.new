@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Loader2, Plus, Pencil, Trash2, ArrowUp, ArrowDown, Send, Link as LinkIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -19,6 +19,8 @@ import { ChallengeEditorDialog } from "./challenge-editor-dialog"
 import type { Challenge } from "@/lib/services/challenges"
 import type { ScheduleItem } from "@/lib/services/schedule-items"
 import type { HackathonStatus } from "@/lib/db/hackathon-types"
+import { useIsClient } from "@/hooks/use-is-client"
+import { useActionItemsOptional } from "./action-items-context"
 
 type Props = {
   hackathonId: string
@@ -30,13 +32,20 @@ type Props = {
   hackathonStatus: HackathonStatus
 }
 
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleString(undefined, {
+function formatDate(dateStr: string, timeZone?: string): string {
+  const date = new Date(dateStr)
+  const locale = timeZone ? "en-US" : undefined
+  const dateLabel = date.toLocaleDateString(locale, {
     month: "short",
     day: "numeric",
+    timeZone,
+  })
+  const timeLabel = date.toLocaleTimeString(locale, {
     hour: "numeric",
     minute: "2-digit",
+    timeZone,
   })
+  return `${dateLabel} at ${timeLabel}`
 }
 
 export function ChallengesTab({
@@ -49,7 +58,31 @@ export function ChallengesTab({
   hackathonStatus,
 }: Props) {
   const router = useRouter()
-  const [challenges, setChallenges] = useState<Challenge[]>(initialChallenges)
+  const isClient = useIsClient()
+  const displayTimeZone = isClient ? undefined : "UTC"
+  const actionItems = useActionItemsOptional()
+  const [localChallenges, setLocalChallenges] = useState<Challenge[]>(initialChallenges)
+  const challenges = actionItems?.manageWebMcpView.challenges ?? localChallenges
+  const challengesRef = useRef(challenges)
+  useEffect(() => {
+    challengesRef.current = challenges
+  }, [challenges])
+  const replaceChallenges = useCallback(
+    (items: Challenge[]) => {
+      if (actionItems) {
+        actionItems.replaceManageChallenges(items)
+      } else {
+        setLocalChallenges(items)
+      }
+    },
+    [actionItems],
+  )
+  const updateChallenges = useCallback(
+    (update: (items: Challenge[]) => Challenge[]) => {
+      replaceChallenges(update(challengesRef.current))
+    },
+    [replaceChallenges],
+  )
   const [releasedAt, setReleasedAt] = useState<string | null>(initialReleasedAt)
   const [editorOpen, setEditorOpen] = useState(false)
   const [editing, setEditing] = useState<Challenge | null>(null)
@@ -58,10 +91,13 @@ export function ChallengesTab({
   const [releaseDialogOpen, setReleaseDialogOpen] = useState(false)
   const [releasing, setReleasing] = useState(false)
   const [releaseError, setReleaseError] = useState<string | null>(null)
+  const hasPendingWebMcpChallenge = challenges.some((challenge) =>
+    challenge.id.startsWith("webmcp-challenge-"),
+  )
 
   useEffect(() => {
-    setChallenges(initialChallenges)
-  }, [initialChallenges])
+    if (!actionItems) setLocalChallenges(initialChallenges)
+  }, [actionItems, initialChallenges])
 
   useEffect(() => {
     setReleasedAt(initialReleasedAt)
@@ -78,7 +114,7 @@ export function ChallengesTab({
   }
 
   function handleSaved(saved: Challenge) {
-    setChallenges((prev) => {
+    updateChallenges((prev) => {
       const existing = prev.findIndex((c) => c.id === saved.id)
       if (existing >= 0) {
         const next = [...prev]
@@ -99,7 +135,7 @@ export function ChallengesTab({
         { method: "DELETE" },
       )
       if (!res.ok) throw new Error()
-      setChallenges((prev) => prev.filter((c) => c.id !== deleteTarget.id))
+      updateChallenges((prev) => prev.filter((c) => c.id !== deleteTarget.id))
       setDeleteTarget(null)
       router.refresh()
     } catch {
@@ -114,14 +150,14 @@ export function ChallengesTab({
     const next = [...challenges]
     const [moved] = next.splice(from, 1)
     next.splice(to, 0, moved)
-    setChallenges(next)
+    replaceChallenges(next)
     const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/challenges/reorder`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ orderedIds: next.map((c) => c.id) }),
     })
     if (!res.ok) {
-      setChallenges(challenges)
+      replaceChallenges(challenges)
     } else {
       router.refresh()
     }
@@ -165,7 +201,7 @@ export function ChallengesTab({
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
             {challenges.length} challenge{challenges.length === 1 ? "" : "s"}
-            {releasedAt ? ` · released ${formatDate(releasedAt)}` : ""}
+            {releasedAt ? ` · released ${formatDate(releasedAt, displayTimeZone)}` : ""}
           </p>
           <div className="flex items-center gap-2">
             {!releasedAt && (
@@ -173,6 +209,7 @@ export function ChallengesTab({
                 variant="outline"
                 size="sm"
                 onClick={() => setReleaseDialogOpen(true)}
+                disabled={hasPendingWebMcpChallenge}
               >
                 <Send className="size-4" />
                 <span className="hidden sm:inline">Release</span>
@@ -189,7 +226,12 @@ export function ChallengesTab({
             <div key={c.id} className="rounded-lg border bg-card p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
-                  <h3 className="truncate text-base font-semibold">{c.title}</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="truncate text-base font-semibold">{c.title}</h3>
+                    {c.id.startsWith("webmcp-challenge-") && (
+                      <Badge variant="secondary">Saving</Badge>
+                    )}
+                  </div>
                   {c.description ? (
                     <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
                       {c.description}
@@ -207,16 +249,16 @@ export function ChallengesTab({
                   ) : null}
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
-                  <Button variant="ghost" size="icon" onClick={() => reorder(idx, idx - 1)} disabled={idx === 0} aria-label="Move up">
+                  <Button variant="ghost" size="icon" onClick={() => reorder(idx, idx - 1)} disabled={idx === 0 || hasPendingWebMcpChallenge} aria-label="Move up">
                     <ArrowUp className="size-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" onClick={() => reorder(idx, idx + 1)} disabled={idx === challenges.length - 1} aria-label="Move down">
+                  <Button variant="ghost" size="icon" onClick={() => reorder(idx, idx + 1)} disabled={idx === challenges.length - 1 || hasPendingWebMcpChallenge} aria-label="Move down">
                     <ArrowDown className="size-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" onClick={() => openEdit(c)} aria-label="Edit">
+                  <Button variant="ghost" size="icon" onClick={() => openEdit(c)} disabled={c.id.startsWith("webmcp-challenge-")} aria-label="Edit">
                     <Pencil className="size-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(c)} aria-label="Delete">
+                  <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(c)} disabled={c.id.startsWith("webmcp-challenge-")} aria-label="Delete">
                     <Trash2 className="size-4" />
                   </Button>
                 </div>

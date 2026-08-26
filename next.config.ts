@@ -1,6 +1,24 @@
 import type { NextConfig } from "next"
 import { withWorkflow } from "workflow/next"
 import { createMDX } from "fumadocs-mdx/next"
+import {
+  createWebMcpOriginTrialHeaderRule,
+  getWebMcpOriginTrialRegistration,
+  hasWebMcpOriginTrialConfiguration,
+} from "./lib/webmcp/origin-trial"
+
+const hasConfiguredWebMcpToken = hasWebMcpOriginTrialConfiguration()
+const webMcpOriginTrial = getWebMcpOriginTrialRegistration()
+
+if (hasConfiguredWebMcpToken && !webMcpOriginTrial) {
+  throw new Error("WEBMCP_ORIGIN_TRIAL_TOKEN is malformed, expired, or not a WebMCP token.")
+}
+
+if (webMcpOriginTrial?.renewalDue) {
+  throw new Error("WEBMCP_ORIGIN_TRIAL_TOKEN expires within 30 days. Renew it before deploying.")
+}
+
+const sharpTraceFiles = ["node_modules/sharp/**/*", "node_modules/@img/**/*"]
 
 const nextConfig: NextConfig = {
   skipTrailingSlashRedirect: true,
@@ -19,6 +37,14 @@ const nextConfig: NextConfig = {
     "@react-email/render",
     "@react-pdf/renderer",
   ],
+  outputFileTracingIncludes: {
+    "/api/\\[\\[\\.\\.\\.slugs\\]\\]": sharpTraceFiles,
+    "/.well-known/workflow/v1/step": sharpTraceFiles,
+  },
+  async headers() {
+    if (!webMcpOriginTrial) return []
+    return [createWebMcpOriginTrialHeaderRule(webMcpOriginTrial)]
+  },
   async rewrites() {
     return [
       {

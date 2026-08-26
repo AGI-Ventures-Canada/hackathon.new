@@ -20,7 +20,7 @@ Run these commands to verify the developer has required tools:
 
 ```bash
 bun --version       # Need Bun 1.0+
-node --version      # Need Node.js 20.9+ (for Next.js 16)
+node --version      # Need Node.js 20.18.1+
 supabase --version  # Need Supabase CLI
 docker info         # Need Docker running (for local Supabase)
 ```
@@ -30,7 +30,7 @@ docker info         # Need Docker running (for local Supabase)
 | Tool | Install Command |
 |------|-----------------|
 | Bun | `curl -fsSL https://bun.sh/install \| bash` or `brew install oven-sh/bun/bun` |
-| Node.js | `brew install node@20` or [nodejs.org](https://nodejs.org) (v20.9+) |
+| Node.js | `brew install node@20` or [nodejs.org](https://nodejs.org) (v20.18.1+) |
 | Supabase CLI | `brew install supabase/tap/supabase` |
 | Docker | [Docker Desktop](https://www.docker.com/products/docker-desktop) |
 
@@ -70,9 +70,14 @@ ADMIN_ENABLED=true
 # Resend (email sending)
 RESEND_API_KEY=re_...
 RESEND_FROM_EMAIL=noreply@hackathon.new
+RESEND_REPLY_TO_EMAIL=support@hackathon.new
+# RESEND_REQUEST_TIMEOUT_MS=10000
 
 # App URL (used for email links, invite URLs, etc.)
 NEXT_PUBLIC_APP_URL=http://localhost:3000
+
+# WebMCP origin trial (optional; use a different exact-origin token per Vercel host)
+# WEBMCP_ORIGIN_TRIAL_TOKEN=...
 
 # Tavily (optional - enables rich content extraction from Luma event pages)
 # Without this, Luma imports still work but won't extract sponsors, rules, or prizes
@@ -96,6 +101,8 @@ echo "ENCRYPTION_KEY=$(openssl rand -hex 32)" >> .env.local
 **Admin portal access** requires two things: (1) `ADMIN_ENABLED=true` in `.env.local`, and (2) the Clerk user must have `{ "admin": true }` in their public metadata. Set this in Clerk Dashboard > Users > your user > Public metadata. The Clerk session token template must also map `"metadata": "{{user.public_metadata}}"` under Configure > Sessions > Customize session token for the claims to reach the app.
 
 **Supabase keys are auto-configured** when running `bun dev` (local Supabase).
+
+**WebMCP origin-trial tokens are public, origin-specific values.** Local setup does not need one. Configure the preview token on the stable Vercel branch URL and a separate production token on `https://hackathon.new`. Never reuse a token for a different origin.
 
 ### Step 4: Start Development Server
 
@@ -132,7 +139,7 @@ curl http://localhost:3000/api/public/health
 ### Step 6: Run Tests
 
 ```bash
-bun test
+bun run test
 ```
 
 All tests should pass before making changes. Target: 90% code coverage.
@@ -160,7 +167,7 @@ git checkout -b feature/your-feature-name
 | `bun dev` | Start dev server (auto-starts local Supabase) |
 | `bun dev:fresh` | Reset database + start dev server (clean slate) |
 | `bun run build` | Production build |
-| `bun test` | Run tests |
+| `bun run test` | Run tests |
 | `bun lint` | Run ESLint |
 | `bun db:sync` | Reset DB + regenerate types |
 | `bun db:diff name` | Capture Studio changes as migration |

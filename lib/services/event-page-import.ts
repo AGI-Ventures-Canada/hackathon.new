@@ -1,7 +1,12 @@
 import { cache } from "react"
 import { normalizeUrl } from "@/lib/utils/url"
 import { normalizeLocale } from "@/lib/utils/language"
-import { fetchAllowedUrl, readResponseText } from "@/lib/utils/safe-fetch-url"
+import {
+  fetchAllowedUrl,
+  readResponseText,
+  redactFetchErrorForLogs,
+  redactUrlForLogs,
+} from "@/lib/utils/safe-fetch-url"
 
 export type EventPageData = {
   name: string
@@ -57,7 +62,10 @@ export const extractEventPageData = cache(async function extractEventPageData(
     if (!fetched) return null
     response = fetched
   } catch (err) {
-    console.error(`Failed to fetch event page from ${url}:`, err)
+    console.error(
+      `Failed to fetch event page from ${redactUrlForLogs(url)}:`,
+      redactFetchErrorForLogs(err, [url])
+    )
     return null
   }
 

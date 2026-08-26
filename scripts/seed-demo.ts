@@ -11,8 +11,8 @@ if (!supabaseUrl || !supabaseServiceKey) {
 const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
 const DEV_USER = {
-  clerkUserId: "user_38vEFI8UesKwM07qIuFNqEzFavS",
-  name: "Hai The Dude",
+  clerkUserId: process.env.SCENARIO_DEV_USER_ID ?? "user_demo_secondary_0002",
+  name: "Jordan Lee",
 }
 
 async function seedDemo() {
@@ -31,7 +31,7 @@ async function seedDemo() {
       .insert({
         clerk_user_id: DEV_USER.clerkUserId,
         name: DEV_USER.name,
-        slug: "hai",
+        slug: "jordan-lee",
         description: "Personal workspace",
       })
 
@@ -87,7 +87,7 @@ async function seedDemo() {
   }
 
   let tavilyTenantId: string | null = null
-  const TAVILY_CLERK_ORG_ID = "org_3998gS77efJrXAYJfwOU2AQRrXI"
+  const TAVILY_CLERK_ORG_ID = "org_demo_tavily_0003"
 
   const { data: tavilyTenant } = await supabase
     .from("tenants")

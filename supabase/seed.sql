@@ -6,7 +6,7 @@
 -- Personal tenant (Your local dev user)
 INSERT INTO tenants (id, clerk_user_id, name, slug, description, created_at, updated_at)
 VALUES
-  ('d1d1d1d1-d1d1-d1d1-d1d1-d1d1d1d1d1d1', 'user_39BZw9GPM79s3lcPIZn8tDLtoQg', 'Dwayne Joseph', 'dwayne-joseph', 'Personal workspace for local development', now(), now())
+  ('d1d1d1d1-d1d1-d1d1-d1d1-d1d1d1d1d1d1', 'user_demo_primary_0001', 'Jordan Lee', 'jordan-lee', 'Personal workspace for local development', now(), now())
 ON CONFLICT (id) DO NOTHING;
 
 -- Organization tenants
@@ -17,14 +17,14 @@ VALUES
   ('55555555-5555-5555-5555-555555555555', 'org_tavily', 'Tavily', 'tavily', 'AI-powered search API for developers', 'https://tavily.com', now(), now()),
   ('66666666-6666-6666-6666-666666666666', 'org_anthropic', 'Anthropic', 'anthropic', 'AI safety company building reliable, interpretable AI systems', 'https://anthropic.com', now(), now()),
   ('77777777-7777-7777-7777-777777777777', 'org_openai', 'OpenAI', 'openai', 'AI research and deployment company', 'https://openai.com', now(), now()),
-  ('12345678-1234-1234-1234-123456789012', 'org_3998CZRtAOrKPFpY9g5RBuUN3Py', 'AGI Ventures Canada', 'agi-ventures-canada', NULL, NULL, now(), now()),
-  ('99990000-9999-9999-9999-999900009999', 'org_39UEiyWJhVSLPzFAJZI4CFNm2Ba', 'AGI House', 'agi-house', 'AI hacker house and community in the Bay Area, hosting hackathons, dinners, and events for the AI community', 'https://agihouse.org', now(), now())
+  ('12345678-1234-1234-1234-123456789012', 'org_demo_agi_ventures_0001', 'AGI Ventures Canada', 'agi-ventures-canada', NULL, NULL, now(), now()),
+  ('99990000-9999-9999-9999-999900009999', 'org_demo_agi_house_0002', 'AGI House', 'agi-house', 'AI hacker house and community in the Bay Area, hosting hackathons, dinners, and events for the AI community', 'https://agihouse.org', now(), now())
 ON CONFLICT (id) DO NOTHING;
 
 -- Personal tenant for test user
 INSERT INTO tenants (id, clerk_user_id, name, slug, description, website_url, created_at, updated_at)
 VALUES
-  ('87654321-4321-4321-4321-210987654321', 'user_38vEFI8UesKwM07qIuFNqEzFavS', 'Test User', 'test-user', 'Personal tenant for test user', NULL, now(), now())
+  ('87654321-4321-4321-4321-210987654321', 'user_demo_secondary_0002', 'Test User', 'test-user', 'Personal tenant for test user', NULL, now(), now())
 ON CONFLICT (id) DO NOTHING;
 -- ============================================================================
 -- API KEYS AND AUDIT LOGS
@@ -1257,22 +1257,22 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO hackathon_participants (id, hackathon_id, clerk_user_id, role, registered_at)
 VALUES
-  ('d2d2d2d2-d2d2-d2d2-d2d2-d2d2d2d2d2d2', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'user_39BZw9GPM79s3lcPIZn8tDLtoQg', 'participant', now()),
-  ('d3d3d3d3-d3d3-d3d3-d3d3-d3d3d3d3d3d3', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'user_39BZw9GPM79s3lcPIZn8tDLtoQg', 'participant', now()),
-  ('d4d4d4d4-d4d4-d4d4-d4d4-d4d4d4d4d4d4', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'user_39BZw9GPM79s3lcPIZn8tDLtoQg', 'participant', now()),
-  ('d5d5d5d5-d5d5-d5d5-d5d5-d5d5d5d5d5d5', 'dddddddd-dddd-dddd-dddd-dddddddddddd', 'user_39BZw9GPM79s3lcPIZn8tDLtoQg', 'participant', now()),
-  ('d6d6d6d6-d6d6-d6d6-d6d6-d6d6d6d6d6d6', 'aa11aa11-aa11-aa11-aa11-aa11aa11aa11', 'user_39BZw9GPM79s3lcPIZn8tDLtoQg', 'participant', now() - interval '20 days'),
-  ('d7d7d7d7-d7d7-d7d7-d7d7-d7d7d7d7d7d7', 'bb22bb22-bb22-bb22-bb22-bb22bb22bb22', 'user_39BZw9GPM79s3lcPIZn8tDLtoQg', 'participant', now() - interval '2 days'),
-  ('d8d8d8d8-d8d8-d8d8-d8d8-d8d8d8d8d8d8', 'cc33cc33-cc33-cc33-cc33-cc33cc33cc33', 'user_39BZw9GPM79s3lcPIZn8tDLtoQg', 'participant', now() - interval '1 day'),
-  ('d9d9d9d9-d9d9-d9d9-d9d9-d9d9d9d9d9d9', 'dd44dd44-dd44-dd44-dd44-dd44dd44dd44', 'user_39BZw9GPM79s3lcPIZn8tDLtoQg', 'participant', now()),
-  ('dadadada-dada-dada-dada-dadadadadada', 'ee55ee55-ee55-ee55-ee55-ee55ee55ee55', 'user_39BZw9GPM79s3lcPIZn8tDLtoQg', 'participant', now() - interval '35 days'),
-  ('dbdbdbdb-dbdb-dbdb-dbdb-dbdbdbdbdbdb', 'ff66ff66-ff66-ff66-ff66-ff66ff66ff66', 'user_39BZw9GPM79s3lcPIZn8tDLtoQg', 'participant', now() - interval '3 days'),
-  ('dcdcdcdc-dcdc-dcdc-dcdc-dcdcdcdcdcdc', 'aa77aa77-aa77-aa77-aa77-aa77aa77aa77', 'user_39BZw9GPM79s3lcPIZn8tDLtoQg', 'participant', now()),
-  ('ddddeeee-ddee-ddee-ddee-ddddeeeeddee', 'bb88bb88-bb88-bb88-bb88-bb88bb88bb88', 'user_39BZw9GPM79s3lcPIZn8tDLtoQg', 'participant', now()),
-  ('a9d90001-a9d9-a9d9-a9d9-a9d90001a9d9', 'aaa10001-aaa1-aaa1-aaa1-aaa10001aaa1', 'user_39BZw9GPM79s3lcPIZn8tDLtoQg', 'participant', now() - interval '30 days'),
-  ('a9d90002-a9d9-a9d9-a9d9-a9d90002a9d9', 'aaa20002-aaa2-aaa2-aaa2-aaa20002aaa2', 'user_39BZw9GPM79s3lcPIZn8tDLtoQg', 'participant', now() - interval '50 days'),
-  ('a9d90003-a9d9-a9d9-a9d9-a9d90003a9d9', 'aaa40004-aaa4-aaa4-aaa4-aaa40004aaa4', 'user_39BZw9GPM79s3lcPIZn8tDLtoQg', 'participant', now() - interval '3 days'),
-  ('a9d90004-a9d9-a9d9-a9d9-a9d90004a9d9', 'aaa50005-aaa5-aaa5-aaa5-aaa50005aaa5', 'user_39BZw9GPM79s3lcPIZn8tDLtoQg', 'participant', now())
+  ('d2d2d2d2-d2d2-d2d2-d2d2-d2d2d2d2d2d2', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'user_demo_primary_0001', 'participant', now()),
+  ('d3d3d3d3-d3d3-d3d3-d3d3-d3d3d3d3d3d3', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'user_demo_primary_0001', 'participant', now()),
+  ('d4d4d4d4-d4d4-d4d4-d4d4-d4d4d4d4d4d4', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'user_demo_primary_0001', 'participant', now()),
+  ('d5d5d5d5-d5d5-d5d5-d5d5-d5d5d5d5d5d5', 'dddddddd-dddd-dddd-dddd-dddddddddddd', 'user_demo_primary_0001', 'participant', now()),
+  ('d6d6d6d6-d6d6-d6d6-d6d6-d6d6d6d6d6d6', 'aa11aa11-aa11-aa11-aa11-aa11aa11aa11', 'user_demo_primary_0001', 'participant', now() - interval '20 days'),
+  ('d7d7d7d7-d7d7-d7d7-d7d7-d7d7d7d7d7d7', 'bb22bb22-bb22-bb22-bb22-bb22bb22bb22', 'user_demo_primary_0001', 'participant', now() - interval '2 days'),
+  ('d8d8d8d8-d8d8-d8d8-d8d8-d8d8d8d8d8d8', 'cc33cc33-cc33-cc33-cc33-cc33cc33cc33', 'user_demo_primary_0001', 'participant', now() - interval '1 day'),
+  ('d9d9d9d9-d9d9-d9d9-d9d9-d9d9d9d9d9d9', 'dd44dd44-dd44-dd44-dd44-dd44dd44dd44', 'user_demo_primary_0001', 'participant', now()),
+  ('dadadada-dada-dada-dada-dadadadadada', 'ee55ee55-ee55-ee55-ee55-ee55ee55ee55', 'user_demo_primary_0001', 'participant', now() - interval '35 days'),
+  ('dbdbdbdb-dbdb-dbdb-dbdb-dbdbdbdbdbdb', 'ff66ff66-ff66-ff66-ff66-ff66ff66ff66', 'user_demo_primary_0001', 'participant', now() - interval '3 days'),
+  ('dcdcdcdc-dcdc-dcdc-dcdc-dcdcdcdcdcdc', 'aa77aa77-aa77-aa77-aa77-aa77aa77aa77', 'user_demo_primary_0001', 'participant', now()),
+  ('ddddeeee-ddee-ddee-ddee-ddddeeeeddee', 'bb88bb88-bb88-bb88-bb88-bb88bb88bb88', 'user_demo_primary_0001', 'participant', now()),
+  ('a9d90001-a9d9-a9d9-a9d9-a9d90001a9d9', 'aaa10001-aaa1-aaa1-aaa1-aaa10001aaa1', 'user_demo_primary_0001', 'participant', now() - interval '30 days'),
+  ('a9d90002-a9d9-a9d9-a9d9-a9d90002a9d9', 'aaa20002-aaa2-aaa2-aaa2-aaa20002aaa2', 'user_demo_primary_0001', 'participant', now() - interval '50 days'),
+  ('a9d90003-a9d9-a9d9-a9d9-a9d90003a9d9', 'aaa40004-aaa4-aaa4-aaa4-aaa40004aaa4', 'user_demo_primary_0001', 'participant', now() - interval '3 days'),
+  ('a9d90004-a9d9-a9d9-a9d9-a9d90004a9d9', 'aaa50005-aaa5-aaa5-aaa5-aaa50005aaa5', 'user_demo_primary_0001', 'participant', now())
 ON CONFLICT (id) DO NOTHING;
 -- ============================================================================
 -- SEED PARTICIPANTS (Fake users across hackathons)
@@ -1468,7 +1468,7 @@ ON CONFLICT (id) DO NOTHING;
 -- Generative UI Hackathon (completed) — 18 participants + dev user
 INSERT INTO hackathon_participants (id, hackathon_id, clerk_user_id, role, registered_at)
 VALUES
-  ('a9e00024-a9e0-a9e0-a9e0-a9e00024a9e0', 'aaa30003-aaa3-aaa3-aaa3-aaa30003aaa3', 'user_39BZw9GPM79s3lcPIZn8tDLtoQg', 'participant', now() - interval '75 days'),
+  ('a9e00024-a9e0-a9e0-a9e0-a9e00024a9e0', 'aaa30003-aaa3-aaa3-aaa3-aaa30003aaa3', 'user_demo_primary_0001', 'participant', now() - interval '75 days'),
   ('a9e00025-a9e0-a9e0-a9e0-a9e00025a9e0', 'aaa30003-aaa3-aaa3-aaa3-aaa30003aaa3', 'user_seed_106', 'participant', now() - interval '78 days'),
   ('a9e00026-a9e0-a9e0-a9e0-a9e00026a9e0', 'aaa30003-aaa3-aaa3-aaa3-aaa30003aaa3', 'user_seed_107', 'participant', now() - interval '77 days'),
   ('a9e00027-a9e0-a9e0-a9e0-a9e00027a9e0', 'aaa30003-aaa3-aaa3-aaa3-aaa30003aaa3', 'user_seed_108', 'participant', now() - interval '77 days'),

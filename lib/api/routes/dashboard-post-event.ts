@@ -2,6 +2,7 @@ import { Elysia, t } from "elysia"
 import { resolvePrincipal, requirePrincipal } from "@/lib/auth/principal"
 import { logAudit } from "@/lib/services/audit"
 import { safeDecrypt } from "@/lib/services/encryption"
+import { isSafeExternalUrl, normalizeUrl } from "@/lib/utils/url"
 
 export const dashboardPostEventRoutes = new Elysia()
   .derive(async ({ request }) => {
@@ -192,8 +193,16 @@ export const dashboardPostEventRoutes = new Elysia()
         })
       }
 
+      const surveyUrl = normalizeUrl(body.surveyUrl)
+      if (!isSafeExternalUrl(surveyUrl)) {
+        return new Response(JSON.stringify({ error: "Use a public HTTPS survey link" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+
       const { sendFeedbackSurveyEmails } = await import("@/lib/email/feedback-survey")
-      const { sent, failed } = await sendFeedbackSurveyEmails(params.id, body.surveyUrl)
+      const { sent, failed } = await sendFeedbackSurveyEmails(params.id, surveyUrl)
 
       if (sent === 0 && failed === 0) {
         return new Response(JSON.stringify({ error: "Survey already sent or no participants found" }), {
@@ -207,7 +216,7 @@ export const dashboardPostEventRoutes = new Elysia()
         action: "feedback_survey.sent",
         resourceType: "hackathon",
         resourceId: params.id,
-        metadata: { sent, failed, surveyUrl: body.surveyUrl },
+        metadata: { sent, failed, surveyUrl },
       })
 
       return { success: true, sent, failed }
@@ -218,7 +227,7 @@ export const dashboardPostEventRoutes = new Elysia()
         description: "Sends a feedback survey email to all participants. Requires hackathons:write scope.",
       },
       body: t.Object({
-        surveyUrl: t.String({ minLength: 1 }),
+        surveyUrl: t.String({ minLength: 1, maxLength: 2_048 }),
       }),
     }
   )

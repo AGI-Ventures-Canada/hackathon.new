@@ -45,7 +45,6 @@ export default async function RootLayout({
   children: React.ReactNode
 }>) {
   const showDevTool = await shouldShowDevTool()
-
   return (
     <html lang="en" className={jetbrainsMono.variable} suppressHydrationWarning>
       <body

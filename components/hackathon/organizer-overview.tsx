@@ -10,6 +10,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { OverviewSchedule } from "@/components/hackathon/overview-schedule"
+import { useActionItemsOptional } from "@/components/hackathon/manage/action-items-context"
 import type { ScheduleItem } from "@/lib/services/schedule-items"
 
 type QuickStats = {
@@ -47,6 +48,13 @@ function StatCard({ icon: Icon, value, label, href }: { icon: typeof Users; valu
 }
 
 export function OrganizerOverview({ slug, hackathonId, stats, scheduleItems, challengeReleasedAt, challengeExists, hackathonStartsAt, hackathonEndsAt, hackathonStatus }: Props) {
+  const actionItems = useActionItemsOptional()
+  const visibleScheduleItems =
+    actionItems?.manageWebMcpView.scheduleItems ?? scheduleItems
+  const visibleStartsAt =
+    actionItems?.manageWebMcpView.timeline.startsAt ?? hackathonStartsAt
+  const visibleEndsAt =
+    actionItems?.manageWebMcpView.timeline.endsAt ?? hackathonEndsAt
   const judgingValue = stats.judgingProgress.totalAssignments > 0
     ? `${Math.round((stats.judgingProgress.completedAssignments / stats.judgingProgress.totalAssignments) * 100)}%`
     : "—"
@@ -73,11 +81,11 @@ export function OrganizerOverview({ slug, hackathonId, stats, scheduleItems, cha
         <div>
           <OverviewSchedule
             hackathonId={hackathonId}
-            scheduleItems={scheduleItems}
+            scheduleItems={visibleScheduleItems}
             challengeReleasedAt={challengeReleasedAt}
             challengeExists={challengeExists}
-            hackathonStartsAt={hackathonStartsAt}
-            hackathonEndsAt={hackathonEndsAt}
+            hackathonStartsAt={visibleStartsAt}
+            hackathonEndsAt={visibleEndsAt}
             hackathonStatus={hackathonStatus}
           />
         </div>

@@ -9,7 +9,7 @@ export interface PollAnnouncement {
   title: string
   body: string
   priority: "normal" | "urgent"
-  audience: string
+  audience: "everyone"
   published_at: string
 }
 
@@ -57,7 +57,9 @@ export async function buildPollPayload(hackathonId: string): Promise<PollRespons
 
   if (hErr || !hackathon) return null
 
-  const challenges = await listChallenges(hackathonId)
+  const challenges = hackathon.challenge_released_at
+    ? await listChallenges(hackathonId)
+    : []
 
   const { count: submissionCount } = await client
     .from("submissions")
@@ -100,6 +102,7 @@ export async function buildPollPayload(hackathonId: string): Promise<PollRespons
       .from("hackathon_announcements")
       .select("id, title, body, priority, audience, published_at")
       .eq("hackathon_id", hackathonId)
+      .eq("audience", "everyone")
       .not("published_at", "is", null)
       .lte("published_at", new Date().toISOString())
       .order("published_at", { ascending: false })
@@ -142,7 +145,10 @@ export async function buildPollPayload(hackathonId: string): Promise<PollRespons
       judgingTotal: judgingTotal ?? 0,
       mentorQueueOpen,
     },
-    announcements: (announcements ?? []) as PollAnnouncement[],
+    announcements: (announcements ?? []).filter(
+      (announcement): announcement is PollAnnouncement =>
+        announcement.audience === "everyone",
+    ),
     scheduleItems: (scheduleRows ?? []) as PollScheduleItem[],
   }
 }

@@ -16,6 +16,7 @@ interface CreateFlowProgressProps {
   canSkip: boolean
   onSkip: () => void
   onClose: () => void
+  skipLabel?: string
 }
 
 export function CreateFlowProgress({
@@ -24,6 +25,7 @@ export function CreateFlowProgress({
   canSkip,
   onSkip,
   onClose,
+  skipLabel = "Skip to event page",
 }: CreateFlowProgressProps) {
   const isMac = useSyncExternalStore(noop, getIsMac, getServerIsMac)
 
@@ -71,7 +73,7 @@ export function CreateFlowProgress({
           onClick={onSkip}
           className="gap-2 text-muted-foreground"
         >
-          Skip to event page
+          {skipLabel}
           <Kbd className="hidden sm:inline-flex">
             {isMac ? "⌘" : "Ctrl"}
             +Enter

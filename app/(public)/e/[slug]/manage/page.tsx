@@ -8,6 +8,7 @@ import { countPendingJudgeInvitations } from "@/lib/services/judge-invitations"
 import { countJudgeDisplayProfiles } from "@/lib/services/judge-display"
 import { getManageOverviewStats } from "@/lib/services/manage-overview"
 import { listChallenges } from "@/lib/services/challenges"
+import { listAnnouncements } from "@/lib/services/announcements"
 import { listPerks } from "@/lib/services/perks"
 import { listScheduleItems, getSubmissionDeadline } from "@/lib/services/schedule-items"
 import { getOrganizerActionItems } from "@/lib/utils/organizer-actions"
@@ -22,6 +23,11 @@ import { ActionItemsProvider } from "@/components/hackathon/manage/action-items-
 import { ActionItemsTab } from "@/components/hackathon/manage/action-items-tab"
 import { ActionItemsLayout } from "@/components/hackathon/manage/action-items-layout"
 import { ActionItemsTabBadge } from "@/components/hackathon/manage/action-items-tab-badge"
+import { ManageHackathonWebMcpTools } from "@/components/hackathon/manage/manage-webmcp-tools"
+import {
+  ManageHackathonName,
+  ManageHackathonTabCount,
+} from "@/components/hackathon/manage/manage-hackathon-name"
 import { StatusBadgeMenu } from "@/components/hackathon/manage/status-badge-menu"
 import { ChallengesTab } from "@/components/hackathon/manage/challenges-tab"
 import { PerksTab } from "@/components/hackathon/manage/perks-tab"
@@ -74,6 +80,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     perks,
     unassignedSubmissionCount,
     judgingSetupStatus,
+    announcements,
   ] = await Promise.all([
     getHackathonSubmissions(hackathon.id),
     getJudgingProgress(hackathon.id),
@@ -89,6 +96,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     listPerks(hackathon.id),
     countUnassignedSubmissions(hackathon.id),
     getJudgingSetupStatus(hackathon.id),
+    listAnnouncements(hackathon.id),
   ])
 
   const submissionCount = submissions.length
@@ -163,6 +171,66 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     submissionCount: r.submissionCount,
     screeningPrizeId: r.screeningPrizeId,
   }))
+  const webMcpContext = {
+    hackathon: {
+      id: hackathon.id,
+      slug: hackathon.slug,
+      name: hackathon.name,
+      description: hackathon.description,
+      locale: descriptionLocale,
+      status: hackathon.status,
+      storedStatus: hackathon.stored_status ?? hackathon.status,
+      phase: hackathon.phase,
+      eventVersion: hackathon.updated_at,
+      startsAt: hackathon.starts_at,
+      endsAt: hackathon.ends_at,
+      registrationClosesAt: hackathon.registration_closes_at,
+      locationType: hackathon.location_type,
+      locationName: hackathon.location_name,
+      locationUrl: hackathon.location_url,
+      minTeamSize: hackathon.min_team_size ?? 1,
+      maxTeamSize: hackathon.max_team_size ?? 5,
+      allowSolo: hackathon.allow_solo ?? true,
+      requireTeamApproval: hackathon.require_team_approval ?? false,
+    },
+    stats: {
+      attendeeCount: overviewStats.participantCount,
+      teamCount: overviewStats.teamCount,
+      pendingTeamApprovalCount: overviewStats.pendingTeamApprovalCount,
+      projectCount: submissionCount,
+      judgeCount,
+      prizeCount: prizes.length,
+      judgingAssignments: judgingProgress.totalAssignments,
+      completedJudgingAssignments: judgingProgress.completedAssignments,
+    },
+    actionItems: actionItems.map((item) => ({
+      label: item.label,
+      hint: item.hint ?? null,
+      severity: item.severity,
+    })),
+    scheduleItems: scheduleItems.map((item) => ({
+      title: item.title,
+      description: item.description,
+      startsAt: item.starts_at,
+      endsAt: item.ends_at,
+      location: item.location,
+    })),
+    challenges: challenges.map((challenge) => ({
+      title: challenge.title,
+      description: challenge.description,
+      resourceCount: challenge.resources.length,
+    })),
+    prizes: prizes.map((prize) => ({
+      id: prize.id,
+      name: prize.name,
+      description: prize.description,
+      value: prize.value,
+      judgingStyle: prize.judging_style,
+      judgeCount: prize.judgeCount,
+      totalAssignments: prize.totalAssignments,
+      completedAssignments: prize.completedAssignments,
+    })),
+  }
 
   return (
     <div className="space-y-6">
@@ -170,11 +238,14 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
         actionItems={actionItems}
         hackathonId={hackathon.id}
         slug={hackathon.slug}
+        name={hackathon.name}
         status={hackathon.status}
         phase={hackathon.phase}
         challengeExists={challengeExists}
         challengeReleasedAt={hackathon.challenge_released_at}
         challenges={challenges}
+        prizes={prizes}
+        announcements={announcements}
         challengeReleaseItem={challengeReleaseItem ?? null}
         scheduleItems={scheduleItems}
         startsAt={hackathon.starts_at}
@@ -206,10 +277,11 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
         rounds={roundsForDialogs}
         judgingSetupIssues={judgingSetupStatus.issues}
       >
+        <ManageHackathonWebMcpTools context={webMcpContext} />
         <TabsUrlSync paramKey="tab" value={activeTab}>
           <ActionItemsLayout>
             <div className="flex items-center gap-1.5">
-              <h1 className="text-lg font-semibold">{hackathon.name}</h1>
+              <ManageHackathonName />
               <StatusBadgeMenu />
               <HackathonPageActions
                 slug={hackathon.slug}
@@ -220,12 +292,12 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
             <TabsList variant="line">
               <TabsTrigger value="action-items">Action Items<ActionItemsTabBadge /></TabsTrigger>
               <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="challenges">Challenges{challenges.length > 0 && <TabCount>{challenges.length}</TabCount>}</TabsTrigger>
+              <TabsTrigger value="challenges">Challenges<ManageHackathonTabCount kind="challenges" /></TabsTrigger>
               <TabsTrigger value="perks">Perks{perks.length > 0 && <TabCount>{perks.length}</TabCount>}</TabsTrigger>
               <TabsTrigger value="edit">Event Page</TabsTrigger>
               <TabsTrigger value="teams" title={teamsTabTooltip}>Teams</TabsTrigger>
               <TabsTrigger value="people">People</TabsTrigger>
-              <TabsTrigger value="judging">Judging &amp; Prizes{prizes.length > 0 && <TabCount>{prizes.length}</TabCount>}</TabsTrigger>
+              <TabsTrigger value="judging">Judging &amp; Prizes<ManageHackathonTabCount kind="prizes" /></TabsTrigger>
               <TabsTrigger value="post-event">Post-Event</TabsTrigger>
               <TabsTrigger value="event">Communications</TabsTrigger>
               <TabsTrigger value="miscs">Miscs</TabsTrigger>

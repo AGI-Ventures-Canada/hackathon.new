@@ -8,7 +8,7 @@ import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription } from "@/components/ui/card"
 import { HackathonGrid } from "@/components/org/hackathon-grid"
-import { getTimelineState } from "@/lib/utils/timeline"
+import { getTimelineStateAt } from "@/lib/utils/timeline"
 import type { HackathonWithRole } from "@/components/org/hackathon-grid"
 
 const COMPLETED_LABELS = new Set(["Judging", "Completed", "Archived"])
@@ -18,6 +18,7 @@ type Props = {
   organizedHackathons: HackathonWithRole[]
   sponsoredHackathons: HackathonWithRole[]
   totalUniqueEvents: number
+  timelineReferenceTime: string
 }
 
 export function OrgEventTabs({
@@ -25,11 +26,13 @@ export function OrgEventTabs({
   organizedHackathons,
   sponsoredHackathons,
   totalUniqueEvents,
+  timelineReferenceTime,
 }: Props) {
   const [showCompleted, setShowCompleted] = useState(false)
+  const referenceTime = new Date(timelineReferenceTime)
 
   const isActive = (h: HackathonWithRole) =>
-    !COMPLETED_LABELS.has(getTimelineState(h).label)
+    !COMPLETED_LABELS.has(getTimelineStateAt(h, referenceTime).label)
 
   const hasCompleted = allHackathons.some((h) => !isActive(h))
 
@@ -73,12 +76,20 @@ export function OrgEventTabs({
       </div>
 
       <TabsContent value="all">
-        <HackathonGrid hackathons={allHackathons} showCompleted={showCompleted} />
+        <HackathonGrid
+          hackathons={allHackathons}
+          showCompleted={showCompleted}
+          timelineReferenceTime={timelineReferenceTime}
+        />
       </TabsContent>
 
       <TabsContent value="organized">
         {visibleOrganizedCount > 0 ? (
-          <HackathonGrid hackathons={organizedHackathons} showCompleted={showCompleted} />
+          <HackathonGrid
+            hackathons={organizedHackathons}
+            showCompleted={showCompleted}
+            timelineReferenceTime={timelineReferenceTime}
+          />
         ) : (
           <EmptyState message="This organization hasn't organized any public events yet." />
         )}
@@ -86,7 +97,11 @@ export function OrgEventTabs({
 
       <TabsContent value="sponsored">
         {visibleSponsoredCount > 0 ? (
-          <HackathonGrid hackathons={sponsoredHackathons} showCompleted={showCompleted} />
+          <HackathonGrid
+            hackathons={sponsoredHackathons}
+            showCompleted={showCompleted}
+            timelineReferenceTime={timelineReferenceTime}
+          />
         ) : (
           <EmptyState message="This organization hasn't sponsored any public events yet." />
         )}

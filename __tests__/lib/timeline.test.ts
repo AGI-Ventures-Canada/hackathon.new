@@ -1,5 +1,13 @@
 import { describe, expect, it, beforeEach, afterEach } from "bun:test"
-import { getEffectiveStatus, getTimelineState, validateTimelineDates } from "@/lib/utils/timeline"
+import {
+  getEffectiveStatus,
+  getEffectiveStatusAt,
+  getPersistedTimelineState,
+  getHydrationSafeTimelineState,
+  getTimelineState,
+  getTimelineStateAt,
+  validateTimelineDates,
+} from "@/lib/utils/timeline"
 import type { HackathonStatus } from "@/lib/db/hackathon-types"
 
 function mockDateGlobal(originalDate: typeof Date, isoString: string) {
@@ -109,6 +117,18 @@ describe("getEffectiveStatus", () => {
       starts_at: "2026-03-01T00:00:00Z",
       ends_at: null,
     })).toBe("active")
+  })
+
+  it("accepts an explicit clock for deterministic server rendering", () => {
+    expect(getEffectiveStatusAt({
+      status: "published",
+      starts_at: "2026-03-01T00:00:00Z",
+      ends_at: "2026-03-05T00:00:00Z",
+    }, new Date("2026-03-02T00:00:00Z"))).toBe("active")
+    expect(getPersistedTimelineState("published")).toEqual({
+      label: "Published",
+      variant: "secondary",
+    })
   })
 })
 
@@ -279,6 +299,64 @@ describe("getTimelineState", () => {
       })
       expect(result).toEqual({ label: "Registration Open", variant: "default" })
     })
+  })
+})
+
+describe("getHydrationSafeTimelineState", () => {
+  let originalDate: typeof Date
+
+  beforeEach(() => {
+    originalDate = globalThis.Date
+  })
+
+  afterEach(() => {
+    globalThis.Date = originalDate
+  })
+
+  const hackathon = {
+    status: "published" as HackathonStatus,
+    registration_opens_at: "2026-02-01T00:00:00Z",
+    registration_closes_at: "2026-02-15T00:00:00Z",
+    starts_at: "2026-03-01T00:00:00Z",
+    ends_at: "2026-03-02T00:00:00Z",
+  }
+
+  it("keeps first-render lifecycle markup stable across a clock boundary", () => {
+    mockDateGlobal(originalDate, "2026-01-01T00:00:00Z")
+    const beforeBoundary = getHydrationSafeTimelineState(hackathon, false)
+
+    mockDateGlobal(originalDate, "2026-03-03T00:00:00Z")
+    const afterBoundary = getHydrationSafeTimelineState(hackathon, false)
+
+    expect(beforeBoundary).toEqual({ label: "Published", variant: "secondary" })
+    expect(afterBoundary).toEqual(beforeBoundary)
+  })
+
+  it("resumes live lifecycle behavior after mount", () => {
+    mockDateGlobal(originalDate, "2026-01-01T00:00:00Z")
+    expect(getHydrationSafeTimelineState(hackathon, true).label).toBe("Coming Soon")
+
+    mockDateGlobal(originalDate, "2026-03-03T00:00:00Z")
+    expect(getHydrationSafeTimelineState(hackathon, true).label).toBe("Completed")
+  })
+})
+
+describe("getTimelineStateAt", () => {
+  it("uses the supplied reference time instead of the process clock", () => {
+    const hackathon = {
+      status: "published" as HackathonStatus,
+      registration_opens_at: "2026-02-01T00:00:00Z",
+      registration_closes_at: "2026-02-15T00:00:00Z",
+      starts_at: "2026-03-01T00:00:00Z",
+      ends_at: "2026-03-02T00:00:00Z",
+    }
+
+    expect(
+      getTimelineStateAt(hackathon, new Date("2026-01-01T00:00:00Z")),
+    ).toEqual({ label: "Coming Soon", variant: "secondary" })
+    expect(
+      getTimelineStateAt(hackathon, new Date("2026-03-03T00:00:00Z")),
+    ).toEqual({ label: "Completed", variant: "outline" })
   })
 })
 

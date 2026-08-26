@@ -29,6 +29,21 @@ type Step =
   | "reset-password";
 
 type OAuthProvider = "oauth_google" | "oauth_github" | "oauth_linkedin_oidc";
+type CodeSecondFactor = "totp" | "phone_code" | "email_code" | "backup_code";
+type SecondFactorOption = {
+  id: string;
+  strategy: CodeSecondFactor;
+  safeIdentifier: string | null;
+  phoneNumberId?: string;
+  emailAddressId?: string;
+};
+
+type SupportedSecondFactor = {
+  strategy: string;
+  safeIdentifier?: string;
+  phoneNumberId?: string;
+  emailAddressId?: string;
+};
 
 const OAUTH_PROVIDER_LABEL: Record<OAuthProvider, string> = {
   oauth_google: "Google",
@@ -67,6 +82,16 @@ export function SignInForm({
   const [oauthOnlyProviders, setOauthOnlyProviders] = useState<
     OAuthProvider[] | null
   >(null);
+  const [secondFactor, setSecondFactor] = useState<{
+    id: string;
+    strategy: CodeSecondFactor;
+    safeIdentifier: string | null;
+    phoneNumberId?: string;
+    emailAddressId?: string;
+  }>({ id: "totp", strategy: "totp", safeIdentifier: null });
+  const [secondFactorOptions, setSecondFactorOptions] = useState<
+    SecondFactorOption[]
+  >([]);
 
   if (!isLoaded) {
     return (
@@ -87,6 +112,143 @@ export function SignInForm({
     return unique.length > 0 ? unique : null;
   }
 
+  function normalizeSecondFactors(
+    factors: ReadonlyArray<SupportedSecondFactor> | undefined,
+  ): SecondFactorOption[] {
+    if (!factors?.length) {
+      return [{ id: "totp", strategy: "totp", safeIdentifier: null }];
+    }
+    return factors.flatMap((factor): SecondFactorOption[] => {
+      const safeIdentifier = factor.safeIdentifier ?? null;
+      if (factor.strategy === "totp" || factor.strategy === "backup_code") {
+        return [
+          { id: factor.strategy, strategy: factor.strategy, safeIdentifier },
+        ];
+      }
+      if (factor.strategy === "phone_code" && factor.phoneNumberId) {
+        return [
+          {
+            id: `phone_code:${factor.phoneNumberId}`,
+            strategy: "phone_code",
+            safeIdentifier,
+            phoneNumberId: factor.phoneNumberId,
+          },
+        ];
+      }
+      if (factor.strategy === "email_code" && factor.emailAddressId) {
+        return [
+          {
+            id: `email_code:${factor.emailAddressId}`,
+            strategy: "email_code",
+            safeIdentifier,
+            emailAddressId: factor.emailAddressId,
+          },
+        ];
+      }
+      return [];
+    });
+  }
+
+  async function prepareSecondFactor(
+    result: NonNullable<typeof signIn>,
+    factor: SecondFactorOption,
+  ) {
+    if (factor.strategy === "phone_code" && factor.phoneNumberId) {
+      await result.prepareSecondFactor({
+        strategy: "phone_code",
+        phoneNumberId: factor.phoneNumberId,
+      });
+    } else if (factor.strategy === "email_code" && factor.emailAddressId) {
+      await result.prepareSecondFactor({
+        strategy: "email_code",
+        emailAddressId: factor.emailAddressId,
+      });
+    }
+  }
+
+  async function startSecondFactor(result: NonNullable<typeof signIn>) {
+    const factors = result.supportedSecondFactors as
+      | ReadonlyArray<SupportedSecondFactor>
+      | undefined;
+    const options = normalizeSecondFactors(factors);
+    if (options.length === 0) {
+      throw new Error(
+        "This account uses a sign-in method we can't open here. Try another way to sign in.",
+      );
+    }
+    const factor =
+      options.find((candidate) => candidate.strategy === "totp") ??
+      options.find((candidate) => candidate.strategy === "phone_code") ??
+      options.find((candidate) => candidate.strategy === "email_code") ??
+      options[0];
+    await prepareSecondFactor(result, factor);
+    setSecondFactorOptions(options);
+    setSecondFactor(factor);
+    setCode("");
+    setStep("factor");
+  }
+
+  async function handleSecondFactorChoice(factor: SecondFactorOption) {
+    if (!signIn || isSubmitting || factor.id === secondFactor.id) return;
+    setError("");
+    setIsSubmitting(true);
+    try {
+      await prepareSecondFactor(signIn, factor);
+      setSecondFactor(factor);
+      setCode("");
+    } catch (err) {
+      if (isClerkAPIResponseError(err)) {
+        setError(
+          err.errors[0]?.message || "We couldn't open that sign-in method.",
+        );
+      } else {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "We couldn't open that sign-in method.",
+        );
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleResendSecondFactor() {
+    if (
+      !signIn ||
+      isSubmitting ||
+      (secondFactor.strategy !== "phone_code" &&
+        secondFactor.strategy !== "email_code")
+    )
+      return;
+    setError("");
+    setIsSubmitting(true);
+    try {
+      await prepareSecondFactor(signIn, secondFactor);
+    } catch (err) {
+      if (isClerkAPIResponseError(err)) {
+        setError(err.errors[0]?.message || "We couldn't send a new code.");
+      } else {
+        setError(
+          err instanceof Error ? err.message : "We couldn't send a new code.",
+        );
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  function secondFactorLabel(factor: SecondFactorOption): string {
+    if (factor.strategy === "totp") return "Authenticator app";
+    if (factor.strategy === "backup_code") return "Backup code";
+    if (factor.strategy === "phone_code") {
+      return factor.safeIdentifier
+        ? `Text ${factor.safeIdentifier}`
+        : "Text message";
+    }
+    return factor.safeIdentifier ? `Email ${factor.safeIdentifier}` : "Email";
+  }
+
   async function handleCredentials(e: React.FormEvent) {
     e.preventDefault();
     if (!signIn) return;
@@ -98,19 +260,29 @@ export function SignInForm({
       const result = await signIn.create({ identifier, password });
 
       if (result.status === "needs_second_factor") {
-        setStep("factor");
+        await startSecondFactor(result);
         return;
       }
 
       if (result.status === "complete") {
+        if (!result.createdSessionId)
+          throw new Error("The new session was missing.");
         await setActive({ session: result.createdSessionId });
-        router.push(redirectUrl);
+        router.replace(redirectUrl);
+        return;
       }
+      if (result.status === "needs_new_password") {
+        setStep("reset-password");
+        return;
+      }
+      setError("We couldn't finish signing you in. Try another method.");
     } catch (err) {
       if (isClerkAPIResponseError(err)) {
         const errorCode = err.errors[0]?.code;
         if (errorCode === "strategy_for_user_invalid") {
-          const providers = getOAuthOnlyProviders(signIn.supportedFirstFactors ?? undefined);
+          const providers = getOAuthOnlyProviders(
+            signIn.supportedFirstFactors ?? undefined,
+          );
           if (providers) {
             setOauthOnlyProviders(providers);
             return;
@@ -121,6 +293,8 @@ export function SignInForm({
             err.errors[0]?.message ||
             "Sign in failed",
         );
+      } else {
+        setError(err instanceof Error ? err.message : "Sign in failed");
       }
     } finally {
       setIsSubmitting(false);
@@ -135,14 +309,22 @@ export function SignInForm({
 
     try {
       const result = await signIn.attemptSecondFactor({
-        strategy: "totp",
+        strategy: secondFactor.strategy,
         code,
       });
 
       if (result.status === "complete") {
+        if (!result.createdSessionId)
+          throw new Error("The new session was missing.");
         await setActive({ session: result.createdSessionId });
-        router.push(redirectUrl);
+        router.replace(redirectUrl);
+        return;
       }
+      if (result.status === "needs_new_password") {
+        setStep("reset-password");
+        return;
+      }
+      setError("That code wasn't accepted. Try again.");
     } catch (err) {
       if (isClerkAPIResponseError(err)) {
         setError(
@@ -150,6 +332,8 @@ export function SignInForm({
             err.errors[0]?.message ||
             "Verification failed",
         );
+      } else {
+        setError(err instanceof Error ? err.message : "Verification failed");
       }
     } finally {
       setIsSubmitting(false);
@@ -175,6 +359,8 @@ export function SignInForm({
             err.errors[0]?.message ||
             "Reset request failed",
         );
+      } else {
+        setError(err instanceof Error ? err.message : "Reset request failed");
       }
     } finally {
       setIsSubmitting(false);
@@ -203,6 +389,8 @@ export function SignInForm({
             err.errors[0]?.message ||
             "Invalid code",
         );
+      } else {
+        setError(err instanceof Error ? err.message : "Invalid code");
       }
     } finally {
       setIsSubmitting(false);
@@ -219,9 +407,17 @@ export function SignInForm({
       const result = await signIn.resetPassword({ password: newPassword });
 
       if (result.status === "complete") {
+        if (!result.createdSessionId)
+          throw new Error("The new session was missing.");
         await setActive({ session: result.createdSessionId });
-        router.push(redirectUrl);
+        router.replace(redirectUrl);
+        return;
       }
+      if (result.status === "needs_second_factor") {
+        await startSecondFactor(result);
+        return;
+      }
+      setError("We couldn't finish resetting your password. Try again.");
     } catch (err) {
       if (isClerkAPIResponseError(err)) {
         setError(
@@ -229,6 +425,8 @@ export function SignInForm({
             err.errors[0]?.message ||
             "Password reset failed",
         );
+      } else {
+        setError(err instanceof Error ? err.message : "Password reset failed");
       }
     } finally {
       setIsSubmitting(false);
@@ -241,7 +439,7 @@ export function SignInForm({
     setIsSubmitting(true);
     try {
       await resumeSession({ session: lastSession.id });
-      router.push(redirectUrl);
+      router.replace(redirectUrl);
     } catch {
       setError("Session expired. Please sign in again.");
     } finally {
@@ -252,17 +450,23 @@ export function SignInForm({
   async function handleOAuth(
     provider: "oauth_google" | "oauth_github" | "oauth_linkedin_oidc",
   ) {
-    if (!signIn) return;
+    if (!signIn || isSubmitting) return;
+    setError("");
+    setIsSubmitting(true);
     try {
       await signIn.authenticateWithRedirect({
         strategy: provider,
-        redirectUrl: "/sso-callback",
+        redirectUrl: `/sso-callback?redirect_url=${encodeURIComponent(redirectUrl)}`,
         redirectUrlComplete: redirectUrl,
       });
     } catch (err) {
       if (isClerkAPIResponseError(err)) {
         setError(err.errors[0]?.message || "OAuth failed");
+      } else {
+        setError("OAuth failed. Check your connection and try again.");
       }
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
@@ -280,7 +484,11 @@ export function SignInForm({
         <CardHeader>
           <CardTitle>Two-factor authentication</CardTitle>
           <CardDescription>
-            Enter the code from your authenticator app
+            {secondFactor.strategy === "totp"
+              ? "Enter the code from your authenticator app"
+              : secondFactor.strategy === "backup_code"
+                ? "Enter one of your backup codes"
+                : `Enter the code sent to ${secondFactor.safeIdentifier ?? "your account"}`}
           </CardDescription>
         </CardHeader>
         <form
@@ -290,19 +498,60 @@ export function SignInForm({
         >
           <CardContent className="space-y-4">
             {error && <p className="text-xs text-destructive">{error}</p>}
+            {secondFactorOptions.length > 1 && (
+              <div className="space-y-2">
+                <Label id="second-factor-label">
+                  How do you want to verify?
+                </Label>
+                <div
+                  className="grid gap-2"
+                  role="group"
+                  aria-labelledby="second-factor-label"
+                >
+                  {secondFactorOptions.map((factor) => (
+                    <Button
+                      key={factor.id}
+                      type="button"
+                      variant={
+                        factor.id === secondFactor.id ? "secondary" : "outline"
+                      }
+                      aria-pressed={factor.id === secondFactor.id}
+                      className="w-full justify-start"
+                      onClick={() => void handleSecondFactorChoice(factor)}
+                      disabled={isSubmitting}
+                    >
+                      {secondFactorLabel(factor)}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="code">Verification code</Label>
               <Input
                 id="code"
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
-                placeholder="123456"
+                placeholder={
+                  secondFactor.strategy === "backup_code"
+                    ? "Enter backup code"
+                    : "123456"
+                }
                 autoFocus
-                autoComplete="off"
-                data-1p-ignore
-                data-lpignore="true"
-                data-form-type="other"
+                autoComplete="one-time-code"
               />
+              {(secondFactor.strategy === "phone_code" ||
+                secondFactor.strategy === "email_code") && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void handleResendSecondFactor()}
+                  disabled={isSubmitting}
+                >
+                  Send a new code
+                </Button>
+              )}
             </div>
           </CardContent>
           <CardFooter className="flex-col gap-3">
@@ -318,6 +567,7 @@ export function SignInForm({
                 setStep("credentials");
                 setCode("");
                 setError("");
+                setSecondFactorOptions([]);
               }}
             >
               Back to sign in
@@ -397,10 +647,7 @@ export function SignInForm({
                 onChange={(e) => setCode(e.target.value)}
                 placeholder="123456"
                 autoFocus
-                autoComplete="off"
-                data-1p-ignore
-                data-lpignore="true"
-                data-form-type="other"
+                autoComplete="one-time-code"
               />
             </div>
           </CardContent>
@@ -502,7 +749,7 @@ export function SignInForm({
             </div>
           </>
         )}
-        <OAuthButtons onOAuth={handleOAuth} />
+        <OAuthButtons onOAuth={handleOAuth} disabled={isSubmitting} />
         <div className="flex items-center gap-3">
           <Separator className="flex-1" />
           <span className="text-xs text-muted-foreground">or</span>
@@ -530,6 +777,7 @@ export function SignInForm({
                     variant="outline"
                     className="w-full"
                     onClick={() => handleOAuth(provider)}
+                    disabled={isSubmitting}
                   >
                     Continue with {OAUTH_PROVIDER_LABEL[provider]}
                   </Button>

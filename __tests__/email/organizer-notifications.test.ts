@@ -88,6 +88,7 @@ describe("sendOrganizerClaimNotification", () => {
       hackathonSlug: "test-hackathon",
       winnerName: "Alice",
       hackathonId: "hack_1",
+      fulfillmentId: "fulfillment_1",
     })
 
     expect(sent).toBe(1)
@@ -103,6 +104,10 @@ describe("sendOrganizerClaimNotification", () => {
     expect((call.text as string)).toContain("Alice")
     expect((call.html as string)).not.toContain("($")
     expect((call.html as string)).not.toContain("View Fulfillment Tracker")
+    expect(call.idempotencyKey).toMatch(
+      /^organizer-claim\/fulfillment_1\/[a-f0-9]{24}$/
+    )
+    expect(call.idempotencyKey).not.toContain("org@test.com")
   })
 
   it("sends email to personal tenant user", async () => {
@@ -256,6 +261,6 @@ describe("sendOrganizerClaimNotification", () => {
       name: "type",
       value: "organizer_claim_notification",
     })
-    expect(tags.find((t) => t.name === "hackathon")?.value).toBe("My_Hack_")
+    expect(tags.find((t) => t.name === "hackathon")?.value).toBe("My_Hack")
   })
 })

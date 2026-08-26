@@ -4,6 +4,7 @@ import type {
   TransitionTrigger,
   WebhookEvent,
 } from "@/lib/db/hackathon-types"
+import { randomUUID } from "node:crypto"
 
 export type DispatchInput = {
   type: TransitionEvent
@@ -15,6 +16,8 @@ export type DispatchInput = {
   fromStatus: string
   toStatus: string
   challenges?: ChallengeSummary[]
+  sendEmail?: boolean
+  idempotencyKey?: string
 }
 
 const EVENT_TO_WEBHOOK: Record<TransitionEvent, WebhookEvent> = {
@@ -49,7 +52,7 @@ export async function dispatchTransitionNotifications(
   const roles = EVENT_TO_ROLES[input.type]
   const hasChallenges = !!input.challenges && input.challenges.length > 0
 
-  if (emailEnabled && roles.length > 0) {
+  if (input.sendEmail !== false && emailEnabled && roles.length > 0) {
     try {
       const { start } = await import("workflow/api")
       const { sendTransitionNotificationsWorkflow } = await import(
@@ -57,6 +60,7 @@ export async function dispatchTransitionNotifications(
       )
       start(sendTransitionNotificationsWorkflow, [
         {
+          notificationId: randomUUID(),
           hackathonId: input.hackathonId,
           hackathonName: input.hackathon.name,
           hackathonSlug: input.hackathon.slug,
@@ -90,16 +94,25 @@ export async function dispatchTransitionNotifications(
   try {
     const { triggerWebhooks } = await import("@/lib/services/webhooks")
     const timestamp = new Date().toISOString()
-    triggerWebhooks(input.tenantId, webhookEvent, {
+    const webhookDelivery = triggerWebhooks(input.tenantId, webhookEvent, {
       event: webhookEvent,
       timestamp,
+      ...(input.idempotencyKey
+        ? { idempotencyKey: input.idempotencyKey }
+        : {}),
       data: {
         hackathonId: input.hackathonId,
         fromStatus: input.fromStatus,
         toStatus: input.toStatus,
         trigger: input.trigger,
       },
-    }).catch(console.error)
+    }, input.idempotencyKey
+      ? {
+          idempotencyKey: input.idempotencyKey,
+          requireRecorded: true,
+        }
+      : {}).catch(console.error)
+    if (input.idempotencyKey) await webhookDelivery
 
     if (hasChallenges) {
       triggerWebhooks(input.tenantId, "hackathon.challenges_released", {
@@ -152,6 +165,7 @@ export async function dispatchChallengesReleasedNotifications(
       )
       start(sendChallengesReleasedNotificationsWorkflow, [
         {
+          notificationId: randomUUID(),
           hackathonId: input.hackathonId,
           hackathonName: input.hackathon.name,
           hackathonSlug: input.hackathon.slug,

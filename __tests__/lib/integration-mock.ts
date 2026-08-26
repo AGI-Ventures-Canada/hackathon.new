@@ -23,6 +23,10 @@ export interface IntegrationChainableMock {
   upsert: ChainMethod
   eq: ChainMethod
   neq: ChainMethod
+  gt: ChainMethod
+  gte: ChainMethod
+  lt: ChainMethod
+  lte: ChainMethod
   in: ChainMethod
   is: ChainMethod
   or: ChainMethod
@@ -47,6 +51,10 @@ export function createIntegrationChainableMock<T = unknown>(
     upsert: mock(() => chain),
     eq: mock(() => chain),
     neq: mock(() => chain),
+    gt: mock(() => chain),
+    gte: mock(() => chain),
+    lt: mock(() => chain),
+    lte: mock(() => chain),
     in: mock(() => chain),
     is: mock(() => chain),
     or: mock(() => chain),

@@ -63,7 +63,9 @@ describe("StepImport", () => {
       render(<StepImport {...defaultProps} />)
       goToImportMode()
       await waitFor(() => {
-        expect(screen.getByPlaceholderText("luma.com/your-event")).toBeDefined()
+        const input = screen.getByLabelText("Event page URL")
+        expect(input.getAttribute("maxlength")).toBe("2048")
+        expect(input.getAttribute("placeholder")).toBe("luma.com/your-event")
       })
     })
 
@@ -118,6 +120,50 @@ describe("StepImport", () => {
       expect(pushArg).toContain("/import?url=")
     })
 
+    it("freezes the URL and ignores repeated Enter presses while navigating", async () => {
+      render(<StepImport {...defaultProps} />)
+      goToImportMode()
+      const input = await screen.findByLabelText("Event page URL")
+
+      fireEvent.change(input, { target: { value: "luma.com/my-event" } })
+      fireEvent.keyDown(input, { key: "Enter" })
+
+      expect((input as HTMLInputElement).disabled).toBe(true)
+      fireEvent.keyDown(input, { key: "Enter" })
+      expect(mockPush).toHaveBeenCalledTimes(1)
+    })
+
+    it("accepts a URL whose normalized value is exactly 2,048 characters", async () => {
+      render(<StepImport {...defaultProps} />)
+      goToImportMode()
+      const input = await screen.findByPlaceholderText("luma.com/your-event")
+      const prefix = "events.example/"
+      const url = `${prefix}${"a".repeat(2_048 - "https://".length - prefix.length)}`
+
+      fireEvent.change(input, { target: { value: url } })
+      fireEvent.keyDown(input, { key: "Enter" })
+
+      expect(mockPush).toHaveBeenCalledWith(
+        `/import?url=${encodeURIComponent(`https://${url}`)}`,
+      )
+    })
+
+    it("rejects a URL whose normalized value exceeds 2,048 characters", async () => {
+      render(<StepImport {...defaultProps} />)
+      goToImportMode()
+      const input = await screen.findByPlaceholderText("luma.com/your-event")
+      const prefix = "events.example/"
+      const url = `${prefix}${"a".repeat(2_049 - "https://".length - prefix.length)}`
+
+      fireEvent.change(input, { target: { value: url } })
+      fireEvent.keyDown(input, { key: "Enter" })
+
+      expect(
+        screen.getByText("Use a public HTTPS link with 2,048 characters or fewer."),
+      ).toBeDefined()
+      expect(mockPush).not.toHaveBeenCalled()
+    })
+
     it("shows submit button when URL has content", async () => {
       render(<StepImport {...defaultProps} />)
       goToImportMode()
@@ -127,9 +173,7 @@ describe("StepImport", () => {
         target: { value: "luma.com/event" },
       })
 
-      const buttons = screen.getAllByRole("button")
-      const submitButton = buttons.find((b) => b.querySelector(".lucide-arrow-right"))
-      expect(submitButton).toBeDefined()
+      expect(screen.getByRole("button", { name: "Import event" })).toBeDefined()
     })
   })
 })

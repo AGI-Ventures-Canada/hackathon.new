@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useEffect, useState, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -11,6 +11,7 @@ import { ScoringPanel } from "./scoring-panel"
 import { UnifiedScoringPanel } from "./unified-scoring-panel"
 import { FocusScoringView } from "./focus-scoring-view"
 import { usePrefetchAssignment } from "@/hooks/use-prefetch-assignment"
+import { JUDGE_WEBMCP_OPEN_EVENT } from "./judge-webmcp-tools"
 
 const PAGE_SIZE = 20
 
@@ -112,6 +113,22 @@ export function JudgeAssignmentsCard({
     }
   }
 
+  useEffect(() => {
+    function handleOpen(event: Event) {
+      const assignmentId = (event as CustomEvent<{ assignmentId?: string }>).detail
+        ?.assignmentId
+      const index = assignments.findIndex((assignment) => assignment.id === assignmentId)
+      if (index < 0 || !assignmentId) return
+      setQuery("")
+      setPage(Math.floor(index / PAGE_SIZE))
+      setViewMode("list")
+      setOpenAssignmentId(assignmentId)
+    }
+
+    window.addEventListener(JUDGE_WEBMCP_OPEN_EVENT, handleOpen)
+    return () => window.removeEventListener(JUDGE_WEBMCP_OPEN_EVENT, handleOpen)
+  }, [assignments])
+
   if (assignments.length === 0) return null
 
   return (
@@ -186,7 +203,11 @@ export function JudgeAssignmentsCard({
                   const isOpen = openAssignmentId === a.id
 
                   return (
-                    <div key={a.id} className={`rounded-lg border ${isOpen ? "border-border" : "border-transparent"}`}>
+                    <div
+                      key={a.id}
+                      data-judge-assignment={a.id}
+                      className={`rounded-lg border ${isOpen ? "border-border" : "border-transparent"}`}
+                    >
                       <Button
                         variant="ghost"
                         className="w-full justify-start gap-3 h-auto py-3"

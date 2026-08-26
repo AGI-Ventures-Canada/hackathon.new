@@ -23,6 +23,7 @@ export function StepDescription({ value, onChange }: StepDescriptionProps) {
         onChange={(val) => onChange(val || null)}
         placeholder="What will participants build? What's the theme?"
         rows={8}
+        maxLength={5_000}
       />
     </div>
   )

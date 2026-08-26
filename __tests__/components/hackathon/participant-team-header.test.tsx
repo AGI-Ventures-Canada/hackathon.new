@@ -8,7 +8,7 @@ import type { ParticipantTeamInfo } from "@/lib/services/hackathons"
 const teamInfo = {
   team: {
     id: "team-1",
-    name: "Hai The Dude's Team",
+    name: "Jordan Lee's Team",
     status: "forming",
     inviteCode: "abc123",
     captainClerkUserId: "user-1",
@@ -17,7 +17,7 @@ const teamInfo = {
   members: [
     {
       clerkUserId: "user-1",
-      displayName: "Hai The Dude",
+      displayName: "Jordan Lee",
       email: "hai@example.com",
       role: "participant",
       isCaptain: true,
@@ -71,7 +71,7 @@ describe("ParticipantTeamHeader", () => {
 
     await user.click(screen.getByRole("button", { name: /rename team/i }))
 
-    const input = screen.getByDisplayValue("Hai The Dude's Team")
+    const input = screen.getByDisplayValue("Jordan Lee's Team")
     expect(input.tagName).toBe("INPUT")
   })
 

@@ -18,6 +18,8 @@ function createMockChains(overrides: {
   judgingComplete?: number | null
   mentorCount?: number | null
   rooms?: Record<string, unknown>[] | null
+  challenges?: Record<string, unknown>[] | null
+  announcements?: Record<string, unknown>[] | null
 } = {}) {
   const {
     hackathon = {
@@ -34,6 +36,8 @@ function createMockChains(overrides: {
     judgingComplete = 8,
     mentorCount = 3,
     rooms = [],
+    challenges = [],
+    announcements = [],
   } = overrides
 
   const chains: Record<string, ReturnType<typeof createChainableMock>> = {
@@ -42,7 +46,9 @@ function createMockChains(overrides: {
     teams: createChainableMock({ data: null, error: null, count: teamCount }),
     rooms: createChainableMock({ data: rooms, error: null }),
     mentor_requests: createChainableMock({ data: null, error: null, count: mentorCount }),
-    challenges: createChainableMock({ data: [], error: null }),
+    challenges: createChainableMock({ data: challenges, error: null }),
+    hackathon_announcements: createChainableMock({ data: announcements, error: null }),
+    hackathon_schedule_items: createChainableMock({ data: [], error: null }),
   }
 
   let judgeCallCount = 0
@@ -56,6 +62,8 @@ function createMockChains(overrides: {
     }
     return chains[table] ?? createChainableMock({ data: null, error: null })
   })
+
+  return chains
 }
 
 describe("Polling Service", () => {
@@ -103,19 +111,30 @@ describe("Polling Service", () => {
     })
 
     it("includes challenge info when released", async () => {
-      createMockChains()
+      createMockChains({
+        challenges: [{
+          id: "challenge-1",
+          hackathon_id: hackathonId,
+          title: "Private until release",
+          description: "Build an agent",
+          resources: [],
+          sort_order: 0,
+          created_at: "2026-04-01T00:00:00Z",
+          updated_at: "2026-04-01T00:00:00Z",
+        }],
+      })
 
       const result = await buildPollPayload(hackathonId)
 
       expect(result!.challenge).toEqual({
         released: true,
         releasedAt: "2026-04-28T10:00:00Z",
-        challenges: [],
+        challenges: [expect.objectContaining({ title: "Private until release" })],
       })
     })
 
-    it("shows challenge as not released when no released_at", async () => {
-      createMockChains({
+    it("never loads or serializes challenges before release", async () => {
+      const chains = createMockChains({
         hackathon: {
           status: "active",
           phase: "build",
@@ -123,12 +142,56 @@ describe("Polling Service", () => {
           ends_at: "2026-04-28T17:00:00Z",
           challenge_released_at: null,
         },
+        challenges: [{
+          id: "challenge-secret",
+          hackathon_id: hackathonId,
+          title: "Secret prompt",
+          description: "Do not reveal",
+          resources: [],
+          sort_order: 0,
+          created_at: "2026-04-01T00:00:00Z",
+          updated_at: "2026-04-01T00:00:00Z",
+        }],
       })
 
       const result = await buildPollPayload(hackathonId)
 
       expect(result!.challenge!.released).toBe(false)
       expect(result!.challenge!.releasedAt).toBeNull()
+      expect(result!.challenge!.challenges).toEqual([])
+      expect(JSON.stringify(result)).not.toContain("Secret prompt")
+      expect(chains.challenges.select).not.toHaveBeenCalled()
+    })
+
+    it("serializes only announcements for everyone", async () => {
+      const chains = createMockChains({
+        announcements: [
+          {
+            id: "public-announcement",
+            title: "Doors open",
+            body: "Welcome",
+            priority: "normal",
+            audience: "everyone",
+            published_at: "2026-04-28T10:00:00Z",
+          },
+          {
+            id: "judge-announcement",
+            title: "Judge briefing",
+            body: "Private judging details",
+            priority: "urgent",
+            audience: "judges",
+            published_at: "2026-04-28T10:00:00Z",
+          },
+        ],
+      })
+
+      const result = await buildPollPayload(hackathonId)
+
+      expect(result!.announcements).toEqual([
+        expect.objectContaining({ id: "public-announcement", audience: "everyone" }),
+      ])
+      expect(JSON.stringify(result)).not.toContain("Private judging details")
+      expect(chains.hackathon_announcements.eq).toHaveBeenCalledWith("audience", "everyone")
     })
 
     it("includes stats from all count queries", async () => {

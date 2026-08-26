@@ -1,6 +1,6 @@
 import * as p from "@clack/prompts"
 import type { OatmealClient } from "../../client.js"
-import { formatJson, formatSuccess } from "../../output.js"
+import { formatJson, formatSuccess, formatWarning } from "../../output.js"
 
 interface TeamCreateOptions {
   name?: string
@@ -57,13 +57,23 @@ export async function runTeamsCreate(
     process.exit(1)
   }
 
-  const response = await client.post<{ team: { id: string; name: string }; invited?: boolean; queued?: boolean }>(
+  const response = await client.post<{
+    team: { id: string; name: string }
+    invited?: boolean
+    queued?: boolean
+    delivery?: "sent" | "queued" | "failed"
+  }>(
     `/api/dashboard/hackathons/${hackathonId}/teams`,
     { name, captainEmail }
   )
 
   if (options.json) {
     console.log(formatJson(response))
+    return
+  }
+
+  if (response.invited && response.delivery === "failed") {
+    console.log(formatWarning(`Created team "${response.team.name}" and saved the invite to ${captainEmail}, but email delivery could not be confirmed`))
     return
   }
 

@@ -5,21 +5,31 @@ import { useEffect } from "react"
 interface UseCreateFlowKeyboardOptions {
   onNext: () => void
   onSkip: () => void
+  onPrimary?: () => void
   onClose: () => void
   canSkip: boolean
+  disabled?: boolean
 }
 
 export function useCreateFlowKeyboard({
   onNext,
   onSkip,
+  onPrimary,
   onClose,
   canSkip,
+  disabled = false,
 }: UseCreateFlowKeyboardOptions) {
   useEffect(() => {
+    if (disabled) return
+
     function handleKeyDown(e: KeyboardEvent) {
-      const tag = (e.target as HTMLElement)?.tagName
+      const target = e.target instanceof HTMLElement ? e.target : null
+      const tag = target?.tagName
       const isTextarea = tag === "TEXTAREA"
-      const isContentEditable = (e.target as HTMLElement)?.isContentEditable
+      const isContentEditable = target?.isContentEditable
+      const isButtonLike = Boolean(target?.closest(
+        "button, a, select, [role='button'], [role='link'], [role='checkbox'], [role='radio'], [role='switch']",
+      ))
 
       if (e.key === "Escape") {
         e.preventDefault()
@@ -27,13 +37,20 @@ export function useCreateFlowKeyboard({
         return
       }
 
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && canSkip) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && (onPrimary || canSkip)) {
         e.preventDefault()
-        onSkip()
+        if (onPrimary) onPrimary()
+        else onSkip()
         return
       }
 
-      if (e.key === "Enter" && !isTextarea && !isContentEditable && !e.shiftKey) {
+      if (
+        e.key === "Enter" &&
+        !isTextarea &&
+        !isContentEditable &&
+        !isButtonLike &&
+        !e.shiftKey
+      ) {
         e.preventDefault()
         onNext()
       }
@@ -41,5 +58,5 @@ export function useCreateFlowKeyboard({
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [onNext, onSkip, onClose, canSkip])
+  }, [onNext, onSkip, onPrimary, onClose, canSkip, disabled])
 }

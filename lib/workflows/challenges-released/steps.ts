@@ -1,8 +1,14 @@
 "use step"
 
 import type { ChallengeSummary } from "@/lib/db/hackathon-types"
+import { createHash } from "node:crypto"
+
+function recipientFingerprint(email: string): string {
+  return createHash("sha256").update(email.trim().toLowerCase()).digest("hex").slice(0, 24)
+}
 
 export type SendChallengesReleasedEmailInput = {
+  notificationId: string
   to: string
   hackathonName: string
   hackathonSlug: string
@@ -37,6 +43,7 @@ export async function sendChallengesReleasedEmail(
       { name: "type", value: "challenges_released" },
       { name: "hackathon", value: tag },
     ],
+    idempotencyKey: `challenges/${input.notificationId}/${recipientFingerprint(input.to)}`,
   })
 
   if (!result) {

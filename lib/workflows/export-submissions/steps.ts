@@ -1,6 +1,5 @@
 "use step"
 
-import { fetch } from "workflow"
 import JSZip from "jszip"
 import type {
   EnrichedExportPayload,
@@ -23,17 +22,18 @@ import {
   formatScores,
 } from "@/lib/workflows/export-submissions/format"
 import { isClerkUserId } from "@/lib/utils/person-display"
-import { isAllowedDownloadUrl } from "@/lib/utils/safe-fetch-url"
 import {
   renderSubmissionsExportPdf,
   type ExportScreenshotMap,
 } from "@/pdfs/submissions-export"
 import { sendExportReadyEmail, sendExportFailedEmail } from "@/lib/email/submission-exports"
+import {
+  downloadImageForExport,
+  type DownloadedImage,
+} from "@/lib/workflows/export-submissions/download-image"
 
 const EXPORTS_BUCKET = "exports"
-const IMAGE_DOWNLOAD_TIMEOUT_MS = 10_000
 const IMAGE_DOWNLOAD_CONCURRENCY = 10
-const IMAGE_MAX_BYTES = 20 * 1024 * 1024
 const EXPORT_TTL_DAYS = 30
 const PDF_SCREENSHOT_MAX_EDGE = 1200
 
@@ -163,6 +163,7 @@ export async function failExport(
   if (!hackathon) return
 
   await sendExportFailedEmail({
+    exportId,
     to: recipient.email,
     recipientName: recipient.name,
     hackathonName: hackathon.name,
@@ -180,8 +181,6 @@ function sanitizeErrorMessage(message: string): string {
   const max = 240
   return stripped.length > max ? `${stripped.slice(0, max - 1).trimEnd()}…` : stripped
 }
-
-type DownloadedImage = { path: string; buffer: Buffer }
 
 const SCREENSHOT_PATH_PATTERN = /^media\/([^/]+)\/screenshot\.[^/]+$/
 
@@ -248,7 +247,7 @@ async function downloadAllImages(
     while (queue.length > 0) {
       const job = queue.shift()
       if (!job) return
-      const result = await downloadImage(job.url, job.path)
+      const result = await downloadImageForExport(job.url, job.path)
       if (result) results.push(result)
     }
   }
@@ -259,92 +258,6 @@ async function downloadAllImages(
   )
   await Promise.all(workers)
   return results
-}
-
-async function downloadImage(
-  url: string,
-  pathWithoutExtension: string
-): Promise<DownloadedImage | null> {
-  if (!isAllowedDownloadUrl(url)) {
-    console.warn(`Refusing to download image with disallowed URL: ${url}`)
-    return null
-  }
-  const controller = new AbortController()
-  const timeout = setTimeout(
-    () => controller.abort(),
-    IMAGE_DOWNLOAD_TIMEOUT_MS
-  )
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      redirect: "error",
-    })
-
-    if (!response.ok) return null
-
-    const declaredLength = Number(response.headers.get("content-length") ?? 0)
-    if (declaredLength > IMAGE_MAX_BYTES) {
-      console.warn(
-        `Skipping image ${url}: content-length ${declaredLength} exceeds ${IMAGE_MAX_BYTES}`
-      )
-      return null
-    }
-
-    const contentType = response.headers.get("content-type") ?? ""
-    const extension = inferExtension(contentType, url)
-    if (extension === "bin") {
-      console.warn(
-        `Image ${url} saved as .bin (unrecognized content-type: ${contentType || "<none>"})`
-      )
-    }
-
-    if (!response.body) return null
-    const reader = response.body.getReader()
-    const chunks: Uint8Array[] = []
-    let total = 0
-    try {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        total += value.byteLength
-        if (total > IMAGE_MAX_BYTES) {
-          console.warn(
-            `Skipping image ${url}: streamed ${total} bytes exceeds ${IMAGE_MAX_BYTES}`
-          )
-          await reader.cancel()
-          controller.abort()
-          return null
-        }
-        chunks.push(value)
-      }
-    } finally {
-      reader.releaseLock()
-    }
-    return {
-      path: `${pathWithoutExtension}.${extension}`,
-      buffer: Buffer.concat(chunks),
-    }
-  } catch (err) {
-    console.warn(`Failed to download image ${url}:`, err)
-    return null
-  } finally {
-    clearTimeout(timeout)
-  }
-}
-
-
-function inferExtension(contentType: string, url: string): string {
-  if (contentType.includes("png")) return "png"
-  if (contentType.includes("jpeg") || contentType.includes("jpg")) return "jpg"
-  if (contentType.includes("webp")) return "webp"
-  if (contentType.includes("gif")) return "gif"
-
-  const urlMatch = /\.(png|jpe?g|webp|gif)(?:\?|$)/i.exec(url)
-  if (urlMatch) {
-    const ext = urlMatch[1].toLowerCase()
-    return ext === "jpeg" ? "jpg" : ext
-  }
-  return "bin"
 }
 
 function buildCsv(payload: EnrichedExportPayload): string {

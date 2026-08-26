@@ -6,6 +6,7 @@ import type { HackathonWithRole } from "@/components/org/hackathon-grid"
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const now = Date.now()
+const timelineReferenceTime = new Date(now).toISOString()
 
 function makeHackathon(
   overrides: Partial<HackathonWithRole> & { status: HackathonWithRole["status"] }
@@ -40,6 +41,13 @@ const archivedHackathon = makeHackathon({
   status: "archived",
 })
 
+const publishedEndedHackathon = makeHackathon({
+  name: "Ended Published Event",
+  status: "published",
+  starts_at: new Date(now - 3 * DAY_MS).toISOString(),
+  ends_at: new Date(now - DAY_MS).toISOString(),
+})
+
 describe("OrgEventTabs", () => {
   afterEach(cleanup)
 
@@ -50,6 +58,7 @@ describe("OrgEventTabs", () => {
         organizedHackathons={[activeHackathon, completedHackathon]}
         sponsoredHackathons={[]}
         totalUniqueEvents={2}
+        timelineReferenceTime={timelineReferenceTime}
       />
     )
 
@@ -65,6 +74,7 @@ describe("OrgEventTabs", () => {
         organizedHackathons={[activeHackathon, completedHackathon]}
         sponsoredHackathons={[completedHackathon]}
         totalUniqueEvents={2}
+        timelineReferenceTime={timelineReferenceTime}
       />
     )
 
@@ -85,6 +95,7 @@ describe("OrgEventTabs", () => {
         organizedHackathons={[activeHackathon, archivedHackathon]}
         sponsoredHackathons={[]}
         totalUniqueEvents={2}
+        timelineReferenceTime={timelineReferenceTime}
       />
     )
 
@@ -99,6 +110,7 @@ describe("OrgEventTabs", () => {
         organizedHackathons={[activeHackathon]}
         sponsoredHackathons={[]}
         totalUniqueEvents={1}
+        timelineReferenceTime={timelineReferenceTime}
       />
     )
 
@@ -113,6 +125,7 @@ describe("OrgEventTabs", () => {
         organizedHackathons={[activeHackathon]}
         sponsoredHackathons={[]}
         totalUniqueEvents={1}
+        timelineReferenceTime={timelineReferenceTime}
       />
     )
 
@@ -126,9 +139,25 @@ describe("OrgEventTabs", () => {
         organizedHackathons={[activeHackathon, completedHackathon]}
         sponsoredHackathons={[]}
         totalUniqueEvents={2}
+        timelineReferenceTime={timelineReferenceTime}
       />
     )
 
     expect(screen.getByRole("switch")).toBeDefined()
+  })
+
+  it("uses the server reference time to hide an ended published event", () => {
+    render(
+      <OrgEventTabs
+        allHackathons={[activeHackathon, publishedEndedHackathon]}
+        organizedHackathons={[activeHackathon, publishedEndedHackathon]}
+        sponsoredHackathons={[]}
+        totalUniqueEvents={2}
+        timelineReferenceTime={timelineReferenceTime}
+      />
+    )
+
+    expect(screen.getByRole("tab", { name: "All 1" })).toBeDefined()
+    expect(screen.queryByText("Ended Published Event")).toBeNull()
   })
 })

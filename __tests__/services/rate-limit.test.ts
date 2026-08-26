@@ -67,6 +67,19 @@ describe("Rate Limiting", () => {
       expect(result.remaining).toBe(9)
     })
 
+    it("fails closed on database error when the caller protects public work", async () => {
+      mockRpcCall("check_rate_limit", mockError("connection failed"))
+
+      const result = await checkRateLimit(
+        "public-work",
+        { maxRequests: 10, windowMs: 60000 },
+        { failureMode: "closed" },
+      )
+
+      expect(result.allowed).toBe(false)
+      expect(result.remaining).toBe(0)
+    })
+
     it("fails open on null data", async () => {
       setMockRpcImplementation(() => Promise.resolve({ data: null, error: null }))
 
@@ -85,6 +98,21 @@ describe("Rate Limiting", () => {
 
       expect(result.allowed).toBe(true)
       expect(result.remaining).toBe(9)
+    })
+
+    it("fails closed on malformed data when requested", async () => {
+      setMockRpcImplementation(() =>
+        Promise.resolve({ data: { allowed: "yes" }, error: null })
+      )
+
+      const result = await checkRateLimit(
+        "public-work",
+        { maxRequests: 10, windowMs: 60000 },
+        { failureMode: "closed" },
+      )
+
+      expect(result.allowed).toBe(false)
+      expect(result.remaining).toBe(0)
     })
 
     it("fails open when remaining field is wrong type", async () => {

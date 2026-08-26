@@ -23,6 +23,7 @@ export function StepName({ value, onChange }: StepNameProps) {
         placeholder="My Awesome Hackathon"
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        maxLength={120}
         className="h-14 text-lg"
         autoFocus
         autoComplete="off"

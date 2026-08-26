@@ -59,7 +59,7 @@ export default function JudgeAddedEmail({
 }
 
 JudgeAddedEmail.PreviewProps = {
-  addedByName: "Alex Ivany",
+  addedByName: "Jordan Lee",
   hackathonName: "AI Innovation Hackathon 2026",
   eventUrl: "https://hackathon.new/e/ai-innovation-2026",
   hackathonStartsAt: "2026-04-20T08:30:00Z",

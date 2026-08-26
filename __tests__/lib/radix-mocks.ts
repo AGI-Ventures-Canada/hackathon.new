@@ -24,10 +24,10 @@ mock.module("@/components/ui/dialog", () => ({
     return h(DialogCtx.Provider, { value: { open: isOpen } },
       h("div", null, isOpen && h("button", { type: "button", onClick: () => onOpenChange?.(false) }, "Close Dialog"), children))
   },
-  DialogContent: ({ children, className }: { children: React.ReactNode; className?: string }) => {
+  DialogContent: ({ children, className, ...props }: { children: React.ReactNode; className?: string; [key: string]: unknown }) => {
     const ctx = useContext(DialogCtx)
     if (!ctx.open) return null
-    return h("div", { role: "dialog", className }, children)
+    return h("div", { ...props, role: "dialog", className }, children)
   },
   DialogHeader: ({ children }: { children: React.ReactNode }) => h("div", null, children),
   DialogTitle: ({ children }: { children: React.ReactNode }) => h("h2", null, children),
@@ -62,10 +62,10 @@ mock.module("@/components/ui/alert-dialog", () => ({
     }
     return h("button", triggerProps, children)
   },
-  AlertDialogContent: ({ children }: { children: React.ReactNode }) => {
+  AlertDialogContent: ({ children, ...props }: { children: React.ReactNode; [key: string]: unknown }) => {
     const ctx = useContext(AlertDialogCtx)
     if (!ctx.open) return null
-    return h("div", { role: "alertdialog" }, children)
+    return h("div", { ...props, role: "alertdialog" }, children)
   },
   AlertDialogHeader: ({ children }: { children: React.ReactNode }) => h("div", null, children),
   AlertDialogTitle: ({ children }: { children: React.ReactNode }) => h("h2", null, children),

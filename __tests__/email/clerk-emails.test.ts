@@ -74,8 +74,20 @@ describe("forwardClerkEmail", () => {
 
     expect(result).toEqual({ status: "sent", emailId: "email_123" })
     expect(mockSendEmail.mock.calls[0]?.[0]).toMatchObject({
-      html: undefined,
+      html: "<p>Open your invitation.</p>",
       text: "Open your invitation.",
+    })
+  })
+
+  it("escapes text-only Clerk bodies when creating HTML", async () => {
+    await forwardClerkEmail(buildEmail({
+      body: undefined,
+      body_plain: "Use <this> & that\nThen continue.",
+    }))
+
+    expect(mockSendEmail.mock.calls[0]?.[0]).toMatchObject({
+      html: "<p>Use &lt;this&gt; &amp; that<br />Then continue.</p>",
+      text: "Use <this> & that\nThen continue.",
     })
   })
 

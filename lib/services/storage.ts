@@ -1,7 +1,12 @@
-import sharp from "sharp"
 import { supabase as getSupabase } from "@/lib/db/client"
 import { MAX_SUBMISSION_SCREENSHOTS } from "@/lib/utils/submission-screenshots"
-import { fetchAllowedUrl, isAllowedHttpsUrl, readResponseBytes } from "@/lib/utils/safe-fetch-url"
+import {
+  fetchAllowedUrl,
+  isAllowedHttpsUrl,
+  readResponseBytes,
+  redactFetchErrorForLogs,
+  redactUrlForLogs,
+} from "@/lib/utils/safe-fetch-url"
 
 const LOGOS_BUCKET = "logos"
 const BANNERS_BUCKET = "banners"
@@ -19,6 +24,11 @@ const MAX_BANNER_SIZE = 500 * 1024 // 500KB
 const MAX_SCREENSHOT_SIZE = 500 * 1024 // 500KB
 
 export type LogoVariant = "light" | "dark"
+
+async function loadSharp() {
+  const { default: sharp } = await import("sharp")
+  return sharp
+}
 
 export interface UploadLogoResult {
   url: string
@@ -44,6 +54,7 @@ export async function optimizeImage(
     return { buffer, mimeType }
   }
 
+  const sharp = await loadSharp()
   const image = sharp(buffer)
   const metadata = await image.metadata()
 
@@ -154,6 +165,7 @@ export interface UploadBannerResult {
 export async function optimizeBanner(
   buffer: Buffer
 ): Promise<{ buffer: Buffer; mimeType: string }> {
+  const sharp = await loadSharp()
   const image = sharp(buffer)
   const metadata = await image.metadata()
 
@@ -244,6 +256,7 @@ export interface UploadScreenshotResult {
 export async function optimizeScreenshot(
   buffer: Buffer
 ): Promise<{ buffer: Buffer; mimeType: string }> {
+  const sharp = await loadSharp()
   const image = sharp(buffer)
   const metadata = await image.metadata()
 
@@ -307,6 +320,56 @@ export async function uploadScreenshot(
     url: urlData.publicUrl,
     path,
   }
+}
+
+export async function uploadScreenshotVersion(
+  submissionId: string,
+  file: Buffer,
+  slot: number,
+  versionId: string
+): Promise<UploadScreenshotResult | null> {
+  const client = getSupabase()
+  const { buffer, mimeType } = await optimizeScreenshot(file)
+  const path = `${submissionId}/versions/${versionId}-${slot}.webp`
+  const { error } = await client.storage
+    .from(SCREENSHOTS_BUCKET)
+    .upload(path, buffer, {
+      contentType: mimeType,
+      upsert: false,
+      cacheControl: "3600",
+    })
+
+  if (error) {
+    console.error("Failed to upload screenshot version:", error)
+    return null
+  }
+
+  const { data: urlData } = client.storage
+    .from(SCREENSHOTS_BUCKET)
+    .getPublicUrl(path)
+
+  return { url: urlData.publicUrl, path }
+}
+
+export async function deleteScreenshotVersion(
+  submissionId: string,
+  path: string
+): Promise<boolean> {
+  if (
+    !path.startsWith(`${submissionId}/versions/`) ||
+    path.includes("..") ||
+    !path.endsWith(".webp")
+  ) {
+    return false
+  }
+
+  const client = getSupabase()
+  const { error } = await client.storage.from(SCREENSHOTS_BUCKET).remove([path])
+  if (error) {
+    console.error("Failed to delete screenshot version:", error)
+    return false
+  }
+  return true
 }
 
 export async function deleteScreenshot(submissionId: string, slot?: number): Promise<boolean> {
@@ -409,7 +472,7 @@ export async function downloadAndUploadBanner(
   if (!imageUrl) return null
 
   if (!isAllowedHttpsUrl(imageUrl)) {
-    console.warn(`Rejected unsafe banner URL: ${imageUrl}`)
+    console.warn(`Rejected unsafe banner URL: ${redactUrlForLogs(imageUrl)}`)
     return null
   }
 
@@ -421,12 +484,17 @@ export async function downloadAndUploadBanner(
       { requireHttps: true }
     )
   } catch (err) {
-    console.error(`Failed to fetch banner image from ${imageUrl}:`, err)
+    console.error(
+      `Failed to fetch banner image from ${redactUrlForLogs(imageUrl)}:`,
+      redactFetchErrorForLogs(err, [imageUrl])
+    )
     return null
   }
 
   if (!response?.ok) {
-    console.warn(`Banner image fetch returned ${response?.status ?? "no response"} for ${imageUrl}`)
+    console.warn(
+      `Banner image fetch returned ${response?.status ?? "no response"} for ${redactUrlForLogs(imageUrl)}`
+    )
     return null
   }
 
@@ -452,6 +520,7 @@ const MAX_HEADSHOT_HEIGHT = 400
 export async function optimizeHeadshot(
   buffer: Buffer
 ): Promise<{ buffer: Buffer; mimeType: string }> {
+  const sharp = await loadSharp()
   const image = sharp(buffer)
   const metadata = await image.metadata()
 

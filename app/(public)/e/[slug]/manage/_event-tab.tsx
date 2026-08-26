@@ -17,14 +17,6 @@ import {
   CardDescription,
 } from "@/components/ui/card"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -50,16 +42,18 @@ import {
 } from "@/components/ui/select"
 import { Loader2, CheckCircle2, Send, Eye, ThumbsUp, ThumbsDown, Plus, Pencil, Trash2, Megaphone, Zap, MessageCircle, Share2, Mail } from "lucide-react"
 import { assertOk, assertOkJson } from "@/lib/utils/fetch"
-import type { AnnouncementAudience } from "@/lib/services/announcements"
+import type {
+  Announcement,
+  AnnouncementAudience,
+} from "@/lib/services/announcements"
 import type { HackathonStatus, HackathonPhase } from "@/lib/db/hackathon-types"
+import { useActionItemsOptional } from "@/components/hackathon/manage/action-items-context"
+import { useIsClient } from "@/hooks/use-is-client"
 
-type MentorRequest = {
-  id: string
-  team_name: string | null
-  category: string | null
-  description: string | null
-  status: "open" | "claimed" | "resolved" | "cancelled"
-  created_at: string
+type MentorQueueStats = {
+  open: number
+  claimed: number
+  resolved: number
 }
 
 type SocialSubmission = {
@@ -77,6 +71,88 @@ type EmailResult = {
   failed: number
 }
 
+const EMAIL_AUDIENCE_ROLES = ["participant", "judge", "mentor"] as const
+type EmailAudienceRole = (typeof EMAIL_AUDIENCE_ROLES)[number]
+
+type PendingEmailOperation = {
+  version: 1
+  deliveryId: string
+  subject: string
+  html: string
+  roles: EmailAudienceRole[]
+}
+
+function pendingEmailOperationKey(hackathonId: string): string {
+  return `oatmeal:email-blast:pending:${hackathonId}`
+}
+
+function getEmailOperationStorage(): Storage | null {
+  if (typeof window === "undefined") return null
+  try {
+    return window.sessionStorage
+  } catch {
+    return null
+  }
+}
+
+function isPendingEmailOperation(value: unknown): value is PendingEmailOperation {
+  if (!value || typeof value !== "object") return false
+  const candidate = value as Partial<PendingEmailOperation>
+  return candidate.version === 1 &&
+    typeof candidate.deliveryId === "string" &&
+    candidate.deliveryId.length > 0 &&
+    candidate.deliveryId.length <= 200 &&
+    typeof candidate.subject === "string" &&
+    candidate.subject.trim().length > 0 &&
+    candidate.subject.length <= 200 &&
+    typeof candidate.html === "string" &&
+    candidate.html.trim().length > 0 &&
+    candidate.html.length <= 100_000 &&
+    Array.isArray(candidate.roles) &&
+    candidate.roles.every((role) => EMAIL_AUDIENCE_ROLES.includes(role))
+}
+
+function loadPendingEmailOperation(hackathonId: string): PendingEmailOperation | null {
+  const storage = getEmailOperationStorage()
+  if (!storage) return null
+  const key = pendingEmailOperationKey(hackathonId)
+  try {
+    const raw = storage.getItem(key)
+    if (!raw) return null
+    const parsed: unknown = JSON.parse(raw)
+    if (isPendingEmailOperation(parsed)) return parsed
+    storage.removeItem(key)
+    return null
+  } catch {
+    try {
+      storage.removeItem(key)
+    } catch {}
+    return null
+  }
+}
+
+function savePendingEmailOperation(
+  hackathonId: string,
+  operation: PendingEmailOperation,
+): boolean {
+  const storage = getEmailOperationStorage()
+  if (!storage) return false
+  try {
+    storage.setItem(pendingEmailOperationKey(hackathonId), JSON.stringify(operation))
+    return true
+  } catch {
+    return false
+  }
+}
+
+function clearPendingEmailOperation(hackathonId: string): void {
+  const storage = getEmailOperationStorage()
+  if (!storage) return
+  try {
+    storage.removeItem(pendingEmailOperationKey(hackathonId))
+  } catch {}
+}
+
 interface EventTabContentProps {
   hackathonId: string
   activeEtab: string
@@ -84,30 +160,48 @@ interface EventTabContentProps {
   hackathonPhase: HackathonPhase | null
 }
 
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleString(undefined, {
+function formatDate(dateStr: string, timeZone?: string): string {
+  const date = new Date(dateStr)
+  const locale = timeZone ? "en-US" : undefined
+  const dateLabel = date.toLocaleDateString(locale, {
     month: "short",
     day: "numeric",
     year: "numeric",
+    timeZone,
+  })
+  const timeLabel = date.toLocaleTimeString(locale, {
     hour: "numeric",
     minute: "2-digit",
+    timeZone,
   })
+  return `${dateLabel}, ${timeLabel}`
+}
+
+export function AnnouncementDateLabel({
+  label,
+  date,
+}: {
+  label: "Created" | "Sent"
+  date: string
+}) {
+  const isClient = useIsClient()
+  return <>{label} {formatDate(date, isClient ? undefined : "UTC")}</>
 }
 
 function MentorsSubTab({ hackathonId }: { hackathonId: string }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [requests, setRequests] = useState<MentorRequest[]>([])
+  const [stats, setStats] = useState<MentorQueueStats | null>(null)
 
   useEffect(() => {
     let cancelled = false
     async function load() {
       try {
-        const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/mentor-requests`)
-        if (!res.ok) throw new Error("Failed to load mentor requests")
-        const data = await res.json()
+        const data = await fetch(
+          `/api/dashboard/hackathons/${hackathonId}/mentor-requests`,
+        ).then(assertOkJson<{ stats: MentorQueueStats }>)
         if (cancelled) return
-        setRequests(data.requests)
+        setStats(data.stats)
       } catch {
         if (!cancelled) setError("Failed to load mentor requests")
       } finally {
@@ -126,52 +220,27 @@ function MentorsSubTab({ hackathonId }: { hackathonId: string }) {
     return <div className="rounded-lg border p-8 text-center text-destructive">{error}</div>
   }
 
-  if (requests.length === 0) {
-    return (
-      <div className="rounded-lg border p-8 text-center text-muted-foreground">
-        <MessageCircle className="size-8 mx-auto mb-2 opacity-50" />
-        <p className="text-sm">No mentor requests yet</p>
-      </div>
-    )
-  }
-
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Mentor Requests</CardTitle>
-        <CardDescription>{requests.length} request{requests.length !== 1 ? "s" : ""} in queue</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Team</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Requested</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {requests.map((req) => (
-                <TableRow key={req.id}>
-                  <TableCell>{req.team_name ?? "No team"}</TableCell>
-                  <TableCell>{req.category ?? "-"}</TableCell>
-                  <TableCell className="max-w-[200px] truncate">{req.description ?? "-"}</TableCell>
-                  <TableCell>
-                    <Badge variant={req.status === "open" ? "default" : "secondary"}>
-                      {req.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{formatDate(req.created_at)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      </CardContent>
-    </Card>
+    <div className="grid gap-3 sm:grid-cols-3">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Waiting</CardTitle>
+        </CardHeader>
+        <CardContent className="text-2xl font-semibold">{stats?.open ?? 0}</CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Being helped</CardTitle>
+        </CardHeader>
+        <CardContent className="text-2xl font-semibold">{stats?.claimed ?? 0}</CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Finished</CardTitle>
+        </CardHeader>
+        <CardContent className="text-2xl font-semibold">{stats?.resolved ?? 0}</CardContent>
+      </Card>
+    </div>
   )
 }
 
@@ -313,7 +382,7 @@ function SocialSubTab({ hackathonId }: { hackathonId: string }) {
 function EmailSubTab({ hackathonId }: { hackathonId: string }) {
   const [subject, setSubject] = useState("")
   const [html, setHtml] = useState("")
-  const [roles, setRoles] = useState<Record<string, boolean>>({
+  const [roles, setRoles] = useState<Record<EmailAudienceRole, boolean>>({
     participant: false,
     judge: false,
     mentor: false,
@@ -322,29 +391,60 @@ function EmailSubTab({ hackathonId }: { hackathonId: string }) {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<EmailResult | null>(null)
+  const deliveryIdRef = useRef<string | null>(null)
+  const sendInFlightRef = useRef(false)
 
-  const selectedRoles = Object.entries(roles)
-    .filter(([, checked]) => checked)
-    .map(([role]) => role)
+  useEffect(() => {
+    deliveryIdRef.current = null
+    const pending = loadPendingEmailOperation(hackathonId)
+    if (!pending) return
+    deliveryIdRef.current = pending.deliveryId
+    setSubject(pending.subject)
+    setHtml(pending.html)
+    setRoles({
+      participant: pending.roles.includes("participant"),
+      judge: pending.roles.includes("judge"),
+      mentor: pending.roles.includes("mentor"),
+    })
+  }, [hackathonId])
+
+  const selectedRoles = EMAIL_AUDIENCE_ROLES.filter((role) => roles[role])
 
   const recipientLabel = selectedRoles.length > 0
     ? selectedRoles.map((r) => `${r}s`).join(", ")
     : "all participants"
 
   async function handleSend() {
-    if (!subject.trim() || !html.trim()) return
+    if (sendInFlightRef.current || !subject.trim() || !html.trim()) return
+    setConfirmOpen(false)
+    const deliveryId = deliveryIdRef.current ?? crypto.randomUUID()
+    const operation: PendingEmailOperation = {
+      version: 1,
+      deliveryId,
+      subject,
+      html,
+      roles: [...selectedRoles],
+    }
+    if (!savePendingEmailOperation(hackathonId, operation)) {
+      setError("Turn on browser storage so we can safely send this email.")
+      return
+    }
+    deliveryIdRef.current = deliveryId
+    sendInFlightRef.current = true
     setSending(true)
     setError(null)
     setResult(null)
-    setConfirmOpen(false)
     try {
       const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/email-blast`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": deliveryId,
+        },
         body: JSON.stringify({
-          subject,
-          html,
-          recipientFilter: selectedRoles.length > 0 ? selectedRoles : undefined,
+          subject: operation.subject,
+          html: operation.html,
+          recipientFilter: operation.roles.length > 0 ? operation.roles : undefined,
         }),
       })
       if (!res.ok) {
@@ -353,12 +453,17 @@ function EmailSubTab({ hackathonId }: { hackathonId: string }) {
       }
       const data: EmailResult = await res.json()
       setResult(data)
-      setSubject("")
-      setHtml("")
-      setRoles({ participant: false, judge: false, mentor: false })
+      if (data.failed === 0) {
+        clearPendingEmailOperation(hackathonId)
+        deliveryIdRef.current = null
+        setSubject("")
+        setHtml("")
+        setRoles({ participant: false, judge: false, mentor: false })
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to send emails")
     } finally {
+      sendInFlightRef.current = false
       setSending(false)
     }
   }
@@ -370,8 +475,19 @@ function EmailSubTab({ hackathonId }: { hackathonId: string }) {
     }
   }
 
-  function toggleRole(role: string) {
+  function toggleRole(role: EmailAudienceRole) {
+    if (sending) return
+    if (deliveryIdRef.current) {
+      deliveryIdRef.current = null
+      clearPendingEmailOperation(hackathonId)
+    }
     setRoles((prev) => ({ ...prev, [role]: !prev[role] }))
+  }
+
+  function clearDeliveryIdentity() {
+    if (!deliveryIdRef.current) return
+    deliveryIdRef.current = null
+    clearPendingEmailOperation(hackathonId)
   }
 
   return (
@@ -382,7 +498,10 @@ function EmailSubTab({ hackathonId }: { hackathonId: string }) {
       </CardHeader>
       <CardContent>
         <form
-          onSubmit={(e) => { e.preventDefault(); setConfirmOpen(true) }}
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (!sending && !sendInFlightRef.current) setConfirmOpen(true)
+          }}
           onKeyDown={handleKeyDown}
           autoComplete="off"
           className="space-y-4"
@@ -393,13 +512,17 @@ function EmailSubTab({ hackathonId }: { hackathonId: string }) {
               id="email-subject"
               name="email-subject"
               value={subject}
-              onChange={(e) => setSubject(e.target.value)}
+              onChange={(e) => {
+                clearDeliveryIdentity()
+                setSubject(e.target.value)
+              }}
               placeholder="Email subject line"
               autoComplete="off"
               data-1p-ignore
               data-lpignore="true"
               data-form-type="other"
               autoFocus
+              disabled={sending}
             />
           </div>
           <div className="space-y-2">
@@ -408,24 +531,29 @@ function EmailSubTab({ hackathonId }: { hackathonId: string }) {
               id="email-body"
               name="email-body"
               value={html}
-              onChange={(e) => setHtml(e.target.value)}
+              onChange={(e) => {
+                clearDeliveryIdentity()
+                setHtml(e.target.value)
+              }}
               placeholder="<h1>Hello!</h1><p>Your email content here...</p>"
               rows={10}
               autoComplete="off"
               data-1p-ignore
               data-lpignore="true"
               data-form-type="other"
+              disabled={sending}
             />
           </div>
           <div className="space-y-2">
             <Label>Send to</Label>
             <div className="flex flex-wrap gap-4">
-              {(["participant", "judge", "mentor"] as const).map((role) => (
+              {EMAIL_AUDIENCE_ROLES.map((role) => (
                 <div key={role} className="flex items-center gap-2">
                   <Checkbox
                     id={`role-${role}`}
                     checked={roles[role]}
                     onCheckedChange={() => toggleRole(role)}
+                    disabled={sending}
                   />
                   <Label htmlFor={`role-${role}`} className="capitalize">
                     {role}s
@@ -462,7 +590,9 @@ function EmailSubTab({ hackathonId }: { hackathonId: string }) {
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleSend}>Send Now</AlertDialogAction>
+              <AlertDialogAction onClick={handleSend} disabled={sending}>
+                Send Now
+              </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
@@ -471,15 +601,7 @@ function EmailSubTab({ hackathonId }: { hackathonId: string }) {
   )
 }
 
-type AnnouncementData = {
-  id: string
-  title: string
-  body: string
-  priority: "normal" | "urgent"
-  audience: string
-  published_at: string | null
-  created_at: string
-}
+type AnnouncementData = Announcement
 
 type SuggestedAnnouncement = {
   title: string
@@ -517,9 +639,27 @@ function getSuggestedAnnouncements(status: HackathonStatus, phase: HackathonPhas
 }
 
 function AnnouncementsSubTab({ hackathonId, hackathonStatus, hackathonPhase }: { hackathonId: string; hackathonStatus: HackathonStatus; hackathonPhase: HackathonPhase | null }) {
+  const actionItems = useActionItemsOptional()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [items, setItems] = useState<AnnouncementData[]>([])
+  const [localItems, setLocalItems] = useState<AnnouncementData[]>([])
+  const items = actionItems?.manageWebMcpView.announcements ?? localItems
+  const hasSharedAnnouncements = actionItems !== null
+  const itemsRef = useRef(items)
+  useEffect(() => {
+    itemsRef.current = items
+  }, [items])
+  function replaceItems(next: AnnouncementData[]) {
+    itemsRef.current = next
+    if (actionItems) {
+      actionItems.replaceManageAnnouncements(next)
+    } else {
+      setLocalItems(next)
+    }
+  }
+  function updateItems(update: (items: AnnouncementData[]) => AnnouncementData[]) {
+    replaceItems(update(itemsRef.current))
+  }
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<AnnouncementData | null>(null)
   const [title, setTitle] = useState("")
@@ -533,13 +673,18 @@ function AnnouncementsSubTab({ hackathonId, hackathonStatus, hackathonPhase }: {
   const drafts = items.filter((i) => !i.published_at)
 
   useEffect(() => {
+    if (hasSharedAnnouncements) {
+      setLoading(false)
+      setError(null)
+      return
+    }
     let cancelled = false
     async function load() {
       try {
         const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/announcements`)
         if (!res.ok) throw new Error("Failed to load")
         const data = await res.json()
-        if (!cancelled) setItems(data.announcements)
+        if (!cancelled) setLocalItems(data.announcements)
       } catch {
         if (!cancelled) setError("Failed to load announcements")
       } finally {
@@ -548,7 +693,7 @@ function AnnouncementsSubTab({ hackathonId, hackathonStatus, hackathonPhase }: {
     }
     load()
     return () => { cancelled = true }
-  }, [hackathonId])
+  }, [hackathonId, hasSharedAnnouncements])
 
   function openCreate() {
     setEditing(null)
@@ -587,30 +732,32 @@ function AnnouncementsSubTab({ hackathonId, hackathonStatus, hackathonPhase }: {
 
     if (editing) {
       const prev = items.find((i) => i.id === editing.id)
-      setItems((old) => old.map((i) => (i.id === editing.id ? { ...i, title, body, priority, audience } : i)))
+      updateItems((old) => old.map((i) => (i.id === editing.id ? { ...i, title, body, priority, audience } : i)))
       fetch(`/api/dashboard/hackathons/${hackathonId}/announcements/${editing.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, body, priority, audience }),
       })
         .then(assertOkJson<AnnouncementData>)
-        .then((saved) => setItems((old) => old.map((i) => (i.id === saved.id ? saved : i))))
+        .then((saved) => updateItems((old) => old.map((i) => (i.id === saved.id ? saved : i))))
         .catch((err) => {
-          if (prev) setItems((old) => old.map((i) => (i.id === editing.id ? prev : i)))
+          if (prev) updateItems((old) => old.map((i) => (i.id === editing.id ? prev : i)))
           setError(err instanceof Error ? err.message : "Failed to save announcement")
         })
     } else {
       const tempId = `temp-${++tempIdCounter.current}`
       const optimistic: AnnouncementData = {
         id: tempId,
+        hackathon_id: hackathonId,
         title,
         body,
         priority,
         audience,
         published_at: publish ? new Date().toISOString() : null,
         created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       }
-      setItems((old) => [optimistic, ...old])
+      updateItems((old) => [optimistic, ...old])
       fetch(`/api/dashboard/hackathons/${hackathonId}/announcements`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -621,17 +768,17 @@ function AnnouncementsSubTab({ hackathonId, hackathonStatus, hackathonPhase }: {
           if (publish) {
             try {
               const published = await fetch(`/api/dashboard/hackathons/${hackathonId}/announcements/${created.id}/publish`, { method: "POST" }).then(assertOkJson<AnnouncementData>)
-              setItems((old) => old.map((i) => (i.id === tempId ? published : i)))
+              updateItems((old) => old.map((i) => (i.id === tempId ? published : i)))
             } catch {
-              setItems((old) => old.map((i) => (i.id === tempId ? created : i)))
+              updateItems((old) => old.map((i) => (i.id === tempId ? created : i)))
               setError("Saved as draft — couldn't publish. Try publishing again.")
             }
           } else {
-            setItems((old) => old.map((i) => (i.id === tempId ? created : i)))
+            updateItems((old) => old.map((i) => (i.id === tempId ? created : i)))
           }
         })
         .catch((err) => {
-          setItems((old) => old.filter((i) => i.id !== tempId))
+          updateItems((old) => old.filter((i) => i.id !== tempId))
           setError(err instanceof Error ? err.message : "Failed to save announcement")
         })
     }
@@ -640,11 +787,11 @@ function AnnouncementsSubTab({ hackathonId, hackathonStatus, hackathonPhase }: {
   function handleDelete(id: string) {
     const index = items.findIndex((i) => i.id === id)
     const prev = index >= 0 ? items[index] : null
-    setItems((old) => old.filter((i) => i.id !== id))
+    updateItems((old) => old.filter((i) => i.id !== id))
     fetch(`/api/dashboard/hackathons/${hackathonId}/announcements/${id}`, { method: "DELETE" })
       .then(assertOk)
       .catch(() => {
-        if (prev) setItems((old) => { const next = [...old]; next.splice(index, 0, prev); return next })
+        if (prev) updateItems((old) => { const next = [...old]; next.splice(index, 0, prev); return next })
         setError("Failed to delete announcement")
       })
   }
@@ -652,7 +799,7 @@ function AnnouncementsSubTab({ hackathonId, hackathonStatus, hackathonPhase }: {
   function handleTogglePublish(item: AnnouncementData) {
     const action = item.published_at ? "unpublish" : "publish"
     const prevItem = item
-    setItems((old) =>
+    updateItems((old) =>
       old.map((i) =>
         i.id === item.id
           ? { ...i, published_at: item.published_at ? null : new Date().toISOString() }
@@ -661,9 +808,9 @@ function AnnouncementsSubTab({ hackathonId, hackathonStatus, hackathonPhase }: {
     )
     fetch(`/api/dashboard/hackathons/${hackathonId}/announcements/${item.id}/${action}`, { method: "POST" })
       .then(assertOkJson<AnnouncementData>)
-      .then((updated) => setItems((old) => old.map((i) => (i.id === updated.id ? updated : i))))
+      .then((updated) => updateItems((old) => old.map((i) => (i.id === updated.id ? updated : i))))
       .catch(() => {
-        setItems((old) => old.map((i) => (i.id === prevItem.id ? prevItem : i)))
+        updateItems((old) => old.map((i) => (i.id === prevItem.id ? prevItem : i)))
         setError("Failed to update publish status")
       })
   }
@@ -681,6 +828,7 @@ function AnnouncementsSubTab({ hackathonId, hackathonStatus, hackathonPhase }: {
 
   function renderAnnouncementCard(item: AnnouncementData) {
     const isDraft = !item.published_at
+    const isSaving = item.id.startsWith("webmcp-announcement-")
     return (
       <div key={item.id} className={isDraft ? "rounded-lg border border-dashed p-4" : "rounded-lg border p-4"}>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -688,10 +836,15 @@ function AnnouncementsSubTab({ hackathonId, hackathonStatus, hackathonPhase }: {
             <div className="flex items-center gap-2 mb-1">
               <h4 className="text-sm font-medium truncate">{item.title}</h4>
               {item.priority === "urgent" && <Badge variant="destructive">urgent</Badge>}
+              {isSaving && <Badge variant="secondary">Saving</Badge>}
             </div>
             <p className="text-xs text-muted-foreground line-clamp-2">{item.body}</p>
             <p className="text-xs text-muted-foreground mt-1">
-              {isDraft ? `Created ${formatDate(item.created_at)}` : `Sent ${formatDate(item.published_at!)}`}
+              {isDraft ? (
+                <AnnouncementDateLabel label="Created" date={item.created_at} />
+              ) : (
+                <AnnouncementDateLabel label="Sent" date={item.published_at!} />
+              )}
             </p>
           </div>
           <div className="flex items-center gap-1 shrink-0">
@@ -700,6 +853,7 @@ function AnnouncementsSubTab({ hackathonId, hackathonStatus, hackathonPhase }: {
                 size="sm"
                 variant="default"
                 onClick={() => handleTogglePublish(item)}
+                disabled={isSaving}
               >
                 <Send className="size-4" />
                 <span className="hidden sm:inline">Publish</span>
@@ -710,17 +864,18 @@ function AnnouncementsSubTab({ hackathonId, hackathonStatus, hackathonPhase }: {
                 size="sm"
                 variant="ghost"
                 onClick={() => handleTogglePublish(item)}
+                disabled={isSaving}
               >
                 <Eye className="size-4" />
                 <span className="hidden sm:inline">Unpublish</span>
               </Button>
             )}
-            <Button size="sm" variant="ghost" onClick={() => openEdit(item)}>
+            <Button size="sm" variant="ghost" onClick={() => openEdit(item)} disabled={isSaving}>
               <Pencil className="size-4" />
             </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button size="sm" variant="ghost">
+                <Button size="sm" variant="ghost" disabled={isSaving}>
                   <Trash2 className="size-4" />
                 </Button>
               </AlertDialogTrigger>

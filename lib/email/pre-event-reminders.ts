@@ -5,12 +5,22 @@ import {
   formatTimeLeft,
   getReplyToAddress,
   buildMailtoUnsubscribeHeaders,
+  paceBulkSend,
   shortHackathonName,
 } from "./utils"
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { clerkClient } from "@clerk/nextjs/server"
 import PreEventReminderEmail from "@/emails/pre-event-reminder"
+import { getUnresolvedEmailDecision } from "@/lib/services/delivery-lease"
+import {
+  consumeDeliverySlot,
+  hasPendingDeliveryTasks,
+  markDeliveryTaskComplete,
+  runWithinDeliveryDeadline,
+  selectPendingDeliveryTasks,
+  type DeliveryBudget,
+} from "@/lib/services/delivery-budget"
 
 type PreEventContent = {
   heading: string
@@ -76,6 +86,8 @@ export type SendPreEventReminderInput = {
   hackathonSlug: string
   deadlineDate: string
   urgency: "low" | "medium" | "high"
+  deliveryId?: string
+  budget?: DeliveryBudget
 }
 
 const HIGH_URGENCY_SUBJECTS: Record<
@@ -89,9 +101,9 @@ const HIGH_URGENCY_SUBJECTS: Record<
 
 export async function sendPreEventReminderEmail(
   input: SendPreEventReminderInput
-): Promise<{ sent: number }> {
+): Promise<{ sent: number; failed: number; deferred?: true }> {
   const builder = CONTENT_BUILDERS[input.reminderType]
-  if (!builder) return { sent: 0 }
+  if (!builder) return { sent: 0, failed: 0 }
 
   const content = builder(input.hackathonName, input.hackathonSlug)
   const timeLeft = formatTimeLeft(input.deadlineDate)
@@ -107,10 +119,69 @@ export async function sendPreEventReminderEmail(
       ? HIGH_URGENCY_SUBJECTS[input.reminderType](shortHackathonName(input.hackathonName))
       : content.subject
 
-  const recipients = await getRecipients(input.hackathonId, input.reminderType)
+  const candidateIds = await getRecipientIds(input.hackathonId)
   let sent = 0
+  let failed = 0
+  const deliveryId = input.deliveryId ?? `${input.hackathonId}/${input.reminderType}/${input.deadlineDate}`
+  const workKey = `pre-event:${deliveryId}`
+  const selection = await selectPendingDeliveryTasks(
+    workKey,
+    candidateIds,
+    (candidateId) => candidateId,
+    input.budget,
+  )
+  let deferred = selection.deferred
+  let unresolvedDecision: "retry" | "exhausted" | null = null
+  const candidates: RecipientCandidate[] = []
 
-  for (const recipient of recipients) {
+  if (selection.tasks.length > 0) {
+    const clerk = await clerkClient()
+    for (let offset = 0; offset < selection.tasks.length; offset += 100) {
+      const batch = selection.tasks.slice(offset, offset + 100)
+      const resolved = await runWithinDeliveryDeadline(
+        input.budget,
+        () => clerk.users.getUserList({ userId: batch, limit: 100 }),
+      )
+      if (!resolved.completed) {
+        deferred = true
+        break
+      }
+      const recipients = new Map<string, Recipient>()
+      for (const user of resolved.value.data) {
+        const email = user.primaryEmailAddress?.emailAddress
+        if (!email) continue
+        recipients.set(user.id, {
+          id: user.id,
+          email,
+          name: user.firstName || email.split("@")[0],
+        })
+      }
+      candidates.push(...batch.map((id) => ({
+        id,
+        recipient: recipients.get(id) ?? null,
+      })))
+    }
+  }
+
+  for (let index = 0; index < candidates.length; index += 1) {
+    if (!consumeDeliverySlot(input.budget)) {
+      deferred = true
+      break
+    }
+
+    const recipient = candidates[index].recipient
+    if (!recipient) {
+      unresolvedDecision ??= await getUnresolvedEmailDecision(workKey)
+      if (unresolvedDecision === "retry") {
+        failed++
+        if (input.budget) break
+        continue
+      }
+      await markDeliveryTaskComplete(workKey, candidates[index].id)
+      continue
+    }
+
+    await paceBulkSend(index)
     const { html, text } = await renderEmail(
       PreEventReminderEmail({
         hackathonName: input.hackathonName,
@@ -136,51 +207,57 @@ export async function sendPreEventReminderEmail(
         { name: "type", value: `pre_event_${input.reminderType}` },
         { name: "hackathon", value: sanitizeTag(input.hackathonName) },
       ],
+      idempotencyKey: `pre-event-reminder/${deliveryId}/${recipient.id}`,
     })
 
-    if (result !== null) sent++
+    if (result !== null) {
+      sent++
+      await markDeliveryTaskComplete(workKey, candidates[index].id)
+    } else {
+      failed++
+      if (input.budget) break
+    }
   }
 
-  return { sent }
+  if (unresolvedDecision === "exhausted") {
+    console.warn(
+      `Pre-event reminder: recipient records remained unavailable after bounded retries for hackathon ${input.hackathonId}.`,
+    )
+  }
+
+  if (failed === 0 && !deferred) {
+    const refreshedCandidateIds = await getRecipientIds(input.hackathonId)
+    deferred = await hasPendingDeliveryTasks(
+      workKey,
+      refreshedCandidateIds,
+      (candidateId) => candidateId,
+      input.budget,
+    )
+  }
+
+  return deferred ? { sent, failed, deferred: true } : { sent, failed }
 }
 
-type Recipient = { email: string; name: string }
+type Recipient = { id: string; email: string; name: string }
+type RecipientCandidate = { id: string; recipient: Recipient | null }
 
-async function getRecipients(
+async function getRecipientIds(
   hackathonId: string,
-  _reminderType: string
-): Promise<Recipient[]> {
+): Promise<string[]> {
   const client = getSupabase() as unknown as SupabaseClient
 
   const role = "participant"
 
-  const { data: participants } = await client
+  const { data: participants, error: participantsError } = await client
     .from("hackathon_participants")
     .select("clerk_user_id")
     .eq("hackathon_id", hackathonId)
     .eq("role", role)
 
-  if (!participants || participants.length === 0) return []
-
-  const clerk = await clerkClient()
-  const recipients: Recipient[] = []
-  const PAGE_SIZE = 100
-
-  const userIds = participants.map((p) => p.clerk_user_id as string)
-
-  for (let i = 0; i < userIds.length; i += PAGE_SIZE) {
-    const batch = userIds.slice(i, i + PAGE_SIZE)
-    const users = await clerk.users.getUserList({ userId: batch, limit: PAGE_SIZE })
-    for (const user of users.data) {
-      const email = user.primaryEmailAddress?.emailAddress
-      if (email) {
-        recipients.push({
-          email,
-          name: user.firstName || email.split("@")[0],
-        })
-      }
-    }
+  if (participantsError) {
+    throw new Error(`Failed to load event attendees: ${participantsError.message}`)
   }
-
-  return recipients
+  return [...new Set((participants ?? []).map(
+    (participant) => participant.clerk_user_id as string,
+  ))].sort()
 }

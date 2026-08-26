@@ -1,6 +1,7 @@
 import { mock } from "bun:test"
 import { createElement } from "react"
 import { Window } from "happy-dom"
+import * as dnsPromises from "node:dns/promises"
 import "./__tests__/lib/supabase-mock"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -9,6 +10,15 @@ const g = globalThis as any
 if (!process.env.ENCRYPTION_KEY) {
   process.env.ENCRYPTION_KEY = "0".repeat(64)
 }
+
+g.__safeFetchDnsLookup = mock(async () => [
+  { address: "93.184.216.34", family: 4 as const },
+])
+
+mock.module("node:dns/promises", () => ({
+  ...dnsPromises,
+  lookup: (...args: unknown[]) => g.__safeFetchDnsLookup(...args),
+}))
 
 g.__nextNavState = {
   pathname: "/test",
@@ -41,8 +51,13 @@ g.__clerkState = {
   sessionLoaded: true,
   session: { id: "sess_123" } as { id: string } | null,
   organization: null as { id: string; name: string } | null,
-  memberships: [] as Array<{ organization: { id: string; name: string; imageUrl: string | null } }>,
+  memberships: [] as Array<{
+    role: string
+    organization: { id: string; name: string; imageUrl: string | null }
+  }>,
   setActive: mock(() => Promise.resolve()),
+  has: mock(() => true),
+  getToken: mock(() => Promise.resolve("test-token")),
   openUserProfile: mock(() => {}),
   openOrganizationProfile: mock(() => {}),
   signOut: mock(() => Promise.resolve()),
@@ -60,7 +75,7 @@ g.__clerkState = {
 mock.module("@clerk/nextjs", () => ({
   OrganizationList: (props: Record<string, unknown>) =>
     createElement("div", { "data-testid": "organization-list", ...props }),
-  useAuth: () => ({ isSignedIn: g.__clerkState.isSignedIn, isLoaded: g.__clerkState.isLoaded, userId: g.__clerkState.userId, orgId: g.__clerkState.orgId, getToken: () => Promise.resolve(null) }),
+  useAuth: () => ({ isSignedIn: g.__clerkState.isSignedIn, isLoaded: g.__clerkState.isLoaded, userId: g.__clerkState.userId, orgId: g.__clerkState.orgId, getToken: g.__clerkState.getToken, has: g.__clerkState.has }),
   AuthenticateWithRedirectCallback: (props: Record<string, unknown>) =>
     createElement("div", { "data-testid": "authenticate-with-redirect-callback", ...props }),
   useUser: () => ({ isLoaded: g.__clerkState.isLoaded, isSignedIn: g.__clerkState.isSignedIn, user: g.__clerkState.isSignedIn ? g.__clerkState.user : null }),
@@ -101,6 +116,15 @@ mock.module("next/link", () => ({
 }))
 
 const window = new Window()
+Object.assign(window, {
+  Error,
+  EvalError,
+  RangeError,
+  ReferenceError,
+  SyntaxError,
+  TypeError,
+  URIError,
+})
 Object.assign(globalThis, {
   window,
   document: window.document,
@@ -108,6 +132,17 @@ Object.assign(globalThis, {
   localStorage: window.localStorage,
   sessionStorage: window.sessionStorage,
   HTMLElement: window.HTMLElement,
+  Event: window.Event,
+  EventTarget: window.EventTarget,
+  CustomEvent: window.CustomEvent,
+  FocusEvent: window.FocusEvent,
+  InputEvent: window.InputEvent,
+  KeyboardEvent: window.KeyboardEvent,
+  MouseEvent: window.MouseEvent,
+  PointerEvent: window.PointerEvent,
+  SubmitEvent: window.SubmitEvent,
+  UIEvent: window.UIEvent,
+  WheelEvent: window.WheelEvent,
   Element: window.Element,
   Node: window.Node,
   NodeFilter: window.NodeFilter,

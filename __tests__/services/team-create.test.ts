@@ -77,6 +77,9 @@ describe("createTeamWithMembers", () => {
     mockSendTeamInvitationEmail.mockClear()
     mockMarkTeamInvitationEmailed.mockClear()
     mockScheduleReminders.mockClear()
+    mockSendTeamInvitationEmail.mockResolvedValue({ success: true })
+    mockMarkTeamInvitationEmailed.mockResolvedValue()
+    mockScheduleReminders.mockResolvedValue(0)
   })
 
   describe("captain email is not in Clerk", () => {
@@ -100,6 +103,7 @@ describe("createTeamWithMembers", () => {
       if ("team" in result) {
         expect(result.invited).toBe(true)
         expect(result.queued).toBe(true)
+        expect(result.delivery).toBe("queued")
       }
       expect(mockSendTeamInvitationEmail).not.toHaveBeenCalled()
       expect(mockMarkTeamInvitationEmailed).not.toHaveBeenCalled()
@@ -126,10 +130,37 @@ describe("createTeamWithMembers", () => {
       if ("team" in result) {
         expect(result.invited).toBe(true)
         expect(result.queued).toBe(false)
+        expect(result.delivery).toBe("sent")
       }
       expect(mockSendTeamInvitationEmail).toHaveBeenCalledTimes(1)
       expect(mockMarkTeamInvitationEmailed).toHaveBeenCalledTimes(1)
       expect(mockScheduleReminders).toHaveBeenCalledTimes(1)
+    })
+
+    it("keeps a failed live captain invite pending and schedules no reminders", async () => {
+      mockClerkUserList([])
+      setMockFromImplementation(
+        tableImpl({
+          hackathons: { data: { name: "H", slug: "h", status: "published", starts_at: null, ends_at: null }, error: null },
+          teams: { data: { id: "team_1", name: "T" }, error: null },
+          team_invitations: { data: { id: "inv_1" }, error: null },
+        })
+      )
+      mockSendTeamInvitationEmail.mockResolvedValueOnce({ success: false })
+
+      const result = await createTeamWithMembers("h1", {
+        name: "T",
+        captainEmail: "new@example.com",
+        organizerClerkUserId: "organizer_1",
+      })
+
+      expect("team" in result).toBe(true)
+      if ("team" in result && result.invited) {
+        expect(result.queued).toBe(false)
+        expect(result.delivery).toBe("failed")
+      }
+      expect(mockMarkTeamInvitationEmailed).not.toHaveBeenCalled()
+      expect(mockScheduleReminders).not.toHaveBeenCalled()
     })
   })
 
@@ -155,6 +186,7 @@ describe("createTeamWithMembers", () => {
       if ("team" in result) {
         expect(result.invited).toBe(true)
         expect(result.queued).toBe(true)
+        expect(result.delivery).toBe("queued")
       }
       expect(mockSendTeamInvitationEmail).not.toHaveBeenCalled()
     })
@@ -186,6 +218,7 @@ describe("createTeamWithMembers", () => {
       setMockFromImplementation(
         tableImpl({
           hackathon_participants: { data: { id: "p_1", team_id: null }, error: null },
+          hackathons: { data: { status: "active", starts_at: null, ends_at: null }, error: null },
           teams: { data: { id: "team_1", name: "T" }, error: null },
         })
       )
@@ -207,7 +240,7 @@ describe("createTeamWithMembers", () => {
       mockClerkUserList([{ id: "user_captain", email: "captain@example.com" }])
       const participantChain = createChainableMock({ data: { id: "p_1", team_id: null }, error: null })
       const teamChain = createChainableMock({ data: { id: "team_1", name: "T" }, error: null })
-      const hackathonChain = createChainableMock({ data: { require_team_approval: true }, error: null })
+      const hackathonChain = createChainableMock({ data: { status: "active", starts_at: null, ends_at: null }, error: null })
       setMockFromImplementation((table) => {
         if (table === "hackathon_participants") return participantChain
         if (table === "teams") return teamChain
@@ -224,7 +257,7 @@ describe("createTeamWithMembers", () => {
       expect(teamChain.insert).toHaveBeenCalledWith(expect.objectContaining({
         status: "forming",
       }))
-      expect(hackathonChain.select).not.toHaveBeenCalled()
+      expect(hackathonChain.select).toHaveBeenCalledWith("status, starts_at, ends_at")
       expect(mockSendTeamInvitationEmail).not.toHaveBeenCalled()
     })
 

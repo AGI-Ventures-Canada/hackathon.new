@@ -106,6 +106,18 @@ describe("Public Registration Routes", () => {
     mockCurrentTermsHash.mockResolvedValue(null)
   })
 
+  it("does not expose the retired unsigned OAuth callback", async () => {
+    const state = Buffer.from(JSON.stringify({
+      tenantId: "11111111-1111-1111-1111-111111111111",
+      userId: "attacker",
+    })).toString("base64url")
+    const res = await app.handle(new Request(
+      `http://localhost/api/public/integrations/gmail/callback?code=code&state=${state}`,
+    ))
+
+    expect(res.status).toBe(404)
+  })
+
   describe("POST /api/public/hackathons/:slug/register", () => {
     it("returns 401 when not authenticated", async () => {
       mockAuth.mockResolvedValue({ userId: null })
@@ -318,7 +330,7 @@ describe("Public Registration Routes", () => {
       expect(mockRecordTermsAcceptance).toHaveBeenCalledTimes(1)
     })
 
-    it("does not record acceptance when registration fails", async () => {
+    it("keeps the recorded acceptance when registration later fails", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
       mockCurrentTermsHash.mockResolvedValue("expected-hash")
@@ -337,7 +349,27 @@ describe("Public Registration Routes", () => {
       )
 
       expect(res.status).toBe(409)
-      expect(mockRecordTermsAcceptance).not.toHaveBeenCalled()
+      expect(mockRecordTermsAcceptance).toHaveBeenCalledWith("h1", "user_123", "expected-hash")
+    })
+
+    it("does not register when terms acceptance cannot be recorded", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockCurrentTermsHash.mockResolvedValue("expected-hash")
+      mockRecordTermsAcceptance.mockRejectedValue(new Error("database unavailable"))
+
+      const res = await app.handle(
+        new Request("http://localhost/api/public/hackathons/test-hackathon/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ terms_hash: "expected-hash" }),
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(500)
+      expect(data).toMatchObject({ code: "terms_record_failed", retryable: true })
+      expect(mockRegisterForHackathon).not.toHaveBeenCalled()
     })
 
     it("calls registerForHackathon with correct parameters", async () => {

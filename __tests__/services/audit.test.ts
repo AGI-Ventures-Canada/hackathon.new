@@ -231,6 +231,80 @@ describe("Audit Service", () => {
       expect(result).toBeNull()
     })
 
+    it("returns the existing matching audit for a deterministic idempotency ID", async () => {
+      const idempotencyId = "11111111-1111-4111-8111-111111111111"
+      const insert = createChainableMock({
+        data: null,
+        error: { code: "23505", message: "duplicate key" },
+      })
+      const existing = {
+        id: idempotencyId,
+        tenant_id: "tenant-123",
+        action: "hackathon.created",
+        actor_type: "user",
+        actor_id: "user-456",
+        resource_type: "hackathon",
+        resource_id: idempotencyId,
+        metadata: { idempotencyKey: "sha256:stable" },
+        created_at: "2026-08-26T12:00:00.000Z",
+      }
+      const lookup = createChainableMock({ data: existing, error: null })
+      const chains = [insert, lookup]
+      setMockFromImplementation(() => chains.shift()!)
+
+      const result = await logAudit({
+        principal: mockUserPrincipal,
+        action: "hackathon.created",
+        resourceType: "hackathon",
+        resourceId: idempotencyId,
+        metadata: { name: "Stable Event" },
+        idempotencyId,
+        idempotencyKey: "sha256:stable",
+        critical: true,
+      })
+
+      expect(result).toEqual(existing)
+      expect(insert.insert).toHaveBeenCalledWith(expect.objectContaining({
+        id: idempotencyId,
+        metadata: {
+          name: "Stable Event",
+          idempotencyKey: "sha256:stable",
+        },
+      }))
+      expect(lookup.eq).toHaveBeenCalledWith("id", idempotencyId)
+      expect(lookup.eq).toHaveBeenCalledWith("tenant_id", "tenant-123")
+    })
+
+    it("rejects a deterministic audit ID that belongs to another resource", async () => {
+      const idempotencyId = "22222222-2222-4222-8222-222222222222"
+      const insert = createChainableMock({
+        data: null,
+        error: { code: "23505", message: "duplicate key" },
+      })
+      const lookup = createChainableMock({
+        data: {
+          id: idempotencyId,
+          tenant_id: "tenant-123",
+          action: "hackathon.deleted",
+          resource_type: "hackathon",
+          resource_id: idempotencyId,
+        },
+        error: null,
+      })
+      const chains = [insert, lookup]
+      setMockFromImplementation(() => chains.shift()!)
+
+      await expect(logAudit({
+        principal: mockUserPrincipal,
+        action: "hackathon.created",
+        resourceType: "hackathon",
+        resourceId: idempotencyId,
+        idempotencyId,
+        idempotencyKey: "sha256:stable",
+        critical: true,
+      })).rejects.toThrow("Audit idempotency ID is already in use")
+    })
+
     it("handles complex metadata objects", async () => {
       const complexMetadata = {
         nested: { deep: { value: 123 } },

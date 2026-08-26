@@ -1,5 +1,10 @@
 import { describe, expect, it, mock, beforeEach } from "bun:test"
 import { Elysia } from "elysia"
+import {
+  createChainableMock,
+  resetSupabaseMocks,
+  setMockFromImplementation,
+} from "../lib/supabase-mock"
 
 const mockHackathonResponse = {
   id: "11111111-1111-1111-1111-111111111111",
@@ -9,6 +14,7 @@ const mockHackathonResponse = {
   rules: null,
   banner_url: null,
   status: "published",
+  updated_at: "2026-08-25T15:00:00.000Z",
   starts_at: null,
   ends_at: null,
   registration_opens_at: null,
@@ -45,8 +51,11 @@ mock.module("@/lib/services/public-hackathons", () => ({
   deleteHackathon: mockDeleteHackathon,
 }))
 
+const mockExecuteTransition = mock(() =>
+  Promise.resolve({ success: true, hackathon: mockHackathonResponse }),
+)
 mock.module("@/lib/services/lifecycle", () => ({
-  executeTransition: mock(() => Promise.resolve({ success: true, hackathon: mockHackathonResponse })),
+  executeTransition: mockExecuteTransition,
 }))
 
 mock.module("@/lib/services/judge-invitations", () => ({
@@ -82,12 +91,24 @@ mock.module("@clerk/nextjs/server", () => ({
 
 mock.module("@/lib/utils/timeline", () => ({
   validateTimelineDates: mock(() => null),
-  getEffectiveStatus: mock((h: { status: string }) => h.status),
+  getEffectiveStatus: mock((h: {
+    status: string
+    starts_at?: string | null
+    ends_at?: string | null
+  }) => {
+    if (h.status === "draft" || h.status === "archived") return h.status
+    if (h.ends_at && Date.now() >= new Date(h.ends_at).getTime()) {
+      return h.status === "judging" ? "judging" : "completed"
+    }
+    if (h.starts_at && Date.now() >= new Date(h.starts_at).getTime()) return "active"
+    return h.status
+  }),
 }))
 
 mock.module("@/lib/utils/url", () => ({
   normalizeOptionalUrl: mock((url: string | undefined) => url),
   normalizeUrl: mock((url: string) => url),
+  isSafeExternalUrl: mock(() => true),
 }))
 
 mock.module("@/lib/services/api-keys", () => ({
@@ -167,11 +188,14 @@ const mockUserPrincipal = {
   scopes: ["hackathons:read", "hackathons:write"],
 }
 
-function patchSettings(body: Record<string, unknown>) {
+function patchSettings(
+  body: Record<string, unknown>,
+  headers?: Record<string, string>,
+) {
   return app.handle(
     new Request("http://localhost/api/dashboard/hackathons/11111111-1111-1111-1111-111111111111/settings", {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...headers },
       body: JSON.stringify(body),
     })
   )
@@ -179,6 +203,7 @@ function patchSettings(body: Record<string, unknown>) {
 
 describe("PATCH /api/dashboard/hackathons/:id/settings - locale branch", () => {
   beforeEach(() => {
+    resetSupabaseMocks()
     mockResolvePrincipal.mockClear()
     mockCheckHackathonOrganizer.mockClear()
     mockUpdateHackathonSettings.mockClear()
@@ -186,6 +211,7 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - locale branch", () => {
     mockGetHackathonByIdForOrganizer.mockClear()
     mockLogAudit.mockClear()
     mockTriggerWebhooks.mockClear()
+    mockExecuteTransition.mockClear()
 
     mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
     mockCheckHackathonOrganizer.mockResolvedValue({ status: "ok", hackathon: mockHackathonResponse })
@@ -204,7 +230,15 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - locale branch", () => {
       "fr",
       expect.objectContaining({ name: "Bonjour", description: "French desc" })
     )
-    expect(mockUpdateHackathonSettings).not.toHaveBeenCalled()
+    expect(mockUpdateHackathonSettings).toHaveBeenCalledWith(
+      "11111111-1111-1111-1111-111111111111",
+      "22222222-2222-2222-2222-222222222222",
+      expect.any(Object),
+      {
+        expectedVersion: "2026-08-25T15:00:00.000Z",
+        allowedStatuses: ["draft", "published", "registration_open", "active", "judging"],
+      },
+    )
   })
 
   it("normalizes unusual locale strings before using as translation key", async () => {
@@ -227,8 +261,173 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - locale branch", () => {
     expect(mockUpdateHackathonSettings).toHaveBeenCalledWith(
       "11111111-1111-1111-1111-111111111111",
       "22222222-2222-2222-2222-222222222222",
-      expect.objectContaining({ name: "Hello" })
+      expect.objectContaining({ name: "Hello" }),
+      {
+        expectedVersion: "2026-08-25T15:00:00.000Z",
+        allowedStatuses: ["draft", "published", "registration_open", "active", "judging"],
+      },
     )
+  })
+
+  it("allows a current WebMCP details update before completion", async () => {
+    mockCheckHackathonOrganizer.mockResolvedValue({
+      status: "ok",
+      hackathon: {
+        ...mockHackathonResponse,
+        starts_at: "2020-01-01T00:00:00.000Z",
+        ends_at: "2099-01-01T00:00:00.000Z",
+      },
+    })
+    const res = await patchSettings(
+      { name: "Updated name" },
+      {
+        "x-webmcp-request": "1",
+        "x-webmcp-expected-status": "active",
+        "x-webmcp-event-version": "2026-08-25T15:00:00.000Z",
+      },
+    )
+
+    expect(res.status).toBe(200)
+    expect(mockUpdateHackathonSettings).toHaveBeenCalledTimes(1)
+  })
+
+  it("rejects an expired WebMCP details update before writing", async () => {
+    mockCheckHackathonOrganizer.mockResolvedValue({
+      status: "ok",
+      hackathon: {
+        ...mockHackathonResponse,
+        starts_at: "2019-01-01T00:00:00.000Z",
+        ends_at: "2020-01-01T00:00:00.000Z",
+      },
+    })
+
+    const res = await patchSettings(
+      { name: "Late update" },
+      {
+        "x-webmcp-request": "1",
+        "x-webmcp-expected-status": "active",
+        "x-webmcp-event-version": "2026-08-25T15:00:00.000Z",
+      },
+    )
+
+    expect(res.status).toBe(409)
+    expect(await res.json()).toMatchObject({ code: "event_changed" })
+    expect(mockUpdateHackathonSettings).not.toHaveBeenCalled()
+  })
+
+  it("rejects WebMCP timeline updates after draft", async () => {
+    const res = await patchSettings(
+      {
+        startsAt: "2026-09-10T16:00:00.000Z",
+        endsAt: "2026-09-11T16:00:00.000Z",
+      },
+      {
+        "x-webmcp-request": "1",
+        "x-webmcp-expected-status": "published",
+        "x-webmcp-event-version": "2026-08-25T15:00:00.000Z",
+      },
+    )
+
+    expect(res.status).toBe(409)
+    expect(await res.json()).toMatchObject({ code: "event_changed" })
+    expect(mockUpdateHackathonSettings).not.toHaveBeenCalled()
+  })
+
+  it("rejects stale or out-of-contract WebMCP settings updates", async () => {
+    const stale = await patchSettings(
+      { name: "Stale name" },
+      {
+        "x-webmcp-request": "1",
+        "x-webmcp-expected-status": "published",
+        "x-webmcp-event-version": "2026-08-25T14:00:00.000Z",
+      },
+    )
+    expect(stale.status).toBe(409)
+
+    const statusChange = await patchSettings(
+      { status: "active" },
+      {
+        "x-webmcp-request": "1",
+        "x-webmcp-expected-status": "published",
+        "x-webmcp-event-version": "2026-08-25T15:00:00.000Z",
+      },
+    )
+    expect(statusChange.status).toBe(400)
+    expect(await statusChange.json()).toMatchObject({
+      code: "webmcp_invalid_mutation",
+    })
+    expect(mockUpdateHackathonSettings).not.toHaveBeenCalled()
+  })
+
+  it("rejects ordinary settings writes after the event is complete", async () => {
+    mockCheckHackathonOrganizer.mockResolvedValue({
+      status: "ok",
+      hackathon: { ...mockHackathonResponse, status: "completed" },
+    })
+
+    const res = await patchSettings({ name: "Too late" })
+
+    expect(res.status).toBe(409)
+    expect(await res.json()).toMatchObject({ code: "event_changed" })
+    expect(mockUpdateHackathonSettings).not.toHaveBeenCalled()
+  })
+
+  it("rejects a status change mixed with any other setting", async () => {
+    const res = await patchSettings({ status: "active", name: "Mixed write" })
+
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({
+      error: "Change the event stage separately from other settings.",
+      code: "status_must_be_separate",
+    })
+    expect(mockCheckHackathonOrganizer).not.toHaveBeenCalled()
+    expect(mockExecuteTransition).not.toHaveBeenCalled()
+    expect(mockUpdateHackathonSettings).not.toHaveBeenCalled()
+  })
+
+  it("returns a stable conflict while another settings mutation owns the event lease", async () => {
+    let rateLimitCall = 0
+    setMockFromImplementation((table) => {
+      if (table === "rate_limits") {
+        rateLimitCall += 1
+        return createChainableMock(
+          rateLimitCall === 2
+            ? { data: null, error: { message: "duplicate", code: "23505" } }
+            : { data: null, error: null },
+        )
+      }
+      return createChainableMock({ data: null, error: null })
+    })
+
+    const res = await patchSettings({ name: "Wait for the other save" })
+
+    expect(res.status).toBe(409)
+    expect(await res.json()).toEqual({
+      error: "Another event change is still being saved.",
+      code: "event_busy",
+    })
+    expect(mockCheckHackathonOrganizer).not.toHaveBeenCalled()
+    expect(mockUpdateHackathonSettings).not.toHaveBeenCalled()
+  })
+
+  it("returns a stable retryable failure when the settings lease is unavailable", async () => {
+    setMockFromImplementation((table) =>
+      createChainableMock(
+        table === "rate_limits"
+          ? { data: null, error: { message: "database unavailable" } }
+          : { data: null, error: null },
+      ),
+    )
+
+    const res = await patchSettings({ name: "Try later" })
+
+    expect(res.status).toBe(503)
+    expect(await res.json()).toEqual({
+      error: "The event change lock is unavailable.",
+      code: "lease_unavailable",
+    })
+    expect(mockCheckHackathonOrganizer).not.toHaveBeenCalled()
+    expect(mockUpdateHackathonSettings).not.toHaveBeenCalled()
   })
 
   it("falls through to updateHackathonSettings when locale normalizes to null", async () => {
@@ -239,7 +438,11 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - locale branch", () => {
     expect(mockUpdateHackathonSettings).toHaveBeenCalledWith(
       "11111111-1111-1111-1111-111111111111",
       "22222222-2222-2222-2222-222222222222",
-      expect.objectContaining({ name: "Hello" })
+      expect.objectContaining({ name: "Hello" }),
+      {
+        expectedVersion: "2026-08-25T15:00:00.000Z",
+        allowedStatuses: ["draft", "published", "registration_open", "active", "judging"],
+      },
     )
   })
 
@@ -286,18 +489,19 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - locale branch", () => {
     expect(body.error).toBe("Failed to update translation")
   })
 
-  it("returns 500 when the settings write fails after the translation write succeeds", async () => {
+  it("returns a conflict when the guarded settings write loses its event version", async () => {
     mockUpdateHackathonSettings.mockResolvedValueOnce(null as never)
 
     const res = await patchSettings({ locale: "fr", name: "Bonjour", maxTeamSize: 10 })
-    expect(res.status).toBe(500)
+    expect(res.status).toBe(409)
     const body = await res.json()
-    expect(body.error).toBe("Failed to update settings")
+    expect(body.code).toBe("event_changed")
   })
 })
 
 describe("PATCH /api/dashboard/hackathons/:id/settings - terms validation", () => {
   beforeEach(() => {
+    resetSupabaseMocks()
     mockResolvePrincipal.mockClear()
     mockCheckHackathonOrganizer.mockClear()
     mockUpdateHackathonSettings.mockClear()
@@ -362,7 +566,11 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - terms validation", () =
       expect.objectContaining({
         requireTermsAcceptance: true,
         termsContent: "## Terms\n\nBe excellent.",
-      })
+      }),
+      {
+        expectedVersion: "2026-08-25T15:00:00.000Z",
+        allowedStatuses: ["draft", "published", "registration_open", "active", "judging"],
+      },
     )
   })
 

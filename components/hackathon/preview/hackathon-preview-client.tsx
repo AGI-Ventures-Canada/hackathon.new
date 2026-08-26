@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useIsClient } from "@/hooks/use-is-client"
 import { useRouter } from "next/navigation"
 import { useOptimisticMutation } from "@/hooks/use-optimistic-mutation"
@@ -50,6 +50,10 @@ import type { Challenge } from "@/lib/services/challenges"
 import { ChallengeSection } from "@/components/hackathon/challenge-section"
 import type { Perk } from "@/lib/services/perks"
 import { PerksSection } from "@/components/hackathon/perks-section"
+import {
+  formatPreviewScheduleTime,
+  getPendingInvitationTiming,
+} from "./preview-date-formatting"
 
 interface HackathonPreviewClientProps {
   hackathon: PublicHackathon
@@ -101,6 +105,20 @@ function HackathonPreviewContent({
 }: Omit<HackathonPreviewClientProps, "isEditable">) {
   const { isEditable, editMode, activeSection, openSection, closeDrawer } = useEdit()
   const router = useRouter()
+  const actionItemsCtx = useActionItemsOptional()
+  const manageView = isEditable ? actionItemsCtx?.manageWebMcpView : undefined
+  const visibleName = manageView?.details.name ?? hackathon.name
+  const visibleDescription = manageView
+    ? manageView.details.description
+    : hackathon.description
+  const visibleStartsAt = manageView
+    ? manageView.timeline.startsAt
+    : hackathon.starts_at
+  const visibleEndsAt = manageView
+    ? manageView.timeline.endsAt
+    : hackathon.ends_at
+  const visibleScheduleItems = manageView?.scheduleItems ?? scheduleItems
+  const visibleChallenges = manageView?.challenges ?? challenges
   const isClient = useIsClient()
   const origin = isClient ? window.location.origin : ""
   const primaryLocale = hackathon.default_locale ?? "en"
@@ -115,6 +133,12 @@ function HackathonPreviewContent({
   const [pendingPrizes, setPendingPrizes] = useState<PublicPrize[]>([])
   const [judgingDialogOpen, setJudgingDialogOpen] = useState(false)
 
+  const judgeDisplayKey = useCallback(
+    (judge: Pick<HackathonJudgeDisplay, "name" | "headshot_url">) =>
+      `${judge.name}\u0000${judge.headshot_url ?? ""}`,
+    [],
+  )
+
   useEffect(() => {
     setBannerUrl(hackathon.banner_url)
   }, [hackathon.banner_url])
@@ -125,24 +149,30 @@ function HackathonPreviewContent({
   }, [hackathon.prizes])
 
   useEffect(() => {
-    const serverParticipantIds = new Set(hackathon.judges.map((j) => j.participant_id).filter(Boolean))
-    setPendingJudges((prev) => prev.filter((j) => !j.participant_id || !serverParticipantIds.has(j.participant_id)))
-  }, [hackathon.judges])
+    const serverJudges = new Set(hackathon.judges.map(judgeDisplayKey))
+    setPendingJudges((previous) =>
+      previous.filter((judge) => !serverJudges.has(judgeDisplayKey(judge))),
+    )
+  }, [hackathon.judges, judgeDisplayKey])
 
   const displayJudges = useMemo(() => {
-    const serverParticipantIds = new Set(hackathon.judges.map((j) => j.participant_id).filter(Boolean))
+    const serverJudges = new Set(hackathon.judges.map(judgeDisplayKey))
     return [
       ...hackathon.judges,
-      ...pendingJudges.filter((j) => !j.participant_id || !serverParticipantIds.has(j.participant_id)),
+      ...pendingJudges.filter((judge) => !serverJudges.has(judgeDisplayKey(judge))),
     ]
-  }, [hackathon.judges, pendingJudges])
+  }, [hackathon.judges, judgeDisplayKey, pendingJudges])
   const displayPrizes = useMemo(() => {
     const serverIds = new Set(hackathon.prizes.map((p) => p.id))
+    const pendingIds = new Set(pendingPrizes.map((p) => p.id))
     return [
       ...hackathon.prizes,
       ...pendingPrizes.filter((p) => !serverIds.has(p.id)),
+      ...(manageView?.prizes ?? []).filter(
+        (prize) => !serverIds.has(prize.id) && !pendingIds.has(prize.id),
+      ),
     ]
-  }, [hackathon.prizes, pendingPrizes])
+  }, [hackathon.prizes, manageView?.prizes, pendingPrizes])
 
   const [nowIso, setNowIso] = useState<string | null>(null)
   useEffect(() => {
@@ -166,8 +196,8 @@ function HackathonPreviewContent({
   const canInviteTeamMembers = getCanInviteTeamMembers({
     isFormingCaptain: canManageTeam,
     hackathonStatus: hackathon.status,
-    startsAt: hackathon.starts_at,
-    endsAt: hackathon.ends_at,
+    startsAt: visibleStartsAt,
+    endsAt: visibleEndsAt,
     registrationClosesAt: hackathon.registration_closes_at,
     allowLateRegistration: hackathon.allow_late_registration,
     nowIso,
@@ -187,7 +217,6 @@ function HackathonPreviewContent({
     }
   }
 
-  const actionItemsCtx = useActionItemsOptional()
   useEffect(() => {
     if (!actionItemsCtx || !isEditable) return
     const { registerTabAction, unregisterTabAction } = actionItemsCtx
@@ -207,11 +236,11 @@ function HackathonPreviewContent({
 
   const autoOpenedName = useRef(false)
   useEffect(() => {
-    if (isEditable && editMode && !hackathon.name.trim() && !activeSection && !autoOpenedName.current) {
+    if (isEditable && editMode && !visibleName.trim() && !activeSection && !autoOpenedName.current) {
       autoOpenedName.current = true
       openSection("name")
     }
-  }, [isEditable, editMode, hackathon.name, activeSection, openSection])
+  }, [isEditable, editMode, visibleName, activeSection, openSection])
 
   async function handleCancelInvitation(invitationId: string) {
     if (!teamInfo) return
@@ -332,11 +361,12 @@ function HackathonPreviewContent({
               )
             })}
             {teamInfo.pendingInvitations.map((invitation) => {
-              const sentAt = new Date(invitation.createdAt)
-              const expiresAt = new Date(invitation.expiresAt)
-              const now = new Date()
-              const isExpired = expiresAt < now
-              const hoursLeft = Math.max(0, (expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60))
+              const invitationTiming = getPendingInvitationTiming({
+                createdAt: invitation.createdAt,
+                expiresAt: invitation.expiresAt,
+                isClient,
+                nowIso,
+              })
 
               return (
                 <Popover key={invitation.id}>
@@ -375,7 +405,7 @@ function HackathonPreviewContent({
                             />
                           </>
                         )}
-                        {!isExpired && !(invitation.remindedAt || remindedIds.has(invitation.id)) && (
+                        {!invitationTiming.isExpired && !(invitation.remindedAt || remindedIds.has(invitation.id)) && (
                           <Button
                             variant="ghost"
                             size="icon-xs"
@@ -408,18 +438,13 @@ function HackathonPreviewContent({
                       <div className="flex items-center gap-2 text-muted-foreground">
                         <Clock className="size-3.5 shrink-0" />
                         <span className="text-xs">
-                          Sent {sentAt.toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                          {invitationTiming.sentLabel}
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <CalendarClock className={`size-3.5 shrink-0 ${isExpired ? "text-destructive" : "text-muted-foreground"}`} />
-                        <span className={`text-xs ${isExpired ? "text-destructive" : "text-muted-foreground"}`}>
-                          {isExpired
-                            ? "Expired"
-                            : hoursLeft < 48
-                              ? `Expires in ${Math.ceil(hoursLeft)}h`
-                              : `Expires ${expiresAt.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`
-                          }
+                        <CalendarClock className={`size-3.5 shrink-0 ${invitationTiming.isExpired ? "text-destructive" : "text-muted-foreground"}`} />
+                        <span className={`text-xs ${invitationTiming.isExpired ? "text-destructive" : "text-muted-foreground"}`}>
+                          {invitationTiming.expiryLabel}
                         </span>
                       </div>
                       {(invitation.remindedAt || remindedIds.has(invitation.id)) && (
@@ -565,7 +590,7 @@ function HackathonPreviewContent({
                 organization: null,
                 headshot_url: judge.imageUrl,
                 clerk_user_id: null,
-                participant_id: judge.participantId,
+                participant_id: null,
                 display_order: 9999,
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
@@ -615,7 +640,7 @@ function HackathonPreviewContent({
               <TabsList variant="line">
                 <TabsTrigger value="overview">Overview</TabsTrigger>
                 <TabsTrigger value="schedule">Schedule</TabsTrigger>
-                {!isPendingTeam && challenges.length > 0 && (
+                {!isPendingTeam && visibleChallenges.length > 0 && (
                   <TabsTrigger value="challenges">
                     <span className="flex items-center gap-1.5">
                       Challenges
@@ -663,7 +688,7 @@ function HackathonPreviewContent({
                   <h2 className="text-xl font-bold mb-4">About</h2>
                   <AboutEditForm
                     hackathonId={hackathon.id}
-                    initialData={{ description: hackathon.description }}
+                    initialData={{ description: visibleDescription }}
                     onSaveAndNext={() => handleSaveAndNext("about")}
                     onSave={onFormSave ? (data) => onFormSave(data) : undefined}
                     locale={translationLocale}
@@ -672,14 +697,14 @@ function HackathonPreviewContent({
               ) : (
                 <EditableSection
                   section="about"
-                  isEmpty={!hackathon.description}
+                  isEmpty={!visibleDescription}
                   emptyLabel="Click to add description"
                 >
-                  {hackathon.description && (
+                  {visibleDescription && (
                     <div>
                       <h2 className="text-xl font-bold mb-4">About</h2>
                       <TruncatableContent>
-                        <MarkdownContent>{hackathon.description}</MarkdownContent>
+                        <MarkdownContent>{visibleDescription}</MarkdownContent>
                       </TruncatableContent>
                     </div>
                   )}
@@ -691,9 +716,9 @@ function HackathonPreviewContent({
             </TabsContent>
 
             <TabsContent value="schedule" className="mt-6">
-              {scheduleItems.length > 0 ? (
+              {visibleScheduleItems.length > 0 ? (
                 <div className="space-y-3">
-                  {scheduleItems.map((item) => {
+                  {visibleScheduleItems.map((item) => {
                     const isCurrent = Boolean(
                       nowIso && item.ends_at && item.starts_at <= nowIso && item.ends_at > nowIso,
                     )
@@ -703,7 +728,7 @@ function HackathonPreviewContent({
                         className={`flex items-start gap-3 ${isCurrent ? "rounded-md bg-primary/5 -mx-2 px-2 py-1" : ""}`}
                       >
                         <span className="text-xs tabular-nums text-muted-foreground shrink-0 w-16 pt-0.5 text-right">
-                          {new Date(item.starts_at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+                          {formatPreviewScheduleTime(item.starts_at, isClient)}
                         </span>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
@@ -727,10 +752,10 @@ function HackathonPreviewContent({
               )}
             </TabsContent>
 
-            {!isPendingTeam && challenges.length > 0 && (
+            {!isPendingTeam && visibleChallenges.length > 0 && (
               <TabsContent value="challenges" className="mt-6">
                 <ChallengeSection
-                  challenges={challenges}
+                  challenges={visibleChallenges}
                   releasedAt={hackathon.challenge_released_at}
                 />
               </TabsContent>
@@ -760,11 +785,11 @@ function HackathonPreviewContent({
 
   const heroContent = (
     <EventHero
-      name={hackathon.name}
+      name={visibleName}
       bannerUrl={bannerUrl}
       status={hackathon.status}
-      startsAt={hackathon.starts_at}
-      endsAt={hackathon.ends_at}
+      startsAt={visibleStartsAt}
+      endsAt={visibleEndsAt}
       registrationOpensAt={hackathon.registration_opens_at}
       registrationClosesAt={hackathon.registration_closes_at}
       organizer={hackathon.organizer}
@@ -777,7 +802,7 @@ function HackathonPreviewContent({
       nameEditSlot={isEditable && editMode && activeSection === "name" ? (
         <NameEditForm
           hackathonId={hackathon.id}
-          initialName={hackathon.name}
+          initialName={visibleName}
           onSaveAndNext={() => handleSaveAndNext("name")}
           onSave={onFormSave ? (data) => onFormSave(data) : undefined}
           locale={translationLocale}
@@ -787,8 +812,8 @@ function HackathonPreviewContent({
         <TimelineEditForm
           hackathonId={hackathon.id}
           initialData={{
-            startsAt: hackathon.starts_at,
-            endsAt: hackathon.ends_at,
+            startsAt: visibleStartsAt,
+            endsAt: visibleEndsAt,
             allowLateRegistration: hackathon.allow_late_registration,
           }}
           onSaveAndNext={() => handleSaveAndNext("dates")}
@@ -829,8 +854,8 @@ function HackathonPreviewContent({
       registrationProps={(isEditable && editMode) ? undefined : isJudge ? undefined : {
         hackathonSlug: hackathon.slug,
         status: hackathon.status,
-        startsAt: hackathon.starts_at,
-        endsAt: hackathon.ends_at,
+        startsAt: visibleStartsAt,
+        endsAt: visibleEndsAt,
         registrationOpensAt: hackathon.registration_opens_at,
         registrationClosesAt: hackathon.registration_closes_at,
         allowLateRegistration: hackathon.allow_late_registration,
@@ -844,6 +869,7 @@ function HackathonPreviewContent({
         submission,
         onRegistrationSuccess: handleRegistrationSuccess,
         canSubmit: !isPendingTeam,
+        teamStatus: teamInfo?.team.status ?? null,
         teamSizeWarning: teamInfo ? (getTeamSizeWarning({
           memberCount: teamInfo.members.length,
           minTeamSize: hackathon.min_team_size,

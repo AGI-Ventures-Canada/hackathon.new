@@ -148,6 +148,7 @@ mock.module("@/lib/services/social-submissions", () => ({
 
 mock.module("@/lib/services/mentor-requests", () => ({
   listMentorQueue: mock(() => Promise.resolve([])),
+  getQueueStats: mock(() => Promise.resolve({ open: 0, claimed: 0, resolved: 0 })),
 }))
 
 mock.module("@/lib/services/challenge", () => ({

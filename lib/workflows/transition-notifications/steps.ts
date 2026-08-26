@@ -5,6 +5,11 @@ import type {
   TransitionEvent,
 } from "@/lib/db/hackathon-types"
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { createHash } from "node:crypto"
+
+function recipientFingerprint(email: string): string {
+  return createHash("sha256").update(email.trim().toLowerCase()).digest("hex").slice(0, 24)
+}
 
 export async function fetchRecipientEmails(
   hackathonId: string,
@@ -24,13 +29,16 @@ export async function fetchRecipientEmails(
 
   const { data: participants, error } = await query
 
-  if (error || !participants || participants.length === 0) {
+  if (error) {
+    throw new Error(`Failed to load notification recipients: ${error.message}`)
+  }
+  if (!participants || participants.length === 0) {
     return []
   }
 
-  const clerkUserIds = participants.map(
+  const clerkUserIds = [...new Set(participants.map(
     (p: { clerk_user_id: string }) => p.clerk_user_id
-  )
+  ))]
   const emails: string[] = []
 
   const { clerkClient } = await import("@clerk/nextjs/server")
@@ -40,15 +48,16 @@ export async function fetchRecipientEmails(
     const batch = clerkUserIds.slice(i, i + 100)
     const users = await clerk.users.getUserList({ userId: batch, limit: 100 })
     for (const user of users.data) {
-      const email = user.emailAddresses[0]?.emailAddress
+      const email = user.primaryEmailAddress?.emailAddress ?? user.emailAddresses[0]?.emailAddress
       if (email) emails.push(email)
     }
   }
 
-  return emails
+  return [...new Set(emails.map((email) => email.trim().toLowerCase()))]
 }
 
 export type SendTransitionEmailInput = {
+  notificationId: string
   to: string
   event: TransitionEvent
   hackathonName: string
@@ -97,6 +106,7 @@ export async function sendTransitionEmail(
       },
       { name: "hackathon", value: tag },
     ],
+    idempotencyKey: `transition/${input.notificationId}/${recipientFingerprint(input.to)}`,
   })
 
   if (!result) {

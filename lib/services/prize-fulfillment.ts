@@ -1,7 +1,7 @@
 import { randomBytes } from "crypto"
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
-import type { Database } from "@/lib/db/types"
+import type { Database, TablesUpdate } from "@/lib/db/types"
 import type { PrizeFulfillment, PrizeFulfillmentStatus } from "@/lib/db/hackathon-types"
 
 const CLAIM_TOKEN_EXPIRY_DAYS = 30
@@ -159,7 +159,7 @@ export async function updateFulfillmentStatus(
   }
 
   const now = new Date().toISOString()
-  const updateData: Record<string, unknown> = {
+  const updateData: TablesUpdate<"prize_fulfillments"> = {
     status,
     updated_at: now,
   }
@@ -218,6 +218,7 @@ async function notifyWinnerOfShipment(
   const pa = assignment as unknown as { prize: { name: string } }
   const { sendPrizeShippedEmail } = await import("@/lib/email/prize-shipped")
   await sendPrizeShippedEmail({
+    fulfillmentId: fulfillment.id,
     recipientEmail: fulfillment.recipient_email!,
     recipientName: fulfillment.recipient_name ?? "Winner",
     prizeName: pa.prize.name,
@@ -465,7 +466,7 @@ export async function claimPrize(
   }
 
   const now = new Date().toISOString()
-  const updateData: Record<string, unknown> = {
+  const updateData: TablesUpdate<"prize_fulfillments"> = {
     status: "claimed",
     claimed_at: now,
     updated_at: now,
@@ -516,6 +517,7 @@ export async function claimPrize(
   }
 
   void sendClaimNotifications({
+    fulfillmentId: fulfillment.id,
     prizeName: pa?.prize?.name ?? "Prize",
     prizeValue: pa?.prize?.value ?? null,
     sponsorTenantId: pa?.prize?.prize_track?.sponsor?.sponsor_tenant_id ?? null,
@@ -536,7 +538,7 @@ async function updateCashPrizePayment(
   },
   client: SupabaseClient<Database>
 ): Promise<ClaimPrizeResult> {
-  const updateData: Record<string, unknown> = {
+  const updateData: TablesUpdate<"prize_fulfillments"> = {
     updated_at: new Date().toISOString(),
     recipient_name: data.recipientName,
   }
@@ -580,6 +582,7 @@ async function updateCashPrizePayment(
 }
 
 async function sendClaimNotifications(params: {
+  fulfillmentId: string
   prizeName: string
   prizeValue: string | null
   sponsorTenantId: string | null
@@ -595,31 +598,37 @@ async function sendClaimNotifications(params: {
 
   if (!hackathon) return
 
-  const promises: Promise<unknown>[] = []
-
   if (params.sponsorTenantId) {
     const { sendSponsorClaimNotification } = await import("@/lib/email/sponsor-notifications")
-    promises.push(sendSponsorClaimNotification({
-      prizeName: params.prizeName,
-      hackathonName: hackathon.name,
-      winnerName: params.winnerName,
-      sponsorTenantId: params.sponsorTenantId,
-      hackathonSlug: hackathon.slug,
-      prizeValue: params.prizeValue,
-    }))
+    try {
+      await sendSponsorClaimNotification({
+        fulfillmentId: params.fulfillmentId,
+        prizeName: params.prizeName,
+        hackathonName: hackathon.name,
+        winnerName: params.winnerName,
+        sponsorTenantId: params.sponsorTenantId,
+        hackathonSlug: hackathon.slug,
+        prizeValue: params.prizeValue,
+      })
+    } catch (error) {
+      console.error("Failed to send sponsor claim notifications:", error)
+    }
   }
 
   const { sendOrganizerClaimNotification } = await import("@/lib/email/organizer-notifications")
-  promises.push(sendOrganizerClaimNotification({
-    prizeName: params.prizeName,
-    hackathonName: hackathon.name,
-    hackathonSlug: hackathon.slug,
-    winnerName: params.winnerName,
-    hackathonId: params.hackathonId,
-    prizeValue: params.prizeValue,
-  }))
-
-  await Promise.allSettled(promises)
+  try {
+    await sendOrganizerClaimNotification({
+      fulfillmentId: params.fulfillmentId,
+      prizeName: params.prizeName,
+      hackathonName: hackathon.name,
+      hackathonSlug: hackathon.slug,
+      winnerName: params.winnerName,
+      hackathonId: params.hackathonId,
+      prizeValue: params.prizeValue,
+    })
+  } catch (error) {
+    console.error("Failed to send organizer claim notifications:", error)
+  }
 }
 
 export async function getClaimTokensForHackathon(

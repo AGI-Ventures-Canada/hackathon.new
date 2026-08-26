@@ -1,6 +1,7 @@
-import { Text, Link, Section } from "@react-email/components"
+import { Text, Link } from "@react-email/components"
 import { OatmealLayout } from "./_components/oatmeal-layout"
 import { EventDetailBox } from "./_components/event-detail-box"
+import { InfoBox } from "./_components/info-box"
 import { CTAButton } from "./_components/cta-button"
 import { colors, fontSize, spacing } from "./_components/constants"
 
@@ -57,25 +58,7 @@ export default function WinnerNotificationEmail({
       />
 
       {prizes.length > 0 && (
-        <Section
-          style={{
-            background: colors.infoBoxBg,
-            padding: `${spacing.md} ${spacing.lg}`,
-            marginBottom: spacing.lg,
-            borderRadius: "8px",
-            borderLeft: `3px solid ${colors.accent}`,
-          }}
-        >
-          <Text
-            style={{
-              margin: "0 0 12px 0",
-              fontSize: fontSize.xs,
-              color: colors.textSecondary,
-              fontWeight: 600,
-            }}
-          >
-            Prizes won
-          </Text>
+        <InfoBox label="Prizes won">
           {prizes.map((prize) => (
             <Text
               key={prize.name}
@@ -93,7 +76,7 @@ export default function WinnerNotificationEmail({
                   <Link
                     href={prize.claimUrl}
                     style={{
-                      color: colors.accent,
+                      color: colors.accentDark,
                       fontSize: fontSize.sm,
                       fontWeight: 600,
                       textDecoration: "underline",
@@ -105,7 +88,7 @@ export default function WinnerNotificationEmail({
               )}
             </Text>
           ))}
-        </Section>
+        </InfoBox>
       )}
 
       {primaryClaimUrl && (

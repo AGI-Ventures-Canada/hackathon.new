@@ -1,11 +1,21 @@
 import { notFound } from "next/navigation"
 import { auth } from "@clerk/nextjs/server"
-import { getPublicHackathon, PUBLISHED_STATUSES } from "@/lib/services/public-hackathons"
+import {
+  getPublicHackathon,
+  isPublicHackathonOrganizer,
+  PUBLISHED_STATUSES,
+  toPublicHackathonClientDto,
+} from "@/lib/services/public-hackathons"
 import { listScheduleItems } from "@/lib/services/schedule-items"
-import { listPublishedAnnouncements } from "@/lib/services/announcements"
+import {
+  filterAnnouncementsForViewer,
+  listPublishedAnnouncements,
+} from "@/lib/services/announcements"
 import { listChallenges } from "@/lib/services/challenges"
 import { getSubmissionScreenshotUrls } from "@/lib/utils/submission-screenshots"
 import { HackathonPreviewClient } from "@/components/hackathon/preview/hackathon-preview-client"
+import { EventWebMcpTools } from "@/components/hackathon/event-webmcp-tools"
+import { AttendeeMentorWebMcp } from "@/components/hackathon/mentors/attendee-mentor-webmcp"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Eye, Clock } from "lucide-react"
 import type { Metadata } from "next"
@@ -14,6 +24,11 @@ import {
   availableLocales,
   normalizeLocale,
 } from "@/lib/utils/language"
+import { publicSubmitterName } from "@/lib/utils/anonymous-judging"
+import { getParticipantCount } from "@/lib/services/hackathons"
+import { canRegisterNow } from "@/lib/utils/registration"
+
+export { canRegisterNow }
 
 type PageProps = {
   params: Promise<{ slug: string }>
@@ -23,7 +38,7 @@ type PageProps = {
 export async function generateMetadata({ params, searchParams }: PageProps): Promise<Metadata> {
   const { slug } = await params
   const { lang } = await searchParams
-  const hackathon = await getPublicHackathon(slug, { includeUnpublished: true })
+  const hackathon = await getPublicHackathon(slug)
 
   if (!hackathon) {
     return {
@@ -47,7 +62,10 @@ export default async function EventPage({ params, searchParams }: PageProps) {
   const { lang } = await searchParams
   const { orgId, userId } = await auth()
 
-  const rawHackathon = await getPublicHackathon(slug, { includeUnpublished: true })
+  const rawHackathon = await getPublicHackathon(
+    slug,
+    userId || orgId ? { includeUnpublished: true } : undefined,
+  )
 
   if (!rawHackathon) {
     notFound()
@@ -60,10 +78,12 @@ export default async function EventPage({ params, searchParams }: PageProps) {
 
   const isPublished = PUBLISHED_STATUSES.includes(hackathon.status)
   let isPreview = false
-  let isOrganizer = false
+  const isOrganizer = isPublicHackathonOrganizer(hackathon, {
+    orgId: orgId ?? null,
+    userId: userId ?? null,
+  })
 
-  if (orgId && hackathon.organizer.clerk_org_id === orgId) {
-    isOrganizer = true
+  if (isOrganizer) {
     if (!isPublished) {
       isPreview = true
     }
@@ -89,7 +109,7 @@ export default async function EventPage({ params, searchParams }: PageProps) {
 
   let isRegistered = false
   let participantRole: string | null = null
-  let participantCount = 0
+  const participantCount = await getParticipantCount(hackathon.id)
   let submission = null
   let teamInfo = null
   let judgeAssignments: {
@@ -105,14 +125,13 @@ export default async function EventPage({ params, searchParams }: PageProps) {
     notes: string
   }[] = []
 
-  const isViewingAsParticipant = !orgId || orgId !== hackathon.organizer.clerk_org_id
+  const isViewingAsParticipant = !isOrganizer
 
   if (userId && isViewingAsParticipant) {
     const { getRegistrationInfo, getParticipantTeamInfo } = await import("@/lib/services/hackathons")
     const registrationInfo = await getRegistrationInfo(hackathon.id, userId)
     isRegistered = registrationInfo.isRegistered
     participantRole = registrationInfo.participantRole
-    participantCount = registrationInfo.participantCount
 
     if (isRegistered && participantRole === "participant") {
       const [submissionResult, teamResult] = await Promise.all([
@@ -138,6 +157,7 @@ export default async function EventPage({ params, searchParams }: PageProps) {
   if (userId && isOrganizer) {
     const { getRegistrationInfo } = await import("@/lib/services/hackathons")
     const registrationInfo = await getRegistrationInfo(hackathon.id, userId)
+    isRegistered = registrationInfo.isRegistered
     if (registrationInfo.participantRole === "judge") {
       participantRole = "judge"
       const { getJudgeAssignments } = await import("@/lib/services/judging")
@@ -149,18 +169,30 @@ export default async function EventPage({ params, searchParams }: PageProps) {
   }
 
   const { getHackathonSubmissions } = await import("@/lib/services/submissions")
-  const [rawSubmissions, scheduleItems, publishedAnnouncements, challenges] = await Promise.all([
+  const [rawSubmissions, scheduleItems, allPublishedAnnouncements, challenges] = await Promise.all([
     getHackathonSubmissions(hackathon.id),
     listScheduleItems(hackathon.id),
     listPublishedAnnouncements(hackathon.id),
     listChallenges(hackathon.id),
   ])
+  const publishedAnnouncements = filterAnnouncementsForViewer(allPublishedAnnouncements, {
+    role: isOrganizer
+      ? "organizer"
+      : participantRole === "judge" || participantRole === "mentor" || participantRole === "participant"
+        ? participantRole
+        : "public",
+    ...(participantRole === "participant"
+      ? { hasSubmitted: Boolean(submission && submission.status === "submitted") }
+      : {}),
+  })
 
   let viewerPerks: import("@/lib/services/perks").Perk[] = []
   const perksNone = hackathon.perks_none ?? false
   const isPendingTeam = teamInfo?.team.status === "pending_approval"
-  const viewerChallenges = isPendingTeam ? [] : challenges
-
+  const isDisbandedTeam = teamInfo?.team.status === "disbanded"
+  const viewerChallenges = isPendingTeam || (!isOrganizer && !hackathon.challenge_released_at)
+    ? []
+    : challenges
   if (!perksNone && teamInfo && !isPendingTeam) {
     const { listPerks, isPerkReleased } = await import("@/lib/services/perks")
     const all = await listPerks(hackathon.id)
@@ -176,7 +208,9 @@ export default async function EventPage({ params, searchParams }: PageProps) {
     demoVideoUrl: s.demo_video_url,
     screenshotUrl: s.screenshot_url,
     screenshotUrls: getSubmissionScreenshotUrls(s),
-    submitter: s.submitter_name,
+    submitter: isOrganizer
+      ? s.submitter_name
+      : publicSubmitterName(hackathon, s.submitter_name),
     createdAt: s.created_at,
   }))
 
@@ -186,6 +220,87 @@ export default async function EventPage({ params, searchParams }: PageProps) {
     const { getPublicResultsWithDetails } = await import("@/lib/services/results")
     publicResults = (await getPublicResultsWithDetails(hackathon.id)) ?? []
   }
+
+  const isAttendee = isRegistered && participantRole === "participant"
+  const isFormingCaptain = Boolean(
+    teamInfo?.isCaptain &&
+    (teamInfo.team.status === "forming" || teamInfo.team.status === "pending_approval"),
+  )
+  const atCapacity = Boolean(
+    hackathon.max_participants && participantCount >= hackathon.max_participants,
+  )
+  const viewerNextStep = isOrganizer
+    ? "Open the manage workspace to run this event."
+    : !userId
+    ? "Sign in to register. You can prepare a project draft first."
+    : !isAttendee
+      ? participantRole
+        ? `Open the ${participantRole} workspace for this event.`
+        : "Register to join this event."
+      : isDisbandedTeam
+        ? "Your team is no longer active. Ask the organizer if you need help."
+      : isPendingTeam
+        ? "Wait for team approval. You can keep preparing your project."
+        : hackathon.status === "active"
+          ? "Build with your team and review your project draft before submitting."
+          : "Check the schedule for what happens next."
+
+  const eventGuide = {
+    name: hackathon.name,
+    slug: hackathon.slug,
+    description: hackathon.description,
+    status: hackathon.status,
+    startsAt: hackathon.starts_at,
+    endsAt: hackathon.ends_at,
+    locationType: hackathon.location_type,
+    locationName: hackathon.location_name,
+    locationUrl: hackathon.location_url,
+    organizerName: hackathon.organizer.name,
+    schedule: scheduleItems.map((item) => ({
+      title: item.title,
+      startsAt: item.starts_at,
+      endsAt: item.ends_at,
+      location: item.location,
+    })),
+    announcements: publishedAnnouncements.map((announcement) => ({
+      title: announcement.title,
+      body: announcement.body,
+      priority: announcement.priority,
+    })),
+    challenges: viewerChallenges.map((challenge) => ({
+      title: challenge.title,
+      description: challenge.description,
+      resourceCount: challenge.resources.length,
+    })),
+    resultsPublished: Boolean(hackathon.results_published_at),
+  }
+
+  const eventViewer = {
+    signedIn: Boolean(userId),
+    registered: isRegistered,
+    role: participantRole,
+    participantCount,
+    nextStep: viewerNextStep,
+    team: teamInfo ? {
+      name: teamInfo.team.name,
+      status: teamInfo.team.status,
+      isCaptain: teamInfo.isCaptain,
+      memberNames: teamInfo.members.map((member) => member.displayName || "Teammate"),
+      memberCount: teamInfo.members.length,
+      pendingInviteCount: teamInfo.pendingInvitations.length,
+      maxTeamSize: hackathon.max_team_size,
+    } : null,
+    project: submission ? {
+      title: submission.title,
+      status: submission.status,
+      hasGithubUrl: Boolean(submission.github_url),
+      hasLiveAppUrl: Boolean(submission.live_app_url),
+      hasDemoVideoUrl: Boolean(submission.demo_video_url),
+    } : null,
+  }
+  const clientHackathon = toPublicHackathonClientDto(hackathon, {
+    includeEditorSponsorData: isOrganizer,
+  })
 
   return (
     <div>
@@ -198,8 +313,28 @@ export default async function EventPage({ params, searchParams }: PageProps) {
         </Alert>
       )}
 
+      <EventWebMcpTools
+        guide={eventGuide}
+        viewer={eventViewer}
+        canRegisterViewer={!isOrganizer && !isRegistered}
+        registrationOpensAt={hackathon.registration_opens_at}
+        isFormingCaptain={isFormingCaptain}
+        registrationClosesAt={hackathon.registration_closes_at}
+        allowLateRegistration={hackathon.allow_late_registration}
+        atCapacity={atCapacity}
+        isOrganizer={isOrganizer}
+      />
+      <AttendeeMentorWebMcp
+        slug={hackathon.slug}
+        status={hackathon.status}
+        startsAt={hackathon.starts_at}
+        endsAt={hackathon.ends_at}
+        isParticipant={isAttendee}
+        teamStatus={teamInfo?.team.status ?? null}
+      />
+
       <HackathonPreviewClient
-        hackathon={hackathon}
+        hackathon={clientHackathon}
         isEditable={isOrganizer}
         isRegistered={isRegistered}
         participantRole={participantRole}

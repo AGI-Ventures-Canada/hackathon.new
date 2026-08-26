@@ -3,6 +3,7 @@
 import type { ChallengeSummary } from "@/lib/db/hackathon-types"
 
 export type ChallengesReleasedNotificationInput = {
+  notificationId: string
   hackathonId: string
   hackathonName: string
   hackathonSlug: string
@@ -27,6 +28,7 @@ export async function sendChallengesReleasedNotificationsWorkflow(
   for (const email of emails) {
     try {
       await sendChallengesReleasedEmail({
+        notificationId: input.notificationId,
         to: email,
         hackathonName: input.hackathonName,
         hackathonSlug: input.hackathonSlug,

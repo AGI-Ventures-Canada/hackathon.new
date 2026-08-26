@@ -11,6 +11,7 @@ import {
 import JudgeAddedEmail from "@/emails/judge-added"
 import JudgeInvitationEmail from "@/emails/judge-invitation"
 import JudgeInvitationReminderEmail from "@/emails/judge-invitation-reminder"
+import { sha256Fingerprint } from "@/lib/utils/hash"
 
 export type SendJudgeInvitationInput = {
   to: string
@@ -21,10 +22,12 @@ export type SendJudgeInvitationInput = {
   hackathonSlug?: string
   hackathonStartsAt?: string | null
   hackathonEndsAt?: string | null
+  deliveryId?: string
 }
 
 export type SendJudgeAddedNotificationInput = {
   to: string
+  deliveryId: string
   hackathonName: string
   hackathonSlug: string
   addedByName: string
@@ -63,6 +66,7 @@ export async function sendJudgeAddedNotification(
       { name: "type", value: "judge_added" },
       { name: "hackathon", value: sanitizeTag(input.hackathonName) },
     ],
+    idempotencyKey: `judge-added/${input.deliveryId}/${await sha256Fingerprint(input.to.trim().toLowerCase())}`,
   })
 
   return { success: result !== null }
@@ -109,6 +113,7 @@ export async function sendJudgeInvitationEmail(
       { name: "type", value: "judge_invitation" },
       { name: "hackathon", value: sanitizeTag(input.hackathonName) },
     ],
+    idempotencyKey: `judge-invitation/${input.deliveryId ?? input.inviteToken}`,
   })
 
   return { success: result !== null }
@@ -121,6 +126,7 @@ export type SendJudgeInvitationReminderInput = {
   inviteToken: string
   expiresAt: string
   urgency?: "low" | "medium" | "high"
+  deliveryId?: string
 }
 
 function judgeReminderSubject(hackathonName: string, urgency: string): string {
@@ -157,7 +163,8 @@ export async function sendJudgeInvitationReminderEmail(
     })
   )
 
-  const subject = judgeReminderSubject(input.hackathonName, input.urgency ?? "low")
+  const urgency = input.urgency ?? "low"
+  const subject = judgeReminderSubject(input.hackathonName, urgency)
 
   const result = await sendEmail({
     to: input.to,
@@ -170,6 +177,7 @@ export async function sendJudgeInvitationReminderEmail(
       { name: "type", value: "judge_invitation_reminder" },
       { name: "hackathon", value: sanitizeTag(input.hackathonName) },
     ],
+    idempotencyKey: `judge-invitation-reminder/${input.deliveryId ?? `${input.inviteToken}/${urgency}`}`,
   })
 
   return { success: result !== null }

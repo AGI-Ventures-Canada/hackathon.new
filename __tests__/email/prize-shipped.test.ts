@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, mock } from "bun:test"
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test"
 
 const originalAppUrl = process.env.NEXT_PUBLIC_APP_URL
 
@@ -34,6 +34,7 @@ describe("sendPrizeShippedEmail", () => {
       prizeName: "Best Demo",
       hackathonName: "Test Hackathon",
       trackingNumber: "1Z999AA10123456784",
+      fulfillmentId: "fulfillment_1",
     })
 
     expect(result).toBe(true)
@@ -44,6 +45,10 @@ describe("sendPrizeShippedEmail", () => {
     expect(call.subject).toContain("on its way")
     expect((call.html as string)).toContain("1Z999AA10123456784")
     expect((call.text as string)).toContain("1Z999AA10123456784")
+    expect(call.idempotencyKey).toMatch(
+      /^prize-shipped\/fulfillment_1\/[a-f0-9]{24}$/
+    )
+    expect(call.idempotencyKey).not.toContain("alice@test.com")
   })
 
   it("sends email without tracking number", async () => {

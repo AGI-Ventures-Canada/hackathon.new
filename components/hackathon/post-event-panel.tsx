@@ -20,8 +20,9 @@ import {
 import { Loader2, Mail, Clock, X, Send } from "lucide-react"
 import { normalizeUrl } from "@/lib/utils/url"
 import { useActionItemsOptional } from "@/components/hackathon/manage/action-items-context"
+import { useIsClient } from "@/hooks/use-is-client"
 
-type Reminder = {
+export type Reminder = {
   id: string
   type: string
   scheduledFor: string
@@ -37,12 +38,30 @@ const REMINDER_LABELS: Record<string, { label: string; description: string }> = 
   feedback_followup: { label: "Feedback Follow-up", description: "Reminds participants to share feedback" },
 }
 
-function ReminderStatus({ reminder }: { reminder: Reminder }) {
+function formatReminderDate(iso: string, timeZone?: string): string {
+  return new Date(iso).toLocaleDateString(timeZone ? "en-US" : undefined, {
+    timeZone,
+  })
+}
+
+export function ReminderStatus({ reminder }: { reminder: Reminder }) {
+  const isClient = useIsClient()
   if (reminder.sentAt) return <Badge variant="default">Sent</Badge>
   if (reminder.cancelledAt) return <Badge variant="secondary">Cancelled</Badge>
-  const isPast = new Date(reminder.scheduledFor) < new Date()
+  const isPast = isClient && new Date(reminder.scheduledFor) < new Date()
   if (isPast) return <Badge variant="outline">Pending</Badge>
   return <Badge variant="outline">Scheduled</Badge>
+}
+
+export function ReminderDateLabel({ reminder }: { reminder: Reminder }) {
+  const isClient = useIsClient()
+  const displayTimeZone = isClient ? undefined : "UTC"
+
+  if (reminder.sentAt) {
+    return <>Sent {formatReminderDate(reminder.sentAt, displayTimeZone)}</>
+  }
+  if (reminder.cancelledAt) return <>Cancelled</>
+  return <>Scheduled for {formatReminderDate(reminder.scheduledFor, displayTimeZone)}</>
 }
 
 export function PostEventPanel({
@@ -236,11 +255,7 @@ export function PostEventPanel({
                       </div>
                       <p className="text-sm text-muted-foreground">{config.description}</p>
                       <p className="text-xs text-muted-foreground">
-                        {reminder.sentAt
-                          ? `Sent ${new Date(reminder.sentAt).toLocaleDateString()}`
-                          : reminder.cancelledAt
-                            ? "Cancelled"
-                            : `Scheduled for ${new Date(reminder.scheduledFor).toLocaleDateString()}`}
+                        <ReminderDateLabel reminder={reminder} />
                       </p>
                     </div>
                     {isActive && (

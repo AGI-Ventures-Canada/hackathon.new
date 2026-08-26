@@ -8,6 +8,7 @@ import {
   useRef,
   useMemo,
   useEffect,
+  useReducer,
   startTransition,
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -17,7 +18,11 @@ import {
   type ActionItem,
   type ActionSeverity,
 } from "@/lib/utils/organizer-actions";
-import type { HackathonStatus, HackathonPhase } from "@/lib/db/hackathon-types";
+import type {
+  HackathonStatus,
+  HackathonPhase,
+  Prize,
+} from "@/lib/db/hackathon-types";
 import { useOrganizerPoll } from "@/hooks/use-organizer-poll";
 import { getEffectiveStatus } from "@/lib/utils/timeline";
 import {
@@ -69,8 +74,17 @@ import { AddJudgeDialog } from "@/components/hackathon/judging/add-judge-dialog"
 import { AddPrizeDialog } from "@/components/hackathon/judging/add-prize-dialog";
 import type { RoundData } from "@/components/hackathon/judging/rounds-types";
 import type { Challenge } from "@/lib/services/challenges";
+import type { Announcement } from "@/lib/services/announcements";
 import type { Perk } from "@/lib/services/perks";
 import { assertOk } from "@/lib/utils/fetch";
+import {
+  createManageWebMcpState,
+  manageWebMcpStateReducer,
+  selectManageWebMcpVisibleState,
+  type ManageWebMcpCommittedChange,
+  type ManageWebMcpOptimisticChange,
+  type ManageWebMcpVisibleState,
+} from "@/lib/webmcp/manage-optimistic-state";
 
 const SEVERITY_ORDER: ActionSeverity[] = ["urgent", "warning", "scheduled", "info"];
 
@@ -100,6 +114,14 @@ interface ActionItemsContextValue {
   challengeExists: boolean;
   slug: string;
   setOptimisticStage: (stage: StageKey | null) => void;
+  manageWebMcpView: ManageWebMcpVisibleState;
+  beginManageWebMcpChange: (change: ManageWebMcpOptimisticChange) => void;
+  commitManageWebMcpChange: (change: ManageWebMcpCommittedChange) => void;
+  rollbackManageWebMcpChange: (mutationId: string) => void;
+  replaceManageSchedule: (items: ScheduleItem[]) => void;
+  replaceManageChallenges: (items: Challenge[]) => void;
+  replaceManagePrizes: (items: Prize[]) => void;
+  replaceManageAnnouncements: (items: Announcement[]) => void;
 }
 
 const ActionItemsContext = createContext<ActionItemsContextValue | null>(null);
@@ -159,11 +181,14 @@ type ProviderProps = {
   actionItems: ActionItem[];
   hackathonId: string;
   slug: string;
+  name: string;
   status: HackathonStatus;
   phase: HackathonPhase | null;
   challengeExists: boolean;
   challengeReleasedAt: string | null;
   challenges: Challenge[];
+  prizes: Prize[];
+  announcements: Announcement[];
   challengeReleaseItem: ScheduleItem | null;
   scheduleItems: ScheduleItem[];
   startsAt: string | null;
@@ -186,11 +211,14 @@ export function ActionItemsProvider({
   actionItems: serverActionItems,
   hackathonId,
   slug,
+  name: serverName,
   status: serverStatus,
   phase: serverPhase,
   challengeExists,
   challengeReleasedAt,
   challenges: serverChallenges,
+  prizes: serverPrizes,
+  announcements: serverAnnouncements,
   challengeReleaseItem,
   scheduleItems: serverScheduleItems,
   startsAt: serverStartsAt,
@@ -232,15 +260,88 @@ export function ActionItemsProvider({
   const [releaseChallengeError, setReleaseChallengeError] = useState<string | null>(null);
   const [settingsDialogError, setSettingsDialogError] = useState<string | null>(null);
   const [pendingTargetRefreshHref, setPendingTargetRefreshHref] = useState<string | null>(null);
+  const [manageWebMcpState, dispatchManageWebMcpState] = useReducer(
+    manageWebMcpStateReducer,
+    {
+      details: { name: serverName, description },
+      timeline: { startsAt: serverStartsAt, endsAt: serverEndsAt },
+      scheduleItems: serverScheduleItems,
+      challenges: serverChallenges,
+      prizes: serverPrizes,
+      announcements: serverAnnouncements,
+    },
+    createManageWebMcpState,
+  );
+  const manageWebMcpView = useMemo(
+    () => selectManageWebMcpVisibleState(manageWebMcpState),
+    [manageWebMcpState],
+  );
+  const scheduleItems = manageWebMcpView.scheduleItems;
+  const challenges = manageWebMcpView.challenges;
 
-  const [scheduleItems, setScheduleItems] = useState(serverScheduleItems);
   useEffect(() => {
-    setScheduleItems(serverScheduleItems);
+    dispatchManageWebMcpState({
+      type: "sync_details",
+      details: { name: serverName, description },
+    });
+  }, [serverName, description]);
+  useEffect(() => {
+    dispatchManageWebMcpState({
+      type: "sync_timeline",
+      timeline: { startsAt: serverStartsAt, endsAt: serverEndsAt },
+    });
+  }, [serverStartsAt, serverEndsAt]);
+  useEffect(() => {
+    dispatchManageWebMcpState({
+      type: "sync_schedule",
+      scheduleItems: serverScheduleItems,
+    });
   }, [serverScheduleItems]);
-  const [challenges, setChallenges] = useState(serverChallenges);
   useEffect(() => {
-    setChallenges(serverChallenges);
+    dispatchManageWebMcpState({
+      type: "sync_challenges",
+      challenges: serverChallenges,
+    });
   }, [serverChallenges]);
+  useEffect(() => {
+    dispatchManageWebMcpState({ type: "sync_prizes", prizes: serverPrizes });
+  }, [serverPrizes]);
+  useEffect(() => {
+    dispatchManageWebMcpState({
+      type: "sync_announcements",
+      announcements: serverAnnouncements,
+    });
+  }, [serverAnnouncements]);
+  const beginManageWebMcpChange = useCallback(
+    (change: ManageWebMcpOptimisticChange) => {
+      dispatchManageWebMcpState({ type: "begin", change });
+    },
+    [],
+  );
+  const commitManageWebMcpChange = useCallback(
+    (change: ManageWebMcpCommittedChange) => {
+      dispatchManageWebMcpState({ type: "commit", change });
+    },
+    [],
+  );
+  const rollbackManageWebMcpChange = useCallback((mutationId: string) => {
+    dispatchManageWebMcpState({ type: "rollback", mutationId });
+  }, []);
+  const replaceManageSchedule = useCallback((items: ScheduleItem[]) => {
+    dispatchManageWebMcpState({ type: "sync_schedule", scheduleItems: items });
+  }, []);
+  const replaceManageChallenges = useCallback((items: Challenge[]) => {
+    dispatchManageWebMcpState({ type: "sync_challenges", challenges: items });
+  }, []);
+  const replaceManagePrizes = useCallback((items: Prize[]) => {
+    dispatchManageWebMcpState({ type: "sync_prizes", prizes: items });
+  }, []);
+  const replaceManageAnnouncements = useCallback((items: Announcement[]) => {
+    dispatchManageWebMcpState({
+      type: "sync_announcements",
+      announcements: items,
+    });
+  }, []);
   const [bannerUrl, setBannerUrl] = useState(serverBannerUrl);
   useEffect(() => {
     setBannerUrl(serverBannerUrl);
@@ -613,20 +714,24 @@ export function ActionItemsProvider({
 
   const handleChallengeSaved = useCallback(
     (saved: Challenge) => {
-      setChallenges((prev) => {
-        const existing = prev.findIndex((c) => c.id === saved.id);
-        if (existing >= 0) {
-          const next = [...prev];
-          next[existing] = saved;
-          return next;
-        }
-        return [...prev, saved];
-      });
+      const existing = challenges.findIndex((challenge) => challenge.id === saved.id);
+      if (existing >= 0) {
+        const next = [...challenges];
+        next[existing] = saved;
+        replaceManageChallenges(next);
+      } else {
+        replaceManageChallenges([...challenges, saved]);
+      }
       const item = challengeDialogItem;
       setChallengeDialogItem(null);
       routeToActionTarget(item);
     },
-    [challengeDialogItem, routeToActionTarget],
+    [
+      challengeDialogItem,
+      challenges,
+      replaceManageChallenges,
+      routeToActionTarget,
+    ],
   );
 
   const handlePerkSaved = useCallback(
@@ -830,6 +935,14 @@ export function ActionItemsProvider({
       challengeExists: liveChallengeExists,
       slug,
       setOptimisticStage,
+      manageWebMcpView,
+      beginManageWebMcpChange,
+      commitManageWebMcpChange,
+      rollbackManageWebMcpChange,
+      replaceManageSchedule,
+      replaceManageChallenges,
+      replaceManagePrizes,
+      replaceManageAnnouncements,
       openShowcaseDialog: () => setShowcaseDialogOpen(true),
     }),
     [
@@ -856,6 +969,14 @@ export function ActionItemsProvider({
       livePhase,
       liveChallengeExists,
       slug,
+      manageWebMcpView,
+      beginManageWebMcpChange,
+      commitManageWebMcpChange,
+      rollbackManageWebMcpChange,
+      replaceManageSchedule,
+      replaceManageChallenges,
+      replaceManagePrizes,
+      replaceManageAnnouncements,
     ],
   );
 
@@ -1068,7 +1189,9 @@ export function ActionItemsProvider({
               setAgendaDialogOpen(false);
               router.push(`/e/${slug}/manage?tab=challenges`);
             }}
-            onScheduleChange={(items) => setScheduleItems(items as ScheduleItem[])}
+            onScheduleChange={(items) =>
+              replaceManageSchedule(items as ScheduleItem[])
+            }
           />
         </DialogContent>
       </Dialog>

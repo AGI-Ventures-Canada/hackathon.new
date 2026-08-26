@@ -29,7 +29,13 @@ export async function schedulePreEventReminders(
     .single()
 
   if (!hackathon) return 0
-  if (hackathon.status === "completed" || hackathon.status === "archived") return 0
+  if (
+    hackathon.status === "draft" ||
+    hackathon.status === "completed" ||
+    hackathon.status === "archived"
+  ) {
+    return 0
+  }
 
   const now = new Date()
   let scheduled = 0

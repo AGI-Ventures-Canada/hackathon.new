@@ -190,7 +190,7 @@ hackathon judging judges list $HACKATHON_ID
 
 `POST /api/dashboard/hackathons/:id/judging/judges` — requires `hackathons:write` scope.
 
-Provide either `clerkUserId` or `email`. If the user isn't found by email, a judge invitation is sent instead.
+Provide either `clerkUserId` or `email`. If the user isn't found by email, a judge invitation is saved instead.
 
 ```bash title="Add a judge by email"
 curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/judging/judges" \
@@ -199,7 +199,21 @@ curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/judging/judges
   -d '{"email": "judge@example.com"}' | jq .
 ```
 
-The response includes either `participantId` (judge added immediately) or `invitationId` (invitation sent because the user was not found).
+The response includes either `participant` (judge added immediately) or `invitation` (saved because the user was not found). Email invitations also include a delivery result:
+
+```json title="response.json"
+{
+  "queued": false,
+  "delivery": "sent",
+  "invitation": {
+    "id": "inv_abc123",
+    "email": "judge@example.com",
+    "token": "accept-token"
+  }
+}
+```
+
+`delivery` is `sent`, `queued`, or `failed`. `queued` means the event is still a draft and the email waits for go-live. `failed` means the invite was saved but email delivery could not be confirmed. The compatibility field `queued` is true only for draft invites.
 
 <Callout type="info" title="CLI equivalent">
 ```bash

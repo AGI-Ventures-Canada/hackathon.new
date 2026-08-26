@@ -4,6 +4,14 @@ import { logAudit } from "@/lib/services/audit"
 import { resolveAdderName } from "@/lib/auth/resolve-adder-name"
 import { checkRateLimit, RateLimitError } from "@/lib/services/rate-limit"
 import { isValidUuid } from "@/lib/utils/uuid"
+import { getEffectiveStatus } from "@/lib/utils/timeline"
+import { getNotificationDisposition, getNotificationLifecycleError } from "@/lib/utils/notification-lifecycle"
+import { getRequestIdempotencyFingerprint } from "@/lib/utils/request-idempotency"
+import { validateWebMcpMutationContext } from "@/lib/webmcp/mutation-context"
+import {
+  EventMutationLeaseError,
+  withEventMutationLease,
+} from "@/lib/services/event-mutation-lease"
 
 type CachedAuthResult = { status: "ok" } | { status: "not_found" } | { status: "not_authorized" }
 // Local-dev-only optimisation: avoids repeated checkHackathonOrganizer calls
@@ -12,6 +20,15 @@ type CachedAuthResult = { status: "ok" } | { status: "not_found" } | { status: "
 const SEARCH_AUTH_MAX = 500
 const searchAuthCache = new Map<string, { result: CachedAuthResult; expires: number }>()
 const SEARCH_AUTH_TTL = 30_000
+
+function prizeMutationLeaseFailure(
+  error: unknown,
+  set: { status?: number | string },
+) {
+  if (!(error instanceof EventMutationLeaseError)) throw error
+  set.status = error.code === "event_busy" ? 409 : 503
+  return { error: error.message, code: error.code }
+}
 
 export const dashboardJudgingRoutes = new Elysia()
   .derive(async ({ request }) => {
@@ -46,8 +63,11 @@ export const dashboardJudgingRoutes = new Elysia()
 
   .post(
     "/hackathons/:id/prizes",
-    async ({ principal, params, body }) => {
+    async ({ principal, params, body, request, set }) => {
       requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+
+      try {
+        return await withEventMutationLease(params.id, async () => {
 
       const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
       const result = await checkHackathonOrganizer(params.id, principal.tenantId)
@@ -57,6 +77,19 @@ export const dashboardJudgingRoutes = new Elysia()
       }
       if (result.status === "not_authorized") {
         return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
+      }
+
+      const webMcpError = validateWebMcpMutationContext(
+        request,
+        {
+          status: getEffectiveStatus(result.hackathon),
+          eventVersion: result.hackathon.updated_at,
+        },
+        ["draft"],
+      )
+      if (webMcpError) {
+        set.status = webMcpError.status
+        return { error: webMcpError.error, code: webMcpError.code }
       }
 
       if (body.judgingStyle === "gate_check") {
@@ -118,6 +151,10 @@ export const dashboardJudgingRoutes = new Elysia()
       })
 
       return { prize }
+        })
+      } catch (error) {
+        return prizeMutationLeaseFailure(error, set)
+      }
     },
     {
       body: t.Object({
@@ -169,7 +206,7 @@ export const dashboardJudgingRoutes = new Elysia()
       detail: {
         summary: "Create prize",
         description:
-          "Creates a new prize. Accepts judgingStyle with criteria/buckets for judging tab, or legacy type/rank/kind fields from edit drawer.",
+          "Creates a new prize. Accepts judgingStyle with criteria/buckets for judging tab, or legacy type/rank/kind fields from edit drawer. WebMCP draft requests must match the event's current draft status and version.",
       },
     }
   )
@@ -1267,6 +1304,18 @@ export const dashboardJudgingRoutes = new Elysia()
         return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
       }
 
+      const notificationDisposition = getNotificationDisposition({
+        status: result.hackathon.status,
+        starts_at: result.hackathon.starts_at,
+        ends_at: result.hackathon.ends_at,
+      })
+      if (notificationDisposition === "reject") {
+        return new Response(JSON.stringify({ error: "This event has ended.", code: "hackathon_ended" }), {
+          status: 409,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+
       const typedBody = body as { clerkUserId?: string; email?: string }
 
       const { clerkClient } = await import("@clerk/nextjs/server")
@@ -1321,17 +1370,23 @@ export const dashboardJudgingRoutes = new Elysia()
 
         if (judgeEmail) {
           try {
-            if (hackathon.status !== "draft") {
+            if (notificationDisposition === "send") {
               const addedByName = await resolveAdderName(principal, client)
               const { sendJudgeAddedNotification } = await import("@/lib/email/judge-invitations")
               sendJudgeAddedNotification({
                 to: judgeEmail,
+                deliveryId: addResult.participant.id,
                 hackathonName: hackathon.name,
                 hackathonSlug: hackathon.slug,
                 addedByName,
                 hackathonStartsAt: hackathon.starts_at,
                 hackathonEndsAt: hackathon.ends_at,
-              }).catch(console.error)
+              }).catch((error) => {
+                console.error(
+                  `Failed to send judge-added notification ${addResult.participant.id}:`,
+                  error,
+                )
+              })
             } else {
               const addedByName = await resolveAdderName(principal, client)
               const { createJudgePendingNotification } = await import("@/lib/services/judge-invitations")
@@ -1391,11 +1446,12 @@ export const dashboardJudgingRoutes = new Elysia()
             console.error("Failed to create judge display profile:", err)
           }
 
-          if (hackathon.status !== "draft") {
+          if (notificationDisposition === "send") {
             const addedByName = await resolveAdderName(principal, client)
             const { sendJudgeAddedNotification } = await import("@/lib/email/judge-invitations")
             sendJudgeAddedNotification({
               to: typedBody.email,
+              deliveryId: addResult.participant.id,
               hackathonName: hackathon.name,
               hackathonSlug: hackathon.slug,
               addedByName,
@@ -1413,7 +1469,7 @@ export const dashboardJudgingRoutes = new Elysia()
             action: "judge.added",
             resourceType: "hackathon",
             resourceId: params.id,
-            metadata: { judgeClerkUserId: existingUser.id, email: typedBody.email },
+            metadata: { judgeClerkUserId: existingUser.id },
           })
 
           return { participant: addResult.participant }
@@ -1443,9 +1499,11 @@ export const dashboardJudgingRoutes = new Elysia()
           return new Response(JSON.stringify({ error: invitationResult.error, code: invitationResult.code }), { status: 400, headers: { "Content-Type": "application/json" } })
         }
 
-        if (hackathon.status !== "draft") {
+        let delivery: "queued" | "sent" | "failed" = notificationDisposition === "queue" ? "queued" : "sent"
+
+        if (notificationDisposition === "send") {
           const { sendJudgeInvitationEmail } = await import("@/lib/email/judge-invitations")
-          sendJudgeInvitationEmail({
+          const emailResult = await sendJudgeInvitationEmail({
             to: typedBody.email,
             hackathonName: hackathon.name,
             inviterName,
@@ -1454,35 +1512,65 @@ export const dashboardJudgingRoutes = new Elysia()
             hackathonSlug: hackathon.slug,
             hackathonStartsAt: hackathon.starts_at,
             hackathonEndsAt: hackathon.ends_at,
-          }).catch(console.error)
+            deliveryId: invitationResult.invitation.id,
+          }).catch((error) => {
+            console.error(`Failed to send judge invitation ${invitationResult.invitation.id}:`, error)
+            return { success: false }
+          })
 
-          const { scheduleReminders } = await import("@/lib/services/smart-reminders")
-          scheduleReminders(
-            "judge_invitation",
-            invitationResult.invitation.id,
-            params.id,
-            "invitation_reminder",
-            new Date(invitationResult.invitation.created_at),
-            new Date(invitationResult.invitation.expires_at),
-            {
-              email: typedBody.email,
-              hackathonName: hackathon.name,
-              inviterName,
-              inviteToken: invitationResult.invitation.token,
-              expiresAt: invitationResult.invitation.expires_at,
+          if (!emailResult.success) {
+            delivery = "failed"
+          } else {
+            const { markJudgeInvitationEmailed } = await import("@/lib/services/judge-invitations")
+            try {
+              await markJudgeInvitationEmailed(invitationResult.invitation.id)
+            } catch (error) {
+              console.error(`Failed to save judge invitation ${invitationResult.invitation.id} delivery:`, error)
+              return new Response(JSON.stringify({
+                error: "The invitation email was sent, but its follow-up could not be saved.",
+                code: "delivery_state_failed",
+              }), { status: 500, headers: { "Content-Type": "application/json" } })
             }
-          ).catch((err) => console.error(`Failed to schedule reminders for judge_invitation ${invitationResult.invitation.id} (hackathon=${params.id}):`, err))
+            const { scheduleReminders } = await import("@/lib/services/smart-reminders")
+            await scheduleReminders(
+              "judge_invitation",
+              invitationResult.invitation.id,
+              params.id,
+              "invitation_reminder",
+              new Date(invitationResult.invitation.created_at),
+              new Date(invitationResult.invitation.expires_at),
+              {
+                email: typedBody.email,
+                hackathonName: hackathon.name,
+                inviterName,
+                inviteToken: invitationResult.invitation.token,
+                expiresAt: invitationResult.invitation.expires_at,
+              }
+            ).catch((error) => {
+              console.error(`Failed to schedule judge invitation ${invitationResult.invitation.id} reminder:`, error)
+            })
+          }
         }
 
         logAudit({
           principal,
-          action: "judge.invited",
+          action: delivery === "queued"
+            ? "judge_invitation.queued"
+            : delivery === "failed"
+              ? "judge_invitation.delivery_failed"
+              : "judge.invited",
           resourceType: "hackathon",
           resourceId: params.id,
-          metadata: { email: typedBody.email },
+          metadata: {
+            invitationId: invitationResult.invitation.id,
+            queued: delivery === "queued",
+            delivery,
+          },
         })
 
         return {
+          queued: delivery === "queued",
+          delivery,
           invitation: {
             id: invitationResult.invitation.id,
             email: typedBody.email,
@@ -1628,7 +1716,7 @@ export const dashboardJudgingRoutes = new Elysia()
     detail: { summary: "Cancel invitation", description: "Cancels a pending judge invitation." },
   })
 
-  .post("/hackathons/:id/judging/invitations/:invitationId/remind", async ({ principal, params }) => {
+  .post("/hackathons/:id/judging/invitations/:invitationId/remind", async ({ principal, params, request }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     if (!isValidUuid(params.invitationId)) {
       return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
@@ -1646,11 +1734,24 @@ export const dashboardJudgingRoutes = new Elysia()
 
     const hackathon = result.hackathon
 
-    if (hackathon.status === "draft") {
+    const lifecycleError = getNotificationLifecycleError(getNotificationDisposition({
+      status: hackathon.status,
+      starts_at: hackathon.starts_at,
+      ends_at: hackathon.ends_at,
+    }))
+    if (lifecycleError) {
       return new Response(
-        JSON.stringify({ error: "Reminders can't be sent while the hackathon is in draft.", code: "hackathon_draft" }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
+        JSON.stringify({ error: lifecycleError.error, code: lifecycleError.code }),
+        { status: lifecycleError.status, headers: { "Content-Type": "application/json" } }
       )
+    }
+
+    const requestKey = await getRequestIdempotencyFingerprint(request, "manual")
+    if (!requestKey.ok) {
+      return new Response(JSON.stringify({ error: requestKey.error, code: requestKey.code }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      })
     }
 
     const rateLimitResult = await checkRateLimit(`judge_invitation_remind:${params.id}:${params.invitationId}`, {
@@ -1660,6 +1761,10 @@ export const dashboardJudgingRoutes = new Elysia()
     if (!rateLimitResult.allowed) {
       throw new RateLimitError(rateLimitResult.resetAt, rateLimitResult.remaining)
     }
+
+    const { clerkClient } = await import("@clerk/nextjs/server")
+    const client = await clerkClient()
+    const inviterName = await resolveAdderName(principal, client)
 
     const { remindJudgeInvitation } = await import("@/lib/services/judge-invitations")
     const remindResult = await remindJudgeInvitation(params.invitationId, params.id)
@@ -1671,21 +1776,43 @@ export const dashboardJudgingRoutes = new Elysia()
       })
     }
 
-    const { clerkClient } = await import("@clerk/nextjs/server")
-    const client = await clerkClient()
-    const inviterName = await resolveAdderName(principal, client)
-
     const { sendJudgeInvitationReminderEmail } = await import("@/lib/email/judge-invitations")
-    sendJudgeInvitationReminderEmail({
+    const delivery = await sendJudgeInvitationReminderEmail({
       to: remindResult.invitation.email,
       hackathonName: hackathon.name,
       inviterName,
       inviteToken: remindResult.invitation.token,
       expiresAt: remindResult.invitation.expires_at,
-    }).catch(console.error)
+      deliveryId: `${params.invitationId}/manual/${requestKey.fingerprint}`,
+    }).catch((error) => {
+      console.error(`Failed to send judge invitation reminder ${params.invitationId}:`, error)
+      return { success: false }
+    })
+
+    if (!delivery.success) {
+      const remindedAt = remindResult.invitation.reminded_at
+      if (remindedAt) {
+        const { releaseJudgeInvitationReminderClaim } = await import("@/lib/services/judge-invitations")
+        await releaseJudgeInvitationReminderClaim(params.invitationId, remindedAt).catch((error) =>
+          console.error(`Failed to release reminder claim for judge_invitation ${params.invitationId}:`, error)
+        )
+      }
+      return new Response(
+        JSON.stringify({ error: "The reminder email could not be sent.", code: "email_delivery_failed" }),
+        { status: 502, headers: { "Content-Type": "application/json" } },
+      )
+    }
 
     const { cancelUpcomingReminder } = await import("@/lib/services/smart-reminders")
-    cancelUpcomingReminder("judge_invitation", params.invitationId).catch(console.error)
+    try {
+      await cancelUpcomingReminder("judge_invitation", params.invitationId)
+    } catch (error) {
+      console.error(`Failed to cancel the next judge invitation reminder ${params.invitationId}:`, error)
+      return new Response(
+        JSON.stringify({ error: "The email was sent, but the next reminder could not be updated.", code: "reminder_state_failed" }),
+        { status: 500, headers: { "Content-Type": "application/json" } },
+      )
+    }
 
     await logAudit({
       principal,
@@ -1697,7 +1824,10 @@ export const dashboardJudgingRoutes = new Elysia()
 
     return { success: true }
   }, {
-    detail: { summary: "Send invitation reminder", description: "Sends a reminder email for a pending judge invitation." },
+    detail: {
+      summary: "Send invitation reminder",
+      description: "Sends the one allowed manual reminder for a pending judge invitation. Reuse an optional Idempotency-Key header when retrying the same request.",
+    },
   })
 
   .get("/hackathons/:id/judging/progress", async ({ principal, params }) => {

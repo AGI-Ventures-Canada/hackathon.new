@@ -39,10 +39,11 @@ const mockCreateTeamInvitation = mock(() =>
 )
 const mockListTeamInvitations = mock(() => Promise.resolve({ success: true, invitations: [] }))
 const mockCancelTeamInvitation = mock(() => Promise.resolve({ success: true }))
+const mockReleaseTeamInvitationReminderClaim = mock(() => Promise.resolve())
 const mockGetTeamWithHackathon = mock(() =>
   Promise.resolve({
     name: "Test Team",
-    hackathon: { name: "Test Hackathon", slug: "test-hackathon", status: "active", starts_at: "2025-06-01T00:00:00Z", ends_at: "2025-06-02T00:00:00Z" },
+    hackathon: { name: "Test Hackathon", slug: "test-hackathon", status: "active", starts_at: "2099-06-01T00:00:00Z", ends_at: "2099-06-02T00:00:00Z" },
     memberNames: [],
   })
 )
@@ -56,6 +57,8 @@ const mockRemindTeamInvitation = mock(() =>
       email: "invitee@example.com",
       token: "abc123",
       expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      reminded_at: "2026-08-26T12:00:00.000Z",
+      updated_at: "2026-08-26T12:00:00.000Z",
     },
   })
 )
@@ -67,6 +70,7 @@ mock.module("@/lib/services/team-invitations", () => ({
   createTeamInvitation: mockCreateTeamInvitation,
   listTeamInvitations: mockListTeamInvitations,
   cancelTeamInvitation: mockCancelTeamInvitation,
+  releaseTeamInvitationReminderClaim: mockReleaseTeamInvitationReminderClaim,
   getTeamWithHackathon: mockGetTeamWithHackathon,
   remindTeamInvitation: mockRemindTeamInvitation,
   markTeamInvitationEmailed: mockMarkTeamInvitationEmailed,
@@ -118,6 +122,14 @@ const mockWorkflowStart = mock(() => Promise.resolve({ runId: "run_1" }))
 mock.module("workflow/api", () => ({ start: mockWorkflowStart }))
 mock.module("@/lib/workflows/team-invitations", () => ({
   sendTeamInvitationWorkflow: mock(() => Promise.resolve()),
+}))
+
+const mockScheduleReminders = mock(() => Promise.resolve(0))
+const mockCancelUpcomingReminder = mock(() => Promise.resolve(0))
+mock.module("@/lib/services/smart-reminders", () => ({
+  scheduleReminders: mockScheduleReminders,
+  cancelUpcomingReminder: mockCancelUpcomingReminder,
+  cancelRemindersForEntity: mock(() => Promise.resolve(0)),
 }))
 
 const mockLogAudit = mock(() => Promise.resolve())
@@ -233,6 +245,9 @@ describe("Team Invitations API Routes", () => {
     mockCreateTeamInvitation.mockReset()
     mockListTeamInvitations.mockReset()
     mockCancelTeamInvitation.mockReset()
+    mockCancelTeamInvitation.mockResolvedValue({ success: true })
+    mockReleaseTeamInvitationReminderClaim.mockReset()
+    mockReleaseTeamInvitationReminderClaim.mockResolvedValue()
     mockGetTeamWithHackathon.mockReset()
     mockRemindTeamInvitation.mockReset()
     mockGetPublicHackathonById.mockReset()
@@ -493,7 +508,7 @@ describe("Team Invitations API Routes", () => {
       expect(mockRecordTermsAcceptance).toHaveBeenCalledTimes(1)
     })
 
-    it("does not record acceptance when invitation accept fails", async () => {
+    it("keeps the recorded acceptance when invitation acceptance later fails", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
       mockGetInvitationByToken.mockResolvedValue(mockInvitation)
       mockCurrentTermsHash.mockResolvedValue("expected-hash")
@@ -512,7 +527,27 @@ describe("Team Invitations API Routes", () => {
       )
 
       expect(res.status).toBe(400)
-      expect(mockRecordTermsAcceptance).not.toHaveBeenCalled()
+      expect(mockRecordTermsAcceptance).toHaveBeenCalledWith("h1", "user_123", "expected-hash")
+    })
+
+    it("does not accept an invitation when terms acceptance cannot be recorded", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetInvitationByToken.mockResolvedValue(mockInvitation)
+      mockCurrentTermsHash.mockResolvedValue("expected-hash")
+      mockRecordTermsAcceptance.mockRejectedValue(new Error("database unavailable"))
+
+      const res = await publicApp.handle(
+        new Request("http://localhost/api/public/invitations/valid_token/accept", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ terms_hash: "expected-hash" }),
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(500)
+      expect(data).toMatchObject({ code: "terms_record_failed", retryable: true })
+      expect(mockAcceptTeamInvitation).not.toHaveBeenCalled()
     })
   })
 
@@ -608,6 +643,28 @@ describe("Dashboard Team Invitations Routes", () => {
     mockGetTeamWithHackathon.mockReset()
     mockSendTeamInvitationEmail.mockReset()
     mockSendTeamInvitationEmail.mockResolvedValue({ success: true })
+    mockMarkTeamInvitationEmailed.mockReset()
+    mockMarkTeamInvitationEmailed.mockResolvedValue()
+    mockScheduleReminders.mockReset()
+    mockScheduleReminders.mockResolvedValue(0)
+    mockCancelUpcomingReminder.mockReset()
+    mockCancelUpcomingReminder.mockResolvedValue(0)
+    mockRemindTeamInvitation.mockReset()
+    mockRemindTeamInvitation.mockResolvedValue({
+      success: true,
+      invitation: {
+        id: "22222222-2222-2222-2222-222222222222",
+        email: "invitee@example.com",
+        token: "abc123",
+        expires_at: "2099-06-01T00:00:00Z",
+        reminded_at: "2026-08-26T12:00:00.000Z",
+        updated_at: "2026-08-26T12:00:00.000Z",
+      },
+    })
+    mockSendTeamInvitationReminderEmail.mockReset()
+    mockSendTeamInvitationReminderEmail.mockResolvedValue({ success: true })
+    mockReleaseTeamInvitationReminderClaim.mockReset()
+    mockReleaseTeamInvitationReminderClaim.mockResolvedValue()
     mockWorkflowStart.mockReset()
     mockWorkflowStart.mockResolvedValue({ runId: "run_1" })
     mockLogAudit.mockReset()
@@ -616,7 +673,7 @@ describe("Dashboard Team Invitations Routes", () => {
 
     mockGetTeamWithHackathon.mockResolvedValue({
       name: "Test Team",
-      hackathon: { name: "Test Hackathon", slug: "test-hackathon", starts_at: "2025-06-01T00:00:00Z", ends_at: "2025-06-02T00:00:00Z" },
+      hackathon: { name: "Test Hackathon", slug: "test-hackathon", status: "active", starts_at: "2099-06-01T00:00:00Z", ends_at: "2099-06-02T00:00:00Z" },
       memberNames: [],
     })
 
@@ -638,6 +695,7 @@ describe("Dashboard Team Invitations Routes", () => {
           id: "inv_1",
           email: "test@example.com",
           token: "token123",
+          created_at: "2026-08-26T12:00:00.000Z",
           expires_at: new Date().toISOString(),
         },
       })
@@ -658,8 +716,12 @@ describe("Dashboard Team Invitations Routes", () => {
       expect(res.status).toBe(200)
       expect(data.id).toBe("inv_1")
       expect(data.email).toBe("test@example.com")
-      expect(data.emailSent).toBeUndefined()
-      expect(mockWorkflowStart).toHaveBeenCalled()
+      expect(data.queued).toBe(false)
+      expect(data.delivery).toBe("sent")
+      expect(mockSendTeamInvitationEmail).toHaveBeenCalledTimes(1)
+      expect(mockMarkTeamInvitationEmailed).toHaveBeenCalledWith("inv_1")
+      expect(mockScheduleReminders).toHaveBeenCalledTimes(1)
+      expect(mockWorkflowStart).not.toHaveBeenCalled()
       expect(mockLogAudit).toHaveBeenCalled()
     })
 
@@ -693,6 +755,7 @@ describe("Dashboard Team Invitations Routes", () => {
           id: "inv_1",
           email: "test@example.com",
           token: "token123",
+          created_at: "2026-08-26T12:00:00.000Z",
           expires_at: new Date().toISOString(),
         },
       })
@@ -708,10 +771,117 @@ describe("Dashboard Team Invitations Routes", () => {
         })
       )
 
-      expect(mockWorkflowStart).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.arrayContaining([expect.objectContaining({ inviterName: "Your team captain" })])
+      expect(mockSendTeamInvitationEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ inviterName: "Your team captain" })
       )
+    })
+
+    it("queues draft invitations without sending email", async () => {
+      mockGetTeamWithHackathon.mockResolvedValue({
+        name: "Test Team",
+        hackathon: {
+          name: "Test Hackathon",
+          slug: "test-hackathon",
+          starts_at: "2025-06-01T00:00:00Z",
+          ends_at: "2025-06-02T00:00:00Z",
+          status: "draft",
+        },
+        memberNames: [],
+      })
+      mockCreateTeamInvitation.mockResolvedValue({
+        success: true,
+        invitation: {
+          id: "inv_1",
+          email: "test@example.com",
+          token: "token123",
+          expires_at: new Date().toISOString(),
+        },
+      })
+
+      const res = await dashboardApp.handle(
+        new Request("http://localhost/api/dashboard/teams/team_1/invitations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            hackathonId: "h1",
+            email: "test@example.com",
+          }),
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(data.queued).toBe(true)
+      expect(data.delivery).toBe("queued")
+      expect(mockWorkflowStart).not.toHaveBeenCalled()
+      expect(mockLogAudit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "team_invitation.queued",
+          metadata: expect.objectContaining({ queued: true }),
+        })
+      )
+    })
+
+    it("keeps a failed immediate send pending and schedules no reminders", async () => {
+      mockCreateTeamInvitation.mockResolvedValue({
+        success: true,
+        invitation: {
+          id: "inv_1",
+          email: "test@example.com",
+          token: "token123",
+          created_at: "2026-08-26T12:00:00.000Z",
+          expires_at: "2026-09-02T12:00:00.000Z",
+        },
+      })
+      mockSendTeamInvitationEmail.mockResolvedValue({ success: false })
+
+      const res = await dashboardApp.handle(
+        new Request("http://localhost/api/dashboard/teams/team_1/invitations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ hackathonId: "h1", email: "test@example.com" }),
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(data.delivery).toBe("failed")
+      expect(data.queued).toBe(false)
+      expect(mockMarkTeamInvitationEmailed).not.toHaveBeenCalled()
+      expect(mockScheduleReminders).not.toHaveBeenCalled()
+      expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+        action: "team_invitation.delivery_failed",
+        metadata: expect.objectContaining({ delivery: "failed" }),
+      }))
+    })
+
+    it("does not call an unresolved event lookup queued for go-live", async () => {
+      mockCreateTeamInvitation.mockResolvedValue({
+        success: true,
+        invitation: {
+          id: "inv_1",
+          email: "test@example.com",
+          token: "token123",
+          created_at: "2026-08-26T12:00:00.000Z",
+          expires_at: "2026-09-02T12:00:00.000Z",
+        },
+      })
+      mockGetTeamWithHackathon.mockResolvedValue(null)
+
+      const res = await dashboardApp.handle(
+        new Request("http://localhost/api/dashboard/teams/team_1/invitations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ hackathonId: "h1", email: "test@example.com" }),
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(data.delivery).toBe("failed")
+      expect(data.queued).toBe(false)
+      expect(mockSendTeamInvitationEmail).not.toHaveBeenCalled()
+      expect(mockScheduleReminders).not.toHaveBeenCalled()
     })
   })
 
@@ -825,6 +995,55 @@ describe("Dashboard Team Invitations Routes", () => {
       expect(res.status).toBe(429)
     })
 
+    it("rejects draft and ended events before claiming a reminder", async () => {
+      for (const hackathon of [
+        {
+          name: "Test Hackathon",
+          slug: "test-hackathon",
+          status: "draft",
+          starts_at: null,
+          ends_at: null,
+        },
+        {
+          name: "Test Hackathon",
+          slug: "test-hackathon",
+          status: "completed",
+          starts_at: "2026-01-01T00:00:00Z",
+          ends_at: "2026-01-02T00:00:00Z",
+        },
+      ]) {
+        mockGetTeamWithHackathon.mockResolvedValue({
+          name: "Test Team",
+          hackathon,
+          memberNames: [],
+        })
+
+        const res = await dashboardApp.handle(new Request(remindUrl, { method: "POST" }))
+        const data = await res.json()
+
+        expect(res.status).toBe(hackathon.status === "draft" ? 400 : 409)
+        expect(data.code).toBe(
+          hackathon.status === "draft" ? "hackathon_draft" : "hackathon_ended",
+        )
+      }
+
+      expect(mockRemindTeamInvitation).not.toHaveBeenCalled()
+      expect(mockSendTeamInvitationReminderEmail).not.toHaveBeenCalled()
+    })
+
+    it("rejects an invalid idempotency key before rate limiting", async () => {
+      const res = await dashboardApp.handle(new Request(remindUrl, {
+        method: "POST",
+        headers: { "Idempotency-Key": "x".repeat(201) },
+      }))
+      const data = await res.json()
+
+      expect(res.status).toBe(400)
+      expect(data.code).toBe("invalid_idempotency_key")
+      expect(mockCheckRateLimit).not.toHaveBeenCalled()
+      expect(mockRemindTeamInvitation).not.toHaveBeenCalled()
+    })
+
     it("returns 400 when remind service fails", async () => {
       mockRemindTeamInvitation.mockResolvedValue({
         success: false,
@@ -848,6 +1067,8 @@ describe("Dashboard Team Invitations Routes", () => {
           email: "invitee@example.com",
           token: "abc123",
           expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+          reminded_at: "2026-08-26T12:00:00.000Z",
+          updated_at: "2026-08-26T12:00:00.000Z",
         },
       })
 
@@ -857,7 +1078,11 @@ describe("Dashboard Team Invitations Routes", () => {
       expect(res.status).toBe(200)
       expect(data.success).toBe(true)
       expect(mockRemindTeamInvitation).toHaveBeenCalledWith(INVITATION_ID, "user_captain", TEAM_ID)
-      expect(mockSendTeamInvitationReminderEmail).toHaveBeenCalled()
+      expect(mockSendTeamInvitationReminderEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          deliveryId: `${INVITATION_ID}/manual/manual`,
+        })
+      )
       expect(mockLogAudit).toHaveBeenCalledWith(
         expect.objectContaining({
           action: "team_invitation.reminded",
@@ -865,6 +1090,34 @@ describe("Dashboard Team Invitations Routes", () => {
           resourceId: INVITATION_ID,
         })
       )
+    })
+
+    it("releases its claim when the email provider rejects delivery", async () => {
+      mockSendTeamInvitationReminderEmail.mockResolvedValue({ success: false })
+
+      const res = await dashboardApp.handle(new Request(remindUrl, { method: "POST" }))
+      const data = await res.json()
+
+      expect(res.status).toBe(502)
+      expect(data.code).toBe("email_delivery_failed")
+      expect(mockReleaseTeamInvitationReminderClaim).toHaveBeenCalledWith(
+        INVITATION_ID,
+        "2026-08-26T12:00:00.000Z",
+      )
+      expect(mockCancelUpcomingReminder).not.toHaveBeenCalled()
+      expect(mockLogAudit).not.toHaveBeenCalled()
+    })
+
+    it("returns a retryable state error after delivery when cleanup fails", async () => {
+      mockCancelUpcomingReminder.mockRejectedValue(new Error("database unavailable"))
+
+      const res = await dashboardApp.handle(new Request(remindUrl, { method: "POST" }))
+      const data = await res.json()
+
+      expect(res.status).toBe(500)
+      expect(data.code).toBe("reminder_state_failed")
+      expect(mockSendTeamInvitationReminderEmail).toHaveBeenCalledTimes(1)
+      expect(mockLogAudit).not.toHaveBeenCalled()
     })
 
     it("checks team existence before rate limiting", async () => {

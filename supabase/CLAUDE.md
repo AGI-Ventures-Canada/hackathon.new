@@ -226,9 +226,8 @@ supabase branches get <branch-name>
 
 ## Project Info
 
-- **Project ID:** udrmzihwkxnbkqpvphsx
-- **Organization:** Cats with Bats
-- **Region:** us-east-1
+Use `supabase projects list` to find the project for your account. Do not commit
+account-specific project IDs, organization names, or branch credentials.
 
 ## Documentation
 

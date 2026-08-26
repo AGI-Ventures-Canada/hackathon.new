@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { cleanup, render, screen } from "@testing-library/react"
+import { renderToString } from "react-dom/server"
 import { resetComponentMocks, setClerkAuth, setPathname } from "../../lib/component-mocks"
 import { clerkState } from "../../lib/clerk-mock"
 import { RegistrationButton } from "@/components/hackathon/registration-button"
@@ -34,6 +35,26 @@ afterEach(() => {
 })
 
 describe("RegistrationButton", () => {
+  it("uses a stable loading fallback in server markup", () => {
+    setClerkAuth({ isSignedIn: false })
+    const html = renderToString(
+      <RegistrationButton
+        hackathonSlug="example"
+        status="registration_open"
+        startsAt={null}
+        endsAt={FUTURE_DATE}
+        registrationOpensAt={null}
+        registrationClosesAt={FUTURE_DATE}
+        maxParticipants={null}
+        participantCount={0}
+        isRegistered={false}
+      />
+    )
+
+    expect(html).toContain("Loading...")
+    expect(html).not.toContain("Register to Attend")
+  })
+
   describe("when registration has closed and user is signed out", () => {
     beforeEach(() => {
       setClerkAuth({ isSignedIn: false })

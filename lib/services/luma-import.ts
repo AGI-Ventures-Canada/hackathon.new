@@ -1,6 +1,11 @@
 import { cache } from "react"
 import { LANGUAGE_NAMES, normalizeLocale } from "@/lib/utils/language"
-import { fetchAllowedUrl, readResponseText } from "@/lib/utils/safe-fetch-url"
+import {
+  fetchAllowedUrl,
+  readResponseText,
+  redactFetchErrorForLogs,
+  redactUrlForLogs,
+} from "@/lib/utils/safe-fetch-url"
 
 export type LumaEventData = {
   name: string
@@ -55,7 +60,10 @@ export const extractLumaEventData = cache(async function extractLumaEventData(
     if (!fetched) return null
     response = fetched
   } catch (err) {
-    console.error(`Failed to fetch Luma event from ${url}:`, err)
+    console.error(
+      `Failed to fetch Luma event from ${redactUrlForLogs(url)}:`,
+      redactFetchErrorForLogs(err, [url])
+    )
     return null
   }
 
