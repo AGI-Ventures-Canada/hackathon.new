@@ -15,6 +15,12 @@ const ENCRYPTION_MOCK_TESTS = [
 ]
 const encryptionMockSet = new Set(ENCRYPTION_MOCK_TESTS)
 
+const SERVICE_MOCK_PROCESS_ISOLATED_TESTS = [
+  "__tests__/services/challenges.test.ts",
+  "__tests__/services/judge-invitations.test.ts",
+  "__tests__/services/smart-reminders.test.ts",
+]
+
 const SERVICE_MOCK_ISOLATED_TESTS = [
   "__tests__/services/notification-dispatcher.test.ts",
   "__tests__/services/lifecycle.test.ts",
@@ -25,6 +31,7 @@ const SERVICE_MOCK_ISOLATED_TESTS = [
   "__tests__/services/public-hackathons.test.ts",
   "__tests__/services/post-event-reminders.test.ts",
   "__tests__/services/smart-reminders-delivery.test.ts",
+  ...SERVICE_MOCK_PROCESS_ISOLATED_TESTS,
 ]
 const serviceMockSet = new Set(SERVICE_MOCK_ISOLATED_TESTS)
 
@@ -264,6 +271,10 @@ const groups: Group[] = [
     name: "services (service-mock isolated: smart-reminders delivery)",
     args: SERVICE_MOCK_SMART_REMINDERS_DELIVERY_TESTS,
   },
+  ...SERVICE_MOCK_PROCESS_ISOLATED_TESTS.map((testPath, index) => ({
+    name: `services (service-mock process-isolated ${index + 1})`,
+    args: [testPath],
+  })),
   {
     name: "services (storage-mock isolated: storage)",
     args: ["__tests__/services/storage.test.ts"],
