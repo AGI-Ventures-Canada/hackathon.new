@@ -17,6 +17,7 @@ const encryptionMockSet = new Set(ENCRYPTION_MOCK_TESTS)
 
 const SERVICE_MOCK_PROCESS_ISOLATED_TESTS = [
   "__tests__/services/challenges.test.ts",
+  "__tests__/services/event-mutation-lease.test.ts",
   "__tests__/services/judge-invitations.test.ts",
   "__tests__/services/smart-reminders.test.ts",
 ]
