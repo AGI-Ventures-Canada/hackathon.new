@@ -129,6 +129,7 @@ export function defineWebMcpTool<TSchema extends z.ZodType, TData>(
     inputSchema: toInputSchema(definition.schema),
     annotations: definition.annotations,
     execute: async (rawInput, options) => {
+      const signal = options?.signal ?? new AbortController().signal
       const parsed = definition.schema.safeParse(rawInput)
       if (!parsed.success) {
         return errorResult(
@@ -138,12 +139,12 @@ export function defineWebMcpTool<TSchema extends z.ZodType, TData>(
         )
       }
 
-      if (options.signal.aborted) {
+      if (signal.aborted) {
         return errorResult("cancelled", "The request was cancelled.", true)
       }
 
       try {
-        const output = await definition.execute(parsed.data, options)
+        const output = await definition.execute(parsed.data, { signal })
         if (isHandlerResult(output)) {
           return enforceOutputBudget({
             ok: true,
@@ -158,7 +159,7 @@ export function defineWebMcpTool<TSchema extends z.ZodType, TData>(
           data: output,
         } satisfies WebMcpToolResult<TData>)
       } catch (error) {
-        if (isAbortError(error, options.signal)) {
+        if (isAbortError(error, signal)) {
           return errorResult("cancelled", "The request was cancelled.", true)
         }
         if (error instanceof WebMcpRequestError) {

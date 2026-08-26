@@ -32,7 +32,7 @@ export type WebMcpTool = {
   annotations?: WebMcpToolAnnotations
   execute: (
     input: Record<string, unknown>,
-    options: WebMcpExecuteOptions,
+    options?: WebMcpExecuteOptions,
   ) => Promise<unknown>
 }
 

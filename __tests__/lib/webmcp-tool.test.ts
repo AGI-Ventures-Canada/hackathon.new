@@ -30,6 +30,20 @@ describe("defineWebMcpTool", () => {
     ).toEqual({ ok: true, data: { value: "hello" } })
   })
 
+  it("runs when native Chrome omits the execution context", async () => {
+    const tool = defineWebMcpTool({
+      name: "read_native_value",
+      description: "Read a native value.",
+      schema: z.object({ value: z.string() }).strict(),
+      execute: ({ value }, { signal }) => ({ value, aborted: signal.aborted }),
+    })
+
+    expect(await tool.execute({ value: "hello" })).toEqual({
+      ok: true,
+      data: { value: "hello", aborted: false },
+    })
+  })
+
   it("returns validation, request, and cancellation errors", async () => {
     const requestTool = defineWebMcpTool({
       name: "save_value",
