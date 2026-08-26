@@ -24,6 +24,7 @@ const JudgingTabContent = boundary("JudgingTabContent")
 const EventTabContent = boundary("EventTabContent")
 const TeamsTab = boundary("TeamsTab")
 const TabsUrlSync = boundary("TabsUrlSync")
+const TabsList = boundary("TabsList")
 
 const componentModules: Array<[string, Record<string, ComponentType<Props>>]> = [
   ["@/components/hackathon/preview/hackathon-preview-client", { HackathonPreviewClient }],
@@ -51,7 +52,7 @@ const componentModules: Array<[string, Record<string, ComponentType<Props>>]> = 
     "@/components/ui/tabs",
     {
       TabsContent: boundary("TabsContent"),
-      TabsList: boundary("TabsList"),
+      TabsList,
       TabsTrigger: boundary("TabsTrigger"),
     },
   ],
@@ -394,6 +395,7 @@ describe("manage page boundary", () => {
     ])
     expect(JSON.stringify(judging.props.submissions)).not.toContain("Private Team")
     expect(findElement(result, TabsUrlSync).props.value).toBe("edit")
+    expect(findElement(result, TabsList).props.className).toContain("flex-wrap")
     expect(findElement(result, TeamsTab).props.hackathonStatus).toBe("draft")
     expect(findElement(result, EventTabContent).props.hackathonStatus).toBe(
       "draft",

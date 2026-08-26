@@ -288,8 +288,10 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
                 isOrganizer={true}
               />
             </div>
-            <div className="overflow-x-auto scrollbar-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none]">
-            <TabsList variant="line">
+            <TabsList
+              variant="line"
+              className="group-data-horizontal/tabs:h-auto max-w-full flex-wrap justify-start gap-y-2"
+            >
               <TabsTrigger value="action-items">Action Items<ActionItemsTabBadge /></TabsTrigger>
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="challenges">Challenges<ManageHackathonTabCount kind="challenges" /></TabsTrigger>
@@ -302,7 +304,6 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
               <TabsTrigger value="event">Communications</TabsTrigger>
               <TabsTrigger value="miscs">Miscs</TabsTrigger>
             </TabsList>
-          </div>
 
             <TabsContent value="action-items" forceMount className="data-[state=inactive]:hidden">
               <ActionItemsTab />
