@@ -33,6 +33,10 @@ import { CreateDraftWebMcpTools } from "@/components/hackathon/create-draft-webm
 import { DraftReview } from "@/components/hackathon/draft-review"
 import { FetchResponseError } from "@/lib/utils/fetch"
 import { isValidSlugFormat } from "@/lib/utils/slug"
+import {
+  getPendingCreatedEventNavigation,
+  rememberCreatedEventNavigation,
+} from "@/lib/created-event-navigation"
 
 export const STORAGE_EXPIRY_MS = HACKATHON_DRAFT_EXPIRY_MS
 export type {
@@ -257,11 +261,17 @@ export function HackathonDraftEditor({
   const submitInFlightRef = useRef(false)
   const copyTimeoutRef = useRef<number | null>(null)
   const autoTriggeredRef = useRef(false)
+  const completedEventNavigationRef = useRef<string | null>(null)
   const canCreateInActiveOrganization = Boolean(
     organization && has?.({ role: "org:admin" }) === true,
   )
   const eventAlreadyCreated = persistenceStatus === "completed"
   const canOpenCompletedEvent = eventAlreadyCreated && Boolean(recentCompletedEventSlug)
+  const openCreatedEvent = useCallback((slug: string) => {
+    rememberCreatedEventNavigation(slug)
+    completedEventNavigationRef.current = slug
+    router.replace(`/e/${encodeURIComponent(slug)}/manage`)
+  }, [router])
 
   useEffect(() => {
     if (!hydrated || autoTriggeredRef.current) return
@@ -285,6 +295,23 @@ export function HackathonDraftEditor({
       })
     })
   }, [hydrated, pathname, router, searchParams])
+
+  useEffect(() => {
+    if (
+      !recentCompletedEventSlug ||
+      (!eventAlreadyCreated && (
+        hasStoredDraft !== false ||
+        getPendingCreatedEventNavigation() !== recentCompletedEventSlug
+      ))
+    ) return
+    if (completedEventNavigationRef.current === recentCompletedEventSlug) return
+    openCreatedEvent(recentCompletedEventSlug)
+  }, [
+    eventAlreadyCreated,
+    hasStoredDraft,
+    openCreatedEvent,
+    recentCompletedEventSlug,
+  ])
 
   useEffect(() => {
     return () => {
@@ -355,21 +382,19 @@ export function HackathonDraftEditor({
         throw new Error("The event was created, but its page address was invalid. Keep this page open and try again.")
       }
       const completion = clearSavedDraft(submittedEnvelope, slug)
-      if (
-        completion === "preservation_failed" ||
-        completion === "completion_failed"
-      ) {
+      if (completion === "preservation_failed") {
         setError(
-          completion === "preservation_failed"
-            ? "Your event was created, but newer edits aren't saved yet. Keep this page open and try again."
-            : "Your event was created, but we couldn't finish saving that result. Keep this page open and try again.",
+          "Your event was created, but newer edits aren't saved yet. Keep this page open and try again.",
         )
         return
+      }
+      if (completion === "completion_failed") {
+        console.warn("The completed event could not be recorded in browser storage.")
       }
       if (completion === "cleanup_failed") {
         console.warn("The completed draft could not be cleared from browser storage.")
       }
-      router.replace(`/e/${encodeURIComponent(slug)}/manage`)
+      openCreatedEvent(slug)
     } catch (err) {
       console.error("Failed to create hackathon:", err)
       if (err instanceof FetchResponseError && err.status === 401) {
@@ -404,21 +429,21 @@ export function HackathonDraftEditor({
           submittedEnvelope,
           err.existingEvent.slug,
         )
-        if (
-          preservation === "preservation_failed" ||
-          preservation === "completion_failed"
-        ) {
+        if (preservation === "preservation_failed") {
           setError(
             `${err.message} Your event is at /e/${err.existingEvent.slug}/manage. Keep this page open so your draft stays safe.`,
           )
           return
+        }
+        if (preservation === "completion_failed") {
+          console.warn("The completed event could not be recorded in browser storage.")
         }
         setError(
           preservation === "preserved" || preservation === "already_rotated"
             ? "Your event was created. We're opening it now. Newer edits are saved as a new draft."
             : "Your event was created. We're opening it now.",
         )
-        router.replace(`/e/${encodeURIComponent(err.existingEvent.slug)}/manage`)
+        openCreatedEvent(err.existingEvent.slug)
         return
       }
       if (err instanceof FetchResponseError && err.code === "draft_conflict") {
@@ -439,7 +464,7 @@ export function HackathonDraftEditor({
               ? "This event was already created. We're opening it now. Newer edits are saved as a new draft."
               : "This event was already created. We're opening it now.",
           )
-          router.replace(`/e/${encodeURIComponent(err.existingEvent.slug)}/manage`)
+          openCreatedEvent(err.existingEvent.slug)
           return
         }
         setError(
@@ -457,7 +482,7 @@ export function HackathonDraftEditor({
       setIsSubmitting(false)
     }
   }, [
-    router,
+    openCreatedEvent,
     onSubmit,
     clearSavedDraft,
     ensureSavedDraft,
@@ -585,9 +610,7 @@ export function HackathonDraftEditor({
           </p>
           <Button
             type="button"
-            onClick={() => router.replace(
-              `/e/${encodeURIComponent(recentCompletedEventSlug)}/manage`,
-            )}
+            onClick={() => openCreatedEvent(recentCompletedEventSlug)}
           >
             Open Event
           </Button>
@@ -679,9 +702,7 @@ export function HackathonDraftEditor({
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => router.replace(
-                  `/e/${encodeURIComponent(recentCompletedEventSlug)}/manage`,
-                )}
+                onClick={() => openCreatedEvent(recentCompletedEventSlug)}
               >
                 Open Event
               </Button>
@@ -702,9 +723,7 @@ export function HackathonDraftEditor({
                 size="lg"
                 className="rounded-full px-8 text-base"
                 onClick={canOpenCompletedEvent && recentCompletedEventSlug
-                  ? () => router.replace(
-                      `/e/${encodeURIComponent(recentCompletedEventSlug)}/manage`,
-                    )
+                  ? () => openCreatedEvent(recentCompletedEventSlug)
                   : handleSubmit}
                 disabled={
                   !canOpenCompletedEvent && (
@@ -731,9 +750,7 @@ export function HackathonDraftEditor({
               size="lg"
               className="rounded-full px-8 text-base"
               onClick={canOpenCompletedEvent && recentCompletedEventSlug
-                ? () => router.replace(
-                    `/e/${encodeURIComponent(recentCompletedEventSlug)}/manage`,
-                  )
+                ? () => openCreatedEvent(recentCompletedEventSlug)
                 : handleSubmit}
               disabled={
                 !canOpenCompletedEvent && (

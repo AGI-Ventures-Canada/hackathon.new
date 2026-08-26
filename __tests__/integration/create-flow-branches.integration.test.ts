@@ -242,6 +242,7 @@ async function submitFromReview() {
 }
 
 beforeEach(() => {
+  sessionStorage.clear()
   clerkLoaded = true
   clerkSignedIn = true
   clerkAdmin = true
@@ -292,7 +293,7 @@ describe("creation flow recovery branches", () => {
     }
   })
 
-  it("keeps a committed event recoverable when its completion cannot be recorded", async () => {
+  it("opens a committed event when its completion cannot be recorded", async () => {
     preserveResult = "completion_failed"
     onSubmit.mockRejectedValueOnce(new FetchResponseError({
       message: "Setup could not be scheduled.",
@@ -310,8 +311,8 @@ describe("creation flow recovery branches", () => {
 
     await submitFromReview()
 
-    expect(await screen.findByText(/event is at \/e\/created-event\/manage/i)).toBeDefined()
-    expect(replace).not.toHaveBeenCalledWith("/e/created-event/manage")
+    expect(await screen.findByText(/event was created.*opening it now/i)).toBeDefined()
+    expect(replace).toHaveBeenCalledWith("/e/created-event/manage")
   })
 
   it("does not navigate a lost-success conflict when newer edits cannot be saved", async () => {
@@ -455,17 +456,13 @@ describe("creation flow recovery branches", () => {
     expect(onSubmit).not.toHaveBeenCalled()
   })
 
-  it("opens a completed event from the primary review action", async () => {
+  it("automatically opens a completed event from the review", async () => {
     draftSnapshot = {
       ...draftSnapshot,
       persistenceStatus: "completed",
       recentCompletedEventSlug: "completed-event",
     }
     await openReview()
-    const openButtons = screen.getAllByRole("button", { name: "Open Event" })
-    expect(openButtons).toHaveLength(1)
-
-    fireEvent.click(openButtons[0])
 
     expect(replace).toHaveBeenCalledTimes(2)
     expect(replace).toHaveBeenLastCalledWith("/e/completed-event/manage")
@@ -542,14 +539,14 @@ describe("draft editor recovery branches", () => {
     }
   })
 
-  it("keeps committed finalization failures recoverable", async () => {
+  it("opens committed finalization failures when completion storage is unavailable", async () => {
     preserveResult = "completion_failed"
     onSubmit.mockRejectedValueOnce(committedError("finalization_unscheduled"))
 
     await submitEditor()
 
-    expect(await screen.findByText(/event is at \/e\/created-event\/manage/i)).toBeDefined()
-    expect(replace).not.toHaveBeenCalledWith("/e/created-event/manage")
+    expect(await screen.findByText(/event was created.*opening it now/i)).toBeDefined()
+    expect(replace).toHaveBeenCalledWith("/e/created-event/manage")
   })
 
   it("opens committed finalization results without a rotated draft", async () => {
@@ -678,7 +675,7 @@ describe("draft editor recovery branches", () => {
     expect(await screen.findByTestId("sign-in")).toBeDefined()
   })
 
-  it("opens a completed event from the editor primary action", async () => {
+  it("automatically opens a completed event from the editor", async () => {
     draftSnapshot = {
       ...draftSnapshot,
       persistenceStatus: "completed",
@@ -687,9 +684,8 @@ describe("draft editor recovery branches", () => {
     renderEditor()
     await screen.findByText("Preview marker")
 
-    fireEvent.click(screen.getByRole("button", { name: "Open Event" }))
-
-    expect(replace).toHaveBeenCalledWith("/e/completed-event/manage")
+    expect(replace).toHaveBeenCalledTimes(2)
+    expect(replace).toHaveBeenLastCalledWith("/e/completed-event/manage")
     expect(onSubmit).not.toHaveBeenCalled()
   })
 

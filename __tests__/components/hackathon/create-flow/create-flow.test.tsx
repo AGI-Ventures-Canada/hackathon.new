@@ -10,6 +10,7 @@ import {
 } from "@/lib/hackathon-draft"
 import type { WebMcpTool } from "@/lib/webmcp/types"
 import { FetchResponseError } from "@/lib/utils/fetch"
+import { acknowledgeCreatedEventNavigation } from "@/lib/created-event-navigation"
 
 mock.module("@/components/sign-in-required-dialog", () => ({
   SignInRequiredDialog: ({ open, description, redirectQuery }: {
@@ -655,7 +656,7 @@ describe("CreateFlow", () => {
         await screen.findByText(/created in another tab/i),
       ).toBeDefined()
       expect(screen.queryByTestId("sign-in-dialog")).toBeNull()
-      expect(mockReplace).not.toHaveBeenCalled()
+      expect(mockReplace).toHaveBeenCalledWith("/e/created-elsewhere/manage")
     })
 
     it("shows sign-in dialog when not signed in", async () => {
@@ -988,7 +989,7 @@ describe("CreateFlow", () => {
       }
     })
 
-    it("keeps the page open when creation cannot record a durable completion", async () => {
+    it("opens the created event when browser storage cannot record completion", async () => {
       mockOnSubmit.mockImplementationOnce(async () => {
         localDraftStorage!.setBlocked(true)
         sessionDraftStorage!.setBlocked(true)
@@ -1003,10 +1004,9 @@ describe("CreateFlow", () => {
 
       fireEvent.click(screen.getByText("Create Event"))
 
-      expect(
-        await screen.findByText(/couldn't finish saving that result/i),
-      ).toBeDefined()
-      expect(mockReplace).not.toHaveBeenCalled()
+      await waitFor(() => {
+        expect(mockReplace).toHaveBeenCalledWith("/e/created-event/manage")
+      })
       expect(mockOnSubmit).toHaveBeenCalledTimes(1)
     })
 
@@ -1881,8 +1881,9 @@ describe("CreateFlow", () => {
         fireEvent.click(screen.getByText("Skip to review"))
         fireEvent.click(screen.getByText("Create Event"))
 
-        expect(await screen.findByText(/couldn't finish saving that result/i)).toBeDefined()
-        expect(mockReplace).not.toHaveBeenCalledWith("/e/test-hackathon/manage")
+        await waitFor(() => {
+          expect(mockReplace).toHaveBeenCalledWith("/e/test-hackathon/manage")
+        })
         local.setBlocked(false)
         session.setBlocked(false)
 
@@ -1975,9 +1976,12 @@ describe("CreateFlow", () => {
         expect(mockReplace).toHaveBeenCalledWith("/e/test-hackathon/manage")
       })
       firstView.unmount()
+      expect(acknowledgeCreatedEventNavigation("test-hackathon")).toBe(true)
+      mockReplace.mockClear()
 
       renderFlow()
       await goToNameStep()
+      expect(mockReplace).not.toHaveBeenCalled()
       expect(screen.getByRole("button", { name: "Open Event" })).toBeDefined()
       fireEvent.change(screen.getByPlaceholderText("My Awesome Hackathon"), {
         target: { value: "Second event" },

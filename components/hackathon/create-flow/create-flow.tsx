@@ -14,6 +14,10 @@ import { CreateDraftWebMcpTools } from "@/components/hackathon/create-draft-webm
 import { DraftReview } from "@/components/hackathon/draft-review"
 import { FetchResponseError } from "@/lib/utils/fetch"
 import { isValidSlugFormat } from "@/lib/utils/slug"
+import {
+  getPendingCreatedEventNavigation,
+  rememberCreatedEventNavigation,
+} from "@/lib/created-event-navigation"
 import { CreateFlowProgress } from "./create-flow-progress"
 import { CreateFlowStep } from "./create-flow-step"
 import { StepImport } from "./step-import"
@@ -75,6 +79,7 @@ export function CreateFlow({
   const [importMode, setImportMode] = useState<"choose" | "import">("choose")
   const submitInFlightRef = useRef(false)
   const autoTriggeredRef = useRef(false)
+  const completedEventNavigationRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (autoTriggeredRef.current) return
@@ -111,6 +116,28 @@ export function CreateFlow({
   )
   const eventAlreadyCreated = persistenceStatus === "completed"
   const canOpenCompletedEvent = eventAlreadyCreated && Boolean(recentCompletedEventSlug)
+  const openCreatedEvent = useCallback((slug: string) => {
+    rememberCreatedEventNavigation(slug)
+    completedEventNavigationRef.current = slug
+    router.replace(`/e/${encodeURIComponent(slug)}/manage`)
+  }, [router])
+
+  useEffect(() => {
+    if (
+      !recentCompletedEventSlug ||
+      (!eventAlreadyCreated && (
+        hasStoredDraft !== false ||
+        getPendingCreatedEventNavigation() !== recentCompletedEventSlug
+      ))
+    ) return
+    if (completedEventNavigationRef.current === recentCompletedEventSlug) return
+    openCreatedEvent(recentCompletedEventSlug)
+  }, [
+    eventAlreadyCreated,
+    hasStoredDraft,
+    openCreatedEvent,
+    recentCompletedEventSlug,
+  ])
 
   const doSubmit = useCallback(async (submittedEnvelope: DraftEnvelope) => {
     if (!submittedEnvelope.state.name.trim()) {
@@ -132,21 +159,19 @@ export function CreateFlow({
         throw new Error("The event was created, but its page address was invalid. Keep this page open and try again.")
       }
       const completion = clearSavedDraft(submittedEnvelope, slug)
-      if (
-        completion === "preservation_failed" ||
-        completion === "completion_failed"
-      ) {
+      if (completion === "preservation_failed") {
         setError(
-          completion === "preservation_failed"
-            ? "Your event was created, but newer edits aren't saved yet. Keep this page open and try again."
-            : "Your event was created, but we couldn't finish saving that result. Keep this page open and try again.",
+          "Your event was created, but newer edits aren't saved yet. Keep this page open and try again.",
         )
         return
+      }
+      if (completion === "completion_failed") {
+        console.warn("The completed event could not be recorded in browser storage.")
       }
       if (completion === "cleanup_failed") {
         console.warn("The completed draft could not be cleared from browser storage.")
       }
-      router.replace(`/e/${encodeURIComponent(slug)}/manage`)
+      openCreatedEvent(slug)
     } catch (err) {
       console.error("Failed to create hackathon:", err)
       if (err instanceof FetchResponseError && err.status === 401) {
@@ -180,21 +205,21 @@ export function CreateFlow({
           submittedEnvelope,
           err.existingEvent.slug,
         )
-        if (
-          preservation === "preservation_failed" ||
-          preservation === "completion_failed"
-        ) {
+        if (preservation === "preservation_failed") {
           setError(
             `${err.message} Your event is at /e/${err.existingEvent.slug}/manage. Keep this page open so your draft stays safe.`,
           )
           return
+        }
+        if (preservation === "completion_failed") {
+          console.warn("The completed event could not be recorded in browser storage.")
         }
         setError(
           preservation === "preserved" || preservation === "already_rotated"
             ? "Your event was created. We're opening it now. Newer edits are saved as a new draft."
             : "Your event was created. We're opening it now.",
         )
-        router.replace(`/e/${encodeURIComponent(err.existingEvent.slug)}/manage`)
+        openCreatedEvent(err.existingEvent.slug)
         return
       }
       if (err instanceof FetchResponseError && err.code === "draft_conflict") {
@@ -215,7 +240,7 @@ export function CreateFlow({
               ? "This event was already created. We're opening it now. Newer edits are saved as a new draft."
               : "This event was already created. We're opening it now.",
           )
-          router.replace(`/e/${encodeURIComponent(err.existingEvent.slug)}/manage`)
+          openCreatedEvent(err.existingEvent.slug)
           return
         }
         setError(
@@ -235,7 +260,7 @@ export function CreateFlow({
       setIsSubmitting(false)
     }
   }, [
-    router,
+    openCreatedEvent,
     onSubmit,
     clearSavedDraft,
     ensureSavedDraft,
@@ -452,9 +477,7 @@ export function CreateFlow({
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => router.replace(
-                  `/e/${encodeURIComponent(recentCompletedEventSlug)}/manage`,
-                )}
+                onClick={() => openCreatedEvent(recentCompletedEventSlug)}
               >
                 Open Event
               </Button>
@@ -492,9 +515,7 @@ export function CreateFlow({
                   type="button"
                   size="lg"
                   onClick={canOpenCompletedEvent && recentCompletedEventSlug
-                    ? () => router.replace(
-                        `/e/${encodeURIComponent(recentCompletedEventSlug)}/manage`,
-                      )
+                    ? () => openCreatedEvent(recentCompletedEventSlug)
                     : isLastStep
                       ? () => void handleSubmit()
                       : goNext}

@@ -10,6 +10,7 @@ import {
   createAuthResumeTarget,
   restoreAuthResumeTarget,
 } from "@/lib/auth/create-resume"
+import { rememberCreatedEventNavigation } from "@/lib/created-event-navigation"
 import {
   resetComponentMocks,
   setRouter,
@@ -456,7 +457,7 @@ describe("HackathonDraftEditor", () => {
     expect(storage.get("test-draft")).toBe(JSON.stringify(otherTab))
   })
 
-  it("keeps a link to the created event when navigation does not leave the page", async () => {
+  it("automatically reopens the created event when navigation does not leave the page", async () => {
     const firstView = renderEditor()
     await waitForDraftHydration()
     fireEvent.click(screen.getByText("Create Event"))
@@ -469,9 +470,10 @@ describe("HackathonDraftEditor", () => {
 
     renderEditor()
     await waitForDraftHydration()
-    fireEvent.click(screen.getByRole("button", { name: "Open Event" }))
 
-    expect(mockReplace).toHaveBeenCalledWith("/e/test-hackathon/manage")
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("/e/test-hackathon/manage")
+    })
     expect(mockOnSubmit).not.toHaveBeenCalled()
     expect(screen.getByRole("button", { name: "Create Event" })).toBeDefined()
   })
@@ -490,7 +492,7 @@ describe("HackathonDraftEditor", () => {
     expect(screen.getByRole("button", { name: "Create Event" })).toBeDefined()
   })
 
-  it("keeps the page open when a successful create cannot record completion", async () => {
+  it("opens the created event when browser storage cannot record completion", async () => {
     const originalLocal = globalThis.localStorage
     const originalSession = globalThis.sessionStorage
     const local = createToggleableStorage(originalLocal)
@@ -510,11 +512,10 @@ describe("HackathonDraftEditor", () => {
       await waitForDraftHydration()
       fireEvent.click(screen.getByText("Create Event"))
 
-      expect(
-        await screen.findByText(/could(?:n't| not) finish saving that result/i),
-      ).toBeDefined()
+      await waitFor(() => {
+        expect(mockReplace).toHaveBeenCalledWith("/e/test-hackathon/manage")
+      })
       expect(mockOnSubmit).toHaveBeenCalledTimes(1)
-      expect(mockReplace).not.toHaveBeenCalled()
     } finally {
       restore()
     }
@@ -550,7 +551,7 @@ describe("HackathonDraftEditor", () => {
       await screen.findByText(/created in another tab/i),
     ).toBeDefined()
     expect(screen.queryByTestId("sign-in-dialog")).toBeNull()
-    expect(mockReplace).not.toHaveBeenCalled()
+    expect(mockReplace).toHaveBeenCalledWith("/e/created-elsewhere/manage")
   })
 
   it("reports when stale auth cannot restore an unsaved draft", async () => {
@@ -1247,7 +1248,7 @@ describe("HackathonDraftEditor", () => {
     expect(screen.queryByText("Create Event")).toBeNull()
   })
 
-  it("opens a recently completed event instead of showing an empty recovery", async () => {
+  it("automatically opens a recently completed event instead of showing an empty recovery", async () => {
     const completed = createDraftEnvelope(defaultState, {
       draftId: "34343434-3434-4434-8434-343434343434",
     })
@@ -1264,15 +1265,16 @@ describe("HackathonDraftEditor", () => {
         },
       }),
     )
+    expect(rememberCreatedEventNavigation("recent-event")).toBe(true)
     renderEditor({
       createIfMissing: false,
       fallbackWhenNoSavedDraft: <p>No saved import</p>,
     })
 
     expect(await screen.findByText("Your event was created")).toBeDefined()
-    fireEvent.click(screen.getByRole("button", { name: "Open Event" }))
-
-    expect(mockReplace).toHaveBeenCalledWith("/e/recent-event/manage")
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("/e/recent-event/manage")
+    })
     expect(screen.queryByText("No saved import")).toBeNull()
   })
 
@@ -1387,7 +1389,7 @@ describe("HackathonDraftEditor", () => {
       })
     })
 
-    it("keeps the created event link when import recovery reloads after completion", async () => {
+    it("automatically opens the created event when import recovery reloads after completion", async () => {
       globalThis.localStorage.setItem(baseStorageKey, JSON.stringify({
         completedDraft: {
           draftId: "1d065280-8f46-41d0-a271-8474c26f1fb8",
@@ -1397,6 +1399,7 @@ describe("HackathonDraftEditor", () => {
           eventSlug: "recovered-hackathon",
         },
       }))
+      expect(rememberCreatedEventNavigation("recovered-hackathon")).toBe(true)
 
       render(
         <EventImportRecovery
@@ -1407,10 +1410,11 @@ describe("HackathonDraftEditor", () => {
         />,
       )
 
-      const openEvent = await screen.findByRole("button", { name: "Open Event" })
+      await screen.findByRole("button", { name: "Open Event" })
       expect(screen.queryByText("Import failed")).toBeNull()
-      fireEvent.click(openEvent)
-      expect(mockReplace).toHaveBeenCalledWith("/e/recovered-hackathon/manage")
+      await waitFor(() => {
+        expect(mockReplace).toHaveBeenCalledWith("/e/recovered-hackathon/manage")
+      })
     })
 
     it("switches to the matching saved draft when the import URL changes", async () => {
