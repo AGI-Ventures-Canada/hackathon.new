@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Submission, TeamStatus } from "@/lib/db/hackathon-types"
 import type { Json } from "@/lib/db/types"
 import { trackEvent } from "@/lib/analytics/posthog"
-import { tagSubmissionChallenges } from "@/lib/services/challenges"
+import { syncSubmissionChallenges } from "@/lib/services/challenges"
 import { autoAssignSubmissionToRoomJudges, ROOM_ROUTING_STATUSES } from "@/lib/services/judging"
 
 export type ParticipantInfo = {
@@ -28,6 +28,7 @@ export async function getParticipantWithTeam(
     .select("id, team_id, teams(status)")
     .eq("hackathon_id", hackathonId)
     .eq("clerk_user_id", clerkUserId)
+    .eq("role", "participant")
     .maybeSingle()
 
   if (error) {
@@ -98,6 +99,7 @@ export async function getSubmissionForParticipant(
 }
 
 export type CreateSubmissionInput = {
+  submissionId?: string
   title: string
   description: string
   githubUrl: string
@@ -120,6 +122,7 @@ export async function createSubmission(
     client
       .from("submissions")
       .insert({
+        ...(input.submissionId ? { id: input.submissionId } : {}),
         hackathon_id: hackathonId,
         participant_id: teamId ? null : participantId,
         team_id: teamId,
@@ -156,7 +159,7 @@ export async function createSubmission(
   })
 
   if (input.challengeIds && input.challengeIds.length > 0) {
-    const tagged = await tagSubmissionChallenges(data.id, input.challengeIds)
+    const tagged = await syncSubmissionChallenges(data.id, input.challengeIds)
     if (!tagged) {
       console.error("Submission created but challenge tags could not be saved:", data.id)
     }
@@ -198,6 +201,7 @@ export type UpdateSubmissionInput = {
   screenshotUrl?: string | null
   metadata?: Record<string, Json | undefined>
   challengeIds?: string[]
+  expectedUpdatedAt?: string
 }
 
 export async function updateSubmission(
@@ -208,7 +212,7 @@ export async function updateSubmission(
 ): Promise<Submission | null> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const updates: Record<string, unknown> = {}
+  const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
   if (input.title !== undefined) updates.title = input.title
   if (input.description !== undefined) updates.description = input.description
   if (input.githubUrl !== undefined) updates.github_url = input.githubUrl
@@ -227,16 +231,20 @@ export async function updateSubmission(
   } else {
     query = query.eq("participant_id", participantId)
   }
+  if (input.expectedUpdatedAt) {
+    query = query.eq("updated_at", input.expectedUpdatedAt)
+  }
 
-  const { data, error } = await query.select().single()
+  const { data, error } = await query.select().maybeSingle()
 
   if (error) {
     console.error("Failed to update submission:", error)
     return null
   }
+  if (!data) return null
 
   if (input.challengeIds !== undefined) {
-    const tagged = await tagSubmissionChallenges(submissionId, input.challengeIds)
+    const tagged = await syncSubmissionChallenges(submissionId, input.challengeIds)
     if (!tagged) {
       console.error("Submission updated but challenge tags could not be saved:", submissionId)
     }
@@ -363,6 +371,7 @@ export async function getHackathonSubmissions(
 
 export async function notifySubmissionMembers(input: {
   hackathonId: string
+  submissionId?: string
   participantId: string
   teamId: string | null
   projectTitle: string
@@ -443,27 +452,26 @@ export async function notifySubmissionMembers(input: {
   const { sendSubmissionConfirmationEmail } = await import(
     "@/lib/email/submission-confirmation"
   )
+  const { paceBulkSend } = await import("@/lib/email/utils")
 
   const hackathonName = hackathon.name
   const hackathonSlug = hackathon.slug
 
   let sent = 0
-  const results = await Promise.allSettled(
-    recipients.map((to) =>
-      sendSubmissionConfirmationEmail({
-        to,
+  for (let index = 0; index < recipients.length; index += 1) {
+    await paceBulkSend(index)
+    try {
+      const result = await sendSubmissionConfirmationEmail({
+        to: recipients[index],
         hackathonName,
         hackathonSlug,
         projectTitle: input.projectTitle,
         teamName,
+        submissionId: input.submissionId,
       })
-    )
-  )
-
-  for (const result of results) {
-    if (result.status === "fulfilled" && result.value.success) sent++
-    if (result.status === "rejected") {
-      console.error("Failed to send submission confirmation:", result.reason)
+      if (result.success) sent++
+    } catch (error) {
+      console.error("Failed to send submission confirmation:", error)
     }
   }
 

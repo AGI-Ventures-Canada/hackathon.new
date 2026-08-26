@@ -18,8 +18,8 @@ mock.module("@clerk/nextjs/server", () => ({
   clerkClient: () => Promise.resolve({ users: { getUserList: mockGetUserList } }),
 }))
 
-let hackathonRow: { data: { name: string } | null; error: unknown } = {
-  data: { name: "AI Hackathon" },
+let hackathonRow: { data: { name: string; status: string; starts_at: string | null; ends_at: string | null } | null; error: unknown } = {
+  data: { name: "AI Hackathon", status: "active", starts_at: null, ends_at: null },
   error: null,
 }
 let participantsRow: { data: Array<{ clerk_user_id: string; role: string }>; error: unknown } = {
@@ -61,7 +61,7 @@ describe("sendBulkEmail", () => {
     mockFrom.mockClear()
     mockSingle.mockClear()
     sendEmailImpl = () => Promise.resolve({ id: "email_1" })
-    hackathonRow = { data: { name: "AI Hackathon" }, error: null }
+    hackathonRow = { data: { name: "AI Hackathon", status: "active", starts_at: null, ends_at: null }, error: null }
     participantsRow = { data: [{ clerk_user_id: "user_1", role: "participant" }], error: null }
     process.env.RESEND_REPLY_TO_EMAIL = "support@hackathon.new"
     process.env.RESEND_FROM_EMAIL = "noreply@hackathon.new"
@@ -95,19 +95,17 @@ describe("sendBulkEmail", () => {
       { name: "type", value: "participant_broadcast" },
       { name: "hackathon", value: "AI_Hackathon" },
     ])
+    expect(call.idempotencyKey).toMatch(/^participant-broadcast\/hack_1\/[a-f0-9]{24}\/[a-f0-9]{24}$/)
   })
 
-  it("omits the hackathon tag when the hackathon name can't be resolved", async () => {
+  it("fails closed when the event can't be resolved", async () => {
     hackathonRow = { data: null, error: null }
 
-    const result = await sendBulkEmail("hack_missing", {
+    await expect(sendBulkEmail("hack_missing", {
       subject: "Heads up",
       html: "<p>Body</p>",
-    })
-
-    expect(result).toEqual({ sent: 1, failed: 0 })
-    const call = mockSendEmail.mock.calls[0][0] as Record<string, unknown>
-    expect(call.tags).toEqual([{ name: "type", value: "participant_broadcast" }])
+    })).rejects.toThrow("Failed to load the event")
+    expect(mockSendEmail).not.toHaveBeenCalled()
   })
 
   it("counts failures when a send returns null", async () => {
@@ -116,5 +114,24 @@ describe("sendBulkEmail", () => {
     const result = await sendBulkEmail("hack_1", { subject: "x", html: "<p>x</p>" })
 
     expect(result).toEqual({ sent: 0, failed: 1 })
+  })
+
+  it("rejects a stale live status after the event has ended", async () => {
+    hackathonRow = {
+      data: {
+        name: "AI Hackathon",
+        status: "active",
+        starts_at: "2020-01-01T00:00:00.000Z",
+        ends_at: "2020-01-02T00:00:00.000Z",
+      },
+      error: null,
+    }
+
+    await expect(sendBulkEmail("hack_1", {
+      subject: "Too late",
+      html: "<p>Body</p>",
+    })).rejects.toThrow("This event has ended")
+    expect(mockSendEmail).not.toHaveBeenCalled()
+    expect(mockGetUserList).not.toHaveBeenCalled()
   })
 })

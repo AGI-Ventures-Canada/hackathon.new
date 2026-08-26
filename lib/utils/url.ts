@@ -1,7 +1,22 @@
-export function safeRedirectUrl(url: string | undefined, fallback = "/home"): string {
-  if (!url) return fallback
-  if (url.startsWith("/") && !url.startsWith("//")) return url
-  return fallback
+const MAX_SAFE_REDIRECT_URL_LENGTH = 8_192
+
+export function safeRedirectUrl(
+  url: string | string[] | undefined,
+  fallback = "/home",
+): string {
+  const candidate = Array.isArray(url) ? url[0] : url
+  if (!candidate || candidate.length > MAX_SAFE_REDIRECT_URL_LENGTH) return fallback
+  if (!candidate.startsWith("/") || candidate.startsWith("//")) return fallback
+  if (candidate.includes("\\") || /[\u0000-\u001f\u007f]/.test(candidate)) return fallback
+
+  try {
+    const base = new URL("https://redirect.invalid")
+    const parsed = new URL(candidate, base)
+    if (parsed.origin !== base.origin) return fallback
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`
+  } catch {
+    return fallback
+  }
 }
 
 export const urlInputProps = {
@@ -33,11 +48,45 @@ export function normalizeOptionalUrl(
   return normalized || null
 }
 
+export function isHttpsUrlWithoutCredentials(rawUrl: string): boolean {
+  try {
+    const url = new URL(rawUrl)
+    return url.protocol === "https:" && !url.username && !url.password
+  } catch {
+    return false
+  }
+}
+
+export function normalizeImportUrl(input: string): string | null {
+  const normalized = normalizeUrl(input)
+  if (normalized.length > 2_048 || !isSafeExternalUrl(normalized)) return null
+  return normalized
+}
+
+export function redactImportSourceUrl(input: string): string | null {
+  const normalized = normalizeUrl(input)
+  if (normalized.length > 2_048) return null
+  try {
+    const url = new URL(normalized)
+    url.username = ""
+    url.password = ""
+    url.search = ""
+    url.hash = ""
+    if (!isSafeExternalUrl(url.toString())) return null
+    const redacted = decodeURI(url.toString())
+    if (/[\u0000-\u001f\u007f]/.test(redacted)) return null
+    return redacted.length <= 2_048 ? redacted : null
+  } catch {
+    return null
+  }
+}
+
 export function isSafeExternalUrl(rawUrl: string): boolean {
   try {
     const url = new URL(rawUrl.startsWith("http") ? rawUrl : `https://${rawUrl}`)
 
     if (url.protocol !== "https:") return false
+    if (url.username || url.password) return false
 
     // URL constructor wraps IPv6 in brackets: new URL("https://[::1]/").hostname === "[::1]"
     const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "")

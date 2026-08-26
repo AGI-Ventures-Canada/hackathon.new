@@ -2,7 +2,6 @@
 
 **Date:** 2026-02-25
 **Status:** Draft
-**Pitch:** [Notion Pitch](https://www.notion.so/311ffe5c4f7481ebb047ed17c6d26538)
 **Appetite:** 1-2 weeks (small batch)
 
 ## Problem

@@ -10,18 +10,20 @@ type PageProps = {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params
-  const hackathon = await getPublicHackathon(slug, { includeUnpublished: true })
+  const hackathon = await getPublicHackathon(slug)
 
   return {
-    title: hackathon ? `Winners | ${hackathon.name}` : "Winners",
+    title: hackathon?.results_published_at
+      ? `Winners | ${hackathon.name}`
+      : "Winners",
   }
 }
 
 export default async function DisplayWinnersPage({ params }: PageProps) {
   const { slug } = await params
 
-  const hackathon = await getPublicHackathon(slug, { includeUnpublished: true })
-  if (!hackathon) notFound()
+  const hackathon = await getPublicHackathon(slug)
+  if (!hackathon?.results_published_at) notFound()
 
   const entries = await getWinnerPageData(hackathon.id)
   const winners = entries.map((e) => ({
@@ -29,7 +31,9 @@ export default async function DisplayWinnersPage({ params }: PageProps) {
     prizeDescription: e.prizeDescription,
     prizeValue: e.prizeValue,
     submissionTitle: e.submissionTitle,
-    teamName: e.teamName ?? "Unknown Team",
+    teamName: hackathon.anonymous_judging
+      ? "Anonymous project"
+      : e.teamName ?? "Unknown Team",
   }))
 
   return (

@@ -29,6 +29,7 @@ describe("winner-pages service", () => {
       const teams = [{ id: "t1", name: "Team Alpha" }]
 
       setMockFromImplementation((table) => {
+        if (table === "hackathons") return createChainableMock(mockSuccess({ results_published_at: "2026-04-30T00:00:00Z" }))
         if (table === "prize_assignments") return createChainableMock(mockSuccess(assignments))
         if (table === "teams") return createChainableMock(mockSuccess(teams))
         return createChainableMock(mockSuccess(null))
@@ -42,9 +43,60 @@ describe("winner-pages service", () => {
     })
 
     it("returns empty on error", async () => {
-      setMockFromImplementation(() => createChainableMock(mockError("Failed")))
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") return createChainableMock(mockSuccess({ results_published_at: "2026-04-30T00:00:00Z" }))
+        return createChainableMock(mockError("Failed"))
+      })
       const result = await getWinnerPageData(HACKATHON_ID)
       expect(result).toEqual([])
+    })
+
+    it("does not load assigned winners before results are published", async () => {
+      const assignments = createChainableMock(mockSuccess([{ prize_id: "private-prize" }]))
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") return createChainableMock(mockSuccess({ results_published_at: null }))
+        if (table === "prize_assignments") return assignments
+        return createChainableMock(mockSuccess(null))
+      })
+
+      const result = await getWinnerPageData(HACKATHON_ID)
+
+      expect(result).toEqual([])
+      expect(assignments.select).not.toHaveBeenCalled()
+    })
+
+    it("does not query or expose team names for anonymous winners", async () => {
+      const assignments = [{
+        prize_id: "p1",
+        submission_id: "s1",
+        prizes: {
+          id: "p1",
+          name: "Best Overall",
+          description: null,
+          value: "$5000",
+          display_order: 0,
+        },
+        submissions: { id: "s1", title: "Private Project", team_id: "t1" },
+      }]
+      const teams = createChainableMock(mockSuccess([{ id: "t1", name: "Private Team" }]))
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock(mockSuccess({
+            results_published_at: "2026-04-30T00:00:00Z",
+            anonymous_judging: true,
+          }))
+        }
+        if (table === "prize_assignments") {
+          return createChainableMock(mockSuccess(assignments))
+        }
+        if (table === "teams") return teams
+        return createChainableMock(mockSuccess(null))
+      })
+
+      const result = await getWinnerPageData(HACKATHON_ID)
+
+      expect(result[0].teamName).toBeNull()
+      expect(teams.select).not.toHaveBeenCalled()
     })
   })
 

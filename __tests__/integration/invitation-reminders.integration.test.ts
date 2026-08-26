@@ -39,9 +39,12 @@ const mockRemindJudgeInvitation = mock(() =>
       email: "judge@example.com",
       token: "judge-token-123",
       expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      reminded_at: "2026-08-26T12:00:00.000Z",
+      updated_at: "2026-08-26T12:00:00.000Z",
     },
   })
 )
+const mockReleaseJudgeInvitationReminderClaim = mock(() => Promise.resolve())
 
 mock.module("@/lib/services/judge-invitations", () => ({
   createJudgeInvitation: mock(() => Promise.resolve({ success: false })),
@@ -51,6 +54,7 @@ mock.module("@/lib/services/judge-invitations", () => ({
   hasPendingJudgeEntry: mock(() => Promise.resolve(false)),
   createJudgePendingNotification: mock(() => Promise.resolve()),
   remindJudgeInvitation: mockRemindJudgeInvitation,
+  releaseJudgeInvitationReminderClaim: mockReleaseJudgeInvitationReminderClaim,
 }))
 
 const mockSendJudgeInvitationReminderEmail = mock(() => Promise.resolve({ success: true }))
@@ -164,6 +168,7 @@ describe("POST /hackathons/:id/judging/invitations/:invitationId/remind", () => 
     mockSendJudgeInvitationReminderEmail.mockClear()
     mockLogAudit.mockClear()
     mockCheckRateLimit.mockClear()
+    mockReleaseJudgeInvitationReminderClaim.mockClear()
 
     mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
     mockCheckHackathonOrganizer.mockResolvedValue({
@@ -177,6 +182,8 @@ describe("POST /hackathons/:id/judging/invitations/:invitationId/remind", () => 
         email: "judge@example.com",
         token: "judge-token-123",
         expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        reminded_at: "2026-08-26T12:00:00.000Z",
+        updated_at: "2026-08-26T12:00:00.000Z",
       },
     })
     mockCheckRateLimit.mockReturnValue({ allowed: true, remaining: 9, resetAt: Date.now() + 60000 })
@@ -256,7 +263,11 @@ describe("POST /hackathons/:id/judging/invitations/:invitationId/remind", () => 
     expect(res.status).toBe(200)
     expect(data.success).toBe(true)
     expect(mockRemindJudgeInvitation).toHaveBeenCalledWith(INVITATION_ID, HACKATHON_ID)
-    expect(mockSendJudgeInvitationReminderEmail).toHaveBeenCalled()
+    expect(mockSendJudgeInvitationReminderEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deliveryId: `${INVITATION_ID}/manual/manual`,
+      })
+    )
     expect(mockLogAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "judge_invitation.reminded",
@@ -264,6 +275,40 @@ describe("POST /hackathons/:id/judging/invitations/:invitationId/remind", () => 
         resourceId: HACKATHON_ID,
         metadata: { invitationId: INVITATION_ID },
       })
+    )
+  })
+
+  it("rejects effectively ended events before claiming or sending", async () => {
+    mockCheckHackathonOrganizer.mockResolvedValue({
+      status: "ok",
+      hackathon: {
+        id: HACKATHON_ID,
+        name: "Test Hackathon",
+        slug: "test-hackathon",
+        status: "active",
+        starts_at: "2020-01-01T00:00:00.000Z",
+        ends_at: "2020-01-02T00:00:00.000Z",
+      },
+    })
+
+    const res = await app.handle(new Request(remindUrl, { method: "POST" }))
+    expect(res.status).toBe(409)
+    expect(await res.json()).toMatchObject({ code: "hackathon_ended" })
+    expect(mockRemindJudgeInvitation).not.toHaveBeenCalled()
+    expect(mockSendJudgeInvitationReminderEmail).not.toHaveBeenCalled()
+  })
+
+  it("uses a hashed request idempotency key for provider retries", async () => {
+    const res = await app.handle(new Request(remindUrl, {
+      method: "POST",
+      headers: { "Idempotency-Key": "retry-this-request" },
+    }))
+
+    expect(res.status).toBe(200)
+    expect(mockSendJudgeInvitationReminderEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deliveryId: expect.stringMatching(new RegExp(`^${INVITATION_ID}/manual/[a-f0-9]{24}$`)),
+      }),
     )
   })
 })

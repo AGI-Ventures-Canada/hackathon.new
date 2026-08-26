@@ -4,17 +4,24 @@ import { getPresenterView, resolvePresenterSubmissions } from "@/lib/services/pr
 import { isValidUuid } from "@/lib/utils/uuid"
 import { FullscreenShowcase } from "@/components/hackathon/display/fullscreen-showcase"
 import type { Metadata } from "next"
+import { publicSubmitterName } from "@/lib/utils/anonymous-judging"
 
 type PageProps = {
   params: Promise<{ slug: string }>
   searchParams: Promise<{ view?: string }>
 }
 
-export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+export async function generateMetadata({ params, searchParams }: PageProps): Promise<Metadata> {
   const { slug } = await params
-  const hackathon = await getPublicHackathon(slug, { includeUnpublished: true })
+  const { view: viewId } = await searchParams
+  const view = viewId && isValidUuid(viewId)
+    ? await getPresenterView(viewId)
+    : null
+  const hackathon = await getPublicHackathon(slug)
   return {
-    title: hackathon ? `Showcase | ${hackathon.name}` : "Showcase",
+    title: hackathon && view?.hackathon_id === hackathon.id
+      ? `Showcase | ${hackathon.name}`
+      : "Showcase",
   }
 }
 
@@ -22,13 +29,14 @@ export default async function DisplayShowcasePage({ params, searchParams }: Page
   const { slug } = await params
   const { view: viewId } = await searchParams
 
-  // Intentionally allows unpublished hackathons so organizers can set up the
-  // projector view (and verify the link) before going live. Access is gated
-  // by the unguessable view UUID, mirroring the other /display/* pages.
-  const hackathon = await getPublicHackathon(slug, { includeUnpublished: true })
+  const hasViewCapability = Boolean(viewId && isValidUuid(viewId))
+  const view = hasViewCapability
+    ? await getPresenterView(viewId!)
+    : null
+  const hackathon = await getPublicHackathon(slug)
   if (!hackathon) notFound()
 
-  if (!viewId || !isValidUuid(viewId)) {
+  if (!hasViewCapability) {
     return (
       <FullscreenShowcase
         hackathonName={hackathon.name}
@@ -39,16 +47,8 @@ export default async function DisplayShowcasePage({ params, searchParams }: Page
     )
   }
 
-  const view = await getPresenterView(viewId)
   if (!view || view.hackathon_id !== hackathon.id) {
-    return (
-      <FullscreenShowcase
-        hackathonName={hackathon.name}
-        viewName={null}
-        submissions={[]}
-        message="That showcase view wasn't found. The organizer may have deleted it."
-      />
-    )
+    notFound()
   }
 
   const submissions = await resolvePresenterSubmissions(view)
@@ -65,7 +65,7 @@ export default async function DisplayShowcasePage({ params, searchParams }: Page
         liveAppUrl: s.live_app_url,
         demoVideoUrl: s.demo_video_url,
         screenshotUrl: s.screenshot_url,
-        submitter: s.submitter_name,
+        submitter: publicSubmitterName(hackathon, s.submitter_name),
       }))}
       message={
         submissions.length === 0

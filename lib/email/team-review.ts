@@ -9,9 +9,11 @@ import {
 } from "./utils"
 import TeamApprovedEmail from "@/emails/team-approved"
 import TeamDeniedEmail from "@/emails/team-denied"
+import { sha256Fingerprint } from "@/lib/utils/hash"
 
 type TeamReviewEmailInput = {
   to: string
+  teamId: string
   teamName: string
   hackathonName: string
   hackathonSlug: string
@@ -44,6 +46,7 @@ export async function sendTeamApprovedEmail(
       { name: "type", value: "team_approved" },
       { name: "hackathon", value: sanitizeTag(input.hackathonName) },
     ],
+    idempotencyKey: `team-review/${input.teamId}/approved/${await sha256Fingerprint(input.to.trim().toLowerCase())}`,
   })
 
   return { success: result !== null }
@@ -72,6 +75,7 @@ export async function sendTeamDeniedEmail(
       { name: "type", value: "team_denied" },
       { name: "hackathon", value: sanitizeTag(input.hackathonName) },
     ],
+    idempotencyKey: `team-review/${input.teamId}/denied/${await sha256Fingerprint(input.to.trim().toLowerCase())}`,
   })
 
   return { success: result !== null }

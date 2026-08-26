@@ -8,6 +8,7 @@ import {
 const {
   listAnnouncements,
   listPublishedAnnouncements,
+  filterAnnouncementsForViewer,
   createAnnouncement,
   updateAnnouncement,
   deleteAnnouncement,
@@ -18,6 +19,53 @@ const {
 
 const HACKATHON_ID = "11111111-1111-1111-1111-111111111111"
 const ANNOUNCEMENT_ID = "22222222-2222-2222-2222-222222222222"
+
+const audienceAnnouncements = [
+  "everyone",
+  "organizers",
+  "judges",
+  "mentors",
+  "attendees",
+  "submitted",
+  "not_submitted",
+].map((audience) => ({
+  id: audience,
+  hackathon_id: HACKATHON_ID,
+  title: audience,
+  body: `${audience} body`,
+  priority: "normal" as const,
+  audience: audience as import("@/lib/services/announcements").AnnouncementAudience,
+  published_at: "2026-08-25T15:00:00Z",
+  created_at: "2026-08-25T15:00:00Z",
+  updated_at: "2026-08-25T15:00:00Z",
+}))
+
+describe("filterAnnouncementsForViewer", () => {
+  it("shows signed-out viewers only announcements for everyone", () => {
+    expect(filterAnnouncementsForViewer(audienceAnnouncements, { role: "public" }))
+      .toEqual([audienceAnnouncements[0]])
+  })
+
+  it("matches exact event roles and attendee project state", () => {
+    expect(
+      filterAnnouncementsForViewer(audienceAnnouncements, { role: "judge" }).map(
+        (announcement) => announcement.audience,
+      ),
+    ).toEqual(["everyone", "judges"])
+    expect(
+      filterAnnouncementsForViewer(audienceAnnouncements, {
+        role: "participant",
+        hasSubmitted: true,
+      }).map((announcement) => announcement.audience),
+    ).toEqual(["everyone", "attendees", "submitted"])
+    expect(
+      filterAnnouncementsForViewer(audienceAnnouncements, {
+        role: "participant",
+        hasSubmitted: false,
+      }).map((announcement) => announcement.audience),
+    ).toEqual(["everyone", "attendees", "not_submitted"])
+  })
+})
 
 describe("listAnnouncements", () => {
   beforeEach(() => {

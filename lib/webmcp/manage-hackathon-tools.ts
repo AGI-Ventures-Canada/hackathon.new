@@ -1,6 +1,29 @@
 import { z } from "zod"
-import type { WebMcpTool } from "@/hooks/use-webmcp-tools"
-import { assertOkJson } from "@/lib/utils/fetch"
+import type { Prize } from "@/lib/db/hackathon-types"
+import type { Announcement } from "@/lib/services/announcements"
+import type { Challenge } from "@/lib/services/challenges"
+import type { ScheduleItem } from "@/lib/services/schedule-items"
+import {
+  fetchWebMcpJson,
+  WebMcpRequestError,
+  type WebMcpFetcher,
+} from "@/lib/webmcp/fetch"
+import type {
+  ManageWebMcpCommittedChange,
+  ManageWebMcpOptimisticChange,
+} from "@/lib/webmcp/manage-optimistic-state"
+import {
+  createWebMcpMutationHeaders,
+  isWebMcpPreCompletionStatus,
+  WEBMCP_PRE_COMPLETION_STATUSES,
+} from "@/lib/webmcp/mutation-context"
+import { defineWebMcpTool } from "@/lib/webmcp/tool"
+import type { WebMcpTool } from "@/lib/webmcp/types"
+
+export type {
+  ManageWebMcpCommittedChange,
+  ManageWebMcpOptimisticChange,
+} from "@/lib/webmcp/manage-optimistic-state"
 
 export type ManageHackathonWebMcpContext = {
   hackathon: {
@@ -10,7 +33,9 @@ export type ManageHackathonWebMcpContext = {
     description: string | null
     locale: string | null
     status: string
+    storedStatus: string
     phase: string | null
+    eventVersion: string
     startsAt: string | null
     endsAt: string | null
     registrationClosesAt: string | null
@@ -50,6 +75,7 @@ export type ManageHackathonWebMcpContext = {
     resourceCount: number
   }[]
   prizes: {
+    id: string
     name: string
     description: string | null
     value: string | null
@@ -60,33 +86,29 @@ export type ManageHackathonWebMcpContext = {
   }[]
 }
 
-type WebMcpFetch = (
-  input: RequestInfo | URL,
-  init?: RequestInit,
-) => Promise<Response>
-
 type ManageHackathonToolDependencies = {
-  context: ManageHackathonWebMcpContext
-  fetcher: WebMcpFetch
-  onChanged: (href: string) => void
+  getContext: () => ManageHackathonWebMcpContext
+  fetcher: WebMcpFetcher
+  onOptimistic: (change: ManageWebMcpOptimisticChange) => void
+  onCommitted: (
+    optimistic: ManageWebMcpOptimisticChange,
+    committed: ManageWebMcpCommittedChange,
+  ) => void
+  onReverted: (
+    optimistic: ManageWebMcpOptimisticChange,
+    message: string,
+  ) => void
   onNavigate: (href: string) => void
+  onOpenTransition: (status: string) => void
 }
 
-const emptyInputSchema = {
-  type: "object",
-  properties: {},
-  additionalProperties: false,
-} as const
-
-const dateTimeSchema = z
-  .string()
-  .max(64)
-  .refine((value) => !Number.isNaN(Date.parse(value)), "Use an ISO date and time")
+const emptyInput = z.object({}).strict()
+const dateTime = z.iso.datetime({ offset: true }).max(64)
 
 const updateDetailsInput = z
   .object({
     name: z.string().trim().min(1).max(200).optional(),
-    description: z.string().trim().max(10_000).nullable().optional(),
+    description: z.string().trim().max(5_000).nullable().optional(),
   })
   .strict()
   .refine(
@@ -96,8 +118,8 @@ const updateDetailsInput = z
 
 const timelineInput = z
   .object({
-    startsAt: dateTimeSchema,
-    endsAt: dateTimeSchema,
+    startsAt: dateTime,
+    endsAt: dateTime,
   })
   .strict()
   .refine(
@@ -108,10 +130,10 @@ const timelineInput = z
 const scheduleItemInput = z
   .object({
     title: z.string().trim().min(1).max(200),
-    description: z.string().trim().max(5_000).optional(),
-    startsAt: dateTimeSchema,
-    endsAt: dateTimeSchema.optional(),
-    location: z.string().trim().max(500).optional(),
+    description: z.string().trim().max(2_000).optional(),
+    startsAt: dateTime,
+    endsAt: dateTime.optional(),
+    location: z.string().trim().max(300).optional(),
   })
   .strict()
   .refine(
@@ -124,19 +146,38 @@ const scheduleItemInput = z
 const challengeInput = z
   .object({
     title: z.string().trim().min(1).max(200),
-    description: z.string().trim().max(10_000).optional(),
+    description: z.string().trim().max(5_000).optional(),
   })
   .strict()
 
 const prizeInput = z
   .object({
     name: z.string().trim().min(1).max(200),
-    description: z.string().trim().max(5_000).optional(),
+    description: z.string().trim().max(2_000).optional(),
     value: z.string().trim().max(200).optional(),
     judgingStyle: z
       .enum(["judges_pick", "bucket_sort", "crowd_vote"])
       .optional(),
     maxPicks: z.number().int().min(1).max(100).optional(),
+  })
+  .strict()
+
+const announcementInput = z
+  .object({
+    title: z.string().trim().min(1).max(200),
+    body: z.string().trim().min(1).max(5_000),
+    priority: z.enum(["normal", "urgent"]).optional(),
+    audience: z
+      .enum([
+        "everyone",
+        "organizers",
+        "judges",
+        "mentors",
+        "attendees",
+        "submitted",
+        "not_submitted",
+      ])
+      .optional(),
   })
   .strict()
 
@@ -151,13 +192,14 @@ const sectionInput = z
       "teams",
       "people",
       "judging",
+      "results",
       "post_event",
       "communications",
     ]),
   })
   .strict()
 
-const sectionParams: Record<z.infer<typeof sectionInput>["section"], string> = {
+const sectionParams: Record<z.output<typeof sectionInput>["section"], string> = {
   action_items: "tab=action-items",
   overview: "tab=overview",
   challenges: "tab=challenges",
@@ -166,392 +208,697 @@ const sectionParams: Record<z.infer<typeof sectionInput>["section"], string> = {
   teams: "tab=teams",
   people: "tab=people",
   judging: "tab=judging",
+  results: "tab=judging&jtab=results",
   post_event: "tab=post-event",
   communications: "tab=event",
 }
 
-function parseInput<T>(schema: z.ZodType<T>, input: unknown): T {
-  const result = schema.safeParse(input)
-  if (result.success) return result.data
-  throw new Error(result.error.issues[0]?.message ?? "Invalid tool input")
-}
+const untrustedReadAnnotations = {
+  readOnlyHint: true,
+  untrustedContentHint: true,
+} as const
 
-async function sendJson<T>(
-  fetcher: WebMcpFetch,
-  url: string,
-  method: "POST" | "PATCH",
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-): Promise<T> {
-  return fetcher(url, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal,
-  }).then(assertOkJson<T>)
+const MAX_ACTION_ITEMS = 1
+const MAX_SCHEDULE_ITEMS = 2
+const MAX_CHALLENGE_ITEMS = 3
+const MAX_PRIZE_ITEMS = 2
+let optimisticMutationSequence = 0
+
+const draftOnlyToolNames = new Set([
+  "set_hackathon_timeline",
+  "add_challenge",
+  "add_prize",
+  "open_go_live_review",
+])
+
+function clip(value: string | null, maxLength: number): string | null {
+  if (value === null || value.length <= maxLength) return value
+  return `${value.slice(0, maxLength - 1)}…`
 }
 
 function manageHref(slug: string, params: string): string {
   return `/e/${slug}/manage?${params}`
 }
 
-function createReadTools(
-  context: ManageHackathonWebMcpContext,
-  onNavigate: (href: string) => void,
-): WebMcpTool[] {
-  const { hackathon } = context
-  const untrustedReadAnnotations = {
-    readOnlyHint: true,
-    untrustedContentHint: true,
-  }
+function createMutationId(kind: ManageWebMcpOptimisticChange["kind"]): string {
+  optimisticMutationSequence += 1
+  return `webmcp-${kind}-${optimisticMutationSequence}`
+}
 
+function getDraftContext(
+  dependencies: ManageHackathonToolDependencies,
+): ManageHackathonWebMcpContext {
+  const context = dependencies.getContext()
+  if (context.hackathon.status !== "draft") {
+    throw new WebMcpRequestError({
+      code: "event_changed",
+      message: "The event changed. Refresh the page before trying again.",
+      retryable: true,
+    })
+  }
+  return context
+}
+
+function getPreCompletionContext(
+  dependencies: ManageHackathonToolDependencies,
+): ManageHackathonWebMcpContext {
+  const context = dependencies.getContext()
+  if (!isWebMcpPreCompletionStatus(context.hackathon.status)) {
+    throw new WebMcpRequestError({
+      code: "event_changed",
+      message: "The event changed. Refresh the page before trying again.",
+      retryable: true,
+    })
+  }
+  return context
+}
+
+async function sendMutation<T>(
+  dependencies: ManageHackathonToolDependencies,
+  options: {
+    context: ManageHackathonWebMcpContext
+    url: string
+    method: "POST" | "PATCH"
+    body: Record<string, unknown>
+    signal: AbortSignal
+    optimistic: ManageWebMcpOptimisticChange
+    toCommitted: (result: T) => ManageWebMcpCommittedChange
+  },
+): Promise<T> {
+  dependencies.onOptimistic(options.optimistic)
+  try {
+    const result = await fetchWebMcpJson<T>(dependencies.fetcher, options.url, {
+      method: options.method,
+      headers: {
+        "Content-Type": "application/json",
+        ...createWebMcpMutationHeaders({
+          status: options.context.hackathon.status,
+          eventVersion: options.context.hackathon.eventVersion,
+        }),
+      },
+      body: JSON.stringify(options.body),
+      signal: options.signal,
+    })
+    dependencies.onCommitted(options.optimistic, options.toCommitted(result))
+    return result
+  } catch (error) {
+    dependencies.onReverted(
+      options.optimistic,
+      error instanceof WebMcpRequestError
+        ? error.message
+        : "We couldn't save that change. Review the page and try again.",
+    )
+    throw error
+  }
+}
+
+function createReadTools(
+  dependencies: ManageHackathonToolDependencies,
+): WebMcpTool[] {
   return [
-    {
+    defineWebMcpTool({
       name: "get_hackathon_overview",
       title: "Get hackathon overview",
       description:
-        "Read the current hackathon's setup, progress, team rules, and remaining organizer tasks. This does not change the hackathon.",
-      inputSchema: emptyInputSchema,
+        "Read the event setup, progress, team rules, and the organizer's next tasks. This doesn't change the event.",
+      schema: emptyInput,
       annotations: untrustedReadAnnotations,
-      execute: async () => ({
-        hackathon: {
-          slug: hackathon.slug,
-          name: hackathon.name,
-          description: hackathon.description,
-          locale: hackathon.locale,
-          status: hackathon.status,
-          phase: hackathon.phase,
-          startsAt: hackathon.startsAt,
-          endsAt: hackathon.endsAt,
-          registrationClosesAt: hackathon.registrationClosesAt,
-          locationType: hackathon.locationType,
-          locationName: hackathon.locationName,
-          locationUrl: hackathon.locationUrl,
-          minTeamSize: hackathon.minTeamSize,
-          maxTeamSize: hackathon.maxTeamSize,
-          allowSolo: hackathon.allowSolo,
-          requireTeamApproval: hackathon.requireTeamApproval,
-        },
-        stats: context.stats,
-        remainingActionItems: context.actionItems,
-        manageUrl: manageHref(hackathon.slug, "tab=overview"),
-        eventUrl: `/e/${hackathon.slug}`,
-      }),
-    },
-    {
+      execute: () => {
+        const context = dependencies.getContext()
+        const { hackathon } = context
+        const actionItems = context.actionItems
+          .slice(0, MAX_ACTION_ITEMS)
+          .map((item) => ({
+            label: clip(item.label, 80),
+            hint: clip(item.hint, 80),
+            severity: item.severity,
+          }))
+        return {
+          event: {
+            slug: clip(hackathon.slug, 80),
+            name: clip(hackathon.name, 100),
+            summary: clip(hackathon.description, 160),
+            status: hackathon.status,
+            phase: hackathon.phase,
+            startsAt: hackathon.startsAt,
+            endsAt: hackathon.endsAt,
+            registrationClosesAt: hackathon.registrationClosesAt,
+            location: {
+              type: hackathon.locationType,
+              name: clip(hackathon.locationName, 80),
+            },
+            teamRules: {
+              minSize: hackathon.minTeamSize,
+              maxSize: hackathon.maxTeamSize,
+              solo: hackathon.allowSolo,
+              approval: hackathon.requireTeamApproval,
+            },
+          },
+          counts: {
+            attendees: context.stats.attendeeCount,
+            teams: context.stats.teamCount,
+            pendingTeams: context.stats.pendingTeamApprovalCount,
+            projects: context.stats.projectCount,
+            judges: context.stats.judgeCount,
+            prizes: context.stats.prizeCount,
+            judgingAssignments: context.stats.judgingAssignments,
+            completedAssignments: context.stats.completedJudgingAssignments,
+          },
+          nextTask: actionItems[0] ?? null,
+          remainingTaskCount: context.actionItems.length,
+          urls: {
+            manage: clip(manageHref(hackathon.slug, "tab=overview"), 120),
+            event: clip(`/e/${hackathon.slug}`, 100),
+          },
+        }
+      },
+    }),
+    defineWebMcpTool({
       name: "list_hackathon_schedule",
       title: "List hackathon schedule",
       description:
-        "Read the current hackathon's schedule in time order. This does not change the schedule.",
-      inputSchema: emptyInputSchema,
+        "Read the first two event schedule items in time order. This doesn't change the schedule.",
+      schema: emptyInput,
       annotations: untrustedReadAnnotations,
-      execute: async () => ({
-        count: context.scheduleItems.length,
-        scheduleItems: context.scheduleItems,
-        inspectUrl: manageHref(hackathon.slug, "tab=overview"),
-      }),
-    },
-    {
+      execute: () => {
+        const context = dependencies.getContext()
+        const items = context.scheduleItems
+          .slice(0, MAX_SCHEDULE_ITEMS)
+          .map((item) => ({
+            title: clip(item.title, 100),
+            description: clip(item.description, 160),
+            startsAt: item.startsAt,
+            endsAt: item.endsAt,
+            location: clip(item.location, 100),
+          }))
+        return {
+          totalCount: context.scheduleItems.length,
+          items,
+          truncated: context.scheduleItems.length > items.length,
+          inspectUrl: manageHref(context.hackathon.slug, "tab=overview"),
+        }
+      },
+    }),
+    defineWebMcpTool({
       name: "list_hackathon_challenges",
       title: "List hackathon challenges",
       description:
-        "Read the current hackathon's challenges. This does not release or change them.",
-      inputSchema: emptyInputSchema,
+        "Read the first three event challenges. This doesn't release or change them.",
+      schema: emptyInput,
       annotations: untrustedReadAnnotations,
-      execute: async () => ({
-        count: context.challenges.length,
-        challenges: context.challenges,
-        inspectUrl: manageHref(hackathon.slug, "tab=challenges"),
-      }),
-    },
-    {
+      execute: () => {
+        const context = dependencies.getContext()
+        const items = context.challenges
+          .slice(0, MAX_CHALLENGE_ITEMS)
+          .map((challenge) => ({
+            title: clip(challenge.title, 100),
+            description: clip(challenge.description, 180),
+            resourceCount: challenge.resourceCount,
+          }))
+        return {
+          totalCount: context.challenges.length,
+          items,
+          truncated: context.challenges.length > items.length,
+          inspectUrl: manageHref(context.hackathon.slug, "tab=challenges"),
+        }
+      },
+    }),
+    defineWebMcpTool({
       name: "list_hackathon_prizes",
       title: "List hackathon prizes",
       description:
-        "Read the current hackathon's prizes and judging progress. This does not change judging.",
-      inputSchema: emptyInputSchema,
+        "Read the first two prizes and their judging progress. This doesn't change judging.",
+      schema: emptyInput,
       annotations: untrustedReadAnnotations,
-      execute: async () => ({
-        count: context.prizes.length,
-        prizes: context.prizes,
-        inspectUrl: manageHref(hackathon.slug, "tab=judging&jtab=prizes"),
-      }),
-    },
-    {
+      execute: () => {
+        const context = dependencies.getContext()
+        const items = context.prizes.slice(0, MAX_PRIZE_ITEMS).map((prize) => ({
+          name: clip(prize.name, 100),
+          description: clip(prize.description, 160),
+          value: clip(prize.value, 80),
+          judgingStyle: prize.judgingStyle,
+          judgeCount: prize.judgeCount,
+          totalAssignments: prize.totalAssignments,
+          completedAssignments: prize.completedAssignments,
+        }))
+        return {
+          totalCount: context.prizes.length,
+          items,
+          truncated: context.prizes.length > items.length,
+          inspectUrl: manageHref(
+            context.hackathon.slug,
+            "tab=judging&jtab=prizes",
+          ),
+        }
+      },
+    }),
+    defineWebMcpTool({
       name: "open_hackathon_section",
       title: "Open hackathon section",
       description:
-        "Open a section of the current hackathon manager so the organizer can inspect it. This does not change saved data.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          section: {
-            type: "string",
-            enum: Object.keys(sectionParams),
-            description: "The organizer section to open.",
-          },
-        },
-        required: ["section"],
-        additionalProperties: false,
-      },
+        "Open one organizer section for review. This doesn't change saved event data.",
+      schema: sectionInput,
       annotations: { readOnlyHint: true },
-      execute: async (rawInput) => {
-        const { section } = parseInput(sectionInput, rawInput)
-        const url = manageHref(hackathon.slug, sectionParams[section])
-        onNavigate(url)
+      execute: ({ section }) => {
+        const slug = dependencies.getContext().hackathon.slug
+        const url = manageHref(slug, sectionParams[section])
+        dependencies.onNavigate(url)
         return { opened: section, url }
       },
-    },
+    }),
   ]
 }
 
-function createDraftWriteTools({
-  context,
-  fetcher,
-  onChanged,
-}: ManageHackathonToolDependencies): WebMcpTool[] {
-  const { hackathon } = context
-  const settingsUrl = `/api/dashboard/hackathons/${hackathon.id}/settings`
-
+function createOrganizerWriteTools(
+  dependencies: ManageHackathonToolDependencies,
+): WebMcpTool[] {
   return [
-    {
+    defineWebMcpTool({
       name: "update_hackathon_details",
       title: "Update hackathon details",
       description:
-        "Update the current draft hackathon's name or description. This does not publish it. Existing integrations may receive the same update notice sent by the editor.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          name: { type: "string", minLength: 1, maxLength: 200 },
-          description: {
-            anyOf: [{ type: "string", maxLength: 10_000 }, { type: "null" }],
-          },
-        },
-        anyOf: [{ required: ["name"] }, { required: ["description"] }],
-        additionalProperties: false,
-      },
+        "Save a new name or description before the event is completed. This doesn't publish or change its status.",
+      schema: updateDetailsInput,
       annotations: { untrustedContentHint: true },
-      execute: async (rawInput, { signal }) => {
-        const input = parseInput(updateDetailsInput, rawInput)
-        const updated = await sendJson<{
-          id: string
+      execute: async (input, { signal }) => {
+        const context = getPreCompletionContext(dependencies)
+        const inspectUrl = manageHref(context.hackathon.slug, "tab=edit")
+        const mutationId = createMutationId("details")
+        const optimistic: ManageWebMcpOptimisticChange = {
+          mutationId,
+          kind: "details",
+          href: inspectUrl,
+          summary: "Updating the event details",
+          patch: input,
+        }
+        const updated = await sendMutation<{
           name: string
           slug: string
           description: string | null
           status: string
-        }>(
-          fetcher,
-          settingsUrl,
-          "PATCH",
-          {
+        }>(dependencies, {
+          context,
+          url: `/api/dashboard/hackathons/${context.hackathon.id}/settings`,
+          method: "PATCH",
+          body: {
             ...input,
-            ...(hackathon.locale ? { locale: hackathon.locale } : {}),
+            ...(context.hackathon.locale
+              ? { locale: context.hackathon.locale }
+              : {}),
           },
           signal,
-        )
-        const inspectUrl = manageHref(hackathon.slug, "tab=edit")
-        onChanged(inspectUrl)
+          optimistic,
+          toCommitted: (result) => ({
+            mutationId,
+            kind: "details",
+            details: {
+              name: result.name,
+              description: result.description,
+            },
+          }),
+        })
         return {
           updated: {
-            name: updated.name,
+            name: clip(updated.name, 200),
             slug: updated.slug,
-            description: updated.description,
+            description: clip(updated.description, 400),
             status: updated.status,
           },
           inspectUrl,
         }
       },
-    },
-    {
+    }),
+    defineWebMcpTool({
       name: "set_hackathon_timeline",
       title: "Set hackathon timeline",
       description:
-        "Set the current draft hackathon's start and end. Changing the start also moves registration close to that time and reschedules existing reminders. This does not publish the hackathon.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          startsAt: { type: "string", format: "date-time", maxLength: 64 },
-          endsAt: { type: "string", format: "date-time", maxLength: 64 },
-        },
-        required: ["startsAt", "endsAt"],
-        additionalProperties: false,
-      },
+        "Set the draft event's start and end. Draft reminders stay off until the event goes live.",
+      schema: timelineInput,
       annotations: { untrustedContentHint: true },
-      execute: async (rawInput, { signal }) => {
-        const input = parseInput(timelineInput, rawInput)
-        const updated = await sendJson<{
-          id: string
+      execute: async (input, { signal }) => {
+        const context = getDraftContext(dependencies)
+        const inspectUrl = manageHref(context.hackathon.slug, "tab=overview")
+        const mutationId = createMutationId("timeline")
+        const optimistic: ManageWebMcpOptimisticChange = {
+          mutationId,
+          kind: "timeline",
+          href: inspectUrl,
+          summary: "Updating the event dates",
+          timeline: input,
+        }
+        const updated = await sendMutation<{
           name: string
           startsAt: string | null
           endsAt: string | null
-          registrationClosesAt: string | null
-        }>(fetcher, settingsUrl, "PATCH", input, signal)
-        const inspectUrl = manageHref(hackathon.slug, "tab=overview")
-        onChanged(inspectUrl)
+        }>(dependencies, {
+          context,
+          url: `/api/dashboard/hackathons/${context.hackathon.id}/settings`,
+          method: "PATCH",
+          body: input,
+          signal,
+          optimistic,
+          toCommitted: (result) => ({
+            mutationId,
+            kind: "timeline",
+            timeline: {
+              startsAt: result.startsAt,
+              endsAt: result.endsAt,
+            },
+          }),
+        })
         return {
           updated: {
-            name: updated.name,
+            name: clip(updated.name, 200),
             startsAt: updated.startsAt,
             endsAt: updated.endsAt,
-            registrationClosesAt: updated.registrationClosesAt,
           },
           inspectUrl,
         }
       },
-    },
-    {
+    }),
+    defineWebMcpTool({
       name: "add_schedule_item",
       title: "Add schedule item",
       description:
-        "Add one ordinary item to the current draft hackathon's schedule. This does not create a deadline, release a challenge, or publish the hackathon.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          title: { type: "string", minLength: 1, maxLength: 200 },
-          description: { type: "string", maxLength: 5_000 },
-          startsAt: { type: "string", format: "date-time", maxLength: 64 },
-          endsAt: { type: "string", format: "date-time", maxLength: 64 },
-          location: { type: "string", maxLength: 500 },
-        },
-        required: ["title", "startsAt"],
-        additionalProperties: false,
-      },
+        "Add one ordinary schedule item before completion. This can't create a deadline or publish the event.",
+      schema: scheduleItemInput,
       annotations: { untrustedContentHint: true },
-      execute: async (rawInput, { signal }) => {
-        const input = parseInput(scheduleItemInput, rawInput)
-        const scheduleItem = await sendJson<{
-          id: string
-          title: string
-          description: string | null
-          starts_at: string
-          ends_at: string | null
-          location: string | null
-        }>(
-          fetcher,
-          `/api/dashboard/hackathons/${hackathon.id}/schedule`,
-          "POST",
-          input,
+      execute: async (input, { signal }) => {
+        const context = getPreCompletionContext(dependencies)
+        const inspectUrl = manageHref(context.hackathon.slug, "tab=overview")
+        const mutationId = createMutationId("schedule")
+        const createdAt = new Date().toISOString()
+        const optimistic: ManageWebMcpOptimisticChange = {
+          mutationId,
+          kind: "schedule",
+          href: inspectUrl,
+          summary: `Adding ${input.title} to the schedule`,
+          item: {
+            id: mutationId,
+            hackathon_id: context.hackathon.id,
+            title: input.title,
+            description: input.description ?? null,
+            starts_at: input.startsAt,
+            ends_at: input.endsAt ?? null,
+            location: input.location ?? null,
+            sort_order: context.scheduleItems.length,
+            trigger_type: null,
+            linked_to: null,
+            created_at: createdAt,
+            updated_at: createdAt,
+          },
+        }
+        const item = await sendMutation<ScheduleItem>(dependencies, {
+          context,
+          url: `/api/dashboard/hackathons/${context.hackathon.id}/schedule`,
+          method: "POST",
+          body: input,
           signal,
-        )
-        const inspectUrl = manageHref(hackathon.slug, "tab=overview")
-        onChanged(inspectUrl)
+          optimistic,
+          toCommitted: (result) => ({
+            mutationId,
+            kind: "schedule",
+            item: result,
+          }),
+        })
         return {
           scheduleItem: {
-            title: scheduleItem.title,
-            description: scheduleItem.description,
-            startsAt: scheduleItem.starts_at,
-            endsAt: scheduleItem.ends_at,
-            location: scheduleItem.location,
+            title: clip(item.title, 200),
+            description: clip(item.description, 240),
+            startsAt: item.starts_at,
+            endsAt: item.ends_at,
+            location: clip(item.location, 160),
           },
           inspectUrl,
         }
       },
-    },
-    {
+    }),
+    defineWebMcpTool({
       name: "add_challenge",
       title: "Add challenge",
       description:
-        "Add one challenge to the current draft hackathon. This does not release the challenge or publish the hackathon.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          title: { type: "string", minLength: 1, maxLength: 200 },
-          description: { type: "string", maxLength: 10_000 },
-        },
-        required: ["title"],
-        additionalProperties: false,
-      },
+        "Add one challenge to the draft event. This doesn't release it or notify attendees.",
+      schema: challengeInput,
       annotations: { untrustedContentHint: true },
-      execute: async (rawInput, { signal }) => {
-        const input = parseInput(challengeInput, rawInput)
-        const result = await sendJson<{
+      execute: async (input, { signal }) => {
+        const context = getDraftContext(dependencies)
+        const inspectUrl = manageHref(context.hackathon.slug, "tab=challenges")
+        const mutationId = createMutationId("challenge")
+        const createdAt = new Date().toISOString()
+        const optimistic: ManageWebMcpOptimisticChange = {
+          mutationId,
+          kind: "challenge",
+          href: inspectUrl,
+          summary: `Adding the ${input.title} challenge`,
           challenge: {
-            id: string
-            title: string
-            description: string | null
-          }
-        }>(
-          fetcher,
-          `/api/dashboard/hackathons/${hackathon.id}/challenges`,
-          "POST",
-          input,
+            id: mutationId,
+            hackathonId: context.hackathon.id,
+            title: input.title,
+            description: input.description ?? null,
+            resources: [],
+            sortOrder: context.challenges.length,
+            createdAt,
+            updatedAt: createdAt,
+          },
+        }
+        const result = await sendMutation<{
+          challenge: Challenge
+        }>(dependencies, {
+          context,
+          url: `/api/dashboard/hackathons/${context.hackathon.id}/challenges`,
+          method: "POST",
+          body: input,
           signal,
-        )
-        const inspectUrl = manageHref(hackathon.slug, "tab=challenges")
-        onChanged(inspectUrl)
+          optimistic,
+          toCommitted: (response) => ({
+            mutationId,
+            kind: "challenge",
+            challenge: response.challenge,
+          }),
+        })
         return {
           challenge: {
-            title: result.challenge.title,
-            description: result.challenge.description,
+            title: clip(result.challenge.title, 200),
+            description: clip(result.challenge.description, 240),
           },
           inspectUrl,
         }
       },
-    },
-    {
+    }),
+    defineWebMcpTool({
       name: "add_prize",
       title: "Add prize",
       description:
-        "Add one prize to the current draft hackathon. Judging defaults to judges picking projects. This does not assign judges, pick a winner, or publish the hackathon.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          name: { type: "string", minLength: 1, maxLength: 200 },
-          description: { type: "string", maxLength: 5_000 },
-          value: { type: "string", maxLength: 200 },
-          judgingStyle: {
-            type: "string",
-            enum: ["judges_pick", "bucket_sort", "crowd_vote"],
-          },
-          maxPicks: { type: "integer", minimum: 1, maximum: 100 },
-        },
-        required: ["name"],
-        additionalProperties: false,
-      },
+        "Add one prize to the draft event. This doesn't assign judges, pick winners, or publish results.",
+      schema: prizeInput,
       annotations: { untrustedContentHint: true },
-      execute: async (rawInput, { signal }) => {
-        const input = parseInput(prizeInput, rawInput)
-        const result = await sendJson<{
-          prize: {
-            id: string
-            name: string
-            description: string | null
-            value: string | null
-            judging_style: string | null
-          }
-        }>(
-          fetcher,
-          `/api/dashboard/hackathons/${hackathon.id}/prizes`,
-          "POST",
-          { ...input, judgingStyle: input.judgingStyle ?? "judges_pick" },
-          signal,
-        )
+      execute: async (input, { signal }) => {
+        const context = getDraftContext(dependencies)
         const inspectUrl = manageHref(
-          hackathon.slug,
+          context.hackathon.slug,
           "tab=judging&jtab=prizes",
         )
-        onChanged(inspectUrl)
+        const mutationId = createMutationId("prize")
+        const createdAt = new Date().toISOString()
+        const judgingStyle = input.judgingStyle ?? "judges_pick"
+        const optimistic: ManageWebMcpOptimisticChange = {
+          mutationId,
+          kind: "prize",
+          href: inspectUrl,
+          summary: `Adding the ${input.name} prize`,
+          prize: {
+            id: mutationId,
+            hackathon_id: context.hackathon.id,
+            name: input.name,
+            description: input.description ?? null,
+            value: input.value ?? null,
+            type: judgingStyle === "crowd_vote" ? "crowd" : "favorite",
+            rank: null,
+            kind: "prize",
+            monetary_value: null,
+            currency: null,
+            distribution_method: null,
+            display_value: null,
+            criteria_id: null,
+            prize_track_id: null,
+            judging_style: judgingStyle,
+            round_id: null,
+            assignment_mode: "organizer_assigned",
+            max_picks: input.maxPicks ?? 3,
+            is_screening: false,
+            allowed_team_modes: null,
+            display_order: context.prizes.length,
+            created_at: createdAt,
+            updated_at: createdAt,
+          },
+        }
+        const result = await sendMutation<{
+          prize: Prize
+        }>(dependencies, {
+          context,
+          url: `/api/dashboard/hackathons/${context.hackathon.id}/prizes`,
+          method: "POST",
+          body: {
+            ...input,
+            judgingStyle,
+          },
+          signal,
+          optimistic,
+          toCommitted: (response) => ({
+            mutationId,
+            kind: "prize",
+            prize: response.prize,
+          }),
+        })
         return {
           prize: {
-            name: result.prize.name,
-            description: result.prize.description,
-            value: result.prize.value,
+            name: clip(result.prize.name, 200),
+            description: clip(result.prize.description, 240),
+            value: clip(result.prize.value, 120),
             judgingStyle: result.prize.judging_style,
           },
           inspectUrl,
         }
       },
-    },
+    }),
+    defineWebMcpTool({
+      name: "open_go_live_review",
+      title: "Review going live",
+      description:
+        "Open the event's go-live review. The organizer must check it and click the final button.",
+      schema: emptyInput,
+      annotations: { readOnlyHint: true },
+      execute: () => {
+        const context = getDraftContext(dependencies)
+        dependencies.onOpenTransition("published")
+        return {
+          data: {
+            status: "review_opened",
+            eventUrl: `/e/${context.hackathon.slug}`,
+          },
+          requiresHumanAction: true,
+        }
+      },
+    }),
   ]
+}
+
+function createAnnouncementTool(
+  dependencies: ManageHackathonToolDependencies,
+): WebMcpTool {
+  return defineWebMcpTool({
+    name: "draft_announcement",
+    title: "Draft announcement",
+    description:
+      "Save an announcement draft for organizer review. This doesn't publish or send it.",
+    schema: announcementInput,
+    annotations: { untrustedContentHint: true },
+    execute: async (input, { signal }) => {
+      const context = dependencies.getContext()
+      if (context.hackathon.status === "archived") {
+        throw new WebMcpRequestError({
+          code: "event_changed",
+          message: "Archived events can't add announcement drafts.",
+          retryable: false,
+        })
+      }
+      const inspectUrl = manageHref(context.hackathon.slug, "tab=event")
+      const mutationId = createMutationId("announcement")
+      const createdAt = new Date().toISOString()
+      const optimistic: ManageWebMcpOptimisticChange = {
+        mutationId,
+        kind: "announcement",
+        href: inspectUrl,
+        summary: `Drafting the ${input.title} announcement`,
+        announcement: {
+          id: mutationId,
+          hackathon_id: context.hackathon.id,
+          title: input.title,
+          body: input.body,
+          priority: input.priority ?? "normal",
+          audience: input.audience ?? "everyone",
+          published_at: null,
+          created_at: createdAt,
+          updated_at: createdAt,
+        },
+      }
+      const result = await sendMutation<Announcement>(dependencies, {
+        context,
+        url: `/api/dashboard/hackathons/${context.hackathon.id}/announcements`,
+        method: "POST",
+        body: input,
+        signal,
+        optimistic,
+        toCommitted: (announcement) => ({
+          mutationId,
+          kind: "announcement",
+          announcement,
+        }),
+      })
+      return {
+        data: {
+          announcement: {
+            title: clip(result.title, 200),
+            body: clip(result.body, 400),
+            priority: result.priority,
+            audience: result.audience,
+            published: result.published_at !== null,
+          },
+          inspectUrl,
+        },
+        requiresHumanAction: true,
+      }
+    },
+  })
+}
+
+function createPublishReviewTool(
+  dependencies: ManageHackathonToolDependencies,
+): WebMcpTool {
+  return defineWebMcpTool({
+    name: "open_publish_review",
+    title: "Review publishing results",
+    description:
+      "Open results for review. The organizer must check winners and click the final publish button.",
+    schema: emptyInput,
+    annotations: { readOnlyHint: true },
+    execute: () => {
+      const slug = dependencies.getContext().hackathon.slug
+      const url = manageHref(slug, "tab=judging&jtab=results")
+      dependencies.onNavigate(url)
+      return {
+        data: { status: "review_opened", url },
+        requiresHumanAction: true,
+      }
+    },
+  })
 }
 
 export function createManageHackathonTools(
   dependencies: ManageHackathonToolDependencies,
+  registrationStatus = dependencies.getContext().hackathon.status,
 ): WebMcpTool[] {
-  const readTools = createReadTools(
-    dependencies.context,
-    dependencies.onNavigate,
-  )
-  if (dependencies.context.hackathon.status !== "draft") return readTools
-  return [...readTools, ...createDraftWriteTools(dependencies)]
+  const tools = createReadTools(dependencies)
+  if (
+    WEBMCP_PRE_COMPLETION_STATUSES.some(
+      (allowed) => allowed === registrationStatus,
+    )
+  ) {
+    tools.push(
+      ...createOrganizerWriteTools(dependencies).filter(
+        (tool) =>
+          registrationStatus === "draft" || !draftOnlyToolNames.has(tool.name),
+      ),
+    )
+  }
+  if (registrationStatus !== "archived") {
+    tools.push(createAnnouncementTool(dependencies))
+  }
+  if (
+    registrationStatus === "judging" ||
+    registrationStatus === "completed"
+  ) {
+    tools.push(createPublishReviewTool(dependencies))
+  }
+  return tools
 }

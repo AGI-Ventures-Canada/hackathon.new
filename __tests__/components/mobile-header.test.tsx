@@ -60,7 +60,7 @@ beforeEach(() => {
   resetClerkState()
   clerkState.user = {
     id: "user_123",
-    fullName: "Alex Ivany",
+    fullName: "Jordan Lee",
     firstName: "Alex",
     imageUrl: null,
   }
@@ -118,7 +118,7 @@ describe("MobileHeader", () => {
     it("shows user image when imageUrl is provided", () => {
       clerkState.user = { ...clerkState.user!, imageUrl: "https://example.com/avatar.png" }
       render(<MobileHeader />)
-      const img = screen.getByAltText("Alex Ivany")
+      const img = screen.getByAltText("Jordan Lee")
       expect(img.getAttribute("src")).toBe("https://example.com/avatar.png")
     })
 
@@ -237,6 +237,7 @@ describe("MobileHeader", () => {
       clerkState.organization = { id: "org_1", name: "Test Org", imageUrl: null }
       clerkState.memberships = [
         {
+          role: "org:admin",
           organization: { id: "org_1", name: "Test Org", imageUrl: null },
         },
         {

@@ -387,6 +387,115 @@ describe("Schedules Service", () => {
       expect(createJob).not.toHaveBeenCalled()
       expect(startJobWorkflow).not.toHaveBeenCalled()
     })
+
+    it("restores a one-time schedule when its workflow does not start", async () => {
+      const dueSchedule = {
+        id: "schedule-1",
+        tenant_id: "tenant-1",
+        job_type: "echo",
+        frequency: "once",
+        cron_expression: null,
+        timezone: "UTC",
+        run_time: "09:00",
+        input: null,
+        is_active: true,
+        next_run_at: "2026-08-21T09:00:00.000Z",
+        last_run_at: null,
+        run_count: 0,
+      } as Schedule
+      const claimedSchedule = {
+        ...dueSchedule,
+        is_active: false,
+        next_run_at: null,
+        last_run_at: "2026-08-21T09:00:01.000Z",
+        run_count: 1,
+      }
+      const job = {
+        id: "job-1",
+        tenant_id: "tenant-1",
+        type: "echo",
+        input: null,
+        status_cache: "queued",
+        workflow_run_id: null,
+      } as Job
+      const listChain = createChainableMock({ data: [dueSchedule], error: null })
+      const claimChain = createChainableMock({ data: claimedSchedule, error: null })
+      const restoreChain = createChainableMock({ data: { id: dueSchedule.id }, error: null })
+      let scheduleQueryCount = 0
+      setMockFromImplementation(() => {
+        const chain = [listChain, claimChain, restoreChain][scheduleQueryCount]
+        scheduleQueryCount += 1
+        return chain ?? createChainableMock({ data: null, error: null })
+      })
+      const createJob = mock(() => Promise.resolve(job))
+      const startJobWorkflow = mock(() => Promise.resolve(null))
+
+      expect(await processDueSchedules({ createJob, startJobWorkflow })).toEqual({
+        found: 1,
+        started: 0,
+        failed: 1,
+      })
+      expect(restoreChain.update).toHaveBeenCalledWith(expect.objectContaining({
+        is_active: true,
+        last_run_at: null,
+        next_run_at: dueSchedule.next_run_at,
+        run_count: 0,
+      }))
+      expect(restoreChain.eq).toHaveBeenCalledWith("run_count", 1)
+      expect(restoreChain.eq).toHaveBeenCalledWith("is_active", false)
+      expect(restoreChain.is).toHaveBeenCalledWith("next_run_at", null)
+    })
+
+    it("restores a claimed schedule when job creation throws", async () => {
+      const dueSchedule = {
+        id: "schedule-1",
+        tenant_id: "tenant-1",
+        job_type: "echo",
+        frequency: "daily",
+        cron_expression: null,
+        timezone: "UTC",
+        run_time: "09:00",
+        input: null,
+        is_active: true,
+        next_run_at: "2026-08-21T09:00:00.000Z",
+        last_run_at: null,
+        run_count: 0,
+      } as Schedule
+      const claimedSchedule = {
+        ...dueSchedule,
+        next_run_at: "2026-08-22T09:00:00.000Z",
+        last_run_at: "2026-08-21T09:00:01.000Z",
+        run_count: 1,
+      }
+      const responses = [
+        createChainableMock({ data: [dueSchedule], error: null }),
+        createChainableMock({ data: claimedSchedule, error: null }),
+        createChainableMock({ data: { id: dueSchedule.id }, error: null }),
+      ]
+      let scheduleQueryCount = 0
+      setMockFromImplementation(() => responses[scheduleQueryCount++]!)
+      const createJob = mock(() => Promise.reject(new Error("jobs unavailable")))
+      const startJobWorkflow = mock(() => Promise.resolve(null))
+
+      expect(await processDueSchedules({ createJob, startJobWorkflow })).toEqual({
+        found: 1,
+        started: 0,
+        failed: 1,
+      })
+      expect(startJobWorkflow).not.toHaveBeenCalled()
+    })
+
+    it("surfaces a due-schedule query failure to the cron route", async () => {
+      setMockFromImplementation(() => createChainableMock({
+        data: null,
+        error: { message: "database unavailable" },
+      }))
+
+      await expect(processDueSchedules({
+        createJob: mock(() => Promise.resolve(null)),
+        startJobWorkflow: mock(() => Promise.resolve(null)),
+      })).rejects.toThrow("Failed to fetch due schedules: database unavailable")
+    })
   })
 
   describe("Schedule Input Validation", () => {

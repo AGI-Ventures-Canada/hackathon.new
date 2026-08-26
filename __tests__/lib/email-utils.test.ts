@@ -1,12 +1,50 @@
-import { describe, it, expect, afterEach } from "bun:test"
+import { describe, it, expect, afterEach, mock } from "bun:test"
 import {
   extractEmailAddress,
   formatFromAddress,
   formatTimeLeft,
   shortHackathonName,
+  buildUnsubscribeHeaders,
   buildMailtoUnsubscribeHeaders,
   htmlToPlainText,
+  paceBulkSend,
+  sanitizeTag,
 } from "@/lib/email/utils"
+
+describe("sanitizeTag", () => {
+  it("returns a provider-safe fallback for names with no ASCII tag characters", () => {
+    expect(sanitizeTag("🔥 🎉")).toBe("event")
+  })
+
+  it("trims replacement underscores from the ends", () => {
+    expect(sanitizeTag("  Demo Day  ")).toBe("Demo_Day")
+  })
+})
+
+describe("paceBulkSend", () => {
+  it("pauses for one second after each group of eight sends", async () => {
+    const waits: number[] = []
+    const wait = async (milliseconds: number) => {
+      waits.push(milliseconds)
+    }
+
+    for (let index = 0; index <= 16; index += 1) {
+      await paceBulkSend(index, wait)
+    }
+
+    expect(waits).toEqual([1_000, 1_000])
+  })
+
+  it("does not pause within the first group", async () => {
+    const wait = mock(() => Promise.resolve())
+
+    for (let index = 0; index < 8; index += 1) {
+      await paceBulkSend(index, wait)
+    }
+
+    expect(wait).not.toHaveBeenCalled()
+  })
+})
 
 describe("formatTimeLeft", () => {
   it("returns days for time more than 24 hours away", () => {
@@ -193,6 +231,27 @@ describe("buildMailtoUnsubscribeHeaders", () => {
     expect(buildMailtoUnsubscribeHeaders()).toBeUndefined()
     process.env.RESEND_REPLY_TO_EMAIL = "not-an-email"
     expect(buildMailtoUnsubscribeHeaders()).toBeUndefined()
+  })
+})
+
+describe("buildUnsubscribeHeaders", () => {
+  const originalReplyTo = process.env.RESEND_REPLY_TO_EMAIL
+  const originalFrom = process.env.RESEND_FROM_EMAIL
+
+  afterEach(() => {
+    if (originalReplyTo === undefined) delete process.env.RESEND_REPLY_TO_EMAIL
+    else process.env.RESEND_REPLY_TO_EMAIL = originalReplyTo
+    if (originalFrom === undefined) delete process.env.RESEND_FROM_EMAIL
+    else process.env.RESEND_FROM_EMAIL = originalFrom
+  })
+
+  it("extracts a bare reply-to address for the one-click header", () => {
+    process.env.RESEND_REPLY_TO_EMAIL = "Oatmeal Support <support@hackathon.new>"
+    expect(buildUnsubscribeHeaders("https://hackathon.new/unsubscribe/one")).toEqual({
+      "List-Unsubscribe":
+        "<https://hackathon.new/unsubscribe/one>, <mailto:support@hackathon.new?subject=unsubscribe>",
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    })
   })
 })
 

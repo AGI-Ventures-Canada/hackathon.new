@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, mock } from "bun:test"
-import { cleanup, renderHook, waitFor } from "@testing-library/react"
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react"
 import {
   registerWebMcpTools,
   useWebMcpTools,
@@ -97,5 +97,65 @@ describe("useWebMcpTools", () => {
     expect(calls[0].signal.aborted).toBe(true)
     expect(calls[1]).toMatchObject({ name: "second_tool" })
     expect(calls[1].signal.aborted).toBe(false)
+  })
+
+  it("aborts the whole registration batch and reports an active failure", async () => {
+    const error = new Error("registration failed")
+    const signals: AbortSignal[] = []
+    const originalConsoleError = console.error
+    const consoleError = mock(() => {})
+    console.error = consoleError
+    document.modelContext = {
+      registerTool: mock(async (_tool, options) => {
+        if (options?.signal) signals.push(options.signal)
+        throw error
+      }),
+    }
+
+    try {
+      renderHook(() => useWebMcpTools([firstTool]))
+
+      await waitFor(() => expect(consoleError).toHaveBeenCalledTimes(1))
+      expect(signals).toHaveLength(1)
+      expect(signals[0].aborted).toBe(true)
+      expect(consoleError).toHaveBeenCalledWith(
+        "Failed to register WebMCP tools",
+        error,
+      )
+    } finally {
+      console.error = originalConsoleError
+    }
+  })
+
+  it("does not report a late registration failure after unmount", async () => {
+    let rejectRegistration: ((error: Error) => void) | undefined
+    const signals: AbortSignal[] = []
+    const originalConsoleError = console.error
+    const consoleError = mock(() => {})
+    console.error = consoleError
+    document.modelContext = {
+      registerTool: mock((_tool, options) => {
+        if (options?.signal) signals.push(options.signal)
+        return new Promise<void>((_resolve, reject) => {
+          rejectRegistration = reject
+        })
+      }),
+    }
+
+    try {
+      const { unmount } = renderHook(() => useWebMcpTools([firstTool]))
+      await waitFor(() => expect(signals).toHaveLength(1))
+
+      unmount()
+      await act(async () => {
+        rejectRegistration?.(new Error("late failure"))
+        await Promise.resolve()
+      })
+
+      expect(signals[0].aborted).toBe(true)
+      expect(consoleError).not.toHaveBeenCalled()
+    } finally {
+      console.error = originalConsoleError
+    }
   })
 })

@@ -1,5 +1,6 @@
 import { describe, expect, it, mock, beforeEach } from "bun:test"
 import { Elysia } from "elysia"
+import { resetSupabaseMocks } from "../lib/supabase-mock"
 
 const mockCheckHackathonOrganizer = mock(() =>
   Promise.resolve({ status: "ok", hackathon: { id: "h1" } })
@@ -114,6 +115,7 @@ mock.module("@/lib/utils/timeline", () => ({
 }))
 
 mock.module("@/lib/utils/url", () => ({
+  isSafeExternalUrl: mock(() => true),
   normalizeOptionalUrl: mock((url: string | undefined) => url),
   normalizeUrl: mock((url: string) => url),
 }))
@@ -220,6 +222,7 @@ const mockHackathonResponse = {
   description: null,
   rules: null,
   banner_url: null,
+  status: "published",
   starts_at: null,
   ends_at: null,
   registration_opens_at: null,
@@ -240,6 +243,7 @@ const mockHackathonResponse = {
 
 describe("PATCH /api/dashboard/hackathons/:id/settings - status change emails", () => {
   beforeEach(() => {
+    resetSupabaseMocks()
     mockResolvePrincipal.mockClear()
     mockCheckHackathonOrganizer.mockClear()
     mockGetHackathonByIdForOrganizer.mockClear()
@@ -256,7 +260,10 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - status change emails", 
     mockSendJudgeNotification.mockClear()
 
     mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
-    mockExecuteTransition.mockResolvedValue({ success: true, hackathon: { id: "h1" } })
+    mockExecuteTransition.mockResolvedValue({
+      success: true,
+      hackathon: mockHackathonResponse,
+    })
     mockGetJudgingSetupStatus.mockResolvedValue({ isReady: true, issues: [] })
     mockWorkflowStart.mockResolvedValue({ runId: "run_1" })
     mockFetchPendingNotifications.mockResolvedValue([])
@@ -274,15 +281,14 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - status change emails", 
 
     await Promise.resolve()
 
-    expect(mockUpdateHackathonSettings).toHaveBeenCalledWith(
-      "h1",
-      "tenant-123",
+    expect(mockUpdateHackathonSettings).not.toHaveBeenCalled()
+    expect(mockExecuteTransition).toHaveBeenCalledTimes(1)
+    expect(mockExecuteTransition).toHaveBeenCalledWith(
       expect.objectContaining({
         registrationOpensAt: expect.any(String),
         registrationClosesAt: expect.any(String),
       }),
     )
-    expect(mockExecuteTransition).toHaveBeenCalledTimes(1)
     expect(mockSendPendingJudgeInvitationEmails).toHaveBeenCalledTimes(1)
     expect(mockSendPendingJudgeInvitationEmails).toHaveBeenCalledWith(
       "h1",
@@ -372,6 +378,28 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - status change emails", 
 
     expect(mockUpdateHackathonSettings).not.toHaveBeenCalled()
     expect(mockExecuteTransition).toHaveBeenCalledTimes(1)
+  })
+
+  it("returns a stable conflict when another event mutation owns the transition lease", async () => {
+    mockCheckHackathonOrganizer.mockResolvedValue({
+      status: "ok",
+      hackathon: { ...mockHackathonResponse, status: "draft" },
+    })
+    mockExecuteTransition.mockResolvedValue({
+      success: false,
+      error: "Another event change is still being saved.",
+      code: "event_busy",
+    })
+
+    const res = await patchSettings({ status: "published" })
+
+    expect(res.status).toBe(409)
+    expect(await res.json()).toEqual({
+      error: "Another event change is still being saved.",
+      code: "event_busy",
+    })
+    expect(mockUpdateHackathonSettings).not.toHaveBeenCalled()
+    expect(mockSendPendingJudgeInvitationEmails).not.toHaveBeenCalled()
   })
 
   it("blocks judging until scoring setup is complete", async () => {

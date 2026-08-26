@@ -2,6 +2,7 @@ import type { Json } from "@/lib/db/types"
 
 export const SUBMISSION_SCREENSHOT_SLOTS = [0, 1] as const
 export const MAX_SUBMISSION_SCREENSHOTS = SUBMISSION_SCREENSHOT_SLOTS.length
+export const MAX_SUBMISSION_SCREENSHOT_REQUEST_BYTES = 4 * 1024 * 1024
 
 export type SubmissionScreenshotSlot = (typeof SUBMISSION_SCREENSHOT_SLOTS)[number]
 

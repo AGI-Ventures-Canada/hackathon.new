@@ -8,6 +8,7 @@ import type {
   HackathonStatus,
   TenantProfile,
   Submission,
+  TeamStatus,
 } from "@/lib/db/hackathon-types";
 import { RegistrationButton } from "./registration-button";
 import { SubmissionButton } from "./submission-button";
@@ -35,6 +36,7 @@ interface RegistrationProps {
   onRegistrationSuccess?: () => void;
   teamSizeWarning?: string | null;
   canSubmit?: boolean;
+  teamStatus?: TeamStatus | null;
 }
 
 interface EventHeroProps {
@@ -460,8 +462,9 @@ export function EventHero({
       ) : registrationProps && (
         <div className="flex flex-wrap items-center gap-2">
           {!hideRegistrationButton && !isRegistered && (
-            <Suspense>
-              <RegistrationButton
+            <div data-webmcp-registration>
+              <Suspense>
+                <RegistrationButton
                 hackathonSlug={registrationProps.hackathonSlug}
                 status={status}
                 startsAt={registrationProps.startsAt}
@@ -477,8 +480,9 @@ export function EventHero({
                 termsContent={registrationProps.termsContent}
                 termsHash={registrationProps.termsHash}
                 onRegistrationSuccess={registrationProps.onRegistrationSuccess}
-              />
-            </Suspense>
+                />
+              </Suspense>
+            </div>
           )}
           <SubmissionButton
             hackathonSlug={registrationProps.hackathonSlug}
@@ -487,6 +491,7 @@ export function EventHero({
             submission={registrationProps.submission ?? null}
             teamSizeWarning={registrationProps.teamSizeWarning}
             pendingTeamApproval={registrationProps.canSubmit === false}
+            teamStatus={registrationProps.teamStatus}
           />
           {tabsSlot}
         </div>

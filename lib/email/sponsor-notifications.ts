@@ -6,9 +6,15 @@ import {
   buildEventUrl,
   getReplyToAddress,
   buildMailtoUnsubscribeHeaders,
+  paceBulkSend,
   shortHackathonName,
 } from "./utils"
 import SponsorClaimNotificationEmail from "@/emails/sponsor-claim-notification"
+import { createHash } from "node:crypto"
+
+function recipientFingerprint(email: string): string {
+  return createHash("sha256").update(email.trim().toLowerCase()).digest("hex").slice(0, 24)
+}
 
 export async function sendSponsorClaimNotification(params: {
   prizeName: string
@@ -17,6 +23,7 @@ export async function sendSponsorClaimNotification(params: {
   sponsorTenantId: string
   hackathonSlug?: string
   prizeValue?: string | null
+  fulfillmentId?: string
 }): Promise<number> {
   const { prizeName, hackathonName, winnerName, sponsorTenantId, hackathonSlug, prizeValue } = params
   const { supabase: getSupabase } = await import("@/lib/db/client")
@@ -52,7 +59,9 @@ export async function sendSponsorClaimNotification(params: {
   const tag = sanitizeTag(hackathonName)
 
   let sent = 0
-  for (const email of emails) {
+  for (let index = 0; index < emails.length; index += 1) {
+    const email = emails[index]
+    await paceBulkSend(index)
     const result = await sendEmail({
       to: email,
       subject: `Winner claimed ${prizeName} — ${shortHackathonName(hackathonName)}`,
@@ -64,6 +73,9 @@ export async function sendSponsorClaimNotification(params: {
         { name: "type", value: "sponsor_claim_notification" },
         { name: "hackathon", value: tag },
       ],
+      idempotencyKey: params.fulfillmentId
+        ? `sponsor-claim/${params.fulfillmentId}/${recipientFingerprint(email)}`
+        : undefined,
     })
     if (result) sent++
   }

@@ -32,10 +32,13 @@ async function insertOrFetchTenant(
   value: string,
   name: string
 ): Promise<Tenant | null> {
+  const identity = column === "clerk_org_id"
+    ? { clerk_org_id: value }
+    : { clerk_user_id: value }
   const { data, error } = await getSupabase()
     .from("tenants")
     .upsert(
-      { [column]: value, name },
+      { ...identity, name },
       { onConflict: column, ignoreDuplicates: true }
     )
     .select()

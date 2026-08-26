@@ -128,9 +128,12 @@ This is a participant action. Team captains send invitations through the team ma
   "id": "inv_abc123",
   "email": "teammate@example.com",
   "expiresAt": "2026-03-25T00:00:00Z",
-  "emailSent": true
+  "queued": false,
+  "delivery": "sent"
 }
 ```
+
+`delivery` is `sent`, `queued`, or `failed`. `queued` means the event is still a draft and the email waits for go-live. `failed` means the invite was saved but email delivery could not be confirmed. The compatibility field `queued` is true only for draft invites.
 
 ## List Team Invitations
 

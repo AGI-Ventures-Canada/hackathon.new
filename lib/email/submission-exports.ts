@@ -10,6 +10,11 @@ import {
 import { formatFileSize } from "@/lib/utils/format"
 import SubmissionExportReadyEmail from "@/emails/submission-export-ready"
 import SubmissionExportFailedEmail from "@/emails/submission-export-failed"
+import { createHash } from "node:crypto"
+
+function recipientFingerprint(email: string): string {
+  return createHash("sha256").update(email.trim().toLowerCase()).digest("hex").slice(0, 24)
+}
 
 export type SendExportReadyEmailInput = {
   to: string
@@ -24,6 +29,7 @@ export type SendExportReadyEmailInput = {
 }
 
 export type SendExportFailedEmailInput = {
+  exportId?: string
   to: string
   recipientName: string | null
   hackathonName: string
@@ -73,6 +79,7 @@ export async function sendExportReadyEmail(
       { name: "type", value: "submission_export_ready" },
       { name: "hackathon", value: sanitizeTag(input.hackathonName) },
     ],
+    idempotencyKey: `submission-export-ready/${input.exportId}/${recipientFingerprint(input.to)}`,
   })
 
   return { success: result !== null }
@@ -110,6 +117,9 @@ export async function sendExportFailedEmail(
       { name: "type", value: "submission_export_failed" },
       { name: "hackathon", value: sanitizeTag(input.hackathonName) },
     ],
+    idempotencyKey: input.exportId
+      ? `submission-export-failed/${input.exportId}/${recipientFingerprint(input.to)}`
+      : undefined,
   })
 
   return { success: result !== null }

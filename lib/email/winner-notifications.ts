@@ -4,12 +4,23 @@ import {
   renderEmail,
   getReplyToAddress,
   buildMailtoUnsubscribeHeaders,
+  paceBulkSend,
   shortHackathonName,
 } from "./utils"
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { clerkClient } from "@clerk/nextjs/server"
 import WinnerNotificationEmail from "@/emails/winner-notification"
+import { createHash } from "node:crypto"
+import { getUnresolvedEmailDecision } from "@/lib/services/delivery-lease"
+
+function recipientFingerprint(email: string): string {
+  return createHash("sha256").update(email.trim().toLowerCase()).digest("hex").slice(0, 24)
+}
+
+function publicationFingerprint(publicationVersion: string): string {
+  return createHash("sha256").update(publicationVersion).digest("hex").slice(0, 24)
+}
 
 function ordinal(n: number): string {
   const s = ["th", "st", "nd", "rd"]
@@ -23,10 +34,11 @@ type WinnerPrize = {
   claimToken: string | null
 }
 
-export async function sendWinnerEmails(hackathonId: string): Promise<number> {
+export async function sendWinnerEmailsWithResult(
+  hackathonId: string,
+): Promise<{ attempted: number; sent: number; failed: number }> {
   if (!process.env.NEXT_PUBLIC_APP_URL) {
-    console.error("NEXT_PUBLIC_APP_URL not set, skipping winner emails")
-    return 0
+    throw new Error("NEXT_PUBLIC_APP_URL is required for winner emails.")
   }
 
   const client = getSupabase() as unknown as SupabaseClient
@@ -34,11 +46,18 @@ export async function sendWinnerEmails(hackathonId: string): Promise<number> {
 
   const { data: hackathon } = await client
     .from("hackathons")
-    .select("name, slug, starts_at, ends_at")
+    .select("name, slug, starts_at, ends_at, status, results_published_at, winner_emails_sent_at")
     .eq("id", hackathonId)
     .single()
 
-  if (!hackathon) return 0
+  if (!hackathon) throw new Error("The event was not found for winner emails.")
+  if (
+    hackathon.status !== "completed" ||
+    !hackathon.results_published_at ||
+    hackathon.winner_emails_sent_at
+  ) return { attempted: 0, sent: 0, failed: 0 }
+
+  const publicationKey = publicationFingerprint(hackathon.results_published_at)
 
   const { data: results } = await client
     .from("hackathon_results")
@@ -50,7 +69,9 @@ export async function sendWinnerEmails(hackathonId: string): Promise<number> {
     .lte("rank", 3)
     .order("rank")
 
-  if (!results || results.length === 0) return 0
+  if (!results || results.length === 0) {
+    throw new Error("Published results were not found for winner emails.")
+  }
 
   const submissionIds = results.map((r: Record<string, unknown>) => {
     const sub = r.submission as unknown as { id: string } | null
@@ -142,7 +163,7 @@ export async function sendWinnerEmails(hackathonId: string): Promise<number> {
   }
 
   const memberUserIds = Object.keys(submissionsByUser)
-  if (memberUserIds.length === 0) return 0
+  if (memberUserIds.length === 0) return { attempted: 0, sent: 0, failed: 0 }
 
   const clerk = await clerkClient()
   const tag = sanitizeTag(hackathon.name)
@@ -155,59 +176,97 @@ export async function sendWinnerEmails(hackathonId: string): Promise<number> {
     resolvedUsers.push(...page.data)
   }
 
-  const emailPromises = resolvedUsers
-    .flatMap((user) => {
-      const email = user.primaryEmailAddress?.emailAddress
-      if (!email) return []
-
-      const submissions = submissionsByUser[user.id]
-      if (!submissions || submissions.length === 0) return []
-
-      return submissions.map(async (info) => {
-        const prizes = (prizeMap[info.submissionId] ?? []).map((p) => ({
-          name: p.name,
-          value: p.value,
-          claimUrl: p.claimToken ? `${baseUrl}/prizes/claim/${p.claimToken}` : null,
-        }))
-
-        const firstClaimToken = (prizeMap[info.submissionId] ?? []).find((p) => p.claimToken)?.claimToken
-        const primaryClaimUrl = firstClaimToken ? `${baseUrl}/prizes/claim/${firstClaimToken}` : null
-
-        const { html, text } = await renderEmail(
-          WinnerNotificationEmail({
-            submissionTitle: info.title,
-            rank: ordinal(info.rank),
-            hackathonName: hackathon.name,
-            resultsUrl,
-            prizes,
-            primaryClaimUrl,
-            hackathonStartsAt: hackathon.starts_at,
-            hackathonEndsAt: hackathon.ends_at,
-          })
-        )
-
-        return sendEmail({
-          to: email,
-          subject: `${ordinal(info.rank)} Place — ${shortHackathonName(hackathon.name)} Results`,
-          html,
-          text,
-          replyTo: getReplyToAddress(),
-          headers: buildMailtoUnsubscribeHeaders(),
-          tags: [
-            { name: "type", value: "winner_notification" },
-            { name: "hackathon", value: tag },
-          ],
-        })
-      })
-    })
-
-  const settled = await Promise.allSettled(emailPromises)
-  const succeeded = settled.filter((r) => r.status === "fulfilled" && r.value !== null).length
-  const failed = settled.length - succeeded
-  if (failed > 0) {
-    console.error(`Winner emails: ${succeeded} sent, ${failed} failed for hackathon ${hackathonId}`)
+  const resolvedUsersById = new Map(resolvedUsers.map((user) => [user.id, user]))
+  const emailTasks: Array<{
+    email: string
+    info: { title: string; rank: number; submissionId: string }
+  }> = []
+  let unresolved = 0
+  for (const userId of memberUserIds) {
+    const submissions = submissionsByUser[userId] ?? []
+    const email = resolvedUsersById.get(userId)?.primaryEmailAddress?.emailAddress
+    if (!email) {
+      unresolved += submissions.length
+      continue
+    }
+    emailTasks.push(...submissions.map((info) => ({ email, info })))
   }
-  return succeeded
+
+  let attempted = 0
+  let sent = 0
+  let failed = 0
+
+  for (let index = 0; index < emailTasks.length; index += 1) {
+    await paceBulkSend(index)
+    const { email, info } = emailTasks[index]
+    attempted++
+
+    try {
+      const prizes = (prizeMap[info.submissionId] ?? []).map((p) => ({
+        name: p.name,
+        value: p.value,
+        claimUrl: p.claimToken ? `${baseUrl}/prizes/claim/${p.claimToken}` : null,
+      }))
+
+      const firstClaimToken = (prizeMap[info.submissionId] ?? []).find((p) => p.claimToken)?.claimToken
+      const primaryClaimUrl = firstClaimToken ? `${baseUrl}/prizes/claim/${firstClaimToken}` : null
+
+      const { html, text } = await renderEmail(
+        WinnerNotificationEmail({
+          submissionTitle: info.title,
+          rank: ordinal(info.rank),
+          hackathonName: hackathon.name,
+          resultsUrl,
+          prizes,
+          primaryClaimUrl,
+          hackathonStartsAt: hackathon.starts_at,
+          hackathonEndsAt: hackathon.ends_at,
+        })
+      )
+
+      const result = await sendEmail({
+        to: email,
+        subject: `${ordinal(info.rank)} Place — ${shortHackathonName(hackathon.name)} Results`,
+        html,
+        text,
+        replyTo: getReplyToAddress(),
+        headers: buildMailtoUnsubscribeHeaders(),
+        tags: [
+          { name: "type", value: "winner_notification" },
+          { name: "hackathon", value: tag },
+        ],
+        idempotencyKey: `winner/${hackathonId}/${publicationKey}/${info.submissionId}/${recipientFingerprint(email)}`,
+      })
+
+      if (result) sent++
+      else failed++
+    } catch {
+      failed++
+    }
+  }
+
+  if (unresolved > 0) {
+    const decision = await getUnresolvedEmailDecision(
+      `winner:${hackathonId}:${publicationKey}`,
+    )
+    if (decision === "retry") {
+      attempted += unresolved
+      failed += unresolved
+    } else {
+      console.warn(
+        `Winner emails: ${unresolved} recipient record(s) remained unavailable after bounded retries for hackathon ${hackathonId}.`,
+      )
+    }
+  }
+
+  if (failed > 0) {
+    console.error(`Winner emails: ${sent} sent, ${failed} failed for hackathon ${hackathonId}`)
+  }
+  return { attempted, sent, failed }
+}
+
+export async function sendWinnerEmails(hackathonId: string): Promise<number> {
+  return (await sendWinnerEmailsWithResult(hackathonId)).sent
 }
 
 export async function sendPrizeClaimEmail(
@@ -315,6 +374,7 @@ export async function sendPrizeClaimEmail(
         { name: "type", value: "prize_claim_notification" },
         { name: "hackathon", value: tag },
       ],
+      idempotencyKey: `prize-claim/${prizeAssignmentId}/${recipientFingerprint(email)}`,
     })
 
     if (result) sent++

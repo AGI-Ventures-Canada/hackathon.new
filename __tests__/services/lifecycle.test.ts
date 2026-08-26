@@ -3,7 +3,35 @@ import {
   createChainableMock,
   resetSupabaseMocks,
   setMockFromImplementation,
+  type ChainableMock,
 } from "../lib/supabase-mock"
+
+const leaseOrder: string[] = []
+async function runWithEventMutationLease(
+  _hackathonId: string,
+  mutation: () => Promise<unknown>,
+) {
+  leaseOrder.push("acquired")
+  try {
+    return await mutation()
+  } finally {
+    leaseOrder.push("released")
+  }
+}
+const mockWithEventMutationLease = mock(runWithEventMutationLease)
+class MockEventMutationLeaseError extends Error {
+  constructor(
+    message: string,
+    public readonly code: "event_busy" | "lease_unavailable",
+  ) {
+    super(message)
+    this.name = "EventMutationLeaseError"
+  }
+}
+mock.module("@/lib/services/event-mutation-lease", () => ({
+  EventMutationLeaseError: MockEventMutationLeaseError,
+  withEventMutationLease: mockWithEventMutationLease,
+}))
 
 const mockDispatch = mock(() => Promise.resolve())
 mock.module("@/lib/services/notification-dispatcher", () => ({
@@ -41,6 +69,9 @@ const { executeTransition, processAutoTransitions } = await import(
 describe("Lifecycle Service", () => {
   beforeEach(() => {
     resetSupabaseMocks()
+    leaseOrder.length = 0
+    mockWithEventMutationLease.mockReset()
+    mockWithEventMutationLease.mockImplementation(runWithEventMutationLease)
     mockDispatch.mockClear()
     mockReleaseChallenges.mockClear()
     mockReleaseChallenges.mockImplementation(() => Promise.resolve(true))
@@ -52,9 +83,37 @@ describe("Lifecycle Service", () => {
     mockDenyPendingTeamsForClosedHackathon.mockResolvedValue({ denied: 0, failed: [] })
     mockCancelRemindersForEntity.mockClear()
     mockCancelRemindersForEntity.mockResolvedValue(undefined)
+    mockScheduleReminders.mockClear()
+    mockScheduleReminders.mockResolvedValue(0)
   })
 
   describe("executeTransition", () => {
+    it("returns a stable event-busy code without running transition side effects", async () => {
+      mockWithEventMutationLease.mockRejectedValueOnce(
+        new MockEventMutationLeaseError(
+          "Another event change is still being saved.",
+          "event_busy",
+        ),
+      )
+
+      const result = await executeTransition({
+        hackathonId: "h1",
+        tenantId: "t1",
+        fromStatus: "draft",
+        toStatus: "published",
+        trigger: "manual",
+        triggeredBy: "user1",
+      })
+
+      expect(result).toEqual({
+        success: false,
+        error: "Another event change is still being saved.",
+        code: "event_busy",
+      })
+      expect(mockGetTriggerItem).not.toHaveBeenCalled()
+      expect(mockDispatch).not.toHaveBeenCalled()
+    })
+
     it("rejects invalid transitions", async () => {
       const result = await executeTransition({
         hackathonId: "h1",
@@ -92,14 +151,21 @@ describe("Lifecycle Service", () => {
         status: "published",
       }
 
+      let hackathonChain: ChainableMock | undefined
       setMockFromImplementation((table) => {
         if (table === "hackathon_transitions") {
           return createChainableMock({ data: [], error: null })
         }
         if (table === "hackathons") {
-          return createChainableMock({ data: hackathon, error: null })
+          const chain = createChainableMock({ data: hackathon, error: null })
+          hackathonChain ??= chain
+          return chain
         }
         return createChainableMock({ data: null, error: null })
+      })
+      mockGetTriggerItem.mockImplementation(() => {
+        leaseOrder.push("side-effect")
+        return Promise.resolve(null)
       })
 
       const result = await executeTransition({
@@ -109,9 +175,58 @@ describe("Lifecycle Service", () => {
         toStatus: "published",
         trigger: "manual",
         triggeredBy: "user1",
+        registrationOpensAt: "2026-08-26T12:00:00.000Z",
+        registrationClosesAt: "2026-09-10T12:00:00.000Z",
       })
 
       expect(result.success).toBe(true)
+      expect(leaseOrder).toEqual(["acquired", "released", "side-effect"])
+      const updateCalls = hackathonChain!.update.mock.calls as unknown as Array<[
+        Record<string, unknown>,
+      ]>
+      expect(updateCalls[0]![0]).toMatchObject({
+        status: "published",
+        registration_opens_at: "2026-08-26T12:00:00.000Z",
+        registration_closes_at: "2026-09-10T12:00:00.000Z",
+      })
+    })
+
+    it("commits completion and result visibility in one event update", async () => {
+      const hackathon = {
+        id: "h1",
+        tenant_id: "t1",
+        name: "Test Hack",
+        slug: "test-hack",
+        status: "completed",
+      }
+      let hackathonChain: ChainableMock | undefined
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_transitions") {
+          return createChainableMock({ data: [], error: null })
+        }
+        const chain = createChainableMock({ data: hackathon, error: null })
+        hackathonChain ??= chain
+        return chain
+      })
+
+      const result = await executeTransition({
+        hackathonId: "h1",
+        tenantId: "t1",
+        fromStatus: "judging",
+        toStatus: "completed",
+        trigger: "manual",
+        triggeredBy: "system",
+        resultsPublication: { publishedAt: "2026-08-26T12:00:00.000Z" },
+      })
+
+      expect(result.success).toBe(true)
+      const update = hackathonChain!.update.mock.calls[0]![0] as Record<string, unknown>
+      expect(update).toMatchObject({
+        status: "completed",
+        results_published_at: "2026-08-26T12:00:00.000Z",
+        winner_emails_sent_at: null,
+        results_announcement_sent_at: null,
+      })
     })
 
     it("allows published → registration_open", async () => {
@@ -181,6 +296,75 @@ describe("Lifecycle Service", () => {
       expect(mockCancelRemindersForEntity).toHaveBeenCalledWith("hackathon_event", "h1")
     })
 
+    it("retries pending-team closeout before returning from completion", async () => {
+      const hackathon = {
+        id: "h1",
+        tenant_id: "t1",
+        name: "Test Hack",
+        slug: "test-hack",
+        status: "completed",
+      }
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_transitions") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "hackathons") {
+          return createChainableMock({ data: hackathon, error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+      mockDenyPendingTeamsForClosedHackathon
+        .mockResolvedValueOnce({
+          denied: 0,
+          failed: [{ teamId: "team-1", code: "failed" }],
+        })
+        .mockResolvedValueOnce({ denied: 1, failed: [] })
+
+      const result = await executeTransition({
+        hackathonId: "h1",
+        tenantId: "t1",
+        fromStatus: "active",
+        toStatus: "completed",
+        trigger: "auto",
+        triggeredBy: "system",
+      })
+
+      expect(result.success).toBe(true)
+      expect(mockDenyPendingTeamsForClosedHackathon).toHaveBeenCalledTimes(2)
+    })
+
+    it("cancels pre-event reminders when moving back to draft", async () => {
+      const hackathon = {
+        id: "h1",
+        tenant_id: "t1",
+        name: "Test Hack",
+        slug: "test-hack",
+        status: "draft",
+      }
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_transitions") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "hackathons") {
+          return createChainableMock({ data: hackathon, error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await executeTransition({
+        hackathonId: "h1",
+        tenantId: "t1",
+        fromStatus: "published",
+        toStatus: "draft",
+        trigger: "manual",
+        triggeredBy: "user1",
+      })
+
+      expect(result.success).toBe(true)
+      expect(mockDenyPendingTeamsForClosedHackathon).not.toHaveBeenCalled()
+      expect(mockCancelRemindersForEntity).toHaveBeenCalledWith("hackathon_event", "h1")
+    })
+
     it("allows the auto path to finalize an ended event that skipped stages", async () => {
       const hackathon = {
         id: "h1",
@@ -247,7 +431,7 @@ describe("Lifecycle Service", () => {
       expect(mockDispatch).not.toHaveBeenCalled()
     })
 
-    it("still notifies on a normal auto active → completed", async () => {
+    it("does not call an event ending results publication", async () => {
       const hackathon = {
         id: "h1",
         tenant_id: "t1",
@@ -276,9 +460,7 @@ describe("Lifecycle Service", () => {
       })
 
       expect(result.success).toBe(true)
-      expect(mockDispatch).toHaveBeenCalledTimes(1)
-      const call = mockDispatch.mock.calls[0][0] as { type: string }
-      expect(call.type).toBe("results_published")
+      expect(mockDispatch).not.toHaveBeenCalled()
     })
 
     it("still rejects a manual registration_open → completed jump", async () => {
@@ -747,6 +929,7 @@ describe("Lifecycle Service", () => {
 
       expect(result.success).toBe(false)
       expect(result.error).toContain("status has already changed")
+      expect(result.code).toBe("event_changed")
     })
 
     it("handles DB update failure", async () => {
@@ -771,6 +954,7 @@ describe("Lifecycle Service", () => {
 
       expect(result.success).toBe(false)
       expect(result.error).toContain("Failed to update status")
+      expect(result.code).toBe("transition_unavailable")
     })
   })
 
@@ -870,6 +1054,58 @@ describe("Lifecycle Service", () => {
       expect(result.errors).toHaveLength(0)
       expect(result.transitions[0].from).toBe("registration_open")
       expect(result.transitions[0].to).toBe("completed")
+    })
+
+    it("isolates an unexpected transition failure and continues with later events", async () => {
+      const startsAt = new Date(Date.now() - 2 * 86400000).toISOString()
+      const endsAt = new Date(Date.now() - 86400000).toISOString()
+      const hackathons = [
+        {
+          id: "h1",
+          tenant_id: "t1",
+          status: "active",
+          starts_at: startsAt,
+          ends_at: endsAt,
+          name: "First Hack",
+          slug: "first-hack",
+        },
+        {
+          id: "h2",
+          tenant_id: "t2",
+          status: "active",
+          starts_at: startsAt,
+          ends_at: endsAt,
+          name: "Second Hack",
+          slug: "second-hack",
+        },
+      ]
+      let hackathonCalls = 0
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          hackathonCalls++
+          return createChainableMock({
+            data: hackathonCalls === 1
+              ? hackathons
+              : { ...hackathons[hackathonCalls - 2], status: "completed" },
+            error: null,
+          })
+        }
+        if (table === "hackathon_transitions") {
+          return createChainableMock({ data: [], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+      mockDenyPendingTeamsForClosedHackathon
+        .mockRejectedValueOnce(new Error("closeout unavailable"))
+        .mockResolvedValue({ denied: 0, failed: [] })
+
+      const result = await processAutoTransitions()
+
+      expect(result.processed).toBe(1)
+      expect(result.transitions).toEqual([
+        { hackathonId: "h2", from: "active", to: "completed" },
+      ])
+      expect(result.errors).toEqual(["h1: closeout unavailable"])
     })
 
     it("handles DB fetch error gracefully", async () => {

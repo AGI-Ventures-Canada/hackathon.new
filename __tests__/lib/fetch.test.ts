@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test"
-import { assertOk, assertOkJson } from "@/lib/utils/fetch"
+import { assertOk, assertOkJson, FetchResponseError } from "@/lib/utils/fetch"
 
 function fakeResponse(status: number, body?: unknown): Response {
   const hasBody = body !== undefined
@@ -31,6 +31,123 @@ describe("assertOk", () => {
     await expect(
       assertOk(fakeResponse(422, { detail: "unprocessable" }))
     ).rejects.toThrow("Request failed (422)")
+  })
+
+  it("preserves structured conflict details", async () => {
+    try {
+      await assertOk(fakeResponse(422, {
+        error: "This draft was already used",
+        code: "draft_conflict",
+        retryable: false,
+        existingEvent: {
+          id: "11111111-1111-4111-8111-111111111111",
+          name: "Created event",
+          slug: "created-event",
+        },
+      }))
+      throw new Error("Expected assertOk to throw")
+    } catch (error) {
+      expect(error).toBeInstanceOf(FetchResponseError)
+      expect(error).toMatchObject({
+        message: "This draft was already used",
+        status: 422,
+        code: "draft_conflict",
+        retryable: false,
+        existingEvent: {
+          id: "11111111-1111-4111-8111-111111111111",
+          name: "Created event",
+          slug: "created-event",
+        },
+      })
+    }
+  })
+
+  it("trusts committed recovery only with an explicit boolean and valid event", async () => {
+    const validEvent = {
+      id: "11111111-1111-4111-8111-111111111111",
+      name: "Created event",
+      slug: "created-event",
+    }
+    try {
+      await assertOk(fakeResponse(503, {
+        error: "Setup was not scheduled",
+        code: "finalization_unscheduled",
+        committed: true,
+        existingEvent: validEvent,
+      }))
+      throw new Error("Expected assertOk to throw")
+    } catch (error) {
+      expect(error).toMatchObject({
+        committed: true,
+        existingEvent: validEvent,
+      })
+    }
+
+    try {
+      await assertOk(fakeResponse(503, {
+        error: "Setup was not scheduled",
+        code: "finalization_unscheduled",
+        committed: "true",
+        existingEvent: { ...validEvent, slug: "" },
+      }))
+      throw new Error("Expected assertOk to throw")
+    } catch (error) {
+      expect(error).toMatchObject({
+        committed: false,
+        existingEvent: null,
+      })
+    }
+  })
+
+  it("rejects malformed recovery IDs and route slugs", async () => {
+    for (const existingEvent of [
+      null,
+      "not-an-object",
+      { id: "not-a-uuid", name: "Created event", slug: "created-event" },
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        name: "",
+        slug: "created-event",
+      },
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        name: "N".repeat(121),
+        slug: "created-event",
+      },
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        name: "Created event",
+        slug: "../created-event",
+      },
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        name: "Created event",
+        slug: "s".repeat(101),
+      },
+    ]) {
+      try {
+        await assertOk(fakeResponse(422, {
+          error: "This draft was already used",
+          code: "draft_conflict",
+          existingEvent,
+        }))
+        throw new Error("Expected assertOk to throw")
+      } catch (error) {
+        expect(error).toMatchObject({ existingEvent: null })
+      }
+    }
+  })
+
+  it("uses safe defaults for optional structured error fields", () => {
+    expect(new FetchResponseError({ message: "Failed", status: 500 })).toMatchObject({
+      name: "FetchResponseError",
+      message: "Failed",
+      status: 500,
+      code: null,
+      retryable: false,
+      committed: false,
+      existingEvent: null,
+    })
   })
 
   it("throws with status code when body is not JSON", async () => {

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useIsClient } from "@/hooks/use-is-client"
 import { useRouter } from "next/navigation"
 import { useOptimisticList } from "@/hooks/use-optimistic-list"
@@ -87,6 +87,7 @@ import { AssignmentsSection } from "./assignments-section"
 import { JudgePill } from "./judge-pill"
 import { RoundsSection } from "./rounds-section"
 import type { RoundData } from "./rounds-types"
+import type { Prize } from "@/lib/db/hackathon-types"
 
 type TeamMode = "in_person" | "virtual"
 
@@ -194,6 +195,27 @@ const getPrizeId = (p: PrizeData) => p.id
 const getJudgeParticipantId = (j: JudgeData) => j.participantId
 const getInvitationId = (i: InvitationData) => i.id
 
+function toPrizeData(prize: Prize): PrizeData {
+  return {
+    id: prize.id,
+    name: prize.name,
+    description: prize.description,
+    value: prize.value,
+    judgingStyle: prize.judging_style,
+    assignmentMode: prize.assignment_mode,
+    maxPicks: prize.max_picks,
+    roundId: prize.round_id,
+    displayOrder: prize.display_order,
+    totalAssignments: 0,
+    completedAssignments: 0,
+    judgeCount: 0,
+    allowedTeamModes: prize.allowed_team_modes,
+    criteria: null,
+    buckets: null,
+    sponsorName: null,
+  }
+}
+
 const STYLE_META: Record<string, { label: string; icon: typeof Trophy; color: string }> = {
   bucket_sort: { label: "Bucket Sort", icon: ArrowUpDown, color: "bg-blue-500/10 text-blue-700 dark:text-blue-400" },
   gate_check: { label: "Gate Check", icon: ListChecks, color: "bg-amber-500/10 text-amber-700 dark:text-amber-400" },
@@ -219,13 +241,24 @@ export function JudgingTabClient({
   resultsByPrize = [],
 }: JudgingTabClientProps) {
   const router = useRouter()
+  const actionItems = useActionItemsOptional()
+  const sharedPrizes = useMemo(() => {
+    const serverIds = new Set(initialPrizes.map((prize) => prize.id))
+    const webMcpPrizes = actionItems?.manageWebMcpView.prizes ?? []
+    return [
+      ...initialPrizes,
+      ...webMcpPrizes
+        .filter((prize) => !serverIds.has(prize.id))
+        .map(toPrizeData),
+    ]
+  }, [actionItems?.manageWebMcpView.prizes, initialPrizes])
   const [showAddJudge, setShowAddJudge] = useState(false)
   const [showAddPrize, setShowAddPrize] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [publishDialogOpen, setPublishDialogOpen] = useState(false)
   const weightedScoringLocked =
     coreCriteria.length > 0 ||
-    initialPrizes.some((p) => p.judgingStyle === "weighted_score")
+    sharedPrizes.some((p) => p.judgingStyle === "weighted_score")
   const [weightedScoringEnabled, setWeightedScoringEnabled] = useState(weightedScoringLocked)
   useEffect(() => {
     if (weightedScoringLocked) setWeightedScoringEnabled(true)
@@ -233,8 +266,6 @@ export function JudgingTabClient({
   const results = initialResults
   const [isPublished, setIsPublished] = useState(initialIsPublished)
   const [error, setError] = useState<string | null>(null)
-
-  const actionItems = useActionItemsOptional()
 
   useEffect(() => {
     if (!actionItems) return
@@ -255,7 +286,7 @@ export function JudgingTabClient({
 
   const base = `/api/dashboard/hackathons/${hackathonId}`
 
-  const prizesList = useOptimisticList({ items: initialPrizes, getId: getPrizeId })
+  const prizesList = useOptimisticList({ items: sharedPrizes, getId: getPrizeId })
   const judgesList = useOptimisticList({ items: initialJudges, getId: getJudgeParticipantId })
   const invitationsList = useOptimisticList({ items: initialInvitations, getId: getInvitationId })
 
@@ -441,7 +472,7 @@ export function JudgingTabClient({
           <JudgingSetupWizard
             hackathonId={hackathonId}
             slug={slug}
-            prizes={initialPrizes.map((p) => ({
+            prizes={prizes.map((p) => ({
               id: p.id,
               name: p.name,
               description: p.description,
@@ -469,7 +500,7 @@ export function JudgingTabClient({
             pendingInvitations={initialInvitations}
             coreCriteria={coreCriteria}
             onEditPrize={(prizeId) => {
-              const prize = initialPrizes.find((p) => p.id === prizeId)
+              const prize = prizes.find((p) => p.id === prizeId)
               if (prize) handleEditPrize(prize)
             }}
           />
@@ -1061,6 +1092,7 @@ function PrizeCard({
   const isCrowdVote = prize.judgingStyle === "crowd_vote"
   const isWeightedScore = prize.judgingStyle === "weighted_score"
   const isHybrid = locationType === "hybrid"
+  const isSaving = prize.id.startsWith("webmcp-prize-")
   const modeFilter = modesToFilter(prize.allowedTeamModes)
 
   return (
@@ -1071,13 +1103,14 @@ function PrizeCard({
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-semibold">{prize.name}</span>
               {prize.value && <Badge variant="secondary">{prize.value}</Badge>}
+              {isSaving && <Badge variant="secondary">Saving</Badge>}
               {style && (
                 <Badge variant="outline" className={style.color}>
                   <StyleIcon className="mr-1 size-3" />
                   {style.label}
                 </Badge>
               )}
-              {isHybrid && (
+              {isHybrid && !isSaving && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
@@ -1124,7 +1157,7 @@ function PrizeCard({
               </div>
             )}
 
-            <AlertDialog>
+            {!isSaving && <AlertDialog>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="icon" className="size-8">
@@ -1158,7 +1191,7 @@ function PrizeCard({
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
-            </AlertDialog>
+            </AlertDialog>}
           </div>
         </div>
 
@@ -1220,7 +1253,7 @@ function PrizeCard({
           </p>
         )}
 
-        {isWeightedScore ? (
+        {!isSaving && (isWeightedScore ? (
           <p className="text-xs text-muted-foreground">
             Judges for this prize are managed in the Assignments tab.
           </p>
@@ -1257,7 +1290,7 @@ function PrizeCard({
               </span>
             </Button>
           </div>
-        )}
+        ))}
       </CardContent>
     </Card>
   )

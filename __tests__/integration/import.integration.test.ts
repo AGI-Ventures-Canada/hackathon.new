@@ -1,4 +1,5 @@
-import { describe, it, expect, mock, beforeEach } from "bun:test"
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test"
+import { createHash } from "node:crypto"
 
 const mockExtractLumaEventData = mock(() => Promise.resolve(null))
 
@@ -18,12 +19,54 @@ mock.module("@/lib/services/event-page-import", () => ({
   extractEventPageData: mockExtractEventPageData,
 }))
 
+const mockCheckRateLimit = mock(() => Promise.resolve({
+  allowed: true,
+  remaining: 9,
+  resetAt: Date.now() + 60_000,
+}))
+
+class MockRateLimitError extends Error {
+  constructor(
+    public resetAt: number,
+    public remaining: number
+  ) {
+    super("Rate limit exceeded")
+    this.name = "RateLimitError"
+  }
+}
+
+mock.module("@/lib/services/rate-limit", () => ({
+  checkRateLimit: mockCheckRateLimit,
+  defaultRateLimits: {
+    "api_key:default": { maxRequests: 100, windowMs: 60_000 },
+    "user:default": { maxRequests: 200, windowMs: 60_000 },
+  },
+  RateLimitError: MockRateLimitError,
+  getRateLimitHeaders: (result: { remaining: number; resetAt: number }) => ({
+    "X-RateLimit-Remaining": String(result.remaining),
+    "X-RateLimit-Reset": String(Math.ceil(result.resetAt / 1000)),
+  }),
+}))
+
 const { api } = await import("@/lib/api")
+const originalVercel = process.env.VERCEL
 
 describe("POST /api/public/import/url", () => {
   beforeEach(() => {
+    delete process.env.VERCEL
     mockExtractLumaEventData.mockClear()
     mockExtractEventPageData.mockClear()
+    mockCheckRateLimit.mockReset()
+    mockCheckRateLimit.mockResolvedValue({
+      allowed: true,
+      remaining: 9,
+      resetAt: Date.now() + 60_000,
+    })
+  })
+
+  afterEach(() => {
+    if (originalVercel === undefined) delete process.env.VERCEL
+    else process.env.VERCEL = originalVercel
   })
 
   it("returns extracted event data for a Luma URL", async () => {
@@ -91,6 +134,40 @@ describe("POST /api/public/import/url", () => {
     )
 
     expect(res.status).toBe(404)
+  })
+
+  it("rate limits Vercel client IPs without trusting x-forwarded-for", async () => {
+    process.env.VERCEL = "1"
+    const resetAt = Date.now() + 60_000
+    mockCheckRateLimit.mockResolvedValueOnce({
+      allowed: false,
+      remaining: 0,
+      resetAt,
+    })
+
+    const res = await api.handle(
+      new Request("http://localhost/api/public/import/url", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-forwarded-for": "1.1.1.1",
+          "x-vercel-forwarded-for": "8.8.8.8",
+        },
+        body: JSON.stringify({ url: "https://luma.com/rate-limited" }),
+      })
+    )
+
+    const digest = createHash("sha256").update("8.8.8.8").digest("hex")
+    expect(mockCheckRateLimit).toHaveBeenCalledWith(
+      `public_import:${digest}`,
+      {
+        maxRequests: 10,
+        windowMs: 60_000,
+      },
+      { failureMode: "closed" },
+    )
+    expect(res.status).toBe(429)
+    expect(mockExtractLumaEventData).not.toHaveBeenCalled()
   })
 
   it("returns 422 when url is missing", async () => {

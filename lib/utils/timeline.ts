@@ -5,13 +5,23 @@ export function getEffectiveStatus(hackathon: {
   starts_at: string | null
   ends_at: string | null
 }): HackathonStatus {
+  return getEffectiveStatusAt(hackathon, new Date())
+}
+
+export function getEffectiveStatusAt(
+  hackathon: {
+    status: HackathonStatus
+    starts_at: string | null
+    ends_at: string | null
+  },
+  now: Date,
+): HackathonStatus {
   const { status, starts_at, ends_at } = hackathon
 
   if (status === "draft" || status === "archived") {
     return status
   }
 
-  const now = new Date()
   const startsAt = starts_at ? new Date(starts_at) : null
   const endsAt = ends_at ? new Date(ends_at) : null
 

@@ -21,9 +21,11 @@ export type SponsorReportData = {
   winners: WinnerEntry[]
 }
 
-export async function getWinnerPageData(hackathonId: string): Promise<WinnerEntry[]> {
-  const client = getSupabase() as unknown as SupabaseClient
-
+async function loadWinnerPageData(
+  client: SupabaseClient,
+  hackathonId: string,
+  includeTeamNames = true,
+): Promise<WinnerEntry[]> {
   const { data: assignments, error } = await client
     .from("prize_assignments")
     .select("prize_id, submission_id, prizes(id, name, description, value, display_order), submissions(id, title, team_id)")
@@ -42,7 +44,7 @@ export async function getWinnerPageData(hackathonId: string): Promise<WinnerEntr
   )]
 
   let teamNames: Record<string, string> = {}
-  if (teamIds.length > 0) {
+  if (includeTeamNames && teamIds.length > 0) {
     const { data: teams } = await client.from("teams").select("id, name").in("id", teamIds)
     if (teams) {
       teamNames = Object.fromEntries(teams.map((t: { id: string; name: string }) => [t.id, t.name]))
@@ -65,6 +67,18 @@ export async function getWinnerPageData(hackathonId: string): Promise<WinnerEntr
   })
 }
 
+export async function getWinnerPageData(hackathonId: string): Promise<WinnerEntry[]> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const { data: hackathon } = await client
+    .from("hackathons")
+    .select("results_published_at, anonymous_judging")
+    .eq("id", hackathonId)
+    .single()
+
+  if (!hackathon?.results_published_at) return []
+  return loadWinnerPageData(client, hackathonId, !hackathon.anonymous_judging)
+}
+
 export async function generateSponsorReport(hackathonId: string): Promise<SponsorReportData | null> {
   const client = getSupabase() as unknown as SupabaseClient
 
@@ -83,7 +97,7 @@ export async function generateSponsorReport(hackathonId: string): Promise<Sponso
     client.from("hackathon_sponsors").select("name, tier, logo_url").eq("hackathon_id", hackathonId).order("display_order"),
   ])
 
-  const winners = await getWinnerPageData(hackathonId)
+  const winners = await loadWinnerPageData(client, hackathonId)
 
   return {
     hackathonName: hackathon.name,

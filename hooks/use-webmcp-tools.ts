@@ -1,45 +1,17 @@
 "use client"
 
 import { useEffect } from "react"
+import type { WebMcpTool } from "@/lib/webmcp/types"
 
-export type WebMcpToolAnnotations = {
-  readOnlyHint?: boolean
-  untrustedContentHint?: boolean
-}
-
-export type WebMcpExecuteOptions = {
-  signal: AbortSignal
-}
-
-export type WebMcpTool = {
-  name: string
-  title?: string
-  description: string
-  inputSchema?: Record<string, unknown>
-  annotations?: WebMcpToolAnnotations
-  execute: (
-    input: Record<string, unknown>,
-    options: WebMcpExecuteOptions,
-  ) => Promise<unknown>
-}
-
-type WebMcpRegisterOptions = {
-  exposedTo?: string[]
-  signal?: AbortSignal
-}
-
-type WebMcpModelContext = {
-  registerTool: (
-    tool: WebMcpTool,
-    options?: WebMcpRegisterOptions,
-  ) => Promise<void>
-}
-
-declare global {
-  interface Document {
-    modelContext?: WebMcpModelContext
-  }
-}
+export type {
+  WebMcpExecuteOptions,
+  WebMcpModelContext,
+  WebMcpRegisterOptions,
+  WebMcpTool,
+  WebMcpToolAnnotations,
+  WebMcpToolError,
+  WebMcpToolResult,
+} from "@/lib/webmcp/types"
 
 export async function registerWebMcpTools(
   tools: WebMcpTool[],

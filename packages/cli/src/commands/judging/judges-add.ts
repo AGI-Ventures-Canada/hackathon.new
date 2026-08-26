@@ -1,6 +1,6 @@
 import type { OatmealClient } from "../../client.js"
-import { formatJson, formatSuccess } from "../../output.js"
-import type { Judge } from "../../types.js"
+import { formatJson, formatSuccess, formatWarning } from "../../output.js"
+import type { JudgeAddResponse } from "../../types.js"
 
 interface JudgesAddOptions {
   email?: string
@@ -42,15 +42,29 @@ export async function runJudgesAdd(
   if (options.email) body.email = options.email
   if (options.userId) body.clerkUserId = options.userId
 
-  const judge = await client.post<Judge>(
+  const response = await client.post<JudgeAddResponse>(
     `/api/dashboard/hackathons/${hackathonId}/judging/judges`,
     body
   )
 
   if (options.json) {
-    console.log(formatJson(judge))
+    console.log(formatJson(response))
     return
   }
 
-  console.log(formatSuccess(`Added judge ${judge.name ?? judge.email ?? judge.id}`))
+  if (options.email && response.invitation) {
+    if (response.delivery === "failed") {
+      console.log(formatWarning(`Saved judge invitation for ${response.invitation.email}, but email delivery could not be confirmed`))
+      return
+    }
+
+    const message = response.queued
+      ? `Saved judge invitation for ${response.invitation.email} (sent when the event goes live)`
+      : `Sent judge invitation to ${response.invitation.email}`
+    console.log(formatSuccess(message))
+    return
+  }
+
+  const judge = response.participant
+  console.log(formatSuccess(`Added judge ${judge?.name ?? judge?.email ?? judge?.id ?? options.userId ?? options.email}`))
 }

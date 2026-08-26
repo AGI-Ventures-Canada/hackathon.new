@@ -21,7 +21,7 @@ emails/post-event-reminder.tsx        # React Email template: post-event follow-
 
 ### Database tables
 
-- `scheduled_reminders` — smart reminders (invitations + pre-event). Uses atomic `UPDATE ... SET sent_at = now() WHERE sent_at IS NULL AND fail_count < 3 RETURNING *` to prevent double-sends. Failed dispatches revert `sent_at`, increment `fail_count`, and record `last_error` for retry on the next cron run (max 3 attempts)
+- `scheduled_reminders` — smart reminders (invitations + pre-event). Loads a bounded pending batch, sends with stable provider idempotency keys, and writes `sent_at` only after provider acceptance. Failed dispatches leave `sent_at` null, increment `fail_count`, and record `last_error` for retry on the next cron run (max 3 attempts)
 - `post_event_reminders` — post-event reminders (prize claims, fulfillment, feedback). Separate table, separate processing path
 - `team_invitations.reminded_at` / `judge_invitations.reminded_at` — manual remind tracking
 
@@ -33,7 +33,7 @@ emails/post-event-reminder.tsx        # React Email template: post-event follow-
 | `scheduleReminders()` | `smart-reminders.ts` | Inserts rows into `scheduled_reminders` with upsert |
 | `cancelRemindersForEntity()` | `smart-reminders.ts` | Cancels all pending reminders for an entity |
 | `cancelUpcomingReminder()` | `smart-reminders.ts` | Cancels next reminder within N ms (manual remind dedup) |
-| `processPendingReminders()` | `smart-reminders.ts` | Cron processor: claim, validate metadata, dispatch, revert on failure |
+| `processPendingReminders()` | `smart-reminders.ts` | Cron processor: load, validate, dispatch idempotently, then mark completion |
 | `schedulePreEventReminders()` | `pre-event-reminders.ts` | Schedule reminders for hackathon deadlines |
 | `reschedulePreEventReminders()` | `pre-event-reminders.ts` | Cancel + reschedule (called on date changes) |
 | `processAllPendingReminders()` | `post-event-reminders.ts` | Post-event cron processor |
@@ -79,4 +79,4 @@ bun run test:integration              # End-to-end reminder flow tests
 
 ## Cron configuration
 
-The cron runs every 15 minutes via Vercel (`vercel.json`). Authenticated with `CRON_SECRET` bearer token. The atomic claim pattern in `processPendingReminders()` makes concurrent invocations safe. Failed reminders retry up to 3 times across cron runs — query `SELECT * FROM scheduled_reminders WHERE fail_count >= 3` to find permanently failed reminders that need manual investigation.
+The cron runs every 15 minutes via Vercel (`vercel.json`). Authenticated with `CRON_SECRET` bearer token. Concurrent invocations reuse stable provider idempotency keys and never use `sent_at` as a pre-delivery claim. Failed reminders retry up to 3 dispatch attempts across cron runs. Query `SELECT * FROM scheduled_reminders WHERE fail_count >= 3` to find rows that need manual investigation.

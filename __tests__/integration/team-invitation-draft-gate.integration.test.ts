@@ -45,8 +45,10 @@ const mockRemindTeamInvitation = mock(() => Promise.resolve({
     email: "invitee@example.com",
     token: "tok_123",
     expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    reminded_at: "2026-08-26T12:00:00.000Z",
   },
 }))
+const mockReleaseTeamInvitationReminderClaim = mock(() => Promise.resolve())
 const mockSendPendingTeamInvitationEmails = mock(() => Promise.resolve({ sent: 0, total: 0, failedEmails: [] }))
 
 mock.module("@/lib/services/team-invitations", () => ({
@@ -56,6 +58,7 @@ mock.module("@/lib/services/team-invitations", () => ({
   listTeamInvitations: mockListTeamInvitations,
   cancelTeamInvitation: mockCancelTeamInvitation,
   remindTeamInvitation: mockRemindTeamInvitation,
+  releaseTeamInvitationReminderClaim: mockReleaseTeamInvitationReminderClaim,
   sendPendingTeamInvitationEmails: mockSendPendingTeamInvitationEmails,
 }))
 
@@ -203,6 +206,10 @@ describe("Team invitations: draft hackathon gating", () => {
     mockWorkflowStart.mockClear()
     mockScheduleReminders.mockClear()
     mockCancelUpcomingReminder.mockClear()
+    mockRemindTeamInvitation.mockClear()
+    mockReleaseTeamInvitationReminderClaim.mockClear()
+    mockSendTeamInvitationEmail.mockResolvedValue({ success: true })
+    mockMarkTeamInvitationEmailed.mockResolvedValue()
   })
 
   it("creates invitation row but does NOT email or schedule reminders when hackathon is draft", async () => {
@@ -222,6 +229,8 @@ describe("Team invitations: draft hackathon gating", () => {
     expect(mockWorkflowStart).not.toHaveBeenCalled()
     expect(mockSendTeamInvitationEmail).not.toHaveBeenCalled()
     expect(mockScheduleReminders).not.toHaveBeenCalled()
+    const data = await res.json()
+    expect(data.delivery).toBe("queued")
   })
 
   it("emails immediately when hackathon is published", async () => {
@@ -237,8 +246,11 @@ describe("Team invitations: draft hackathon gating", () => {
 
     expect(res.status).toBe(200)
     expect(mockMarkTeamInvitationEmailed).toHaveBeenCalledTimes(1)
-    expect(mockWorkflowStart).toHaveBeenCalledTimes(1)
+    expect(mockSendTeamInvitationEmail).toHaveBeenCalledTimes(1)
+    expect(mockWorkflowStart).not.toHaveBeenCalled()
     expect(mockScheduleReminders).toHaveBeenCalledTimes(1)
+    const data = await res.json()
+    expect(data.delivery).toBe("sent")
   })
 
   it("persists inviterEmail in reminder metadata when scheduling", async () => {
@@ -258,6 +270,25 @@ describe("Team invitations: draft hackathon gating", () => {
     expect(meta.inviterName).toBe("Your team captain")
   })
 
+  it("keeps a failed live invitation unclaimed and schedules no reminders", async () => {
+    mockGetTeamWithHackathon.mockResolvedValueOnce({
+      ...baseTeam,
+      hackathon: { ...baseTeam.hackathon, status: "published" },
+    })
+    mockSendTeamInvitationEmail.mockResolvedValueOnce({ success: false })
+
+    const res = await postInvitation({
+      hackathonId: "h1",
+      email: "invitee@example.com",
+    })
+    const data = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(data.delivery).toBe("failed")
+    expect(mockMarkTeamInvitationEmailed).not.toHaveBeenCalled()
+    expect(mockScheduleReminders).not.toHaveBeenCalled()
+  })
+
   it("passes inviterEmail to the reminder email on remind", async () => {
     mockGetTeamWithHackathon.mockResolvedValueOnce({
       ...baseTeam,
@@ -273,6 +304,9 @@ describe("Team invitations: draft hackathon gating", () => {
     }
     expect(args.inviterEmail).toBe("captain@example.com")
     expect(args.inviterName).toBe("Captain Test")
+    expect((args as { deliveryId?: string }).deliveryId).toBe(
+      "22222222-2222-2222-2222-222222222222/manual/manual",
+    )
   })
 
   it("blocks remind with hackathon_draft when hackathon is draft", async () => {
@@ -299,5 +333,24 @@ describe("Team invitations: draft hackathon gating", () => {
 
     expect(res.status).toBe(200)
     expect(mockSendTeamInvitationReminderEmail).toHaveBeenCalledTimes(1)
+  })
+
+  it("rejects a stale live event without creating or sending a reminder", async () => {
+    mockGetTeamWithHackathon.mockResolvedValueOnce({
+      ...baseTeam,
+      hackathon: {
+        ...baseTeam.hackathon,
+        status: "active",
+        starts_at: "2020-01-01T00:00:00.000Z",
+        ends_at: "2020-01-02T00:00:00.000Z",
+      },
+    })
+
+    const res = await postRemind("22222222-2222-2222-2222-222222222222")
+
+    expect(res.status).toBe(409)
+    expect(await res.json()).toMatchObject({ code: "hackathon_ended" })
+    expect(mockRemindTeamInvitation).not.toHaveBeenCalled()
+    expect(mockSendTeamInvitationReminderEmail).not.toHaveBeenCalled()
   })
 })

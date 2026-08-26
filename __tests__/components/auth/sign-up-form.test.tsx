@@ -20,7 +20,7 @@ const signUpAttemptVerification = mock((...args: unknown[]) =>
 const signUpAuthenticateWithRedirect = mock(() => Promise.resolve())
 
 const mockSetActive = g.__clerkState.signUpSetActive
-const mockPush = g.__nextNavState.router.push
+const mockReplace = g.__nextNavState.router.replace
 const mockCreateOrganization = mock(() => Promise.resolve({ id: "org_new" }))
 const mockSetOrgActive = mock(() => Promise.resolve())
 
@@ -52,7 +52,7 @@ beforeEach(() => {
   signUpPrepareVerification.mockClear()
   signUpAttemptVerification.mockClear()
   signUpAuthenticateWithRedirect.mockClear()
-  mockPush.mockClear()
+  mockReplace.mockClear()
   mockSetActive.mockClear()
   mockSetOrgActive.mockClear()
   mockCreateOrganization.mockClear()
@@ -178,7 +178,7 @@ describe("SignUpForm", () => {
       )
       fireEvent.click(screen.getByRole("button", { name: "Verify email" }))
       await waitFor(() => {
-        expect(mockPush).toHaveBeenCalledWith("/e/my-event")
+        expect(mockReplace).toHaveBeenCalledWith("/e/my-event")
       })
       expect(screen.queryByText("Create your organization")).toBeNull()
     })
@@ -220,7 +220,7 @@ describe("SignUpForm", () => {
     it("Skip for now navigates to /onboarding when no redirectUrl is set", async () => {
       await goToCreateOrg()
       fireEvent.click(screen.getByRole("button", { name: "Skip for now" }))
-      expect(mockPush).toHaveBeenCalledWith("/onboarding")
+      expect(mockReplace).toHaveBeenCalledWith("/onboarding")
     })
 
     it("auto-generates slug from org name", async () => {
@@ -242,7 +242,7 @@ describe("SignUpForm", () => {
       await waitFor(() => {
         expect(signUpAuthenticateWithRedirect).toHaveBeenCalledWith({
           strategy: "oauth_google",
-          redirectUrl: "/sso-callback",
+          redirectUrl: "/sso-callback?redirect_url=%2Fdashboard",
           redirectUrlComplete: "/dashboard",
         })
       })
@@ -254,7 +254,7 @@ describe("SignUpForm", () => {
       await waitFor(() => {
         expect(signUpAuthenticateWithRedirect).toHaveBeenCalledWith({
           strategy: "oauth_github",
-          redirectUrl: "/sso-callback",
+          redirectUrl: "/sso-callback?redirect_url=%2Fonboarding",
           redirectUrlComplete: "/onboarding",
         })
       })
@@ -266,7 +266,7 @@ describe("SignUpForm", () => {
       await waitFor(() => {
         expect(signUpAuthenticateWithRedirect).toHaveBeenCalledWith({
           strategy: "oauth_linkedin_oidc",
-          redirectUrl: "/sso-callback",
+          redirectUrl: "/sso-callback?redirect_url=%2Fonboarding",
           redirectUrlComplete: "/onboarding",
         })
       })

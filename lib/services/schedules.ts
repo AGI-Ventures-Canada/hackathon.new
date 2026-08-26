@@ -1,6 +1,6 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { Job, Schedule, ScheduleFrequency } from "@/lib/db/hackathon-types"
-import type { Json } from "@/lib/db/types"
+import type { Json, TablesUpdate } from "@/lib/db/types"
 import { CronExpressionParser } from "cron-parser"
 
 export type CreateScheduleInput = {
@@ -110,7 +110,7 @@ export async function updateSchedule(
 ): Promise<Schedule | null> {
   if (updates.timezone !== undefined && !isValidTimezone(updates.timezone)) return null
 
-  const updateData: Record<string, unknown> = {
+  const updateData: TablesUpdate<"schedules"> = {
     updated_at: new Date().toISOString(),
   }
 
@@ -174,13 +174,17 @@ export async function deleteSchedule(
 export async function getNextDueSchedules(limit: number = 100): Promise<Schedule[]> {
   const now = new Date().toISOString()
 
-  const { data } = await getSupabase()
+  const { data, error } = await getSupabase()
     .from("schedules")
     .select("*")
     .eq("is_active", true)
     .lte("next_run_at", now)
     .order("next_run_at", { ascending: true })
     .limit(limit)
+
+  if (error) {
+    throw new Error(`Failed to fetch due schedules: ${error.message}`)
+  }
 
   return (data as Schedule[] | null) ?? []
 }
@@ -234,6 +238,37 @@ async function claimScheduleRun(schedule: Schedule): Promise<Schedule | null> {
   return data as Schedule
 }
 
+async function restoreScheduleRun(
+  schedule: Schedule,
+  claimed: Schedule,
+): Promise<boolean> {
+  let query = getSupabase()
+    .from("schedules")
+    .update({
+      last_run_at: schedule.last_run_at,
+      next_run_at: schedule.next_run_at,
+      run_count: schedule.run_count ?? 0,
+      is_active: schedule.is_active,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", schedule.id)
+    .eq("run_count", claimed.run_count ?? 0)
+    .eq("is_active", claimed.is_active)
+
+  if (claimed.next_run_at === null) {
+    query = query.is("next_run_at", null)
+  } else {
+    query = query.eq("next_run_at", claimed.next_run_at)
+  }
+
+  const { data, error } = await query.select("id").maybeSingle()
+  if (error || !data) {
+    console.error("Failed to restore schedule after job start failure:", error)
+    return false
+  }
+  return true
+}
+
 export type ProcessDueSchedulesResult = {
   found: number
   started: number
@@ -267,18 +302,31 @@ export async function processDueSchedules(
     const claimed = await claimScheduleRun(schedule)
     if (!claimed) continue
 
-    const job = await jobService.createJob({
-      tenantId: schedule.tenant_id,
-      type: schedule.job_type,
-      input: schedule.input ?? undefined,
-      idempotencyKey: `schedule:${schedule.id}:${schedule.next_run_at}`,
-    })
-    if (!job || !(await jobService.startJobWorkflow(job))) {
-      failed += 1
-      continue
-    }
+    try {
+      const job = await jobService.createJob({
+        tenantId: schedule.tenant_id,
+        type: schedule.job_type,
+        input: schedule.input ?? undefined,
+        idempotencyKey: `schedule:${schedule.id}:${schedule.next_run_at}`,
+      })
+      if (!job) {
+        await restoreScheduleRun(schedule, claimed)
+        failed += 1
+        continue
+      }
 
-    started += 1
+      if (!job.workflow_run_id && !(await jobService.startJobWorkflow(job))) {
+        await restoreScheduleRun(schedule, claimed)
+        failed += 1
+        continue
+      }
+
+      started += 1
+    } catch (error) {
+      console.error(`Failed to start scheduled job ${schedule.id}:`, error)
+      await restoreScheduleRun(schedule, claimed)
+      failed += 1
+    }
   }
 
   return { found: schedules.length, started, failed }

@@ -10,6 +10,7 @@ import { normalizeUrl } from "@/lib/utils/url"
 interface StepImportProps {
   onSkipToScratch: () => void
   onModeChange?: (mode: "choose" | "import") => void
+  savedDraftName?: string | null
 }
 
 function looksLikeUrl(input: string): boolean {
@@ -18,7 +19,11 @@ function looksLikeUrl(input: string): boolean {
   return /^(https?:\/\/)?[\w.-]+\.\w{2,}(\/|$)/i.test(trimmed)
 }
 
-export function StepImport({ onSkipToScratch, onModeChange }: StepImportProps) {
+export function StepImport({
+  onSkipToScratch,
+  onModeChange,
+  savedDraftName,
+}: StepImportProps) {
   const router = useRouter()
   const [mode, _setMode] = useState<"choose" | "import">("choose")
 
@@ -115,7 +120,9 @@ export function StepImport({ onSkipToScratch, onModeChange }: StepImportProps) {
           Create a hackathon
         </h1>
         <p className="text-muted-foreground">
-          Start fresh or import from an existing event page.
+          {savedDraftName
+            ? "Your saved draft is ready. Keep editing or import another event."
+            : "Start fresh or import from an existing event page."}
         </p>
       </div>
 
@@ -127,9 +134,11 @@ export function StepImport({ onSkipToScratch, onModeChange }: StepImportProps) {
         >
           <PenLine className="size-6 text-muted-foreground" />
           <div>
-            <div className="font-medium">Start from scratch</div>
+            <div className="font-medium">
+              {savedDraftName ? "Keep editing" : "Start from scratch"}
+            </div>
             <div className="mt-1 text-sm text-muted-foreground">
-              Name it, set dates, and go
+              {savedDraftName || "Name it, set dates, and go"}
             </div>
           </div>
         </button>

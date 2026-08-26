@@ -3,16 +3,25 @@ import {
   createManageHackathonTools,
   type ManageHackathonWebMcpContext,
 } from "@/lib/webmcp/manage-hackathon-tools"
+import type { WebMcpToolResult } from "@/lib/webmcp/types"
+import type {
+  ManageWebMcpCommittedChange,
+  ManageWebMcpOptimisticChange,
+} from "@/lib/webmcp/manage-optimistic-state"
 
-const context: ManageHackathonWebMcpContext = {
+const createdAt = "2026-08-25T15:00:00.000Z"
+
+const baseContext: ManageHackathonWebMcpContext = {
   hackathon: {
-    id: "hackathon-1",
+    id: "11111111-1111-1111-1111-111111111111",
     slug: "build-day",
     name: "Build Day",
     description: "Make something useful.",
     locale: "fr",
     status: "draft",
+    storedStatus: "draft",
     phase: null,
+    eventVersion: "2026-08-25T15:00:00.000Z",
     startsAt: "2026-09-10T16:00:00.000Z",
     endsAt: "2026-09-11T23:00:00.000Z",
     registrationClosesAt: "2026-09-10T16:00:00.000Z",
@@ -59,6 +68,7 @@ const context: ManageHackathonWebMcpContext = {
   ],
   prizes: [
     {
+      id: "prize-1",
       name: "Best Demo",
       description: null,
       value: "$500",
@@ -71,42 +81,78 @@ const context: ManageHackathonWebMcpContext = {
 }
 
 const signal = new AbortController().signal
+let context = structuredClone(baseContext)
 let fetcher = mock(
   async (_input: RequestInfo | URL, _init?: RequestInit) => Response.json({}),
 )
-let onChanged = mock((_href: string) => {})
+let onOptimistic = mock((_change: ManageWebMcpOptimisticChange) => {})
+let onCommitted = mock(
+  (
+    _optimistic: ManageWebMcpOptimisticChange,
+    _committed: ManageWebMcpCommittedChange,
+  ) => {},
+)
+let onReverted = mock(
+  (_optimistic: ManageWebMcpOptimisticChange, _message: string) => {},
+)
 let onNavigate = mock((_href: string) => {})
+let onOpenTransition = mock((_status: string) => {})
 
-function createTools(overrides?: Partial<ManageHackathonWebMcpContext>) {
+function createTools() {
   return createManageHackathonTools({
-    context: { ...context, ...overrides },
+    getContext: () => context,
     fetcher,
-    onChanged,
+    onOptimistic,
+    onCommitted,
+    onReverted,
     onNavigate,
+    onOpenTransition,
   })
 }
 
-function getTool(
-  tools: ReturnType<typeof createTools>,
-  name: string,
-) {
+function getTool(tools: ReturnType<typeof createTools>, name: string) {
   const tool = tools.find((candidate) => candidate.name === name)
   if (!tool) throw new Error(`Missing tool: ${name}`)
   return tool
 }
 
+async function execute<T>(
+  tools: ReturnType<typeof createTools>,
+  name: string,
+  input: Record<string, unknown> = {},
+): Promise<WebMcpToolResult<T>> {
+  return getTool(tools, name).execute(input, { signal }) as Promise<
+    WebMcpToolResult<T>
+  >
+}
+
+function dataOf<T>(result: WebMcpToolResult<T>): T {
+  if (!result.ok) throw new Error(result.error.message)
+  return result.data
+}
+
 beforeEach(() => {
+  context = structuredClone(baseContext)
   fetcher = mock(
     async (_input: RequestInfo | URL, _init?: RequestInit) => Response.json({}),
   )
-  onChanged = mock((_href: string) => {})
+  onOptimistic = mock((_change: ManageWebMcpOptimisticChange) => {})
+  onCommitted = mock(
+    (
+      _optimistic: ManageWebMcpOptimisticChange,
+      _committed: ManageWebMcpCommittedChange,
+    ) => {},
+  )
+  onReverted = mock(
+    (_optimistic: ManageWebMcpOptimisticChange, _message: string) => {},
+  )
   onNavigate = mock((_href: string) => {})
+  onOpenTransition = mock((_status: string) => {})
 })
 
 describe("createManageHackathonTools", () => {
-  it("offers reads and draft-safe writes for a draft", () => {
-    const tools = createTools()
-    expect(tools.map((tool) => tool.name)).toEqual([
+  it("offers reads, draft-safe writes, a draft announcement, and go-live review", () => {
+    expect(createTools().map((tool) => tool.name)).toEqual([
       "get_hackathon_overview",
       "list_hackathon_schedule",
       "list_hackathon_challenges",
@@ -117,22 +163,31 @@ describe("createManageHackathonTools", () => {
       "add_schedule_item",
       "add_challenge",
       "add_prize",
+      "open_go_live_review",
+      "draft_announcement",
     ])
-    expect(getTool(tools, "get_hackathon_overview").annotations).toEqual({
-      readOnlyHint: true,
-      untrustedContentHint: true,
-    })
-    expect(getTool(tools, "add_challenge").annotations).toEqual({
-      untrustedContentHint: true,
-    })
   })
 
-  it("removes every write tool after the draft goes live", () => {
-    const tools = createTools({
-      hackathon: { ...context.hackathon, status: "published" },
-    })
+  it("uses lifecycle-specific tool sets", () => {
+    context.hackathon.status = "published"
+    expect(createTools().map((tool) => tool.name)).toEqual([
+      "get_hackathon_overview",
+      "list_hackathon_schedule",
+      "list_hackathon_challenges",
+      "list_hackathon_prizes",
+      "open_hackathon_section",
+      "update_hackathon_details",
+      "add_schedule_item",
+      "draft_announcement",
+    ])
 
-    expect(tools.map((tool) => tool.name)).toEqual([
+    context.hackathon.status = "judging"
+    expect(createTools().map((tool) => tool.name)).toContain(
+      "open_publish_review",
+    )
+
+    context.hackathon.status = "archived"
+    expect(createTools().map((tool) => tool.name)).toEqual([
       "get_hackathon_overview",
       "list_hackathon_schedule",
       "list_hackathon_challenges",
@@ -141,264 +196,532 @@ describe("createManageHackathonTools", () => {
     ])
   })
 
-  it("returns the current overview and inspect links", async () => {
+  it("reads fresh context without rebuilding the registered tools", async () => {
     const tools = createTools()
-    const overview = await getTool(tools, "get_hackathon_overview").execute(
-      {},
-      { signal },
-    )
-    const schedule = await getTool(tools, "list_hackathon_schedule").execute(
-      {},
-      { signal },
-    )
-    const challenges = await getTool(
-      tools,
+    context.stats.attendeeCount = 30
+    context.actionItems = []
+
+    const overview = dataOf<{
+      counts: { attendees: number }
+      remainingTaskCount: number
+    }>(await execute(tools, "get_hackathon_overview"))
+
+    expect(overview.counts.attendees).toBe(30)
+    expect(overview.remainingTaskCount).toBe(0)
+  })
+
+  it("bounds untrusted list output", async () => {
+    context.scheduleItems = Array.from({ length: 25 }, (_, index) => ({
+      title: `Item ${index}`,
+      description: "x".repeat(500),
+      startsAt: "2026-09-10T16:00:00.000Z",
+      endsAt: null,
+      location: null,
+    }))
+
+    const result = dataOf<{
+      totalCount: number
+      items: { description: string }[]
+      truncated: boolean
+    }>(await execute(createTools(), "list_hackathon_schedule"))
+
+    expect(result.totalCount).toBe(25)
+    expect(result.items).toHaveLength(2)
+    expect(result.items[0].description.length).toBe(160)
+    expect(result.truncated).toBe(true)
+    expect(
+      JSON.stringify({ ok: true, data: result }).length,
+    ).toBeLessThanOrEqual(1_500)
+  })
+
+  it("keeps every organizer read result inside the shared output budget", async () => {
+    context.hackathon.name = "n".repeat(1_000)
+    context.hackathon.description = "d".repeat(5_000)
+    context.hackathon.locationName = "l".repeat(1_000)
+    context.actionItems = Array.from({ length: 20 }, () => ({
+      label: "a".repeat(1_000),
+      hint: "h".repeat(1_000),
+      severity: "warning",
+    }))
+    context.challenges = Array.from({ length: 20 }, () => ({
+      title: "c".repeat(1_000),
+      description: "d".repeat(5_000),
+      resourceCount: 20,
+    }))
+    context.prizes = Array.from({ length: 20 }, (_, index) => ({
+      id: `prize-${index + 1}`,
+      name: "p".repeat(1_000),
+      description: "d".repeat(5_000),
+      value: "v".repeat(1_000),
+      judgingStyle: "judges_pick",
+      judgeCount: 20,
+      totalAssignments: 100,
+      completedAssignments: 50,
+    }))
+
+    const tools = createTools()
+    for (const name of [
+      "get_hackathon_overview",
+      "list_hackathon_schedule",
       "list_hackathon_challenges",
-    ).execute({}, { signal })
-    const prizes = await getTool(tools, "list_hackathon_prizes").execute(
-      {},
-      { signal },
-    )
-
-    expect(overview).toMatchObject({
-      hackathon: { name: "Build Day" },
-      stats: { attendeeCount: 24 },
-      remainingActionItems: [{ label: "Tell people about your event" }],
-      eventUrl: "/e/build-day",
-    })
-    expect(overview).not.toHaveProperty("hackathon.id")
-    expect(schedule).not.toHaveProperty("scheduleItems.0.id")
-    expect(challenges).not.toHaveProperty("challenges.0.id")
-    expect(prizes).not.toHaveProperty("prizes.0.id")
-    expect(schedule).toMatchObject({ count: 1, inspectUrl: "/e/build-day/manage?tab=overview" })
-    expect(challenges).toMatchObject({ count: 1, inspectUrl: "/e/build-day/manage?tab=challenges" })
-    expect(prizes).toMatchObject({ count: 1, inspectUrl: "/e/build-day/manage?tab=judging&jtab=prizes" })
+      "list_hackathon_prizes",
+    ]) {
+      const result = await execute(tools, name)
+      expect(result.ok).toBe(true)
+      expect(JSON.stringify(result).length).toBeLessThanOrEqual(1_500)
+    }
   })
 
-  it("opens a requested organizer section", async () => {
-    const result = await getTool(
-      createTools(),
-      "open_hackathon_section",
-    ).execute({ section: "judging" }, { signal })
-
+  it("opens organizer sections without changing data", async () => {
+    const result = dataOf<{ opened: string; url: string }>(
+      await execute(createTools(), "open_hackathon_section", {
+        section: "results",
+      }),
+    )
     expect(onNavigate).toHaveBeenCalledWith(
-      "/e/build-day/manage?tab=judging",
+      "/e/build-day/manage?tab=judging&jtab=results",
     )
-    expect(result).toEqual({
-      opened: "judging",
-      url: "/e/build-day/manage?tab=judging",
-    })
+    expect(result.opened).toBe("results")
+    expect(fetcher).not.toHaveBeenCalled()
   })
 
-  it("rejects an unknown organizer section", async () => {
-    await expect(
-      getTool(createTools(), "open_hackathon_section").execute(
-        { section: "billing" },
-        { signal },
-      ),
-    ).rejects.toThrow()
+  it("returns a structured input error", async () => {
+    const result = await execute(createTools(), "open_hackathon_section", {
+      section: "billing",
+    })
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: "invalid_input",
+        message: expect.any(String),
+        retryable: false,
+      },
+    })
     expect(onNavigate).not.toHaveBeenCalled()
   })
 
-  it("updates translated draft details through the existing settings API", async () => {
-    fetcher = mock(
-      async (_input: RequestInfo | URL, _init?: RequestInit) =>
-        Response.json({
-        id: "hackathon-1",
+  it("updates draft details with lifecycle headers and visible optimistic state", async () => {
+    const order: string[] = []
+    onOptimistic = mock(() => order.push("optimistic"))
+    onCommitted = mock(() => order.push("committed"))
+    fetcher = mock(async () => {
+      order.push("fetch")
+      return Response.json({
         name: "Journée Build",
         slug: "build-day",
         description: "Créez quelque chose.",
         status: "draft",
-        }),
-    )
+      })
+    })
 
-    const result = await getTool(
-      createTools(),
-      "update_hackathon_details",
-    ).execute(
-      { name: "Journée Build", description: "Créez quelque chose." },
-      { signal },
-    )
+    const result = await execute<{
+      updated: { name: string }
+      inspectUrl: string
+    }>(createTools(), "update_hackathon_details", {
+      name: "Journée Build",
+      description: "Créez quelque chose.",
+    })
 
-    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(result.ok).toBe(true)
+    expect(order).toEqual(["optimistic", "fetch", "committed"])
     const [url, init] = fetcher.mock.calls[0]
-    expect(url).toBe("/api/dashboard/hackathons/hackathon-1/settings")
-    expect(init?.method).toBe("PATCH")
-    expect(init?.signal).toBe(signal)
+    expect(url).toBe(
+      "/api/dashboard/hackathons/11111111-1111-1111-1111-111111111111/settings",
+    )
+    expect(init?.headers).toMatchObject({
+      "x-webmcp-request": "1",
+      "x-webmcp-expected-status": "draft",
+      "x-webmcp-event-version": "2026-08-25T15:00:00.000Z",
+    })
     expect(JSON.parse(String(init?.body))).toEqual({
       name: "Journée Build",
       description: "Créez quelque chose.",
       locale: "fr",
     })
-    expect(onChanged).toHaveBeenCalledWith(
-      "/e/build-day/manage?tab=edit",
-    )
-    expect(result).toMatchObject({
-      updated: { name: "Journée Build" },
-      inspectUrl: "/e/build-day/manage?tab=edit",
-    })
-    expect(result).not.toHaveProperty("updated.id")
   })
 
-  it("requires at least one detail to update", async () => {
-    await expect(
-      getTool(createTools(), "update_hackathon_details").execute(
-        {},
-        { signal },
-      ),
-    ).rejects.toThrow("Add a name or description")
+  it("sends the page's effective status for server lifecycle guards", async () => {
+    context.hackathon.status = "active"
+    context.hackathon.storedStatus = "published"
+    fetcher = mock(async () =>
+      Response.json({
+        name: "Active Build Day",
+        slug: "build-day",
+        description: "Make something useful.",
+        status: "published",
+      }),
+    )
+
+    const result = await execute(createTools(), "update_hackathon_details", {
+      name: "Active Build Day",
+    })
+
+    expect(result.ok).toBe(true)
+    expect(fetcher.mock.calls[0][1]?.headers).toMatchObject({
+      "x-webmcp-expected-status": "active",
+    })
+  })
+
+  it("sends every mutation kind to its visible review surface", async () => {
+    fetcher = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<
+        string,
+        unknown
+      >
+      if (url.endsWith("/settings") && body.startsAt) {
+        return Response.json({
+          name: "Build Day",
+          startsAt: body.startsAt,
+          endsAt: body.endsAt,
+        })
+      }
+      if (url.endsWith("/settings")) {
+        return Response.json({
+          name: body.name ?? "Build Day",
+          slug: "build-day",
+          description: body.description ?? "Make something useful.",
+          status: "draft",
+        })
+      }
+      if (url.endsWith("/schedule")) {
+        return Response.json({
+          id: "schedule-saved",
+          hackathon_id: baseContext.hackathon.id,
+          title: body.title,
+          description: null,
+          starts_at: body.startsAt,
+          ends_at: null,
+          location: null,
+          sort_order: 1,
+          trigger_type: null,
+          linked_to: null,
+          created_at: createdAt,
+          updated_at: createdAt,
+        })
+      }
+      if (url.endsWith("/challenges")) {
+        return Response.json({
+          challenge: {
+            id: "challenge-saved",
+            hackathonId: baseContext.hackathon.id,
+            title: body.title,
+            description: null,
+            resources: [],
+            sortOrder: 1,
+            createdAt,
+            updatedAt: createdAt,
+          },
+        })
+      }
+      if (url.endsWith("/prizes")) {
+        return Response.json({
+          prize: {
+            id: "prize-saved",
+            hackathon_id: baseContext.hackathon.id,
+            name: body.name,
+            description: null,
+            value: null,
+            type: "favorite",
+            rank: null,
+            kind: "prize",
+            monetary_value: null,
+            currency: null,
+            distribution_method: null,
+            display_value: null,
+            criteria_id: null,
+            prize_track_id: null,
+            judging_style: "judges_pick",
+            round_id: null,
+            assignment_mode: "organizer_assigned",
+            max_picks: 3,
+            is_screening: false,
+            allowed_team_modes: null,
+            display_order: 1,
+            created_at: createdAt,
+            updated_at: createdAt,
+          },
+        })
+      }
+      return Response.json({
+        id: "announcement-saved",
+        hackathon_id: baseContext.hackathon.id,
+        title: body.title,
+        body: body.body,
+        priority: "normal",
+        audience: "everyone",
+        published_at: null,
+        created_at: createdAt,
+        updated_at: createdAt,
+      })
+    })
+    const tools = createTools()
+
+    await execute(tools, "update_hackathon_details", { name: "Agent event" })
+    await execute(tools, "set_hackathon_timeline", {
+      startsAt: "2026-09-12T16:00:00.000Z",
+      endsAt: "2026-09-13T16:00:00.000Z",
+    })
+    await execute(tools, "add_schedule_item", {
+      title: "Lunch",
+      startsAt: "2026-09-12T18:00:00.000Z",
+    })
+    await execute(tools, "add_challenge", { title: "City helper" })
+    await execute(tools, "add_prize", { name: "Best demo" })
+    await execute(tools, "draft_announcement", {
+      title: "Doors open",
+      body: "Meet in the main hall.",
+    })
+
+    expect(
+      onOptimistic.mock.calls.map(([change]) => [change.kind, change.href]),
+    ).toEqual([
+      ["details", "/e/build-day/manage?tab=edit"],
+      ["timeline", "/e/build-day/manage?tab=overview"],
+      ["schedule", "/e/build-day/manage?tab=overview"],
+      ["challenge", "/e/build-day/manage?tab=challenges"],
+      ["prize", "/e/build-day/manage?tab=judging&jtab=prizes"],
+      ["announcement", "/e/build-day/manage?tab=event"],
+    ])
+    expect(
+      onCommitted.mock.calls.map(([, change]) => change.kind),
+    ).toEqual([
+      "details",
+      "timeline",
+      "schedule",
+      "challenge",
+      "prize",
+      "announcement",
+    ])
+  })
+
+  it("rejects non-RFC3339 timelines before fetching", async () => {
+    const result = await execute(createTools(), "set_hackathon_timeline", {
+      startsAt: "September 10, 2026",
+      endsAt: "September 11, 2026",
+    })
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: "invalid_input", retryable: false },
+    })
     expect(fetcher).not.toHaveBeenCalled()
   })
 
-  it("sets a valid timeline and rejects an end before the start", async () => {
-    fetcher = mock(
-      async (_input: RequestInfo | URL, _init?: RequestInit) =>
-        Response.json({
-        id: "hackathon-1",
+  it("maps the settings API timeline response without raw timestamps", async () => {
+    fetcher = mock(async () =>
+      Response.json({
         name: "Build Day",
-        startsAt: "2026-10-01T16:00:00.000Z",
-        endsAt: "2026-10-02T23:00:00.000Z",
-        registrationClosesAt: "2026-10-01T16:00:00.000Z",
-        }),
-    )
-    const tool = getTool(createTools(), "set_hackathon_timeline")
-
-    await expect(
-      tool.execute(
-        {
-          startsAt: "2026-10-02T16:00:00.000Z",
-          endsAt: "2026-10-01T16:00:00.000Z",
-        },
-        { signal },
-      ),
-    ).rejects.toThrow("The end must be after the start")
-
-    await tool.execute(
-      {
-        startsAt: "2026-10-01T16:00:00.000Z",
-        endsAt: "2026-10-02T23:00:00.000Z",
-      },
-      { signal },
+        startsAt: "2026-09-12T16:00:00.000Z",
+        endsAt: "2026-09-13T16:00:00.000Z",
+      }),
     )
 
-    expect(fetcher).toHaveBeenCalledTimes(1)
-    expect(onChanged).toHaveBeenCalledWith(
-      "/e/build-day/manage?tab=overview",
+    const result = dataOf<{
+      updated: { startsAt: string; endsAt: string }
+    }>(
+      await execute(createTools(), "set_hackathon_timeline", {
+        startsAt: "2026-09-12T16:00:00.000Z",
+        endsAt: "2026-09-13T16:00:00.000Z",
+      }),
     )
+
+    expect(result.updated).toMatchObject({
+      startsAt: "2026-09-12T16:00:00.000Z",
+      endsAt: "2026-09-13T16:00:00.000Z",
+    })
+    expect(result.updated).not.toHaveProperty("starts_at")
   })
 
-  it("adds an ordinary schedule item", async () => {
-    fetcher = mock(
-      async (_input: RequestInfo | URL, _init?: RequestInit) =>
-        Response.json({
-        id: "schedule-2",
+  it("rejects a schedule item ending before it starts", async () => {
+    const result = await execute(createTools(), "add_schedule_item", {
+      title: "Backwards",
+      startsAt: "2026-09-10T20:00:00.000Z",
+      endsAt: "2026-09-10T19:00:00.000Z",
+    })
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: "invalid_input" },
+    })
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+
+  it("adds an ordinary schedule item and passes the abort signal", async () => {
+    fetcher = mock(async () =>
+      Response.json({
         title: "Lunch",
         description: null,
         starts_at: "2026-09-10T19:00:00.000Z",
         ends_at: "2026-09-10T20:00:00.000Z",
         location: "Cafe",
-        }),
+      }),
     )
 
-    const result = await getTool(createTools(), "add_schedule_item").execute(
-      {
+    const result = dataOf<{ scheduleItem: { title: string } }>(
+      await execute(createTools(), "add_schedule_item", {
         title: "Lunch",
         startsAt: "2026-09-10T19:00:00.000Z",
         endsAt: "2026-09-10T20:00:00.000Z",
-        location: "Cafe",
-      },
-      { signal },
+      }),
     )
-
-    const [url, init] = fetcher.mock.calls[0]
-    expect(url).toBe("/api/dashboard/hackathons/hackathon-1/schedule")
-    expect(init?.method).toBe("POST")
-    expect(JSON.parse(String(init?.body))).not.toHaveProperty("triggerType")
-    expect(result).toMatchObject({ scheduleItem: { title: "Lunch" } })
+    expect(result.scheduleItem.title).toBe("Lunch")
+    expect(fetcher.mock.calls[0][1]?.signal).toBe(signal)
+    expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body))).not.toHaveProperty(
+      "triggerType",
+    )
   })
 
-  it("rejects a schedule item whose end is before its start", async () => {
-    await expect(
-      getTool(createTools(), "add_schedule_item").execute(
-        {
-          title: "Backwards",
-          startsAt: "2026-09-10T20:00:00.000Z",
-          endsAt: "2026-09-10T19:00:00.000Z",
-        },
-        { signal },
-      ),
-    ).rejects.toThrow("The end must be after the start")
+  it("blocks a stale draft tool before the request", async () => {
+    const tools = createTools()
+    context.hackathon.status = "published"
+    const result = await execute(tools, "add_challenge", { title: "Blocked" })
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: "event_changed", retryable: true },
+    })
     expect(fetcher).not.toHaveBeenCalled()
   })
 
-  it("adds a challenge without releasing it", async () => {
-    fetcher = mock(
-      async (_input: RequestInfo | URL, _init?: RequestInit) =>
-        Response.json({
-        challenge: {
-          id: "challenge-2",
-          title: "Make transit easier",
-          description: null,
-        },
-        }),
-    )
+  it("blocks a stale pre-completion tool before the request", async () => {
+    context.hackathon.status = "published"
+    const tools = createTools()
+    context.hackathon.status = "completed"
 
-    const result = await getTool(createTools(), "add_challenge").execute(
-      { title: "Make transit easier" },
-      { signal },
-    )
-
-    const [url, init] = fetcher.mock.calls[0]
-    expect(url).toBe("/api/dashboard/hackathons/hackathon-1/challenges")
-    expect(init?.method).toBe("POST")
-    expect(result).toMatchObject({
-      challenge: { title: "Make transit easier" },
-      inspectUrl: "/e/build-day/manage?tab=challenges",
+    const result = await execute(tools, "update_hackathon_details", {
+      name: "Too late",
     })
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: "event_changed",
+        message: "The event changed. Refresh the page before trying again.",
+        retryable: true,
+      },
+    })
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(onOptimistic).not.toHaveBeenCalled()
   })
 
-  it("adds a judges-pick prize by default", async () => {
-    fetcher = mock(
-      async (_input: RequestInfo | URL, _init?: RequestInit) =>
-        Response.json({
-        prize: {
-          id: "prize-2",
-          name: "People's Choice",
-          description: null,
-          value: null,
-          judging_style: "judges_pick",
-        },
-        }),
-    )
-
-    await getTool(createTools(), "add_prize").execute(
-      { name: "People's Choice" },
-      { signal },
-    )
-
-    const [url, init] = fetcher.mock.calls[0]
-    expect(url).toBe("/api/dashboard/hackathons/hackathon-1/prizes")
-    expect(JSON.parse(String(init?.body))).toEqual({
-      name: "People's Choice",
-      judgingStyle: "judges_pick",
-    })
-    expect(onChanged).toHaveBeenCalledWith(
-      "/e/build-day/manage?tab=judging&jtab=prizes",
-    )
-  })
-
-  it("returns the API error and leaves the page in place", async () => {
-    fetcher = mock(
-      async (_input: RequestInfo | URL, _init?: RequestInit) =>
-        Response.json({ error: "Not authorized" }, { status: 403 }),
-    )
-
-    await expect(
-      getTool(createTools(), "add_challenge").execute(
-        { title: "Blocked" },
-        { signal },
+  it("returns server lifecycle conflicts and rolls back the notice", async () => {
+    fetcher = mock(async () =>
+      Response.json(
+        { error: "The event changed.", code: "event_changed" },
+        { status: 409 },
       ),
-    ).rejects.toThrow("Not authorized")
-    expect(onChanged).not.toHaveBeenCalled()
+    )
+    const result = await execute(createTools(), "add_challenge", {
+      title: "Blocked",
+    })
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: "event_changed",
+        message: "The event changed.",
+        retryable: true,
+      },
+    })
+    expect(onReverted).toHaveBeenCalledTimes(1)
+    expect(onCommitted).not.toHaveBeenCalled()
+  })
+
+  it("uses a safe rollback message when a network failure has no tool error", async () => {
+    fetcher = mock(async () => {
+      throw new TypeError("socket details must stay private")
+    })
+
+    const result = await execute(createTools(), "add_schedule_item", {
+      title: "Lunch",
+      startsAt: "2026-09-10T19:00:00.000Z",
+    })
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        code: "unexpected_error",
+        message: "Something went wrong. Please try again.",
+        retryable: true,
+      },
+    })
+    expect(onReverted).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "schedule" }),
+      "We couldn't save that change. Review the page and try again.",
+    )
+    expect(onCommitted).not.toHaveBeenCalled()
+  })
+
+  it("opens go-live review without sending a request", async () => {
+    const result = await execute(createTools(), "open_go_live_review")
+    expect(result).toMatchObject({
+      ok: true,
+      requiresHumanAction: true,
+      data: { status: "review_opened" },
+    })
+    expect(onOpenTransition).toHaveBeenCalledWith("published")
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+
+  it("saves announcement drafts without publishing them", async () => {
+    fetcher = mock(async () =>
+      Response.json({
+        title: "Doors open",
+        body: "Come to the main hall.",
+        priority: "normal",
+        audience: "everyone",
+        published_at: null,
+      }),
+    )
+    const result = await execute(createTools(), "draft_announcement", {
+      title: "Doors open",
+      body: "Come to the main hall.",
+    })
+    expect(result).toMatchObject({
+      ok: true,
+      requiresHumanAction: true,
+      data: { announcement: { published: false } },
+    })
+    expect(fetcher.mock.calls[0][0]).toBe(
+      "/api/dashboard/hackathons/11111111-1111-1111-1111-111111111111/announcements",
+    )
+  })
+
+  it("blocks a captured announcement tool after the event is archived", async () => {
+    context.hackathon.status = "published"
+    const tools = createTools()
+    context.hackathon.status = "archived"
+
+    const result = await execute(tools, "draft_announcement", {
+      title: "Too late",
+      body: "This must stay unsent.",
+    })
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: "event_changed",
+        message: "Archived events can't add announcement drafts.",
+        retryable: false,
+      },
+    })
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(onOptimistic).not.toHaveBeenCalled()
+  })
+
+  it("opens publish review without making a request", async () => {
+    context.hackathon.status = "judging"
+
+    const result = await execute(createTools(), "open_publish_review")
+
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        status: "review_opened",
+        url: "/e/build-day/manage?tab=judging&jtab=results",
+      },
+      requiresHumanAction: true,
+    })
+    expect(onNavigate).toHaveBeenCalledWith(
+      "/e/build-day/manage?tab=judging&jtab=results",
+    )
+    expect(fetcher).not.toHaveBeenCalled()
   })
 })

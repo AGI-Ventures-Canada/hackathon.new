@@ -462,8 +462,9 @@ export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challe
                           const current = isCurrent(item, now)
                           const isTrigger = !!item.trigger_type
                           const isVirtual = isVirtualItem(item.id)
+                          const isWebMcpPending = item.id.startsWith("webmcp-schedule-")
                           const isReleased = item.trigger_type === "challenge_release" && !!challengeReleasedAt
-                          const isInteractive = !isReleased && !isVirtual
+                          const isInteractive = !isReleased && !isVirtual && !isWebMcpPending
                           return (
                             <div
                               key={item.id}
@@ -480,6 +481,7 @@ export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challe
                                   <div className="flex min-h-10 items-center gap-2 flex-wrap">
                                     <p className="text-sm font-medium truncate">{item.title}</p>
                                     {current && <Badge variant="secondary">Now</Badge>}
+                                    {isWebMcpPending && <Badge variant="secondary">Saving</Badge>}
                                     {isReleased ? (
                                       <Badge variant="secondary" className="text-xs">Released</Badge>
                                     ) : isTrigger && item.trigger_type ? (

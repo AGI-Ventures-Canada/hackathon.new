@@ -9,6 +9,7 @@ type SendEmailInput = {
   replyTo?: string
   headers?: Record<string, string>
   tags?: Array<{ name: string; value: string }>
+  idempotencyKey?: string
 }
 
 type SendEmailResult = { id: string } | null
@@ -153,6 +154,22 @@ describe("Team Invitation Email", () => {
 
       const callArgs = mockSendEmail.mock.calls[0][0]
       expect(callArgs.tags).toContainEqual({ name: "type", value: "team_invitation" })
+    })
+
+    it("uses the invitation token as a stable idempotency key", async () => {
+      await sendTeamInvitationEmail(validInput)
+
+      expect(mockSendEmail.mock.calls[0][0].idempotencyKey).toBe(
+        "team-invitation/abc123token"
+      )
+    })
+
+    it("allows a stable delivery attempt to override the initial key", async () => {
+      await sendTeamInvitationEmail({ ...validInput, deliveryId: "invite-1/reminded-at" })
+
+      expect(mockSendEmail.mock.calls[0][0].idempotencyKey).toBe(
+        "team-invitation/invite-1/reminded-at"
+      )
     })
 
     it("adds hackathon tag", async () => {

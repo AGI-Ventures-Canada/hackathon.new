@@ -1,15 +1,64 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test"
 
-const mockCreateHackathonFromImport = mock(() => Promise.resolve(null))
-const mockCreateSponsorsFromImport = mock(() => Promise.resolve())
-const mockCreatePrizesFromImport = mock(() => Promise.resolve())
-const mockCreateAgendaFromImport = mock(() => Promise.resolve())
+type MockHackathon = {
+  id: string
+  name: string
+  slug: string
+  default_locale?: string | null
+}
+
+type MockAggregateResult =
+  | { status: "created"; hackathon: MockHackathon }
+  | { status: "replayed"; hackathon: MockHackathon }
+  | {
+      status: "invalid"
+      hackathon: null
+      error: {
+        code: "invalid_draft" | "incomplete_agenda"
+        message: string
+      }
+    }
+  | {
+      status: "invalid"
+      hackathon: MockHackathon
+      error: {
+        code: "draft_conflict"
+        message: string
+      }
+    }
+  | { status: "in_progress" | "failed"; hackathon: null }
+
+const mockCreateHackathonFromImport = mock(
+  (): Promise<MockAggregateResult> => Promise.resolve({ status: "failed", hackathon: null }),
+)
+const mockImportTranslationVariants = mock(() => Promise.resolve())
+type MockFinalizationResult =
+  | { status: "complete" | "in_progress" | "failed" }
+  | {
+      status: "invalid"
+      error: { code: "draft_conflict"; message: string }
+    }
+const mockFinalizeHackathonCreation = mock(
+  (): Promise<MockFinalizationResult> => Promise.resolve({ status: "complete" }),
+)
+const mockStartHackathonCreationFinalizationWorkflow = mock(
+  (): Promise<string | null> => Promise.resolve("creation-finalization-run-1"),
+)
 mock.module("@/lib/services/luma-import-create", () => ({
-  createHackathonFromImport: mockCreateHackathonFromImport,
-  createSponsorsFromImport: mockCreateSponsorsFromImport,
-  createPrizesFromImport: mockCreatePrizesFromImport,
-  createAgendaFromImport: mockCreateAgendaFromImport,
+  createHackathonAggregateWithResult: mockCreateHackathonFromImport,
+  importTranslationVariants: mockImportTranslationVariants,
+  finalizeHackathonCreation: mockFinalizeHackathonCreation,
 }))
+mock.module("@/lib/workflows/creation-finalization", () => ({
+  startHackathonCreationFinalizationWorkflow:
+    mockStartHackathonCreationFinalizationWorkflow,
+}))
+
+function created(hackathon: MockHackathon): MockAggregateResult {
+  return { status: "created", hackathon }
+}
+
+const draftId = "11111111-1111-4111-8111-111111111111"
 
 const mockExtractEventPageData = mock(() => Promise.resolve(null))
 mock.module("@/lib/services/event-page-import", () => ({
@@ -82,9 +131,9 @@ const { api } = await import("@/lib/api")
 describe("POST /api/dashboard/import/event (create from editor data)", () => {
   beforeEach(() => {
     mockCreateHackathonFromImport.mockClear()
-    mockCreateSponsorsFromImport.mockClear()
-    mockCreatePrizesFromImport.mockClear()
-    mockCreateAgendaFromImport.mockClear()
+    mockImportTranslationVariants.mockClear()
+    mockFinalizeHackathonCreation.mockClear()
+    mockStartHackathonCreationFinalizationWorkflow.mockClear()
     mockExtractLumaEventData.mockClear()
     mockExtractLumaRichContent.mockClear()
     mockExtractEventPageData.mockClear()
@@ -95,6 +144,9 @@ describe("POST /api/dashboard/import/event (create from editor data)", () => {
     mockVerifyApiKey.mockClear()
     mockGetOrCreateTenant.mockClear()
     mockGetOrCreatePersonalTenant.mockClear()
+    mockStartHackathonCreationFinalizationWorkflow.mockResolvedValue(
+      "creation-finalization-run-1",
+    )
   })
 
   it("creates hackathon from import when authenticated", async () => {
@@ -106,17 +158,19 @@ describe("POST /api/dashboard/import/event (create from editor data)", () => {
 
     mockGetOrCreateTenant.mockResolvedValueOnce({ id: "tenant-1" })
 
-    mockCreateHackathonFromImport.mockResolvedValueOnce({
+    mockCreateHackathonFromImport.mockResolvedValueOnce(created({
       id: "h1",
       name: "Imported Hackathon",
       slug: "imported-hackathon",
-    })
+    }))
 
     const res = await api.handle(
       new Request("http://localhost/api/dashboard/import/event", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          draftId,
+          expectedOrganizationId: "org-1",
           name: "Imported Hackathon",
           description: "From Luma",
           startsAt: "2026-03-15T09:00:00.000-08:00",
@@ -125,7 +179,7 @@ describe("POST /api/dashboard/import/event (create from editor data)", () => {
           locationName: "San Francisco",
           locationUrl: null,
           imageUrl: "https://images.lumacdn.com/test.png",
-          sourceUrl: "https://luma.com/test-event",
+          sourceUrl: "https://luma.com/test-event?access=raw#private",
         }),
       })
     )
@@ -134,6 +188,369 @@ describe("POST /api/dashboard/import/event (create from editor data)", () => {
     const data = await res.json()
     expect(data.id).toBe("h1")
     expect(data.slug).toBe("imported-hackathon")
+    expect(data.replayed).toBe(false)
+    expect(mockCreateHackathonFromImport).toHaveBeenCalledWith(
+      "tenant-1",
+      expect.objectContaining({ draftId }),
+    )
+    expect(mockFinalizeHackathonCreation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: "tenant-1",
+        principal: expect.objectContaining({ kind: "user", userId: "user-1" }),
+        hackathon: expect.objectContaining({ id: "h1" }),
+        auditMetadata: {
+          source: "luma_import",
+          sourceUrl: "https://luma.com/test-event",
+        },
+        webhookData: {
+          hackathonId: "h1",
+          source: "luma_import",
+          sourceUrl: "https://luma.com/test-event",
+        },
+      }),
+    )
+  })
+
+  it("rejects an imported create when another tab changed the organization", async () => {
+    mockAuth.mockResolvedValueOnce({
+      userId: "user-1",
+      orgId: "org-1",
+      orgRole: "org:admin",
+    })
+    mockGetOrCreateTenant.mockResolvedValueOnce({ id: "tenant-1" })
+
+    const res = await api.handle(
+      new Request("http://localhost/api/dashboard/import/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          draftId,
+          expectedOrganizationId: "org-other",
+          name: "Imported Hackathon",
+        }),
+      }),
+    )
+
+    expect(res.status).toBe(409)
+    expect(await res.json()).toEqual({
+      error: "Your active organization changed. Review it and try again.",
+      code: "organization_context_changed",
+      retryable: true,
+    })
+    expect(mockCreateHackathonFromImport).not.toHaveBeenCalled()
+  })
+
+  it("returns a replay after resuming imported-event finalization", async () => {
+    mockAuth.mockResolvedValueOnce({
+      userId: "user-1",
+      orgId: "org-1",
+      orgRole: "org:admin",
+    })
+    mockGetOrCreateTenant.mockResolvedValueOnce({ id: "tenant-1" })
+    mockCreateHackathonFromImport.mockResolvedValueOnce({
+      status: "replayed",
+      hackathon: {
+        id: draftId,
+        name: "Imported Hackathon",
+        slug: "imported-hackathon",
+        default_locale: "fr",
+      },
+    })
+
+    const res = await api.handle(
+      new Request("http://localhost/api/dashboard/import/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          draftId,
+          name: "Imported Hackathon",
+          description: "From Luma",
+          sourceUrl: "https://luma.com/test-event",
+          defaultLocale: "fr",
+          translationLinks: [{ url: "https://luma.com/test-event-en", languageCode: "en" }],
+        }),
+      }),
+    )
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      id: draftId,
+      name: "Imported Hackathon",
+      slug: "imported-hackathon",
+      replayed: true,
+    })
+    expect(mockCreateHackathonFromImport).toHaveBeenCalledWith(
+      "tenant-1",
+      expect.objectContaining({ draftId }),
+    )
+    expect(mockFinalizeHackathonCreation).toHaveBeenCalledTimes(1)
+  })
+
+  it("returns the imported event when its durable setup still needs retry", async () => {
+    mockAuth.mockResolvedValueOnce({
+      userId: "user-1",
+      orgId: "org-1",
+      orgRole: "org:admin",
+    })
+    mockGetOrCreateTenant.mockResolvedValueOnce({ id: "tenant-1" })
+    mockCreateHackathonFromImport.mockResolvedValueOnce({
+      status: "replayed",
+      hackathon: {
+        id: draftId,
+        name: "Imported Hackathon",
+        slug: "imported-hackathon",
+      },
+    })
+    mockFinalizeHackathonCreation.mockResolvedValueOnce({ status: "failed" })
+
+    const res = await api.handle(
+      new Request("http://localhost/api/dashboard/import/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          draftId,
+          name: "Imported Hackathon",
+        }),
+      }),
+    )
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      id: draftId,
+      name: "Imported Hackathon",
+      slug: "imported-hackathon",
+      replayed: true,
+      finalization: {
+        status: "failed",
+        retryable: true,
+        retryScheduled: true,
+        message: "The event was created. We're finishing setup now.",
+      },
+    })
+    expect(mockStartHackathonCreationFinalizationWorkflow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: "tenant-1",
+        hackathon: expect.objectContaining({ id: draftId }),
+      }),
+    )
+  })
+
+  it("keeps an imported draft retryable when finalization cannot be scheduled", async () => {
+    mockAuth.mockResolvedValueOnce({
+      userId: "user-1",
+      orgId: "org-1",
+      orgRole: "org:admin",
+    })
+    mockGetOrCreateTenant.mockResolvedValueOnce({ id: "tenant-1" })
+    mockCreateHackathonFromImport.mockResolvedValueOnce({
+      status: "created",
+      hackathon: {
+        id: draftId,
+        name: "Imported Hackathon",
+        slug: "imported-hackathon",
+      },
+    })
+    mockFinalizeHackathonCreation.mockResolvedValueOnce({ status: "failed" })
+    mockStartHackathonCreationFinalizationWorkflow.mockResolvedValue(null)
+
+    const res = await api.handle(
+      new Request("http://localhost/api/dashboard/import/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          draftId,
+          name: "Imported Hackathon",
+        }),
+      }),
+    )
+
+    expect(res.status).toBe(503)
+    expect(res.headers.get("Retry-After")).toBe("2")
+    expect(await res.json()).toEqual({
+      error: "Your event was created, but setup could not be scheduled. Keep this page open and try again.",
+      code: "finalization_unscheduled",
+      retryable: true,
+      committed: true,
+      existingEvent: {
+        id: draftId,
+        name: "Imported Hackathon",
+        slug: "imported-hackathon",
+      },
+    })
+    expect(mockStartHackathonCreationFinalizationWorkflow).toHaveBeenCalledTimes(2)
+  })
+
+  it("keeps newer imported edits when finalization details conflict", async () => {
+    mockAuth.mockResolvedValueOnce({
+      userId: "user-1",
+      orgId: "org-1",
+      orgRole: "org:admin",
+    })
+    mockGetOrCreateTenant.mockResolvedValueOnce({ id: "tenant-1" })
+    mockCreateHackathonFromImport.mockResolvedValueOnce({
+      status: "replayed",
+      hackathon: {
+        id: draftId,
+        name: "Imported Hackathon",
+        slug: "imported-hackathon",
+      },
+    })
+    mockFinalizeHackathonCreation.mockResolvedValueOnce({
+      status: "invalid",
+      error: {
+        code: "draft_conflict",
+        message: "This saved draft already created an event with different import details. Open that event to continue.",
+      },
+    })
+
+    const res = await api.handle(
+      new Request("http://localhost/api/dashboard/import/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          draftId,
+          name: "Imported Hackathon",
+          sourceUrl: "https://luma.com/new-source",
+        }),
+      }),
+    )
+
+    expect(res.status).toBe(422)
+    expect(await res.json()).toEqual({
+      error: "This saved draft already created an event with different import details. Open that event to continue.",
+      code: "draft_conflict",
+      retryable: false,
+      existingEvent: {
+        id: draftId,
+        name: "Imported Hackathon",
+        slug: "imported-hackathon",
+      },
+    })
+  })
+
+  it("returns a non-retryable conflict when imported content changes for a draft ID", async () => {
+    mockAuth.mockResolvedValueOnce({
+      userId: "user-1",
+      orgId: "org-1",
+      orgRole: "org:admin",
+    })
+    mockGetOrCreateTenant.mockResolvedValueOnce({ id: "tenant-1" })
+    mockCreateHackathonFromImport.mockResolvedValueOnce({
+      status: "invalid",
+      hackathon: { id: "h-imported", name: "Imported Event", slug: "imported-event" },
+      error: {
+        code: "draft_conflict",
+        message: "This saved draft already created an event. Open that event to continue.",
+      },
+    })
+
+    const res = await api.handle(
+      new Request("http://localhost/api/dashboard/import/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ draftId, name: "Changed imported event" }),
+      }),
+    )
+
+    expect(res.status).toBe(422)
+    expect(await res.json()).toEqual({
+      error: "This saved draft already created an event. Open that event to continue.",
+      code: "draft_conflict",
+      retryable: false,
+      existingEvent: {
+        id: "h-imported",
+        name: "Imported Event",
+        slug: "imported-event",
+      },
+    })
+    expect(mockImportTranslationVariants).not.toHaveBeenCalled()
+    expect(mockLogAudit).not.toHaveBeenCalled()
+    expect(mockTriggerWebhooks).not.toHaveBeenCalled()
+  })
+
+  it("returns a retryable conflict while the same draft is being created", async () => {
+    mockAuth.mockResolvedValueOnce({
+      userId: "user-1",
+      orgId: "org-1",
+      orgRole: "org:admin",
+    })
+    mockGetOrCreateTenant.mockResolvedValueOnce({ id: "tenant-1" })
+    mockCreateHackathonFromImport.mockResolvedValueOnce({
+      status: "in_progress",
+      hackathon: null,
+    })
+
+    const res = await api.handle(
+      new Request("http://localhost/api/dashboard/import/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ draftId, name: "Imported Hackathon" }),
+      }),
+    )
+
+    expect(res.status).toBe(409)
+    expect(res.headers.get("Retry-After")).toBe("2")
+    expect(await res.json()).toEqual({
+      error: "Event creation is already in progress. Try again shortly.",
+      code: "creation_in_progress",
+      retryable: true,
+    })
+    expect(mockImportTranslationVariants).not.toHaveBeenCalled()
+    expect(mockLogAudit).not.toHaveBeenCalled()
+    expect(mockTriggerWebhooks).not.toHaveBeenCalled()
+  })
+
+  it("returns a retryable failure when aggregate creation cannot finish", async () => {
+    mockAuth.mockResolvedValueOnce({
+      userId: "user-1",
+      orgId: "org-1",
+      orgRole: "org:admin",
+    })
+    mockGetOrCreateTenant.mockResolvedValueOnce({ id: "tenant-1" })
+    mockCreateHackathonFromImport.mockResolvedValueOnce({
+      status: "failed",
+      hackathon: null,
+    })
+
+    const res = await api.handle(
+      new Request("http://localhost/api/dashboard/import/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ draftId, name: "Imported Hackathon" }),
+      }),
+    )
+
+    expect(res.status).toBe(500)
+    expect(await res.json()).toEqual({
+      error: "Failed to create hackathon",
+      code: "creation_failed",
+      retryable: true,
+    })
+    expect(mockImportTranslationVariants).not.toHaveBeenCalled()
+    expect(mockLogAudit).not.toHaveBeenCalled()
+    expect(mockTriggerWebhooks).not.toHaveBeenCalled()
+  })
+
+  it("rejects a malformed draft ID before aggregate creation", async () => {
+    mockAuth.mockResolvedValueOnce({
+      userId: "user-1",
+      orgId: "org-1",
+      orgRole: "org:admin",
+    })
+
+    const res = await api.handle(
+      new Request("http://localhost/api/dashboard/import/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ draftId: "not-a-uuid", name: "Imported Hackathon" }),
+      }),
+    )
+
+    expect(res.status).toBe(422)
+    expect(mockCreateHackathonFromImport).not.toHaveBeenCalled()
+    expect(mockImportTranslationVariants).not.toHaveBeenCalled()
+    expect(mockLogAudit).not.toHaveBeenCalled()
+    expect(mockTriggerWebhooks).not.toHaveBeenCalled()
   })
 
   it("creates hackathon from generic event-page data when authenticated", async () => {
@@ -145,11 +562,11 @@ describe("POST /api/dashboard/import/event (create from editor data)", () => {
 
     mockGetOrCreateTenant.mockResolvedValueOnce({ id: "tenant-1" })
 
-    mockCreateHackathonFromImport.mockResolvedValueOnce({
+    mockCreateHackathonFromImport.mockResolvedValueOnce(created({
       id: "h-generic",
       name: "Imported Event Page",
       slug: "imported-event-page",
-    })
+    }))
 
     const res = await api.handle(
       new Request("http://localhost/api/dashboard/import/event", {
@@ -158,8 +575,8 @@ describe("POST /api/dashboard/import/event (create from editor data)", () => {
         body: JSON.stringify({
           name: "Imported Event Page",
           description: "From Eventbrite",
-          startsAt: "2026-06-08T09:00:00",
-          endsAt: "2026-06-08T20:00:00",
+          startsAt: "2026-06-08T09:00:00-04:00",
+          endsAt: "2026-06-08T20:00:00-04:00",
           locationType: "in_person",
           locationName: "Ottawa",
           locationUrl: null,
@@ -176,12 +593,13 @@ describe("POST /api/dashboard/import/event (create from editor data)", () => {
     const data = await res.json()
     expect(data.id).toBe("h-generic")
     expect(data.slug).toBe("imported-event-page")
-    expect(mockCreateSponsorsFromImport).toHaveBeenCalledWith("h-generic", [
-      { name: "OpenAI", tier: "gold" },
-    ])
-    expect(mockCreatePrizesFromImport).toHaveBeenCalledWith("h-generic", [
-      { name: "Grand Prize", description: null, value: "$5,000" },
-    ])
+    expect(mockCreateHackathonFromImport).toHaveBeenCalledWith(
+      "tenant-1",
+      expect.objectContaining({
+        sponsors: [{ name: "OpenAI", tier: "gold" }],
+        prizes: [{ name: "Grand Prize", description: null, value: "$5,000" }],
+      })
+    )
   })
 
   it("returns 401 when not authenticated", async () => {
@@ -198,7 +616,28 @@ describe("POST /api/dashboard/import/event (create from editor data)", () => {
     expect(res.status).toBe(401)
   })
 
-  it("forwards agendaItems to createAgendaFromImport with the event start anchor", async () => {
+  it("rejects a whitespace-only imported event name", async () => {
+    mockAuth.mockResolvedValueOnce({
+      userId: "user-1",
+      orgId: "org-1",
+      orgRole: "org:admin",
+    })
+    mockGetOrCreateTenant.mockResolvedValueOnce({ id: "tenant-1" })
+
+    const res = await api.handle(
+      new Request("http://localhost/api/dashboard/import/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "   " }),
+      })
+    )
+
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: "Give your event a name." })
+    expect(mockCreateHackathonFromImport).not.toHaveBeenCalled()
+  })
+
+  it("forwards agendaItems in the one aggregate create call", async () => {
     mockAuth.mockResolvedValueOnce({
       userId: "user-1",
       orgId: "org-1",
@@ -207,11 +646,11 @@ describe("POST /api/dashboard/import/event (create from editor data)", () => {
 
     mockGetOrCreateTenant.mockResolvedValueOnce({ id: "tenant-1" })
 
-    mockCreateHackathonFromImport.mockResolvedValueOnce({
+    mockCreateHackathonFromImport.mockResolvedValueOnce(created({
       id: "h-agenda-event",
       name: "Agenda Event",
       slug: "agenda-event",
-    })
+    }))
 
     const agendaItems = [
       {
@@ -249,10 +688,20 @@ describe("POST /api/dashboard/import/event (create from editor data)", () => {
     )
 
     expect(res.status).toBe(200)
-    expect(mockCreateAgendaFromImport).toHaveBeenCalledWith(
-      "h-agenda-event",
-      agendaItems,
-      "2026-05-14T08:30:00-04:00"
+    expect(mockCreateHackathonFromImport).toHaveBeenCalledWith(
+      "tenant-1",
+      expect.objectContaining({
+        startsAt: "2026-05-14T08:30:00-04:00",
+        agendaItems: [
+          agendaItems[0],
+          {
+            ...agendaItems[1],
+            description: null,
+            endsAt: null,
+            location: null,
+          },
+        ],
+      })
     )
   })
 
@@ -283,10 +732,79 @@ describe("POST /api/dashboard/import/event (create from editor data)", () => {
     )
 
     expect(res.status).toBe(422)
-    expect(mockCreateAgendaFromImport).not.toHaveBeenCalled()
+    expect(mockCreateHackathonFromImport).not.toHaveBeenCalled()
   })
 
-  it("does not call createAgendaFromImport when agendaItems is empty", async () => {
+  it("rejects an ambiguous event timestamp at the schema boundary", async () => {
+    mockAuth.mockResolvedValueOnce({
+      userId: "user-1",
+      orgId: "org-1",
+      orgRole: "org:admin",
+    })
+
+    const res = await api.handle(
+      new Request("http://localhost/api/dashboard/import/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Ambiguous Event",
+          startsAt: "2026-05-14T08:30:00",
+          endsAt: "2026-05-15T17:00:00-04:00",
+        }),
+      })
+    )
+
+    expect(res.status).toBe(422)
+    expect(mockCreateHackathonFromImport).not.toHaveBeenCalled()
+  })
+
+  it("rejects a private or unsafe source URL before creating anything", async () => {
+    mockAuth.mockResolvedValueOnce({
+      userId: "user-1",
+      orgId: "org-1",
+      orgRole: "org:admin",
+    })
+    mockGetOrCreateTenant.mockResolvedValueOnce({ id: "tenant-1" })
+
+    const res = await api.handle(
+      new Request("http://localhost/api/dashboard/import/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Unsafe source",
+          sourceUrl: "http://127.0.0.1/private",
+        }),
+      })
+    )
+
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: "Invalid or disallowed source URL" })
+    expect(mockCreateHackathonFromImport).not.toHaveBeenCalled()
+  })
+
+  it("caps rich imported content at the request boundary", async () => {
+    mockAuth.mockResolvedValueOnce({
+      userId: "user-1",
+      orgId: "org-1",
+      orgRole: "org:admin",
+    })
+
+    const res = await api.handle(
+      new Request("http://localhost/api/dashboard/import/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Oversized import",
+          description: "x".repeat(5_001),
+        }),
+      })
+    )
+
+    expect(res.status).toBe(422)
+    expect(mockCreateHackathonFromImport).not.toHaveBeenCalled()
+  })
+
+  it("passes an empty agenda to the aggregate create call", async () => {
     mockAuth.mockResolvedValueOnce({
       userId: "user-1",
       orgId: "org-1",
@@ -295,11 +813,11 @@ describe("POST /api/dashboard/import/event (create from editor data)", () => {
 
     mockGetOrCreateTenant.mockResolvedValueOnce({ id: "tenant-1" })
 
-    mockCreateHackathonFromImport.mockResolvedValueOnce({
+    mockCreateHackathonFromImport.mockResolvedValueOnce(created({
       id: "h-no-agenda",
       name: "No Agenda",
       slug: "no-agenda",
-    })
+    }))
 
     const res = await api.handle(
       new Request("http://localhost/api/dashboard/import/event", {
@@ -315,16 +833,19 @@ describe("POST /api/dashboard/import/event (create from editor data)", () => {
     )
 
     expect(res.status).toBe(200)
-    expect(mockCreateAgendaFromImport).not.toHaveBeenCalled()
+    expect(mockCreateHackathonFromImport).toHaveBeenCalledWith(
+      "tenant-1",
+      expect.objectContaining({ agendaItems: [] })
+    )
   })
 })
 
 describe("POST /api/dashboard/import/url (create from URL)", () => {
   beforeEach(() => {
     mockCreateHackathonFromImport.mockClear()
-    mockCreateSponsorsFromImport.mockClear()
-    mockCreatePrizesFromImport.mockClear()
-    mockCreateAgendaFromImport.mockClear()
+    mockImportTranslationVariants.mockClear()
+    mockFinalizeHackathonCreation.mockClear()
+    mockStartHackathonCreationFinalizationWorkflow.mockClear()
     mockExtractLumaEventData.mockClear()
     mockExtractLumaRichContent.mockClear()
     mockExtractEventPageData.mockClear()
@@ -335,6 +856,9 @@ describe("POST /api/dashboard/import/url (create from URL)", () => {
     mockVerifyApiKey.mockClear()
     mockGetOrCreateTenant.mockClear()
     mockGetOrCreatePersonalTenant.mockClear()
+    mockStartHackathonCreationFinalizationWorkflow.mockResolvedValue(
+      "creation-finalization-run-1",
+    )
   })
 
   it("creates hackathon from a Luma URL with API key auth", async () => {
@@ -347,8 +871,8 @@ describe("POST /api/dashboard/import/url (create from URL)", () => {
     mockExtractLumaEventData.mockResolvedValueOnce({
       name: "Extracted Luma Event",
       description: "From page",
-      startsAt: "2026-03-15T09:00:00",
-      endsAt: "2026-03-16T17:00:00",
+      startsAt: "2026-03-15T09:00:00-07:00",
+      endsAt: "2026-03-16T17:00:00-07:00",
       locationType: "in_person",
       locationName: "San Francisco",
       locationUrl: null,
@@ -365,11 +889,11 @@ describe("POST /api/dashboard/import/url (create from URL)", () => {
       cleanedDescription: null,
     })
 
-    mockCreateHackathonFromImport.mockResolvedValueOnce({
+    mockCreateHackathonFromImport.mockResolvedValueOnce(created({
       id: "h2",
       name: "CLI Imported Hackathon",
       slug: "cli-imported-hackathon",
-    })
+    }))
 
     const res = await api.handle(
       new Request("http://localhost/api/dashboard/import/url", {
@@ -379,32 +903,292 @@ describe("POST /api/dashboard/import/url (create from URL)", () => {
           Authorization: "Bearer sk_live_test",
         },
         body: JSON.stringify({
-          url: "lu.ma/test-hackathon",
+          draftId,
+          url: "https://lu.ma/test-hackathon?access=raw#private",
           name: "CLI Imported Hackathon",
         }),
       })
     )
 
     expect(res.status).toBe(200)
-    expect(mockCreateHackathonFromImport).toHaveBeenCalledWith("tenant-1", {
-      name: "CLI Imported Hackathon",
+    expect(mockCreateHackathonFromImport).toHaveBeenCalledWith(
+      "tenant-1",
+      expect.objectContaining({
+        draftId,
+        name: "CLI Imported Hackathon",
+        description: "From page",
+        startsAt: "2026-03-15T09:00:00-07:00",
+        endsAt: "2026-03-16T17:00:00-07:00",
+        registrationOpensAt: null,
+        registrationClosesAt: null,
+        locationType: "in_person",
+        locationName: "San Francisco",
+        locationUrl: null,
+        imageUrl: "https://images.lumacdn.com/test.png",
+        rules: "Bring your laptop.",
+        defaultLocale: null,
+        sponsors: [{ name: "OpenAI", tier: "gold" }],
+        prizes: [{ name: "Grand Prize", description: null, value: "$5,000" }],
+        agendaItems: [],
+      })
+    )
+    expect((await res.json()).replayed).toBe(false)
+    expect(mockFinalizeHackathonCreation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: "tenant-1",
+        principal: expect.objectContaining({ kind: "api_key", keyId: "key-1" }),
+        hackathon: expect.objectContaining({ id: "h2" }),
+        auditMetadata: {
+          source: "luma_import",
+          sourceUrl: "https://lu.ma/test-hackathon",
+        },
+        webhookData: {
+          hackathonId: "h2",
+          source: "luma_import",
+          sourceUrl: "https://lu.ma/test-hackathon",
+        },
+      }),
+    )
+  })
+
+  it("returns a URL-import replay after resuming its finalization", async () => {
+    mockVerifyApiKey.mockResolvedValueOnce({
+      id: "key-1",
+      tenant_id: "tenant-1",
+      scopes: ["hackathons:write"],
+    })
+    mockExtractLumaEventData.mockResolvedValueOnce({
+      name: "Extracted Luma Event",
       description: "From page",
-      startsAt: "2026-03-15T09:00:00",
-      endsAt: "2026-03-16T17:00:00",
+      startsAt: "2026-03-15T09:00:00-07:00",
+      endsAt: "2026-03-16T17:00:00-07:00",
       locationType: "in_person",
       locationName: "San Francisco",
       locationUrl: null,
-      imageUrl: "https://images.lumacdn.com/test.png",
-      rules: "Bring your laptop.",
-      defaultLocale: null,
+      imageUrl: null,
+      language: "fr",
+      translationLinks: [{ url: "https://luma.com/test-event-en", languageCode: "en" }],
     })
-    expect(mockCreateSponsorsFromImport).toHaveBeenCalledWith("h2", [
-      { name: "OpenAI", tier: "gold" },
-    ])
-    expect(mockCreatePrizesFromImport).toHaveBeenCalledWith("h2", [
-      { name: "Grand Prize", description: null, value: "$5,000" },
-    ])
-    expect(mockCreateAgendaFromImport).not.toHaveBeenCalled()
+    mockExtractLumaRichContent.mockResolvedValueOnce(null)
+    mockCreateHackathonFromImport.mockResolvedValueOnce({
+      status: "replayed",
+      hackathon: {
+        id: draftId,
+        name: "Extracted Luma Event",
+        slug: "extracted-luma-event",
+        default_locale: "fr",
+      },
+    })
+
+    const res = await api.handle(
+      new Request("http://localhost/api/dashboard/import/url", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer sk_live_test",
+        },
+        body: JSON.stringify({ draftId, url: "https://luma.com/test-event" }),
+      }),
+    )
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      id: draftId,
+      name: "Extracted Luma Event",
+      slug: "extracted-luma-event",
+      replayed: true,
+    })
+    expect(mockCreateHackathonFromImport).toHaveBeenCalledWith(
+      "tenant-1",
+      expect.objectContaining({ draftId }),
+    )
+    expect(mockFinalizeHackathonCreation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        hackathon: expect.objectContaining({ id: draftId }),
+        translations: expect.objectContaining({
+          translationLinks: [
+            { url: "https://luma.com/test-event-en", languageCode: "en" },
+          ],
+        }),
+      }),
+    )
+  })
+
+  it("keeps a URL-import draft retryable when finalization cannot be scheduled", async () => {
+    mockVerifyApiKey.mockResolvedValueOnce({
+      id: "key-1",
+      tenant_id: "tenant-1",
+      scopes: ["hackathons:write"],
+    })
+    mockExtractLumaEventData.mockResolvedValueOnce({
+      name: "Extracted Luma Event",
+      description: "From page",
+      startsAt: "2026-03-15T09:00:00-07:00",
+      endsAt: "2026-03-16T17:00:00-07:00",
+      locationType: "in_person",
+      locationName: "San Francisco",
+      locationUrl: null,
+      imageUrl: null,
+      language: null,
+      translationLinks: [],
+    })
+    mockExtractLumaRichContent.mockResolvedValueOnce(null)
+    mockCreateHackathonFromImport.mockResolvedValueOnce({
+      status: "created",
+      hackathon: {
+        id: draftId,
+        name: "Extracted Luma Event",
+        slug: "extracted-luma-event",
+      },
+    })
+    mockFinalizeHackathonCreation.mockResolvedValueOnce({ status: "failed" })
+    mockStartHackathonCreationFinalizationWorkflow.mockResolvedValue(null)
+
+    const res = await api.handle(
+      new Request("http://localhost/api/dashboard/import/url", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer sk_live_test",
+        },
+        body: JSON.stringify({ draftId, url: "https://luma.com/test-event" }),
+      }),
+    )
+
+    expect(res.status).toBe(503)
+    expect(res.headers.get("Retry-After")).toBe("2")
+    expect(await res.json()).toEqual({
+      error: "Your event was created, but setup could not be scheduled. Keep this page open and try again.",
+      code: "finalization_unscheduled",
+      retryable: true,
+      committed: true,
+      existingEvent: {
+        id: draftId,
+        name: "Extracted Luma Event",
+        slug: "extracted-luma-event",
+      },
+    })
+    expect(mockStartHackathonCreationFinalizationWorkflow).toHaveBeenCalledTimes(2)
+  })
+
+  it("returns a retryable conflict while a URL import is in progress", async () => {
+    mockVerifyApiKey.mockResolvedValueOnce({
+      id: "key-1",
+      tenant_id: "tenant-1",
+      scopes: ["hackathons:write"],
+    })
+    mockExtractLumaEventData.mockResolvedValueOnce({
+      name: "Extracted Luma Event",
+      description: null,
+      startsAt: "2026-03-15T09:00:00-07:00",
+      endsAt: "2026-03-16T17:00:00-07:00",
+      locationType: "virtual",
+      locationName: null,
+      locationUrl: null,
+      imageUrl: null,
+      language: null,
+      translationLinks: [],
+    })
+    mockExtractLumaRichContent.mockResolvedValueOnce(null)
+    mockCreateHackathonFromImport.mockResolvedValueOnce({
+      status: "in_progress",
+      hackathon: null,
+    })
+
+    const res = await api.handle(
+      new Request("http://localhost/api/dashboard/import/url", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer sk_live_test",
+        },
+        body: JSON.stringify({ draftId, url: "https://luma.com/test-event" }),
+      }),
+    )
+
+    expect(res.status).toBe(409)
+    expect(res.headers.get("Retry-After")).toBe("2")
+    expect(await res.json()).toEqual({
+      error: "Event creation is already in progress. Try again shortly.",
+      code: "creation_in_progress",
+      retryable: true,
+    })
+    expect(mockImportTranslationVariants).not.toHaveBeenCalled()
+    expect(mockLogAudit).not.toHaveBeenCalled()
+    expect(mockTriggerWebhooks).not.toHaveBeenCalled()
+  })
+
+  it("returns a retryable failure when URL aggregate creation cannot finish", async () => {
+    mockVerifyApiKey.mockResolvedValueOnce({
+      id: "key-1",
+      tenant_id: "tenant-1",
+      scopes: ["hackathons:write"],
+    })
+    mockExtractLumaEventData.mockResolvedValueOnce({
+      name: "Extracted Luma Event",
+      description: null,
+      startsAt: "2026-03-15T09:00:00-07:00",
+      endsAt: "2026-03-16T17:00:00-07:00",
+      locationType: "virtual",
+      locationName: null,
+      locationUrl: null,
+      imageUrl: null,
+      language: null,
+      translationLinks: [],
+    })
+    mockExtractLumaRichContent.mockResolvedValueOnce(null)
+    mockCreateHackathonFromImport.mockResolvedValueOnce({
+      status: "failed",
+      hackathon: null,
+    })
+
+    const res = await api.handle(
+      new Request("http://localhost/api/dashboard/import/url", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer sk_live_test",
+        },
+        body: JSON.stringify({ draftId, url: "https://luma.com/test-event" }),
+      }),
+    )
+
+    expect(res.status).toBe(500)
+    expect(await res.json()).toEqual({
+      error: "Failed to create hackathon",
+      code: "creation_failed",
+      retryable: true,
+    })
+    expect(mockImportTranslationVariants).not.toHaveBeenCalled()
+    expect(mockLogAudit).not.toHaveBeenCalled()
+    expect(mockTriggerWebhooks).not.toHaveBeenCalled()
+  })
+
+  it("rejects a malformed URL-import draft ID before fetching the page", async () => {
+    mockVerifyApiKey.mockResolvedValueOnce({
+      id: "key-1",
+      tenant_id: "tenant-1",
+      scopes: ["hackathons:write"],
+    })
+
+    const res = await api.handle(
+      new Request("http://localhost/api/dashboard/import/url", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer sk_live_test",
+        },
+        body: JSON.stringify({ draftId: "not-a-uuid", url: "https://luma.com/test-event" }),
+      }),
+    )
+
+    expect(res.status).toBe(422)
+    expect(mockExtractLumaEventData).not.toHaveBeenCalled()
+    expect(mockExtractEventPageData).not.toHaveBeenCalled()
+    expect(mockCreateHackathonFromImport).not.toHaveBeenCalled()
+    expect(mockImportTranslationVariants).not.toHaveBeenCalled()
+    expect(mockLogAudit).not.toHaveBeenCalled()
+    expect(mockTriggerWebhooks).not.toHaveBeenCalled()
   })
 
   it("creates hackathon from a non-Luma event page URL with rich content", async () => {
@@ -417,8 +1201,8 @@ describe("POST /api/dashboard/import/url (create from URL)", () => {
     mockExtractEventPageData.mockResolvedValueOnce({
       name: "Devpost Hackathon",
       description: "A hackathon on Devpost",
-      startsAt: "2026-06-01T09:00:00",
-      endsAt: "2026-06-02T17:00:00",
+      startsAt: "2026-06-01T09:00:00Z",
+      endsAt: "2026-06-02T17:00:00Z",
       locationType: "virtual",
       locationName: null,
       locationUrl: "https://devpost.com/hackathon",
@@ -435,11 +1219,11 @@ describe("POST /api/dashboard/import/url (create from URL)", () => {
       cleanedDescription: null,
     })
 
-    mockCreateHackathonFromImport.mockResolvedValueOnce({
+    mockCreateHackathonFromImport.mockResolvedValueOnce(created({
       id: "h-devpost",
       name: "Devpost Hackathon",
       slug: "devpost-hackathon",
-    })
+    }))
 
     const res = await api.handle(
       new Request("http://localhost/api/dashboard/import/url", {
@@ -461,29 +1245,30 @@ describe("POST /api/dashboard/import/url (create from URL)", () => {
     expect(mockExtractEventPageData).toHaveBeenCalledWith("https://devpost.com/hackathon/test")
     expect(mockExtractEventPageRichContent).toHaveBeenCalledWith(
       "https://devpost.com/hackathon/test",
-      { eventStartsAt: "2026-06-01T09:00:00" }
+      { eventStartsAt: "2026-06-01T09:00:00Z" }
     )
-    expect(mockCreateHackathonFromImport).toHaveBeenCalledWith("tenant-1", {
-      name: "Devpost Hackathon",
-      description: "A hackathon on Devpost",
-      startsAt: "2026-06-01T09:00:00",
-      endsAt: "2026-06-02T17:00:00",
-      locationType: "virtual",
-      locationName: null,
-      locationUrl: "https://devpost.com/hackathon",
-      imageUrl: "https://devpost.com/banner.png",
-      rules: "Teams of 1-4. No pre-built projects.",
-      defaultLocale: null,
-    })
-    expect(mockCreateSponsorsFromImport).toHaveBeenCalledWith("h-devpost", [
-      { name: "Stripe", tier: "gold" },
-    ])
-    expect(mockCreatePrizesFromImport).toHaveBeenCalledWith("h-devpost", [
-      { name: "Best Overall", description: null, value: "$10,000" },
-    ])
+    expect(mockCreateHackathonFromImport).toHaveBeenCalledWith(
+      "tenant-1",
+      expect.objectContaining({
+        name: "Devpost Hackathon",
+        description: "A hackathon on Devpost",
+        startsAt: "2026-06-01T09:00:00Z",
+        endsAt: "2026-06-02T17:00:00Z",
+        registrationOpensAt: null,
+        registrationClosesAt: null,
+        locationType: "virtual",
+        locationName: null,
+        locationUrl: "https://devpost.com/hackathon",
+        imageUrl: "https://devpost.com/banner.png",
+        rules: "Teams of 1-4. No pre-built projects.",
+        defaultLocale: null,
+        sponsors: [{ name: "Stripe", tier: "gold" }],
+        prizes: [{ name: "Best Overall", description: null, value: "$10,000" }],
+      })
+    )
   })
 
-  it("passes extracted agenda items to createAgendaFromImport", async () => {
+  it("passes extracted agenda items to the aggregate create call", async () => {
     mockVerifyApiKey.mockResolvedValueOnce({
       id: "key-1",
       tenant_id: "tenant-1",
@@ -522,11 +1307,11 @@ describe("POST /api/dashboard/import/url (create from URL)", () => {
       ],
     })
 
-    mockCreateHackathonFromImport.mockResolvedValueOnce({
+    mockCreateHackathonFromImport.mockResolvedValueOnce(created({
       id: "h-agenda",
       name: "Agenda Event",
       slug: "agenda-event",
-    })
+    }))
 
     const res = await api.handle(
       new Request("http://localhost/api/dashboard/import/url", {
@@ -540,19 +1325,20 @@ describe("POST /api/dashboard/import/url (create from URL)", () => {
     )
 
     expect(res.status).toBe(200)
-    expect(mockCreateAgendaFromImport).toHaveBeenCalledWith(
-      "h-agenda",
-      [
-        {
-          title: "Kickoff",
-          description: "Welcome",
-          startsAt: "2026-05-10T09:00:00-04:00",
-          endsAt: "2026-05-10T09:30:00-04:00",
-          location: "Main Hall",
-          speakers: [],
-        },
-      ],
-      "2026-05-10T09:00:00-04:00"
+    expect(mockCreateHackathonFromImport).toHaveBeenCalledWith(
+      "tenant-1",
+      expect.objectContaining({
+        agendaItems: [
+          {
+            title: "Kickoff",
+            description: "Welcome",
+            startsAt: "2026-05-10T09:00:00-04:00",
+            endsAt: "2026-05-10T09:30:00-04:00",
+            location: "Main Hall",
+            speakers: [],
+          },
+        ],
+      })
     )
   })
 

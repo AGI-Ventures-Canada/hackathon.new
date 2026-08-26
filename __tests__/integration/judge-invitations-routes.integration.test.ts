@@ -176,7 +176,7 @@ describe("POST /api/public/judge-invitations/:token/accept", () => {
     expect(mockRecordTermsAcceptance).toHaveBeenCalledTimes(1)
   })
 
-  it("does not record acceptance when invitation accept fails", async () => {
+  it("keeps the recorded acceptance when invitation acceptance later fails", async () => {
     mockAuth.mockResolvedValue({ userId: "user_123" })
     mockGetJudgeInvitationByToken.mockResolvedValue(mockInvitation)
     mockCurrentTermsHash.mockResolvedValue("expected-hash")
@@ -195,6 +195,26 @@ describe("POST /api/public/judge-invitations/:token/accept", () => {
     )
 
     expect(res.status).toBe(400)
-    expect(mockRecordTermsAcceptance).not.toHaveBeenCalled()
+    expect(mockRecordTermsAcceptance).toHaveBeenCalledWith("h1", "user_123", "expected-hash")
+  })
+
+  it("does not accept an invitation when terms acceptance cannot be recorded", async () => {
+    mockAuth.mockResolvedValue({ userId: "user_123" })
+    mockGetJudgeInvitationByToken.mockResolvedValue(mockInvitation)
+    mockCurrentTermsHash.mockResolvedValue("expected-hash")
+    mockRecordTermsAcceptance.mockRejectedValue(new Error("database unavailable"))
+
+    const res = await app.handle(
+      new Request("http://localhost/api/public/judge-invitations/valid-token/accept", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ terms_hash: "expected-hash" }),
+      })
+    )
+    const data = await res.json()
+
+    expect(res.status).toBe(500)
+    expect(data).toMatchObject({ code: "terms_record_failed", retryable: true })
+    expect(mockAcceptJudgeInvitation).not.toHaveBeenCalled()
   })
 })

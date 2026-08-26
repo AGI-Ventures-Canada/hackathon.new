@@ -61,6 +61,22 @@ describe("teams commands", () => {
       expect(body.name).toBe("Alpha")
       expect(body.captainEmail).toBe("captain@example.com")
     })
+
+    it("reports a team created with a saved but unsent captain invite", async () => {
+      mockFetch.mockResolvedValueOnce(jsonResponse({
+        team: { id: "t1", name: "Alpha" },
+        invited: true,
+        queued: false,
+        delivery: "failed",
+      }))
+      const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
+      const { runTeamsCreate } = await import("../../src/commands/teams/create")
+
+      await runTeamsCreate(client, hackathonId, ["--name", "Alpha", "--captain-email", "captain@example.com"])
+
+      expect(consoleLogSpy.mock.calls[0][0]).toContain("Created team \"Alpha\"")
+      expect(consoleLogSpy.mock.calls[0][0]).toContain("email delivery could not be confirmed")
+    })
   })
 
   describe("update", () => {

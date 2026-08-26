@@ -1,19 +1,29 @@
 import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test"
-import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react"
+import {
+  render,
+  screen,
+  fireEvent,
+  cleanup,
+  waitFor,
+} from "@testing-library/react"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const g = globalThis as any
 
 let signInCreateImpl: (...args: unknown[]) => Promise<unknown> = () =>
   Promise.resolve({ status: "complete", createdSessionId: "session_123" })
-let signInAttemptSecondFactorImpl: (...args: unknown[]) => Promise<unknown> = () =>
+let signInAttemptSecondFactorImpl: (
+  ...args: unknown[]
+) => Promise<unknown> = () =>
   Promise.resolve({ status: "complete", createdSessionId: "session_123" })
-let signInAttemptFirstFactorImpl: (...args: unknown[]) => Promise<unknown> = () =>
-  Promise.resolve({ status: "needs_new_password" })
+let signInAttemptFirstFactorImpl: (
+  ...args: unknown[]
+) => Promise<unknown> = () => Promise.resolve({ status: "needs_new_password" })
 let signInResetPasswordImpl: (...args: unknown[]) => Promise<unknown> = () =>
   Promise.resolve({ status: "complete", createdSessionId: "session_123" })
-let signInAuthenticateWithRedirectImpl: (...args: unknown[]) => Promise<unknown> = () =>
-  Promise.resolve()
+let signInAuthenticateWithRedirectImpl: (
+  ...args: unknown[]
+) => Promise<unknown> = () => Promise.resolve()
 
 const signInCreate = mock((...args: unknown[]) => signInCreateImpl(...args))
 const signInAttemptSecondFactor = mock((...args: unknown[]) =>
@@ -28,9 +38,10 @@ const signInResetPassword = mock((...args: unknown[]) =>
 const signInAuthenticateWithRedirect = mock((...args: unknown[]) =>
   signInAuthenticateWithRedirectImpl(...args),
 )
+const signInPrepareSecondFactor = mock(() => Promise.resolve({}))
 
 const mockSetActive = g.__clerkState.signInSetActive
-const mockPush = g.__nextNavState.router.push
+const mockReplace = g.__nextNavState.router.replace
 
 const { SignInForm } = await import("@/components/auth/sign-in-form")
 
@@ -39,6 +50,7 @@ beforeEach(() => {
   g.__clerkState.signIn = {
     create: signInCreate,
     attemptSecondFactor: signInAttemptSecondFactor,
+    prepareSecondFactor: signInPrepareSecondFactor,
     attemptFirstFactor: signInAttemptFirstFactor,
     resetPassword: signInResetPassword,
     authenticateWithRedirect: signInAuthenticateWithRedirect,
@@ -58,7 +70,8 @@ beforeEach(() => {
   signInAttemptFirstFactor.mockClear()
   signInResetPassword.mockClear()
   signInAuthenticateWithRedirect.mockClear()
-  mockPush.mockClear()
+  signInPrepareSecondFactor.mockClear()
+  mockReplace.mockClear()
   mockSetActive.mockClear()
 })
 
@@ -109,12 +122,12 @@ describe("SignInForm", () => {
       })
     })
 
-    it("calls setActive and router.push on complete", async () => {
+    it("calls setActive and replaces the auth page on complete", async () => {
       render(<SignInForm redirectUrl="/dashboard" />)
       fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
       await waitFor(() => {
         expect(mockSetActive).toHaveBeenCalledWith({ session: "session_123" })
-        expect(mockPush).toHaveBeenCalledWith("/dashboard")
+        expect(mockReplace).toHaveBeenCalledWith("/dashboard")
       })
     })
 
@@ -122,7 +135,7 @@ describe("SignInForm", () => {
       render(<SignInForm />)
       fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
       await waitFor(() => {
-        expect(mockPush).toHaveBeenCalledWith("/home")
+        expect(mockReplace).toHaveBeenCalledWith("/home")
       })
     })
 
@@ -146,11 +159,226 @@ describe("SignInForm", () => {
       })
     })
 
+    it("prepares a phone code when TOTP is not available", async () => {
+      signInCreateImpl = () =>
+        Promise.resolve({
+          status: "needs_second_factor",
+          supportedSecondFactors: [
+            {
+              strategy: "phone_code",
+              phoneNumberId: "phone_123",
+              safeIdentifier: "+1 *** 1234",
+            },
+          ],
+          prepareSecondFactor: signInPrepareSecondFactor,
+        })
+      render(<SignInForm />)
+      fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
+
+      await waitFor(() => {
+        expect(signInPrepareSecondFactor).toHaveBeenCalledWith({
+          strategy: "phone_code",
+          phoneNumberId: "phone_123",
+        })
+        expect(screen.getByText(/\+1 \*\*\* 1234/)).toBeDefined()
+      })
+      fireEvent.click(screen.getByRole("button", { name: "Verify" }))
+      await waitFor(() => {
+        expect(signInAttemptSecondFactor).toHaveBeenCalledWith({
+          strategy: "phone_code",
+          code: "",
+        })
+      })
+    })
+
+    it("lets the user switch from TOTP to a backup code", async () => {
+      signInCreateImpl = () =>
+        Promise.resolve({
+          status: "needs_second_factor",
+          supportedSecondFactors: [
+            { strategy: "totp" },
+            { strategy: "backup_code" },
+          ],
+          prepareSecondFactor: signInPrepareSecondFactor,
+        })
+      render(<SignInForm />)
+      fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
+
+      const backupButton = await waitFor(() =>
+        screen.getByRole("button", { name: "Backup code" }),
+      )
+      fireEvent.click(backupButton)
+      await screen.findByText("Enter one of your backup codes")
+      fireEvent.change(screen.getByLabelText("Verification code"), {
+        target: { value: "backup-code" },
+      })
+      fireEvent.click(screen.getByRole("button", { name: "Verify" }))
+
+      await waitFor(() => {
+        expect(signInAttemptSecondFactor).toHaveBeenCalledWith({
+          strategy: "backup_code",
+          code: "backup-code",
+        })
+      })
+    })
+
+    it("resends the selected phone factor", async () => {
+      signInCreateImpl = () =>
+        Promise.resolve({
+          status: "needs_second_factor",
+          supportedSecondFactors: [
+            {
+              strategy: "phone_code",
+              phoneNumberId: "phone_123",
+              safeIdentifier: "+1 *** 1234",
+            },
+          ],
+          prepareSecondFactor: signInPrepareSecondFactor,
+        })
+      render(<SignInForm />)
+      fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
+
+      const resendButton = await waitFor(() =>
+        screen.getByRole("button", { name: "Send a new code" }),
+      )
+      signInPrepareSecondFactor.mockClear()
+      fireEvent.click(resendButton)
+
+      await waitFor(() => {
+        expect(signInPrepareSecondFactor).toHaveBeenCalledWith({
+          strategy: "phone_code",
+          phoneNumberId: "phone_123",
+        })
+      })
+    })
+
+    it("switches between phone destinations and resends to the selected one", async () => {
+      signInCreateImpl = () =>
+        Promise.resolve({
+          status: "needs_second_factor",
+          supportedSecondFactors: [
+            {
+              strategy: "phone_code",
+              phoneNumberId: "phone_123",
+              safeIdentifier: "+1 *** 1234",
+            },
+            {
+              strategy: "phone_code",
+              phoneNumberId: "phone_456",
+              safeIdentifier: "+1 *** 5678",
+            },
+          ],
+          prepareSecondFactor: signInPrepareSecondFactor,
+        })
+      render(<SignInForm />)
+      fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
+
+      const secondPhone = await waitFor(() =>
+        screen.getByRole("button", { name: "Text +1 *** 5678" }),
+      )
+      fireEvent.click(secondPhone)
+      await waitFor(() => {
+        expect(secondPhone.getAttribute("aria-pressed")).toBe("true")
+        expect(signInPrepareSecondFactor).toHaveBeenLastCalledWith({
+          strategy: "phone_code",
+          phoneNumberId: "phone_456",
+        })
+      })
+
+      signInPrepareSecondFactor.mockClear()
+      fireEvent.click(screen.getByRole("button", { name: "Send a new code" }))
+      await waitFor(() => {
+        expect(signInPrepareSecondFactor).toHaveBeenCalledWith({
+          strategy: "phone_code",
+          phoneNumberId: "phone_456",
+        })
+      })
+    })
+
+    it("switches between email destinations and resends to the selected one", async () => {
+      signInCreateImpl = () =>
+        Promise.resolve({
+          status: "needs_second_factor",
+          supportedSecondFactors: [
+            {
+              strategy: "email_code",
+              emailAddressId: "email_123",
+              safeIdentifier: "a***@example.com",
+            },
+            {
+              strategy: "email_code",
+              emailAddressId: "email_456",
+              safeIdentifier: "b***@example.com",
+            },
+          ],
+          prepareSecondFactor: signInPrepareSecondFactor,
+        })
+      render(<SignInForm />)
+      fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
+
+      const secondEmail = await waitFor(() =>
+        screen.getByRole("button", { name: "Email b***@example.com" }),
+      )
+      fireEvent.click(secondEmail)
+      await waitFor(() => {
+        expect(secondEmail.getAttribute("aria-pressed")).toBe("true")
+        expect(signInPrepareSecondFactor).toHaveBeenLastCalledWith({
+          strategy: "email_code",
+          emailAddressId: "email_456",
+        })
+      })
+
+      signInPrepareSecondFactor.mockClear()
+      fireEvent.click(screen.getByRole("button", { name: "Send a new code" }))
+      await waitFor(() => {
+        expect(signInPrepareSecondFactor).toHaveBeenCalledWith({
+          strategy: "email_code",
+          emailAddressId: "email_456",
+        })
+      })
+    })
+
+    it("shows a useful error for an unsupported second-factor method", async () => {
+      signInCreateImpl = () =>
+        Promise.resolve({
+          status: "needs_second_factor",
+          supportedSecondFactors: [
+            {
+              strategy: "email_link",
+              emailAddressId: "email_123",
+              safeIdentifier: "u***@example.com",
+            },
+          ],
+          prepareSecondFactor: signInPrepareSecondFactor,
+        })
+      render(<SignInForm />)
+      fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
+
+      await waitFor(() => {
+        expect(
+          screen.getByText(/sign-in method we can't open here/),
+        ).toBeDefined()
+      })
+      expect(screen.queryByText("Two-factor authentication")).toBeNull()
+    })
+
+    it("shows non-Clerk sign-in failures", async () => {
+      signInCreateImpl = () => Promise.reject(new Error("Connection lost"))
+      render(<SignInForm />)
+      fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
+
+      await waitFor(() => {
+        expect(screen.getByText("Connection lost")).toBeDefined()
+      })
+    })
+
     it("transitions to reset-request step when Forgot password is clicked", () => {
       render(<SignInForm />)
       fireEvent.click(screen.getByText("Forgot password?"))
       expect(screen.getByText("Reset password")).toBeDefined()
-      expect(screen.getByRole("button", { name: "Send reset code" })).toBeDefined()
+      expect(
+        screen.getByRole("button", { name: "Send reset code" }),
+      ).toBeDefined()
     })
   })
 
@@ -159,18 +387,26 @@ describe("SignInForm", () => {
       return (...args: unknown[]) => {
         const params = args[0] as { password?: string }
         if (params?.password) {
-          ;(g.__clerkState.signIn as { supportedFirstFactors?: { strategy: string }[] }).supportedFirstFactors = factors
+          ;(
+            g.__clerkState.signIn as {
+              supportedFirstFactors?: { strategy: string }[]
+            }
+          ).supportedFirstFactors = factors
           return Promise.reject({
             clerkError: true,
             errors: [
               {
                 code: "strategy_for_user_invalid",
-                message: "The verification strategy is not valid for this account",
+                message:
+                  "The verification strategy is not valid for this account",
               },
             ],
           })
         }
-        return Promise.resolve({ status: "needs_first_factor", supportedFirstFactors: factors })
+        return Promise.resolve({
+          status: "needs_first_factor",
+          supportedFirstFactors: factors,
+        })
       }
     }
 
@@ -214,7 +450,7 @@ describe("SignInForm", () => {
       await waitFor(() => {
         expect(signInAuthenticateWithRedirect).toHaveBeenCalledWith({
           strategy: "oauth_google",
-          redirectUrl: "/sso-callback",
+          redirectUrl: "/sso-callback?redirect_url=%2Fdashboard",
           redirectUrlComplete: "/dashboard",
         })
       })
@@ -321,7 +557,7 @@ describe("SignInForm", () => {
       await goToSecondFactor()
       fireEvent.click(screen.getByRole("button", { name: "Verify" }))
       await waitFor(() => {
-        expect(mockPush).toHaveBeenCalledWith("/home")
+        expect(mockReplace).toHaveBeenCalledWith("/home")
       })
     })
 
@@ -343,8 +579,8 @@ describe("SignInForm", () => {
   })
 
   describe("password reset flow", () => {
-    function goToResetRequest() {
-      render(<SignInForm />)
+    function goToResetRequest(redirectUrl?: string) {
+      render(<SignInForm redirectUrl={redirectUrl} />)
       fireEvent.click(screen.getByText("Forgot password?"))
     }
 
@@ -402,7 +638,42 @@ describe("SignInForm", () => {
         expect(signInResetPassword).toHaveBeenCalledWith({
           password: "newpass123",
         })
-        expect(mockPush).toHaveBeenCalledWith("/home")
+        expect(mockReplace).toHaveBeenCalledWith("/home")
+      })
+    })
+
+    it("resumes the requested page after MFA following a password reset", async () => {
+      signInCreateImpl = () => Promise.resolve({})
+      signInResetPasswordImpl = () => Promise.resolve({
+        status: "needs_second_factor",
+        supportedSecondFactors: [{ strategy: "totp" }],
+        prepareSecondFactor: signInPrepareSecondFactor,
+      })
+      goToResetRequest("/create?review=true")
+      fireEvent.click(screen.getByRole("button", { name: "Send reset code" }))
+      await waitFor(() => {
+        expect(screen.getByText("Check your email")).toBeDefined()
+      })
+      fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
+      await waitFor(() => {
+        expect(screen.getByText("Set new password")).toBeDefined()
+      })
+      fireEvent.change(screen.getByLabelText("New password"), {
+        target: { value: "newpass123" },
+      })
+      fireEvent.click(screen.getByRole("button", { name: "Reset password" }))
+
+      await waitFor(() => {
+        expect(screen.getByText("Two-factor authentication")).toBeDefined()
+      })
+      fireEvent.change(screen.getByLabelText("Verification code"), {
+        target: { value: "123456" },
+      })
+      fireEvent.click(screen.getByRole("button", { name: "Verify" }))
+
+      await waitFor(() => {
+        expect(mockSetActive).toHaveBeenCalledWith({ session: "session_123" })
+        expect(mockReplace).toHaveBeenCalledWith("/create?review=true")
       })
     })
   })
@@ -414,7 +685,7 @@ describe("SignInForm", () => {
       await waitFor(() => {
         expect(signInAuthenticateWithRedirect).toHaveBeenCalledWith({
           strategy: "oauth_google",
-          redirectUrl: "/sso-callback",
+          redirectUrl: "/sso-callback?redirect_url=%2Fdashboard",
           redirectUrlComplete: "/dashboard",
         })
       })
@@ -426,7 +697,7 @@ describe("SignInForm", () => {
       await waitFor(() => {
         expect(signInAuthenticateWithRedirect).toHaveBeenCalledWith({
           strategy: "oauth_github",
-          redirectUrl: "/sso-callback",
+          redirectUrl: "/sso-callback?redirect_url=%2Fhome",
           redirectUrlComplete: "/home",
         })
       })
@@ -438,7 +709,7 @@ describe("SignInForm", () => {
       await waitFor(() => {
         expect(signInAuthenticateWithRedirect).toHaveBeenCalledWith({
           strategy: "oauth_linkedin_oidc",
-          redirectUrl: "/sso-callback",
+          redirectUrl: "/sso-callback?redirect_url=%2Fhome",
           redirectUrlComplete: "/home",
         })
       })

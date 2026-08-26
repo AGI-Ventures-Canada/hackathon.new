@@ -1,5 +1,7 @@
 import { supabase as getSupabase } from "@/lib/db/client"
+import { getNotificationDisposition } from "@/lib/utils/notification-lifecycle"
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { withDeliveryLease } from "@/lib/services/delivery-lease"
 
 export type Urgency = "low" | "medium" | "high"
 
@@ -134,12 +136,14 @@ export async function scheduleReminders(
 
   const { data, error } = await client
     .from("scheduled_reminders")
-    .upsert(rows, { onConflict: "entity_type,entity_id,scheduled_for" })
+    .upsert(rows, {
+      onConflict: "entity_type,entity_id,scheduled_for",
+      ignoreDuplicates: true,
+    })
     .select("id")
 
   if (error) {
-    console.error("Failed to schedule reminders:", error)
-    return 0
+    throw new Error(`Failed to schedule reminders: ${error.message}`)
   }
 
   return data?.length ?? 0
@@ -161,8 +165,7 @@ export async function cancelRemindersForEntity(
     .select("id")
 
   if (error) {
-    console.error("Failed to cancel reminders:", error)
-    return 0
+    throw new Error(`Failed to cancel reminders: ${error.message}`)
   }
 
   return data?.length ?? 0
@@ -187,8 +190,7 @@ export async function cancelUpcomingReminder(
     .select("id")
 
   if (error) {
-    console.error("Failed to cancel upcoming reminder:", error)
-    return 0
+    throw new Error(`Failed to cancel upcoming reminder: ${error.message}`)
   }
 
   return data?.length ?? 0
@@ -220,52 +222,74 @@ export type ProcessResult = {
 }
 
 export async function processPendingReminders(
-  limit: number = 50
+  limit: number = 50,
+  dependencies: {
+    validate?: (reminder: ScheduledReminder) => Promise<boolean>
+    dispatch?: (reminder: ScheduledReminder) => Promise<boolean>
+  } = {},
+): Promise<ProcessResult> {
+  const claimed = await withDeliveryLease(
+    "scheduled-reminders",
+    () => processPendingRemindersUnlocked(limit, dependencies),
+  )
+  return claimed.acquired
+    ? claimed.value
+    : { processed: 0, sent: 0, skipped: 0, errors: 0 }
+}
+
+async function processPendingRemindersUnlocked(
+  limit: number,
+  dependencies: {
+    validate?: (reminder: ScheduledReminder) => Promise<boolean>
+    dispatch?: (reminder: ScheduledReminder) => Promise<boolean>
+  },
 ): Promise<ProcessResult> {
   const client = getSupabase() as unknown as SupabaseClient
   const now = new Date().toISOString()
 
   const { data: reminders, error } = await client
     .from("scheduled_reminders")
-    .update({ sent_at: now })
+    .select("*")
     .lte("scheduled_for", now)
     .is("sent_at", null)
     .is("cancelled_at", null)
     .lt("fail_count", MAX_RETRIES)
-    .select("*")
+    .order("scheduled_for")
     .limit(limit)
 
-  if (error || !reminders) {
-    console.error("Failed to claim pending reminders:", error)
-    return { processed: 0, sent: 0, skipped: 0, errors: 0 }
+  if (error) {
+    throw new Error(`Failed to load pending reminders: ${error.message}`)
   }
 
-  const result: ProcessResult = { processed: reminders.length, sent: 0, skipped: 0, errors: 0 }
+  const pending = (reminders ?? []) as ScheduledReminder[]
+  const result: ProcessResult = { processed: pending.length, sent: 0, skipped: 0, errors: 0 }
 
-  for (const reminder of reminders as ScheduledReminder[]) {
+  for (const reminder of pending) {
+    let deliveryAccepted = false
     try {
-      const shouldSend = await validateReminderEntity(reminder)
+      const shouldSend = await (dependencies.validate ?? validateReminderEntity)(reminder)
       if (!shouldSend) {
+        await markReminderSkipped(client, reminder.id)
         result.skipped++
         continue
       }
 
-      await dispatchReminderEmail(reminder)
-      result.sent++
+      const delivered = await (dependencies.dispatch ?? dispatchReminderEmail)(reminder)
+      if (delivered) {
+        deliveryAccepted = true
+        await markScheduledReminderSent(client, reminder.id)
+        result.sent++
+      } else {
+        await markReminderSkipped(client, reminder.id)
+        result.skipped++
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       console.error(
         `Failed to process reminder ${reminder.id} (entity=${reminder.entity_type}, entity_id=${reminder.entity_id}, hackathon=${reminder.hackathon_id}):`,
         err
       )
-      await client
-        .from("scheduled_reminders")
-        .update({
-          sent_at: null,
-          fail_count: reminder.fail_count + 1,
-          last_error: message,
-        })
-        .eq("id", reminder.id)
+      await recordReminderFailure(client, reminder, message, !deliveryAccepted)
       result.errors++
     }
   }
@@ -273,27 +297,94 @@ export async function processPendingReminders(
   return result
 }
 
-async function validateReminderEntity(
+async function markScheduledReminderSent(
+  client: SupabaseClient,
+  reminderId: string,
+): Promise<void> {
+  const { error } = await client
+    .from("scheduled_reminders")
+    .update({
+      sent_at: new Date().toISOString(),
+      last_error: null,
+    })
+    .eq("id", reminderId)
+    .is("sent_at", null)
+    .is("cancelled_at", null)
+
+  if (error) {
+    throw new Error(`Failed to mark reminder sent: ${error.message}`)
+  }
+}
+
+async function recordReminderFailure(
+  client: SupabaseClient,
+  reminder: ScheduledReminder,
+  message: string,
+  incrementAttempt: boolean,
+): Promise<void> {
+  const { error } = await client
+    .from("scheduled_reminders")
+    .update({
+      ...(incrementAttempt ? { fail_count: reminder.fail_count + 1 } : {}),
+      last_error: message,
+    })
+    .eq("id", reminder.id)
+    .is("sent_at", null)
+    .is("cancelled_at", null)
+
+  if (error) {
+    throw new Error(`Failed to record reminder failure: ${error.message}`)
+  }
+}
+
+async function markReminderSkipped(
+  client: SupabaseClient,
+  reminderId: string,
+): Promise<void> {
+  const { error } = await client
+    .from("scheduled_reminders")
+    .update({
+      cancelled_at: new Date().toISOString(),
+      last_error: null,
+    })
+    .eq("id", reminderId)
+    .is("sent_at", null)
+    .is("cancelled_at", null)
+
+  if (error) {
+    throw new Error(`Failed to cancel skipped reminder: ${error.message}`)
+  }
+}
+
+export async function validateReminderEntity(
   reminder: ScheduledReminder
 ): Promise<boolean> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  if (reminder.entity_type === "team_invitation" || reminder.entity_type === "judge_invitation") {
-    const { data: hackathon } = await client
-      .from("hackathons")
-      .select("status")
-      .eq("id", reminder.hackathon_id)
-      .single()
-    if (!hackathon || hackathon.status === "draft") return false
+  const { data: hackathon, error: hackathonError } = await client
+    .from("hackathons")
+    .select("status, starts_at, ends_at")
+    .eq("id", reminder.hackathon_id)
+    .single()
+  if (hackathonError) {
+    throw new Error(`Failed to validate reminder event: ${hackathonError.message}`)
   }
+  if (!hackathon) return false
+  const disposition = getNotificationDisposition({
+    status: hackathon.status,
+    starts_at: hackathon.starts_at ?? null,
+    ends_at: hackathon.ends_at ?? null,
+  })
+  if (disposition !== "send") return false
 
   if (reminder.entity_type === "team_invitation") {
-    const { data } = await client
+    const { data, error } = await client
       .from("team_invitations")
       .select("status, expires_at")
       .eq("id", reminder.entity_id)
       .single()
 
+    if (error) throw new Error(`Failed to validate team invitation reminder: ${error.message}`)
     if (!data) return false
     if (data.status !== "pending") return false
     if (new Date(data.expires_at) < new Date()) return false
@@ -301,12 +392,13 @@ async function validateReminderEntity(
   }
 
   if (reminder.entity_type === "judge_invitation") {
-    const { data } = await client
+    const { data, error } = await client
       .from("judge_invitations")
       .select("status, expires_at")
       .eq("id", reminder.entity_id)
       .single()
 
+    if (error) throw new Error(`Failed to validate judge invitation reminder: ${error.message}`)
     if (!data) return false
     if (data.status !== "pending") return false
     if (new Date(data.expires_at) < new Date()) return false
@@ -314,15 +406,7 @@ async function validateReminderEntity(
   }
 
   if (reminder.entity_type === "hackathon_event") {
-    const { data } = await client
-      .from("hackathons")
-      .select("status")
-      .eq("id", reminder.entity_id)
-      .single()
-
-    if (!data) return false
-    if (data.status === "completed" || data.status === "archived") return false
-    return true
+    return reminder.entity_id === reminder.hackathon_id
   }
 
   return false
@@ -335,9 +419,23 @@ function requireMeta(meta: Record<string, unknown>, ...keys: string[]): void {
   }
 }
 
+export function hasReminderDeliveryFailure(
+  delivery: { success: boolean } | { sent: number; failed: number },
+): boolean {
+  return "success" in delivery ? !delivery.success : delivery.failed > 0
+}
+
+export function reminderDeliveryWasSent(
+  delivery: { success: boolean } | { sent: number; failed: number },
+): boolean {
+  return "success" in delivery
+    ? delivery.success
+    : delivery.sent > 0 && delivery.failed === 0
+}
+
 async function dispatchReminderEmail(
   reminder: ScheduledReminder
-): Promise<void> {
+): Promise<boolean> {
   const meta = reminder.metadata
 
   if (
@@ -348,7 +446,7 @@ async function dispatchReminderEmail(
     const { sendTeamInvitationReminderEmail } = await import(
       "@/lib/email/team-invitations"
     )
-    await sendTeamInvitationReminderEmail({
+    const delivery = await sendTeamInvitationReminderEmail({
       to: meta.email as string,
       teamName: meta.teamName as string,
       hackathonName: meta.hackathonName as string,
@@ -357,8 +455,12 @@ async function dispatchReminderEmail(
       inviteToken: meta.inviteToken as string,
       expiresAt: meta.expiresAt as string,
       urgency: reminder.urgency,
+      deliveryId: reminder.id,
     })
-    return
+    if (hasReminderDeliveryFailure(delivery)) {
+      throw new Error("Team invitation reminder email was not accepted")
+    }
+    return reminderDeliveryWasSent(delivery)
   }
 
   if (
@@ -369,15 +471,19 @@ async function dispatchReminderEmail(
     const { sendJudgeInvitationReminderEmail } = await import(
       "@/lib/email/judge-invitations"
     )
-    await sendJudgeInvitationReminderEmail({
+    const delivery = await sendJudgeInvitationReminderEmail({
       to: meta.email as string,
       hackathonName: meta.hackathonName as string,
       inviterName: meta.inviterName as string,
       inviteToken: meta.inviteToken as string,
       expiresAt: meta.expiresAt as string,
       urgency: reminder.urgency,
+      deliveryId: reminder.id,
     })
-    return
+    if (hasReminderDeliveryFailure(delivery)) {
+      throw new Error("Judge invitation reminder email was not accepted")
+    }
+    return reminderDeliveryWasSent(delivery)
   }
 
   if (reminder.entity_type === "hackathon_event") {
@@ -385,16 +491,21 @@ async function dispatchReminderEmail(
     const { sendPreEventReminderEmail } = await import(
       "@/lib/email/pre-event-reminders"
     )
-    await sendPreEventReminderEmail({
+    const delivery = await sendPreEventReminderEmail({
       hackathonId: reminder.hackathon_id,
       reminderType: reminder.reminder_type as "registration_closing" | "event_starting" | "submission_due",
       hackathonName: meta.hackathonName as string,
       hackathonSlug: meta.hackathonSlug as string,
       deadlineDate: meta.deadlineDate as string,
       urgency: reminder.urgency,
+      deliveryId: reminder.id,
     })
-    return
+    if (hasReminderDeliveryFailure(delivery)) {
+      throw new Error("One or more event reminder emails were not accepted")
+    }
+    return reminderDeliveryWasSent(delivery)
   }
 
   console.warn(`Unknown reminder dispatch: ${reminder.entity_type}/${reminder.reminder_type}`)
+  return false
 }

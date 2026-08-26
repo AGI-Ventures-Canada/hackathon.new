@@ -106,8 +106,9 @@ export function AboutEditForm({ hackathonId, initialData, onSaveAndNext, onSave,
             id="about-description"
             rows={8}
             placeholder="Tell participants about your hackathon..."
-            value={description}
-            onChange={setDescription}
+          value={description}
+          onChange={setDescription}
+          maxLength={5_000}
           />
           <FieldDescription>
             Supports markdown: **bold**, _italic_, ## headings, lists, and [links](url)

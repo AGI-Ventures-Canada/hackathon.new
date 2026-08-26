@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 
 type OAuthProvider = "oauth_google" | "oauth_github" | "oauth_linkedin_oidc";
@@ -11,12 +11,17 @@ const VALID_PROVIDERS: OAuthProvider[] = [
   "oauth_github",
   "oauth_linkedin_oidc",
 ];
+const emptySubscribe = () => () => {};
 
 function getLastUsedProvider(): OAuthProvider | null {
   if (typeof window === "undefined") return null;
-  const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored && VALID_PROVIDERS.includes(stored as OAuthProvider)) {
-    return stored as OAuthProvider;
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored && VALID_PROVIDERS.includes(stored as OAuthProvider)) {
+      return stored as OAuthProvider;
+    }
+  } catch {
+    return null;
   }
   return null;
 }
@@ -24,13 +29,20 @@ function getLastUsedProvider(): OAuthProvider | null {
 
 export function OAuthButtons({
   onOAuth,
+  disabled = false,
 }: {
   onOAuth: (provider: OAuthProvider) => void;
+  disabled?: boolean;
 }) {
-  const [lastUsed] = useState<OAuthProvider | null>(getLastUsedProvider);
+  const isClient = useSyncExternalStore(emptySubscribe, () => true, () => false);
+  const [selectedProvider, setSelectedProvider] = useState<OAuthProvider | null>(null);
+  const lastUsed = selectedProvider ?? (isClient ? getLastUsedProvider() : null);
 
   function handleOAuth(provider: OAuthProvider) {
-    localStorage.setItem(STORAGE_KEY, provider);
+    try {
+      localStorage.setItem(STORAGE_KEY, provider);
+    } catch {}
+    setSelectedProvider(provider);
     onOAuth(provider);
   }
 
@@ -81,6 +93,7 @@ export function OAuthButtons({
             variant="outline"
             className="w-full"
             onClick={() => handleOAuth(provider)}
+            disabled={disabled}
           >
             {icon}
             {label}

@@ -36,135 +36,134 @@ export function OatmealLayout({
       <Body
         style={{
           fontFamily,
-          lineHeight: "1.7",
+          lineHeight: "1.6",
           color: colors.textPrimary,
-          maxWidth: "560px",
-          margin: "0 auto",
-          padding: "20px",
+          width: "100%",
+          margin: "0",
+          padding: "32px 12px",
           backgroundColor: colors.pageBg,
         }}
       >
-        <Container>
-          <Section style={{ borderTop: `3px solid ${colors.accent}` }}>
-            <Section
+        <Container style={{ width: "100%", maxWidth: "600px", margin: "0 auto" }}>
+          <Section
+            style={{
+              backgroundColor: colors.headerBg,
+              padding: `${spacing.lg} ${spacing.xl}`,
+              borderRadius: "14px 14px 0 0",
+            }}
+          >
+            <Link
+              href={brandUrl}
               style={{
-                background: colors.headerBg,
-                padding: `${spacing.xl} ${spacing.xxl} ${spacing.lg}`,
+                color: colors.headerText,
+                display: "inline-block",
+                fontSize: fontSize.lg,
+                fontWeight: 700,
+                letterSpacing: "-0.03em",
+                lineHeight: "1.2",
+                textDecoration: "none",
               }}
             >
-              <Heading
-                style={{
-                  color: colors.textPrimary,
-                  margin: "0",
-                  fontSize: fontSize.xl,
-                  fontWeight: 700,
-                  letterSpacing: "-0.025em",
-                }}
-              >
-                {heading}
-              </Heading>
-            </Section>
+              hackathon.new
+            </Link>
+          </Section>
+
+          <Section
+            style={{
+              backgroundColor: colors.bodyBg,
+              padding: `${spacing.xxl} ${spacing.xl}`,
+              border: `1px solid ${colors.border}`,
+              borderTop: "none",
+              borderRadius: "0 0 14px 14px",
+            }}
+          >
+            <Heading
+              style={{
+                color: colors.textPrimary,
+                margin: `0 0 ${spacing.lg} 0`,
+                fontSize: fontSize.xl,
+                fontWeight: 700,
+                lineHeight: "1.12",
+                letterSpacing: "-0.04em",
+              }}
+            >
+              {heading}
+            </Heading>
+
+            {children}
 
             <Hr
               style={{
                 border: "none",
                 borderTop: `1px solid ${colors.divider}`,
-                margin: "0",
+                margin: `${spacing.xl} 0 ${spacing.lg} 0`,
               }}
             />
 
-            <Section
-              style={{
-                background: colors.bodyBg,
-                padding: `${spacing.xl} ${spacing.xxl}`,
-                border: `1px solid ${colors.border}`,
-                borderTop: "none",
-              }}
-            >
-              {children}
-
-              <Hr
-                style={{
-                  border: "none",
-                  borderTop: `1px solid ${colors.divider}`,
-                  margin: `${spacing.lg} 0`,
-                }}
-              />
-
-              {eventUrl && (
-                <Text
-                  style={{
-                    fontSize: fontSize.sm,
-                    color: colors.textMuted,
-                    margin: `0 0 ${spacing.md} 0`,
-                    lineHeight: "1.5",
-                  }}
-                >
-                  <Link
-                    href={eventUrl}
-                    style={{
-                      color: colors.accent,
-                      textDecoration: "none",
-                      fontWeight: 600,
-                    }}
-                  >
-                    {hackathonName
-                      ? `View ${hackathonName} \u2192`
-                      : "View event page \u2192"}
-                  </Link>
-                </Text>
-              )}
-
+            {eventUrl && (
               <Text
                 style={{
-                  fontSize: fontSize.xs,
-                  color: colors.textFooter,
-                  margin: `0 0 ${spacing.sm} 0`,
+                  fontSize: fontSize.sm,
+                  margin: `0 0 ${spacing.md} 0`,
                   lineHeight: "1.5",
                 }}
               >
-                {footerText}
+                <Link
+                  href={eventUrl}
+                  style={{
+                    color: colors.textPrimary,
+                    fontWeight: 600,
+                    textDecoration: "underline",
+                  }}
+                >
+                  {hackathonName
+                    ? `View ${hackathonName} \u2192`
+                    : "View event page \u2192"}
+                </Link>
               </Text>
-            </Section>
-          </Section>
+            )}
 
-          <Section
-            style={{
-              textAlign: "center" as const,
-              padding: `${spacing.md} 0`,
-            }}
-          >
-            <Text
-              style={{
-                fontSize: fontSize.sm,
-                color: colors.textSecondary,
-                fontWeight: 600,
-                margin: `0 0 ${spacing.sm} 0`,
-              }}
-            >
-              <Link
-                href={brandUrl}
-                style={{
-                  color: colors.textSecondary,
-                  textDecoration: "none",
-                }}
-              >
-                hackathon.new
-              </Link>
-            </Text>
             <Text
               style={{
                 fontSize: fontSize.xs,
                 color: colors.textFooter,
                 margin: "0",
+                lineHeight: "1.5",
               }}
             >
-              Questions?{" "}
+              {footerText}
+            </Text>
+          </Section>
+
+          <Section
+            style={{
+              textAlign: "left" as const,
+              padding: `${spacing.md} ${spacing.sm}`,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: fontSize.xs,
+                color: colors.textFooter,
+                margin: "0",
+                lineHeight: "1.5",
+              }}
+            >
+              Sent by{" "}
+              <Link
+                href={brandUrl}
+                style={{
+                  color: colors.textFooter,
+                }}
+              >
+                hackathon.new
+              </Link>
+              . Questions?{" "}
               <Link
                 href={`mailto:${supportEmail}`}
                 style={{
                   color: colors.textFooter,
-                  textDecoration: "underline",
+                  textDecoration: "none",
                 }}
               >
                 {supportEmail}

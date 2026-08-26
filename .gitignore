@@ -33,6 +33,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -59,7 +60,7 @@ lib/**/*.d.ts.map
 # local dev
 specs.md
 examples/
-docs/
+/docs/
 
 # Claude Code
 .claude/worktrees/
@@ -94,3 +95,4 @@ supabase/.temp
 
 # generated DB types
 lib/db/types.ts
+/.swc

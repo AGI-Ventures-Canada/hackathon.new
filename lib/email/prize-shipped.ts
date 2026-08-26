@@ -8,6 +8,11 @@ import {
   shortHackathonName,
 } from "./utils"
 import PrizeShippedEmail from "@/emails/prize-shipped"
+import { createHash } from "node:crypto"
+
+function recipientFingerprint(email: string): string {
+  return createHash("sha256").update(email.trim().toLowerCase()).digest("hex").slice(0, 24)
+}
 
 export async function sendPrizeShippedEmail(params: {
   recipientEmail: string
@@ -16,6 +21,7 @@ export async function sendPrizeShippedEmail(params: {
   hackathonName: string
   trackingNumber: string | null
   hackathonSlug?: string
+  fulfillmentId?: string
 }): Promise<boolean> {
   const { recipientEmail, recipientName, prizeName, hackathonName, trackingNumber, hackathonSlug } = params
 
@@ -40,6 +46,9 @@ export async function sendPrizeShippedEmail(params: {
       { name: "type", value: "prize_shipped" },
       { name: "hackathon", value: sanitizeTag(hackathonName) },
     ],
+    idempotencyKey: params.fulfillmentId
+      ? `prize-shipped/${params.fulfillmentId}/${recipientFingerprint(recipientEmail)}`
+      : undefined,
   })
 
   return result !== null

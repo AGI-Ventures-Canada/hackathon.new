@@ -13,7 +13,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const hackathon = await getPublicHackathon(slug)
 
   return {
-    title: hackathon ? `Winners | ${hackathon.name}` : "Winners",
+    title: hackathon?.results_published_at
+      ? `Winners | ${hackathon.name}`
+      : "Winners",
   }
 }
 
@@ -21,7 +23,7 @@ export default async function WinnersPage({ params }: PageProps) {
   const { slug } = await params
   const hackathon = await getPublicHackathon(slug)
 
-  if (!hackathon) {
+  if (!hackathon?.results_published_at) {
     notFound()
   }
 
@@ -32,7 +34,9 @@ export default async function WinnersPage({ params }: PageProps) {
     prizeDescription: w.prizeDescription,
     prizeValue: w.prizeValue,
     submissionTitle: w.submissionTitle,
-    teamName: w.teamName ?? "Unknown Team",
+    teamName: hackathon.anonymous_judging
+      ? "Anonymous project"
+      : w.teamName ?? "Unknown Team",
   }))
 
   return (

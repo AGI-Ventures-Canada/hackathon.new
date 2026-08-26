@@ -10,19 +10,20 @@ export function InfoBox({ label, children }: InfoBoxProps) {
   return (
     <Section
       style={{
-        background: colors.infoBoxBg,
-        padding: `${spacing.md} ${spacing.lg}`,
+        backgroundColor: colors.infoBoxBg,
+        padding: spacing.lg,
         marginBottom: spacing.lg,
-        borderRadius: "8px",
-        borderLeft: `3px solid ${colors.accent}`,
+        borderRadius: "12px",
+        border: `1px solid ${colors.border}`,
       }}
     >
       <Text
         style={{
           margin: "0 0 4px 0",
-          fontSize: fontSize.xs,
+          fontSize: fontSize.sm,
           color: colors.textSecondary,
           fontWeight: 600,
+          letterSpacing: "0.01em",
         }}
       >
         {label}

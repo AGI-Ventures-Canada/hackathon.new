@@ -71,6 +71,30 @@ describe("SSOCallback", () => {
     expect(el.getAttribute("signupforceredirecturl")).toBeNull()
   })
 
+  it("passes the saved creation target to both Clerk fallbacks", () => {
+    g.__nextNavState.searchParams = new URLSearchParams(
+      "redirect_url=%2Fresume-create%3Ftoken%3D123",
+    )
+    render(<SSOCallback />)
+    const el = screen.getByTestId("authenticate-with-redirect-callback")
+    expect(el.getAttribute("signinfallbackredirecturl")).toBe(
+      "/resume-create?token=123",
+    )
+    expect(el.getAttribute("signupfallbackredirecturl")).toBe(
+      "/resume-create?token=123",
+    )
+  })
+
+  it("does not pass an unsafe target to Clerk fallbacks", () => {
+    g.__nextNavState.searchParams = new URLSearchParams(
+      "redirect_url=https%3A%2F%2Fevil.example%2Fsteal",
+    )
+    render(<SSOCallback />)
+    const el = screen.getByTestId("authenticate-with-redirect-callback")
+    expect(el.getAttribute("signinfallbackredirecturl")).toBe("/home")
+    expect(el.getAttribute("signupfallbackredirecturl")).toBe("/onboarding")
+  })
+
   it("schedules an 8 second fallback timeout when signed in", () => {
     render(<SSOCallback />)
     expect(callbacks.find((c) => c.delay === 8000)).toBeDefined()
@@ -131,6 +155,15 @@ describe("SSOCallback", () => {
       flushTimers()
     })
     expect(mockReplace).toHaveBeenCalledWith("/home")
+  })
+
+  it("ignores backslash redirects that normalize to another origin", async () => {
+    g.__nextNavState.searchParams = new URLSearchParams("redirect_url=%2F%5Cevil.com%2Fsteal")
+    render(<SSOCallback />)
+    await act(async () => {
+      flushTimers()
+    })
+    expect(mockReplace).toHaveBeenCalledWith("/onboarding")
   })
 
   it("does not navigate if Clerk already moved off /sso-callback", async () => {

@@ -4,7 +4,7 @@ const mockFetch = mock(() =>
   Promise.resolve(new Response("", { status: 200 }))
 )
 
-globalThis.fetch = mockFetch as typeof fetch
+globalThis.fetch = mockFetch as unknown as typeof fetch
 
 const { extractEventPageData } = await import("@/lib/services/event-page-import")
 
@@ -105,5 +105,25 @@ describe("extractEventPageData", () => {
     }))
 
     expect(await extractEventPageData("https://example.com/oversized-event")).toBeNull()
+  })
+
+  it("redacts event URL secrets from fetch errors", async () => {
+    const url = "https://example.com/events/log-test?token=event-secret#private"
+    mockFetch.mockRejectedValueOnce(new Error(`Network failure for ${url}`))
+    const originalConsoleError = console.error
+    const consoleError = mock(() => {})
+    console.error = consoleError
+
+    try {
+      expect(await extractEventPageData(url)).toBeNull()
+    } finally {
+      console.error = originalConsoleError
+    }
+
+    const output = JSON.stringify(consoleError.mock.calls)
+    expect(output).toContain("https://example.com/[redacted]")
+    expect(output).not.toContain("log-test")
+    expect(output).not.toContain("event-secret")
+    expect(output).not.toContain("#private")
   })
 })

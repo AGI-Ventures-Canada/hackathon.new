@@ -64,6 +64,6 @@ describe("Transition Email Templates", () => {
   it("sanitizes hackathon name for email tag", async () => {
     const email = await buildTransitionEmail("hackathon_started", "AI & ML Hackathon 2026!", "ai-ml-hack")
 
-    expect(email.tag).toBe("AI_ML_Hackathon_2026_")
+    expect(email.tag).toBe("AI_ML_Hackathon_2026")
   })
 })

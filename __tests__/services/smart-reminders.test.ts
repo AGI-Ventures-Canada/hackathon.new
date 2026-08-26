@@ -1,11 +1,25 @@
-import { describe, it, expect, beforeEach } from "bun:test"
+import { describe, it, expect, beforeEach, mock } from "bun:test"
 import {
   createChainableMock,
   resetSupabaseMocks,
   setMockFromImplementation,
 } from "../lib/supabase-mock"
 
-const { computeReminderSchedule } = await import(
+const mockWithDeliveryLease = mock(async (
+  _key: string,
+  work: () => Promise<unknown>,
+) => ({ acquired: true as const, value: await work() }))
+mock.module("@/lib/services/delivery-lease", () => ({
+  withDeliveryLease: mockWithDeliveryLease,
+}))
+
+const {
+  computeReminderSchedule,
+  hasReminderDeliveryFailure,
+  processPendingReminders,
+  reminderDeliveryWasSent,
+  validateReminderEntity,
+} = await import(
   "@/lib/services/smart-reminders"
 )
 
@@ -209,10 +223,9 @@ describe("scheduleReminders", () => {
           data: [{ id: "r1" }, { id: "r2" }, { id: "r3" }],
           error: null,
         })
-        const origUpsert = mock.upsert
         mock.upsert = ((rows: unknown[]) => {
           upsertedRows = rows
-          return origUpsert(rows)
+          return mock
         }) as typeof mock.upsert
         return mock
       }
@@ -254,6 +267,25 @@ describe("scheduleReminders", () => {
 
     expect(count).toBe(0)
   })
+
+  it("surfaces reminder persistence failures", async () => {
+    const { scheduleReminders } = await import("@/lib/services/smart-reminders")
+    setMockFromImplementation(() =>
+      createChainableMock({ data: null, error: { message: "database unavailable" } })
+    )
+
+    await expect(
+      scheduleReminders(
+        "team_invitation",
+        "inv-123",
+        "hack-456",
+        "invitation_reminder",
+        new Date(),
+        daysFromNow(7),
+        { email: "test@example.com" },
+      ),
+    ).rejects.toThrow("Failed to schedule reminders: database unavailable")
+  })
 })
 
 describe("cancelRemindersForEntity", () => {
@@ -285,6 +317,17 @@ describe("cancelRemindersForEntity", () => {
     const count = await cancelRemindersForEntity("team_invitation", "inv-999")
     expect(count).toBe(0)
   })
+
+  it("surfaces cancellation-state failures", async () => {
+    const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
+    setMockFromImplementation(() =>
+      createChainableMock({ data: null, error: { message: "write failed" } })
+    )
+
+    await expect(
+      cancelRemindersForEntity("team_invitation", "inv-999"),
+    ).rejects.toThrow("Failed to cancel reminders: write failed")
+  })
 })
 
 describe("cancelUpcomingReminder", () => {
@@ -304,5 +347,201 @@ describe("cancelUpcomingReminder", () => {
 
     const count = await cancelUpcomingReminder("team_invitation", "inv-123")
     expect(count).toBe(1)
+  })
+
+  it("surfaces cancellation-state failures", async () => {
+    const { cancelUpcomingReminder } = await import("@/lib/services/smart-reminders")
+    setMockFromImplementation(() =>
+      createChainableMock({ data: null, error: { message: "write failed" } })
+    )
+
+    await expect(
+      cancelUpcomingReminder("team_invitation", "inv-123"),
+    ).rejects.toThrow("Failed to cancel upcoming reminder: write failed")
+  })
+})
+
+describe("reminder delivery lifecycle", () => {
+  const reminder = {
+    id: "reminder-1",
+    entity_type: "hackathon_event" as const,
+    entity_id: "hackathon-1",
+    hackathon_id: "hackathon-1",
+    reminder_type: "event_starting" as const,
+    scheduled_for: "2026-08-26T12:00:00.000Z",
+    urgency: "low" as const,
+    sent_at: null,
+    cancelled_at: null,
+    metadata: {},
+    fail_count: 0,
+    last_error: null,
+    created_at: "2026-08-25T12:00:00.000Z",
+  }
+
+  it("rejects stale event reminder rows after draft or closeout", async () => {
+    for (const status of ["draft", "completed", "archived"]) {
+      resetSupabaseMocks()
+      setMockFromImplementation(() =>
+        createChainableMock({
+          data: {
+            status,
+            starts_at: new Date(Date.now() - HOUR).toISOString(),
+            ends_at: null,
+          },
+          error: null,
+        })
+      )
+
+      await expect(validateReminderEntity(reminder)).resolves.toBe(false)
+    }
+  })
+
+  it("allows event reminders only while the event is live and pre-completion", async () => {
+    for (const status of ["published", "registration_open", "active", "judging"]) {
+      resetSupabaseMocks()
+      setMockFromImplementation(() =>
+        createChainableMock({ data: { status }, error: null })
+      )
+
+      await expect(validateReminderEntity(reminder)).resolves.toBe(true)
+    }
+  })
+
+  it("rejects a stale published row after its event has effectively ended", async () => {
+    resetSupabaseMocks()
+    setMockFromImplementation(() =>
+      createChainableMock({
+        data: {
+          status: "published",
+          starts_at: new Date(Date.now() - 2 * HOUR).toISOString(),
+          ends_at: new Date(Date.now() - HOUR).toISOString(),
+        },
+        error: null,
+      })
+    )
+
+    await expect(validateReminderEntity(reminder)).resolves.toBe(false)
+  })
+
+  it("distinguishes no eligible recipients from a delivery failure", () => {
+    expect(hasReminderDeliveryFailure({ sent: 0, failed: 0 })).toBe(false)
+    expect(hasReminderDeliveryFailure({ sent: 0, failed: 1 })).toBe(true)
+    expect(hasReminderDeliveryFailure({ success: false })).toBe(true)
+    expect(hasReminderDeliveryFailure({ success: true })).toBe(false)
+    expect(reminderDeliveryWasSent({ sent: 0, failed: 0 })).toBe(false)
+    expect(reminderDeliveryWasSent({ sent: 1, failed: 0 })).toBe(true)
+    expect(reminderDeliveryWasSent({ sent: 1, failed: 1 })).toBe(false)
+    expect(reminderDeliveryWasSent({ success: true })).toBe(true)
+    expect(reminderDeliveryWasSent({ success: false })).toBe(false)
+  })
+
+  it("marks completion only after provider acceptance", async () => {
+    resetSupabaseMocks()
+    const updates: Array<Record<string, unknown>> = []
+    setMockFromImplementation(() => {
+      const chain = createChainableMock({ data: [reminder], error: null })
+      chain.update = ((value: Record<string, unknown>) => {
+        updates.push(value)
+        return chain
+      }) as typeof chain.update
+      return chain
+    })
+
+    const result = await processPendingReminders(50, {
+      validate: async () => true,
+      dispatch: async () => true,
+    })
+
+    expect(result).toEqual({ processed: 1, sent: 1, skipped: 0, errors: 0 })
+    expect(updates).toHaveLength(1)
+    expect(typeof updates[0].sent_at).toBe("string")
+  })
+
+  it("keeps a rejected delivery pending and records a retry", async () => {
+    resetSupabaseMocks()
+    const updates: Array<Record<string, unknown>> = []
+    setMockFromImplementation(() => {
+      const chain = createChainableMock({ data: [reminder], error: null })
+      chain.update = ((value: Record<string, unknown>) => {
+        updates.push(value)
+        return chain
+      }) as typeof chain.update
+      return chain
+    })
+
+    const result = await processPendingReminders(50, {
+      validate: async () => true,
+      dispatch: async () => {
+        throw new Error("provider unavailable")
+      },
+    })
+
+    expect(result).toEqual({ processed: 1, sent: 0, skipped: 0, errors: 1 })
+    expect(updates).toEqual([
+      { fail_count: 1, last_error: "provider unavailable" },
+    ])
+  })
+
+  it("retries when completion persistence fails after provider acceptance", async () => {
+    resetSupabaseMocks()
+    let scheduledReminderCalls = 0
+    const updates: Array<Record<string, unknown>> = []
+    setMockFromImplementation(() => {
+      scheduledReminderCalls++
+      const chain = createChainableMock(
+        scheduledReminderCalls === 2
+          ? { data: null, error: { message: "write failed" } }
+          : { data: [reminder], error: null },
+      )
+      chain.update = ((value: Record<string, unknown>) => {
+        updates.push(value)
+        return chain
+      }) as typeof chain.update
+      return chain
+    })
+
+    const result = await processPendingReminders(50, {
+      validate: async () => true,
+      dispatch: async () => true,
+    })
+
+    expect(result).toEqual({ processed: 1, sent: 0, skipped: 0, errors: 1 })
+    expect(updates.some((update) => typeof update.sent_at === "string")).toBe(true)
+    expect(updates).toContainEqual({
+      last_error: "Failed to mark reminder sent: write failed",
+    })
+  })
+
+  it("surfaces pending-reminder query failures to cron", async () => {
+    resetSupabaseMocks()
+    setMockFromImplementation(() =>
+      createChainableMock({ data: null, error: { message: "query failed" } })
+    )
+
+    await expect(processPendingReminders()).rejects.toThrow(
+      "Failed to load pending reminders: query failed",
+    )
+  })
+
+  it("surfaces failure-state persistence errors to cron", async () => {
+    resetSupabaseMocks()
+    let scheduledReminderCalls = 0
+    setMockFromImplementation(() => {
+      scheduledReminderCalls++
+      return createChainableMock(
+        scheduledReminderCalls === 1
+          ? { data: [reminder], error: null }
+          : { data: null, error: { message: "write failed" } },
+      )
+    })
+
+    await expect(
+      processPendingReminders(50, {
+        validate: async () => true,
+        dispatch: async () => {
+          throw new Error("provider unavailable")
+        },
+      }),
+    ).rejects.toThrow("Failed to record reminder failure: write failed")
   })
 })

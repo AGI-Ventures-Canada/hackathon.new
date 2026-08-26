@@ -30,6 +30,37 @@ export type UpdateAnnouncementInput = {
   audience?: AnnouncementAudience
 }
 
+export type AnnouncementViewer = {
+  role: "public" | "organizer" | "judge" | "mentor" | "participant"
+  hasSubmitted?: boolean
+}
+
+export function filterAnnouncementsForViewer(
+  announcements: Announcement[],
+  viewer: AnnouncementViewer,
+): Announcement[] {
+  return announcements.filter((announcement) => {
+    switch (announcement.audience) {
+      case "everyone":
+        return true
+      case "organizers":
+        return viewer.role === "organizer"
+      case "judges":
+        return viewer.role === "judge"
+      case "mentors":
+        return viewer.role === "mentor"
+      case "attendees":
+        return viewer.role === "participant"
+      case "submitted":
+        return viewer.role === "participant" && viewer.hasSubmitted === true
+      case "not_submitted":
+        return viewer.role === "participant" && viewer.hasSubmitted === false
+      default:
+        return false
+    }
+  })
+}
+
 export async function listAnnouncements(hackathonId: string): Promise<Announcement[]> {
   const client = getSupabase() as unknown as SupabaseClient
   const { data, error } = await client

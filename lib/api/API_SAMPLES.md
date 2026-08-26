@@ -384,6 +384,40 @@ curl -s -X POST "$BASE_URL/api/public/hackathons/$SLUG/judging/picks" \
 
 ---
 
+### Ask a mentor
+
+Requires an attendee Clerk session while the event is active. The attendee or their team can have one unresolved request.
+
+```bash
+curl -s -X POST "$BASE_URL/api/public/hackathons/$SLUG/mentor-request" \
+  --cookie "clerk-session=..." \
+  -H "Content-Type: application/json" \
+  -d '{ "category": "API", "description": "Help us read this error" }' | jq .
+```
+
+### Read the mentor queue
+
+Public viewers receive counts only. A mentor Clerk session also receives the safe request list.
+
+```bash
+curl -s "$BASE_URL/api/public/hackathons/$SLUG/mentor-queue" \
+  --cookie "clerk-session=..." | jq .
+```
+
+### Claim or finish mentor help
+
+Only an event mentor can claim. Only that same mentor can finish the request.
+
+```bash
+curl -s -X POST "$BASE_URL/api/public/hackathons/$SLUG/mentor-request/$REQUEST_ID/claim" \
+  --cookie "clerk-session=..." | jq .
+
+curl -s -X POST "$BASE_URL/api/public/hackathons/$SLUG/mentor-request/$REQUEST_ID/resolve" \
+  --cookie "clerk-session=..." | jq .
+```
+
+---
+
 ## Dashboard Endpoints
 
 All dashboard endpoints require an API key: `-H "Authorization: Bearer $API_KEY"`.
@@ -428,13 +462,38 @@ curl -s "$BASE_URL/api/dashboard/hackathons?q=ai" \
 
 Scope: `hackathons:write`
 
+The basic `name` and `description` request still works. You can also create one complete private draft in a single request. If any child section fails, the new draft is removed.
+
 ```bash
 curl -s -X POST "$BASE_URL/api/dashboard/hackathons" \
   -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "AI Builders 2026",
-    "description": "Build AI-powered apps"
+    "description": "Build AI-powered apps",
+    "startsAt": "2026-09-08T08:30:00-04:00",
+    "endsAt": "2026-09-09T17:00:00-04:00",
+    "registrationOpensAt": "2026-08-25T12:00:00-04:00",
+    "registrationClosesAt": "2026-09-07T08:30:00-04:00",
+    "locationType": "hybrid",
+    "locationName": "Toronto",
+    "locationUrl": "https://example.com/live",
+    "rules": "Be kind. Build during the event.",
+    "sponsors": [{ "name": "OpenAI", "tier": "gold" }],
+    "prizes": [{ "name": "Best Overall", "description": null, "value": "$5,000" }],
+    "challenges": [{
+      "title": "Useful agents",
+      "description": "Build an agent people can trust.",
+      "resources": [{ "label": "Starter guide", "url": "https://example.com/guide" }]
+    }],
+    "agendaItems": [{
+      "title": "Kickoff",
+      "description": null,
+      "startsAt": "2026-09-08T08:30:00-04:00",
+      "endsAt": "2026-09-08T09:00:00-04:00",
+      "location": "Main stage",
+      "speakers": ["Jane Smith"]
+    }]
   }' | jq .
 ```
 
@@ -842,7 +901,7 @@ curl -s "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/judging/judges" \
 
 #### Add a judge
 
-Scope: `hackathons:write`. Add by email — if the user doesn't have an account, an invitation email is sent automatically.
+Scope: `hackathons:write`. Add by email — if the user doesn't have an account, an invitation is saved and delivery is attempted.
 
 ```bash
 curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/judging/judges" \
@@ -850,6 +909,22 @@ curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/judging/judges
   -H "Content-Type: application/json" \
   -d '{ "email": "judge@example.com" }' | jq .
 ```
+
+**Email invitation response:**
+
+```json
+{
+  "queued": false,
+  "delivery": "sent",
+  "invitation": {
+    "id": "uuid",
+    "email": "judge@example.com",
+    "token": "accept-token"
+  }
+}
+```
+
+`delivery` is `sent`, `queued`, or `failed`. `failed` means the invite was saved but email delivery could not be confirmed. `queued` is also returned for compatibility and is true only while a draft invite waits for go-live.
 
 ---
 
@@ -917,6 +992,18 @@ Scope: `hackathons:write`
 ```bash
 curl -s -X DELETE "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/judging/invitations/$INVITATION_ID" \
   -H "Authorization: Bearer $API_KEY"
+```
+
+---
+
+#### Remind a judge invite
+
+Scope: `hackathons:write`. A pending invite can receive one manual reminder. Reuse the same idempotency key if the request is retried.
+
+```bash
+curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/judging/invitations/$INVITATION_ID/remind" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Idempotency-Key: judge-reminder-$INVITATION_ID" | jq .
 ```
 
 ---
@@ -1011,6 +1098,18 @@ curl -s -X PATCH "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/participants/
 ---
 
 ### Teams
+
+#### Remind a team invite
+
+Scope: `hackathons:write`. A pending invite can receive one manual reminder. Reuse the same idempotency key if the request is retried.
+
+```bash
+curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/teams/$TEAM_ID/invitations/$INVITATION_ID/remind" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Idempotency-Key: team-reminder-$INVITATION_ID" | jq .
+```
+
+---
 
 #### Update team name
 

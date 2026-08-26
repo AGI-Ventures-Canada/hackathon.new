@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -15,6 +15,10 @@ import {
   Check,
   X,
 } from "lucide-react"
+import {
+  JUDGE_WEBMCP_OPEN_EVENT,
+  useJudgeWebMcpEditor,
+} from "./judge-webmcp-tools"
 
 type GateCriterion = {
   id: string
@@ -112,11 +116,26 @@ export function GateCheckPanel({
     [hackathonSlug]
   )
 
+  const currentAssignmentId = assignments[currentIndex]?.id
+
   useEffect(() => {
-    if (assignments.length > 0 && assignments[currentIndex]) {
-      fetchDetail(assignments[currentIndex].id)
+    if (currentAssignmentId) fetchDetail(currentAssignmentId)
+  }, [currentAssignmentId, fetchDetail])
+
+  useEffect(() => {
+    function handleOpen(event: Event) {
+      const assignmentId = (event as CustomEvent<{ assignmentId?: string }>).detail
+        ?.assignmentId
+      const index = assignments.findIndex((assignment) => assignment.id === assignmentId)
+      if (index >= 0) {
+        setCurrentIndex(index)
+        setSubmitted(false)
+      }
     }
-  }, [assignments, currentIndex, fetchDetail])
+
+    window.addEventListener(JUDGE_WEBMCP_OPEN_EVENT, handleOpen)
+    return () => window.removeEventListener(JUDGE_WEBMCP_OPEN_EVENT, handleOpen)
+  }, [assignments])
 
   function goNext() {
     if (currentIndex < assignments.length - 1) {
@@ -197,6 +216,48 @@ export function GateCheckPanel({
     if (e.key === "ArrowRight" && submitted) goNext()
   }
 
+  const webMcpEditor = useMemo(() => {
+    if (!detail) return null
+    const criteria = detail.gates.map((criterion, index) => ({
+      ref: `criterion-${index + 1}`,
+      name: criterion.name,
+      id: criterion.id,
+    }))
+
+    return {
+      info: {
+        criteria: criteria.map(({ id: _id, ...criterion }) => criterion),
+      },
+      prepare: (preparation: import("@/lib/webmcp/judge-tools").JudgePreparation) => {
+        if (preparation.kind !== "gate_check") {
+          return { prepared: false, message: "This project uses yes-or-no checks." }
+        }
+        const nextResponses: Record<string, boolean> = {}
+        for (const requested of preparation.gates) {
+          const criterion = criteria.find(
+            (candidate) =>
+              candidate.ref === requested.criterion ||
+              candidate.name.toLowerCase() === requested.criterion.toLowerCase(),
+          )
+          if (!criterion) {
+            return { prepared: false, message: `Check ${requested.criterion} again.` }
+          }
+          nextResponses[criterion.id] = requested.passed
+        }
+        setGateResponses((current) => ({ ...current, ...nextResponses }))
+        setSubmitted(false)
+        setError(null)
+        return {
+          prepared: true,
+          message: "The checks are filled in. Review them, then click Save response.",
+        }
+      },
+    }
+  }, [detail])
+
+  const webMcpAssignmentIds = useMemo(() => (detail ? [detail.id] : []), [detail])
+  useJudgeWebMcpEditor(webMcpAssignmentIds, webMcpEditor)
+
   if (assignments.length === 0) {
     return (
       <Card>
@@ -214,7 +275,11 @@ export function GateCheckPanel({
   const totalGates = detail?.gates.length ?? 0
 
   return (
-    <Card onKeyDown={handleKeyDown} tabIndex={-1}>
+    <Card
+      data-judge-assignment={detail?.id}
+      onKeyDown={handleKeyDown}
+      tabIndex={-1}
+    >
       <CardHeader className="pb-3">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>

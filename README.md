@@ -35,6 +35,7 @@ Major additions since 2026-02:
 - **Action items** — organizer to-do list that surfaces what still needs attention before the event starts.
 - **Mentor queue** — attendees request help, mentors triage and claim requests in real time.
 - **Announcements** — publish immediately or schedule, target specific audiences (all, teams-only, judges).
+- **WebMCP** — let a browser agent read the page, fill visible work, and open reviews while people keep every final submit, publish, invite, judging, and mentor action.
 
 ## Dashboard, CLI, or API — pick your surface
 
@@ -121,3 +122,11 @@ Interactive documentation is available at `/docs` with:
 - Code examples with package manager tabs
 
 The full OpenAPI reference is at `/api/swagger`.
+
+## WebMCP
+
+Oatmeal exposes role-aware browser tools on event creation, public event, organizer, judge, and mentor pages. Tools appear only when they fit the signed-in role and the event's current state. Read the [WebMCP guide](content/docs/guides/webmcp.mdx) for the user flow and the [implementation notes](webmcp/README.md) for the full tool list, safety rules, evals, and preview checks.
+
+## License
+
+This project is licensed under the [GNU Affero General Public License v3.0](LICENSE).

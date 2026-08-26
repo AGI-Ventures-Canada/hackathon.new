@@ -213,6 +213,11 @@ set_env_var() {
   echo "${key}=\"${value}\"" >> "$ENV_FILE"
 }
 
+has_hex_secret() {
+  local key="$1"
+  grep -Eq "^${key}=\"?[[:xdigit:]]{64}\"?$" "$ENV_FILE" 2>/dev/null
+}
+
 touch "$ENV_FILE"
 
 echo "Updating .env.local with local Supabase credentials..."
@@ -220,9 +225,14 @@ set_env_var "NEXT_PUBLIC_SUPABASE_URL" "$API_URL"
 set_env_var "NEXT_PUBLIC_SUPABASE_ANON_KEY" "$ANON_KEY"
 set_env_var "SUPABASE_SERVICE_ROLE_KEY" "$SERVICE_KEY"
 
-if ! grep -q "^API_KEY_SECRET=" "$ENV_FILE" 2>/dev/null; then
+if ! has_hex_secret "API_KEY_SECRET"; then
   echo "Generating API_KEY_SECRET..."
   set_env_var "API_KEY_SECRET" "$(openssl rand -hex 32)"
+fi
+
+if ! has_hex_secret "ENCRYPTION_KEY"; then
+  echo "Generating ENCRYPTION_KEY..."
+  set_env_var "ENCRYPTION_KEY" "$(openssl rand -hex 32)"
 fi
 
 echo "Using local Supabase ($API_URL)"

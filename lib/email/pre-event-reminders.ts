@@ -5,6 +5,7 @@ import {
   formatTimeLeft,
   getReplyToAddress,
   buildMailtoUnsubscribeHeaders,
+  paceBulkSend,
   shortHackathonName,
 } from "./utils"
 import { supabase as getSupabase } from "@/lib/db/client"
@@ -76,6 +77,7 @@ export type SendPreEventReminderInput = {
   hackathonSlug: string
   deadlineDate: string
   urgency: "low" | "medium" | "high"
+  deliveryId?: string
 }
 
 const HIGH_URGENCY_SUBJECTS: Record<
@@ -89,9 +91,9 @@ const HIGH_URGENCY_SUBJECTS: Record<
 
 export async function sendPreEventReminderEmail(
   input: SendPreEventReminderInput
-): Promise<{ sent: number }> {
+): Promise<{ sent: number; failed: number }> {
   const builder = CONTENT_BUILDERS[input.reminderType]
-  if (!builder) return { sent: 0 }
+  if (!builder) return { sent: 0, failed: 0 }
 
   const content = builder(input.hackathonName, input.hackathonSlug)
   const timeLeft = formatTimeLeft(input.deadlineDate)
@@ -109,8 +111,11 @@ export async function sendPreEventReminderEmail(
 
   const recipients = await getRecipients(input.hackathonId, input.reminderType)
   let sent = 0
+  let failed = 0
 
-  for (const recipient of recipients) {
+  for (let index = 0; index < recipients.length; index += 1) {
+    const recipient = recipients[index]
+    await paceBulkSend(index)
     const { html, text } = await renderEmail(
       PreEventReminderEmail({
         hackathonName: input.hackathonName,
@@ -136,15 +141,17 @@ export async function sendPreEventReminderEmail(
         { name: "type", value: `pre_event_${input.reminderType}` },
         { name: "hackathon", value: sanitizeTag(input.hackathonName) },
       ],
+      idempotencyKey: `pre-event-reminder/${input.deliveryId ?? `${input.hackathonId}/${input.reminderType}/${input.deadlineDate}`}/${recipient.id}`,
     })
 
     if (result !== null) sent++
+    else failed++
   }
 
-  return { sent }
+  return { sent, failed }
 }
 
-type Recipient = { email: string; name: string }
+type Recipient = { id: string; email: string; name: string }
 
 async function getRecipients(
   hackathonId: string,
@@ -175,6 +182,7 @@ async function getRecipients(
       const email = user.primaryEmailAddress?.emailAddress
       if (email) {
         recipients.push({
+          id: user.id,
           email,
           name: user.firstName || email.split("@")[0],
         })

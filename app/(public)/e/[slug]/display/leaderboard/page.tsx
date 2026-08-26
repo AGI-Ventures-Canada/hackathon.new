@@ -9,7 +9,7 @@ type PageProps = {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params
-  const hackathon = await getPublicHackathon(slug, { includeUnpublished: true })
+  const hackathon = await getPublicHackathon(slug)
 
   return {
     title: hackathon ? `Leaderboard | ${hackathon.name}` : "Leaderboard",
@@ -19,7 +19,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 export default async function DisplayLeaderboardPage({ params }: PageProps) {
   const { slug } = await params
 
-  const hackathon = await getPublicHackathon(slug, { includeUnpublished: true })
+  const hackathon = await getPublicHackathon(slug)
   if (!hackathon) notFound()
 
   return (

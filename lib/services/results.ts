@@ -9,6 +9,11 @@ import {
   calculateCoreOnlyResults,
   calculatePrizeResults,
 } from "@/lib/services/judging"
+import {
+  EventMutationLeaseError,
+  withEventMutationLease,
+} from "@/lib/services/event-mutation-lease"
+import { withDeliveryLease } from "@/lib/services/delivery-lease"
 
 export type ResultWithDetails = HackathonResult & {
   submissionTitle: string
@@ -38,6 +43,63 @@ export type PublicResultWithDetails = {
 export type CalculateResultsResponse =
   | { success: true; count: number }
   | { success: false; error: string; code: string }
+
+async function markResultsAnnouncementHandled(
+  client: SupabaseClient,
+  hackathonId: string,
+  publicationVersion: string,
+): Promise<void> {
+  const { error } = await client
+    .from("hackathons")
+    .update({ results_announcement_sent_at: new Date().toISOString() })
+    .eq("id", hackathonId)
+    .eq("results_published_at", publicationVersion)
+    .is("results_announcement_sent_at", null)
+
+  if (error) {
+    throw new Error(`Failed to save results email preference: ${error.message}`)
+  }
+}
+
+async function publishCompletedResultsGate(
+  client: SupabaseClient,
+  hackathonId: string,
+  tenantId: string,
+  publishedAt: string,
+): Promise<{ success: true } | { success: false; error: string }> {
+  try {
+    return await withEventMutationLease(hackathonId, async () => {
+      const { data, error } = await client
+        .from("hackathons")
+        .update({
+          results_published_at: publishedAt,
+          winner_emails_sent_at: null,
+          results_announcement_sent_at: null,
+          updated_at: publishedAt,
+        })
+        .eq("id", hackathonId)
+        .eq("tenant_id", tenantId)
+        .eq("status", "completed")
+        .is("results_published_at", null)
+        .select("id")
+        .maybeSingle()
+
+      if (error) return { success: false, error: "Failed to publish results" }
+      if (!data) {
+        return {
+          success: false,
+          error: "The event changed. Refresh the page and try again.",
+        }
+      }
+      return { success: true }
+    })
+  } catch (error) {
+    if (error instanceof EventMutationLeaseError) {
+      return { success: false, error: error.message }
+    }
+    throw error
+  }
+}
 
 export async function calculateResults(
   hackathonId: string
@@ -266,7 +328,7 @@ export async function publishResults(
 
   const { data: hackathon } = await client
     .from("hackathons")
-    .select("id, name, slug, status, tenant_id, winner_emails_sent_at")
+    .select("id, name, slug, status, tenant_id, results_published_at")
     .eq("id", hackathonId)
     .eq("tenant_id", tenantId)
     .single()
@@ -287,34 +349,8 @@ export async function publishResults(
 
   const now = new Date().toISOString()
 
-  const { data: existing } = await client
-    .from("hackathons")
-    .select("results_published_at")
-    .eq("id", hackathonId)
-    .eq("tenant_id", tenantId)
-    .single()
-
-  if (existing?.results_published_at) {
+  if (hackathon.results_published_at) {
     return { success: false, error: "Results are already published" }
-  }
-
-  const { error: tsError } = await client
-    .from("hackathons")
-    .update({ results_published_at: now, updated_at: now })
-    .eq("id", hackathonId)
-    .eq("tenant_id", tenantId)
-
-  if (tsError) {
-    return { success: false, error: "Failed to update published timestamp" }
-  }
-
-  const { error: updateError } = await client
-    .from("hackathon_results")
-    .update({ published_at: now })
-    .eq("hackathon_id", hackathonId)
-
-  if (updateError) {
-    console.error("Failed to update results published_at:", updateError)
   }
 
   const currentStatus = hackathon.status as string
@@ -327,10 +363,53 @@ export async function publishResults(
       toStatus: "completed",
       trigger: "manual",
       triggeredBy: "system",
+      resultsPublication: { publishedAt: now },
     })
     if (!transitionResult.success) {
-      console.error("Lifecycle transition to completed failed:", transitionResult.error)
+      return {
+        success: false,
+        error: transitionResult.error ?? "Failed to complete the event before publishing results",
+      }
     }
+  } else {
+    const publication = await publishCompletedResultsGate(
+      client,
+      hackathonId,
+      tenantId,
+      now,
+    )
+    if (!publication.success) return publication
+  }
+
+  const { error: updateError } = await client
+    .from("hackathon_results")
+    .update({ published_at: now })
+    .eq("hackathon_id", hackathonId)
+
+  if (updateError) {
+    console.error("Failed to update results published_at:", updateError)
+  }
+
+  try {
+    const { dispatchTransitionNotifications } = await import(
+      "@/lib/services/notification-dispatcher"
+    )
+    await dispatchTransitionNotifications({
+      type: "results_published",
+      hackathonId,
+      tenantId,
+      hackathon: {
+        name: hackathon.name,
+        slug: hackathon.slug,
+      },
+      trigger: "manual",
+      triggeredBy: "system",
+      fromStatus: currentStatus,
+      toStatus: "completed",
+      sendEmail: false,
+    })
+  } catch (err) {
+    console.error("Failed to dispatch results-published webhooks (non-blocking):", err)
   }
 
   try {
@@ -347,40 +426,43 @@ export async function publishResults(
     console.error("Failed to initialize fulfillments (non-blocking):", err)
   }
 
-  if (!hackathon.winner_emails_sent_at) {
-    try {
-      const { sendWinnerEmails } = await import("@/lib/email/winner-notifications")
-      const sentCount = await sendWinnerEmails(hackathonId)
-      if (sentCount > 0) {
-        await client
-          .from("hackathons")
-          .update({ winner_emails_sent_at: new Date().toISOString() })
-          .eq("id", hackathonId)
-      }
-    } catch (err) {
-      console.error("Failed to send winner emails (non-blocking):", err)
+  try {
+    const claimed = await withDeliveryLease(`winner-results:${hackathonId}:${now}`, async () => {
+      const { sendWinnerEmailsWithResult } = await import("@/lib/email/winner-notifications")
+      return sendWinnerEmailsWithResult(hackathonId)
+    })
+    if (claimed.acquired && claimed.value.failed === 0) {
+      await client
+        .from("hackathons")
+        .update({ winner_emails_sent_at: new Date().toISOString() })
+        .eq("id", hackathonId)
+        .eq("results_published_at", now)
+        .is("winner_emails_sent_at", null)
     }
+  } catch (err) {
+    console.error("Failed to send winner emails (non-blocking):", err)
   }
 
   try {
-    const { sendResultsAnnouncementEmails } = await import("@/lib/email/results-announcement")
-    await sendResultsAnnouncementEmails(hackathonId)
+    const { getNotificationSettings } = await import("@/lib/services/notification-settings")
+    const settings = await getNotificationSettings(hackathonId)
+    if (settings.email_on_results_published) {
+      await withDeliveryLease(`results-announcement:${hackathonId}:${now}`, async () => {
+        const { sendResultsAnnouncementEmails } = await import("@/lib/email/results-announcement")
+        return sendResultsAnnouncementEmails(hackathonId)
+      })
+    } else {
+      await markResultsAnnouncementHandled(client, hackathonId, now)
+    }
   } catch (err) {
     console.error("Failed to send results announcement (non-blocking):", err)
   }
 
   try {
-    const { start } = await import("workflow/api")
-    const { postEventRemindersWorkflow } = await import("@/lib/workflows/post-event-reminders")
-    start(postEventRemindersWorkflow, [{
-      hackathonId,
-      hackathonName: hackathon.name,
-      hackathonSlug: hackathon.slug,
-    }]).catch((err) => {
-      console.error("Failed to start post-event reminders workflow:", err)
-    })
+    const { schedulePostEventReminders } = await import("@/lib/services/post-event-reminders")
+    await schedulePostEventReminders(hackathonId)
   } catch (err) {
-    console.error("Failed to start post-event reminders workflow (non-blocking):", err)
+    console.error("Failed to schedule post-event reminders (non-blocking):", err)
   }
 
   return { success: true }
@@ -406,6 +488,8 @@ export async function unpublishResults(
     .from("hackathons")
     .update({
       results_published_at: null,
+      winner_emails_sent_at: null,
+      results_announcement_sent_at: null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", hackathonId)
@@ -437,7 +521,120 @@ export async function unpublishResults(
     }
   }
 
+  try {
+    const { cancelPendingPostEventReminders } = await import(
+      "@/lib/services/post-event-reminders"
+    )
+    await cancelPendingPostEventReminders(hackathonId)
+  } catch (err) {
+    console.error("Failed to cancel post-event reminders after unpublishing:", err)
+  }
+
   return { success: true }
+}
+
+export async function retryPendingResultEmails(limit = 20): Promise<{
+  processed: number
+  winnerEmailsSent: number
+  resultEmailsSent: number
+  errors: number
+}> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const { data: hackathons, error } = await client
+    .from("hackathons")
+    .select("id, results_published_at, winner_emails_sent_at, results_announcement_sent_at")
+    .eq("status", "completed")
+    .not("results_published_at", "is", null)
+    .or("winner_emails_sent_at.is.null,results_announcement_sent_at.is.null")
+    .order("results_published_at", { ascending: true })
+    .limit(limit)
+
+  if (error) {
+    throw new Error(`Failed to load pending results emails: ${error.message}`)
+  }
+
+  const summary = {
+    processed: 0,
+    winnerEmailsSent: 0,
+    resultEmailsSent: 0,
+    errors: 0,
+  }
+
+  for (const hackathon of hackathons ?? []) {
+    const publicationVersion = hackathon.results_published_at
+    if (!publicationVersion) {
+      summary.errors++
+      continue
+    }
+    summary.processed++
+
+    if (!hackathon.winner_emails_sent_at) {
+      try {
+        const claimed = await withDeliveryLease(
+          `winner-results:${hackathon.id}:${publicationVersion}`,
+          async () => {
+            const { sendWinnerEmailsWithResult } = await import(
+              "@/lib/email/winner-notifications"
+            )
+            return sendWinnerEmailsWithResult(hackathon.id)
+          },
+        )
+        if (claimed.acquired) {
+          const delivery = claimed.value
+          summary.winnerEmailsSent += delivery.sent
+          if (delivery.failed === 0) {
+            const { error: stampError } = await client
+              .from("hackathons")
+              .update({ winner_emails_sent_at: new Date().toISOString() })
+              .eq("id", hackathon.id)
+              .eq("results_published_at", publicationVersion)
+              .is("winner_emails_sent_at", null)
+            if (stampError) throw stampError
+          } else {
+            summary.errors++
+          }
+        }
+      } catch (sendError) {
+        console.error(`Failed to retry winner emails for ${hackathon.id}:`, sendError)
+        summary.errors++
+      }
+    }
+
+    if (!hackathon.results_announcement_sent_at) {
+      try {
+        const { getNotificationSettings } = await import(
+          "@/lib/services/notification-settings"
+        )
+        const settings = await getNotificationSettings(hackathon.id)
+        if (!settings.email_on_results_published) {
+          await markResultsAnnouncementHandled(
+            client,
+            hackathon.id,
+            publicationVersion,
+          )
+          continue
+        }
+        const claimed = await withDeliveryLease(
+          `results-announcement:${hackathon.id}:${publicationVersion}`,
+          async () => {
+            const { sendResultsAnnouncementEmailsWithResult } = await import(
+              "@/lib/email/results-announcement"
+            )
+            return sendResultsAnnouncementEmailsWithResult(hackathon.id)
+          },
+        )
+        if (!claimed.acquired) continue
+        const delivery = claimed.value
+        summary.resultEmailsSent += delivery.sent
+        if (delivery.failed > 0) summary.errors++
+      } catch (sendError) {
+        console.error(`Failed to retry results emails for ${hackathon.id}:`, sendError)
+        summary.errors++
+      }
+    }
+  }
+
+  return summary
 }
 
 export async function getPublicResults(
@@ -447,7 +644,7 @@ export async function getPublicResults(
 
   const { data: hackathon } = await client
     .from("hackathons")
-    .select("results_published_at")
+    .select("results_published_at, anonymous_judging")
     .eq("id", hackathonId)
     .single()
 
@@ -455,7 +652,14 @@ export async function getPublicResults(
     return null
   }
 
-  return getResults(hackathonId)
+  const results = await getResults(hackathonId)
+  if (!hackathon.anonymous_judging) return results
+
+  return results.map((result) => ({
+    ...result,
+    submissionTeamId: null,
+    teamName: null,
+  }))
 }
 
 export async function getPublicResultsWithDetails(

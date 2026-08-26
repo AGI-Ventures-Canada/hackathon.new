@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
@@ -13,6 +13,10 @@ import {
   ExternalLink,
   Play,
 } from "lucide-react"
+import {
+  JUDGE_WEBMCP_OPEN_EVENT,
+  useJudgeWebMcpEditor,
+} from "./judge-webmcp-tools"
 
 type BucketDef = {
   id: string
@@ -119,11 +123,26 @@ export function BucketSortPanel({
     [hackathonSlug]
   )
 
+  const currentAssignmentId = assignments[currentIndex]?.id
+
   useEffect(() => {
-    if (assignments.length > 0 && assignments[currentIndex]) {
-      fetchDetail(assignments[currentIndex].id)
+    if (currentAssignmentId) fetchDetail(currentAssignmentId)
+  }, [currentAssignmentId, fetchDetail])
+
+  useEffect(() => {
+    function handleOpen(event: Event) {
+      const assignmentId = (event as CustomEvent<{ assignmentId?: string }>).detail
+        ?.assignmentId
+      const index = assignments.findIndex((assignment) => assignment.id === assignmentId)
+      if (index >= 0) {
+        setCurrentIndex(index)
+        setSubmitted(false)
+      }
     }
-  }, [assignments, currentIndex, fetchDetail])
+
+    window.addEventListener(JUDGE_WEBMCP_OPEN_EVENT, handleOpen)
+    return () => window.removeEventListener(JUDGE_WEBMCP_OPEN_EVENT, handleOpen)
+  }, [assignments])
 
   function goNext() {
     if (currentIndex < assignments.length - 1) {
@@ -203,6 +222,45 @@ export function BucketSortPanel({
     if (e.key === "ArrowRight" && submitted) goNext()
   }
 
+  const webMcpEditor = useMemo(() => {
+    if (!detail) return null
+    const buckets = detail.buckets.map((bucket, index) => ({
+      ref: `bucket-${index + 1}`,
+      label: bucket.label,
+      id: bucket.id,
+    }))
+
+    return {
+      info: {
+        buckets: buckets.map(({ id: _id, ...bucket }) => bucket),
+      },
+      prepare: (preparation: import("@/lib/webmcp/judge-tools").JudgePreparation) => {
+        if (preparation.kind !== "bucket_sort") {
+          return { prepared: false, message: "This project uses sort groups." }
+        }
+        const bucket = buckets.find(
+          (candidate) =>
+            candidate.ref === preparation.bucket ||
+            candidate.label.toLowerCase() === preparation.bucket.toLowerCase(),
+        )
+        if (!bucket) {
+          return { prepared: false, message: "Pick one of the listed sort groups." }
+        }
+        setSelectedBucketId(bucket.id)
+        if (preparation.notes !== undefined) setNotes(preparation.notes)
+        setSubmitted(false)
+        setError(null)
+        return {
+          prepared: true,
+          message: "The sort group is filled in. Review it, then click Save response.",
+        }
+      },
+    }
+  }, [detail])
+
+  const webMcpAssignmentIds = useMemo(() => (detail ? [detail.id] : []), [detail])
+  useJudgeWebMcpEditor(webMcpAssignmentIds, webMcpEditor)
+
   if (assignments.length === 0) {
     return (
       <Card>
@@ -217,7 +275,11 @@ export function BucketSortPanel({
 
   const scored = assignments.filter((a) => a.isComplete).length
   return (
-    <Card onKeyDown={handleKeyDown} tabIndex={-1}>
+    <Card
+      data-judge-assignment={detail?.id}
+      onKeyDown={handleKeyDown}
+      tabIndex={-1}
+    >
       <CardHeader className="pb-3">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>

@@ -5,6 +5,7 @@ import {
   hasAllScopes,
   ALL_SCOPES,
   DEFAULT_API_KEY_SCOPES,
+  matchesExpectedOrganization,
 } from "@/lib/auth/types"
 import { hasAdminMetadata } from "@/lib/auth/principal"
 import type { UserPrincipal, ApiKeyPrincipal, AnonPrincipal } from "@/lib/auth/types"
@@ -140,6 +141,33 @@ describe("Auth Types", () => {
       [{ metadata: { admin: true } }, true],
     ])("hasAdminMetadata(%j) === %s", (claims, expected) => {
       expect(hasAdminMetadata(claims)).toBe(expected)
+    })
+  })
+
+  describe("matchesExpectedOrganization", () => {
+    const principal: UserPrincipal = {
+      kind: "user",
+      tenantId: "tenant-1",
+      userId: "user-1",
+      orgId: "org-1",
+      orgRole: "org:admin",
+      scopes: ["hackathons:write"],
+    }
+
+    it("binds a browser mutation to the authenticated organization", () => {
+      expect(matchesExpectedOrganization(principal, "org-1")).toBe(true)
+      expect(matchesExpectedOrganization(principal, "org-2")).toBe(false)
+      expect(matchesExpectedOrganization(principal, undefined)).toBe(true)
+    })
+
+    it("does not accept a browser organization assertion from an API key", () => {
+      const apiKey: ApiKeyPrincipal = {
+        kind: "api_key",
+        tenantId: "tenant-1",
+        keyId: "key-1",
+        scopes: ["hackathons:write"],
+      }
+      expect(matchesExpectedOrganization(apiKey, "org-1")).toBe(false)
     })
   })
 })

@@ -25,7 +25,7 @@ export async function sendJudgeNotificationsWorkflow(
       })
       sent++
     } catch (err) {
-      console.error(`Failed to send judge notification ${notification.id} to ${notification.email}:`, err)
+      console.error(`Failed to send judge notification ${notification.id}:`, err)
     }
   }
 

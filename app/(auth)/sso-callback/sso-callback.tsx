@@ -11,6 +11,7 @@ export function SSOCallback() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const stored = searchParams.get("redirect_url")
+  const storedDestination = safeRedirectUrl(stored ?? undefined, "")
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn) return
@@ -28,8 +29,8 @@ export function SSOCallback() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background p-4">
       <AuthenticateWithRedirectCallback
-        signInFallbackRedirectUrl="/home"
-        signUpFallbackRedirectUrl="/onboarding"
+        signInFallbackRedirectUrl={storedDestination || "/home"}
+        signUpFallbackRedirectUrl={storedDestination || "/onboarding"}
       />
       <Loader2 className="size-5 animate-spin text-muted-foreground" />
       <p className="text-muted-foreground text-sm">Signing you in…</p>
