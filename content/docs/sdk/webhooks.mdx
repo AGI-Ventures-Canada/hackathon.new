@@ -36,7 +36,7 @@ curl -s -X POST "$BASE_URL/api/v1/webhooks" \
   -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "url": "https://your-app.com/webhooks/oatmeal",
+    "url": "https://your-app.com/webhooks/hackathon",
     "events": ["hackathon.created", "submission.created"]
   }' | jq .
 ```
@@ -63,7 +63,7 @@ hackathon webhooks create
 ```json title="response.json"
 {
   "id": "wh_abc123",
-  "url": "https://your-app.com/webhooks/oatmeal",
+  "url": "https://your-app.com/webhooks/hackathon",
   "events": ["hackathon.created", "submission.created"],
   "secret": "whsec_...",
   "createdAt": "2026-02-10T15:30:00Z"
@@ -92,7 +92,7 @@ hackathon webhooks list
   "webhooks": [
     {
       "id": "wh_abc123",
-      "url": "https://your-app.com/webhooks/oatmeal",
+      "url": "https://your-app.com/webhooks/hackathon",
       "events": ["hackathon.created", "submission.created"],
       "isActive": true,
       "failureCount": 0,

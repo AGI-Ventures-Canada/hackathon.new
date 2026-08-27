@@ -464,7 +464,7 @@ describe("Post-Event Reminders Service", () => {
   describe("markReminderSent", () => {
     it("marks a reminder as sent", async () => {
       setMockFromImplementation(() =>
-        createChainableMock({ data: null, error: null })
+        createChainableMock({ data: [{ id: "r1" }], error: null })
       )
 
       await markReminderSent("r1")
@@ -725,7 +725,7 @@ describe("Post-Event Reminders Service", () => {
           reminderCall++
           return reminderCall === 1
             ? createChainableMock({ data: variant, error: null })
-            : createChainableMock({ data: null, error: null })
+            : createChainableMock({ data: [{ id: variant.id }], error: null })
         })
 
         await expect(processReminder(variant as never)).resolves.toBe(1)
@@ -774,7 +774,7 @@ describe("Post-Event Reminders Service", () => {
         reminderCall++
         return reminderCall === 1
           ? createChainableMock({ data: publicationReminder, error: null })
-          : createChainableMock({ data: null, error: null })
+          : createChainableMock({ data: [{ id: publicationReminder.id }], error: null })
       })
 
       await expect(processReminder(publicationReminder as never)).resolves.toBe(1)
@@ -822,7 +822,7 @@ describe("Post-Event Reminders Service", () => {
           reminderCall++
           return reminderCall === 1
             ? createChainableMock({ data: variant, error: null })
-            : createChainableMock({ data: null, error: null })
+            : createChainableMock({ data: [{ id: variant.id }], error: null })
         })
 
         await expect(processReminder(variant as never)).resolves.toBe(0)
@@ -836,9 +836,20 @@ describe("Post-Event Reminders Service", () => {
       mockSendReminderEmailsWithResult
         .mockResolvedValueOnce({ eligible: 1, sent: 0, failed: 1 })
         .mockResolvedValueOnce({ eligible: 1, sent: 1, failed: 0 })
+      let reminderCalls = 0
       setMockFromImplementation((table) => {
         if (table === "post_event_reminders") {
-          return createChainableMock({ data: [reminder, secondReminder], error: null })
+          reminderCalls++
+          if (reminderCalls === 1) {
+            return createChainableMock({ data: [reminder, secondReminder], error: null })
+          }
+          if (reminderCalls === 2) {
+            return createChainableMock({ data: reminder, error: null })
+          }
+          if (reminderCalls === 3) {
+            return createChainableMock({ data: secondReminder, error: null })
+          }
+          return createChainableMock({ data: [{ id: secondReminder.id }], error: null })
         }
         if (table === "hackathons") {
           return createChainableMock({

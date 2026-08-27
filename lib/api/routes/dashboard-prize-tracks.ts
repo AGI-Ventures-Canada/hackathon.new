@@ -56,7 +56,7 @@ export const dashboardPrizeTracksRoutes = new Elysia()
     }
 
     const { getPrizeTrackWithDetails } = await import("@/lib/services/prize-tracks")
-    const track = await getPrizeTrackWithDetails(params.trackId)
+    const track = await getPrizeTrackWithDetails(params.trackId, params.id)
 
     if (!track) {
       return new Response(JSON.stringify({ error: "Prize track not found" }), {
@@ -302,7 +302,12 @@ export const dashboardPrizeTracksRoutes = new Elysia()
       }
 
       const { replaceRoundBucketDefinitions } = await import("@/lib/services/prize-tracks")
-      const buckets = await replaceRoundBucketDefinitions(params.roundId, body.buckets)
+      const buckets = await replaceRoundBucketDefinitions(
+        params.roundId,
+        body.buckets,
+        params.id,
+        params.trackId,
+      )
 
       return { buckets: buckets.map((b) => ({ id: b.id, level: b.level, label: b.label, description: b.description })) }
     },
@@ -347,7 +352,7 @@ export const dashboardPrizeTracksRoutes = new Elysia()
         style: body.style as "bucket_sort" | "gate_check" | "head_to_head" | "top_n" | "compliance" | "crowd" | "points" | "subjective" | undefined,
         status: body.status as "planned" | "active" | "complete" | "advanced" | undefined,
         advancement: body.advancement as "top_n" | "threshold" | "manual" | undefined,
-      })
+      }, params.id, params.trackId)
 
       if (!round) {
         return new Response(JSON.stringify({ error: "Round not found" }), {
@@ -490,7 +495,7 @@ export const dashboardPrizeTracksRoutes = new Elysia()
       }
 
       const { activateRound } = await import("@/lib/services/prize-tracks")
-      const success = await activateRound(params.roundId, params.trackId)
+      const success = await activateRound(params.roundId, params.trackId, params.id)
 
       if (!success) {
         return new Response(JSON.stringify({ error: "Failed to activate round" }), {
@@ -532,7 +537,7 @@ export const dashboardPrizeTracksRoutes = new Elysia()
       const { getRound, calculateBucketSortResults, calculateGateCheckResults } = await import("@/lib/services/prize-tracks")
       const round = await getRound(params.roundId)
 
-      if (!round) {
+      if (!round || round.hackathon_id !== params.id || round.prize_track_id !== params.trackId) {
         return new Response(JSON.stringify({ error: "Round not found" }), {
           status: 404,
           headers: { "Content-Type": "application/json" },

@@ -138,6 +138,10 @@ async function commitTransition(
     updateData.results_published_at = input.resultsPublication.publishedAt
     updateData.winner_emails_sent_at = null
     updateData.results_announcement_sent_at = null
+  } else if (fromStatus === "completed" && toStatus !== "archived") {
+    updateData.results_published_at = null
+    updateData.winner_emails_sent_at = null
+    updateData.results_announcement_sent_at = null
   }
 
   if (input.resultsPublication) {
@@ -269,6 +273,16 @@ async function commitTransition(
     }
   }
 
+  if (fromStatus === "completed" && toStatus !== "archived") {
+    const { error: unpublishError } = await client
+      .from("hackathon_results")
+      .update({ published_at: null })
+      .eq("hackathon_id", hackathonId)
+    if (unpublishError) {
+      console.error("Failed to clear stale result publication state:", unpublishError)
+    }
+  }
+
   await client.from("hackathon_transitions").insert({
     hackathon_id: hackathonId,
     from_status: fromStatus,
@@ -348,31 +362,34 @@ export async function runTransitionSideEffects(
   }
 
   const event = STATUS_TO_EVENT[toStatus]
-  if (event && !isSkipAheadCompletion) {
+  const isResultsRollback = fromStatus === "completed" && toStatus === "judging"
+  if (event && !isSkipAheadCompletion && !isResultsRollback) {
     const { dispatchTransitionNotifications } = await import(
       "./notification-dispatcher"
     )
-    dispatchTransitionNotifications({
-      type: event,
-      hackathonId,
-      tenantId,
-      hackathon: {
-        name: hackathon.name,
-        slug: hackathon.slug,
-        starts_at: hackathon.starts_at,
-        ends_at: hackathon.ends_at,
-      },
-      trigger,
-      triggeredBy,
-      fromStatus,
-      toStatus,
-      challenges: coincidentChallenges,
-    }).catch((err) => {
+    try {
+      await dispatchTransitionNotifications({
+        type: event,
+        hackathonId,
+        tenantId,
+        hackathon: {
+          name: hackathon.name,
+          slug: hackathon.slug,
+          starts_at: hackathon.starts_at,
+          ends_at: hackathon.ends_at,
+        },
+        trigger,
+        triggeredBy,
+        fromStatus,
+        toStatus,
+        challenges: coincidentChallenges,
+      })
+    } catch (err) {
       console.error(
         `Failed to dispatch notifications for ${fromStatus} → ${toStatus}:`,
         err
       )
-    })
+    }
   }
 
   if (
@@ -383,12 +400,14 @@ export async function runTransitionSideEffects(
     const { reschedulePreEventReminders } = await import(
       "./pre-event-reminders"
     )
-    reschedulePreEventReminders(hackathonId).catch((err) => {
+    try {
+      await reschedulePreEventReminders(hackathonId)
+    } catch (err) {
       console.error(
         `Failed to schedule pre-event reminders for ${hackathonId}:`,
         err
       )
-    })
+    }
   }
 
   if (toStatus === "completed" || toStatus === "archived") {
@@ -418,12 +437,14 @@ export async function runTransitionSideEffects(
     toStatus === "archived"
   ) {
     const { cancelRemindersForEntity } = await import("./smart-reminders")
-    cancelRemindersForEntity("hackathon_event", hackathonId).catch((err) =>
+    try {
+      await cancelRemindersForEntity("hackathon_event", hackathonId)
+    } catch (err) {
       console.error(
         `Failed to cancel pre-event reminders for hackathon ${hackathonId}:`,
         err
       )
-    )
+    }
   }
 
 }

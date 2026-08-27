@@ -20,7 +20,7 @@ PR #468 keeps this baseline visible and targets `staging`. Its first WebMCP comm
 - Deterministic tests, model-selection eval cases, public docs, security notes, and a hosted preview matrix.
 - Next.js 16.2.11 security update, `SECURITY.md`, public-safe setup examples, and repository publication audit work.
 
-No database migration or parallel WebMCP backend was added. The implementation reuses Oatmeal's existing pages, services, API routes, audit log, lifecycle flushes, and human controls.
+No database migration or parallel WebMCP backend was added. The implementation reuses hackathon.new's existing pages, services, API routes, audit log, lifecycle flushes, and human controls.
 
 ## Reproduce the boundary check
 

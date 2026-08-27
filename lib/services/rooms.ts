@@ -214,7 +214,7 @@ export async function addTeamToRoom(
 
   const { error } = await client
     .from("room_teams")
-    .insert({ room_id: roomId, team_id: teamId })
+    .upsert({ room_id: roomId, team_id: teamId }, { onConflict: "team_id" })
 
   if (error) {
     console.error("Failed to add team to room:", error)

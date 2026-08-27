@@ -93,6 +93,26 @@ describe("Admin Auth", () => {
 
       expect(principal.kind).not.toBe("admin")
     })
+
+    it("resolves authentication once for the same request", async () => {
+      mockAuth.mockImplementation(() =>
+        Promise.resolve({
+          userId: "normal-user",
+          orgId: null,
+          orgRole: null,
+          sessionClaims: {},
+        })
+      )
+
+      const request = new Request("http://localhost/api/test")
+      const [first, second] = await Promise.all([
+        resolvePrincipal(request),
+        resolvePrincipal(request),
+      ])
+
+      expect(first).toEqual(second)
+      expect(mockAuth).toHaveBeenCalledTimes(1)
+    })
   })
 
   describe("requireAdmin", () => {

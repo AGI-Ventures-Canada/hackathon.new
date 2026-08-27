@@ -9,7 +9,10 @@ const mockClerkClient = mock(() =>
     users: {
       getUser: mock(() =>
         Promise.resolve({
-          emailAddresses: [{ emailAddress: "judge@example.com" }],
+          emailAddresses: [{
+            emailAddress: "judge@example.com",
+            verification: { status: "verified" },
+          }],
         })
       ),
     },

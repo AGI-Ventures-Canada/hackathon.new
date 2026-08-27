@@ -1,15 +1,28 @@
 {
-  "name": "oatmeal",
+  "name": "hackathon.new",
   "version": "0.1.0",
   "license": "AGPL-3.0-only",
-  "description": "Hackathon platform",
+  "description": "Open-source platform for running hackathons",
   "private": true,
+  "homepage": "https://hackathon.new",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AGI-Ventures-Canada/hackathon.new.git"
+  },
+  "bugs": {
+    "url": "https://github.com/AGI-Ventures-Canada/hackathon.new/issues"
+  },
+  "packageManager": "bun@1.3.14",
+  "engines": {
+    "node": ">=20.18.1"
+  },
   "scripts": {
     "predev": "./scripts/setup-local-db.sh",
     "dev": "next dev",
     "dev:fresh": "./scripts/setup-local-db.sh && supabase db reset && bun run dev:skip-setup",
     "dev:skip-setup": "next dev",
     "build": "bun run check:production-email-delivery && next build && bun run check:sharp-trace",
+    "docs:generate": "fumadocs-mdx",
     "check:production-email-delivery": "bun run scripts/check-production-email-delivery.ts",
     "check:sharp-trace": "bun run scripts/check-sharp-trace.ts",
     "start": "next start",

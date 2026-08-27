@@ -163,6 +163,8 @@ export function LocationEditForm({ hackathonId, initialData, onSaveAndNext, onSa
         setRequireLocationVerification(false)
       } else if (type === "in_person") {
         setLocationUrl("")
+      } else if (type === "hybrid") {
+        setRequireLocationVerification(false)
       }
     }
   }
@@ -225,7 +227,12 @@ export function LocationEditForm({ hackathonId, initialData, onSaveAndNext, onSa
               <AddressAutocomplete
                 id="location-name"
                 value={locationName}
-                onChange={setLocationName}
+                onChange={(value) => {
+                  setLocationName(value)
+                  setLocationLatitude(null)
+                  setLocationLongitude(null)
+                  setRequireLocationVerification(false)
+                }}
                 onSelect={(result) => {
                   setLocationName(result.displayName)
                   setLocationLatitude(result.latitude)
@@ -254,10 +261,10 @@ export function LocationEditForm({ hackathonId, initialData, onSaveAndNext, onSa
                     id="require-location"
                     checked={requireLocationVerification}
                     onCheckedChange={setRequireLocationVerification}
-                    disabled={!locationLatitude}
+                    disabled={locationLatitude == null || locationLongitude == null}
                   />
                 </div>
-                {requireLocationVerification && !locationLatitude && (
+                {requireLocationVerification && (locationLatitude == null || locationLongitude == null) && (
                   <p className="text-xs text-muted-foreground">
                     Select an address from the suggestions to enable verification
                   </p>

@@ -15,7 +15,7 @@ Wrapper for `agent-browser` that handles the full startup sequence for local UI 
 bun run browser                 # opens http://localhost:3000/home
 bun run browser /hackathons     # any path
 bun run browser --refresh-auth  # re-save auth from side Chrome profile
-bun run browser --close         # close the oatmeal agent-browser session
+bun run browser --close         # close the hackathon.new agent-browser session
 bun run browser --quit-chrome   # also quit the side Chrome instance
 ```
 
@@ -25,13 +25,13 @@ bun run browser --quit-chrome   # also quit the side Chrome instance
 2. Launches a **dedicated side Chrome instance** with its own profile at `.auth/chrome-profile/` and `--remote-debugging-port=9222`. Your main Chrome window is never touched.
 3. On first run, opens the side window so you can sign in once — auth persists in the profile for future runs.
 4. Saves auth state to `.auth/auth.json` (first run or `--refresh-auth`) via `agent-browser --auto-connect state save`.
-5. Closes any stale `oatmeal` session, opens the target path with `--state`, waits for `networkidle`, prints a snapshot.
+5. Closes any stale `hackathon.new` session, opens the target path with `--state`, waits for `networkidle`, prints a snapshot.
 
 ### Environment overrides
 
 | Var | Default | Purpose |
 |-----|---------|---------|
-| `OATMEAL_BASE_URL` | `http://localhost:3000` | Change base URL (e.g., preview deploy) |
+| `HACKATHON_BASE_URL` | `http://localhost:3000` | Change base URL (e.g., preview deploy) |
 | `CHROME_DEBUG_PORT` | `9222` | Alternate debug port for the side Chrome |
 | `CHROME_APP` | `/Applications/Google Chrome.app` | Path to Chrome.app |
 | `CHROME_PROFILE_DIR` | `$PWD/.auth/chrome-profile` | Location of the dedicated profile |

@@ -530,6 +530,25 @@ describe("Dashboard Routes Integration Tests", () => {
 
       expect(res.status).toBe(422)
     })
+
+    it("rejects API key permissions the caller does not hold", async () => {
+      mockResolvePrincipal.mockResolvedValue({
+        ...mockUserPrincipal,
+        orgRole: "org:member",
+        scopes: ["keys:write", "hackathons:read"],
+      })
+
+      const res = await app.handle(
+        new Request("http://localhost/api/dashboard/keys", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "Elevated Key", scopes: ["hackathons:write"] }),
+        })
+      )
+
+      expect(res.status).toBe(403)
+      expect(mockCreateApiKey).not.toHaveBeenCalled()
+    })
   })
 
   describe("POST /api/dashboard/keys/:id/revoke", () => {

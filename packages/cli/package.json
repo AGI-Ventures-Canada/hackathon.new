@@ -5,13 +5,12 @@
   "keywords": [
     "hackathon",
     "cli",
-    "hackathon.new",
-    "oatmeal"
+    "hackathon.new"
   ],
-  "homepage": "https://github.com/AGI-Ventures-Canada/oatmeal/tree/main/packages/cli#readme",
+  "homepage": "https://github.com/AGI-Ventures-Canada/hackathon.new/tree/main/packages/cli#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/AGI-Ventures-Canada/oatmeal.git",
+    "url": "git+https://github.com/AGI-Ventures-Canada/hackathon.new.git",
     "directory": "packages/cli"
   },
   "license": "AGPL-3.0-only",
@@ -28,7 +27,7 @@
     "build": "obuild",
     "dev": "bun run src/cli.ts",
     "test": "bun test",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "bun run build"
   },
   "dependencies": {
     "@clack/prompts": "^0.10.0",

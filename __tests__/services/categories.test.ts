@@ -122,13 +122,19 @@ describe("categories service", () => {
 
   describe("setSubmissionCategories", () => {
     it("sets categories for a submission", async () => {
-      setMockFromImplementation(() => createChainableMock({ data: null, error: null }))
+      setMockFromImplementation((table) => {
+        if (table === "submissions") return createChainableMock({ data: { hackathon_id: HACKATHON_ID }, error: null })
+        if (table === "submission_categories") return createChainableMock({ data: [{ id: CATEGORY_ID }], error: null })
+        return createChainableMock({ data: null, error: null })
+      })
       const result = await setSubmissionCategories(SUBMISSION_ID, [CATEGORY_ID])
       expect(result).toBe(true)
     })
 
     it("handles empty category list", async () => {
-      setMockFromImplementation(() => createChainableMock({ data: null, error: null }))
+      setMockFromImplementation((table) => table === "submissions"
+        ? createChainableMock({ data: { hackathon_id: HACKATHON_ID }, error: null })
+        : createChainableMock({ data: null, error: null }))
       const result = await setSubmissionCategories(SUBMISSION_ID, [])
       expect(result).toBe(true)
     })

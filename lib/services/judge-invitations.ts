@@ -159,6 +159,8 @@ export type JudgeInvitationWithDetails = JudgeInvitation & {
     name: string
     slug: string
     status: string
+    starts_at: string | null
+    ends_at: string | null
     require_terms_acceptance: boolean
     terms_content: string | null
   }
@@ -173,7 +175,7 @@ export async function getJudgeInvitationByToken(
     .from("judge_invitations")
     .select(`
       *,
-      hackathons!inner(id, name, slug, status, require_terms_acceptance, terms_content)
+      hackathons!inner(id, name, slug, status, starts_at, ends_at, require_terms_acceptance, terms_content)
     `)
     .eq("token", token)
     .single()
@@ -187,6 +189,8 @@ export async function getJudgeInvitationByToken(
     name: string
     slug: string
     status: string
+    starts_at: string | null
+    ends_at: string | null
     require_terms_acceptance: boolean | null
     terms_content: string | null
   }
@@ -198,6 +202,8 @@ export async function getJudgeInvitationByToken(
       name: hackathon.name,
       slug: hackathon.slug,
       status: hackathon.status,
+      starts_at: hackathon.starts_at,
+      ends_at: hackathon.ends_at,
       require_terms_acceptance: hackathon.require_terms_acceptance ?? false,
       terms_content: hackathon.terms_content ?? null,
     },
@@ -234,6 +240,16 @@ export async function acceptJudgeInvitation(
     return { success: false, error: "Invitation has expired", code: "expired" }
   }
 
+  if (
+    getNotificationDisposition({
+      status: invitation.hackathon.status as HackathonStatus,
+      starts_at: invitation.hackathon.starts_at,
+      ends_at: invitation.hackathon.ends_at,
+    }) === "reject"
+  ) {
+    return { success: false, error: "Hackathon has ended", code: "hackathon_ended" }
+  }
+
   const emails = Array.isArray(userEmails) ? userEmails : [userEmails]
   const matchesInvitation = emails.some(
     (e) => e.toLowerCase() === invitation.email.toLowerCase()
@@ -253,15 +269,6 @@ export async function acceptJudgeInvitation(
 
   if (!addResult.success) {
     if (addResult.code === "already_judge") {
-      await client
-        .from("judge_invitations")
-        .update({
-          status: "accepted",
-          accepted_by_clerk_user_id: clerkUserId,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", invitation.id)
-
       return {
         success: true,
         hackathonId: invitation.hackathon_id,
@@ -271,7 +278,10 @@ export async function acceptJudgeInvitation(
     return { success: false, error: addResult.error, code: addResult.code }
   }
 
-  const { error: updateError } = await client
+  // Add the judge first. The operation is idempotent, so a concurrent
+  // acceptance cannot strand an invitation in the accepted state without a
+  // judge participant. The conditional update then claims the invitation.
+  const { data: claimedInvitation, error: claimError } = await client
     .from("judge_invitations")
     .update({
       status: "accepted",
@@ -279,9 +289,15 @@ export async function acceptJudgeInvitation(
       updated_at: new Date().toISOString(),
     })
     .eq("id", invitation.id)
+    .eq("status", "pending")
+    .select("id")
+    .maybeSingle()
 
-  if (updateError) {
-    console.error("Failed to update judge invitation status:", updateError)
+  if (claimError) {
+    return { success: false, error: "Failed to accept invitation", code: "claim_failed" }
+  }
+  if (!claimedInvitation) {
+    return { success: true, hackathonId: invitation.hackathon_id, hackathonSlug: invitation.hackathon.slug }
   }
 
   return {
@@ -308,12 +324,15 @@ export async function cancelJudgeInvitation(
     return { success: false, error: "Invitation not found or not pending" }
   }
 
-  const { error } = await client
+  const { data: cancelledInvitation, error } = await client
     .from("judge_invitations")
     .update({ status: "cancelled", updated_at: new Date().toISOString() })
     .eq("id", invitationId)
+    .eq("status", "pending")
+    .select("id")
+    .maybeSingle()
 
-  return { success: !error }
+  return { success: !error && Boolean(cancelledInvitation) }
 }
 
 export type RemindJudgeInvitationResult =

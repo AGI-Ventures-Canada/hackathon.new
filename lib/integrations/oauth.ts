@@ -1,6 +1,7 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { OrgIntegration, IntegrationProvider } from "@/lib/db/hackathon-types"
 import { encryptToken, decryptToken } from "@/lib/services/encryption"
+import { createHmac, timingSafeEqual } from "node:crypto"
 
 export interface OAuthProviderConfig {
   name: IntegrationProvider
@@ -9,6 +10,47 @@ export interface OAuthProviderConfig {
   scopes: string[]
   clientId: string
   clientSecret: string
+}
+
+type OAuthState = { tenantId: string; userId: string; expiresAt: number }
+
+function oauthStateSecret(): string {
+  const secret = process.env.ENCRYPTION_KEY
+  if (!secret || !/^[a-f0-9]{64}$/.test(secret)) {
+    throw new Error("ENCRYPTION_KEY must be exactly 64 lowercase hex characters")
+  }
+  return secret
+}
+
+export function createOAuthState(tenantId: string, userId: string): string {
+  const payload = Buffer.from(JSON.stringify({
+    tenantId,
+    userId,
+    expiresAt: Date.now() + 10 * 60_000,
+  } satisfies OAuthState)).toString("base64url")
+  const signature = createHmac("sha256", oauthStateSecret()).update(payload).digest("base64url")
+  return `${payload}.${signature}`
+}
+
+export function verifyOAuthState(state: string): OAuthState | null {
+  const [payload, providedSignature, extra] = state.split(".")
+  if (!payload || !providedSignature || extra) return null
+  const expectedSignature = createHmac("sha256", oauthStateSecret()).update(payload).digest()
+  let actualSignature: Buffer
+  try {
+    actualSignature = Buffer.from(providedSignature, "base64url")
+  } catch {
+    return null
+  }
+  if (actualSignature.length !== expectedSignature.length || !timingSafeEqual(actualSignature, expectedSignature)) return null
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as Partial<OAuthState>
+    if (typeof parsed.tenantId !== "string" || typeof parsed.userId !== "string") return null
+    if (typeof parsed.expiresAt !== "number" || parsed.expiresAt < Date.now()) return null
+    return parsed as OAuthState
+  } catch {
+    return null
+  }
 }
 
 export const OAUTH_PROVIDERS: Record<IntegrationProvider, () => OAuthProviderConfig | null> = {
@@ -65,6 +107,7 @@ export const OAUTH_PROVIDERS: Record<IntegrationProvider, () => OAuthProviderCon
 }
 
 export function getProviderConfig(provider: IntegrationProvider): OAuthProviderConfig | null {
+  if (!Object.hasOwn(OAUTH_PROVIDERS, provider)) return null
   const configFn = OAUTH_PROVIDERS[provider]
   return configFn ? configFn() : null
 }

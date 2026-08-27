@@ -93,13 +93,27 @@ describe("cancelTeamInvitationAsOrganizer", () => {
       tableImpl({
         team_invitations: [
           { data: { id: VALID_UUID, hackathon_id: "h_1", status: "pending" }, error: null },
-          { data: null, error: null },
+          { data: { id: VALID_UUID }, error: null },
         ],
       })
     )
 
     const result = await cancelTeamInvitationAsOrganizer(VALID_UUID, "h_1")
     expect(result).toEqual({ success: true, error: undefined })
+  })
+
+  it("does not report success when acceptance wins a race", async () => {
+    setMockFromImplementation(
+      tableImpl({
+        team_invitations: [
+          { data: { id: VALID_UUID, hackathon_id: "h_1", status: "pending" }, error: null },
+          { data: null, error: null },
+        ],
+      })
+    )
+
+    const result = await cancelTeamInvitationAsOrganizer(VALID_UUID, "h_1")
+    expect(result).toEqual({ success: false, error: "Invitation is no longer pending" })
   })
 })
 

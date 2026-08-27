@@ -129,7 +129,7 @@ function formatInvitation(invitation: ClerkOrganizationInvitationResource): Orga
     createdAt: toIsoTimestamp(invitation.createdAt),
     updatedAt: toIsoTimestamp(invitation.updatedAt),
     expiresAt: toOptionalIsoTimestamp(invitation.expiresAt),
-    url: invitation.url ?? null,
+    url: null,
   }
 }
 

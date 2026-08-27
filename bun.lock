@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "oatmeal",
+      "name": "hackathon.new",
       "dependencies": {
         "@ai-sdk/anthropic": "^3.0.12",
         "@base-ui/react": "1.0.0",

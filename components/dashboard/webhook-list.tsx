@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { assertOk } from "@/lib/utils/fetch"
 import { Webhook, MoreHorizontal, Trash2, AlertTriangle } from "lucide-react"
-import type { Webhook as WebhookType } from "@/lib/db/hackathon-types"
+import type { WebhookSummary } from "@/lib/services/webhooks"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -38,7 +38,7 @@ import {
 } from "@/components/ui/tooltip"
 
 interface WebhookListProps {
-  webhooks: WebhookType[]
+  webhooks: WebhookSummary[]
 }
 
 const eventLabels: Record<string, string> = {

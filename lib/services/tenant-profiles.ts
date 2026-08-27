@@ -118,6 +118,8 @@ export type TenantWithEvents = TenantProfile & {
   sponsoredHackathons: SponsoredHackathon[]
 }
 
+const PUBLIC_EVENT_FIELDS = "id, slug, name, description, banner_url, status, starts_at, ends_at, registration_opens_at, registration_closes_at, metadata"
+
 export async function getPublicTenantWithHackathons(
   slug: string
 ): Promise<TenantWithHackathons | null> {
@@ -136,7 +138,7 @@ export async function getPublicTenantWithHackathons(
 
   const { data: hackathons, error: hackathonsError } = await client
     .from("hackathons")
-    .select("*")
+    .select(PUBLIC_EVENT_FIELDS)
     .eq("tenant_id", tenant.id)
     .in("status", ["published", "registration_open", "active", "judging", "completed"])
     .order("starts_at", { ascending: false })
@@ -147,9 +149,12 @@ export async function getPublicTenantWithHackathons(
 
   return {
     ...(tenant as unknown as TenantProfile),
-    hackathons: ((hackathons || []) as unknown as Hackathon[]).filter(
-      isHackathonCreationReady,
-    ),
+    hackathons: ((hackathons || []) as unknown as Hackathon[])
+      .filter(isHackathonCreationReady)
+      .map((hackathon) => {
+        const { metadata: _metadata, ...publicHackathon } = hackathon
+        return publicHackathon as Hackathon
+      }),
   }
 }
 
@@ -173,7 +178,7 @@ export async function getPublicTenantWithEvents(
 
   const { data: organizedHackathons, error: organizedError } = await client
     .from("hackathons")
-    .select("*")
+    .select(PUBLIC_EVENT_FIELDS)
     .eq("tenant_id", tenant.id)
     .in("status", ["published", "registration_open", "active", "judging", "completed"])
     .order("starts_at", { ascending: false })
@@ -187,7 +192,7 @@ export async function getPublicTenantWithEvents(
     .select(`
       hackathon_id,
       hackathons!inner(
-        *,
+        id, slug, name, description, banner_url, status, starts_at, ends_at, registration_opens_at, registration_closes_at, metadata,
         organizer:tenants!tenant_id(id, name, slug, logo_url, logo_url_dark)
       )
     `)
@@ -206,6 +211,10 @@ export async function getPublicTenantWithEvents(
         return hackathon
       })
       .filter(isHackathonCreationReady)
+      .map((hackathon) => {
+        const { metadata: _metadata, ...publicHackathon } = hackathon
+        return publicHackathon
+      })
       .filter((h) =>
         ["published", "registration_open", "active", "judging", "completed"].includes(h.status)
       ),
@@ -216,13 +225,13 @@ export async function getPublicTenantWithEvents(
     ...(tenant as unknown as TenantProfile),
     organizedHackathons: ((organizedHackathons || []) as unknown as Hackathon[])
       .filter(isHackathonCreationReady)
-      .map((h) => ({
-        ...h,
-        role: "organizer" as const,
-      })),
+      .map((h) => {
+        const { metadata: _metadata, ...publicHackathon } = h
+        return { ...publicHackathon, role: "organizer" as const } as OrganizedHackathon
+      }),
     sponsoredHackathons: sponsoredHackathons.map((h) => ({
       ...h,
       role: "sponsor" as const,
-    })),
+    })) as SponsoredHackathon[],
   }
 }

@@ -134,14 +134,14 @@ describe("export status transitions", () => {
 
   it("markExportProcessing updates status without throwing", async () => {
     setMockFromImplementation(() =>
-      createChainableMock({ data: null, error: null })
+      createChainableMock({ data: [{ id: EXPORT_ID }], error: null })
     )
     await markExportProcessing(EXPORT_ID)
   })
 
   it("markExportReady updates row with metadata", async () => {
     setMockFromImplementation(() =>
-      createChainableMock({ data: null, error: null })
+      createChainableMock({ data: [{ id: EXPORT_ID }], error: null })
     )
     await markExportReady(EXPORT_ID, {
       storagePath: "h/x/file.zip",
@@ -153,7 +153,7 @@ describe("export status transitions", () => {
 
   it("markExportFailed records the error message", async () => {
     setMockFromImplementation(() =>
-      createChainableMock({ data: null, error: null })
+      createChainableMock({ data: [{ id: EXPORT_ID }], error: null })
     )
     await markExportFailed(EXPORT_ID, "boom")
   })

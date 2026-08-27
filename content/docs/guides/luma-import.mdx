@@ -3,7 +3,7 @@ title: Importing from Luma
 description: Create a hackathon by importing event details from a Luma event page.
 ---
 
-If your hackathon is already listed on Luma, you can import the event details — name, dates, location, sponsors, and prizes — directly into Oatmeal.
+If your hackathon is already listed on Luma, you can import the event details — name, dates, location, sponsors, and prizes — directly into hackathon.new.
 
 ## Overview
 
@@ -55,7 +55,7 @@ curl -s -X POST "$BASE_URL/api/dashboard/import/luma" \
 ```
 
 The create endpoint automatically:
-- Downloads and uploads the banner image to Oatmeal storage
+- Downloads and uploads the banner image to hackathon.new storage
 - Creates sponsor entries with the imported tier assignments
 - Creates prize entries with descriptions and values
 - Generates a URL-friendly slug from the event name
@@ -94,7 +94,7 @@ The imported hackathon starts in `draft` status. You'll typically want to:
 
 ## Best Practices
 
-1. **Import early** — Create the hackathon from Luma as soon as the event is listed, then customize in Oatmeal
+1. **Import early** — Create the hackathon from Luma as soon as the event is listed, then customize in hackathon.new
 2. **Check dates** — Verify timezone handling on imported dates matches your expectations
 3. **Add sponsor logos** — Import captures sponsor names but logos need to be uploaded separately via the [Sponsors API](/docs/sdk/sponsors)
 4. **Customize prizes** — Imported prizes may need additional configuration like prize type (`score`, `favorite`, `crowd`) and monetary values

@@ -1,6 +1,7 @@
 import type { NextConfig } from "next"
 import { withWorkflow } from "workflow/next"
 import { createMDX } from "fumadocs-mdx/next"
+import { SECURITY_HEADERS } from "./lib/security-headers"
 import {
   createWebMcpOriginTrialHeaderRule,
   getWebMcpOriginTrialRegistration,
@@ -45,22 +46,15 @@ const nextConfig: NextConfig = {
     "/.well-known/workflow/v1/step": sharpTraceFiles,
   },
   async headers() {
-    if (!webMcpOriginTrial) return []
-    return [createWebMcpOriginTrialHeaderRule(webMcpOriginTrial)]
+    return webMcpOriginTrial
+      ? [SECURITY_HEADERS, createWebMcpOriginTrialHeaderRule(webMcpOriginTrial)]
+      : [SECURITY_HEADERS]
   },
   async rewrites() {
     return [
       {
         source: "/docs/:path*.mdx",
         destination: "/llms.mdx/docs/:path*",
-      },
-      {
-        source: "/t/static/:path*",
-        destination: "https://us-assets.i.posthog.com/static/:path*",
-      },
-      {
-        source: "/t/:path*",
-        destination: "https://us.i.posthog.com/:path*",
       },
     ]
   },

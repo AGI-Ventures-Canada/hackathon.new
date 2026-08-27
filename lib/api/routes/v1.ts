@@ -67,12 +67,34 @@ export const v1Routes = new Elysia({ prefix: "/v1", tags: ["v1"] })
     async ({ principal, body, request }) => {
       requirePrincipal(principal, ["api_key"], ["hackathons:write"])
 
+      const { isSupportedJobType } = await import("@/lib/workflows/jobs/handlers")
+      if (!isSupportedJobType(body.type)) {
+        return new Response(JSON.stringify({ error: "Unsupported job type" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+      if (JSON.stringify(body.input ?? null).length > 64_000) {
+        return new Response(JSON.stringify({ error: "Job input is too large" }), {
+          status: 413,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+
       const rateLimit = await checkRateLimit(
         `api_key:${principal.keyId}:jobs:create`,
         defaultRateLimits["api_key:default"]
       )
       if (!rateLimit.allowed) {
         throw new RateLimitError(rateLimit.resetAt, rateLimit.remaining)
+      }
+      const tenantLimit = await checkRateLimit(
+        `tenant:${principal.tenantId}:jobs:create`,
+        { maxRequests: 20, windowMs: 60_000 },
+        { failureMode: "closed" },
+      )
+      if (!tenantLimit.allowed) {
+        throw new RateLimitError(tenantLimit.resetAt, tenantLimit.remaining)
       }
 
       const idempotencyKey = request.headers.get("idempotency-key") ?? body.idempotencyKey
@@ -108,9 +130,9 @@ export const v1Routes = new Elysia({ prefix: "/v1", tags: ["v1"] })
     },
     {
       body: t.Object({
-        type: t.String({ minLength: 1, description: "Job type identifier" }),
+        type: t.String({ minLength: 1, maxLength: 100, description: "Job type identifier" }),
         input: t.Optional(t.Any({ description: "Job input payload (JSON)" })),
-        idempotencyKey: t.Optional(t.String({ description: "Unique key for idempotent requests" })),
+        idempotencyKey: t.Optional(t.String({ minLength: 1, maxLength: 200, description: "Unique key for idempotent requests" })),
       }),
       detail: {
         summary: "Create a new job",

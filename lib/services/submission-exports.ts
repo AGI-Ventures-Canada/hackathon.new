@@ -239,11 +239,12 @@ export async function purgeExpiredExports(): Promise<PurgeExpiredExportsResult> 
 
 export async function markExportProcessing(exportId: string): Promise<void> {
   const client = getSupabase()
-  const { error } = await client
+  const { data, error } = await client
     .from("submission_exports")
     .update({ status: "processing" })
     .eq("id", exportId)
-  if (error) console.error("Failed to mark export processing:", error)
+    .select("id")
+  if (error || data?.length !== 1) throw new Error(`Failed to mark export processing: ${error?.message ?? "not found"}`)
 }
 
 export async function markExportReady(
@@ -256,7 +257,7 @@ export async function markExportReady(
   }
 ): Promise<void> {
   const client = getSupabase()
-  const { error } = await client
+  const { data, error } = await client
     .from("submission_exports")
     .update({
       status: "ready",
@@ -267,7 +268,8 @@ export async function markExportReady(
       expires_at: args.expiresAt,
     })
     .eq("id", exportId)
-  if (error) console.error("Failed to mark export ready:", error)
+    .select("id")
+  if (error || data?.length !== 1) throw new Error(`Failed to mark export ready: ${error?.message ?? "not found"}`)
 }
 
 export async function markExportFailed(
@@ -275,11 +277,12 @@ export async function markExportFailed(
   errorMessage: string
 ): Promise<void> {
   const client = getSupabase()
-  const { error } = await client
+  const { data, error } = await client
     .from("submission_exports")
     .update({ status: "failed", error_message: errorMessage })
     .eq("id", exportId)
-  if (error) console.error("Failed to mark export failed:", error)
+    .select("id")
+  if (error || data?.length !== 1) throw new Error(`Failed to mark export failed: ${error?.message ?? "not found"}`)
 }
 
 export async function loadExportPayload(

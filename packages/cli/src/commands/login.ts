@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto"
-import { execSync } from "node:child_process"
+import { execFileSync } from "node:child_process"
 import * as p from "@clack/prompts"
 import { OatmealClient } from "../client.js"
 import { loadConfig, saveConfig } from "../config.js"
@@ -38,7 +38,7 @@ export function parseLoginOptions(args: string[]): LoginOptions {
 
 export async function runLogin(args: string[]): Promise<void> {
   const options = parseLoginOptions(args)
-  const baseUrl = options.baseUrl ?? DEFAULT_BASE_URL
+  const baseUrl = validateBaseUrl(options.baseUrl ?? DEFAULT_BASE_URL)
 
   const existingConfig = loadConfig()
   if (existingConfig && !options.yes && !options.apiKey && !process.env.HACKATHON_API_KEY) {
@@ -68,7 +68,7 @@ export async function runLogin(args: string[]): Promise<void> {
   }
 
   const deviceToken = randomBytes(32).toString("hex")
-  const authUrl = `${baseUrl}/cli-auth?token=${deviceToken}`
+  const authUrl = `${baseUrl}/cli-auth#token=${deviceToken}`
 
   const initClient = new OatmealClient({ baseUrl })
   try {
@@ -99,29 +99,58 @@ export async function runLogin(args: string[]): Promise<void> {
   }
 }
 
+export function validateBaseUrl(value: string): string {
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    throw new Error("Base URL must be a valid web address")
+  }
+  const isLoopback = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]"
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && isLoopback)) {
+    throw new Error("Base URL must use HTTPS. HTTP is allowed only for local development.")
+  }
+  if (url.username || url.password || url.hash) throw new Error("Base URL cannot include credentials or a fragment")
+  return url.toString().replace(/\/$/, "")
+}
+
+export function getBrowserCommand(
+  url: string,
+  platform: NodeJS.Platform = process.platform
+): { executable: string; args: string[] } {
+  if (platform === "darwin") return { executable: "open", args: [url] }
+  if (platform === "win32") {
+    return {
+      executable: "rundll32.exe",
+      args: ["url.dll,FileProtocolHandler", url],
+    }
+  }
+  return { executable: "xdg-open", args: [url] }
+}
+
 function openBrowser(url: string): void {
-  const platform = process.platform
-  const cmd =
-    platform === "darwin"
-      ? "open"
-      : platform === "win32"
-        ? "start"
-        : "xdg-open"
-  execSync(`${cmd} "${url}"`, { stdio: "ignore" })
+  const { executable, args } = getBrowserCommand(url)
+  execFileSync(executable, args, { stdio: "ignore" })
 }
 
 async function pollForKey(baseUrl: string, deviceToken: string): Promise<string> {
   const client = new OatmealClient({ baseUrl })
   const start = Date.now()
+  let shownCode = false
 
   while (Date.now() - start < AUTH_TIMEOUT_MS) {
-    const result = await client.get<{ status: string; apiKey?: string }>(
+    const result = await client.get<{ status: string; apiKey?: string; userCode?: string }>(
       "/api/public/cli-auth/poll",
       { params: { token: deviceToken } }
     )
 
     if (result.status === "complete" && result.apiKey) {
       return result.apiKey
+    }
+
+    if (!shownCode && result.userCode) {
+      p.log.info(`Confirmation code: ${result.userCode}`)
+      shownCode = true
     }
 
     if (result.status === "expired") {

@@ -17,6 +17,7 @@ export interface AddSponsorInput {
 }
 
 export async function addSponsor(input: AddSponsorInput): Promise<HackathonSponsor | null> {
+  if (input.sponsorTenantId) return null
   const client = getSupabase() as unknown as SupabaseClient
   const { data, error } = await client
     .from("hackathon_sponsors")
@@ -47,23 +48,26 @@ export async function addSponsor(input: AddSponsorInput): Promise<HackathonSpons
 export async function removeSponsor(sponsorId: string, hackathonId: string): Promise<boolean> {
   const client = getSupabase() as unknown as SupabaseClient
 
+  const { data, error } = await client
+    .from("hackathon_sponsors")
+    .delete()
+    .eq("id", sponsorId)
+    .eq("hackathon_id", hackathonId)
+    .select("id")
+
+  if (error) {
+    console.error("Failed to remove sponsor:", error)
+    return false
+  }
+
+  if (!data || data.length === 0) return false
+
   try {
     const { deleteSponsorLogo } = await import("@/lib/services/storage")
     await deleteSponsorLogo(hackathonId, sponsorId, "light")
     await deleteSponsorLogo(hackathonId, sponsorId, "dark")
   } catch {
-    // Logo cleanup is best-effort, don't fail sponsor removal
-  }
-
-  const { error } = await client
-    .from("hackathon_sponsors")
-    .delete()
-    .eq("id", sponsorId)
-    .eq("hackathon_id", hackathonId)
-
-  if (error) {
-    console.error("Failed to remove sponsor:", error)
-    return false
+    console.error("Sponsor removed, but its old logo files could not be cleaned up")
   }
 
   return true
@@ -73,6 +77,7 @@ export async function listHackathonSponsors(
   hackathonId: string
 ): Promise<HackathonSponsor[]> {
   const client = getSupabase() as unknown as SupabaseClient
+
   const { data, error } = await client
     .from("hackathon_sponsors")
     .select("*")
@@ -94,6 +99,16 @@ export async function updateSponsor(
   hackathonId: string
 ): Promise<HackathonSponsor | null> {
   const client = getSupabase() as unknown as SupabaseClient
+
+  if (updates.sponsorTenantId !== undefined) {
+    const { data: existing } = await client
+      .from("hackathon_sponsors")
+      .select("sponsor_tenant_id")
+      .eq("id", sponsorId)
+      .eq("hackathon_id", hackathonId)
+      .maybeSingle()
+    if (!existing || existing.sponsor_tenant_id !== updates.sponsorTenantId) return null
+  }
 
   const updateData: Record<string, unknown> = {}
   if (updates.name !== undefined) updateData.name = updates.name

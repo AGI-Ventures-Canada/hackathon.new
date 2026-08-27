@@ -1,5 +1,5 @@
 import {
-  getOrCreateTenant,
+  getOrCreateAttendeeTenant,
   createTestHackathon,
   createTeamWithMembers,
   registerParticipant,
@@ -24,7 +24,7 @@ async function run() {
   console.log("Setting up attendee-winner-pending-claim scenario...")
 
   const overrideTenantId = await promptForOptionalTenantId()
-  const tenantId = await getOrCreateTenant(overrideTenantId)
+  const tenantId = await getOrCreateAttendeeTenant(overrideTenantId)
 
   const now = new Date()
   const hackathonId = await createTestHackathon({
@@ -66,9 +66,7 @@ async function run() {
   const allSubIds = [devSubId, ...otherTeams.map((o) => o.subId)]
   const assignmentIds = await assignJudges(hackathonId, judgePids, allSubIds, judgeTeamIds)
 
-  for (const aid of assignmentIds) {
-    await submitRandomScores(aid, criteriaIds)
-  }
+  for (const aid of assignmentIds) await submitRandomScores(aid, criteriaIds)
 
   const { data: devAssignments } = await supabase
     .from("judge_assignments")
@@ -76,19 +74,20 @@ async function run() {
     .eq("hackathon_id", hackathonId)
 
   for (const a of devAssignments ?? []) {
-    if (a.submission_id === devSubId) {
-      for (const cid of criteriaIds) {
-        await supabase.from("scores").upsert(
-          {
-            judge_assignment_id: a.id,
-            criteria_id: cid,
-            score: 5,
-          },
-          { onConflict: "judge_assignment_id,criteria_id" }
-        )
-      }
+    for (const cid of criteriaIds) {
+      await supabase.from("scores").upsert(
+        {
+          judge_assignment_id: a.id,
+          criteria_id: cid,
+          score: a.submission_id === devSubId ? 5 : 1,
+        },
+        { onConflict: "judge_assignment_id,criteria_id" }
+      )
     }
   }
+
+  const { calculateCoreOnlyResults } = await import("@/lib/services/judging")
+  await calculateCoreOnlyResults(hackathonId)
 
   const prizeIds = await createPrizes(hackathonId, buildDefaultPrizes(criteriaIds))
 
@@ -99,4 +98,4 @@ async function run() {
   printReady(SLUG)
 }
 
-run().catch(console.error)
+await run()

@@ -1,6 +1,6 @@
 # Supabase Development Guide
 
-This document covers Supabase setup, database development, and migrations for the oatmeal project.
+This document covers Supabase setup, database development, and migrations for the hackathon.new project.
 
 ## CRITICAL: Service Key Only Access
 

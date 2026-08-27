@@ -81,15 +81,23 @@ export async function sendBulkEmail(
     participants.map((p: { clerk_user_id: string }) => p.clerk_user_id),
   )]
   const emails: string[] = []
+  let unresolved = 0
 
   try {
     const clerk = await clerkClient()
     for (let i = 0; i < clerkUserIds.length; i += 100) {
       const batch = clerkUserIds.slice(i, i + 100)
       const users = await clerk.users.getUserList({ userId: batch, limit: 100 })
-      for (const user of users.data) {
+      const usersById = new Map(users.data.map((user) => [user.id, user]))
+      for (const userId of batch) {
+        const user = usersById.get(userId)
+        if (!user) {
+          unresolved++
+          continue
+        }
         const email = user.primaryEmailAddress?.emailAddress ?? user.emailAddresses[0]?.emailAddress
         if (email) emails.push(email)
+        else unresolved++
       }
     }
   } catch {
@@ -97,7 +105,7 @@ export async function sendBulkEmail(
   }
 
   let sent = 0
-  let failed = 0
+  let failed = unresolved
 
   const uniqueEmails = [...new Set(emails.map((email) => email.trim().toLowerCase()))]
   const text = htmlToPlainText(input.html)

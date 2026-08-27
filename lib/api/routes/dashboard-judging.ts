@@ -151,7 +151,7 @@ export const dashboardJudgingRoutes = new Elysia()
       })
 
       return { prize }
-        })
+        }, principal.tenantId)
       } catch (error) {
         return prizeMutationLeaseFailure(error, set)
       }
@@ -304,6 +304,7 @@ export const dashboardJudgingRoutes = new Elysia()
 
       if (body.buckets !== undefined) {
         const updatedBuckets = await replaceBucketDefinitions(
+          params.id,
           params.prizeId,
           body.buckets.map((b, i) => ({
             level: b.level ?? i + 1,
@@ -416,7 +417,7 @@ export const dashboardJudgingRoutes = new Elysia()
     }
 
     const { getPrizeDetails } = await import("@/lib/services/judging")
-    const prize = await getPrizeDetails(params.prizeId)
+    const prize = await getPrizeDetails(params.id, params.prizeId)
 
     if (!prize) {
       return new Response(JSON.stringify({ error: "Prize not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
@@ -553,7 +554,7 @@ export const dashboardJudgingRoutes = new Elysia()
       }
 
       const { replaceBucketDefinitions } = await import("@/lib/services/judging")
-      const buckets = await replaceBucketDefinitions(params.prizeId, body.buckets)
+      const buckets = await replaceBucketDefinitions(params.id, params.prizeId, body.buckets)
 
       return { buckets }
     },
@@ -792,7 +793,7 @@ export const dashboardJudgingRoutes = new Elysia()
       }
 
       const { updateRound } = await import("@/lib/services/judging")
-      const updated = await updateRound(params.roundId, body)
+      const updated = await updateRound(params.roundId, params.id, body)
 
       return { success: updated }
     },
@@ -885,7 +886,7 @@ export const dashboardJudgingRoutes = new Elysia()
     }
 
     const { completeRound } = await import("@/lib/services/judging")
-    const completed = await completeRound(params.roundId)
+    const completed = await completeRound(params.roundId, params.id)
 
     return { success: completed }
   }, {
@@ -1139,7 +1140,12 @@ export const dashboardJudgingRoutes = new Elysia()
       }
 
       const { advanceSubmissions } = await import("@/lib/services/judging")
-      const advanced = await advanceSubmissions(params.roundId, body.toRoundId, body.submissionIds)
+      const advanced = await advanceSubmissions(
+        params.id,
+        params.roundId,
+        body.toRoundId,
+        body.submissionIds
+      )
 
       return advanced
     },
@@ -1245,7 +1251,22 @@ export const dashboardJudgingRoutes = new Elysia()
     }
 
     const q = (query as Record<string, string>).q
-    if (!q || q.length < 2) return { users: [] }
+    if (!q || q.length < 3 || q.length > 100) return { users: [] }
+
+    const searchRateLimit = await checkRateLimit(
+      `judge-user-search:${principal.kind === "user" ? principal.userId : principal.keyId}`,
+      { maxRequests: 20, windowMs: 60_000 },
+    )
+    if (!searchRateLimit.allowed) throw new RateLimitError(searchRateLimit.resetAt, searchRateLimit.remaining)
+
+    const { supabase } = await import("@/lib/db/client")
+    const { data: participants } = await supabase()
+      .from("hackathon_participants")
+      .select("clerk_user_id")
+      .eq("hackathon_id", params.id)
+      .limit(500)
+    const eventUserIds = new Set((participants ?? []).map((participant) => participant.clerk_user_id))
+    if (eventUserIds.size === 0) return { users: [] }
 
     const { clerkClient } = await import("@clerk/nextjs/server")
     const clerk = await clerkClient()
@@ -1255,12 +1276,12 @@ export const dashboardJudgingRoutes = new Elysia()
     })
 
     return {
-      users: searchResults.data.map((u) => ({
+      users: searchResults.data.filter((u) => eventUserIds.has(u.id) && u.primaryEmailAddress).map((u) => ({
         id: u.id,
         firstName: u.firstName ?? null,
         lastName: u.lastName ?? null,
         displayName: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.username || u.id,
-        email: u.primaryEmailAddress?.emailAddress ?? null,
+        email: u.primaryEmailAddress!.emailAddress,
         imageUrl: u.imageUrl ?? null,
       })),
     }

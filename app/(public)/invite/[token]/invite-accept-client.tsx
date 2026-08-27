@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { assertOk } from "@/lib/utils/fetch"
@@ -49,8 +49,6 @@ export function InviteAcceptClient({
   const needsTerms = Boolean(invitation.requireTermsAcceptance && invitation.termsContent && invitation.termsHash)
   const canAccept = !loading && (!needsTerms || termsAccepted)
 
-  const autoAcceptedRef = useRef(false)
-
   const handleAccept = useCallback(async () => {
     if (needsTerms && !termsAccepted) {
       setError("Please agree to the terms and conditions to continue.")
@@ -86,13 +84,6 @@ export function InviteAcceptClient({
       setLoading(false)
     }
   }, [needsTerms, termsAccepted, token, invitation.termsHash, invitation.hackathonSlug, router])
-
-  useEffect(() => {
-    if (autoAcceptedRef.current) return
-    if (!isAuthenticated || !isValid || needsTerms) return
-    autoAcceptedRef.current = true
-    void handleAccept()
-  }, [isAuthenticated, isValid, needsTerms, handleAccept])
 
   async function handleDecline() {
     setLoading(true)

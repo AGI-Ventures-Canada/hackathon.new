@@ -1,25 +1,15 @@
 name: Publish CLI
 
-# TEMPORARILY DISABLED — see https://github.com/AGI-Ventures-Canada/oatmeal/issues/439
-#
-# The repo is private. `npm publish --provenance` uses sigstore, which only
-# supports public source repositories, so the publish step fails with:
-#   422 Unsupported GitHub Actions source repository visibility: "private"
-#
-# Automatic triggers (push to main, cli-v* tags) are removed so this no longer
-# runs a red check on every main push. The job can still be run by hand from the
-# Actions tab. To re-enable, restore the push/tags triggers below:
-#   on:
-#     push:
-#       branches: [main]
-#       tags:
-#         - 'cli-v*'
 on:
+  push:
+    branches: [main]
+    tags:
+      - "cli-v*"
   workflow_dispatch:
 
 jobs:
   publish:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/cli-v')
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -68,16 +68,8 @@ export function SignUpForm({
       });
       await signUp.prepareVerification({ strategy: "email_code" });
       setStep("verify");
-    } catch (err) {
-      if (isClerkAPIResponseError(err)) {
-        setError(
-          err.errors[0]?.longMessage ||
-            err.errors[0]?.message ||
-            "Sign up failed",
-        );
-      } else {
-        setError(err instanceof Error ? err.message : "Sign up failed");
-      }
+    } catch {
+      setError("We couldn't create the account. Try signing in or use another method.");
     } finally {
       setIsSubmitting(false);
     }

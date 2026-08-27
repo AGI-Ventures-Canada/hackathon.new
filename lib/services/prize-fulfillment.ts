@@ -179,6 +179,7 @@ export async function updateFulfillmentStatus(
     .update(updateData)
     .eq("id", fulfillmentId)
     .eq("hackathon_id", hackathonId)
+    .eq("status", currentStatus)
     .select()
     .single()
 
@@ -190,7 +191,7 @@ export async function updateFulfillmentStatus(
   const fulfillment = data as unknown as PrizeFulfillment
 
   if (status === "shipped" && fulfillment.recipient_email && fulfillment.tracking_number) {
-    void notifyWinnerOfShipment(fulfillment, hackathonId, client).catch(console.error)
+    await notifyWinnerOfShipment(fulfillment, hackathonId, client)
   }
 
   return fulfillment
@@ -252,7 +253,7 @@ export async function getClaimByToken(token: string): Promise<ClaimWithDetails |
   const { data: fulfillment, error } = await client
     .from("prize_fulfillments")
     .select(`
-      id, status, recipient_name, recipient_email, shipping_address, claimed_at, claim_token_expires_at,
+      id, status, claimed_at, claim_token_expires_at,
       prize_assignment:prize_assignments!prize_assignment_id(
         prize:prizes!prize_id(name, value, kind, distribution_method),
         submission:submissions!submission_id(title, team_id, hackathon_id)
@@ -295,9 +296,9 @@ export async function getClaimByToken(token: string): Promise<ClaimWithDetails |
     hackathonSlug: hackathon?.slug ?? "",
     submissionTitle: pa.submission.title,
     teamName,
-    recipientName: fulfillment.recipient_name,
-    recipientEmail: fulfillment.recipient_email,
-    shippingAddress: fulfillment.shipping_address,
+    recipientName: null,
+    recipientEmail: null,
+    shippingAddress: null,
     claimedAt: fulfillment.claimed_at,
     expiresAt: fulfillment.claim_token_expires_at,
   }
@@ -319,20 +320,13 @@ export type SiblingClaim = {
 
 /**
  * Public projection of SiblingClaim for client-side use.
- * `recipientName` is intentionally kept — siblings are teammates who claimed
- * prizes for the same submission, so names are not sensitive in this context.
- * Any teammate opening a prize link can see names entered by other teammates;
- * this is acceptable because the claim page is scoped to a single submission's
- * team and names are already visible on the public results page.
- * `recipientEmail` and `shippingAddress` are stripped as PII.
- *
  * `token` is intentionally kept — it enables the multi-prize claim queue
  * where a single team member can claim all of their submission's prizes in
  * one session. All tokens belong to the same submission's prize assignments,
  * so cross-member token access is by design (any team member may claim on
  * behalf of the team).
  */
-export type SiblingClaimPublic = Omit<SiblingClaim, "recipientEmail" | "shippingAddress">
+export type SiblingClaimPublic = Omit<SiblingClaim, "recipientName" | "recipientEmail" | "shippingAddress">
 
 export async function getSiblingClaims(token: string): Promise<SiblingClaim[]> {
   const client = getSupabase()
@@ -345,6 +339,7 @@ export async function getSiblingClaims(token: string): Promise<SiblingClaim[]> {
       )
     `)
     .eq("claim_token", token)
+    .or(`claim_token_expires_at.is.null,claim_token_expires_at.gt.${new Date().toISOString()}`)
     .single()
 
   if (!fulfillment) return []
@@ -371,11 +366,10 @@ export async function getSiblingClaims(token: string): Promise<SiblingClaim[]> {
     `)
     .in("prize_assignment_id", assignmentIds)
     .not("claim_token", "is", null)
+    .or(`claim_token_expires_at.is.null,claim_token_expires_at.gt.${new Date().toISOString()}`)
     .order("created_at")
 
   if (!siblings) return []
-
-  const now = new Date()
 
   return siblings.map((s: Record<string, unknown>) => {
     const spa = s.prize_assignment as {
@@ -392,9 +386,7 @@ export async function getSiblingClaims(token: string): Promise<SiblingClaim[]> {
       recipientName: s.recipient_name as string | null,
       recipientEmail: s.recipient_email as string | null,
       shippingAddress: s.shipping_address as string | null,
-      isExpired: s.claim_token_expires_at
-        ? new Date(s.claim_token_expires_at as string) < now
-        : false,
+      isExpired: false,
     }
   })
 }
@@ -453,16 +445,7 @@ export async function claimPrize(
   const pa = (fulfillment as Record<string, unknown>).prize_assignment as ClaimPrizeAssignment | null
 
   if (fulfillment.status === "claimed") {
-    const isCash = pa?.prize?.kind === "cash"
-
-    if (!isCash) {
-      return { success: false, error: "This prize has already been claimed", code: "already_claimed" }
-    }
-    if (fulfillment.recipient_email && fulfillment.recipient_email !== data.recipientEmail) {
-      return { success: false, error: "This cash prize has already been claimed by another recipient", code: "already_claimed" }
-    }
-
-    return updateCashPrizePayment(fulfillment.id, data, client)
+    return { success: false, error: "This prize has already been claimed", code: "already_claimed" }
   }
 
   const now = new Date().toISOString()
@@ -516,7 +499,7 @@ export async function claimPrize(
     return { success: false, error: "This prize has already been claimed", code: "already_claimed" }
   }
 
-  void sendClaimNotifications({
+  await sendClaimNotifications({
     fulfillmentId: fulfillment.id,
     prizeName: pa?.prize?.name ?? "Prize",
     prizeValue: pa?.prize?.value ?? null,
@@ -524,59 +507,7 @@ export async function claimPrize(
     winnerName: data.recipientName,
     hackathonId: fulfillment.hackathon_id,
     client,
-  }).catch(console.error)
-
-  return { success: true }
-}
-
-async function updateCashPrizePayment(
-  fulfillmentId: string,
-  data: {
-    recipientName: string
-    paymentMethod?: string
-    paymentDetail?: string
-  },
-  client: SupabaseClient<Database>
-): Promise<ClaimPrizeResult> {
-  const updateData: TablesUpdate<"prize_fulfillments"> = {
-    updated_at: new Date().toISOString(),
-    recipient_name: data.recipientName,
-  }
-
-  const hasPaymentMethod = !!data.paymentMethod
-  const hasPaymentDetail = !!data.paymentDetail
-  if (hasPaymentMethod !== hasPaymentDetail) {
-    return { success: false, error: "Payment method and payment detail must both be provided", code: "invalid_payment" }
-  }
-
-  if (data.paymentMethod) {
-    updateData.payment_method = data.paymentMethod
-  }
-  if (data.paymentDetail) {
-    try {
-      const { encryptToken } = await import("@/lib/services/encryption")
-      updateData.payment_detail = encryptToken(data.paymentDetail)
-    } catch (err) {
-      console.error("[claimPrize] Failed to encrypt payment_detail:", err)
-      return { success: false, error: "Unable to securely store payment details. Please try again.", code: "encryption_failed" }
-    }
-  }
-
-  const { data: updated, error: updateError } = await client
-    .from("prize_fulfillments")
-    .update(updateData)
-    .eq("id", fulfillmentId)
-    .eq("status", "claimed")
-    .select("id")
-
-  if (updateError) {
-    console.error("Failed to update cash prize claim:", updateError)
-    return { success: false, error: "Failed to update claim details", code: "update_failed" }
-  }
-
-  if (!updated || updated.length === 0) {
-    return { success: false, error: "This prize has already been claimed", code: "already_claimed" }
-  }
+  })
 
   return { success: true }
 }

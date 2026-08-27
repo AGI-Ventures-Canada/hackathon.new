@@ -1,5 +1,5 @@
 import {
-  getOrCreateTenant,
+  getOrCreateAttendeeTenant,
   createTestHackathon,
   createTeamWithMembers,
   createPerkSeed,
@@ -14,7 +14,7 @@ async function run() {
   console.log("Setting up attendee-perks-mixed scenario...")
 
   const overrideTenantId = await promptForOptionalTenantId()
-  const tenantId = await getOrCreateTenant(overrideTenantId)
+  const tenantId = await getOrCreateAttendeeTenant(overrideTenantId)
 
   const now = new Date()
   const hackathonId = await createTestHackathon({
@@ -51,6 +51,7 @@ async function run() {
     description: "Hidden until manually released — no schedule, no released_at",
     type: "coupon",
     code: "HIDDEN-SURPRISE",
+    scheduledReleaseAt: new Date(now.getTime() + 7 * 86400000),
     sortOrder: 2,
   })
 
@@ -68,4 +69,4 @@ async function run() {
   printReady(SLUG)
 }
 
-run().catch(console.error)
+await run()

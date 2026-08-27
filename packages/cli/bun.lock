@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "@oatmeal/cli",
+      "name": "@agi-ventures-canada/hackathon-cli",
       "dependencies": {
         "@clack/prompts": "^0.10.0",
         "picocolors": "^1.1.1",

@@ -3,6 +3,7 @@ import { resolvePrincipal, requirePrincipal } from "@/lib/auth/principal"
 import { checkRateLimit, RateLimitError } from "@/lib/services/rate-limit"
 import { logAudit } from "@/lib/services/audit"
 import { isValidUuid } from "@/lib/utils/uuid"
+import { isSafeExternalUrl, normalizeUrl } from "@/lib/utils/url"
 import { setPhase } from "@/lib/services/phases"
 import { listRooms, createRoom, updateRoom, deleteRoom, addTeamToRoom, removeTeamFromRoom, togglePresented, setRoomTimer, clearRoomTimer, pauseRoomTimer, resumeRoomTimer, addJudgeToRoom, removeJudgeFromRoom, setAutoAssignByRoom, getAutoAssignByRoom } from "@/lib/services/rooms"
 import { listCategories, createCategory, updateCategory, deleteCategory } from "@/lib/services/categories"
@@ -18,8 +19,8 @@ import {
   mergeExportFilters,
 } from "@/lib/services/submission-exports"
 import { supabase as getSupabase } from "@/lib/db/client"
-import { listRounds, createRound, updateRound, deleteRound, activateRound } from "@/lib/services/judging-rounds"
-import { syncRoomSubmissionsToJudges } from "@/lib/services/judging"
+import { listRounds, createRound, updateRound } from "@/lib/services/judging-rounds"
+import { syncRoomSubmissionsToJudges, deleteRound, activateRound } from "@/lib/services/judging"
 import { listSocialSubmissions, reviewSocialSubmission } from "@/lib/services/social-submissions"
 import { getQueueStats } from "@/lib/services/mentor-requests"
 import {
@@ -83,6 +84,22 @@ function eventMutationLeaseFailure(
   if (!(error instanceof EventMutationLeaseError)) throw error
   set.status = error.code === "event_busy" ? 409 : 503
   return { error: error.message, code: error.code }
+}
+
+function validateOptionalExternalUrl(value: string | null | undefined): string | null | undefined {
+  if (value === undefined || value === null || value.trim() === "") return value === null ? null : value
+  const normalized = normalizeUrl(value)
+  return isSafeExternalUrl(normalized) ? normalized : undefined
+}
+
+function validateChallengeResources(resources: { label: string; url: string }[] | undefined) {
+  if (!resources) return { ok: true as const, resources }
+  const normalized = resources.map((resource) => ({
+    ...resource,
+    url: validateOptionalExternalUrl(resource.url),
+  }))
+  if (normalized.some((resource) => !resource.url)) return { ok: false as const }
+  return { ok: true as const, resources: normalized as { label: string; url: string }[] }
 }
 
 async function checkOrganizer(hackathonId: string, tenantId: string, set: { status?: number | string }) {
@@ -786,7 +803,6 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       set.status = lifecycleError.status
       return { error: lifecycleError.error, code: lifecycleError.code }
     }
-
     const requestKey = await getRequestIdempotencyFingerprint(request, "manual")
     if (!requestKey.ok) {
       set.status = 400
@@ -1256,14 +1272,16 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
           return { error: webMcpError.error, code: webMcpError.code }
         }
         const b = body as { title: string; description?: string | null; resources?: { label: string; url: string }[] }
-        const created = await createChallenge(params.id, principal.tenantId, b)
+        const resources = validateChallengeResources(b.resources)
+        if (!resources.ok) { set.status = 400; return { error: "Resource links must use safe HTTPS URLs" } }
+        const created = await createChallenge(params.id, principal.tenantId, { ...b, resources: resources.resources })
         if (!created) { set.status = 400; return { error: "Failed to create challenge" } }
         await logAudit({ principal, action: "challenge.created", resourceType: "challenge", resourceId: created.id, metadata: { hackathonId: params.id, title: b.title } })
 
         await maybeReleaseChallengesForPublishLink(params.id, principal.tenantId)
 
         return { challenge: created }
-      })
+      }, principal.tenantId)
     } catch (error) {
       return eventMutationLeaseFailure(error, set)
     }
@@ -1296,7 +1314,9 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     if ("error" in authErr) return authErr
     if (!isValidUuid(params.cid)) { set.status = 404; return { error: "Challenge not found" } }
     const b = body as { title?: string; description?: string | null; resources?: { label: string; url: string }[] }
-    const updated = await updateChallenge(params.cid, principal.tenantId, b)
+    const resources = validateChallengeResources(b.resources)
+    if (!resources.ok) { set.status = 400; return { error: "Resource links must use safe HTTPS URLs" } }
+    const updated = await updateChallenge(params.cid, principal.tenantId, { ...b, resources: resources.resources })
     if (!updated) { set.status = 400; return { error: "Failed to update challenge" } }
     await logAudit({ principal, action: "challenge.updated", resourceType: "challenge", resourceId: params.cid, metadata: { hackathonId: params.id } })
     return { challenge: updated }
@@ -1352,7 +1372,12 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       set.status = 400
       return { error: `Invalid type. Valid: ${PERK_TYPES.join(", ")}` }
     }
-    const created = await createPerk(params.id, principal.tenantId, b)
+    const redemptionUrl = validateOptionalExternalUrl(b.redemptionUrl)
+    if (b.redemptionUrl !== undefined && redemptionUrl === undefined) {
+      set.status = 400
+      return { error: "Redemption links must use a safe HTTPS URL" }
+    }
+    const created = await createPerk(params.id, principal.tenantId, { ...b, redemptionUrl })
     if (!created) { set.status = 400; return { error: "Failed to create perk" } }
     await logAudit({ principal, action: "perk.created", resourceType: "perk", resourceId: created.id, metadata: { hackathonId: params.id, name: b.name } })
     return { perk: created }
@@ -1388,7 +1413,12 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       set.status = 400
       return { error: `Invalid type. Valid: ${PERK_TYPES.join(", ")}` }
     }
-    const updated = await updatePerk(params.pid, principal.tenantId, b)
+    const redemptionUrl = validateOptionalExternalUrl(b.redemptionUrl)
+    if (b.redemptionUrl !== undefined && redemptionUrl === undefined) {
+      set.status = 400
+      return { error: "Redemption links must use a safe HTTPS URL" }
+    }
+    const updated = await updatePerk(params.pid, principal.tenantId, { ...b, redemptionUrl })
     if (!updated) { set.status = 400; return { error: "Failed to update perk" } }
     await logAudit({ principal, action: "perk.updated", resourceType: "perk", resourceId: params.pid, metadata: { hackathonId: params.id } })
     return { perk: updated }
@@ -1467,6 +1497,15 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       set.status = lifecycleError.status
       return { error: lifecycleError.error, code: lifecycleError.code }
     }
+    const actorId = principal.kind === "user" ? principal.userId : principal.keyId
+    const blastLimit = await checkRateLimit(
+      `email_blast:${params.id}:${actorId}`,
+      { maxRequests: 3, windowMs: 60 * 60_000 },
+      { failureMode: "closed" },
+    )
+    if (!blastLimit.allowed) {
+      throw new RateLimitError(blastLimit.resetAt, blastLimit.remaining)
+    }
     const deliveryId = await getRequestIdempotencyFingerprint(
       request,
       crypto.randomUUID(),
@@ -1532,7 +1571,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
         if (!announcement) { set.status = 400; return { error: "Failed to create announcement" } }
         await logAudit({ principal, action: "announcement.created", resourceType: "announcement", resourceId: announcement.id, metadata: { hackathonId: params.id, title: (body as CreateAnnouncementInput).title } })
         return announcement
-      })
+      }, principal.tenantId)
     } catch (error) {
       return eventMutationLeaseFailure(error, set)
     }
@@ -1666,7 +1705,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
         if (!item) { set.status = 400; return { error: "Failed to create schedule item" } }
         await logAudit({ principal, action: "schedule_item.created", resourceType: "schedule_item", resourceId: item.id, metadata: { hackathonId: params.id, title: b.title } })
         return item
-      })
+      }, principal.tenantId)
     } catch (error) {
       return eventMutationLeaseFailure(error, set)
     }

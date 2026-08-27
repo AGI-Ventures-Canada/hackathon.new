@@ -305,6 +305,7 @@ export type Database = {
           key_id: string | null
           status: string
           tenant_id: string | null
+          user_code: string | null
         }
         Insert: {
           created_at?: string
@@ -315,6 +316,7 @@ export type Database = {
           key_id?: string | null
           status?: string
           tenant_id?: string | null
+          user_code?: string | null
         }
         Update: {
           created_at?: string
@@ -325,6 +327,7 @@ export type Database = {
           key_id?: string | null
           status?: string
           tenant_id?: string | null
+          user_code?: string | null
         }
         Relationships: [
           {
@@ -2987,6 +2990,7 @@ export type Database = {
           delivered_at: string | null
           event: Database["public"]["Enums"]["webhook_event"]
           id: string
+          idempotency_key: string | null
           payload: Json
           response_body: string | null
           response_status: number | null
@@ -2998,6 +3002,7 @@ export type Database = {
           delivered_at?: string | null
           event: Database["public"]["Enums"]["webhook_event"]
           id?: string
+          idempotency_key?: string | null
           payload: Json
           response_body?: string | null
           response_status?: number | null
@@ -3009,6 +3014,7 @@ export type Database = {
           delivered_at?: string | null
           event?: Database["public"]["Enums"]["webhook_event"]
           id?: string
+          idempotency_key?: string | null
           payload?: Json
           response_body?: string | null
           response_status?: number | null
@@ -3082,31 +3088,24 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      accept_team_invitation:
-        | {
-            Args: { p_clerk_user_id: string; p_token: string }
-            Returns: {
-              error_code: string
-              error_message: string
-              hackathon_id: string
-              success: boolean
-              team_id: string
-            }[]
-          }
-        | {
-            Args: {
-              p_clerk_user_id: string
-              p_token: string
-              p_user_email?: string
-            }
-            Returns: {
-              error_code: string
-              error_message: string
-              hackathon_id: string
-              success: boolean
-              team_id: string
-            }[]
-          }
+      accept_team_invitation: {
+        Args: {
+          p_clerk_user_id: string
+          p_token: string
+          p_user_email?: string
+        }
+        Returns: {
+          error_code: string
+          error_message: string
+          hackathon_id: string
+          success: boolean
+          team_id: string
+        }[]
+      }
+      activate_judging_round: {
+        Args: { p_hackathon_id: string; p_round_id: string }
+        Returns: boolean
+      }
       approve_pending_team: {
         Args: { p_hackathon_id: string; p_team_id: string }
         Returns: {
@@ -3184,6 +3183,10 @@ export type Database = {
       get_organizer_poll_data: {
         Args: { p_hackathon_id: string }
         Returns: Json
+      }
+      increment_webhook_failure: {
+        Args: { p_webhook_id: string }
+        Returns: boolean
       }
       register_for_hackathon: {
         Args: {
@@ -3350,6 +3353,7 @@ export type Database = {
         | "hackathon.started"
         | "hackathon.judging_started"
         | "hackathon.completed"
+        | "hackathon.challenges_released"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -3563,6 +3567,7 @@ export const Constants = {
         "hackathon.started",
         "hackathon.judging_started",
         "hackathon.completed",
+        "hackathon.challenges_released",
       ],
     },
   },

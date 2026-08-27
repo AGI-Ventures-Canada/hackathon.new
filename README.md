@@ -1,10 +1,11 @@
 # hackathon.new
 
 [![Vercel](https://img.shields.io/badge/Vercel-Deployed-black?logo=vercel)](https://vercel.com)
-[![CI](https://github.com/AGI-Ventures-Canada/oatmeal/actions/workflows/ci.yml/badge.svg)](https://github.com/AGI-Ventures-Canada/oatmeal/actions/workflows/ci.yml)
+[![CI](https://github.com/AGI-Ventures-Canada/hackathon.new/actions/workflows/ci.yml/badge.svg)](https://github.com/AGI-Ventures-Canada/hackathon.new/actions/workflows/ci.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue?logo=typescript)](https://www.typescriptlang.org/)
 [![Bun](https://img.shields.io/badge/Bun-Runtime-f9f1e1?logo=bun)](https://bun.sh/)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org/)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
 **hackathon.new is the platform for running hackathons end-to-end — registration, teams, judging, prizes, and results.**
 
@@ -17,7 +18,7 @@ Organizers launch an event in minutes, attendees form teams and submit projects,
 | **Dashboard** (`/hackathons/:id`) | Organizers, sponsors | Configure the event, invite judges, manage prizes, broadcast announcements |
 | **Public event pages** (`/e/:slug`) | Attendees, judges, visitors | Register, form teams, submit projects, score submissions, view results |
 | **CLI** (`@agi-ventures-canada/hackathon-cli`) | Power users, scripts | Manage every hackathon resource from your terminal |
-| **Skills** (`npx skills add AGI-Ventures-Canada/oatmeal`) | AI agents | Claude Code, Cursor, and others can run the event for you |
+| **Skills** (`npx skills add AGI-Ventures-Canada/hackathon.new`) | AI agents | Claude Code, Cursor, and others can run the event for you |
 | **Public API** (`/api/*`) | Integrations | Dashboard CRUD with API keys, stable v1 surface for jobs + webhooks |
 | **Webhooks** | Integrations | Subscribe to registration, team, submission, and judging events |
 
@@ -46,7 +47,7 @@ All three talk to the same backend. Use whichever fits the task.
 **CLI.** Great for scripted setup, bulk changes, and sharing repeatable event templates.
 
 ```bash
-npm install -g @agi-ventures-canada/hackathon-cli
+bun add --global @agi-ventures-canada/hackathon-cli
 hackathon login
 hackathon events list
 hackathon prizes create <hackathon-id> --name "Best AI App"
@@ -55,7 +56,7 @@ hackathon prizes create <hackathon-id> --name "Best AI App"
 **Skills + AI agents.** Install once in your agent; ask it to run the event.
 
 ```bash
-npx skills add AGI-Ventures-Canada/oatmeal
+npx skills add AGI-Ventures-Canada/hackathon.new
 # In Claude Code / Cursor:
 # "Create a 48-hour AI hackathon starting next Friday with 3 tracks and a $5k grand prize."
 ```
@@ -78,11 +79,16 @@ bun dev
 
 Run tests: `bun run test`
 
+Before opening a pull request, read [CONTRIBUTING.md](CONTRIBUTING.md). By taking
+part, you agree to follow our [Code of Conduct](CODE_OF_CONDUCT.md). For help,
+see [SUPPORT.md](SUPPORT.md). Report security issues privately as described in
+[SECURITY.md](SECURITY.md).
+
 ### Stack
 
 - Next.js 16 (App Router) + React 19 + TypeScript strict
 - Elysia (API routes)
-- Clerk (auth) + Supabase (database) + Stripe (payments)
+- Clerk (auth) + Supabase (database)
 - AI SDK 6 + Anthropic
 - Workflow DevKit (durable workflows)
 - Tailwind CSS 4 + shadcn/ui
@@ -125,7 +131,7 @@ The full OpenAPI reference is at `/api/swagger`.
 
 ## WebMCP
 
-Oatmeal exposes role-aware browser tools on event creation, public event, organizer, judge, and mentor pages. Tools appear only when they fit the signed-in role and the event's current state. Read the [WebMCP guide](content/docs/guides/webmcp.mdx) for the user flow and the [implementation notes](webmcp/README.md) for the full tool list, safety rules, evals, and preview checks.
+hackathon.new exposes role-aware browser tools on event creation, public event, organizer, judge, and mentor pages. Tools appear only when they fit the signed-in role and the event's current state. Read the [WebMCP guide](content/docs/guides/webmcp.mdx) for the user flow and the [implementation notes](webmcp/README.md) for the full tool list, safety rules, evals, and preview checks.
 
 ## License
 

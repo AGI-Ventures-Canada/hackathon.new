@@ -18,7 +18,7 @@ Webhooks allow you to:
 curl -s -X POST "$BASE_URL/api/v1/webhooks" \
   -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"url": "https://your-app.com/webhooks/oatmeal", "events": ["hackathon.created", "submission.created"]}' | jq .
+  -d '{"url": "https://your-app.com/webhooks/hackathon", "events": ["hackathon.created", "submission.created"]}' | jq .
 ```
 
 The response includes a `secret` field for verifying signatures.
@@ -29,7 +29,7 @@ The webhook secret is only shown once. Store it securely for signature verificat
 
 <Callout type="info" title="CLI equivalent">
 ```bash
-hackathon webhooks create --url https://your-app.com/webhooks/oatmeal --events hackathon.created,submission.created
+hackathon webhooks create --url https://your-app.com/webhooks/hackathon --events hackathon.created,submission.created
 ```
 </Callout>
 
@@ -79,7 +79,7 @@ app.use(express.json())
 
 const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET!
 
-app.post("/webhooks/oatmeal", (req, res) => {
+app.post("/webhooks/hackathon", (req, res) => {
   const signature = req.headers["x-webhook-signature"] as string
   const payload = JSON.stringify(req.body)
   const expected = crypto

@@ -1,9 +1,9 @@
 ---
 title: API Keys Setup
-description: Create, configure, and manage API keys for programmatic access to the Oatmeal platform.
+description: Create, configure, and manage API keys for programmatic access to hackathon.new.
 ---
 
-API keys provide programmatic access to the Oatmeal platform. Use them for CI/CD pipelines, server-side integrations, CLI authentication, and automation scripts.
+API keys provide programmatic access to hackathon.new. Use them for CI/CD pipelines, server-side integrations, CLI authentication, and automation scripts.
 
 ## Creating a Key
 
@@ -56,7 +56,7 @@ Pass the API key in the `Authorization` header:
 
 ```bash title="List your hackathons"
 curl -s "$BASE_URL/api/dashboard/hackathons" \
-  -H "Authorization: Bearer $OATMEAL_API_KEY" | jq .
+  -H "Authorization: Bearer $HACKATHON_API_KEY" | jq .
 ```
 
 ### Verify Your Key
@@ -65,7 +65,7 @@ Test that your key works with the `whoami` endpoint:
 
 ```bash title="Verify your API key"
 curl -s "$BASE_URL/api/v1/whoami" \
-  -H "Authorization: Bearer $OATMEAL_API_KEY" | jq .
+  -H "Authorization: Bearer $HACKATHON_API_KEY" | jq .
 ```
 
 ## Environment Variables
@@ -73,8 +73,8 @@ curl -s "$BASE_URL/api/v1/whoami" \
 Store your key in environment variables, never in source code:
 
 ```bash title=".env.local"
-OATMEAL_API_KEY=sk_live_...
-OATMEAL_BASE_URL=https://your-app.com
+HACKATHON_API_KEY=sk_live_...
+HACKATHON_BASE_URL=https://your-app.com
 ```
 
 <Callout type="warn">
@@ -99,7 +99,7 @@ To rotate a key without downtime:
 
 ## Security
 
-- **Keys are hashed** — Oatmeal stores an HMAC-SHA256 hash, not the raw key. If the database is compromised, keys cannot be extracted.
+- **Keys are hashed** — hackathon.new stores an HMAC-SHA256 hash, not the raw key. If the database is compromised, keys cannot be extracted.
 - **Keys are shown once** — The full key is returned only at creation. Store it in a secrets manager.
 - **Prefix format** — Keys start with `sk_live_` for easy identification in logs and configs.
 - **Last used tracking** — Check `lastUsedAt` to identify stale keys that should be revoked.

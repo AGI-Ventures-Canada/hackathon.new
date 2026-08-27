@@ -24,7 +24,7 @@ Email templates use React Email components rendered to HTML/text strings at send
 emails/                              # React Email components
   _components/                       # Shared layout + primitives
     constants.ts                     # Color tokens, font family
-    oatmeal-layout.tsx               # Dark header + white body + footer
+    oatmeal-layout.tsx               # Shared dark header + white body + footer
     info-box.tsx                     # Gray info box
     cta-button.tsx                   # Primary/secondary CTA button
   team-invitation.tsx                # Team join invitation
@@ -98,7 +98,7 @@ export async function sendMyEmail(to: string, name: string) {
 
 ## Shared Components
 
-- **OatmealLayout**: Wraps all emails. Props: `heading`, `preview?`, `children`, `footerText?`, `eventUrl?`, `hackathonName?`. When `eventUrl` is provided, renders a footer link to the event page.
+- **Shared email layout**: Wraps all emails. Props: `heading`, `preview?`, `children`, `footerText?`, `eventUrl?`, `hackathonName?`. When `eventUrl` is provided, renders a footer link to the event page.
 - **InfoBox**: Neutral bordered highlight box. Props: `label`, `children`
 - **EventDetailBox**: Multi-field hackathon info box. Props: `hackathonName`, `startsAt?`, `endsAt?`, `location?`. Use instead of InfoBox when showing hackathon details with dates.
 - **CTAButton**: Primary (accent) or secondary (light) button. Props: `href`, `children`, `variant?`
@@ -156,7 +156,7 @@ Email arrives → Resend webhook → Verify signature →
 
 ## Sending Clerk Emails Through Resend
 
-Clerk owns authentication and organization invitation state, but Oatmeal owns delivery:
+Clerk owns authentication and organization invitation state, but hackathon.new owns delivery:
 
 1. Configure `POST /api/webhooks/clerk` in the Clerk Dashboard and subscribe to `email.created`.
 2. Set `CLERK_WEBHOOK_SIGNING_SECRET` from that endpoint in every deployed environment.

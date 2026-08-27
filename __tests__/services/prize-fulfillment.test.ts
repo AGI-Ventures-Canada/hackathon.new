@@ -468,15 +468,16 @@ describe("Prize Fulfillment Service", () => {
         return Promise.resolve(1)
       })
 
-      const result = await claimPrize("valid-token", {
+      const resultPromise = claimPrize("valid-token", {
         recipientName: "Alice",
         recipientEmail: "alice@test.com",
       })
 
-      expect(result.success).toBe(true)
       await sponsorStarted
       expect(mockSendOrganizerClaimNotification).not.toHaveBeenCalled()
       finishSponsor?.(1)
+      const result = await resultPromise
+      expect(result.success).toBe(true)
       await organizerStarted
       expect(mockSendOrganizerClaimNotification).toHaveBeenCalledTimes(1)
     })
@@ -682,41 +683,11 @@ describe("Prize Fulfillment Service", () => {
       expect(result).toEqual([])
     })
 
-    it("marks expired tokens correctly", async () => {
-      let callCount = 0
-      setMockFromImplementation(() => {
-        callCount++
-        if (callCount === 1) {
-          return createChainableMock({
-            data: { prize_assignment: { submission_id: "sub-1" } },
-            error: null,
-          })
-        }
-        if (callCount === 2) {
-          return createChainableMock({ data: [{ id: "a1" }], error: null })
-        }
-        return createChainableMock({
-          data: [
-            {
-              id: "f1",
-              status: "assigned",
-              claim_token: "tok-expired",
-              claim_token_expires_at: new Date(Date.now() - 86400000).toISOString(),
-              recipient_name: null,
-              recipient_email: null,
-              shipping_address: null,
-              prize_assignment: {
-                prize: { name: "Expired Prize", value: null, kind: "swag", distribution_method: null },
-              },
-            },
-          ],
-          error: null,
-        })
-      })
+    it("does not return sibling claims through an expired token", async () => {
+      setMockFromImplementation(() => createChainableMock({ data: null, error: null }))
 
       const result = await getSiblingClaims("tok-expired")
-      expect(result).toHaveLength(1)
-      expect(result[0].isExpired).toBe(true)
+      expect(result).toEqual([])
     })
   })
 })
