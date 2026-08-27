@@ -5,7 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useAuth } from "@clerk/nextjs"
 import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
-import { ArrowLeft, Loader2, X } from "lucide-react"
+import { ArrowLeft, Loader2 } from "lucide-react"
 import { SignInRequiredDialog } from "@/components/sign-in-required-dialog"
 import { OrgGateDialog } from "@/components/org-gate-dialog"
 import type { DraftEnvelope, DraftState } from "@/lib/hackathon-draft"
@@ -378,24 +378,9 @@ export function CreateFlow({
 
   return (
     <div className="flex flex-1 flex-col bg-background overflow-y-auto">
-      <div className="w-full px-4 pt-6 sm:px-8">
-        <div className="mx-auto max-w-2xl">
-          {currentStep === 0 ? (
-            <div className="flex items-center">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={handleClose}
-                disabled={isSubmitting}
-                aria-label="Close"
-                className="gap-1.5 text-muted-foreground"
-              >
-                <X className="size-4" />
-                <span className="hidden sm:inline">Close</span>
-              </Button>
-            </div>
-          ) : (
+      {currentStep > 0 && (
+        <div className="w-full px-4 pt-6 sm:px-8">
+          <div className="mx-auto max-w-2xl">
             <CreateFlowProgress
               currentStep={currentStep - 1}
               totalSteps={TOTAL_STEPS - 1}
@@ -404,9 +389,9 @@ export function CreateFlow({
               onClose={handleClose}
               skipLabel="Skip to review"
             />
-          )}
+          </div>
         </div>
-      </div>
+      )}
 
       <div
         className="flex flex-1 items-center overflow-y-auto px-4 py-8 sm:px-8"
