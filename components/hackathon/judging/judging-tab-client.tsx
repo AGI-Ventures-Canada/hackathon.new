@@ -468,7 +468,7 @@ export function JudgingTabClient({
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="setup" className="mt-4">
+        <TabsContent value="setup" className="mt-4" data-webmcp-section="judging_setup">
           <JudgingSetupWizard
             hackathonId={hackathonId}
             slug={slug}
@@ -506,7 +506,7 @@ export function JudgingTabClient({
           />
         </TabsContent>
 
-        <TabsContent value="judges" className="mt-4">
+        <TabsContent value="judges" className="mt-4" data-webmcp-section="judges">
           <JudgesSection
             judges={judges}
             invitations={invitations}
@@ -518,11 +518,11 @@ export function JudgingTabClient({
           />
         </TabsContent>
 
-        <TabsContent value="rounds" className="mt-4">
+        <TabsContent value="rounds" className="mt-4" data-webmcp-section="rounds">
           <RoundsSection hackathonId={hackathonId} rounds={rounds} />
         </TabsContent>
 
-        <TabsContent value="prizes" className="mt-4 space-y-6">
+        <TabsContent value="prizes" className="mt-4 space-y-6" data-webmcp-section="prizes">
           {weightWarnings.length > 0 && (
             <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm">
               <p className="font-medium">Some prize weights don&apos;t add up to 100%.</p>
@@ -589,7 +589,7 @@ export function JudgingTabClient({
           />
         </TabsContent>
 
-        <TabsContent value="assignments" className="mt-4">
+        <TabsContent value="assignments" className="mt-4" data-webmcp-section="assignments">
           <AssignmentsSection
             hackathonId={hackathonId}
             judges={judges.map((j) => ({

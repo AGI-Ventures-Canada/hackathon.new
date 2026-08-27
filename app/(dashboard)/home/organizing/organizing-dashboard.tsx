@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { useMemo } from "react"
 import {
   Megaphone,
@@ -19,6 +20,8 @@ import { NeedsAttentionCard } from "@/components/hackathon/needs-attention-card"
 import { groupOrganizedHackathons, hasUrgencySignals } from "@/lib/utils/organize-groups"
 import type { HackathonMiniStats } from "@/lib/services/organizer-dashboard"
 import type { HackathonStatus } from "@/lib/db/hackathon-types"
+import { useWebMcpTools } from "@/hooks/use-webmcp-tools"
+import { createOrganizerPortfolioTools } from "@/lib/webmcp/organizer-tools"
 
 type Hackathon = {
   id: string
@@ -79,6 +82,7 @@ function MiniStatsRow({ stats }: { stats: HackathonMiniStats }) {
 }
 
 export function OrganizingDashboard({ hackathons, stats, showHeader = true }: Props) {
+  const router = useRouter()
   const statsMap = useMemo(
     () => new Map(Object.entries(stats)),
     [stats],
@@ -100,6 +104,35 @@ export function OrganizingDashboard({ hackathons, stats, showHeader = true }: Pr
     }
     return { events: hackathons.length, participants, teams, submissions }
   }, [hackathons, statsMap])
+
+  const portfolioEvents = useMemo(
+    () => hackathons.map((hackathon) => {
+      const eventStats = statsMap.get(hackathon.id)
+      return {
+        id: hackathon.id,
+        slug: hackathon.slug,
+        name: hackathon.name,
+        description: hackathon.description,
+        status: hackathon.status,
+        startsAt: hackathon.starts_at,
+        endsAt: hackathon.ends_at,
+        participantCount: eventStats?.participantCount ?? 0,
+        teamCount: eventStats?.teamCount ?? 0,
+        projectCount: eventStats?.submissionCount ?? 0,
+        judgingComplete: eventStats?.judgingComplete ?? 0,
+        judgingTotal: eventStats?.judgingTotal ?? 0,
+      }
+    }),
+    [hackathons, statsMap],
+  )
+  const webMcpTools = useMemo(
+    () => createOrganizerPortfolioTools({
+      getEvents: () => portfolioEvents,
+      onNavigate: (url) => router.push(url),
+    }),
+    [portfolioEvents, router],
+  )
+  useWebMcpTools(webMcpTools)
 
   if (hackathons.length === 0) {
     return (
