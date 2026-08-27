@@ -126,6 +126,9 @@ const COMPONENT_PROCESS_ISOLATED_TESTS = [
   "__tests__/components/hackathon/judging/judging-setup-dialog.test.tsx",
   "__tests__/components/hackathon/judging/webmcp-preparation-panels.test.tsx",
   "__tests__/components/hackathon/mentors/mentor-webmcp-workspace.test.tsx",
+  "__tests__/components/hackathon/manage/action-items-panel.test.tsx",
+  "__tests__/components/hackathon/manage/nested-tabs-accessibility.test.tsx",
+  "__tests__/components/org/profile-form.test.tsx",
 ]
 const componentProcessIsolatedSet = new Set(COMPONENT_PROCESS_ISOLATED_TESTS)
 

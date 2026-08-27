@@ -38,6 +38,7 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
   const [error, setError] = useState<string | null>(null)
 
   const [slug, setSlug] = useState(initialData.slug ?? "")
+  const [slugTouched, setSlugTouched] = useState(false)
   const [slugStatus, setSlugStatus] = useState<SlugStatus>("idle")
   const [description, setDescription] = useState(initialData.description ?? "")
   const [websiteUrl, setWebsiteUrl] = useState(initialData.websiteUrl ?? "")
@@ -113,6 +114,7 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
 
       setWebsiteUrl(normalizedWebsiteUrl)
       lastSaved.current = { slug, description, websiteUrl: normalizedWebsiteUrl }
+      setSlugTouched(false)
       setSlugStatus("idle")
       router.refresh()
     } catch (err) {
@@ -213,7 +215,12 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
           type="text"
           placeholder="my-organization"
           value={slug}
-          onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+          onChange={(e) => {
+            setSlugTouched(true)
+            setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))
+          }}
+          onBlur={() => setSlugTouched(true)}
+          aria-invalid={slugTouched && !slug}
           autoComplete="off"
           data-1p-ignore
           data-lpignore="true"
@@ -221,7 +228,7 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
         />
         <FieldDescription>
           <span>Your public organization page URL: /o/{slug || "your-slug"}</span>
-          {slug !== lastSaved.current.slug && (
+          {slug && slug !== lastSaved.current.slug && (
             <span className="flex items-center gap-1 mt-0.5">
               {slugStatus === "checking" && <><Loader2 className="size-3 animate-spin" /><span>Checking availability...</span></>}
               {slugStatus === "available" && <><Check className="size-3 text-primary" /><span className="text-primary">Available</span></>}
@@ -229,7 +236,7 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
               {slugStatus === "invalid" && <span className="text-destructive">Must be at least 3 characters, start and end with a letter or number</span>}
             </span>
           )}
-          {!slug && <span className="text-destructive mt-0.5 block">Slug is required</span>}
+          {slugTouched && !slug && <span className="text-destructive mt-0.5 block">Slug is required</span>}
         </FieldDescription>
       </Field>
 

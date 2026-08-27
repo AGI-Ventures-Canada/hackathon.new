@@ -1051,10 +1051,10 @@ export function EventTabContent({ hackathonId, activeEtab, hackathonStatus, hack
     <TabsUrlSync paramKey="etab" value={activeEtab} className="space-y-6">
       <div className="overflow-x-auto scrollbar-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none]">
         <TabsList>
-          <TabsTrigger value="announcements"><Megaphone className="size-4" /><span className="hidden sm:inline">Announcements</span></TabsTrigger>
-          <TabsTrigger value="mentors"><MessageCircle className="size-4" /><span className="hidden sm:inline">Mentors</span></TabsTrigger>
-          <TabsTrigger value="social"><Share2 className="size-4" /><span className="hidden sm:inline">Social</span></TabsTrigger>
-          <TabsTrigger value="email"><Mail className="size-4" /><span className="hidden sm:inline">Email</span></TabsTrigger>
+          <TabsTrigger value="announcements" aria-label="Announcements"><Megaphone className="size-4" /><span className="hidden sm:inline">Announcements</span></TabsTrigger>
+          <TabsTrigger value="mentors" aria-label="Mentors"><MessageCircle className="size-4" /><span className="hidden sm:inline">Mentors</span></TabsTrigger>
+          <TabsTrigger value="social" aria-label="Social"><Share2 className="size-4" /><span className="hidden sm:inline">Social</span></TabsTrigger>
+          <TabsTrigger value="email" aria-label="Email"><Mail className="size-4" /><span className="hidden sm:inline">Email</span></TabsTrigger>
         </TabsList>
       </div>
 

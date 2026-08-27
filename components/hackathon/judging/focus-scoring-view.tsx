@@ -137,6 +137,7 @@ export function FocusScoringView({
           className="size-8"
           disabled={currentIndex === 0}
           onClick={goToPrev}
+          aria-label="Previous project"
         >
           <ChevronLeft className="size-4" />
         </Button>
@@ -159,6 +160,7 @@ export function FocusScoringView({
           className="size-8"
           disabled={currentIndex === total - 1}
           onClick={goToNext}
+          aria-label="Next project"
         >
           <ChevronRight className="size-4" />
         </Button>

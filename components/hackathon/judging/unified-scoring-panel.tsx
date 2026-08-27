@@ -393,13 +393,14 @@ export function UnifiedScoringPanel({
               {g.criteria.map((c) => (
                 <div key={c.id} className="space-y-2">
                   <div>
-                    <Label className="text-sm font-medium">{c.name}</Label>
+                    <Label htmlFor={`score-${assignmentId}-${c.id}`} className="text-sm font-medium">{c.name}</Label>
                     {c.description && (
                       <p className="text-xs text-muted-foreground">{c.description}</p>
                     )}
                   </div>
                   <div className="flex items-center gap-3">
                     <Slider
+                      aria-label={`${c.name} score slider`}
                       value={[scores[c.id] ?? Math.round((c.min_score + c.max_score) / 2)]}
                       onValueChange={([val]) =>
                         setScores((prev) => ({ ...prev, [c.id]: val }))
@@ -410,6 +411,8 @@ export function UnifiedScoringPanel({
                       className="flex-1"
                     />
                     <Input
+                      id={`score-${assignmentId}-${c.id}`}
+                      aria-label={`${c.name} score`}
                       type="number"
                       min={c.min_score}
                       max={c.max_score}
@@ -453,10 +456,11 @@ export function UnifiedScoringPanel({
 
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label>Notes</Label>
+          <Label htmlFor={`notes-${assignmentId}`}>Notes</Label>
           {savingNotes && <span className="text-xs text-muted-foreground">Saving...</span>}
         </div>
         <Textarea
+          id={`notes-${assignmentId}`}
           value={notes}
           onChange={(e) => handleNotesChange(e.target.value)}
           placeholder="Add your notes about this submission..."
