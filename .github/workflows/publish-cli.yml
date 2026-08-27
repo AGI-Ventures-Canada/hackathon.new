@@ -128,7 +128,7 @@ jobs:
         run: npm install -g npm@12.0.2
 
       - name: Publish to npm
-        run: npm publish cli-package/*.tgz --provenance --access public --ignore-scripts
+        run: npm publish ./cli-package/*.tgz --provenance --access public --ignore-scripts
 
       - name: Tag release
         env:
