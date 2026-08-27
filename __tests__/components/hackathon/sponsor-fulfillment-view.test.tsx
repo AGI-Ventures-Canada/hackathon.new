@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, it } from "bun:test"
-import { cleanup, render, screen } from "@testing-library/react"
+import { afterEach, describe, expect, it, mock } from "bun:test"
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import type { WebMcpTool } from "@/lib/webmcp/types"
 
 const { SponsorFulfillmentView } = await import(
   "@/components/hackathon/prizes/sponsor-fulfillment-view"
@@ -7,6 +8,7 @@ const { SponsorFulfillmentView } = await import(
 
 afterEach(() => {
   cleanup()
+  delete document.modelContext
 })
 
 const baseFulfillment = {
@@ -104,5 +106,66 @@ describe("SponsorFulfillmentView", () => {
       />
     )
     expect(screen.getAllByText("Fulfilled").length).toBeGreaterThanOrEqual(1)
+  })
+
+  it("lets WebMCP prepare a human review and rolls back a failed optimistic save", async () => {
+    const registered = new Map<string, WebMcpTool>()
+    document.modelContext = {
+      registerTool: mock(async (tool, options) => {
+        registered.set(tool.name, tool)
+        options?.signal?.addEventListener("abort", () => {
+          if (registered.get(tool.name) === tool) registered.delete(tool.name)
+        })
+      }),
+    }
+    const originalFetch = globalThis.fetch
+    let finishRequest: ((response: Response) => void) | undefined
+    globalThis.fetch = mock(() => new Promise<Response>((resolve) => {
+      finishRequest = resolve
+    })) as typeof fetch
+
+    try {
+      render(
+        <SponsorFulfillmentView
+          hackathonId="h1"
+          fulfillments={[{
+            ...baseFulfillment,
+            status: "claimed",
+            recipientName: "Alice",
+            recipientEmail: "alice@example.com",
+            shippingAddress: "123 Main St",
+            claimedAt: "2026-04-01T00:00:00Z",
+          }]}
+        />,
+      )
+      await waitFor(() => expect(registered.has("prepare_fulfillment")).toBe(true))
+
+      let preparation: unknown
+      await act(async () => {
+        preparation = await registered.get("prepare_fulfillment")!.execute({
+          fulfillmentRef: "fulfillment-1",
+          trackingNumber: "TRACK-1",
+        }, { signal: new AbortController().signal })
+      })
+      expect(preparation).toMatchObject({
+        ok: true,
+        requiresHumanAction: true,
+      })
+      expect((screen.getByLabelText("Tracking number (optional)") as HTMLInputElement).value)
+        .toBe("TRACK-1")
+      expect(globalThis.fetch).not.toHaveBeenCalled()
+
+      fireEvent.click(screen.getByText("Confirm Fulfilled"))
+      expect(screen.getAllByText("Fulfilled").length).toBeGreaterThanOrEqual(1)
+      expect(screen.queryByText("Confirm Fulfilled")).toBeNull()
+
+      finishRequest?.(new Response(null, { status: 500 }))
+      await waitFor(() => {
+        expect(screen.getByText("We couldn't mark that prize fulfilled. Try again.")).toBeTruthy()
+        expect(screen.getByText("Mark Fulfilled")).toBeTruthy()
+      })
+    } finally {
+      globalThis.fetch = originalFetch
+    }
   })
 })

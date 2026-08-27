@@ -22,8 +22,11 @@ function jsonResponse(body: unknown, status = 200) {
 describe("hackathons commands", () => {
   let consoleLogSpy: ReturnType<typeof spyOn>
   let consoleErrorSpy: ReturnType<typeof spyOn>
+  let ttyDescriptor: PropertyDescriptor | undefined
 
   beforeEach(() => {
+    ttyDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY")
+    Object.defineProperty(process.stdout, "isTTY", { value: false, configurable: true })
     mockFetch.mockReset()
     globalThis.fetch = mockFetch as unknown as typeof globalThis.fetch
     consoleLogSpy = spyOn(console, "log").mockImplementation(() => {})
@@ -31,6 +34,11 @@ describe("hackathons commands", () => {
   })
 
   afterEach(() => {
+    if (ttyDescriptor) {
+      Object.defineProperty(process.stdout, "isTTY", ttyDescriptor)
+    } else {
+      delete process.stdout.isTTY
+    }
     globalThis.fetch = originalFetch
     consoleLogSpy.mockRestore()
     consoleErrorSpy.mockRestore()

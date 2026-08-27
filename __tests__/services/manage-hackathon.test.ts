@@ -36,6 +36,7 @@ const mockHackathonRow = {
     logo_url: null,
     logo_url_dark: null,
     clerk_org_id: "org_123",
+    clerk_user_id: "user_owner",
   },
 }
 
@@ -95,6 +96,17 @@ describe("Manage Hackathon Service", () => {
       const result = await getManageHackathon("test-hackathon-noid")
 
       expect(result).toEqual({ ok: false, reason: "not_organizer" })
+    })
+
+    it("accepts a personal organizer when Clerk omits orgId", async () => {
+      mockAuth.mockImplementation(() =>
+        Promise.resolve({ userId: "user_owner", orgId: undefined, orgRole: null })
+      )
+      setupHackathonMock()
+
+      const result = await getManageHackathon("test-hackathon-personal")
+
+      expect(result.ok).toBe(true)
     })
 
     it("returns hackathon when user is the organizer", async () => {
