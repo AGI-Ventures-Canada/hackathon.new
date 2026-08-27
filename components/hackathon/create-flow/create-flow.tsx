@@ -388,6 +388,7 @@ export function CreateFlow({
                 size="sm"
                 onClick={handleClose}
                 disabled={isSubmitting}
+                aria-label="Close"
                 className="gap-1.5 text-muted-foreground"
               >
                 <X className="size-4" />
