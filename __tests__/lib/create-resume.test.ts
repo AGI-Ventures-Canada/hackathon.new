@@ -248,7 +248,7 @@ describe("create auth resume", () => {
     sessionStorage.setItem(key, JSON.stringify({
       kind: "redirect",
       redirectUrl: "/create",
-      createdAt: new Date(Date.now() + 60_001).toISOString(),
+      createdAt: new Date(Date.now() + 2 * 60_000).toISOString(),
     }))
 
     expect(takeAuthResumeTarget(token)).toBeNull()
