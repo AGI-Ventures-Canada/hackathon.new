@@ -251,11 +251,11 @@ describe("CreateFlow", () => {
       expect(screen.queryByText("Continue")).toBeNull()
     })
 
-    it("names the mobile close button", async () => {
+    it("does not show a close button on the chooser", async () => {
       renderFlow()
       await screen.findByText("Create a hackathon")
 
-      expect(screen.getByRole("button", { name: "Close" }).getAttribute("aria-label")).toBe("Close")
+      expect(screen.queryByRole("button", { name: "Close" })).toBeNull()
     })
 
     it("advances to name step when Start from scratch is clicked", async () => {
@@ -325,6 +325,7 @@ describe("CreateFlow", () => {
       })
       try {
         renderFlow()
+        await goToNameStep()
         fireEvent.click(await screen.findByRole("button", { name: /close/i }))
 
         expect(mockBack).toHaveBeenCalledTimes(1)
@@ -349,6 +350,7 @@ describe("CreateFlow", () => {
       })
       try {
         renderFlow()
+        await goToNameStep()
         fireEvent.click(await screen.findByRole("button", { name: /close/i }))
 
         expect(mockPush).toHaveBeenCalledWith("/home")
