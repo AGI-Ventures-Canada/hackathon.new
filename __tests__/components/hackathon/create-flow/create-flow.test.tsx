@@ -251,6 +251,13 @@ describe("CreateFlow", () => {
       expect(screen.queryByText("Continue")).toBeNull()
     })
 
+    it("names the mobile close button", async () => {
+      renderFlow()
+      await screen.findByText("Create a hackathon")
+
+      expect(screen.getByRole("button", { name: "Close" }).getAttribute("aria-label")).toBe("Close")
+    })
+
     it("advances to name step when Start from scratch is clicked", async () => {
       renderFlow()
       await goToNameStep()
