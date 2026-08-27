@@ -18,21 +18,31 @@ export function canInviteTeamMembers({
   nowIso,
 }: CanInviteTeamMembersInput): boolean {
   if (!isFormingCaptain) return false
-  if (!registrationClosesAt) return true
   if (!nowIso) return false
 
   const now = new Date(nowIso).getTime()
+  if (!Number.isFinite(now)) return false
+  if (!["published", "registration_open", "active"].includes(hackathonStatus ?? "")) {
+    return false
+  }
+
   const eventStartsAt = startsAt ? new Date(startsAt).getTime() : null
   const eventEndsAt = endsAt ? new Date(endsAt).getTime() : null
+  if (eventStartsAt !== null && !Number.isFinite(eventStartsAt)) return false
+  if (eventEndsAt !== null && !Number.isFinite(eventEndsAt)) return false
+  if (eventEndsAt !== null && now >= eventEndsAt) return false
+  if (!registrationClosesAt) return true
+
+  const registrationCloses = new Date(registrationClosesAt).getTime()
+  if (!Number.isFinite(registrationCloses)) return false
+  if (registrationCloses > now) return true
+
   const canInviteLate = Boolean(
     allowLateRegistration &&
-    eventStartsAt &&
+    eventStartsAt !== null &&
     now >= eventStartsAt &&
-    (!eventEndsAt || now <= eventEndsAt) &&
-    ["published", "registration_open", "active"].includes(hackathonStatus ?? "")
+    (eventEndsAt === null || now < eventEndsAt)
   )
 
-  if (canInviteLate) return true
-
-  return new Date(registrationClosesAt).getTime() > new Date(nowIso).getTime()
+  return canInviteLate
 }

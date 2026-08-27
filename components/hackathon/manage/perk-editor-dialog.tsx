@@ -20,6 +20,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog"
 import { normalizeUrl } from "@/lib/utils/url"
 import type { Perk, PerkType } from "@/lib/services/perks"
@@ -121,6 +122,7 @@ export function PerkEditorDialog({ open, onOpenChange, hackathonId, perk, sponso
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>{perk ? "Edit perk" : "Add perk"}</DialogTitle>
+          <DialogDescription>Share an offer or resource with attendees.</DialogDescription>
         </DialogHeader>
         <form
           onSubmit={(e) => { e.preventDefault(); handleSave() }}

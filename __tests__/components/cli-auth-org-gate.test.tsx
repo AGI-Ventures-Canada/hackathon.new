@@ -28,8 +28,8 @@ beforeEach(() => {
   clerkState.setActive.mockImplementation(() => Promise.resolve())
   setRouter({ refresh: mockRefresh })
   setClerkMemberships([
-    { organization: { id: "org_1", name: "Alpha Org", imageUrl: null } },
-    { organization: { id: "org_2", name: "Beta Org", imageUrl: "https://example.com/beta.png" } },
+    { role: "org:admin", organization: { id: "org_1", name: "Alpha Org", imageUrl: null } },
+    { role: "org:admin", organization: { id: "org_2", name: "Beta Org", imageUrl: "https://example.com/beta.png" } },
   ])
 })
 

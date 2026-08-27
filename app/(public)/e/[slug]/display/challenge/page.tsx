@@ -10,7 +10,7 @@ type PageProps = {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params
-  const hackathon = await getPublicHackathon(slug, { includeUnpublished: true })
+  const hackathon = await getPublicHackathon(slug)
 
   return {
     title: hackathon ? `Challenge | ${hackathon.name}` : "Challenge",
@@ -20,10 +20,12 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 export default async function DisplayChallengePage({ params }: PageProps) {
   const { slug } = await params
 
-  const hackathon = await getPublicHackathon(slug, { includeUnpublished: true })
+  const hackathon = await getPublicHackathon(slug)
   if (!hackathon) notFound()
 
-  const challenges = await listChallenges(hackathon.id)
+  const challenges = hackathon.challenge_released_at
+    ? await listChallenges(hackathon.id)
+    : []
 
   return (
     <FullscreenChallenge

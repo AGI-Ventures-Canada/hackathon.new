@@ -7,6 +7,7 @@ const mockRegisterForHackathon = mock(() =>
 )
 const mockGetParticipantCount = mock(() => Promise.resolve(42))
 const mockIsUserRegistered = mock(() => Promise.resolve(false))
+const mockFindPendingTeamInvitationForEmails = mock(() => Promise.resolve(null))
 
 mock.module("@clerk/nextjs/server", () => ({
   auth: mockAuth,
@@ -19,7 +20,10 @@ mock.module("@clerk/nextjs/server", () => ({
         firstName: "Test",
         lastName: "User",
         username: null,
-        emailAddresses: [],
+        emailAddresses: [{
+          emailAddress: "captain@example.com",
+          verification: { status: "verified" },
+        }],
       })),
     },
   })),
@@ -50,6 +54,9 @@ mock.module("@/lib/services/hackathons", () => ({
   registerForHackathon: mockRegisterForHackathon,
   getParticipantCount: mockGetParticipantCount,
   isUserRegistered: mockIsUserRegistered,
+}))
+mock.module("@/lib/services/team-invitations", () => ({
+  findPendingTeamInvitationForEmails: mockFindPendingTeamInvitationForEmails,
 }))
 
 const mockGetPublicTenantWithEvents = mock(() => Promise.resolve(null))
@@ -103,7 +110,21 @@ describe("Public Registration Routes", () => {
     mockGetPublicTenantWithEvents.mockReset()
     mockCurrentTermsHash.mockReset()
     mockRecordTermsAcceptance.mockReset()
+    mockFindPendingTeamInvitationForEmails.mockReset()
+    mockFindPendingTeamInvitationForEmails.mockResolvedValue(null)
     mockCurrentTermsHash.mockResolvedValue(null)
+  })
+
+  it("does not expose the retired unsigned OAuth callback", async () => {
+    const state = Buffer.from(JSON.stringify({
+      tenantId: "11111111-1111-1111-1111-111111111111",
+      userId: "attacker",
+    })).toString("base64url")
+    const res = await app.handle(new Request(
+      `http://localhost/api/public/integrations/gmail/callback?code=code&state=${state}`,
+    ))
+
+    expect(res.status).toBe(404)
   })
 
   describe("POST /api/public/hackathons/:slug/register", () => {
@@ -176,6 +197,28 @@ describe("Public Registration Routes", () => {
 
       expect(res.status).toBe(409)
       expect(data.code).toBe("already_registered")
+    })
+
+    it("opens the matching team invite instead of creating a new team", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockFindPendingTeamInvitationForEmails.mockResolvedValue({
+        token: "invite-token",
+        teamName: "Captain's Team",
+      })
+
+      const res = await app.handle(
+        new Request("http://localhost/api/public/hackathons/test-hackathon/register", {
+          method: "POST",
+        }),
+      )
+
+      expect(res.status).toBe(409)
+      expect(await res.json()).toMatchObject({
+        code: "pending_team_invitation",
+        inviteUrl: "/invite/invite-token",
+      })
+      expect(mockRegisterForHackathon).not.toHaveBeenCalled()
     })
 
     it("returns 400 when registration is not open", async () => {
@@ -318,7 +361,7 @@ describe("Public Registration Routes", () => {
       expect(mockRecordTermsAcceptance).toHaveBeenCalledTimes(1)
     })
 
-    it("does not record acceptance when registration fails", async () => {
+    it("keeps the recorded acceptance when registration later fails", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
       mockCurrentTermsHash.mockResolvedValue("expected-hash")
@@ -337,7 +380,27 @@ describe("Public Registration Routes", () => {
       )
 
       expect(res.status).toBe(409)
-      expect(mockRecordTermsAcceptance).not.toHaveBeenCalled()
+      expect(mockRecordTermsAcceptance).toHaveBeenCalledWith("h1", "user_123", "expected-hash")
+    })
+
+    it("does not register when terms acceptance cannot be recorded", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockCurrentTermsHash.mockResolvedValue("expected-hash")
+      mockRecordTermsAcceptance.mockRejectedValue(new Error("database unavailable"))
+
+      const res = await app.handle(
+        new Request("http://localhost/api/public/hackathons/test-hackathon/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ terms_hash: "expected-hash" }),
+        })
+      )
+      const data = await res.json()
+
+      expect(res.status).toBe(500)
+      expect(data).toMatchObject({ code: "terms_record_failed", retryable: true })
+      expect(mockRegisterForHackathon).not.toHaveBeenCalled()
     })
 
     it("calls registerForHackathon with correct parameters", async () => {
@@ -355,7 +418,12 @@ describe("Public Registration Routes", () => {
         })
       )
 
-      expect(mockRegisterForHackathon).toHaveBeenCalledWith("h1", "user_456", "Test User's Team")
+      expect(mockRegisterForHackathon).toHaveBeenCalledWith(
+        "h1",
+        "user_456",
+        "Test User's Team",
+        ["captain@example.com"],
+      )
     })
   })
 

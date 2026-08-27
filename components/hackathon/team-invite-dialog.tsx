@@ -18,6 +18,10 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { UserPlus, Check, AlertCircle } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import {
+  PREPARE_TEAM_INVITE_EVENT,
+  type PrepareTeamInviteEvent,
+} from "@/lib/webmcp/client-events"
 
 interface TeamInviteDialogProps {
   teamId: string
@@ -35,6 +39,8 @@ export function TeamInviteDialog({ teamId, hackathonId, teamName, maxTeamSize }:
   const [email, setEmail] = useState("")
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
+  const [queued, setQueued] = useState(false)
+  const [deliveryFailed, setDeliveryFailed] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [progressValue, setProgressValue] = useState(0)
   const rafRef = useRef<number | null>(null)
@@ -48,7 +54,22 @@ export function TeamInviteDialog({ teamId, hackathonId, teamName, maxTeamSize }:
   }, [open, success])
 
   useEffect(() => {
-    if (!success || !open) {
+    const prepareInvite = (event: Event) => {
+      const { email: preparedEmail, acknowledge } = (event as PrepareTeamInviteEvent).detail
+      setEmail(preparedEmail)
+      setError(null)
+      setSuccess(false)
+      setQueued(false)
+      setDeliveryFailed(false)
+      setOpen(true)
+      acknowledge({ ok: true })
+    }
+    window.addEventListener(PREPARE_TEAM_INVITE_EVENT, prepareInvite)
+    return () => window.removeEventListener(PREPARE_TEAM_INVITE_EVENT, prepareInvite)
+  }, [])
+
+  useEffect(() => {
+    if (!success || !open || deliveryFailed) {
       setProgressValue(0)
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
       return
@@ -72,10 +93,10 @@ export function TeamInviteDialog({ teamId, hackathonId, teamName, maxTeamSize }:
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
     }
-  }, [success, open, router])
+  }, [success, open, deliveryFailed, router])
 
   useEffect(() => {
-    if (!success || !open) return
+    if (!success || !open || deliveryFailed) return
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Enter") {
         e.preventDefault()
@@ -88,7 +109,7 @@ export function TeamInviteDialog({ teamId, hackathonId, teamName, maxTeamSize }:
     }
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [success, open, router])
+  }, [success, open, deliveryFailed, router])
 
   async function handleInvite() {
     setLoading(true)
@@ -108,6 +129,8 @@ export function TeamInviteDialog({ teamId, hackathonId, teamName, maxTeamSize }:
         return
       }
 
+      setQueued(data.queued === true)
+      setDeliveryFailed(data.delivery === "failed")
       setSuccess(true)
     } catch {
       setError("Failed to send invitation")
@@ -121,6 +144,8 @@ export function TeamInviteDialog({ teamId, hackathonId, teamName, maxTeamSize }:
     if (!isOpen) {
       setEmail("")
       setError(null)
+      setQueued(false)
+      setDeliveryFailed(false)
       if (success) {
         setSuccess(false)
         router.refresh()
@@ -146,17 +171,36 @@ export function TeamInviteDialog({ teamId, hackathonId, teamName, maxTeamSize }:
       <AlertDialogContent>
         {success ? (
           <>
-            <AlertDialogTitle className="sr-only">Invitation sent</AlertDialogTitle>
+            <AlertDialogTitle className="sr-only">
+              {queued || deliveryFailed ? "Invitation saved" : "Invitation sent"}
+            </AlertDialogTitle>
             <AlertDialogDescription className="sr-only">
-              Invitation sent to {email}
+              {deliveryFailed
+                ? `Invitation saved for ${email}, but we couldn't confirm the email was sent.`
+                : queued
+                ? `Invitation saved for ${email}. We'll send it when the event goes live.`
+                : `Invitation sent to ${email}`}
             </AlertDialogDescription>
             <div className="flex flex-col items-center gap-3 py-6">
               <div className="animate-in zoom-in-50 fade-in duration-300 rounded-full bg-primary/10 p-3">
-                <Check className="size-5 text-primary" strokeWidth={2.5} />
+                {deliveryFailed
+                  ? <AlertCircle className="size-5 text-destructive" strokeWidth={2.5} />
+                  : <Check className="size-5 text-primary" strokeWidth={2.5} />}
               </div>
               <div className="text-center">
-                <p className="text-sm font-medium">Invitation sent</p>
+                <p className="text-sm font-medium">
+                  {queued || deliveryFailed ? "Invitation saved" : "Invitation sent"}
+                </p>
                 <p className="text-sm text-muted-foreground mt-1">{email}</p>
+                {deliveryFailed ? (
+                  <p className="text-sm text-destructive mt-1">
+                    We couldn&apos;t confirm the email was sent. Use Send again in the invite list.
+                  </p>
+                ) : queued && (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    We&apos;ll send it when the event goes live.
+                  </p>
+                )}
               </div>
             </div>
             <AlertDialogFooter>

@@ -6,14 +6,17 @@ import { CreateOrgForm } from "@/components/auth/create-org-form"
 export default async function OnboardingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ redirect_url?: string }>
+  searchParams: Promise<{ redirect_url?: string | string[] }>
 }) {
   const { userId, orgId } = await auth()
   const { redirect_url } = await searchParams
   const destination = redirect_url ? safeRedirectUrl(redirect_url) : "/home"
 
   if (!userId) {
-    redirect("/sign-in")
+    const onboardingUrl = redirect_url
+      ? `/onboarding?redirect_url=${encodeURIComponent(destination)}`
+      : "/onboarding"
+    redirect(`/sign-in?redirect_url=${encodeURIComponent(onboardingUrl)}`)
   }
 
   if (orgId) {

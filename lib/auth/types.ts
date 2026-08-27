@@ -125,3 +125,14 @@ export function hasScope(principal: Principal, scope: Scope): boolean {
 export function hasAllScopes(principal: Principal, scopes: Scope[]): boolean {
   return scopes.every((s) => hasScope(principal, s))
 }
+
+export function matchesExpectedOrganization(
+  principal: Principal,
+  expectedOrganizationId: string | undefined,
+): boolean {
+  if (expectedOrganizationId === undefined) return true
+  return (
+    (principal.kind === "user" || principal.kind === "admin") &&
+    principal.orgId === expectedOrganizationId
+  )
+}

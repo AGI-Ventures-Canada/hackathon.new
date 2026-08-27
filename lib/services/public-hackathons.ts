@@ -17,8 +17,13 @@ export type PublicPrize = Omit<Prize, "distribution_method" | "monetary_value" |
 export const PUBLISHED_STATUSES: HackathonStatus[] = ["published", "registration_open", "active", "judging", "completed"]
 import { getEffectiveStatus } from "@/lib/utils/timeline"
 import { sortByStatusPriority } from "@/lib/utils/sort-hackathons"
+import {
+  isHackathonCreationReady,
+  READY_HACKATHON_POSTGREST_FILTER,
+} from "@/lib/utils/hackathon-creation-state"
 
 export type PublicHackathon = Hackathon & {
+  stored_status?: HackathonStatus
   organizer: Pick<TenantProfile, "id" | "name" | "slug" | "logo_url" | "logo_url_dark" | "clerk_org_id" | "clerk_user_id">
   sponsors: (HackathonSponsor & {
     tenant?: Pick<
@@ -31,17 +36,104 @@ export type PublicHackathon = Hackathon & {
   terms_hash: string | null
 }
 
+export type PublicHackathonClientDto = PublicHackathon
+
+export function isPublicHackathonOrganizer(
+  hackathon: PublicHackathon,
+  viewer: { orgId: string | null; userId: string | null },
+): boolean {
+  return Boolean(
+    (viewer.orgId && hackathon.organizer.clerk_org_id === viewer.orgId) ||
+    (viewer.userId &&
+      hackathon.organizer.clerk_user_id &&
+      hackathon.organizer.clerk_user_id === viewer.userId),
+  )
+}
+
+export function toPublicHackathonClientDto(
+  hackathon: PublicHackathon,
+  options?: { includeEditorSponsorData?: boolean },
+): PublicHackathonClientDto {
+  const {
+    stored_status: _storedStatus,
+    tenant_id: _tenantId,
+    metadata: _metadata,
+    created_at: _createdAt,
+    updated_at: _updatedAt,
+    location_latitude: _locationLatitude,
+    location_longitude: _locationLongitude,
+    winner_emails_sent_at: _winnerEmailsSentAt,
+    results_announcement_sent_at: _resultsAnnouncementSentAt,
+    feedback_survey_sent_at: _feedbackSurveySentAt,
+    feedback_survey_url: _feedbackSurveyUrl,
+    organizer: _organizer,
+    sponsors: _sponsors,
+    judges: _judges,
+    prizes: _prizes,
+    ...visibleHackathon
+  } = hackathon
+  const {
+    id: _organizerId,
+    clerk_org_id: _clerkOrgId,
+    clerk_user_id: _clerkUserId,
+    ...organizer
+  } = hackathon.organizer
+  const sponsors = hackathon.sponsors.map((sponsor) =>
+    options?.includeEditorSponsorData ? sponsor : (() => {
+      const {
+        hackathon_id: _hackathonId,
+        sponsor_tenant_id: _sponsorTenantId,
+        tenant_sponsor_id: _tenantSponsorId,
+        created_at: _sponsorCreatedAt,
+        ...visibleSponsor
+      } = sponsor
+      return visibleSponsor
+    })(),
+  )
+
+  return {
+    ...visibleHackathon,
+    organizer,
+    sponsors,
+    judges: hackathon.judges.map((judge) => {
+      const {
+        hackathon_id: _hackathonId,
+        clerk_user_id: _judgeClerkUserId,
+        participant_id: _participantId,
+        created_at: _judgeCreatedAt,
+        updated_at: _judgeUpdatedAt,
+        ...visibleJudge
+      } = judge
+      return visibleJudge
+    }),
+    prizes: hackathon.prizes.map((prize) => {
+      const {
+        hackathon_id: _hackathonId,
+        criteria_id: _criteriaId,
+        prize_track_id: _prizeTrackId,
+        round_id: _roundId,
+        assignment_mode: _assignmentMode,
+        max_picks: _maxPicks,
+        created_at: _prizeCreatedAt,
+        updated_at: _prizeUpdatedAt,
+        ...visiblePrize
+      } = prize
+      return visiblePrize
+    }),
+  } as unknown as PublicHackathonClientDto
+}
+
 export async function getPublicHackathonById(
   id: string
 ): Promise<{ slug: string } | null> {
   const client = getSupabase() as unknown as SupabaseClient
   const { data, error } = await client
     .from("hackathons")
-    .select("slug")
+    .select("slug, metadata")
     .eq("id", id)
     .single()
 
-  if (error || !data) {
+  if (error || !data || !isHackathonCreationReady(data)) {
     return null
   }
 
@@ -75,6 +167,7 @@ export async function getPublicHackathon(
     }
     return null
   }
+  if (!isHackathonCreationReady(hackathon)) return null
 
   const { data: sponsors, error: sponsorsError } = await client
     .from("hackathon_sponsors")
@@ -121,6 +214,7 @@ export async function getPublicHackathon(
 
   return {
     ...hackathon,
+    stored_status: hackathon.status,
     status: getEffectiveStatus(hackathon),
     sponsors: sponsors || [],
     judges: (judges || []) as unknown as HackathonJudgeDisplay[],
@@ -145,6 +239,7 @@ export async function listPublicHackathons(
     .from("hackathons")
     .select("id", { count: "exact", head: true })
     .in("status", PUBLISHED_STATUSES)
+    .or(READY_HACKATHON_POSTGREST_FILTER)
 
   let dataQuery = client
     .from("hackathons")
@@ -153,6 +248,7 @@ export async function listPublicHackathons(
       organizer:tenants!tenant_id(id, name, slug, logo_url, logo_url_dark, clerk_org_id)
     `)
     .in("status", PUBLISHED_STATUSES)
+    .or(READY_HACKATHON_POSTGREST_FILTER)
     .order("status", { ascending: true })
     .order("starts_at", { ascending: true })
     .range(offset, offset + limit - 1)
@@ -176,7 +272,9 @@ export async function listPublicHackathons(
     return { hackathons: [], total: 0 }
   }
 
-  const hackathons = sortByStatusPriority(data as unknown as HackathonWithOrganizer[])
+  const hackathons = sortByStatusPriority(
+    (data as unknown as HackathonWithOrganizer[]).filter(isHackathonCreationReady),
+  )
     .map((h) => ({ ...h, status: getEffectiveStatus(h) })) as unknown as HackathonWithOrganizer[]
 
   return { hackathons, total: count ?? 0 }
@@ -216,6 +314,10 @@ export async function checkHackathonOrganizer(
     return { status: "not_found" }
   }
 
+  if (!isHackathonCreationReady(data)) {
+    return { status: "not_found" }
+  }
+
   if (data.tenant_id !== tenantId) {
     return { status: "not_authorized" }
   }
@@ -245,6 +347,7 @@ export async function getHackathonByIdWithFullData(
     }
     return null
   }
+  if (!isHackathonCreationReady(hackathon)) return null
 
   const { data: sponsors, error: sponsorsError } = await client
     .from("hackathon_sponsors")
@@ -307,6 +410,7 @@ export async function getHackathonByIdWithAccess(
   if (hackathonError || !hackathon) {
     return null
   }
+  if (!isHackathonCreationReady(hackathon)) return null
 
   const isOrganizer = hackathon.tenant_id === tenantId
 
@@ -370,11 +474,17 @@ export async function updateHackathonSettings(
     communityLabel?: string | null
     requireTermsAcceptance?: boolean
     termsContent?: string | null
-  }
+  },
+  guard?: {
+    expectedVersion: string
+    allowedStatuses: readonly HackathonStatus[]
+  },
 ): Promise<Hackathon | null> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const updateData: Record<string, unknown> = {}
+  const updateData: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  }
   if (updates.bannerUrl !== undefined) updateData.banner_url = updates.bannerUrl
   if (updates.name !== undefined) updateData.name = updates.name
   if (updates.description !== undefined) updateData.description = updates.description
@@ -403,15 +513,19 @@ export async function updateHackathonSettings(
   if (updates.requireTermsAcceptance !== undefined) updateData.require_terms_acceptance = updates.requireTermsAcceptance
   if (updates.termsContent !== undefined) updateData.terms_content = updates.termsContent
 
-  const { data, error } = await client
+  let query = client
     .from("hackathons")
     .update(updateData)
     .eq("id", hackathonId)
     .eq("tenant_id", tenantId)
-    .select()
-    .single()
+  if (guard) {
+    query = query
+      .eq("updated_at", guard.expectedVersion)
+      .in("status", [...guard.allowedStatuses])
+  }
+  const { data, error } = await query.select().maybeSingle()
 
-  if (error) {
+  if (error || !data) {
     console.error("Failed to update hackathon settings:", error)
     return null
   }
@@ -468,6 +582,7 @@ async function autoPromotePendingTeams(
       notifyReviewedTeamMembers({
         client,
         hackathonId,
+        teamId: team.id,
         teamName: team.name,
         acceptedMemberClerkUserIds: (team.hackathon_participants ?? []).map(
           (m) => m.clerk_user_id

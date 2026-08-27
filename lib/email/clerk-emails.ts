@@ -20,6 +20,16 @@ function getEmailType(slug: string | null | undefined): string {
   return sanitizeTag(slug ?? "") || "clerk_email"
 }
 
+function plainTextToHtml(text: string): string {
+  return `<p>${text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+    .replace(/\r?\n/g, "<br />")}</p>`
+}
+
 export async function forwardClerkEmail(email: EmailJSON): Promise<ForwardClerkEmailResult> {
   if (email.delivered_by_clerk) {
     return { status: "skipped", reason: "delivered_by_clerk" }
@@ -34,9 +44,12 @@ export async function forwardClerkEmail(email: EmailJSON): Promise<ForwardClerkE
   const subject = email.subject?.trim()
   if (!subject) return { status: "invalid", reason: "missing_subject" }
 
-  const html = email.body?.trim() || undefined
-  const text = email.body_plain?.trim() || (html ? htmlToPlainText(html) : undefined)
-  if (!html && !text) return { status: "invalid", reason: "missing_body" }
+  const suppliedHtml = email.body?.trim()
+  const suppliedText = email.body_plain?.trim()
+  if (!suppliedHtml && !suppliedText) return { status: "invalid", reason: "missing_body" }
+
+  const html = suppliedHtml || plainTextToHtml(suppliedText!)
+  const text = suppliedText || htmlToPlainText(suppliedHtml!)
 
   const result = await sendEmail({
     to,

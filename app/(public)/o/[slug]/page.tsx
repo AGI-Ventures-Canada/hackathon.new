@@ -4,7 +4,7 @@ import { getPublicTenantWithEvents } from "@/lib/services/tenant-profiles"
 import { OrgHeader } from "@/components/org/org-header"
 import { OrgEventTabs } from "@/components/org/org-event-tabs"
 import { Card, CardContent, CardDescription, CardTitle } from "@/components/ui/card"
-import { getTimelineState } from "@/lib/utils/timeline"
+import { getTimelineStateAt } from "@/lib/utils/timeline"
 import type { HackathonWithRole } from "@/components/org/hackathon-grid"
 import type { Metadata } from "next"
 
@@ -37,10 +37,13 @@ const STATUS_PRIORITY: Record<string, number> = {
   Archived: 7,
 }
 
-function sortHackathons<T extends HackathonWithRole>(hackathons: T[]): T[] {
+function sortHackathons<T extends HackathonWithRole>(
+  hackathons: T[],
+  referenceTime: Date,
+): T[] {
   return [...hackathons].sort((a, b) => {
-    const priorityA = STATUS_PRIORITY[getTimelineState(a).label] ?? 8
-    const priorityB = STATUS_PRIORITY[getTimelineState(b).label] ?? 8
+    const priorityA = STATUS_PRIORITY[getTimelineStateAt(a, referenceTime).label] ?? 8
+    const priorityB = STATUS_PRIORITY[getTimelineStateAt(b, referenceTime).label] ?? 8
 
     if (priorityA !== priorityB) return priorityA - priorityB
 
@@ -67,6 +70,7 @@ export default async function OrgPage({ params }: PageProps) {
   }
 
   const { organizedHackathons, sponsoredHackathons } = tenant
+  const timelineReferenceTime = new Date()
 
   const organizedIds = new Set(organizedHackathons.map((h) => h.id))
   const sponsoredOnlyHackathons = sponsoredHackathons.filter(
@@ -74,15 +78,18 @@ export default async function OrgPage({ params }: PageProps) {
   )
   const totalUniqueEvents = organizedHackathons.length + sponsoredOnlyHackathons.length
 
-  const allHackathons = sortHackathons([
-    ...organizedHackathons.map((h) => ({
-      ...h,
-      role: sponsoredHackathons.some((s) => s.id === h.id)
-        ? ("both" as const)
-        : ("organizer" as const),
-    })),
-    ...sponsoredOnlyHackathons.map((h) => ({ ...h, role: "sponsor" as const })),
-  ])
+  const allHackathons = sortHackathons(
+    [
+      ...organizedHackathons.map((h) => ({
+        ...h,
+        role: sponsoredHackathons.some((s) => s.id === h.id)
+          ? ("both" as const)
+          : ("organizer" as const),
+      })),
+      ...sponsoredOnlyHackathons.map((h) => ({ ...h, role: "sponsor" as const })),
+    ],
+    timelineReferenceTime,
+  )
 
   return (
     <div>
@@ -105,12 +112,15 @@ export default async function OrgPage({ params }: PageProps) {
               <OrgEventTabs
                 allHackathons={allHackathons}
                 organizedHackathons={sortHackathons(
-                  organizedHackathons.map((h) => ({ ...h, role: "organizer" as const }))
+                  organizedHackathons.map((h) => ({ ...h, role: "organizer" as const })),
+                  timelineReferenceTime,
                 )}
                 sponsoredHackathons={sortHackathons(
-                  sponsoredHackathons.map((h) => ({ ...h, role: "sponsor" as const }))
+                  sponsoredHackathons.map((h) => ({ ...h, role: "sponsor" as const })),
+                  timelineReferenceTime,
                 )}
                 totalUniqueEvents={totalUniqueEvents}
+                timelineReferenceTime={timelineReferenceTime.toISOString()}
               />
             )}
           </div>

@@ -23,6 +23,10 @@ export function resetClerkState() {
   clerkState.organization = null
   clerkState.memberships = []
   clerkState.setActive.mockClear()
+  clerkState.has.mockReset()
+  clerkState.has.mockImplementation(() => true)
+  clerkState.getToken.mockReset()
+  clerkState.getToken.mockImplementation(() => Promise.resolve("test-token"))
   clerkState.openUserProfile.mockClear()
   clerkState.openOrganizationProfile.mockClear()
   clerkState.signOut.mockClear()
@@ -47,7 +51,9 @@ export const clerkMock = {
     isSignedIn: clerkState.isSignedIn,
     isLoaded: clerkState.isLoaded,
     userId: clerkState.userId,
-    getToken: () => Promise.resolve(null),
+    orgId: clerkState.orgId ?? clerkState.organization?.id ?? null,
+    getToken: clerkState.getToken,
+    has: clerkState.has,
   }),
   useClerk: () => ({
     openUserProfile: clerkState.openUserProfile,

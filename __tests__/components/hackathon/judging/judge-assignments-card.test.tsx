@@ -338,4 +338,28 @@ describe("JudgeAssignmentsCard", () => {
     expect(screen.queryByTestId("scoring-panel-a3")).toBeNull()
     expect(screen.queryByText("Project Charlie")).toBeNull()
   })
+
+  it("opens the assignment requested by an agent and resets list filters", () => {
+    render(
+      <JudgeAssignmentsCard
+        hackathonSlug="test-hack"
+        assignments={baseAssignments}
+      />,
+    )
+    fireEvent.click(screen.getByText("List"))
+    fireEvent.change(screen.getByLabelText("Search assignments"), {
+      target: { value: "alpha" },
+    })
+    expect(screen.queryByText("Project Beta")).toBeNull()
+
+    fireEvent(
+      window,
+      new CustomEvent("oatmeal:webmcp:open-judge-assignment", {
+        detail: { assignmentId: "a2" },
+      }),
+    )
+
+    expect(screen.getByTestId("scoring-panel-a2")).toBeDefined()
+    expect(screen.getByLabelText("Search assignments")).toHaveProperty("value", "")
+  })
 })

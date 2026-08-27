@@ -89,6 +89,32 @@ describe("createScheduleItem", () => {
     expect(result!.description).toBeNull()
   })
 
+  it("returns the original item when a WebMCP request id is retried", async () => {
+    const existing = {
+      id: ITEM_ID,
+      hackathon_id: HACKATHON_ID,
+      title: "Lunch",
+      description: null,
+      starts_at: "2026-01-01T12:00:00Z",
+      ends_at: null,
+      location: null,
+      sort_order: 0,
+      created_at: "2026-01-01",
+      updated_at: "2026-01-01",
+    }
+    const chain = createChainableMock({ data: existing, error: null })
+    setMockFromImplementation(() => chain)
+
+    const result = await createScheduleItem(HACKATHON_ID, {
+      id: ITEM_ID,
+      title: "Lunch",
+      startsAt: "2026-01-01T12:00:00Z",
+    })
+
+    expect(result).toEqual(existing)
+    expect(chain.insert).not.toHaveBeenCalled()
+  })
+
   it("returns null on error", async () => {
     setMockFromImplementation(() =>
       createChainableMock({ data: null, error: { message: "error" } })

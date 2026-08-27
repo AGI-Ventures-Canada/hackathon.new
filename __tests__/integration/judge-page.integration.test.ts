@@ -139,6 +139,7 @@ describe("JudgePage", () => {
     expect(getRedirectUrl(caught)).toBe(
       `/sign-in?redirect_url=${encodeURIComponent("/e/test-hackathon/judge")}`
     )
+    expect(mockGetPublicHackathon).not.toHaveBeenCalled()
   })
 
   it("calls notFound when hackathon does not exist", async () => {
@@ -210,6 +211,19 @@ describe("JudgePage", () => {
 
     expect(result).toBeTruthy()
     expect(mockGetJudgeAssignments).toHaveBeenCalledWith("h1", "user_123")
+  })
+
+  it("keeps the unpublished waiting view for an authenticated judge", async () => {
+    mockAuth.mockResolvedValue({ userId: "user_123", orgId: null })
+    mockGetPublicHackathon.mockResolvedValue({ ...mockHackathon, status: "draft" })
+    mockGetRegistrationInfo.mockResolvedValue({ participantRole: "judge" })
+
+    const result = await callPage("test-hackathon")
+
+    expect(result).toBeTruthy()
+    expect(mockGetPublicHackathon).toHaveBeenCalledWith("test-hackathon", {
+      includeUnpublished: true,
+    })
   })
 
   it("anonymizes team names when hackathon has anonymous_judging enabled", async () => {

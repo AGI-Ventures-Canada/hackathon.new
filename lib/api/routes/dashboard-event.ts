@@ -7,7 +7,7 @@ import { setPhase } from "@/lib/services/phases"
 import { listRooms, createRoom, updateRoom, deleteRoom, addTeamToRoom, removeTeamFromRoom, togglePresented, setRoomTimer, clearRoomTimer, pauseRoomTimer, resumeRoomTimer, addJudgeToRoom, removeJudgeFromRoom, setAutoAssignByRoom, getAutoAssignByRoom } from "@/lib/services/rooms"
 import { listCategories, createCategory, updateCategory, deleteCategory } from "@/lib/services/categories"
 import { listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, publishAnnouncement, unpublishAnnouncement, scheduleAnnouncement, type CreateAnnouncementInput, type UpdateAnnouncementInput } from "@/lib/services/announcements"
-import { listScheduleItems, createScheduleItem, updateScheduleItem, deleteScheduleItem, getTriggerItem } from "@/lib/services/schedule-items"
+import { listScheduleItems, getScheduleItemById, createScheduleItem, updateScheduleItem, deleteScheduleItem, getTriggerItem } from "@/lib/services/schedule-items"
 import { listTeamsWithMembers, createTeamWithMembers, modifyTeamMembers, bulkAssignTeams, deleteTeam, setTeamCaptain, approvePendingTeam, denyPendingTeam } from "@/lib/services/hackathons"
 import { listHackathonPeople, peopleToCsvRows } from "@/lib/services/hackathon-people"
 import { toCsv } from "@/lib/utils/csv"
@@ -21,7 +21,7 @@ import { supabase as getSupabase } from "@/lib/db/client"
 import { listRounds, createRound, updateRound, deleteRound, activateRound } from "@/lib/services/judging-rounds"
 import { syncRoomSubmissionsToJudges } from "@/lib/services/judging"
 import { listSocialSubmissions, reviewSocialSubmission } from "@/lib/services/social-submissions"
-import { listMentorQueue } from "@/lib/services/mentor-requests"
+import { getQueueStats } from "@/lib/services/mentor-requests"
 import {
   listChallenges,
   createChallenge,
@@ -44,7 +44,19 @@ import {
 import { getLiveStats } from "@/lib/services/event-dashboard"
 import { sendBulkEmail } from "@/lib/services/participant-emails"
 import { getEffectiveStatus } from "@/lib/utils/timeline"
+import { getNotificationDisposition, getNotificationLifecycleError } from "@/lib/utils/notification-lifecycle"
+import { getRequestIdempotencyFingerprint } from "@/lib/utils/request-idempotency"
 import type { HackathonPhase, ParticipantRole } from "@/lib/db/hackathon-types"
+import {
+  getWebMcpIdempotencyKey,
+  isWebMcpMutationRequest,
+  validateWebMcpMutationContext,
+  WEBMCP_PRE_COMPLETION_STATUSES,
+} from "@/lib/webmcp/mutation-context"
+import {
+  EventMutationLeaseError,
+  withEventMutationLease,
+} from "@/lib/services/event-mutation-lease"
 
 const VALID_PHASES: HackathonPhase[] = [
   "build",
@@ -63,6 +75,15 @@ const announcementAudienceType = t.Union([
   t.Literal("submitted"),
   t.Literal("not_submitted"),
 ])
+
+function eventMutationLeaseFailure(
+  error: unknown,
+  set: { status?: number | string },
+) {
+  if (!(error instanceof EventMutationLeaseError)) throw error
+  set.status = error.code === "event_busy" ? 409 : 503
+  return { error: error.message, code: error.code }
+}
 
 async function checkOrganizer(hackathonId: string, tenantId: string, set: { status?: number | string }) {
   const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
@@ -546,13 +567,20 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       ...b,
       organizerClerkUserId: principal.kind === "user" ? principal.userId : undefined,
     })
-    if ("error" in result) { set.status = 400; return { error: result.error } }
+    if ("error" in result) {
+      set.status = result.code === "hackathon_not_found" ? 404 : result.code === "hackathon_ended" ? 409 : 400
+      return { error: result.error, ...(result.code ? { code: result.code } : {}) }
+    }
     await logAudit({
       principal,
       action: result.invited ? "team.captain_invited" : "team.created",
       resourceType: "team",
       resourceId: result.team.id,
-      metadata: { hackathonId: params.id, name: b.name, ...(result.invited ? { captainEmail: b.captainEmail } : {}) },
+      metadata: {
+        hackathonId: params.id,
+        name: b.name,
+        ...(result.invited ? { captainEmail: b.captainEmail, queued: result.queued, delivery: result.delivery } : {}),
+      },
     })
     return result
   }, {
@@ -657,7 +685,11 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       })
     }
 
-    const updatePayload: Record<string, unknown> = {}
+    const updatePayload: {
+      name?: string
+      mode?: "in_person" | "virtual" | null
+      updated_at?: string
+    } = {}
     if (name !== undefined) updatePayload.name = name.trim()
     if (mode !== undefined) updatePayload.mode = mode
 
@@ -736,7 +768,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
   }, {
     detail: { summary: "Cancel a team invitation as organizer" },
   })
-  .post("/hackathons/:id/teams/:teamId/invitations/:invitationId/remind", async ({ params, principal, set }) => {
+  .post("/hackathons/:id/teams/:teamId/invitations/:invitationId/remind", async ({ params, principal, request, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     if (!isValidUuid(params.teamId) || !isValidUuid(params.invitationId)) {
       set.status = 400
@@ -745,23 +777,41 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if ("error" in authErr) return authErr
 
+    const lifecycleError = getNotificationLifecycleError(getNotificationDisposition({
+      status: authErr.hackathon.status,
+      starts_at: authErr.hackathon.starts_at,
+      ends_at: authErr.hackathon.ends_at,
+    }))
+    if (lifecycleError) {
+      set.status = lifecycleError.status
+      return { error: lifecycleError.error, code: lifecycleError.code }
+    }
+
+    const requestKey = await getRequestIdempotencyFingerprint(request, "manual")
+    if (!requestKey.ok) {
+      set.status = 400
+      return { error: requestKey.error, code: requestKey.code }
+    }
+
     const rateLimitResult = await checkRateLimit(`team_invitation_remind:${params.teamId}`, {
       maxRequests: 5,
       windowMs: 60_000,
     })
     if (!rateLimitResult.allowed) throw new RateLimitError(rateLimitResult.resetAt, rateLimitResult.remaining)
 
-    const { remindTeamInvitationAsOrganizer, getTeamWithHackathon } = await import("@/lib/services/team-invitations")
+    const {
+      remindTeamInvitationAsOrganizer,
+      getTeamWithHackathon,
+      releaseTeamInvitationReminderClaim,
+    } = await import("@/lib/services/team-invitations")
     const teamInfo = await getTeamWithHackathon(params.teamId)
     if (!teamInfo || teamInfo.hackathon.id !== params.id) {
       set.status = 404
       return { error: "Team not found" }
     }
 
-    if (teamInfo.hackathon.status === "draft") {
-      set.status = 400
-      return { error: "Reminders can't be sent while the hackathon is in draft.", code: "hackathon_draft" }
-    }
+    const { resolveAdderEmail } = await import("@/lib/auth/resolve-adder-name")
+    const inviterEmail = await resolveAdderEmail(principal)
 
     const result = await remindTeamInvitationAsOrganizer(params.invitationId, params.teamId, params.id)
     if (!result.success) {
@@ -770,9 +820,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     }
 
     const { sendTeamInvitationEmail } = await import("@/lib/email/team-invitations")
-    const { resolveAdderEmail } = await import("@/lib/auth/resolve-adder-name")
-    const inviterEmail = await resolveAdderEmail(principal)
-    sendTeamInvitationEmail({
+    const delivery = await sendTeamInvitationEmail({
       to: result.invitation.email,
       teamName: teamInfo.name,
       hackathonName: teamInfo.hackathon.name,
@@ -784,9 +832,31 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       hackathonStartsAt: teamInfo.hackathon.starts_at,
       hackathonEndsAt: teamInfo.hackathon.ends_at,
       teamMembers: teamInfo.memberNames,
-    }).catch((err) =>
-      console.error(`Failed to send reminder email for team_invitation ${params.invitationId}:`, err)
-    )
+      deliveryId: `${params.invitationId}/manual/${requestKey.fingerprint}`,
+    }).catch((error) => {
+      console.error(`Failed to send reminder email for team_invitation ${params.invitationId}:`, error)
+      return { success: false }
+    })
+
+    if (!delivery.success) {
+      const remindedAt = result.invitation.reminded_at
+      if (remindedAt) {
+        await releaseTeamInvitationReminderClaim(params.invitationId, remindedAt).catch((error) =>
+          console.error(`Failed to release reminder claim for team_invitation ${params.invitationId}:`, error)
+        )
+      }
+      set.status = 502
+      return { error: "The reminder email could not be sent.", code: "email_delivery_failed" }
+    }
+
+    const { cancelUpcomingReminder } = await import("@/lib/services/smart-reminders")
+    try {
+      await cancelUpcomingReminder("team_invitation", params.invitationId)
+    } catch (error) {
+      console.error(`Failed to cancel the next team invitation reminder ${params.invitationId}:`, error)
+      set.status = 500
+      return { error: "The email was sent, but the next reminder could not be updated.", code: "reminder_state_failed" }
+    }
 
     await logAudit({
       principal,
@@ -798,7 +868,10 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
 
     return { success: true }
   }, {
-    detail: { summary: "Resend a team invitation as organizer" },
+    detail: {
+      summary: "Resend a team invitation as organizer",
+      description: "Sends the one allowed manual reminder. Reuse an optional Idempotency-Key header when retrying the same request.",
+    },
   })
   .patch("/hackathons/:id/teams/:teamId/captain-invitation", async ({ params, body, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
@@ -828,10 +901,10 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       action: "team_invitation.replaced",
       resourceType: "team",
       resourceId: params.teamId,
-      metadata: { hackathonId: params.id, email: email.trim().toLowerCase(), queued: result.queued },
+      metadata: { hackathonId: params.id, email: email.trim().toLowerCase(), queued: result.queued, delivery: result.delivery },
     })
 
-    return { success: true, invitationId: result.invitationId, queued: result.queued }
+    return { success: true, invitationId: result.invitationId, queued: result.queued, delivery: result.delivery }
   }, {
     body: t.Object({ email: t.String({ format: "email" }) }),
     detail: { summary: "Replace the pending captain invitation email" },
@@ -1012,7 +1085,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     }),
     detail: {
       summary: "Update a participant's team or role",
-      description: "Changes a person's team or role. During judging, an attendee can still become a judge so organizers can replace or add judges. Their team link is kept to prevent self-judging.",
+      description: "Changes a person's team or role. During judging, an attendee can still become a judge so organizers can replace or add judges.",
     },
   })
   .delete("/hackathons/:id/participants/:participantId", async ({ params, principal, set }) => {
@@ -1155,33 +1228,55 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if ("error" in authErr) return authErr
-    return { requests: await listMentorQueue(params.id) }
-  }, { detail: { summary: "List mentor requests" } })
+    set.headers["Cache-Control"] = "private, no-store"
+    return { stats: await getQueueStats(params.id) }
+  }, { detail: { summary: "Get mentor queue totals" } })
   .get("/hackathons/:id/challenges", async ({ params, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if ("error" in authErr) return authErr
     return { challenges: await listChallenges(params.id) }
   }, { detail: { summary: "List challenges" } })
-  .post("/hackathons/:id/challenges", async ({ params, body, principal, set }) => {
+  .post("/hackathons/:id/challenges", async ({ params, body, principal, request, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
-    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if ("error" in authErr) return authErr
-    const b = body as { title: string; description?: string | null; resources?: { label: string; url: string }[] }
-    const created = await createChallenge(params.id, principal.tenantId, b)
-    if (!created) { set.status = 400; return { error: "Failed to create challenge" } }
-    await logAudit({ principal, action: "challenge.created", resourceType: "challenge", resourceId: created.id, metadata: { hackathonId: params.id, title: b.title } })
+    try {
+      return await withEventMutationLease(params.id, async () => {
+        const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+        if ("error" in authErr) return authErr
+        const webMcpError = validateWebMcpMutationContext(
+          request,
+          {
+            status: getEffectiveStatus(authErr.hackathon),
+            eventVersion: authErr.hackathon.updated_at,
+          },
+          ["draft"],
+        )
+        if (webMcpError) {
+          set.status = webMcpError.status
+          return { error: webMcpError.error, code: webMcpError.code }
+        }
+        const b = body as { title: string; description?: string | null; resources?: { label: string; url: string }[] }
+        const created = await createChallenge(params.id, principal.tenantId, b)
+        if (!created) { set.status = 400; return { error: "Failed to create challenge" } }
+        await logAudit({ principal, action: "challenge.created", resourceType: "challenge", resourceId: created.id, metadata: { hackathonId: params.id, title: b.title } })
 
-    await maybeReleaseChallengesForPublishLink(params.id, principal.tenantId)
+        await maybeReleaseChallengesForPublishLink(params.id, principal.tenantId)
 
-    return { challenge: created }
+        return { challenge: created }
+      })
+    } catch (error) {
+      return eventMutationLeaseFailure(error, set)
+    }
   }, {
     body: t.Object({
       title: t.String({ description: "Challenge title" }),
       description: t.Optional(t.Union([t.String(), t.Null()])),
       resources: t.Optional(t.Array(t.Object({ label: t.String(), url: t.String() }))),
     }),
-    detail: { summary: "Create challenge" },
+    detail: {
+      summary: "Create challenge",
+      description: "Creates a challenge. WebMCP draft requests must match the event's current draft status and version.",
+    },
   })
   .put("/hackathons/:id/challenges/reorder", async ({ params, body, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
@@ -1351,7 +1446,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     if (!stats) { set.status = 404; return { error: "Hackathon not found" } }
     return stats
   }, { detail: { summary: "Get live event stats" } })
-  .post("/hackathons/:id/email-blast", async ({ params, body, principal, set }) => {
+  .post("/hackathons/:id/email-blast", async ({ params, body, principal, request, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
     const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
     const check = await checkHackathonOrganizer(params.id, principal.tenantId)
@@ -1363,19 +1458,49 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       set.status = 403
       return { error: "Not authorized to manage this hackathon" }
     }
-    if (check.hackathon.status === "draft") {
+    const lifecycleError = getNotificationLifecycleError(getNotificationDisposition({
+      status: check.hackathon.status,
+      starts_at: check.hackathon.starts_at,
+      ends_at: check.hackathon.ends_at,
+    }))
+    if (lifecycleError) {
+      set.status = lifecycleError.status
+      return { error: lifecycleError.error, code: lifecycleError.code }
+    }
+    const deliveryId = await getRequestIdempotencyFingerprint(
+      request,
+      crypto.randomUUID(),
+    )
+    if (!deliveryId.ok) {
       set.status = 400
-      return { error: "Go live before sending an email blast.", code: "hackathon_draft" }
+      return { error: deliveryId.error, code: deliveryId.code }
     }
     const { subject, html, recipientFilter } = body as { subject: string; html: string; recipientFilter?: ParticipantRole[] }
-    const result = await sendBulkEmail(params.id, { subject, html, recipientFilter })
-    await logAudit({ principal, action: "email_blast.sent", resourceType: "hackathon", resourceId: params.id, metadata: { hackathonId: params.id, subject, recipientFilter: recipientFilter ?? "all", sentCount: result.sent } })
+    const result = await sendBulkEmail(params.id, {
+      subject,
+      html,
+      recipientFilter,
+      deliveryId: deliveryId.fingerprint,
+    })
+    await logAudit({
+      principal,
+      action: result.failed === 0 ? "email_blast.sent" : "email_blast.delivery_failed",
+      resourceType: "hackathon",
+      resourceId: params.id,
+      metadata: {
+        hackathonId: params.id,
+        subject,
+        recipientFilter: recipientFilter ?? "all",
+        sentCount: result.sent,
+        failedCount: result.failed,
+      },
+    })
     return result
   }, {
     body: t.Object({
-      subject: t.String(),
-      html: t.String(),
-      recipientFilter: t.Optional(t.Array(t.String())),
+      subject: t.String({ minLength: 1, maxLength: 200 }),
+      html: t.String({ minLength: 1, maxLength: 100_000 }),
+      recipientFilter: t.Optional(t.Array(t.String(), { maxItems: 5 })),
     }),
     detail: { summary: "Send bulk email to participants" },
   })
@@ -1385,22 +1510,43 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     if ("error" in authErr) return authErr
     return { announcements: await listAnnouncements(params.id) }
   }, { detail: { summary: "List announcements" } })
-  .post("/hackathons/:id/announcements", async ({ params, body, principal, set }) => {
+  .post("/hackathons/:id/announcements", async ({ params, body, principal, request, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
-    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if ("error" in authErr) return authErr
-    const announcement = await createAnnouncement(params.id, body as CreateAnnouncementInput)
-    if (!announcement) { set.status = 400; return { error: "Failed to create announcement" } }
-    await logAudit({ principal, action: "announcement.created", resourceType: "announcement", resourceId: announcement.id, metadata: { hackathonId: params.id, title: (body as CreateAnnouncementInput).title } })
-    return announcement
+    try {
+      return await withEventMutationLease(params.id, async () => {
+        const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+        if ("error" in authErr) return authErr
+        const webMcpError = validateWebMcpMutationContext(
+          request,
+          {
+            status: getEffectiveStatus(authErr.hackathon),
+            eventVersion: authErr.hackathon.updated_at,
+          },
+          ["draft", "published", "registration_open", "active", "judging", "completed"],
+        )
+        if (webMcpError) {
+          set.status = webMcpError.status
+          return { error: webMcpError.error, code: webMcpError.code }
+        }
+        const announcement = await createAnnouncement(params.id, body as CreateAnnouncementInput)
+        if (!announcement) { set.status = 400; return { error: "Failed to create announcement" } }
+        await logAudit({ principal, action: "announcement.created", resourceType: "announcement", resourceId: announcement.id, metadata: { hackathonId: params.id, title: (body as CreateAnnouncementInput).title } })
+        return announcement
+      })
+    } catch (error) {
+      return eventMutationLeaseFailure(error, set)
+    }
   }, {
     body: t.Object({
-      title: t.String(),
-      body: t.String(),
+      title: t.String({ minLength: 1, maxLength: 200 }),
+      body: t.String({ minLength: 1, maxLength: 5_000 }),
       priority: t.Optional(t.Union([t.Literal("normal"), t.Literal("urgent")])),
       audience: t.Optional(announcementAudienceType),
     }),
-    detail: { summary: "Create announcement" },
+    detail: {
+      summary: "Create announcement",
+      description: "Creates an unpublished announcement draft. WebMCP requests must match the event's current status and version.",
+    },
   })
   .patch("/hackathons/:id/announcements/:announcementId", async ({ params, body, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
@@ -1479,18 +1625,57 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     if ("error" in authErr) return authErr
     return { scheduleItems: await listScheduleItems(params.id) }
   }, { detail: { summary: "List schedule items" } })
-  .post("/hackathons/:id/schedule", async ({ params, body, principal, set }) => {
+  .post("/hackathons/:id/schedule", async ({ params, body, principal, request, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
-    const authErr = await checkOrganizer(params.id, principal.tenantId, set)
-    if ("error" in authErr) return authErr
-    const b = body as { title: string; startsAt: string; description?: string; endsAt?: string; location?: string; sortOrder?: number; triggerType?: "challenge_release" | "submission_deadline" | null }
-    const item = await createScheduleItem(params.id, b)
-    if (!item) { set.status = 400; return { error: "Failed to create schedule item" } }
-    await logAudit({ principal, action: "schedule_item.created", resourceType: "schedule_item", resourceId: item.id, metadata: { hackathonId: params.id, title: b.title } })
-    return item
+    try {
+      return await withEventMutationLease(params.id, async () => {
+        const authErr = await checkOrganizer(params.id, principal.tenantId, set)
+        if ("error" in authErr) return authErr
+        const webMcpError = validateWebMcpMutationContext(
+          request,
+          {
+            status: getEffectiveStatus(authErr.hackathon),
+            eventVersion: authErr.hackathon.updated_at,
+          },
+          WEBMCP_PRE_COMPLETION_STATUSES,
+        )
+        if (webMcpError) {
+          set.status = webMcpError.status
+          return { error: webMcpError.error, code: webMcpError.code }
+        }
+        const b = body as { title: string; startsAt: string; description?: string; endsAt?: string; location?: string; sortOrder?: number; triggerType?: "challenge_release" | "submission_deadline" | null }
+        if (
+          isWebMcpMutationRequest(request) &&
+          (b.sortOrder !== undefined || b.triggerType != null)
+        ) {
+          set.status = 400
+          return {
+            error: "WebMCP can only add an ordinary schedule item.",
+            code: "invalid_request",
+          }
+        }
+        const idempotencyKey = getWebMcpIdempotencyKey(request)
+        if (idempotencyKey) {
+          const existing = await getScheduleItemById(idempotencyKey, params.id)
+          if (existing) return existing
+        }
+        const item = await createScheduleItem(params.id, {
+          ...b,
+          id: idempotencyKey ?? undefined,
+        })
+        if (!item) { set.status = 400; return { error: "Failed to create schedule item" } }
+        await logAudit({ principal, action: "schedule_item.created", resourceType: "schedule_item", resourceId: item.id, metadata: { hackathonId: params.id, title: b.title } })
+        return item
+      })
+    } catch (error) {
+      return eventMutationLeaseFailure(error, set)
+    }
   }, {
     body: t.Object({ title: t.String(), startsAt: t.String(), description: t.Optional(t.String()), endsAt: t.Optional(t.String()), location: t.Optional(t.String()), sortOrder: t.Optional(t.Number()), triggerType: t.Optional(t.Union([t.Literal("challenge_release"), t.Literal("submission_deadline"), t.Null()])) }),
-    detail: { summary: "Create schedule item" },
+    detail: {
+      summary: "Create schedule item",
+      description: "Creates a schedule item. WebMCP requests must match a current pre-completion event status and version.",
+    },
   })
   .patch("/hackathons/:id/schedule/:itemId", async ({ params, body, principal, set }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])

@@ -8,6 +8,7 @@ type SendEmailInput = {
   from?: string
   replyTo?: string
   tags?: Array<{ name: string; value: string }>
+  idempotencyKey?: string
 }
 
 type SendEmailResult = { id: string } | null
@@ -47,6 +48,7 @@ describe("Judge Added Notification Email", () => {
   it("sends notification with event link", async () => {
     const result = await sendJudgeAddedNotification({
       to: "judge@example.com",
+      deliveryId: "participant-1",
       hackathonName: "Test Hackathon",
       hackathonSlug: "test-hackathon",
       addedByName: "Jane Organizer",
@@ -70,6 +72,7 @@ describe("Judge Added Notification Email", () => {
 
     const result = await sendJudgeAddedNotification({
       to: "judge@example.com",
+      deliveryId: "participant-1",
       hackathonName: "Test Hackathon",
       hackathonSlug: "test-hackathon",
       addedByName: "Jane Organizer",
@@ -84,6 +87,7 @@ describe("Judge Added Notification Email", () => {
 
     const result = await sendJudgeAddedNotification({
       to: "judge@example.com",
+      deliveryId: "participant-1",
       hackathonName: "Test Hackathon",
       hackathonSlug: "test-hackathon",
       addedByName: "Jane Organizer",
@@ -95,6 +99,7 @@ describe("Judge Added Notification Email", () => {
   it("escapes HTML in hackathon name and organizer name", async () => {
     await sendJudgeAddedNotification({
       to: "judge@example.com",
+      deliveryId: "participant-1",
       hackathonName: "<script>alert('xss')</script>",
       hackathonSlug: "safe-slug",
       addedByName: "<b>Evil</b>",
@@ -109,6 +114,7 @@ describe("Judge Added Notification Email", () => {
   it("includes correct email tags", async () => {
     await sendJudgeAddedNotification({
       to: "judge@example.com",
+      deliveryId: "participant-1",
       hackathonName: "Test Hackathon",
       hackathonSlug: "test-hackathon",
       addedByName: "Organizer",
@@ -119,11 +125,13 @@ describe("Judge Added Notification Email", () => {
       { name: "type", value: "judge_added" },
       { name: "hackathon", value: "Test_Hackathon" },
     ])
+    expect(call.idempotencyKey).toMatch(/^judge-added\/participant-1\//)
   })
 
   it("includes event dates in HTML when hackathonStartsAt and hackathonEndsAt are provided", async () => {
     await sendJudgeAddedNotification({
       to: "judge@example.com",
+      deliveryId: "participant-1",
       hackathonName: "Test Hackathon",
       hackathonSlug: "test-hackathon",
       addedByName: "Organizer",

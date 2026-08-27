@@ -21,6 +21,7 @@ const {
   resetFailureCount,
   recordDelivery,
   deliverWebhook,
+  triggerWebhooks,
 } = await import("@/lib/services/webhooks")
 
 const {
@@ -147,7 +148,40 @@ describe("Webhooks Service", () => {
       expect(result.success).toBe(false)
       expect(mockFetch).toHaveBeenCalledWith(
         mockWebhook.url,
-        expect.objectContaining({ redirect: "error" })
+        expect.objectContaining({
+          credentials: "omit",
+          dispatcher: expect.anything(),
+          redirect: "manual",
+        })
+      )
+    })
+
+    it("rejects webhook delivery when the hostname resolves privately", async () => {
+      const state = globalThis as typeof globalThis & {
+        __safeFetchDnsLookup: ReturnType<typeof mock>
+      }
+      state.__safeFetchDnsLookup.mockResolvedValueOnce([
+        { address: "169.254.169.254", family: 4 as const },
+      ])
+
+      const result = await deliverWebhook(mockWebhook, "hackathon.created", { id: "event-1" })
+
+      expect(result).toEqual({ success: false, error: "Unsafe webhook URL" })
+      expect(mockFetch).not.toHaveBeenCalled()
+    })
+
+    it("sends a stable idempotency header when one is provided", async () => {
+      const result = await deliverWebhook(
+        mockWebhook,
+        "hackathon.created",
+        { id: "event-1" },
+        { idempotencyKey: "sha256:stable" },
+      )
+
+      expect(result.success).toBe(true)
+      const requestInit = mockFetch.mock.calls[0]?.[1] as RequestInit
+      expect(new Headers(requestInit.headers).get("X-Webhook-Idempotency-Key")).toBe(
+        "sha256:stable",
       )
     })
   })
@@ -221,6 +255,127 @@ describe("Webhooks Service", () => {
       const result = await listWebhooks("tenant-error")
 
       expect(result).toEqual([])
+    })
+
+    it("throws on lookup errors when delivery recording is required", async () => {
+      const chain = createChainableMock({
+        data: null,
+        error: { message: "Database error" },
+      })
+      setMockFromImplementation(() => chain)
+
+      await expect(listActiveWebhooks(
+        "tenant-error",
+        "hackathon.created",
+        { throwOnError: true },
+      )).rejects.toThrow("Failed to list active webhooks")
+    })
+  })
+
+  describe("triggerWebhooks", () => {
+    it("records a remote failure without blocking event creation", async () => {
+      mockFetch.mockResolvedValueOnce(new Response("unavailable", { status: 503 }))
+      const list = createChainableMock({ data: [mockWebhook], error: null })
+      const checkpoint = createChainableMock({ data: [], error: null })
+      const record = createChainableMock({
+        data: {
+          id: "delivery-1",
+          webhook_id: mockWebhook.id,
+          event: "hackathon.created",
+          payload: { idempotencyKey: "sha256:stable" },
+          response_status: 503,
+          response_body: "unavailable",
+          attempt: 1,
+          delivered_at: null,
+          created_at: "2026-08-26T12:00:00.000Z",
+        },
+        error: null,
+      })
+      const failureCount = createChainableMock({ data: { failure_count: 0 }, error: null })
+      const updateFailure = createChainableMock({ data: null, error: null })
+      const chains = [list, checkpoint, record, failureCount, updateFailure]
+      setMockFromImplementation(() => chains.shift()!)
+
+      await expect(triggerWebhooks(
+        "tenant-123",
+        "hackathon.created",
+        { idempotencyKey: "sha256:stable" },
+        { idempotencyKey: "sha256:stable", requireRecorded: true },
+      )).resolves.toBeUndefined()
+
+      expect(record.insert).toHaveBeenCalledTimes(1)
+      expect(failureCount.select).toHaveBeenCalledWith("failure_count")
+    })
+
+    it("reports an unrecorded delivery attempt for a safe retry", async () => {
+      const list = createChainableMock({ data: [mockWebhook], error: null })
+      const checkpoint = createChainableMock({ data: [], error: null })
+      const reset = createChainableMock({ data: null, error: null })
+      const recordFailure = createChainableMock({
+        data: null,
+        error: { message: "Database error" },
+      })
+      const chains = [list, checkpoint, reset, recordFailure]
+      setMockFromImplementation(() => chains.shift()!)
+
+      await expect(triggerWebhooks(
+        "tenant-123",
+        "hackathon.created",
+        { idempotencyKey: "sha256:stable" },
+        { idempotencyKey: "sha256:stable", requireRecorded: true },
+      )).rejects.toThrow("delivery attempts could not be recorded")
+    })
+
+    it("skips a duplicate POST when a checkpointed delivery is retried", async () => {
+      const firstList = createChainableMock({ data: [mockWebhook], error: null })
+      const firstCheckpoint = createChainableMock({ data: [], error: null })
+      const firstReset = createChainableMock({ data: null, error: null })
+      const firstRecord = createChainableMock({
+        data: {
+          id: "delivery-1",
+          webhook_id: mockWebhook.id,
+          event: "hackathon.created",
+          payload: { idempotencyKey: "sha256:stable" },
+          response_status: 200,
+          response_body: "ok",
+          attempt: 1,
+          delivered_at: "2026-08-26T12:00:00.000Z",
+          created_at: "2026-08-26T12:00:00.000Z",
+        },
+        error: null,
+      })
+      const retryList = createChainableMock({ data: [mockWebhook], error: null })
+      const retryCheckpoint = createChainableMock({
+        data: [{ id: "delivery-1" }],
+        error: null,
+      })
+      const chains = [
+        firstList,
+        firstCheckpoint,
+        firstReset,
+        firstRecord,
+        retryList,
+        retryCheckpoint,
+      ]
+      setMockFromImplementation(() => chains.shift()!)
+
+      const args = [
+        "tenant-123",
+        "hackathon.created",
+        { idempotencyKey: "sha256:stable" },
+        { idempotencyKey: "sha256:stable", requireRecorded: true },
+      ] as const
+      await triggerWebhooks(...args)
+      await triggerWebhooks(...args)
+
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+      expect(firstRecord.insert).toHaveBeenCalledTimes(1)
+      expect(retryCheckpoint.eq).toHaveBeenCalledWith("webhook_id", mockWebhook.id)
+      expect(retryCheckpoint.eq).toHaveBeenCalledWith("event", "hackathon.created")
+      expect(retryCheckpoint.not).toHaveBeenCalledWith("delivered_at", "is", null)
+      expect(retryCheckpoint.contains).toHaveBeenCalledWith("payload", {
+        idempotencyKey: "sha256:stable",
+      })
     })
   })
 

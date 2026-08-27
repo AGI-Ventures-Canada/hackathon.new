@@ -2,7 +2,7 @@ import { Text } from "@react-email/components"
 import { OatmealLayout } from "./_components/oatmeal-layout"
 import { InfoBox } from "./_components/info-box"
 import { CTAButton } from "./_components/cta-button"
-import { colors } from "./_components/constants"
+import { colors, fontSize, spacing } from "./_components/constants"
 
 interface JudgeInvitationReminderEmailProps {
   inviterName: string
@@ -23,16 +23,22 @@ export default function JudgeInvitationReminderEmail({
     <OatmealLayout
       heading="Friendly Reminder — You're Invited to Judge!"
       preview={`Reminder: ${inviterName} invited you to judge ${hackathonName}`}
-      footerText="If you didn&#x2019;t expect this invitation, you can safely ignore this email."
+      footerText="If you didn’t expect this invitation, you can safely ignore this email."
     >
-      <Text style={{ fontSize: "14px", marginBottom: "24px", lineHeight: "1.6" }}>
+      <Text
+        style={{
+          fontSize: fontSize.base,
+          marginBottom: spacing.lg,
+          lineHeight: "1.6",
+        }}
+      >
         Just a heads-up — <strong>{inviterName}</strong> invited you to be a
         judge for the <strong>{hackathonName}</strong> hackathon. Your invite is
         still waiting!
       </Text>
 
       <InfoBox label="Hackathon">
-        <Text style={{ margin: "0", fontSize: "16px", fontWeight: 600 }}>
+        <Text style={{ margin: "0", fontSize: fontSize.base, fontWeight: 600 }}>
           {hackathonName}
         </Text>
       </InfoBox>
@@ -41,9 +47,9 @@ export default function JudgeInvitationReminderEmail({
 
       <Text
         style={{
-          fontSize: "12px",
+          fontSize: fontSize.sm,
           color: colors.textMuted,
-          marginTop: "24px",
+          marginTop: spacing.lg,
           lineHeight: "1.5",
         }}
       >
@@ -56,7 +62,7 @@ export default function JudgeInvitationReminderEmail({
 }
 
 JudgeInvitationReminderEmail.PreviewProps = {
-  inviterName: "Alex Ivany",
+  inviterName: "Jordan Lee",
   hackathonName: "AI Innovation Hackathon 2026",
   acceptUrl: "https://hackathon.new/judge-invite/xyz789",
   expiresDate: "Friday, April 17, 2026",

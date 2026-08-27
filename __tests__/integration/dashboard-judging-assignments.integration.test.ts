@@ -15,11 +15,22 @@ const mockAssignJudgeToSubmission = mock(() =>
 const mockUnassignJudgeFromSubmission = mock(() =>
   Promise.resolve({ success: true, removed: true })
 )
+const mockCreatePrize = mock(() =>
+  Promise.resolve({
+    success: true as const,
+    prize: {
+      id: "prize-1",
+      name: "Best build",
+      judging_style: "judges_pick",
+    },
+  })
+)
 
 mock.module("@/lib/services/judging", () => ({
   listJudgeSubmissionAssignments: mockListJudgeSubmissionAssignments,
   assignJudgeToSubmission: mockAssignJudgeToSubmission,
   unassignJudgeFromSubmission: mockUnassignJudgeFromSubmission,
+  createPrize: mockCreatePrize,
 }))
 
 mock.module("@clerk/nextjs/server", () => ({
@@ -119,7 +130,79 @@ describe("dashboard judge↔submission assignment routes", () => {
     mockAssignJudgeToSubmission.mockResolvedValue({ success: true, alreadyAssigned: false })
     mockUnassignJudgeFromSubmission.mockReset()
     mockUnassignJudgeFromSubmission.mockResolvedValue({ success: true, removed: true })
+    mockCreatePrize.mockReset()
+    mockCreatePrize.mockResolvedValue({
+      success: true,
+      prize: {
+        id: "prize-1",
+        name: "Best build",
+        judging_style: "judges_pick",
+      },
+    })
     mockLogAudit.mockClear()
+  })
+
+  describe("POST /hackathons/:id/prizes", () => {
+    it("creates a prize for a current WebMCP draft", async () => {
+      mockCheckHackathonOrganizer.mockResolvedValueOnce({
+        status: "ok",
+        hackathon: {
+          id: HACKATHON_ID,
+          tenant_id: "org_123",
+          status: "draft",
+          starts_at: "2019-01-01T00:00:00.000Z",
+          ends_at: "2020-01-01T00:00:00.000Z",
+          updated_at: "2026-08-25T15:00:00.000Z",
+        },
+      })
+
+      const res = await app.handle(
+        new Request(urlFor(`/hackathons/${HACKATHON_ID}/prizes`), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-webmcp-request": "1",
+            "x-webmcp-expected-status": "draft",
+            "x-webmcp-event-version": "2026-08-25T15:00:00.000Z",
+          },
+          body: JSON.stringify({ name: "Best build", judgingStyle: "judges_pick" }),
+        }),
+      )
+
+      expect(res.status).toBe(200)
+      expect(mockCreatePrize).toHaveBeenCalledTimes(1)
+    })
+
+    it("rejects a stale WebMCP prize after the event expires", async () => {
+      mockCheckHackathonOrganizer.mockResolvedValueOnce({
+        status: "ok",
+        hackathon: {
+          id: HACKATHON_ID,
+          tenant_id: "org_123",
+          status: "published",
+          starts_at: "2019-01-01T00:00:00.000Z",
+          ends_at: "2020-01-01T00:00:00.000Z",
+          updated_at: "2026-08-25T15:00:00.000Z",
+        },
+      })
+
+      const res = await app.handle(
+        new Request(urlFor(`/hackathons/${HACKATHON_ID}/prizes`), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-webmcp-request": "1",
+            "x-webmcp-expected-status": "active",
+            "x-webmcp-event-version": "2026-08-25T15:00:00.000Z",
+          },
+          body: JSON.stringify({ name: "Late prize", judgingStyle: "judges_pick" }),
+        }),
+      )
+
+      expect(res.status).toBe(409)
+      expect(await res.json()).toMatchObject({ code: "event_changed" })
+      expect(mockCreatePrize).not.toHaveBeenCalled()
+    })
   })
 
   describe("GET /judges/:participantId/submissions", () => {

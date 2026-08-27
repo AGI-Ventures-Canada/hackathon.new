@@ -1,8 +1,9 @@
 import { Elysia, t } from "elysia"
 import { auth, clerkClient } from "@clerk/nextjs/server"
+import { z } from "zod"
 import { normalizeUrl } from "@/lib/utils/url"
+import { isAllowedHttpsUrl } from "@/lib/utils/safe-fetch-url"
 import { isValidUuid } from "@/lib/utils/uuid"
-import { exchangeCodeForTokens, saveIntegration, getProviderConfig } from "@/lib/integrations/oauth"
 import { getPublicHackathon, listPublicHackathons } from "@/lib/services/public-hackathons"
 import { registerForHackathon, getParticipantCount, isUserRegistered } from "@/lib/services/hackathons"
 import { getPublicTenantWithEvents } from "@/lib/services/tenant-profiles"
@@ -23,9 +24,165 @@ import {
   getSubmissionScreenshots,
   getSubmissionScreenshotUrls,
   MAX_SUBMISSION_SCREENSHOTS,
+  MAX_SUBMISSION_SCREENSHOT_REQUEST_BYTES,
+  type SubmissionScreenshot,
   type SubmissionScreenshotSlot,
 } from "@/lib/utils/submission-screenshots"
+import type { Json } from "@/lib/db/types"
 import { pendingTeamApprovalResponse } from "@/lib/api/responses"
+import { getVerifiedUserEmails } from "@/lib/auth/verified-emails"
+import {
+  publicSubmitterName,
+  publicTeamName,
+} from "@/lib/utils/anonymous-judging"
+import { syncSubmissionChallenges } from "@/lib/services/challenges"
+
+const aggregateSubmissionPayloadSchema = z.object({
+  title: z.string().trim().min(1).max(100),
+  description: z.string().trim().min(1).max(280),
+  githubUrl: z.string().trim().min(1).max(2_048),
+  liveAppUrl: z.string().trim().max(2_048).nullable().optional(),
+  demoVideoUrl: z.string().trim().max(2_048).nullable().optional(),
+  challengeIds: z.array(z.string()).max(50).optional(),
+  retainedScreenshotSlots: z
+    .array(z.union([z.literal(0), z.literal(1)]))
+    .max(MAX_SUBMISSION_SCREENSHOTS)
+    .refine((slots) => new Set(slots).size === slots.length),
+  requestId: z.uuid(),
+})
+
+const allowedSubmissionScreenshotTypes = new Set(["image/png", "image/jpeg", "image/webp"])
+const aggregateScreenshotPathsKey = "submissionScreenshotPaths"
+const aggregateScreenshotCleanupKey = "submissionScreenshotCleanup"
+const aggregateSubmissionRequestKey = "submissionAggregateRequestId"
+
+type AggregateScreenshot = SubmissionScreenshot & { path: string | null }
+
+async function persistRequiredTermsAcceptance(
+  hackathonId: string,
+  userId: string,
+  termsHash: string
+): Promise<Response | null> {
+  try {
+    await recordTermsAcceptance(hackathonId, userId, termsHash)
+    return null
+  } catch (err) {
+    console.error("Failed to record terms acceptance:", err)
+    return new Response(
+      JSON.stringify({
+        error: "We couldn't save your terms acceptance. Please try again.",
+        code: "terms_record_failed",
+        retryable: true,
+      }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    )
+  }
+}
+
+function isUploadedFile(value: unknown): value is File {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as File).arrayBuffer === "function" &&
+    typeof (value as File).size === "number" &&
+    typeof (value as File).type === "string"
+  )
+}
+
+function metadataRecord(metadata: Json | null | undefined): Record<string, Json | undefined> {
+  return metadata && typeof metadata === "object" && !Array.isArray(metadata)
+    ? metadata as Record<string, Json | undefined>
+    : {}
+}
+
+function getAggregateScreenshots(submission: {
+  metadata?: Json | null
+  screenshot_url?: string | null
+}): AggregateScreenshot[] {
+  const metadata = metadataRecord(submission.metadata)
+  const rawPaths = metadataRecord(
+    metadata[aggregateScreenshotPathsKey] as Json | null | undefined
+  )
+  return getSubmissionScreenshots(submission).map((screenshot) => ({
+    ...screenshot,
+    path: typeof rawPaths[String(screenshot.slot)] === "string"
+      ? rawPaths[String(screenshot.slot)] as string
+      : null,
+  }))
+}
+
+function getAggregateCleanup(metadata: Json | null | undefined): string[] {
+  const raw = metadataRecord(metadata)[aggregateScreenshotCleanupKey]
+  return Array.isArray(raw)
+    ? raw.filter((value): value is string => typeof value === "string").slice(0, 20)
+    : []
+}
+
+function getAggregateRequestId(metadata: Json | null | undefined): string | null {
+  const value = metadataRecord(metadata)[aggregateSubmissionRequestKey]
+  return typeof value === "string" ? value : null
+}
+
+function buildAggregateScreenshotMetadata(
+  metadata: Json | null | undefined,
+  screenshots: AggregateScreenshot[],
+  cleanup: string[],
+  requestId?: string,
+) {
+  const next = buildSubmissionScreenshotMetadata(metadata, screenshots)
+  next[aggregateScreenshotPathsKey] = Object.fromEntries(
+    screenshots.flatMap((screenshot) =>
+      screenshot.path ? [[String(screenshot.slot), screenshot.path]] : []
+    )
+  )
+  next[aggregateScreenshotCleanupKey] = cleanup.slice(0, 20)
+  if (requestId) next[aggregateSubmissionRequestKey] = requestId
+  return next
+}
+
+function submissionErrorResponse(
+  error: string,
+  code: string,
+  status: number,
+  extra?: Record<string, unknown>
+) {
+  return new Response(JSON.stringify({ error, code, ...extra }), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  })
+}
+
+async function deleteSubmissionScreenshotTargets(
+  submissionId: string,
+  targets: string[],
+): Promise<string[]> {
+  const { deleteScreenshotVersion, deleteScreenshot } = await import("@/lib/services/storage")
+  const failed: string[] = []
+  for (const target of targets) {
+    let deleted = false
+    try {
+      if (target.startsWith("slot:")) {
+        const slot = Number(target.slice("slot:".length))
+        deleted = Number.isInteger(slot) && slot >= 0 && slot < MAX_SUBMISSION_SCREENSHOTS
+          ? await deleteScreenshot(submissionId, slot)
+          : false
+      } else {
+        deleted = await deleteScreenshotVersion(submissionId, target)
+      }
+    } catch {
+      deleted = false
+    }
+    if (!deleted) failed.push(target)
+  }
+  return failed
+}
+
+function validateSubmissionUrl(rawUrl: string | null | undefined): string | null | undefined {
+  if (rawUrl === null || rawUrl === undefined || !rawUrl.trim()) return null
+  const normalized = normalizeUrl(rawUrl)
+  if (!isAllowedHttpsUrl(normalized)) throw new Error("invalid_url")
+  return normalized
+}
 
 export const publicRoutes = new Elysia({ prefix: "/public" })
   .get("/health", () => ({
@@ -35,81 +192,6 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     detail: {
       summary: "Health check",
       description: "Returns service health status and current timestamp.",
-    },
-  })
-  .get("/integrations/:provider/callback", async ({ params, query }) => {
-    const { provider } = params
-    const code = query.code as string | undefined
-    const state = query.state as string | undefined
-    const error = query.error as string | undefined
-
-    if (error) {
-      const safeError = error
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;")
-      return new Response(
-        `<html><body><h1>Error</h1><p>${safeError}</p><script>window.close()</script></body></html>`,
-        { headers: { "Content-Type": "text/html" } }
-      )
-    }
-
-    if (!code || !state) {
-      return new Response(
-        `<html><body><h1>Error</h1><p>Missing code or state</p></body></html>`,
-        { headers: { "Content-Type": "text/html" } }
-      )
-    }
-
-    let stateData: { tenantId: string; userId: string }
-    try {
-      stateData = JSON.parse(Buffer.from(state, "base64url").toString())
-    } catch {
-      return new Response(
-        `<html><body><h1>Error</h1><p>Invalid state</p></body></html>`,
-        { headers: { "Content-Type": "text/html" } }
-      )
-    }
-
-    const providerType = provider as "gmail" | "google_calendar" | "notion" | "luma"
-    const config = getProviderConfig(providerType)
-
-    if (!config) {
-      return new Response(
-        `<html><body><h1>Error</h1><p>Provider not configured</p></body></html>`,
-        { headers: { "Content-Type": "text/html" } }
-      )
-    }
-
-    const tokens = await exchangeCodeForTokens(providerType, code)
-
-    if (!tokens) {
-      return new Response(
-        `<html><body><h1>Error</h1><p>Token exchange failed</p></body></html>`,
-        { headers: { "Content-Type": "text/html" } }
-      )
-    }
-
-    await saveIntegration({
-      tenantId: stateData.tenantId,
-      provider: providerType,
-      accountEmail: tokens.email,
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      expiresIn: tokens.expiresIn,
-      scopes: config.scopes,
-    })
-
-    return new Response(
-      `<html><body><h1>Success!</h1><p>${provider} connected successfully.</p><script>setTimeout(() => window.close(), 2000)</script></body></html>`,
-      { headers: { "Content-Type": "text/html" } }
-    )
-  }, {
-    detail: {
-      summary: "OAuth callback",
-      description: "Handles OAuth provider callback. Exchanges authorization code for tokens and saves the integration. Browser-only flow.",
     },
   })
   .get("/hackathons/:slug", async ({ params }) => {
@@ -235,9 +317,11 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     }
 
     let teamName: string | undefined
+    let userEmails: string[]
     try {
       const client = await clerkClient()
       const user = await client.users.getUser(userId)
+      userEmails = getVerifiedUserEmails(user)
       const displayName = user.firstName
         ? `${user.firstName}${user.lastName ? ` ${user.lastName}` : ""}`
         : user.username || user.emailAddresses?.[0]?.emailAddress?.split("@")[0]
@@ -246,26 +330,41 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       }
     } catch (err) {
       console.warn("Failed to fetch user for team name:", err)
+      return new Response(
+        JSON.stringify({ error: "We couldn't check your account. Please try again.", code: "account_check_failed" }),
+        { status: 503, headers: { "Content-Type": "application/json" } },
+      )
     }
 
-    const result = await registerForHackathon(hackathon.id, userId, teamName)
+    const { findPendingTeamInvitationForEmails } = await import("@/lib/services/team-invitations")
+    const pendingInvitation = await findPendingTeamInvitationForEmails(
+      hackathon.id,
+      userEmails,
+    )
+    if (pendingInvitation) {
+      return new Response(
+        JSON.stringify({
+          error: `You have an invite to join ${pendingInvitation.teamName}.`,
+          code: "pending_team_invitation",
+          inviteUrl: `/invite/${pendingInvitation.token}`,
+        }),
+        { status: 409, headers: { "Content-Type": "application/json" } },
+      )
+    }
+
+    if (expectedTermsHash) {
+      const termsFailure = await persistRequiredTermsAcceptance(hackathon.id, userId, expectedTermsHash)
+      if (termsFailure) return termsFailure
+    }
+
+    const result = await registerForHackathon(hackathon.id, userId, teamName, userEmails)
 
     if (!result.success) {
-      const statusCode = result.code === "already_registered" ? 409 : 400
+      const statusCode = ["already_registered", "pending_team_invitation"].includes(result.code) ? 409 : 400
       return new Response(
         JSON.stringify({ error: result.error, code: result.code }),
         { status: statusCode, headers: { "Content-Type": "application/json" } }
       )
-    }
-
-    let termsWarning: string | undefined
-    if (expectedTermsHash) {
-      try {
-        await recordTermsAcceptance(hackathon.id, userId, expectedTermsHash)
-      } catch (err) {
-        console.error("Failed to record terms acceptance:", err)
-        termsWarning = "terms_record_failed"
-      }
     }
 
     const { triggerWebhooks } = await import("@/lib/services/webhooks")
@@ -279,7 +378,6 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       success: true,
       participantId: result.participantId,
       teamId: result.teamId,
-      ...(termsWarning && { warning: termsWarning }),
     }
   }, {
     detail: {
@@ -356,7 +454,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         screenshotUrls: getSubmissionScreenshotUrls(s),
         status: s.status,
         createdAt: s.created_at,
-        submitter: s.submitter_name,
+        submitter: publicSubmitterName(hackathon, s.submitter_name),
       })),
     }
   }, {
@@ -366,16 +464,28 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     },
   })
   .get("/hackathons/:slug/presenter-views/:viewId", async ({ params }) => {
-    const hackathon = await getPublicHackathon(params.slug, { includeUnpublished: true })
+    if (!isValidUuid(params.viewId)) {
+      return new Response(
+        JSON.stringify({ error: "Presenter view not found", code: "presenter_view_not_found" }),
+        { status: 404, headers: { "Content-Type": "application/json" } }
+      )
+    }
+    const { getPresenterView, resolvePresenterSubmissions } = await import("@/lib/services/presenter-views")
+    const view = await getPresenterView(params.viewId)
+    if (!view) {
+      return new Response(
+        JSON.stringify({ error: "Presenter view not found", code: "presenter_view_not_found" }),
+        { status: 404, headers: { "Content-Type": "application/json" } }
+      )
+    }
+    const hackathon = await getPublicHackathon(params.slug)
     if (!hackathon) {
       return new Response(
         JSON.stringify({ error: "Hackathon not found", code: "hackathon_not_found" }),
         { status: 404, headers: { "Content-Type": "application/json" } }
       )
     }
-    const { getPresenterView, resolvePresenterSubmissions } = await import("@/lib/services/presenter-views")
-    const view = await getPresenterView(params.viewId)
-    if (!view || view.hackathon_id !== hackathon.id) {
+    if (view.hackathon_id !== hackathon.id) {
       return new Response(
         JSON.stringify({ error: "Presenter view not found", code: "presenter_view_not_found" }),
         { status: 404, headers: { "Content-Type": "application/json" } }
@@ -394,7 +504,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         demoVideoUrl: s.demo_video_url,
         screenshotUrl: s.screenshot_url,
         screenshotUrls: getSubmissionScreenshotUrls(s),
-        submitter: s.submitter_name,
+        submitter: publicSubmitterName(hackathon, s.submitter_name),
       })),
     }
   }, {
@@ -442,6 +552,9 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
 
       if (participant.teamStatus === "pending_approval") {
         return pendingTeamApprovalResponse(set)
+      }
+      if (participant.teamStatus === "disbanded") {
+        return submissionErrorResponse("Your team is no longer active", "team_not_active", 409)
       }
 
       const existing = await getExistingSubmission(
@@ -541,6 +654,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
 
       notifySubmissionMembers({
         hackathonId: hackathon.id,
+        submissionId: submission.id,
         participantId: participant.participantId,
         teamId: participant.teamId,
         projectTitle: body.title,
@@ -602,6 +716,9 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
 
       if (participant.teamStatus === "pending_approval") {
         return pendingTeamApprovalResponse(set)
+      }
+      if (participant.teamStatus === "disbanded") {
+        return submissionErrorResponse("Your team is no longer active", "team_not_active", 409)
       }
 
       const existing = await getExistingSubmission(
@@ -667,13 +784,17 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
           liveAppUrl: normalizedLiveAppUrl,
           demoVideoUrl: normalizedDemoVideoUrl,
           challengeIds: body.challengeIds,
+          expectedUpdatedAt: existing.updated_at,
         }
       )
 
       if (!submission) {
         return new Response(
-          JSON.stringify({ error: "Failed to update submission", code: "update_failed" }),
-          { status: 500, headers: { "Content-Type": "application/json" } }
+          JSON.stringify({
+            error: "This project changed in another tab. Refresh and try again.",
+            code: "stale_submission",
+          }),
+          { status: 409, headers: { "Content-Type": "application/json" } }
         )
       }
 
@@ -701,6 +822,372 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       }),
     }
   )
+  .post("/hackathons/:slug/submissions/complete", async ({ params, request, set }) => {
+    const { userId } = await auth()
+
+    if (!userId) {
+      return submissionErrorResponse("Sign in required", "not_authenticated", 401)
+    }
+
+    const hackathon = await getPublicHackathon(params.slug)
+    if (!hackathon) {
+      return submissionErrorResponse("Hackathon not found", "hackathon_not_found", 404)
+    }
+    if (hackathon.status !== "active") {
+      return submissionErrorResponse(
+        "Submissions are not currently open",
+        "submissions_closed",
+        400
+      )
+    }
+
+    const { getRegistrationInfo } = await import("@/lib/services/hackathons")
+    const registration = await getRegistrationInfo(hackathon.id, userId)
+    if (registration.participantRole !== "participant") {
+      return submissionErrorResponse(
+        "Only attendees can save a project",
+        "not_attendee",
+        403,
+      )
+    }
+
+    const participant = await getParticipantWithTeam(hackathon.id, userId)
+    if (!participant) {
+      return submissionErrorResponse(
+        "You must register before submitting",
+        "not_registered",
+        403
+      )
+    }
+    if (participant.teamStatus === "pending_approval") {
+      return pendingTeamApprovalResponse(set)
+    }
+    if (participant.teamStatus === "disbanded") {
+      return submissionErrorResponse("Your team is no longer active", "team_not_active", 409)
+    }
+
+    let formData: FormData
+    try {
+      formData = await request.formData()
+    } catch {
+      return submissionErrorResponse("Invalid project form", "invalid_form", 400)
+    }
+
+    const rawPayload = formData.get("payload")
+    if (typeof rawPayload !== "string") {
+      return submissionErrorResponse("Project details are required", "invalid_form", 400)
+    }
+
+    let payload: z.infer<typeof aggregateSubmissionPayloadSchema>
+    try {
+      payload = aggregateSubmissionPayloadSchema.parse(JSON.parse(rawPayload))
+    } catch {
+      return submissionErrorResponse("Check the project details and try again", "invalid_form", 400)
+    }
+
+    if (payload.challengeIds?.some((id) => !isValidUuid(id))) {
+      return submissionErrorResponse("Invalid challenge ID", "invalid_challenge_id", 400)
+    }
+
+    let githubUrl: string
+    let liveAppUrl: string | null | undefined
+    let demoVideoUrl: string | null | undefined
+    try {
+      githubUrl = validateSubmissionUrl(payload.githubUrl) as string
+      const github = new URL(githubUrl)
+      if (!["github.com", "www.github.com"].includes(github.hostname)) {
+        return submissionErrorResponse(
+          "GitHub URL must be from github.com",
+          "invalid_github_url",
+          400
+        )
+      }
+      liveAppUrl = validateSubmissionUrl(payload.liveAppUrl)
+      demoVideoUrl = validateSubmissionUrl(payload.demoVideoUrl)
+    } catch {
+      return submissionErrorResponse("Check the project links and try again", "invalid_url", 400)
+    }
+
+    const screenshotFiles = new Map<SubmissionScreenshotSlot, File>()
+    let screenshotBytes = 0
+    for (const [key, value] of formData.entries()) {
+      if (!key.startsWith("screenshot_")) continue
+      const slot = Number(key.slice("screenshot_".length))
+      if (
+        !Number.isInteger(slot) ||
+        slot < 0 ||
+        slot >= MAX_SUBMISSION_SCREENSHOTS ||
+        !isUploadedFile(value) ||
+        screenshotFiles.has(slot as SubmissionScreenshotSlot)
+      ) {
+        return submissionErrorResponse(
+          "Invalid screenshot slot",
+          "invalid_screenshot_slot",
+          400
+        )
+      }
+      if (!allowedSubmissionScreenshotTypes.has(value.type)) {
+        return submissionErrorResponse(
+          "Invalid file type. Use PNG, JPEG, or WebP",
+          "invalid_file_type",
+          400
+        )
+      }
+      screenshotBytes += value.size
+      if (screenshotBytes > MAX_SUBMISSION_SCREENSHOT_REQUEST_BYTES) {
+        return submissionErrorResponse(
+          "Screenshots must be 4MB or less in total",
+          "file_too_large",
+          400
+        )
+      }
+      screenshotFiles.set(slot as SubmissionScreenshotSlot, value)
+    }
+
+    const retainedSlotSet = new Set(payload.retainedScreenshotSlots)
+    for (const slot of screenshotFiles.keys()) {
+      if (retainedSlotSet.has(slot)) {
+        return submissionErrorResponse(
+          "A screenshot slot cannot be kept and replaced at the same time",
+          "invalid_screenshot_slot",
+          400
+        )
+      }
+    }
+
+    const existing = await getExistingSubmission(
+      hackathon.id,
+      participant.participantId,
+      participant.teamId
+    )
+    const existingScreenshots = existing ? getAggregateScreenshots(existing) : []
+    const existingSlotSet = new Set(existingScreenshots.map((screenshot) => screenshot.slot))
+    if ([...retainedSlotSet].some((slot) => !existingSlotSet.has(slot))) {
+      return submissionErrorResponse(
+        "A kept screenshot no longer exists",
+        "stale_screenshot",
+        409
+      )
+    }
+
+    const { uploadScreenshotVersion } = await import("@/lib/services/storage")
+
+    if (existing && getAggregateRequestId(existing.metadata) === payload.requestId) {
+      if (!(await syncSubmissionChallenges(existing.id, payload.challengeIds ?? []))) {
+        return submissionErrorResponse(
+          "Your project was saved, but its challenges still need to sync. Try again.",
+          "challenge_sync_failed",
+          503,
+        )
+      }
+      const cleanup = getAggregateCleanup(existing.metadata)
+      const failedCleanup = await deleteSubmissionScreenshotTargets(existing.id, cleanup)
+      return {
+        success: true,
+        submissionId: existing.id,
+        teamSizeWarning: null,
+        screenshots: existingScreenshots.map(({ slot, url }) => ({ slot, url })),
+        cleanupPending: failedCleanup.length > 0,
+      }
+    }
+
+    let teamSizeWarning: string | null = null
+    let teamMemberCount = 1
+    if (!existing) {
+      if (participant.teamId) {
+        teamMemberCount = await getTeamMemberCount(participant.teamId)
+        const warning = getTeamSizeWarning({
+          memberCount: teamMemberCount,
+          minTeamSize: hackathon.min_team_size,
+          allowSolo: hackathon.allow_solo,
+        })
+        if (warning) teamSizeWarning = warning.message
+      } else if (!hackathon.allow_solo) {
+        teamSizeWarning = `Solo participants are not allowed — this event requires teams of at least ${hackathon.min_team_size}.`
+      }
+    }
+
+    const submissionId = existing?.id ?? payload.requestId
+    const uploadAttemptId = crypto.randomUUID()
+    const stagedScreenshots: AggregateScreenshot[] = []
+    for (const [slot, file] of screenshotFiles) {
+      const expectedPath = `${submissionId}/versions/${uploadAttemptId}-${slot}.webp`
+      let uploadResult
+      try {
+        uploadResult = await uploadScreenshotVersion(
+          submissionId,
+          Buffer.from(await file.arrayBuffer()),
+          slot,
+          uploadAttemptId
+        )
+      } catch {
+        uploadResult = null
+      }
+      if (!uploadResult) {
+        await deleteSubmissionScreenshotTargets(
+          submissionId,
+          [
+            ...stagedScreenshots.flatMap((screenshot) => screenshot.path ? [screenshot.path] : []),
+            expectedPath,
+          ]
+        )
+        return submissionErrorResponse(
+          "Failed to upload screenshot",
+          "upload_failed",
+          500
+        )
+      }
+      stagedScreenshots.push({ slot, url: uploadResult.url, path: uploadResult.path })
+    }
+
+    const desiredScreenshots = [
+      ...existingScreenshots.filter((screenshot) => retainedSlotSet.has(screenshot.slot)),
+      ...stagedScreenshots,
+    ].sort((a, b) => a.slot - b.slot)
+    const priorCleanup = existing ? getAggregateCleanup(existing.metadata) : []
+    const newlyObsolete = existingScreenshots
+      .filter((screenshot) => !retainedSlotSet.has(screenshot.slot))
+      .map((screenshot) => screenshot.path ?? `slot:${screenshot.slot}`)
+    const desiredPaths = new Set(
+      desiredScreenshots.flatMap((screenshot) => screenshot.path ? [screenshot.path] : [])
+    )
+    const cleanupTargets = [...new Set([...priorCleanup, ...newlyObsolete])]
+      .filter((target) => !desiredPaths.has(target))
+    const baseMetadata = existing?.metadata ?? (
+      teamSizeWarning ? { teamSizeWarning, teamMemberCount } : {}
+    )
+    const aggregateMetadata = buildAggregateScreenshotMetadata(
+      baseMetadata,
+      desiredScreenshots,
+      cleanupTargets,
+      payload.requestId
+    )
+    const saveInput = {
+      title: payload.title,
+      description: payload.description,
+      githubUrl,
+      liveAppUrl,
+      demoVideoUrl,
+      screenshotUrl: desiredScreenshots[0]?.url ?? null,
+      metadata: aggregateMetadata,
+      challengeIds: payload.challengeIds,
+      ...(existing ? { expectedUpdatedAt: existing.updated_at } : {}),
+    }
+    let savedSubmission = null
+    try {
+      savedSubmission = existing
+        ? await updateSubmission(existing.id, participant.participantId, participant.teamId, saveInput)
+        : await createSubmission(
+            hackathon.id,
+            participant.participantId,
+            participant.teamId,
+            {
+              submissionId,
+              ...saveInput,
+            }
+          )
+    } catch {
+      savedSubmission = null
+    }
+
+    if (!savedSubmission) {
+      const replayed = await getExistingSubmission(
+        hackathon.id,
+        participant.participantId,
+        participant.teamId
+      )
+      if (replayed && getAggregateRequestId(replayed.metadata) === payload.requestId) {
+        if (!(await syncSubmissionChallenges(replayed.id, payload.challengeIds ?? []))) {
+          return submissionErrorResponse(
+            "Your project was saved, but its challenges still need to sync. Try again.",
+            "challenge_sync_failed",
+            503,
+          )
+        }
+        const replayedScreenshots = getAggregateScreenshots(replayed)
+        const replayedPaths = new Set(
+          replayedScreenshots.flatMap((screenshot) => screenshot.path ? [screenshot.path] : [])
+        )
+        await deleteSubmissionScreenshotTargets(
+          submissionId,
+          stagedScreenshots.flatMap((screenshot) =>
+            screenshot.path && !replayedPaths.has(screenshot.path) ? [screenshot.path] : []
+          )
+        )
+        const replayCleanup = getAggregateCleanup(replayed.metadata)
+        const failedReplayCleanup = await deleteSubmissionScreenshotTargets(replayed.id, replayCleanup)
+        return {
+          success: true,
+          submissionId: replayed.id,
+          teamSizeWarning: null,
+          screenshots: replayedScreenshots.map(({ slot, url }) => ({ slot, url })),
+          cleanupPending: failedReplayCleanup.length > 0,
+        }
+      }
+      await deleteSubmissionScreenshotTargets(
+        submissionId,
+        stagedScreenshots.flatMap((screenshot) =>
+          screenshot.path && !getAggregateScreenshots(replayed ?? {})
+            .some((current) => current.path === screenshot.path)
+            ? [screenshot.path]
+            : []
+        )
+      )
+      if (replayed) {
+        const currentScreenshots = getAggregateScreenshots(replayed)
+        return submissionErrorResponse(
+          "This project changed in another tab. Review the latest version and try again.",
+          "stale_submission",
+          409,
+          { screenshots: currentScreenshots.map(({ slot, url }) => ({ slot, url })) },
+        )
+      }
+      return submissionErrorResponse(
+        existing ? "Failed to update submission" : "Failed to create submission",
+        existing ? "update_failed" : "create_failed",
+        500
+      )
+    }
+
+    const failedCleanup = await deleteSubmissionScreenshotTargets(submissionId, cleanupTargets)
+
+    const { triggerWebhooks } = await import("@/lib/services/webhooks")
+    triggerWebhooks(
+      hackathon.tenant_id,
+      existing ? "submission.updated" : "submission.created",
+      {
+        event: existing ? "submission.updated" : "submission.created",
+        timestamp: new Date().toISOString(),
+        data: {
+          hackathonId: hackathon.id,
+          submissionId: savedSubmission.id,
+          ...(existing ? {} : { title: payload.title }),
+        },
+      }
+    ).catch(console.error)
+    if (!existing) {
+      notifySubmissionMembers({
+        hackathonId: hackathon.id,
+        submissionId: savedSubmission.id,
+        participantId: participant.participantId,
+        teamId: participant.teamId,
+        projectTitle: payload.title,
+      }).catch(console.error)
+    }
+
+    return {
+      success: true,
+      submissionId: savedSubmission.id,
+      teamSizeWarning,
+      screenshots: desiredScreenshots.map(({ slot, url }) => ({ slot, url })),
+      cleanupPending: failedCleanup.length > 0,
+    }
+  }, {
+    detail: {
+      summary: "Complete submission",
+      description: "Creates or updates a project and its screenshots in one request.",
+    },
+  })
   .post("/hackathons/:slug/submissions/screenshot", async ({ params, request, set }) => {
     const { userId } = await auth()
 
@@ -738,6 +1225,9 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
 
     if (participant.teamStatus === "pending_approval") {
       return pendingTeamApprovalResponse(set)
+    }
+    if (participant.teamStatus === "disbanded") {
+      return submissionErrorResponse("Your team is no longer active", "team_not_active", 409)
     }
 
     const existing = await getExistingSubmission(
@@ -780,16 +1270,22 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
-    if (file.size > 10 * 1024 * 1024) {
+    if (file.size > MAX_SUBMISSION_SCREENSHOT_REQUEST_BYTES) {
       return new Response(
-        JSON.stringify({ error: "File too large (max 10MB)", code: "file_too_large" }),
+        JSON.stringify({ error: "File too large (max 4MB)", code: "file_too_large" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       )
     }
 
-    const { uploadScreenshot } = await import("@/lib/services/storage")
+    const { uploadScreenshotVersion } = await import("@/lib/services/storage")
     const buffer = Buffer.from(await file.arrayBuffer())
-    const uploadResult = await uploadScreenshot(existing.id, buffer, slot)
+    const uploadAttemptId = crypto.randomUUID()
+    const uploadResult = await uploadScreenshotVersion(
+      existing.id,
+      buffer,
+      slot as SubmissionScreenshotSlot,
+      uploadAttemptId,
+    )
 
     if (!uploadResult) {
       return new Response(
@@ -798,34 +1294,52 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
-    const screenshots = [
-      ...getSubmissionScreenshots(existing).filter((screenshot) => screenshot.slot !== slot),
-      { slot: slot as SubmissionScreenshotSlot, url: uploadResult.url },
+    const existingScreenshots = getAggregateScreenshots(existing)
+    const replacedScreenshots = existingScreenshots.filter((screenshot) => screenshot.slot === slot)
+    const screenshots: AggregateScreenshot[] = [
+      ...existingScreenshots.filter((screenshot) => screenshot.slot !== slot),
+      { slot: slot as SubmissionScreenshotSlot, url: uploadResult.url, path: uploadResult.path },
     ].sort((a, b) => a.slot - b.slot)
-    const metadata = buildSubmissionScreenshotMetadata(existing.metadata, screenshots)
+    const cleanupTargets = [...new Set([
+      ...getAggregateCleanup(existing.metadata),
+      ...replacedScreenshots.map((screenshot) => screenshot.path ?? `slot:${screenshot.slot}`),
+    ])].filter((target) => target !== uploadResult.path)
+    const metadata = buildAggregateScreenshotMetadata(
+      existing.metadata,
+      screenshots,
+      cleanupTargets,
+    )
     const updated = await updateSubmission(
       existing.id,
       participant.participantId,
       participant.teamId,
-      { screenshotUrl: screenshots[0]?.url ?? null, metadata }
+      {
+        screenshotUrl: screenshots[0]?.url ?? null,
+        metadata,
+        expectedUpdatedAt: existing.updated_at,
+      }
     )
 
     if (!updated) {
-      return new Response(
-        JSON.stringify({ error: "Failed to save screenshot URL", code: "update_failed" }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
+      await deleteSubmissionScreenshotTargets(existing.id, [uploadResult.path])
+      return submissionErrorResponse(
+        "This project changed in another tab. Refresh and try again.",
+        "stale_submission",
+        409,
       )
     }
+    const failedCleanup = await deleteSubmissionScreenshotTargets(existing.id, cleanupTargets)
 
     return {
       success: true,
       screenshotUrl: uploadResult.url,
-      screenshotUrls: updated ? getSubmissionScreenshotUrls(updated) : screenshots.map((s) => s.url),
+      screenshotUrls: getSubmissionScreenshotUrls(updated),
+      cleanupPending: failedCleanup.length > 0,
     }
   }, {
     detail: {
       summary: "Upload submission screenshot",
-      description: "Uploads a screenshot image for the user's submission. Accepts PNG, JPEG, or WebP (max 10MB).",
+      description: "Uploads a screenshot image for the user's submission. Accepts PNG, JPEG, or WebP (max 4MB).",
     },
   })
   .delete("/hackathons/:slug/submissions/screenshot", async ({ params, request, set }) => {
@@ -866,6 +1380,9 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     if (participant.teamStatus === "pending_approval") {
       return pendingTeamApprovalResponse(set)
     }
+    if (participant.teamStatus === "disbanded") {
+      return submissionErrorResponse("Your team is no longer active", "team_not_active", 409)
+    }
 
     const existing = await getExistingSubmission(
       hackathon.id,
@@ -893,32 +1410,48 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
-    const { deleteScreenshot } = await import("@/lib/services/storage")
-    if (slot === null) {
-      await deleteScreenshot(existing.id)
-    } else {
-      await deleteScreenshot(existing.id, slot)
-    }
+    const existingScreenshots = getAggregateScreenshots(existing)
+    const removedScreenshots = slot === null
+      ? existingScreenshots
+      : existingScreenshots.filter((screenshot) => screenshot.slot === slot)
     const screenshots = slot === null
       ? []
-      : getSubmissionScreenshots(existing).filter((screenshot) => screenshot.slot !== slot)
-    const metadata = buildSubmissionScreenshotMetadata(existing.metadata, screenshots)
+      : existingScreenshots.filter((screenshot) => screenshot.slot !== slot)
+    const cleanupTargets = [...new Set([
+      ...getAggregateCleanup(existing.metadata),
+      ...removedScreenshots.map((screenshot) => screenshot.path ?? `slot:${screenshot.slot}`),
+    ])]
+    const metadata = buildAggregateScreenshotMetadata(
+      existing.metadata,
+      screenshots,
+      cleanupTargets,
+    )
 
     const updated = await updateSubmission(
       existing.id,
       participant.participantId,
       participant.teamId,
-      { screenshotUrl: screenshots[0]?.url ?? null, metadata }
+      {
+        screenshotUrl: screenshots[0]?.url ?? null,
+        metadata,
+        expectedUpdatedAt: existing.updated_at,
+      }
     )
 
     if (!updated) {
-      return new Response(
-        JSON.stringify({ error: "Failed to save screenshot URL", code: "update_failed" }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
+      return submissionErrorResponse(
+        "This project changed in another tab. Refresh and try again.",
+        "stale_submission",
+        409,
       )
     }
 
-    return { success: true, screenshotUrls: getSubmissionScreenshotUrls(updated) }
+    const failedCleanup = await deleteSubmissionScreenshotTargets(existing.id, cleanupTargets)
+    return {
+      success: true,
+      screenshotUrls: getSubmissionScreenshotUrls(updated),
+      cleanupPending: failedCleanup.length > 0,
+    }
   }, {
     detail: {
       summary: "Delete submission screenshot",
@@ -1094,17 +1627,33 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
 
     const client = await clerkClient()
     const user = await client.users.getUser(userId)
-    const userEmail = user.primaryEmailAddress?.emailAddress
+    const { getVerifiedUserEmails } = await import("@/lib/auth/verified-emails")
+    const userEmails = getVerifiedUserEmails(user)
 
-    if (!userEmail) {
+    if (userEmails.length === 0) {
       return new Response(
-        JSON.stringify({ error: "No email address found", code: "no_email" }),
+        JSON.stringify({ error: "No verified email address found", code: "no_email" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       )
     }
 
-    const { acceptTeamInvitation, getInvitationByToken } = await import("@/lib/services/team-invitations")
+    const {
+      acceptTeamInvitation,
+      cancelOtherPendingTeamInvitations,
+      getInvitationByToken,
+    } = await import("@/lib/services/team-invitations")
     const invitation = await getInvitationByToken(params.token)
+    const invitationEmail = invitation?.email.trim().toLowerCase() ?? null
+    const matchingEmail = invitationEmail && userEmails.includes(invitationEmail)
+      ? invitationEmail
+      : null
+
+    if (invitation && !matchingEmail) {
+      return new Response(
+        JSON.stringify({ error: "Sign in with the email that received this invite.", code: "email_mismatch" }),
+        { status: 403, headers: { "Content-Type": "application/json" } },
+      )
+    }
 
     const expectedTermsHash = invitation
       ? await currentTermsHash({
@@ -1119,7 +1668,16 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
-    const result = await acceptTeamInvitation(params.token, userId, userEmail)
+    if (invitation && expectedTermsHash) {
+      const termsFailure = await persistRequiredTermsAcceptance(
+        invitation.hackathon.id,
+        userId,
+        expectedTermsHash
+      )
+      if (termsFailure) return termsFailure
+    }
+
+    const result = await acceptTeamInvitation(params.token, userId, matchingEmail ?? userEmails[0])
 
     if (!result.success) {
       const statusCode = result.code === "not_found" ? 404 : 400
@@ -1129,19 +1687,14 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
-    let termsWarning: string | undefined
-    if (invitation && expectedTermsHash) {
-      try {
-        await recordTermsAcceptance(invitation.hackathon.id, userId, expectedTermsHash)
-      } catch (err) {
-        console.error("Failed to record terms acceptance:", err)
-        termsWarning = "terms_record_failed"
-      }
-    }
-
     if (invitation) {
+      await cancelOtherPendingTeamInvitations(
+        result.hackathonId,
+        userEmails,
+        invitation.id,
+      )
       const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
-      cancelRemindersForEntity("team_invitation", invitation.id).catch((err) =>
+      await cancelRemindersForEntity("team_invitation", invitation.id).catch((err) =>
         console.error(`Failed to cancel reminders for team_invitation ${invitation.id}:`, err)
       )
     }
@@ -1153,7 +1706,6 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       success: true,
       teamId: result.teamId,
       hackathonSlug: hackathon?.slug || null,
-      ...(termsWarning && { warning: termsWarning }),
     }
   }, {
     detail: {
@@ -1176,9 +1728,9 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
 
     const client = await clerkClient()
     const user = await client.users.getUser(userId)
-    const userEmail = user.primaryEmailAddress?.emailAddress
+    const userEmails = getVerifiedUserEmails(user)
 
-    if (!userEmail) {
+    if (userEmails.length === 0) {
       return new Response(
         JSON.stringify({ error: "No email address found", code: "no_email" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
@@ -1186,7 +1738,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     }
 
     const { declineTeamInvitation } = await import("@/lib/services/team-invitations")
-    const result = await declineTeamInvitation(params.token, userEmail)
+    const result = await declineTeamInvitation(params.token, userEmails)
 
     if (!result.success) {
       const statusCode = result.code === "not_found" ? 404 : 403
@@ -1309,6 +1861,22 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
+    if (hackathon.status !== "judging" && hackathon.status !== "active") {
+      return new Response(
+        JSON.stringify({ error: "Hackathon is not in judging phase", code: "not_judging" }),
+        { status: 409, headers: { "Content-Type": "application/json" } }
+      )
+    }
+
+    const { getRegistrationInfo } = await import("@/lib/services/hackathons")
+    const registration = await getRegistrationInfo(hackathon.id, userId)
+    if (registration.participantRole !== "judge") {
+      return new Response(
+        JSON.stringify({ error: "Not a judge", code: "not_judge" }),
+        { status: 403, headers: { "Content-Type": "application/json" } }
+      )
+    }
+
     const { getJudgeAssignments } = await import("@/lib/services/judging")
     const assignments = await getJudgeAssignments(hackathon.id, userId)
 
@@ -1331,7 +1899,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         prizeName: a.prizeName,
         judgingStyle: a.judgingStyle,
         maxPicks: a.maxPicks,
-        selfJudging: a.selfJudging,
+        selfJudging: anonymize ? false : a.selfJudging,
         assignmentKind: a.assignmentKind,
       })),
     }
@@ -1377,7 +1945,9 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     }
 
     const { getJudgeSummary } = await import("@/lib/services/judging")
-    const summary = await getJudgeSummary(hackathon.id, participant.id)
+    const summary = await getJudgeSummary(hackathon.id, participant.id, {
+      anonymousJudging: hackathon.anonymous_judging,
+    })
     return summary
   }, {
     detail: {
@@ -1398,7 +1968,30 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
-      const { saveNotes } = await import("@/lib/services/judging")
+      if (!isValidUuid(params.assignmentId)) {
+        return new Response(
+          JSON.stringify({ error: "Assignment not found", code: "not_found" }),
+          { status: 404, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
+      const hackathon = await getPublicHackathon(params.slug)
+      if (!hackathon) {
+        return new Response(
+          JSON.stringify({ error: "Hackathon not found", code: "not_found" }),
+          { status: 404, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
+      const { assertAssignmentWritable, saveNotes } = await import("@/lib/services/judging")
+      const guard = await assertAssignmentWritable(params.assignmentId, userId, hackathon)
+      if (!guard.ok) {
+        return new Response(
+          JSON.stringify({ error: guard.error, code: guard.code }),
+          { status: guard.status, headers: { "Content-Type": "application/json" } }
+        )
+      }
+
       const success = await saveNotes(params.assignmentId, userId, (body as { notes: string }).notes)
 
       if (!success) {
@@ -1413,8 +2006,11 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     {
       detail: {
         summary: "Save judge notes",
-        description: "Saves private notes for a judging assignment.",
+        description: "Saves private notes only while this judge's assignment is writable.",
       },
+      body: t.Object({
+        notes: t.String({ maxLength: 2_000, description: "Private notes for this judging assignment" }),
+      }),
     }
   )
   .get(
@@ -2025,6 +2621,15 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
+    if (judgeInvitation && expectedTermsHash) {
+      const termsFailure = await persistRequiredTermsAcceptance(
+        judgeInvitation.hackathon.id,
+        userId,
+        expectedTermsHash
+      )
+      if (termsFailure) return termsFailure
+    }
+
     const result = await acceptJudgeInvitation(params.token, userId, userEmails)
 
     if (!result.success) {
@@ -2033,16 +2638,6 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         JSON.stringify({ error: result.error, code: result.code }),
         { status: statusCode, headers: { "Content-Type": "application/json" } }
       )
-    }
-
-    let termsWarning: string | undefined
-    if (judgeInvitation && expectedTermsHash) {
-      try {
-        await recordTermsAcceptance(judgeInvitation.hackathon.id, userId, expectedTermsHash)
-      } catch (err) {
-        console.error("Failed to record terms acceptance:", err)
-        termsWarning = "terms_record_failed"
-      }
     }
 
     if (judgeInvitation) {
@@ -2055,7 +2650,6 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     return {
       success: true,
       hackathonSlug: result.hackathonSlug,
-      ...(termsWarning && { warning: termsWarning }),
     }
   }, {
     detail: {
@@ -2131,7 +2725,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       results: results.map((r) => ({
         rank: r.rank,
         submissionTitle: r.submissionTitle,
-        teamName: r.teamName,
+        teamName: publicTeamName(hackathon, r.teamName),
         weightedScore: r.weighted_score,
         judgeCount: r.judge_count,
         prizes: r.prizes,
@@ -2185,7 +2779,9 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     const { listPrizeAssignments } = await import("@/lib/services/prizes")
     const [prizes, assignments] = await Promise.all([
       listPrizes(hackathon.id),
-      listPrizeAssignments(hackathon.id),
+      hackathon.results_published_at
+        ? listPrizeAssignments(hackathon.id)
+        : Promise.resolve([]),
     ])
 
     return {
@@ -2199,7 +2795,10 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         winner: assignments.find((a) => a.prize_id === p.id)
           ? {
               submissionTitle: assignments.find((a) => a.prize_id === p.id)!.submissionTitle,
-              teamName: assignments.find((a) => a.prize_id === p.id)!.teamName,
+              teamName: publicTeamName(
+                hackathon,
+                assignments.find((a) => a.prize_id === p.id)!.teamName,
+              ),
             }
           : null,
       })),
@@ -2207,7 +2806,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
   }, {
     detail: {
       summary: "List prizes",
-      description: "Returns prizes for a hackathon with winner info for completed events.",
+      description: "Returns prizes and adds winner info after results are published.",
     },
   })
   .post("/hackathons/:slug/vote", async ({ params, body }) => {

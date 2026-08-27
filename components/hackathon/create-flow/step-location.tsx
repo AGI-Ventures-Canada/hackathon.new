@@ -41,7 +41,7 @@ export function StepLocation({ locationType, locationName, locationUrl, onChange
             onChange({
               locationType: "in_person",
               locationName: locationName,
-              locationUrl: null,
+              locationUrl,
             })
           }
         >
@@ -55,7 +55,7 @@ export function StepLocation({ locationType, locationName, locationUrl, onChange
           onClick={() =>
             onChange({
               locationType: "virtual",
-              locationName: null,
+              locationName,
               locationUrl: locationUrl,
             })
           }
@@ -90,6 +90,7 @@ export function StepLocation({ locationType, locationName, locationUrl, onChange
               onChange({ locationType, locationName: val || null, locationUrl })
             }
             placeholder="Search for a venue..."
+            maxLength={240}
           />
         </Field>
       )}
@@ -102,6 +103,7 @@ export function StepLocation({ locationType, locationName, locationUrl, onChange
             {...urlInputProps}
             placeholder="zoom.us/j/123456789"
             value={locationUrl ?? ""}
+            maxLength={2_048}
             onChange={(e) =>
               onChange({ locationType, locationName, locationUrl: e.target.value || null })
             }

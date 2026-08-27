@@ -6,9 +6,15 @@ import {
   buildEventUrl,
   getReplyToAddress,
   buildMailtoUnsubscribeHeaders,
+  paceBulkSend,
   shortHackathonName,
 } from "./utils"
 import OrganizerClaimNotificationEmail from "@/emails/organizer-claim-notification"
+import { createHash } from "node:crypto"
+
+function recipientFingerprint(email: string): string {
+  return createHash("sha256").update(email.trim().toLowerCase()).digest("hex").slice(0, 24)
+}
 
 export async function sendOrganizerClaimNotification(params: {
   prizeName: string
@@ -17,6 +23,7 @@ export async function sendOrganizerClaimNotification(params: {
   winnerName: string
   hackathonId: string
   prizeValue?: string | null
+  fulfillmentId?: string
 }): Promise<number> {
   const { prizeName, hackathonName, hackathonSlug, winnerName, hackathonId, prizeValue } = params
   const { supabase: getSupabase } = await import("@/lib/db/client")
@@ -63,7 +70,9 @@ export async function sendOrganizerClaimNotification(params: {
   const tag = sanitizeTag(hackathonName)
 
   let sent = 0
-  for (const email of emails) {
+  for (let index = 0; index < emails.length; index += 1) {
+    const email = emails[index]
+    await paceBulkSend(index)
     const result = await sendEmail({
       to: email,
       subject: `Prize claimed: ${prizeName} — ${shortHackathonName(hackathonName)}`,
@@ -75,6 +84,9 @@ export async function sendOrganizerClaimNotification(params: {
         { name: "type", value: "organizer_claim_notification" },
         { name: "hackathon", value: tag },
       ],
+      idempotencyKey: params.fulfillmentId
+        ? `organizer-claim/${params.fulfillmentId}/${recipientFingerprint(email)}`
+        : undefined,
     })
     if (result) sent++
   }

@@ -6,7 +6,7 @@ Automated, deadline-aware reminder emails for invitations and hackathon events. 
 
 1. **Something with a deadline gets created** (team invite, judge invite, hackathon going live)
 2. **Reminders are auto-scheduled** based on how far away the deadline is
-3. **A cron job runs every 15 minutes**, claims pending reminders atomically, validates the source entity still needs a reminder, and sends the email
+3. **A cron job runs every 15 minutes**, loads a bounded pending batch, validates the source entity still needs a reminder, and sends the email with a stable idempotency key
 4. **Reminders cancel themselves** when the entity is resolved (invite accepted, hackathon completed, dates changed)
 
 ## Scheduling tiers
@@ -48,14 +48,15 @@ Separate system using the `post_event_reminders` table. Scheduled after results 
 
 The cron endpoint (`GET /api/cron/reminders`) calls `processPendingReminders()` which:
 
-1. Atomically claims pending reminders: `UPDATE ... SET sent_at = now() WHERE sent_at IS NULL AND fail_count < 3 RETURNING *`
+1. Loads pending reminders where `sent_at` and `cancelled_at` are null
 2. Validates metadata fields before dispatching (throws on missing required fields)
 3. Validates each reminder's source entity (is the invite still pending? is the hackathon still active?)
 4. Dispatches the appropriate email via dynamic import
-5. On failure: reverts `sent_at` to NULL, increments `fail_count`, records `last_error`
-6. Returns `{ processed, sent, skipped, errors }`
+5. Marks `sent_at` only after every provider call is accepted
+6. On failure: leaves `sent_at` null, increments `fail_count`, and records `last_error`
+7. Returns `{ processed, sent, skipped, errors }`
 
-The atomic claim pattern prevents double-sends if cron fires overlap. Failed reminders are retried on the next cron run, up to 3 attempts. After 3 failures, the reminder is permanently skipped (query for `fail_count >= 3` to find them).
+Overlapping cron runs reuse the same per-reminder and per-recipient provider idempotency keys. Failed or uncertain deliveries stay pending and retry on the next run, up to 3 dispatch attempts. Database query and completion-write failures return a cron error instead of reporting success.
 
 ## Cancellation triggers
 
@@ -85,7 +86,7 @@ The atomic claim pattern prevents double-sends if cron fires overlap. Failed rem
 
 | Table | Purpose |
 |-------|---------|
-| `scheduled_reminders` | Smart reminders (invitations + pre-event). Atomic claim via `sent_at`, retry via `fail_count`/`last_error` |
+| `scheduled_reminders` | Smart reminders (invitations + pre-event). Completion via `sent_at`, retry via `fail_count`/`last_error` |
 | `post_event_reminders` | Post-event reminders (prize claims, fulfillment, feedback) |
 | `team_invitations.reminded_at` | Tracks manual remind timestamp |
 | `judge_invitations.reminded_at` | Tracks manual remind timestamp |

@@ -27,7 +27,7 @@ describe("Post-Event Reminder Content Builders", () => {
     it("builds content with correct subject and CTA", () => {
       const content = buildPrizeClaimReminderContent("Hack Day", "hack-day")
       expect(content.subject).toContain("Hack Day")
-      expect(content.heading).toBe("Don't Forget Your Prize!")
+      expect(content.heading).toBe("Your prize is waiting")
       expect(content.ctaUrl).toBe("https://test.hackathon.new/e/hack-day")
     })
   })
@@ -36,9 +36,9 @@ describe("Post-Event Reminder Content Builders", () => {
     it("builds urgent follow-up content", () => {
       const content = buildPrizeClaimFollowupContent("Hack Day", "hack-day")
       expect(content.subject).toContain("still waiting")
-      expect(content.heading).toBe("Last Call for Your Prize!")
+      expect(content.heading).toBe("Your prize is still waiting")
       expect(content.body).toContain("unclaimed")
-      expect(content.ctaLabel).toBe("Claim Your Prize")
+      expect(content.ctaLabel).toBe("View Results")
     })
   })
 
@@ -51,10 +51,10 @@ describe("Post-Event Reminder Content Builders", () => {
         "Best Demo (Cool Project), API Credits (Widget)"
       )
       expect(content.subject).toContain("2 winners unresponsive")
-      expect(content.heading).toBe("Winners Need Follow-Up")
+      expect(content.heading).toBe("Winners need a follow-up")
       expect(content.body).toContain("Best Demo (Cool Project)")
       expect(content.ctaLabel).toBe("Review Fulfillment")
-      expect(content.ctaUrl).toContain("fulfillment")
+      expect(content.ctaUrl).toContain("post-event")
     })
 
     it("uses singular when only one winner", () => {

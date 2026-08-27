@@ -1,7 +1,7 @@
-import { Text, Section } from "@react-email/components"
+import { Text } from "@react-email/components"
 import { OatmealLayout } from "./_components/oatmeal-layout"
 import { InfoBox } from "./_components/info-box"
-import { colors, fontSize, spacing, monoFontFamily } from "./_components/constants"
+import { fontSize, spacing, monoFontFamily } from "./_components/constants"
 
 interface AgentNotificationEmailProps {
   agentName: string
@@ -49,26 +49,7 @@ export default function AgentNotificationEmail({
       </Text>
 
       {type === "completed" && output && (
-        <Section
-          style={{
-            background: colors.infoBoxBg,
-            padding: `${spacing.md} ${spacing.lg}`,
-            marginBottom: spacing.lg,
-            overflowX: "auto" as const,
-            borderRadius: "8px",
-            borderLeft: `3px solid ${colors.accent}`,
-          }}
-        >
-          <Text
-            style={{
-              margin: "0 0 8px 0",
-              fontSize: fontSize.xs,
-              color: colors.textSecondary,
-              fontWeight: 600,
-            }}
-          >
-            Output
-          </Text>
+        <InfoBox label="Output">
           <pre
             style={{
               margin: "0",
@@ -80,30 +61,11 @@ export default function AgentNotificationEmail({
           >
             {output}
           </pre>
-        </Section>
+        </InfoBox>
       )}
 
       {type === "failed" && error && (
-        <Section
-          style={{
-            background: colors.infoBoxBg,
-            padding: `${spacing.md} ${spacing.lg}`,
-            marginBottom: spacing.lg,
-            overflowX: "auto" as const,
-            borderRadius: "8px",
-            borderLeft: `3px solid ${colors.accent}`,
-          }}
-        >
-          <Text
-            style={{
-              margin: "0 0 8px 0",
-              fontSize: fontSize.xs,
-              color: colors.textSecondary,
-              fontWeight: 600,
-            }}
-          >
-            Error
-          </Text>
+        <InfoBox label="Error">
           <pre
             style={{
               margin: "0",
@@ -115,7 +77,7 @@ export default function AgentNotificationEmail({
           >
             {error}
           </pre>
-        </Section>
+        </InfoBox>
       )}
     </OatmealLayout>
   )

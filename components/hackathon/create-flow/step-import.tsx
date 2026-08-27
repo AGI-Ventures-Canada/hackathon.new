@@ -4,12 +4,14 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { Label } from "@/components/ui/label"
 import { ArrowRight, Globe, Loader2, PenLine } from "lucide-react"
-import { normalizeUrl } from "@/lib/utils/url"
+import { normalizeImportUrl } from "@/lib/utils/url"
 
 interface StepImportProps {
   onSkipToScratch: () => void
   onModeChange?: (mode: "choose" | "import") => void
+  savedDraftName?: string | null
 }
 
 function looksLikeUrl(input: string): boolean {
@@ -18,7 +20,11 @@ function looksLikeUrl(input: string): boolean {
   return /^(https?:\/\/)?[\w.-]+\.\w{2,}(\/|$)/i.test(trimmed)
 }
 
-export function StepImport({ onSkipToScratch, onModeChange }: StepImportProps) {
+export function StepImport({
+  onSkipToScratch,
+  onModeChange,
+  savedDraftName,
+}: StepImportProps) {
   const router = useRouter()
   const [mode, _setMode] = useState<"choose" | "import">("choose")
 
@@ -31,6 +37,8 @@ export function StepImport({ onSkipToScratch, onModeChange }: StepImportProps) {
   const [error, setError] = useState<string | null>(null)
 
   function handleImport() {
+    if (loading) return
+
     const trimmed = url.trim()
     if (!trimmed) return
 
@@ -39,9 +47,14 @@ export function StepImport({ onSkipToScratch, onModeChange }: StepImportProps) {
       return
     }
 
+    const normalized = normalizeImportUrl(trimmed)
+    if (!normalized) {
+      setError("Use a public HTTPS link with 2,048 characters or fewer.")
+      return
+    }
+
     setLoading(true)
     setError(null)
-    const normalized = normalizeUrl(trimmed)
     router.push(`/import?url=${encodeURIComponent(normalized)}`)
   }
 
@@ -58,47 +71,54 @@ export function StepImport({ onSkipToScratch, onModeChange }: StepImportProps) {
         </div>
 
         <div className="space-y-3">
-          <div className="flex gap-2">
-            <Input
-              type="text"
-              inputMode="url"
-              placeholder="luma.com/your-event"
-              value={url}
-              onChange={(e) => {
-                setUrl(e.target.value)
-                if (error) setError(null)
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && url.trim()) {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  handleImport()
-                }
-              }}
-              className="h-14 text-lg"
-              autoFocus
-              autoComplete="off"
-              autoCapitalize="off"
-              spellCheck={false}
-              data-1p-ignore
-              data-lpignore="true"
-              data-form-type="other"
-            />
-            {url.trim() && (
-              <Button
-                type="button"
-                size="lg"
-                onClick={handleImport}
+          <div className="space-y-2">
+            <Label htmlFor="event-import-url">Event page URL</Label>
+            <div className="flex gap-2">
+              <Input
+                id="event-import-url"
+                type="text"
+                inputMode="url"
+                placeholder="luma.com/your-event"
+                value={url}
+                onChange={(e) => {
+                  setUrl(e.target.value)
+                  if (error) setError(null)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && url.trim()) {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    handleImport()
+                  }
+                }}
+                className="h-14 text-lg"
+                autoFocus
+                maxLength={2048}
+                autoComplete="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                data-1p-ignore
+                data-lpignore="true"
+                data-form-type="other"
                 disabled={loading}
-                className="h-14 px-4"
-              >
-                {loading ? (
-                  <Loader2 className="size-5 animate-spin" />
-                ) : (
-                  <ArrowRight className="size-5" />
-                )}
-              </Button>
-            )}
+              />
+              {url.trim() && (
+                <Button
+                  type="button"
+                  size="lg"
+                  onClick={handleImport}
+                  disabled={loading}
+                  aria-label={loading ? "Importing event" : "Import event"}
+                  className="h-14 px-4"
+                >
+                  {loading ? (
+                    <Loader2 className="size-5 animate-spin" />
+                  ) : (
+                    <ArrowRight className="size-5" />
+                  )}
+                </Button>
+              )}
+            </div>
           </div>
           {error && (
             <p className="text-sm text-destructive">{error}</p>
@@ -115,7 +135,9 @@ export function StepImport({ onSkipToScratch, onModeChange }: StepImportProps) {
           Create a hackathon
         </h1>
         <p className="text-muted-foreground">
-          Start fresh or import from an existing event page.
+          {savedDraftName
+            ? "Your saved draft is ready. Keep editing or import another event."
+            : "Start fresh or import from an existing event page."}
         </p>
       </div>
 
@@ -127,9 +149,11 @@ export function StepImport({ onSkipToScratch, onModeChange }: StepImportProps) {
         >
           <PenLine className="size-6 text-muted-foreground" />
           <div>
-            <div className="font-medium">Start from scratch</div>
+            <div className="font-medium">
+              {savedDraftName ? "Keep editing" : "Start from scratch"}
+            </div>
             <div className="mt-1 text-sm text-muted-foreground">
-              Name it, set dates, and go
+              {savedDraftName || "Name it, set dates, and go"}
             </div>
           </div>
         </button>

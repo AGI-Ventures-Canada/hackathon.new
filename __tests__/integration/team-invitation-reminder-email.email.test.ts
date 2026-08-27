@@ -9,6 +9,7 @@ type SendEmailInput = {
   replyTo?: string
   headers?: Record<string, string>
   tags?: Array<{ name: string; value: string }>
+  idempotencyKey?: string
 }
 
 type SendEmailResult = { id: string } | null
@@ -130,6 +131,17 @@ describe("Team Invitation Reminder Email", () => {
 
       const callArgs = mockSendEmail.mock.calls[0][0]
       expect(callArgs.tags).toContainEqual({ name: "type", value: "team_invitation_reminder" })
+    })
+
+    it("uses a scheduled reminder delivery ID as the idempotency key", async () => {
+      await sendTeamInvitationReminderEmail({
+        ...validInput,
+        deliveryId: "scheduled-reminder-1",
+      })
+
+      expect(mockSendEmail.mock.calls[0][0].idempotencyKey).toBe(
+        "team-invitation-reminder/scheduled-reminder-1"
+      )
     })
 
     it("returns success false when sendEmail returns null", async () => {

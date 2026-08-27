@@ -43,12 +43,14 @@ const mockCreateJudgeInvitation = mock(() =>
       token: "invite-token-123",
       email: "newjudge@example.com",
       expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      created_at: new Date().toISOString(),
     },
   })
 )
 
 const mockHasPendingJudgeEntry = mock(() => Promise.resolve(false))
 const mockCreateJudgePendingNotification = mock(() => Promise.resolve())
+const mockMarkJudgeInvitationEmailed = mock(() => Promise.resolve())
 
 mock.module("@/lib/services/judge-invitations", () => ({
   createJudgeInvitation: mockCreateJudgeInvitation,
@@ -57,6 +59,7 @@ mock.module("@/lib/services/judge-invitations", () => ({
   hasPendingJudgeInvitation: mock(() => Promise.resolve(false)),
   hasPendingJudgeEntry: mockHasPendingJudgeEntry,
   createJudgePendingNotification: mockCreateJudgePendingNotification,
+  markJudgeInvitationEmailed: mockMarkJudgeInvitationEmailed,
 }))
 
 const mockSendJudgeAddedNotification = mock(() => Promise.resolve({ success: true }))
@@ -187,7 +190,11 @@ describe("POST /hackathons/:id/judging/judges - email notifications", () => {
     mockLogAudit.mockClear()
     mockHasPendingJudgeEntry.mockClear()
     mockCreateJudgePendingNotification.mockClear()
+    mockMarkJudgeInvitationEmailed.mockClear()
     mockScheduleReminders.mockClear()
+
+    mockSendJudgeAddedNotification.mockResolvedValue({ success: true })
+    mockSendJudgeInvitationEmail.mockResolvedValue({ success: true })
 
     mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
     mockHasPendingJudgeEntry.mockResolvedValue(false)
@@ -199,6 +206,9 @@ describe("POST /hackathons/:id/judging/judges - email notifications", () => {
       firstName: "Jane",
       lastName: "Organizer",
     })
+    mockSendJudgeInvitationEmail.mockResolvedValue({ success: true })
+    mockMarkJudgeInvitationEmailed.mockResolvedValue()
+    mockScheduleReminders.mockResolvedValue(0)
   })
 
   describe("adding judge by clerkUserId", () => {
@@ -209,9 +219,9 @@ describe("POST /hackathons/:id/judging/judges - email notifications", () => {
       })
 
       const res = await postAddJudge({ clerkUserId: "judge_123" })
+      const data = await res.json()
       expect(res.status).toBe(200)
-
-      await Promise.resolve()
+      expect(data).toMatchObject({ queued: false, delivery: "sent" })
 
       expect(mockSendJudgeAddedNotification).toHaveBeenCalledTimes(1)
       expect(mockSendJudgeAddedNotification).toHaveBeenCalledWith(
@@ -230,11 +240,34 @@ describe("POST /hackathons/:id/judging/judges - email notifications", () => {
       })
 
       const res = await postAddJudge({ clerkUserId: "judge_123" })
+      const data = await res.json()
       expect(res.status).toBe(200)
-
-      await Promise.resolve()
+      expect(data).toMatchObject({ queued: true, delivery: "queued" })
 
       expect(mockSendJudgeAddedNotification).not.toHaveBeenCalled()
+    })
+
+    it("rejects an effectively ended event before Clerk, database, or email work", async () => {
+      mockCheckHackathonOrganizer.mockResolvedValue({
+        status: "ok",
+        hackathon: {
+          id: "h1",
+          name: "Ended Hackathon",
+          slug: "ended-hack",
+          status: "active",
+          starts_at: "2020-01-01T00:00:00.000Z",
+          ends_at: "2020-01-02T00:00:00.000Z",
+        },
+      })
+
+      const res = await postAddJudge({ clerkUserId: "judge_123" })
+      expect(res.status).toBe(409)
+      expect(await res.json()).toMatchObject({ code: "hackathon_ended" })
+      expect(mockGetUser).not.toHaveBeenCalled()
+      expect(mockAddJudge).not.toHaveBeenCalled()
+      expect(mockSendJudgeAddedNotification).not.toHaveBeenCalled()
+      expect(mockCreateJudgeInvitation).not.toHaveBeenCalled()
+      expect(mockScheduleReminders).not.toHaveBeenCalled()
     })
   })
 
@@ -253,9 +286,9 @@ describe("POST /hackathons/:id/judging/judges - email notifications", () => {
       mockAddJudge.mockResolvedValue({ success: true, participant: { id: "j1", clerkUserId: "found_user_123" } })
 
       const res = await postAddJudge({ email: "existing@example.com" })
+      const data = await res.json()
       expect(res.status).toBe(200)
-
-      await Promise.resolve()
+      expect(data).toMatchObject({ queued: false, delivery: "sent" })
 
       expect(mockSendJudgeAddedNotification).toHaveBeenCalledTimes(1)
       expect(mockSendJudgeAddedNotification).toHaveBeenCalledWith(
@@ -273,9 +306,9 @@ describe("POST /hackathons/:id/judging/judges - email notifications", () => {
       })
 
       const res = await postAddJudge({ email: "existing@example.com" })
+      const data = await res.json()
       expect(res.status).toBe(200)
-
-      await Promise.resolve()
+      expect(data).toMatchObject({ queued: true, delivery: "queued" })
 
       expect(mockSendJudgeAddedNotification).not.toHaveBeenCalled()
     })
@@ -290,6 +323,7 @@ describe("POST /hackathons/:id/judging/judges - email notifications", () => {
           id: "inv1",
           token: "invite-token-123",
           email: "newjudge@example.com",
+          created_at: "2026-08-26T12:00:00.000Z",
           expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
         },
       })
@@ -307,6 +341,8 @@ describe("POST /hackathons/:id/judging/judges - email notifications", () => {
       expect(data.invitation).toBeDefined()
       expect(data.invitation.email).toBe("newjudge@example.com")
       expect(data.invitation.token).toBe("invite-token-123")
+      expect(data.queued).toBe(false)
+      expect(data.delivery).toBe("sent")
       expect(mockSendJudgeInvitationEmail).toHaveBeenCalledTimes(1)
       expect(mockSendJudgeInvitationEmail).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -314,6 +350,17 @@ describe("POST /hackathons/:id/judging/judges - email notifications", () => {
           hackathonName: "Active Hackathon",
           inviteToken: "invite-token-123",
         })
+      )
+      expect(mockMarkJudgeInvitationEmailed).toHaveBeenCalledWith("inv1")
+      expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+        action: "judge.invited",
+        metadata: expect.objectContaining({
+          invitationId: "inv1",
+          queued: false,
+        }),
+      }))
+      expect(mockLogAudit.mock.calls.flat().join(" ")).not.toContain(
+        "newjudge@example.com",
       )
     })
 
@@ -330,7 +377,16 @@ describe("POST /hackathons/:id/judging/judges - email notifications", () => {
       expect(data.invitation).toBeDefined()
       expect(data.invitation.email).toBe("newjudge@example.com")
       expect(data.invitation.token).toBe("invite-token-123")
+      expect(data.queued).toBe(true)
+      expect(data.delivery).toBe("queued")
       expect(mockSendJudgeInvitationEmail).not.toHaveBeenCalled()
+      expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+        action: "judge_invitation.queued",
+        metadata: expect.objectContaining({
+          invitationId: "inv1",
+          queued: true,
+        }),
+      }))
     })
 
     it("does not write a pending-notification row for new-email invites in draft mode", async () => {
@@ -378,6 +434,60 @@ describe("POST /hackathons/:id/judging/judges - email notifications", () => {
 
       await Promise.resolve()
       expect(mockScheduleReminders).not.toHaveBeenCalled()
+    })
+
+    it("leaves a failed immediate send unclaimed and schedules no reminders", async () => {
+      mockCheckHackathonOrganizer.mockResolvedValue({
+        status: "ok",
+        hackathon: { id: "h1", name: "Active Hackathon", slug: "active-hack", status: "active" },
+      })
+      mockSendJudgeInvitationEmail.mockResolvedValue({ success: false })
+
+      const res = await postAddJudge({ email: "newjudge@example.com" })
+      const data = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(data.queued).toBe(false)
+      expect(data.delivery).toBe("failed")
+      expect(data.invitation.id).toBe("inv1")
+      expect(mockMarkJudgeInvitationEmailed).not.toHaveBeenCalled()
+      expect(mockScheduleReminders).not.toHaveBeenCalled()
+      expect(mockLogAudit).not.toHaveBeenCalledWith(expect.objectContaining({ action: "judge.invited" }))
+      expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+        action: "judge_invitation.delivery_failed",
+        metadata: expect.objectContaining({ delivery: "failed" }),
+      }))
+    })
+
+    it("records completed delivery before scheduling reminders", async () => {
+      mockCheckHackathonOrganizer.mockResolvedValue({
+        status: "ok",
+        hackathon: { id: "h1", name: "Active Hackathon", slug: "active-hack", status: "active" },
+      })
+      mockMarkJudgeInvitationEmailed.mockRejectedValue(new Error("database unavailable"))
+
+      const res = await postAddJudge({ email: "newjudge@example.com" })
+      const data = await res.json()
+
+      expect(res.status).toBe(500)
+      expect(data.code).toBe("delivery_state_failed")
+      expect(mockMarkJudgeInvitationEmailed).toHaveBeenCalledWith("inv1")
+      expect(mockScheduleReminders).not.toHaveBeenCalled()
+    })
+
+    it("keeps accepted delivery recorded when reminder scheduling fails", async () => {
+      mockCheckHackathonOrganizer.mockResolvedValue({
+        status: "ok",
+        hackathon: { id: "h1", name: "Active Hackathon", slug: "active-hack", status: "active" },
+      })
+      mockScheduleReminders.mockRejectedValue(new Error("database unavailable"))
+
+      const res = await postAddJudge({ email: "newjudge@example.com" })
+      const data = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(data.delivery).toBe("sent")
+      expect(mockMarkJudgeInvitationEmailed).toHaveBeenCalledWith("inv1")
     })
   })
 

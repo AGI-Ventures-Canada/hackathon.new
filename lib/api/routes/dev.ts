@@ -244,7 +244,12 @@ export const devRoutes = new Elysia({ prefix: "/dev" })
       if (guard) return guard
 
       const db = await getDb()
-      const updates: Record<string, string | null> = {}
+      const updates: {
+        starts_at?: string | null
+        ends_at?: string | null
+        registration_opens_at?: string | null
+        registration_closes_at?: string | null
+      } = {}
       if (body.startsAt !== undefined) updates.starts_at = body.startsAt
       if (body.endsAt !== undefined) updates.ends_at = body.endsAt
       if (body.registrationOpensAt !== undefined) updates.registration_opens_at = body.registrationOpensAt

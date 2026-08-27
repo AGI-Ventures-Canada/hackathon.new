@@ -9,12 +9,26 @@ export function buildEventUrl(slug?: string, path?: string): string | undefined 
   return path ? `${base}${path}` : base
 }
 
-export function getReplyToAddress(): string | undefined {
-  return process.env.RESEND_REPLY_TO_EMAIL || process.env.RESEND_FROM_EMAIL || undefined
+export function getReplyToAddress(fromAddress = process.env.RESEND_FROM_EMAIL): string | undefined {
+  const configured = process.env.RESEND_REPLY_TO_EMAIL?.trim()
+  if (configured && !/[\r\n]/.test(configured)) return extractEmailAddress(configured)
+
+  const from = fromAddress?.trim()
+  return from && !/[\r\n]/.test(from) ? extractEmailAddress(from) : undefined
+}
+
+export async function paceBulkSend(
+  index: number,
+  wait: (milliseconds: number) => Promise<void> = (milliseconds) =>
+    new Promise((resolve) => setTimeout(resolve, milliseconds)),
+): Promise<void> {
+  if (index > 0 && index % 8 === 0) {
+    await wait(1_000)
+  }
 }
 
 export function buildUnsubscribeHeaders(unsubscribeUrl: string): Record<string, string> {
-  const mailto = process.env.RESEND_REPLY_TO_EMAIL
+  const mailto = getReplyToAddress()
   const targets = [`<${unsubscribeUrl}>`]
   if (mailto) targets.push(`<mailto:${mailto}?subject=unsubscribe>`)
   return {
@@ -87,10 +101,12 @@ export function shortHackathonName(name: string, maxLength = 45): string {
 }
 
 export function sanitizeTag(name: string): string {
-  return name
+  const sanitized = name
     .replace(/[^a-zA-Z0-9_-]/g, "_")
     .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "")
     .slice(0, 100)
+  return sanitized || "event"
 }
 
 export function extractEmailAddress(emailLike: string): string {

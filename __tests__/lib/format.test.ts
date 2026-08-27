@@ -74,6 +74,30 @@ describe("formatDateRange", () => {
     const result = formatDateRange("2026-03-10T00:00:00Z", "2026-03-15T00:00:00Z")
     expect(result).toContain("–")
   })
+
+  it("uses an explicit time zone for hydration-safe date boundaries", () => {
+    expect(
+      formatDateRange(
+        "2026-10-25T00:30:00Z",
+        "2026-10-27T00:30:00Z",
+        "UTC",
+      ),
+    ).toBe("Oct 25 – 27, 2026")
+  })
+
+  it("does not render a backwards date range", () => {
+    expect(
+      formatDateRange(
+        "2026-04-18T00:00:00Z",
+        "2026-04-12T00:00:00Z",
+        "UTC",
+      ),
+    ).toBe("Apr 18, 2026 · Check end date")
+  })
+
+  it("falls back when the start date is invalid", () => {
+    expect(formatDateRange("not-a-date", null)).toBe("Dates TBD")
+  })
 })
 
 describe("sortByStartDate", () => {

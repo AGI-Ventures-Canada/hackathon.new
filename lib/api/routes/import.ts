@@ -1,8 +1,16 @@
 import { Elysia, t } from "elysia"
-import { resolvePrincipal, requirePrincipal } from "@/lib/auth/principal"
-import { logAudit } from "@/lib/services/audit"
-import { normalizeUrl, isSafeExternalUrl } from "@/lib/utils/url"
+import {
+  resolvePrincipal,
+  requirePrincipal,
+} from "@/lib/auth/principal"
+import { matchesExpectedOrganization } from "@/lib/auth/types"
+import { normalizeUrl, isSafeExternalUrl, redactImportSourceUrl } from "@/lib/utils/url"
 import { extractExternalEventData, extractExternalRichContent, isLumaUrl } from "@/lib/services/external-import"
+import { RateLimitError } from "@/lib/services/rate-limit"
+import { consumePublicImportRateLimit } from "@/lib/services/public-import-rate-limit"
+import { normalizeLocale } from "@/lib/utils/language"
+
+const MAX_TRANSLATION_LINKS = 10
 
 function mergeTranslationLinks(
   a: { url: string; languageCode: string }[],
@@ -10,11 +18,21 @@ function mergeTranslationLinks(
 ): { url: string; languageCode: string }[] {
   const seen = new Set<string>()
   const out: { url: string; languageCode: string }[] = []
-  for (const link of [...a, ...b]) {
-    const key = normalizeUrl(link.url)
-    if (seen.has(key)) continue
-    seen.add(key)
-    out.push({ url: key, languageCode: link.languageCode })
+  for (const links of [a, b]) {
+    for (const link of links) {
+      if (out.length >= MAX_TRANSLATION_LINKS) return out
+      const url = normalizeUrl(link.url)
+      const languageCode = normalizeLocale(link.languageCode)
+      if (
+        url.length > 2048 ||
+        !languageCode ||
+        !isSafeExternalUrl(url) ||
+        !isLumaUrl(url)
+      ) continue
+      if (seen.has(url)) continue
+      seen.add(url)
+      out.push({ url, languageCode })
+    }
   }
   return out
 }
@@ -22,12 +40,17 @@ function mergeTranslationLinks(
 export const importRoutes = new Elysia({ prefix: "/public/import" })
   .post(
     "/url",
-    async ({ body, set }) => {
+    async ({ body, request, set }) => {
       const url = normalizeUrl(body.url)
 
       if (!isSafeExternalUrl(url)) {
         set.status = 400
         return { error: "Invalid or disallowed URL" }
+      }
+
+      const rateLimit = await consumePublicImportRateLimit(request.headers)
+      if (rateLimit && !rateLimit.allowed) {
+        throw new RateLimitError(rateLimit.resetAt, rateLimit.remaining)
       }
 
       const data = await extractExternalEventData(url)
@@ -61,16 +84,37 @@ export const dashboardImportRoutes = new Elysia({ prefix: "/dashboard/import" })
     async ({ principal, body, set }) => {
       requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
 
+      if (!matchesExpectedOrganization(principal, body.expectedOrganizationId)) {
+        set.status = 409
+        return {
+          error: "Your active organization changed. Review it and try again.",
+          code: "organization_context_changed",
+          retryable: true,
+        }
+      }
+
       const { isOrgTenant, organizationRequiredResponse } = await import("@/lib/services/tenants")
       if (!(await isOrgTenant(principal.tenantId))) {
         return organizationRequiredResponse()
       }
 
-      const { createHackathonFromImport, importTranslationVariants } = await import(
+      const sourceUrl = body.sourceUrl ? normalizeUrl(body.sourceUrl) : null
+      if (sourceUrl && !isSafeExternalUrl(sourceUrl)) {
+        set.status = 400
+        return { error: "Invalid or disallowed source URL" }
+      }
+      const name = body.name.trim()
+      if (!name) {
+        set.status = 400
+        return { error: "Give your event a name." }
+      }
+
+      const { createHackathonAggregateWithResult, finalizeHackathonCreation } = await import(
         "@/lib/services/luma-import-create"
       )
-      const hackathon = await createHackathonFromImport(principal.tenantId, {
-        name: body.name,
+      const result = await createHackathonAggregateWithResult(principal.tenantId, {
+        draftId: body.draftId,
+        name,
         description: body.description ?? null,
         startsAt: body.startsAt ?? null,
         endsAt: body.endsAt ?? null,
@@ -82,70 +126,156 @@ export const dashboardImportRoutes = new Elysia({ prefix: "/dashboard/import" })
         imageUrl: body.imageUrl ?? null,
         rules: body.rules ?? null,
         defaultLocale: body.defaultLocale ?? null,
+        sponsors: body.sponsors?.map((sponsor) => ({
+          name: sponsor.name,
+          tier: sponsor.tier ?? null,
+        })) ?? [],
+        prizes: body.prizes?.map((prize) => ({
+          name: prize.name,
+          description: prize.description ?? null,
+          value: prize.value ?? null,
+        })) ?? [],
+        challenges: body.challenges?.map((challenge) => ({
+          title: challenge.title,
+          description: challenge.description ?? null,
+          resources: challenge.resources ?? [],
+        })) ?? [],
+        agendaItems: body.agendaItems?.map((item) => ({
+          title: item.title,
+          description: item.description ?? null,
+          startsAt: item.startsAt ?? null,
+          endsAt: item.endsAt ?? null,
+          location: item.location ?? null,
+          speakers: item.speakers ?? [],
+        })) ?? [],
       })
 
-      if (!hackathon) {
+      if (result.status === "in_progress") {
+        set.status = 409
+        set.headers["Retry-After"] = "2"
+        return {
+          error: "Event creation is already in progress. Try again shortly.",
+          code: "creation_in_progress",
+          retryable: true,
+        }
+      }
+
+      if (result.status === "invalid") {
+        set.status = 422
+        return {
+          error: result.error.message,
+          code: result.error.code,
+          retryable: false,
+          ...(result.error.code === "draft_conflict" && result.hackathon
+            ? {
+                existingEvent: {
+                  id: result.hackathon.id,
+                  name: result.hackathon.name,
+                  slug: result.hackathon.slug,
+                },
+              }
+            : {}),
+        }
+      }
+
+      if (result.status === "failed") {
         set.status = 500
-        return { error: "Failed to create hackathon" }
+        return { error: "Failed to create hackathon", code: "creation_failed", retryable: true }
       }
 
-      if (body.sponsors?.length) {
-        const { createSponsorsFromImport } = await import("@/lib/services/luma-import-create")
-        await createSponsorsFromImport(hackathon.id, body.sponsors)
+      const hackathon = result.hackathon
+      const redactedSourceUrl = sourceUrl ? redactImportSourceUrl(sourceUrl) : null
+      const source = redactedSourceUrl && isLumaUrl(redactedSourceUrl)
+        ? "luma_import"
+        : "event_page_import"
+      const sourceMetadata = {
+        source,
+        ...(redactedSourceUrl ? { sourceUrl: redactedSourceUrl } : {}),
       }
-
-      if (body.prizes?.length) {
-        const { createPrizesFromImport } = await import("@/lib/services/luma-import-create")
-        await createPrizesFromImport(hackathon.id, body.prizes)
-      }
-
-      if (body.challenges?.length) {
-        const { createChallengesFromImport } = await import("@/lib/services/luma-import-create")
-        await createChallengesFromImport(hackathon.id, principal.tenantId, body.challenges)
-      }
-
-      if (body.agendaItems?.length) {
-        const { createAgendaFromImport } = await import("@/lib/services/luma-import-create")
-        await createAgendaFromImport(hackathon.id, body.agendaItems, body.startsAt ?? null)
-      }
-
-      if (body.translationLinks?.length) {
-        importTranslationVariants({
-          hackathonId: hackathon.id,
-          tenantId: principal.tenantId,
-          primaryLocale: hackathon.default_locale ?? "en",
-          primary: {
-            name: body.name,
-            description: body.description ?? null,
-            rules: body.rules ?? null,
-            location_name: body.locationName ?? null,
-            community_label: null,
-          },
-          translationLinks: body.translationLinks,
-        }).catch(console.error)
-      }
-
-      const source = body.sourceUrl && isLumaUrl(body.sourceUrl) ? "luma_import" : "event_page_import"
-
-      await logAudit({
+      const translationLinks = mergeTranslationLinks(
+        body.translationLinks ?? [],
+        [],
+      )
+      const finalizationInput = {
+        tenantId: principal.tenantId,
         principal,
-        action: "hackathon.created",
-        resourceType: "hackathon",
-        resourceId: hackathon.id,
-        metadata: { source, ...(body.sourceUrl ? { sourceUrl: normalizeUrl(body.sourceUrl) } : {}) },
-      })
-
-      const { triggerWebhooks } = await import("@/lib/services/webhooks")
-      triggerWebhooks(principal.tenantId, "hackathon.created", {
-        event: "hackathon.created",
-        timestamp: new Date().toISOString(),
-        data: { hackathonId: hackathon.id, source, ...(body.sourceUrl ? { sourceUrl: normalizeUrl(body.sourceUrl) } : {}) },
-      }).catch(console.error)
-
+        hackathon,
+        auditMetadata: sourceMetadata,
+        webhookData: { hackathonId: hackathon.id, ...sourceMetadata },
+        ...(translationLinks.length
+          ? {
+              translations: {
+                primaryLocale: hackathon.default_locale ?? "en",
+                primary: {
+                  name,
+                  description: body.description ?? null,
+                  rules: body.rules ?? null,
+                  location_name: body.locationName ?? null,
+                  community_label: null,
+                },
+                translationLinks,
+              },
+            }
+          : {}),
+      }
+      const { startHackathonCreationFinalizationWorkflow } = await import(
+        "@/lib/workflows/creation-finalization"
+      )
+      let finalizationRunId = await startHackathonCreationFinalizationWorkflow(
+        finalizationInput,
+      )
+      const finalization = await finalizeHackathonCreation(finalizationInput)
+      if (
+        !finalizationRunId &&
+        (finalization.status === "failed" || finalization.status === "in_progress")
+      ) {
+        finalizationRunId = await startHackathonCreationFinalizationWorkflow(
+          finalizationInput,
+        )
+      }
+      if (finalization.status === "invalid") {
+        set.status = 422
+        return {
+          error: finalization.error.message,
+          code: finalization.error.code,
+          retryable: false,
+          existingEvent: {
+            id: hackathon.id,
+            name: hackathon.name,
+            slug: hackathon.slug,
+          },
+        }
+      }
+      if (!finalizationRunId && finalization.status !== "complete") {
+        set.status = 503
+        set.headers["Retry-After"] = "2"
+        return {
+          error: "Your event was created, but setup could not be scheduled. Keep this page open and try again.",
+          code: "finalization_unscheduled",
+          retryable: true,
+          committed: true,
+          existingEvent: {
+            id: hackathon.id,
+            name: hackathon.name,
+            slug: hackathon.slug,
+          },
+        }
+      }
       return {
         id: hackathon.id,
         name: hackathon.name,
         slug: hackathon.slug,
+        replayed: result.status === "replayed",
+        ...(finalization.status === "complete"
+          ? {}
+          : {
+              finalization: {
+                status: finalization.status,
+                retryable: true,
+                retryScheduled: Boolean(finalizationRunId),
+                message: "The event was created. We're finishing setup now.",
+              },
+            }),
       }
     },
     {
@@ -155,59 +285,61 @@ export const dashboardImportRoutes = new Elysia({ prefix: "/dashboard/import" })
         tags: ["dashboard"],
       },
       body: t.Object({
-        name: t.String({ minLength: 1 }),
-        description: t.Optional(t.Union([t.String(), t.Null()])),
-        startsAt: t.Optional(t.Union([t.String(), t.Null()])),
-        endsAt: t.Optional(t.Union([t.String(), t.Null()])),
-        registrationOpensAt: t.Optional(t.Union([t.String(), t.Null()])),
-        registrationClosesAt: t.Optional(t.Union([t.String(), t.Null()])),
-        locationType: t.Optional(t.Union([t.Literal("in_person"), t.Literal("virtual"), t.Null()])),
-        locationName: t.Optional(t.Union([t.String(), t.Null()])),
-        locationUrl: t.Optional(t.Union([t.String(), t.Null()])),
-        imageUrl: t.Optional(t.Union([t.String(), t.Null()])),
+        draftId: t.Optional(t.String({ format: "uuid" })),
+        expectedOrganizationId: t.Optional(t.String({ minLength: 1, maxLength: 200 })),
+        name: t.String({ minLength: 1, maxLength: 120 }),
+        description: t.Optional(t.Union([t.String({ maxLength: 5000 }), t.Null()])),
+        startsAt: t.Optional(t.Union([t.String({ format: "date-time" }), t.Null()])),
+        endsAt: t.Optional(t.Union([t.String({ format: "date-time" }), t.Null()])),
+        registrationOpensAt: t.Optional(t.Union([t.String({ format: "date-time" }), t.Null()])),
+        registrationClosesAt: t.Optional(t.Union([t.String({ format: "date-time" }), t.Null()])),
+        locationType: t.Optional(t.Union([t.Literal("in_person"), t.Literal("virtual"), t.Literal("hybrid"), t.Null()])),
+        locationName: t.Optional(t.Union([t.String({ maxLength: 240 }), t.Null()])),
+        locationUrl: t.Optional(t.Union([t.String({ maxLength: 2048 }), t.Null()])),
+        imageUrl: t.Optional(t.Union([t.String({ maxLength: 2048 }), t.Null()])),
         sponsors: t.Optional(t.Array(t.Object({
-          name: t.String({ minLength: 1 }),
-          tier: t.Union([t.String(), t.Null()]),
-        }))),
-        rules: t.Optional(t.Union([t.String(), t.Null()])),
+          name: t.String({ minLength: 1, maxLength: 120 }),
+          tier: t.Union([t.String({ maxLength: 80 }), t.Null()]),
+        }), { maxItems: 50 })),
+        rules: t.Optional(t.Union([t.String({ maxLength: 10000 }), t.Null()])),
         prizes: t.Optional(t.Array(t.Object({
-          name: t.String({ minLength: 1 }),
-          description: t.Optional(t.Union([t.String(), t.Null()])),
-          value: t.Optional(t.Union([t.String(), t.Null()])),
-        }))),
+          name: t.String({ minLength: 1, maxLength: 120 }),
+          description: t.Optional(t.Union([t.String({ maxLength: 1000 }), t.Null()])),
+          value: t.Optional(t.Union([t.String({ maxLength: 120 }), t.Null()])),
+        }), { maxItems: 50 })),
         challenges: t.Optional(t.Array(t.Object({
-          title: t.String({ minLength: 1 }),
-          description: t.Optional(t.Union([t.String(), t.Null()])),
+          title: t.String({ minLength: 1, maxLength: 200 }),
+          description: t.Optional(t.Union([t.String({ maxLength: 2000 }), t.Null()])),
           resources: t.Optional(t.Array(t.Object({
-            label: t.String(),
-            url: t.String(),
-          }))),
-        }))),
+            label: t.String({ maxLength: 120 }),
+            url: t.String({ minLength: 1, maxLength: 2048 }),
+          }), { maxItems: 20 })),
+        }), { maxItems: 50 })),
         agendaItems: t.Optional(t.Array(t.Object({
-          title: t.String({ minLength: 1 }),
-          description: t.Optional(t.Union([t.String(), t.Null()])),
+          title: t.String({ minLength: 1, maxLength: 200 }),
+          description: t.Optional(t.Union([t.String({ maxLength: 1000 }), t.Null()])),
           startsAt: t.Optional(t.Union([
             t.String({
-              pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d+)?)?(Z|[+-]\\d{2}:?\\d{2})?$",
-              description: "ISO 8601 timestamp (e.g. 2026-05-14T09:00:00-04:00). Must include date and time; offset is optional.",
+              format: "date-time",
+              description: "ISO 8601 timestamp with an offset (e.g. 2026-05-14T09:00:00-04:00).",
             }),
             t.Null(),
           ])),
           endsAt: t.Optional(t.Union([
             t.String({
-              pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d+)?)?(Z|[+-]\\d{2}:?\\d{2})?$",
-              description: "ISO 8601 timestamp. Same format as startsAt.",
+              format: "date-time",
+              description: "ISO 8601 timestamp with an offset. Same format as startsAt.",
             }),
             t.Null(),
           ])),
-          location: t.Optional(t.Union([t.String(), t.Null()])),
-          speakers: t.Optional(t.Array(t.String())),
-        }))),
-        sourceUrl: t.Optional(t.Union([t.String(), t.Null()])),
-        defaultLocale: t.Optional(t.Union([t.String(), t.Null()])),
+          location: t.Optional(t.Union([t.String({ maxLength: 200 }), t.Null()])),
+          speakers: t.Optional(t.Array(t.String({ minLength: 1, maxLength: 120 }), { maxItems: 20 })),
+        }), { maxItems: 50 })),
+        sourceUrl: t.Optional(t.Union([t.String({ maxLength: 2048 }), t.Null()])),
+        defaultLocale: t.Optional(t.Union([t.String({ maxLength: 35 }), t.Null()])),
         translationLinks: t.Optional(t.Array(t.Object({
-          url: t.String({ minLength: 1 }),
-          languageCode: t.String({ minLength: 1 }),
+          url: t.String({ minLength: 1, maxLength: 2048 }),
+          languageCode: t.String({ minLength: 1, maxLength: 35 }),
         }), { maxItems: 10 })),
       }),
     }
@@ -256,84 +388,164 @@ export const dashboardImportRoutes = new Elysia({ prefix: "/dashboard/import" })
         richContent?.cleanedDescription ||
         eventData.description
 
-      const { createHackathonFromImport, importTranslationVariants } = await import(
+      const { createHackathonAggregateWithResult, finalizeHackathonCreation } = await import(
         "@/lib/services/luma-import-create"
       )
-      const hackathon = await createHackathonFromImport(principal.tenantId, {
+      const result = await createHackathonAggregateWithResult(principal.tenantId, {
+        draftId: body.draftId,
         name: primaryName,
         description: primaryDescription,
         startsAt: eventData.startsAt,
         endsAt: eventData.endsAt,
+        registrationOpensAt: null,
+        registrationClosesAt: null,
         locationType: eventData.locationType,
         locationName: eventData.locationName,
         locationUrl: eventData.locationUrl,
         imageUrl: eventData.imageUrl,
         rules: richContent?.rules ?? null,
         defaultLocale: primaryLocale,
+        sponsors: richContent?.sponsors ?? [],
+        prizes: richContent?.prizes?.map((prize) => ({
+          name: prize.name,
+          description: prize.description ?? null,
+          value: prize.value ?? null,
+        })) ?? [],
+        challenges: richContent?.challenges?.map((challenge) => ({
+          title: challenge.title,
+          description: challenge.description ?? null,
+          resources: challenge.resources ?? [],
+        })) ?? [],
+        agendaItems: richContent?.agendaItems?.map((item) => ({
+          title: item.title,
+          description: item.description ?? null,
+          startsAt: item.startsAt ?? null,
+          endsAt: item.endsAt ?? null,
+          location: item.location ?? null,
+          speakers: item.speakers ?? [],
+        })) ?? [],
       })
 
-      if (!hackathon) {
+      if (result.status === "in_progress") {
+        set.status = 409
+        set.headers["Retry-After"] = "2"
+        return {
+          error: "Event creation is already in progress. Try again shortly.",
+          code: "creation_in_progress",
+          retryable: true,
+        }
+      }
+
+      if (result.status === "invalid") {
+        set.status = 422
+        return {
+          error: result.error.message,
+          code: result.error.code,
+          retryable: false,
+          ...(result.error.code === "draft_conflict" && result.hackathon
+            ? {
+                existingEvent: {
+                  id: result.hackathon.id,
+                  name: result.hackathon.name,
+                  slug: result.hackathon.slug,
+                },
+              }
+            : {}),
+        }
+      }
+
+      if (result.status === "failed") {
         set.status = 500
-        return { error: "Failed to create hackathon" }
+        return { error: "Failed to create hackathon", code: "creation_failed", retryable: true }
       }
 
-      if (richContent?.sponsors?.length) {
-        const { createSponsorsFromImport } = await import("@/lib/services/luma-import-create")
-        await createSponsorsFromImport(hackathon.id, richContent.sponsors)
-      }
-
-      if (richContent?.prizes?.length) {
-        const { createPrizesFromImport } = await import("@/lib/services/luma-import-create")
-        await createPrizesFromImport(hackathon.id, richContent.prizes)
-      }
-
-      if (richContent?.challenges?.length) {
-        const { createChallengesFromImport } = await import("@/lib/services/luma-import-create")
-        await createChallengesFromImport(hackathon.id, principal.tenantId, richContent.challenges)
-      }
-
-      if (richContent?.agendaItems?.length) {
-        const { createAgendaFromImport } = await import("@/lib/services/luma-import-create")
-        await createAgendaFromImport(hackathon.id, richContent.agendaItems, eventData.startsAt)
-      }
-
-      if (mergedTranslationLinks.length) {
-        importTranslationVariants({
-          hackathonId: hackathon.id,
-          tenantId: principal.tenantId,
-          primaryLocale: hackathon.default_locale ?? "en",
-          primary: {
-            name: primaryName,
-            description: primaryDescription,
-            rules: richContent?.rules ?? null,
-            location_name: eventData.locationName,
-            community_label: null,
-          },
-          translationLinks: mergedTranslationLinks,
-        }).catch(console.error)
-      }
-
+      const hackathon = result.hackathon
       const source = isLumaUrl(url) ? "luma_import" : "event_page_import"
-
-      await logAudit({
+      const redactedSourceUrl = redactImportSourceUrl(url)
+      const sourceMetadata = {
+        source,
+        ...(redactedSourceUrl ? { sourceUrl: redactedSourceUrl } : {}),
+      }
+      const finalizationInput = {
+        tenantId: principal.tenantId,
         principal,
-        action: "hackathon.created",
-        resourceType: "hackathon",
-        resourceId: hackathon.id,
-        metadata: { source, sourceUrl: url },
-      })
-
-      const { triggerWebhooks } = await import("@/lib/services/webhooks")
-      triggerWebhooks(principal.tenantId, "hackathon.created", {
-        event: "hackathon.created",
-        timestamp: new Date().toISOString(),
-        data: { hackathonId: hackathon.id, source, sourceUrl: url },
-      }).catch(console.error)
-
+        hackathon,
+        auditMetadata: sourceMetadata,
+        webhookData: { hackathonId: hackathon.id, ...sourceMetadata },
+        ...(mergedTranslationLinks.length
+          ? {
+              translations: {
+                primaryLocale: hackathon.default_locale ?? "en",
+                primary: {
+                  name: primaryName,
+                  description: primaryDescription,
+                  rules: richContent?.rules ?? null,
+                  location_name: eventData.locationName,
+                  community_label: null,
+                },
+                translationLinks: mergedTranslationLinks,
+              },
+            }
+          : {}),
+      }
+      const { startHackathonCreationFinalizationWorkflow } = await import(
+        "@/lib/workflows/creation-finalization"
+      )
+      let finalizationRunId = await startHackathonCreationFinalizationWorkflow(
+        finalizationInput,
+      )
+      const finalization = await finalizeHackathonCreation(finalizationInput)
+      if (
+        !finalizationRunId &&
+        (finalization.status === "failed" || finalization.status === "in_progress")
+      ) {
+        finalizationRunId = await startHackathonCreationFinalizationWorkflow(
+          finalizationInput,
+        )
+      }
+      if (finalization.status === "invalid") {
+        set.status = 422
+        return {
+          error: finalization.error.message,
+          code: finalization.error.code,
+          retryable: false,
+          existingEvent: {
+            id: hackathon.id,
+            name: hackathon.name,
+            slug: hackathon.slug,
+          },
+        }
+      }
+      if (!finalizationRunId && finalization.status !== "complete") {
+        set.status = 503
+        set.headers["Retry-After"] = "2"
+        return {
+          error: "Your event was created, but setup could not be scheduled. Keep this page open and try again.",
+          code: "finalization_unscheduled",
+          retryable: true,
+          committed: true,
+          existingEvent: {
+            id: hackathon.id,
+            name: hackathon.name,
+            slug: hackathon.slug,
+          },
+        }
+      }
       return {
         id: hackathon.id,
         name: hackathon.name,
         slug: hackathon.slug,
+        replayed: result.status === "replayed",
+        ...(finalization.status === "complete"
+          ? {}
+          : {
+              finalization: {
+                status: finalization.status,
+                retryable: true,
+                retryScheduled: Boolean(finalizationRunId),
+                message: "The event was created. We're finishing setup now.",
+              },
+            }),
       }
     },
     {
@@ -343,6 +555,7 @@ export const dashboardImportRoutes = new Elysia({ prefix: "/dashboard/import" })
         tags: ["dashboard"],
       },
       body: t.Object({
+        draftId: t.Optional(t.String({ format: "uuid" })),
         url: t.String({ minLength: 1 }),
         name: t.Optional(t.String({ minLength: 1 })),
         description: t.Optional(t.String()),

@@ -12,9 +12,10 @@ the mistake.
    `renderEmail()` from [`utils.ts`](utils.ts) — it returns `{ html, text }`
    from a single React Email component.
 
-2. **Set a `replyTo`.** Use `getReplyToAddress()` from [`utils.ts`](utils.ts).
-   It reads `RESEND_REPLY_TO_EMAIL` and falls back to `RESEND_FROM_EMAIL`.
-   Don't hard-code an address — that leaks production into dev/staging.
+2. **Set a `replyTo`.** The shared sender reads `RESEND_REPLY_TO_EMAIL` and
+   falls back to the actual sender address. Call `getReplyToAddress()` when a
+   template needs the value before dispatch. Don't hard-code an address — that
+   leaks production into dev/staging.
 
 3. **Set `List-Unsubscribe` + `List-Unsubscribe-Post` for any email a
    recipient might want to stop getting.** Use
@@ -114,8 +115,20 @@ the mistake.
     rows.
 
 15. **Bulk sends fan out per recipient.** If you're sending to >50
-    recipients in one operation, throttle with an interval between sends
-    (Resend's API is happy at 10/s, but burst sends look bot-like).
+    recipients in one operation, call `paceBulkSend(index)` before each send.
+    It pauses after every eight calls so a batch stays below the provider's
+    burst limit.
+
+16. **Give every retryable send a stable idempotency key.** Batch keys must
+    include a stable message or reminder ID plus a privacy-safe recipient ID or
+    fingerprint. Reuse the exact key only for the exact same payload. Resend
+    deduplicates a key for 24 hours and rejects a key reused with different
+    content.
+
+17. **Only stamp completion after provider acceptance.** Starting a workflow,
+    adding a job to a queue, or making a provider request does not mean the
+    email was sent. Update `emailed_at`, `sent_at`, reminder state, audit copy,
+    and user-facing copy only after the send returns an accepted message ID.
 
 ## Code shape
 
@@ -149,12 +162,23 @@ await sendEmail({
     { name: "type", value: "my_email" },
     { name: "hackathon", value: sanitizeTag(hackathonName) },
   ],
+  idempotencyKey: `my-email/${stableMessageId}/${recipientFingerprint}`,
 })
 ```
 
-If your email omits any of `text`, `replyTo`, `headers`, or `tags`, that's
-a deliverability bug — fix it before merging, not after the first
-"my mail is in spam" report.
+If your email omits `text`, `headers`, or `tags`, that's a deliverability bug.
+An explicit `replyTo` may be omitted only when the shared sender's configured
+reply-to or sender fallback is correct for that message.
+
+`sendEmailWithResult()` is the structured path. It reports provider
+acceptance, safe failure codes, retryability, attempt count, and duration. It
+requires non-empty HTML and plain text, rejects injected sender/reply-to
+headers, normalizes subjects to one line, times out provider calls, and retries
+retryable failures only when a stable idempotency key makes that safe.
+
+The reference app's `email_log` and email-preference tables were evaluated but
+intentionally not copied into this PR. Oatmeal needs separate schema and
+product-policy work before those persistence features can be added safely.
 
 ## Email link query params
 

@@ -14,6 +14,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogTrigger,
 } from "@/components/ui/dialog"
 import {
@@ -324,15 +325,24 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, captainEmail: email }),
-      }).then(assertOkJson<{ team?: Team; invited?: boolean; queued?: boolean }>)
+      }).then(assertOkJson<{
+        team?: Team
+        invited?: boolean
+        queued?: boolean
+        delivery?: "sent" | "queued" | "failed"
+      }>)
 
       if (data.invited) {
-        setInviteSuccess(
-          data.queued
+        if (data.delivery === "failed") {
+          showActionError(`Team created and invite saved for ${email}, but we couldn't confirm the email was sent. Use Send again in the invite list.`)
+        } else {
+          setInviteSuccess(
+            data.queued
             ? `Invite saved for ${email}. We'll send it when you go live.`
             : `Invite sent to ${email}`
-        )
-        setTimeout(() => setInviteSuccess(null), 5000)
+          )
+          setTimeout(() => setInviteSuccess(null), 5000)
+        }
       }
 
       await fetchTeams()
@@ -593,13 +603,17 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
-      }).then(assertOkJson<{ queued?: boolean }>)
-      setInviteSuccess(
-        data.queued
+      }).then(assertOkJson<{ queued?: boolean; delivery?: "sent" | "queued" | "failed" }>)
+      if (data.delivery === "failed") {
+        showActionError(`Invite saved for ${email}, but we couldn't confirm the email was sent. Use Send again in the invite list.`)
+      } else {
+        setInviteSuccess(
+          data.queued
           ? `Invite saved for ${email}. We'll send it when you go live.`
           : `Invite sent to ${email}`
-      )
-      setTimeout(() => setInviteSuccess(null), 5000)
+        )
+        setTimeout(() => setInviteSuccess(null), 5000)
+      }
       await fetchTeams()
       router.refresh()
     } catch (err) {
@@ -688,6 +702,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Create Team</DialogTitle>
+              <DialogDescription>Add a team and invite its captain by email.</DialogDescription>
             </DialogHeader>
             <form
               onSubmit={handleCreate}
@@ -829,6 +844,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Change captain invite email</DialogTitle>
+            <DialogDescription>Send the captain invite to a different address.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">

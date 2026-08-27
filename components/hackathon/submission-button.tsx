@@ -30,7 +30,7 @@ import {
   Video,
   X,
 } from "lucide-react"
-import type { HackathonStatus, Submission } from "@/lib/db/hackathon-types"
+import type { HackathonStatus, Submission, TeamStatus } from "@/lib/db/hackathon-types"
 import {
   normalizeOptionalUrl,
   normalizeUrl,
@@ -42,12 +42,22 @@ import {
   buildSubmissionScreenshotMetadata,
   getSubmissionScreenshots,
   MAX_SUBMISSION_SCREENSHOTS,
+  MAX_SUBMISSION_SCREENSHOT_REQUEST_BYTES,
   SUBMISSION_SCREENSHOT_SLOTS,
   type SubmissionScreenshot,
   type SubmissionScreenshotSlot,
 } from "@/lib/utils/submission-screenshots"
 import { getVideoEmbedInfo } from "@/lib/utils/video-embed"
 import { VideoEmbed } from "@/components/hackathon/video-embed"
+import {
+  PREPARE_PROJECT_EVENT,
+  type PrepareProjectEvent,
+} from "@/lib/webmcp/client-events"
+import {
+  readProjectDraft,
+  removeProjectDraft,
+  writeProjectDraft,
+} from "@/lib/webmcp/project-draft-storage"
 
 const submissionSteps = [
   { key: "title", label: "Title", icon: Type },
@@ -76,10 +86,6 @@ type ScreenshotDraftItem = SubmissionScreenshot & {
   file: File | null
 }
 
-type ScreenshotSyncResult =
-  | { ok: true; screenshots: SubmissionScreenshot[] }
-  | { ok: false; didChange: boolean; error: string }
-
 const allowedScreenshotTypes = ["image/png", "image/jpeg", "image/webp"]
 
 function isScreenshotSlot(value: unknown): value is SubmissionScreenshotSlot {
@@ -101,6 +107,54 @@ function getInitialScreenshotDrafts(submission: Submission | null): ScreenshotDr
   }))
 }
 
+function parseSubmissionDraft(rawDraft: string | null): SubmissionDraft | null {
+  if (!rawDraft) return null
+
+  try {
+    const parsed = JSON.parse(rawDraft) as Partial<SubmissionDraft>
+    const savedScreenshots: SubmissionScreenshot[] = Array.isArray(parsed.screenshots)
+      ? parsed.screenshots.flatMap((screenshot) =>
+          isScreenshotSlot(screenshot.slot) &&
+          typeof screenshot.url === "string" &&
+          screenshot.url.trim()
+            ? [{ slot: screenshot.slot, url: screenshot.url }]
+            : []
+        )
+      : []
+    const screenshots: SubmissionScreenshot[] = savedScreenshots.length
+      ? savedScreenshots.slice(0, MAX_SUBMISSION_SCREENSHOTS)
+      : typeof parsed.screenshotPreview === "string" && parsed.screenshotPreview
+        ? [{ slot: 0 as const, url: parsed.screenshotPreview }]
+        : []
+
+    return {
+      title: typeof parsed.title === "string" ? parsed.title : "",
+      githubUrl: typeof parsed.githubUrl === "string" ? parsed.githubUrl : "",
+      liveAppUrl: typeof parsed.liveAppUrl === "string" ? parsed.liveAppUrl : "",
+      demoVideoUrl: typeof parsed.demoVideoUrl === "string" ? parsed.demoVideoUrl : "",
+      description: typeof parsed.description === "string" ? parsed.description : "",
+      currentStep: Math.min(
+        Math.max(typeof parsed.currentStep === "number" ? parsed.currentStep : 0, 0),
+        submissionSteps.length - 1
+      ),
+      screenshots,
+    }
+  } catch {
+    return null
+  }
+}
+
+function toScreenshotDraftItems(
+  screenshots: SubmissionScreenshot[],
+  idPrefix: string
+): ScreenshotDraftItem[] {
+  return screenshots.map((screenshot) => ({
+    ...screenshot,
+    id: `${idPrefix}-${screenshot.slot}-${screenshot.url}`,
+    file: null,
+  }))
+}
+
 interface SubmissionButtonProps {
   hackathonSlug: string
   status: HackathonStatus
@@ -108,6 +162,7 @@ interface SubmissionButtonProps {
   submission: Submission | null
   teamSizeWarning?: string | null
   pendingTeamApproval?: boolean
+  teamStatus?: TeamStatus | null
 }
 
 export function SubmissionButton({
@@ -117,14 +172,17 @@ export function SubmissionButton({
   submission: initialSubmission,
   teamSizeWarning,
   pendingTeamApproval = false,
+  teamStatus = null,
 }: SubmissionButtonProps) {
-  const { isSignedIn, isLoaded } = useUser()
+  const { isSignedIn, isLoaded, user } = useUser()
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const screenshotPickerModeRef = useRef<{ replaceSlot: SubmissionScreenshotSlot | null }>({
     replaceSlot: null,
   })
   const previewUrlsRef = useRef<Set<string>>(new Set())
+  const aggregateRequestIdRef = useRef<string | null>(null)
+  const submissionInFlightRef = useRef(false)
   const [submission, setSubmission] = useState(initialSubmission)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -139,11 +197,12 @@ export function SubmissionButton({
   const [screenshots, setScreenshots] = useState<ScreenshotDraftItem[]>(() =>
     getInitialScreenshotDrafts(initialSubmission)
   )
-  const [isUploadingScreenshot, setIsUploadingScreenshot] = useState(false)
   const [isDraggingScreenshots, setIsDraggingScreenshots] = useState(false)
 
   const canSubmit = status === "active"
-  const draftStorageKey = `oatmeal:submission-draft:${hackathonSlug}`
+  const isPendingTeam = pendingTeamApproval || teamStatus === "pending_approval"
+  const isDisbandedTeam = teamStatus === "disbanded"
+  const draftOwnerId = isSignedIn ? user?.id ?? null : null
   const videoPreview = demoVideoUrl.trim() ? getVideoEmbedInfo(demoVideoUrl) : null
 
   useEffect(() => {
@@ -172,17 +231,106 @@ export function SubmissionButton({
         .map(({ slot, url }) => ({ slot, url })),
     }
 
-    window.localStorage.setItem(draftStorageKey, JSON.stringify(draft))
+    writeProjectDraft(
+      window.localStorage,
+      hackathonSlug,
+      draftOwnerId,
+      JSON.stringify(draft),
+    )
   }, [
     currentStep,
     description,
     demoVideoUrl,
-    draftStorageKey,
+    draftOwnerId,
+    hackathonSlug,
     githubUrl,
     isDialogOpen,
     liveAppUrl,
     screenshots,
     title,
+  ])
+
+  useEffect(() => {
+    const prepareProject = (event: Event) => {
+      const { draft, acknowledge } = (event as PrepareProjectEvent).detail
+      try {
+        const savedDraft = parseSubmissionDraft(
+          readProjectDraft(window.localStorage, hackathonSlug, draftOwnerId),
+        )
+        const preservedProgress = isDialogOpen
+          ? {
+              currentStep,
+              screenshots: screenshots
+                .filter((screenshot) => !screenshot.url.startsWith("blob:"))
+                .map(({ slot, url }) => ({ slot, url })),
+            }
+          : {
+              currentStep: savedDraft?.currentStep ?? 0,
+              screenshots: savedDraft?.screenshots ?? [],
+            }
+        const mergedDraft: SubmissionDraft = {
+          ...draft,
+          ...preservedProgress,
+        }
+        const serializedDraft = JSON.stringify(mergedDraft)
+
+        writeProjectDraft(
+          window.localStorage,
+          hackathonSlug,
+          draftOwnerId,
+          serializedDraft,
+        )
+        if (
+          readProjectDraft(window.localStorage, hackathonSlug, draftOwnerId) !==
+          serializedDraft
+        ) {
+          throw new Error("Project draft storage verification failed")
+        }
+        aggregateRequestIdRef.current = null
+        setTitle(draft.title)
+        setGithubUrl(draft.githubUrl)
+        setLiveAppUrl(draft.liveAppUrl)
+        setDemoVideoUrl(draft.demoVideoUrl)
+        setDescription(draft.description)
+        setError(null)
+        if (!isDialogOpen) {
+          setCurrentStep(mergedDraft.currentStep)
+          for (const screenshot of screenshots) {
+            if (screenshot.url.startsWith("blob:")) {
+              URL.revokeObjectURL(screenshot.url)
+              previewUrlsRef.current.delete(screenshot.url)
+            }
+          }
+          setScreenshots(toScreenshotDraftItems(mergedDraft.screenshots, "prepared"))
+        }
+        if (isSignedIn && isRegistered && canSubmit && !isPendingTeam && !isDisbandedTeam) {
+          setIsDialogOpen(true)
+        }
+        acknowledge({ ok: true })
+      } catch {
+        acknowledge({
+          ok: false,
+          error: {
+            code: "storage_unavailable",
+            message: "Turn on browser storage, then try again.",
+            retryable: false,
+          },
+        })
+      }
+    }
+    window.addEventListener(PREPARE_PROJECT_EVENT, prepareProject)
+    return () => window.removeEventListener(PREPARE_PROJECT_EVENT, prepareProject)
+  }, [
+    canSubmit,
+    currentStep,
+    draftOwnerId,
+    hackathonSlug,
+    isDialogOpen,
+    isRegistered,
+    isSignedIn,
+    isDisbandedTeam,
+    isPendingTeam,
+    screenshots,
   ])
 
   if (!isLoaded) {
@@ -214,7 +362,21 @@ export function SubmissionButton({
     return null
   }
 
-  if (pendingTeamApproval) {
+  if (isDisbandedTeam) {
+    return (
+      <Button
+        disabled
+        variant="outline"
+        size="lg"
+        title="Your team is no longer active. Ask the organizer if you need help."
+      >
+        <Lock className="size-4" />
+        Team is no longer active
+      </Button>
+    )
+  }
+
+  if (isPendingTeam) {
     return (
       <Button disabled variant="outline" size="lg" title="Your team is waiting for organizer approval before you can submit.">
         <Clock className="size-4" />
@@ -265,43 +427,9 @@ export function SubmissionButton({
       return null
     }
 
-    const rawDraft = window.localStorage.getItem(draftStorageKey)
-    if (!rawDraft) {
-      return null
-    }
-
-    try {
-      const parsed = JSON.parse(rawDraft) as Partial<SubmissionDraft>
-      const savedScreenshots: SubmissionScreenshot[] = Array.isArray(parsed.screenshots)
-        ? parsed.screenshots.flatMap((screenshot) =>
-            isScreenshotSlot(screenshot.slot) &&
-            typeof screenshot.url === "string" &&
-            screenshot.url.trim()
-              ? [{ slot: screenshot.slot, url: screenshot.url }]
-              : []
-          )
-        : []
-      const screenshots: SubmissionScreenshot[] = savedScreenshots.length
-        ? savedScreenshots.slice(0, MAX_SUBMISSION_SCREENSHOTS)
-        : typeof parsed.screenshotPreview === "string" && parsed.screenshotPreview
-          ? [{ slot: 0 as const, url: parsed.screenshotPreview }]
-          : []
-
-      return {
-        title: parsed.title ?? "",
-        githubUrl: parsed.githubUrl ?? "",
-        liveAppUrl: parsed.liveAppUrl ?? "",
-        demoVideoUrl: parsed.demoVideoUrl ?? "",
-        description: parsed.description ?? "",
-        currentStep: Math.min(
-          Math.max(parsed.currentStep ?? 0, 0),
-          submissionSteps.length - 1
-        ),
-        screenshots,
-      }
-    } catch {
-      return null
-    }
+    return parseSubmissionDraft(
+      readProjectDraft(window.localStorage, hackathonSlug, draftOwnerId),
+    )
   }
 
   function restoreDraft() {
@@ -317,13 +445,7 @@ export function SubmissionButton({
     setDescription(draft.description)
     setCurrentStep(draft.currentStep)
     revokePreviewUrls(screenshots)
-    setScreenshots(
-      draft.screenshots.map((screenshot) => ({
-        ...screenshot,
-        id: `draft-${screenshot.slot}-${screenshot.url}`,
-        file: null,
-      }))
-    )
+    setScreenshots(toScreenshotDraftItems(draft.screenshots, "draft"))
   }
 
   function clearDraft() {
@@ -331,7 +453,7 @@ export function SubmissionButton({
       return
     }
 
-    window.localStorage.removeItem(draftStorageKey)
+    removeProjectDraft(window.localStorage, hackathonSlug, draftOwnerId)
   }
 
   function validateScreenshotFile(file: File): string | null {
@@ -339,8 +461,8 @@ export function SubmissionButton({
       return "Please select a PNG, JPEG, or WebP image"
     }
 
-    if (file.size > 10 * 1024 * 1024) {
-      return "Screenshot must be smaller than 10MB"
+    if (file.size > MAX_SUBMISSION_SCREENSHOT_REQUEST_BYTES) {
+      return "Screenshots must be 4MB or less in total"
     }
 
     return null
@@ -375,7 +497,17 @@ export function SubmissionButton({
       }
     }
 
+    const retainedBytes = screenshots
+      .filter((screenshot) => screenshot.file && screenshot.slot !== replaceSlot)
+      .reduce((total, screenshot) => total + (screenshot.file?.size ?? 0), 0)
+    const selectedBytes = files.reduce((total, file) => total + file.size, 0)
+    if (retainedBytes + selectedBytes > MAX_SUBMISSION_SCREENSHOT_REQUEST_BYTES) {
+      setError("Screenshots must be 4MB or less in total")
+      return
+    }
+
     setError(fileList.length > availableSlots.length ? "You can upload up to 2 screenshots." : null)
+    aggregateRequestIdRef.current = null
     setScreenshots((previous) => {
       const next = replaceSlot === null
         ? [...previous]
@@ -412,6 +544,7 @@ export function SubmissionButton({
   }
 
   function handleRemoveScreenshot(slot: SubmissionScreenshotSlot) {
+    aggregateRequestIdRef.current = null
     setScreenshots((previous) =>
       previous.filter((screenshot) => {
         if (screenshot.slot === slot) {
@@ -426,7 +559,7 @@ export function SubmissionButton({
 
   function handleScreenshotDragOver(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault()
-    if (!isSubmitting && !isUploadingScreenshot) {
+    if (!isSubmitting) {
       setIsDraggingScreenshots(true)
     }
   }
@@ -441,147 +574,11 @@ export function SubmissionButton({
     e.preventDefault()
     setIsDraggingScreenshots(false)
 
-    if (isSubmitting || isUploadingScreenshot) {
+    if (isSubmitting) {
       return
     }
 
     handleScreenshotFiles(Array.from(e.dataTransfer.files), null)
-  }
-
-  async function syncScreenshots(
-    previousScreenshots: SubmissionScreenshot[],
-    nextScreenshots: ScreenshotDraftItem[]
-  ): Promise<ScreenshotSyncResult> {
-    const nextBySlot = new Map<SubmissionScreenshotSlot, string>()
-    for (const screenshot of nextScreenshots) {
-      if (!screenshot.file) {
-        nextBySlot.set(screenshot.slot, screenshot.url)
-      }
-    }
-
-    const currentSlots = new Set(nextScreenshots.map((screenshot) => screenshot.slot))
-    const removedSlots = previousScreenshots
-      .filter((screenshot) => !currentSlots.has(screenshot.slot))
-      .map((screenshot) => screenshot.slot)
-    const screenshotsToUpload = nextScreenshots.filter(
-      (screenshot): screenshot is ScreenshotDraftItem & { file: File } => screenshot.file !== null
-    )
-
-    if (removedSlots.length === 0 && screenshotsToUpload.length === 0) {
-      return {
-        ok: true,
-        screenshots: nextScreenshots.map(({ slot, url }) => ({ slot, url })),
-      }
-    }
-
-    setIsUploadingScreenshot(true)
-    const syncedPreviewUrls: string[] = []
-    let didChange = false
-    try {
-      if (nextScreenshots.length === 0 && previousScreenshots.length > 0) {
-        const response = await fetch(
-          `/api/public/hackathons/${hackathonSlug}/submissions/screenshot`,
-          { method: "DELETE" }
-        )
-
-        if (!response.ok) {
-          const data = await response.json().catch(() => ({}))
-          return {
-            ok: false,
-            didChange: data.code === "update_failed",
-            error: data.error || "Failed to remove screenshot",
-          }
-        }
-
-        didChange = true
-        nextBySlot.clear()
-      } else {
-        // Uploads stay serial because each API call merges with the current saved screenshot metadata.
-        for (const screenshot of screenshotsToUpload) {
-          const formData = new FormData()
-          formData.append("file", screenshot.file)
-          formData.append("slot", String(screenshot.slot))
-
-          try {
-            const response = await fetch(
-              `/api/public/hackathons/${hackathonSlug}/submissions/screenshot`,
-              { method: "POST", body: formData }
-            )
-            const data = await response.json().catch(() => ({}))
-
-            if (!response.ok) {
-              return {
-                ok: false,
-                didChange: didChange || data.code === "update_failed",
-                error: data.error || "Failed to upload screenshot",
-              }
-            }
-
-            if (typeof data.screenshotUrl !== "string") {
-              return {
-                ok: false,
-                didChange,
-                error: "Failed to upload screenshot",
-              }
-            }
-
-            nextBySlot.set(screenshot.slot, data.screenshotUrl)
-            syncedPreviewUrls.push(screenshot.url)
-            didChange = true
-          } catch {
-            return {
-              ok: false,
-              didChange,
-              error: "Failed to upload screenshot",
-            }
-          }
-        }
-
-        for (const slot of removedSlots) {
-          const response = await fetch(
-            `/api/public/hackathons/${hackathonSlug}/submissions/screenshot?slot=${slot}`,
-            { method: "DELETE" }
-          )
-
-          if (!response.ok) {
-            const data = await response.json().catch(() => ({}))
-            return {
-              ok: false,
-              didChange: didChange || data.code === "update_failed",
-              error: data.error || "Failed to remove screenshot",
-            }
-          }
-
-          nextBySlot.delete(slot)
-          didChange = true
-        }
-      }
-
-      const syncedScreenshots = Array.from(nextBySlot.entries())
-        .sort(([a], [b]) => a - b)
-        .map(([slot, url]) => ({ slot, url }))
-
-      for (const url of syncedPreviewUrls) {
-        revokePreviewUrl(url)
-      }
-
-      setScreenshots(
-        syncedScreenshots.map((screenshot) => ({
-          ...screenshot,
-          id: `saved-${screenshot.slot}-${screenshot.url}`,
-          file: null,
-        }))
-      )
-      return { ok: true, screenshots: syncedScreenshots }
-    } catch {
-      return {
-        ok: false,
-        didChange,
-        error: "Failed to upload screenshot",
-      }
-    } finally {
-      setIsUploadingScreenshot(false)
-    }
   }
 
   function handleOpenChange(open: boolean) {
@@ -616,8 +613,10 @@ export function SubmissionButton({
       invalid_demo_video_url: "Please enter a valid video link.",
       no_file: "Please select a screenshot to upload.",
       invalid_file_type: "Please select a PNG, JPEG, or WebP image.",
-      file_too_large: "Screenshot must be smaller than 10MB.",
+      file_too_large: "Screenshots must be 4MB or less in total.",
       upload_failed: "Failed to upload screenshot. Please try again.",
+      invalid_screenshot_slot: "One of the screenshot slots is invalid.",
+      screenshot_sync_failed: "Your project was saved, but screenshot changes did not finish.",
     }
     return errorMessages[code] || fallback
   }
@@ -697,6 +696,7 @@ export function SubmissionButton({
   }
 
   function handleChange(setter: (value: string) => void, value: string) {
+    aggregateRequestIdRef.current = null
     setter(value)
     if (error) {
       setError(null)
@@ -715,6 +715,7 @@ export function SubmissionButton({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (submissionInFlightRef.current) return
     setError(null)
 
     const validationError = validateForm()
@@ -724,23 +725,36 @@ export function SubmissionButton({
       return
     }
 
+    submissionInFlightRef.current = true
     setIsSubmitting(true)
 
     try {
       const normalizedGithubUrl = normalizeUrl(githubUrl)
       const normalizedLiveAppUrl = normalizeOptionalUrl(liveAppUrl)
       const normalizedDemoVideoUrl = normalizeOptionalUrl(demoVideoUrl)
-      const method = submission ? "PATCH" : "POST"
-      const response = await fetch(`/api/public/hackathons/${hackathonSlug}/submissions`, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const formData = new FormData()
+      const requestId = aggregateRequestIdRef.current ?? crypto.randomUUID()
+      aggregateRequestIdRef.current = requestId
+      formData.append("payload", JSON.stringify({
           title: title.trim(),
           description: description.trim(),
           githubUrl: normalizedGithubUrl,
           liveAppUrl: normalizedLiveAppUrl,
           demoVideoUrl: normalizedDemoVideoUrl,
-        }),
+          retainedScreenshotSlots: screenshots
+            .filter((screenshot) => screenshot.file === null)
+            .map((screenshot) => screenshot.slot),
+          requestId,
+        }))
+      for (const screenshot of screenshots) {
+        if (screenshot.file) {
+          formData.append(`screenshot_${screenshot.slot}`, screenshot.file)
+        }
+      }
+
+      const response = await fetch(`/api/public/hackathons/${hackathonSlug}/submissions/complete`, {
+        method: "POST",
+        body: formData,
       })
 
       let data
@@ -752,24 +766,71 @@ export function SubmissionButton({
       }
 
       if (!response.ok) {
+        if (data.projectSaved && typeof data.submissionId === "string") {
+          const savedScreenshots: SubmissionScreenshot[] = Array.isArray(data.screenshots)
+            ? data.screenshots.filter(
+                (screenshot: unknown): screenshot is SubmissionScreenshot =>
+                  !!screenshot &&
+                  typeof screenshot === "object" &&
+                  isScreenshotSlot((screenshot as SubmissionScreenshot).slot) &&
+                  typeof (screenshot as SubmissionScreenshot).url === "string" &&
+                  Boolean((screenshot as SubmissionScreenshot).url.trim())
+              )
+            : submission
+              ? getSubmissionScreenshots(submission)
+              : []
+          const savedSlots = new Set(savedScreenshots.map((screenshot) => screenshot.slot))
+          const pendingScreenshots = screenshots.filter(
+            (screenshot) => screenshot.file && !savedSlots.has(screenshot.slot)
+          )
+          for (const screenshot of screenshots) {
+            if (screenshot.file && savedSlots.has(screenshot.slot)) {
+              revokePreviewUrl(screenshot.url)
+            }
+          }
+          setScreenshots([
+            ...pendingScreenshots,
+            ...toScreenshotDraftItems(savedScreenshots, "saved"),
+          ].sort((left, right) => left.slot - right.slot))
+          setSubmission({
+            ...submission,
+            id: data.submissionId,
+            title: title.trim(),
+            description: description.trim(),
+            github_url: normalizedGithubUrl,
+            live_app_url: normalizedLiveAppUrl,
+            demo_video_url: normalizedDemoVideoUrl,
+            screenshot_url: savedScreenshots[0]?.url ?? null,
+            metadata: buildSubmissionScreenshotMetadata(submission?.metadata, savedScreenshots),
+          } as Submission)
+          setError(`Your project was saved, but screenshot changes did not finish. ${data.error || "Try again."}`)
+          return
+        }
         setError(getErrorMessage(data.code, data.error || "Failed to submit"))
         return
       }
 
-      const previousScreenshots = submission ? getSubmissionScreenshots(submission) : []
-      const screenshotSync = await syncScreenshots(previousScreenshots, screenshots)
-      if (!screenshotSync.ok) {
-        const prefix = screenshotSync.didChange
-          ? "Your project was saved, but some screenshot changes did not finish."
-          : "Your project was saved, but screenshots were not updated."
-        setError(`${prefix} ${screenshotSync.error}`)
-        return
-      }
-      const finalScreenshots = screenshotSync.screenshots
+      const finalScreenshots: SubmissionScreenshot[] = Array.isArray(data.screenshots)
+        ? data.screenshots.filter(
+            (screenshot: unknown): screenshot is SubmissionScreenshot =>
+              !!screenshot &&
+              typeof screenshot === "object" &&
+              isScreenshotSlot((screenshot as SubmissionScreenshot).slot) &&
+              typeof (screenshot as SubmissionScreenshot).url === "string" &&
+              Boolean((screenshot as SubmissionScreenshot).url.trim())
+          )
+        : []
       const finalMetadata = buildSubmissionScreenshotMetadata(
         submission?.metadata,
         finalScreenshots
       )
+
+      for (const screenshot of screenshots) {
+        if (screenshot.file) {
+          revokePreviewUrl(screenshot.url)
+        }
+      }
+      setScreenshots(toScreenshotDraftItems(finalScreenshots, "saved"))
 
       setSubmission({
         ...submission,
@@ -784,6 +845,7 @@ export function SubmissionButton({
       } as Submission)
 
       clearDraft()
+      aggregateRequestIdRef.current = null
       setIsDialogOpen(false)
       router.refresh()
     } catch (err) {
@@ -793,6 +855,7 @@ export function SubmissionButton({
         setError("An unexpected error occurred. Please try again.")
       }
     } finally {
+      submissionInFlightRef.current = false
       setIsSubmitting(false)
     }
   }
@@ -993,13 +1056,13 @@ export function SubmissionButton({
                   >
                     {screenshots.length > 0 && (
                       <div className="grid gap-3 sm:grid-cols-2">
-                        {screenshots.map((screenshot, index) => (
+                        {screenshots.map((screenshot) => (
                           <div key={screenshot.id} className="space-y-2">
                             <div className="flex aspect-video items-center justify-center overflow-hidden rounded-md border bg-muted">
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
                                 src={screenshot.url}
-                                alt={`Screenshot ${index + 1} preview`}
+                                alt={`Screenshot ${screenshot.slot + 1} preview`}
                                 className="size-full object-contain"
                               />
                             </div>
@@ -1009,7 +1072,7 @@ export function SubmissionButton({
                                 size="sm"
                                 variant="outline"
                                 onClick={() => openScreenshotPicker(screenshot.slot)}
-                                disabled={isSubmitting || isUploadingScreenshot}
+                                disabled={isSubmitting}
                               >
                                 <Upload className="size-4" />
                                 Replace
@@ -1019,7 +1082,7 @@ export function SubmissionButton({
                                 variant="destructive"
                                 size="sm"
                                 onClick={() => handleRemoveScreenshot(screenshot.slot)}
-                                disabled={isSubmitting || isUploadingScreenshot}
+                                disabled={isSubmitting}
                               >
                                 <X className="size-4" />
                                 Remove
@@ -1034,7 +1097,7 @@ export function SubmissionButton({
                       <button
                         type="button"
                         onClick={() => openScreenshotPicker()}
-                        disabled={isSubmitting || isUploadingScreenshot}
+                        disabled={isSubmitting}
                         className={cn(
                           "flex min-h-36 w-full flex-col items-center justify-center gap-1.5 rounded-md bg-muted/50 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50",
                           screenshots.length > 0 && "mt-3"
@@ -1044,7 +1107,7 @@ export function SubmissionButton({
                         <span className="text-xs font-medium">
                           {screenshots.length > 0 ? "Add another screenshot" : "Upload screenshots"}
                         </span>
-                        <span className="text-xs text-muted-foreground">PNG, JPEG, or WebP (max 10MB)</span>
+                        <span className="text-xs text-muted-foreground">PNG, JPEG, or WebP (4MB total)</span>
                       </button>
                     )}
 
@@ -1063,7 +1126,7 @@ export function SubmissionButton({
                   type="button"
                   variant="outline"
                   onClick={() => setIsDialogOpen(false)}
-                  disabled={isSubmitting || isUploadingScreenshot}
+                  disabled={isSubmitting}
                 >
                   Cancel
                 </Button>
@@ -1072,16 +1135,16 @@ export function SubmissionButton({
                   type="button"
                   variant="outline"
                   onClick={handlePreviousStep}
-                  disabled={isSubmitting || isUploadingScreenshot}
+                  disabled={isSubmitting}
                 >
                   Back
                 </Button>
               )}
-              <Button type="submit" disabled={isSubmitting || isUploadingScreenshot}>
-                {isSubmitting || isUploadingScreenshot ? (
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? (
                   <>
                     <Loader2 className="size-4 animate-spin" />
-                    {isUploadingScreenshot ? "Uploading..." : submission ? "Saving..." : "Submitting..."}
+                    {submission ? "Saving..." : "Submitting..."}
                   </>
                 ) : currentStep < submissionSteps.length - 1 ? (
                   "Next"

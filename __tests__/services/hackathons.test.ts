@@ -13,6 +13,8 @@ const {
   listParticipatingHackathons,
   listOrganizedHackathons,
   listSponsoredHackathons,
+  listJudgingHackathons,
+  createHackathon,
   isUserRegistered,
   getParticipantCount,
   getRegistrationInfo,
@@ -50,6 +52,59 @@ const mockHackathon: Hackathon = {
 describe("Hackathons Service", () => {
   beforeEach(() => {
     resetSupabaseMocks()
+  })
+
+  describe("createHackathon", () => {
+    it("uses a reachable fallback URL for a non-Latin event name", async () => {
+      const lookup = createChainableMock({ data: null, error: null })
+      const insert = createChainableMock({
+        data: { ...mockHackathon, id: "h-international", name: "東京ハッカソン" },
+        error: null,
+      })
+      let call = 0
+      setMockFromImplementation(() => {
+        call += 1
+        return call === 1 ? lookup : insert
+      })
+
+      const result = await createHackathon(
+        "t1",
+        { name: "東京ハッカソン" },
+        { track: false },
+      )
+
+      expect(result?.id).toBe("h-international")
+      expect(insert.insert).toHaveBeenCalledWith(expect.objectContaining({
+        slug: expect.stringMatching(/^event-[a-f0-9]{8}$/),
+      }))
+    })
+
+    it("retries a slug collision caused by a concurrent create", async () => {
+      const firstLookup = createChainableMock({ data: null, error: null })
+      const collision = createChainableMock({
+        data: null,
+        error: { code: "23505", message: "duplicate slug" },
+      })
+      const secondLookup = createChainableMock({ data: null, error: null })
+      const insert = createChainableMock({
+        data: { ...mockHackathon, id: "h-second", slug: "same-name-1" },
+        error: null,
+      })
+      const calls = [firstLookup, collision, secondLookup, insert]
+      let call = 0
+      setMockFromImplementation(() => calls[call++] ?? insert)
+
+      const result = await createHackathon(
+        "t1",
+        { name: "Same Name" },
+        { track: false },
+      )
+
+      expect(result?.id).toBe("h-second")
+      expect(insert.insert).toHaveBeenCalledWith(expect.objectContaining({
+        slug: "same-name-1",
+      }))
+    })
   })
 
   describe("listParticipatingHackathons", () => {
@@ -144,6 +199,23 @@ describe("Hackathons Service", () => {
 
       expect(result).toHaveLength(1)
     })
+
+    it("hides a crashed aggregate from the attendee list", async () => {
+      const chain = createChainableMock({
+        data: [{
+          hackathon_id: "h1",
+          role: "participant",
+          hackathons: {
+            ...mockHackathon,
+            metadata: { aggregate_creation: { state: "building" } },
+          },
+        }],
+        error: null,
+      })
+      setMockFromImplementation(() => chain)
+
+      expect(await listParticipatingHackathons("user_123")).toEqual([])
+    })
   })
 
   describe("listOrganizedHackathons", () => {
@@ -206,6 +278,19 @@ describe("Hackathons Service", () => {
       expect(result).toHaveLength(1)
       expect(chain.or).not.toHaveBeenCalled()
     })
+
+    it("hides a crashed aggregate from the organizer list", async () => {
+      const chain = createChainableMock({
+        data: [{
+          ...mockHackathon,
+          metadata: { aggregate_creation: { state: "compensating" } },
+        }],
+        error: null,
+      })
+      setMockFromImplementation(() => chain)
+
+      expect(await listOrganizedHackathons("t1")).toEqual([])
+    })
   })
 
   describe("listSponsoredHackathons", () => {
@@ -263,6 +348,42 @@ describe("Hackathons Service", () => {
       const result = await listSponsoredHackathons("t1")
 
       expect(result).toHaveLength(1)
+    })
+
+    it("hides a crashed aggregate from the sponsor list", async () => {
+      const chain = createChainableMock({
+        data: [{
+          hackathon_id: "h1",
+          hackathons: {
+            ...mockHackathon,
+            metadata: { aggregate_creation: { state: "failed" } },
+          },
+        }],
+        error: null,
+      })
+      setMockFromImplementation(() => chain)
+
+      expect(await listSponsoredHackathons("t1")).toEqual([])
+    })
+  })
+
+  describe("listJudgingHackathons", () => {
+    it("hides a crashed aggregate from the judge list", async () => {
+      const chain = createChainableMock({
+        data: [{
+          hackathon_id: "h1",
+          role: "judge",
+          hackathons: {
+            ...mockHackathon,
+            status: "judging",
+            metadata: { aggregate_creation: { state: "building" } },
+          },
+        }],
+        error: null,
+      })
+      setMockFromImplementation(() => chain)
+
+      expect(await listJudgingHackathons("judge_123")).toEqual([])
     })
   })
 
@@ -391,6 +512,31 @@ describe("Hackathons Service", () => {
   })
 
   describe("registerForHackathon", () => {
+    it("passes every verified email to the registration guard", async () => {
+      let rpcArgs: Record<string, unknown> | undefined
+      setMockRpcImplementation((_name, args) => {
+        rpcArgs = args as Record<string, unknown>
+        return Promise.resolve({
+          data: [{ success: true, participant_id: "p123", team_id: "t123" }],
+          error: null,
+        })
+      })
+
+      await registerForHackathon(
+        "h1",
+        "user_123",
+        "Test Team",
+        ["primary@example.com", "captain@example.com"],
+      )
+
+      expect(rpcArgs).toMatchObject({
+        p_hackathon_id: "h1",
+        p_clerk_user_id: "user_123",
+        p_team_name: "Test Team",
+        p_user_emails: ["primary@example.com", "captain@example.com"],
+      })
+    })
+
     it("returns success when registration succeeds", async () => {
       setMockRpcImplementation(() =>
         Promise.resolve({

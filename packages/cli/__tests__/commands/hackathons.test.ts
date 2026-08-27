@@ -117,6 +117,9 @@ describe("hackathons commands", () => {
       const body = JSON.parse(init.body as string)
       expect(body.name).toBe("New Hack")
       expect(body.slug).toBe("new-hack")
+      expect(body.draftId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      )
     })
 
     it("imports a hackathon from a supported event URL", async () => {
@@ -148,6 +151,9 @@ describe("hackathons commands", () => {
 
       expect(url).toContain("/api/dashboard/import/url")
       expect(body).toEqual({
+        draftId: expect.stringMatching(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+        ),
         url: "lu.ma/imported-hack",
         name: "Imported Hack Override",
         description: "Imported from event page",
@@ -186,6 +192,9 @@ describe("hackathons commands", () => {
 
       expect(url).toContain("/api/dashboard/import/url")
       expect(body).toEqual({
+        draftId: expect.stringMatching(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+        ),
         url: "https://devpost.com/hackathon/test",
         name: undefined,
         description: undefined,
@@ -195,6 +204,85 @@ describe("hackathons commands", () => {
         name: "Devpost Hack",
         slug: "devpost-hack",
       })
+    })
+
+    it("reuses a tenant-scoped draft ID for the same idempotency key", async () => {
+      const whoami = {
+        tenantId: "tenant-org-1",
+        tenantName: "Acme Labs",
+        tenantType: "organization" as const,
+        keyId: "key-1",
+        scopes: ["hackathons:write"],
+      }
+      mockFetch
+        .mockResolvedValueOnce(jsonResponse(whoami))
+        .mockResolvedValueOnce(
+          jsonResponse({ id: "first-id", name: "New Hack", slug: "new-hack" }),
+        )
+        .mockResolvedValueOnce(jsonResponse({
+          ...whoami,
+          tenantId: "tenant-org-2",
+        }))
+        .mockResolvedValueOnce(
+          jsonResponse({ id: "second-id", name: "New Hack", slug: "new-hack" }),
+        )
+        .mockResolvedValueOnce(jsonResponse(whoami))
+        .mockResolvedValueOnce(
+          jsonResponse({ id: "first-id", name: "New Hack", slug: "new-hack" }),
+        )
+      const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
+      const { runHackathonsCreate } = await import("../../src/commands/hackathons/create")
+
+      await runHackathonsCreate(client, [
+        "--name", "New Hack",
+        "--idempotency-key", "automation-run-42",
+      ])
+      await runHackathonsCreate(client, [
+        "--name", "New Hack",
+        "--idempotency-key", "automation-run-42",
+      ])
+      await runHackathonsCreate(client, [
+        "--name", "New Hack",
+        "--idempotency-key", "automation-run-42",
+      ])
+
+      const firstBody = JSON.parse(
+        (mockFetch.mock.calls[1][1] as RequestInit).body as string,
+      )
+      const otherTenantBody = JSON.parse(
+        (mockFetch.mock.calls[3][1] as RequestInit).body as string,
+      )
+      const sameTenantBody = JSON.parse(
+        (mockFetch.mock.calls[5][1] as RequestInit).body as string,
+      )
+      expect(firstBody.draftId).toBe(sameTenantBody.draftId)
+      expect(firstBody.draftId).not.toBe(otherTenantBody.draftId)
+      expect(firstBody.draftId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      )
+    })
+
+    it("rejects invalid idempotency keys before making a request", async () => {
+      const exitSpy = spyOn(process, "exit").mockImplementation(() => {
+        throw new Error("exit")
+      })
+      const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
+      const { runHackathonsCreate } = await import("../../src/commands/hackathons/create")
+
+      for (const args of [
+        ["--name", "New Hack", "--idempotency-key", "   "],
+        ["--name", "New Hack", "--idempotency-key", "--json"],
+        ["--name", "New Hack", "--idempotency-key", "x".repeat(201)],
+      ]) {
+        await expect(runHackathonsCreate(client, args)).rejects.toThrow("exit")
+      }
+
+      expect(consoleErrorSpy).toHaveBeenCalledTimes(3)
+      expect(consoleErrorSpy).toHaveBeenLastCalledWith(
+        "Error: --idempotency-key must be 1 to 200 characters",
+      )
+      expect(mockFetch).not.toHaveBeenCalled()
+      exitSpy.mockRestore()
     })
 
     it("blocks personal workspace creates", async () => {

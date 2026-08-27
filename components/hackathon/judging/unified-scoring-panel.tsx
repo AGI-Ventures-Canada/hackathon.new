@@ -12,6 +12,7 @@ import Image from "next/image"
 import { assertOkJson } from "@/lib/utils/fetch"
 import type { AssignmentDetail } from "@/lib/services/judging"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
+import { useJudgeWebMcpEditor } from "./judge-webmcp-tools"
 
 interface UnifiedScoringPanelProps {
   hackathonSlug: string
@@ -217,6 +218,58 @@ export function UnifiedScoringPanel({
     }
   }
 
+  const webMcpEditor = useMemo(() => {
+    if (!detail) return null
+    const criteria = detail.criteria.map((criterion, index) => ({
+      ref: `criterion-${index + 1}`,
+      name: criterion.name,
+      min: criterion.min_score,
+      max: criterion.max_score,
+      id: criterion.id,
+    }))
+
+    return {
+      info: {
+        criteria: criteria.map(({ id: _id, ...criterion }) => criterion),
+      },
+      prepare: (preparation: import("@/lib/webmcp/judge-tools").JudgePreparation) => {
+        if (preparation.kind !== "weighted_score") {
+          return { prepared: false, message: "This project uses score categories." }
+        }
+
+        const nextScores: Record<string, number> = {}
+        for (const requested of preparation.scores) {
+          const criterion = criteria.find(
+            (candidate) =>
+              candidate.ref === requested.criterion ||
+              candidate.name.toLowerCase() === requested.criterion.toLowerCase(),
+          )
+          if (!criterion || requested.value < criterion.min || requested.value > criterion.max) {
+            return {
+              prepared: false,
+              message: `Check ${requested.criterion} and use one of the listed score ranges.`,
+            }
+          }
+          nextScores[criterion.id] = requested.value
+        }
+
+        setScores((current) => ({ ...current, ...nextScores }))
+        if (preparation.notes !== undefined) {
+          clearTimeout(notesTimeoutRef.current)
+          setNotes(preparation.notes)
+        }
+        setError(null)
+        return {
+          prepared: true,
+          message: "Scores are filled in. Review them, then click Submit scores.",
+        }
+      },
+    }
+  }, [detail])
+
+  const webMcpAssignmentIds = useMemo(() => (detail ? [assignmentId] : []), [assignmentId, detail])
+  useJudgeWebMcpEditor(webMcpAssignmentIds, webMcpEditor)
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-8">
@@ -234,7 +287,11 @@ export function UnifiedScoringPanel({
   }
 
   return (
-    <div className="space-y-6" onKeyDown={handleKeyDown}>
+    <div
+      className="space-y-6"
+      data-judge-assignment={assignmentId}
+      onKeyDown={handleKeyDown}
+    >
       {detail.submissionScreenshotUrl && (
         <>
           <div className="relative rounded-lg border overflow-hidden group">

@@ -3425,6 +3425,21 @@ describe("Judging Service", () => {
         expect(summary.prizeRankings[0].prizeName).toBe("Best Overall")
         expect(summary.prizeRankings[0].top[0].submissionId).toBe("s1")
       }
+
+      coreCriteriaCallCount = 0
+      prizeCriteriaCallCount = 0
+      const anonymousSummary = await getJudgeSummary("h1", "j1", {
+        anonymousJudging: true,
+      })
+      expect(anonymousSummary.unlocked).toBe(true)
+      if (anonymousSummary.unlocked) {
+        expect(anonymousSummary.coreRanking.top.every((entry) => entry.teamName === null)).toBe(true)
+        expect(
+          anonymousSummary.prizeRankings.every((ranking) =>
+            ranking.top.every((entry) => entry.teamName === null),
+          ),
+        ).toBe(true)
+      }
     })
 
     it("returns locked when judge has no assignments", async () => {

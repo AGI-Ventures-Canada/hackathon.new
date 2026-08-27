@@ -34,13 +34,14 @@ export async function sendJudgeNotification(input: SendNotificationInput): Promi
 
   const result = await sendJudgeAddedNotification({
     to: input.notification.email,
+    deliveryId: input.notification.id,
     hackathonName: input.hackathonName,
     hackathonSlug: input.hackathonSlug,
     addedByName: input.notification.added_by_name,
   })
 
   if (!result.success) {
-    throw new Error(`Failed to send email to ${input.notification.email}`)
+    throw new Error(`Failed to send judge notification ${input.notification.id}`)
   }
 
   const client = getSupabase() as unknown as SupabaseClient

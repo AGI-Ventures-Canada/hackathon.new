@@ -1,5 +1,6 @@
-import { Section, Text } from "@react-email/components"
+import { Text } from "@react-email/components"
 import { OatmealLayout } from "./_components/oatmeal-layout"
+import { InfoBox } from "./_components/info-box"
 import { colors, fontSize, spacing } from "./_components/constants"
 
 interface PrizeShippedEmailProps {
@@ -37,19 +38,11 @@ export default function PrizeShippedEmail({
       </Text>
 
       {trackingNumber && (
-        <Section
-          style={{
-            background: colors.infoBoxBg,
-            padding: `${spacing.md} ${spacing.lg}`,
-            marginBottom: spacing.md,
-            borderRadius: "8px",
-            borderLeft: `3px solid ${colors.accent}`,
-          }}
-        >
+        <InfoBox label="Tracking number">
           <Text style={{ margin: "0", fontSize: fontSize.base }}>
-            <strong>Tracking number:</strong> {trackingNumber}
+            {trackingNumber}
           </Text>
-        </Section>
+        </InfoBox>
       )}
 
       <Text

@@ -11,6 +11,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog"
 import type { ScheduleItem } from "@/lib/services/schedule-items"
 
@@ -81,6 +82,7 @@ export const SubmissionDeadlineDialog = forwardRef<SubmissionDeadlineDialogHandl
         <DialogContent onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>Submissions Close & Judging Starts</DialogTitle>
+            <DialogDescription>Pick when projects close and judging begins.</DialogDescription>
           </DialogHeader>
           <form
             onSubmit={(e) => { e.preventDefault(); handleSave() }}

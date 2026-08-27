@@ -11,6 +11,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog"
 import {
   ChevronRight,
@@ -382,6 +383,7 @@ export function EditPrizeDialog({
       <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit prize</DialogTitle>
+          <DialogDescription>Change the prize and how judges pick its winner.</DialogDescription>
         </DialogHeader>
         {prize && (
           <form onSubmit={handleSave} onKeyDown={handleKeyDown} autoComplete="off" className="space-y-4">

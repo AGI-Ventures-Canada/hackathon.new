@@ -6,6 +6,7 @@ import type {
 } from "@/lib/db/hackathon-types"
 
 export type TransitionNotificationInput = {
+  notificationId: string
   hackathonId: string
   hackathonName: string
   hackathonSlug: string
@@ -30,6 +31,7 @@ export async function sendTransitionNotificationsWorkflow(
   for (const email of emails) {
     try {
       await sendTransitionEmail({
+        notificationId: input.notificationId,
         to: email,
         event: input.event,
         hackathonName: input.hackathonName,

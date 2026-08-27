@@ -4615,7 +4615,8 @@ export type JudgeSummary =
 
 export async function getJudgeSummary(
   hackathonId: string,
-  judgeParticipantId: string
+  judgeParticipantId: string,
+  options: { anonymousJudging?: boolean } = {},
 ): Promise<JudgeSummary> {
   const client = getSupabase() as unknown as SupabaseClient
 
@@ -4658,7 +4659,9 @@ export async function getJudgeSummary(
       .in("judge_assignment_id", assignmentIds.length > 0 ? assignmentIds : ["00000000-0000-0000-0000-000000000000"]),
   ])
 
-  const teamIds = (subs ?? []).map((s) => s.team_id).filter((id): id is string => Boolean(id))
+  const teamIds = options.anonymousJudging
+    ? []
+    : (subs ?? []).map((s) => s.team_id).filter((id): id is string => Boolean(id))
   const teamMap: Record<string, string> = {}
   if (teamIds.length > 0) {
     const { data: teams } = await client.from("teams").select("id, name").in("id", teamIds)
@@ -4666,7 +4669,16 @@ export async function getJudgeSummary(
   }
 
   const subInfoMap = new Map(
-    (subs ?? []).map((s) => [s.id, { title: s.title as string, teamName: s.team_id ? teamMap[s.team_id] ?? null : null }])
+    (subs ?? []).map((s) => [
+      s.id,
+      {
+        title: s.title as string,
+        teamName:
+          options.anonymousJudging || !s.team_id
+            ? null
+            : teamMap[s.team_id] ?? null,
+      },
+    ])
   )
 
   const assignmentSubMap = new Map((assignments ?? []).map((a) => [a.id, a.submission_id]))

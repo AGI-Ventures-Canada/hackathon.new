@@ -74,7 +74,7 @@ If the active org doesn't match, switch via Clerk's JS API rather than clicking 
 
 ```bash
 # Switch to a specific org (use the clerk_org_id from the query above)
-agent-browser --session oatmeal eval 'window.Clerk.setActive({organization: "org_3998CZRtAOrKPFpY9g5RBuUN3Py"})'
+agent-browser --session oatmeal eval 'window.Clerk.setActive({organization: "org_your_local_test_org"})'
 
 # Switch to Personal Workspace
 agent-browser --session oatmeal eval 'window.Clerk.setActive({organization: null})'

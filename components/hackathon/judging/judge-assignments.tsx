@@ -58,6 +58,7 @@ import {
   ArrowUp,
   ArrowDown,
 } from "lucide-react"
+import { getJudgeAddedMessage, getJudgeInvitationMessage } from "@/lib/judge-invitation-message"
 
 type SortColumn = "judge" | "submission" | "status" | "assigned"
 
@@ -273,6 +274,7 @@ export function JudgeAssignments({
   async function handleAddFromSearch(user: SearchUser) {
     setAddingJudge(true)
     setAddJudgeError(null)
+    setAddJudgeSuccess(null)
 
     try {
       const res = await fetch(`${base}/judges`, {
@@ -301,7 +303,10 @@ export function JudgeAssignments({
           completedCount: 0,
         },
       ])
-      setAddJudgeSuccess(`${displayName} added as judge`)
+      const deliveryFailed = data.delivery === "failed"
+      const message = getJudgeAddedMessage(displayName, data.queued === true, deliveryFailed)
+      if (deliveryFailed) setAddJudgeError(message)
+      else setAddJudgeSuccess(message)
       setSearchQuery("")
       setSearchResults([])
       onMutation?.()
@@ -320,6 +325,7 @@ export function JudgeAssignments({
 
     setAddingJudge(true)
     setAddJudgeError(null)
+    setAddJudgeSuccess(null)
 
     try {
       const res = await fetch(`${base}/judges`, {
@@ -344,7 +350,13 @@ export function JudgeAssignments({
           },
           ...prev,
         ])
-        setAddJudgeSuccess(`Invitation sent to ${email}`)
+        const deliveryFailed = data.delivery === "failed"
+        const message = getJudgeInvitationMessage(email, data.queued === true, deliveryFailed)
+        if (deliveryFailed) {
+          setAddJudgeError(message)
+        } else {
+          setAddJudgeSuccess(message)
+        }
       } else {
         setJudges((prev) => [
           ...prev,
@@ -358,13 +370,18 @@ export function JudgeAssignments({
             completedCount: 0,
           },
         ])
-        setAddJudgeSuccess(`${email} added as judge`)
+        const deliveryFailed = data.delivery === "failed"
+        const message = getJudgeAddedMessage(email, data.queued === true, deliveryFailed)
+        if (deliveryFailed) setAddJudgeError(message)
+        else setAddJudgeSuccess(message)
       }
 
       setInviteEmail("")
       setShowInviteForm(false)
       onMutation?.()
-      setTimeout(() => setAddJudgeOpen(false), 800)
+      if (data.delivery !== "failed") {
+        setTimeout(() => setAddJudgeOpen(false), 800)
+      }
     } catch (err) {
       setAddJudgeError(err instanceof Error ? err.message : "Something went wrong")
     } finally {

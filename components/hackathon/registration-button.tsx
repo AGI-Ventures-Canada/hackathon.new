@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Loader2, Check, CalendarClock, Lock, Users } from "lucide-react"
 import type { HackathonStatus } from "@/lib/db/hackathon-types"
 import { TermsAcceptanceBlock } from "@/components/hackathon/terms-acceptance-block"
+import { useIsClient } from "@/hooks/use-is-client"
 
 interface RegistrationButtonProps {
   hackathonSlug: string
@@ -48,6 +49,7 @@ export function RegistrationButton({
   onRegistrationSuccess,
 }: RegistrationButtonProps) {
   const { isSignedIn, isLoaded } = useUser()
+  const isClient = useIsClient()
   const pathname = usePathname()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -56,9 +58,10 @@ export function RegistrationButton({
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [termsAccepted, setTermsAccepted] = useState(false)
+  const [inviteUrl, setInviteUrl] = useState<string | null>(null)
   const needsTerms = Boolean(requireTermsAcceptance && termsContent && termsHash)
 
-  if (!isLoaded) {
+  if (!isClient || !isLoaded) {
     return (
       <Button disabled variant="secondary" size="lg">
         <Loader2 className="size-4 animate-spin" />
@@ -190,6 +193,8 @@ export function RegistrationButton({
       location_too_far: fallback,
       terms_required: "You must agree to the terms and conditions to register.",
       terms_record_failed: "Couldn't record your agreement. Please try again.",
+      pending_team_invitation: "You already have a team invite. Open that invite to join the right team.",
+      account_check_failed: "We couldn't check your account. Please try again.",
     }
     return errorMessages[code] || fallback
   }
@@ -238,6 +243,13 @@ export function RegistrationButton({
       }
 
       if (!response.ok) {
+        if (
+          data.code === "pending_team_invitation" &&
+          typeof data.inviteUrl === "string" &&
+          data.inviteUrl.startsWith("/invite/")
+        ) {
+          setInviteUrl(data.inviteUrl)
+        }
         setError(getErrorMessage(data.code, data.error || "Failed to register"))
         return
       }
@@ -258,6 +270,17 @@ export function RegistrationButton({
     } finally {
       setIsLoading(false)
     }
+  }
+
+  if (inviteUrl) {
+    return (
+      <div className="flex flex-col gap-2">
+        <Button asChild size="lg">
+          <Link href={inviteUrl}>Open team invite</Link>
+        </Button>
+        {error && <p className="text-sm text-muted-foreground">{error}</p>}
+      </div>
+    )
   }
 
   return (

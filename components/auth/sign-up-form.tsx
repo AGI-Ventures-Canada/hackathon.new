@@ -75,6 +75,8 @@ export function SignUpForm({
             err.errors[0]?.message ||
             "Sign up failed",
         );
+      } else {
+        setError(err instanceof Error ? err.message : "Sign up failed");
       }
     } finally {
       setIsSubmitting(false);
@@ -94,13 +96,16 @@ export function SignUpForm({
       });
 
       if (result.status === "complete") {
+        if (!result.createdSessionId) throw new Error("The new session was missing.");
         await setActive({ session: result.createdSessionId });
         if (redirectUrl) {
-          router.push(redirectUrl);
+          router.replace(redirectUrl);
           return;
         }
         setStep("create-org");
+        return;
       }
+      setError("We couldn't finish creating your account. Try again.");
     } catch (err) {
       if (isClerkAPIResponseError(err)) {
         setError(
@@ -108,6 +113,8 @@ export function SignUpForm({
             err.errors[0]?.message ||
             "Verification failed",
         );
+      } else {
+        setError(err instanceof Error ? err.message : "Verification failed");
       }
     } finally {
       setIsSubmitting(false);
@@ -117,17 +124,23 @@ export function SignUpForm({
   async function handleOAuth(
     provider: "oauth_google" | "oauth_github" | "oauth_linkedin_oidc",
   ) {
-    if (!signUp) return;
+    if (!signUp || isSubmitting) return;
+    setError("");
+    setIsSubmitting(true);
     try {
       await signUp.authenticateWithRedirect({
         strategy: provider,
-        redirectUrl: "/sso-callback",
+        redirectUrl: `/sso-callback?redirect_url=${encodeURIComponent(oauthCompleteUrl)}`,
         redirectUrlComplete: oauthCompleteUrl,
       });
     } catch (err) {
       if (isClerkAPIResponseError(err)) {
         setError(err.errors[0]?.message || "OAuth failed");
+      } else {
+        setError("OAuth failed. Check your connection and try again.");
       }
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
@@ -171,10 +184,7 @@ export function SignUpForm({
                 onChange={(e) => setCode(e.target.value)}
                 placeholder="123456"
                 autoFocus
-                autoComplete="off"
-                data-1p-ignore
-                data-lpignore="true"
-                data-form-type="other"
+                autoComplete="one-time-code"
               />
             </div>
           </CardContent>
@@ -195,7 +205,7 @@ export function SignUpForm({
         <CardTitle className="text-center">Sign up for an account</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4 mb-0">
-        <OAuthButtons onOAuth={handleOAuth} />
+        <OAuthButtons onOAuth={handleOAuth} disabled={isSubmitting} />
         <div className="flex items-center gap-3">
           <Separator className="flex-1" />
           <span className="text-xs text-muted-foreground">or</span>

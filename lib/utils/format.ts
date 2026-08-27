@@ -10,32 +10,59 @@ export function formatDateTime(date: string | Date): string {
 
 export function formatDateRange(
   startsAt: string | null,
-  endsAt: string | null
+  endsAt: string | null,
+  timeZone?: string,
 ): string {
   if (!startsAt) return "Dates TBD"
 
   const start = new Date(startsAt)
+  if (Number.isNaN(start.getTime())) return "Dates TBD"
   const opts: Intl.DateTimeFormatOptions = {
     month: "short",
     day: "numeric",
     year: "numeric",
+    ...(timeZone ? { timeZone } : {}),
   }
 
   if (!endsAt) return start.toLocaleDateString("en-US", opts)
 
   const end = new Date(endsAt)
+  if (Number.isNaN(end.getTime()) || end.getTime() < start.getTime()) {
+    return `${start.toLocaleDateString("en-US", opts)} · Check end date`
+  }
+  const startParts = getCalendarParts(start, timeZone)
+  const endParts = getCalendarParts(end, timeZone)
 
   if (
-    start.getFullYear() === end.getFullYear() &&
-    start.getMonth() === end.getMonth()
+    startParts.year === endParts.year &&
+    startParts.month === endParts.month
   ) {
-    if (start.getDate() === end.getDate()) {
+    if (startParts.day === endParts.day) {
       return start.toLocaleDateString("en-US", opts)
     }
-    return `${start.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${end.getDate()}, ${end.getFullYear()}`
+    return `${start.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      ...(timeZone ? { timeZone } : {}),
+    })} – ${endParts.day}, ${endParts.year}`
   }
 
   return `${start.toLocaleDateString("en-US", opts)} – ${end.toLocaleDateString("en-US", opts)}`
+}
+
+function getCalendarParts(date: Date, timeZone?: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    ...(timeZone ? { timeZone } : {}),
+  }).formatToParts(date)
+
+  return {
+    year: Number(parts.find((part) => part.type === "year")?.value),
+    month: Number(parts.find((part) => part.type === "month")?.value),
+    day: Number(parts.find((part) => part.type === "day")?.value),
+  }
 }
 
 export function formatDateTimeDisplay(date: string | Date): string {

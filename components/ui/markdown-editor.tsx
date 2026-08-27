@@ -21,6 +21,7 @@ interface MarkdownEditorProps {
   placeholder?: string
   rows?: number
   id?: string
+  maxLength?: number
 }
 
 type FormatAction =
@@ -44,6 +45,7 @@ export function MarkdownEditor({
   placeholder,
   rows = 8,
   id,
+  maxLength,
 }: MarkdownEditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [activeTab, setActiveTab] = useState("write")
@@ -167,6 +169,7 @@ export function MarkdownEditor({
           placeholder={placeholder}
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          maxLength={maxLength}
           autoComplete="off"
           data-1p-ignore
           data-lpignore="true"

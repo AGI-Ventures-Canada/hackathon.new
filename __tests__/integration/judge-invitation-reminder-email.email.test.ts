@@ -7,7 +7,9 @@ type SendEmailInput = {
   text?: string
   from?: string
   replyTo?: string
+  headers?: Record<string, string>
   tags?: Array<{ name: string; value: string }>
+  idempotencyKey?: string
 }
 
 type SendEmailResult = { id: string } | null
@@ -30,7 +32,7 @@ mock.module("@/lib/email/resend", () => ({
   sendAgentNotification: mock(() => Promise.resolve({ id: "notif_123" })),
 }))
 
-const { sendJudgeInvitationReminderEmail } = await import("@/lib/email/judge-invitations")
+const { sendJudgeInvitationEmail, sendJudgeInvitationReminderEmail } = await import("@/lib/email/judge-invitations")
 
 const originalAppUrl = process.env.NEXT_PUBLIC_APP_URL
 
@@ -52,7 +54,7 @@ describe("Judge Invitation Reminder Email", () => {
     const validInput = {
       to: "judge@example.com",
       hackathonName: "AI Hackathon 2026",
-      inviterName: "Alex Ivany",
+      inviterName: "Jordan Lee",
       inviteToken: "xyz789token",
       expiresAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
     }
@@ -104,8 +106,8 @@ describe("Judge Invitation Reminder Email", () => {
       await sendJudgeInvitationReminderEmail(validInput)
 
       const callArgs = mockSendEmail.mock.calls[0][0]
-      expect(callArgs.html).toContain("Alex Ivany")
-      expect(callArgs.text).toContain("Alex Ivany")
+      expect(callArgs.html).toContain("Jordan Lee")
+      expect(callArgs.text).toContain("Jordan Lee")
     })
 
     it("adds judge_invitation_reminder tag", async () => {
@@ -113,6 +115,25 @@ describe("Judge Invitation Reminder Email", () => {
 
       const callArgs = mockSendEmail.mock.calls[0][0]
       expect(callArgs.tags).toContainEqual({ name: "type", value: "judge_invitation_reminder" })
+    })
+
+    it("uses a scheduled reminder delivery ID as the idempotency key", async () => {
+      await sendJudgeInvitationReminderEmail({
+        ...validInput,
+        deliveryId: "scheduled-reminder-2",
+      })
+
+      expect(mockSendEmail.mock.calls[0][0].idempotencyKey).toBe(
+        "judge-invitation-reminder/scheduled-reminder-2"
+      )
+    })
+
+    it("uses the judge invitation token as a stable idempotency key", async () => {
+      await sendJudgeInvitationEmail(validInput)
+
+      expect(mockSendEmail.mock.calls[0][0].idempotencyKey).toBe(
+        "judge-invitation/xyz789token"
+      )
     })
 
     it("returns success false when sendEmail returns null", async () => {

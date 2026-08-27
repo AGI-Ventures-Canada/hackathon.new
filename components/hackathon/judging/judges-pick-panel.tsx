@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { assertOk } from "@/lib/utils/fetch"
+import { useJudgeWebMcpEditor } from "./judge-webmcp-tools"
 
 type PickAssignment = {
   id: string
@@ -114,6 +115,39 @@ export function JudgesPickPanel({
     }
   }
 
+  const webMcpEditor = useMemo(() => ({
+    info: { maxPicks },
+    prepare: (preparation: import("@/lib/webmcp/judge-tools").JudgePreparation) => {
+      if (preparation.kind !== "judges_pick") {
+        return { prepared: false, message: "This prize uses ranked picks." }
+      }
+      const uniqueIds = Array.from(new Set(preparation.rankedSubmissionIds))
+      if (
+        uniqueIds.length === 0 ||
+        uniqueIds.length > maxPicks ||
+        uniqueIds.some((submissionId) => !allowedSubmissionIds.has(submissionId))
+      ) {
+        return {
+          prepared: false,
+          message: `Pick between 1 and ${maxPicks} projects from this prize.`,
+        }
+      }
+      setSelectedIds(uniqueIds)
+      setSaved(false)
+      setError(null)
+      return {
+        prepared: true,
+        message: "Your picks are filled in. Review their order, then click Save picks.",
+      }
+    },
+  }), [allowedSubmissionIds, maxPicks])
+
+  const webMcpAssignmentIds = useMemo(
+    () => assignments.map((assignment) => assignment.id),
+    [assignments],
+  )
+  useJudgeWebMcpEditor(webMcpAssignmentIds, webMcpEditor)
+
   return (
     <Card onKeyDown={handleKeyDown}>
       <CardHeader>
@@ -136,7 +170,11 @@ export function JudgesPickPanel({
           const limitReached = selectedIds.length >= maxPicks
 
           return (
-            <div key={assignment.id} className="rounded-lg border p-4">
+            <div
+              key={assignment.id}
+              data-judge-assignment={assignment.id}
+              className="rounded-lg border p-4"
+            >
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0 space-y-1">
                   <div className="flex items-center gap-2">

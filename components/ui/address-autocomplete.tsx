@@ -19,6 +19,7 @@ interface AddressAutocompleteProps {
   onSelect?: (result: { displayName: string; latitude: number; longitude: number }) => void
   placeholder?: string
   autoFocus?: boolean
+  maxLength?: number
 }
 
 export function AddressAutocomplete({
@@ -28,6 +29,7 @@ export function AddressAutocomplete({
   onSelect,
   placeholder = "Search for an address...",
   autoFocus,
+  maxLength,
 }: AddressAutocompleteProps) {
   const [results, setResults] = useState<NominatimResult[]>([])
   const [isSearching, setIsSearching] = useState(false)
@@ -130,6 +132,7 @@ export function AddressAutocomplete({
           onFocus={() => { if (results.length > 0) setIsOpen(true) }}
           placeholder={placeholder}
           autoFocus={autoFocus}
+          maxLength={maxLength}
           autoComplete="off"
           data-1p-ignore
           data-lpignore="true"

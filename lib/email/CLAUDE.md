@@ -99,7 +99,7 @@ export async function sendMyEmail(to: string, name: string) {
 ## Shared Components
 
 - **OatmealLayout**: Wraps all emails. Props: `heading`, `preview?`, `children`, `footerText?`, `eventUrl?`, `hackathonName?`. When `eventUrl` is provided, renders a footer link to the event page.
-- **InfoBox**: Accent-bordered highlight box. Props: `label`, `children`
+- **InfoBox**: Neutral bordered highlight box. Props: `label`, `children`
 - **EventDetailBox**: Multi-field hackathon info box. Props: `hackathonName`, `startsAt?`, `endsAt?`, `location?`. Use instead of InfoBox when showing hackathon details with dates.
 - **CTAButton**: Primary (accent) or secondary (light) button. Props: `href`, `children`, `variant?`
 - **constants.ts**: Color tokens (`colors`), font families (`fontFamily`, `monoFontFamily`), `fontSize`, and `spacing` — use these instead of hardcoding values
@@ -163,6 +163,8 @@ Clerk owns authentication and organization invitation state, but Oatmeal owns de
 3. Send a Clerk test event and confirm the endpoint returns `200`.
 4. Disable **Delivered by Clerk** for each email template that Resend should deliver.
 
+Production builds run `bun run check:production-email-delivery`. The check requires the Resend and Clerk webhook secrets, reads every Clerk email template, and stops the deployment if any template is still delivered by Clerk. Run it locally against the configured Clerk instance with `bun run check:production-email-delivery --force`.
+
 The webhook verifies Clerk's signature, ignores messages already delivered by Clerk, and forwards Clerk's rendered HTML, plain text, recipient, and subject through `sendEmail()`. The Clerk email ID is used as the Resend idempotency key so webhook retries do not create duplicate messages.
 
 Do not disable Clerk delivery before the webhook and signing secret are live. Clerk configures delivery per template, so repeat the test for every template you move to Resend.
@@ -200,7 +202,13 @@ const isValid = verifyResendWebhook(rawBody, {
 
 ## Failure Modes
 
-`sendEmail` catches a missing `RESEND_API_KEY` (thrown by `getResendClient`) and returns `null` with a `console.warn` instead of propagating the exception. Callers already handle `null`, so this is intentional for local-dev resilience. **Production implication:** if `RESEND_API_KEY` is removed from the environment, emails will silently stop sending — there will be no uncaught exception or 5xx alert, only a `[email] Resend client unavailable` warn in the logs. Monitor for this warn in production rather than relying on exception alerting.
+`sendEmailWithResult` returns a typed provider acceptance or failure with a safe code, retryability, attempt count, and duration. Provider calls time out after 10 seconds by default. Retryable failures use bounded exponential backoff only when the caller supplies a stable Resend idempotency key. `sendEmail` remains the compatibility wrapper and returns `{ id }` on provider acceptance or `null` on failure.
+
+Both HTML and plain text are required. Subjects are normalized to one line. Sender and reply-to values containing CR/LF are rejected before provider dispatch. A missing API key or sender returns `email_provider_not_configured` instead of throwing from the delivery wrapper.
+
+Every retryable or bulk path must use a stable, privacy-safe idempotency key. Batch sends need a different key per recipient. Use `paceBulkSend(index)` to pause after each group of eight provider calls. Persist `sent_at`, `emailed_at`, or other completion state only after the provider returns an accepted message ID; a queued workflow or started request is not a completed delivery.
+
+The reference implementation's `email_log` and email-preference tables were reviewed but intentionally not copied here. They require schema and product-policy work outside this PR.
 
 ## Environment Variables
 
@@ -208,6 +216,8 @@ const isValid = verifyResendWebhook(rawBody, {
 |----------|-------------|
 | `RESEND_API_KEY` | Resend API key (required) |
 | `RESEND_FROM_EMAIL` | Default from address |
+| `RESEND_REPLY_TO_EMAIL` | Default reply-to address; falls back to the sender address |
+| `RESEND_REQUEST_TIMEOUT_MS` | Optional provider timeout from 100 to 30,000 ms; defaults to 10,000 ms |
 | `RESEND_WEBHOOK_SECRET` | For verifying inbound webhooks |
 | `RESEND_RECEIVING_DOMAIN` | Domain for inbound email addresses |
 | `CLERK_WEBHOOK_SIGNING_SECRET` | Verifies Clerk `email.created` webhooks |

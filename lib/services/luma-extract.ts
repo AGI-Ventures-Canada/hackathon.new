@@ -4,6 +4,14 @@ import { anthropic } from "@/lib/ai/anthropic"
 import { z } from "zod"
 import { normalizeUrl } from "@/lib/utils/url"
 import { sanitizeIsoTimestamp } from "@/lib/utils/timestamp"
+import {
+  redactFetchErrorForLogs,
+  redactUrlForLogs,
+} from "@/lib/utils/safe-fetch-url"
+
+const MAX_RICH_CONTENT_CHARACTERS = 100_000
+const TAVILY_TIMEOUT_SECONDS = 15
+const MODEL_TIMEOUT_MS = 20_000
 
 const EventPageRichContentSchema = z.object({
   sponsors: z
@@ -166,16 +174,17 @@ export async function extractEventPageRichContent(
     const response = await client.extract([url], {
       extractDepth: "advanced",
       format: "markdown",
+      timeout: TAVILY_TIMEOUT_SECONDS,
     })
 
     if (!response.results.length || !response.results[0].rawContent) {
-      console.warn(`Tavily returned no content for ${url}`)
+      console.warn(`Tavily returned no content for ${redactUrlForLogs(url)}`)
       return null
     }
 
-    rawContent = response.results[0].rawContent
+    rawContent = response.results[0].rawContent.slice(0, MAX_RICH_CONTENT_CHARACTERS)
   } catch (err) {
-    console.error("Tavily extraction failed:", err)
+    console.error("Tavily extraction failed:", redactFetchErrorForLogs(err, [url]))
     return null
   }
 
@@ -199,11 +208,12 @@ ${anchorLine}
 Page content:
 ${rawContent}`,
       maxOutputTokens: 4096,
+      timeout: MODEL_TIMEOUT_MS,
     })
 
     return object
   } catch (err) {
-    console.error("LLM structured extraction failed:", err)
+    console.error("LLM structured extraction failed:", redactFetchErrorForLogs(err, [url]))
     return null
   }
 }

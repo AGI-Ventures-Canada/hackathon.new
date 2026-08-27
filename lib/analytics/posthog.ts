@@ -34,6 +34,27 @@ export function trackEvent(
   })
 }
 
+export async function trackEventImmediately(
+  distinctId: string,
+  event: string,
+  properties: Record<string, unknown>,
+  options: { eventId: string; timestamp: string },
+): Promise<void> {
+  const client = getClient()
+  if (!client) return
+
+  await client.captureImmediate({
+    distinctId,
+    event,
+    properties: {
+      ...properties,
+      environment: process.env.VERCEL_ENV || "development",
+    },
+    timestamp: new Date(options.timestamp),
+    uuid: options.eventId,
+  })
+}
+
 export function identifyUser(
   distinctId: string,
   properties?: Record<string, unknown>

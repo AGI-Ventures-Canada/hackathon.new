@@ -253,11 +253,13 @@ export async function reorderChallenges(
   return true
 }
 
+type ChallengeReleaseOutcome = "released" | "already_released" | "not_released"
+
 async function releaseChallengesIfAny(
   client: SupabaseClient,
   hackathonId: string,
   tenantId: string,
-): Promise<boolean> {
+): Promise<ChallengeReleaseOutcome> {
   const { count, error: countErr } = await client
     .from("challenges")
     .select("id", { count: "exact", head: true })
@@ -265,11 +267,11 @@ async function releaseChallengesIfAny(
 
   if (countErr) {
     console.error("Failed to count challenges:", countErr)
-    return false
+    return "not_released"
   }
-  if (!count || count === 0) return false
+  if (!count || count === 0) return "not_released"
 
-  const { error } = await client
+  const { data, error } = await client
     .from("hackathons")
     .update({
       challenge_released_at: new Date().toISOString(),
@@ -277,13 +279,16 @@ async function releaseChallengesIfAny(
     })
     .eq("id", hackathonId)
     .eq("tenant_id", tenantId)
+    .is("challenge_released_at", null)
+    .select("id")
+    .maybeSingle()
 
   if (error) {
     console.error("Failed to release challenges:", error)
-    return false
+    return "not_released"
   }
 
-  return true
+  return data ? "released" : "already_released"
 }
 
 export type ReleaseChallengesOptions = {
@@ -305,10 +310,14 @@ async function releaseChallengesWithHackathon(
   hackathon: ReleasableHackathon,
   options?: ReleaseChallengesOptions,
 ): Promise<boolean> {
+  if (hackathon.status === "draft" || hackathon.status === "archived") {
+    return false
+  }
   if (hackathon.challenge_released_at) return true
 
-  const released = await releaseChallengesIfAny(client, hackathonId, tenantId)
-  if (!released) return false
+  const outcome = await releaseChallengesIfAny(client, hackathonId, tenantId)
+  if (outcome === "not_released") return false
+  if (outcome === "already_released") return true
 
   const dispatchNotification = options?.dispatchNotification ?? true
   const eligibleStatus =
@@ -463,8 +472,24 @@ export async function processScheduledChallengeReleases(): Promise<ScheduledChal
 
   const nowIso = new Date().toISOString()
   for (const item of items) {
-    if (item.linked_to !== null) continue
-    if (typeof item.starts_at !== "string" || item.starts_at > nowIso) continue
+    const trigger = item.linked_to === "event_start"
+      ? "event_start"
+      : item.linked_to === "event_publish"
+        ? "event_publish"
+        : "scheduled"
+    if (
+      item.linked_to !== "event_start" &&
+      item.linked_to !== "event_publish" &&
+      item.linked_to !== null
+    ) {
+      continue
+    }
+    if (
+      item.linked_to === null &&
+      (typeof item.starts_at !== "string" || item.starts_at > nowIso)
+    ) {
+      continue
+    }
 
     const hackathonId = item.hackathon_id as string
     const tenantId = tenantById.get(hackathonId)
@@ -472,7 +497,7 @@ export async function processScheduledChallengeReleases(): Promise<ScheduledChal
 
     try {
       const released = await releaseChallenges(hackathonId, tenantId, {
-        trigger: "scheduled",
+        trigger,
       })
       if (released) {
         result.processed++
@@ -505,8 +530,13 @@ export async function tagSubmissionChallenges(
   challengeIds: string[],
 ): Promise<boolean> {
   const client = getSupabase() as unknown as SupabaseClient
+  const desiredIds = [...new Set(challengeIds)]
+  if (desiredIds.length !== challengeIds.length) {
+    console.error("Duplicate challenge IDs are not allowed")
+    return false
+  }
 
-  if (challengeIds.length > 0) {
+  if (desiredIds.length > 0) {
     const { data: submission, error: subErr } = await client
       .from("submissions")
       .select("hackathon_id")
@@ -522,7 +552,7 @@ export async function tagSubmissionChallenges(
       .from("challenges")
       .select("id")
       .eq("hackathon_id", submission.hackathon_id)
-      .in("id", challengeIds)
+      .in("id", desiredIds)
 
     if (valErr) {
       console.error("Failed to validate challenge ownership:", valErr)
@@ -530,37 +560,62 @@ export async function tagSubmissionChallenges(
     }
 
     const validIds = new Set((validChallenges ?? []).map((r) => r.id))
-    if (validIds.size !== challengeIds.length) {
+    if (validIds.size !== desiredIds.length) {
       console.error("One or more challenge IDs do not belong to submission's hackathon")
       return false
     }
   }
 
-  const { error: delErr } = await client
+  const { data: currentRows, error: currentError } = await client
     .from("submission_challenges")
-    .delete()
+    .select("challenge_id")
     .eq("submission_id", submissionId)
-
-  if (delErr) {
-    console.error("Failed to clear submission challenges:", delErr)
+  if (currentError) {
+    console.error("Failed to read submission challenges:", currentError)
     return false
   }
 
-  if (challengeIds.length === 0) return true
+  const currentIds = new Set((currentRows ?? []).map((row) => row.challenge_id))
+  const missingIds = desiredIds.filter((challengeId) => !currentIds.has(challengeId))
+  if (missingIds.length > 0) {
+    const rows = missingIds.map((challengeId) => ({
+      submission_id: submissionId,
+      challenge_id: challengeId,
+    }))
+    const { error: insertError } = await client
+      .from("submission_challenges")
+      .insert(rows)
+    if (insertError) {
+      console.error("Failed to tag submission challenges:", insertError)
+      return false
+    }
+  }
 
-  const rows = challengeIds.map((challengeId) => ({
-    submission_id: submissionId,
-    challenge_id: challengeId,
-  }))
-
-  const { error: insErr } = await client.from("submission_challenges").insert(rows)
-
-  if (insErr) {
-    console.error("Failed to tag submission challenges:", insErr)
-    return false
+  const desiredSet = new Set(desiredIds)
+  const obsoleteIds = [...currentIds].filter((challengeId) => !desiredSet.has(challengeId))
+  if (obsoleteIds.length > 0) {
+    const { error: deleteError } = await client
+      .from("submission_challenges")
+      .delete()
+      .eq("submission_id", submissionId)
+      .in("challenge_id", obsoleteIds)
+    if (deleteError) {
+      console.error("Failed to clear old submission challenges:", deleteError)
+      return false
+    }
   }
 
   return true
+}
+
+export async function syncSubmissionChallenges(
+  submissionId: string,
+  challengeIds: string[],
+): Promise<boolean> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (await tagSubmissionChallenges(submissionId, challengeIds)) return true
+  }
+  return false
 }
 
 export async function listChallengeIdsForSubmissions(

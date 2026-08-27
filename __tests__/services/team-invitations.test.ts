@@ -4,6 +4,7 @@ import {
   resetSupabaseMocks,
   setMockFromImplementation,
   setMockRpcImplementation,
+  mockClerkClient,
 } from "../lib/supabase-mock"
 
 const mockSendTeamInvitationEmail = mock(() => Promise.resolve({ success: true }))
@@ -22,16 +23,27 @@ mock.module("@/lib/services/smart-reminders", () => ({
   processPendingReminders: mock(() => Promise.resolve({ processed: 0, sent: 0, skipped: 0, errors: 0 })),
 }))
 
+const mockWithDeliveryLease = mock(async (
+  _key: string,
+  work: () => Promise<unknown>,
+) => ({ acquired: true as const, value: await work() }))
+mock.module("@/lib/services/delivery-lease", () => ({
+  withDeliveryLease: mockWithDeliveryLease,
+}))
+
 const {
   createTeamInvitation,
   getInvitationByToken,
   acceptTeamInvitation,
+  cancelOtherPendingTeamInvitations,
   declineTeamInvitation,
   cancelTeamInvitation,
   listTeamInvitations,
   getTeamWithHackathon,
   remindTeamInvitation,
+  releaseTeamInvitationReminderClaim,
   sendPendingTeamInvitationEmails,
+  retryPendingTeamInvitationEmails,
   markTeamInvitationEmailed,
 } = await import("@/lib/services/team-invitations")
 
@@ -69,6 +81,23 @@ const mockInvitation = {
 describe("Team Invitations Service", () => {
   beforeEach(() => {
     resetSupabaseMocks()
+    mockCancelRemindersForEntity.mockClear()
+    mockWithDeliveryLease.mockClear()
+    mockWithDeliveryLease.mockImplementation(async (_key, work) => ({
+      acquired: true as const,
+      value: await work(),
+    }))
+    mockClerkClient.mockReset()
+    mockClerkClient.mockResolvedValue({
+      users: {
+        getUser: mock(() => Promise.resolve({
+          firstName: "Captain",
+          lastName: "Hook",
+          primaryEmailAddress: { emailAddress: "captain@example.com" },
+        })),
+        getUserList: mock(() => Promise.resolve({ data: [] })),
+      },
+    } as unknown)
   })
 
   describe("createTeamInvitation", () => {
@@ -472,6 +501,88 @@ describe("Team Invitations Service", () => {
       }
     })
 
+    it("expires an old pending invitation before creating a replacement", async () => {
+      let invitationCalls = 0
+      let expiredUpdate: Record<string, unknown> | null = null
+      setMockFromImplementation((table) => {
+        if (table === "teams") {
+          return createChainableMock({ data: mockTeam, error: null })
+        }
+        if (table === "hackathons") {
+          return createChainableMock({ data: mockHackathon, error: null })
+        }
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: null, error: null, count: 1 })
+        }
+        if (table === "team_invitations") {
+          invitationCalls++
+          if (invitationCalls === 1) {
+            return createChainableMock({ data: null, error: null, count: 0 })
+          }
+          if (invitationCalls === 2) {
+            return createChainableMock({
+              data: {
+                id: "expired_invite",
+                expires_at: new Date(Date.now() - 60_000).toISOString(),
+              },
+              error: null,
+            })
+          }
+          if (invitationCalls === 3) {
+            const chain = createChainableMock({ data: null, error: null })
+            const originalUpdate = chain.update
+            chain.update = mock((value: Record<string, unknown>) => {
+              expiredUpdate = value
+              return originalUpdate(value)
+            }) as typeof chain.update
+            return chain
+          }
+          return createChainableMock({ data: mockInvitation, error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await createTeamInvitation({
+        teamId: "team_1",
+        hackathonId: "h1",
+        email: "invitee@example.com",
+        invitedByClerkUserId: "user_captain",
+      })
+
+      expect(result.success).toBe(true)
+      expect(expiredUpdate).toEqual(expect.objectContaining({ status: "expired" }))
+    })
+
+    it("fails closed when pending invitations cannot be checked", async () => {
+      let invitationCalls = 0
+      setMockFromImplementation((table) => {
+        if (table === "teams") return createChainableMock({ data: mockTeam, error: null })
+        if (table === "hackathons") {
+          return createChainableMock({ data: mockHackathon, error: null })
+        }
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: null, error: null, count: 1 })
+        }
+        invitationCalls++
+        return invitationCalls === 1
+          ? createChainableMock({ data: null, error: null, count: 0 })
+          : createChainableMock({ data: null, error: { message: "database unavailable" } })
+      })
+
+      const result = await createTeamInvitation({
+        teamId: "team_1",
+        hackathonId: "h1",
+        email: "invitee@example.com",
+        invitedByClerkUserId: "user_captain",
+      })
+
+      expect(result).toEqual({
+        success: false,
+        error: "Failed to check existing invitations",
+        code: "lookup_failed",
+      })
+    })
+
     it("lowercases email address", async () => {
       let capturedEmail: string | null = null
       setMockFromImplementation((table) => {
@@ -679,7 +790,7 @@ describe("Team Invitations Service", () => {
         createChainableMock({ data: null, error: null })
       )
 
-      const result = await declineTeamInvitation("test_token", "user@example.com")
+      const result = await declineTeamInvitation("test_token", ["user@example.com"])
 
       expect(result.success).toBe(false)
       expect(result.code).toBe("not_found")
@@ -691,27 +802,31 @@ describe("Team Invitations Service", () => {
         callCount++
         if (callCount === 1) {
           return createChainableMock({
-            data: { email: "test@example.com" },
+            data: { id: "inv_1", email: "test@example.com" },
             error: null,
           })
         }
         return createChainableMock({ data: null, error: null })
       })
 
-      const result = await declineTeamInvitation("test_token", "test@example.com")
+      const result = await declineTeamInvitation("test_token", ["primary@example.com", "test@example.com"])
 
       expect(result.success).toBe(true)
+      expect(mockCancelRemindersForEntity).toHaveBeenCalledWith(
+        "team_invitation",
+        "inv_1",
+      )
     })
 
     it("returns error when email does not match", async () => {
       setMockFromImplementation(() =>
         createChainableMock({
-          data: { email: "different@example.com" },
+          data: { id: "inv_1", email: "different@example.com" },
           error: null,
         })
       )
 
-      const result = await declineTeamInvitation("test_token", "test@example.com")
+      const result = await declineTeamInvitation("test_token", ["test@example.com"])
 
       expect(result.success).toBe(false)
       expect(result.code).toBe("email_mismatch")
@@ -722,7 +837,7 @@ describe("Team Invitations Service", () => {
         createChainableMock({ data: null, error: null })
       )
 
-      const result = await declineTeamInvitation("nonexistent", "test@example.com")
+      const result = await declineTeamInvitation("nonexistent", ["test@example.com"])
 
       expect(result.success).toBe(false)
       expect(result.code).toBe("not_found")
@@ -734,16 +849,40 @@ describe("Team Invitations Service", () => {
         callCount++
         if (callCount === 1) {
           return createChainableMock({
-            data: { email: "TEST@EXAMPLE.COM" },
+            data: { id: "inv_1", email: "TEST@EXAMPLE.COM" },
             error: null,
           })
         }
         return createChainableMock({ data: null, error: null })
       })
 
-      const result = await declineTeamInvitation("test_token", "test@example.com")
+      const result = await declineTeamInvitation("test_token", ["test@example.com"])
 
       expect(result.success).toBe(true)
+    })
+  })
+
+  describe("cancelOtherPendingTeamInvitations", () => {
+    it("cancels sibling invites across every verified email", async () => {
+      const chain = createChainableMock({
+        data: [{ id: "inv_2" }, { id: "inv_3" }],
+        error: null,
+      })
+      setMockFromImplementation(() => chain)
+
+      const result = await cancelOtherPendingTeamInvitations(
+        "h1",
+        ["Primary@Example.com", "secondary@example.com", "primary@example.com"],
+        "inv_1",
+      )
+
+      expect(result).toBe(2)
+      expect(chain.in).toHaveBeenCalledWith("email", [
+        "primary@example.com",
+        "secondary@example.com",
+      ])
+      expect(chain.neq).toHaveBeenCalledWith("id", "inv_1")
+      expect(mockCancelRemindersForEntity).toHaveBeenCalledTimes(2)
     })
   })
 
@@ -987,10 +1126,13 @@ describe("Team Invitations Service", () => {
     }
 
     it("succeeds for a pending invitation with no prior reminder", async () => {
-      let callCount = 0
-      setMockFromImplementation(() => {
-        callCount++
-        if (callCount === 1) {
+      let invitationCalls = 0
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({ data: { status: "active", starts_at: null, ends_at: null }, error: null })
+        }
+        invitationCalls++
+        if (invitationCalls === 1) {
           return createChainableMock({ data: pendingInvitation, error: null })
         }
         return createChainableMock({
@@ -1005,10 +1147,13 @@ describe("Team Invitations Service", () => {
     })
 
     it("succeeds when teamId matches", async () => {
-      let callCount = 0
-      setMockFromImplementation(() => {
-        callCount++
-        if (callCount === 1) {
+      let invitationCalls = 0
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({ data: { status: "active", starts_at: null, ends_at: null }, error: null })
+        }
+        invitationCalls++
+        if (invitationCalls === 1) {
           return createChainableMock({ data: pendingInvitation, error: null })
         }
         return createChainableMock({
@@ -1117,20 +1262,77 @@ describe("Team Invitations Service", () => {
       }
     })
 
-    it("allows repeat reminders when already reminded", async () => {
-      setMockFromImplementation(() =>
-        createChainableMock({
-          data: {
-            ...pendingInvitation,
-            reminded_at: new Date().toISOString(),
-          },
+    it("rejects reminders for missing, draft, and ended events", async () => {
+      for (const hackathon of [
+        null,
+        { status: "draft", starts_at: null, ends_at: null },
+        {
+          status: "completed",
+          starts_at: "2026-01-01T00:00:00Z",
+          ends_at: "2026-01-02T00:00:00Z",
+        },
+      ]) {
+        setMockFromImplementation((table) => table === "hackathons"
+          ? createChainableMock({ data: hackathon, error: null })
+          : createChainableMock({ data: pendingInvitation, error: null }))
+        const result = await remindTeamInvitation(
+          "11111111-1111-1111-1111-111111111111",
+          "user_captain",
+          "22222222-2222-2222-2222-222222222222",
+        )
+        expect(result.success).toBe(false)
+        if (!result.success) {
+          expect(result.code).toBe(
+            hackathon === null
+              ? "hackathon_not_found"
+              : hackathon.status === "draft"
+                ? "hackathon_draft"
+                : "hackathon_ended",
+          )
+        }
+      }
+    })
+
+    it("rejects repeat reminders after the one-time claim", async () => {
+      let invitationCalls = 0
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({ data: { status: "active", starts_at: null, ends_at: null }, error: null })
+        }
+        invitationCalls++
+        return createChainableMock({
+          data: invitationCalls === 1
+            ? { ...pendingInvitation, reminded_at: new Date().toISOString() }
+            : null,
           error: null,
         })
-      )
+      })
 
       const result = await remindTeamInvitation("11111111-1111-1111-1111-111111111111", "user_captain", "22222222-2222-2222-2222-222222222222")
 
-      expect(result.success).toBe(true)
+      expect(result).toMatchObject({ success: false, code: "already_reminded" })
+    })
+  })
+
+  describe("releaseTeamInvitationReminderClaim", () => {
+    it("releases only the matching pending claim", async () => {
+      const chain = createChainableMock({ data: null, error: null })
+      setMockFromImplementation(() => chain)
+      await releaseTeamInvitationReminderClaim("inv_1", "2026-08-01T00:00:00Z")
+      expect(chain.update).toHaveBeenCalledWith(expect.objectContaining({
+        reminded_at: null,
+        updated_at: expect.any(String),
+      }))
+      expect(chain.eq).toHaveBeenCalledWith("reminded_at", "2026-08-01T00:00:00Z")
+    })
+
+    it("surfaces claim release failures", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({ data: null, error: { message: "release failed" } })
+      )
+      await expect(
+        releaseTeamInvitationReminderClaim("inv_1", "2026-08-01T00:00:00Z"),
+      ).rejects.toThrow("Failed to release team invitation reminder claim: release failed")
     })
   })
 
@@ -1173,8 +1375,21 @@ describe("Team Invitations Service", () => {
     })
 
     const teamRow = {
+      id: "team_1",
       name: "Test Team",
-      hackathons: { name: "Test Hackathon", slug: "test-hackathon", status: "published", starts_at: null, ends_at: null },
+      status: "forming",
+      hackathons: {
+        id: "h1",
+        name: "Test Hackathon",
+        slug: "test-hackathon",
+        status: "published",
+        starts_at: null,
+        ends_at: null,
+        registration_closes_at: null,
+        allow_late_registration: true,
+        max_team_size: 5,
+        max_participants: null,
+      },
       hackathon_participants: [],
     }
 
@@ -1188,13 +1403,13 @@ describe("Team Invitations Service", () => {
       expect(mockScheduleReminders).not.toHaveBeenCalled()
     })
 
-    it("throws when the atomic claim fails", async () => {
+    it("surfaces a pending-invitation query failure", async () => {
       setMockFromImplementation(() =>
         createChainableMock({ data: null, error: { message: "connection lost" } })
       )
 
       await expect(sendPendingTeamInvitationEmails("h1")).rejects.toThrow(
-        /Failed to claim pending team invitations: connection lost/
+        /Failed to load pending team invitations: connection lost/
       )
       expect(mockSendTeamInvitationEmail).not.toHaveBeenCalled()
     })
@@ -1210,7 +1425,10 @@ describe("Team Invitations Service", () => {
         Promise.resolve({ firstName: "Captain", lastName: "Hook" })
       )
       mockClerkClient.mockResolvedValueOnce({
-        users: { getUser: getUserMock },
+        users: {
+          getUser: getUserMock,
+          getUserList: mock(() => Promise.resolve({ data: [] })),
+        },
       } as unknown)
 
       const updateCalls: string[] = []
@@ -1243,6 +1461,7 @@ describe("Team Invitations Service", () => {
           hackathonName: "Test Hackathon",
           inviterName: "Captain Hook",
           inviteToken: "t1",
+          deliveryId: "inv_1",
         })
       )
       expect(getUserMock).toHaveBeenCalledTimes(1)
@@ -1258,7 +1477,10 @@ describe("Team Invitations Service", () => {
       const { mockClerkClient } = await import("../lib/supabase-mock")
       const getUserSpy = mock(() => Promise.reject(new Error("should not be called")))
       mockClerkClient.mockResolvedValueOnce({
-        users: { getUser: getUserSpy },
+        users: {
+          getUser: getUserSpy,
+          getUserList: mock(() => Promise.resolve({ data: [] })),
+        },
       } as unknown)
 
       setMockFromImplementation((table) => {
@@ -1283,7 +1505,10 @@ describe("Team Invitations Service", () => {
 
       const { mockClerkClient } = await import("../lib/supabase-mock")
       mockClerkClient.mockResolvedValueOnce({
-        users: { getUser: mock(() => Promise.reject(new Error("not found"))) },
+        users: {
+          getUser: mock(() => Promise.reject(new Error("not found"))),
+          getUserList: mock(() => Promise.resolve({ data: [] })),
+        },
       } as unknown)
 
       setMockFromImplementation((table) => {
@@ -1300,13 +1525,12 @@ describe("Team Invitations Service", () => {
       )
     })
 
-    it("counts failures, reverts emailed_at on the failed row, and surfaces failed emails", async () => {
+    it("marks only completed deliveries and leaves failed rows pending", async () => {
       const pending = [
         { ...mockInvitation, id: "inv_1", email: "good@example.com", token: "t1", team_id: "team_1" },
         { ...mockInvitation, id: "inv_2", email: "bad@example.com", token: "t2", team_id: "team_1" },
       ]
       const updates: Array<{ emailed_at: string | null }> = []
-      const inFilters: string[][] = []
       setMockFromImplementation((table) => {
         if (table === "team_invitations") {
           const chain = createChainableMock({ data: pending, error: null })
@@ -1314,11 +1538,6 @@ describe("Team Invitations Service", () => {
           chain.update = (data: unknown) => {
             updates.push(data as { emailed_at: string | null })
             return originalUpdate(data)
-          }
-          const originalIn = chain.in as (col: string, vals: string[]) => unknown
-          chain.in = (col: string, vals: string[]) => {
-            inFilters.push(vals)
-            return originalIn(col, vals)
           }
           return chain
         }
@@ -1338,8 +1557,192 @@ describe("Team Invitations Service", () => {
       expect(result.total).toBe(2)
       expect(result.failedEmails).toEqual(["bad@example.com"])
       expect(mockScheduleReminders).toHaveBeenCalledTimes(1)
-      expect(updates.some((u) => u.emailed_at === null)).toBe(true)
-      expect(inFilters.some((vals) => vals.includes("inv_2") && !vals.includes("inv_1"))).toBe(true)
+      expect(updates).toHaveLength(1)
+      expect(typeof updates[0].emailed_at).toBe("string")
+    })
+
+    it("keeps a delivered invitation checkpoint when reminder scheduling fails", async () => {
+      const pending = [
+        { ...mockInvitation, id: "inv_1", email: "a@example.com", token: "t1", team_id: "team_1" },
+      ]
+      const invitationChain = createChainableMock({ data: pending, error: null })
+      setMockFromImplementation((table) => {
+        if (table === "team_invitations") return invitationChain
+        if (table === "teams") return createChainableMock({ data: teamRow, error: null })
+        return createChainableMock({ data: null, error: null })
+      })
+      mockScheduleReminders.mockRejectedValueOnce(new Error("reminder storage unavailable"))
+
+      const result = await sendPendingTeamInvitationEmails("h1")
+
+      expect(result).toEqual({ sent: 1, total: 1, failedEmails: [] })
+      expect(mockSendTeamInvitationEmail).toHaveBeenCalledTimes(1)
+      expect(invitationChain.update).toHaveBeenCalledWith({
+        emailed_at: expect.any(String),
+      })
+    })
+
+    it("does not send when a stale event row has effectively ended", async () => {
+      const pending = [
+        { ...mockInvitation, id: "inv_1", email: "a@example.com", token: "t1", team_id: "team_1" },
+      ]
+      setMockFromImplementation((table) => {
+        if (table === "team_invitations") {
+          return createChainableMock({ data: pending, error: null })
+        }
+        if (table === "teams") {
+          return createChainableMock({
+            data: {
+              ...teamRow,
+              hackathons: {
+                ...teamRow.hackathons,
+                starts_at: "2026-01-01T00:00:00.000Z",
+                ends_at: "2026-01-02T00:00:00.000Z",
+              },
+            },
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      await expect(sendPendingTeamInvitationEmails("h1")).resolves.toEqual({
+        sent: 0,
+        total: 1,
+        failedEmails: [],
+      })
+      expect(mockSendTeamInvitationEmail).not.toHaveBeenCalled()
+    })
+
+    it("cancels a queued invite when the recipient became a judge", async () => {
+      const pending = [
+        { ...mockInvitation, id: "inv_stale", email: "judge@example.com" },
+      ]
+      let cancelledUpdate: Record<string, unknown> | null = null
+      const invitationChain = createChainableMock({ data: pending, error: null })
+      const originalUpdate = invitationChain.update
+      invitationChain.update = mock((value: Record<string, unknown>) => {
+        cancelledUpdate = value
+        return originalUpdate(value)
+      }) as typeof invitationChain.update
+      mockClerkClient.mockResolvedValueOnce({
+        users: {
+          getUser: mock(() => Promise.resolve({ firstName: "Captain", lastName: "Hook" })),
+          getUserList: mock(() => Promise.resolve({ data: [{ id: "judge_1" }] })),
+        },
+      } as unknown)
+      setMockFromImplementation((table) => {
+        if (table === "team_invitations") return invitationChain
+        if (table === "teams") return createChainableMock({ data: teamRow, error: null })
+        if (table === "hackathon_participants") {
+          return createChainableMock({
+            data: { role: "judge", team_id: null },
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      await expect(sendPendingTeamInvitationEmails("h1")).resolves.toEqual({
+        sent: 0,
+        total: 1,
+        failedEmails: [],
+      })
+      expect(cancelledUpdate).toEqual(expect.objectContaining({ status: "cancelled" }))
+      expect(mockSendTeamInvitationEmail).not.toHaveBeenCalled()
+    })
+  })
+
+  describe("retryPendingTeamInvitationEmails", () => {
+    beforeEach(() => {
+      mockSendTeamInvitationEmail.mockClear()
+      mockSendTeamInvitationEmail.mockResolvedValue({ success: true })
+      mockScheduleReminders.mockClear()
+      mockScheduleReminders.mockResolvedValue(1)
+    })
+
+    it("retries bounded pending rows for live events", async () => {
+      let invitationCalls = 0
+      setMockFromImplementation((table) => {
+        if (table === "team_invitations") {
+          invitationCalls++
+          if (invitationCalls === 1) {
+            return createChainableMock({
+              data: [{
+                hackathon_id: "h1",
+                hackathons: { status: "published", starts_at: null, ends_at: null },
+              }],
+              error: null,
+            })
+          }
+          if (invitationCalls === 2) {
+            return createChainableMock({ data: [mockInvitation], error: null })
+          }
+          if (invitationCalls === 3) {
+            return createChainableMock({ data: mockInvitation, error: null })
+          }
+          return createChainableMock({ data: null, error: null })
+        }
+        if (table === "teams") {
+          return createChainableMock({
+            data: {
+              id: "team_1",
+              name: "Test Team",
+              status: "forming",
+              hackathons: {
+                id: "h1",
+                name: "Test Hackathon",
+                slug: "test-hackathon",
+                status: "published",
+                starts_at: null,
+                ends_at: null,
+                registration_closes_at: null,
+                allow_late_registration: true,
+                max_team_size: 5,
+                max_participants: null,
+              },
+              hackathon_participants: [],
+            },
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      await expect(retryPendingTeamInvitationEmails(10)).resolves.toEqual({
+        events: 1,
+        sent: 1,
+        failed: 0,
+      })
+      expect(mockSendTeamInvitationEmail).toHaveBeenCalledTimes(1)
+    })
+
+    it("does not retry queued draft invitations", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({
+          data: [{
+            hackathon_id: "h1",
+            hackathons: { status: "draft", starts_at: null, ends_at: null },
+          }],
+          error: null,
+        })
+      )
+
+      await expect(retryPendingTeamInvitationEmails()).resolves.toEqual({
+        events: 0,
+        sent: 0,
+        failed: 0,
+      })
+      expect(mockSendTeamInvitationEmail).not.toHaveBeenCalled()
+    })
+
+    it("surfaces retry queue failures", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({ data: null, error: { message: "retry lookup failed" } })
+      )
+      await expect(retryPendingTeamInvitationEmails()).rejects.toThrow(
+        "Failed to load retryable team invitations: retry lookup failed"
+      )
     })
   })
 })

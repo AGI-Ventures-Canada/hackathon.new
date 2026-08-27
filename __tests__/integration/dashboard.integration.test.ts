@@ -652,4 +652,44 @@ describe("Dashboard Routes Integration Tests", () => {
       expect(data.error).toBe("Job not found")
     })
   })
+
+  describe("organization profile binding", () => {
+    it("rejects a profile read after the active organization changes", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+
+      const res = await app.handle(new Request(
+        "http://localhost/api/dashboard/org-profile?expectedOrganizationId=org-other",
+      ))
+
+      expect(res.status).toBe(409)
+      expect(await res.json()).toEqual({
+        error: "Your active organization changed. Review it and try again.",
+        code: "organization_context_changed",
+        retryable: true,
+      })
+    })
+
+    it("rejects a profile update after the active organization changes", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+
+      const res = await app.handle(new Request(
+        "http://localhost/api/dashboard/org-profile",
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            slug: "acme",
+            expectedOrganizationId: "org-other",
+          }),
+        },
+      ))
+
+      expect(res.status).toBe(409)
+      expect(await res.json()).toEqual({
+        error: "Your active organization changed. Review it and try again.",
+        code: "organization_context_changed",
+        retryable: true,
+      })
+    })
+  })
 })

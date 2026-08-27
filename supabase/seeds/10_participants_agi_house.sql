@@ -51,7 +51,7 @@ ON CONFLICT (id) DO NOTHING;
 -- Generative UI Hackathon (completed) — 18 participants + dev user
 INSERT INTO hackathon_participants (id, hackathon_id, clerk_user_id, role, registered_at)
 VALUES
-  ('a9e00024-a9e0-a9e0-a9e0-a9e00024a9e0', 'aaa30003-aaa3-aaa3-aaa3-aaa30003aaa3', 'user_39BZw9GPM79s3lcPIZn8tDLtoQg', 'participant', now() - interval '75 days'),
+  ('a9e00024-a9e0-a9e0-a9e0-a9e00024a9e0', 'aaa30003-aaa3-aaa3-aaa3-aaa30003aaa3', 'user_demo_primary_0001', 'participant', now() - interval '75 days'),
   ('a9e00025-a9e0-a9e0-a9e0-a9e00025a9e0', 'aaa30003-aaa3-aaa3-aaa3-aaa30003aaa3', 'user_seed_106', 'participant', now() - interval '78 days'),
   ('a9e00026-a9e0-a9e0-a9e0-a9e00026a9e0', 'aaa30003-aaa3-aaa3-aaa3-aaa30003aaa3', 'user_seed_107', 'participant', now() - interval '77 days'),
   ('a9e00027-a9e0-a9e0-a9e0-a9e00027a9e0', 'aaa30003-aaa3-aaa3-aaa3-aaa30003aaa3', 'user_seed_108', 'participant', now() - interval '77 days'),

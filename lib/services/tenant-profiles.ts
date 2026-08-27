@@ -2,6 +2,7 @@ import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { TenantProfile, Hackathon } from "@/lib/db/hackathon-types"
 import { sortByStartDate } from "@/lib/utils/format"
+import { isHackathonCreationReady } from "@/lib/utils/hackathon-creation-state"
 
 export async function getPublicTenantBySlug(
   slug: string
@@ -146,7 +147,9 @@ export async function getPublicTenantWithHackathons(
 
   return {
     ...(tenant as unknown as TenantProfile),
-    hackathons: (hackathons || []) as unknown as Hackathon[],
+    hackathons: ((hackathons || []) as unknown as Hackathon[]).filter(
+      isHackathonCreationReady,
+    ),
   }
 }
 
@@ -202,6 +205,7 @@ export async function getPublicTenantWithEvents(
         }
         return hackathon
       })
+      .filter(isHackathonCreationReady)
       .filter((h) =>
         ["published", "registration_open", "active", "judging", "completed"].includes(h.status)
       ),
@@ -210,10 +214,12 @@ export async function getPublicTenantWithEvents(
 
   return {
     ...(tenant as unknown as TenantProfile),
-    organizedHackathons: (organizedHackathons || []).map((h) => ({
-      ...(h as unknown as Hackathon),
-      role: "organizer" as const,
-    })),
+    organizedHackathons: ((organizedHackathons || []) as unknown as Hackathon[])
+      .filter(isHackathonCreationReady)
+      .map((h) => ({
+        ...h,
+        role: "organizer" as const,
+      })),
     sponsoredHackathons: sponsoredHackathons.map((h) => ({
       ...h,
       role: "sponsor" as const,

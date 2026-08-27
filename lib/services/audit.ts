@@ -2,6 +2,7 @@ import { supabase as getSupabase } from "@/lib/db/client"
 import type { AuditLog } from "@/lib/db/hackathon-types"
 import type { Json } from "@/lib/db/types"
 import type { Principal } from "@/lib/auth/types"
+import { isValidUuid } from "@/lib/utils/uuid"
 
 export type AuditAction =
   | "api_key.created"
@@ -45,6 +46,7 @@ export type AuditAction =
   | "logo.deleted"
   | "team_invitation.sent"
   | "team_invitation.queued"
+  | "team_invitation.delivery_failed"
   | "team_invitation.reminded"
   | "team_invitation.cancelled"
   | "judging_criteria.created"
@@ -52,6 +54,8 @@ export type AuditAction =
   | "judge.added"
   | "judge.removed"
   | "judge.invited"
+  | "judge_invitation.queued"
+  | "judge_invitation.delivery_failed"
   | "judge_invitation.reminded"
   | "judge_invitation.cancelled"
   | "judging.auto_assigned"
@@ -127,6 +131,7 @@ export type AuditAction =
   | "perk.released"
   | "perk.none_toggled"
   | "email_blast.sent"
+  | "email_blast.delivery_failed"
   | "announcement.created"
   | "announcement.updated"
   | "announcement.deleted"
@@ -162,10 +167,16 @@ export type LogAuditInput = {
   metadata?: Json
   targetTenantId?: string
   critical?: boolean
+  idempotencyId?: string
+  idempotencyKey?: string
 }
 
 export async function logAudit(input: LogAuditInput): Promise<AuditLog | null> {
   const { principal } = input
+
+  if (input.idempotencyId && !isValidUuid(input.idempotencyId)) {
+    throw new Error("Audit idempotency ID must be a UUID")
+  }
 
   let tenantId: string
   let actorType: "user" | "api_key"
@@ -196,9 +207,17 @@ export async function logAudit(input: LogAuditInput): Promise<AuditLog | null> {
     actorId = principal.keyId
   }
 
+  if (input.idempotencyKey) {
+    metadata = {
+      ...(metadata as Record<string, unknown> ?? {}),
+      idempotencyKey: input.idempotencyKey,
+    }
+  }
+
   const { data, error } = await getSupabase()
     .from("audit_logs")
     .insert({
+      ...(input.idempotencyId ? { id: input.idempotencyId } : {}),
       tenant_id: tenantId,
       action: input.action,
       actor_type: actorType,
@@ -211,6 +230,26 @@ export async function logAudit(input: LogAuditInput): Promise<AuditLog | null> {
     .single()
 
   if (error || !data) {
+    if (input.idempotencyId) {
+      const { data: existing, error: lookupError } = await getSupabase()
+        .from("audit_logs")
+        .select("*")
+        .eq("id", input.idempotencyId)
+        .eq("tenant_id", tenantId)
+        .maybeSingle()
+      if (
+        existing &&
+        existing.action === input.action &&
+        existing.resource_type === input.resourceType &&
+        existing.resource_id === (input.resourceId ?? null)
+      ) {
+        return existing as AuditLog
+      }
+      if (existing) throw new Error("Audit idempotency ID is already in use")
+      if (lookupError && input.critical) {
+        throw new Error(`Critical audit idempotency lookup failed: ${lookupError.message}`)
+      }
+    }
     if (input.critical) {
       throw new Error(`Critical audit log failed: ${error?.message ?? "no data returned"}`)
     }

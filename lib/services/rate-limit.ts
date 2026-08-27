@@ -18,7 +18,8 @@ export type RateLimitResult = {
 
 export async function checkRateLimit(
   key: string,
-  config: RateLimitConfig = defaultRateLimits["api_key:default"]
+  config: RateLimitConfig = defaultRateLimits["api_key:default"],
+  options: { failureMode?: "open" | "closed" } = {},
 ): Promise<RateLimitResult> {
   const db = supabase()
   const { data, error } = await db.rpc("check_rate_limit", {
@@ -29,8 +30,8 @@ export async function checkRateLimit(
 
   if (error || !data || typeof data !== "object") {
     return {
-      allowed: true,
-      remaining: config.maxRequests - 1,
+      allowed: options.failureMode !== "closed",
+      remaining: options.failureMode === "closed" ? 0 : config.maxRequests - 1,
       resetAt: Date.now() + config.windowMs,
     }
   }
@@ -42,8 +43,8 @@ export async function checkRateLimit(
     typeof result.reset_at !== "number"
   ) {
     return {
-      allowed: true,
-      remaining: config.maxRequests - 1,
+      allowed: options.failureMode !== "closed",
+      remaining: options.failureMode === "closed" ? 0 : config.maxRequests - 1,
       resetAt: Date.now() + config.windowMs,
     }
   }

@@ -21,8 +21,9 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination"
 import { formatDateRange } from "@/lib/utils/format"
-import { getTimelineState } from "@/lib/utils/timeline"
+import { getTimelineStateAt } from "@/lib/utils/timeline"
 import type { HackathonStatus } from "@/lib/db/hackathon-types"
+import { useIsClient } from "@/hooks/use-is-client"
 
 const PAGE_SIZE = 5
 const COMPLETED_LABELS = new Set(["Judging", "Completed", "Archived"])
@@ -51,10 +52,15 @@ export type HackathonWithRole = {
 export function HackathonGrid({
   hackathons,
   showCompleted,
+  timelineReferenceTime,
 }: {
   hackathons: HackathonWithRole[]
   showCompleted: boolean
+  timelineReferenceTime: string
 }) {
+  const isClient = useIsClient()
+  const displayTimeZone = isClient ? undefined : "UTC"
+  const referenceTime = new Date(timelineReferenceTime)
   const [page, setPage] = useState(1)
   const [prevShowCompleted, setPrevShowCompleted] = useState(showCompleted)
   if (prevShowCompleted !== showCompleted) {
@@ -64,7 +70,9 @@ export function HackathonGrid({
 
   const filtered = showCompleted
     ? hackathons
-    : hackathons.filter((h) => !COMPLETED_LABELS.has(getTimelineState(h).label))
+    : hackathons.filter((h) => (
+        !COMPLETED_LABELS.has(getTimelineStateAt(h, referenceTime).label)
+      ))
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
   const safePage = Math.min(page, totalPages || 1)
@@ -88,13 +96,13 @@ export function HackathonGrid({
                           : "Sponsor"}
                     </Badge>
                     {(() => {
-                      const timelineState = getTimelineState({
+                      const timelineState = getTimelineStateAt({
                         status: hackathon.status,
                         starts_at: hackathon.starts_at,
                         ends_at: hackathon.ends_at,
                         registration_opens_at: hackathon.registration_opens_at,
                         registration_closes_at: hackathon.registration_closes_at,
-                      })
+                      }, referenceTime)
                       return (
                         <Badge variant={timelineState.variant}>
                           {timelineState.label}
@@ -113,7 +121,7 @@ export function HackathonGrid({
                 <div className="flex items-center gap-1.5 text-muted-foreground text-sm">
                   <Calendar className="size-3.5" />
                   <span>
-                    {formatDateRange(hackathon.starts_at, hackathon.ends_at)}
+                    {formatDateRange(hackathon.starts_at, hackathon.ends_at, displayTimeZone)}
                   </span>
                 </div>
               </CardContent>

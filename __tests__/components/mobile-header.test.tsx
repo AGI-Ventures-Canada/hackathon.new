@@ -60,7 +60,7 @@ beforeEach(() => {
   resetClerkState()
   clerkState.user = {
     id: "user_123",
-    fullName: "Alex Ivany",
+    fullName: "Jordan Lee",
     firstName: "Alex",
     imageUrl: null,
   }
@@ -105,7 +105,8 @@ describe("MobileHeader", () => {
     it("renders the menu button and logo", () => {
       render(<MobileHeader />)
       const header = getHeader()
-      expect(within(header).getByText("Open menu")).toBeDefined()
+      expect(within(header).getByText("Open menu").closest("button")?.getAttribute("data-size"))
+        .toBe("icon-touch")
       expect(within(header).getByText("hackathon.new")).toBeDefined()
     })
 
@@ -118,7 +119,7 @@ describe("MobileHeader", () => {
     it("shows user image when imageUrl is provided", () => {
       clerkState.user = { ...clerkState.user!, imageUrl: "https://example.com/avatar.png" }
       render(<MobileHeader />)
-      const img = screen.getByAltText("Alex Ivany")
+      const img = screen.getByAltText("Jordan Lee")
       expect(img.getAttribute("src")).toBe("https://example.com/avatar.png")
     })
 
@@ -126,6 +127,7 @@ describe("MobileHeader", () => {
       render(<MobileHeader />)
       const header = getHeader()
       const avatarButton = within(header).getByText("A").closest("button")!
+      expect(avatarButton.getAttribute("data-size")).toBe("icon-touch")
       fireEvent.click(avatarButton)
       expect(clerkState.openUserProfile).toHaveBeenCalled()
     })
@@ -148,7 +150,9 @@ describe("MobileHeader", () => {
     it("unlocks body scroll when closed", async () => {
       openMenu()
       const overlay = getOverlay()
-      fireEvent.click(within(overlay).getByText("Close menu"))
+      const closeButton = within(overlay).getByText("Close menu").closest("button")!
+      expect(closeButton.getAttribute("data-size")).toBe("icon-touch")
+      fireEvent.click(closeButton)
       await waitFor(() => {
         expect(document.body.style.overflow).toBe("")
       })
@@ -237,6 +241,7 @@ describe("MobileHeader", () => {
       clerkState.organization = { id: "org_1", name: "Test Org", imageUrl: null }
       clerkState.memberships = [
         {
+          role: "org:admin",
           organization: { id: "org_1", name: "Test Org", imageUrl: null },
         },
         {

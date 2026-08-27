@@ -11,6 +11,7 @@
     "organization-setup",
     "api-keys-setup",
     "integrations",
+    "webmcp",
     "---",
     "cli-organizer",
     "cli-browsing",

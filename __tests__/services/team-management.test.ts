@@ -292,12 +292,14 @@ describe("team approvals", () => {
     expect(mockSendTeamApprovedEmail).toHaveBeenCalledTimes(2)
     expect(mockSendTeamApprovedEmail).toHaveBeenNthCalledWith(1, {
       to: "one@example.com",
+      teamId: "team_1",
       teamName: "Team One",
       hackathonName: "Hack One",
       hackathonSlug: "hack-one",
     })
     expect(mockSendTeamApprovedEmail).toHaveBeenNthCalledWith(2, {
       to: "two@example.com",
+      teamId: "team_1",
       teamName: "Team One",
       hackathonName: "Hack One",
       hackathonSlug: "hack-one",
@@ -477,12 +479,14 @@ describe("team approvals", () => {
     expect(mockSendTeamDeniedEmail).toHaveBeenCalledTimes(2)
     expect(mockSendTeamDeniedEmail).toHaveBeenNthCalledWith(1, {
       to: "one@example.com",
+      teamId: "team_1",
       teamName: "Team One",
       hackathonName: "Hack One",
       hackathonSlug: "hack-one",
     })
     expect(mockSendTeamDeniedEmail).toHaveBeenNthCalledWith(2, {
       to: "two@example.com",
+      teamId: "team_1",
       teamName: "Team One",
       hackathonName: "Hack One",
       hackathonSlug: "hack-one",

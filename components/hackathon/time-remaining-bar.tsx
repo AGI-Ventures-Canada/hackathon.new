@@ -20,8 +20,9 @@ type Milestone = {
   startRef: Date
 }
 
-function getMilestone(props: Props): Milestone | null {
-  const now = new Date()
+function getMilestone(props: Props, nowMs: number | null): Milestone | null {
+  if (nowMs === null) return null
+  const now = new Date(nowMs)
 
   if (props.status === "draft") {
     if (props.registrationOpensAt) {
@@ -74,7 +75,7 @@ function formatRemaining(ms: number): string {
 }
 
 export function TimeRemainingBar(props: Props) {
-  const [now, setNow] = useState(() => Date.now())
+  const [now, setNow] = useState<number | null>(null)
 
   useEffect(() => {
     const sync = () => setNow(Date.now())
@@ -83,8 +84,8 @@ export function TimeRemainingBar(props: Props) {
     return () => { cancelAnimationFrame(frame); clearInterval(interval) }
   }, [])
 
-  const milestone = getMilestone(props)
-  if (!milestone) return null
+  const milestone = getMilestone(props, now)
+  if (!milestone || now === null) return null
 
   const remaining = milestone.deadline.getTime() - now
   const total = milestone.deadline.getTime() - milestone.startRef.getTime()
@@ -117,7 +118,6 @@ export function TimeRemainingBar(props: Props) {
       </div>
       <div className="h-2 rounded-full bg-muted overflow-hidden">
         <div
-          suppressHydrationWarning
           className={cn(
             "h-full rounded-full transition-all duration-1000",
             isUrgent ? "bg-destructive" : isWarning ? "bg-primary" : "bg-primary/60",

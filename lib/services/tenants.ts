@@ -27,15 +27,22 @@ async function fetchTenantBy(
   return (data as Tenant) ?? null
 }
 
+export function getTenantByClerkOrgId(clerkOrgId: string): Promise<Tenant | null> {
+  return fetchTenantBy("clerk_org_id", clerkOrgId)
+}
+
 async function insertOrFetchTenant(
   column: "clerk_org_id" | "clerk_user_id",
   value: string,
   name: string
 ): Promise<Tenant | null> {
+  const identity = column === "clerk_org_id"
+    ? { clerk_org_id: value }
+    : { clerk_user_id: value }
   const { data, error } = await getSupabase()
     .from("tenants")
     .upsert(
-      { [column]: value, name },
+      { ...identity, name },
       { onConflict: column, ignoreDuplicates: true }
     )
     .select()

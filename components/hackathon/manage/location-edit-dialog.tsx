@@ -6,6 +6,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog"
 import { LocationEditForm } from "@/components/hackathon/edit-drawer/location-edit-form"
 
@@ -31,6 +32,7 @@ export function LocationEditDialog({ open, onOpenChange, hackathonId, initialDat
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Set event location</DialogTitle>
+          <DialogDescription>Tell people where and how to join.</DialogDescription>
         </DialogHeader>
         <LocationEditForm
           hackathonId={hackathonId}

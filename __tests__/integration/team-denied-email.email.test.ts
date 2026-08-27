@@ -7,6 +7,7 @@ type SendEmailInput = {
   text?: string
   replyTo?: string
   tags?: Array<{ name: string; value: string }>
+  idempotencyKey?: string
 }
 
 const mockSendEmail = mock((input: SendEmailInput) => Promise.resolve({ id: "email_123", input }))
@@ -27,6 +28,7 @@ describe("Team review email", () => {
   it("sends a clear team approval email", async () => {
     const result = await sendTeamApprovedEmail({
       to: "person@example.com",
+      teamId: "team_123",
       teamName: "Awesome Team",
       hackathonName: "AI Hackathon",
       hackathonSlug: "ai-hackathon",
@@ -41,11 +43,13 @@ describe("Team review email", () => {
     expect(callArgs.text).toContain("ready to keep working")
     expect(callArgs.replyTo).toBe("help@example.com")
     expect(callArgs.tags).toContainEqual({ name: "type", value: "team_approved" })
+    expect(callArgs.idempotencyKey).toMatch(/^team-review\/team_123\/approved\//)
   })
 
   it("sends a clear team denial email", async () => {
     const result = await sendTeamDeniedEmail({
       to: "person@example.com",
+      teamId: "team_123",
       teamName: "Awesome Team",
       hackathonName: "AI Hackathon",
       hackathonSlug: "ai-hackathon",
@@ -60,5 +64,6 @@ describe("Team review email", () => {
     expect(callArgs.text).toContain("join another team")
     expect(callArgs.replyTo).toBe("help@example.com")
     expect(callArgs.tags).toContainEqual({ name: "type", value: "team_denied" })
+    expect(callArgs.idempotencyKey).toMatch(/^team-review\/team_123\/denied\//)
   })
 })

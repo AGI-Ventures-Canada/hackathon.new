@@ -8,6 +8,11 @@ import {
   shortHackathonName,
 } from "./utils"
 import SubmissionConfirmationEmail from "@/emails/submission-confirmation"
+import { createHash } from "node:crypto"
+
+function recipientFingerprint(email: string): string {
+  return createHash("sha256").update(email.trim().toLowerCase()).digest("hex").slice(0, 24)
+}
 
 export type SendSubmissionConfirmationInput = {
   to: string
@@ -15,6 +20,7 @@ export type SendSubmissionConfirmationInput = {
   hackathonSlug: string
   projectTitle: string
   teamName?: string | null
+  submissionId?: string
 }
 
 export async function sendSubmissionConfirmationEmail(
@@ -41,6 +47,9 @@ export async function sendSubmissionConfirmationEmail(
       { name: "type", value: "submission_confirmation" },
       { name: "hackathon", value: sanitizeTag(input.hackathonName) },
     ],
+    idempotencyKey: input.submissionId
+      ? `submission-confirmation/${input.submissionId}/${recipientFingerprint(input.to)}`
+      : undefined,
   })
 
   return { success: result !== null }

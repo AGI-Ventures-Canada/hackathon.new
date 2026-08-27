@@ -20,6 +20,8 @@ mock.module("@clerk/nextjs/server", () => ({
 }))
 
 const mockGetPublicHackathon = mock(() => Promise.resolve(null))
+const mockListPrizes = mock(() => Promise.resolve([]))
+const mockListPrizeAssignments = mock(() => Promise.resolve([]))
 
 mock.module("@/lib/services/public-hackathons", () => ({
   getPublicHackathon: mockGetPublicHackathon,
@@ -31,6 +33,11 @@ mock.module("@/lib/services/public-hackathons", () => ({
   getHackathonByIdWithAccess: mock(() => Promise.resolve(null)),
   updateHackathonSettings: mock(() => Promise.resolve(null)),
   PUBLISHED_STATUSES: ["published", "registration_open", "active", "judging", "completed"],
+}))
+
+mock.module("@/lib/services/prizes", () => ({
+  listPrizes: mockListPrizes,
+  listPrizeAssignments: mockListPrizeAssignments,
 }))
 
 const mockGetRegistrationInfo = mock(
@@ -71,6 +78,7 @@ const VALID_SUBMISSION_ID = "33333333-3333-3333-3333-333333333333"
 const mockVerifyAssignmentOwnership = mock(() => Promise.resolve({ hackathonId: "22222222-2222-2222-2222-222222222222", prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" }))
 const mockRecalculateForAssignment = mock(() => Promise.resolve())
 const mockGetAssignmentDetail = mock(() => Promise.resolve(null))
+const mockGetJudgeAssignments = mock(() => Promise.resolve([]))
 const mockSubmitScores = mock(() => Promise.resolve({ success: true }))
 const mockSubmitJudgesPick = mock(() => Promise.resolve({ success: true }))
 const mockCalculatePrizeResults = mock(() => Promise.resolve({ success: true, count: 1 }))
@@ -90,7 +98,7 @@ mock.module("@/lib/services/judging", () => ({
   removeJudgeAssignment: mock(() => Promise.resolve(false)),
   autoAssignJudges: mock(() => Promise.resolve({ assignedCount: 0 })),
   getJudgingProgress: mock(() => Promise.resolve({ totalAssignments: 0, completedAssignments: 0, judges: [] })),
-  getJudgeAssignments: mock(() => Promise.resolve([])),
+  getJudgeAssignments: mockGetJudgeAssignments,
   getAssignmentDetail: mockGetAssignmentDetail,
   submitScores: mockSubmitScores,
   submitJudgesPick: mockSubmitJudgesPick,
@@ -149,6 +157,7 @@ const mockHackathon = {
   name: "Test Hackathon",
   slug: "test-hackathon",
   status: "judging",
+  results_published_at: null,
   organizer: {
     id: "t1",
     name: "Test Org",
@@ -162,9 +171,12 @@ describe("Judging Scoring Routes", () => {
   beforeEach(() => {
     mockAuth.mockReset()
     mockGetPublicHackathon.mockReset()
+    mockListPrizes.mockReset()
+    mockListPrizeAssignments.mockReset()
     mockVerifyAssignmentOwnership.mockReset()
     mockRecalculateForAssignment.mockReset()
     mockGetAssignmentDetail.mockReset()
+    mockGetJudgeAssignments.mockReset()
     mockSubmitScores.mockReset()
     mockSubmitJudgesPick.mockReset()
     mockCalculatePrizeResults.mockReset()
@@ -185,6 +197,104 @@ describe("Judging Scoring Routes", () => {
     mockSubmitJudgesPick.mockResolvedValue({ success: true })
     mockCalculatePrizeResults.mockResolvedValue({ success: true, count: 1 })
     mockGetRegistrationInfo.mockResolvedValue({ participantRole: "judge", participantId: "judge-1" })
+    mockGetJudgeAssignments.mockResolvedValue([])
+    mockListPrizes.mockResolvedValue([])
+    mockListPrizeAssignments.mockResolvedValue([])
+  })
+
+  describe("GET /api/public/hackathons/:slug/judging/assignments", () => {
+    it("removes team context and self-identity hints for anonymous judging", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_judge" })
+      mockGetPublicHackathon.mockResolvedValue({
+        ...mockHackathon,
+        anonymous_judging: true,
+      })
+      mockGetJudgeAssignments.mockResolvedValue([
+        {
+          id: VALID_ASSIGNMENT_ID,
+          submissionId: VALID_SUBMISSION_ID,
+          submissionTitle: "Project",
+          submissionDescription: null,
+          submissionGithubUrl: null,
+          submissionLiveAppUrl: null,
+          submissionDemoVideoUrl: null,
+          submissionScreenshotUrl: null,
+          teamName: "Identity Leak",
+          teamMode: "virtual",
+          teamMemberCount: 4,
+          isComplete: false,
+          notes: "",
+          viewedAt: null,
+          prizeId: null,
+          prizeName: null,
+          judgingStyle: "weighted_score",
+          maxPicks: null,
+          selfJudging: true,
+          assignmentKind: "unified_weighted_score",
+        },
+      ])
+
+      const response = await app.handle(
+        new Request("http://localhost/api/public/hackathons/test-hackathon/judging/assignments"),
+      )
+      const data = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(data.assignments[0].teamName).toBeNull()
+      expect(data.assignments[0].teamMode).toBeNull()
+      expect(data.assignments[0].selfJudging).toBe(false)
+      expect(data.assignments[0]).not.toHaveProperty("teamMemberCount")
+    })
+  })
+
+  describe("GET /api/public/hackathons/:slug/prizes", () => {
+    const url = "http://localhost/api/public/hackathons/test-hackathon/prizes"
+    const prize = {
+      id: "prize-1",
+      name: "Best Overall",
+      description: "Top project",
+      value: "$500",
+      type: "placement",
+      rank: 1,
+    }
+    const assignment = {
+      prize_id: "prize-1",
+      submissionTitle: "Private winner",
+      teamName: "Private team",
+    }
+
+    it("omits assigned winners before results are published", async () => {
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockListPrizes.mockResolvedValue([prize])
+      mockListPrizeAssignments.mockResolvedValue([assignment])
+
+      const response = await app.handle(new Request(url))
+      const data = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(data.prizes[0].winner).toBeNull()
+      expect(JSON.stringify(data)).not.toContain("Private winner")
+      expect(mockListPrizeAssignments).not.toHaveBeenCalled()
+    })
+
+    it("includes assigned winners after results are published", async () => {
+      mockGetPublicHackathon.mockResolvedValue({
+        ...mockHackathon,
+        results_published_at: "2026-08-25T16:00:00Z",
+      })
+      mockListPrizes.mockResolvedValue([prize])
+      mockListPrizeAssignments.mockResolvedValue([assignment])
+
+      const response = await app.handle(new Request(url))
+      const data = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(data.prizes[0].winner).toEqual({
+        submissionTitle: "Private winner",
+        teamName: "Private team",
+      })
+      expect(mockListPrizeAssignments).toHaveBeenCalledWith(mockHackathon.id)
+    })
   })
 
   describe("POST /api/public/hackathons/:slug/judging/picks", () => {

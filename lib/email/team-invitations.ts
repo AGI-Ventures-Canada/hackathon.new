@@ -36,6 +36,7 @@ export type SendTeamInvitationInput = {
   hackathonStartsAt?: string | null
   hackathonEndsAt?: string | null
   teamMembers?: string[]
+  deliveryId?: string
 }
 
 export async function sendTeamInvitationEmail(
@@ -81,6 +82,7 @@ export async function sendTeamInvitationEmail(
       { name: "type", value: "team_invitation" },
       { name: "hackathon", value: sanitizeTag(input.hackathonName) },
     ],
+    idempotencyKey: `team-invitation/${input.deliveryId ?? input.inviteToken}`,
   })
 
   return { success: result !== null }
@@ -95,6 +97,7 @@ export type SendTeamInvitationReminderInput = {
   inviteToken: string
   expiresAt: string
   urgency?: "low" | "medium" | "high"
+  deliveryId?: string
 }
 
 function teamReminderSubject(teamName: string, hackathonName: string, urgency: string): string {
@@ -132,7 +135,8 @@ export async function sendTeamInvitationReminderEmail(
     })
   )
 
-  const subject = teamReminderSubject(input.teamName, input.hackathonName, input.urgency ?? "low")
+  const urgency = input.urgency ?? "low"
+  const subject = teamReminderSubject(input.teamName, input.hackathonName, urgency)
 
   const result = await sendEmail({
     to: input.to,
@@ -146,6 +150,7 @@ export async function sendTeamInvitationReminderEmail(
       { name: "type", value: "team_invitation_reminder" },
       { name: "hackathon", value: sanitizeTag(input.hackathonName) },
     ],
+    idempotencyKey: `team-invitation-reminder/${input.deliveryId ?? `${input.inviteToken}/${urgency}`}`,
   })
 
   return { success: result !== null }

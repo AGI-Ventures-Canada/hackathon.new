@@ -3107,6 +3107,18 @@ export type Database = {
               team_id: string
             }[]
           }
+      approve_pending_team: {
+        Args: { p_hackathon_id: string; p_team_id: string }
+        Returns: {
+          error_code: string
+          error_message: string
+          member_clerk_user_ids: string[]
+          success: boolean
+          team_id: string
+          team_name: string
+          team_status: Database["public"]["Enums"]["team_status"]
+        }[]
+      }
       bulk_assign_teams: {
         Args: { p_assignments: Json; p_hackathon_id: string }
         Returns: {
@@ -3114,18 +3126,6 @@ export type Database = {
           error_code: string
           error_message: string
           success: boolean
-        }[]
-      }
-      approve_pending_team: {
-        Args: { p_team_id: string; p_hackathon_id: string }
-        Returns: {
-          error_code: string | null
-          error_message: string | null
-          success: boolean
-          team_id: string | null
-          team_name: string | null
-          team_status: Database["public"]["Enums"]["team_status"] | null
-          member_clerk_user_ids: string[]
         }[]
       }
       calculate_results: {
@@ -3159,18 +3159,18 @@ export type Database = {
         Returns: number
       }
       deny_pending_team: {
-        Args: { p_team_id: string; p_hackathon_id: string }
+        Args: { p_hackathon_id: string; p_team_id: string }
         Returns: {
           cancelled_invitation_ids: string[]
-          error_code: string | null
-          error_message: string | null
+          error_code: string
+          error_message: string
           invites_cancelled: number
           member_clerk_user_ids: string[]
           members_unassigned: number
           success: boolean
-          team_id: string | null
-          team_name: string | null
-          team_status: Database["public"]["Enums"]["team_status"] | null
+          team_id: string
+          team_name: string
+          team_status: Database["public"]["Enums"]["team_status"]
         }[]
       }
       effective_hackathon_status: {
@@ -3185,30 +3185,21 @@ export type Database = {
         Args: { p_hackathon_id: string }
         Returns: Json
       }
-      register_for_hackathon:
-        | {
-            Args: { p_clerk_user_id: string; p_hackathon_id: string }
-            Returns: {
-              error_code: string
-              error_message: string
-              participant_id: string
-              success: boolean
-            }[]
-          }
-        | {
-            Args: {
-              p_clerk_user_id: string
-              p_hackathon_id: string
-              p_team_name?: string
-            }
-            Returns: {
-              error_code: string
-              error_message: string
-              participant_id: string
-              success: boolean
-              team_id: string
-            }[]
-          }
+      register_for_hackathon: {
+        Args: {
+          p_clerk_user_id: string
+          p_hackathon_id: string
+          p_team_name?: string
+          p_user_emails?: string[]
+        }
+        Returns: {
+          error_code: string
+          error_message: string
+          participant_id: string
+          success: boolean
+          team_id: string
+        }[]
+      }
       submit_scores: {
         Args: {
           p_judge_assignment_id: string
@@ -3340,7 +3331,7 @@ export type Database = {
         | "rejected"
         | "winner"
       team_mode: "in_person" | "virtual"
-      team_status: "forming" | "pending_approval" | "locked" | "disbanded"
+      team_status: "forming" | "locked" | "disbanded" | "pending_approval"
       track_intent:
         | "overall_winner"
         | "sponsor_prize"
@@ -3552,7 +3543,7 @@ export const Constants = {
         "winner",
       ],
       team_mode: ["in_person", "virtual"],
-      team_status: ["forming", "pending_approval", "locked", "disbanded"],
+      team_status: ["forming", "locked", "disbanded", "pending_approval"],
       track_intent: [
         "overall_winner",
         "sponsor_prize",

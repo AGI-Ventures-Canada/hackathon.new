@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import {
   DEFAULT_TEAM_STATUS,
   type Hackathon,
+  type HackathonStatus,
   type HackathonParticipant,
   type TeamStatus,
 } from "@/lib/db/hackathon-types"
@@ -12,6 +13,8 @@ import { clerkClient } from "@clerk/nextjs/server"
 import { trackEvent } from "@/lib/analytics/posthog"
 import { getSubmissionScreenshotUrls } from "@/lib/utils/submission-screenshots"
 import { isValidUuid } from "@/lib/utils/uuid"
+import { getNotificationDisposition } from "@/lib/utils/notification-lifecycle"
+import { isHackathonCreationReady } from "@/lib/utils/hackathon-creation-state"
 
 type ParticipantWithHackathon = HackathonParticipant & {
   hackathons: Hackathon
@@ -41,6 +44,7 @@ export async function listParticipatingHackathons(
   let hackathons = (data as unknown as ParticipantWithHackathon[])
     .filter((r) => r.hackathons)
     .map((r) => ({ ...r.hackathons, role: r.role }))
+    .filter(isHackathonCreationReady)
 
   if (options?.search && options.search.length >= 2) {
     const q = options.search.toLowerCase()
@@ -77,7 +81,7 @@ export async function listOrganizedHackathons(
     return []
   }
 
-  return data as unknown as Hackathon[]
+  return (data as unknown as Hackathon[]).filter(isHackathonCreationReady)
 }
 
 type SponsorWithHackathon = {
@@ -103,6 +107,7 @@ export async function listSponsoredHackathons(
   let hackathons = (data as unknown as SponsorWithHackathon[])
     .filter((r) => r.hackathons)
     .map((r) => r.hackathons)
+    .filter(isHackathonCreationReady)
 
   if (options?.search && options.search.length >= 2) {
     const q = options.search.toLowerCase()
@@ -133,6 +138,7 @@ export async function listJudgingHackathons(
   let hackathons = (data as unknown as ParticipantWithHackathon[])
     .filter((r) => r.hackathons)
     .map((r) => r.hackathons)
+    .filter(isHackathonCreationReady)
     .filter((h) => h.status !== "draft")
 
   if (options?.search && options.search.length >= 2) {
@@ -146,61 +152,95 @@ export async function listJudgingHackathons(
 }
 
 export type CreateHackathonInput = {
+  id?: string
   name: string
   description?: string | null
+  metadata?: Record<string, unknown>
 }
 
 export async function createHackathon(
   tenantId: string,
-  input: CreateHackathonInput
+  input: CreateHackathonInput,
+  options: { track?: boolean } = {},
 ): Promise<Hackathon | null> {
   const client = getSupabase() as unknown as SupabaseClient
+  const name = input.name.trim()
+  if (!name) return null
+  if (input.id && !isValidUuid(input.id)) return null
 
-  const baseSlug = generateSlug(input.name)
-  let slug = baseSlug
-  let attempt = 0
+  const generatedSlug = generateSlug(name)
+  const baseSlug = generatedSlug || `event-${crypto.randomUUID().slice(0, 8)}`
 
-  while (attempt < 10) {
-    const { data: existing } = await client
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const slug = attempt === 0 ? baseSlug : `${baseSlug}-${attempt}`
+    const { data: existing, error: lookupError } = await client
       .from("hackathons")
       .select("id")
       .eq("slug", slug)
       .maybeSingle()
 
-    if (!existing) break
-    attempt++
-    slug = `${baseSlug}-${attempt}`
+    if (lookupError) {
+      console.error("Failed to check hackathon slug:", lookupError)
+      return null
+    }
+    if (existing) continue
+
+    const { data, error } = await client
+      .from("hackathons")
+      .insert({
+        ...(input.id ? { id: input.id } : {}),
+        tenant_id: tenantId,
+        name,
+        slug,
+        description: input.description ?? null,
+        status: "draft",
+        min_team_size: 1,
+        max_team_size: 5,
+        allow_solo: true,
+        allow_late_registration: true,
+        require_team_approval: false,
+        metadata: input.metadata ?? {},
+      })
+      .select()
+      .single()
+
+    if (error?.code === "23505") {
+      if (input.id) {
+        const { data: existingId, error: existingIdError } = await client
+          .from("hackathons")
+          .select("id")
+          .eq("id", input.id)
+          .eq("tenant_id", tenantId)
+          .maybeSingle()
+        if (existingIdError) {
+          console.error("Failed to check existing hackathon creation:", existingIdError)
+          return null
+        }
+        if (existingId) return null
+      }
+      continue
+    }
+    if (error) {
+      console.error("Failed to create hackathon:", error)
+      return null
+    }
+    if (!data) {
+      console.error("Failed to create hackathon: database returned no event")
+      return null
+    }
+
+    if (options.track !== false) {
+      trackEvent(tenantId, "hackathon.created", {
+        hackathonId: data.id,
+        name,
+      })
+    }
+
+    return data as unknown as Hackathon
   }
 
-  const { data, error } = await client
-    .from("hackathons")
-    .insert({
-      tenant_id: tenantId,
-      name: input.name,
-      slug,
-      description: input.description ?? null,
-      status: "draft",
-      min_team_size: 1,
-      max_team_size: 5,
-      allow_solo: true,
-      allow_late_registration: true,
-      require_team_approval: false,
-      metadata: {},
-    })
-    .select()
-    .single()
-
-  if (error) {
-    console.error("Failed to create hackathon:", error)
-    return null
-  }
-
-  trackEvent(tenantId, "hackathon.created", {
-    hackathonId: data.id,
-    name: input.name,
-  })
-
-  return data as unknown as Hackathon
+  console.error("Failed to create hackathon: no unique event URL was available")
+  return null
 }
 
 export async function getHackathonById(
@@ -220,7 +260,8 @@ export async function getHackathonById(
     return null
   }
 
-  return data as unknown as Hackathon
+  const hackathon = data as unknown as Hackathon
+  return isHackathonCreationReady(hackathon) ? hackathon : null
 }
 
 export async function isUserRegistered(
@@ -308,7 +349,8 @@ type RegisterResult =
 export async function registerForHackathon(
   hackathonId: string,
   clerkUserId: string,
-  teamName?: string
+  teamName?: string,
+  userEmails: string[] = [],
 ): Promise<RegisterResult> {
   const client = getSupabase() as unknown as SupabaseClient
 
@@ -316,6 +358,7 @@ export async function registerForHackathon(
     p_hackathon_id: hackathonId,
     p_clerk_user_id: clerkUserId,
     p_team_name: teamName ?? null,
+    p_user_emails: userEmails,
   })
 
   if (error) {
@@ -659,9 +702,9 @@ export async function listTeamsWithMembers(hackathonId: string): Promise<TeamWit
 }
 
 export type CreateTeamResult =
-  | { team: { id: string; name: string }; invited?: undefined; queued?: undefined }
-  | { team: { id: string; name: string }; invited: true; queued?: boolean }
-  | { error: string }
+  | { team: { id: string; name: string }; invited?: undefined; queued?: undefined; delivery?: undefined }
+  | { team: { id: string; name: string }; invited: true; queued: boolean; delivery: "sent" | "queued" | "failed" }
+  | { error: string; code?: "hackathon_not_found" | "hackathon_ended" }
 
 export type ReviewTeamResult =
   | { success: true; team: { id: string; name: string; status: TeamStatus }; membersUnassigned?: number; invitesCancelled?: number; membersNotified?: number }
@@ -720,6 +763,23 @@ export async function createTeamWithMembers(
     }
 
     if (participant) {
+      const { data: hackathon, error: hackathonError } = await client
+        .from("hackathons")
+        .select("status, starts_at, ends_at")
+        .eq("id", hackathonId)
+        .maybeSingle()
+
+      if (hackathonError || !hackathon) {
+        return { error: "Hackathon not found", code: "hackathon_not_found" }
+      }
+      if (getNotificationDisposition({
+        status: hackathon.status as HackathonStatus,
+        starts_at: hackathon.starts_at,
+        ends_at: hackathon.ends_at,
+      }) === "reject") {
+        return { error: "Hackathon has ended", code: "hackathon_ended" }
+      }
+
       const { data: team, error } = await client
         .from("teams")
         .insert({
@@ -766,7 +826,16 @@ async function createPendingTeamWithInvite(
     return { error: "Hackathon not found" }
   }
 
-  const isDraft = hackathon.status === "draft"
+  const disposition = getNotificationDisposition({
+    status: hackathon.status as HackathonStatus,
+    starts_at: hackathon.starts_at,
+    ends_at: hackathon.ends_at,
+  })
+  if (disposition === "reject") {
+    return { error: "Hackathon has ended", code: "hackathon_ended" }
+  }
+
+  let delivery: "sent" | "queued" | "failed" = disposition === "queue" ? "queued" : "sent"
 
   let inviterName = "The organizer"
   let inviterEmail: string | undefined
@@ -824,7 +893,7 @@ async function createPendingTeamWithInvite(
     return { error: "Failed to send invitation" }
   }
 
-  if (!isDraft) {
+  if (disposition === "send") {
     const { sendTeamInvitationEmail } = await import("@/lib/email/team-invitations")
     const sendResult = await sendTeamInvitationEmail({
       to: input.captainEmail.toLowerCase(),
@@ -837,6 +906,7 @@ async function createPendingTeamWithInvite(
       hackathonSlug: hackathon.slug,
       hackathonStartsAt: hackathon.starts_at,
       hackathonEndsAt: hackathon.ends_at,
+      deliveryId: invitation.id,
     }).catch((err) => {
       console.error(`Failed to send captain invitation email for ${invitation.id}:`, err)
       return { success: false }
@@ -844,34 +914,40 @@ async function createPendingTeamWithInvite(
 
     if (sendResult.success) {
       const { markTeamInvitationEmailed } = await import("@/lib/services/team-invitations")
-      await markTeamInvitationEmailed(invitation.id).catch((err) =>
-        console.error(`Failed to mark team_invitation ${invitation.id} emailed:`, err)
-      )
-
-      const { scheduleReminders } = await import("@/lib/services/smart-reminders")
-      scheduleReminders(
-        "team_invitation",
-        invitation.id,
-        hackathonId,
-        "invitation_reminder",
-        new Date(),
-        new Date(expiresAt),
-        {
-          email: input.captainEmail.toLowerCase(),
-          teamName: input.name,
-          hackathonName: hackathon.name,
-          inviterName,
-          inviterEmail,
-          inviteToken: token,
-          expiresAt,
-        }
-      ).catch((err) =>
-        console.error(`Failed to schedule reminders for team_invitation ${invitation.id} (hackathon=${hackathonId}):`, err)
-      )
+      try {
+        await markTeamInvitationEmailed(invitation.id)
+      } catch (error) {
+        console.error(`Failed to save team_invitation ${invitation.id} delivery:`, error)
+        delivery = "failed"
+      }
+      if (delivery === "sent") {
+        const { scheduleReminders } = await import("@/lib/services/smart-reminders")
+        await scheduleReminders(
+          "team_invitation",
+          invitation.id,
+          hackathonId,
+          "invitation_reminder",
+          new Date(),
+          new Date(expiresAt),
+          {
+            email: input.captainEmail.toLowerCase(),
+            teamName: input.name,
+            hackathonName: hackathon.name,
+            inviterName,
+            inviterEmail,
+            inviteToken: token,
+            expiresAt,
+          }
+        ).catch((error) => {
+          console.error(`Failed to schedule team_invitation ${invitation.id} reminder:`, error)
+        })
+      }
+    } else {
+      delivery = "failed"
     }
   }
 
-  return { team, invited: true, queued: isDraft }
+  return { team, invited: true, queued: delivery === "queued", delivery }
 }
 
 export async function approvePendingTeam(
@@ -915,6 +991,7 @@ export async function approvePendingTeam(
   const membersNotified = await notifyReviewedTeamMembers({
     client,
     hackathonId,
+    teamId: row.team_id,
     teamName: row.team_name,
     acceptedMemberClerkUserIds: memberClerkUserIds,
     review: "approved",
@@ -984,6 +1061,7 @@ export async function denyPendingTeam(
     : await notifyReviewedTeamMembers({
         client,
         hackathonId,
+        teamId: row.team_id,
         teamName: row.team_name,
         acceptedMemberClerkUserIds: memberClerkUserIds,
         review: "denied",
@@ -1049,6 +1127,7 @@ export async function denyPendingTeamsForClosedHackathon(
 export async function notifyReviewedTeamMembers({
   client,
   hackathonId,
+  teamId,
   teamName,
   acceptedMemberClerkUserIds,
   review,
@@ -1056,6 +1135,7 @@ export async function notifyReviewedTeamMembers({
 }: {
   client: SupabaseClient
   hackathonId: string
+  teamId: string
   teamName: string
   acceptedMemberClerkUserIds: string[]
   review: "approved" | "denied"
@@ -1089,10 +1169,12 @@ export async function notifyReviewedTeamMembers({
     const hackathonSlug = hackathon.slug
     const clerk = await clerkClient()
     const { sendTeamApprovedEmail, sendTeamDeniedEmail } = await import("@/lib/email/team-review")
+    const { paceBulkSend } = await import("@/lib/email/utils")
     const sendEmail = review === "approved" ? sendTeamApprovedEmail : sendTeamDeniedEmail
     const seenRecipients = new Set<string>()
     const uniqueUserIds = [...new Set(acceptedMemberClerkUserIds)]
     let sent = 0
+    let deliveryAttempts = 0
 
     for (let i = 0; i < uniqueUserIds.length; i += 100) {
       const batch = uniqueUserIds.slice(i, i + 100)
@@ -1114,20 +1196,21 @@ export async function notifyReviewedTeamMembers({
       }
 
       if (recipients.length === 0) continue
-      try {
-        const results = await Promise.all(
-          recipients.map((to) =>
-            sendEmail({
-              to,
-              teamName,
-              hackathonName,
-              hackathonSlug,
-            })
-          )
-        )
-        sent += results.filter((result) => result.success).length
-      } catch (err) {
-        console.error(`Failed to send ${review} team notification batch:`, err)
+      for (const to of recipients) {
+        await paceBulkSend(deliveryAttempts)
+        deliveryAttempts += 1
+        try {
+          const result = await sendEmail({
+            to,
+            teamId,
+            teamName,
+            hackathonName,
+            hackathonSlug,
+          })
+          if (result.success) sent += 1
+        } catch (err) {
+          console.error(`Failed to send ${review} team notification:`, err)
+        }
       }
     }
 

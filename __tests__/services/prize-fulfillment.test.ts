@@ -1,9 +1,59 @@
-import { describe, it, expect, beforeEach } from "bun:test"
+import { describe, it, expect, beforeEach, mock } from "bun:test"
 import {
   createChainableMock,
   resetSupabaseMocks,
   setMockFromImplementation,
 } from "../lib/supabase-mock"
+
+const mockSendSponsorClaimNotification = mock(() => Promise.resolve(1))
+const mockSendOrganizerClaimNotification = mock(() => Promise.resolve(1))
+
+mock.module("@/lib/email/sponsor-notifications", () => ({
+  sendSponsorClaimNotification: mockSendSponsorClaimNotification,
+}))
+
+mock.module("@/lib/email/organizer-notifications", () => ({
+  sendOrganizerClaimNotification: mockSendOrganizerClaimNotification,
+}))
+
+function setClaimWithSponsorMock(): void {
+  let fulfillmentCall = 0
+  setMockFromImplementation((table) => {
+    if (table === "prize_fulfillments") {
+      fulfillmentCall += 1
+      if (fulfillmentCall === 1) {
+        return createChainableMock({
+          data: {
+            id: "f1",
+            status: "assigned",
+            hackathon_id: "h1",
+            prize_assignment_id: "pa1",
+            claim_token_expires_at: "2027-01-01T00:00:00Z",
+            prize_assignment: {
+              prize: {
+                name: "Grand Prize",
+                kind: "physical",
+                value: "$500",
+                prize_track: {
+                  sponsor: { sponsor_tenant_id: "sponsor-tenant" },
+                },
+              },
+            },
+          },
+          error: null,
+        })
+      }
+      return createChainableMock({ data: [{ id: "f1" }], error: null })
+    }
+    if (table === "hackathons") {
+      return createChainableMock({
+        data: { name: "AI Hack", slug: "ai-hack" },
+        error: null,
+      })
+    }
+    return createChainableMock({ data: null, error: null })
+  })
+}
 
 const {
   initializeFulfillments,
@@ -19,6 +69,10 @@ const {
 describe("Prize Fulfillment Service", () => {
   beforeEach(() => {
     resetSupabaseMocks()
+    mockSendSponsorClaimNotification.mockReset()
+    mockSendSponsorClaimNotification.mockImplementation(() => Promise.resolve(1))
+    mockSendOrganizerClaimNotification.mockReset()
+    mockSendOrganizerClaimNotification.mockImplementation(() => Promise.resolve(1))
   })
 
   describe("initializeFulfillments", () => {
@@ -389,6 +443,68 @@ describe("Prize Fulfillment Service", () => {
         shippingAddress: "123 Main St",
       })
       expect(result.success).toBe(true)
+    })
+
+    it("finishes the sponsor fan-out before starting organizer delivery", async () => {
+      setClaimWithSponsorMock()
+
+      let finishSponsor: ((sent: number) => void) | undefined
+      let markSponsorStarted: (() => void) | undefined
+      const sponsorStarted = new Promise<void>((resolve) => {
+        markSponsorStarted = resolve
+      })
+      let markOrganizerStarted: (() => void) | undefined
+      const organizerStarted = new Promise<void>((resolve) => {
+        markOrganizerStarted = resolve
+      })
+      mockSendSponsorClaimNotification.mockImplementationOnce(() => {
+        markSponsorStarted?.()
+        return new Promise<number>((resolve) => {
+          finishSponsor = resolve
+        })
+      })
+      mockSendOrganizerClaimNotification.mockImplementationOnce(() => {
+        markOrganizerStarted?.()
+        return Promise.resolve(1)
+      })
+
+      const result = await claimPrize("valid-token", {
+        recipientName: "Alice",
+        recipientEmail: "alice@test.com",
+      })
+
+      expect(result.success).toBe(true)
+      await sponsorStarted
+      expect(mockSendOrganizerClaimNotification).not.toHaveBeenCalled()
+      finishSponsor?.(1)
+      await organizerStarted
+      expect(mockSendOrganizerClaimNotification).toHaveBeenCalledTimes(1)
+    })
+
+    it("still notifies organizers when the sponsor fan-out rejects", async () => {
+      setClaimWithSponsorMock()
+
+      let markOrganizerStarted: (() => void) | undefined
+      const organizerStarted = new Promise<void>((resolve) => {
+        markOrganizerStarted = resolve
+      })
+      mockSendSponsorClaimNotification.mockImplementationOnce(() =>
+        Promise.reject(new Error("Sponsor provider unavailable"))
+      )
+      mockSendOrganizerClaimNotification.mockImplementationOnce(() => {
+        markOrganizerStarted?.()
+        return Promise.resolve(1)
+      })
+
+      const result = await claimPrize("valid-token", {
+        recipientName: "Alice",
+        recipientEmail: "alice@test.com",
+      })
+
+      expect(result.success).toBe(true)
+      await organizerStarted
+      expect(mockSendSponsorClaimNotification).toHaveBeenCalledTimes(1)
+      expect(mockSendOrganizerClaimNotification).toHaveBeenCalledTimes(1)
     })
 
     it("successfully claims with payment fields", async () => {

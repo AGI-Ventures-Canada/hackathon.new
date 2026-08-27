@@ -3,7 +3,12 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { Webhook, WebhookDelivery, WebhookEvent } from "@/lib/db/hackathon-types"
 import type { Json } from "@/lib/db/types"
-import { isAllowedHttpsUrl, readResponseText } from "@/lib/utils/safe-fetch-url"
+import {
+  fetchAllowedWebhookUrl,
+  isAllowedHttpsUrl,
+  redactFetchErrorForLogs,
+  readResponseText,
+} from "@/lib/utils/safe-fetch-url"
 import { generateWebhookSecret, signWebhookPayload } from "./encryption"
 
 export type CreateWebhookInput = {
@@ -17,6 +22,14 @@ export interface WebhookDeliveryResult {
   status?: number
   body?: string
   error?: string
+}
+
+export type WebhookDeliveryOptions = {
+  idempotencyKey?: string
+}
+
+export type TriggerWebhooksOptions = WebhookDeliveryOptions & {
+  requireRecorded?: boolean
 }
 
 export async function createWebhook(
@@ -67,14 +80,22 @@ export async function listWebhooks(tenantId: string): Promise<Webhook[]> {
 
 export async function listActiveWebhooks(
   tenantId: string,
-  event: WebhookEvent
+  event: WebhookEvent,
+  options: { throwOnError?: boolean } = {},
 ): Promise<Webhook[]> {
-  const { data } = await getSupabase()
+  const { data, error } = await getSupabase()
     .from("webhooks")
     .select("*")
     .eq("tenant_id", tenantId)
     .eq("is_active", true)
     .contains("events", [event])
+
+  if (error) {
+    if (options.throwOnError) {
+      throw new Error(`Failed to list active webhooks: ${error.message}`)
+    }
+    return []
+  }
 
   return (data as Webhook[] | null) ?? []
 }
@@ -176,10 +197,36 @@ export async function recordDelivery(
   return data as WebhookDelivery
 }
 
+async function hasSuccessfulDelivery(
+  webhookId: string,
+  event: WebhookEvent,
+  idempotencyKey: string,
+  throwOnError: boolean,
+): Promise<boolean> {
+  const { data, error } = await getSupabase()
+    .from("webhook_deliveries")
+    .select("id")
+    .eq("webhook_id", webhookId)
+    .eq("event", event)
+    .not("delivered_at", "is", null)
+    .contains("payload", { idempotencyKey })
+    .limit(1)
+
+  if (error) {
+    if (throwOnError) {
+      throw new Error(`Failed to check webhook delivery history: ${error.message}`)
+    }
+    return false
+  }
+
+  return Boolean(data?.length)
+}
+
 export async function deliverWebhook(
   webhook: Webhook,
   event: WebhookEvent,
-  payload: Json
+  payload: Json,
+  options: WebhookDeliveryOptions = {},
 ): Promise<WebhookDeliveryResult> {
   if (!isAllowedHttpsUrl(webhook.url)) {
     return { success: false, error: "Unsafe webhook URL" }
@@ -189,18 +236,20 @@ export async function deliverWebhook(
   const signature = signWebhookPayload(webhook.secret, body)
 
   try {
-    const response = await fetch(webhook.url, {
+    const response = await fetchAllowedWebhookUrl(webhook.url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "X-Webhook-Event": event,
         "X-Webhook-Signature": signature,
         "X-Webhook-Timestamp": new Date().toISOString(),
+        ...(options.idempotencyKey
+          ? { "X-Webhook-Idempotency-Key": options.idempotencyKey }
+          : {}),
       },
       body,
-      redirect: "error",
-      signal: AbortSignal.timeout(10000),
     })
+    if (!response) return { success: false, error: "Unsafe webhook URL" }
 
     const responseBody = await readResponseText(response, 64 * 1024)
     if (responseBody === null) {
@@ -216,7 +265,7 @@ export async function deliverWebhook(
   } catch (err) {
     return {
       success: false,
-      error: err instanceof Error ? err.message : "Unknown error",
+      error: redactFetchErrorForLogs(err, [webhook.url]).message,
     }
   }
 }
@@ -224,16 +273,35 @@ export async function deliverWebhook(
 export async function triggerWebhooks(
   tenantId: string,
   event: WebhookEvent,
-  payload: Json
+  payload: Json,
+  options: TriggerWebhooksOptions = {},
 ): Promise<void> {
-  const webhooks = await listActiveWebhooks(tenantId, event)
+  const webhooks = await listActiveWebhooks(tenantId, event, {
+    throwOnError: options.requireRecorded,
+  })
+  let unrecorded = false
 
   for (const webhook of webhooks) {
-    const result = await deliverWebhook(webhook, event, payload)
-    await recordDelivery(webhook.id, event, payload, result, 1)
+    if (
+      options.idempotencyKey &&
+      await hasSuccessfulDelivery(
+        webhook.id,
+        event,
+        options.idempotencyKey,
+        options.requireRecorded === true,
+      )
+    ) continue
+
+    const result = await deliverWebhook(webhook, event, payload, options)
+    const delivery = await recordDelivery(webhook.id, event, payload, result, 1)
 
     if (!result.success) {
       await incrementFailureCount(webhook.id)
     }
+    if (!delivery) unrecorded = true
+  }
+
+  if (options.requireRecorded && unrecorded) {
+    throw new Error("One or more webhook delivery attempts could not be recorded")
   }
 }

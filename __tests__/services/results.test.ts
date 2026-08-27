@@ -8,6 +8,19 @@ import {
   mockClerkClient,
 } from "../lib/supabase-mock"
 
+class MockEventMutationLeaseError extends Error {
+  code = "event_busy"
+}
+
+const mockWithEventMutationLease = mock(
+  async <T>(_hackathonId: string, work: () => Promise<T>): Promise<T> => work(),
+)
+
+mock.module("@/lib/services/event-mutation-lease", () => ({
+  EventMutationLeaseError: MockEventMutationLeaseError,
+  withEventMutationLease: mockWithEventMutationLease,
+}))
+
 const {
   calculateResults,
   getResults,
@@ -32,9 +45,25 @@ const mockResult: HackathonResult = {
 describe("Results Service", () => {
   beforeEach(() => {
     resetSupabaseMocks()
+    mockWithEventMutationLease.mockClear()
   })
 
   describe("calculateResults", () => {
+    beforeEach(() => {
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: { judging_mode: "rubric", results_published_at: null },
+            error: null,
+          })
+        }
+        if (table === "prizes") {
+          return createChainableMock({ data: [], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+    })
+
     it("calculates results successfully", async () => {
       setMockRpcImplementation((fn) => {
         if (fn === "calculate_results") {
@@ -442,12 +471,34 @@ describe("Results Service", () => {
 
   describe("unpublishResults", () => {
     it("unpublishes results successfully", async () => {
+      let hackathonUpdate: Record<string, unknown> | null = null
+      let hackathonCalls = 0
+      const current = {
+        id: "h1",
+        tenant_id: "t1",
+        status: "judging",
+        results_published_at: "2026-01-01T00:00:00.000Z",
+      }
       setMockFromImplementation((table) => {
         if (table === "hackathon_results") {
           return createChainableMock({ data: null, error: null })
         }
         if (table === "hackathons") {
-          return createChainableMock({ data: null, error: null })
+          hackathonCalls++
+          const chain = createChainableMock({
+            data: hackathonCalls === 1
+              ? current
+              : { ...current, results_published_at: null },
+            error: null,
+          })
+          if (hackathonCalls === 2) {
+            const originalUpdate = chain.update
+            chain.update = mock((value: Record<string, unknown>) => {
+              hackathonUpdate = value
+              return originalUpdate(value)
+            }) as typeof chain.update
+          }
+          return chain
         }
         return createChainableMock({ data: null, error: null })
       })
@@ -455,10 +506,26 @@ describe("Results Service", () => {
       const result = await unpublishResults("h1", "t1")
 
       expect(result.success).toBe(true)
+      expect(hackathonUpdate).toEqual(expect.objectContaining({
+        results_published_at: null,
+        winner_emails_sent_at: null,
+        results_announcement_sent_at: null,
+      }))
     })
 
     it("returns error when hackathon_results update fails", async () => {
       setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: {
+              id: "h1",
+              tenant_id: "t1",
+              status: "judging",
+              results_published_at: "2026-01-01T00:00:00.000Z",
+            },
+            error: null,
+          })
+        }
         if (table === "hackathon_results") {
           return createChainableMock({
             data: null,
@@ -475,15 +542,33 @@ describe("Results Service", () => {
     })
 
     it("returns error when hackathons status update fails", async () => {
+      let hackathonCalls = 0
+      let resultCalls = 0
+      const current = {
+        id: "h1",
+        tenant_id: "t1",
+        status: "judging",
+        results_published_at: "2026-01-01T00:00:00.000Z",
+      }
       setMockFromImplementation((table) => {
         if (table === "hackathon_results") {
-          return createChainableMock({ data: null, error: null })
+          resultCalls++
+          return createChainableMock({
+            data: resultCalls === 2
+              ? [{ id: "r1", published_at: null }]
+              : null,
+            error: null,
+          })
         }
         if (table === "hackathons") {
-          return createChainableMock({
-            data: null,
-            error: { message: "Update failed" },
-          })
+          hackathonCalls++
+          if (hackathonCalls === 2) {
+            return createChainableMock({
+              data: null,
+              error: { message: "Update failed" },
+            })
+          }
+          return createChainableMock({ data: current, error: null })
         }
         return createChainableMock({ data: null, error: null })
       })
@@ -551,6 +636,51 @@ describe("Results Service", () => {
       const result = await getPublicResults("h1")
 
       expect(result).toBeNull()
+    })
+
+    it("redacts team identity after anonymous results are published", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: {
+              results_published_at: "2026-01-01T00:00:00Z",
+              anonymous_judging: true,
+            },
+            error: null,
+          })
+        }
+        if (table === "hackathon_results") {
+          return createChainableMock({
+            data: [{
+              ...mockResult,
+              submission: {
+                title: "Private Project",
+                description: null,
+                github_url: null,
+                live_app_url: null,
+                screenshot_url: null,
+                team_id: "t1",
+              },
+            }],
+            error: null,
+          })
+        }
+        if (table === "teams") {
+          return createChainableMock({
+            data: [{ id: "t1", name: "Private Team" }],
+            error: null,
+          })
+        }
+        if (table === "prize_assignments") {
+          return createChainableMock({ data: [], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await getPublicResults("h1")
+
+      expect(result?.[0].teamName).toBeNull()
+      expect(result?.[0].submissionTeamId).toBeNull()
     })
   })
 
@@ -695,6 +825,50 @@ describe("Results Service", () => {
 
       expect(result).not.toBeNull()
       expect(result![0].members).toEqual(["Alice Smith"])
+    })
+
+    it("does not load or expose members for anonymous published results", async () => {
+      let participantsQueried = false
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: {
+              results_published_at: "2026-01-01T00:00:00Z",
+              anonymous_judging: true,
+            },
+            error: null,
+          })
+        }
+        if (table === "hackathon_results") {
+          return createChainableMock({
+            data: [publishedSubmission({ team_id: "t1" })],
+            error: null,
+          })
+        }
+        if (table === "teams") {
+          return createChainableMock({
+            data: [{ id: "t1", name: "Private Team" }],
+            error: null,
+          })
+        }
+        if (table === "prize_assignments") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "hackathon_participants") {
+          participantsQueried = true
+          return createChainableMock({
+            data: [{ team_id: "t1", clerk_user_id: "user_1" }],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await getPublicResultsWithDetails("h1")
+
+      expect(participantsQueried).toBe(false)
+      expect(result?.[0].teamName).toBeNull()
+      expect(result?.[0].members).toEqual([])
     })
 
     it("uses username when firstName is not set", async () => {

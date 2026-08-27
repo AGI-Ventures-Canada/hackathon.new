@@ -157,6 +157,7 @@ describe("remindTeamInvitationAsOrganizer", () => {
           { data: fresh, error: null },
           { data: { ...fresh, reminded_at: "now" }, error: null },
         ],
+        hackathons: { data: { status: "active", starts_at: null, ends_at: null }, error: null },
       })
     )
 
@@ -172,6 +173,8 @@ describe("replaceTeamCaptainInvitation", () => {
     mockSendTeamInvitationEmail.mockClear()
     mockScheduleReminders.mockClear()
     mockCancelRemindersForEntity.mockClear()
+    mockSendTeamInvitationEmail.mockResolvedValue({ success: true })
+    mockScheduleReminders.mockResolvedValue(0)
   })
 
   it("returns team_not_found when team is missing", async () => {
@@ -232,7 +235,7 @@ describe("replaceTeamCaptainInvitation", () => {
     )
 
     const result = await replaceTeamCaptainInvitation("team_1", "h_1", "NEW@Example.com", "organizer_1")
-    expect(result).toEqual({ success: true, invitationId: "new_inv_1", queued: true })
+    expect(result).toEqual({ success: true, invitationId: "new_inv_1", queued: true, delivery: "queued" })
     expect(mockSendTeamInvitationEmail).not.toHaveBeenCalled()
     expect(mockScheduleReminders).not.toHaveBeenCalled()
   })
@@ -260,11 +263,35 @@ describe("replaceTeamCaptainInvitation", () => {
 
     const result = await replaceTeamCaptainInvitation("team_1", "h_1", "new@example.com", "organizer_1")
     expect(result.success).toBe(true)
-    if (result.success) expect(result.queued).toBe(false)
+    if (result.success) {
+      expect(result.queued).toBe(false)
+      expect(result.delivery).toBe("sent")
+    }
 
-    await new Promise((resolve) => setTimeout(resolve, 0))
     expect(mockSendTeamInvitationEmail).toHaveBeenCalledTimes(1)
     expect(mockScheduleReminders).toHaveBeenCalledTimes(1)
     expect(mockCancelRemindersForEntity).toHaveBeenCalledWith("team_invitation", "old_inv_1")
+  })
+
+  it("keeps a failed live replacement pending and schedules no reminders", async () => {
+    setMockFromImplementation(
+      tableImpl({
+        teams: [
+          { data: { id: "team_1", name: "T", status: "forming", captain_clerk_user_id: null, pending_captain_email: "old@example.com" }, error: null },
+          { data: null, error: null },
+        ],
+        hackathons: { data: { name: "H", slug: "h", status: "active", starts_at: null, ends_at: null }, error: null },
+        team_invitations: [
+          { data: [{ id: "old_inv_1" }], error: null },
+          { data: { id: "new_inv_1" }, error: null },
+        ],
+      })
+    )
+    mockSendTeamInvitationEmail.mockResolvedValueOnce({ success: false })
+
+    const result = await replaceTeamCaptainInvitation("team_1", "h_1", "new@example.com", "organizer_1")
+
+    expect(result).toEqual({ success: true, invitationId: "new_inv_1", queued: false, delivery: "failed" })
+    expect(mockScheduleReminders).not.toHaveBeenCalled()
   })
 })

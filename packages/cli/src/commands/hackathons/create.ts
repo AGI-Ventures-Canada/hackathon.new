@@ -1,4 +1,5 @@
 import * as p from "@clack/prompts"
+import { createHash, randomUUID } from "node:crypto"
 import type { OatmealClient } from "../../client.js"
 import { formatJson, formatSuccess } from "../../output.js"
 import type { Hackathon, WhoAmIResponse } from "../../types.js"
@@ -9,6 +10,7 @@ interface CreateOptions {
   slug?: string
   description?: string
   fromUrl?: string
+  idempotencyKey?: string
   json?: boolean
   yes?: boolean
 }
@@ -35,6 +37,13 @@ export function parseCreateOptions(args: string[]): CreateOptions {
       case "--from-url":
         options.fromUrl = args[++i]
         break
+      case "--idempotency-key":
+        if (args[i + 1] && !args[i + 1].startsWith("-")) {
+          options.idempotencyKey = args[++i]
+        } else {
+          options.idempotencyKey = ""
+        }
+        break
       case "--json":
         options.json = true
         break
@@ -52,15 +61,25 @@ export async function runHackathonsCreate(
   args: string[]
 ): Promise<void> {
   const options = parseCreateOptions(args)
+  const idempotencyKey = options.idempotencyKey?.trim()
+  if (
+    args.includes("--idempotency-key") &&
+    (!idempotencyKey || idempotencyKey.length > 200)
+  ) {
+    console.error("Error: --idempotency-key must be 1 to 200 characters")
+    process.exit(1)
+  }
 
   let name = options.name
   let slug = options.slug
   let description = options.description
 
   if (options.fromUrl) {
-    await confirmPersonalWorkspace(client)
+    const workspace = await confirmPersonalWorkspace(client)
+    const draftId = createDraftId(workspace.tenantId, idempotencyKey)
 
     const hackathon = await client.post<ImportedHackathonResponse>("/api/dashboard/import/url", {
+      draftId,
       url: options.fromUrl,
       name,
       description,
@@ -98,9 +117,11 @@ export async function runHackathonsCreate(
     if (!p.isCancel(result)) description = result || undefined
   }
 
-  await confirmPersonalWorkspace(client)
+  const workspace = await confirmPersonalWorkspace(client)
+  const draftId = createDraftId(workspace.tenantId, idempotencyKey)
 
   const hackathon = await client.post<Hackathon>("/api/dashboard/hackathons", {
+    draftId,
     name,
     slug,
     description,
@@ -114,11 +135,30 @@ export async function runHackathonsCreate(
   console.log(formatSuccess(`Created hackathon "${hackathon.name}" (${hackathon.id})`))
 }
 
-async function confirmPersonalWorkspace(client: OatmealClient): Promise<void> {
+function createDraftId(tenantId: string, idempotencyKey?: string): string {
+  if (!idempotencyKey) return randomUUID()
+
+  const namespace = Buffer.from("0db104e625bd42c3a7800d84bd24dfb9", "hex")
+  const bytes = createHash("sha1")
+    .update(namespace)
+    .update(tenantId)
+    .update("\0")
+    .update(idempotencyKey)
+    .digest()
+    .subarray(0, 16)
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x50
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80
+  const hex = bytes.toString("hex")
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+async function confirmPersonalWorkspace(
+  client: OatmealClient,
+): Promise<WhoAmIResponse> {
   const whoami = await client.get<WhoAmIResponse>("/api/v1/whoami")
 
   if (whoami.tenantType !== "personal") {
-    return
+    return whoami
   }
 
   if (!process.stdout.isTTY) {

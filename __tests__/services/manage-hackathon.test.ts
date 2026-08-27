@@ -108,6 +108,7 @@ describe("Manage Hackathon Service", () => {
       expect(result.ok).toBe(true)
       if (result.ok) {
         expect(result.hackathon.name).toBe("Test Hackathon")
+        expect(result.hackathon.stored_status).toBe("published")
         expect(result.hackathon.organizer.clerk_org_id).toBe("org_123")
       }
     })

@@ -5,13 +5,23 @@ export function getEffectiveStatus(hackathon: {
   starts_at: string | null
   ends_at: string | null
 }): HackathonStatus {
+  return getEffectiveStatusAt(hackathon, new Date())
+}
+
+export function getEffectiveStatusAt(
+  hackathon: {
+    status: HackathonStatus
+    starts_at: string | null
+    ends_at: string | null
+  },
+  now: Date,
+): HackathonStatus {
   const { status, starts_at, ends_at } = hackathon
 
-  if (status === "draft" || status === "archived") {
+  if (status === "draft" || status === "completed" || status === "archived") {
     return status
   }
 
-  const now = new Date()
   const startsAt = starts_at ? new Date(starts_at) : null
   const endsAt = ends_at ? new Date(ends_at) : null
 
@@ -41,8 +51,37 @@ export interface TimelineInput {
   ends_at?: string | null
 }
 
+const persistedTimelineStates = {
+  completed: { label: "Completed", variant: "outline" },
+  judging: { label: "Judging", variant: "default" },
+  active: { label: "Live", variant: "default" },
+  draft: { label: "Draft", variant: "secondary" },
+  archived: { label: "Archived", variant: "outline" },
+  published: { label: "Published", variant: "secondary" },
+  registration_open: { label: "Registration Open", variant: "default" },
+} satisfies Record<HackathonStatus, TimelineState>
+
+export function getPersistedTimelineState(status: HackathonStatus): TimelineState {
+  return persistedTimelineStates[status]
+}
+
+export function getHydrationSafeTimelineState(
+  hackathon: TimelineInput,
+  isClient: boolean,
+): TimelineState {
+  return isClient
+    ? getTimelineState(hackathon)
+    : getPersistedTimelineState(hackathon.status)
+}
+
 export function getTimelineState(hackathon: TimelineInput): TimelineState {
-  const now = new Date()
+  return getTimelineStateAt(hackathon, new Date())
+}
+
+export function getTimelineStateAt(
+  hackathon: TimelineInput,
+  now: Date,
+): TimelineState {
   const {
     status,
     registration_opens_at,
@@ -51,7 +90,16 @@ export function getTimelineState(hackathon: TimelineInput): TimelineState {
     ends_at,
   } = hackathon
 
-  if (status === "completed") {
+  const effectiveStatus = getEffectiveStatusAt(
+    {
+      status,
+      starts_at: starts_at ?? null,
+      ends_at: ends_at ?? null,
+    },
+    now,
+  )
+
+  if (effectiveStatus === "completed") {
     return { label: "Completed", variant: "outline" }
   }
 
