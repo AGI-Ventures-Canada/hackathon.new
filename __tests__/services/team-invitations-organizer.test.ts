@@ -249,7 +249,13 @@ describe("replaceTeamCaptainInvitation", () => {
     )
 
     const result = await replaceTeamCaptainInvitation("team_1", "h_1", "NEW@Example.com", "organizer_1")
-    expect(result).toEqual({ success: true, invitationId: "new_inv_1", queued: true, delivery: "queued" })
+    expect(result).toEqual({
+      success: true,
+      invitationId: "new_inv_1",
+      queued: true,
+      delivery: "queued",
+      queueReason: "event_draft",
+    })
     expect(mockSendTeamInvitationEmail).not.toHaveBeenCalled()
     expect(mockScheduleReminders).not.toHaveBeenCalled()
   })
@@ -305,7 +311,13 @@ describe("replaceTeamCaptainInvitation", () => {
 
     const result = await replaceTeamCaptainInvitation("team_1", "h_1", "new@example.com", "organizer_1")
 
-    expect(result).toEqual({ success: true, invitationId: "new_inv_1", queued: false, delivery: "failed" })
+    expect(result).toEqual({
+      success: true,
+      invitationId: "new_inv_1",
+      queued: false,
+      delivery: "failed",
+      queueReason: undefined,
+    })
     expect(mockScheduleReminders).not.toHaveBeenCalled()
   })
 })

@@ -19,8 +19,12 @@ export type NotificationLifecycleHackathon = {
 export function getNotificationDisposition(
   hackathon: NotificationLifecycleHackathon,
 ): NotificationDisposition {
-  if (hackathon.status === "draft") return "queue"
   if (hackathon.status === "completed" || hackathon.status === "archived") return "reject"
+
+  const endsAt = hackathon.ends_at ? new Date(hackathon.ends_at) : null
+  if (endsAt && !Number.isNaN(endsAt.getTime()) && new Date() >= endsAt) return "reject"
+
+  if (hackathon.status === "draft") return "queue"
 
   const effectiveStatus = getEffectiveStatus({
     status: hackathon.status,

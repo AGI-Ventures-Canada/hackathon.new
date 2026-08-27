@@ -5,6 +5,7 @@ import { paceBulkSend } from "@/lib/email/utils"
 import { isValidUuid } from "@/lib/utils/uuid"
 import { canInviteTeamMembers } from "@/lib/utils/team-invite"
 import { getNotificationDisposition } from "@/lib/utils/notification-lifecycle"
+import { getQueueReason, type QueueReasonCode } from "@/lib/utils/notification-delivery"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { withDeliveryLease } from "@/lib/services/delivery-lease"
 import {
@@ -21,10 +22,32 @@ const TEAM_STATUSES_OPEN_FOR_INVITES: ReadonlySet<TeamStatus> = new Set<TeamStat
 ])
 const INVITATION_DELIVERY_STATUSES = ["published", "registration_open", "active", "judging"] satisfies HackathonStatus[]
 
+type PendingCaptainMarker = {
+  team_id: string | null
+  email: string
+  is_captain_invite: boolean
+}
+
 function createInvitationToken(): string {
   const bytes = new Uint8Array(32)
   crypto.getRandomValues(bytes)
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")
+}
+
+async function clearPendingCaptainMarker(
+  client: SupabaseClient,
+  invitation: PendingCaptainMarker | null,
+): Promise<void> {
+  if (!invitation?.is_captain_invite || !invitation.team_id) return
+
+  const { error } = await client
+    .from("teams")
+    .update({ pending_captain_email: null, updated_at: new Date().toISOString() })
+    .eq("id", invitation.team_id)
+    .eq("pending_captain_email", invitation.email)
+  if (error) {
+    throw new Error(`Failed to clear stale captain invitation: ${error.message}`)
+  }
 }
 
 async function expirePendingTeamInvitation(
@@ -32,30 +55,37 @@ async function expirePendingTeamInvitation(
   now: string,
 ): Promise<void> {
   const client = getSupabase() as unknown as SupabaseClient
-  const { error } = await client
+  const { data: invitation, error } = await client
     .from("team_invitations")
     .update({ status: "expired", updated_at: now })
     .eq("id", invitationId)
     .eq("status", "pending")
     .lte("expires_at", now)
+    .select("team_id, email, is_captain_invite")
+    .maybeSingle()
 
   if (error) {
     throw new Error(`Failed to expire old team invitation: ${error.message}`)
   }
+  await clearPendingCaptainMarker(client, invitation)
 }
 
 async function cancelPendingTeamInvitation(invitationId: string): Promise<void> {
   const client = getSupabase() as unknown as SupabaseClient
-  const { error } = await client
+  const { data: invitation, error } = await client
     .from("team_invitations")
     .update({ status: "cancelled", updated_at: new Date().toISOString() })
     .eq("id", invitationId)
     .eq("status", "pending")
     .is("emailed_at", null)
+    .select("team_id, email, is_captain_invite")
+    .maybeSingle()
 
   if (error) {
     throw new Error(`Failed to cancel stale team invitation: ${error.message}`)
   }
+
+  await clearPendingCaptainMarker(client, invitation)
 }
 
 export type CreateInvitationInput = {
@@ -533,7 +563,7 @@ export async function cancelTeamInvitationAsOrganizer(
 }
 
 export type ReplaceCaptainInvitationResult =
-  | { success: true; invitationId: string; queued: boolean; delivery: "sent" | "queued" | "failed" }
+  | { success: true; invitationId: string; queued: boolean; delivery: "sent" | "queued" | "failed"; queueReason?: QueueReasonCode }
   | { success: false; error: string; code: string }
 
 export async function replaceTeamCaptainInvitation(
@@ -683,7 +713,13 @@ export async function replaceTeamCaptainInvitation(
     }
   }
 
-  return { success: true, invitationId: invitation.id, queued: delivery === "queued", delivery }
+  return {
+    success: true,
+    invitationId: invitation.id,
+    queued: delivery === "queued",
+    delivery,
+    queueReason: getQueueReason(delivery),
+  }
 }
 
 export async function cancelTeamInvitation(

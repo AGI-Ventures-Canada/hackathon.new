@@ -6,6 +6,7 @@ import { checkRateLimit, RateLimitError } from "@/lib/services/rate-limit"
 import { isValidUuid } from "@/lib/utils/uuid"
 import { getEffectiveStatus } from "@/lib/utils/timeline"
 import { getNotificationDisposition, getNotificationLifecycleError } from "@/lib/utils/notification-lifecycle"
+import { getQueueReason } from "@/lib/utils/notification-delivery"
 import { getRequestIdempotencyFingerprint } from "@/lib/utils/request-idempotency"
 import { validateWebMcpMutationContext } from "@/lib/webmcp/mutation-context"
 import {
@@ -1422,13 +1423,19 @@ export const dashboardJudgingRoutes = new Elysia()
           action: "judge.added",
           resourceType: "hackathon",
           resourceId: params.id,
-          metadata: { judgeClerkUserId: typedBody.clerkUserId },
+          metadata: {
+            judgeClerkUserId: typedBody.clerkUserId,
+            queued: delivery === "queued",
+            delivery,
+            queueReason: getQueueReason(delivery),
+          },
         })
 
         return {
           participant: addResult.participant,
           queued: delivery === "queued",
           delivery,
+          queueReason: getQueueReason(delivery),
         }
       }
 
@@ -1501,13 +1508,19 @@ export const dashboardJudgingRoutes = new Elysia()
             action: "judge.added",
             resourceType: "hackathon",
             resourceId: params.id,
-            metadata: { judgeClerkUserId: existingUser.id },
+            metadata: {
+              judgeClerkUserId: existingUser.id,
+              queued: delivery === "queued",
+              delivery,
+              queueReason: getQueueReason(delivery),
+            },
           })
 
           return {
             participant: addResult.participant,
             queued: delivery === "queued",
             delivery,
+            queueReason: getQueueReason(delivery),
           }
         }
 
@@ -1601,12 +1614,14 @@ export const dashboardJudgingRoutes = new Elysia()
             invitationId: invitationResult.invitation.id,
             queued: delivery === "queued",
             delivery,
+            queueReason: getQueueReason(delivery),
           },
         })
 
         return {
           queued: delivery === "queued",
           delivery,
+          queueReason: getQueueReason(delivery),
           invitation: {
             id: invitationResult.invitation.id,
             email: typedBody.email,

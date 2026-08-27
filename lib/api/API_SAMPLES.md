@@ -924,7 +924,22 @@ curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/judging/judges
 }
 ```
 
-`delivery` is `sent`, `queued`, or `failed`. `failed` means the invite was saved but email delivery could not be confirmed. `queued` is also returned for compatibility and is true only while a draft invite waits for go-live.
+**Queued response for a draft event:**
+
+```json
+{
+  "queued": true,
+  "delivery": "queued",
+  "queueReason": "event_draft",
+  "invitation": {
+    "id": "uuid",
+    "email": "judge@example.com",
+    "token": "accept-token"
+  }
+}
+```
+
+`delivery` is `sent`, `queued`, or `failed`. `failed` means the invite was saved but email delivery could not be confirmed. `queued` is also returned for compatibility and is true only while a draft invite waits for go-live. When `delivery` is `queued`, `queueReason` is `event_draft`. Use that value to explain why the email is waiting and what will release it.
 
 ---
 

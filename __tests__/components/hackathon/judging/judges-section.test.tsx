@@ -13,6 +13,7 @@ type Judge = {
   email: string | null
   imageUrl: string | null
   prizeIds: string[]
+  notificationQueued?: boolean
 }
 
 type Invitation = {
@@ -21,6 +22,7 @@ type Invitation = {
   status: string
   createdAt: string
   remindedAt: string | null
+  emailedAt: string | null
   token: string | null
 }
 
@@ -48,6 +50,7 @@ const pendingInvitation: Invitation = {
   status: "pending",
   createdAt: "2026-05-01T00:00:00Z",
   remindedAt: null,
+  emailedAt: "2026-05-01T00:00:01Z",
   token: "token-abc",
 }
 
@@ -57,6 +60,7 @@ const remindedInvitation: Invitation = {
   status: "pending",
   createdAt: "2026-05-01T00:00:00Z",
   remindedAt: "2026-05-05T00:00:00Z",
+  emailedAt: "2026-05-01T00:00:01Z",
   token: "token-def",
 }
 
@@ -137,7 +141,7 @@ describe("JudgesSection", () => {
     expect(screen.getByText("2 prizes")).toBeDefined()
   })
 
-  it("renders Invited badge for pending invitations and Reminded badge for reminded ones", () => {
+  it("renders Sent badge for pending invitations and Reminded badge for reminded ones", () => {
     render(
       <JudgesSection
         judges={[]}
@@ -149,10 +153,45 @@ describe("JudgesSection", () => {
         onRemindInvitation={noop}
       />
     )
-    expect(screen.getByText("Invited")).toBeDefined()
+    expect(screen.getByText("Sent")).toBeDefined()
     expect(screen.getByText("Reminded")).toBeDefined()
     expect(screen.getByText("carol@example.com")).toBeDefined()
     expect(screen.getByText("dave@example.com")).toBeDefined()
+  })
+
+  it("shows why draft invitation emails are queued", () => {
+    render(
+      <JudgesSection
+        judges={[]}
+        invitations={[{ ...pendingInvitation, emailedAt: null }]}
+        hackathonId="h1"
+        hackathonStatus="draft"
+        onAddJudge={noop}
+        onRemoveJudge={noop}
+        onCancelInvitation={noop}
+        onRemindInvitation={noop}
+      />
+    )
+    expect(screen.getByText("Queued")).toBeDefined()
+    expect(screen.getByText("1 email is queued")).toBeDefined()
+    expect(screen.getByText(/This event is still a draft/)).toBeDefined()
+  })
+
+  it("shows queued email status for a judge who was added directly", () => {
+    render(
+      <JudgesSection
+        judges={[{ ...baseJudge, notificationQueued: true }]}
+        invitations={[]}
+        hackathonId="h1"
+        hackathonStatus="draft"
+        onAddJudge={noop}
+        onRemoveJudge={noop}
+        onCancelInvitation={noop}
+        onRemindInvitation={noop}
+      />
+    )
+    expect(screen.getByText("1 email is queued")).toBeDefined()
+    expect(screen.getByText("Queued")).toBeDefined()
   })
 
   it("calls onRemoveJudge when remove action is clicked", () => {

@@ -4,12 +4,22 @@ import { getNotificationDisposition } from "@/lib/utils/notification-lifecycle"
 describe("getNotificationDisposition", () => {
   afterEach(() => setSystemTime())
 
-  it("queues draft work even when dates are present", () => {
+  it("queues draft work while the event can still go live", () => {
+    setSystemTime(new Date("2025-12-31T12:00:00.000Z"))
     expect(getNotificationDisposition({
       status: "draft",
       starts_at: "2026-01-01T00:00:00.000Z",
       ends_at: "2026-01-02T00:00:00.000Z",
     })).toBe("queue")
+  })
+
+  it("rejects draft work after the event end instead of creating an impossible queue", () => {
+    setSystemTime(new Date("2026-01-03T12:00:00.000Z"))
+    expect(getNotificationDisposition({
+      status: "draft",
+      starts_at: "2026-01-01T00:00:00.000Z",
+      ends_at: "2026-01-02T00:00:00.000Z",
+    })).toBe("reject")
   })
 
   it.each(["published", "registration_open", "active", "judging"] as const)(

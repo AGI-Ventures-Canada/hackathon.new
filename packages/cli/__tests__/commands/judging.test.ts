@@ -134,7 +134,8 @@ describe("judging commands", () => {
       await runJudgesAdd(client, hackathonId, ["--email", "judge@test.com"])
 
       expect(consoleLogSpy.mock.calls[0][0]).toContain("Saved judge invitation for judge@test.com")
-      expect(consoleLogSpy.mock.calls[0][0]).toContain("event goes live")
+      expect(consoleLogSpy.mock.calls[0][0]).toContain("This event is still a draft")
+      expect(consoleLogSpy.mock.calls[0][0]).toContain("when you go live")
     })
 
     it("reports an invitation saved after email delivery fails", async () => {
@@ -178,6 +179,24 @@ describe("judging commands", () => {
       await runJudgesAdd(client, hackathonId, ["--user-id", "user1"])
 
       expect(consoleLogSpy.mock.calls[0][0]).toContain("Added judge Judge One")
+    })
+
+    it("reports a queued email for a directly added judge", async () => {
+      mockFetch.mockResolvedValueOnce(
+        jsonResponse({
+          participant: { id: "participant1", name: "Judge One" },
+          queued: true,
+          delivery: "queued",
+          queueReason: "event_draft",
+        })
+      )
+      const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
+      const { runJudgesAdd } = await import("../../src/commands/judging/judges-add")
+
+      await runJudgesAdd(client, hackathonId, ["--user-id", "user1"])
+
+      expect(consoleLogSpy.mock.calls[0][0]).toContain("This event is still a draft")
+      expect(consoleLogSpy.mock.calls[0][0]).toContain("when you go live")
     })
   })
 

@@ -75,7 +75,11 @@ describe("TeamInviteDialog", () => {
   })
 
   it("reports a queued invitation honestly and closes on the human Enter action", async () => {
-    fetchSpy.mockImplementation(() => response({ queued: true }))
+    fetchSpy.mockImplementation(() => response({
+      queued: true,
+      delivery: "queued",
+      queueReason: "event_draft",
+    }))
     renderInvite()
     fireEvent.click(screen.getByRole("button", { name: "Invite Member" }))
     fireEvent.change(screen.getByLabelText("Email Address"), {
@@ -87,7 +91,7 @@ describe("TeamInviteDialog", () => {
     await waitFor(() => {
       expect(fetchSpy).toHaveBeenCalledTimes(1)
       expect(screen.getAllByText("Invitation saved").length).toBeGreaterThan(0)
-      expect(screen.getAllByText("We'll send it when the event goes live.").length)
+      expect(screen.getAllByText(/This event is still a draft.*We'll send it when you go live/).length)
         .toBeGreaterThan(0)
     })
     expect(screen.queryByText("Invitation sent")).toBeNull()

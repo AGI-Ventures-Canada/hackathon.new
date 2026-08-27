@@ -14,6 +14,7 @@ import { trackEvent } from "@/lib/analytics/posthog"
 import { getSubmissionScreenshotUrls } from "@/lib/utils/submission-screenshots"
 import { isValidUuid } from "@/lib/utils/uuid"
 import { getNotificationDisposition } from "@/lib/utils/notification-lifecycle"
+import { getQueueReason, type QueueReasonCode } from "@/lib/utils/notification-delivery"
 import { isHackathonCreationReady } from "@/lib/utils/hackathon-creation-state"
 
 type ParticipantWithHackathon = HackathonParticipant & {
@@ -412,6 +413,7 @@ export type ParticipantTeamInfo = {
     expiresAt: string
     createdAt: string
     remindedAt: string | null
+    emailedAt: string | null
     token: string | null
   }[]
   isCaptain: boolean
@@ -449,9 +451,10 @@ export async function getParticipantTeamInfo(
       .order("registered_at", { ascending: true }),
     client
       .from("team_invitations")
-      .select("id, email, expires_at, created_at, reminded_at, token")
+      .select("id, email, expires_at, created_at, reminded_at, emailed_at, token")
       .eq("team_id", participant.team_id)
       .eq("status", "pending")
+      .gt("expires_at", new Date().toISOString())
       .order("created_at", { ascending: false }),
     typedClient
       .from("room_teams")
@@ -505,6 +508,7 @@ export async function getParticipantTeamInfo(
     expiresAt: inv.expires_at,
     createdAt: inv.created_at,
     remindedAt: inv.reminded_at ?? null,
+    emailedAt: inv.emailed_at ?? null,
     token: isCaptain ? inv.token : null,
   }))
 
@@ -536,6 +540,7 @@ export type TeamPendingInvitation = {
   isCaptainInvite: boolean
   createdAt: string
   remindedAt: string | null
+  emailedAt: string | null
 }
 
 export type TeamWithMembers = {
@@ -596,9 +601,10 @@ export async function listTeamsWithMembers(hackathonId: string): Promise<TeamWit
       .in("team_id", teamIds),
     client
       .from("team_invitations")
-      .select("id, team_id, email, is_captain_invite, created_at, reminded_at")
+      .select("id, team_id, email, is_captain_invite, created_at, reminded_at, emailed_at")
       .eq("hackathon_id", hackathonId)
       .eq("status", "pending")
+      .gt("expires_at", new Date().toISOString())
       .in("team_id", teamIds)
       .order("created_at", { ascending: true }),
   ])
@@ -606,7 +612,7 @@ export async function listTeamsWithMembers(hackathonId: string): Promise<TeamWit
   const invitesByTeam: Record<string, TeamPendingInvitation[]> = {}
   const captainInviteIdByTeam: Record<string, string> = {}
   const captainInviteRemindedAtByTeam: Record<string, string | null> = {}
-  for (const inv of (invites ?? []) as Array<{ id: string; team_id: string; email: string; is_captain_invite: boolean; created_at: string; reminded_at: string | null }>) {
+  for (const inv of (invites ?? []) as Array<{ id: string; team_id: string; email: string; is_captain_invite: boolean; created_at: string; reminded_at: string | null; emailed_at: string | null }>) {
     const list = invitesByTeam[inv.team_id] ?? (invitesByTeam[inv.team_id] = [])
     list.push({
       id: inv.id,
@@ -614,6 +620,7 @@ export async function listTeamsWithMembers(hackathonId: string): Promise<TeamWit
       isCaptainInvite: !!inv.is_captain_invite,
       createdAt: inv.created_at,
       remindedAt: inv.reminded_at,
+      emailedAt: inv.emailed_at,
     })
     if (inv.is_captain_invite && !captainInviteIdByTeam[inv.team_id]) {
       captainInviteIdByTeam[inv.team_id] = inv.id
@@ -703,7 +710,7 @@ export async function listTeamsWithMembers(hackathonId: string): Promise<TeamWit
 
 export type CreateTeamResult =
   | { team: { id: string; name: string }; invited?: undefined; queued?: undefined; delivery?: undefined }
-  | { team: { id: string; name: string }; invited: true; queued: boolean; delivery: "sent" | "queued" | "failed" }
+  | { team: { id: string; name: string }; invited: true; queued: boolean; delivery: "sent" | "queued" | "failed"; queueReason?: QueueReasonCode }
   | { error: string; code?: "hackathon_not_found" | "hackathon_ended" }
 
 export type ReviewTeamResult =
@@ -947,7 +954,13 @@ async function createPendingTeamWithInvite(
     }
   }
 
-  return { team, invited: true, queued: delivery === "queued", delivery }
+  return {
+    team,
+    invited: true,
+    queued: delivery === "queued",
+    delivery,
+    queueReason: getQueueReason(delivery),
+  }
 }
 
 export async function approvePendingTeam(

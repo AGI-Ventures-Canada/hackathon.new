@@ -12,6 +12,8 @@ import { listAnnouncements } from "@/lib/services/announcements"
 import { isPerkReleased, listPerks } from "@/lib/services/perks"
 import { listScheduleItems, getSubmissionDeadline } from "@/lib/services/schedule-items"
 import { getOrganizerActionItems } from "@/lib/utils/organizer-actions"
+import { getNotificationDisposition } from "@/lib/utils/notification-lifecycle"
+import type { HackathonStatus } from "@/lib/db/hackathon-types"
 import { VALID_TABS, VALID_ETABS, VALID_MTABS, VALID_JTABS, VALID_PTABS, DEFAULT_TAB, DEFAULT_MTAB, DEFAULT_JTAB, DEFAULT_PTAB, resolveTab } from "@/lib/utils/manage-tabs"
 import { HackathonPreviewClient } from "@/components/hackathon/preview/hackathon-preview-client"
 import { applyHackathonTranslation, availableLocales, normalizeLocale } from "@/lib/utils/language"
@@ -64,6 +66,11 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
   const requestedLocale = normalizeLocale(lang ?? null)
   const currentLocale = requestedLocale && locales.includes(requestedLocale) ? requestedLocale : locales[0]
   const hackathon = applyHackathonTranslation(rawHackathon, currentLocale)
+  const notificationDisposition = getNotificationDisposition({
+    status: (hackathon.stored_status ?? hackathon.status) as HackathonStatus,
+    starts_at: hackathon.starts_at,
+    ends_at: hackathon.ends_at,
+  })
 
   const [
     submissions,
@@ -412,6 +419,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
                   currentUserId={userId}
                   availableLocales={locales}
                   currentLocale={currentLocale}
+                  notificationDisposition={notificationDisposition}
                 />
               </div>
             </TabsContent>
@@ -425,6 +433,8 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
                   resultsPublishedAt={hackathon.results_published_at}
                   activeJtab={activeJtab}
                   locationType={hackathon.location_type ?? null}
+                  hackathonStatus={hackathon.stored_status ?? hackathon.status}
+                  notificationDisposition={notificationDisposition}
                 />
               </Suspense>
             </TabsContent>
@@ -449,13 +459,18 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
                 minTeamSize={hackathon.min_team_size ?? 1}
                 allowSolo={hackathon.allow_solo ?? true}
                 requireTeamApproval={hackathon.require_team_approval ?? false}
-                hackathonStatus={hackathon.status}
+                hackathonStatus={hackathon.stored_status ?? hackathon.status}
+                notificationDisposition={notificationDisposition}
               />
             </TabsContent>
 
             <TabsContent value="people" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="people">
               <Suspense fallback={<TabLoadingSkeleton />}>
-                <PeopleTab hackathonId={hackathon.id} hackathonStatus={hackathon.status} />
+                <PeopleTab
+                  hackathonId={hackathon.id}
+                  hackathonStatus={hackathon.stored_status ?? hackathon.status}
+                  notificationDisposition={notificationDisposition}
+                />
               </Suspense>
             </TabsContent>
 

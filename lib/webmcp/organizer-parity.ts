@@ -96,7 +96,7 @@ export const ORGANIZER_SECTION_CONFIG: Record<
   },
   teams: {
     title: "Teams",
-    summary: "Review team counts, approvals, and team setup.",
+    summary: "Review team setup, approvals, and whether invite emails are sent or queued.",
     params: "tab=teams",
     webMcpTools: ["get_hackathon_overview"],
     cliCommands: ["teams list", "teams create", "teams approve", "teams deny", "teams update"],
@@ -110,7 +110,7 @@ export const ORGANIZER_SECTION_CONFIG: Record<
   },
   people: {
     title: "People",
-    summary: "Review attendee totals and manage event roles.",
+    summary: "Review event roles and whether invite emails are sent or queued.",
     params: "tab=people",
     webMcpTools: ["get_hackathon_overview"],
     cliCommands: [],
@@ -131,7 +131,7 @@ export const ORGANIZER_SECTION_CONFIG: Record<
   },
   judges: {
     title: "Judges",
-    summary: "Review assigned judges and pending invitations.",
+    summary: "Review judges and whether their invite emails are sent or queued.",
     params: "tab=judging&jtab=judges",
     webMcpTools: ["get_hackathon_overview"],
     cliCommands: ["judging judges list", "judging judges add", "judging judges remove"],

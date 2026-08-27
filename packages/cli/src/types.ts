@@ -106,6 +106,7 @@ export interface JudgeAddResponse {
   }
   queued?: boolean
   delivery?: "sent" | "queued" | "failed"
+  queueReason?: "event_draft"
 }
 
 export interface Prize {

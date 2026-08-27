@@ -27,6 +27,8 @@ import {
 import { publicSubmitterName } from "@/lib/utils/anonymous-judging"
 import { getParticipantCount } from "@/lib/services/hackathons"
 import { canRegisterNow } from "@/lib/utils/registration"
+import { getNotificationDisposition } from "@/lib/utils/notification-lifecycle"
+import type { HackathonStatus } from "@/lib/db/hackathon-types"
 
 export { canRegisterNow }
 
@@ -326,6 +328,11 @@ export default async function EventPage({ params, searchParams }: PageProps) {
     includeEditorSponsorData: isOrganizer,
     includePrivateLocation: isOrganizer || isRegistered,
   })
+  const notificationDisposition = getNotificationDisposition({
+    status: hackathon.status as HackathonStatus,
+    starts_at: hackathon.starts_at,
+    ends_at: hackathon.ends_at,
+  })
 
   return (
     <div>
@@ -380,6 +387,7 @@ export default async function EventPage({ params, searchParams }: PageProps) {
         submission={submission}
         submissions={gallerySubmissions}
         teamInfo={teamInfo}
+        notificationDisposition={notificationDisposition}
         publicResults={publicResults}
         scheduleItems={scheduleItems}
         announcements={publishedAnnouncements}

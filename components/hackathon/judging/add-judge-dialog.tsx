@@ -24,6 +24,7 @@ import {
   getJudgeAddedMessage,
   getJudgeInvitationMessage,
 } from "@/lib/judge-invitation-message"
+import type { QueueReasonCode } from "@/lib/utils/notification-delivery"
 import {
   Loader2,
   UserPlus,
@@ -43,8 +44,8 @@ type SearchUser = {
 }
 
 export type AddJudgeResult =
-  | { type: "judge"; participantId: string; clerkUserId: string; displayName: string; email: string | null; imageUrl: string | null }
-  | { type: "invitation"; id: string; email: string; token: string }
+  | { type: "judge"; participantId: string; clerkUserId: string; displayName: string; email: string | null; imageUrl: string | null; delivery?: "sent" | "queued" | "failed" }
+  | { type: "invitation"; id: string; email: string; token: string; delivery?: "sent" | "queued" | "failed" }
 
 type SuccessNotice = {
   title: "Judge added" | "Judge invited"
@@ -196,6 +197,7 @@ export function AddJudgeDialog({
           participant: { id: string; clerkUserId?: string }
           queued?: boolean
           delivery?: "sent" | "queued" | "failed"
+          queueReason?: QueueReasonCode
         }>
       )
       const displayName = getDisplayName(user)
@@ -206,6 +208,7 @@ export function AddJudgeDialog({
         displayName,
         email: user.email,
         imageUrl: user.imageUrl,
+        delivery: data.delivery,
       })
       setSuccessNotice({
         title: "Judge added",
@@ -213,7 +216,8 @@ export function AddJudgeDialog({
           ? getJudgeAddedMessage(
               displayName,
               data.delivery === "queued",
-              data.delivery === "failed"
+              data.delivery === "failed",
+              data.queueReason,
             )
           : `${displayName} was added as a judge.`,
       })
@@ -246,16 +250,24 @@ export function AddJudgeDialog({
           participant?: { id: string; clerkUserId: string }
           queued?: boolean
           delivery?: "sent" | "queued" | "failed"
+          queueReason?: QueueReasonCode
         }>
       )
       if (data.invitation) {
-        onSuccess?.({ type: "invitation", id: data.invitation.id, email, token: data.invitation.token })
+        onSuccess?.({
+          type: "invitation",
+          id: data.invitation.id,
+          email,
+          token: data.invitation.token,
+          delivery: data.delivery,
+        })
         setSuccessNotice({
           title: "Judge invited",
           message: getJudgeInvitationMessage(
             email,
             data.delivery === "queued",
-            data.delivery === "failed"
+            data.delivery === "failed",
+            data.queueReason,
           ),
         })
       } else if (data.participant) {
@@ -266,6 +278,7 @@ export function AddJudgeDialog({
           displayName: email,
           email,
           imageUrl: null,
+          delivery: data.delivery,
         })
         setSuccessNotice({
           title: "Judge added",
@@ -273,7 +286,8 @@ export function AddJudgeDialog({
             ? getJudgeAddedMessage(
                 email,
                 data.delivery === "queued",
-                data.delivery === "failed"
+                data.delivery === "failed",
+                data.queueReason,
               )
             : `${email} was added as a judge.`,
         })

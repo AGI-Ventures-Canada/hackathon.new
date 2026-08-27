@@ -887,8 +887,8 @@ describe("Dashboard Team Invitations Routes", () => {
         hackathon: {
           name: "Test Hackathon",
           slug: "test-hackathon",
-          starts_at: "2025-06-01T00:00:00Z",
-          ends_at: "2025-06-02T00:00:00Z",
+          starts_at: "2099-06-01T00:00:00Z",
+          ends_at: "2099-06-02T00:00:00Z",
           status: "draft",
         },
         memberNames: [],
@@ -918,11 +918,15 @@ describe("Dashboard Team Invitations Routes", () => {
       expect(res.status).toBe(200)
       expect(data.queued).toBe(true)
       expect(data.delivery).toBe("queued")
+      expect(data.queueReason).toBe("event_draft")
       expect(mockWorkflowStart).not.toHaveBeenCalled()
       expect(mockLogAudit).toHaveBeenCalledWith(
         expect.objectContaining({
           action: "team_invitation.queued",
-          metadata: expect.objectContaining({ queued: true }),
+          metadata: expect.objectContaining({
+            queued: true,
+            queueReason: "event_draft",
+          }),
         })
       )
     })

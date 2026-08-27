@@ -44,6 +44,7 @@ const {
   sendPendingJudgeInvitationEmails,
   retryPendingJudgeInvitationEmails,
   createJudgePendingNotification,
+  listPendingJudgeNotifications,
   hasPendingJudgeInvitation,
   hasPendingJudgeEntry,
   countPendingJudgeInvitations,
@@ -795,6 +796,36 @@ describe("Judge Invitations Service", () => {
       await expect(
         createJudgePendingNotification("h1", "participant1", "judge@example.com", "Organizer")
       ).rejects.toThrow("Failed to create judge pending notification: unique constraint violation")
+    })
+  })
+
+  describe("listPendingJudgeNotifications", () => {
+    it("returns unsent judge notifications in a UI-safe shape", async () => {
+      const chain = createChainableMock({
+        data: [{
+          participant_id: "participant1",
+          email: "judge@example.com",
+          created_at: "2026-08-27T12:00:00.000Z",
+        }],
+        error: null,
+      })
+      setMockFromImplementation(() => chain)
+
+      await expect(listPendingJudgeNotifications("h1")).resolves.toEqual([{
+        participantId: "participant1",
+        email: "judge@example.com",
+        createdAt: "2026-08-27T12:00:00.000Z",
+      }])
+      expect(chain.is).toHaveBeenCalledWith("sent_at", null)
+    })
+
+    it("keeps the page available when pending-notification lookup fails", async () => {
+      setMockFromImplementation(() => createChainableMock({
+        data: null,
+        error: { message: "connection failed" },
+      }))
+
+      await expect(listPendingJudgeNotifications("h1")).resolves.toEqual([])
     })
   })
 

@@ -596,7 +596,12 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       metadata: {
         hackathonId: params.id,
         name: b.name,
-        ...(result.invited ? { captainEmail: b.captainEmail, queued: result.queued, delivery: result.delivery } : {}),
+        ...(result.invited ? {
+          captainEmail: b.captainEmail,
+          queued: result.queued,
+          delivery: result.delivery,
+          queueReason: result.queueReason,
+        } : {}),
       },
     })
     return result
@@ -917,10 +922,22 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       action: "team_invitation.replaced",
       resourceType: "team",
       resourceId: params.teamId,
-      metadata: { hackathonId: params.id, email: email.trim().toLowerCase(), queued: result.queued, delivery: result.delivery },
+      metadata: {
+        hackathonId: params.id,
+        email: email.trim().toLowerCase(),
+        queued: result.queued,
+        delivery: result.delivery,
+        queueReason: result.queueReason,
+      },
     })
 
-    return { success: true, invitationId: result.invitationId, queued: result.queued, delivery: result.delivery }
+    return {
+      success: true,
+      invitationId: result.invitationId,
+      queued: result.queued,
+      delivery: result.delivery,
+      queueReason: result.queueReason,
+    }
   }, {
     body: t.Object({ email: t.String({ format: "email" }) }),
     detail: { summary: "Replace the pending captain invitation email" },

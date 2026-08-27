@@ -20,9 +20,11 @@ mock.module("@/lib/services/judging", () => ({
 }))
 
 const mockListJudgeInvitations = mock(() => Promise.resolve([]))
+const mockListPendingJudgeNotifications = mock(() => Promise.resolve([]))
 
 mock.module("@/lib/services/judge-invitations", () => ({
   listJudgeInvitations: mockListJudgeInvitations,
+  listPendingJudgeNotifications: mockListPendingJudgeNotifications,
 }))
 
 const mockGetResults = mock(() => Promise.resolve([]))

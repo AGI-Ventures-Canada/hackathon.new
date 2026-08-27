@@ -803,6 +803,32 @@ export async function createJudgePendingNotification(
   }
 }
 
+export async function listPendingJudgeNotifications(
+  hackathonId: string,
+): Promise<Array<{ participantId: string; email: string; createdAt: string }>> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const { data, error } = await client
+    .from("judge_pending_notifications")
+    .select("participant_id, email, created_at")
+    .eq("hackathon_id", hackathonId)
+    .is("sent_at", null)
+
+  if (error) {
+    console.error("Failed to list pending judge notifications:", error)
+    return []
+  }
+
+  return ((data ?? []) as Array<{
+    participant_id: string
+    email: string
+    created_at: string
+  }>).map((notification) => ({
+    participantId: notification.participant_id,
+    email: notification.email,
+    createdAt: notification.created_at,
+  }))
+}
+
 export async function countPendingJudgeInvitations(hackathonId: string): Promise<number> {
   const client = getSupabase() as unknown as SupabaseClient
   const now = new Date().toISOString()
@@ -830,6 +856,9 @@ export async function listJudgeInvitations(
 
   if (status) {
     query = query.eq("status", status)
+  }
+  if (status === "pending") {
+    query = query.gt("expires_at", new Date().toISOString())
   }
 
   const { data, error } = await query
