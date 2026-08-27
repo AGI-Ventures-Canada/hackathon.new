@@ -1,10 +1,6 @@
 # WebMCP hosted preview QA
 
-Use only the ready Vercel deployment for PR #468:
-
-`https://oatmeal-git-feature-webmcp-organizer-tools-agi-ventures-canada.vercel.app`
-
-Do not run the app, Supabase, scenarios, or localhost browser checks for this delivery. Use synthetic preview data on the ready deployment only. Verify the matrix once in Codex's built-in browser and once in a dedicated Chrome profile so Chrome's native WebMCP connection is covered without touching a personal browsing session.
+Run this matrix against local synthetic scenarios first, then repeat it on the ready PR preview, staging, and production after each promotion. Verify it once in Codex's built-in browser and once in the dedicated Oatmeal Chrome profile so native WebMCP coverage never touches a personal browsing session.
 
 ## Private judging access
 

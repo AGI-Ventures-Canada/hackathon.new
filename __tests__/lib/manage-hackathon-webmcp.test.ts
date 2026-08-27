@@ -78,6 +78,23 @@ const baseContext: ManageHackathonWebMcpContext = {
       completedAssignments: 5,
     },
   ],
+  projects: [
+    {
+      title: "Safe streets",
+      description: "Help people get home.",
+      submitterName: "City Team",
+    },
+  ],
+  sponsors: [{ name: "Acme", tier: "Gold" }],
+  perks: [{ name: "Cloud credits", type: "code", released: false }],
+  announcements: [
+    {
+      title: "Doors open",
+      audience: "everyone",
+      priority: "normal",
+      publishedAt: null,
+    },
+  ],
 }
 
 const signal = new AbortController().signal
@@ -165,6 +182,10 @@ describe("createManageHackathonTools", () => {
       "list_hackathon_schedule",
       "list_hackathon_challenges",
       "list_hackathon_prizes",
+      "list_hackathon_projects",
+      "list_hackathon_sponsors",
+      "list_hackathon_perks",
+      "list_hackathon_announcements",
       "open_hackathon_section",
       "update_hackathon_details",
       "set_hackathon_timeline",
@@ -183,6 +204,10 @@ describe("createManageHackathonTools", () => {
       "list_hackathon_schedule",
       "list_hackathon_challenges",
       "list_hackathon_prizes",
+      "list_hackathon_projects",
+      "list_hackathon_sponsors",
+      "list_hackathon_perks",
+      "list_hackathon_announcements",
       "open_hackathon_section",
       "update_hackathon_details",
       "add_schedule_item",
@@ -200,6 +225,10 @@ describe("createManageHackathonTools", () => {
       "list_hackathon_schedule",
       "list_hackathon_challenges",
       "list_hackathon_prizes",
+      "list_hackathon_projects",
+      "list_hackathon_sponsors",
+      "list_hackathon_perks",
+      "list_hackathon_announcements",
       "open_hackathon_section",
     ])
   })
@@ -266,6 +295,26 @@ describe("createManageHackathonTools", () => {
       totalAssignments: 100,
       completedAssignments: 50,
     }))
+    context.projects = Array.from({ length: 20 }, () => ({
+      title: "p".repeat(1_000),
+      description: "d".repeat(5_000),
+      submitterName: "s".repeat(1_000),
+    }))
+    context.sponsors = Array.from({ length: 20 }, () => ({
+      name: "s".repeat(1_000),
+      tier: "t".repeat(1_000),
+    }))
+    context.perks = Array.from({ length: 20 }, () => ({
+      name: "p".repeat(1_000),
+      type: "code",
+      released: false,
+    }))
+    context.announcements = Array.from({ length: 20 }, () => ({
+      title: "a".repeat(1_000),
+      audience: "everyone",
+      priority: "normal",
+      publishedAt: null,
+    }))
 
     const tools = createTools()
     for (const name of [
@@ -273,6 +322,10 @@ describe("createManageHackathonTools", () => {
       "list_hackathon_schedule",
       "list_hackathon_challenges",
       "list_hackathon_prizes",
+      "list_hackathon_projects",
+      "list_hackathon_sponsors",
+      "list_hackathon_perks",
+      "list_hackathon_announcements",
     ]) {
       const result = await execute(tools, name)
       expect(result.ok).toBe(true)

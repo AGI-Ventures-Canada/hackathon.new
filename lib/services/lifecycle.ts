@@ -392,15 +392,22 @@ export async function runTransitionSideEffects(
   }
 
   if (toStatus === "completed" || toStatus === "archived") {
-    const { denyPendingTeamsForClosedHackathon } = await import("./hackathons")
-    let closeout = await denyPendingTeamsForClosedHackathon(hackathonId)
-    for (let attempt = 1; attempt < 3 && closeout.failed.length > 0; attempt++) {
-      closeout = await denyPendingTeamsForClosedHackathon(hackathonId)
-    }
-    if (closeout.failed.length > 0) {
+    try {
+      const { denyPendingTeamsForClosedHackathon } = await import("./hackathons")
+      let closeout = await denyPendingTeamsForClosedHackathon(hackathonId)
+      for (let attempt = 1; attempt < 3 && closeout.failed.length > 0; attempt++) {
+        closeout = await denyPendingTeamsForClosedHackathon(hackathonId)
+      }
+      if (closeout.failed.length > 0) {
+        console.error(
+          `Failed to close ${closeout.failed.length} pending team(s) for hackathon ${hackathonId}:`,
+          closeout.failed
+        )
+      }
+    } catch (error) {
       console.error(
-        `Failed to close ${closeout.failed.length} pending team(s) for hackathon ${hackathonId}:`,
-        closeout.failed
+        `Failed to close pending teams for hackathon ${hackathonId}:`,
+        error,
       )
     }
   }
@@ -425,6 +432,60 @@ export type AutoTransitionResult = {
   processed: number
   transitions: Array<{ hackathonId: string; from: string; to: string }>
   errors: string[]
+}
+
+export type ClosedTeamReconciliationResult = {
+  events: number
+  denied: number
+  failed: number
+  errors: string[]
+}
+
+export async function reconcilePendingTeamsForClosedHackathons(
+  limit: number = 50,
+): Promise<ClosedTeamReconciliationResult> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const { data, error } = await client
+    .from("teams")
+    .select("hackathon_id, hackathon:hackathons!inner(status)")
+    .eq("status", "pending_approval")
+    .in("hackathon.status", ["completed", "archived"])
+    .limit(limit)
+
+  if (error) {
+    return { events: 0, denied: 0, failed: 0, errors: [error.message] }
+  }
+
+  const hackathonIds = [...new Set(
+    (data ?? []).map((team) => team.hackathon_id as string),
+  )]
+  const result: ClosedTeamReconciliationResult = {
+    events: hackathonIds.length,
+    denied: 0,
+    failed: 0,
+    errors: [],
+  }
+  const { denyPendingTeamsForClosedHackathon } = await import("./hackathons")
+
+  for (const hackathonId of hackathonIds) {
+    try {
+      const closeout = await denyPendingTeamsForClosedHackathon(hackathonId)
+      result.denied += closeout.denied
+      result.failed += closeout.failed.length
+      if (closeout.failed.length > 0) {
+        result.errors.push(
+          `${hackathonId}: ${closeout.failed.map((failure) => `${failure.teamId}:${failure.code}`).join(",")}`,
+        )
+      }
+    } catch (closeoutError) {
+      result.failed++
+      result.errors.push(
+        `${hackathonId}: ${closeoutError instanceof Error ? closeoutError.message : String(closeoutError)}`,
+      )
+    }
+  }
+
+  return result
 }
 
 export async function processAutoTransitions(): Promise<AutoTransitionResult> {

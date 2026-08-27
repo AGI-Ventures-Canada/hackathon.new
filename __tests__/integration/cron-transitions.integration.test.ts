@@ -15,9 +15,16 @@ const mockProcessDueSchedules = mock(() => Promise.resolve({
   started: 0,
   failed: 0,
 }))
+const mockReconcilePendingTeams = mock(() => Promise.resolve({
+  events: 0,
+  denied: 0,
+  failed: 0,
+  errors: [],
+}))
 
 mock.module("@/lib/services/lifecycle", () => ({
   processAutoTransitions: mockProcessAutoTransitions,
+  reconcilePendingTeamsForClosedHackathons: mockReconcilePendingTeams,
 }))
 mock.module("@/lib/services/challenges", () => ({
   processScheduledChallengeReleases: mockProcessScheduledChallengeReleases,
@@ -56,6 +63,13 @@ describe("transition cron route", () => {
       started: 0,
       failed: 0,
     })
+    mockReconcilePendingTeams.mockClear()
+    mockReconcilePendingTeams.mockResolvedValue({
+      events: 0,
+      denied: 0,
+      failed: 0,
+      errors: [],
+    })
   })
 
   afterAll(() => {
@@ -73,6 +87,7 @@ describe("transition cron route", () => {
     expect(mockProcessAutoTransitions).toHaveBeenCalledTimes(1)
     expect(mockProcessScheduledChallengeReleases).toHaveBeenCalledTimes(1)
     expect(mockProcessDueSchedules).toHaveBeenCalledTimes(1)
+    expect(mockReconcilePendingTeams).toHaveBeenCalledTimes(1)
   })
 
   it("reports a failed schedule occurrence as a failed cron run", async () => {
@@ -98,5 +113,22 @@ describe("transition cron route", () => {
     expect(response.status).toBe(500)
     expect(mockProcessScheduledChallengeReleases).toHaveBeenCalledTimes(1)
     expect(mockProcessDueSchedules).toHaveBeenCalledTimes(1)
+    expect(mockReconcilePendingTeams).toHaveBeenCalledTimes(1)
+  })
+
+  it("reports pending-team closeout failures for another cron retry", async () => {
+    mockReconcilePendingTeams.mockResolvedValue({
+      events: 1,
+      denied: 0,
+      failed: 1,
+      errors: ["event-1: team-1:failed"],
+    })
+
+    const response = await GET(cronRequest())
+
+    expect(response.status).toBe(500)
+    expect(await response.json()).toMatchObject({
+      pendingTeamCloseout: { events: 1, denied: 0, failed: 1 },
+    })
   })
 })

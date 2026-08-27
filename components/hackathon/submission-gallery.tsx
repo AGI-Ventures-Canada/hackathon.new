@@ -63,13 +63,13 @@ export function SubmissionGallery({ submissions }: SubmissionGalleryProps) {
   return (
     <section className="py-12 border-t">
       <div className="mx-auto max-w-4xl px-4">
-        <h2 className="text-xl font-bold mb-6">Submissions</h2>
+        <h2 className="text-xl font-bold mb-6">Projects</h2>
 
         <div className="relative mb-6">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
             type="text"
-            placeholder="Search submissions..."
+            placeholder="Search projects..."
             value={searchQuery}
             onChange={(e) => {
               setSearchQuery(e.target.value)

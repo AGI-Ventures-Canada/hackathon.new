@@ -92,6 +92,26 @@ export type ManageHackathonWebMcpContext = {
     totalAssignments: number
     completedAssignments: number
   }[]
+  projects: {
+    title: string
+    description: string | null
+    submitterName: string
+  }[]
+  sponsors: {
+    name: string
+    tier: string | null
+  }[]
+  perks: {
+    name: string
+    type: string
+    released: boolean
+  }[]
+  announcements: {
+    title: string
+    audience: string
+    priority: string
+    publishedAt: string | null
+  }[]
 }
 
 type ManageHackathonToolDependencies = {
@@ -202,7 +222,10 @@ const sectionInput = z
       "schedule",
       "event_page",
       "teams",
+      "projects",
       "people",
+      "sponsors",
+      "perks",
       "judging",
       "results",
       "post_event",
@@ -218,7 +241,10 @@ const sectionParams: Record<z.output<typeof sectionInput>["section"], string> = 
   schedule: "tab=overview",
   event_page: "tab=edit",
   teams: "tab=teams",
+  projects: "tab=teams",
   people: "tab=people",
+  sponsors: "tab=edit",
+  perks: "tab=perks",
   judging: "tab=judging",
   results: "tab=judging&jtab=results",
   post_event: "tab=post-event",
@@ -234,6 +260,10 @@ const MAX_ACTION_ITEMS = 1
 const MAX_SCHEDULE_ITEMS = 2
 const MAX_CHALLENGE_ITEMS = 3
 const MAX_PRIZE_ITEMS = 2
+const MAX_PROJECT_ITEMS = 3
+const MAX_SPONSOR_ITEMS = 4
+const MAX_PERK_ITEMS = 4
+const MAX_ANNOUNCEMENT_ITEMS = 3
 
 const draftOnlyToolNames = new Set([
   "set_hackathon_timeline",
@@ -491,6 +521,92 @@ function createReadTools(
             context.hackathon.slug,
             "tab=judging&jtab=prizes",
           ),
+        }
+      },
+    }),
+    defineWebMcpTool({
+      name: "list_hackathon_projects",
+      title: "List hackathon projects",
+      description: "Read the first three submitted projects. This doesn't change projects or judging.",
+      schema: emptyInput,
+      annotations: untrustedReadAnnotations,
+      execute: () => {
+        const context = dependencies.getContext()
+        const items = context.projects.slice(0, MAX_PROJECT_ITEMS).map((project) => ({
+          title: clip(project.title, 100),
+          description: clip(project.description, 180),
+          submittedBy: clip(project.submitterName, 80),
+        }))
+        return {
+          totalCount: context.projects.length,
+          items,
+          truncated: context.projects.length > items.length,
+          inspectUrl: manageHref(context.hackathon.slug, "tab=teams"),
+        }
+      },
+    }),
+    defineWebMcpTool({
+      name: "list_hackathon_sponsors",
+      title: "List hackathon sponsors",
+      description: "Read the first four sponsors shown on the event page. This doesn't change sponsor details.",
+      schema: emptyInput,
+      annotations: untrustedReadAnnotations,
+      execute: () => {
+        const context = dependencies.getContext()
+        const items = context.sponsors.slice(0, MAX_SPONSOR_ITEMS).map((sponsor) => ({
+          name: clip(sponsor.name, 100),
+          tier: clip(sponsor.tier, 60),
+        }))
+        return {
+          totalCount: context.sponsors.length,
+          items,
+          truncated: context.sponsors.length > items.length,
+          inspectUrl: manageHref(context.hackathon.slug, "tab=edit"),
+        }
+      },
+    }),
+    defineWebMcpTool({
+      name: "list_hackathon_perks",
+      title: "List hackathon perks",
+      description: "Read the first four perks and release state. Codes and private instructions stay hidden.",
+      schema: emptyInput,
+      annotations: untrustedReadAnnotations,
+      execute: () => {
+        const context = dependencies.getContext()
+        const items = context.perks.slice(0, MAX_PERK_ITEMS).map((perk) => ({
+          name: clip(perk.name, 100),
+          type: perk.type,
+          released: perk.released,
+        }))
+        return {
+          totalCount: context.perks.length,
+          items,
+          truncated: context.perks.length > items.length,
+          inspectUrl: manageHref(context.hackathon.slug, "tab=perks"),
+        }
+      },
+    }),
+    defineWebMcpTool({
+      name: "list_hackathon_announcements",
+      title: "List announcements",
+      description: "Read the first three announcement summaries. This doesn't publish or send a message.",
+      schema: emptyInput,
+      annotations: untrustedReadAnnotations,
+      execute: () => {
+        const context = dependencies.getContext()
+        const items = context.announcements
+          .slice(0, MAX_ANNOUNCEMENT_ITEMS)
+          .map((announcement) => ({
+            title: clip(announcement.title, 100),
+            audience: announcement.audience,
+            priority: announcement.priority,
+            state: announcement.publishedAt ? "published" : "draft",
+          }))
+        return {
+          totalCount: context.announcements.length,
+          items,
+          truncated: context.announcements.length > items.length,
+          inspectUrl: manageHref(context.hackathon.slug, "tab=event"),
         }
       },
     }),

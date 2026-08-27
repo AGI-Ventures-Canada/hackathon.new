@@ -1,7 +1,8 @@
 "use client"
 
 import Link from "next/link"
-import { useMemo } from "react"
+import { useMemo, useSyncExternalStore } from "react"
+import { useRouter } from "next/navigation"
 import {
   Star,
   Award,
@@ -16,6 +17,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { HackathonCard } from "@/components/hackathon/hackathon-card"
 import type { SponsorshipInfo } from "@/lib/services/persona-stats"
 import type { HackathonStatus, SponsorTier } from "@/lib/db/hackathon-types"
+import { useWebMcpTools } from "@/hooks/use-webmcp-tools"
+import { createSponsorPortfolioTools } from "@/lib/webmcp/sponsor-tools"
 
 type Hackathon = {
   id: string
@@ -68,8 +71,11 @@ function TierBadge({ tier, customLabel }: { tier: SponsorTier; customLabel?: str
 }
 
 const PAST_STATUSES: HackathonStatus[] = ["completed", "archived"]
+const emptySubscribe = () => () => {}
 
 export function SponsoringDashboard({ hackathons, sponsorships, showHeader = true }: Props) {
+  const router = useRouter()
+  const isClient = useSyncExternalStore(emptySubscribe, () => true, () => false)
   const sponsorMap = useMemo(
     () => new Map(Object.entries(sponsorships)),
     [sponsorships],
@@ -82,7 +88,7 @@ export function SponsoringDashboard({ hackathons, sponsorships, showHeader = tru
 
     for (const h of hackathons) {
       const endsAt = h.ends_at ? new Date(h.ends_at) : null
-      if (PAST_STATUSES.includes(h.status) || (endsAt && endsAt < now)) {
+      if (PAST_STATUSES.includes(h.status) || (isClient && endsAt && endsAt < now)) {
         past.push(h)
       } else {
         active.push(h)
@@ -97,7 +103,7 @@ export function SponsoringDashboard({ hackathons, sponsorships, showHeader = tru
     })
 
     return { active, past }
-  }, [hackathons])
+  }, [hackathons, isClient])
 
   const tierCounts = useMemo(() => {
     const counts = new Map<SponsorTier, number>()
@@ -108,6 +114,29 @@ export function SponsoringDashboard({ hackathons, sponsorships, showHeader = tru
   }, [sponsorMap])
 
   const titleOrGold = (tierCounts.get("custom") ?? 0) + (tierCounts.get("gold") ?? 0)
+  const webMcpEvents = useMemo(
+    () => hackathons.map((hackathon) => {
+      const sponsorship = sponsorMap.get(hackathon.id)
+      return {
+        id: hackathon.id,
+        slug: hackathon.slug,
+        name: hackathon.name,
+        status: hackathon.status,
+        endsAt: hackathon.ends_at,
+        tier: sponsorship?.tier ?? "none",
+        customTierLabel: sponsorship?.customTierLabel ?? null,
+      }
+    }),
+    [hackathons, sponsorMap],
+  )
+  const webMcpTools = useMemo(
+    () => createSponsorPortfolioTools({
+      getEvents: () => webMcpEvents,
+      onNavigate: (url) => router.push(url),
+    }),
+    [router, webMcpEvents],
+  )
+  useWebMcpTools(webMcpTools)
 
   if (hackathons.length === 0) {
     return (

@@ -62,7 +62,11 @@ mock.module("@/lib/services/smart-reminders", () => ({
   scheduleReminders: mockScheduleReminders,
 }))
 
-const { executeTransition, processAutoTransitions } = await import(
+const {
+  executeTransition,
+  processAutoTransitions,
+  reconcilePendingTeamsForClosedHackathons,
+} = await import(
   "@/lib/services/lifecycle"
 )
 
@@ -1171,7 +1175,7 @@ describe("Lifecycle Service", () => {
       expect(result.transitions[0].to).toBe("completed")
     })
 
-    it("isolates an unexpected transition failure and continues with later events", async () => {
+    it("keeps committed transitions successful when pending-team closeout fails", async () => {
       const startsAt = new Date(Date.now() - 2 * 86400000).toISOString()
       const endsAt = new Date(Date.now() - 86400000).toISOString()
       const hackathons = [
@@ -1216,11 +1220,12 @@ describe("Lifecycle Service", () => {
 
       const result = await processAutoTransitions()
 
-      expect(result.processed).toBe(1)
+      expect(result.processed).toBe(2)
       expect(result.transitions).toEqual([
+        { hackathonId: "h1", from: "active", to: "completed" },
         { hackathonId: "h2", from: "active", to: "completed" },
       ])
-      expect(result.errors).toEqual(["h1: closeout unavailable"])
+      expect(result.errors).toEqual([])
     })
 
     it("handles DB fetch error gracefully", async () => {
@@ -1239,6 +1244,54 @@ describe("Lifecycle Service", () => {
       expect(result.processed).toBe(0)
       expect(result.errors).toHaveLength(1)
       expect(result.errors[0]).toContain("Connection failed")
+    })
+  })
+
+  describe("reconcilePendingTeamsForClosedHackathons", () => {
+    it("retries closeout for each closed event with a waiting team", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "teams") {
+          return createChainableMock({
+            data: [
+              { hackathon_id: "h1" },
+              { hackathon_id: "h1" },
+              { hackathon_id: "h2" },
+            ],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+      mockDenyPendingTeamsForClosedHackathon
+        .mockResolvedValueOnce({ denied: 2, failed: [] })
+        .mockResolvedValueOnce({
+          denied: 0,
+          failed: [{ teamId: "team-3", code: "failed" }],
+        })
+
+      const result = await reconcilePendingTeamsForClosedHackathons()
+
+      expect(result).toEqual({
+        events: 2,
+        denied: 2,
+        failed: 1,
+        errors: ["h2: team-3:failed"],
+      })
+      expect(mockDenyPendingTeamsForClosedHackathon).toHaveBeenCalledTimes(2)
+    })
+
+    it("reports the closed-team queue read failure", async () => {
+      setMockFromImplementation(() => createChainableMock({
+        data: null,
+        error: { message: "queue unavailable" },
+      }))
+
+      expect(await reconcilePendingTeamsForClosedHackathons()).toEqual({
+        events: 0,
+        denied: 0,
+        failed: 0,
+        errors: ["queue unavailable"],
+      })
     })
   })
 })

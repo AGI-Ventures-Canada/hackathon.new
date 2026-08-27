@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -25,6 +25,9 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { parseAddress, formatAddress } from "@/lib/utils/address"
 import { Package, Check, Clock, Mail, Eye, EyeOff } from "lucide-react"
 import type { PrizeFulfillmentStatus } from "@/lib/db/hackathon-types"
+import { useWebMcpTools } from "@/hooks/use-webmcp-tools"
+import { assertOk } from "@/lib/utils/fetch"
+import { createSponsorFulfillmentTools } from "@/lib/webmcp/sponsor-tools"
 
 type SponsorFulfillment = {
   fulfillmentId: string
@@ -60,44 +63,66 @@ export function SponsorFulfillmentView({
   const [fulfillDialogOpen, setFulfillDialogOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [trackingNumber, setTrackingNumber] = useState("")
-  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [revealedPayments, setRevealedPayments] = useState<Set<string>>(new Set())
+  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set())
 
-  function openFulfillDialog(id: string) {
+  const openFulfillDialog = useCallback((id: string, preparedTracking = "") => {
     setSelectedId(id)
-    setTrackingNumber("")
+    setTrackingNumber(preparedTracking)
     setError(null)
     setFulfillDialogOpen(true)
-  }
+  }, [])
+
+  const webMcpTools = useMemo(
+    () => createSponsorFulfillmentTools({
+      getFulfillments: () => fulfillments.map((fulfillment) => ({
+        id: fulfillment.fulfillmentId,
+        prizeName: fulfillment.prizeName,
+        prizeValue: fulfillment.prizeValue,
+        submissionTitle: fulfillment.submissionTitle,
+        teamName: fulfillment.teamName,
+        status: fulfillment.status,
+      })),
+      onPrepare: openFulfillDialog,
+    }),
+    [fulfillments, openFulfillDialog],
+  )
+  useWebMcpTools(webMcpTools)
 
   async function handleMarkFulfilled() {
-    if (!selectedId) return
-    setLoading(true)
+    if (!selectedId || pendingIds.has(selectedId)) return
+    const fulfillmentId = selectedId
+    const nextTrackingNumber = trackingNumber.trim() || null
+    const previous = fulfillments.find((item) => item.fulfillmentId === fulfillmentId)
+    if (!previous || previous.status !== "claimed") return
+
+    setPendingIds((current) => new Set(current).add(fulfillmentId))
+    setFulfillments((current) => current.map((item) =>
+      item.fulfillmentId === fulfillmentId
+        ? { ...item, status: "shipped", trackingNumber: nextTrackingNumber }
+        : item
+    ))
+    setFulfillDialogOpen(false)
+    setError(null)
 
     try {
-      const res = await fetch(`/api/dashboard/hackathons/${hackathonId}/sponsor-fulfillments/${selectedId}`, {
+      await fetch(`/api/dashboard/hackathons/${hackathonId}/sponsor-fulfillments/${fulfillmentId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ trackingNumber: trackingNumber.trim() || undefined }),
-      })
-
-      if (res.ok) {
-        setFulfillments((prev) =>
-          prev.map((f) =>
-            f.fulfillmentId === selectedId
-              ? { ...f, status: "shipped" as PrizeFulfillmentStatus, trackingNumber: trackingNumber.trim() || null }
-              : f
-          )
-        )
-        setFulfillDialogOpen(false)
-      } else {
-        setError("Failed to mark as fulfilled. Please try again.")
-      }
+        body: JSON.stringify({ trackingNumber: nextTrackingNumber ?? undefined }),
+      }).then(assertOk)
     } catch {
-      setError("Something went wrong. Please try again.")
+      setFulfillments((current) => current.map((item) =>
+        item.fulfillmentId === fulfillmentId ? previous : item
+      ))
+      setError("We couldn't mark that prize fulfilled. Try again.")
     } finally {
-      setLoading(false)
+      setPendingIds((current) => {
+        const next = new Set(current)
+        next.delete(fulfillmentId)
+        return next
+      })
     }
   }
 
@@ -115,6 +140,11 @@ export function SponsorFulfillmentView({
 
   return (
     <div className="space-y-6">
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <span>{claimedCount}/{totalCount} claimed</span>
@@ -206,6 +236,7 @@ export function SponsorFulfillmentView({
                         variant="outline"
                         size="sm"
                         onClick={() => openFulfillDialog(f.fulfillmentId)}
+                        disabled={pendingIds.has(f.fulfillmentId)}
                       >
                         Mark Fulfilled
                       </Button>
@@ -243,18 +274,13 @@ export function SponsorFulfillmentView({
                 data-form-type="other"
               />
             </div>
-            {error && (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setFulfillDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleMarkFulfilled} disabled={loading}>
-              {loading ? "Updating..." : "Confirm Fulfilled"}
+            <Button onClick={handleMarkFulfilled}>
+              Confirm Fulfilled
             </Button>
           </DialogFooter>
         </DialogContent>
