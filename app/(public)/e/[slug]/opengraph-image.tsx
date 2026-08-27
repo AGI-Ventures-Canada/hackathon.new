@@ -1,7 +1,6 @@
 import { ImageResponse } from "next/og"
 import { getPublicHackathon } from "@/lib/services/public-hackathons"
 
-export const runtime = "edge"
 export const alt = "Hackathon"
 export const size = { width: 1200, height: 630 }
 export const contentType = "image/png"
@@ -90,6 +89,7 @@ export default async function Image({ params }: Props) {
         >
           <div
             style={{
+              display: "flex",
               fontSize: 24,
               color: "#888",
               marginBottom: 16,
