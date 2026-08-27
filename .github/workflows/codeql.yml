@@ -27,3 +27,5 @@ jobs:
           languages: javascript-typescript
       - name: Analyze
         uses: github/codeql-action/analyze@5ba2889ada762081db2c4f32a729827dce632c7b # v3
+        with:
+          upload: ${{ github.event.repository.visibility == 'public' && 'always' || 'never' }}
