@@ -1,6 +1,7 @@
 import type { OatmealClient } from "../../client.js"
 import { formatJson, formatSuccess, formatWarning } from "../../output.js"
 import type { JudgeAddResponse } from "../../types.js"
+import { formatQueueReason } from "../../notification-delivery.js"
 
 interface JudgesAddOptions {
   email?: string
@@ -59,12 +60,20 @@ export async function runJudgesAdd(
     }
 
     const message = response.queued
-      ? `Saved judge invitation for ${response.invitation.email} (sent when the event goes live)`
+      ? `Saved judge invitation for ${response.invitation.email}. ${formatQueueReason(response.queueReason)}`
       : `Sent judge invitation to ${response.invitation.email}`
     console.log(formatSuccess(message))
     return
   }
 
   const judge = response.participant
-  console.log(formatSuccess(`Added judge ${judge?.name ?? judge?.email ?? judge?.id ?? options.userId ?? options.email}`))
+  const judgeLabel = judge?.name ?? judge?.email ?? judge?.id ?? options.userId ?? options.email
+  if (response.delivery === "failed") {
+    console.log(formatWarning(`Added judge ${judgeLabel}, but email delivery could not be confirmed`))
+    return
+  }
+  const message = response.queued
+    ? `Added judge ${judgeLabel}. ${formatQueueReason(response.queueReason)}`
+    : `Added judge ${judgeLabel}`
+  console.log(formatSuccess(message))
 }

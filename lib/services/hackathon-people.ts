@@ -26,6 +26,7 @@ type TeamInvitationRow = {
   email: string
   created_at: string
   reminded_at: string | null
+  emailed_at: string | null
 }
 
 type JudgeInvitationRow = {
@@ -33,6 +34,11 @@ type JudgeInvitationRow = {
   email: string
   created_at: string
   reminded_at: string | null
+  emailed_at: string | null
+}
+
+type JudgePendingNotificationRow = {
+  participant_id: string
 }
 
 const PEOPLE_ROLES: PersonRole[] = ["participant", "judge", "mentor", "organizer"]
@@ -42,7 +48,7 @@ export async function listHackathonPeople(hackathonId: string): Promise<Person[]
 
   const client = getSupabase()
 
-  const [participantsRes, teamsRes, teamInvitesRes, judgeInvitesRes] = await Promise.all([
+  const [participantsRes, teamsRes, teamInvitesRes, judgeInvitesRes, judgeNotificationsRes] = await Promise.all([
     client
       .from("hackathon_participants")
       .select("id, clerk_user_id, role, team_id, registered_at")
@@ -54,25 +60,37 @@ export async function listHackathonPeople(hackathonId: string): Promise<Person[]
       .eq("hackathon_id", hackathonId),
     client
       .from("team_invitations")
-      .select("id, team_id, email, created_at, reminded_at")
+      .select("id, team_id, email, created_at, reminded_at, emailed_at")
       .eq("hackathon_id", hackathonId)
-      .eq("status", "pending"),
+      .eq("status", "pending")
+      .gt("expires_at", new Date().toISOString()),
     client
       .from("judge_invitations")
-      .select("id, email, created_at, reminded_at")
+      .select("id, email, created_at, reminded_at, emailed_at")
       .eq("hackathon_id", hackathonId)
-      .eq("status", "pending"),
+      .eq("status", "pending")
+      .gt("expires_at", new Date().toISOString()),
+    client
+      .from("judge_pending_notifications")
+      .select("participant_id")
+      .eq("hackathon_id", hackathonId)
+      .is("sent_at", null),
   ])
 
   if (participantsRes.error) console.error("Failed to load hackathon_participants:", participantsRes.error)
   if (teamsRes.error) console.error("Failed to load teams:", teamsRes.error)
   if (teamInvitesRes.error) console.error("Failed to load team_invitations:", teamInvitesRes.error)
   if (judgeInvitesRes.error) console.error("Failed to load judge_invitations:", judgeInvitesRes.error)
+  if (judgeNotificationsRes.error) console.error("Failed to load judge_pending_notifications:", judgeNotificationsRes.error)
 
   const participants = (participantsRes.data ?? []) as ParticipantRow[]
   const teams = (teamsRes.data ?? []) as TeamRow[]
   const teamInvites = (teamInvitesRes.data ?? []) as TeamInvitationRow[]
   const judgeInvites = (judgeInvitesRes.data ?? []) as JudgeInvitationRow[]
+  const queuedJudgeParticipantIds = new Set(
+    ((judgeNotificationsRes.data ?? []) as JudgePendingNotificationRow[])
+      .map((notification) => notification.participant_id),
+  )
 
   const teamById: Record<string, TeamRow> = {}
   for (const t of teams) teamById[t.id] = t
@@ -97,6 +115,8 @@ export async function listHackathonPeople(hackathonId: string): Promise<Person[]
       isCaptain: team !== null && team.captain_clerk_user_id === p.clerk_user_id,
       joinedOrInvitedAt: p.registered_at,
       remindedAt: null,
+      emailedAt: null,
+      notificationQueued: queuedJudgeParticipantIds.has(p.id),
     }
   })
 
@@ -116,6 +136,8 @@ export async function listHackathonPeople(hackathonId: string): Promise<Person[]
       isCaptain: false,
       joinedOrInvitedAt: inv.created_at,
       remindedAt: inv.reminded_at,
+      emailedAt: inv.emailed_at,
+      notificationQueued: false,
     })
   }
 
@@ -132,6 +154,8 @@ export async function listHackathonPeople(hackathonId: string): Promise<Person[]
       isCaptain: false,
       joinedOrInvitedAt: inv.created_at,
       remindedAt: inv.reminded_at,
+      emailedAt: inv.emailed_at,
+      notificationQueued: false,
     })
   }
 

@@ -83,6 +83,38 @@ describe("createTeamWithMembers", () => {
   })
 
   describe("captain email is not in Clerk", () => {
+    it("rejects an expired draft instead of creating an invite that can never send", async () => {
+      mockClerkUserList([])
+      const teamsChain = createChainableMock({ data: { id: "team_1", name: "T" }, error: null })
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: {
+              name: "H",
+              slug: "h",
+              status: "draft",
+              starts_at: "2020-01-01T00:00:00.000Z",
+              ends_at: "2020-01-02T00:00:00.000Z",
+            },
+            error: null,
+          })
+        }
+        if (table === "teams") return teamsChain
+        return createChainableMock({ data: null, error: null })
+      })
+
+      await expect(createTeamWithMembers("h1", {
+        name: "T",
+        captainEmail: "new@example.com",
+        organizerClerkUserId: "organizer_1",
+      })).resolves.toEqual({
+        error: "Hackathon has ended",
+        code: "hackathon_ended",
+      })
+      expect(teamsChain.insert).not.toHaveBeenCalled()
+      expect(mockSendTeamInvitationEmail).not.toHaveBeenCalled()
+    })
+
     it("creates pending team but does NOT email when hackathon is draft", async () => {
       mockClerkUserList([])
       setMockFromImplementation(
@@ -104,6 +136,7 @@ describe("createTeamWithMembers", () => {
         expect(result.invited).toBe(true)
         expect(result.queued).toBe(true)
         expect(result.delivery).toBe("queued")
+        expect(result.queueReason).toBe("event_draft")
       }
       expect(mockSendTeamInvitationEmail).not.toHaveBeenCalled()
       expect(mockMarkTeamInvitationEmailed).not.toHaveBeenCalled()
@@ -187,6 +220,7 @@ describe("createTeamWithMembers", () => {
         expect(result.invited).toBe(true)
         expect(result.queued).toBe(true)
         expect(result.delivery).toBe("queued")
+        expect(result.queueReason).toBe("event_draft")
       }
       expect(mockSendTeamInvitationEmail).not.toHaveBeenCalled()
     })

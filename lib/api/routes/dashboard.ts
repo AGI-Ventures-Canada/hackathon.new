@@ -17,6 +17,7 @@ import { dashboardSponsorFulfillmentRoutes } from "./dashboard-sponsor-fulfillme
 import { dashboardPrizeTracksRoutes } from "./dashboard-prize-tracks"
 import { getEffectiveStatus } from "@/lib/utils/timeline"
 import { getNotificationDisposition, getNotificationLifecycleError } from "@/lib/utils/notification-lifecycle"
+import { getQueueReason } from "@/lib/utils/notification-delivery"
 import { getRequestIdempotencyFingerprint } from "@/lib/utils/request-idempotency"
 import { normalizeLocale } from "@/lib/utils/language"
 import type { UserPrincipal } from "@/lib/auth/types"
@@ -3063,7 +3064,13 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
             : "team_invitation.delivery_failed",
         resourceType: "team_invitation",
         resourceId: result.invitation.id,
-        metadata: { teamId: params.teamId, email: body.email, queued: delivery === "queued", delivery },
+        metadata: {
+          teamId: params.teamId,
+          email: body.email,
+          queued: delivery === "queued",
+          delivery,
+          queueReason: getQueueReason(delivery),
+        },
       })
 
       return {
@@ -3072,6 +3079,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         expiresAt: result.invitation.expires_at,
         queued: delivery === "queued",
         delivery,
+        queueReason: getQueueReason(delivery),
       }
     },
     {

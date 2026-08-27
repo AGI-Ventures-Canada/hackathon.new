@@ -58,7 +58,6 @@ import {
   Globe,
   GlobeLock,
   Loader2,
-  Clock,
   Mail,
   Layers,
   Vote,
@@ -78,6 +77,11 @@ import {
 import { useActionItemsOptional } from "@/components/hackathon/manage/action-items-context"
 import { AddJudgeDialog, type AddJudgeResult } from "./add-judge-dialog"
 import { AddPrizeDialog } from "./add-prize-dialog"
+import {
+  InvitationDeliveryBadge,
+  QueuedEmailNotice,
+} from "@/components/hackathon/email-delivery-status"
+import { getInvitationDeliveryState } from "@/lib/utils/notification-delivery"
 import { EditPrizeDialog, type EditablePrize, type UpdatedPrize } from "./edit-prize-dialog"
 import { CoreCriteriaEditor } from "./core-criteria-editor"
 import { Switch } from "@/components/ui/switch"
@@ -145,6 +149,7 @@ type JudgeData = {
   email: string | null
   imageUrl: string | null
   prizeIds: string[]
+  notificationQueued?: boolean
 }
 
 type InvitationData = {
@@ -153,6 +158,7 @@ type InvitationData = {
   status: string
   createdAt: string
   remindedAt: string | null
+  emailedAt?: string | null
   token: string | null
 }
 
@@ -181,6 +187,8 @@ interface JudgingTabClientProps {
   submissions: Array<{ id: string; title: string }>
   isPublished: boolean
   locationType: "in_person" | "virtual" | "hybrid" | null
+  hackathonStatus?: string | null
+  notificationDisposition?: "queue" | "send" | "reject"
   activeJtab: ManageJtab
   coreCriteria?: { id: string; name: string; description: string | null; weight: number; minScore: number; maxScore: number; displayOrder: number }[]
   weightedAssignmentSummary?: {
@@ -235,6 +243,8 @@ export function JudgingTabClient({
   submissions: _submissions,
   isPublished: initialIsPublished,
   locationType,
+  hackathonStatus = null,
+  notificationDisposition,
   activeJtab,
   coreCriteria = [],
   weightedAssignmentSummary,
@@ -511,6 +521,8 @@ export function JudgingTabClient({
             judges={judges}
             invitations={invitations}
             hackathonId={hackathonId}
+            hackathonStatus={hackathonStatus}
+            notificationDisposition={notificationDisposition}
             onAddJudge={() => setShowAddJudge(true)}
             onRemoveJudge={handleRemoveJudge}
             onCancelInvitation={handleCancelInvitation}
@@ -647,6 +659,7 @@ export function JudgingTabClient({
               email: result.email,
               imageUrl: result.imageUrl,
               prizeIds: [],
+              notificationQueued: result.delivery === "queued",
             })
           } else {
             invitationsList.addPendingItem({
@@ -655,6 +668,7 @@ export function JudgingTabClient({
               status: "pending",
               createdAt: new Date().toISOString(),
               remindedAt: null,
+              emailedAt: result.delivery === "sent" ? new Date().toISOString() : null,
               token: result.token,
             })
           }
@@ -690,6 +704,8 @@ export function JudgesSection({
   judges,
   invitations,
   hackathonId: _hackathonId,
+  hackathonStatus = null,
+  notificationDisposition,
   onAddJudge,
   onRemoveJudge,
   onCancelInvitation,
@@ -698,6 +714,8 @@ export function JudgesSection({
   judges: JudgeData[]
   invitations: InvitationData[]
   hackathonId: string
+  hackathonStatus?: string | null
+  notificationDisposition?: "queue" | "send" | "reject"
   onAddJudge: () => void
   onRemoveJudge: (id: string) => void
   onCancelInvitation: (id: string) => void
@@ -706,6 +724,24 @@ export function JudgesSection({
   const isClient = useIsClient()
   const origin = isClient ? window.location.origin : ""
   const totalCount = judges.length + invitations.length
+  const invitationEmailedAt = (invitation: InvitationData) =>
+    invitation.emailedAt === undefined ? invitation.createdAt : invitation.emailedAt
+  const queuedInvitationCount = invitations.filter(
+    (invitation) => getInvitationDeliveryState({
+      emailedAt: invitationEmailedAt(invitation),
+      hackathonStatus,
+      notificationDisposition,
+    }) === "queued",
+  ).length
+  const pendingNotificationState = getInvitationDeliveryState({
+    emailedAt: null,
+    hackathonStatus,
+    notificationDisposition,
+  })
+  const queuedNotificationCount = judges.filter(
+    (judge) => judge.notificationQueued && pendingNotificationState === "queued",
+  ).length
+  const queuedCount = queuedInvitationCount + queuedNotificationCount
   const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null)
 
   const handleCopyInvite = async (id: string, link: string) => {
@@ -731,7 +767,9 @@ export function JudgesSection({
       .slice(0, 2)
 
   return (
-    <Card>
+    <div className="space-y-4">
+      <QueuedEmailNotice count={queuedCount} />
+      <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <Users className="size-4" />
@@ -785,7 +823,18 @@ export function JudgesSection({
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="secondary">Active</Badge>
+                      <div className="flex flex-wrap gap-1">
+                        <Badge variant="secondary">Active</Badge>
+                        {judge.notificationQueued && (
+                          <InvitationDeliveryBadge
+                            emailedAt={null}
+                            remindedAt={null}
+                            hackathonStatus={hackathonStatus}
+                            notificationDisposition={notificationDisposition}
+                            state={pendingNotificationState}
+                          />
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       {judge.prizeIds.length > 0 ? (
@@ -835,17 +884,12 @@ export function JudgesSection({
                       </div>
                     </TableCell>
                     <TableCell>
-                      {inv.remindedAt ? (
-                        <Badge variant="secondary">
-                          <Bell className="mr-1 size-3" />
-                          Reminded
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline">
-                          <Clock className="mr-1 size-3" />
-                          Invited
-                        </Badge>
-                      )}
+                      <InvitationDeliveryBadge
+                        emailedAt={invitationEmailedAt(inv)}
+                        remindedAt={inv.remindedAt}
+                        hackathonStatus={hackathonStatus}
+                        notificationDisposition={notificationDisposition}
+                      />
                     </TableCell>
                     <TableCell>
                       <span className="text-sm text-muted-foreground">—</span>
@@ -894,9 +938,12 @@ export function JudgesSection({
                               </DropdownMenuItem>
                             </>
                           )}
-                          <DropdownMenuItem onClick={() => onRemindInvitation(inv.id)}>
+                          <DropdownMenuItem
+                            disabled={notificationDisposition !== undefined && notificationDisposition !== "send"}
+                            onClick={() => onRemindInvitation(inv.id)}
+                          >
                             <Bell className="mr-2 size-4" />
-                            Send reminder
+                            {invitationEmailedAt(inv) ? "Send reminder" : "Send now"}
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             className="text-destructive"
@@ -915,7 +962,8 @@ export function JudgesSection({
           </div>
         )}
       </CardContent>
-    </Card>
+      </Card>
+    </div>
   )
 }
 

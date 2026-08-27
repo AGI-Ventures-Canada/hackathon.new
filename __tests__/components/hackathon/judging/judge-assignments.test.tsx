@@ -43,6 +43,8 @@ describe("JudgeAssignments invitation delivery", () => {
       Response.json({
         invitation: { id: "invite-queued" },
         queued: true,
+        delivery: "queued",
+        queueReason: "event_draft",
       }),
     )
     renderAssignments()
@@ -51,7 +53,7 @@ describe("JudgeAssignments invitation delivery", () => {
 
     expect(
       await screen.findByText(
-        "Invite saved for queued@example.com. It'll send when the event goes live.",
+        "Invite saved for queued@example.com. This event is still a draft. We'll send it when you go live.",
       ),
     ).toBeDefined()
     expect(fetcher).toHaveBeenCalledTimes(1)

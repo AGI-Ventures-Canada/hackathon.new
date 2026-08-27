@@ -304,7 +304,12 @@ export function JudgeAssignments({
         },
       ])
       const deliveryFailed = data.delivery === "failed"
-      const message = getJudgeAddedMessage(displayName, data.queued === true, deliveryFailed)
+      const message = getJudgeAddedMessage(
+        displayName,
+        data.queued === true,
+        deliveryFailed,
+        data.queueReason,
+      )
       if (deliveryFailed) setAddJudgeError(message)
       else setAddJudgeSuccess(message)
       setSearchQuery("")
@@ -351,7 +356,12 @@ export function JudgeAssignments({
           ...prev,
         ])
         const deliveryFailed = data.delivery === "failed"
-        const message = getJudgeInvitationMessage(email, data.queued === true, deliveryFailed)
+        const message = getJudgeInvitationMessage(
+          email,
+          data.queued === true,
+          deliveryFailed,
+          data.queueReason,
+        )
         if (deliveryFailed) {
           setAddJudgeError(message)
         } else {
@@ -371,7 +381,12 @@ export function JudgeAssignments({
           },
         ])
         const deliveryFailed = data.delivery === "failed"
-        const message = getJudgeAddedMessage(email, data.queued === true, deliveryFailed)
+        const message = getJudgeAddedMessage(
+          email,
+          data.queued === true,
+          deliveryFailed,
+          data.queueReason,
+        )
         if (deliveryFailed) setAddJudgeError(message)
         else setAddJudgeSuccess(message)
       }

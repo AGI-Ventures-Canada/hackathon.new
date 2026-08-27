@@ -12,6 +12,8 @@ export type Person = {
   isCaptain: boolean
   joinedOrInvitedAt: string
   remindedAt: string | null
+  emailedAt: string | null
+  notificationQueued: boolean
 }
 
 export const ROLE_LABEL: Record<PersonRole, string> = {

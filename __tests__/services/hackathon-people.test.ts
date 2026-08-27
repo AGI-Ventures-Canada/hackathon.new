@@ -31,6 +31,7 @@ type Tables = {
   teams?: unknown[]
   team_invitations?: unknown[]
   judge_invitations?: unknown[]
+  judge_pending_notifications?: unknown[]
 }
 
 function mockTables(tables: Tables) {
@@ -115,15 +116,15 @@ describe("listHackathonPeople", () => {
     expect(judgeInv.teamName).toBeNull()
   })
 
-  it("plumbs reminded_at through onto pending team and judge invitations", async () => {
+  it("plumbs email delivery timestamps through pending team and judge invitations", async () => {
     mockTables({
       team_invitations: [
-        { id: "ti1", team_id: "team_x", email: "team-invitee@example.com", created_at: "2026-05-05T00:00:00Z", reminded_at: "2026-05-06T12:00:00Z" },
-        { id: "ti2", team_id: "team_x", email: "team-fresh@example.com", created_at: "2026-05-05T00:00:00Z", reminded_at: null },
+        { id: "ti1", team_id: "team_x", email: "team-invitee@example.com", created_at: "2026-05-05T00:00:00Z", emailed_at: "2026-05-05T00:05:00Z", reminded_at: "2026-05-06T12:00:00Z" },
+        { id: "ti2", team_id: "team_x", email: "team-fresh@example.com", created_at: "2026-05-05T00:00:00Z", emailed_at: null, reminded_at: null },
       ],
       judge_invitations: [
-        { id: "ji1", email: "judge-invitee@example.com", created_at: "2026-05-06T00:00:00Z", reminded_at: "2026-05-07T09:30:00Z" },
-        { id: "ji2", email: "judge-fresh@example.com", created_at: "2026-05-06T00:00:00Z", reminded_at: null },
+        { id: "ji1", email: "judge-invitee@example.com", created_at: "2026-05-06T00:00:00Z", emailed_at: "2026-05-06T00:05:00Z", reminded_at: "2026-05-07T09:30:00Z" },
+        { id: "ji2", email: "judge-fresh@example.com", created_at: "2026-05-06T00:00:00Z", emailed_at: null, reminded_at: null },
       ],
       teams: [{ id: "team_x", name: "Rocket", captain_clerk_user_id: null }],
     })
@@ -131,17 +132,20 @@ describe("listHackathonPeople", () => {
     const result = await listHackathonPeople(HACKATHON_ID)
 
     const reminded = result.find((p) => p.email === "team-invitee@example.com")!
+    expect(reminded.emailedAt).toBe("2026-05-05T00:05:00Z")
     expect(reminded.remindedAt).toBe("2026-05-06T12:00:00Z")
     const fresh = result.find((p) => p.email === "team-fresh@example.com")!
+    expect(fresh.emailedAt).toBeNull()
     expect(fresh.remindedAt).toBeNull()
 
     const judgeReminded = result.find((p) => p.email === "judge-invitee@example.com")!
+    expect(judgeReminded.emailedAt).toBe("2026-05-06T00:05:00Z")
     expect(judgeReminded.remindedAt).toBe("2026-05-07T09:30:00Z")
     const judgeFresh = result.find((p) => p.email === "judge-fresh@example.com")!
     expect(judgeFresh.remindedAt).toBeNull()
   })
 
-  it("sets remindedAt to null on accepted participants", async () => {
+  it("sets delivery timestamps to null on accepted participants", async () => {
     mockTables({
       hackathon_participants: [
         { id: "p1", clerk_user_id: "user_a", role: "participant", team_id: null, registered_at: "2026-05-01T00:00:00Z" },
@@ -152,7 +156,25 @@ describe("listHackathonPeople", () => {
     ]
 
     const result = await listHackathonPeople(HACKATHON_ID)
+    expect(result[0].emailedAt).toBeNull()
     expect(result[0].remindedAt).toBeNull()
+  })
+
+  it("marks an accepted judge when their added email is still queued", async () => {
+    mockTables({
+      hackathon_participants: [
+        { id: "p1", clerk_user_id: "user_judge", role: "judge", team_id: null, registered_at: "2026-05-01T00:00:00Z" },
+      ],
+      judge_pending_notifications: [
+        { participant_id: "p1" },
+      ],
+    })
+    nextUsers = [
+      { id: "user_judge", firstName: "Jamie", lastName: null, username: null, emailAddresses: [{ emailAddress: "judge@example.com" }] },
+    ]
+
+    const result = await listHackathonPeople(HACKATHON_ID)
+    expect(result[0].notificationQueued).toBe(true)
   })
 
   it("dedupes a pending invite when the email is already an accepted participant", async () => {
@@ -249,6 +271,8 @@ describe("peopleToCsvRows", () => {
         teamName: "Rocket",
         isCaptain: true,
         joinedOrInvitedAt: "2026-05-01T00:00:00Z",
+        emailedAt: null,
+        notificationQueued: false,
         remindedAt: null,
       },
       {
@@ -261,6 +285,8 @@ describe("peopleToCsvRows", () => {
         teamName: null,
         isCaptain: false,
         joinedOrInvitedAt: "2026-05-02T00:00:00Z",
+        emailedAt: null,
+        notificationQueued: false,
         remindedAt: null,
       },
     ])

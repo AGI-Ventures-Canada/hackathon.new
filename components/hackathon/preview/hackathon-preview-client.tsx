@@ -51,6 +51,11 @@ import { ChallengeSection } from "@/components/hackathon/challenge-section"
 import type { Perk } from "@/lib/services/perks"
 import { PerksSection } from "@/components/hackathon/perks-section"
 import {
+  InvitationDeliveryBadge,
+  QueuedEmailNotice,
+} from "@/components/hackathon/email-delivery-status"
+import { getInvitationDeliveryState } from "@/lib/utils/notification-delivery"
+import {
   formatPreviewScheduleTime,
   getPendingInvitationTiming,
 } from "./preview-date-formatting"
@@ -79,6 +84,7 @@ interface HackathonPreviewClientProps {
   onFormSave?: (data: Record<string, unknown>) => Promise<boolean>
   onBannerChange?: (imageUrl: string | null) => void | Promise<void>
   onAuthRequired?: () => void
+  notificationDisposition?: "queue" | "send" | "reject"
 }
 
 function HackathonPreviewContent({
@@ -104,6 +110,7 @@ function HackathonPreviewContent({
   onFormSave,
   onBannerChange,
   onAuthRequired,
+  notificationDisposition,
 }: Omit<HackathonPreviewClientProps, "isEditable">) {
   const { isEditable, editMode, activeSection, openSection, closeDrawer } = useEdit()
   const router = useRouter()
@@ -137,6 +144,14 @@ function HackathonPreviewContent({
   const [pendingJudges, setPendingJudges] = useState<HackathonJudgeDisplay[]>([])
   const [pendingPrizes, setPendingPrizes] = useState<PublicPrize[]>([])
   const [judgingDialogOpen, setJudgingDialogOpen] = useState(false)
+  const invitationHackathonStatus = hackathon.stored_status ?? hackathon.status
+  const queuedInvitationCount = teamInfo?.pendingInvitations.filter(
+    (invitation) => getInvitationDeliveryState({
+      emailedAt: invitation.emailedAt,
+      hackathonStatus: invitationHackathonStatus,
+      notificationDisposition,
+    }) === "queued",
+  ).length ?? 0
 
   const judgeDisplayKey = useCallback(
     (judge: Pick<HackathonJudgeDisplay, "name" | "headshot_url">) =>
@@ -327,6 +342,7 @@ function HackathonPreviewContent({
       )}
       {teamInfo && (
         <div className="space-y-1 pl-1">
+          <QueuedEmailNotice count={queuedInvitationCount} />
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-muted-foreground">
               {teamInfo.members.length} / {hackathon.max_team_size} members
@@ -379,6 +395,11 @@ function HackathonPreviewContent({
                 isClient,
                 nowIso,
               })
+              const deliveryState = getInvitationDeliveryState({
+                emailedAt: invitation.emailedAt,
+                hackathonStatus: invitationHackathonStatus,
+                notificationDisposition,
+              })
 
               return (
                 <Popover key={invitation.id}>
@@ -391,10 +412,12 @@ function HackathonPreviewContent({
                     <PopoverTrigger asChild>
                       <button className="flex items-center gap-2 min-w-0">
                         <span className="text-xs text-muted-foreground truncate">{invitation.email}</span>
-                        <Badge variant="outline" className="shrink-0">
-                          <Clock />
-                          Pending
-                        </Badge>
+                        <InvitationDeliveryBadge
+                          emailedAt={invitation.emailedAt}
+                          remindedAt={invitation.remindedAt}
+                          hackathonStatus={invitationHackathonStatus}
+                          notificationDisposition={notificationDisposition}
+                        />
                       </button>
                     </PopoverTrigger>
                     {teamInfo.isCaptain && (
@@ -417,7 +440,9 @@ function HackathonPreviewContent({
                             />
                           </>
                         )}
-                        {!invitationTiming.isExpired && !(invitation.remindedAt || remindedIds.has(invitation.id)) && (
+                        {(notificationDisposition === undefined
+                          ? deliveryState !== "queued"
+                          : notificationDisposition === "send") && !invitationTiming.isExpired && !(invitation.remindedAt || remindedIds.has(invitation.id)) && (
                           <Button
                             variant="ghost"
                             size="icon-xs"
@@ -450,7 +475,11 @@ function HackathonPreviewContent({
                       <div className="flex items-center gap-2 text-muted-foreground">
                         <Clock className="size-3.5 shrink-0" />
                         <span className="text-xs">
-                          {invitationTiming.sentLabel}
+                          {deliveryState === "queued"
+                            ? "Not sent yet — this event is a draft"
+                            : deliveryState === "not_sent"
+                              ? "This email wasn't sent"
+                              : invitationTiming.sentLabel}
                         </span>
                       </div>
                       <div className="flex items-center gap-2">

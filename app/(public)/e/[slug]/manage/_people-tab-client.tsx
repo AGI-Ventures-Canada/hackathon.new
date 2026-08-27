@@ -41,12 +41,18 @@ import {
 import { formatDate } from "@/lib/utils/format"
 import { assertOk } from "@/lib/utils/fetch"
 import { ROLE_LABEL, STATUS_LABEL, type Person, type PersonRole } from "@/lib/services/hackathon-people-types"
+import {
+  InvitationDeliveryBadge,
+  QueuedEmailNotice,
+} from "@/components/hackathon/email-delivery-status"
+import { getInvitationDeliveryState } from "@/lib/utils/notification-delivery"
 
 type PeopleTabClientProps = {
   hackathonId: string
   people: Person[]
   teams: { id: string; name: string }[]
   hackathonStatus: string | null
+  notificationDisposition: "queue" | "send" | "reject"
 }
 
 const emptySubscribe = () => () => {}
@@ -69,7 +75,7 @@ function parsePendingId(id: string): { kind: "team" | "judge"; invitationId: str
   return null
 }
 
-export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hackathonStatus }: PeopleTabClientProps) {
+export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hackathonStatus, notificationDisposition }: PeopleTabClientProps) {
   const router = useRouter()
   const list = useOptimisticList({ items: initialPeople, getId: (p) => p.id })
   const people = list.visibleItems
@@ -101,6 +107,20 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
 
   const acceptedCount = people.filter((p) => p.status === "accepted").length
   const pendingCount = people.length - acceptedCount
+  const pendingNotificationState = getInvitationDeliveryState({
+    emailedAt: null,
+    hackathonStatus,
+    notificationDisposition,
+  })
+  const queuedCount = people.filter((person) =>
+    (person.notificationQueued && pendingNotificationState === "queued") || (
+      person.status === "pending" && getInvitationDeliveryState({
+        emailedAt: person.emailedAt,
+        hackathonStatus,
+        notificationDisposition,
+      }) === "queued"
+    )
+  ).length
   const isLocked = hackathonStatus ? LOCKED_STATUSES.has(hackathonStatus) : false
 
   function showError(message: string) {
@@ -260,6 +280,7 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
           {[actionError, remindError].filter(Boolean).join(" · ")}
         </p>
       )}
+      <QueuedEmailNotice count={queuedCount} />
 
       {people.length === 0 ? (
         <div className="rounded-lg border border-dashed py-12 text-center text-sm text-muted-foreground">
@@ -289,7 +310,6 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
                 const isAccepted = p.status === "accepted"
                 const isPending = p.status === "pending"
                 const isTeamInvite = parsedPending?.kind === "team"
-                const isReminded = isPending && !!p.remindedAt
                 const canChangeAnyRole = ROLES.some(
                   (role) => role !== p.role && canChangePersonRole(hackathonStatus, p.role, role)
                 )
@@ -303,13 +323,26 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
                       <Badge variant="secondary">{ROLE_LABEL[p.role]}</Badge>
                     </TableCell>
                     <TableCell>
-                      {isReminded ? (
-                        <Badge variant="secondary">
-                          <Bell className="mr-1 size-3" />
-                          Reminded
-                        </Badge>
+                      {isPending ? (
+                        <InvitationDeliveryBadge
+                          emailedAt={p.emailedAt}
+                          remindedAt={p.remindedAt}
+                          hackathonStatus={hackathonStatus}
+                          notificationDisposition={notificationDisposition}
+                        />
                       ) : (
-                        <Badge variant={isAccepted ? "default" : "outline"}>{STATUS_LABEL[p.status]}</Badge>
+                        <div className="flex flex-wrap gap-1">
+                          <Badge variant="default">{STATUS_LABEL[p.status]}</Badge>
+                          {p.notificationQueued && (
+                            <InvitationDeliveryBadge
+                              emailedAt={null}
+                              remindedAt={null}
+                              hackathonStatus={hackathonStatus}
+                              notificationDisposition={notificationDisposition}
+                              state={pendingNotificationState}
+                            />
+                          )}
+                        </div>
                       )}
                     </TableCell>
                     <TableCell>
@@ -332,9 +365,13 @@ export function PeopleTabClient({ hackathonId, people: initialPeople, teams, hac
                             variant="ghost"
                             size="icon"
                             className="size-8"
-                            aria-label={`Send reminder to ${p.email ?? "invitee"}`}
-                            title="Send reminder"
-                            disabled={!!parsedPending && remindPendingIds.has(parsedPending.invitationId)}
+                            aria-label={`${p.emailedAt ? "Send reminder" : "Send invite"} to ${p.email ?? "invitee"}`}
+                            title={notificationDisposition === "queue"
+                              ? "This will send when you go live"
+                              : notificationDisposition === "reject"
+                                ? "This event has ended"
+                                : p.emailedAt ? "Send reminder" : "Send now"}
+                            disabled={notificationDisposition !== "send" || (!!parsedPending && remindPendingIds.has(parsedPending.invitationId))}
                             onClick={() => handleRemind(p)}
                           >
                             <Bell className="size-4" />
