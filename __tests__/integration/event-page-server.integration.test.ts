@@ -101,6 +101,9 @@ mock.module("@/lib/services/tenants", () => ({
 const { canRegisterNow, default: EventPage, generateMetadata } = await import(
   "@/app/(public)/e/[slug]/page"
 )
+const { default: EventOpenGraphImage } = await import(
+  "@/app/(public)/e/[slug]/opengraph-image"
+)
 
 const baseHackathon = {
   id: "hackathon-1",
@@ -202,6 +205,20 @@ describe("public event server page", () => {
     await expect(generateMetadata(pageProps())).resolves.toEqual({
       title: "Hackathon Not Found",
     })
+  })
+
+  it("renders the published event social image", async () => {
+    mockGetPublicHackathon.mockResolvedValueOnce({
+      ...baseHackathon,
+      sponsors: [{ name: "Example Sponsor", tier: "gold" }],
+    })
+
+    const response = await EventOpenGraphImage({
+      params: Promise.resolve({ slug: "test-event" }),
+    })
+
+    expect(response.headers.get("content-type")).toBe("image/png")
+    expect((await response.arrayBuffer()).byteLength).toBeGreaterThan(1_000)
   })
 
   it("renders a privacy-safe signed-out event guide", async () => {

@@ -1,7 +1,6 @@
 import { ImageResponse } from "next/og"
 import { getPublicTenantBySlug } from "@/lib/services/tenant-profiles"
 
-export const runtime = "edge"
 export const alt = "Organization"
 export const size = { width: 1200, height: 630 }
 export const contentType = "image/png"
