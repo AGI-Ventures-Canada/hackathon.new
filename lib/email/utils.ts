@@ -1,4 +1,5 @@
 import { render } from "@react-email/components"
+import { toPlainText } from "@react-email/render"
 
 export function buildEventUrl(slug: string, path?: string): string
 export function buildEventUrl(slug?: string, path?: string): string | undefined
@@ -47,43 +48,9 @@ export function buildMailtoUnsubscribeHeaders(): Record<string, string> | undefi
   }
 }
 
-function codePointOr(original: string, code: number): string {
-  if (!Number.isInteger(code) || code < 0 || code > 0x10ffff) return original
-  try {
-    return String.fromCodePoint(code)
-  } catch {
-    return original
-  }
-}
-
-function decodeHtmlEntities(text: string): string {
-  const named: Record<string, string> = {
-    "&nbsp;": " ",
-    "&amp;": "&",
-    "&lt;": "<",
-    "&gt;": ">",
-    "&quot;": '"',
-    "&apos;": "'",
-    "&mdash;": "—",
-    "&ndash;": "–",
-    "&hellip;": "…",
-  }
-  return text
-    .replace(/&#x([0-9a-f]+);/gi, (m, hex) => codePointOr(m, parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (m, dec) => codePointOr(m, Number(dec)))
-    .replace(/&[a-z]+;/gi, (m) => named[m.toLowerCase()] ?? m)
-}
-
 export function htmlToPlainText(html: string): string {
-  return decodeHtmlEntities(
-    html
-      .replace(/<!--[\s\S]*?-->/g, "")
-      .replace(/<style[\s\S]*?<\/style>/gi, "")
-      .replace(/<script[\s\S]*?<\/script>/gi, "")
-      .replace(/<\/(p|div|tr|h[1-6]|li)>/gi, "\n")
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<[^>]+>/g, "")
-  )
+  return toPlainText(html)
+    .replace(/\u00a0/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .replace(/[ \t]+/g, " ")
     .trim()

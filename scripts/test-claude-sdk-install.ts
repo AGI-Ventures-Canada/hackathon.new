@@ -37,7 +37,7 @@ async function main() {
       {
         name: "agent-runner",
         dependencies: {
-          "@anthropic-ai/claude-agent-sdk": "latest",
+          "@anthropic-ai/claude-agent-sdk": "0.3.247",
         },
       },
       null,

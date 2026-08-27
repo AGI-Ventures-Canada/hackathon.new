@@ -88,6 +88,25 @@ describe("extractEventPageData", () => {
       translationLinks: [],    })
   })
 
+  it("decodes each HTML entity only once", async () => {
+    mockFetch.mockResolvedValueOnce(new Response(`<!DOCTYPE html>
+      <html>
+        <head>
+          <script type="application/ld+json">
+            {
+              "@type": "Event",
+              "name": "Safe &amp;lt;script&amp;gt; title",
+              "startDate": "2026-06-08T09:00:00-04:00"
+            }
+          </script>
+        </head>
+      </html>`, { status: 200 }))
+
+    const result = await extractEventPageData("https://example.com/events/encoded")
+
+    expect(result?.name).toBe("Safe &lt;script&gt; title")
+  })
+
   it("blocks redirects to private services", async () => {
     mockFetch.mockResolvedValueOnce(new Response(null, {
       status: 302,
