@@ -28,6 +28,7 @@ mock.module("@/lib/services/announcements", () => ({
 }))
 
 const mockListScheduleItems = mock(() => Promise.resolve([]))
+const mockGetScheduleItemById = mock(() => Promise.resolve(null))
 const mockCreateScheduleItem = mock(() => Promise.resolve(null))
 const mockUpdateScheduleItem = mock(() => Promise.resolve(null))
 const mockDeleteScheduleItem = mock(() => Promise.resolve(false))
@@ -35,6 +36,7 @@ const mockGetTriggerItem = mock(() => Promise.resolve(null))
 
 mock.module("@/lib/services/schedule-items", () => ({
   listScheduleItems: mockListScheduleItems,
+  getScheduleItemById: mockGetScheduleItemById,
   createScheduleItem: mockCreateScheduleItem,
   updateScheduleItem: mockUpdateScheduleItem,
   deleteScheduleItem: mockDeleteScheduleItem,
@@ -203,6 +205,7 @@ describe("Dashboard Event Routes Integration Tests", () => {
     mockUnpublishAnnouncement.mockReset()
     mockScheduleAnnouncement.mockReset()
     mockListScheduleItems.mockReset()
+    mockGetScheduleItemById.mockReset()
     mockCreateScheduleItem.mockReset()
     mockUpdateScheduleItem.mockReset()
     mockDeleteScheduleItem.mockReset()
@@ -217,6 +220,7 @@ describe("Dashboard Event Routes Integration Tests", () => {
     mockListHackathonPeople.mockResolvedValue([])
     mockPeopleToCsvRows.mockImplementation((people: unknown) => people as Record<string, string>[])
     mockGetQueueStats.mockResolvedValue({ open: 0, claimed: 0, resolved: 0 })
+    mockGetScheduleItemById.mockResolvedValue(null)
 
     mockSetPhase.mockResolvedValue({ success: true })
     mockCreateChallenge.mockResolvedValue(null)
@@ -922,6 +926,40 @@ describe("Dashboard Event Routes Integration Tests", () => {
 
       expect(res.status).toBe(200)
       expect(mockCreateScheduleItem).toHaveBeenCalledTimes(1)
+    })
+
+    it("returns the original schedule item when WebMCP retries the same request", async () => {
+      const receiptId = "44444444-4444-4444-8444-444444444444"
+      const existing = {
+        id: receiptId,
+        hackathon_id: hackathonId,
+        title: "Lunch",
+        starts_at: "2026-09-10T19:00:00.000Z",
+      }
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      mockGetScheduleItemById.mockResolvedValue(existing)
+
+      const res = await app.handle(
+        new Request(`${baseUrl}/schedule`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-webmcp-request": "1",
+            "x-webmcp-expected-status": "draft",
+            "x-webmcp-event-version": "2026-08-25T15:00:00.000Z",
+            "x-webmcp-idempotency-key": receiptId,
+          },
+          body: JSON.stringify({
+            title: "Lunch",
+            startsAt: "2026-09-10T19:00:00.000Z",
+          }),
+        }),
+      )
+
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual(existing)
+      expect(mockGetScheduleItemById).toHaveBeenCalledWith(receiptId, hackathonId)
+      expect(mockCreateScheduleItem).not.toHaveBeenCalled()
     })
 
     it("rejects an expired WebMCP schedule write before creating it", async () => {

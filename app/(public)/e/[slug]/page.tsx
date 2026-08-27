@@ -17,7 +17,7 @@ import { HackathonPreviewClient } from "@/components/hackathon/preview/hackathon
 import { EventWebMcpTools } from "@/components/hackathon/event-webmcp-tools"
 import { AttendeeMentorWebMcp } from "@/components/hackathon/mentors/attendee-mentor-webmcp"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Eye, Clock } from "lucide-react"
+import { Eye, Clock, Handshake } from "lucide-react"
 import type { Metadata } from "next"
 import {
   applyHackathonTranslation,
@@ -82,6 +82,20 @@ export default async function EventPage({ params, searchParams }: PageProps) {
     orgId: orgId ?? null,
     userId: userId ?? null,
   })
+  let sponsorRelationship: { organizationName: string; tier: string } | null = null
+  if (!isOrganizer && orgId) {
+    const { getTenantByClerkOrgId } = await import("@/lib/services/tenants")
+    const viewerTenant = await getTenantByClerkOrgId(orgId)
+    const sponsor = viewerTenant
+      ? rawHackathon.sponsors.find((entry) => entry.sponsor_tenant_id === viewerTenant.id)
+      : null
+    if (sponsor) {
+      sponsorRelationship = {
+        organizationName: viewerTenant?.name ?? sponsor.name,
+        tier: sponsor.custom_tier_label ?? sponsor.tier,
+      }
+    }
+  }
 
   if (isOrganizer) {
     if (!isPublished) {
@@ -231,6 +245,8 @@ export default async function EventPage({ params, searchParams }: PageProps) {
   )
   const viewerNextStep = isOrganizer
     ? "Open the manage workspace to run this event."
+    : sponsorRelationship && !isRegistered
+      ? "Open Sponsoring to manage this event relationship."
     : !userId
     ? "Sign in to register. You can prepare a project draft first."
     : !isAttendee
@@ -278,9 +294,10 @@ export default async function EventPage({ params, searchParams }: PageProps) {
   const eventViewer = {
     signedIn: Boolean(userId),
     registered: isRegistered,
-    role: participantRole,
+    role: participantRole ?? (sponsorRelationship ? "sponsor" : null),
     participantCount,
     nextStep: viewerNextStep,
+    sponsor: sponsorRelationship,
     team: teamInfo ? {
       name: teamInfo.team.name,
       status: teamInfo.team.status,
@@ -312,17 +329,26 @@ export default async function EventPage({ params, searchParams }: PageProps) {
           </AlertDescription>
         </Alert>
       )}
+      {sponsorRelationship && (
+        <Alert className="rounded-none border-x-0 border-t-0">
+          <Handshake className="size-4" />
+          <AlertDescription>
+            You&apos;re viewing this event as {sponsorRelationship.organizationName}, a {sponsorRelationship.tier} sponsor.
+          </AlertDescription>
+        </Alert>
+      )}
 
       <EventWebMcpTools
         guide={eventGuide}
         viewer={eventViewer}
-        canRegisterViewer={!isOrganizer && !isRegistered}
+        canRegisterViewer={!isOrganizer && !isRegistered && !sponsorRelationship}
         registrationOpensAt={hackathon.registration_opens_at}
         isFormingCaptain={isFormingCaptain}
         registrationClosesAt={hackathon.registration_closes_at}
         allowLateRegistration={hackathon.allow_late_registration}
         atCapacity={atCapacity}
         isOrganizer={isOrganizer}
+        viewerUserId={userId}
       />
       <AttendeeMentorWebMcp
         slug={hackathon.slug}
@@ -353,6 +379,7 @@ export default async function EventPage({ params, searchParams }: PageProps) {
         currentUserId={userId}
         availableLocales={locales}
         currentLocale={currentLocale}
+        isSponsor={Boolean(sponsorRelationship && !isRegistered)}
       />
     </div>
   )

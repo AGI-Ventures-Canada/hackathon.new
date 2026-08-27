@@ -105,7 +105,8 @@ describe("MobileHeader", () => {
     it("renders the menu button and logo", () => {
       render(<MobileHeader />)
       const header = getHeader()
-      expect(within(header).getByText("Open menu")).toBeDefined()
+      expect(within(header).getByText("Open menu").closest("button")?.getAttribute("data-size"))
+        .toBe("icon-touch")
       expect(within(header).getByText("hackathon.new")).toBeDefined()
     })
 
@@ -126,6 +127,7 @@ describe("MobileHeader", () => {
       render(<MobileHeader />)
       const header = getHeader()
       const avatarButton = within(header).getByText("A").closest("button")!
+      expect(avatarButton.getAttribute("data-size")).toBe("icon-touch")
       fireEvent.click(avatarButton)
       expect(clerkState.openUserProfile).toHaveBeenCalled()
     })
@@ -148,7 +150,9 @@ describe("MobileHeader", () => {
     it("unlocks body scroll when closed", async () => {
       openMenu()
       const overlay = getOverlay()
-      fireEvent.click(within(overlay).getByText("Close menu"))
+      const closeButton = within(overlay).getByText("Close menu").closest("button")!
+      expect(closeButton.getAttribute("data-size")).toBe("icon-touch")
+      fireEvent.click(closeButton)
       await waitFor(() => {
         expect(document.body.style.overflow).toBe("")
       })

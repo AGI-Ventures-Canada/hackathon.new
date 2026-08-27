@@ -12,6 +12,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog"
 import {
   ArrowUpDown,
@@ -445,6 +446,7 @@ export function AddPrizeDialog({
           <DialogTitle>
             {step === "style" ? "How should judges pick the winner?" : "Prize details"}
           </DialogTitle>
+          <DialogDescription>Set up the prize and its judging rules.</DialogDescription>
         </DialogHeader>
         {step === "style" ? (
           <div className="space-y-2">

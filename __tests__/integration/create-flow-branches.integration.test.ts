@@ -108,6 +108,7 @@ mock.module("@clerk/nextjs", () => ({
     has: () => clerkAdmin,
     isLoaded: clerkLoaded,
     isSignedIn: clerkSignedIn,
+    orgId: clerkSignedIn ? "org-1" : null,
   }),
   useOrganization: () => ({
     isLoaded: clerkLoaded,

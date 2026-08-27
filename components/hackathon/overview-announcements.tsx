@@ -22,6 +22,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog"
 import { timeAgo, toLocalDatetime } from "@/lib/utils/datetime"
 import type { Announcement, AnnouncementAudience } from "@/lib/services/announcements"
@@ -178,6 +179,7 @@ export function OverviewAnnouncements({ slug, hackathonId, announcements }: Prop
         <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>New Announcement</DialogTitle>
+            <DialogDescription>Write an update for people at this event.</DialogDescription>
           </DialogHeader>
           <form autoComplete="off" onSubmit={(e) => { e.preventDefault(); handleSubmit() }} onKeyDown={handleKeyDown} className="space-y-4">
             <div>

@@ -9,6 +9,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog"
 import {
   Select,
@@ -121,6 +122,7 @@ export function TeamEditDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Edit team</DialogTitle>
+          <DialogDescription>Change this team&apos;s name and status.</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSave} onKeyDown={handleKeyDown} className="space-y-4" autoComplete="off">
           <div className="space-y-2">

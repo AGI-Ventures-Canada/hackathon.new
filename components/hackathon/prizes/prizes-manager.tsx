@@ -10,6 +10,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogTrigger,
 } from "@/components/ui/dialog"
 import {
@@ -268,6 +269,7 @@ export function PrizesManager({
           <DialogContent>
             <DialogHeader>
               <DialogTitle>{editingId ? "Edit Prize" : "Add Prize"}</DialogTitle>
+              <DialogDescription>Add the prize name, value, and winner rules.</DialogDescription>
             </DialogHeader>
             {success ? (
               <div className="flex flex-col items-center gap-3 py-8">

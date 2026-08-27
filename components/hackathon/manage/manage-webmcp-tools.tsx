@@ -29,7 +29,6 @@ type ManageHackathonWebMcpActions = {
     optimistic: ManageWebMcpOptimisticChange
     message: string
   }
-  navigate: string
   openTransition: string
 }
 
@@ -131,7 +130,39 @@ export function ManageHackathonWebMcpTools({
     },
     [rollbackManageWebMcpChange],
   )
-  const onNavigate = useCallback((href: string) => router.push(href), [router])
+  const onNavigate = useCallback((href: string, section: string) => {
+    router.push(href)
+    return new Promise<boolean>((resolve) => {
+      let settled = false
+      const finish = (opened: boolean) => {
+        if (settled) return
+        settled = true
+        observer.disconnect()
+        window.clearTimeout(timeout)
+        resolve(opened)
+      }
+      const findVisibleTarget = () => {
+        const target = document.querySelector<HTMLElement>(
+          `[data-webmcp-section="${section}"]`,
+        )
+        if (!target || target.closest('[data-state="inactive"]')) return false
+        target.scrollIntoView({ behavior: "smooth", block: "start" })
+        if (!target.hasAttribute("tabindex")) target.tabIndex = -1
+        target.focus({ preventScroll: true })
+        finish(true)
+        return true
+      }
+      const observer = new MutationObserver(findVisibleTarget)
+      const timeout = window.setTimeout(() => finish(false), 4_000)
+      if (findVisibleTarget()) return
+      observer.observe(document.body, {
+        attributes: true,
+        childList: true,
+        subtree: true,
+        attributeFilter: ["data-state"],
+      })
+    })
+  }, [router])
   const onOpenTransition = useCallback(
     (status: string) => triggerTransition(status),
     [triggerTransition],
@@ -145,7 +176,6 @@ export function ManageHackathonWebMcpTools({
         optimistic: onOptimistic,
         committed: onCommitted,
         reverted: onReverted,
-        navigate: onNavigate,
         openTransition: onOpenTransition,
       }),
   )
@@ -154,7 +184,6 @@ export function ManageHackathonWebMcpTools({
       optimistic: onOptimistic,
       committed: onCommitted,
       reverted: onReverted,
-      navigate: onNavigate,
       openTransition: onOpenTransition,
     })
   }, [
@@ -179,13 +208,13 @@ export function ManageHackathonWebMcpTools({
             actionRegistry.dispatch("committed", { optimistic, committed }),
           onReverted: (optimistic, message) =>
             actionRegistry.dispatch("reverted", { optimistic, message }),
-          onNavigate: (href) => actionRegistry.dispatch("navigate", href),
+          onNavigate,
           onOpenTransition: (status) =>
             actionRegistry.dispatch("openTransition", status),
         },
         registrationStatus,
       ),
-    [actionRegistry, registrationStatus],
+    [actionRegistry, onNavigate, registrationStatus],
   )
 
   useWebMcpTools(tools)

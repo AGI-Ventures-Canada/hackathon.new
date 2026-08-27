@@ -15,6 +15,23 @@ const eslintConfig = defineConfig([
           caughtErrorsIgnorePattern: "^_",
         },
       ],
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "resend",
+              message: "Use the shared Resend gateway in lib/email/resend.ts.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["lib/email/resend.ts"],
+    rules: {
+      "no-restricted-imports": "off",
     },
   },
   {
@@ -44,6 +61,7 @@ const eslintConfig = defineConfig([
     // Generated files
     "lib/**/*.d.ts",
     "lib/**/*.js",
+    "supabase/.temp/**",
     // Fumadocs generated source
     ".source/**",
     // Workflow DevKit generated routes

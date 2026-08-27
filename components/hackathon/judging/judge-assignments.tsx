@@ -58,7 +58,7 @@ import {
   ArrowUp,
   ArrowDown,
 } from "lucide-react"
-import { getJudgeInvitationMessage } from "@/lib/judge-invitation-message"
+import { getJudgeAddedMessage, getJudgeInvitationMessage } from "@/lib/judge-invitation-message"
 
 type SortColumn = "judge" | "submission" | "status" | "assigned"
 
@@ -303,7 +303,10 @@ export function JudgeAssignments({
           completedCount: 0,
         },
       ])
-      setAddJudgeSuccess(`${displayName} added as judge`)
+      const deliveryFailed = data.delivery === "failed"
+      const message = getJudgeAddedMessage(displayName, data.queued === true, deliveryFailed)
+      if (deliveryFailed) setAddJudgeError(message)
+      else setAddJudgeSuccess(message)
       setSearchQuery("")
       setSearchResults([])
       onMutation?.()
@@ -367,7 +370,10 @@ export function JudgeAssignments({
             completedCount: 0,
           },
         ])
-        setAddJudgeSuccess(`${email} added as judge`)
+        const deliveryFailed = data.delivery === "failed"
+        const message = getJudgeAddedMessage(email, data.queued === true, deliveryFailed)
+        if (deliveryFailed) setAddJudgeError(message)
+        else setAddJudgeSuccess(message)
       }
 
       setInviteEmail("")

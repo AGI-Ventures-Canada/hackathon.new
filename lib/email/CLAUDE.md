@@ -163,6 +163,8 @@ Clerk owns authentication and organization invitation state, but Oatmeal owns de
 3. Send a Clerk test event and confirm the endpoint returns `200`.
 4. Disable **Delivered by Clerk** for each email template that Resend should deliver.
 
+Production builds run `bun run check:production-email-delivery`. The check requires the Resend and Clerk webhook secrets, reads every Clerk email template, and stops the deployment if any template is still delivered by Clerk. Run it locally against the configured Clerk instance with `bun run check:production-email-delivery --force`.
+
 The webhook verifies Clerk's signature, ignores messages already delivered by Clerk, and forwards Clerk's rendered HTML, plain text, recipient, and subject through `sendEmail()`. The Clerk email ID is used as the Resend idempotency key so webhook retries do not create duplicate messages.
 
 Do not disable Clerk delivery before the webhook and signing secret are live. Clerk configures delivery per template, so repeat the test for every template you move to Resend.

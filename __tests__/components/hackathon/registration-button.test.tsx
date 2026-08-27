@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test"
-import { cleanup, render, screen } from "@testing-library/react"
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test"
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { renderToString } from "react-dom/server"
 import { resetComponentMocks, setClerkAuth, setPathname } from "../../lib/component-mocks"
 import { clerkState } from "../../lib/clerk-mock"
@@ -109,5 +109,25 @@ describe("RegistrationButton", () => {
         `/sign-in?redirect_url=${encodeURIComponent("/e/example")}`
       )
     })
+  })
+
+  it("shows a direct path to a pending team invite", async () => {
+    setClerkAuth({ isSignedIn: true })
+    const fetchMock = mock(() => Promise.resolve(Response.json({
+      error: "You have an invite to join Captain's Team.",
+      code: "pending_team_invitation",
+      inviteUrl: "/invite/invite-token",
+    }, { status: 409 })))
+    globalThis.fetch = fetchMock as typeof fetch
+
+    renderButton({
+      status: "registration_open",
+      registrationClosesAt: FUTURE_DATE,
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Register to Attend" }))
+
+    const link = await screen.findByRole("link", { name: "Open team invite" })
+    expect(link.getAttribute("href")).toBe("/invite/invite-token")
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
   })
 })

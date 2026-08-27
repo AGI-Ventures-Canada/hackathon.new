@@ -10,6 +10,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogTrigger,
 } from "@/components/ui/dialog"
 import {
@@ -273,6 +274,7 @@ export function CriteriaConfig({ hackathonId, judgingMode, initialCriteria }: Cr
               <DialogTitle>
                 {editingId ? "Edit Criterion" : "Add Criterion"}
               </DialogTitle>
+              <DialogDescription>Set what judges should look for.</DialogDescription>
             </DialogHeader>
             {success ? (
               <div className="flex flex-col items-center gap-3 py-8">

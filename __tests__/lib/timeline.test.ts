@@ -51,6 +51,15 @@ describe("getEffectiveStatus", () => {
     expect(getEffectiveStatus({ status: "archived", starts_at: "2026-01-01T00:00:00Z", ends_at: "2026-01-02T00:00:00Z" })).toBe("archived")
   })
 
+  it("returns completed unchanged even when the saved end date is still ahead", () => {
+    mockDate("2026-03-02T00:00:00Z")
+    expect(getEffectiveStatus({
+      status: "completed",
+      starts_at: "2026-03-01T00:00:00Z",
+      ends_at: "2026-03-05T00:00:00Z",
+    })).toBe("completed")
+  })
+
   it("returns active when published and starts_at has passed but not yet ended", () => {
     mockDate("2026-03-02T12:00:00Z")
     expect(getEffectiveStatus({
@@ -161,6 +170,16 @@ describe("getTimelineState", () => {
     it("returns Live for active status", () => {
       const result = getTimelineState({ status: "active" })
       expect(result).toEqual({ label: "Live", variant: "default" })
+    })
+
+    it("returns Completed when an active event has ended", () => {
+      mockDate("2026-03-10T00:00:00Z")
+      const result = getTimelineState({
+        status: "active",
+        starts_at: "2026-03-01T00:00:00Z",
+        ends_at: "2026-03-05T00:00:00Z",
+      })
+      expect(result).toEqual({ label: "Completed", variant: "outline" })
     })
 
     it("returns Draft for draft status", () => {

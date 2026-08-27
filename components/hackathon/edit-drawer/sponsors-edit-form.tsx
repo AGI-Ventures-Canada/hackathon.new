@@ -39,6 +39,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { SponsorLogoUpload } from "./sponsor-logo-upload";
@@ -160,6 +161,7 @@ function TierPicker({
           <div className="w-44 border-r flex flex-col">
             <DialogHeader className="px-4 pt-4 pb-3">
               <DialogTitle>Sponsor Tier</DialogTitle>
+              <DialogDescription>Pick how this sponsor appears on the event page.</DialogDescription>
             </DialogHeader>
             <div className="flex flex-col">
               {TIER_OPTIONS.map((tier) => {

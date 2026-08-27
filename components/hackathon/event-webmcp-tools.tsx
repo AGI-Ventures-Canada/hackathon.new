@@ -14,11 +14,15 @@ import { canRegisterNow } from "@/lib/utils/registration"
 import {
   createEventAttendeeTools,
   getProjectCapabilities,
+  getProjectDraftNextStep,
   type EventGuideContext,
   type EventViewerContext,
   type PreparedProjectDraft,
 } from "@/lib/webmcp/event-attendee-tools"
 import { WebMcpRequestError } from "@/lib/webmcp/fetch"
+import {
+  readProjectDraft,
+} from "@/lib/webmcp/project-draft-storage"
 
 type EventWebMcpToolsProps = {
   guide: EventGuideContext
@@ -30,6 +34,7 @@ type EventWebMcpToolsProps = {
   allowLateRegistration: boolean
   atCapacity: boolean
   isOrganizer: boolean
+  viewerUserId: string | null
 }
 
 function parseProjectDraft(raw: string | null): PreparedProjectDraft | null {
@@ -112,9 +117,9 @@ export function EventWebMcpTools({
   allowLateRegistration,
   atCapacity,
   isOrganizer,
+  viewerUserId,
 }: EventWebMcpToolsProps) {
   const [preparedProject, setPreparedProject] = useState<PreparedProjectDraft | null>(null)
-  const projectDraftKey = `oatmeal:submission-draft:${guide.slug}`
   const { effectiveStatus, nowIso } = useEventLifecycleClock({
     status: guide.status,
     startsAt: guide.startsAt,
@@ -168,8 +173,8 @@ export function EventWebMcpTools({
   }, [])
 
   const getProjectDraft = useCallback(() => {
-    return parseProjectDraft(localStorage.getItem(projectDraftKey))
-  }, [projectDraftKey])
+    return parseProjectDraft(readProjectDraft(localStorage, guide.slug, viewerUserId))
+  }, [guide.slug, viewerUserId])
 
   const prepareProject = useCallback((input: PreparedProjectDraft) => {
     const draft = normalizeProjectDraft(input)
@@ -179,15 +184,29 @@ export function EventWebMcpTools({
     }
     setPreparedProject(draft)
 
+    const nextStep = getProjectDraftNextStep({
+      signedIn: viewer.signedIn,
+      registered: viewer.registered,
+      role: viewer.role,
+      status: effectiveStatus,
+      teamStatus: viewer.team?.status ?? null,
+      canOpenProjectReview,
+    })
+
     return {
       openedReview: canOpenProjectReview,
-      nextStep: canOpenProjectReview
-        ? "Review every project field, then click Submit Project or Save Changes."
-        : viewer.signedIn
-          ? "Register and finish your team setup. Your draft is saved in this browser."
-          : "Sign in and register. Your draft is saved in this browser.",
+      nextStep,
     }
-  }, [canOpenProjectReview, viewer.signedIn])
+  }, [canOpenProjectReview, effectiveStatus, viewer])
+
+  const preparedProjectNextStep = getProjectDraftNextStep({
+    signedIn: viewer.signedIn,
+    registered: viewer.registered,
+    role: viewer.role,
+    status: effectiveStatus,
+    teamStatus: viewer.team?.status ?? null,
+    canOpenProjectReview,
+  })
 
   const tools = useMemo(() => createEventAttendeeTools({
     guide: effectiveGuide,
@@ -219,11 +238,7 @@ export function EventWebMcpTools({
       <Alert>
         <AlertTitle>Project draft ready</AlertTitle>
         <AlertDescription>
-          {canOpenProjectReview
-            ? "Check each field. You choose when to submit it."
-            : viewer.signedIn
-              ? "It’s saved in this browser. Register and finish your team setup when you’re ready."
-              : "It’s saved in this browser. Sign in and register when you’re ready."}
+          {preparedProjectNextStep}
         </AlertDescription>
       </Alert>
     </div>

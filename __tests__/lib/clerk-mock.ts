@@ -51,6 +51,7 @@ export const clerkMock = {
     isSignedIn: clerkState.isSignedIn,
     isLoaded: clerkState.isLoaded,
     userId: clerkState.userId,
+    orgId: clerkState.orgId ?? clerkState.organization?.id ?? null,
     getToken: clerkState.getToken,
     has: clerkState.has,
   }),

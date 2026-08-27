@@ -8,6 +8,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -574,6 +575,7 @@ export function CreateOrganizationDialog({
       >
         <DialogHeader>
           <DialogTitle>Create New Organization</DialogTitle>
+          <DialogDescription>Add the team that will run your events.</DialogDescription>
         </DialogHeader>
         <form
           onSubmit={handleSubmit}

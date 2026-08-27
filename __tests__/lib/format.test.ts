@@ -84,6 +84,20 @@ describe("formatDateRange", () => {
       ),
     ).toBe("Oct 25 – 27, 2026")
   })
+
+  it("does not render a backwards date range", () => {
+    expect(
+      formatDateRange(
+        "2026-04-18T00:00:00Z",
+        "2026-04-12T00:00:00Z",
+        "UTC",
+      ),
+    ).toBe("Apr 18, 2026 · Check end date")
+  })
+
+  it("falls back when the start date is invalid", () => {
+    expect(formatDateRange("not-a-date", null)).toBe("Dates TBD")
+  })
 })
 
 describe("sortByStartDate", () => {

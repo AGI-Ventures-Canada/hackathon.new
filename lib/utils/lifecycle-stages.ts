@@ -50,7 +50,7 @@ export function stageKeyForStatus(status: HackathonStatus): StageKey {
 export const TRANSITION_CONFIRMATIONS: Record<string, { title: string; description: string }> = {
   "draft→published": {
     title: "Publish hackathon?",
-    description: "Your hackathon will become visible and open for registration.",
+    description: "Your event will be visible. Registration will open, and queued invites will start sending.",
   },
   "published→active": {
     title: "Start hackathon?",

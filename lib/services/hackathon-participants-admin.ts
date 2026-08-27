@@ -248,7 +248,7 @@ export async function updateParticipantRole(
   }
 
   const updatePayload: Record<string, unknown> = { role }
-  if (leavingParticipantRole && role !== "judge") updatePayload.team_id = null
+  if (leavingParticipantRole) updatePayload.team_id = null
 
   const { error: updateErr } = await client
     .from("hackathon_participants")

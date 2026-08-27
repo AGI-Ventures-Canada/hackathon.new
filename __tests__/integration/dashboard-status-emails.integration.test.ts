@@ -278,6 +278,7 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - status change emails", 
 
     const res = await patchSettings({ status: "published" })
     expect(res.status).toBe(200)
+    expect(await res.clone().json()).toMatchObject({ notificationDispatch: "queued" })
 
     await Promise.resolve()
 
@@ -286,7 +287,7 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - status change emails", 
     expect(mockExecuteTransition).toHaveBeenCalledWith(
       expect.objectContaining({
         registrationOpensAt: expect.any(String),
-        registrationClosesAt: expect.any(String),
+        registrationClosesAt: undefined,
       }),
     )
     expect(mockSendPendingJudgeInvitationEmails).toHaveBeenCalledTimes(1)
@@ -298,6 +299,72 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - status change emails", 
     )
     expect(mockSendPendingTeamInvitationEmails).toHaveBeenCalledTimes(1)
     expect(mockSendPendingTeamInvitationEmails).toHaveBeenCalledWith("h1")
+  })
+
+  it("keeps organizer-set registration dates when publishing", async () => {
+    const registrationOpensAt = "2026-09-01T16:00:00.000Z"
+    const registrationClosesAt = "2026-09-12T00:00:00.000Z"
+    mockCheckHackathonOrganizer.mockResolvedValue({
+      status: "ok",
+      hackathon: {
+        ...mockHackathonResponse,
+        status: "draft",
+        registration_opens_at: registrationOpensAt,
+        registration_closes_at: registrationClosesAt,
+        starts_at: "2026-09-14T16:00:00.000Z",
+      },
+    })
+
+    const res = await patchSettings({ status: "published" })
+
+    expect(res.status).toBe(200)
+    expect(mockExecuteTransition).toHaveBeenCalledWith(
+      expect.objectContaining({ registrationOpensAt, registrationClosesAt }),
+    )
+  })
+
+  it("defaults registration close to the day before the event", async () => {
+    mockCheckHackathonOrganizer.mockResolvedValue({
+      status: "ok",
+      hackathon: {
+        ...mockHackathonResponse,
+        status: "draft",
+        registration_opens_at: null,
+        registration_closes_at: null,
+        starts_at: "2026-09-14T16:00:00.000Z",
+      },
+    })
+
+    const res = await patchSettings({ status: "published" })
+
+    expect(res.status).toBe(200)
+    expect(mockExecuteTransition).toHaveBeenCalledWith(
+      expect.objectContaining({
+        registrationOpensAt: expect.any(String),
+        registrationClosesAt: "2026-09-13T16:00:00.000Z",
+      }),
+    )
+  })
+
+  it("keeps the default registration window open when the event starts soon", async () => {
+    const startsAt = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+    mockCheckHackathonOrganizer.mockResolvedValue({
+      status: "ok",
+      hackathon: {
+        ...mockHackathonResponse,
+        status: "draft",
+        registration_opens_at: null,
+        registration_closes_at: null,
+        starts_at: startsAt,
+      },
+    })
+
+    const res = await patchSettings({ status: "published" })
+
+    expect(res.status).toBe(200)
+    expect(mockExecuteTransition).toHaveBeenCalledWith(
+      expect.objectContaining({ registrationClosesAt: startsAt }),
+    )
   })
 
   it("does not send pending invitation emails when status stays draft", async () => {

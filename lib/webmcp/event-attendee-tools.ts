@@ -2,6 +2,36 @@ import { z } from "zod"
 import { defineWebMcpTool } from "@/lib/webmcp/tool"
 import type { WebMcpTool } from "@/lib/webmcp/types"
 import type { HackathonStatus, TeamStatus } from "@/lib/db/hackathon-types"
+import { stageKeyForStatus } from "@/lib/utils/lifecycle-stages"
+
+export function getProjectDraftNextStep(input: {
+  signedIn: boolean
+  registered: boolean
+  role: string | null
+  status: HackathonStatus
+  teamStatus: TeamStatus | null
+  canOpenProjectReview: boolean
+}): string {
+  if (input.canOpenProjectReview) {
+    return "Review every project field, then click Submit Project or Save Changes."
+  }
+  if (!input.signedIn) {
+    return "Sign in and register. Your draft is saved in this browser."
+  }
+  if (!input.registered || input.role !== "participant") {
+    return "Register to attend. Your draft is saved in this browser."
+  }
+  if (input.teamStatus === "pending_approval") {
+    return "Your draft is saved. You can submit after your team is approved and the event starts."
+  }
+  if (input.teamStatus === "disbanded") {
+    return "Your draft is saved. Ask the organizer for help with your team before submitting."
+  }
+  if (input.status !== "active") {
+    return "Your draft is saved. You can submit when the event starts."
+  }
+  return "Your draft is saved. Finish your team setup before submitting."
+}
 
 export function getProjectCapabilities({
   status,
@@ -60,6 +90,10 @@ export type EventViewerContext = {
   role: string | null
   participantCount: number
   nextStep: string
+  sponsor: {
+    organizationName: string
+    tier: string
+  } | null
   team: {
     name: string
     status: TeamStatus
@@ -102,6 +136,10 @@ function summarizeViewer(viewer: EventViewerContext) {
     role: viewer.role,
     participantCount: viewer.participantCount,
     nextStep: snippet(viewer.nextStep, 160),
+    sponsor: viewer.sponsor ? {
+      organizationName: snippet(viewer.sponsor.organizationName, 100),
+      tier: snippet(viewer.sponsor.tier, 60),
+    } : null,
     team: viewer.team ? {
       name: snippet(viewer.team.name, 100),
       status: viewer.team.status,
@@ -150,7 +188,12 @@ function summarizeGuide(
       name: snippet(guide.name, 120),
       slug: snippet(guide.slug, 120),
       description: snippet(guide.description, 220),
-      status: guide.status,
+      status: stageKeyForStatus(guide.status),
+      registrationStatus: ["published", "registration_open", "active"].includes(
+        guide.status,
+      )
+        ? "open"
+        : "closed",
       startsAt: guide.startsAt,
       endsAt: guide.endsAt,
       locationType: guide.locationType,
@@ -304,6 +347,23 @@ export function createEventAttendeeTools(
       schema: z.object({}).strict(),
       annotations: { readOnlyHint: true, untrustedContentHint: true },
       execute: () => summarizeViewer(actions.viewer).team,
+    }))
+  }
+
+  if (actions.viewer.sponsor) {
+    tools.push(defineWebMcpTool({
+      name: "get_my_sponsorship",
+      title: "Read my sponsorship",
+      description:
+        "Read the active organization's sponsor relationship shown on this event page.",
+      schema: z.object({}).strict(),
+      annotations: { readOnlyHint: true, untrustedContentHint: true },
+      execute: () => ({
+        event: actions.guide.name,
+        organization: actions.viewer.sponsor?.organizationName,
+        tier: actions.viewer.sponsor?.tier,
+        nextStep: actions.viewer.nextStep,
+      }),
     }))
   }
 

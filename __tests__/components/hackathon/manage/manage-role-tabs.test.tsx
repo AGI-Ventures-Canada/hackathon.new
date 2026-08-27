@@ -109,6 +109,7 @@ mock.module("@/components/ui/dialog", () => ({
   DialogContent: TestDialogContent,
   DialogHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
+  DialogDescription: ({ children }: { children: ReactNode }) => <p>{children}</p>,
 }))
 
 const registerTabAction = mock(() => {})

@@ -30,6 +30,7 @@ import {
 } from "@/lib/utils/submission-screenshots"
 import type { Json } from "@/lib/db/types"
 import { pendingTeamApprovalResponse } from "@/lib/api/responses"
+import { getVerifiedUserEmails } from "@/lib/auth/verified-emails"
 import {
   publicSubmitterName,
   publicTeamName,
@@ -315,15 +316,12 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
-    if (expectedTermsHash) {
-      const termsFailure = await persistRequiredTermsAcceptance(hackathon.id, userId, expectedTermsHash)
-      if (termsFailure) return termsFailure
-    }
-
     let teamName: string | undefined
+    let userEmails: string[]
     try {
       const client = await clerkClient()
       const user = await client.users.getUser(userId)
+      userEmails = getVerifiedUserEmails(user)
       const displayName = user.firstName
         ? `${user.firstName}${user.lastName ? ` ${user.lastName}` : ""}`
         : user.username || user.emailAddresses?.[0]?.emailAddress?.split("@")[0]
@@ -332,12 +330,37 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       }
     } catch (err) {
       console.warn("Failed to fetch user for team name:", err)
+      return new Response(
+        JSON.stringify({ error: "We couldn't check your account. Please try again.", code: "account_check_failed" }),
+        { status: 503, headers: { "Content-Type": "application/json" } },
+      )
     }
 
-    const result = await registerForHackathon(hackathon.id, userId, teamName)
+    const { findPendingTeamInvitationForEmails } = await import("@/lib/services/team-invitations")
+    const pendingInvitation = await findPendingTeamInvitationForEmails(
+      hackathon.id,
+      userEmails,
+    )
+    if (pendingInvitation) {
+      return new Response(
+        JSON.stringify({
+          error: `You have an invite to join ${pendingInvitation.teamName}.`,
+          code: "pending_team_invitation",
+          inviteUrl: `/invite/${pendingInvitation.token}`,
+        }),
+        { status: 409, headers: { "Content-Type": "application/json" } },
+      )
+    }
+
+    if (expectedTermsHash) {
+      const termsFailure = await persistRequiredTermsAcceptance(hackathon.id, userId, expectedTermsHash)
+      if (termsFailure) return termsFailure
+    }
+
+    const result = await registerForHackathon(hackathon.id, userId, teamName, userEmails)
 
     if (!result.success) {
-      const statusCode = result.code === "already_registered" ? 409 : 400
+      const statusCode = ["already_registered", "pending_team_invitation"].includes(result.code) ? 409 : 400
       return new Response(
         JSON.stringify({ error: result.error, code: result.code }),
         { status: statusCode, headers: { "Content-Type": "application/json" } }
@@ -1604,17 +1627,33 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
 
     const client = await clerkClient()
     const user = await client.users.getUser(userId)
-    const userEmail = user.primaryEmailAddress?.emailAddress
+    const { getVerifiedUserEmails } = await import("@/lib/auth/verified-emails")
+    const userEmails = getVerifiedUserEmails(user)
 
-    if (!userEmail) {
+    if (userEmails.length === 0) {
       return new Response(
-        JSON.stringify({ error: "No email address found", code: "no_email" }),
+        JSON.stringify({ error: "No verified email address found", code: "no_email" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       )
     }
 
-    const { acceptTeamInvitation, getInvitationByToken } = await import("@/lib/services/team-invitations")
+    const {
+      acceptTeamInvitation,
+      cancelOtherPendingTeamInvitations,
+      getInvitationByToken,
+    } = await import("@/lib/services/team-invitations")
     const invitation = await getInvitationByToken(params.token)
+    const invitationEmail = invitation?.email.trim().toLowerCase() ?? null
+    const matchingEmail = invitationEmail && userEmails.includes(invitationEmail)
+      ? invitationEmail
+      : null
+
+    if (invitation && !matchingEmail) {
+      return new Response(
+        JSON.stringify({ error: "Sign in with the email that received this invite.", code: "email_mismatch" }),
+        { status: 403, headers: { "Content-Type": "application/json" } },
+      )
+    }
 
     const expectedTermsHash = invitation
       ? await currentTermsHash({
@@ -1638,7 +1677,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       if (termsFailure) return termsFailure
     }
 
-    const result = await acceptTeamInvitation(params.token, userId, userEmail)
+    const result = await acceptTeamInvitation(params.token, userId, matchingEmail ?? userEmails[0])
 
     if (!result.success) {
       const statusCode = result.code === "not_found" ? 404 : 400
@@ -1649,8 +1688,13 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     }
 
     if (invitation) {
+      await cancelOtherPendingTeamInvitations(
+        result.hackathonId,
+        userEmails,
+        invitation.id,
+      )
       const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
-      cancelRemindersForEntity("team_invitation", invitation.id).catch((err) =>
+      await cancelRemindersForEntity("team_invitation", invitation.id).catch((err) =>
         console.error(`Failed to cancel reminders for team_invitation ${invitation.id}:`, err)
       )
     }
@@ -1684,9 +1728,9 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
 
     const client = await clerkClient()
     const user = await client.users.getUser(userId)
-    const userEmail = user.primaryEmailAddress?.emailAddress
+    const userEmails = getVerifiedUserEmails(user)
 
-    if (!userEmail) {
+    if (userEmails.length === 0) {
       return new Response(
         JSON.stringify({ error: "No email address found", code: "no_email" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
@@ -1694,7 +1738,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     }
 
     const { declineTeamInvitation } = await import("@/lib/services/team-invitations")
-    const result = await declineTeamInvitation(params.token, userEmail)
+    const result = await declineTeamInvitation(params.token, userEmails)
 
     if (!result.success) {
       const statusCode = result.code === "not_found" ? 404 : 403

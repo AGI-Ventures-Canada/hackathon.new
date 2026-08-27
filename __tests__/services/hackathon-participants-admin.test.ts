@@ -163,7 +163,7 @@ describe("updateParticipantRole", () => {
     expect(result).toEqual({ success: true, role: "judge", capacityHandedOff: false })
   })
 
-  it("keeps the team link when an attendee becomes a judge", async () => {
+  it("clears the team link when an attendee becomes a judge", async () => {
     let participantCalls = 0
     let updatePayload: Record<string, unknown> | null = null
     setMockFromImplementation((table) => {
@@ -189,7 +189,7 @@ describe("updateParticipantRole", () => {
     const result = await updateParticipantRole(VALID_UUID, VALID_UUID, "judge")
 
     expect(result.success).toBe(true)
-    expect(updatePayload).toEqual({ role: "judge" })
+    expect(updatePayload).toEqual({ role: "judge", team_id: null })
   })
 
   it("keeps judge promotion locked after judging ends", async () => {

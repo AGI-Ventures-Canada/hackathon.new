@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test"
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { resetComponentMocks, setRouter } from "../../lib/component-mocks"
 import { dispatchPrepareProjectAction } from "@/lib/webmcp/client-events"
+import { projectDraftStorageKey } from "@/lib/webmcp/project-draft-storage"
 import type { Submission } from "@/lib/db/hackathon-types"
 import type {
   EventGuideContext,
@@ -258,7 +259,9 @@ describe("SubmissionButton", () => {
     expect(within(dialog).getByAltText("Screenshot 1 preview")).toBeDefined()
     expect(within(dialog).getByAltText("Screenshot 2 preview")).toBeDefined()
     const stored = JSON.parse(
-      window.localStorage.getItem("oatmeal:submission-draft:test-hackathon") as string
+      window.localStorage.getItem(
+        projectDraftStorageKey("test-hackathon", "user_123")
+      ) as string
     )
     expect(stored).toEqual({
       title: "Prepared title",
@@ -422,6 +425,7 @@ describe("SubmissionButton", () => {
       role: null,
       participantCount: 12,
       nextStep: "Sign in and register.",
+      sponsor: null,
       team: null,
       project: null,
     }
@@ -439,6 +443,7 @@ describe("SubmissionButton", () => {
             allowLateRegistration
             atCapacity={false}
             isOrganizer={false}
+            viewerUserId={null}
           />
           <SubmissionButton
             hackathonSlug="test-hackathon"

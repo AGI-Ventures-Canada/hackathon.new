@@ -21,6 +21,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog"
 import {
   AlertDialog,
@@ -959,6 +960,7 @@ function AnnouncementsSubTab({ hackathonId, hackathonStatus, hackathonPhase }: {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{editing ? "Edit Announcement" : "New Announcement"}</DialogTitle>
+            <DialogDescription>Share an update with people at this event.</DialogDescription>
           </DialogHeader>
           <form
             onSubmit={(e) => { e.preventDefault(); handleSave(true) }}

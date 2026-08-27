@@ -127,6 +127,7 @@ mock.module("@/lib/services/announcements", () => ({
 
 mock.module("@/lib/services/schedule-items", () => ({
   listScheduleItems: mock(() => Promise.resolve([])),
+  getScheduleItemById: mock(() => Promise.resolve(null)),
   createScheduleItem: mock(() => Promise.resolve(null)),
   updateScheduleItem: mock(() => Promise.resolve(null)),
   deleteScheduleItem: mock(() => Promise.resolve(false)),

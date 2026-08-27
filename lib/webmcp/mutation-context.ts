@@ -1,6 +1,7 @@
 const WEBMCP_REQUEST_HEADER = "x-webmcp-request"
 const WEBMCP_STATUS_HEADER = "x-webmcp-expected-status"
 const WEBMCP_VERSION_HEADER = "x-webmcp-event-version"
+const WEBMCP_IDEMPOTENCY_HEADER = "x-webmcp-idempotency-key"
 
 export const WEBMCP_PRE_COMPLETION_STATUSES = [
   "draft",
@@ -26,16 +27,28 @@ export type WebMcpMutationError = {
 
 export function createWebMcpMutationHeaders(
   context: WebMcpEventMutationContext,
+  idempotencyKey?: string,
 ): Record<string, string> {
-  return {
+  const headers = {
     [WEBMCP_REQUEST_HEADER]: "1",
     [WEBMCP_STATUS_HEADER]: context.status,
     [WEBMCP_VERSION_HEADER]: context.eventVersion,
   }
+  return idempotencyKey
+    ? { ...headers, [WEBMCP_IDEMPOTENCY_HEADER]: idempotencyKey }
+    : headers
 }
 
 export function isWebMcpMutationRequest(request: Request): boolean {
   return request.headers.get(WEBMCP_REQUEST_HEADER) === "1"
+}
+
+export function getWebMcpIdempotencyKey(request: Request): string | null {
+  if (!isWebMcpMutationRequest(request)) return null
+  const value = request.headers.get(WEBMCP_IDEMPOTENCY_HEADER)
+  return value && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+    ? value
+    : null
 }
 
 export function isWebMcpPreCompletionStatus(status: string): boolean {

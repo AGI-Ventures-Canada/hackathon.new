@@ -12,6 +12,7 @@ import type {
   EventViewerContext,
 } from "@/lib/webmcp/event-attendee-tools"
 import type { WebMcpTool } from "@/lib/webmcp/types"
+import { projectDraftStorageKey } from "@/lib/webmcp/project-draft-storage"
 
 const guide: EventGuideContext = {
   name: "Agent Jam",
@@ -36,6 +37,7 @@ const viewer: EventViewerContext = {
   role: "participant",
   participantCount: 14,
   nextStep: "Prepare your project.",
+  sponsor: null,
   team: {
     name: "Breakfast Club",
     status: "active",
@@ -68,6 +70,7 @@ function renderTools(overrides: Partial<React.ComponentProps<typeof EventWebMcpT
       allowLateRegistration
       atCapacity={false}
       isOrganizer={false}
+      viewerUserId="user_test"
       {...overrides}
     />,
   )
@@ -228,7 +231,8 @@ describe("EventWebMcpTools", () => {
   })
 
   it("reads only a valid bounded project draft from browser storage", async () => {
-    localStorage.setItem("oatmeal:submission-draft:agent-jam", "not json")
+    const draftKey = projectDraftStorageKey("agent-jam", "user_test")
+    localStorage.setItem(draftKey, "not json")
     renderTools()
     await waitFor(() => expect(registered.has("get_project_draft")).toBe(true))
     expect(await tool("get_project_draft").execute(
@@ -236,7 +240,7 @@ describe("EventWebMcpTools", () => {
       { signal: new AbortController().signal },
     )).toEqual({ ok: true, data: { draft: null } })
 
-    localStorage.setItem("oatmeal:submission-draft:agent-jam", JSON.stringify({
+    localStorage.setItem(draftKey, JSON.stringify({
       title: "T".repeat(150),
       githubUrl: `https://github.com/${"r".repeat(2_100)}`,
       liveAppUrl: "https://example.com",
@@ -260,7 +264,7 @@ describe("EventWebMcpTools", () => {
       },
     })
 
-    localStorage.setItem("oatmeal:submission-draft:agent-jam", JSON.stringify({
+    localStorage.setItem(draftKey, JSON.stringify({
       title: "Missing links",
     }))
     expect(await tool("get_project_draft").execute(
@@ -304,7 +308,7 @@ describe("EventWebMcpTools", () => {
         description: "Ready for review.",
       })
       expect(screen.getByText("Project draft ready")).toBeDefined()
-      expect(screen.getByText("Check each field. You choose when to submit it.")).toBeDefined()
+      expect(screen.getByText("Review every project field, then click Submit Project or Save Changes.")).toBeDefined()
     } finally {
       window.removeEventListener(PREPARE_PROJECT_EVENT, listener)
     }
@@ -339,7 +343,7 @@ describe("EventWebMcpTools", () => {
       })
 
       expect(screen.getByText(
-        "It’s saved in this browser. Register and finish your team setup when you’re ready.",
+        "Register to attend. Your draft is saved in this browser.",
       )).toBeDefined()
       expect(screen.queryByText(
         "It’s saved in this browser. Sign in and register when you’re ready.",

@@ -331,15 +331,87 @@ export async function acceptTeamInvitation(
   }
 }
 
+export async function cancelOtherPendingTeamInvitations(
+  hackathonId: string,
+  emails: string[],
+  acceptedInvitationId: string,
+): Promise<number> {
+  const normalizedEmails = Array.from(
+    new Set(emails.map((email) => email.trim().toLowerCase()).filter(Boolean)),
+  )
+  if (normalizedEmails.length === 0) return 0
+
+  const client = getSupabase()
+  const { data, error } = await client
+    .from("team_invitations")
+    .update({ status: "cancelled", updated_at: new Date().toISOString() })
+    .eq("hackathon_id", hackathonId)
+    .in("email", normalizedEmails)
+    .eq("status", "pending")
+    .neq("id", acceptedInvitationId)
+    .select("id")
+
+  if (error) {
+    console.error("Failed to cancel other team invitations:", error)
+    return 0
+  }
+
+  const invitations = (data ?? []) as Array<{ id: string }>
+  if (invitations.length > 0) {
+    const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
+    await Promise.allSettled(
+      invitations.map((item) => cancelRemindersForEntity("team_invitation", item.id)),
+    )
+  }
+  return invitations.length
+}
+
+export async function findPendingTeamInvitationForEmails(
+  hackathonId: string,
+  emails: string[],
+): Promise<{ token: string; teamName: string } | null> {
+  const normalizedEmails = Array.from(
+    new Set(emails.map((email) => email.trim().toLowerCase()).filter(Boolean)),
+  )
+  if (normalizedEmails.length === 0) return null
+
+  const client = getSupabase()
+  const { data, error } = await client
+    .from("team_invitations")
+    .select("token, teams!inner(name, status)")
+    .eq("hackathon_id", hackathonId)
+    .eq("status", "pending")
+    .gt("expires_at", new Date().toISOString())
+    .in("email", normalizedEmails)
+    .limit(10)
+
+  if (error) {
+    console.error("Failed to check pending team invitations:", error)
+    return null
+  }
+
+  const row = (data ?? []).find((item) => {
+    const team = item.teams as unknown as { status: string } | Array<{ status: string }>
+    const status = Array.isArray(team) ? team[0]?.status : team?.status
+    return status !== "disbanded"
+  }) as unknown as {
+    token: string
+    teams: { name: string } | Array<{ name: string }>
+  } | undefined
+  if (!row) return null
+  const team = Array.isArray(row.teams) ? row.teams[0] : row.teams
+  return team ? { token: row.token, teamName: team.name } : null
+}
+
 export async function declineTeamInvitation(
   token: string,
-  userEmail: string
+  userEmails: string[]
 ): Promise<{ success: boolean; error?: string; code?: string }> {
   const client = getSupabase()
 
   const { data: invitation } = await client
     .from("team_invitations")
-    .select("email")
+    .select("id, email")
     .eq("token", token)
     .eq("status", "pending")
     .single()
@@ -348,7 +420,8 @@ export async function declineTeamInvitation(
     return { success: false, error: "Invitation not found", code: "not_found" }
   }
 
-  if (invitation.email.toLowerCase() !== userEmail.toLowerCase()) {
+  const normalizedEmails = userEmails.map((email) => email.trim().toLowerCase())
+  if (!normalizedEmails.includes(invitation.email.toLowerCase())) {
     return { success: false, error: "You can only decline invitations sent to your email", code: "email_mismatch" }
   }
 
@@ -361,7 +434,16 @@ export async function declineTeamInvitation(
     .eq("token", token)
     .eq("status", "pending")
 
-  return { success: !error }
+  if (error) {
+    return { success: false, error: "Failed to decline invitation", code: "update_failed" }
+  }
+
+  const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
+  await cancelRemindersForEntity("team_invitation", invitation.id).catch((err) =>
+    console.error(`Failed to cancel reminders for team_invitation ${invitation.id}:`, err)
+  )
+
+  return { success: true }
 }
 
 export async function unsubscribeTeamInvitation(
@@ -398,7 +480,7 @@ export async function unsubscribeTeamInvitation(
   }
 
   const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
-  cancelRemindersForEntity("team_invitation", invitation.id).catch((err) =>
+  await cancelRemindersForEntity("team_invitation", invitation.id).catch((err) =>
     console.error(`Failed to cancel reminders for team_invitation ${invitation.id}:`, err)
   )
 

@@ -12,7 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Loader2, Search, Check, Mail } from "lucide-react"
-import { getJudgeInvitationMessage } from "@/lib/judge-invitation-message"
+import { getJudgeAddedMessage, getJudgeInvitationMessage } from "@/lib/judge-invitation-message"
 
 type JudgeData = {
   participantId: string
@@ -253,7 +253,7 @@ export function AssignJudgesDialog({
       setFeedback({
         message: data.invitation
           ? getJudgeInvitationMessage(email, data.queued === true, data.delivery === "failed")
-          : `${email} added as judge`,
+          : getJudgeAddedMessage(email, data.queued === true, data.delivery === "failed"),
         isError: data.delivery === "failed",
       })
       hasChanges.current = true

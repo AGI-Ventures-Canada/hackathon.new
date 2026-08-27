@@ -1368,12 +1368,13 @@ export const dashboardJudgingRoutes = new Elysia()
           console.error("Failed to create judge display profile:", err)
         }
 
+        let delivery: "sent" | "queued" | "failed" | undefined
         if (judgeEmail) {
           try {
             if (notificationDisposition === "send") {
               const addedByName = await resolveAdderName(principal, client)
               const { sendJudgeAddedNotification } = await import("@/lib/email/judge-invitations")
-              sendJudgeAddedNotification({
+              const notification = await sendJudgeAddedNotification({
                 to: judgeEmail,
                 deliveryId: addResult.participant.id,
                 hackathonName: hackathon.name,
@@ -1381,19 +1382,17 @@ export const dashboardJudgingRoutes = new Elysia()
                 addedByName,
                 hackathonStartsAt: hackathon.starts_at,
                 hackathonEndsAt: hackathon.ends_at,
-              }).catch((error) => {
-                console.error(
-                  `Failed to send judge-added notification ${addResult.participant.id}:`,
-                  error,
-                )
               })
+              delivery = notification.success ? "sent" : "failed"
             } else {
               const addedByName = await resolveAdderName(principal, client)
               const { createJudgePendingNotification } = await import("@/lib/services/judge-invitations")
               await createJudgePendingNotification(hackathon.id, addResult.participant.id, judgeEmail, addedByName)
+              delivery = "queued"
             }
           } catch (err) {
             console.error(`Failed to handle judge notification:`, err)
+            delivery = "failed"
           }
         }
 
@@ -1405,7 +1404,11 @@ export const dashboardJudgingRoutes = new Elysia()
           metadata: { judgeClerkUserId: typedBody.clerkUserId },
         })
 
-        return { participant: addResult.participant }
+        return {
+          participant: addResult.participant,
+          queued: delivery === "queued",
+          delivery,
+        }
       }
 
       if (typedBody.email) {
@@ -1446,22 +1449,30 @@ export const dashboardJudgingRoutes = new Elysia()
             console.error("Failed to create judge display profile:", err)
           }
 
-          if (notificationDisposition === "send") {
-            const addedByName = await resolveAdderName(principal, client)
-            const { sendJudgeAddedNotification } = await import("@/lib/email/judge-invitations")
-            sendJudgeAddedNotification({
-              to: typedBody.email,
-              deliveryId: addResult.participant.id,
-              hackathonName: hackathon.name,
-              hackathonSlug: hackathon.slug,
-              addedByName,
-              hackathonStartsAt: hackathon.starts_at,
-              hackathonEndsAt: hackathon.ends_at,
-            }).catch(console.error)
-          } else {
-            const addedByName = await resolveAdderName(principal, client)
-            const { createJudgePendingNotification } = await import("@/lib/services/judge-invitations")
-            await createJudgePendingNotification(hackathon.id, addResult.participant.id, typedBody.email, addedByName)
+          let delivery: "sent" | "queued" | "failed"
+          try {
+            if (notificationDisposition === "send") {
+              const addedByName = await resolveAdderName(principal, client)
+              const { sendJudgeAddedNotification } = await import("@/lib/email/judge-invitations")
+              const notification = await sendJudgeAddedNotification({
+                to: typedBody.email,
+                deliveryId: addResult.participant.id,
+                hackathonName: hackathon.name,
+                hackathonSlug: hackathon.slug,
+                addedByName,
+                hackathonStartsAt: hackathon.starts_at,
+                hackathonEndsAt: hackathon.ends_at,
+              })
+              delivery = notification.success ? "sent" : "failed"
+            } else {
+              const addedByName = await resolveAdderName(principal, client)
+              const { createJudgePendingNotification } = await import("@/lib/services/judge-invitations")
+              await createJudgePendingNotification(hackathon.id, addResult.participant.id, typedBody.email, addedByName)
+              delivery = "queued"
+            }
+          } catch (err) {
+            console.error("Failed to handle judge notification:", err)
+            delivery = "failed"
           }
 
           logAudit({
@@ -1472,7 +1483,11 @@ export const dashboardJudgingRoutes = new Elysia()
             metadata: { judgeClerkUserId: existingUser.id },
           })
 
-          return { participant: addResult.participant }
+          return {
+            participant: addResult.participant,
+            queued: delivery === "queued",
+            delivery,
+          }
         }
 
         const { createJudgeInvitation, hasPendingJudgeEntry } = await import("@/lib/services/judge-invitations")

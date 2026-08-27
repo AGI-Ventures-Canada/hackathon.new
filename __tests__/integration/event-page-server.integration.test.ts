@@ -33,6 +33,7 @@ const mockPublicSubmitterName = mock((_hackathon: unknown, name: string) => `Pub
 const mockEventTools = mock(() => null)
 const mockMentorTools = mock(() => null)
 const mockPreview = mock(() => null)
+const mockGetTenantByClerkOrgId = mock(() => Promise.resolve(null as Record<string, unknown> | null))
 
 mock.module("next/navigation", () => ({ notFound: mockNotFound }))
 mock.module("@clerk/nextjs/server", () => ({ auth: mockAuth }))
@@ -93,6 +94,9 @@ mock.module("@/components/hackathon/mentors/attendee-mentor-webmcp", () => ({
 mock.module("@/components/hackathon/preview/hackathon-preview-client", () => ({
   HackathonPreviewClient: mockPreview,
 }))
+mock.module("@/lib/services/tenants", () => ({
+  getTenantByClerkOrgId: mockGetTenantByClerkOrgId,
+}))
 
 const { canRegisterNow, default: EventPage, generateMetadata } = await import(
   "@/app/(public)/e/[slug]/page"
@@ -119,6 +123,7 @@ const baseHackathon = {
   challenge_released_at: null,
   results_published_at: null,
   perks_none: false,
+  sponsors: [],
   organizer: {
     id: "tenant-1",
     name: "Test Org",
@@ -183,6 +188,8 @@ describe("public event server page", () => {
     mockIsPerkReleased.mockReturnValue(true)
     mockGetPublicResults.mockReset()
     mockGetPublicResults.mockResolvedValue([])
+    mockGetTenantByClerkOrgId.mockReset()
+    mockGetTenantByClerkOrgId.mockResolvedValue(null)
   })
 
   it("builds translated metadata and handles a missing event", async () => {
@@ -366,6 +373,37 @@ describe("public event server page", () => {
     expect(preview.props.viewerPerks).toEqual([{ id: "perk-1" }])
     expect(preview.props.publicResults).toEqual([{ id: "result-1" }])
     expect(preview.props.challenges).toHaveLength(1)
+  })
+
+  it("shows the active organization as a sponsor and matches WebMCP state", async () => {
+    mockAuth.mockResolvedValueOnce({ userId: "sponsor-user", orgId: "org-sponsor" })
+    mockGetTenantByClerkOrgId.mockResolvedValueOnce({
+      id: "tenant-sponsor",
+      name: "Breakfast Labs",
+    })
+    mockGetPublicHackathon.mockResolvedValueOnce({
+      ...baseHackathon,
+      sponsors: [{
+        id: "sponsor-1",
+        sponsor_tenant_id: "tenant-sponsor",
+        name: "Breakfast Labs",
+        tier: "gold",
+      }],
+    })
+
+    const result = await EventPage(pageProps())
+    const tools = childFor(result, mockEventTools)
+    const preview = childFor(result, mockPreview)
+
+    expect(renderToStaticMarkup(result)).toContain(
+      "You&#x27;re viewing this event as Breakfast Labs, a gold sponsor.",
+    )
+    expect(tools.props.viewer).toMatchObject({
+      role: "sponsor",
+      sponsor: { organizationName: "Breakfast Labs", tier: "gold" },
+    })
+    expect(tools.props.canRegisterViewer).toBe(false)
+    expect(preview.props.isSponsor).toBe(true)
   })
 
   it("keeps pending teams away from challenges and perks", async () => {

@@ -7,7 +7,7 @@ import { setPhase } from "@/lib/services/phases"
 import { listRooms, createRoom, updateRoom, deleteRoom, addTeamToRoom, removeTeamFromRoom, togglePresented, setRoomTimer, clearRoomTimer, pauseRoomTimer, resumeRoomTimer, addJudgeToRoom, removeJudgeFromRoom, setAutoAssignByRoom, getAutoAssignByRoom } from "@/lib/services/rooms"
 import { listCategories, createCategory, updateCategory, deleteCategory } from "@/lib/services/categories"
 import { listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, publishAnnouncement, unpublishAnnouncement, scheduleAnnouncement, type CreateAnnouncementInput, type UpdateAnnouncementInput } from "@/lib/services/announcements"
-import { listScheduleItems, createScheduleItem, updateScheduleItem, deleteScheduleItem, getTriggerItem } from "@/lib/services/schedule-items"
+import { listScheduleItems, getScheduleItemById, createScheduleItem, updateScheduleItem, deleteScheduleItem, getTriggerItem } from "@/lib/services/schedule-items"
 import { listTeamsWithMembers, createTeamWithMembers, modifyTeamMembers, bulkAssignTeams, deleteTeam, setTeamCaptain, approvePendingTeam, denyPendingTeam } from "@/lib/services/hackathons"
 import { listHackathonPeople, peopleToCsvRows } from "@/lib/services/hackathon-people"
 import { toCsv } from "@/lib/utils/csv"
@@ -48,6 +48,7 @@ import { getNotificationDisposition, getNotificationLifecycleError } from "@/lib
 import { getRequestIdempotencyFingerprint } from "@/lib/utils/request-idempotency"
 import type { HackathonPhase, ParticipantRole } from "@/lib/db/hackathon-types"
 import {
+  getWebMcpIdempotencyKey,
   isWebMcpMutationRequest,
   validateWebMcpMutationContext,
   WEBMCP_PRE_COMPLETION_STATUSES,
@@ -1084,7 +1085,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     }),
     detail: {
       summary: "Update a participant's team or role",
-      description: "Changes a person's team or role. During judging, an attendee can still become a judge so organizers can replace or add judges. Their team link is kept to prevent self-judging.",
+      description: "Changes a person's team or role. During judging, an attendee can still become a judge so organizers can replace or add judges.",
     },
   })
   .delete("/hackathons/:id/participants/:participantId", async ({ params, principal, set }) => {
@@ -1653,7 +1654,15 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
             code: "invalid_request",
           }
         }
-        const item = await createScheduleItem(params.id, b)
+        const idempotencyKey = getWebMcpIdempotencyKey(request)
+        if (idempotencyKey) {
+          const existing = await getScheduleItemById(idempotencyKey, params.id)
+          if (existing) return existing
+        }
+        const item = await createScheduleItem(params.id, {
+          ...b,
+          id: idempotencyKey ?? undefined,
+        })
         if (!item) { set.status = 400; return { error: "Failed to create schedule item" } }
         await logAudit({ principal, action: "schedule_item.created", resourceType: "schedule_item", resourceId: item.id, metadata: { hackathonId: params.id, title: b.title } })
         return item
