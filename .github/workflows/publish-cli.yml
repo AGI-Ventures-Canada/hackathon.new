@@ -99,6 +99,8 @@ jobs:
 
       - name: Publish to npm
         if: "startsWith(github.ref, 'refs/tags/cli-v') || steps.changes.outputs.changed == 'true'"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: cd packages/cli && npm publish --provenance --access public
 
       - name: Get version for tag-triggered runs
