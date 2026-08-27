@@ -71,7 +71,7 @@ describe("ParticipantTeamHeader", () => {
 
     await user.click(screen.getByRole("button", { name: /rename team/i }))
 
-    const input = screen.getByDisplayValue("Jordan Lee's Team")
+    const input = screen.getByRole("textbox", { name: "Team name" })
     expect(input.tagName).toBe("INPUT")
   })
 

@@ -2,11 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test"
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react"
 import { useEffect, type ReactNode } from "react"
 import type { PublicHackathon } from "@/lib/services/public-hackathons"
+import type { ParticipantTeamInfo } from "@/lib/services/hackathons"
 
 type Props = Record<string, unknown>
 
 let captures: Record<string, Props> = {}
 let editable = false
+let editMode = false
+let canInvite = true
 
 const manageView = {
   details: { name: "Agent Build Day", description: "Agent description" },
@@ -94,7 +97,7 @@ mock.module("@/components/hackathon/preview/edit-context", () => ({
   },
   useEdit: () => ({
     isEditable: editable,
-    editMode: false,
+    editMode,
     activeSection: null,
     openSection: mock(() => {}),
     closeDrawer: mock(() => {}),
@@ -112,7 +115,7 @@ mock.module("@/hooks/use-optimistic-mutation", () => ({
   }),
 }))
 mock.module("@/lib/utils/team-invite", () => ({
-  canInviteTeamMembers: () => true,
+  canInviteTeamMembers: () => canInvite,
 }))
 mock.module("@/components/hackathon/preview/editable-section", () => ({
   EditableSection: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -293,6 +296,8 @@ function preview(
 beforeEach(() => {
   captures = {}
   editable = false
+  editMode = false
+  canInvite = true
   actionItems.registerTabAction.mockClear()
   actionItems.unregisterTabAction.mockClear()
 })
@@ -300,6 +305,53 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe("HackathonPreviewClient WebMCP convergence", () => {
+  it("hides an empty Community tab outside edit mode", () => {
+    render(preview(baseHackathon, true))
+
+    expect(screen.queryByRole("button", { name: "Community" })).toBeNull()
+  })
+
+  it("shows the empty Community tab while the organizer is editing", () => {
+    editMode = true
+    render(preview(baseHackathon, true))
+
+    expect(screen.getByRole("button", { name: "Community" })).toBeDefined()
+  })
+
+  it("does not tell captains they can invite after invitations close", () => {
+    canInvite = false
+    const teamInfo = {
+      team: {
+        id: "team-1",
+        name: "Team Maple",
+        status: "forming",
+        inviteCode: "maple",
+        captainClerkUserId: "user-1",
+        mode: null,
+      },
+      members: [],
+      pendingInvitations: [],
+      isCaptain: true,
+      room: null,
+    } satisfies NonNullable<ParticipantTeamInfo>
+
+    render(
+      <HackathonPreviewClient
+        hackathon={baseHackathon}
+        isEditable={false}
+        isRegistered
+        participantRole="participant"
+        teamInfo={teamInfo}
+      />,
+    )
+
+    const statusSlot = captures["event-hero"].statusSlot as ReactNode
+    cleanup()
+    render(<>{statusSlot}</>)
+    expect(screen.getByText("You’re the team captain — you can rename your team.")).toBeDefined()
+    expect(screen.queryByText(/invite members and rename/)).toBeNull()
+  })
+
   it("renders the same optimistic details, dates, schedule, challenges, and prizes organizers review", () => {
     render(preview(baseHackathon, true))
 

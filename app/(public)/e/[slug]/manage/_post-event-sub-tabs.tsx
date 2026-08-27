@@ -18,10 +18,10 @@ export function PostEventSubTabs({ activePtab, showExports, children }: PostEven
     <TabsUrlSync paramKey="ptab" value={activePtab} className="space-y-6">
       <div className="overflow-x-auto scrollbar-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none]">
         <TabsList>
-          <TabsTrigger value="fulfillment"><Gift className="size-4" /><span className="hidden sm:inline">Prizes</span></TabsTrigger>
-          <TabsTrigger value="feedback"><MessageSquare className="size-4" /><span className="hidden sm:inline">Feedback</span></TabsTrigger>
+          <TabsTrigger value="fulfillment" aria-label="Prizes"><Gift className="size-4" /><span className="hidden sm:inline">Prizes</span></TabsTrigger>
+          <TabsTrigger value="feedback" aria-label="Feedback"><MessageSquare className="size-4" /><span className="hidden sm:inline">Feedback</span></TabsTrigger>
           {showExports && (
-            <TabsTrigger value="exports"><Download className="size-4" /><span className="hidden sm:inline">Exports</span></TabsTrigger>
+            <TabsTrigger value="exports" aria-label="Exports"><Download className="size-4" /><span className="hidden sm:inline">Exports</span></TabsTrigger>
           )}
         </TabsList>
       </div>

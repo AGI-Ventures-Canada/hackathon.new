@@ -53,6 +53,9 @@ export function ActionItemsPanel({ visible }: Props) {
       {visible && (
         <button
           onClick={() => setPanelOpen(!panelOpen)}
+          aria-label={panelOpen ? "Close action items" : "Open action items"}
+          aria-expanded={panelOpen}
+          aria-controls="action-items-panel"
           className={cn(
             "fixed z-50 flex items-center gap-1.5 rounded-lg border bg-background px-3 py-2.5 text-sm shadow-md transition-colors hover:bg-muted",
             "top-16",
@@ -76,11 +79,14 @@ export function ActionItemsPanel({ visible }: Props) {
       )}
 
       <div
+        id="action-items-panel"
         className={cn(
           "fixed inset-y-0 right-0 z-30 hidden h-svh lg:flex",
           "transition-[width] duration-300 ease-in-out overflow-hidden",
           expanded ? "w-80" : "w-0",
         )}
+        aria-hidden={!expanded}
+        inert={expanded ? undefined : true}
       >
         <div className="flex h-full w-full flex-col border-l bg-muted">
           <div className="flex items-center border-b px-4 py-3 shrink-0">

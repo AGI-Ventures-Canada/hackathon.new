@@ -34,6 +34,7 @@ export function CopyButton({
         size="icon"
         className={cn("size-8 shrink-0", className)}
         onClick={handleCopy}
+        aria-label={copied ? "Copied" : "Copy"}
       >
         {copied ? (
           <Check className="size-4" />

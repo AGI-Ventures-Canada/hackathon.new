@@ -32,7 +32,7 @@ export function StepLocation({ locationType, locationName, locationUrl, onChange
         </p>
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex gap-3" role="group" aria-label="Event location type">
         <Button
           type="button"
           variant={locationType === "in_person" ? "default" : "outline"}
@@ -44,6 +44,7 @@ export function StepLocation({ locationType, locationName, locationUrl, onChange
               locationUrl,
             })
           }
+          aria-pressed={locationType === "in_person"}
         >
           <MapPin className="size-5" />
           <span className="text-sm">In-person</span>
@@ -59,6 +60,7 @@ export function StepLocation({ locationType, locationName, locationUrl, onChange
               locationUrl: locationUrl,
             })
           }
+          aria-pressed={locationType === "virtual"}
         >
           <Video className="size-5" />
           <span className="text-sm">Virtual</span>
@@ -74,6 +76,7 @@ export function StepLocation({ locationType, locationName, locationUrl, onChange
               locationUrl: locationUrl,
             })
           }
+          aria-pressed={locationType === "hybrid"}
         >
           <Globe className="size-5" />
           <span className="text-sm">Hybrid</span>
