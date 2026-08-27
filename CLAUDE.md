@@ -148,6 +148,18 @@ All request APIs (`params`, `searchParams`, `cookies()`, `headers()`) are async 
 
 ## Development Rules
 
+### App, WebMCP, and CLI Parity
+
+**Every feature and behavior change must consider all three product surfaces: the app UI, WebMCP, and the CLI.** This applies to new work, bug fixes, validation changes, lifecycle rules, permissions, and side effects.
+
+- Before coding, identify the user action and check whether the app, WebMCP, and CLI already support it.
+- New organizer pages must provide useful WebMCP read or navigation support. Add a safe mutation tool when the action can be completed without hidden context. Use a review-opening tool when a person must confirm a sensitive or irreversible action.
+- Update `lib/webmcp/organizer-parity.ts` whenever an organizer page, subpage, capability, WebMCP tool, or CLI command changes.
+- WebMCP and CLI must use the same API validation, permissions, lifecycle gates, queued-vs-immediate state, and plain-language outcomes as the app.
+- If a CLI equivalent is not useful or safe, leave its parity registry entry empty and explain why in the PR. An empty entry is a recorded gap, not proof that parity was ignored.
+- Feature tests must cover the affected app flow plus WebMCP and CLI behavior when those surfaces exist. Add a parity-registry test for new organizer pages.
+- Every PR description must include a `Parity` section stating the app, WebMCP, and CLI impact, including `No change` with a reason when applicable.
+
 ### New Features Require Plan Mode and Interview
 
 **When the user asks to build a new feature, ALWAYS enter plan mode first and conduct an interview to clarify requirements** — what, expected behavior, edge cases, how it fits existing functionality, UI/UX preferences, v1 scope. Only proceed after the user confirms the plan. Does not apply to bug fixes, refactors, or small tweaks.

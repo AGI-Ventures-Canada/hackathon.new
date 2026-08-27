@@ -30,15 +30,15 @@ export function MiscsTabContent({
         </TabsList>
       </div>
 
-      <TabsContent value="rooms" forceMount className="data-[state=inactive]:hidden">
+      <TabsContent value="rooms" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="rooms">
         <RoomsTab hackathonId={hackathonId} />
       </TabsContent>
 
-      <TabsContent value="activity" forceMount className="data-[state=inactive]:hidden">
+      <TabsContent value="activity" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="activity">
         <ActivityTab hackathonId={hackathonId} />
       </TabsContent>
 
-      <TabsContent value="terms" forceMount className="data-[state=inactive]:hidden">
+      <TabsContent value="terms" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="terms">
         <TermsTab
           hackathonId={hackathonId}
           initialRequireTermsAcceptance={requireTermsAcceptance}

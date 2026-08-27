@@ -143,7 +143,7 @@ export function ManageHackathonWebMcpTools({
       }
       const findVisibleTarget = () => {
         const target = document.querySelector<HTMLElement>(
-          `[data-webmcp-section="${section}"]`,
+          `[data-webmcp-section~="${section}"]`,
         )
         if (!target || target.closest('[data-state="inactive"]')) return false
         target.scrollIntoView({ behavior: "smooth", block: "start" })

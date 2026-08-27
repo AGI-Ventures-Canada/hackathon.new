@@ -179,6 +179,7 @@ describe("createManageHackathonTools", () => {
   it("offers reads, draft-safe writes, a draft announcement, and go-live review", () => {
     expect(createTools().map((tool) => tool.name)).toEqual([
       "get_hackathon_overview",
+      "get_organizer_page_support",
       "list_hackathon_schedule",
       "list_hackathon_challenges",
       "list_hackathon_prizes",
@@ -201,6 +202,7 @@ describe("createManageHackathonTools", () => {
     context.hackathon.status = "published"
     expect(createTools().map((tool) => tool.name)).toEqual([
       "get_hackathon_overview",
+      "get_organizer_page_support",
       "list_hackathon_schedule",
       "list_hackathon_challenges",
       "list_hackathon_prizes",
@@ -222,6 +224,7 @@ describe("createManageHackathonTools", () => {
     context.hackathon.status = "archived"
     expect(createTools().map((tool) => tool.name)).toEqual([
       "get_hackathon_overview",
+      "get_organizer_page_support",
       "list_hackathon_schedule",
       "list_hackathon_challenges",
       "list_hackathon_prizes",
@@ -345,6 +348,48 @@ describe("createManageHackathonTools", () => {
     )
     expect(result.opened).toBe("results")
     expect(fetcher).not.toHaveBeenCalled()
+  })
+
+  it("describes WebMCP and CLI support for every organizer page", async () => {
+    const result = dataOf<{
+      section: string
+      webMcpTools: string[]
+      cliCommands: string[]
+      inspectUrl: string
+    }>(await execute(createTools(), "get_organizer_page_support", {
+      section: "rooms",
+    }))
+
+    expect(result).toEqual({
+      section: "rooms",
+      title: "Rooms",
+      summary: "Review room assignments and automatic room setup.",
+      eventStatus: "draft",
+      webMcpTools: ["open_hackathon_section"],
+      unavailableWebMcpTools: [],
+      cliCommands: [
+        "rooms auto-assign-get",
+        "rooms auto-assign-set",
+        "rooms auto-assign-sync",
+      ],
+      cliCoverage: "available",
+      pageData: { eventStatus: "draft" },
+      inspectUrl: "/e/build-day/manage?tab=miscs&mtab=rooms",
+    })
+  })
+
+  it("reports lifecycle-limited page tools as unavailable", async () => {
+    context.hackathon.status = "archived"
+    context.hackathon.storedStatus = "archived"
+    const result = dataOf<{
+      webMcpTools: string[]
+      unavailableWebMcpTools: string[]
+    }>(await execute(createTools(), "get_organizer_page_support", {
+      section: "prizes",
+    }))
+
+    expect(result.webMcpTools).toEqual(["list_hackathon_prizes"])
+    expect(result.unavailableWebMcpTools).toEqual(["add_prize"])
   })
 
   it("returns a structured input error", async () => {

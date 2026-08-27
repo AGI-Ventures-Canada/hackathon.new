@@ -75,6 +75,12 @@ jobs:
             - CLI build (`bun cli:build`) must produce `dist/cli.mjs` — verify no server-side imports leak into the bundle
             - `bin/cli.mjs` uses `#!/usr/bin/env node` (not bun) for cross-platform npm distribution
 
+            ### App, WebMCP, and CLI Parity
+            - Every feature and behavior change must consider the app UI, WebMCP, and CLI
+            - Organizer page or subpage changes must update `lib/webmcp/organizer-parity.ts`
+            - WebMCP and CLI must match app validation, permissions, lifecycle gates, and queued-vs-immediate outcomes
+            - A missing CLI equivalent must be recorded as an empty registry entry and explained in the PR
+
             ## Review Focus
 
             1. **Breaking changes** to existing functionality
@@ -82,6 +88,7 @@ jobs:
             3. **Security** - exposed secrets, SQL injection, XSS
             4. **TypeScript** - proper types, no `any`
             5. **CLI isolation** - CLI package must not import from main app code
+            6. **Parity gaps** - app changes that ignore WebMCP, CLI, or the organizer parity registry
 
             ## Response Format
 

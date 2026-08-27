@@ -50,9 +50,11 @@ bun cli judging auto-assign <hackathon-id> --per-judge 3
 
 ## App Parity
 
-- When app behavior or API validation changes, check whether the CLI needs the same behavior
+- Every app or WebMCP feature and behavior change must check whether the CLI needs the same behavior
 - CLI URL arguments should accept bare domains like `example.com/webhook` and normalize them before sending requests
 - Changes that affect both app and CLI should include CLI tests, not just app tests
+- Organizer page and command coverage is tracked in `lib/webmcp/organizer-parity.ts`; update the registry when commands change
+- When a CLI command is not useful or safe, keep the registry entry empty and explain why in the PR parity section
 
 ## Adding a Command
 1. Create `src/commands/<resource>/<action>.ts`

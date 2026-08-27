@@ -1058,19 +1058,19 @@ export function EventTabContent({ hackathonId, activeEtab, hackathonStatus, hack
         </TabsList>
       </div>
 
-      <TabsContent value="announcements" forceMount className="data-[state=inactive]:hidden">
+      <TabsContent value="announcements" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="announcements">
         <AnnouncementsSubTab hackathonId={hackathonId} hackathonStatus={hackathonStatus} hackathonPhase={hackathonPhase} />
       </TabsContent>
 
-      <TabsContent value="mentors" forceMount className="data-[state=inactive]:hidden">
+      <TabsContent value="mentors" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="mentors">
         <MentorsSubTab hackathonId={hackathonId} />
       </TabsContent>
 
-      <TabsContent value="social" forceMount className="data-[state=inactive]:hidden">
+      <TabsContent value="social" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="social">
         <SocialSubTab hackathonId={hackathonId} />
       </TabsContent>
 
-      <TabsContent value="email" forceMount className="data-[state=inactive]:hidden">
+      <TabsContent value="email" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="email">
         <EmailSubTab hackathonId={hackathonId} />
       </TabsContent>
     </TabsUrlSync>
