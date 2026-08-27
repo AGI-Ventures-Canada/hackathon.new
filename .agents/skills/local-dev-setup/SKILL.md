@@ -42,6 +42,8 @@ bun install
 
 Verify: Check that `node_modules` directory exists and has content.
 
+The app pins Next.js and `eslint-config-next` to the same version in `package.json`. Use `bun install` to preserve that pairing. Next.js 16.3 also writes its agent guidance block to `CLAUDE.md` when the dev server starts.
+
 ### Step 3: Environment Setup
 
 Copy the example env file:
@@ -149,7 +151,7 @@ All tests should pass before making changes. Target: 90% code coverage.
 Read the project's git workflow from CLAUDE.md:
 
 - **Never push directly to main** - always use feature branches
-- Create PRs as drafts first
+- Open ready-for-review PRs against `staging`
 - Follow conventional commit format
 
 Create your first feature branch:
@@ -342,6 +344,8 @@ bun dev:fresh  # Nuclear option: reset everything
 bun run build  # Check exact error
 bunx tsc --noEmit  # TypeScript check only
 ```
+
+Next.js production builds use `tsconfig.build.json` so shipped app code stays strictly checked while test files remain covered by the separate Bun test commands.
 
 ## Next Steps After Setup
 

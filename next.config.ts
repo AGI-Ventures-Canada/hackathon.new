@@ -22,6 +22,9 @@ const sharpTraceFiles = ["node_modules/sharp/**/*", "node_modules/@img/**/*"]
 
 const nextConfig: NextConfig = {
   skipTrailingSlashRedirect: true,
+  typescript: {
+    tsconfigPath: "tsconfig.build.json",
+  },
   env: {
     NEXT_PUBLIC_APP_URL:
       process.env.NEXT_PUBLIC_APP_URL ??
