@@ -10,7 +10,7 @@ mock.module("@/lib/email/resend", () => ({
 
 const mockGetUserList = mock(() =>
   Promise.resolve({
-    data: [{ emailAddresses: [{ emailAddress: "p1@test.com" }] }],
+    data: [{ id: "user_1", emailAddresses: [{ emailAddress: "p1@test.com" }] }],
   })
 )
 

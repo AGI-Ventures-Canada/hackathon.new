@@ -1,8 +1,8 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { AuditLog } from "@/lib/db/hackathon-types"
 import type { Json } from "@/lib/db/types"
-import type { Principal } from "@/lib/auth/types"
 import { isValidUuid } from "@/lib/utils/uuid"
+import type { Principal } from "@/lib/auth/types"
 
 export type AuditAction =
   | "api_key.created"
@@ -24,6 +24,7 @@ export type AuditAction =
   | "schedule.updated"
   | "schedule.deleted"
   | "integration.deleted"
+  | "integration.connected"
   | "email_address.created"
   | "email_address.deleted"
   | "credential.saved"
@@ -297,6 +298,9 @@ export async function listHackathonAuditLogs(
   hackathonId: string,
   options: ListHackathonAuditLogsOptions = {}
 ) {
+  if (!isValidUuid(hackathonId)) {
+    throw new Error("Invalid hackathon ID")
+  }
   const { limit: rawLimit = 50, offset = 0, action, resourceType, since, until, sort = "desc" } = options
   const limit = Math.min(Math.max(rawLimit, 1), MAX_AUDIT_PAGE_SIZE)
 

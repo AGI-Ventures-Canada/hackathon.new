@@ -29,7 +29,7 @@ export default async function Page(props: PageProps) {
         <LLMCopyButton markdownUrl={`${page.url}.mdx`} />
         <ViewOptions
           markdownUrl={`${page.url}.mdx`}
-          githubUrl={`https://github.com/AGI-Ventures-Canada/oatmeal/blob/staging/content/docs/${page.path}`}
+          githubUrl={`https://github.com/AGI-Ventures-Canada/hackathon.new/blob/staging/content/docs/${page.path}`}
         />
       </div>
       <DocsBody>

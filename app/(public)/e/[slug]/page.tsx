@@ -207,7 +207,7 @@ export default async function EventPage({ params, searchParams }: PageProps) {
   const viewerChallenges = isPendingTeam || (!isOrganizer && !hackathon.challenge_released_at)
     ? []
     : challenges
-  if (!perksNone && teamInfo && !isPendingTeam) {
+  if (!perksNone && teamInfo && !isPendingTeam && !isDisbandedTeam) {
     const { listPerks, isPerkReleased } = await import("@/lib/services/perks")
     const all = await listPerks(hackathon.id)
     const now = new Date()
@@ -270,7 +270,7 @@ export default async function EventPage({ params, searchParams }: PageProps) {
     endsAt: hackathon.ends_at,
     locationType: hackathon.location_type,
     locationName: hackathon.location_name,
-    locationUrl: hackathon.location_url,
+    locationUrl: isOrganizer || isRegistered ? hackathon.location_url : null,
     organizerName: hackathon.organizer.name,
     schedule: scheduleItems.map((item) => ({
       title: item.title,
@@ -317,6 +317,7 @@ export default async function EventPage({ params, searchParams }: PageProps) {
   }
   const clientHackathon = toPublicHackathonClientDto(hackathon, {
     includeEditorSponsorData: isOrganizer,
+    includePrivateLocation: isOrganizer || isRegistered,
   })
 
   return (

@@ -30,7 +30,7 @@ interface SponsorLogoUploadProps {
 }
 
 const ASPECT_RATIO = 2
-const MAX_FILE_SIZE = 30 * 1024 * 1024
+const MAX_FILE_SIZE = 5 * 1024 * 1024
 
 async function getCroppedImg(imageSrc: string, pixelCrop: Area): Promise<Blob> {
   const image = new Image()
@@ -109,7 +109,7 @@ export function SponsorLogoUpload({
     }
 
     if (file.size > MAX_FILE_SIZE) {
-      setError("File must be smaller than 30MB")
+      setError("File must be smaller than 5MB")
       return
     }
 
@@ -139,6 +139,9 @@ export function SponsorLogoUpload({
     try {
       const croppedBlob = await getCroppedImg(imageSrc, croppedAreaPixels)
       const croppedFile = new File([croppedBlob], "logo.webp", { type: "image/webp" })
+      if (croppedFile.size > MAX_FILE_SIZE) {
+        throw new Error("The cropped logo must be smaller than 5MB")
+      }
 
       if (sponsorId && !sponsorId.startsWith("temp-")) {
         const formData = new FormData()

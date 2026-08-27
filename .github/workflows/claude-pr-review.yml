@@ -58,7 +58,7 @@ jobs:
 
             ### Testing
             - All new code must have tests in `__tests__/` directory
-            - Run tests with `bun test`
+            - Run tests with `bun run test`; never use `bun test` for the root suite
 
             ### TypeScript/Next.js
             - Proper typing (no `any` types)

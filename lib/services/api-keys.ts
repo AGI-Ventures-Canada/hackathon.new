@@ -58,7 +58,7 @@ export async function createApiKey(
 }
 
 export async function verifyApiKey(raw: string): Promise<ApiKey | null> {
-  if (!raw.startsWith("sk_")) {
+  if (!/^sk_live_[A-Za-z0-9_-]{32}$/.test(raw)) {
     return null
   }
 

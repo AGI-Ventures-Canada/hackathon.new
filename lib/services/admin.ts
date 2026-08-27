@@ -82,7 +82,6 @@ export type UpdateHackathonFields = {
   name?: string
   slug?: string
   description?: string | null
-  status?: HackathonStatus
   starts_at?: string | null
   ends_at?: string | null
   registration_opens_at?: string | null
@@ -96,7 +95,6 @@ export type UpdateHackathonFields = {
   location_type?: LocationType | null
   location_name?: string | null
   location_url?: string | null
-  results_published_at?: string | null
 }
 
 export async function updateHackathonAsAdmin(id: string, fields: UpdateHackathonFields) {

@@ -58,7 +58,7 @@ export async function dispatchTransitionNotifications(
       const { sendTransitionNotificationsWorkflow } = await import(
         "@/lib/workflows/transition-notifications"
       )
-      start(sendTransitionNotificationsWorkflow, [
+      await start(sendTransitionNotificationsWorkflow, [
         {
           notificationId: randomUUID(),
           hackathonId: input.hackathonId,
@@ -76,12 +76,7 @@ export async function dispatchTransitionNotifications(
           // not two.
           challenges: input.challenges,
         },
-      ]).catch((err) => {
-        console.error(
-          `Failed to start transition notification workflow for ${input.type}:`,
-          err
-        )
-      })
+      ])
     } catch (err) {
       console.error(
         `Failed to dispatch transition emails for ${input.type}:`,
@@ -94,7 +89,7 @@ export async function dispatchTransitionNotifications(
   try {
     const { triggerWebhooks } = await import("@/lib/services/webhooks")
     const timestamp = new Date().toISOString()
-    const webhookDelivery = triggerWebhooks(input.tenantId, webhookEvent, {
+    await triggerWebhooks(input.tenantId, webhookEvent, {
       event: webhookEvent,
       timestamp,
       ...(input.idempotencyKey
@@ -111,11 +106,10 @@ export async function dispatchTransitionNotifications(
           idempotencyKey: input.idempotencyKey,
           requireRecorded: true,
         }
-      : {}).catch(console.error)
-    if (input.idempotencyKey) await webhookDelivery
+      : {})
 
     if (hasChallenges) {
-      triggerWebhooks(input.tenantId, "hackathon.challenges_released", {
+      await triggerWebhooks(input.tenantId, "hackathon.challenges_released", {
         event: "hackathon.challenges_released",
         timestamp,
         data: {
@@ -125,7 +119,7 @@ export async function dispatchTransitionNotifications(
           source: "transition",
           coincidentWith: webhookEvent,
         },
-      }).catch(console.error)
+      })
     }
   } catch (err) {
     console.error(`Failed to trigger webhooks for ${input.type}:`, err)
@@ -163,7 +157,7 @@ export async function dispatchChallengesReleasedNotifications(
       const { sendChallengesReleasedNotificationsWorkflow } = await import(
         "@/lib/workflows/challenges-released"
       )
-      start(sendChallengesReleasedNotificationsWorkflow, [
+      await start(sendChallengesReleasedNotificationsWorkflow, [
         {
           notificationId: randomUUID(),
           hackathonId: input.hackathonId,
@@ -172,12 +166,7 @@ export async function dispatchChallengesReleasedNotifications(
           recipientRoles: [...CHALLENGES_RELEASED_RECIPIENT_ROLES],
           challenges: input.challenges,
         },
-      ]).catch((err) => {
-        console.error(
-          `Failed to start challenges-released workflow for ${input.hackathonId}:`,
-          err
-        )
-      })
+      ])
     } catch (err) {
       console.error(
         `Failed to dispatch challenges-released emails for ${input.hackathonId}:`,
@@ -188,7 +177,7 @@ export async function dispatchChallengesReleasedNotifications(
 
   try {
     const { triggerWebhooks } = await import("@/lib/services/webhooks")
-    triggerWebhooks(input.tenantId, "hackathon.challenges_released", {
+    await triggerWebhooks(input.tenantId, "hackathon.challenges_released", {
       event: "hackathon.challenges_released",
       timestamp: new Date().toISOString(),
       data: {
@@ -197,7 +186,7 @@ export async function dispatchChallengesReleasedNotifications(
         challengeCount: input.challenges.length,
         source: "standalone",
       },
-    }).catch(console.error)
+    })
   } catch (err) {
     console.error(
       `Failed to trigger challenges-released webhook for ${input.hackathonId}:`,

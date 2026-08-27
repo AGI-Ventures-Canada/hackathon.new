@@ -28,8 +28,9 @@ async function loadWinnerPageData(
 ): Promise<WinnerEntry[]> {
   const { data: assignments, error } = await client
     .from("prize_assignments")
-    .select("prize_id, submission_id, prizes(id, name, description, value, display_order), submissions(id, title, team_id)")
+    .select("prize_id, submission_id, prizes!inner(id, name, description, value, display_order), submissions!inner(id, title, team_id, hackathon_id)")
     .eq("prizes.hackathon_id", hackathonId)
+    .eq("submissions.hackathon_id", hackathonId)
     .order("prizes(display_order)")
 
   if (error || !assignments) {

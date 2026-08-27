@@ -16,7 +16,9 @@ export function hasAdminMetadata(sessionClaims: unknown): boolean {
   return metadata?.admin === true
 }
 
-export async function resolvePrincipal(request: Request): Promise<Principal> {
+const principalByRequest = new WeakMap<Request, Promise<Principal>>()
+
+async function resolvePrincipalUncached(request: Request): Promise<Principal> {
   const authHeader = request.headers.get("authorization")
 
   if (authHeader?.startsWith("Bearer sk_")) {
@@ -80,6 +82,14 @@ export async function resolvePrincipal(request: Request): Promise<Principal> {
     orgRole: orgId ? (orgRole ?? "org:member") : null,
     scopes: scopesForRole(orgId ? (orgRole ?? "org:member") : null),
   }
+}
+
+export function resolvePrincipal(request: Request): Promise<Principal> {
+  const existing = principalByRequest.get(request)
+  if (existing) return existing
+  const pending = resolvePrincipalUncached(request)
+  principalByRequest.set(request, pending)
+  return pending
 }
 
 export class AuthError extends Error {

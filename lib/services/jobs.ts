@@ -40,6 +40,15 @@ export async function createJob(input: CreateJobInput): Promise<Job | null> {
     .single()
 
   if (error || !data) {
+    if (error?.code === "23505" && input.idempotencyKey) {
+      const { data: existing } = await getSupabase()
+        .from("jobs")
+        .select("*")
+        .eq("tenant_id", input.tenantId)
+        .eq("idempotency_key", input.idempotencyKey)
+        .single()
+      return existing as Job | null
+    }
     console.error("Failed to create job:", error)
     return null
   }
@@ -109,12 +118,13 @@ export async function updateJobStatus(
     updateData.completed_at = new Date().toISOString()
   }
 
-  const { data, error } = await getSupabase()
+  let query = getSupabase()
     .from("jobs")
     .update(updateData)
     .eq("id", jobId)
-    .select()
-    .single()
+
+  if (status !== "canceled") query = query.neq("status_cache", "canceled")
+  const { data, error } = await query.select().single()
 
   if (error || !data) {
     console.error("Failed to update job:", error)
@@ -135,11 +145,43 @@ export async function cancelJob(
     return false
   }
 
-  const updated = await updateJobStatus(jobId, "canceled")
-  return updated !== null
+  const { data, error } = await getSupabase()
+    .from("jobs")
+    .update({
+      status_cache: "canceled",
+      completed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", jobId)
+    .eq("tenant_id", tenantId)
+    .in("status_cache", ["queued", "running"])
+    .select("id")
+  if (error || (data ?? []).length !== 1) return false
+
+  if (job.workflow_run_id && !job.workflow_run_id.startsWith("starting:")) {
+    try {
+      const { getRun } = await import("workflow/api")
+      await getRun(job.workflow_run_id).cancel()
+    } catch (workflowError) {
+      console.error("Job canceled, but its workflow could not be stopped:", workflowError)
+    }
+  }
+  return true
 }
 
 export async function startJobWorkflow(job: Job): Promise<string | null> {
+  if (job.workflow_run_id) return job.workflow_run_id
+  const claimMarker = `starting:${crypto.randomUUID()}`
+  const { data: claimed, error: claimError } = await getSupabase()
+    .from("jobs")
+    .update({ workflow_run_id: claimMarker, updated_at: new Date().toISOString() })
+    .eq("id", job.id)
+    .is("workflow_run_id", null)
+    .eq("status_cache", "queued")
+    .select("id")
+  if (claimError || (claimed ?? []).length === 0) return null
+
+  let startedRunId: string | null = null
   try {
     const { start } = await import("workflow/api")
     const { runJobWorkflow } = await import("@/lib/workflows/jobs")
@@ -152,11 +194,41 @@ export async function startJobWorkflow(job: Job): Promise<string | null> {
         input: job.input,
       },
     ])
+    startedRunId = run.runId
 
-    await updateJobStatus(job.id, "queued", { workflowRunId: run.runId })
+    const { data: attached, error: updateError } = await getSupabase()
+      .from("jobs")
+      .update({ workflow_run_id: run.runId, updated_at: new Date().toISOString() })
+      .eq("id", job.id)
+      .eq("workflow_run_id", claimMarker)
+      .eq("status_cache", "queued")
+      .select("id")
+    if (updateError) throw updateError
+    if (!attached || attached.length === 0) {
+      try {
+        const { getRun } = await import("workflow/api")
+        await getRun(run.runId).cancel()
+      } catch (cancelError) {
+        console.error("Canceled job workflow could not be stopped:", cancelError)
+      }
+      return null
+    }
 
     return run.runId
   } catch (err) {
+    await getSupabase()
+      .from("jobs")
+      .update({ workflow_run_id: null, updated_at: new Date().toISOString() })
+      .eq("id", job.id)
+      .eq("workflow_run_id", claimMarker)
+    if (startedRunId) {
+      try {
+        const { getRun } = await import("workflow/api")
+        await getRun(startedRunId).cancel()
+      } catch (cancelError) {
+        console.error("Failed to stop orphaned job workflow:", cancelError)
+      }
+    }
     console.error("Failed to start workflow:", err)
     return null
   }

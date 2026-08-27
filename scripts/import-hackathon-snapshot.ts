@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { createClient } from "@supabase/supabase-js"
+import { requireLocalSupabaseUrl } from "./local-supabase"
 
 const file = process.argv[2]
 if (!file) {
@@ -16,11 +17,7 @@ if (!supabaseUrl || !supabaseServiceKey) {
   process.exit(1)
 }
 
-if (!supabaseUrl.includes("127.0.0.1") && !supabaseUrl.includes("localhost")) {
-  console.error(`Refusing to run: NEXT_PUBLIC_SUPABASE_URL is not local (${supabaseUrl})`)
-  console.error("This script is intended for local dev databases only.")
-  process.exit(1)
-}
+requireLocalSupabaseUrl(supabaseUrl)
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
@@ -54,7 +51,7 @@ async function importTable(name: string, rows: Row[]) {
   if (error) {
     console.error(`  ${name}: FAILED — ${error.message}`)
     if (error.details) console.error(`    details: ${error.details}`)
-    return
+    throw new Error(`Failed to import ${name}: ${error.message}`)
   }
   console.log(`  ${name}: ${rows.length} row${rows.length === 1 ? "" : "s"}`)
 }

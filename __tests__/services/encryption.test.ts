@@ -285,5 +285,16 @@ describe("Encryption Service", () => {
 
       process.env.ENCRYPTION_KEY = savedKey
     })
+
+    it("rejects a 64 character key containing non-hex characters", () => {
+      const savedKey = process.env.ENCRYPTION_KEY
+      process.env.ENCRYPTION_KEY = "z".repeat(64)
+
+      expect(() => encryptToken("test")).toThrow(
+        "ENCRYPTION_KEY must be 64 hex characters (32 bytes)"
+      )
+
+      process.env.ENCRYPTION_KEY = savedKey
+    })
   })
 })

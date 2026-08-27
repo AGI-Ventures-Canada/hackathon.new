@@ -1139,18 +1139,24 @@ export async function getActiveScenarios(): Promise<ActiveScenario[]> {
   return results
 }
 
-async function clearScenario(name: string): Promise<void> {
+async function clearScenario(name: string, tenantId: string): Promise<void> {
   const db = getSupabase()
   const prefix = `test-${name}-`
   const { data } = await db
     .from("hackathons")
     .select("id")
     .like("slug", `${prefix}%`)
+    .eq("tenant_id", tenantId)
 
   if (!data?.length) return
 
   for (const { id } of data) {
-    await db.from("hackathons").delete().eq("id", id)
+    const { error } = await db
+      .from("hackathons")
+      .delete()
+      .eq("id", id)
+      .eq("tenant_id", tenantId)
+    if (error) throw error
   }
 }
 
@@ -1164,8 +1170,9 @@ export async function runScenario(name: string, tenantId?: string, principalOrgI
     throw new Error(`Unknown scenario: ${name}. Available: ${SCENARIOS.map(s => s.name).join(", ")}`)
   }
 
-  await clearScenario(name)
-  return runner(tenantId, principalOrgId, options)
+  const resolvedTenantId = await resolveScenarioTenant(tenantId, principalOrgId)
+  await clearScenario(name, resolvedTenantId)
+  return runner(resolvedTenantId, principalOrgId, options)
 }
 
 export type RoleCard = {

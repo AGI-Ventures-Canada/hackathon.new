@@ -406,7 +406,7 @@ describe("Jobs Service", () => {
         if (callCount === 1) {
           return createChainableMock({ data: queuedJob, error: null })
         }
-        return createChainableMock({ data: canceledJob, error: null })
+        return createChainableMock({ data: [{ id: canceledJob.id }], error: null })
       })
 
       const result = await cancelJob("job-1", "tenant-123")
@@ -424,7 +424,7 @@ describe("Jobs Service", () => {
         if (callCount === 1) {
           return createChainableMock({ data: runningJob, error: null })
         }
-        return createChainableMock({ data: canceledJob, error: null })
+        return createChainableMock({ data: [{ id: canceledJob.id }], error: null })
       })
 
       const result = await cancelJob("job-1", "tenant-123")

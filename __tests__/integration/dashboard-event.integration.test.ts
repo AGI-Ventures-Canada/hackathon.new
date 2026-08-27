@@ -644,6 +644,9 @@ describe("Dashboard Event Routes Integration Tests", () => {
       mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
       let rateLimitCall = 0
       setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({ data: { id: hackathonId }, error: null })
+        }
         if (table !== "rate_limits") {
           return createChainableMock({ data: null, error: null })
         }
@@ -674,11 +677,13 @@ describe("Dashboard Event Routes Integration Tests", () => {
 
     it("returns a stable retryable failure when the event lease is unavailable", async () => {
       mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
-      setMockFromImplementation(() =>
-        createChainableMock({
-          data: null,
-          error: { message: "database unavailable" },
-        }),
+      setMockFromImplementation((table) =>
+        table === "hackathons"
+          ? createChainableMock({ data: { id: hackathonId }, error: null })
+          : createChainableMock({
+              data: null,
+              error: { message: "database unavailable" },
+            }),
       )
 
       const res = await app.handle(

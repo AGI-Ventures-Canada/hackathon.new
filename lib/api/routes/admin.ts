@@ -14,7 +14,6 @@ import { listScenarios, runScenario, generateRoleTokens, getActiveScenarios } fr
 import { getPersonaUserId, findPersonaByUserId, TEST_PERSONAS } from "@/lib/dev/test-personas"
 import { safeRedirectUrl } from "@/lib/utils/url"
 import { supabase } from "@/lib/db/client"
-import { HackathonStatusEnum } from "@/lib/api/validators"
 
 const LocationTypeEnum = t.Union([
   t.Literal("in_person"),
@@ -92,6 +91,15 @@ export const adminRoutes = new Elysia({ prefix: "/admin" })
     "/hackathons/:id",
     async ({ params, body, principal }) => {
       requireAdminScopes(principal, ["admin:write"])
+      const allowedFields = new Set([
+        "name", "slug", "description", "starts_at", "ends_at",
+        "registration_opens_at", "registration_closes_at", "min_team_size",
+        "max_team_size", "max_participants", "allow_solo", "anonymous_judging",
+        "rules", "location_type", "location_name", "location_url",
+      ])
+      if (Object.keys(body).some((field) => !allowedFields.has(field))) {
+        throw new AuthError("Unsupported hackathon field", 400)
+      }
       const existing = await getHackathonById(params.id)
       if (!existing) {
         throw new AuthError("Hackathon not found", 404)
@@ -113,10 +121,11 @@ export const adminRoutes = new Elysia({ prefix: "/admin" })
     },
     {
       body: t.Object({
+        status: t.Optional(t.Never({ description: "Use the lifecycle endpoint to change status" })),
+        results_published_at: t.Optional(t.Never({ description: "Use the results endpoints to publish results" })),
         name: t.Optional(t.String({ maxLength: 200 })),
         slug: t.Optional(t.String({ maxLength: 200 })),
         description: t.Optional(t.Nullable(t.String({ maxLength: 10000 }))),
-        status: t.Optional(HackathonStatusEnum),
         starts_at: t.Optional(t.Nullable(t.String({ maxLength: 100 }))),
         ends_at: t.Optional(t.Nullable(t.String({ maxLength: 100 }))),
         registration_opens_at: t.Optional(t.Nullable(t.String({ maxLength: 100 }))),
@@ -130,11 +139,10 @@ export const adminRoutes = new Elysia({ prefix: "/admin" })
         location_type: t.Optional(t.Nullable(LocationTypeEnum)),
         location_name: t.Optional(t.Nullable(t.String({ maxLength: 500 }))),
         location_url: t.Optional(t.Nullable(t.String({ maxLength: 2000 }))),
-        results_published_at: t.Optional(t.Nullable(t.String({ maxLength: 100 }))),
       }),
       detail: {
         summary: "Update hackathon",
-        description: "Update any hackathon field as admin.",
+        description: "Update hackathon details as admin. Lifecycle and results changes use their dedicated endpoints.",
       },
     }
   )
@@ -376,6 +384,9 @@ export const adminRoutes = new Elysia({ prefix: "/admin" })
     "/scenario-run/:name",
     async ({ params, body, principal }) => {
       requireAdminScopes(principal, ["admin:scenarios"])
+      if (process.env.VERCEL_ENV === "production") {
+        throw new AuthError("Scenario tools are disabled in production", 404)
+      }
 
       let result: Awaited<ReturnType<typeof runScenario>>
       try {

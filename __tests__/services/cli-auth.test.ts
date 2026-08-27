@@ -21,8 +21,15 @@ mock.module("@/lib/services/api-keys", () => ({
 }))
 
 const { encryptToken } = await import("@/lib/services/encryption")
+const VALID_TOKEN = "a".repeat(64)
 
-const { createCliAuthSession, pollCliAuthSession, completeCliAuthSession } =
+const {
+  createCliAuthSession,
+  pollCliAuthSession,
+  completeCliAuthSession,
+  getCliKeyScopes,
+  isValidCliDeviceToken,
+} =
   await import("@/lib/services/cli-auth")
 
 describe("cli-auth service", () => {
@@ -36,7 +43,7 @@ describe("cli-auth service", () => {
       const chain = createChainableMock({
         data: {
           id: "session-1",
-          device_token: "abc123",
+          device_token: VALID_TOKEN,
           status: "pending",
           expires_at: new Date(Date.now() + 300_000).toISOString(),
         },
@@ -44,9 +51,9 @@ describe("cli-auth service", () => {
       })
       setMockFromImplementation(() => chain)
 
-      const result = await createCliAuthSession("abc123")
+      const result = await createCliAuthSession(VALID_TOKEN)
       expect(result).not.toBeNull()
-      expect(result.device_token).toBe("abc123")
+      expect(result.device_token).toBe(VALID_TOKEN)
       expect(result.status).toBe("pending")
     })
 
@@ -54,7 +61,7 @@ describe("cli-auth service", () => {
       const chain = createChainableMock({ data: null, error: { message: "Duplicate" } })
       setMockFromImplementation(() => chain)
 
-      await expect(createCliAuthSession("abc123")).rejects.toThrow("Failed to create CLI auth session")
+      await expect(createCliAuthSession(VALID_TOKEN)).rejects.toThrow("Failed to create CLI auth session")
     })
   })
 
@@ -64,7 +71,7 @@ describe("cli-auth service", () => {
       const selectChain = createChainableMock({
         data: {
           id: "session-1",
-          device_token: "abc123",
+          device_token: VALID_TOKEN,
           status: "pending",
           expires_at: new Date(Date.now() + 300_000).toISOString(),
         },
@@ -75,7 +82,7 @@ describe("cli-auth service", () => {
         return table === "cli_auth_sessions" ? selectChain : deleteChain
       })
 
-      const result = await pollCliAuthSession("abc123")
+      const result = await pollCliAuthSession(VALID_TOKEN)
       expect(result.status).toBe("pending")
     })
 
@@ -83,7 +90,7 @@ describe("cli-auth service", () => {
       const chain = createChainableMock({ data: null, error: { message: "Not found" } })
       setMockFromImplementation(() => chain)
 
-      const result = await pollCliAuthSession("unknown-token")
+      const result = await pollCliAuthSession("b".repeat(64))
       expect(result.status).toBe("expired")
     })
 
@@ -91,22 +98,21 @@ describe("cli-auth service", () => {
       const selectChain = createChainableMock({
         data: {
           id: "session-1",
-          device_token: "abc123",
+          device_token: VALID_TOKEN,
           status: "pending",
           expires_at: new Date(Date.now() - 60_000).toISOString(),
         },
         error: null,
       })
-      const updateChain = createChainableMock({ data: null, error: null })
+      const updateChain = createChainableMock({ data: { id: "session-1" }, error: null })
 
       let callCount = 0
       setMockFromImplementation(() => {
         callCount++
-        if (callCount <= 2) return updateChain
-        return selectChain
+        return callCount === 1 ? selectChain : updateChain
       })
 
-      const result = await pollCliAuthSession("abc123")
+      const result = await pollCliAuthSession(VALID_TOKEN)
       expect(result.status).toBe("expired")
     })
 
@@ -114,7 +120,7 @@ describe("cli-auth service", () => {
       const selectChain = createChainableMock({
         data: {
           id: "session-1",
-          device_token: "abc123",
+          device_token: VALID_TOKEN,
           status: "complete",
           encrypted_api_key: encryptToken("sk_live_real_key"),
           expires_at: new Date(Date.now() + 300_000).toISOString(),
@@ -126,13 +132,10 @@ describe("cli-auth service", () => {
       let callCount = 0
       setMockFromImplementation(() => {
         callCount++
-        // Call 1 = cleanupExpiredSessions (delete), Call 2 = select query, Call 3 = delete session after returning key
-        if (callCount === 1) return deleteChain
-        if (callCount === 3) return deleteChain
-        return selectChain
+        return callCount === 1 ? selectChain : deleteChain
       })
 
-      const result = await pollCliAuthSession("abc123")
+      const result = await pollCliAuthSession(VALID_TOKEN)
       expect(result.status).toBe("complete")
       expect(result.apiKey).toBe("sk_live_real_key")
     })
@@ -143,7 +146,7 @@ describe("cli-auth service", () => {
       const selectChain = createChainableMock({
         data: {
           id: "session-1",
-          device_token: "abc123",
+          device_token: VALID_TOKEN,
           status: "pending",
           expires_at: new Date(Date.now() + 300_000).toISOString(),
         },
@@ -155,7 +158,12 @@ describe("cli-auth service", () => {
         return table === "cli_auth_sessions" ? selectChain : updateChain
       })
 
-      const result = await completeCliAuthSession("abc123", "tenant-1", "test-host")
+      const result = await completeCliAuthSession(
+        "a".repeat(64),
+        "tenant-1",
+        ["hackathons:read", "hackathons:write"],
+        "test-host"
+      )
       expect(result.success).toBe(true)
       expect(mockCreateApiKey).toHaveBeenCalledTimes(1)
     })
@@ -164,7 +172,11 @@ describe("cli-auth service", () => {
       const chain = createChainableMock({ data: null, error: { message: "Not found" } })
       setMockFromImplementation(() => chain)
 
-      const result = await completeCliAuthSession("nonexistent", "tenant-1")
+      const result = await completeCliAuthSession(
+        "a".repeat(64),
+        "tenant-1",
+        ["hackathons:read"]
+      )
       expect(result.success).toBe(false)
       expect(result.error).toContain("not found")
     })
@@ -173,7 +185,7 @@ describe("cli-auth service", () => {
       const chain = createChainableMock({
         data: {
           id: "session-1",
-          device_token: "abc123",
+          device_token: VALID_TOKEN,
           status: "pending",
           expires_at: new Date(Date.now() - 60_000).toISOString(),
         },
@@ -187,7 +199,11 @@ describe("cli-auth service", () => {
         return callCount === 1 ? chain : updateChain
       })
 
-      const result = await completeCliAuthSession("abc123", "tenant-1")
+      const result = await completeCliAuthSession(
+        "a".repeat(64),
+        "tenant-1",
+        ["hackathons:read"]
+      )
       expect(result.success).toBe(false)
       expect(result.error).toContain("expired")
     })
@@ -196,7 +212,7 @@ describe("cli-auth service", () => {
       const selectChain = createChainableMock({
         data: {
           id: "session-1",
-          device_token: "abc123",
+          device_token: VALID_TOKEN,
           status: "pending",
           expires_at: new Date(Date.now() + 300_000).toISOString(),
         },
@@ -204,13 +220,67 @@ describe("cli-auth service", () => {
       })
       setMockFromImplementation(() => selectChain)
 
-      await completeCliAuthSession("abc123", "tenant-1")
+      await completeCliAuthSession(
+        "a".repeat(64),
+        "tenant-1",
+        ["hackathons:read", "hackathons:write"]
+      )
 
       const createCall = (mockCreateApiKey.mock.calls[0] as unknown[])[0] as { scopes: string[] }
       expect(createCall.scopes).not.toContain("keys:read")
       expect(createCall.scopes).not.toContain("keys:write")
       expect(createCall.scopes).toContain("hackathons:read")
       expect(createCall.scopes).toContain("hackathons:write")
+    })
+
+    it("revokes a new key when session completion loses a race", async () => {
+      const chain = createChainableMock({
+        data: {
+          id: "session-1",
+          device_token: "a".repeat(64),
+          status: "pending",
+          expires_at: new Date(Date.now() + 300_000).toISOString(),
+        },
+        error: null,
+      })
+      const failedUpdate = createChainableMock({ data: null, error: null })
+      let callCount = 0
+      setMockFromImplementation(() => {
+        callCount++
+        return callCount === 1 ? chain : failedUpdate
+      })
+
+      const result = await completeCliAuthSession(
+        "a".repeat(64),
+        "tenant-1",
+        ["hackathons:read"]
+      )
+
+      expect(result.success).toBe(false)
+    })
+  })
+
+  describe("CLI authorization boundaries", () => {
+    it("accepts only exact 64-character lowercase hex tokens", () => {
+      expect(isValidCliDeviceToken("a".repeat(64))).toBe(true)
+      expect(isValidCliDeviceToken("a".repeat(63))).toBe(false)
+      expect(isValidCliDeviceToken("g".repeat(64))).toBe(false)
+      expect(isValidCliDeviceToken("A".repeat(64))).toBe(false)
+    })
+
+    it("does not grant scopes the signed-in member lacks", () => {
+      const scopes = getCliKeyScopes([
+        "hackathons:read",
+        "teams:write",
+        "submissions:write",
+      ])
+      expect(scopes).toEqual([
+        "hackathons:read",
+        "teams:write",
+        "submissions:write",
+      ])
+      expect(scopes).not.toContain("hackathons:write")
+      expect(scopes).not.toContain("org:write")
     })
   })
 })

@@ -85,7 +85,7 @@ describe("Sponsors Service", () => {
 
   describe("removeSponsor", () => {
     it("removes a sponsor successfully", async () => {
-      const chain = createChainableMock({ data: null, error: null })
+      const chain = createChainableMock({ data: [{ id: "s1" }], error: null })
       setMockFromImplementation(() => chain)
 
       const result = await removeSponsor("s1", "h1")

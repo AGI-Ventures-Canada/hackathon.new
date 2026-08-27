@@ -36,6 +36,7 @@ import {
   publicTeamName,
 } from "@/lib/utils/anonymous-judging"
 import { syncSubmissionChallenges } from "@/lib/services/challenges"
+import { RateLimitError } from "@/lib/services/rate-limit"
 
 const aggregateSubmissionPayloadSchema = z.object({
   title: z.string().trim().min(1).max(100),
@@ -866,6 +867,20 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       return submissionErrorResponse("Your team is no longer active", "team_not_active", 409)
     }
 
+    const { checkRateLimit } = await import("@/lib/services/rate-limit")
+    const completionLimit = await checkRateLimit(
+      `submission_complete:${hackathon.id}:${userId}`,
+      { maxRequests: 10, windowMs: 60 * 60_000 },
+      { failureMode: "closed" },
+    )
+    if (!completionLimit.allowed) {
+      throw new RateLimitError(completionLimit.resetAt, completionLimit.remaining)
+    }
+    const contentLength = Number(request.headers.get("content-length") ?? 0)
+    if (contentLength > MAX_SUBMISSION_SCREENSHOT_REQUEST_BYTES + 256 * 1024) {
+      return submissionErrorResponse("Project upload is too large", "request_too_large", 413)
+    }
+
     let formData: FormData
     try {
       formData = await request.formData()
@@ -1240,6 +1255,14 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       return new Response(
         JSON.stringify({ error: "Create a submission first before uploading a screenshot", code: "no_submission" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
+      )
+    }
+
+    const contentLength = Number(request.headers.get("content-length"))
+    if (Number.isFinite(contentLength) && contentLength > MAX_SUBMISSION_SCREENSHOT_REQUEST_BYTES) {
+      return new Response(
+        JSON.stringify({ error: "Request too large (max 4MB)", code: "request_too_large" }),
+        { status: 413, headers: { "Content-Type": "application/json" } },
       )
     }
 
@@ -1827,7 +1850,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
 
     const { getSiblingClaims } = await import("@/lib/services/prize-fulfillment")
     const siblings = await getSiblingClaims(params.token)
-    const publicSiblings = siblings.map(({ recipientEmail: _email, shippingAddress: _addr, ...rest }) => rest)
+    const publicSiblings = siblings.map(({ recipientName: _name, recipientEmail: _email, shippingAddress: _addr, ...rest }) => rest)
 
     return { success: true, siblings: publicSiblings }
   }, {
@@ -2596,7 +2619,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
 
     const client = await clerkClient()
     const user = await client.users.getUser(userId)
-    const userEmails = user.emailAddresses.map((e) => e.emailAddress)
+    const userEmails = getVerifiedUserEmails(user)
 
     if (userEmails.length === 0) {
       return new Response(
@@ -2681,6 +2704,16 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
+    const client = await clerkClient()
+    const user = await client.users.getUser(userId)
+    const verifiedEmails = getVerifiedUserEmails(user)
+    if (!verifiedEmails.includes(invitation.email.toLowerCase())) {
+      return new Response(
+        JSON.stringify({ error: "This invitation was sent to a different email", code: "email_mismatch" }),
+        { status: 403, headers: { "Content-Type": "application/json" } }
+      )
+    }
+
     const result = await cancelJudgeInvitation(invitation.id, invitation.hackathon_id)
     if (!result.success) {
       return new Response(
@@ -2690,9 +2723,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     }
 
     const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
-    cancelRemindersForEntity("judge_invitation", invitation.id).catch((err) =>
-      console.error(`Failed to cancel reminders for judge_invitation ${invitation.id}:`, err)
-    )
+    await cancelRemindersForEntity("judge_invitation", invitation.id)
 
     return { success: true }
   }, {
@@ -2828,6 +2859,20 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
+    const { supabase: getSupabase } = await import("@/lib/db/client")
+    const { data: submission } = await getSupabase()
+      .from("submissions")
+      .select("id, status")
+      .eq("id", body.submissionId)
+      .eq("hackathon_id", hackathon.id)
+      .maybeSingle()
+    if (!submission || submission.status !== "submitted") {
+      return new Response(
+        JSON.stringify({ error: "Project not found" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      )
+    }
+
     const { castVote } = await import("@/lib/services/crowd-voting")
     const result = await castVote(hackathon.id, body.submissionId, userId)
 
@@ -2884,12 +2929,21 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       description: "Removes user's vote for a hackathon. Requires Clerk session.",
     },
   })
-  .get("/cli-auth/poll", async ({ query }) => {
-    if (query.token.length < 32) {
+  .get("/cli-auth/poll", async ({ query, request }) => {
+    const { isValidCliDeviceToken } = await import("@/lib/services/cli-auth")
+    if (!isValidCliDeviceToken(query.token)) {
       return new Response(
         JSON.stringify({ error: "Invalid token" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       )
+    }
+
+    const { consumePublicCliAuthRateLimit } = await import(
+      "@/lib/services/public-import-rate-limit"
+    )
+    const rateLimit = await consumePublicCliAuthRateLimit(request.headers)
+    if (rateLimit && !rateLimit.allowed) {
+      throw new RateLimitError(rateLimit.resetAt, rateLimit.remaining)
     }
 
     const { createCliAuthSession, pollCliAuthSession } = await import("@/lib/services/cli-auth")

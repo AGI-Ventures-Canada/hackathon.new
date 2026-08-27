@@ -6,7 +6,7 @@ import {
 import { matchesExpectedOrganization } from "@/lib/auth/types"
 import { normalizeUrl, isSafeExternalUrl, redactImportSourceUrl } from "@/lib/utils/url"
 import { extractExternalEventData, extractExternalRichContent, isLumaUrl } from "@/lib/services/external-import"
-import { RateLimitError } from "@/lib/services/rate-limit"
+import { checkRateLimit, RateLimitError } from "@/lib/services/rate-limit"
 import { consumePublicImportRateLimit } from "@/lib/services/public-import-rate-limit"
 import { normalizeLocale } from "@/lib/utils/language"
 
@@ -359,6 +359,16 @@ export const dashboardImportRoutes = new Elysia({ prefix: "/dashboard/import" })
       if (!isSafeExternalUrl(url)) {
         set.status = 400
         return { error: "Invalid or disallowed URL" }
+      }
+
+      const actorId = principal.kind === "api_key" ? principal.keyId : principal.userId
+      const rateLimit = await checkRateLimit(
+        `authenticated_import:${principal.tenantId}:${actorId}`,
+        { maxRequests: 10, windowMs: 60 * 60 * 1000 },
+        { failureMode: "closed" }
+      )
+      if (!rateLimit.allowed) {
+        throw new RateLimitError(rateLimit.resetAt, rateLimit.remaining)
       }
 
       const eventData = await extractExternalEventData(url)

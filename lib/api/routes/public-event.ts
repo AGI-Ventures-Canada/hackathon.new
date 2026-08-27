@@ -25,6 +25,8 @@ import { resolvePrincipal } from "@/lib/auth/principal"
 import { pendingTeamApprovalResponse } from "@/lib/api/responses"
 import { isValidUuid } from "@/lib/utils/uuid"
 import { publicTeamName } from "@/lib/utils/anonymous-judging"
+import { checkRateLimit, RateLimitError } from "@/lib/services/rate-limit"
+import { consumePublicPollRateLimit } from "@/lib/services/public-import-rate-limit"
 
 async function resolveHackathonBySlug(slug: string, set: { status?: number | string }) {
   const hackathon = await getPublicHackathon(slug)
@@ -36,7 +38,11 @@ async function resolveHackathonBySlug(slug: string, set: { status?: number | str
 }
 
 export const publicEventRoutes = new Elysia({ prefix: "/public" })
-  .get("/hackathons/:slug/poll", async ({ params, set }) => {
+  .get("/hackathons/:slug/poll", async ({ params, request, set }) => {
+    const pollLimit = await consumePublicPollRateLimit(request.headers)
+    if (pollLimit && !pollLimit.allowed) {
+      throw new RateLimitError(pollLimit.resetAt, pollLimit.remaining)
+    }
     const { error, hackathon } = await resolveHackathonBySlug(params.slug, set)
     if (error) return { error }
 
@@ -66,13 +72,24 @@ export const publicEventRoutes = new Elysia({ prefix: "/public" })
     if (participant.teamStatus === "pending_approval") {
       return pendingTeamApprovalResponse(set)
     }
+    if (participant.teamStatus === "disbanded") {
+      set.status = 403
+      return { error: "You must be on an active team to submit a social post" }
+    }
+
+    const socialLimit = await checkRateLimit(
+      `social_submit:${hackathon!.id}:${principal.userId}`,
+      { maxRequests: 10, windowMs: 60 * 60_000 },
+      { failureMode: "closed" },
+    )
+    if (!socialLimit.allowed) throw new RateLimitError(socialLimit.resetAt, socialLimit.remaining)
 
     const { url } = body as { url: string }
     const submission = await submitSocialUrl(hackathon!.id, participant.participantId, participant.teamId, url)
     if (!submission) { set.status = 400; return { error: "Failed to submit" } }
     return submission
   }, {
-    body: t.Object({ url: t.String() }),
+    body: t.Object({ url: t.String({ minLength: 1, maxLength: 2_048 }) }),
     detail: { summary: "Submit social media post" },
   })
   // --- Mentor Requests ---
@@ -282,6 +299,8 @@ export const publicEventRoutes = new Elysia({ prefix: "/public" })
     },
   })
   .get("/hackathons/:slug/announcements", async ({ params, request, set }) => {
+    set.headers["Cache-Control"] = "private, no-store"
+    set.headers["Vary"] = "Cookie, Authorization"
     const { error, hackathon } = await resolveHackathonBySlug(params.slug, set)
     if (error) return { error }
 
@@ -292,7 +311,10 @@ export const publicEventRoutes = new Elysia({ prefix: "/public" })
     let viewer: AnnouncementViewer = { role: "public" }
 
     if (principal.kind === "api_key") {
-      if (principal.tenantId === hackathon!.organizer.id) viewer = { role: "organizer" }
+      if (
+        principal.tenantId === hackathon!.organizer.id &&
+        principal.scopes.includes("hackathons:read")
+      ) viewer = { role: "organizer" }
     } else if (principal.kind === "user" || principal.kind === "admin") {
       const isOrganizer =
         principal.tenantId === hackathon!.organizer.id ||
@@ -383,6 +405,10 @@ export const publicEventRoutes = new Elysia({ prefix: "/public" })
     }
     if (participant.teamStatus === "pending_approval") {
       return pendingTeamApprovalResponse(set)
+    }
+    if (participant.teamStatus === "disbanded") {
+      set.status = 403
+      return { error: "You must be on an active team to view perks" }
     }
 
     const { listPerks, isPerkReleased } = await import("@/lib/services/perks")

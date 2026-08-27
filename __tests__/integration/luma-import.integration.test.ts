@@ -107,6 +107,24 @@ mock.module("@/lib/services/api-keys", () => ({
   getApiKeyById: mock(() => Promise.resolve(null)),
 }))
 
+const mockCheckRateLimit = mock(() =>
+  Promise.resolve({ allowed: true, remaining: 9, resetAt: Date.now() + 60_000 })
+)
+class MockRateLimitError extends Error {
+  constructor(
+    public resetAt: number,
+    public remaining: number
+  ) {
+    super("Rate limit exceeded")
+  }
+}
+mock.module("@/lib/services/rate-limit", () => ({
+  checkRateLimit: mockCheckRateLimit,
+  RateLimitError: MockRateLimitError,
+  getRateLimitHeaders: () => ({}),
+  defaultRateLimits: { "api_key:default": { maxRequests: 100, windowMs: 60_000 } },
+}))
+
 const mockGetOrCreateTenant = mock(() => Promise.resolve(null))
 const mockGetOrCreatePersonalTenant = mock(() => Promise.resolve(null))
 mock.module("@/lib/services/tenants", () => ({
@@ -142,6 +160,12 @@ describe("POST /api/dashboard/import/event (create from editor data)", () => {
     mockTriggerWebhooks.mockClear()
     mockAuth.mockClear()
     mockVerifyApiKey.mockClear()
+    mockCheckRateLimit.mockClear()
+    mockCheckRateLimit.mockResolvedValue({
+      allowed: true,
+      remaining: 9,
+      resetAt: Date.now() + 60_000,
+    })
     mockGetOrCreateTenant.mockClear()
     mockGetOrCreatePersonalTenant.mockClear()
     mockStartHackathonCreationFinalizationWorkflow.mockResolvedValue(
@@ -873,9 +897,43 @@ describe("POST /api/dashboard/import/url (create from URL)", () => {
     mockVerifyApiKey.mockClear()
     mockGetOrCreateTenant.mockClear()
     mockGetOrCreatePersonalTenant.mockClear()
+    mockCheckRateLimit.mockClear()
+    mockCheckRateLimit.mockResolvedValue({
+      allowed: true,
+      remaining: 9,
+      resetAt: Date.now() + 60_000,
+    })
     mockStartHackathonCreationFinalizationWorkflow.mockResolvedValue(
       "creation-finalization-run-1",
     )
+  })
+
+  it("rate limits paid extraction per authenticated caller", async () => {
+    mockVerifyApiKey.mockResolvedValueOnce({
+      id: "key-1",
+      tenant_id: "tenant-1",
+      scopes: ["hackathons:write"],
+    })
+    mockCheckRateLimit.mockResolvedValueOnce({
+      allowed: false,
+      remaining: 0,
+      resetAt: Date.now() + 60_000,
+    })
+
+    const res = await api.handle(
+      new Request("http://localhost/api/dashboard/import/url", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer sk_live_test",
+        },
+        body: JSON.stringify({ url: "https://lu.ma/test-hackathon" }),
+      })
+    )
+
+    expect(res.status).toBe(429)
+    expect(mockExtractLumaEventData).not.toHaveBeenCalled()
+    expect(mockExtractEventPageData).not.toHaveBeenCalled()
   })
 
   it("creates hackathon from a Luma URL with API key auth", async () => {

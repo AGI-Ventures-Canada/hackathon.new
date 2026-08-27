@@ -1,5 +1,5 @@
 import { describe, expect, it, mock, spyOn } from "bun:test"
-import { parseLoginOptions } from "../../src/commands/login"
+import { getBrowserCommand, parseLoginOptions, validateBaseUrl } from "../../src/commands/login"
 import { AUTH_TIMEOUT_MS } from "../../src/constants"
 
 describe("parseLoginOptions", () => {
@@ -49,6 +49,39 @@ describe("parseLoginOptions", () => {
     expect(options.noBrowser).toBeUndefined()
     expect(options.baseUrl).toBeUndefined()
     expect(options.yes).toBeUndefined()
+  })
+})
+
+describe("getBrowserCommand", () => {
+  const url = "https://example.com/cli-auth#token=abc;touch /tmp/pwned"
+
+  it("passes the URL as one macOS process argument", () => {
+    expect(getBrowserCommand(url, "darwin")).toEqual({
+      executable: "open",
+      args: [url],
+    })
+  })
+
+  it("passes the URL as one Linux process argument", () => {
+    expect(getBrowserCommand(url, "linux")).toEqual({
+      executable: "xdg-open",
+      args: [url],
+    })
+  })
+
+  it("uses the Windows URL handler without a shell", () => {
+    expect(getBrowserCommand(url, "win32")).toEqual({
+      executable: "rundll32.exe",
+      args: ["url.dll,FileProtocolHandler", url],
+    })
+  })
+})
+
+describe("validateBaseUrl", () => {
+  it("requires HTTPS outside loopback development", () => {
+    expect(validateBaseUrl("https://hackathon.new/")).toBe("https://hackathon.new")
+    expect(validateBaseUrl("http://localhost:3000")).toBe("http://localhost:3000")
+    expect(() => validateBaseUrl("http://staging.example.com")).toThrow("must use HTTPS")
   })
 })
 

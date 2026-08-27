@@ -58,6 +58,10 @@ export async function createCategory(
 ): Promise<SubmissionCategory | null> {
   const client = getSupabase() as unknown as SupabaseClient
 
+  if (input.prizeId && !(await prizeBelongsToHackathon(client, input.prizeId, hackathonId))) {
+    return null
+  }
+
   const { data, error } = await client
     .from("submission_categories")
     .insert({
@@ -84,6 +88,10 @@ export async function updateCategory(
   input: UpdateCategoryInput
 ): Promise<SubmissionCategory | null> {
   const client = getSupabase() as unknown as SupabaseClient
+
+  if (input.prizeId && !(await prizeBelongsToHackathon(client, input.prizeId, hackathonId))) {
+    return null
+  }
 
   const updates: Record<string, unknown> = {}
   if (input.name !== undefined) updates.name = input.name
@@ -148,26 +156,63 @@ export async function setSubmissionCategories(
 ): Promise<boolean> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { error: deleteError } = await client
+  const { data: submission } = await client
+    .from("submissions")
+    .select("hackathon_id")
+    .eq("id", submissionId)
+    .maybeSingle()
+  if (!submission) return false
+
+  const uniqueCategoryIds = [...new Set(categoryIds)]
+  if (uniqueCategoryIds.length > 0) {
+    const { data: categories, error: categoriesError } = await client
+      .from("submission_categories")
+      .select("id")
+      .eq("hackathon_id", submission.hackathon_id)
+      .in("id", uniqueCategoryIds)
+    if (categoriesError || categories?.length !== uniqueCategoryIds.length) return false
+
+    const { error: upsertError } = await client
+      .from("submission_category_entries")
+      .upsert(
+        uniqueCategoryIds.map((categoryId) => ({ submission_id: submissionId, category_id: categoryId })),
+        { onConflict: "submission_id,category_id", ignoreDuplicates: true }
+      )
+    if (upsertError) {
+      console.error("Failed to set submission categories:", upsertError)
+      return false
+    }
+  }
+
+  let deleteQuery = client
     .from("submission_category_entries")
     .delete()
     .eq("submission_id", submissionId)
+
+  if (uniqueCategoryIds.length > 0) {
+    deleteQuery = deleteQuery.not("category_id", "in", `(${uniqueCategoryIds.join(",")})`)
+  }
+
+  const { error: deleteError } = await deleteQuery
 
   if (deleteError) {
     console.error("Failed to clear submission categories:", deleteError)
     return false
   }
 
-  if (categoryIds.length === 0) return true
-
-  const { error: insertError } = await client
-    .from("submission_category_entries")
-    .insert(categoryIds.map((categoryId) => ({ submission_id: submissionId, category_id: categoryId })))
-
-  if (insertError) {
-    console.error("Failed to set submission categories:", insertError)
-    return false
-  }
-
   return true
+}
+
+async function prizeBelongsToHackathon(
+  client: SupabaseClient,
+  prizeId: string,
+  hackathonId: string
+): Promise<boolean> {
+  const { data } = await client
+    .from("prizes")
+    .select("id")
+    .eq("id", prizeId)
+    .eq("hackathon_id", hackathonId)
+    .maybeSingle()
+  return Boolean(data)
 }

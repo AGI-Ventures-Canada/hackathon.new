@@ -506,13 +506,19 @@ export async function cancelTeamInvitationAsOrganizer(
     return { success: false, error: "Invitation is no longer pending" }
   }
 
-  const { error } = await client
+  const { data: cancelledInvitation, error } = await client
     .from("team_invitations")
     .update({ status: "cancelled", updated_at: new Date().toISOString() })
     .eq("id", invitationId)
     .eq("hackathon_id", hackathonId)
+    .eq("status", "pending")
+    .select("id")
+    .maybeSingle()
 
   if (error) return { success: false, error: error.message }
+  if (!cancelledInvitation) {
+    return { success: false, error: "Invitation is no longer pending" }
+  }
 
   if (invitation.is_captain_invite && invitation.team_id) {
     const { error: teamErr } = await client
@@ -706,12 +712,19 @@ export async function cancelTeamInvitation(
     return { success: false, error: "Only team captain can cancel invitations" }
   }
 
-  const { error } = await client
+  const { data: cancelledInvitation, error } = await client
     .from("team_invitations")
     .update({ status: "cancelled", updated_at: new Date().toISOString() })
     .eq("id", invitationId)
+    .eq("status", "pending")
+    .select("id")
+    .maybeSingle()
 
-  return { success: !error }
+  if (error) return { success: false, error: error.message }
+  if (!cancelledInvitation) {
+    return { success: false, error: "Invitation not found or not pending" }
+  }
+  return { success: true }
 }
 
 type InvitationStatus = "pending" | "accepted" | "declined" | "expired" | "cancelled"

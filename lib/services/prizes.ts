@@ -277,6 +277,10 @@ export async function autoAssignPrizes(hackathonId: string): Promise<void> {
       .from("hackathon_results")
       .select("submission_id, rank")
       .eq("hackathon_id", hackathonId)
+      .eq("result_kind", "core_only")
+      .is("prize_id", null)
+      .is("prize_track_id", null)
+      .is("round_id", null)
 
     if (results) {
       const rankToSubmission = Object.fromEntries(
@@ -307,14 +311,18 @@ export async function autoAssignPrizes(hackathonId: string): Promise<void> {
 
     if (!topSubmission) continue
 
-    const submissionScores: Record<string, number> = {}
+    const submissionScores: Record<string, { total: number; count: number }> = {}
     for (const s of topSubmission) {
       const assignment = s.judge_assignment as unknown as { submission_id: string; is_complete: boolean; hackathon_id: string } | null
       if (!assignment || !assignment.is_complete || assignment.hackathon_id !== hackathonId) continue
-      submissionScores[assignment.submission_id] = (submissionScores[assignment.submission_id] ?? 0) + s.score
+      const current = submissionScores[assignment.submission_id] ?? { total: 0, count: 0 }
+      submissionScores[assignment.submission_id] = { total: current.total + s.score, count: current.count + 1 }
     }
 
-    const sorted = Object.entries(submissionScores).sort(([, a], [, b]) => b - a)
+    const sorted = Object.entries(submissionScores).sort(([submissionA, a], [submissionB, b]) => {
+      const scoreDifference = (b.total / b.count) - (a.total / a.count)
+      return scoreDifference || submissionA.localeCompare(submissionB)
+    })
     if (sorted.length > 0) {
       await assignPrize(prize.id, sorted[0][0], { skipNotifications: true })
     }

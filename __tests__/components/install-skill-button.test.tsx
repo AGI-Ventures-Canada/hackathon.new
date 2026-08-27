@@ -82,7 +82,7 @@ describe("InstallSkillButton", () => {
       ),
     ).toBeDefined();
     expect(
-      screen.getByText("npx skills add AGI-Ventures-Canada/oatmeal"),
+      screen.getByText("npx skills add AGI-Ventures-Canada/hackathon.new"),
     ).toBeDefined();
   });
 
@@ -95,7 +95,7 @@ describe("InstallSkillButton", () => {
     expect(dialog.className).toContain("sm:max-w-lg");
 
     const installCommand = screen.getByText(
-      "npx skills add AGI-Ventures-Canada/oatmeal",
+      "npx skills add AGI-Ventures-Canada/hackathon.new",
     );
     const codeBlock = installCommand.closest("code");
 

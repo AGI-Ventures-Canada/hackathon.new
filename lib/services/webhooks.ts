@@ -17,6 +17,9 @@ export type CreateWebhookInput = {
   events: WebhookEvent[]
 }
 
+export type WebhookSummary = Omit<Webhook, "secret">
+const MAX_WEBHOOKS_PER_TENANT = 20
+
 export interface WebhookDeliveryResult {
   success: boolean
   status?: number
@@ -36,6 +39,12 @@ export async function createWebhook(
   input: CreateWebhookInput
 ): Promise<{ webhook: Webhook; secret: string } | null> {
   if (!isAllowedHttpsUrl(input.url)) return null
+
+  const { count, error: countError } = await getSupabase()
+    .from("webhooks")
+    .select("id", { count: "exact", head: true })
+    .eq("tenant_id", input.tenantId)
+  if (countError || (count ?? 0) >= MAX_WEBHOOKS_PER_TENANT) return null
 
   const secret = generateWebhookSecret()
 
@@ -68,14 +77,14 @@ export async function getWebhookById(webhookId: string): Promise<Webhook | null>
   return data as Webhook | null
 }
 
-export async function listWebhooks(tenantId: string): Promise<Webhook[]> {
+export async function listWebhooks(tenantId: string): Promise<WebhookSummary[]> {
   const { data } = await getSupabase()
     .from("webhooks")
-    .select("*")
+    .select("id, tenant_id, url, events, is_active, failure_count, last_triggered_at, last_success_at, last_failure_at, created_at, updated_at")
     .eq("tenant_id", tenantId)
     .order("created_at", { ascending: false })
 
-  return (data as Webhook[] | null) ?? []
+  return (data as WebhookSummary[] | null) ?? []
 }
 
 export async function listActiveWebhooks(
@@ -134,24 +143,10 @@ export async function disableWebhook(webhookId: string): Promise<boolean> {
 }
 
 export async function incrementFailureCount(webhookId: string): Promise<boolean> {
-  const { data: webhook } = await getSupabase()
-    .from("webhooks")
-    .select("failure_count")
-    .eq("id", webhookId)
-    .single()
-
-  if (!webhook) return false
-
-  const { error } = await getSupabase()
-    .from("webhooks")
-    .update({
-      failure_count: (webhook.failure_count ?? 0) + 1,
-      last_failure_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", webhookId)
-
-  return !error
+  const { data, error } = await getSupabase().rpc("increment_webhook_failure", {
+    p_webhook_id: webhookId,
+  })
+  return !error && data === true
 }
 
 export async function resetFailureCount(webhookId: string): Promise<boolean> {
@@ -173,19 +168,22 @@ export async function recordDelivery(
   event: WebhookEvent,
   payload: Json,
   result: WebhookDeliveryResult,
-  attempt: number
+  attempt: number,
+  claimedDeliveryId?: string,
 ): Promise<WebhookDelivery | null> {
-  const { data, error } = await getSupabase()
-    .from("webhook_deliveries")
-    .insert({
-      webhook_id: webhookId,
-      event,
-      payload,
-      response_status: result.status ?? null,
-      response_body: result.body ?? result.error ?? null,
-      attempt,
-      delivered_at: result.success ? new Date().toISOString() : null,
-    })
+  const values = {
+    webhook_id: webhookId,
+    event,
+    payload,
+    response_status: result.status ?? null,
+    response_body: result.body ?? result.error ?? null,
+    attempt,
+    delivered_at: result.success ? new Date().toISOString() : null,
+  }
+  const query = claimedDeliveryId
+    ? getSupabase().from("webhook_deliveries").update(values).eq("id", claimedDeliveryId)
+    : getSupabase().from("webhook_deliveries").insert(values)
+  const { data, error } = await query
     .select()
     .single()
 
@@ -197,29 +195,41 @@ export async function recordDelivery(
   return data as WebhookDelivery
 }
 
-async function hasSuccessfulDelivery(
+async function claimWebhookDelivery(
   webhookId: string,
   event: WebhookEvent,
+  payload: Json,
   idempotencyKey: string,
-  throwOnError: boolean,
-): Promise<boolean> {
+): Promise<string | null> {
   const { data, error } = await getSupabase()
     .from("webhook_deliveries")
+    .insert({
+      webhook_id: webhookId,
+      event,
+      payload,
+      idempotency_key: idempotencyKey,
+      attempt: 1,
+      response_body: "Delivery claimed",
+    })
     .select("id")
-    .eq("webhook_id", webhookId)
-    .eq("event", event)
-    .not("delivered_at", "is", null)
-    .contains("payload", { idempotencyKey })
-    .limit(1)
-
-  if (error) {
-    if (throwOnError) {
-      throw new Error(`Failed to check webhook delivery history: ${error.message}`)
+    .single()
+  if (error?.code === "23505") {
+    const { data: existing } = await getSupabase()
+      .from("webhook_deliveries")
+      .select("id, delivered_at, response_status")
+      .eq("webhook_id", webhookId)
+      .eq("event", event)
+      .eq("idempotency_key", idempotencyKey)
+      .maybeSingle()
+    // A claimed but unrecorded attempt is safe to resume after a crash. Once
+    // a response is recorded, the idempotency key is terminal for this event.
+    if (existing && existing.delivered_at === null && existing.response_status === null) {
+      return existing.id
     }
-    return false
+    return null
   }
-
-  return Boolean(data?.length)
+  if (error || !data) return null
+  return data.id
 }
 
 export async function deliverWebhook(
@@ -282,18 +292,26 @@ export async function triggerWebhooks(
   let unrecorded = false
 
   for (const webhook of webhooks) {
-    if (
-      options.idempotencyKey &&
-      await hasSuccessfulDelivery(
+    let claimedDeliveryId: string | undefined
+    if (options.idempotencyKey) {
+      claimedDeliveryId = await claimWebhookDelivery(
         webhook.id,
         event,
+        payload,
         options.idempotencyKey,
-        options.requireRecorded === true,
-      )
-    ) continue
+      ) ?? undefined
+      if (!claimedDeliveryId) continue
+    }
 
     const result = await deliverWebhook(webhook, event, payload, options)
-    const delivery = await recordDelivery(webhook.id, event, payload, result, 1)
+    const delivery = await recordDelivery(
+      webhook.id,
+      event,
+      payload,
+      result,
+      1,
+      claimedDeliveryId,
+    )
 
     if (!result.success) {
       await incrementFailureCount(webhook.id)

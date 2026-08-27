@@ -1,6 +1,6 @@
 ---
 name: hackathon-api
-description: Interact with hackathon.new directly via its REST API using curl commands. Use when the user asks to make direct API calls, test endpoints, debug API responses, call the hackathon.new API programmatically, import from Luma via URL, configure prize tracks or judging rounds, send announcements, release sponsor perks, or run a hybrid hackathon — including phrasings like "curl the hackathon API", "test api", or when the user mentions `hackathon.new` or the former name `oatmeal` in a hackathon-management context.
+description: Interact with hackathon.new directly via its REST API using curl commands. Use when the user asks to make direct API calls, test endpoints, debug API responses, call the hackathon.new API programmatically, import from Luma via URL, configure prize tracks or judging rounds, send announcements, release sponsor perks, or run a hybrid hackathon — including phrasings like "curl the hackathon API", "test api", or when the user mentions `hackathon.new` in a hackathon-management context.
 allowed-tools: Read Bash(curl:*) Bash(jq:*) Bash(export:*)
 metadata:
   model: sonnet
@@ -28,7 +28,7 @@ Interact with hackathon.new directly via its REST API using `curl` commands. Use
 - User asks to release sponsor perks or sponsor credits
 - User asks to import a hackathon from a Luma or external event URL
 - User asks to set up webhooks, integrations, or scheduled jobs
-- User mentions "hackathon.new" or the former name "oatmeal" in the context of hackathon management
+- User mentions "hackathon.new" in the context of hackathon management
 - User gives natural language commands like "make me a hackathon on Sunday from 7am to 9pm"
 
 ## When NOT to Activate

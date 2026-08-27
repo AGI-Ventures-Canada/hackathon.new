@@ -58,14 +58,9 @@ async function main() {
         } else {
           console.log(`No existing snapshot to delete`)
         }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        if (msg.includes("not found") || msg.includes("404")) {
-          console.log(`No existing snapshot to delete`)
-        } else {
-          console.log(`Lookup/delete failed: ${msg}`)
-          // Continue anyway - snapshot might not exist
-        }
+      } catch {
+        console.log("Snapshot lookup or deletion failed. Check Daytona and try again.")
+        throw new Error("Could not safely recreate the snapshot")
       }
     } else {
       // Check if snapshot already exists using daytona.snapshot.get()
@@ -113,9 +108,9 @@ async function main() {
 
     console.log(`\nNote: The snapshot includes node:20-slim + git, curl, wget, jq.`)
     console.log(`@anthropic-ai/claude-agent-sdk will be installed at runtime.`)
-  } catch (err) {
-    console.error("Failed to create snapshot:", err)
-    process.exit(1)
+  } catch {
+    console.error("Failed to create snapshot. Check Daytona logs for details.")
+    process.exitCode = 1
   }
 }
 

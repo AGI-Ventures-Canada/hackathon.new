@@ -121,7 +121,7 @@ Skills in `.claude/skills/`:
 
 Public, installable skills at the project root, distributed via [skills.sh](https://skills.sh). These are **not** internal dev skills. Public skills must live in `skills/`; repo-local helper skills outside `skills/` must set `metadata.internal: true`.
 
-**Install:** `npx skills add AGI-Ventures-Canada/oatmeal`
+**Install:** `npx skills add AGI-Ventures-Canada/hackathon.new`
 
 **Structure:** Each skill follows the standard skills.sh format (`skills/<skill-name>/SKILL.md` + `references/*.md`).
 
@@ -476,12 +476,12 @@ The script launches a dedicated Chrome instance with its own profile at `.auth/c
 **Raw commands** (when the wrapper doesn't fit — different session, non-localhost URL, etc.):
 
 ```bash
-agent-browser --auto-connect --session oatmeal open http://localhost:3000
-agent-browser --session oatmeal wait --load networkidle
-agent-browser --session oatmeal snapshot -i
-agent-browser --session oatmeal screenshot /tmp/screenshot.png
-agent-browser --session oatmeal console
-agent-browser --session oatmeal close
+agent-browser --auto-connect --session hackathon.new open http://localhost:3000
+agent-browser --session hackathon.new wait --load networkidle
+agent-browser --session hackathon.new snapshot -i
+agent-browser --session hackathon.new screenshot /tmp/screenshot.png
+agent-browser --session hackathon.new console
+agent-browser --session hackathon.new close
 ```
 
 If `--auto-connect` targets the wrong tab, list tabs with `curl -s http://127.0.0.1:9222/json/list` and connect via `--cdp "$WS_URL"`. Full command reference in `.agents/skills/agent-browser/`.
@@ -497,7 +497,7 @@ If `--auto-connect` targets the wrong tab, list tabs with `curl -s http://127.0.
 | `SCENARIO_DEV_USER_EMAIL` | Email of the dev user. Used by attendee invite scenarios to send the invite to a claimable address. Falls back to `dev-user@example.com` if unset (un-claimable in local dev) |
 | `NEXT_PUBLIC_APP_URL` | Base URL for the app, used in email CTAs. Set to deployment URL (e.g., `https://hackathon.new`) |
 | `WEBMCP_ORIGIN_TRIAL_TOKEN` | Optional exact-origin WebMCP token sent as a matching-host response header; use different Preview, Staging, and Production values and renew at least 30 days before expiry |
-| `CLERK_WEBHOOK_SIGNING_SECRET` | Verifies Clerk `email.created` events before Oatmeal forwards them through Resend |
+| `CLERK_WEBHOOK_SIGNING_SECRET` | Verifies Clerk `email.created` events before hackathon.new forwards them through Resend |
 | `CRON_SECRET` | Bearer token for Vercel cron endpoints (`/api/cron/*`). Set automatically by Vercel, or `openssl rand -hex 32` locally |
 | `NEXT_PUBLIC_POSTHOG_KEY` | **Production only** (Vercel). Never set in `.env.local` |
 

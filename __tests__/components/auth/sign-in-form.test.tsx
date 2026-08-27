@@ -145,7 +145,11 @@ describe("SignInForm", () => {
       render(<SignInForm />)
       fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
       await waitFor(() => {
-        expect(screen.getByText("Invalid credentials")).toBeDefined()
+        expect(
+          screen.getByText(
+            "We couldn't sign you in. Check your details or try another method.",
+          ),
+        ).toBeDefined()
       })
     })
 
@@ -356,7 +360,9 @@ describe("SignInForm", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByText(/sign-in method we can't open here/),
+          screen.getByText(
+            "We couldn't sign you in. Check your details or try another method.",
+          ),
         ).toBeDefined()
       })
       expect(screen.queryByText("Two-factor authentication")).toBeNull()
@@ -368,7 +374,11 @@ describe("SignInForm", () => {
       fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
 
       await waitFor(() => {
-        expect(screen.getByText("Connection lost")).toBeDefined()
+        expect(
+          screen.getByText(
+            "We couldn't sign you in. Check your details or try another method.",
+          ),
+        ).toBeDefined()
       })
     })
 
@@ -379,152 +389,6 @@ describe("SignInForm", () => {
       expect(
         screen.getByRole("button", { name: "Send reset code" }),
       ).toBeDefined()
-    })
-  })
-
-  describe("OAuth-only account fallback", () => {
-    function failWithStrategyError(factors: { strategy: string }[]) {
-      return (...args: unknown[]) => {
-        const params = args[0] as { password?: string }
-        if (params?.password) {
-          ;(
-            g.__clerkState.signIn as {
-              supportedFirstFactors?: { strategy: string }[]
-            }
-          ).supportedFirstFactors = factors
-          return Promise.reject({
-            clerkError: true,
-            errors: [
-              {
-                code: "strategy_for_user_invalid",
-                message:
-                  "The verification strategy is not valid for this account",
-              },
-            ],
-          })
-        }
-        return Promise.resolve({
-          status: "needs_first_factor",
-          supportedFirstFactors: factors,
-        })
-      }
-    }
-
-    it("shows Continue with Google when password fails on OAuth-only account", async () => {
-      signInCreateImpl = failWithStrategyError([{ strategy: "oauth_google" }])
-
-      render(<SignInForm />)
-      fireEvent.change(screen.getByLabelText("Email"), {
-        target: { value: "user@example.com" },
-      })
-      fireEvent.change(screen.getByLabelText("Password"), {
-        target: { value: "wrong" },
-      })
-      fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
-
-      await waitFor(() => {
-        expect(
-          screen.getByRole("button", { name: "Continue with Google" }),
-        ).toBeDefined()
-      })
-      expect(screen.getByText(/signs in with Google/)).toBeDefined()
-    })
-
-    it("triggers OAuth redirect when Continue with Google is clicked", async () => {
-      signInCreateImpl = failWithStrategyError([{ strategy: "oauth_google" }])
-
-      render(<SignInForm redirectUrl="/dashboard" />)
-      fireEvent.change(screen.getByLabelText("Email"), {
-        target: { value: "user@example.com" },
-      })
-      fireEvent.change(screen.getByLabelText("Password"), {
-        target: { value: "wrong" },
-      })
-      fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
-
-      const continueButton = await waitFor(() =>
-        screen.getByRole("button", { name: "Continue with Google" }),
-      )
-      fireEvent.click(continueButton)
-
-      await waitFor(() => {
-        expect(signInAuthenticateWithRedirect).toHaveBeenCalledWith({
-          strategy: "oauth_google",
-          redirectUrl: "/sso-callback?redirect_url=%2Fdashboard",
-          redirectUrlComplete: "/dashboard",
-        })
-      })
-    })
-
-    it("shows multiple OAuth providers when account supports several", async () => {
-      signInCreateImpl = failWithStrategyError([
-        { strategy: "oauth_google" },
-        { strategy: "oauth_github" },
-      ])
-
-      render(<SignInForm />)
-      fireEvent.change(screen.getByLabelText("Email"), {
-        target: { value: "user@example.com" },
-      })
-      fireEvent.change(screen.getByLabelText("Password"), {
-        target: { value: "wrong" },
-      })
-      fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
-
-      await waitFor(() => {
-        expect(
-          screen.getByRole("button", { name: "Continue with Google" }),
-        ).toBeDefined()
-        expect(
-          screen.getByRole("button", { name: "Continue with GitHub" }),
-        ).toBeDefined()
-      })
-    })
-
-    it("falls back to default error if signIn reports no usable strategies", async () => {
-      signInCreateImpl = failWithStrategyError([{ strategy: "email_code" }])
-
-      render(<SignInForm />)
-      fireEvent.change(screen.getByLabelText("Email"), {
-        target: { value: "user@example.com" },
-      })
-      fireEvent.change(screen.getByLabelText("Password"), {
-        target: { value: "wrong" },
-      })
-      fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
-
-      await waitFor(() => {
-        expect(
-          screen.getByText(/verification strategy is not valid/),
-        ).toBeDefined()
-      })
-    })
-
-    it("clears OAuth-only fallback when email is edited", async () => {
-      signInCreateImpl = failWithStrategyError([{ strategy: "oauth_google" }])
-
-      render(<SignInForm />)
-      fireEvent.change(screen.getByLabelText("Email"), {
-        target: { value: "user@example.com" },
-      })
-      fireEvent.change(screen.getByLabelText("Password"), {
-        target: { value: "wrong" },
-      })
-      fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
-
-      await waitFor(() =>
-        expect(
-          screen.getByRole("button", { name: "Continue with Google" }),
-        ).toBeDefined(),
-      )
-
-      fireEvent.change(screen.getByLabelText("Email"), {
-        target: { value: "other@example.com" },
-      })
-
-      expect(
-        screen.queryByRole("button", { name: "Continue with Google" }),
-      ).toBeNull()
     })
   })
 
@@ -602,7 +466,7 @@ describe("SignInForm", () => {
       goToResetRequest()
       fireEvent.click(screen.getByRole("button", { name: "Send reset code" }))
       await waitFor(() => {
-        expect(screen.getByText("Email not found")).toBeDefined()
+        expect(screen.getByText("Check your email")).toBeDefined()
       })
     })
 
