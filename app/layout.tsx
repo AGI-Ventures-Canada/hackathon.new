@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import { Geist, Geist_Mono, JetBrains_Mono } from "next/font/google"
+import { headers } from "next/headers"
 import { auth } from "@clerk/nextjs/server"
 import { hasAdminMetadata } from "@/lib/auth/principal"
 import { ThemeProvider } from "@/components/theme-provider"
@@ -44,14 +45,15 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  const nonce = (await headers()).get("x-nonce") ?? undefined
   const showDevTool = await shouldShowDevTool()
   return (
     <html lang="en" className={jetbrainsMono.variable} suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <ThemeProvider>
-          <ThemedClerkProvider>
+        <ThemeProvider nonce={nonce}>
+          <ThemedClerkProvider nonce={nonce}>
             <PostHogProvider>{children}</PostHogProvider>
             <SearchCommand />
             {showDevTool && <DevTool />}

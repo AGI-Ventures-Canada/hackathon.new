@@ -1,19 +1,30 @@
 version: 2
 updates:
-  - package-ecosystem: npm
+  - package-ecosystem: bun
     directory: /
+    target-branch: staging
     schedule:
       interval: weekly
+    open-pull-requests-limit: 0
     groups:
-      production-dependencies:
-        dependency-type: production
-      development-dependencies:
-        dependency-type: development
-  - package-ecosystem: npm
+      security-updates:
+        applies-to: security-updates
+        patterns:
+          - "*"
+  - package-ecosystem: bun
     directory: /packages/cli
+    target-branch: staging
     schedule:
       interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      security-updates:
+        applies-to: security-updates
+        patterns:
+          - "*"
   - package-ecosystem: github-actions
     directory: /
+    target-branch: staging
     schedule:
       interval: weekly
+    open-pull-requests-limit: 0

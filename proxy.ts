@@ -9,17 +9,27 @@
  */
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server"
 import { NextResponse } from "next/server"
+import { createContentSecurityPolicy } from "@/lib/security-headers"
 
 const isProtectedRoute = createRouteMatcher(["/home(.*)", "/browse(.*)", "/settings(.*)", "/keys(.*)", "/schedules(.*)", "/webhooks(.*)", "/integrations(.*)", "/jobs(.*)", "/admin(.*)"])
 
-export default clerkMiddleware(async (auth, req) => {
-  if (isProtectedRoute(req)) {
-    await auth.protect()
-  }
-  const requestHeaders = new Headers(req.headers)
-  requestHeaders.set("x-pathname", req.nextUrl.pathname)
-  return NextResponse.next({ request: { headers: requestHeaders } })
-})
+export default clerkMiddleware(
+  async (auth, req) => {
+    if (isProtectedRoute(req)) {
+      await auth.protect()
+    }
+    const nonce = crypto.randomUUID()
+    const contentSecurityPolicy = createContentSecurityPolicy(nonce)
+    const requestHeaders = new Headers(req.headers)
+    requestHeaders.delete("x-nonce")
+    requestHeaders.set("x-nonce", nonce)
+    requestHeaders.set("Content-Security-Policy", contentSecurityPolicy)
+    requestHeaders.set("x-pathname", req.nextUrl.pathname)
+    const response = NextResponse.next({ request: { headers: requestHeaders } })
+    response.headers.set("Content-Security-Policy", contentSecurityPolicy)
+    return response
+  },
+)
 
 export const config = {
   matcher: [

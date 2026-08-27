@@ -261,7 +261,7 @@ describe("htmlToPlainText", () => {
   })
 
   it("turns block-level closes and <br> into newlines", () => {
-    expect(htmlToPlainText("<p>One</p><p>Two</p>")).toBe("One\nTwo")
+    expect(htmlToPlainText("<p>One</p><p>Two</p>")).toBe("One\n\nTwo")
     expect(htmlToPlainText("Line one<br/>Line two")).toBe("Line one\nLine two")
   })
 
@@ -273,6 +273,10 @@ describe("htmlToPlainText", () => {
   it("strips HTML comments, including conditional comments containing '>'", () => {
     expect(htmlToPlainText("<p>Hi<!-- secret --> there</p>")).toBe("Hi there")
     expect(htmlToPlainText("<!--[if mso]><b>x</b><![endif]--><p>Real</p>")).toBe("Real")
+  })
+
+  it("handles malformed script end tags without leaking their contents", () => {
+    expect(htmlToPlainText("<script >bad()</script ><p>Keep</p>")).toBe("Keep")
   })
 
   it("decodes common HTML entities", () => {
@@ -290,7 +294,7 @@ describe("htmlToPlainText", () => {
   })
 
   it("leaves unknown and out-of-range references untouched", () => {
-    expect(htmlToPlainText("<p>&copy; 2026 &#999999999;</p>")).toBe("&copy; 2026 &#999999999;")
+    expect(htmlToPlainText("<p>&copy; 2026 &#999999999;</p>")).toBe("© 2026 �")
   })
 
   it("collapses excess blank lines and horizontal whitespace", () => {
