@@ -53,7 +53,7 @@ export default async function PrizeClaimPage({ params }: PageProps) {
           shippingAddress: claim.shippingAddress,
           isExpired,
         }}
-        siblings={siblings.map(({ recipientEmail: _email, shippingAddress: _addr, ...rest }): SiblingClaimPublic => rest)}
+        siblings={siblings.map(({ recipientName: _name, recipientEmail: _email, shippingAddress: _addr, ...rest }): SiblingClaimPublic => rest)}
       />
     </div>
   )

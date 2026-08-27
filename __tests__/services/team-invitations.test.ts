@@ -903,6 +903,9 @@ describe("Team Invitations Service", () => {
             error: null,
           })
         }
+        if (table === "team_invitations" && callCount > 1) {
+          return createChainableMock({ data: { id: "inv_1" }, error: null })
+        }
         return createChainableMock({ data: null, error: null })
       })
 

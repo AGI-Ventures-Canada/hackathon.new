@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
-const INSTALL_COMMAND = "npx skills add AGI-Ventures-Canada/oatmeal";
+const INSTALL_COMMAND = "npx skills add AGI-Ventures-Canada/hackathon.new";
 
 interface InstallSkillButtonProps {
   trigger?: ReactNode;

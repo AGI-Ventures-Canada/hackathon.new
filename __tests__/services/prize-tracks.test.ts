@@ -3,6 +3,7 @@ import {
   createChainableMock,
   resetSupabaseMocks,
   setMockFromImplementation,
+  setMockRpcImplementation,
   mockSuccess,
   mockError,
 } from "../lib/supabase-mock"
@@ -37,6 +38,22 @@ const ASSIGNMENT_ID = "44444444-4444-4444-4444-444444444444"
 const BUCKET_ID = "55555555-5555-5555-5555-555555555555"
 const CRITERIA_ID = "66666666-6666-6666-6666-666666666666"
 const SUBMISSION_ID = "77777777-7777-7777-7777-777777777777"
+
+function setValidResponseMocks(options?: { response?: Record<string, unknown>; responseError?: string }) {
+  setMockFromImplementation((table) => {
+    if (table === "judge_assignments") {
+      return createChainableMock(mockSuccess({ hackathon_id: HACKATHON_ID, prize_id: TRACK_ID, round_id: ROUND_ID }))
+    }
+    if (table === "bucket_definitions") return createChainableMock(mockSuccess({ id: BUCKET_ID }))
+    if (table === "judging_criteria") return createChainableMock(mockSuccess([{ id: CRITERIA_ID }]))
+    if (table === "binary_responses" || table === "bucket_responses") {
+      return options?.responseError
+        ? createChainableMock(mockError(options.responseError))
+        : createChainableMock(mockSuccess(options?.response ?? { id: "response-1", judge_assignment_id: ASSIGNMENT_ID, criteria_id: CRITERIA_ID, bucket_id: BUCKET_ID, passed: true }))
+    }
+    return createChainableMock(mockSuccess(null))
+  })
+}
 
 describe("prize-tracks service", () => {
   beforeEach(() => {
@@ -187,12 +204,13 @@ describe("prize-tracks service", () => {
   describe("activateRound", () => {
     it("deactivates other rounds and activates target", async () => {
       setMockFromImplementation(() => createChainableMock({ data: { id: ROUND_ID }, error: null }))
-      expect(await activateRound(ROUND_ID, TRACK_ID)).toBe(true)
+      setMockRpcImplementation(() => Promise.resolve({ data: true, error: null }))
+      expect(await activateRound(ROUND_ID, TRACK_ID, HACKATHON_ID)).toBe(true)
     })
 
     it("returns false on deactivate error", async () => {
       setMockFromImplementation(() => createChainableMock(mockError("Failed")))
-      expect(await activateRound(ROUND_ID, TRACK_ID)).toBe(false)
+      expect(await activateRound(ROUND_ID, TRACK_ID, HACKATHON_ID)).toBe(false)
     })
   })
 
@@ -259,7 +277,7 @@ describe("prize-tracks service", () => {
   describe("submitBucketResponse", () => {
     it("upserts a bucket response", async () => {
       const response = { id: "r1", judge_assignment_id: ASSIGNMENT_ID, bucket_id: BUCKET_ID }
-      setMockFromImplementation(() => createChainableMock(mockSuccess(response)))
+      setValidResponseMocks({ response })
       const result = await submitBucketResponse(ASSIGNMENT_ID, { bucketId: BUCKET_ID })
       expect(result).not.toBeNull()
       expect(result!.bucket_id).toBe(BUCKET_ID)
@@ -275,7 +293,7 @@ describe("prize-tracks service", () => {
   describe("submitBinaryResponses", () => {
     it("upserts binary responses and returns success", async () => {
       const resp = { id: "br1", judge_assignment_id: ASSIGNMENT_ID, criteria_id: CRITERIA_ID, passed: true }
-      setMockFromImplementation(() => createChainableMock(mockSuccess(resp)))
+      setValidResponseMocks({ response: resp })
       const result = await submitBinaryResponses(ASSIGNMENT_ID, [
         { criteriaId: CRITERIA_ID, passed: true },
       ])
@@ -287,7 +305,7 @@ describe("prize-tracks service", () => {
     })
 
     it("fails closed on partial failure without marking any progress as complete", async () => {
-      setMockFromImplementation(() => createChainableMock(mockError("Database offline")))
+      setValidResponseMocks({ responseError: "Database offline" })
       const result = await submitBinaryResponses(ASSIGNMENT_ID, [
         { criteriaId: CRITERIA_ID, passed: true },
       ])
@@ -303,7 +321,7 @@ describe("prize-tracks service", () => {
   describe("submitBucketSortResponse", () => {
     it("submits gates + bucket and marks assignment complete", async () => {
       const bucketResp = { id: "br1", judge_assignment_id: ASSIGNMENT_ID, bucket_id: BUCKET_ID }
-      setMockFromImplementation(() => createChainableMock(mockSuccess(bucketResp)))
+      setValidResponseMocks({ response: bucketResp })
 
       const result = await submitBucketSortResponse(ASSIGNMENT_ID, {
         gates: [],
@@ -322,7 +340,7 @@ describe("prize-tracks service", () => {
     })
 
     it("does not mark complete when a gate response fails", async () => {
-      setMockFromImplementation(() => createChainableMock(mockError("Gate failed")))
+      setValidResponseMocks({ responseError: "Gate failed" })
 
       const result = await submitBucketSortResponse(ASSIGNMENT_ID, {
         gates: [{ criteriaId: CRITERIA_ID, passed: true }],
@@ -338,7 +356,7 @@ describe("prize-tracks service", () => {
   describe("submitGateCheckResponse", () => {
     it("submits gate responses and marks assignment complete", async () => {
       const binaryResp = { id: "br1", judge_assignment_id: ASSIGNMENT_ID, criteria_id: CRITERIA_ID, passed: true }
-      setMockFromImplementation(() => createChainableMock(mockSuccess(binaryResp)))
+      setValidResponseMocks({ response: binaryResp })
 
       const result = await submitGateCheckResponse(ASSIGNMENT_ID, [
         { criteriaId: CRITERIA_ID, passed: true },
@@ -347,7 +365,7 @@ describe("prize-tracks service", () => {
     })
 
     it("does not mark complete when gate binary response fails", async () => {
-      setMockFromImplementation(() => createChainableMock(mockError("Binary failed")))
+      setValidResponseMocks({ responseError: "Binary failed" })
       const result = await submitGateCheckResponse(ASSIGNMENT_ID, [
         { criteriaId: CRITERIA_ID, passed: true },
       ])

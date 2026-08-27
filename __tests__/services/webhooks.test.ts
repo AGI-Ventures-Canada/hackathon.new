@@ -5,6 +5,7 @@ import {
   createChainableMock,
   resetSupabaseMocks,
   setMockFromImplementation,
+  setMockRpcImplementation,
 } from "../lib/supabase-mock"
 
 const mockFetch = mock(() => Promise.resolve(new Response("ok")))
@@ -276,7 +277,7 @@ describe("Webhooks Service", () => {
     it("records a remote failure without blocking event creation", async () => {
       mockFetch.mockResolvedValueOnce(new Response("unavailable", { status: 503 }))
       const list = createChainableMock({ data: [mockWebhook], error: null })
-      const checkpoint = createChainableMock({ data: [], error: null })
+      const checkpoint = createChainableMock({ data: { id: "delivery-1" }, error: null })
       const record = createChainableMock({
         data: {
           id: "delivery-1",
@@ -291,10 +292,9 @@ describe("Webhooks Service", () => {
         },
         error: null,
       })
-      const failureCount = createChainableMock({ data: { failure_count: 0 }, error: null })
-      const updateFailure = createChainableMock({ data: null, error: null })
-      const chains = [list, checkpoint, record, failureCount, updateFailure]
+      const chains = [list, checkpoint, record]
       setMockFromImplementation(() => chains.shift()!)
+      setMockRpcImplementation(() => Promise.resolve({ data: true, error: null }))
 
       await expect(triggerWebhooks(
         "tenant-123",
@@ -303,13 +303,12 @@ describe("Webhooks Service", () => {
         { idempotencyKey: "sha256:stable", requireRecorded: true },
       )).resolves.toBeUndefined()
 
-      expect(record.insert).toHaveBeenCalledTimes(1)
-      expect(failureCount.select).toHaveBeenCalledWith("failure_count")
+      expect(record.update).toHaveBeenCalledTimes(1)
     })
 
     it("reports an unrecorded delivery attempt for a safe retry", async () => {
       const list = createChainableMock({ data: [mockWebhook], error: null })
-      const checkpoint = createChainableMock({ data: [], error: null })
+      const checkpoint = createChainableMock({ data: { id: "delivery-1" }, error: null })
       const reset = createChainableMock({ data: null, error: null })
       const recordFailure = createChainableMock({
         data: null,
@@ -328,7 +327,7 @@ describe("Webhooks Service", () => {
 
     it("skips a duplicate POST when a checkpointed delivery is retried", async () => {
       const firstList = createChainableMock({ data: [mockWebhook], error: null })
-      const firstCheckpoint = createChainableMock({ data: [], error: null })
+      const firstCheckpoint = createChainableMock({ data: { id: "delivery-1" }, error: null })
       const firstReset = createChainableMock({ data: null, error: null })
       const firstRecord = createChainableMock({
         data: {
@@ -346,8 +345,8 @@ describe("Webhooks Service", () => {
       })
       const retryList = createChainableMock({ data: [mockWebhook], error: null })
       const retryCheckpoint = createChainableMock({
-        data: [{ id: "delivery-1" }],
-        error: null,
+        data: null,
+        error: { message: "duplicate key value violates unique constraint" },
       })
       const chains = [
         firstList,
@@ -369,13 +368,12 @@ describe("Webhooks Service", () => {
       await triggerWebhooks(...args)
 
       expect(mockFetch).toHaveBeenCalledTimes(1)
-      expect(firstRecord.insert).toHaveBeenCalledTimes(1)
-      expect(retryCheckpoint.eq).toHaveBeenCalledWith("webhook_id", mockWebhook.id)
-      expect(retryCheckpoint.eq).toHaveBeenCalledWith("event", "hackathon.created")
-      expect(retryCheckpoint.not).toHaveBeenCalledWith("delivered_at", "is", null)
-      expect(retryCheckpoint.contains).toHaveBeenCalledWith("payload", {
-        idempotencyKey: "sha256:stable",
-      })
+      expect(firstRecord.update).toHaveBeenCalledTimes(1)
+      expect(retryCheckpoint.insert).toHaveBeenCalledWith(expect.objectContaining({
+        webhook_id: mockWebhook.id,
+        event: "hackathon.created",
+        idempotency_key: "sha256:stable",
+      }))
     })
   })
 
@@ -480,14 +478,7 @@ describe("Webhooks Service", () => {
 
   describe("incrementFailureCount", () => {
     it("increments failure count successfully", async () => {
-      let callCount = 0
-      setMockFromImplementation(() => {
-        callCount++
-        if (callCount === 1) {
-          return createChainableMock({ data: { failure_count: 1 }, error: null })
-        }
-        return createChainableMock({ data: null, error: null })
-      })
+      setMockRpcImplementation(() => Promise.resolve({ data: true, error: null }))
 
       const result = await incrementFailureCount("wh-1")
 

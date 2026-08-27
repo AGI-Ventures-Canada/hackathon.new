@@ -22,6 +22,7 @@ const QUALITY = 85
 const MAX_OPTIMIZED_SIZE = 200 * 1024 // 200KB
 const MAX_BANNER_SIZE = 500 * 1024 // 500KB
 const MAX_SCREENSHOT_SIZE = 500 * 1024 // 500KB
+const MAX_DECODED_PIXELS = 40_000_000
 
 export type LogoVariant = "light" | "dark"
 
@@ -44,18 +45,10 @@ export class ImageTooLargeError extends Error {
 
 export async function optimizeImage(
   buffer: Buffer,
-  mimeType: string
+  _mimeType: string
 ): Promise<{ buffer: Buffer; mimeType: string }> {
-  // SVGs pass through unchanged
-  if (mimeType === "image/svg+xml") {
-    if (buffer.length > MAX_OPTIMIZED_SIZE) {
-      throw new ImageTooLargeError(buffer.length)
-    }
-    return { buffer, mimeType }
-  }
-
   const sharp = await loadSharp()
-  const image = sharp(buffer)
+  const image = sharp(buffer, { failOn: "error", limitInputPixels: MAX_DECODED_PIXELS, pages: 1 })
   const metadata = await image.metadata()
 
   const needsResize =
@@ -82,7 +75,7 @@ export async function optimizeImage(
 
   // If still too large, try even smaller dimensions
   if (optimized.length > MAX_OPTIMIZED_SIZE) {
-    optimized = await sharp(buffer)
+    optimized = await sharp(buffer, { failOn: "error", limitInputPixels: MAX_DECODED_PIXELS, pages: 1 })
       .resize(400, 200, { fit: "inside", withoutEnlargement: true })
       .webp({ quality: 60 })
       .toBuffer()
@@ -166,7 +159,7 @@ export async function optimizeBanner(
   buffer: Buffer
 ): Promise<{ buffer: Buffer; mimeType: string }> {
   const sharp = await loadSharp()
-  const image = sharp(buffer)
+  const image = sharp(buffer, { failOn: "error", limitInputPixels: MAX_DECODED_PIXELS, pages: 1 })
   const metadata = await image.metadata()
 
   const needsResize =
@@ -257,7 +250,7 @@ export async function optimizeScreenshot(
   buffer: Buffer
 ): Promise<{ buffer: Buffer; mimeType: string }> {
   const sharp = await loadSharp()
-  const image = sharp(buffer)
+  const image = sharp(buffer, { failOn: "error", limitInputPixels: MAX_DECODED_PIXELS, pages: 1 })
   const metadata = await image.metadata()
 
   const needsResize =
@@ -521,7 +514,7 @@ export async function optimizeHeadshot(
   buffer: Buffer
 ): Promise<{ buffer: Buffer; mimeType: string }> {
   const sharp = await loadSharp()
-  const image = sharp(buffer)
+  const image = sharp(buffer, { failOn: "error", limitInputPixels: MAX_DECODED_PIXELS, pages: 1 })
   const metadata = await image.metadata()
 
   const needsResize =

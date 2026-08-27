@@ -320,7 +320,7 @@ describe("Judge Invitations Service", () => {
             error: null,
           })
         }
-        return createChainableMock({ data: null, error: null })
+        return createChainableMock({ data: { id: "inv1" }, error: null })
       })
 
       const result = await cancelJudgeInvitation("inv1", "h1")

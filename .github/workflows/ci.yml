@@ -65,11 +65,7 @@ jobs:
         run: cd packages/cli && bun install --frozen-lockfile
 
       - name: Run TypeScript check
-        run: |
-          echo "::group::TypeScript Errors"
-          bunx tsc --noEmit 2>&1 | head -100 || true
-          echo "::endgroup::"
-          echo "::warning::TypeScript check completed (errors shown above if any)"
+        run: bunx tsc --noEmit -p tsconfig.build.json
 
       - name: Run tests
         run: bun run test:all

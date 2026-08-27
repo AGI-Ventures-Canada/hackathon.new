@@ -19,7 +19,7 @@ import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Plus, Copy, Check, Search } from "lucide-react"
 import type { CreateApiKeyResponse } from "@/lib/types/dashboard"
-import { ALL_SCOPES, type Scope } from "@/lib/auth/types"
+import { ALL_SCOPES, DEFAULT_API_KEY_SCOPES, type Scope } from "@/lib/auth/types"
 
 const SCOPE_GROUPS = [
   {
@@ -46,6 +46,14 @@ const SCOPE_GROUPS = [
     name: "Analytics",
     scopes: ["analytics:read"] as Scope[],
   },
+  {
+    name: "Schedules",
+    scopes: ["schedules:read", "schedules:write"] as Scope[],
+  },
+  {
+    name: "Organization",
+    scopes: ["org:read", "org:write"] as Scope[],
+  },
 ]
 
 export function ApiKeyCreateDialog() {
@@ -53,7 +61,7 @@ export function ApiKeyCreateDialog() {
   const nameInputRef = useRef<HTMLInputElement>(null)
   const [open, setOpen] = useState(false)
   const [name, setName] = useState("")
-  const [scopes, setScopes] = useState<Scope[]>([...ALL_SCOPES])
+  const [scopes, setScopes] = useState<Scope[]>([...DEFAULT_API_KEY_SCOPES])
   const [scopeSearch, setScopeSearch] = useState("")
   const [loading, setLoading] = useState(false)
   const [createdKey, setCreatedKey] = useState<CreateApiKeyResponse | null>(
@@ -120,7 +128,7 @@ export function ApiKeyCreateDialog() {
     if (!isOpen) {
       const shouldRefresh = createdKey !== null
       setName("")
-      setScopes([...ALL_SCOPES])
+      setScopes([...DEFAULT_API_KEY_SCOPES])
       setScopeSearch("")
       setCreatedKey(null)
       setCopied(false)

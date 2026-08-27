@@ -1,5 +1,5 @@
 import {
-  getOrCreateTenant,
+  getOrCreateAttendeeTenant,
   createTestHackathon,
   createTeamWithMembers,
   createPendingInvitation,
@@ -17,7 +17,7 @@ async function run() {
   console.log("Setting up attendee-invited-to-team scenario...")
 
   const overrideTenantId = await promptForOptionalTenantId()
-  const tenantId = await getOrCreateTenant(overrideTenantId)
+  const tenantId = await getOrCreateAttendeeTenant(overrideTenantId)
 
   const now = new Date()
   const hackathonId = await createTestHackathon({
@@ -46,4 +46,4 @@ async function run() {
   printReady(SLUG)
 }
 
-run().catch(console.error)
+await run()

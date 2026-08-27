@@ -29,7 +29,7 @@ Manage hackathon.new from the terminal using the `hackathon` CLI (`@agi-ventures
 - User asks to import a hackathon from a Luma event URL
 - User asks to calculate or publish results
 - User gives natural language commands like "make me a hackathon on Sunday from 7am to 9pm"
-- User mentions "hackathon.new" or the former name "oatmeal" in the context of hackathon management
+- User mentions "hackathon.new" in the context of hackathon management
 
 ## When NOT to Activate
 

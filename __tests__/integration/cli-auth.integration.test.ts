@@ -3,7 +3,7 @@ import { describe, expect, it, mock, beforeEach } from "bun:test"
 const mockCreateCliAuthSession = mock(() =>
   Promise.resolve({
     id: "session-1",
-    device_token: "a".repeat(32),
+    device_token: "a".repeat(64),
     status: "pending",
     expires_at: new Date(Date.now() + 300_000).toISOString(),
   })
@@ -16,6 +16,7 @@ mock.module("@/lib/services/cli-auth", () => ({
   createCliAuthSession: mockCreateCliAuthSession,
   pollCliAuthSession: mockPollCliAuthSession,
   completeCliAuthSession: mock(() => Promise.resolve({ success: true })),
+  isValidCliDeviceToken: (token: string) => /^[a-f0-9]{64}$/.test(token),
 }))
 
 mock.module("@/lib/services/rate-limit", () => ({
@@ -96,7 +97,7 @@ const { publicRoutes } = await import("@/lib/api/routes/public")
 
 const publicApp = new Elysia({ prefix: "/api" }).use(publicRoutes)
 
-const validToken = "a".repeat(32)
+const validToken = "a".repeat(64)
 
 describe("CLI Auth Routes Integration Tests", () => {
   beforeEach(() => {

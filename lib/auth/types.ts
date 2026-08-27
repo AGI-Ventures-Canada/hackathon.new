@@ -12,6 +12,7 @@ export type Scope =
   | "analytics:read"
   | "schedules:read"
   | "schedules:write"
+  | "jobs:read"
   | "org:read"
   | "org:write"
   | "admin:read"
@@ -32,6 +33,7 @@ export const ALL_SCOPES: Scope[] = [
   "analytics:read",
   "schedules:read",
   "schedules:write",
+  "jobs:read",
   "org:read",
   "org:write",
 ]
@@ -51,6 +53,7 @@ export const DEFAULT_API_KEY_SCOPES: Scope[] = [
   "webhooks:read",
   "webhooks:write",
   "schedules:read",
+  "jobs:read",
   "org:read",
 ]
 
@@ -115,6 +118,17 @@ export function scopesForRole(role: string | null): Scope[] {
     return ALL_SCOPES
   }
   return ["hackathons:read", "teams:read", "submissions:read"]
+}
+
+export function getDelegableApiKeyScopes(
+  requestedScopes: readonly string[] | undefined,
+  callerScopes: readonly Scope[]
+): Scope[] | null {
+  const requested = requestedScopes ?? DEFAULT_API_KEY_SCOPES
+  const unique = [...new Set(requested)]
+  if (unique.some((scope) => !ALL_SCOPES.includes(scope as Scope))) return null
+  if (unique.some((scope) => !callerScopes.includes(scope as Scope))) return null
+  return unique as Scope[]
 }
 
 export function hasScope(principal: Principal, scope: Scope): boolean {

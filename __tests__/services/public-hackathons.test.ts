@@ -640,7 +640,6 @@ describe("Public Hackathons Service", () => {
       expect(teamsChain.select).toHaveBeenCalledWith(
         "id, name, hackathon_participants(clerk_user_id)"
       )
-      expect(teamsChain.update).toHaveBeenCalledWith({ status: "forming" })
       expect(teamsChain.eq).toHaveBeenCalledWith("hackathon_id", "h1")
       expect(teamsChain.eq).toHaveBeenCalledWith("status", "pending_approval")
 

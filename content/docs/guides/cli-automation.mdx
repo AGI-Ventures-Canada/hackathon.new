@@ -1,9 +1,9 @@
 ---
 title: CLI for CI/CD & Automation
-description: Use the Oatmeal CLI in scripts, CI pipelines, and automated workflows.
+description: Use the hackathon.new CLI in scripts, CI pipelines, and automated workflows.
 ---
 
-The Oatmeal CLI is designed for automation. Every command supports `--json` output and `--yes` to skip prompts, and you can authenticate via environment variables instead of interactive login.
+The hackathon.new CLI is designed for automation. Every command supports `--json` output and `--yes` to skip prompts, and you can authenticate via environment variables instead of interactive login.
 
 ## Authentication in CI
 
@@ -151,12 +151,12 @@ Use webhooks to trigger CLI commands when events occur:
 ```bash title="Webhook-triggered automation"
 # Set up a webhook for submission events
 hackathon webhooks create \
-  --url https://your-server.com/hooks/oatmeal \
+  --url https://your-server.com/hooks/hackathon \
   --events submission.submitted
 
 # In your webhook handler, trigger auto-assign when all submissions are in
 # (pseudocode)
-curl -X POST your-server.com/hooks/oatmeal
+curl -X POST your-server.com/hooks/hackathon
 # → handler runs: hackathon judging auto-assign $HACKATHON --per-judge 5
 ```
 

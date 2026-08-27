@@ -259,24 +259,26 @@ async function calculateResultsUnlocked(
   }
 
   if (styledPrizes && styledPrizes.length > 0) {
-    const { error: clearError } = await client
+    const { data: deletedLegacyRows, error: clearError } = await client
       .from("hackathon_results")
       .delete()
       .eq("hackathon_id", hackathonId)
       .is("prize_id", null)
       .eq("result_kind", "prize")
-
+      .select("*")
     if (clearError) {
       console.error("Failed to clear old results:", clearError)
       return { success: false, error: "Failed to clear old results", code: "delete_failed" }
     }
-
     const calculated = await Promise.all([
       calculateCoreOnlyResults(hackathonId),
       ...styledPrizes.map((prize) => calculatePrizeResults(hackathonId, prize.id)),
     ])
 
     if (calculated.some((result) => !result.success)) {
+      if (deletedLegacyRows && deletedLegacyRows.length > 0) {
+        await client.from("hackathon_results").insert(deletedLegacyRows)
+      }
       return {
         success: false,
         error: "Failed to calculate prize results",
@@ -347,6 +349,11 @@ async function calculateSubjectiveResults(
 
   const uniqueJudges = new Set(picks.map((p) => p.judge_participant_id)).size
 
+  const { data: previousRows } = await client
+    .from("hackathon_results")
+    .select("*")
+    .eq("hackathon_id", hackathonId)
+
   const ranked = Object.entries(submissionStats)
     .sort(([, a], [, b]) => {
       if (b.firstPicks !== a.firstPicks) return b.firstPicks - a.firstPicks
@@ -355,7 +362,8 @@ async function calculateSubjectiveResults(
       return avgA - avgB
     })
 
-  await client.from("hackathon_results").delete().eq("hackathon_id", hackathonId)
+  const { error: deleteError } = await client.from("hackathon_results").delete().eq("hackathon_id", hackathonId)
+  if (deleteError) return { success: false, error: "Failed to clear old results", code: "delete_failed" }
 
   const results = ranked.map(([submissionId, stats], index) => ({
     hackathon_id: hackathonId,
@@ -372,23 +380,28 @@ async function calculateSubjectiveResults(
 
   if (insertError) {
     console.error("Failed to insert subjective results:", insertError)
+    if (previousRows && previousRows.length > 0) await client.from("hackathon_results").insert(previousRows)
     return { success: false, error: "Failed to save results", code: "insert_failed" }
   }
 
   return { success: true, count: results.length }
 }
 
-export async function getResults(hackathonId: string): Promise<ResultWithDetails[]> {
+export async function getResults(
+  hackathonId: string,
+  options: { publishedOnly?: boolean } = {}
+): Promise<ResultWithDetails[]> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { data: results, error } = await client
+  let query = client
     .from("hackathon_results")
     .select(`
       *,
       submission:submissions!submission_id(title, description, github_url, live_app_url, screenshot_url, team_id)
     `)
     .eq("hackathon_id", hackathonId)
-    .order("rank")
+  if (options.publishedOnly) query = query.not("published_at", "is", null)
+  const { data: results, error } = await query.order("rank")
 
   if (error || !results) {
     console.error("Failed to get results:", error)
@@ -893,7 +906,7 @@ export async function getPublicResults(
     return null
   }
 
-  const results = await getResults(hackathonId)
+  const results = await getResults(hackathonId, { publishedOnly: true })
   if (!hackathon.anonymous_judging) return results
 
   return results.map((result) => ({

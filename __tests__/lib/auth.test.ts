@@ -6,6 +6,7 @@ import {
   ALL_SCOPES,
   DEFAULT_API_KEY_SCOPES,
   matchesExpectedOrganization,
+  getDelegableApiKeyScopes,
 } from "@/lib/auth/types"
 import { hasAdminMetadata } from "@/lib/auth/principal"
 import type { UserPrincipal, ApiKeyPrincipal, AnonPrincipal } from "@/lib/auth/types"
@@ -126,6 +127,29 @@ describe("Auth Types", () => {
 
     it("does not include admin scopes", () => {
       expect(DEFAULT_API_KEY_SCOPES).not.toContain("keys:write")
+    })
+  })
+
+  describe("getDelegableApiKeyScopes", () => {
+    it("allows only scopes the caller already holds", () => {
+      expect(
+        getDelegableApiKeyScopes(
+          ["hackathons:read", "teams:read", "teams:read"],
+          ["hackathons:read", "teams:read"]
+        )
+      ).toEqual(["hackathons:read", "teams:read"])
+    })
+
+    it("rejects unknown and elevated scopes", () => {
+      expect(
+        getDelegableApiKeyScopes(["not:a-scope"], ["hackathons:read"])
+      ).toBeNull()
+      expect(
+        getDelegableApiKeyScopes(
+          ["hackathons:write"],
+          ["hackathons:read", "keys:write"]
+        )
+      ).toBeNull()
     })
   })
 

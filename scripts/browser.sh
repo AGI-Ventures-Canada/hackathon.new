@@ -11,7 +11,7 @@ Launch agent-browser against local dev with your real Chrome auth state.
 Usage:
   ./scripts/browser.sh [path]         # e.g. ./scripts/browser.sh /home
   ./scripts/browser.sh --refresh-auth # re-save auth from side Chrome
-  ./scripts/browser.sh --close        # close the oatmeal session
+  ./scripts/browser.sh --close        # close the hackathon.new session
   ./scripts/browser.sh --quit-chrome  # also quit the side Chrome instance
 
 How it works:
@@ -24,8 +24,8 @@ Prereq: dev server running (bun dev).
 USAGE
 }
 
-SESSION="oatmeal"
-BASE_URL="${OATMEAL_BASE_URL:-http://localhost:3000}"
+SESSION="hackathon.new"
+BASE_URL="${HACKATHON_BASE_URL:-${OATMEAL_BASE_URL:-http://localhost:3000}}"
 CHROME_DEBUG_PORT="${CHROME_DEBUG_PORT:-9222}"
 CHROME_APP="${CHROME_APP:-/Applications/Google Chrome.app}"
 CHROME_PROFILE_DIR="${CHROME_PROFILE_DIR:-$PWD/.auth/chrome-profile}"

@@ -134,7 +134,11 @@ describe("SignUpForm", () => {
       render(<SignUpForm />)
       fireEvent.click(screen.getByRole("button", { name: "Sign up" }))
       await waitFor(() => {
-        expect(screen.getByText("Email already in use")).toBeDefined()
+        expect(
+          screen.getByText(
+            "We couldn't create the account. Try signing in or use another method.",
+          ),
+        ).toBeDefined()
       })
     })
   })

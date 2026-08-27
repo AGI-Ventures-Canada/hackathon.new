@@ -11,7 +11,7 @@ Sponsors appear on the public event page grouped by tier. Each sponsor can have:
 - A name and website link
 - Light and dark mode logos
 - A tier assignment controlling prominence
-- A link to an Oatmeal organization (for co-hosted events)
+- A link to a hackathon.new organization (for co-hosted events)
 
 ## Adding Sponsors
 
@@ -86,7 +86,7 @@ curl -s -X PATCH "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/sponsors/reor
 
 ## Linking to Organizations
 
-If a sponsor also has an Oatmeal organization, link them via `sponsorTenantId`. This shows the organization's profile information alongside the sponsor listing:
+If a sponsor also has a hackathon.new organization, link them via `sponsorTenantId`. This shows the organization's profile information alongside the sponsor listing:
 
 ```bash title="Link sponsor to an organization"
 curl -s -X PATCH "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/sponsors/$SPONSOR_ID" \

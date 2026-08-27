@@ -1,8 +1,18 @@
 #!/bin/bash
 
+# Keep generated credentials private even when the caller's umask is permissive.
+umask 077
+
 ENV_FILE=".env.local"
-PROD_BACKUP=".env.local.production"
 TYPES_FILE="lib/db/types.ts"
+
+source "$(dirname "$0")/lib/env-safety.sh"
+
+if contains_remote_supabase_credentials "$ENV_FILE"; then
+  echo "Refusing to overwrite remote Supabase credentials in $ENV_FILE."
+  echo "Move them to a secure password manager, then remove them before starting local development."
+  exit 1
+fi
 
 if ! docker info &>/dev/null 2>&1; then
   echo "Docker is not running. Please start Docker Desktop first."
@@ -47,6 +57,11 @@ sync_env_from_main_worktree() {
 }
 
 sync_env_from_main_worktree
+
+if contains_remote_supabase_credentials "$ENV_FILE"; then
+  echo "Refusing to overwrite remote Supabase credentials copied from the main worktree."
+  exit 1
+fi
 
 stop_other_projects() {
   local other_containers=$(docker ps --filter "name=supabase_" --format "{{.Names}}" | grep -v "oatmeal" || true)
@@ -194,19 +209,13 @@ if [ -z "$API_URL" ] || [ -z "$ANON_KEY" ] || [ -z "$SERVICE_KEY" ]; then
   exit 1
 fi
 
-if [ -f "$ENV_FILE" ] && [ ! -f "$PROD_BACKUP" ]; then
-  if grep -q "supabase.co" "$ENV_FILE"; then
-    echo "Backing up production credentials to $PROD_BACKUP"
-    cp "$ENV_FILE" "$PROD_BACKUP"
-  fi
-fi
-
 set_env_var() {
   local key="$1"
   local value="$2"
 
   if [ -f "$ENV_FILE" ]; then
     grep -v "^${key}=" "$ENV_FILE" > "${ENV_FILE}.tmp" || true
+    chmod 600 "${ENV_FILE}.tmp"
     mv "${ENV_FILE}.tmp" "$ENV_FILE"
   fi
 
@@ -219,6 +228,7 @@ has_hex_secret() {
 }
 
 touch "$ENV_FILE"
+chmod 600 "$ENV_FILE"
 
 echo "Updating .env.local with local Supabase credentials..."
 set_env_var "NEXT_PUBLIC_SUPABASE_URL" "$API_URL"

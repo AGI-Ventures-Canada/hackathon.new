@@ -139,6 +139,8 @@ describe("Sponsor Logo API Integration Tests", () => {
     mockUpdateTenantSponsorLogos.mockReset()
     mockIsSlugAvailable.mockReset()
     mockLogAudit.mockReset()
+    mockListHackathonSponsors.mockResolvedValue([{ id: "s1", tenant_sponsor_id: null }])
+    mockUpdateSponsor.mockResolvedValue({ id: "s1" })
   })
 
   describe("POST /api/dashboard/hackathons/:id/sponsors/:sponsorId/logo", () => {
@@ -269,7 +271,7 @@ describe("Sponsor Logo API Integration Tests", () => {
         url: "https://cdn.example.com/sponsor-logo.webp",
         path: "sponsors/h1/s1/logo.webp",
       })
-      mockListHackathonSponsors.mockResolvedValue([])
+      mockListHackathonSponsors.mockResolvedValue([{ id: "s1", tenant_sponsor_id: null }])
 
       const fd = makeFormData({ file: fakeImageFile(), variant: "light" })
       const res = await app.handle(
@@ -294,7 +296,7 @@ describe("Sponsor Logo API Integration Tests", () => {
         url: "https://cdn.example.com/sponsor-logo-dark.webp",
         path: "sponsors/h1/s1/logo-dark.webp",
       })
-      mockListHackathonSponsors.mockResolvedValue([])
+      mockListHackathonSponsors.mockResolvedValue([{ id: "s1", tenant_sponsor_id: null }])
 
       const fd = makeFormData({ file: fakeImageFile(), variant: "dark" })
       const res = await app.handle(

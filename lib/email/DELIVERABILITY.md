@@ -177,7 +177,7 @@ headers, normalizes subjects to one line, times out provider calls, and retries
 retryable failures only when a stable idempotency key makes that safe.
 
 The reference app's `email_log` and email-preference tables were evaluated but
-intentionally not copied into this PR. Oatmeal needs separate schema and
+intentionally not copied into this PR. hackathon.new needs separate schema and
 product-policy work before those persistence features can be added safely.
 
 ## Email link query params

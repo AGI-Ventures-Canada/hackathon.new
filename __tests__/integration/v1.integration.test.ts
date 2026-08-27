@@ -182,7 +182,7 @@ describe("V1 API Routes Integration Tests", () => {
       mockCreateJob.mockResolvedValue({
         id: "job-new",
         tenant_id: "tenant-123",
-        type: "completion",
+        type: "echo",
         status_cache: "queued",
         created_at: "2024-01-01T00:00:00Z",
       })
@@ -191,14 +191,14 @@ describe("V1 API Routes Integration Tests", () => {
         new Request("http://localhost/api/v1/jobs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ type: "completion", input: { prompt: "Hello" } }),
+          body: JSON.stringify({ type: "echo", input: { prompt: "Hello" } }),
         })
       )
       const data = await res.json()
 
       expect(res.status).toBe(200)
       expect(data.id).toBe("job-new")
-      expect(data.type).toBe("completion")
+      expect(data.type).toBe("echo")
       expect(data.status).toBe("queued")
       expect(mockLogAudit).toHaveBeenCalled()
     })
@@ -208,7 +208,7 @@ describe("V1 API Routes Integration Tests", () => {
       mockCreateJob.mockResolvedValue({
         id: "job-idempotent",
         tenant_id: "tenant-123",
-        type: "completion",
+        type: "echo",
         status_cache: "queued",
         created_at: "2024-01-01T00:00:00Z",
       })
@@ -218,7 +218,7 @@ describe("V1 API Routes Integration Tests", () => {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            type: "completion",
+            type: "echo",
             idempotencyKey: "unique-key-123",
           }),
         })
@@ -236,7 +236,7 @@ describe("V1 API Routes Integration Tests", () => {
       mockCreateJob.mockResolvedValue({
         id: "job-header-key",
         tenant_id: "tenant-123",
-        type: "completion",
+        type: "echo",
         status_cache: "queued",
         created_at: "2024-01-01T00:00:00Z",
       })
@@ -248,7 +248,7 @@ describe("V1 API Routes Integration Tests", () => {
             "Content-Type": "application/json",
             "Idempotency-Key": "header-key-456",
           },
-          body: JSON.stringify({ type: "completion" }),
+          body: JSON.stringify({ type: "echo" }),
         })
       )
 
@@ -266,7 +266,7 @@ describe("V1 API Routes Integration Tests", () => {
         new Request("http://localhost/api/v1/jobs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ type: "completion" }),
+          body: JSON.stringify({ type: "echo" }),
         })
       )
       const data = await res.json()
@@ -297,7 +297,7 @@ describe("V1 API Routes Integration Tests", () => {
       mockResolvePrincipal.mockResolvedValue(mockApiKeyPrincipal)
       mockGetJobById.mockResolvedValue({
         id: "job-1",
-        type: "completion",
+        type: "echo",
         status_cache: "running",
         created_at: "2024-01-01T00:00:00Z",
         updated_at: "2024-01-01T00:00:30Z",

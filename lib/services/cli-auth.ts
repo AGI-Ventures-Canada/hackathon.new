@@ -1,7 +1,8 @@
 import { supabase as getSupabase } from "@/lib/db/client"
-import { createApiKey } from "@/lib/services/api-keys"
+import { createApiKey, revokeApiKey } from "@/lib/services/api-keys"
 import { encryptToken, decryptToken } from "@/lib/services/encryption"
 import type { Scope } from "@/lib/auth/types"
+import { randomBytes } from "node:crypto"
 
 const CLI_KEY_SCOPES: Scope[] = [
   "hackathons:read",
@@ -19,6 +20,16 @@ const CLI_KEY_SCOPES: Scope[] = [
   "org:write",
 ]
 
+const DEVICE_TOKEN_PATTERN = /^[a-f0-9]{64}$/
+
+export function isValidCliDeviceToken(deviceToken: string): boolean {
+  return DEVICE_TOKEN_PATTERN.test(deviceToken)
+}
+
+export function getCliKeyScopes(callerScopes: readonly Scope[]): Scope[] {
+  return CLI_KEY_SCOPES.filter((scope) => callerScopes.includes(scope))
+}
+
 interface CliAuthSession {
   id: string
   device_token: string
@@ -28,6 +39,7 @@ interface CliAuthSession {
   status: string
   created_at: string
   expires_at: string
+  user_code?: string | null
 }
 
 function db() {
@@ -36,9 +48,15 @@ function db() {
 }
 
 export async function createCliAuthSession(deviceToken: string) {
+  if (!isValidCliDeviceToken(deviceToken)) {
+    throw new Error("Invalid CLI device token")
+  }
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+  const random = randomBytes(6)
+  const userCode = Array.from(random, (byte) => alphabet[byte % alphabet.length]).join("")
   const { data, error } = await db()
     .from("cli_auth_sessions")
-    .insert({ device_token: deviceToken })
+    .insert({ device_token: deviceToken, user_code: userCode })
     .select()
     .single() as { data: CliAuthSession | null; error: { message: string } | null }
 
@@ -52,8 +70,9 @@ export async function createCliAuthSession(deviceToken: string) {
 export async function pollCliAuthSession(deviceToken: string): Promise<{
   status: "pending" | "complete" | "expired"
   apiKey?: string
+  userCode?: string
 }> {
-  await cleanupExpiredSessions()
+  if (!isValidCliDeviceToken(deviceToken)) return { status: "expired" }
 
   const { data, error } = await db()
     .from("cli_auth_sessions")
@@ -68,8 +87,9 @@ export async function pollCliAuthSession(deviceToken: string): Promise<{
   if (new Date(data.expires_at) < new Date()) {
     await db()
       .from("cli_auth_sessions")
-      .update({ status: "expired" })
+      .update({ status: "expired", encrypted_api_key: null })
       .eq("id", data.id)
+    if (data.key_id) await revokeApiKey(data.key_id, data.tenant_id ?? "")
     return { status: "expired" }
   }
 
@@ -88,13 +108,15 @@ export async function pollCliAuthSession(deviceToken: string): Promise<{
     return { status: "expired" }
   }
 
-  return { status: "pending" }
+  return { status: "pending", ...(data.user_code ? { userCode: data.user_code } : {}) }
 }
 
 export async function completeCliAuthSession(
   deviceToken: string,
   tenantId: string,
-  hostname?: string
+  scopes: Scope[],
+  hostname?: string,
+  userCode?: string,
 ): Promise<{ success: boolean; error?: string }> {
   const { data: session, error } = await db()
     .from("cli_auth_sessions")
@@ -115,22 +137,33 @@ export async function completeCliAuthSession(
     return { success: false, error: "Session expired" }
   }
 
+  if (session.user_code && (!userCode || userCode.trim().toUpperCase() !== session.user_code)) {
+    return { success: false, error: "The confirmation code does not match" }
+  }
+
   const date = new Date().toISOString().split("T")[0]
   const keyName = `hackathon.new CLI (${hostname ?? "unknown"}, ${date})`
 
   const result = await createApiKey({
     tenantId,
     name: keyName,
-    scopes: CLI_KEY_SCOPES,
+    scopes,
   })
 
   if (!result) {
     return { success: false, error: "Failed to create API key" }
   }
 
-  const encryptedKey = encryptToken(result.rawKey)
+  let encryptedKey: string
+  try {
+    encryptedKey = encryptToken(result.rawKey)
+  } catch (encryptionError) {
+    await revokeApiKey(result.apiKey.id, tenantId)
+    console.error("Failed to encrypt CLI API key:", encryptionError)
+    return { success: false, error: "Failed to secure API key" }
+  }
 
-  await db()
+  const { data: completedSession, error: completionError } = await db()
     .from("cli_auth_sessions")
     .update({
       tenant_id: tenantId,
@@ -139,14 +172,17 @@ export async function completeCliAuthSession(
       status: "complete",
     })
     .eq("id", session.id)
+    .eq("status", "pending")
+    .select("id")
+    .maybeSingle() as {
+      data: { id: string } | null
+      error: { message: string } | null
+    }
+
+  if (completionError || !completedSession) {
+    await revokeApiKey(result.apiKey.id, tenantId)
+    return { success: false, error: "Session was already completed or expired" }
+  }
 
   return { success: true }
-}
-
-async function cleanupExpiredSessions() {
-  await db()
-    .from("cli_auth_sessions")
-    .delete()
-    .lt("expires_at", new Date().toISOString())
-    .neq("status", "complete")
 }

@@ -87,8 +87,6 @@ cli.json
 supabase/.branches
 supabase/.temp
 
-# production env backup
-.env.local.production
 .playwright-mcp/
 
 /tmp

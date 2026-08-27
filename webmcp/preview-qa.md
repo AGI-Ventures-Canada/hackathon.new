@@ -1,6 +1,6 @@
 # WebMCP hosted preview QA
 
-Run this matrix against local synthetic scenarios first, then repeat it on the ready PR preview, staging, and production after each promotion. Verify it once in Codex's built-in browser and once in the dedicated Oatmeal Chrome profile so native WebMCP coverage never touches a personal browsing session.
+Run this matrix against local synthetic scenarios first, then repeat it on the ready PR preview, staging, and production after each promotion. Verify it once in Codex's built-in browser and once in the dedicated hackathon.new Chrome profile so native WebMCP coverage never touches a personal browsing session.
 
 ## Private judging access
 

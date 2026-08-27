@@ -84,7 +84,7 @@ Add `--json` to any command for machine-readable output.
 Prefer driving the CLI through Claude Code, Cursor, or another AI agent? Install our public skills:
 
 ```bash
-npx skills add AGI-Ventures-Canada/oatmeal
+npx skills add AGI-Ventures-Canada/hackathon.new
 ```
 
 That gives your agent two relevant skills: `hackathon-cli` (this package) and `hackathon-api` (direct HTTP calls).
@@ -93,9 +93,9 @@ That gives your agent two relevant skills: `hackathon-cli` (this package) and `h
 
 - Platform: https://hackathon.new
 - Docs: https://hackathon.new/docs
-- Source: https://github.com/AGI-Ventures-Canada/oatmeal (CLI lives in `packages/cli/`)
-- Skills: https://github.com/AGI-Ventures-Canada/oatmeal/tree/main/skills
-- Issues: https://github.com/AGI-Ventures-Canada/oatmeal/issues
+- Source: https://github.com/AGI-Ventures-Canada/hackathon.new (CLI lives in `packages/cli/`)
+- Skills: https://github.com/AGI-Ventures-Canada/hackathon.new/tree/main/skills
+- Issues: https://github.com/AGI-Ventures-Canada/hackathon.new/issues
 
 ## License
 

@@ -1,9 +1,9 @@
 ---
 title: Integrations
-description: Connect Oatmeal to external systems — CRMs, Slack, Zapier, and AI agents.
+description: Connect hackathon.new to external systems — CRMs, Slack, Zapier, and AI agents.
 ---
 
-Use the Oatmeal API and webhooks to connect your hackathon data to the tools your team already uses.
+Use the hackathon.new API and webhooks to connect your hackathon data to the tools your team already uses.
 
 ## Zapier / n8n / Make.com
 
@@ -41,7 +41,7 @@ In Zapier, use **Webhooks by Zapier > Catch Hook** as your trigger, then add act
 
 ### Action: Fetch hackathon data
 
-Use **Webhooks by Zapier > Custom Request** to call any Oatmeal endpoint. For example, to fetch all submissions after results are published:
+Use **Webhooks by Zapier > Custom Request** to call any hackathon.new endpoint. For example, to fetch all submissions after results are published:
 
 ```bash title="Export submissions"
 curl -s "$BASE_URL/api/public/hackathons/ai-innovation-2026/submissions" | jq .
@@ -118,7 +118,7 @@ Get notified in Slack when submissions come in or results are published.
 
 ### Option 2: Custom webhook handler
 
-Build a small handler that receives Oatmeal webhooks and posts to a Slack incoming webhook:
+Build a small handler that receives hackathon.new webhooks and posts to a Slack incoming webhook:
 
 ```typescript title="slack-webhook-handler.ts"
 import express from "express"
@@ -127,10 +127,10 @@ import crypto from "crypto"
 const app = express()
 app.use(express.json())
 
-const WEBHOOK_SECRET = process.env.OATMEAL_WEBHOOK_SECRET!
+const WEBHOOK_SECRET = process.env.HACKATHON_WEBHOOK_SECRET!
 const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL!
 
-app.post("/webhooks/oatmeal", async (req, res) => {
+app.post("/webhooks/hackathon", async (req, res) => {
   const signature = req.headers["x-webhook-signature"] as string
   const expected = crypto
     .createHmac("sha256", WEBHOOK_SECRET)
@@ -166,7 +166,7 @@ app.listen(3001)
 
 ## Claude Code + CLI
 
-The Oatmeal CLI works with [Claude Code](https://claude.ai/code) out of the box. Claude Code can read `hackathon --help`, compose commands, and manage your hackathon interactively.
+The hackathon.new CLI works with [Claude Code](https://claude.ai/code) out of the box. Claude Code can read `hackathon --help`, compose commands, and manage your hackathon interactively.
 
 ### Setup
 
@@ -204,12 +204,12 @@ Other things you can ask:
 - "Auto-assign judges with 5 submissions each, then show the assignment breakdown"
 - "Calculate results and show me the top 5 before publishing"
 
-### Install Oatmeal skills for richer context
+### Install hackathon.new skills for richer context
 
-For deeper hackathon knowledge, install the [Oatmeal skills](/docs/skills):
+For deeper hackathon knowledge, install the [hackathon.new skills](/docs/skills):
 
 ```bash title="Install skills"
-npx skills add AGI-Ventures-Canada/oatmeal
+npx skills add AGI-Ventures-Canada/hackathon.new
 ```
 
 This gives Claude Code domain expertise for planning hackathons, managing judging workflows, and advising participants.

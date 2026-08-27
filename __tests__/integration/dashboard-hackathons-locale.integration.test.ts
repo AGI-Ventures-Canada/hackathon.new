@@ -388,6 +388,9 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - locale branch", () => {
   it("returns a stable conflict while another settings mutation owns the event lease", async () => {
     let rateLimitCall = 0
     setMockFromImplementation((table) => {
+      if (table === "hackathons") {
+        return createChainableMock({ data: { id: mockHackathonResponse.id }, error: null })
+      }
       if (table === "rate_limits") {
         rateLimitCall += 1
         return createChainableMock(
@@ -413,7 +416,9 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - locale branch", () => {
   it("returns a stable retryable failure when the settings lease is unavailable", async () => {
     setMockFromImplementation((table) =>
       createChainableMock(
-        table === "rate_limits"
+        table === "hackathons"
+          ? { data: { id: mockHackathonResponse.id }, error: null }
+          : table === "rate_limits"
           ? { data: null, error: { message: "database unavailable" } }
           : { data: null, error: null },
       ),

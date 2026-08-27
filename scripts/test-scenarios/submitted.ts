@@ -40,4 +40,4 @@ async function run() {
   printReady(SLUG)
 }
 
-run().catch(console.error)
+await run()

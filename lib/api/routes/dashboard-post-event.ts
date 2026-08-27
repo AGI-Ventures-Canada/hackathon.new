@@ -3,6 +3,7 @@ import { resolvePrincipal, requirePrincipal } from "@/lib/auth/principal"
 import { logAudit } from "@/lib/services/audit"
 import { safeDecrypt } from "@/lib/services/encryption"
 import { isSafeExternalUrl, normalizeUrl } from "@/lib/utils/url"
+import { checkRateLimit, RateLimitError } from "@/lib/services/rate-limit"
 
 export const dashboardPostEventRoutes = new Elysia()
   .derive(async ({ request }) => {
@@ -199,6 +200,15 @@ export const dashboardPostEventRoutes = new Elysia()
           status: 400,
           headers: { "Content-Type": "application/json" },
         })
+      }
+
+      const surveyLimit = await checkRateLimit(
+        `feedback_survey:${params.id}`,
+        { maxRequests: 1, windowMs: 5 * 60_000 },
+        { failureMode: "closed" },
+      )
+      if (!surveyLimit.allowed) {
+        throw new RateLimitError(surveyLimit.resetAt, surveyLimit.remaining)
       }
 
       const { sendFeedbackSurveyEmails } = await import("@/lib/email/feedback-survey")

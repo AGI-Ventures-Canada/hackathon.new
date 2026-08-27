@@ -81,7 +81,7 @@ describe("Judge Invitations Integration - acceptJudgeInvitation", () => {
         isFirstCall = false
         return createIntegrationChainableMock({ data: mockInvitation, error: null })
       }
-      return createIntegrationChainableMock({ data: null, error: null })
+      return createIntegrationChainableMock({ data: { id: "inv1" }, error: null })
     })
 
     const result = await acceptJudgeInvitation("test-token-123", "user_123", "judge@example.com")
@@ -114,7 +114,7 @@ describe("Judge Invitations Integration - acceptJudgeInvitation", () => {
         isFirstCall = false
         return createIntegrationChainableMock({ data: mockInvitation, error: null })
       }
-      return createIntegrationChainableMock({ data: null, error: null })
+      return createIntegrationChainableMock({ data: { id: "inv1" }, error: null })
     })
 
     const result = await acceptJudgeInvitation(
@@ -154,7 +154,7 @@ describe("Judge Invitations Integration - acceptJudgeInvitation", () => {
         isFirstCall = false
         return createIntegrationChainableMock({ data: mockInvitation, error: null })
       }
-      return createIntegrationChainableMock({ data: null, error: null })
+      return createIntegrationChainableMock({ data: { id: "inv1" }, error: null })
     })
 
     const result = await acceptJudgeInvitation(
@@ -225,7 +225,7 @@ describe("Judge Invitations Integration - acceptJudgeInvitation", () => {
         isFirstCall = false
         return createIntegrationChainableMock({ data: mockInvitation, error: null })
       }
-      return createIntegrationChainableMock({ data: null, error: null })
+      return createIntegrationChainableMock({ data: { id: "inv1" }, error: null })
     })
 
     const result = await acceptJudgeInvitation("test-token", "user_123", "judge@example.com")

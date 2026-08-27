@@ -155,23 +155,24 @@ export async function cancelReminder(
   reminderId: string,
   hackathonId: string
 ): Promise<boolean> {
-  const client = getSupabase() as unknown as SupabaseClient
-
-  const { data, error } = await client
-    .from("post_event_reminders")
-    .update({ cancelled_at: new Date().toISOString() })
-    .eq("id", reminderId)
-    .eq("hackathon_id", hackathonId)
-    .is("sent_at", null)
-    .is("cancelled_at", null)
-    .select("id")
-
-  if (error) {
-    console.error("Failed to cancel reminder:", error)
+  try {
+    const result = await withDeliveryLease(`post-event-reminder:${reminderId}`, async () => {
+      const client = getSupabase() as unknown as SupabaseClient
+      const { data, error } = await client
+        .from("post_event_reminders")
+        .update({ cancelled_at: new Date().toISOString() })
+        .eq("id", reminderId)
+        .eq("hackathon_id", hackathonId)
+        .is("sent_at", null)
+        .is("cancelled_at", null)
+        .select("id")
+      if (error) throw new Error(`Failed to cancel reminder: ${error.message}`)
+      return data !== null && data.length > 0
+    })
+    return result.acquired ? result.value : false
+  } catch {
     return false
   }
-
-  return data !== null && data.length > 0
 }
 
 export async function getPendingReminders(limit = 50): Promise<PostEventReminder[]> {
@@ -289,10 +290,10 @@ export async function markReminderSent(
     query = query.eq("scheduled_for", expectedScheduledFor)
   }
 
-  const { error } = await query
+  const { data, error } = await query.select("id")
 
-  if (error) {
-    throw new Error(`Failed to mark post-event reminder sent: ${error.message}`)
+  if (error || data?.length !== 1) {
+    throw new Error(`Failed to mark post-event reminder sent: ${error?.message ?? "reminder is no longer pending"}`)
   }
 }
 
@@ -478,30 +479,29 @@ export async function cancelPendingPostEventReminders(hackathonId: string): Prom
     const metadata = reminder.metadata && typeof reminder.metadata === "object"
       ? reminder.metadata as Record<string, unknown>
       : {}
-    const cancelledAt = new Date().toISOString()
-    const { data, error } = await client
-      .from("post_event_reminders")
-      .update({
-        cancelled_at: cancelledAt,
-        metadata: {
-          ...metadata,
-          cancellationReason: "results_unpublished",
-          cancelledPublicationVersion:
-            typeof metadata.publicationVersion === "string"
-              ? metadata.publicationVersion
-              : null,
-        },
-      })
-      .eq("id", reminder.id)
-      .is("sent_at", null)
-      .is("cancelled_at", null)
-      .select("id")
-      .maybeSingle()
-
-    if (error) {
-      throw new Error(`Failed to cancel post-event reminders: ${error.message}`)
-    }
-    if (data) cancelled++
+    const result = await withDeliveryLease(`post-event-reminder:${reminder.id}`, async () => {
+      const { data, error } = await client
+        .from("post_event_reminders")
+        .update({
+          cancelled_at: new Date().toISOString(),
+          metadata: {
+            ...metadata,
+            cancellationReason: "results_unpublished",
+            cancelledPublicationVersion:
+              typeof metadata.publicationVersion === "string"
+                ? metadata.publicationVersion
+                : null,
+          },
+        })
+        .eq("id", reminder.id)
+        .is("sent_at", null)
+        .is("cancelled_at", null)
+        .select("id")
+        .maybeSingle()
+      if (error) throw new Error(`Failed to cancel post-event reminders: ${error.message}`)
+      return Boolean(data)
+    })
+    if (result.acquired && result.value) cancelled++
   }
 
   return cancelled

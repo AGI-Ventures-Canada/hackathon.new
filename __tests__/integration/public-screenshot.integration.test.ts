@@ -120,6 +120,17 @@ mock.module("@/lib/services/challenges", () => ({
   syncSubmissionChallenges: mockSyncSubmissionChallenges,
 }))
 
+mock.module("@/lib/services/rate-limit", () => ({
+  checkRateLimit: mock(() => Promise.resolve({ allowed: true, remaining: 9, resetAt: Date.now() + 60_000 })),
+  getRateLimitHeaders: () => ({}),
+  defaultRateLimits: { "api_key:default": { maxRequests: 100, windowMs: 60_000 } },
+  RateLimitError: class extends Error {
+    constructor(public resetAt: number, public remaining: number) {
+      super("Rate limit exceeded")
+    }
+  },
+}))
+
 const { Elysia } = await import("elysia")
 const { publicRoutes } = await import("@/lib/api/routes/public")
 

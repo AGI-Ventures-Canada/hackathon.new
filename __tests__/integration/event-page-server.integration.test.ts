@@ -291,6 +291,7 @@ describe("public event server page", () => {
     expect(renderToStaticMarkup(result)).toContain("This is a preview")
     expect(mockToClientDto).toHaveBeenCalledWith(expect.any(Object), {
       includeEditorSponsorData: true,
+      includePrivateLocation: true,
     })
     expect(preview.props.hasJudgeAssignments).toBe(true)
     expect(preview.props.isRegistered).toBe(true)

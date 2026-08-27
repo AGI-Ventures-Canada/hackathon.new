@@ -101,17 +101,18 @@ describe("Storage Service", () => {
   })
 
   describe("optimizeImage", () => {
-    it("passes through SVG unchanged if within size limit", async () => {
+    it("sanitizes SVG uploads into bounded WebP output", async () => {
       const svgBuffer = Buffer.from("<svg></svg>")
       const result = await optimizeImage(svgBuffer, "image/svg+xml")
 
-      expect(result.buffer).toBe(svgBuffer)
-      expect(result.mimeType).toBe("image/svg+xml")
-      expect(mockSharp).not.toHaveBeenCalled()
+      expect(result.buffer).not.toBe(svgBuffer)
+      expect(result.mimeType).toBe("image/webp")
+      expect(mockSharp).toHaveBeenCalled()
     })
 
     it("throws error for SVG exceeding size limit", async () => {
       const largeBuffer = Buffer.alloc(250 * 1024)
+      mockSharpInstance.toBuffer.mockImplementation(() => Promise.resolve(Buffer.alloc(250 * 1024)))
 
       await expect(optimizeImage(largeBuffer, "image/svg+xml")).rejects.toThrow(ImageTooLargeError)
     })

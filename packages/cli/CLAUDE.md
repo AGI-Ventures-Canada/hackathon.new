@@ -97,7 +97,7 @@ The workflow authenticates to npm via **Trusted Publishing** — GitHub mints a 
 Requirements (already configured):
 - `permissions: id-token: write` on the job.
 - Runner on **Node 22 + npm ≥ 11.5.1** (trusted publishing needs npm ≥ 11.5.1 / Node ≥ 22.14.0).
-- A Trusted Publisher entry on the npm package (Settings → Trusted Publisher → GitHub Actions): org `AGI-Ventures-Canada`, repo `oatmeal`, workflow `publish-cli.yml`.
+- A Trusted Publisher entry on the npm package (Settings → Trusted Publisher → GitHub Actions): org `AGI-Ventures-Canada`, repo `hackathon.new`, workflow `publish-cli.yml`.
 
 If the workflow filename ever changes, update the Trusted Publisher entry to match, or publishes will fail to authenticate.
 

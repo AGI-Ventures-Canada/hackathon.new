@@ -3725,6 +3725,9 @@ describe("Judging Service", () => {
     }) {
       let roundSubsCallCount = 0
       setMockFromImplementation((table) => {
+        if (table === "judging_rounds") {
+          return createChainableMock({ data: { id: FROM_ROUND }, error: null })
+        }
         if (table === "round_submissions") {
           roundSubsCallCount++
           if (roundSubsCallCount === 1) {
@@ -3848,6 +3851,9 @@ describe("Judging Service", () => {
       results?: Array<{ submission_id: string; prize_id: string; weighted_score: number; judge_count: number }>
     }) {
       setMockFromImplementation((table) => {
+        if (table === "judging_rounds") {
+          return createChainableMock({ data: { id: ROUND }, error: null })
+        }
         if (table === "round_submissions") {
           return createChainableMock({ data: opts.roundSubs ?? [], error: null })
         }

@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js"
+import { requireLocalSupabaseUrl } from "./local-supabase"
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -7,6 +8,8 @@ if (!supabaseUrl || !supabaseServiceKey) {
   console.error("Missing Supabase credentials in environment")
   process.exit(1)
 }
+
+requireLocalSupabaseUrl(supabaseUrl)
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
@@ -36,7 +39,7 @@ async function seedDemo() {
       })
 
     if (personalError) {
-      console.error("Failed to create personal tenant:", personalError)
+      throw new Error(`Failed to create personal tenant: ${personalError.message}`)
     } else {
       console.log("Created personal tenant for dev user")
     }
@@ -44,27 +47,15 @@ async function seedDemo() {
     console.log("Personal tenant already exists for dev user")
   }
 
-  console.log("Looking for AGIVC tenant...")
-  let { data: agivcTenant } = await supabase
+  console.log("Looking for the demo tenant...")
+  const { data: agivcTenant, error: tenantError } = await supabase
     .from("tenants")
     .select("id, clerk_org_id, name")
-    .ilike("name", "%AGI%")
+    .eq("clerk_user_id", DEV_USER.clerkUserId)
     .single()
 
-  if (!agivcTenant) {
-    console.log("AGIVC tenant not found. Using personal tenant for demo hackathon...")
-    const { data: personalTenant } = await supabase
-      .from("tenants")
-      .select("id, clerk_org_id, name")
-      .eq("clerk_user_id", DEV_USER.clerkUserId)
-      .single()
-
-    if (!personalTenant) {
-      console.error("No personal tenant found either. Run the script again after the app creates one.")
-      process.exit(1)
-    }
-
-    agivcTenant = personalTenant
+  if (tenantError || !agivcTenant) {
+    throw new Error("No demo tenant found. Run the script again after the app creates one.")
   }
 
   console.log(`Using tenant: ${agivcTenant.name} (${agivcTenant.id})`)
@@ -81,7 +72,7 @@ async function seedDemo() {
     .single()
 
   if (updateError) {
-    console.error("Failed to update AGIVC tenant:", updateError)
+    throw new Error(`Failed to update demo tenant: ${updateError.message}`)
   } else {
     console.log("Updated AGIVC tenant with slug and description")
   }
@@ -92,14 +83,14 @@ async function seedDemo() {
   const { data: tavilyTenant } = await supabase
     .from("tenants")
     .select("id, name")
-    .or(`clerk_org_id.eq.${TAVILY_CLERK_ORG_ID},name.ilike.%Tavily%`)
+    .eq("clerk_org_id", TAVILY_CLERK_ORG_ID)
     .single()
 
   if (tavilyTenant) {
     console.log(`Found Tavily tenant: ${tavilyTenant.name} (${tavilyTenant.id})`)
     tavilyTenantId = tavilyTenant.id
 
-    await supabase
+    const { error: tavilyUpdateError } = await supabase
       .from("tenants")
       .update({
         name: "Tavily",
@@ -109,6 +100,7 @@ async function seedDemo() {
         website_url: "https://tavily.com",
       })
       .eq("id", tavilyTenant.id)
+    if (tavilyUpdateError) throw tavilyUpdateError
     console.log("Updated Tavily tenant with slug and clerk_org_id")
   } else {
     console.log("Creating Tavily tenant...")
@@ -125,7 +117,7 @@ async function seedDemo() {
       .single()
 
     if (tavilyError) {
-      console.error("Failed to create Tavily tenant:", tavilyError)
+      throw new Error(`Failed to create Tavily tenant: ${tavilyError.message}`)
     } else if (newTavily) {
       tavilyTenantId = newTavily.id
       console.log(`Created Tavily tenant: ${newTavily.name} (${newTavily.id})`)
@@ -137,12 +129,13 @@ async function seedDemo() {
     .from("hackathons")
     .select("id")
     .eq("slug", "research-agents")
+    .eq("tenant_id", agivcTenant.id)
     .single()
 
   if (existingHackathon) {
     console.log("Research Agents hackathon already exists, updating...")
 
-    await supabase
+    const { error: hackathonUpdateError } = await supabase
       .from("hackathons")
       .update({
         name: "Research Agents Hackathon",
@@ -170,6 +163,8 @@ Prizes:
         allow_late_registration: true,
       })
       .eq("id", existingHackathon.id)
+
+    if (hackathonUpdateError) throw hackathonUpdateError
 
     console.log("Updated existing hackathon")
     await addSponsors(existingHackathon.id, tavilyTenantId)
@@ -232,11 +227,6 @@ Prizes:
 async function addSponsors(hackathonId: string, tavilyTenantId: string | null) {
   console.log("Adding sponsors...")
 
-  await supabase
-    .from("hackathon_sponsors")
-    .delete()
-    .eq("hackathon_id", hackathonId)
-
   const sponsors = [
     {
       hackathon_id: hackathonId,
@@ -268,15 +258,25 @@ async function addSponsors(hackathonId: string, tavilyTenantId: string | null) {
     },
   ]
 
-  const { error: sponsorsError } = await supabase
-    .from("hackathon_sponsors")
-    .insert(sponsors)
+  for (const sponsor of sponsors) {
+    const { data: existingSponsor, error: lookupError } = await supabase
+      .from("hackathon_sponsors")
+      .select("id")
+      .eq("hackathon_id", hackathonId)
+      .eq("name", sponsor.name)
+      .maybeSingle()
+    if (lookupError) throw lookupError
 
-  if (sponsorsError) {
-    console.error("Failed to add sponsors:", sponsorsError)
-  } else {
-    console.log(`Added ${sponsors.length} sponsors`)
+    const query = existingSponsor
+      ? supabase.from("hackathon_sponsors").update(sponsor).eq("id", existingSponsor.id)
+      : supabase.from("hackathon_sponsors").insert(sponsor)
+    const { error } = await query
+    if (error) throw error
   }
+  console.log(`Added or updated ${sponsors.length} sponsors`)
 }
 
-seedDemo().catch(console.error)
+seedDemo().catch((error) => {
+  console.error(error instanceof Error ? error.message : "Demo seed failed")
+  process.exitCode = 1
+})

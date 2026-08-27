@@ -9,6 +9,9 @@ export const jobHandlers: Record<string, JobHandler> = {
 
   delay: async (input) => {
     const { ms = 1000 } = (input as { ms?: number }) || {}
+    if (!Number.isFinite(ms) || ms < 0 || ms > 60_000) {
+      throw new Error("Delay must be between 0 and 60000 milliseconds")
+    }
     await new Promise((resolve) => setTimeout(resolve, ms))
     return { delayed: true, ms }
   },
@@ -21,6 +24,10 @@ export const jobHandlers: Record<string, JobHandler> = {
       processedAt: new Date().toISOString(),
     }
   },
+}
+
+export function isSupportedJobType(type: string): boolean {
+  return Object.hasOwn(jobHandlers, type)
 }
 
 export function registerJobHandler(type: string, handler: JobHandler): void {

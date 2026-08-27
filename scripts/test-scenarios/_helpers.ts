@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js"
 import * as readline from "readline"
+import { requireLocalSupabaseUrl } from "../local-supabase"
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -8,6 +9,8 @@ if (!supabaseUrl || !supabaseServiceKey) {
   console.error("Missing Supabase credentials in environment")
   process.exit(1)
 }
+
+requireLocalSupabaseUrl(supabaseUrl)
 
 export const supabase: SupabaseClient = createClient(supabaseUrl, supabaseServiceKey)
 
@@ -114,6 +117,27 @@ export async function getOrCreateTenant(overrideTenantId?: string): Promise<stri
   return newTenant.id
 }
 
+export async function getOrCreateAttendeeTenant(overrideTenantId?: string): Promise<string> {
+  if (overrideTenantId) return getOrCreateTenant(overrideTenantId)
+  const ownerId = SEED_USERS[0]
+  const { data: tenant } = await supabase
+    .from("tenants")
+    .select("id")
+    .eq("clerk_user_id", ownerId)
+    .single()
+  if (tenant) return tenant.id
+  const { data: created, error } = await supabase
+    .from("tenants")
+    .insert({ clerk_user_id: ownerId, name: "Scenario Organizer", slug: "scenario-organizer" })
+    .select("id")
+    .single()
+  if (error || !created) {
+    console.error("Failed to create attendee scenario tenant:", error)
+    process.exit(1)
+  }
+  return created.id
+}
+
 export async function createTestHackathon(opts: {
   tenantId: string
   slug: string
@@ -128,7 +152,14 @@ export async function createTestHackathon(opts: {
   resultsPublishedAt?: string | null
   judgingMode?: string
 }): Promise<string> {
-  await supabase.from("hackathons").delete().eq("slug", opts.slug)
+  const { error: cleanupError } = await supabase
+    .from("hackathons")
+    .delete()
+    .eq("slug", opts.slug)
+    .eq("tenant_id", opts.tenantId)
+  if (cleanupError) {
+    throw new Error(`Failed to remove the existing test event: ${cleanupError.message}`)
+  }
 
   const { data, error } = await supabase
     .from("hackathons")

@@ -649,6 +649,7 @@ describe("Audit Service", () => {
   })
 
   describe("listHackathonAuditLogs", () => {
+    const hackathonId = "11111111-1111-1111-1111-111111111111"
     const hackathonLogs = [
       {
         id: "hlog-1",
@@ -657,7 +658,7 @@ describe("Audit Service", () => {
         actor_type: "user",
         actor_id: "user-1",
         resource_type: "hackathon",
-        resource_id: "h-uuid-1",
+        resource_id: hackathonId,
         metadata: null,
         created_at: "2024-03-01T10:00:00Z",
       },
@@ -669,7 +670,7 @@ describe("Audit Service", () => {
         actor_id: "user-1",
         resource_type: "judge",
         resource_id: "j-uuid-1",
-        metadata: { hackathonId: "h-uuid-1" },
+        metadata: { hackathonId },
         created_at: "2024-02-15T10:00:00Z",
       },
     ]
@@ -682,13 +683,13 @@ describe("Audit Service", () => {
       })
       setMockFromImplementation(() => chain)
 
-      const result = await listHackathonAuditLogs("tenant-123", "h-uuid-1")
+      const result = await listHackathonAuditLogs("tenant-123", hackathonId)
 
       expect(result.logs).toHaveLength(2)
       expect(result.total).toBe(2)
       expect(chain.eq).toHaveBeenCalledWith("tenant_id", "tenant-123")
       expect(chain.or).toHaveBeenCalledWith(
-        "resource_id.eq.h-uuid-1,metadata->>hackathonId.eq.h-uuid-1"
+        `resource_id.eq.${hackathonId},metadata->>hackathonId.eq.${hackathonId}`
       )
       expect(chain.range).toHaveBeenCalledWith(0, 49)
     })
@@ -701,7 +702,7 @@ describe("Audit Service", () => {
       })
       setMockFromImplementation(() => chain)
 
-      const result = await listHackathonAuditLogs("tenant-123", "h-uuid-1", {
+      const result = await listHackathonAuditLogs("tenant-123", hackathonId, {
         limit: 10,
         offset: 5,
       })
@@ -719,7 +720,7 @@ describe("Audit Service", () => {
       })
       setMockFromImplementation(() => chain)
 
-      await listHackathonAuditLogs("tenant-123", "h-uuid-1", { limit: 500 })
+      await listHackathonAuditLogs("tenant-123", hackathonId, { limit: 500 })
 
       expect(chain.range).toHaveBeenCalledWith(0, 99)
     })
@@ -732,7 +733,7 @@ describe("Audit Service", () => {
       })
       setMockFromImplementation(() => chain)
 
-      await listHackathonAuditLogs("tenant-123", "h-uuid-1", {
+      await listHackathonAuditLogs("tenant-123", hackathonId, {
         action: "judge",
       })
 
@@ -747,7 +748,7 @@ describe("Audit Service", () => {
       })
       setMockFromImplementation(() => chain)
 
-      await listHackathonAuditLogs("tenant-123", "h-uuid-1", {
+      await listHackathonAuditLogs("tenant-123", hackathonId, {
         resourceType: "judge",
       })
 
@@ -762,7 +763,7 @@ describe("Audit Service", () => {
       })
       setMockFromImplementation(() => chain)
 
-      await listHackathonAuditLogs("tenant-123", "h-uuid-1", {
+      await listHackathonAuditLogs("tenant-123", hackathonId, {
         since: "2024-02-20T00:00:00Z",
         until: "2024-03-05T00:00:00Z",
       })
@@ -779,7 +780,7 @@ describe("Audit Service", () => {
       })
       setMockFromImplementation(() => chain)
 
-      await listHackathonAuditLogs("tenant-123", "h-uuid-1", { sort: "asc" })
+      await listHackathonAuditLogs("tenant-123", hackathonId, { sort: "asc" })
 
       expect(chain.order).toHaveBeenCalledWith("created_at", { ascending: true })
     })
@@ -792,7 +793,7 @@ describe("Audit Service", () => {
       })
       setMockFromImplementation(() => chain)
 
-      await listHackathonAuditLogs("tenant-123", "h-uuid-1")
+      await listHackathonAuditLogs("tenant-123", hackathonId)
 
       expect(chain.order).toHaveBeenCalledWith("created_at", { ascending: false })
     })
@@ -805,7 +806,7 @@ describe("Audit Service", () => {
       setMockFromImplementation(() => chain)
 
       expect(
-        listHackathonAuditLogs("tenant-123", "h-uuid-1")
+        listHackathonAuditLogs("tenant-123", hackathonId)
       ).rejects.toThrow("Failed to list hackathon audit logs: connection refused")
     })
   })

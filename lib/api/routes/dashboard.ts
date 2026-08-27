@@ -14,12 +14,13 @@ import { dashboardResultsRoutes } from "./dashboard-results"
 import { dashboardJudgeDisplayRoutes } from "./dashboard-judge-display"
 import { dashboardPostEventRoutes } from "./dashboard-post-event"
 import { dashboardSponsorFulfillmentRoutes } from "./dashboard-sponsor-fulfillments"
+import { dashboardPrizeTracksRoutes } from "./dashboard-prize-tracks"
 import { getEffectiveStatus } from "@/lib/utils/timeline"
 import { getNotificationDisposition, getNotificationLifecycleError } from "@/lib/utils/notification-lifecycle"
 import { getRequestIdempotencyFingerprint } from "@/lib/utils/request-idempotency"
 import { normalizeLocale } from "@/lib/utils/language"
-import type { Scope, UserPrincipal } from "@/lib/auth/types"
-import { ALL_SCOPES, matchesExpectedOrganization } from "@/lib/auth/types"
+import type { UserPrincipal } from "@/lib/auth/types"
+import { getDelegableApiKeyScopes, matchesExpectedOrganization } from "@/lib/auth/types"
 import type { WebhookEvent, SponsorTier } from "@/lib/db/hackathon-types"
 import { isAllowedHttpsUrl } from "@/lib/utils/safe-fetch-url"
 import {
@@ -389,9 +390,13 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
     async ({ principal, body }) => {
       requirePrincipal(principal, ["user"], ["keys:write"])
 
-      const sanitizedScopes = body.scopes
-        ? (body.scopes.filter((s) => ALL_SCOPES.includes(s as Scope)) as Scope[])
-        : undefined
+      const sanitizedScopes = getDelegableApiKeyScopes(body.scopes, principal.scopes)
+      if (!sanitizedScopes) {
+        return new Response(
+          JSON.stringify({ error: "API keys can't have permissions you don't have." }),
+          { status: 403, headers: { "Content-Type": "application/json" } }
+        )
+      }
 
       const result = await createApiKey({
         tenantId: principal.tenantId,
@@ -462,7 +467,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
     },
   })
   .get("/jobs", async ({ principal, query }) => {
-    requirePrincipal(principal, ["user", "api_key"])
+    requirePrincipal(principal, ["user", "api_key"], ["jobs:read"])
 
     const jobs = await listJobs(principal.tenantId, {
       limit: query.limit ? parseInt(query.limit) : undefined,
@@ -486,7 +491,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
     },
   })
   .get("/jobs/:id", async ({ principal, params }) => {
-    requirePrincipal(principal, ["user", "api_key"])
+    requirePrincipal(principal, ["user", "api_key"], ["jobs:read"])
 
     const job = await getJobById(params.id, principal.tenantId)
     if (!job) {
@@ -822,7 +827,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
     },
   })
   .get("/integrations", async ({ principal }) => {
-    requirePrincipal(principal, ["user"])
+    requirePrincipal(principal, ["user"], ["org:read"])
 
     const { listIntegrations } = await import("@/lib/integrations/oauth")
     const integrations = await listIntegrations(principal.tenantId)
@@ -845,12 +850,11 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
     },
   })
   .get("/integrations/:provider/auth-url", async ({ principal, params }) => {
-    requirePrincipal(principal, ["user"])
+    requirePrincipal(principal, ["user"], ["org:write"])
 
     const { buildAuthUrl } = await import("@/lib/integrations/oauth")
-    const state = Buffer.from(
-      JSON.stringify({ tenantId: principal.tenantId, userId: principal.userId })
-    ).toString("base64url")
+    const { createOAuthState } = await import("@/lib/integrations/oauth")
+    const state = createOAuthState(principal.tenantId, principal.userId)
 
     const authUrl = buildAuthUrl(params.provider as "gmail" | "google_calendar" | "notion" | "luma", state)
 
@@ -868,8 +872,57 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       description: "Returns the OAuth authorization URL for a provider. Clerk-only.",
     },
   })
+  .get("/integrations/:provider/callback", async ({ principal, params, query }) => {
+    requirePrincipal(principal, ["user"], ["org:write"])
+    const provider = params.provider as "gmail" | "google_calendar" | "notion"
+    if (!["gmail", "google_calendar", "notion"].includes(provider)) {
+      return new Response("Unsupported integration", { status: 400 })
+    }
+
+    const { verifyOAuthState, exchangeCodeForTokens, saveIntegration, getProviderConfig } = await import("@/lib/integrations/oauth")
+    const state = verifyOAuthState(query.state)
+    if (!state || state.tenantId !== principal.tenantId || state.userId !== principal.userId) {
+      return new Response("Invalid or expired authorization request", { status: 400 })
+    }
+
+    const tokens = await exchangeCodeForTokens(provider, query.code)
+    const config = getProviderConfig(provider)
+    if (!tokens || !config) {
+      return new Response("The integration could not be connected", { status: 400 })
+    }
+
+    const integration = await saveIntegration({
+      tenantId: principal.tenantId,
+      provider,
+      accountEmail: tokens.email,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      expiresIn: tokens.expiresIn,
+      scopes: config.scopes,
+    })
+    if (!integration) return new Response("The integration could not be saved", { status: 500 })
+
+    await logAudit({
+      principal,
+      action: "integration.connected",
+      resourceType: "integration",
+      resourceId: integration.id,
+      metadata: { provider },
+    })
+
+    return Response.redirect(new URL("/settings/integrations", process.env.NEXT_PUBLIC_APP_URL), 303)
+  }, {
+    query: t.Object({
+      code: t.String({ minLength: 1, maxLength: 4096 }),
+      state: t.String({ minLength: 1, maxLength: 4096 }),
+    }),
+    detail: {
+      summary: "Complete OAuth integration",
+      description: "Validates the signed authorization state and saves the provider connection.",
+    },
+  })
   .delete("/integrations/:provider", async ({ principal, params }) => {
-    requirePrincipal(principal, ["user"])
+    requirePrincipal(principal, ["user"], ["org:write"])
 
     const { deleteIntegration } = await import("@/lib/integrations/oauth")
     const success = await deleteIntegration(
@@ -899,7 +952,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
     },
   })
   .get("/credentials", async ({ principal }) => {
-    requirePrincipal(principal, ["user"])
+    requirePrincipal(principal, ["user"], ["org:read"])
 
     const { listCredentials } = await import("@/lib/services/org-credentials")
     const credentials = await listCredentials(principal.tenantId)
@@ -924,7 +977,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
   .post(
     "/credentials",
     async ({ principal, body }) => {
-      requirePrincipal(principal, ["user"])
+      requirePrincipal(principal, ["user"], ["org:write"])
 
       const { saveCredential } = await import("@/lib/services/org-credentials")
       const credential = await saveCredential({
@@ -963,17 +1016,17 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         description: "Saves an API credential (e.g. Luma API key). Clerk-only.",
       },
       body: t.Object({
-        provider: t.String(),
-        apiKey: t.String({ minLength: 1 }),
-        label: t.Optional(t.String()),
-        accountIdentifier: t.Optional(t.String()),
+        provider: t.Literal("luma"),
+        apiKey: t.String({ minLength: 1, maxLength: 4096 }),
+        label: t.Optional(t.String({ maxLength: 200 })),
+        accountIdentifier: t.Optional(t.String({ maxLength: 500 })),
       }),
     }
   )
   .patch(
     "/credentials/:provider",
     async ({ principal, params, body }) => {
-      requirePrincipal(principal, ["user"])
+      requirePrincipal(principal, ["user"], ["org:write"])
 
       const { updateCredential } = await import("@/lib/services/org-credentials")
       const credential = await updateCredential(
@@ -1014,15 +1067,15 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         description: "Updates a stored credential. Clerk-only.",
       },
       body: t.Object({
-        apiKey: t.Optional(t.String({ minLength: 1 })),
-        label: t.Optional(t.String()),
-        accountIdentifier: t.Optional(t.String()),
+        apiKey: t.Optional(t.String({ minLength: 1, maxLength: 4096 })),
+        label: t.Optional(t.String({ maxLength: 200 })),
+        accountIdentifier: t.Optional(t.String({ maxLength: 500 })),
         isActive: t.Optional(t.Boolean()),
       }),
     }
   )
   .delete("/credentials/:provider", async ({ principal, params }) => {
-    requirePrincipal(principal, ["user"])
+    requirePrincipal(principal, ["user"], ["org:write"])
 
     const { deleteCredential } = await import("@/lib/services/org-credentials")
     const success = await deleteCredential(principal.tenantId, params.provider as "luma")
@@ -1520,8 +1573,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       }
 
       const runSettingsMutation = async () => {
-        const hasDateUpdate =
-          body.startsAt !== undefined || body.endsAt !== undefined
+        let hasDateUpdate = false
 
         const { checkHackathonOrganizer } =
           await import("@/lib/services/public-hackathons")
@@ -1546,6 +1598,13 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         }
         const currentHackathon = check.hackathon
         const previousStatus = currentHackathon.status
+        const sameDate = (next: string | null, current: string | null) => {
+          if (next === null || current === null) return next === current
+          return new Date(next).getTime() === new Date(current).getTime()
+        }
+        hasDateUpdate =
+          (body.startsAt !== undefined && !sameDate(body.startsAt, currentHackathon.starts_at)) ||
+          (body.endsAt !== undefined && !sameDate(body.endsAt, currentHackathon.ends_at))
 
         const webMcpError = validateWebMcpSettingsMutationContext(
           request,
@@ -2003,7 +2062,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       if (hasStatusField) return runSettingsMutation()
 
       try {
-        return await withEventMutationLease(params.id, runSettingsMutation)
+        return await withEventMutationLease(params.id, runSettingsMutation, principal.tenantId)
       } catch (error) {
         return settingsMutationLeaseFailure(error, set)
       }
@@ -2248,16 +2307,14 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       const websiteUrl = body.websiteUrl ? normalizeUrl(body.websiteUrl) : body.websiteUrl
 
       let tenantSponsorId: string | null = null
-      if (!body.sponsorTenantId) {
-        const { upsertTenantSponsor } = await import("@/lib/services/tenant-sponsors")
-        const tenantSponsor = await upsertTenantSponsor(principal.tenantId, {
-          name: body.name,
-          websiteUrl,
-        })
-        tenantSponsorId = tenantSponsor?.id ?? null
-        if (!tenantSponsorId) {
-          console.warn(`upsertTenantSponsor returned null for tenant ${principal.tenantId}, sponsor "${body.name}" will be added without a library link`)
-        }
+      const { upsertTenantSponsor } = await import("@/lib/services/tenant-sponsors")
+      const tenantSponsor = await upsertTenantSponsor(principal.tenantId, {
+        name: body.name,
+        websiteUrl,
+      })
+      tenantSponsorId = tenantSponsor?.id ?? null
+      if (!tenantSponsorId) {
+        console.warn(`upsertTenantSponsor returned null for tenant ${principal.tenantId}, sponsor "${body.name}" will be added without a library link`)
       }
 
       const sponsor = await addSponsor({
@@ -2267,7 +2324,6 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         websiteUrl,
         tier: body.tier as SponsorTier | undefined,
         customTierLabel: body.customTierLabel,
-        sponsorTenantId: body.sponsorTenantId,
         tenantSponsorId,
         useOrgAssets: body.useOrgAssets,
         displayOrder: body.displayOrder,
@@ -2306,7 +2362,6 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         websiteUrl: t.Optional(t.Union([t.String(), t.Null()])),
         tier: t.Optional(t.String()),
         customTierLabel: t.Optional(t.Union([t.String(), t.Null()])),
-        sponsorTenantId: t.Optional(t.Union([t.String(), t.Null()])),
         useOrgAssets: t.Optional(t.Boolean()),
         displayOrder: t.Optional(t.Number()),
       }),
@@ -2342,7 +2397,6 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         websiteUrl: sponsorWebsiteUrl,
         tier: body.tier as SponsorTier | undefined,
         customTierLabel: body.customTierLabel,
-        sponsorTenantId: body.sponsorTenantId,
         useOrgAssets: body.useOrgAssets,
         displayOrder: body.displayOrder,
       }, params.id)
@@ -2377,7 +2431,6 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         websiteUrl: t.Optional(t.Union([t.String(), t.Null()])),
         tier: t.Optional(t.String()),
         customTierLabel: t.Optional(t.Union([t.String(), t.Null()])),
-        sponsorTenantId: t.Optional(t.Union([t.String(), t.Null()])),
         useOrgAssets: t.Optional(t.Boolean()),
         displayOrder: t.Optional(t.Number()),
       }),
@@ -2490,6 +2543,29 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         })
       }
 
+      const { listHackathonSponsors } = await import("@/lib/services/sponsors")
+      const sponsor = (await listHackathonSponsors(params.id)).find((item) => item.id === params.sponsorId)
+      if (!sponsor) {
+        return new Response(JSON.stringify({ error: "Sponsor not found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+      const actorId = principal.kind === "user" ? principal.userId : principal.keyId
+      const uploadLimit = await checkRateLimit(
+        `sponsor_logo:${params.id}:${actorId}`,
+        { maxRequests: 10, windowMs: 60 * 60_000 },
+        { failureMode: "closed" },
+      )
+      if (!uploadLimit.allowed) throw new RateLimitError(uploadLimit.resetAt, uploadLimit.remaining)
+      const contentLength = Number(request.headers.get("content-length") ?? 0)
+      if (contentLength > 7 * 1024 * 1024) {
+        return new Response(JSON.stringify({ error: "Request too large" }), {
+          status: 413,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+
       const formData = await request.formData()
       const file = formData.get("file") as File | null
       const variant = (formData.get("variant") as string) || "light"
@@ -2535,9 +2611,17 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         })
       }
 
-      const { updateSponsor, listHackathonSponsors } = await import("@/lib/services/sponsors")
+      const { updateSponsor } = await import("@/lib/services/sponsors")
       const updateField = variant === "dark" ? { logoUrlDark: uploadResult.url } : { logoUrl: uploadResult.url }
-      await updateSponsor(params.sponsorId, updateField, params.id)
+      const savedSponsor = await updateSponsor(params.sponsorId, updateField, params.id)
+      if (!savedSponsor) {
+        const { deleteSponsorLogo } = await import("@/lib/services/storage")
+        await deleteSponsorLogo(params.id, params.sponsorId, variant)
+        return new Response(JSON.stringify({ error: "Failed to save sponsor logo" }), {
+          status: 409,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
 
       const sponsors = await listHackathonSponsors(params.id)
       const updatedSponsor = sponsors.find((s) => s.id === params.sponsorId)
@@ -3208,3 +3292,4 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
   .use(dashboardJudgeDisplayRoutes)
   .use(dashboardPostEventRoutes)
   .use(dashboardSponsorFulfillmentRoutes)
+  .use(dashboardPrizeTracksRoutes)

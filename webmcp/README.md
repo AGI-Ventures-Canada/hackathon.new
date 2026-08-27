@@ -1,6 +1,6 @@
-# Oatmeal WebMCP
+# hackathon.new WebMCP
 
-Oatmeal registers browser-native tools with `document.modelContext.registerTool`. Registration follows the current route, signed-in role, event lifecycle, judging style, and visible capabilities. An `AbortController` removes tools when that context changes.
+hackathon.new registers browser-native tools with `document.modelContext.registerTool`. Registration follows the current route, signed-in role, event lifecycle, judging style, and visible capabilities. An `AbortController` removes tools when that context changes.
 
 ## Human control
 
@@ -66,9 +66,9 @@ Origin-trial operations record:
 
 | Exact origin | Vercel environment | Issue date | Expiry | Removal owner |
 |---|---|---|---|---|
-| `https://oatmeal-git-feature-webmcp-organizer-tools-agi-ventures-canada.vercel.app` | Preview, branch `feature/webmcp-organizer-tools` | 2026-08-26 | 2026-11-17 00:00 UTC (Nov 16 Toronto) | Oatmeal release owner |
-| `https://staging.hackathon.new` | Custom environment `staging` | 2026-08-26 | 2026-11-17 00:00 UTC (Nov 16 Toronto) | Oatmeal release owner |
-| `https://hackathon.new` | Production | 2026-08-26 | 2026-11-17 00:00 UTC (Nov 16 Toronto) | Oatmeal release owner |
+| `https://oatmeal-git-feature-webmcp-organizer-tools-agi-ventures-canada.vercel.app` | Preview, branch `feature/webmcp-organizer-tools` | 2026-08-26 | 2026-11-17 00:00 UTC (Nov 16 Toronto) | hackathon.new release owner |
+| `https://staging.hackathon.new` | Custom environment `staging` | 2026-08-26 | 2026-11-17 00:00 UTC (Nov 16 Toronto) | hackathon.new release owner |
+| `https://hackathon.new` | Production | 2026-08-26 | 2026-11-17 00:00 UTC (Nov 16 Toronto) | hackathon.new release owner |
 
 Keep the issue date and expiry in sync with Chrome's enrollment records. The removal owner removes the matching Vercel value when the trial expires or the browser no longer needs it.
 

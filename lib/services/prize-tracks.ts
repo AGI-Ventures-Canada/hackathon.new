@@ -59,13 +59,17 @@ export async function listPrizeTracks(hackathonId: string): Promise<PrizeTrack[]
   return data as unknown as PrizeTrack[]
 }
 
-export async function getPrizeTrack(trackId: string): Promise<PrizeTrack | null> {
+export async function getPrizeTrack(
+  trackId: string,
+  hackathonId?: string,
+): Promise<PrizeTrack | null> {
   const client = getSupabase() as unknown as SupabaseClient
-  const { data, error } = await client
+  let query = client
     .from("prize_tracks")
     .select("*")
     .eq("id", trackId)
-    .maybeSingle()
+  if (hackathonId) query = query.eq("hackathon_id", hackathonId)
+  const { data, error } = await query.maybeSingle()
 
   if (error || !data) return null
   return data as unknown as PrizeTrack
@@ -78,6 +82,16 @@ export async function createPrizeTrack(
   const client = getSupabase() as unknown as SupabaseClient
   const intent = input.intent ?? "custom"
   const style = input.style ?? INTENT_TO_STYLE[intent]
+
+  if (input.sponsorId) {
+    const { data: sponsor } = await client
+      .from("hackathon_sponsors")
+      .select("id")
+      .eq("id", input.sponsorId)
+      .eq("hackathon_id", hackathonId)
+      .maybeSingle()
+    if (!sponsor) return null
+  }
 
   const { data: track, error } = await client
     .from("prize_tracks")
@@ -211,6 +225,14 @@ export async function createRound(
   input: CreateRoundInput
 ): Promise<JudgingRound | null> {
   const client = getSupabase() as unknown as SupabaseClient
+  const { data: track } = await client
+    .from("prize_tracks")
+    .select("id")
+    .eq("id", prizeTrackId)
+    .eq("hackathon_id", hackathonId)
+    .maybeSingle()
+  if (!track) return null
+
   const { data, error } = await client
     .from("judging_rounds")
     .insert({
@@ -236,7 +258,9 @@ export async function createRound(
 
 export async function updateRound(
   roundId: string,
-  input: UpdateRoundInput
+  input: UpdateRoundInput,
+  hackathonId?: string,
+  prizeTrackId?: string,
 ): Promise<JudgingRound | null> {
   const client = getSupabase() as unknown as SupabaseClient
 
@@ -248,11 +272,13 @@ export async function updateRound(
   if (input.advancementConfig !== undefined) updates.advancement_config = input.advancementConfig
   if (input.displayOrder !== undefined) updates.display_order = input.displayOrder
 
-  const { data, error } = await client
+  let query = client
     .from("judging_rounds")
     .update(updates)
     .eq("id", roundId)
-    .select()
+  if (hackathonId) query = query.eq("hackathon_id", hackathonId)
+  if (prizeTrackId) query = query.eq("prize_track_id", prizeTrackId)
+  const { data, error } = await query.select()
     .single()
 
   if (error || !data) {
@@ -263,30 +289,26 @@ export async function updateRound(
   return data as unknown as JudgingRound
 }
 
-export async function activateRound(roundId: string, prizeTrackId: string): Promise<boolean> {
+export async function activateRound(
+  roundId: string,
+  prizeTrackId: string,
+  hackathonId: string,
+): Promise<boolean> {
   const client = getSupabase() as unknown as SupabaseClient
-
-  const { error: deactivateError } = await client
+  const { data: round } = await client
     .from("judging_rounds")
-    .update({ status: "planned", is_active: false, updated_at: new Date().toISOString() })
-    .eq("prize_track_id", prizeTrackId)
-    .eq("status", "active")
-    .neq("id", roundId)
-
-  if (deactivateError) {
-    console.error("Failed to deactivate other rounds:", deactivateError)
-    return false
-  }
-
-  const { data, error } = await client
-    .from("judging_rounds")
-    .update({ status: "active", is_active: true, updated_at: new Date().toISOString() })
+    .select("id")
     .eq("id", roundId)
     .eq("prize_track_id", prizeTrackId)
-    .select("id")
-    .single()
+    .eq("hackathon_id", hackathonId)
+    .maybeSingle()
+  if (!round) return false
 
-  if (error || !data) {
+  const { data, error } = await client.rpc("activate_judging_round", {
+    p_hackathon_id: hackathonId,
+    p_round_id: roundId,
+  })
+  if (error || data !== true) {
     console.error("Failed to activate round:", error)
     return false
   }
@@ -346,9 +368,19 @@ export type UpsertBucketInput = {
 
 export async function replaceRoundBucketDefinitions(
   roundId: string,
-  buckets: UpsertBucketInput[]
+  buckets: UpsertBucketInput[],
+  hackathonId?: string,
+  prizeTrackId?: string,
 ): Promise<BucketDefinition[]> {
   const client = getSupabase() as unknown as SupabaseClient
+
+  if (hackathonId || prizeTrackId) {
+    let roundQuery = client.from("judging_rounds").select("id").eq("id", roundId)
+    if (hackathonId) roundQuery = roundQuery.eq("hackathon_id", hackathonId)
+    if (prizeTrackId) roundQuery = roundQuery.eq("prize_track_id", prizeTrackId)
+    const { data: round } = await roundQuery.maybeSingle()
+    if (!round) return []
+  }
 
   const { error: deleteError } = await client
     .from("bucket_definitions")
@@ -395,6 +427,19 @@ export async function submitBucketResponse(
   input: SubmitBucketResponseInput
 ): Promise<BucketResponse | null> {
   const client = getSupabase() as unknown as SupabaseClient
+  const { data: assignment } = await client
+    .from("judge_assignments")
+    .select("prize_id, round_id")
+    .eq("id", assignmentId)
+    .maybeSingle()
+  if (!assignment) return null
+
+  let bucketQuery = client.from("bucket_definitions").select("id").eq("id", input.bucketId)
+  if (assignment.prize_id) bucketQuery = bucketQuery.eq("prize_id", assignment.prize_id)
+  else if (assignment.round_id) bucketQuery = bucketQuery.eq("round_id", assignment.round_id)
+  else return null
+  const { data: bucket } = await bucketQuery.maybeSingle()
+  if (!bucket) return null
 
   const { data, error } = await client
     .from("bucket_responses")
@@ -444,7 +489,7 @@ export type SubmitBinaryResponsesResult =
   | {
       success: false
       error: string
-      code: "partial_save"
+      code: "partial_save" | "invalid_response"
       savedCount: number
       totalCount: number
       results: BinaryResponse[]
@@ -456,6 +501,40 @@ export async function submitBinaryResponses(
 ): Promise<SubmitBinaryResponsesResult> {
   const client = getSupabase() as unknown as SupabaseClient
   const now = new Date().toISOString()
+
+  const uniqueCriteriaIds = [...new Set(responses.map((response) => response.criteriaId))]
+  if (responses.length === 0 || uniqueCriteriaIds.length !== responses.length) {
+    return {
+      success: false,
+      error: "Every gate must be answered exactly once",
+      code: "invalid_response",
+      savedCount: 0,
+      totalCount: responses.length,
+      results: [],
+    }
+  }
+
+  const { data: assignment } = await client
+    .from("judge_assignments")
+    .select("hackathon_id, prize_id")
+    .eq("id", assignmentId)
+    .maybeSingle()
+  if (!assignment?.prize_id) {
+    return { success: false, error: "This assignment has no gate criteria", code: "invalid_response", savedCount: 0, totalCount: responses.length, results: [] }
+  }
+
+  const { data: criteria } = await client
+    .from("judging_criteria")
+    .select("id")
+    .eq("hackathon_id", assignment.hackathon_id)
+    .eq("prize_id", assignment.prize_id)
+  const configuredCriteriaIds = new Set((criteria ?? []).map((criterion: { id: string }) => criterion.id))
+  if (
+    configuredCriteriaIds.size !== uniqueCriteriaIds.length ||
+    uniqueCriteriaIds.some((criteriaId) => !configuredCriteriaIds.has(criteriaId))
+  ) {
+    return { success: false, error: "Answer every gate shown for this assignment", code: "invalid_response", savedCount: 0, totalCount: responses.length, results: [] }
+  }
 
   const upserts = responses.map((r) => ({
     judge_assignment_id: assignmentId,
@@ -655,9 +734,10 @@ export type TrackWithRoundsAndBuckets = PrizeTrack & {
 }
 
 export async function getPrizeTrackWithDetails(
-  trackId: string
+  trackId: string,
+  hackathonId?: string,
 ): Promise<TrackWithRoundsAndBuckets | null> {
-  const track = await getPrizeTrack(trackId)
+  const track = await getPrizeTrack(trackId, hackathonId)
   if (!track) return null
 
   const rounds = await listRounds(trackId)
@@ -684,12 +764,13 @@ export async function calculateBucketSortResults(
 ): Promise<{ success: boolean; count: number }> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { error: deleteError } = await client
+  const { data: deletedRows, error: deleteError } = await client
     .from("hackathon_results")
     .delete()
     .eq("hackathon_id", hackathonId)
     .eq("prize_track_id", prizeTrackId)
     .eq("round_id", roundId)
+    .select("*")
 
   if (deleteError) {
     console.error("Failed to clear existing results:", deleteError)
@@ -720,6 +801,7 @@ export async function calculateBucketSortResults(
     .eq("round_id", roundId)
 
   if (!bucketResponses || !bucketDefs) {
+    if (deletedRows && deletedRows.length > 0) await client.from("hackathon_results").insert(deletedRows)
     return { success: false, count: 0 }
   }
 
@@ -776,6 +858,7 @@ export async function calculateBucketSortResults(
 
   if (insertError) {
     console.error("Failed to insert bucket sort results:", insertError)
+    if (deletedRows && deletedRows.length > 0) await client.from("hackathon_results").insert(deletedRows)
     return { success: false, count: 0 }
   }
 
@@ -793,12 +876,13 @@ export async function calculateGateCheckResults(
 ): Promise<{ success: boolean; count: number }> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { error: deleteError } = await client
+  const { data: deletedRows, error: deleteError } = await client
     .from("hackathon_results")
     .delete()
     .eq("hackathon_id", hackathonId)
     .eq("prize_track_id", prizeTrackId)
     .eq("round_id", roundId)
+    .select("*")
 
   if (deleteError) {
     console.error("Failed to clear existing results:", deleteError)
@@ -824,6 +908,7 @@ export async function calculateGateCheckResults(
     .in("judge_assignment_id", assignmentIds)
 
   if (!binaryResponses) {
+    if (deletedRows && deletedRows.length > 0) await client.from("hackathon_results").insert(deletedRows)
     return { success: false, count: 0 }
   }
 
@@ -888,6 +973,7 @@ export async function calculateGateCheckResults(
 
   if (insertError) {
     console.error("Failed to insert gate check results:", insertError)
+    if (deletedRows && deletedRows.length > 0) await client.from("hackathon_results").insert(deletedRows)
     return { success: false, count: 0 }
   }
 

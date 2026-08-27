@@ -105,7 +105,7 @@ describe("Organization members service", () => {
       email: "new@example.com",
       role: "org:member",
       status: "pending",
-      url: "https://clerk.example/invite",
+      url: null,
     })
   })
 

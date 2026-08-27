@@ -1,7 +1,6 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import {
-  DEFAULT_TEAM_STATUS,
   type Hackathon,
   type TenantProfile,
   type HackathonSponsor,
@@ -52,7 +51,7 @@ export function isPublicHackathonOrganizer(
 
 export function toPublicHackathonClientDto(
   hackathon: PublicHackathon,
-  options?: { includeEditorSponsorData?: boolean },
+  options?: { includeEditorSponsorData?: boolean; includePrivateLocation?: boolean },
 ): PublicHackathonClientDto {
   const {
     stored_status: _storedStatus,
@@ -62,6 +61,8 @@ export function toPublicHackathonClientDto(
     updated_at: _updatedAt,
     location_latitude: _locationLatitude,
     location_longitude: _locationLongitude,
+    location_url: privateLocationUrl,
+    community_url: privateCommunityUrl,
     winner_emails_sent_at: _winnerEmailsSentAt,
     results_announcement_sent_at: _resultsAnnouncementSentAt,
     feedback_survey_sent_at: _feedbackSurveySentAt,
@@ -93,6 +94,8 @@ export function toPublicHackathonClientDto(
 
   return {
     ...visibleHackathon,
+    location_url: options?.includePrivateLocation ? privateLocationUrl : null,
+    community_url: options?.includePrivateLocation ? privateCommunityUrl : null,
     organizer,
     sponsors,
     judges: hackathon.judges.map((judge) => {
@@ -106,7 +109,9 @@ export function toPublicHackathonClientDto(
       } = judge
       return visibleJudge
     }),
-    prizes: hackathon.prizes.map((prize) => {
+    prizes: hackathon.prizes
+      .filter((prize) => options?.includeEditorSponsorData || !prize.is_screening)
+      .map((prize) => {
       const {
         hackathon_id: _hackathonId,
         criteria_id: _criteriaId,
@@ -119,7 +124,7 @@ export function toPublicHackathonClientDto(
         ...visiblePrize
       } = prize
       return visiblePrize
-    }),
+      }),
   } as unknown as PublicHackathonClientDto
 }
 
@@ -513,6 +518,24 @@ export async function updateHackathonSettings(
   if (updates.requireTermsAcceptance !== undefined) updateData.require_terms_acceptance = updates.requireTermsAcceptance
   if (updates.termsContent !== undefined) updateData.terms_content = updates.termsContent
 
+  let pendingTeamsToNotify: Array<{
+    id: string
+    name: string
+    hackathon_participants: { clerk_user_id: string }[] | null
+  }> = []
+  if (updates.requireTeamApproval === false) {
+    const { data: pendingTeams, error: pendingTeamsError } = await client
+      .from("teams")
+      .select("id, name, hackathon_participants(clerk_user_id)")
+      .eq("hackathon_id", hackathonId)
+      .eq("status", "pending_approval")
+    if (pendingTeamsError) {
+      console.error("Failed to load waiting teams before disabling review:", pendingTeamsError)
+    } else {
+      pendingTeamsToNotify = (pendingTeams ?? []) as typeof pendingTeamsToNotify
+    }
+  }
+
   let query = client
     .from("hackathons")
     .update(updateData)
@@ -531,45 +554,28 @@ export async function updateHackathonSettings(
   }
 
   if (updates.requireTeamApproval === false) {
-    await autoPromotePendingTeams(client, hackathonId, data as unknown as Hackathon)
+    await notifyAutoPromotedTeams(
+      client,
+      hackathonId,
+      data as unknown as Hackathon,
+      pendingTeamsToNotify,
+    )
   }
 
   return data as unknown as Hackathon
 }
 
-async function autoPromotePendingTeams(
+async function notifyAutoPromotedTeams(
   client: SupabaseClient,
   hackathonId: string,
-  hackathon: Hackathon
-): Promise<void> {
-  const { data: pendingTeams, error: listError } = await client
-    .from("teams")
-    .select("id, name, hackathon_participants(clerk_user_id)")
-    .eq("hackathon_id", hackathonId)
-    .eq("status", "pending_approval")
-
-  if (listError) {
-    console.error("Failed to list waiting teams before disabling review:", listError)
-    return
-  }
-
-  const promoted = (pendingTeams ?? []) as Array<{
+  hackathon: Hackathon,
+  promoted: Array<{
     id: string
     name: string
     hackathon_participants: { clerk_user_id: string }[] | null
-  }>
+  }>,
+): Promise<void> {
   if (promoted.length === 0) return
-
-  const { error: updateError } = await client
-    .from("teams")
-    .update({ status: DEFAULT_TEAM_STATUS })
-    .eq("hackathon_id", hackathonId)
-    .eq("status", "pending_approval")
-
-  if (updateError) {
-    console.error("Failed to approve waiting teams after disabling review:", updateError)
-    return
-  }
 
   const notificationHackathon = {
     name: hackathon.name,
