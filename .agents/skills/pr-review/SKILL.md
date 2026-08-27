@@ -110,8 +110,9 @@ In priority order:
 4. **Logic bugs** — off-by-one, null deref, race conditions, wrong predicate.
 5. **TypeScript** — `any`, unsafe casts, missing types on public surfaces.
 6. **CLI isolation** — CLI package importing from `lib/`, `app/`, or `components/`.
-7. **Dead code** — unused imports/vars/exports introduced in the diff, commented-out blocks.
-8. **Style** — only flag if it materially hurts readability or contradicts the standards above.
+7. **App, WebMCP, and CLI parity** — feature or behavior changes that do not consider all three surfaces, organizer page changes missing from `lib/webmcp/organizer-parity.ts`, or mismatched validation, lifecycle gates, and queued outcomes.
+8. **Dead code** — unused imports/vars/exports introduced in the diff, commented-out blocks.
+9. **Style** — only flag if it materially hurts readability or contradicts the standards above.
 
 ### Flow-completeness checks
 

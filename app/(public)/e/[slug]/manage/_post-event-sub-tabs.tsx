@@ -26,16 +26,16 @@ export function PostEventSubTabs({ activePtab, showExports, children }: PostEven
         </TabsList>
       </div>
 
-      <TabsContent value="fulfillment" forceMount className="data-[state=inactive]:hidden">
+      <TabsContent value="fulfillment" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="fulfillment">
         {fulfillmentContent}
       </TabsContent>
 
-      <TabsContent value="feedback" forceMount className="data-[state=inactive]:hidden">
+      <TabsContent value="feedback" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="feedback">
         {feedbackContent}
       </TabsContent>
 
       {showExports && (
-        <TabsContent value="exports" forceMount className="data-[state=inactive]:hidden">
+        <TabsContent value="exports" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="exports">
           {exportsContent}
         </TabsContent>
       )}

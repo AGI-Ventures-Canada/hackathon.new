@@ -329,7 +329,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
               <ActionItemsTab />
             </TabsContent>
 
-            <TabsContent value="overview" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="overview">
+            <TabsContent value="overview" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="overview schedule">
               <div className="space-y-4">
                 <LifecycleStepper
                   hackathonId={hackathon.id}
@@ -394,7 +394,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
               />
             </TabsContent>
 
-            <TabsContent value="perks" forceMount className="data-[state=inactive]:hidden">
+            <TabsContent value="perks" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="perks">
               <PerksTab
                 hackathonId={hackathon.id}
                 initialPerks={perks}
@@ -404,7 +404,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
               />
             </TabsContent>
 
-            <TabsContent value="edit" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="event_page">
+            <TabsContent value="edit" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="event_page sponsors">
               <div className="rounded-lg border overflow-hidden">
                 <HackathonPreviewClient
                   hackathon={hackathon}
@@ -442,7 +442,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
               </Suspense>
             </TabsContent>
 
-            <TabsContent value="teams" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="teams">
+            <TabsContent value="teams" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="teams projects">
               <TeamsTab
                 hackathonId={hackathon.id}
                 maxTeamSize={hackathon.max_team_size ?? 5}
@@ -459,7 +459,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
               </Suspense>
             </TabsContent>
 
-            <TabsContent value="miscs" forceMount className="data-[state=inactive]:hidden">
+            <TabsContent value="miscs" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="miscs">
               <MiscsTabContent
                 hackathonId={hackathon.id}
                 activeMtab={activeMtab}

@@ -26,6 +26,10 @@ import {
 } from "@/lib/webmcp/mutation-context"
 import { defineWebMcpTool } from "@/lib/webmcp/tool"
 import type { WebMcpTool } from "@/lib/webmcp/types"
+import {
+  ORGANIZER_SECTION_CONFIG,
+  ORGANIZER_SECTIONS,
+} from "@/lib/webmcp/organizer-parity"
 import { stageKeyForStatus } from "@/lib/utils/lifecycle-stages"
 
 export type {
@@ -215,41 +219,9 @@ const announcementInput = z
 
 const sectionInput = z
   .object({
-    section: z.enum([
-      "action_items",
-      "overview",
-      "challenges",
-      "schedule",
-      "event_page",
-      "teams",
-      "projects",
-      "people",
-      "sponsors",
-      "perks",
-      "judging",
-      "results",
-      "post_event",
-      "communications",
-    ]),
+    section: z.enum(ORGANIZER_SECTIONS),
   })
   .strict()
-
-const sectionParams: Record<z.output<typeof sectionInput>["section"], string> = {
-  action_items: "tab=action-items",
-  overview: "tab=overview",
-  challenges: "tab=challenges",
-  schedule: "tab=overview",
-  event_page: "tab=edit",
-  teams: "tab=teams",
-  projects: "tab=teams",
-  people: "tab=people",
-  sponsors: "tab=edit",
-  perks: "tab=perks",
-  judging: "tab=judging",
-  results: "tab=judging&jtab=results",
-  post_event: "tab=post-event",
-  communications: "tab=event",
-}
 
 const untrustedReadAnnotations = {
   readOnlyHint: true,
@@ -272,6 +244,30 @@ const draftOnlyToolNames = new Set([
   "open_go_live_review",
 ])
 
+const preCompletionToolNames = new Set([
+  "update_hackathon_details",
+  "set_hackathon_timeline",
+  "add_schedule_item",
+  "add_challenge",
+  "add_prize",
+  "open_go_live_review",
+])
+
+function toolIsAvailableForStatus(
+  toolName: string,
+  status: HackathonStatus,
+): boolean {
+  if (draftOnlyToolNames.has(toolName)) return status === "draft"
+  if (preCompletionToolNames.has(toolName)) {
+    return WEBMCP_PRE_COMPLETION_STATUSES.some((allowed) => allowed === status)
+  }
+  if (toolName === "draft_announcement") return status !== "archived"
+  if (toolName === "open_publish_review") {
+    return status === "judging" || status === "completed"
+  }
+  return true
+}
+
 function clip(value: string | null, maxLength: number): string | null {
   if (value === null || value.length <= maxLength) return value
   return `${value.slice(0, maxLength - 1)}…`
@@ -283,6 +279,71 @@ function manageHref(slug: string, params: string): string {
 
 function createMutationId(_kind: ManageWebMcpOptimisticChange["kind"]): string {
   return crypto.randomUUID()
+}
+
+function organizerSectionData(
+  context: ManageHackathonWebMcpContext,
+  section: z.output<typeof sectionInput>["section"],
+): Record<string, unknown> {
+  if (section === "action_items") {
+    return {
+      remainingCount: context.actionItems.length,
+      nextTask: context.actionItems[0]
+        ? {
+            label: clip(context.actionItems[0].label, 80),
+            hint: clip(context.actionItems[0].hint, 80),
+            severity: context.actionItems[0].severity,
+          }
+        : null,
+    }
+  }
+  if (section === "schedule") return { itemCount: context.scheduleItems.length }
+  if (section === "challenges") return { challengeCount: context.challenges.length }
+  if (section === "perks") {
+    return {
+      perkCount: context.perks.length,
+      releasedCount: context.perks.filter((perk) => perk.released).length,
+    }
+  }
+  if (section === "sponsors") return { sponsorCount: context.sponsors.length }
+  if (section === "teams") {
+    return {
+      teamCount: context.stats.teamCount,
+      pendingApprovalCount: context.stats.pendingTeamApprovalCount,
+      rules: {
+        minimumSize: context.hackathon.minTeamSize,
+        maximumSize: context.hackathon.maxTeamSize,
+        soloAllowed: context.hackathon.allowSolo,
+        approvalRequired: context.hackathon.requireTeamApproval,
+      },
+    }
+  }
+  if (section === "projects") return { projectCount: context.stats.projectCount }
+  if (section === "people") {
+    return {
+      attendeeCount: context.stats.attendeeCount,
+      judgeCount: context.stats.judgeCount,
+    }
+  }
+  if (["judging", "judging_setup", "judges", "rounds", "prizes", "assignments", "results"].includes(section)) {
+    return {
+      judgeCount: context.stats.judgeCount,
+      prizeCount: context.prizes.length,
+      assignmentCount: context.stats.judgingAssignments,
+      completedAssignmentCount: context.stats.completedJudgingAssignments,
+    }
+  }
+  if (["communications", "announcements"].includes(section)) {
+    return {
+      announcementCount: context.announcements.length,
+      publishedCount: context.announcements.filter((announcement) =>
+        announcement.publishedAt !== null
+      ).length,
+    }
+  }
+  return {
+    eventStatus: stageKeyForStatus(context.hackathon.storedStatus),
+  }
 }
 
 function getDraftContext(
@@ -442,6 +503,35 @@ function createReadTools(
             manage: clip(manageHref(hackathon.slug, "tab=overview"), 120),
             event: clip(`/e/${hackathon.slug}`, 100),
           },
+        }
+      },
+    }),
+    defineWebMcpTool({
+      name: "get_organizer_page_support",
+      title: "Get organizer page support",
+      description:
+        "Explain what one organizer page is for and which WebMCP tools and CLI commands cover it. This doesn't change the event.",
+      schema: sectionInput,
+      annotations: untrustedReadAnnotations,
+      execute: ({ section }) => {
+        const context = dependencies.getContext()
+        const config = ORGANIZER_SECTION_CONFIG[section]
+        const webMcpTools = config.webMcpTools.filter((toolName) =>
+          toolIsAvailableForStatus(toolName, context.hackathon.status)
+        )
+        return {
+          section,
+          title: config.title,
+          summary: config.summary,
+          eventStatus: stageKeyForStatus(context.hackathon.storedStatus),
+          webMcpTools,
+          unavailableWebMcpTools: config.webMcpTools.filter(
+            (toolName) => !webMcpTools.includes(toolName),
+          ),
+          cliCommands: config.cliCommands,
+          cliCoverage: config.cliCommands.length > 0 ? "available" : "needs_review",
+          pageData: organizerSectionData(context, section),
+          inspectUrl: manageHref(context.hackathon.slug, config.params),
         }
       },
     }),
@@ -619,7 +709,7 @@ function createReadTools(
       annotations: { readOnlyHint: true },
       execute: async ({ section }) => {
         const slug = dependencies.getContext().hackathon.slug
-        const url = manageHref(slug, sectionParams[section])
+        const url = manageHref(slug, ORGANIZER_SECTION_CONFIG[section].params)
         const opened = await dependencies.onNavigate(url, section)
         return {
           opened: opened ? section : null,
