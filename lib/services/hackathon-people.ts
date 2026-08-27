@@ -85,7 +85,7 @@ export async function listHackathonPeople(hackathonId: string): Promise<Person[]
   const accepted: Person[] = participants.map((p) => {
     const team = p.team_id ? teamById[p.team_id] ?? null : null
     const email = userEmails[p.clerk_user_id] ?? null
-    if (email) acceptedEmails.add(email.toLowerCase())
+    if (email) acceptedEmails.add(email.trim().toLowerCase())
     return {
       id: p.id,
       name: userDisplayNames[p.clerk_user_id] ?? null,
@@ -103,7 +103,7 @@ export async function listHackathonPeople(hackathonId: string): Promise<Person[]
   const pending: Person[] = []
 
   for (const inv of teamInvites) {
-    if (acceptedEmails.has(inv.email.toLowerCase())) continue
+    if (acceptedEmails.has(inv.email.trim().toLowerCase())) continue
     const team = teamById[inv.team_id] ?? null
     pending.push({
       id: `team_invitation:${inv.id}`,
@@ -120,7 +120,7 @@ export async function listHackathonPeople(hackathonId: string): Promise<Person[]
   }
 
   for (const inv of judgeInvites) {
-    if (acceptedEmails.has(inv.email.toLowerCase())) continue
+    if (acceptedEmails.has(inv.email.trim().toLowerCase())) continue
     pending.push({
       id: `judge_invitation:${inv.id}`,
       name: null,

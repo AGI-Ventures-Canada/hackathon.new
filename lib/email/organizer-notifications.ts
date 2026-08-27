@@ -75,7 +75,7 @@ export async function sendOrganizerClaimNotification(params: {
     await paceBulkSend(index)
     const result = await sendEmail({
       to: email,
-      subject: `Prize claimed: ${prizeName} — ${shortHackathonName(hackathonName)}`,
+      subject: `Prize claimed: ${shortHackathonName(prizeName, 18)} — ${shortHackathonName(hackathonName, 20)}`,
       html,
       text,
       replyTo: getReplyToAddress(),

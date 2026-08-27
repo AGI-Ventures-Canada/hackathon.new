@@ -48,6 +48,7 @@ import {
   type SubmissionScreenshotSlot,
 } from "@/lib/utils/submission-screenshots"
 import { getVideoEmbedInfo } from "@/lib/utils/video-embed"
+import { useIsClient } from "@/hooks/use-is-client"
 import { VideoEmbed } from "@/components/hackathon/video-embed"
 import {
   PREPARE_PROJECT_EVENT,
@@ -163,6 +164,7 @@ interface SubmissionButtonProps {
   teamSizeWarning?: string | null
   pendingTeamApproval?: boolean
   teamStatus?: TeamStatus | null
+  submissionDeadline?: string | null
 }
 
 export function SubmissionButton({
@@ -173,6 +175,7 @@ export function SubmissionButton({
   teamSizeWarning,
   pendingTeamApproval = false,
   teamStatus = null,
+  submissionDeadline,
 }: SubmissionButtonProps) {
   const { isSignedIn, isLoaded, user } = useUser()
   const router = useRouter()
@@ -199,7 +202,11 @@ export function SubmissionButton({
   )
   const [isDraggingScreenshots, setIsDraggingScreenshots] = useState(false)
 
-  const canSubmit = status === "active"
+  const isClient = useIsClient()
+  const deadlinePassed = isClient && submissionDeadline !== undefined && (
+    !submissionDeadline || new Date(submissionDeadline).getTime() <= Date.now()
+  )
+  const canSubmit = status === "active" && !deadlinePassed
   const isPendingTeam = pendingTeamApproval || teamStatus === "pending_approval"
   const isDisbandedTeam = teamStatus === "disbanded"
   const draftOwnerId = isSignedIn ? user?.id ?? null : null
@@ -351,11 +358,11 @@ export function SubmissionButton({
   }
 
   if (!canSubmit) {
-    if (status === "judging" || status === "completed") {
+    if (status === "judging" || status === "completed" || deadlinePassed) {
       return (
         <Button disabled variant="outline" size="lg">
           <Lock className="size-4" />
-          Submissions Closed
+          Projects Closed
         </Button>
       )
     }

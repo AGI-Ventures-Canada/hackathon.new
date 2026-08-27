@@ -259,6 +259,52 @@ describe("lifecycle email delivery", () => {
       .toBe("pre-event-reminder/reminder_1/user_2")
   })
 
+  it("does not send project reminders to solo attendees or teams that submitted", async () => {
+    fromImpl = (table) => {
+      if (table === "hackathon_participants") {
+        return query({
+          data: [
+            { id: "p1", clerk_user_id: "user_1", team_id: null },
+            { id: "p2", clerk_user_id: "user_2", team_id: "team_done" },
+            { id: "p3", clerk_user_id: "user_3", team_id: "team_open" },
+            { id: "p4", clerk_user_id: "user_4", team_id: null },
+          ],
+          error: null,
+        })
+      }
+      if (table === "submissions") {
+        return query({
+          data: [
+            { participant_id: "p4", team_id: null },
+            { participant_id: null, team_id: "team_done" },
+          ],
+          error: null,
+        })
+      }
+      return query({ data: null, error: null })
+    }
+    mockGetUserList.mockResolvedValue({ data: [
+      { id: "user_1", firstName: "Avery", primaryEmailAddress: { emailAddress: "a@example.com" } },
+      { id: "user_3", firstName: "Casey", primaryEmailAddress: { emailAddress: "c@example.com" } },
+    ] })
+
+    await expect(sendPreEventReminderEmail({
+      hackathonId: "hack_1",
+      reminderType: "submission_due",
+      hackathonName: "Build Together",
+      hackathonSlug: "build-together",
+      deadlineDate: "2026-09-01T16:00:00Z",
+      urgency: "high",
+      deliveryId: "reminder_2",
+    })).resolves.toEqual({ sent: 2, failed: 0 })
+
+    expect(mockGetUserList).toHaveBeenCalledWith({
+      userId: ["user_1", "user_3"],
+      limit: 100,
+    })
+    expect(mockSendEmail).toHaveBeenCalledTimes(2)
+  })
+
   it("resumes budgeted pre-event delivery by stable recipient instead of list position", async () => {
     fromImpl = () => query({
         data: [{ clerk_user_id: "user_2" }, { clerk_user_id: "user_3" }],

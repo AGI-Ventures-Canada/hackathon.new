@@ -57,7 +57,7 @@ export async function sendJudgeAddedNotification(
 
   const result = await sendEmail({
     to: input.to,
-    subject: `You're a judge for ${shortHackathonName(input.hackathonName)}`,
+    subject: `You're a judge for ${shortHackathonName(input.hackathonName, 40)}`,
     html,
     text,
     replyTo: getReplyToAddress(),
@@ -130,7 +130,7 @@ export type SendJudgeInvitationReminderInput = {
 }
 
 function judgeReminderSubject(hackathonName: string, urgency: string): string {
-  const name = shortHackathonName(hackathonName)
+  const name = shortHackathonName(hackathonName, 24)
   if (urgency === "high") return `Your invite to judge ${name} expires soon`
   if (urgency === "medium") return `Your invite to judge ${name} expires tomorrow`
   return `Reminder: Judge ${name}`

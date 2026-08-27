@@ -100,6 +100,7 @@ mock.module("@/lib/auth/principal", () => ({
 mock.module("@/lib/services/submissions", () => ({
   getParticipantWithTeam: mockGetParticipantWithTeam,
   getSubmissionForParticipant: mockGetSubmissionForParticipant,
+  isSubmissionWindowOpen: mock(() => Promise.resolve(true)),
 }))
 
 mock.module("@/lib/services/social-submissions", () => ({

@@ -37,9 +37,9 @@ export function buildRegistrationClosingContent(
 ): PreEventContent {
   return {
     heading: "Registration Is Closing Soon!",
-    body: `registration for ${hackathonName} is closing soon. Don\u2019t miss your chance to join.`,
+    body: `signups for ${hackathonName} close soon. Check your team and event details.`,
     deadlineLabel: "Registration closes",
-    ctaLabel: "Register Now",
+    ctaLabel: "View Event",
     ctaUrl: `${process.env.NEXT_PUBLIC_APP_URL}/e/${hackathonSlug}`,
     subject: `Registration closing soon \u2014 ${shortHackathonName(hackathonName)}`,
   }
@@ -119,7 +119,7 @@ export async function sendPreEventReminderEmail(
       ? HIGH_URGENCY_SUBJECTS[input.reminderType](shortHackathonName(input.hackathonName))
       : content.subject
 
-  const candidateIds = await getRecipientIds(input.hackathonId)
+  const candidateIds = await getRecipientIds(input.hackathonId, input.reminderType)
   let sent = 0
   let failed = 0
   const deliveryId = input.deliveryId ?? `${input.hackathonId}/${input.reminderType}/${input.deadlineDate}`
@@ -226,7 +226,7 @@ export async function sendPreEventReminderEmail(
   }
 
   if (failed === 0 && !deferred) {
-    const refreshedCandidateIds = await getRecipientIds(input.hackathonId)
+    const refreshedCandidateIds = await getRecipientIds(input.hackathonId, input.reminderType)
     deferred = await hasPendingDeliveryTasks(
       workKey,
       refreshedCandidateIds,
@@ -243,6 +243,7 @@ type RecipientCandidate = { id: string; recipient: Recipient | null }
 
 async function getRecipientIds(
   hackathonId: string,
+  reminderType: SendPreEventReminderInput["reminderType"],
 ): Promise<string[]> {
   const client = getSupabase() as unknown as SupabaseClient
 
@@ -250,14 +251,44 @@ async function getRecipientIds(
 
   const { data: participants, error: participantsError } = await client
     .from("hackathon_participants")
-    .select("clerk_user_id")
+    .select("id, clerk_user_id, team_id")
     .eq("hackathon_id", hackathonId)
     .eq("role", role)
 
   if (participantsError) {
     throw new Error(`Failed to load event attendees: ${participantsError.message}`)
   }
-  return [...new Set((participants ?? []).map(
+
+  let eligibleParticipants = participants ?? []
+  if (reminderType === "submission_due" && eligibleParticipants.length > 0) {
+    const { data: submissions, error: submissionsError } = await client
+      .from("submissions")
+      .select("participant_id, team_id")
+      .eq("hackathon_id", hackathonId)
+      .eq("status", "submitted")
+
+    if (submissionsError) {
+      throw new Error(`Failed to load submitted projects: ${submissionsError.message}`)
+    }
+
+    const submittedParticipantIds = new Set(
+      (submissions ?? []).flatMap((submission) =>
+        submission.participant_id ? [submission.participant_id as string] : [],
+      ),
+    )
+    const submittedTeamIds = new Set(
+      (submissions ?? []).flatMap((submission) =>
+        submission.team_id ? [submission.team_id as string] : [],
+      ),
+    )
+    eligibleParticipants = eligibleParticipants.filter((participant) =>
+      participant.team_id
+        ? !submittedTeamIds.has(participant.team_id as string)
+        : !submittedParticipantIds.has(participant.id as string),
+    )
+  }
+
+  return [...new Set(eligibleParticipants.map(
     (participant) => participant.clerk_user_id as string,
   ))].sort()
 }

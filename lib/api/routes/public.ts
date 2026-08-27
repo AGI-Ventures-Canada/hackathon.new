@@ -16,6 +16,7 @@ import {
   getHackathonSubmissions,
   getTeamMemberCount,
   notifySubmissionMembers,
+  isSubmissionWindowOpen,
 } from "@/lib/services/submissions"
 import { getTeamSizeWarning } from "@/lib/utils/team-size"
 import { currentTermsHash, recordTermsAcceptance } from "@/lib/services/hackathon-terms"
@@ -44,7 +45,11 @@ const aggregateSubmissionPayloadSchema = z.object({
   githubUrl: z.string().trim().min(1).max(2_048),
   liveAppUrl: z.string().trim().max(2_048).nullable().optional(),
   demoVideoUrl: z.string().trim().max(2_048).nullable().optional(),
-  challengeIds: z.array(z.string()).max(50).optional(),
+  challengeIds: z
+    .array(z.string())
+    .max(50)
+    .refine((ids) => new Set(ids).size === ids.length)
+    .optional(),
   retainedScreenshotSlots: z
     .array(z.union([z.literal(0), z.literal(1)]))
     .max(MAX_SUBMISSION_SCREENSHOTS)
@@ -535,7 +540,10 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
-      if (hackathon.status !== "active") {
+      if (
+        hackathon.status !== "active" ||
+        !(await isSubmissionWindowOpen(hackathon.id, hackathon.ends_at))
+      ) {
         return new Response(
           JSON.stringify({ error: "Submissions are not currently open", code: "submissions_closed" }),
           { status: 400, headers: { "Content-Type": "application/json" } }
@@ -621,23 +629,41 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
           { status: 400, headers: { "Content-Type": "application/json" } }
         )
       }
+      if (body.challengeIds && new Set(body.challengeIds).size !== body.challengeIds.length) {
+        return new Response(
+          JSON.stringify({ error: "Choose each challenge once", code: "duplicate_challenge_id" }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        )
+      }
 
-      const submission = await createSubmission(
-        hackathon.id,
-        participant.participantId,
-        participant.teamId,
-        {
-          title: body.title,
-          description: body.description,
-          githubUrl,
-          liveAppUrl,
-          demoVideoUrl,
-          metadata: teamSizeWarning
-            ? { teamSizeWarning, teamMemberCount }
-            : undefined,
-          challengeIds: body.challengeIds,
+      let submission
+      try {
+        submission = await createSubmission(
+          hackathon.id,
+          participant.participantId,
+          participant.teamId,
+          {
+            title: body.title,
+            description: body.description,
+            githubUrl,
+            liveAppUrl,
+            demoVideoUrl,
+            metadata: teamSizeWarning
+              ? { teamSizeWarning, teamMemberCount }
+              : undefined,
+            challengeIds: body.challengeIds,
+          }
+        )
+      } catch (error) {
+        if (error instanceof Error && error.name === "SubmissionChallengeSyncError") {
+          return submissionErrorResponse(
+            "Your project was saved, but its challenges still need to sync. Try again.",
+            "challenge_sync_failed",
+            503,
+          )
         }
-      )
+        throw error
+      }
 
       if (!submission) {
         return new Response(
@@ -699,7 +725,10 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
-      if (hackathon.status !== "active") {
+      if (
+        hackathon.status !== "active" ||
+        !(await isSubmissionWindowOpen(hackathon.id, hackathon.ends_at))
+      ) {
         return new Response(
           JSON.stringify({ error: "Submissions are not currently open", code: "submissions_closed" }),
           { status: 400, headers: { "Content-Type": "application/json" } }
@@ -773,21 +802,39 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
           { status: 400, headers: { "Content-Type": "application/json" } }
         )
       }
+      if (body.challengeIds && new Set(body.challengeIds).size !== body.challengeIds.length) {
+        return new Response(
+          JSON.stringify({ error: "Choose each challenge once", code: "duplicate_challenge_id" }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        )
+      }
 
-      const submission = await updateSubmission(
-        existing.id,
-        participant.participantId,
-        participant.teamId,
-        {
-          title: body.title,
-          description: body.description,
-          githubUrl: normalizedGithubUrl,
-          liveAppUrl: normalizedLiveAppUrl,
-          demoVideoUrl: normalizedDemoVideoUrl,
-          challengeIds: body.challengeIds,
-          expectedUpdatedAt: existing.updated_at,
+      let submission
+      try {
+        submission = await updateSubmission(
+          existing.id,
+          participant.participantId,
+          participant.teamId,
+          {
+            title: body.title,
+            description: body.description,
+            githubUrl: normalizedGithubUrl,
+            liveAppUrl: normalizedLiveAppUrl,
+            demoVideoUrl: normalizedDemoVideoUrl,
+            challengeIds: body.challengeIds,
+            expectedUpdatedAt: existing.updated_at,
+          }
+        )
+      } catch (error) {
+        if (error instanceof Error && error.name === "SubmissionChallengeSyncError") {
+          return submissionErrorResponse(
+            "Your project was saved, but its challenges still need to sync. Try again.",
+            "challenge_sync_failed",
+            503,
+          )
         }
-      )
+        throw error
+      }
 
       if (!submission) {
         return new Response(
@@ -834,7 +881,10 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     if (!hackathon) {
       return submissionErrorResponse("Hackathon not found", "hackathon_not_found", 404)
     }
-    if (hackathon.status !== "active") {
+    if (
+      hackathon.status !== "active" ||
+      !(await isSubmissionWindowOpen(hackathon.id, hackathon.ends_at))
+    ) {
       return submissionErrorResponse(
         "Submissions are not currently open",
         "submissions_closed",
@@ -1222,7 +1272,10 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
-    if (hackathon.status !== "active") {
+    if (
+      hackathon.status !== "active" ||
+      !(await isSubmissionWindowOpen(hackathon.id, hackathon.ends_at))
+    ) {
       return new Response(
         JSON.stringify({ error: "Submissions are not currently open", code: "submissions_closed" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
@@ -1384,7 +1437,10 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
-    if (hackathon.status !== "active") {
+    if (
+      hackathon.status !== "active" ||
+      !(await isSubmissionWindowOpen(hackathon.id, hackathon.ends_at))
+    ) {
       return new Response(
         JSON.stringify({ error: "Submissions are not currently open", code: "submissions_closed" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
@@ -2693,8 +2749,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
-    const { getJudgeInvitationByToken } = await import("@/lib/services/judge-invitations")
-    const { cancelJudgeInvitation } = await import("@/lib/services/judge-invitations")
+    const { getJudgeInvitationByToken, declineJudgeInvitation } = await import("@/lib/services/judge-invitations")
 
     const invitation = await getJudgeInvitationByToken(params.token)
     if (!invitation) {
@@ -2714,7 +2769,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
-    const result = await cancelJudgeInvitation(invitation.id, invitation.hackathon_id)
+    const result = await declineJudgeInvitation(invitation.id, invitation.hackathon_id)
     if (!result.success) {
       return new Response(
         JSON.stringify({ error: result.error }),

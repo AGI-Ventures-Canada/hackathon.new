@@ -40,6 +40,7 @@ interface RegistrationProps {
   teamSizeWarning?: string | null;
   canSubmit?: boolean;
   teamStatus?: TeamStatus | null;
+  submissionDeadline?: string | null;
 }
 
 interface EventHeroProps {
@@ -504,6 +505,7 @@ export function EventHero({
             teamSizeWarning={registrationProps.teamSizeWarning}
             pendingTeamApproval={registrationProps.canSubmit === false}
             teamStatus={registrationProps.teamStatus}
+            submissionDeadline={registrationProps.submissionDeadline}
           />
           {tabsSlot}
         </div>

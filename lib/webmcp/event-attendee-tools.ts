@@ -11,6 +11,7 @@ export function getProjectDraftNextStep(input: {
   status: HackathonStatus
   teamStatus: TeamStatus | null
   canOpenProjectReview: boolean
+  submissionsOpen?: boolean
 }): string {
   if (input.canOpenProjectReview) {
     return "Review every project field, then click Submit Project or Save Changes."
@@ -30,6 +31,9 @@ export function getProjectDraftNextStep(input: {
   if (input.status !== "active") {
     return "Your draft is saved. You can submit when the event starts."
   }
+  if (input.submissionsOpen === false) {
+    return "Your draft is saved. The project deadline has passed."
+  }
   return "Your draft is saved. Finish your team setup before submitting."
 }
 
@@ -39,18 +43,20 @@ export function getProjectCapabilities({
   isOrganizer,
   isAttendee,
   teamStatus,
+  submissionsOpen = true,
 }: {
   status: HackathonStatus
   role: string | null
   isOrganizer: boolean
   isAttendee: boolean
   teamStatus: TeamStatus | null
+  submissionsOpen?: boolean
 }) {
   const isPendingTeam = teamStatus === "pending_approval"
   const isDisbandedTeam = teamStatus === "disbanded"
   return {
     canOpenProjectReview:
-      isAttendee && status === "active" && !isPendingTeam && !isDisbandedTeam,
+      isAttendee && status === "active" && submissionsOpen && !isPendingTeam && !isDisbandedTeam,
     canPrepareProject:
       !isOrganizer &&
       (!role || role === "participant") &&

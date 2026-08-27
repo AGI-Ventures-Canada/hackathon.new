@@ -89,7 +89,7 @@ export function htmlToPlainText(html: string): string {
     .trim()
 }
 
-export function shortHackathonName(name: string, maxLength = 45): string {
+export function shortHackathonName(name: string, maxLength = 32): string {
   const beforeSeparator = name.split("|")[0]
   const trimmed = (beforeSeparator.trim() || name.replace(/\|/g, " ").trim())
     .replace(/\s+/g, " ")

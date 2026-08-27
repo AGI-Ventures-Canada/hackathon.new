@@ -95,6 +95,18 @@ describe("Team Invitation Reminder Email", () => {
       expect(callArgs.subject).toContain("Awesome Team")
     })
 
+    it("keeps long low-urgency reminder subjects short and removes event suffixes", async () => {
+      await sendTeamInvitationReminderEmail({
+        ...validInput,
+        teamName: "The Incredibly Long Team Name That Never Ends",
+        hackathonName: "Healthcare Builders | A Very Long Partner Event Name",
+      })
+
+      const subject = mockSendEmail.mock.calls[0][0].subject
+      expect(subject.length).toBeLessThanOrEqual(60)
+      expect(subject).not.toContain("|")
+    })
+
     it("includes accept URL in HTML body", async () => {
       await sendTeamInvitationReminderEmail(validInput)
 

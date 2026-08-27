@@ -87,6 +87,20 @@ describe("Judge Invitation Reminder Email", () => {
       expect(callArgs.subject).toContain("AI Hackathon 2026")
     })
 
+    it("keeps every urgency subject under 60 characters", async () => {
+      for (const urgency of ["low", "medium", "high"] as const) {
+        mockSendEmail.mockClear()
+        await sendJudgeInvitationReminderEmail({
+          ...validInput,
+          hackathonName: "Healthcare Builders | A Very Long Partner Event Name",
+          urgency,
+        })
+        const subject = mockSendEmail.mock.calls[0][0].subject
+        expect(subject.length).toBeLessThanOrEqual(60)
+        expect(subject).not.toContain("|")
+      }
+    })
+
     it("includes accept URL with judge-invite path", async () => {
       await sendJudgeInvitationReminderEmail(validInput)
 

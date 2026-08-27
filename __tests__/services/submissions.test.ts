@@ -21,7 +21,9 @@ const {
   getExistingSubmission,
   createSubmission,
   updateSubmission,
+  SubmissionChallengeSyncError,
   getTeamMemberCount,
+  isSubmissionWindowOpen,
   submissionBelongsToHackathon,
   notifySubmissionMembers,
 } = await import("@/lib/services/submissions")
@@ -103,6 +105,7 @@ describe("Submissions Service", () => {
 
       expect(result).toBeNull()
     })
+
   })
 
   describe("getSubmissionForParticipant", () => {
@@ -219,6 +222,7 @@ describe("Submissions Service", () => {
 
       expect(result).toBeNull()
     })
+
   })
 
   describe("createSubmission", () => {
@@ -279,6 +283,28 @@ describe("Submissions Service", () => {
       })
 
       expect(result).toBeNull()
+    })
+
+    it("reports when the project saved but challenge links did not", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "submissions") {
+          return createChainableMock({ data: mockSubmission, error: null })
+        }
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: { auto_assign_by_room: false, status: "active" },
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      await expect(createSubmission("h1", "p1", null, {
+        title: "Test",
+        description: "Test",
+        githubUrl: "https://github.com/test/repo",
+        challengeIds: ["duplicate", "duplicate"],
+      })).rejects.toBeInstanceOf(SubmissionChallengeSyncError)
     })
 
     it("skips room-judge routing when auto_assign_by_room is off", async () => {
@@ -426,6 +452,18 @@ describe("Submissions Service", () => {
 
       expect(result).toBeNull()
     })
+
+    it("reports when an update saved but challenge links did not", async () => {
+      setMockFromImplementation(() => createChainableMock({
+        data: { ...mockSubmission, title: "Updated" },
+        error: null,
+      }))
+
+      await expect(updateSubmission("s1", "p1", null, {
+        title: "Updated",
+        challengeIds: ["duplicate", "duplicate"],
+      })).rejects.toBeInstanceOf(SubmissionChallengeSyncError)
+    })
   })
 
   describe("getTeamMemberCount", () => {
@@ -475,6 +513,39 @@ describe("Submissions Service", () => {
 
       const result = await getTeamMemberCount("team-1")
       expect(result).toBe(0)
+    })
+  })
+
+  describe("isSubmissionWindowOpen", () => {
+    it("uses the custom deadline instead of the event end", async () => {
+      setMockFromImplementation(() => createChainableMock({
+        data: { starts_at: new Date(Date.now() - 60_000).toISOString() },
+        error: null,
+      }))
+
+      await expect(isSubmissionWindowOpen(
+        "h1",
+        new Date(Date.now() + 60_000).toISOString(),
+      )).resolves.toBe(false)
+    })
+
+    it("uses the event end when there is no custom deadline", async () => {
+      setMockFromImplementation(() => createChainableMock({ data: null, error: null }))
+
+      await expect(isSubmissionWindowOpen(
+        "h1",
+        new Date(Date.now() + 60_000).toISOString(),
+      )).resolves.toBe(true)
+    })
+
+    it("fails closed when the deadline cannot be checked", async () => {
+      setMockFromImplementation(() => createChainableMock({
+        data: null,
+        error: { message: "database unavailable" },
+      }))
+
+      await expect(isSubmissionWindowOpen("h1", null))
+        .rejects.toThrow("Failed to check the project deadline: database unavailable")
     })
   })
 

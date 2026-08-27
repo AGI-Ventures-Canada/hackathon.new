@@ -83,6 +83,7 @@ mock.module("@/lib/services/submissions", () => ({
   getHackathonSubmissions: mock(() => Promise.resolve([])),
   getTeamMemberCount: mock(() => Promise.resolve(0)),
   notifySubmissionMembers: mock(() => Promise.resolve(0)),
+  isSubmissionWindowOpen: mock(() => Promise.resolve(true)),
 }))
 
 mock.module("@/lib/utils/url", () => ({

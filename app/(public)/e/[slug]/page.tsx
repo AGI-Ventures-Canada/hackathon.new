@@ -243,6 +243,9 @@ export default async function EventPage({ params, searchParams }: PageProps) {
   const atCapacity = Boolean(
     hackathon.max_participants && participantCount >= hackathon.max_participants,
   )
+  const submissionDeadline = scheduleItems.find(
+    (item) => item.trigger_type === "submission_deadline",
+  )?.starts_at ?? hackathon.ends_at
   const viewerNextStep = isOrganizer
     ? "Open the manage workspace to run this event."
     : sponsorRelationship && !isRegistered
@@ -257,9 +260,13 @@ export default async function EventPage({ params, searchParams }: PageProps) {
         ? "Your team is no longer active. Ask the organizer if you need help."
       : isPendingTeam
         ? "Wait for team approval. You can keep preparing your project."
-        : hackathon.status === "active"
+        : hackathon.status === "active" && (
+          !submissionDeadline || new Date(submissionDeadline).getTime() > Date.now()
+        )
           ? "Build with your team and review your project draft before submitting."
-          : "Check the schedule for what happens next."
+          : hackathon.status === "active"
+            ? "The project deadline has passed. Your saved project is locked."
+            : "Check the schedule for what happens next."
 
   const eventGuide = {
     name: hackathon.name,
@@ -350,6 +357,7 @@ export default async function EventPage({ params, searchParams }: PageProps) {
         atCapacity={atCapacity}
         isOrganizer={isOrganizer}
         viewerUserId={userId}
+        submissionDeadline={submissionDeadline}
       />
       <AttendeeMentorWebMcp
         slug={hackathon.slug}

@@ -67,6 +67,20 @@ describe("Judge Added Notification Email", () => {
     expect(call.text).toContain("https://example.com/e/test-hackathon?as=judge")
   })
 
+  it("keeps a long event name out of an oversized subject", async () => {
+    await sendJudgeAddedNotification({
+      to: "judge@example.com",
+      deliveryId: "participant-1",
+      hackathonName: "Healthcare Builders | A Very Long Partner Event Name",
+      hackathonSlug: "healthcare-builders",
+      addedByName: "Jane Organizer",
+    })
+
+    const subject = (mockSendEmail.mock.calls[0][0] as SendEmailInput).subject
+    expect(subject.length).toBeLessThanOrEqual(60)
+    expect(subject).not.toContain("|")
+  })
+
   it("returns failure when NEXT_PUBLIC_APP_URL is not set", async () => {
     delete process.env.NEXT_PUBLIC_APP_URL
 
