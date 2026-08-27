@@ -7,14 +7,13 @@ import {
 } from "./smart-reminders"
 
 type DeadlineConfig = {
-  dateField: "registration_closes_at" | "starts_at" | "ends_at"
+  dateField: "registration_closes_at" | "starts_at"
   reminderType: ReminderType
 }
 
 const DEADLINE_CONFIGS: DeadlineConfig[] = [
   { dateField: "registration_closes_at", reminderType: "registration_closing" },
   { dateField: "starts_at", reminderType: "event_starting" },
-  { dateField: "ends_at", reminderType: "submission_due" },
 ]
 
 export async function schedulePreEventReminders(
@@ -22,12 +21,15 @@ export async function schedulePreEventReminders(
 ): Promise<number> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { data: hackathon } = await client
+  const { data: hackathon, error: hackathonError } = await client
     .from("hackathons")
     .select("id, name, slug, registration_closes_at, starts_at, ends_at, created_at, status")
     .eq("id", hackathonId)
     .single()
 
+  if (hackathonError) {
+    throw new Error(`Failed to load the event: ${hackathonError.message}`)
+  }
   if (!hackathon) return 0
   if (
     hackathon.status === "draft" ||
@@ -40,14 +42,40 @@ export async function schedulePreEventReminders(
   const now = new Date()
   let scheduled = 0
 
-  for (const config of DEADLINE_CONFIGS) {
-    const deadlineStr = hackathon[config.dateField] as string | null
+  const { data: submissionDeadline, error: submissionDeadlineError } = await client
+    .from("hackathon_schedule_items")
+    .select("starts_at")
+    .eq("hackathon_id", hackathonId)
+    .eq("trigger_type", "submission_deadline")
+    .maybeSingle()
+
+  if (submissionDeadlineError) {
+    throw new Error(`Failed to load the project deadline: ${submissionDeadlineError.message}`)
+  }
+
+  const deadlineConfigs = [
+    ...DEADLINE_CONFIGS.map((config) => ({
+      reminderType: config.reminderType,
+      deadlineStr: hackathon[config.dateField] as string | null,
+    })),
+    {
+      reminderType: "submission_due" as const,
+      deadlineStr: submissionDeadline?.starts_at ?? hackathon.ends_at,
+    },
+  ]
+
+  for (const config of deadlineConfigs) {
+    const deadlineStr = config.deadlineStr
     if (!deadlineStr) continue
 
     const deadline = new Date(deadlineStr)
+    if (!Number.isFinite(deadline.getTime())) continue
     if (deadline <= now) continue
 
     const createdAt = new Date(hackathon.created_at as string)
+    if (!Number.isFinite(createdAt.getTime())) {
+      throw new Error("The event creation date is invalid")
+    }
 
     const count = await scheduleReminders(
       "hackathon_event",

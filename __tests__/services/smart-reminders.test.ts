@@ -372,7 +372,7 @@ describe("reminder delivery lifecycle", () => {
     urgency: "low" as const,
     sent_at: null,
     cancelled_at: null,
-    metadata: {},
+    metadata: { deadlineDate: new Date(Date.now() + DAY).toISOString() },
     fail_count: 0,
     last_error: null,
     created_at: "2026-08-25T12:00:00.000Z",
@@ -400,11 +400,34 @@ describe("reminder delivery lifecycle", () => {
     for (const status of ["published", "registration_open", "active", "judging"]) {
       resetSupabaseMocks()
       setMockFromImplementation(() =>
-        createChainableMock({ data: { status }, error: null })
+        createChainableMock({
+          data: {
+            status,
+            starts_at: reminder.metadata.deadlineDate,
+            ends_at: null,
+            registration_closes_at: null,
+          },
+          error: null,
+        })
       )
 
       await expect(validateReminderEntity(reminder)).resolves.toBe(true)
     }
+  })
+
+  it("rejects an event reminder after its deadline changes", async () => {
+    resetSupabaseMocks()
+    setMockFromImplementation(() => createChainableMock({
+      data: {
+        status: "active",
+        starts_at: new Date(Date.now() + 2 * DAY).toISOString(),
+        ends_at: null,
+        registration_closes_at: null,
+      },
+      error: null,
+    }))
+
+    await expect(validateReminderEntity(reminder)).resolves.toBe(false)
   })
 
   it("rejects a stale published row after its event has effectively ended", async () => {

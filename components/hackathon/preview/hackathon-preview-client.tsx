@@ -120,6 +120,9 @@ function HackathonPreviewContent({
     ? manageView.timeline.endsAt
     : hackathon.ends_at
   const visibleScheduleItems = manageView?.scheduleItems ?? scheduleItems
+  const submissionDeadline = visibleScheduleItems.find(
+    (item) => item.trigger_type === "submission_deadline",
+  )?.starts_at ?? visibleEndsAt
   const visibleChallenges = manageView?.challenges ?? challenges
   const isClient = useIsClient()
   const origin = isClient ? window.location.origin : ""
@@ -879,6 +882,7 @@ function HackathonPreviewContent({
         onRegistrationSuccess: handleRegistrationSuccess,
         canSubmit: !isPendingTeam,
         teamStatus: teamInfo?.team.status ?? null,
+        submissionDeadline,
         teamSizeWarning: teamInfo ? (getTeamSizeWarning({
           memberCount: teamInfo.members.length,
           minTeamSize: hackathon.min_team_size,

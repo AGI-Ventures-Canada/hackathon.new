@@ -69,6 +69,7 @@ mock.module("@/lib/services/mentor-requests", () => ({
 }))
 mock.module("@/lib/services/submissions", () => ({
   getHackathonSubmissions,
+  isSubmissionWindowOpen: mock(() => Promise.resolve(true)),
 }))
 mock.module("@/lib/services/crowd-voting", () => ({
   getVoteCounts,

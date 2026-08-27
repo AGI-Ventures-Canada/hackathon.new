@@ -66,6 +66,28 @@ export async function getTeamMemberCount(teamId: string): Promise<number> {
   return count ?? 0
 }
 
+export async function isSubmissionWindowOpen(
+  hackathonId: string,
+  fallbackEndsAt: string | null,
+): Promise<boolean> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const { data, error } = await client
+    .from("hackathon_schedule_items")
+    .select("starts_at")
+    .eq("hackathon_id", hackathonId)
+    .eq("trigger_type", "submission_deadline")
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(`Failed to check the project deadline: ${error.message}`)
+  }
+
+  const deadline = data?.starts_at ?? fallbackEndsAt
+  if (!deadline) return false
+  const deadlineMs = new Date(deadline).getTime()
+  return Number.isFinite(deadlineMs) && deadlineMs > Date.now()
+}
+
 export async function getSubmissionForParticipant(
   hackathonId: string,
   clerkUserId: string
@@ -108,6 +130,13 @@ export type CreateSubmissionInput = {
   screenshotUrl?: string | null
   metadata?: Record<string, unknown>
   challengeIds?: string[]
+}
+
+export class SubmissionChallengeSyncError extends Error {
+  constructor(public readonly submissionId: string) {
+    super("Project saved, but its challenges could not be saved")
+    this.name = "SubmissionChallengeSyncError"
+  }
 }
 
 export async function createSubmission(
@@ -161,7 +190,7 @@ export async function createSubmission(
   if (input.challengeIds && input.challengeIds.length > 0) {
     const tagged = await syncSubmissionChallenges(data.id, input.challengeIds)
     if (!tagged) {
-      console.error("Submission created but challenge tags could not be saved:", data.id)
+      throw new SubmissionChallengeSyncError(data.id)
     }
   }
 
@@ -246,7 +275,7 @@ export async function updateSubmission(
   if (input.challengeIds !== undefined) {
     const tagged = await syncSubmissionChallenges(submissionId, input.challengeIds)
     if (!tagged) {
-      console.error("Submission updated but challenge tags could not be saved:", submissionId)
+      throw new SubmissionChallengeSyncError(submissionId)
     }
   }
 

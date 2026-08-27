@@ -137,6 +137,11 @@ export function JudgeInviteAcceptClient({
         title: "Invitation Cancelled",
         description: "This invitation was cancelled by the organizer.",
       },
+      declined: {
+        icon: <X className="size-8 text-muted-foreground" />,
+        title: "Invitation Declined",
+        description: "You declined this invitation.",
+      },
     }
 
     const status = statusMessages[invitation.status] || statusMessages.expired

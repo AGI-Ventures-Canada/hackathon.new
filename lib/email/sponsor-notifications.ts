@@ -64,7 +64,7 @@ export async function sendSponsorClaimNotification(params: {
     await paceBulkSend(index)
     const result = await sendEmail({
       to: email,
-      subject: `Winner claimed ${prizeName} — ${shortHackathonName(hackathonName)}`,
+      subject: `Winner claimed ${shortHackathonName(prizeName, 16)} — ${shortHackathonName(hackathonName, 20)}`,
       html,
       text,
       replyTo: getReplyToAddress(),

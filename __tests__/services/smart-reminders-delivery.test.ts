@@ -48,8 +48,8 @@ const baseReminder = {
     hackathonSlug: "build-together",
     inviterName: "Avery",
     inviteToken: "token_1",
-    expiresAt: "2026-09-01T00:00:00Z",
-    deadlineDate: "2026-09-01T00:00:00Z",
+    expiresAt: "2099-09-01T00:00:00Z",
+    deadlineDate: "2099-09-01T00:00:00Z",
   },
   fail_count: 0,
   last_error: null,
@@ -271,7 +271,12 @@ describe("smart reminder default delivery", () => {
 
   it("binds event reminders to their event and rejects unknown entity types", async () => {
     setMockFromImplementation(() => createChainableMock({
-      data: { status: "active", starts_at: null, ends_at: null },
+      data: {
+        status: "active",
+        starts_at: "2099-09-01T00:00:00Z",
+        ends_at: null,
+        registration_closes_at: null,
+      },
       error: null,
     }))
 
@@ -279,11 +284,13 @@ describe("smart reminder default delivery", () => {
       ...baseReminder,
       entity_type: "hackathon_event",
       entity_id: "hack_1",
+      reminder_type: "event_starting",
     })).resolves.toBe(true)
     await expect(validateReminderEntity({
       ...baseReminder,
       entity_type: "hackathon_event",
       entity_id: "another_event",
+      reminder_type: "event_starting",
     })).resolves.toBe(false)
     await expect(validateReminderEntity({
       ...baseReminder,

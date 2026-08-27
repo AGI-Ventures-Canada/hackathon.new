@@ -6,6 +6,7 @@ import {
   formatTimeLeft,
   buildUnsubscribeHeaders,
   formatFromAddress,
+  shortHackathonName,
 } from "./utils"
 import TeamInvitationEmail from "@/emails/team-invitation"
 import TeamInvitationReminderEmail from "@/emails/team-invitation-reminder"
@@ -22,6 +23,14 @@ function buildPersonalizedFrom(inviterName: string): string | undefined {
   const trimmed = inviterName.trim()
   if (!trimmed || GENERIC_INVITER_NAMES.has(trimmed.toLowerCase())) return undefined
   return formatFromAddress(`${trimmed} via hackathon.new`, baseFrom)
+}
+
+function teamInvitationSubject(
+  inviterName: string,
+  teamName: string,
+  hackathonName: string,
+): string {
+  return `${shortHackathonName(inviterName, 14)}: "${shortHackathonName(teamName, 18)}" at ${shortHackathonName(hackathonName, 18)}`
 }
 
 export type SendTeamInvitationInput = {
@@ -72,7 +81,11 @@ export async function sendTeamInvitationEmail(
 
   const result = await sendEmail({
     to: input.to,
-    subject: `${input.inviterName} invited you to "${input.teamName}" for ${input.hackathonName}`,
+    subject: teamInvitationSubject(
+      input.inviterName,
+      input.teamName,
+      input.hackathonName,
+    ),
     html,
     text,
     from: buildPersonalizedFrom(input.inviterName),
@@ -101,9 +114,10 @@ export type SendTeamInvitationReminderInput = {
 }
 
 function teamReminderSubject(teamName: string, hackathonName: string, urgency: string): string {
-  if (urgency === "high") return `Your "${teamName}" invite expires soon`
-  if (urgency === "medium") return `Your "${teamName}" invite expires tomorrow`
-  return `Reminder: Join "${teamName}" for ${hackathonName}`
+  const shortTeamName = shortHackathonName(teamName, 28)
+  if (urgency === "high") return `Your "${shortTeamName}" invite expires soon`
+  if (urgency === "medium") return `Your "${shortTeamName}" invite expires tomorrow`
+  return `Reminder: Join "${shortHackathonName(teamName, 18)}" at ${shortHackathonName(hackathonName, 18)}`
 }
 
 export async function sendTeamInvitationReminderEmail(

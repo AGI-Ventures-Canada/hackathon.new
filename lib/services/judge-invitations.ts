@@ -62,7 +62,7 @@ export async function createJudgeInvitation(
   input: CreateJudgeInvitationInput
 ): Promise<CreateJudgeInvitationResult> {
   const client = getSupabase() as unknown as SupabaseClient
-  const normalizedEmail = input.email.toLowerCase()
+  const normalizedEmail = input.email.trim().toLowerCase()
 
   const { data: hackathon, error: hackathonError } = await client
     .from("hackathons")
@@ -252,7 +252,7 @@ export async function acceptJudgeInvitation(
 
   const emails = Array.isArray(userEmails) ? userEmails : [userEmails]
   const matchesInvitation = emails.some(
-    (e) => e.toLowerCase() === invitation.email.toLowerCase()
+    (e) => e.trim().toLowerCase() === invitation.email.trim().toLowerCase()
   )
 
   if (!matchesInvitation) {
@@ -268,14 +268,9 @@ export async function acceptJudgeInvitation(
   const addResult = await addJudge(invitation.hackathon_id, clerkUserId)
 
   if (!addResult.success) {
-    if (addResult.code === "already_judge") {
-      return {
-        success: true,
-        hackathonId: invitation.hackathon_id,
-        hackathonSlug: invitation.hackathon.slug,
-      }
+    if (addResult.code !== "already_judge") {
+      return { success: false, error: addResult.error, code: addResult.code }
     }
-    return { success: false, error: addResult.error, code: addResult.code }
   }
 
   // Add the judge first. The operation is idempotent, so a concurrent
@@ -332,7 +327,40 @@ export async function cancelJudgeInvitation(
     .select("id")
     .maybeSingle()
 
-  return { success: !error && Boolean(cancelledInvitation) }
+  if (error || !cancelledInvitation) return { success: false }
+
+  const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
+  await cancelRemindersForEntity("judge_invitation", invitationId).catch((err) =>
+    console.error(`Failed to cancel reminders for judge_invitation ${invitationId}:`, err)
+  )
+  return { success: true }
+}
+
+export async function declineJudgeInvitation(
+  invitationId: string,
+  hackathonId: string,
+): Promise<{ success: boolean; error?: string }> {
+  const client = getSupabase() as unknown as SupabaseClient
+
+  const { data: declinedInvitation, error } = await client
+    .from("judge_invitations")
+    .update({ status: "declined", updated_at: new Date().toISOString() })
+    .eq("id", invitationId)
+    .eq("hackathon_id", hackathonId)
+    .eq("status", "pending")
+    .select("id")
+    .maybeSingle()
+
+  if (error) return { success: false, error: "Failed to decline invitation" }
+  if (!declinedInvitation) {
+    return { success: false, error: "Invitation not found or not pending" }
+  }
+
+  const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
+  await cancelRemindersForEntity("judge_invitation", invitationId).catch((err) =>
+    console.error(`Failed to cancel reminders for judge_invitation ${invitationId}:`, err)
+  )
+  return { success: true }
 }
 
 export type RemindJudgeInvitationResult =
@@ -570,7 +598,7 @@ async function sendPendingJudgeInvitationEmailsUnlocked(
       }
 
       const recipientUsers = await clerk.users.getUserList({
-        emailAddress: [invitation.email.toLowerCase()],
+        emailAddress: [invitation.email.trim().toLowerCase()],
         limit: 1,
       })
       const recipient = recipientUsers.data[0]
@@ -709,7 +737,7 @@ export async function retryPendingJudgeInvitationEmails(
 
 export async function hasPendingJudgeInvitation(hackathonId: string, email: string): Promise<boolean> {
   const client = getSupabase() as unknown as SupabaseClient
-  const normalizedEmail = email.toLowerCase()
+  const normalizedEmail = email.trim().toLowerCase()
   const now = new Date().toISOString()
 
   const { data, error } = await client
@@ -739,7 +767,7 @@ export async function hasPendingJudgeEntry(hackathonId: string, email: string): 
       .from("judge_pending_notifications")
       .select("id")
       .eq("hackathon_id", hackathonId)
-      .eq("email", email.toLowerCase())
+      .eq("email", email.trim().toLowerCase())
       .is("sent_at", null)
       .maybeSingle(),
   ])
@@ -763,7 +791,7 @@ export async function createJudgePendingNotification(
     {
       hackathon_id: hackathonId,
       participant_id: participantId,
-      email: email.toLowerCase(),
+      email: email.trim().toLowerCase(),
       added_by_name: addedByName,
       sent_at: null,
     },

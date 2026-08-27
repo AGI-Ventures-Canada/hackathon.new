@@ -60,6 +60,7 @@ const mockUpdateSubmission = mock(() => Promise.resolve({ id: "sub123" }))
 const mockGetSubmissionForParticipant = mock(() => Promise.resolve(null))
 const mockGetHackathonSubmissions = mock(() => Promise.resolve([]))
 const mockNotifySubmissionMembers = mock(() => Promise.resolve(0))
+const mockIsSubmissionWindowOpen = mock(() => Promise.resolve(true))
 const mockGetPresenterView = mock(() => Promise.resolve(null))
 const mockResolvePresenterSubmissions = mock(() => Promise.resolve([]))
 
@@ -72,6 +73,7 @@ mock.module("@/lib/services/submissions", () => ({
   getHackathonSubmissions: mockGetHackathonSubmissions,
   getTeamMemberCount: mock(() => Promise.resolve(0)),
   notifySubmissionMembers: mockNotifySubmissionMembers,
+  isSubmissionWindowOpen: mockIsSubmissionWindowOpen,
 }))
 
 mock.module("@/lib/services/presenter-views", () => ({
@@ -226,9 +228,11 @@ describe("Public Screenshot Routes", () => {
     mockGetSubmissionForParticipant.mockReset()
     mockGetHackathonSubmissions.mockReset()
     mockNotifySubmissionMembers.mockReset()
+    mockIsSubmissionWindowOpen.mockReset()
     mockGetPresenterView.mockReset()
     mockResolvePresenterSubmissions.mockReset()
     mockNotifySubmissionMembers.mockImplementation(() => Promise.resolve(0))
+    mockIsSubmissionWindowOpen.mockResolvedValue(true)
     mockGetRegistrationInfo.mockImplementation(() => Promise.resolve({
       participantId: "p1",
       participantRole: "participant",
@@ -515,6 +519,14 @@ describe("Public Screenshot Routes", () => {
       expect((await response.json()).code).toBe("submissions_closed")
 
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockIsSubmissionWindowOpen.mockResolvedValueOnce(false)
+      response = await app.handle(new Request(url, {
+        method: "POST",
+        body: createCompleteSubmissionForm(),
+      }))
+      expect(response.status).toBe(400)
+      expect((await response.json()).code).toBe("submissions_closed")
+
       mockGetParticipantWithTeam.mockResolvedValue(null)
       response = await app.handle(new Request(url, {
         method: "POST",

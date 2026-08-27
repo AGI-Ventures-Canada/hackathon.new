@@ -14,6 +14,7 @@ import {
 const mockSendJudgeInvitationEmail = mock(() => Promise.resolve({ success: true }))
 const mockSendJudgeAddedNotification = mock(() => Promise.resolve({ success: true }))
 const mockScheduleReminders = mock(() => Promise.resolve(1))
+const mockCancelRemindersForEntity = mock(() => Promise.resolve())
 
 mock.module("@/lib/email/judge-invitations", () => ({
   sendJudgeInvitationEmail: mockSendJudgeInvitationEmail,
@@ -22,6 +23,7 @@ mock.module("@/lib/email/judge-invitations", () => ({
 
 mock.module("@/lib/services/smart-reminders", () => ({
   scheduleReminders: mockScheduleReminders,
+  cancelRemindersForEntity: mockCancelRemindersForEntity,
 }))
 
 const mockWithDeliveryLease = mock(async (
@@ -37,6 +39,7 @@ const {
   getJudgeInvitationByToken,
   acceptJudgeInvitation,
   cancelJudgeInvitation,
+  declineJudgeInvitation,
   listJudgeInvitations,
   sendPendingJudgeInvitationEmails,
   retryPendingJudgeInvitationEmails,
@@ -67,6 +70,8 @@ const mockInvitation: JudgeInvitation = {
 describe("Judge Invitations Service", () => {
   beforeEach(() => {
     resetSupabaseMocks()
+    mockCancelRemindersForEntity.mockClear()
+    mockCancelRemindersForEntity.mockResolvedValue()
     mockWithDeliveryLease.mockClear()
     mockWithDeliveryLease.mockImplementation(async (_key, work) => ({
       acquired: true as const,
@@ -212,8 +217,9 @@ describe("Judge Invitations Service", () => {
       })
     })
 
-    it("normalizes email to lowercase before storing", async () => {
+    it("trims and lowercases email before storing", async () => {
       let invitationCalls = 0
+      let insertedEmail: string | null = null
       setMockFromImplementation((table) => {
         if (table === "hackathons") {
           return createChainableMock({ data: { status: "published", starts_at: null, ends_at: null }, error: null })
@@ -222,19 +228,26 @@ describe("Judge Invitations Service", () => {
         if (invitationCalls === 1) {
           return createChainableMock({ data: null, error: null })
         }
-        return createChainableMock({
+        const chain = createChainableMock({
           data: { ...mockInvitation, email: "judge@example.com" },
           error: null,
         })
+        const originalInsert = chain.insert
+        chain.insert = mock((value: { email: string }) => {
+          insertedEmail = value.email
+          return originalInsert(value)
+        }) as typeof chain.insert
+        return chain
       })
 
       const result = await createJudgeInvitation({
         hackathonId: "h1",
-        email: "JUDGE@EXAMPLE.COM",
+        email: "  JUDGE@EXAMPLE.COM  ",
         invitedByClerkUserId: "organizer_123",
       })
 
       expect(result.success).toBe(true)
+      expect(insertedEmail).toBe("judge@example.com")
     })
 
     it("returns insert_failed error when database insert fails", async () => {
@@ -326,6 +339,7 @@ describe("Judge Invitations Service", () => {
       const result = await cancelJudgeInvitation("inv1", "h1")
 
       expect(result.success).toBe(true)
+      expect(mockCancelRemindersForEntity).toHaveBeenCalledWith("judge_invitation", "inv1")
     })
 
     it("returns error when invitation does not exist", async () => {
@@ -372,6 +386,31 @@ describe("Judge Invitations Service", () => {
       const result = await cancelJudgeInvitation("inv1", "h1")
 
       expect(result.success).toBe(false)
+    })
+  })
+
+  describe("declineJudgeInvitation", () => {
+    it("records a recipient decline separately from organizer cancellation", async () => {
+      const chain = createChainableMock({ data: { id: "inv1" }, error: null })
+      setMockFromImplementation(() => chain)
+
+      await expect(declineJudgeInvitation("inv1", "h1")).resolves.toEqual({ success: true })
+      expect(chain.update).toHaveBeenCalledWith({
+        status: "declined",
+        updated_at: expect.any(String),
+      })
+      expect(chain.eq).toHaveBeenCalledWith("hackathon_id", "h1")
+      expect(chain.eq).toHaveBeenCalledWith("status", "pending")
+      expect(mockCancelRemindersForEntity).toHaveBeenCalledWith("judge_invitation", "inv1")
+    })
+
+    it("does not report success when a pending invitation was not claimed", async () => {
+      setMockFromImplementation(() => createChainableMock({ data: null, error: null }))
+
+      await expect(declineJudgeInvitation("inv1", "h1")).resolves.toEqual({
+        success: false,
+        error: "Invitation not found or not pending",
+      })
     })
   })
 

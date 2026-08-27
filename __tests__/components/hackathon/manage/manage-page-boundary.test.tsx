@@ -198,7 +198,10 @@ const notFound = mock((): never => {
 mock.module("next/navigation", () => ({ notFound }))
 mock.module("@clerk/nextjs/server", () => ({ auth }))
 mock.module("@/lib/services/manage-hackathon", () => ({ getManageHackathon }))
-mock.module("@/lib/services/submissions", () => ({ getHackathonSubmissions }))
+mock.module("@/lib/services/submissions", () => ({
+  getHackathonSubmissions,
+  isSubmissionWindowOpen: mock(() => Promise.resolve(true)),
+}))
 mock.module("@/lib/services/judging", () => ({
   countJudges,
   countUnassignedSubmissions,

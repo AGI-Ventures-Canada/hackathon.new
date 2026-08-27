@@ -94,6 +94,37 @@ describe("Judge Invitations Integration - acceptJudgeInvitation", () => {
     expect(mockAddJudge).toHaveBeenCalledWith("h1", "user_123")
   })
 
+  it("claims a pending invitation when the user is already a judge", async () => {
+    const claim = createIntegrationChainableMock({ data: { id: "inv1" }, error: null })
+    let call = 0
+    mockFrom.mockImplementation(() => {
+      call++
+      if (call === 1) {
+        return createIntegrationChainableMock({ data: mockInvitation, error: null })
+      }
+      return claim
+    })
+    mockAddJudge.mockResolvedValue({
+      success: false,
+      error: "Already registered as a judge",
+      code: "already_judge",
+    })
+
+    await expect(acceptJudgeInvitation(
+      "test-token-123",
+      "user_123",
+      "  JUDGE@EXAMPLE.COM ",
+    )).resolves.toEqual({
+      success: true,
+      hackathonId: "h1",
+      hackathonSlug: "test-hackathon",
+    })
+    expect(claim.update).toHaveBeenCalledWith(expect.objectContaining({
+      status: "accepted",
+      accepted_by_clerk_user_id: "user_123",
+    }))
+  })
+
   it("returns email_mismatch error when user email does not match invitation", async () => {
     mockFrom.mockImplementation(() =>
       createIntegrationChainableMock({ data: mockInvitation, error: null })

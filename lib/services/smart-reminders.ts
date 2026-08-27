@@ -375,7 +375,7 @@ export async function validateReminderEntity(
 
   const { data: hackathon, error: hackathonError } = await client
     .from("hackathons")
-    .select("status, starts_at, ends_at")
+    .select("status, starts_at, ends_at, registration_closes_at")
     .eq("id", reminder.hackathon_id)
     .single()
   if (hackathonError) {
@@ -418,7 +418,33 @@ export async function validateReminderEntity(
   }
 
   if (reminder.entity_type === "hackathon_event") {
-    return reminder.entity_id === reminder.hackathon_id
+    if (reminder.entity_id !== reminder.hackathon_id) return false
+    const scheduledDeadline = reminder.metadata.deadlineDate
+    if (typeof scheduledDeadline !== "string") return false
+
+    let currentDeadline: string | null = null
+    if (reminder.reminder_type === "registration_closing") {
+      currentDeadline = hackathon.registration_closes_at ?? null
+    } else if (reminder.reminder_type === "event_starting") {
+      currentDeadline = hackathon.starts_at ?? null
+    } else if (reminder.reminder_type === "submission_due") {
+      const { data: deadline, error: deadlineError } = await client
+        .from("hackathon_schedule_items")
+        .select("starts_at")
+        .eq("hackathon_id", reminder.hackathon_id)
+        .eq("trigger_type", "submission_deadline")
+        .maybeSingle()
+      if (deadlineError) {
+        throw new Error(`Failed to validate project deadline reminder: ${deadlineError.message}`)
+      }
+      currentDeadline = deadline?.starts_at ?? hackathon.ends_at ?? null
+    }
+
+    if (!currentDeadline) return false
+    const currentDeadlineMs = new Date(currentDeadline).getTime()
+    const scheduledDeadlineMs = new Date(scheduledDeadline).getTime()
+    if (!Number.isFinite(currentDeadlineMs) || !Number.isFinite(scheduledDeadlineMs)) return false
+    return currentDeadlineMs === scheduledDeadlineMs && currentDeadlineMs > Date.now()
   }
 
   return false

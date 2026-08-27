@@ -80,6 +80,29 @@ describe("event attendee WebMCP tools", () => {
     })
   })
 
+  it("keeps project review closed after the project deadline", () => {
+    expect(getProjectCapabilities({
+      status: "active",
+      role: "participant",
+      isOrganizer: false,
+      isAttendee: true,
+      teamStatus: "active",
+      submissionsOpen: false,
+    })).toEqual({
+      canOpenProjectReview: false,
+      canPrepareProject: true,
+    })
+    expect(getProjectDraftNextStep({
+      signedIn: true,
+      registered: true,
+      role: "participant",
+      status: "active",
+      teamStatus: "active",
+      canOpenProjectReview: false,
+      submissionsOpen: false,
+    })).toContain("deadline has passed")
+  })
+
   it("removes project preparation and review for a disbanded team", () => {
     expect(getProjectCapabilities({
       status: "active",
