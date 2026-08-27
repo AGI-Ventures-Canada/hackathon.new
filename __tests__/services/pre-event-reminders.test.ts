@@ -9,6 +9,11 @@ const mockScheduleReminders = mock(() => Promise.resolve(1))
 mock.module("@/lib/services/smart-reminders", () => ({
   scheduleReminders: mockScheduleReminders,
   cancelRemindersForEntity: mock(() => Promise.resolve()),
+  cancelUpcomingReminder: mock(() => Promise.resolve(0)),
+  computeReminderSchedule: mock(() => []),
+  processPendingReminders: mock(() =>
+    Promise.resolve({ processed: 0, sent: 0, skipped: 0, errors: 0 })
+  ),
 }))
 
 const { schedulePreEventReminders } = await import(
