@@ -37,7 +37,7 @@ export type InvitationStatus =
   | "expired"
   | "cancelled"
 
-export type JudgeInvitationStatus = "pending" | "accepted" | "expired" | "cancelled"
+export type JudgeInvitationStatus = "pending" | "accepted" | "declined" | "expired" | "cancelled"
 
 export type HackathonPhase =
   | "build"

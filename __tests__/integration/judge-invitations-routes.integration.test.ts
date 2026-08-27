@@ -33,6 +33,7 @@ mock.module("@/lib/services/judge-invitations", () => ({
   getJudgeInvitationByToken: mockGetJudgeInvitationByToken,
   acceptJudgeInvitation: mockAcceptJudgeInvitation,
   cancelJudgeInvitation: mock(() => Promise.resolve({ success: true })),
+  declineJudgeInvitation: mock(() => Promise.resolve({ success: true })),
   createJudgeInvitation: mock(() => Promise.resolve({ success: false })),
   listJudgeInvitations: mock(() => Promise.resolve([])),
   remindJudgeInvitation: mock(() => Promise.resolve({ success: false })),

@@ -89,7 +89,7 @@ export async function createTeamInvitation(
   input: CreateInvitationInput
 ): Promise<CreateInvitationResult> {
   const client = getSupabase()
-  const normalizedEmail = input.email.toLowerCase()
+  const normalizedEmail = input.email.trim().toLowerCase()
 
   const { data: team, error: teamError } = await client
     .from("teams")
@@ -303,7 +303,7 @@ export async function acceptTeamInvitation(
   const { data, error } = await client.rpc("accept_team_invitation", {
     p_token: token,
     p_clerk_user_id: clerkUserId,
-    p_user_email: userEmail.toLowerCase(),
+    p_user_email: userEmail.trim().toLowerCase(),
   })
 
   if (error) {
@@ -421,7 +421,7 @@ export async function declineTeamInvitation(
   }
 
   const normalizedEmails = userEmails.map((email) => email.trim().toLowerCase())
-  if (!normalizedEmails.includes(invitation.email.toLowerCase())) {
+  if (!normalizedEmails.includes(invitation.email.trim().toLowerCase())) {
     return { success: false, error: "You can only decline invitations sent to your email", code: "email_mismatch" }
   }
 
@@ -570,7 +570,7 @@ export async function replaceTeamCaptainInvitation(
     return { success: false, error: "Hackathon has ended", code: "hackathon_ended" }
   }
 
-  const normalized = newEmail.toLowerCase()
+  const normalized = newEmail.trim().toLowerCase()
 
   const { data: cancelledInvites } = await client
     .from("team_invitations")
@@ -1200,7 +1200,7 @@ async function sendPendingTeamInvitationEmailsUnlocked(
       }
 
       const recipientUsers = await clerk.users.getUserList({
-        emailAddress: [invitation.email.toLowerCase()],
+        emailAddress: [invitation.email.trim().toLowerCase()],
         limit: 1,
       })
       const recipient = recipientUsers.data[0]

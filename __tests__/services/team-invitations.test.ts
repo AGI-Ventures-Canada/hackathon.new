@@ -583,7 +583,7 @@ describe("Team Invitations Service", () => {
       })
     })
 
-    it("lowercases email address", async () => {
+    it("trims and lowercases email address", async () => {
       let capturedEmail: string | null = null
       setMockFromImplementation((table) => {
         if (table === "teams") {
@@ -612,7 +612,7 @@ describe("Team Invitations Service", () => {
       await createTeamInvitation({
         teamId: "team_1",
         hackathonId: "h1",
-        email: "TEST@EXAMPLE.COM",
+        email: "  TEST@EXAMPLE.COM  ",
         invitedByClerkUserId: "user_captain",
       })
 

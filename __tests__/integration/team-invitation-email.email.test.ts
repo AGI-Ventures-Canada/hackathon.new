@@ -99,6 +99,19 @@ describe("Team Invitation Email", () => {
       expect(callArgs.subject).toContain("AI Hackathon 2026")
     })
 
+    it("keeps long event, team, and inviter names out of an oversized subject", async () => {
+      await sendTeamInvitationEmail({
+        ...validInput,
+        inviterName: "Alexandria Very Long Organizer Name",
+        teamName: "The Incredibly Long Team Name That Never Ends",
+        hackathonName: "Healthcare Builders | A Very Long Partner Event Name",
+      })
+
+      const subject = mockSendEmail.mock.calls[0][0].subject
+      expect(subject.length).toBeLessThanOrEqual(60)
+      expect(subject).not.toContain("|")
+    })
+
     it("includes accept URL in HTML body", async () => {
       await sendTeamInvitationEmail(validInput)
 

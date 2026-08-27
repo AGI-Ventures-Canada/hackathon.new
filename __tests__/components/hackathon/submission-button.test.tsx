@@ -663,6 +663,22 @@ describe("SubmissionButton", () => {
     expect(screen.queryByRole("button", { name: /Waiting for team approval/i })).toBeNull()
   })
 
+  it("closes project editing when the custom deadline has passed", () => {
+    render(
+      <SubmissionButton
+        hackathonSlug="test-hackathon"
+        status="active"
+        isRegistered
+        submission={null}
+        submissionDeadline={new Date(Date.now() - 60_000).toISOString()}
+      />
+    )
+
+    const button = screen.getByRole("button", { name: "Projects Closed" })
+    expect((button as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.queryByRole("button", { name: "Submit Project" })).toBeNull()
+  })
+
   it("shows a distinct disabled button when the team was disbanded", () => {
     render(
       <SubmissionButton

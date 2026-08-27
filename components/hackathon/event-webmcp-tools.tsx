@@ -35,6 +35,7 @@ type EventWebMcpToolsProps = {
   atCapacity: boolean
   isOrganizer: boolean
   viewerUserId: string | null
+  submissionDeadline?: string | null
 }
 
 function parseProjectDraft(raw: string | null): PreparedProjectDraft | null {
@@ -118,6 +119,7 @@ export function EventWebMcpTools({
   atCapacity,
   isOrganizer,
   viewerUserId,
+  submissionDeadline,
 }: EventWebMcpToolsProps) {
   const [preparedProject, setPreparedProject] = useState<PreparedProjectDraft | null>(null)
   const { effectiveStatus, nowIso } = useEventLifecycleClock({
@@ -130,12 +132,17 @@ export function EventWebMcpTools({
     [effectiveStatus, guide],
   )
   const isAttendee = viewer.registered && viewer.role === "participant"
+  const currentSubmissionDeadline = submissionDeadline ?? guide.endsAt
+  const submissionsOpen = nowIso !== null && Boolean(
+    currentSubmissionDeadline && new Date(currentSubmissionDeadline).getTime() > new Date(nowIso).getTime(),
+  )
   const { canPrepareProject, canOpenProjectReview } = getProjectCapabilities({
     status: effectiveStatus,
     role: viewer.role,
     isOrganizer,
     isAttendee,
     teamStatus: viewer.team?.status ?? null,
+    submissionsOpen,
   })
 
   const canInviteNow = getCanInviteTeamMembers({
@@ -191,13 +198,14 @@ export function EventWebMcpTools({
       status: effectiveStatus,
       teamStatus: viewer.team?.status ?? null,
       canOpenProjectReview,
+      submissionsOpen,
     })
 
     return {
       openedReview: canOpenProjectReview,
       nextStep,
     }
-  }, [canOpenProjectReview, effectiveStatus, viewer])
+  }, [canOpenProjectReview, effectiveStatus, submissionsOpen, viewer])
 
   const preparedProjectNextStep = getProjectDraftNextStep({
     signedIn: viewer.signedIn,
@@ -206,6 +214,7 @@ export function EventWebMcpTools({
     status: effectiveStatus,
     teamStatus: viewer.team?.status ?? null,
     canOpenProjectReview,
+    submissionsOpen,
   })
 
   const tools = useMemo(() => createEventAttendeeTools({
