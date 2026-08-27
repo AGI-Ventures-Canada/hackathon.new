@@ -187,6 +187,8 @@ describe("FocusScoringView", () => {
       />
     )
     expect(screen.getByTestId("scoring-panel-a1")).toBeDefined()
+    expect(screen.getByRole("button", { name: "Previous project" })).toBeDefined()
+    expect(screen.getByRole("button", { name: "Next project" })).toBeDefined()
   })
 
   it("handles assignment with no team name", () => {

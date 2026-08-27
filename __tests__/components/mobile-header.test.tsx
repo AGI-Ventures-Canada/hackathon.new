@@ -68,6 +68,7 @@ beforeEach(() => {
   mockPathname = "/home"
   mockPush.mockClear()
   mockSetTheme.mockClear()
+  Object.defineProperty(window, "innerWidth", { configurable: true, value: 375 })
   setRouter({ push: mockPush })
   setPathname(mockPathname)
   setCreateOrganizationDialog(({ open, onOpenChange }) =>
@@ -142,9 +143,39 @@ describe("MobileHeader", () => {
   })
 
   describe("menu overlay", () => {
+    it("keeps the closed menu out of the accessibility tree", () => {
+      render(<MobileHeader />)
+      const overlay = document.getElementById("mobile-navigation-menu")!
+
+      expect(overlay.getAttribute("aria-hidden")).toBe("true")
+      expect(overlay.hasAttribute("inert")).toBe(true)
+      expect(within(getHeader()).getByRole("button", { name: "Open menu" }).getAttribute("aria-expanded")).toBe("false")
+    })
+
     it("locks body scroll when opened", () => {
       openMenu()
       expect(document.body.style.overflow).toBe("hidden")
+    })
+
+    it("closes on Escape", async () => {
+      openMenu()
+      fireEvent.keyDown(window, { key: "Escape" })
+
+      await waitFor(() => {
+        expect(document.getElementById("mobile-navigation-menu")?.getAttribute("aria-hidden")).toBe("true")
+        expect(document.body.style.overflow).toBe("")
+      })
+    })
+
+    it("closes when the viewport reaches the desktop sidebar breakpoint", async () => {
+      openMenu()
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: 1440 })
+      fireEvent(window, new Event("resize"))
+
+      await waitFor(() => {
+        expect(document.getElementById("mobile-navigation-menu")?.getAttribute("aria-hidden")).toBe("true")
+        expect(document.body.style.overflow).toBe("")
+      })
     })
 
     it("unlocks body scroll when closed", async () => {
@@ -192,6 +223,17 @@ describe("MobileHeader", () => {
   })
 
   describe("section navigation (drill-down)", () => {
+    it("keeps only the active navigation panel interactive", () => {
+      openMenu()
+      const panels = getOverlay().querySelectorAll("nav")
+
+      expect(panels[0]?.hasAttribute("inert")).toBe(false)
+      expect(panels[1]?.hasAttribute("inert")).toBe(true)
+      fireEvent.click(within(panels[0] as HTMLElement).getByRole("button", { name: "Manage" }))
+      expect(panels[0]?.hasAttribute("inert")).toBe(true)
+      expect(panels[3]?.hasAttribute("inert")).toBe(false)
+    })
+
     it("navigates to Hackathons sub-panel and shows children", () => {
       openMenu()
       const rootNav = getOverlay().querySelector("nav")!

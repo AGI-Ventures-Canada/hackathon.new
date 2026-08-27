@@ -204,6 +204,9 @@ function HackathonPreviewContent({
     allowLateRegistration: hackathon.allow_late_registration,
     nowIso,
   })
+  const showCommunityTab =
+    (isEditable && editMode) ||
+    (isRegistered && !isPendingTeam && Boolean(hackathon.community_url))
 
   const handleRegistrationSuccess = () => {
     setIsRegistered(true)
@@ -312,7 +315,11 @@ function HackathonPreviewContent({
       )}
       {teamInfo?.isCaptain && (
         <p className="text-xs text-muted-foreground px-1">
-          You&apos;re the team captain &mdash; you can invite members and rename your team.
+          {canInviteTeamMembers
+            ? "You’re the team captain — you can invite members and rename your team."
+            : canManageTeam
+              ? "You’re the team captain — you can rename your team."
+              : "You’re the team captain."}
         </p>
       )}
       {teamInfo && (
@@ -657,7 +664,7 @@ function HackathonPreviewContent({
                 {!isPendingTeam && viewerPerks.length > 0 && (
                   <TabsTrigger value="perks">Perks</TabsTrigger>
                 )}
-                {(isEditable || (isRegistered && !isPendingTeam && !!hackathon.community_url)) && (
+                {showCommunityTab && (
                   <TabsTrigger value="community">Community</TabsTrigger>
                 )}
               </TabsList>
@@ -772,7 +779,7 @@ function HackathonPreviewContent({
               </TabsContent>
             )}
 
-            {(isEditable || (isRegistered && !isPendingTeam && !!hackathon.community_url)) && (
+            {showCommunityTab && (
               <TabsContent value="community" className="mt-6">
                 {communityBlock}
               </TabsContent>

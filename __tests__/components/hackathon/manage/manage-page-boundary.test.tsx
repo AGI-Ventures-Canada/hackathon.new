@@ -78,6 +78,7 @@ const getHackathonSubmissions = mock(async () => [
   {
     id: "submission-1",
     title: "Private project",
+    description: "A project summary.",
     submitter_name: "Private Team",
   },
 ])
@@ -155,7 +156,15 @@ const listRounds = mock(async () => [
     screeningPrizeId: null,
   },
 ])
-const listPerks = mock(async () => [{ id: "perk-1", title: "Credits" }])
+const listPerks = mock(async () => [
+  {
+    id: "perk-1",
+    name: "Credits",
+    type: "code",
+    releasedAt: null,
+  },
+])
+const isPerkReleased = mock(() => false)
 const listAnnouncements = mock(async () => [
   {
     id: "announcement-1",
@@ -205,7 +214,7 @@ mock.module("@/lib/services/judge-display", () => ({ countJudgeDisplayProfiles }
 mock.module("@/lib/services/manage-overview", () => ({ getManageOverviewStats }))
 mock.module("@/lib/services/challenges", () => ({ listChallenges }))
 mock.module("@/lib/services/announcements", () => ({ listAnnouncements }))
-mock.module("@/lib/services/perks", () => ({ listPerks }))
+mock.module("@/lib/services/perks", () => ({ isPerkReleased, listPerks }))
 mock.module("@/lib/services/schedule-items", () => ({
   listScheduleItems,
   getSubmissionDeadline,
@@ -298,6 +307,7 @@ const serviceMocks = [
   listChallenges,
   listRounds,
   listPerks,
+  isPerkReleased,
   listAnnouncements,
   getOrganizerActionItems,
   availableLocales,
@@ -379,6 +389,22 @@ describe("manage page boundary", () => {
           label: "Assign every project",
           hint: "Give each project a judge.",
           severity: "urgent",
+        },
+      ],
+      projects: [
+        {
+          title: "Private project",
+          description: "A project summary.",
+          submitterName: "Private Team",
+        },
+      ],
+      perks: [{ name: "Credits", type: "code", released: false }],
+      announcements: [
+        {
+          title: "Private organizer draft",
+          audience: "everyone",
+          priority: "normal",
+          publishedAt: null,
         },
       ],
     })

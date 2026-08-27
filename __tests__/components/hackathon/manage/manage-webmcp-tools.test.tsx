@@ -124,6 +124,10 @@ const context: ManageHackathonWebMcpContext = {
       completedAssignments: 1,
     },
   ],
+  projects: [],
+  sponsors: [],
+  perks: [],
+  announcements: [],
 }
 
 const originalFetch = globalThis.fetch

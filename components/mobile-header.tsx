@@ -194,10 +194,34 @@ export function MobileHeader() {
     return () => { document.body.style.overflow = "" }
   }, [open])
 
+  useEffect(() => {
+    if (!open) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close()
+    }
+    const handleResize = () => {
+      if (window.innerWidth >= 1024) close()
+    }
+
+    window.addEventListener("keydown", handleKeyDown)
+    window.addEventListener("resize", handleResize)
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown)
+      window.removeEventListener("resize", handleResize)
+    }
+  }, [close, open])
+
   return (
     <>
       <header className="flex lg:hidden items-center gap-3 border-b px-4 py-3">
-        <Button variant="ghost" size="icon-touch" onClick={() => setOpen(true)}>
+        <Button
+          variant="ghost"
+          size="icon-touch"
+          onClick={() => setOpen(true)}
+          aria-controls="mobile-navigation-menu"
+          aria-expanded={open}
+        >
           <Menu className="size-5" />
           <span className="sr-only">Open menu</span>
         </Button>
@@ -230,12 +254,15 @@ export function MobileHeader() {
 
       {/* Full-screen menu overlay */}
       <div
-        className={`fixed inset-0 z-50 bg-background flex flex-col transition-opacity duration-200 ${
+        id="mobile-navigation-menu"
+        className={`fixed inset-0 z-50 flex flex-col bg-background transition-opacity duration-200 lg:hidden ${
           open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         }`}
         role="dialog"
-        aria-modal="true"
+        aria-modal={open}
+        aria-hidden={!open}
         aria-label="Navigation menu"
+        inert={open ? undefined : true}
       >
         {/* Menu header */}
         <div className="flex items-center justify-between px-5 py-4">
@@ -253,6 +280,8 @@ export function MobileHeader() {
             className={`absolute inset-0 flex flex-col px-5 pt-4 overflow-y-auto transition-transform duration-250 ease-in-out ${
               activeSection ? "-translate-x-full" : "translate-x-0"
             }`}
+            aria-hidden={Boolean(activeSection)}
+            inert={activeSection ? true : undefined}
           >
             {isSignedIn && (
               <ActiveOrganizationChoice
@@ -291,6 +320,8 @@ export function MobileHeader() {
             className={`absolute inset-0 flex flex-col px-5 overflow-y-auto transition-transform duration-250 ease-in-out ${
               activeSection?.id === ORG_SWITCHER_ID ? "translate-x-0" : "translate-x-full"
             }`}
+            aria-hidden={activeSection?.id !== ORG_SWITCHER_ID}
+            inert={activeSection?.id === ORG_SWITCHER_ID ? undefined : true}
           >
             <button
               type="button"
@@ -320,6 +351,8 @@ export function MobileHeader() {
                 className={`absolute inset-0 flex flex-col px-5 overflow-y-auto transition-transform duration-250 ease-in-out ${
                   activeSection?.id === section.id ? "translate-x-0" : "translate-x-full"
                 }`}
+                aria-hidden={activeSection?.id !== section.id}
+                inert={activeSection?.id === section.id ? undefined : true}
               >
                 <button
                   type="button"

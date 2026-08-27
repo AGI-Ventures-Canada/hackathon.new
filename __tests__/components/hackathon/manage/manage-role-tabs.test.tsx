@@ -48,8 +48,8 @@ mock.module("@/components/ui/tabs-url-sync", () => ({
 }))
 mock.module("@/components/ui/tabs", () => ({
   TabsList: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  TabsTrigger: ({ children }: { children: ReactNode }) => (
-    <button type="button">{children}</button>
+  TabsTrigger: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
+    <button type="button" {...props}>{children}</button>
   ),
   TabsContent: TestTabsContent,
 }))
@@ -177,6 +177,22 @@ afterEach(() => {
 })
 
 describe("organizer role tabs", () => {
+  it("gives every icon-only communication tab an accessible name", () => {
+    render(
+      <EventTabContent
+        hackathonId="event-1"
+        activeEtab="announcements"
+        hackathonStatus="draft"
+        hackathonPhase={null}
+      />,
+    )
+
+    expect(screen.getByRole("button", { name: "Announcements" })).toBeDefined()
+    expect(screen.getByRole("button", { name: "Mentors" })).toBeDefined()
+    expect(screen.getByRole("button", { name: "Social" })).toBeDefined()
+    expect(screen.getByRole("button", { name: "Email" })).toBeDefined()
+  })
+
   it("shows only aggregate mentor counts and never renders request text", async () => {
     const fetchMock = mock(async () =>
       Response.json({ stats: { open: 2, claimed: 1, resolved: 3 } }),

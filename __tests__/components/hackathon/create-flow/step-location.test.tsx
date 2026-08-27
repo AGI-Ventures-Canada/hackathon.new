@@ -39,6 +39,16 @@ describe("StepLocation", () => {
     expect(screen.getByText("Virtual")).toBeDefined()
   })
 
+  it("announces the selected location type", () => {
+    render(
+      <StepLocation locationType="virtual" locationName={null} locationUrl="" onChange={() => {}} />
+    )
+
+    expect(screen.getByRole("group", { name: "Event location type" })).toBeDefined()
+    expect(screen.getByRole("button", { name: "Virtual" }).getAttribute("aria-pressed")).toBe("true")
+    expect(screen.getByRole("button", { name: "In-person" }).getAttribute("aria-pressed")).toBe("false")
+  })
+
   it("calls onChange with in_person when In-person is clicked", () => {
     const onChange = mock(() => {})
     render(

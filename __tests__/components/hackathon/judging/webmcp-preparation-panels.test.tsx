@@ -314,6 +314,9 @@ describe("mounted judge WebMCP preparation", () => {
     )
 
     await screen.findByText("Scoring")
+    expect(screen.getByRole("slider", { name: "Impact score slider" })).toBeDefined()
+    expect(screen.getByRole("spinbutton", { name: "Impact score" })).toBeDefined()
+    expect(screen.getByRole("textbox", { name: "Notes" })).toBeDefined()
     await waitForEditor()
     const notes = screen.getByPlaceholderText("Add your notes about this submission...")
     fireEvent.change(notes, { target: { value: "Pending manual note" } })
@@ -363,6 +366,9 @@ describe("mounted judge WebMCP preparation", () => {
     )
 
     await screen.findByText("Core Weighted Categories")
+    expect(screen.getByRole("slider", { name: "Impact score slider" })).toBeDefined()
+    expect(screen.getByRole("spinbutton", { name: "Impact score" })).toBeDefined()
+    expect(screen.getByRole("textbox", { name: "Notes" })).toBeDefined()
     await waitForEditor()
     const notes = screen.getByPlaceholderText("Add your notes about this submission...")
     fireEvent.change(notes, { target: { value: "Pending unified note" } })

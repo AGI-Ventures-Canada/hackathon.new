@@ -69,6 +69,7 @@ export function ParticipantTeamHeader({
                 {editing ? (
                   <input
                     ref={inputRef}
+                    aria-label="Team name"
                     value={value}
                     onChange={(e) => setValue(e.target.value)}
                     onBlur={save}

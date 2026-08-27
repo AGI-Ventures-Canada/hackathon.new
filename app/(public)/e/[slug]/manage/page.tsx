@@ -9,7 +9,7 @@ import { countJudgeDisplayProfiles } from "@/lib/services/judge-display"
 import { getManageOverviewStats } from "@/lib/services/manage-overview"
 import { listChallenges } from "@/lib/services/challenges"
 import { listAnnouncements } from "@/lib/services/announcements"
-import { listPerks } from "@/lib/services/perks"
+import { isPerkReleased, listPerks } from "@/lib/services/perks"
 import { listScheduleItems, getSubmissionDeadline } from "@/lib/services/schedule-items"
 import { getOrganizerActionItems } from "@/lib/utils/organizer-actions"
 import { VALID_TABS, VALID_ETABS, VALID_MTABS, VALID_JTABS, VALID_PTABS, DEFAULT_TAB, DEFAULT_MTAB, DEFAULT_JTAB, DEFAULT_PTAB, resolveTab } from "@/lib/utils/manage-tabs"
@@ -229,6 +229,26 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
       judgeCount: prize.judgeCount,
       totalAssignments: prize.totalAssignments,
       completedAssignments: prize.completedAssignments,
+    })),
+    projects: submissions.map((submission) => ({
+      title: submission.title,
+      description: submission.description,
+      submitterName: submission.submitter_name,
+    })),
+    sponsors: hackathon.sponsors.map((sponsor) => ({
+      name: sponsor.name,
+      tier: sponsor.tier,
+    })),
+    perks: perks.map((perk) => ({
+      name: perk.name,
+      type: perk.type,
+      released: isPerkReleased(perk, hackathon.starts_at),
+    })),
+    announcements: announcements.map((announcement) => ({
+      title: announcement.title,
+      audience: announcement.audience,
+      priority: announcement.priority,
+      publishedAt: announcement.published_at,
     })),
   }
 
