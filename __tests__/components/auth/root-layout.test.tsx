@@ -20,8 +20,8 @@ mock.module("@/lib/auth/principal", () => ({
 }))
 
 mock.module("@/components/theme-provider", () => ({
-  ThemeProvider: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="theme-provider">{children}</div>
+  ThemeProvider: ({ children, nonce }: { children: React.ReactNode; nonce?: string }) => (
+    <div data-testid="theme-provider" data-nonce={nonce}>{children}</div>
   ),
 }))
 
@@ -82,6 +82,7 @@ describe("RootLayout", () => {
       description: "Run your hackathon from start to finish.",
     })
     expect(html).toContain('data-testid="theme-provider"')
+    expect(html.match(/data-nonce="test-nonce"/g)).toHaveLength(2)
     expect(html).toContain('data-testid="clerk-provider"')
     expect(html).toContain('data-nonce="test-nonce"')
     expect(html).toContain('data-testid="posthog-provider"')

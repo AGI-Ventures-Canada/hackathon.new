@@ -52,7 +52,7 @@ export default async function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <ThemeProvider>
+        <ThemeProvider nonce={nonce}>
           <ThemedClerkProvider nonce={nonce}>
             <PostHogProvider>{children}</PostHogProvider>
             <SearchCommand />
