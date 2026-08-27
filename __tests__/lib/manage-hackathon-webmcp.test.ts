@@ -95,7 +95,7 @@ let onCommitted = mock(
 let onReverted = mock(
   (_optimistic: ManageWebMcpOptimisticChange, _message: string) => {},
 )
-let onNavigate = mock((_href: string) => {})
+let onNavigate = mock(async (_href: string, _section: string) => true)
 let onOpenTransition = mock((_status: string) => {})
 let onEventVersionUpdated = mock((eventVersion: string) => {
   context.hackathon.eventVersion = eventVersion
@@ -136,6 +136,7 @@ function dataOf<T>(result: WebMcpToolResult<T>): T {
 }
 
 beforeEach(() => {
+  sessionStorage.clear()
   context = structuredClone(baseContext)
   fetcher = mock(
     async (_input: RequestInfo | URL, _init?: RequestInit) => Response.json({}),
@@ -150,7 +151,7 @@ beforeEach(() => {
   onReverted = mock(
     (_optimistic: ManageWebMcpOptimisticChange, _message: string) => {},
   )
-  onNavigate = mock((_href: string) => {})
+  onNavigate = mock(async (_href: string, _section: string) => true)
   onOpenTransition = mock((_status: string) => {})
   onEventVersionUpdated = mock((eventVersion: string) => {
     context.hackathon.eventVersion = eventVersion
@@ -287,6 +288,7 @@ describe("createManageHackathonTools", () => {
     )
     expect(onNavigate).toHaveBeenCalledWith(
       "/e/build-day/manage?tab=judging&jtab=results",
+      "results",
     )
     expect(result.opened).toBe("results")
     expect(fetcher).not.toHaveBeenCalled()
@@ -339,6 +341,7 @@ describe("createManageHackathonTools", () => {
       "x-webmcp-request": "1",
       "x-webmcp-expected-status": "draft",
       "x-webmcp-event-version": "2026-08-25T15:00:00.000Z",
+      "x-webmcp-idempotency-key": expect.stringMatching(/^[0-9a-f-]{36}$/),
     })
     expect(JSON.parse(String(init?.body))).toEqual({
       name: "Journée Build",
@@ -604,6 +607,68 @@ describe("createManageHackathonTools", () => {
     expect(fetcher).not.toHaveBeenCalled()
   })
 
+  it("returns the committed schedule item when native execution retries", async () => {
+    fetcher = mock(async (_input, init) => {
+      const headers = init?.headers as Record<string, string>
+      return Response.json({
+        id: headers["x-webmcp-idempotency-key"],
+        hackathon_id: context.hackathon.id,
+        title: "Lunch",
+        description: null,
+        starts_at: "2026-09-10T19:00:00.000Z",
+        ends_at: null,
+        location: null,
+        sort_order: 0,
+        trigger_type: null,
+        linked_to: null,
+        created_at: "2026-08-26T00:00:00.000Z",
+        updated_at: "2026-08-26T00:00:00.000Z",
+      })
+    })
+    const tools = createTools()
+    const input = { title: "Lunch", startsAt: "2026-09-10T19:00:00.000Z" }
+
+    const first = await execute(tools, "add_schedule_item", input)
+    const retry = await execute(tools, "add_schedule_item", input)
+
+    expect(first).toEqual(retry)
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+
+  it("commits a retried mutation with its original mutation id", async () => {
+    let attempt = 0
+    fetcher = mock(async (_input, init) => {
+      attempt += 1
+      if (attempt === 1) throw new TypeError("connection lost")
+      const headers = init?.headers as Record<string, string>
+      return Response.json({
+        id: headers["x-webmcp-idempotency-key"],
+        hackathon_id: context.hackathon.id,
+        title: "Lunch",
+        description: null,
+        starts_at: "2026-09-10T19:00:00.000Z",
+        ends_at: null,
+        location: null,
+        sort_order: 0,
+        trigger_type: null,
+        linked_to: null,
+        created_at: "2026-08-26T00:00:00.000Z",
+        updated_at: "2026-08-26T00:00:00.000Z",
+      })
+    })
+    const tools = createTools()
+    const input = { title: "Lunch", startsAt: "2026-09-10T19:00:00.000Z" }
+
+    expect(await execute(tools, "add_schedule_item", input)).toMatchObject({ ok: false })
+    expect(await execute(tools, "add_schedule_item", input)).toMatchObject({ ok: true })
+
+    const [optimistic, committed] = onCommitted.mock.calls[0]
+    expect(committed.mutationId).toBe(optimistic.mutationId)
+    expect(onOptimistic.mock.calls[0][0].mutationId).toBe(
+      onOptimistic.mock.calls[1][0].mutationId,
+    )
+  })
+
   it("adds an ordinary schedule item and passes the abort signal", async () => {
     fetcher = mock(async () =>
       Response.json({
@@ -780,6 +845,7 @@ describe("createManageHackathonTools", () => {
     })
     expect(onNavigate).toHaveBeenCalledWith(
       "/e/build-day/manage?tab=judging&jtab=results",
+      "results",
     )
     expect(fetcher).not.toHaveBeenCalled()
   })

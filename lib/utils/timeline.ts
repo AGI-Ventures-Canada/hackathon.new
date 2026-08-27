@@ -18,7 +18,7 @@ export function getEffectiveStatusAt(
 ): HackathonStatus {
   const { status, starts_at, ends_at } = hackathon
 
-  if (status === "draft" || status === "archived") {
+  if (status === "draft" || status === "completed" || status === "archived") {
     return status
   }
 
@@ -90,7 +90,16 @@ export function getTimelineStateAt(
     ends_at,
   } = hackathon
 
-  if (status === "completed") {
+  const effectiveStatus = getEffectiveStatusAt(
+    {
+      status,
+      starts_at: starts_at ?? null,
+      ends_at: ends_at ?? null,
+    },
+    now,
+  )
+
+  if (effectiveStatus === "completed") {
     return { label: "Completed", variant: "outline" }
   }
 

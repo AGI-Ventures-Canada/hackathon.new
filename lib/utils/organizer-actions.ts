@@ -581,11 +581,11 @@ function addPublishedActions(items: ActionItem[], input: ActionItemsInput) {
   if (hasDates && hasLocation && !eventHasStarted) {
     items.push(transitionAction({
       id: "ready-to-go-live",
-      label: "Ready to go live",
+      label: "Ready to start",
       hint: "The essentials are in place — you can finish the rest later",
       severity: "info",
       action: "transition-to-active",
-      ctaLabel: "Start the main event",
+      ctaLabel: "Start event",
     }))
   }
 }

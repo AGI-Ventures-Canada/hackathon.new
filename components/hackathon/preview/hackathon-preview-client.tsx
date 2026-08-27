@@ -75,6 +75,7 @@ interface HackathonPreviewClientProps {
   currentUserId?: string | null
   availableLocales?: string[]
   currentLocale?: string
+  isSponsor?: boolean
   onFormSave?: (data: Record<string, unknown>) => Promise<boolean>
   onBannerChange?: (imageUrl: string | null) => void | Promise<void>
   onAuthRequired?: () => void
@@ -99,6 +100,7 @@ function HackathonPreviewContent({
   currentUserId = null,
   availableLocales,
   currentLocale,
+  isSponsor = false,
   onFormSave,
   onBannerChange,
   onAuthRequired,
@@ -838,7 +840,7 @@ function HackathonPreviewContent({
         />
       ) : undefined}
       isRegistered={isRegistered}
-      hideRegistrationButton={isJudge}
+      hideRegistrationButton={isJudge || isSponsor}
       isOrganizer={isEditable && !editMode}
       isJudge={isJudge}
       isPersonalWorkspace={isPersonalWorkspace}
@@ -851,7 +853,7 @@ function HackathonPreviewContent({
       }
       availableLocales={availableLocales}
       currentLocale={currentLocale}
-      registrationProps={(isEditable && editMode) ? undefined : isJudge ? undefined : {
+      registrationProps={(isEditable && editMode) ? undefined : isJudge || isSponsor ? undefined : {
         hackathonSlug: hackathon.slug,
         status: hackathon.status,
         startsAt: visibleStartsAt,
@@ -913,6 +915,7 @@ export function HackathonPreviewClient({
   currentUserId,
   availableLocales,
   currentLocale,
+  isSponsor,
   onFormSave,
   onBannerChange,
   onAuthRequired,
@@ -938,6 +941,7 @@ export function HackathonPreviewClient({
         currentUserId={currentUserId}
         availableLocales={availableLocales}
         currentLocale={currentLocale}
+        isSponsor={isSponsor}
         onFormSave={onFormSave}
         onBannerChange={onBannerChange}
         onAuthRequired={onAuthRequired}

@@ -2,6 +2,7 @@ import { describe, expect, it, mock } from "bun:test"
 import {
   createEventAttendeeTools,
   getProjectCapabilities,
+  getProjectDraftNextStep,
   type EventGuideContext,
   type EventViewerContext,
 } from "@/lib/webmcp/event-attendee-tools"
@@ -31,6 +32,7 @@ const viewer: EventViewerContext = {
   role: "participant",
   participantCount: 12,
   nextStep: "Build your project.",
+  sponsor: null,
   team: {
     name: "Oats",
     status: "forming",
@@ -46,6 +48,25 @@ const viewer: EventViewerContext = {
 const signal = new AbortController().signal
 
 describe("event attendee WebMCP tools", () => {
+  it("describes the next project step for signed-in attendees", () => {
+    expect(getProjectDraftNextStep({
+      signedIn: true,
+      registered: true,
+      role: "participant",
+      status: "published",
+      teamStatus: "forming",
+      canOpenProjectReview: false,
+    })).toBe("Your draft is saved. You can submit when the event starts.")
+    expect(getProjectDraftNextStep({
+      signedIn: true,
+      registered: true,
+      role: "participant",
+      status: "active",
+      teamStatus: "active",
+      canOpenProjectReview: true,
+    })).toContain("Submit Project")
+  })
+
   it("keeps local project preparation available before sign-in", () => {
     expect(getProjectCapabilities({
       status: "published",
@@ -287,6 +308,36 @@ describe("event attendee WebMCP tools", () => {
     expect(await executeByName(tools, "get_my_team")).toMatchObject({
       ok: true,
       data: { name: `${"T".repeat(99)}…`, status: "forming" },
+    })
+  })
+
+  it("discovers sponsorship from the same relationship shown on the page", async () => {
+    const sponsorViewer: EventViewerContext = {
+      ...viewer,
+      registered: false,
+      role: "sponsor",
+      team: null,
+      sponsor: { organizationName: "Breakfast Labs", tier: "gold" },
+      nextStep: "Open Sponsoring to manage this event relationship.",
+    }
+    const tools = createEventAttendeeTools({
+      guide,
+      viewer: sponsorViewer,
+      canOpenRegistration: false,
+      canInviteTeamMembers: false,
+      canPrepareProject: false,
+      openRegistration: () => false,
+      prepareTeamInvite: () => false,
+      getProjectDraft: () => null,
+      prepareProject: () => ({ openedReview: false, nextStep: "" }),
+    })
+
+    expect(await executeByName(tools, "get_my_sponsorship")).toMatchObject({
+      ok: true,
+      data: {
+        organization: "Breakfast Labs",
+        tier: "gold",
+      },
     })
   })
 

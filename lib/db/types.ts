@@ -3185,30 +3185,21 @@ export type Database = {
         Args: { p_hackathon_id: string }
         Returns: Json
       }
-      register_for_hackathon:
-        | {
-            Args: { p_clerk_user_id: string; p_hackathon_id: string }
-            Returns: {
-              error_code: string
-              error_message: string
-              participant_id: string
-              success: boolean
-            }[]
-          }
-        | {
-            Args: {
-              p_clerk_user_id: string
-              p_hackathon_id: string
-              p_team_name?: string
-            }
-            Returns: {
-              error_code: string
-              error_message: string
-              participant_id: string
-              success: boolean
-              team_id: string
-            }[]
-          }
+      register_for_hackathon: {
+        Args: {
+          p_clerk_user_id: string
+          p_hackathon_id: string
+          p_team_name?: string
+          p_user_emails?: string[]
+        }
+        Returns: {
+          error_code: string
+          error_message: string
+          participant_id: string
+          success: boolean
+          team_id: string
+        }[]
+      }
       submit_scores: {
         Args: {
           p_judge_assignment_id: string

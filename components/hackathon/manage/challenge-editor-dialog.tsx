@@ -20,6 +20,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog"
 import { normalizeUrl } from "@/lib/utils/url"
 import { assertOk } from "@/lib/utils/fetch"
@@ -220,6 +221,7 @@ export function ChallengeEditorDialog({
       <DialogContent className="sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle>{challenge ? "Edit challenge" : "Add challenge"}</DialogTitle>
+          <DialogDescription>Add the goal and links attendees need.</DialogDescription>
         </DialogHeader>
         <form
           onSubmit={(e) => { e.preventDefault(); handleSave() }}

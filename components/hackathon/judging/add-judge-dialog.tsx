@@ -5,12 +5,25 @@ import { assertOkJson } from "@/lib/utils/fetch"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  getJudgeAddedMessage,
+  getJudgeInvitationMessage,
+} from "@/lib/judge-invitation-message"
 import {
   Loader2,
   UserPlus,
@@ -33,6 +46,11 @@ export type AddJudgeResult =
   | { type: "judge"; participantId: string; clerkUserId: string; displayName: string; email: string | null; imageUrl: string | null }
   | { type: "invitation"; id: string; email: string; token: string }
 
+type SuccessNotice = {
+  title: "Judge added" | "Judge invited"
+  message: string
+}
+
 interface AddJudgeDialogProps {
   hackathonId: string
   open: boolean
@@ -51,6 +69,7 @@ export function AddJudgeDialog({
   const [searching, setSearching] = useState(false)
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [successNotice, setSuccessNotice] = useState<SuccessNotice | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const cacheRef = useRef<Map<string, SearchUser[]>>(new Map())
@@ -162,6 +181,7 @@ export function AddJudgeDialog({
   async function handleAddFromSearch(user: SearchUser) {
     setAdding(true)
     setError(null)
+    setSuccessNotice(null)
     const savedQuery = searchQuery
     const savedResults = searchResults
     handleOpenChange(false)
@@ -171,14 +191,31 @@ export function AddJudgeDialog({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ clerkUserId: user.id }),
-      }).then(assertOkJson<{ participant: { id: string; clerkUserId?: string } }>)
+      }).then(
+        assertOkJson<{
+          participant: { id: string; clerkUserId?: string }
+          queued?: boolean
+          delivery?: "sent" | "queued" | "failed"
+        }>
+      )
+      const displayName = getDisplayName(user)
       onSuccess?.({
         type: "judge",
         participantId: data.participant.id,
         clerkUserId: user.id,
-        displayName: getDisplayName(user),
+        displayName,
         email: user.email,
         imageUrl: user.imageUrl,
+      })
+      setSuccessNotice({
+        title: "Judge added",
+        message: data.delivery
+          ? getJudgeAddedMessage(
+              displayName,
+              data.delivery === "queued",
+              data.delivery === "failed"
+            )
+          : `${displayName} was added as a judge.`,
       })
     } catch (err) {
       setSearchQuery(savedQuery)
@@ -193,6 +230,7 @@ export function AddJudgeDialog({
   async function handleInviteByEmail(email: string) {
     setAdding(true)
     setError(null)
+    setSuccessNotice(null)
     const savedQuery = searchQuery
     const savedResults = searchResults
     handleOpenChange(false)
@@ -206,10 +244,20 @@ export function AddJudgeDialog({
         assertOkJson<{
           invitation?: { id: string; token: string }
           participant?: { id: string; clerkUserId: string }
+          queued?: boolean
+          delivery?: "sent" | "queued" | "failed"
         }>
       )
       if (data.invitation) {
         onSuccess?.({ type: "invitation", id: data.invitation.id, email, token: data.invitation.token })
+        setSuccessNotice({
+          title: "Judge invited",
+          message: getJudgeInvitationMessage(
+            email,
+            data.delivery === "queued",
+            data.delivery === "failed"
+          ),
+        })
       } else if (data.participant) {
         onSuccess?.({
           type: "judge",
@@ -218,6 +266,16 @@ export function AddJudgeDialog({
           displayName: email,
           email,
           imageUrl: null,
+        })
+        setSuccessNotice({
+          title: "Judge added",
+          message: data.delivery
+            ? getJudgeAddedMessage(
+                email,
+                data.delivery === "queued",
+                data.delivery === "failed"
+              )
+            : `${email} was added as a judge.`,
         })
       }
     } catch (err) {
@@ -248,6 +306,7 @@ export function AddJudgeDialog({
     !searching && !isQueryValidEmail && aboveMinLength && searchResults.length === 0
 
   return (
+    <>
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
@@ -356,5 +415,24 @@ export function AddJudgeDialog({
           </div>
       </DialogContent>
     </Dialog>
+    <AlertDialog
+      open={successNotice !== null}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) setSuccessNotice(null)
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{successNotice?.title}</AlertDialogTitle>
+          <AlertDialogDescription>{successNotice?.message}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogAction onClick={() => setSuccessNotice(null)}>
+            Close
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   )
 }

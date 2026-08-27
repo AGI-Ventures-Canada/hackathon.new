@@ -27,6 +27,10 @@ async function fetchTenantBy(
   return (data as Tenant) ?? null
 }
 
+export function getTenantByClerkOrgId(clerkOrgId: string): Promise<Tenant | null> {
+  return fetchTenantBy("clerk_org_id", clerkOrgId)
+}
+
 async function insertOrFetchTenant(
   column: "clerk_org_id" | "clerk_user_id",
   value: string,

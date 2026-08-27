@@ -349,7 +349,8 @@ type RegisterResult =
 export async function registerForHackathon(
   hackathonId: string,
   clerkUserId: string,
-  teamName?: string
+  teamName?: string,
+  userEmails: string[] = [],
 ): Promise<RegisterResult> {
   const client = getSupabase() as unknown as SupabaseClient
 
@@ -357,6 +358,7 @@ export async function registerForHackathon(
     p_hackathon_id: hackathonId,
     p_clerk_user_id: clerkUserId,
     p_team_name: teamName ?? null,
+    p_user_emails: userEmails,
   })
 
   if (error) {

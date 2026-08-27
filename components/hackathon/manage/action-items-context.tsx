@@ -1166,6 +1166,7 @@ export function ActionItemsProvider({
         <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>Your agenda</DialogTitle>
+            <DialogDescription>Add and update the event schedule.</DialogDescription>
           </DialogHeader>
           <ScheduleEditor
             hackathonId={hackathonId}

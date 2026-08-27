@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import {
   createWebMcpMutationHeaders,
+  getWebMcpIdempotencyKey,
   isWebMcpMutationRequest,
   isWebMcpPreCompletionStatus,
   validateWebMcpMutationContext,
@@ -31,6 +32,19 @@ describe("WebMCP mutation context", () => {
     }
     expect(isWebMcpPreCompletionStatus("completed")).toBe(false)
     expect(isWebMcpPreCompletionStatus("archived")).toBe(false)
+  })
+
+  it("accepts only UUID request keys on marked requests", () => {
+    const mutationId = "8e64ee8e-2a97-4d9d-846e-c99746307421"
+    const marked = new Request("https://hackathon.new/api/example", {
+      headers: createWebMcpMutationHeaders(current, mutationId),
+    })
+    const invalid = new Request("https://hackathon.new/api/example", {
+      headers: { ...createWebMcpMutationHeaders(current), "x-webmcp-idempotency-key": "repeat" },
+    })
+    expect(getWebMcpIdempotencyKey(marked)).toBe(mutationId)
+    expect(getWebMcpIdempotencyKey(invalid)).toBeNull()
+    expect(getWebMcpIdempotencyKey(new Request("https://hackathon.new/api/example"))).toBeNull()
   })
 
   it("ignores ordinary app requests", () => {

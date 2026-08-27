@@ -15,6 +15,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog"
 import {
   AlertDialog,
@@ -585,6 +586,7 @@ export function ScheduleEditor({ hackathonId, scheduleItems: serverItems, challe
         <DialogContent onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{editing ? "Edit agenda item" : "Add agenda item"}</DialogTitle>
+            <DialogDescription>Set the time, place, and details for this item.</DialogDescription>
           </DialogHeader>
           <form
             onSubmit={(e) => { e.preventDefault(); handleSave() }}

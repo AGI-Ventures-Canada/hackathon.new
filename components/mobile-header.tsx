@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { usePathname, useSearchParams, useRouter } from "next/navigation"
@@ -61,19 +61,119 @@ const navSections: NavSection[] = [
   },
 ]
 
+function ActiveOrganizationChoice({ onOpen }: { onOpen: () => void }) {
+  const { user } = useUser()
+  const { organization } = useOrganization()
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="flex items-center justify-between py-5 px-3 -mx-3 rounded-lg text-xl text-muted-foreground hover:bg-accent hover:text-accent-foreground active:text-foreground transition-colors"
+    >
+      <span className="flex items-center gap-3">
+        {organization?.imageUrl ? (
+          <Image
+            src={organization.imageUrl}
+            alt={organization.name || "Organization"}
+            width={28}
+            height={28}
+            className="size-7 rounded object-cover"
+          />
+        ) : (
+          <div className="flex size-7 items-center justify-center rounded bg-primary text-primary-foreground text-xs font-semibold">
+            {organization?.name?.charAt(0).toUpperCase() || user?.firstName?.charAt(0)?.toUpperCase() || "P"}
+          </div>
+        )}
+        <span className="truncate">{organization?.name || "Personal Workspace"}</span>
+      </span>
+      <ChevronRight className="size-5 shrink-0" />
+    </button>
+  )
+}
+
+function OrganizationChoices({
+  onClose,
+  onCreate,
+}: {
+  onClose: () => void
+  onCreate: () => void
+}) {
+  const pathname = usePathname()
+  const router = useRouter()
+  const { user } = useUser()
+  const { organization } = useOrganization()
+  const { userMemberships, setActive } = useOrganizationList({
+    userMemberships: { infinite: true },
+  })
+
+  function activateOrganization(organizationId: string | null) {
+    setActive?.({ organization: organizationId })
+    onClose()
+    if (pathname !== "/home") router.push("/home")
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => activateOrganization(null)}
+        className="flex items-center gap-3 py-5 px-3 -mx-3 rounded-lg text-xl text-muted-foreground hover:bg-accent hover:text-accent-foreground active:text-foreground transition-colors"
+      >
+        <div className="flex size-7 items-center justify-center rounded bg-primary text-primary-foreground text-xs font-semibold">
+          {user?.firstName?.charAt(0)?.toUpperCase() || "P"}
+        </div>
+        <span className="flex-1 text-left truncate">Personal Workspace</span>
+        {!organization && <Check className="size-5 shrink-0" />}
+      </button>
+
+      {userMemberships?.data?.map((membership) => (
+        <button
+          key={membership.organization.id}
+          type="button"
+          onClick={() => activateOrganization(membership.organization.id)}
+          className="flex items-center gap-3 py-5 px-3 -mx-3 rounded-lg text-xl text-muted-foreground hover:bg-accent hover:text-accent-foreground active:text-foreground transition-colors"
+        >
+          {membership.organization.imageUrl ? (
+            <Image
+              src={membership.organization.imageUrl}
+              alt={membership.organization.name}
+              width={28}
+              height={28}
+              className="size-7 rounded object-cover"
+            />
+          ) : (
+            <div className="flex size-7 items-center justify-center rounded bg-primary text-primary-foreground text-xs font-semibold">
+              {membership.organization.name.charAt(0).toUpperCase()}
+            </div>
+          )}
+          <span className="flex-1 text-left truncate">{membership.organization.name}</span>
+          {organization?.id === membership.organization.id && <Check className="size-5 shrink-0" />}
+        </button>
+      ))}
+
+      <button
+        type="button"
+        onClick={onCreate}
+        className="flex items-center gap-3 py-5 px-3 -mx-3 rounded-lg text-xl text-muted-foreground hover:bg-accent hover:text-accent-foreground active:text-foreground transition-colors"
+      >
+        <div className="flex size-7 items-center justify-center rounded bg-muted text-muted-foreground">
+          <Plus className="size-4" />
+        </div>
+        <span>Create New Organization</span>
+      </button>
+    </>
+  )
+}
+
 export function MobileHeader() {
   const [open, setOpen] = useState(false)
   const [activeSection, setActiveSection] = useState<NavSection | null>(null)
   const [createOrgOpen, setCreateOrgOpen] = useState(false)
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const router = useRouter()
   const { isSignedIn, user } = useUser()
   const { openUserProfile, signOut } = useClerk()
-  const { organization } = useOrganization()
-  const { userMemberships, setActive } = useOrganizationList({
-    userMemberships: { infinite: true },
-  })
   const { theme, setTheme } = useTheme()
 
   const close = useCallback(() => {
@@ -94,16 +194,10 @@ export function MobileHeader() {
     return () => { document.body.style.overflow = "" }
   }, [open])
 
-  const orgSection: NavSection = useMemo(() => ({
-    id: ORG_SWITCHER_ID,
-    title: organization?.name || "Personal Workspace",
-    children: [],
-  }), [organization])
-
   return (
     <>
       <header className="flex lg:hidden items-center gap-3 border-b px-4 py-3">
-        <Button variant="ghost" size="icon-sm" onClick={() => setOpen(true)}>
+        <Button variant="ghost" size="icon-touch" onClick={() => setOpen(true)}>
           <Menu className="size-5" />
           <span className="sr-only">Open menu</span>
         </Button>
@@ -111,9 +205,10 @@ export function MobileHeader() {
           hackathon.new
         </Link>
         {isSignedIn && user && (
-          <button
-            type="button"
-            className="ml-auto rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          <Button
+            variant="ghost"
+            size="icon-touch"
+            className="ml-auto rounded-full"
             onClick={() => openUserProfile()}
           >
             {user.imageUrl ? (
@@ -129,7 +224,7 @@ export function MobileHeader() {
                 {user.firstName?.charAt(0) || user.emailAddresses[0]?.emailAddress?.charAt(0).toUpperCase() || "U"}
               </div>
             )}
-          </button>
+          </Button>
         )}
       </header>
 
@@ -145,7 +240,7 @@ export function MobileHeader() {
         {/* Menu header */}
         <div className="flex items-center justify-between px-5 py-4">
           <span className="font-bold text-lg">hackathon.new</span>
-          <Button variant="ghost" size="icon-sm" onClick={close}>
+          <Button variant="ghost" size="icon-touch" onClick={close}>
             <X className="size-5" />
             <span className="sr-only">Close menu</span>
           </Button>
@@ -160,29 +255,13 @@ export function MobileHeader() {
             }`}
           >
             {isSignedIn && (
-              <button
-                type="button"
-                onClick={() => setActiveSection(orgSection)}
-                className="flex items-center justify-between py-5 px-3 -mx-3 rounded-lg text-xl text-muted-foreground hover:bg-accent hover:text-accent-foreground active:text-foreground transition-colors"
-              >
-                <span className="flex items-center gap-3">
-                  {organization?.imageUrl ? (
-                    <Image
-                      src={organization.imageUrl}
-                      alt={organization.name || "Organization"}
-                      width={28}
-                      height={28}
-                      className="size-7 rounded object-cover"
-                    />
-                  ) : (
-                    <div className="flex size-7 items-center justify-center rounded bg-primary text-primary-foreground text-xs font-semibold">
-                      {organization?.name?.charAt(0).toUpperCase() || user?.firstName?.charAt(0)?.toUpperCase() || "P"}
-                    </div>
-                  )}
-                  <span className="truncate">{organization?.name || "Personal Workspace"}</span>
-                </span>
-                <ChevronRight className="size-5 shrink-0" />
-              </button>
+              <ActiveOrganizationChoice
+                onOpen={() => setActiveSection({
+                  id: ORG_SWITCHER_ID,
+                  title: "Organization",
+                  children: [],
+                })}
+              />
             )}
 
             {navSections.map((section) =>
@@ -222,64 +301,15 @@ export function MobileHeader() {
               Organization
             </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                setActive?.({ organization: null })
-                close()
-                if (pathname !== "/home") router.push("/home")
-              }}
-              className="flex items-center gap-3 py-5 px-3 -mx-3 rounded-lg text-xl text-muted-foreground hover:bg-accent hover:text-accent-foreground active:text-foreground transition-colors"
-            >
-              <div className="flex size-7 items-center justify-center rounded bg-primary text-primary-foreground text-xs font-semibold">
-                {user?.firstName?.charAt(0)?.toUpperCase() || "P"}
-              </div>
-              <span className="flex-1 text-left truncate">Personal Workspace</span>
-              {!organization && <Check className="size-5 shrink-0" />}
-            </button>
-
-            {userMemberships?.data?.map((mem) => (
-              <button
-                key={mem.organization.id}
-                type="button"
-                onClick={() => {
-                  setActive?.({ organization: mem.organization.id })
+            {isSignedIn && (
+              <OrganizationChoices
+                onClose={close}
+                onCreate={() => {
                   close()
-                  if (pathname !== "/home") router.push("/home")
+                  setCreateOrgOpen(true)
                 }}
-                className="flex items-center gap-3 py-5 px-3 -mx-3 rounded-lg text-xl text-muted-foreground hover:bg-accent hover:text-accent-foreground active:text-foreground transition-colors"
-              >
-                {mem.organization.imageUrl ? (
-                  <Image
-                    src={mem.organization.imageUrl}
-                    alt={mem.organization.name}
-                    width={28}
-                    height={28}
-                    className="size-7 rounded object-cover"
-                  />
-                ) : (
-                  <div className="flex size-7 items-center justify-center rounded bg-primary text-primary-foreground text-xs font-semibold">
-                    {mem.organization.name.charAt(0).toUpperCase()}
-                  </div>
-                )}
-                <span className="flex-1 text-left truncate">{mem.organization.name}</span>
-                {organization?.id === mem.organization.id && <Check className="size-5 shrink-0" />}
-              </button>
-            ))}
-
-            <button
-              type="button"
-              onClick={() => {
-                close()
-                setCreateOrgOpen(true)
-              }}
-              className="flex items-center gap-3 py-5 px-3 -mx-3 rounded-lg text-xl text-muted-foreground hover:bg-accent hover:text-accent-foreground active:text-foreground transition-colors"
-            >
-              <div className="flex size-7 items-center justify-center rounded bg-muted text-muted-foreground">
-                <Plus className="size-4" />
-              </div>
-              <span>Create New Organization</span>
-            </button>
+              />
+            )}
           </nav>
 
           {navSections
@@ -345,7 +375,7 @@ export function MobileHeader() {
               <div className="flex items-center gap-1">
                 <Button
                   variant={theme === "light" ? "secondary" : "ghost"}
-                  size="icon-sm"
+                  size="icon-touch"
                   onClick={() => setTheme("light")}
                 >
                   <Sun className="size-4" />
@@ -353,7 +383,7 @@ export function MobileHeader() {
                 </Button>
                 <Button
                   variant={theme === "dark" ? "secondary" : "ghost"}
-                  size="icon-sm"
+                  size="icon-touch"
                   onClick={() => setTheme("dark")}
                 >
                   <Moon className="size-4" />
@@ -361,7 +391,7 @@ export function MobileHeader() {
                 </Button>
                 <Button
                   variant={theme === "system" ? "secondary" : "ghost"}
-                  size="icon-sm"
+                  size="icon-touch"
                   onClick={() => setTheme("system")}
                 >
                   <Monitor className="size-4" />
@@ -391,10 +421,12 @@ export function MobileHeader() {
         </div>
       </div>
 
-      <CreateOrganizationDialog
-        open={createOrgOpen}
-        onOpenChange={setCreateOrgOpen}
-      />
+      {isSignedIn && (
+        <CreateOrganizationDialog
+          open={createOrgOpen}
+          onOpenChange={setCreateOrgOpen}
+        />
+      )}
     </>
   )
 }

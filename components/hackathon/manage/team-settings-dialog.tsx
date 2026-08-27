@@ -11,6 +11,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog"
 
 type TeamSettingsData = {
@@ -120,6 +121,7 @@ export function TeamSettingsDialog({ open, onOpenChange, hackathonId, initialDat
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Team size</DialogTitle>
+          <DialogDescription>Choose how many people can join each team.</DialogDescription>
         </DialogHeader>
         <div className="space-y-2">
           <p className="text-xs font-medium text-muted-foreground">How big are teams?</p>

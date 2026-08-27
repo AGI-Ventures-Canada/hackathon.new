@@ -607,7 +607,7 @@ export function JudgingTabClient({
           />
         </TabsContent>
 
-        <TabsContent value="results" className="mt-4">
+        <TabsContent value="results" className="mt-4" data-webmcp-section="results">
           {prizes.length > 0 || results.length > 0 ? (
             <ResultsSection
               hackathonId={hackathonId}

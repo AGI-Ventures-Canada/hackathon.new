@@ -58,6 +58,7 @@ export function RegistrationButton({
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [termsAccepted, setTermsAccepted] = useState(false)
+  const [inviteUrl, setInviteUrl] = useState<string | null>(null)
   const needsTerms = Boolean(requireTermsAcceptance && termsContent && termsHash)
 
   if (!isClient || !isLoaded) {
@@ -192,6 +193,8 @@ export function RegistrationButton({
       location_too_far: fallback,
       terms_required: "You must agree to the terms and conditions to register.",
       terms_record_failed: "Couldn't record your agreement. Please try again.",
+      pending_team_invitation: "You already have a team invite. Open that invite to join the right team.",
+      account_check_failed: "We couldn't check your account. Please try again.",
     }
     return errorMessages[code] || fallback
   }
@@ -240,6 +243,13 @@ export function RegistrationButton({
       }
 
       if (!response.ok) {
+        if (
+          data.code === "pending_team_invitation" &&
+          typeof data.inviteUrl === "string" &&
+          data.inviteUrl.startsWith("/invite/")
+        ) {
+          setInviteUrl(data.inviteUrl)
+        }
         setError(getErrorMessage(data.code, data.error || "Failed to register"))
         return
       }
@@ -260,6 +270,17 @@ export function RegistrationButton({
     } finally {
       setIsLoading(false)
     }
+  }
+
+  if (inviteUrl) {
+    return (
+      <div className="flex flex-col gap-2">
+        <Button asChild size="lg">
+          <Link href={inviteUrl}>Open team invite</Link>
+        </Button>
+        {error && <p className="text-sm text-muted-foreground">{error}</p>}
+      </div>
+    )
   }
 
   return (

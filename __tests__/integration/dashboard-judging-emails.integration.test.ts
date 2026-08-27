@@ -193,6 +193,9 @@ describe("POST /hackathons/:id/judging/judges - email notifications", () => {
     mockMarkJudgeInvitationEmailed.mockClear()
     mockScheduleReminders.mockClear()
 
+    mockSendJudgeAddedNotification.mockResolvedValue({ success: true })
+    mockSendJudgeInvitationEmail.mockResolvedValue({ success: true })
+
     mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
     mockHasPendingJudgeEntry.mockResolvedValue(false)
     mockAddJudge.mockResolvedValue({ success: true, participant: { id: "j1", clerkUserId: "judge_123" } })
@@ -216,9 +219,9 @@ describe("POST /hackathons/:id/judging/judges - email notifications", () => {
       })
 
       const res = await postAddJudge({ clerkUserId: "judge_123" })
+      const data = await res.json()
       expect(res.status).toBe(200)
-
-      await Promise.resolve()
+      expect(data).toMatchObject({ queued: false, delivery: "sent" })
 
       expect(mockSendJudgeAddedNotification).toHaveBeenCalledTimes(1)
       expect(mockSendJudgeAddedNotification).toHaveBeenCalledWith(
@@ -237,9 +240,9 @@ describe("POST /hackathons/:id/judging/judges - email notifications", () => {
       })
 
       const res = await postAddJudge({ clerkUserId: "judge_123" })
+      const data = await res.json()
       expect(res.status).toBe(200)
-
-      await Promise.resolve()
+      expect(data).toMatchObject({ queued: true, delivery: "queued" })
 
       expect(mockSendJudgeAddedNotification).not.toHaveBeenCalled()
     })
@@ -283,9 +286,9 @@ describe("POST /hackathons/:id/judging/judges - email notifications", () => {
       mockAddJudge.mockResolvedValue({ success: true, participant: { id: "j1", clerkUserId: "found_user_123" } })
 
       const res = await postAddJudge({ email: "existing@example.com" })
+      const data = await res.json()
       expect(res.status).toBe(200)
-
-      await Promise.resolve()
+      expect(data).toMatchObject({ queued: false, delivery: "sent" })
 
       expect(mockSendJudgeAddedNotification).toHaveBeenCalledTimes(1)
       expect(mockSendJudgeAddedNotification).toHaveBeenCalledWith(
@@ -303,9 +306,9 @@ describe("POST /hackathons/:id/judging/judges - email notifications", () => {
       })
 
       const res = await postAddJudge({ email: "existing@example.com" })
+      const data = await res.json()
       expect(res.status).toBe(200)
-
-      await Promise.resolve()
+      expect(data).toMatchObject({ queued: true, delivery: "queued" })
 
       expect(mockSendJudgeAddedNotification).not.toHaveBeenCalled()
     })

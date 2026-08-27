@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef, useMemo, type ReactNode } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { useAuth, useOrganization } from "@clerk/nextjs"
+import { useAuth } from "@clerk/nextjs"
 import { HackathonPreviewClient } from "@/components/hackathon/preview/hackathon-preview-client"
 import { SignInRequiredDialog } from "@/components/sign-in-required-dialog"
 import { OrgGateDialog } from "@/components/org-gate-dialog"
@@ -216,8 +216,7 @@ export function HackathonDraftEditor({
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const { isSignedIn, isLoaded, has } = useAuth()
-  const { organization, isLoaded: isOrgLoaded } = useOrganization()
+  const { isSignedIn, isLoaded, has, orgId } = useAuth()
 
   const source = useMemo(() => {
     const candidate = draftSource ?? (sourceUrl
@@ -263,7 +262,7 @@ export function HackathonDraftEditor({
   const autoTriggeredRef = useRef(false)
   const completedEventNavigationRef = useRef<string | null>(null)
   const canCreateInActiveOrganization = Boolean(
-    organization && has?.({ role: "org:admin" }) === true,
+    orgId && has?.({ role: "org:admin" }) === true,
   )
   const eventAlreadyCreated = persistenceStatus === "completed"
   const canOpenCompletedEvent = eventAlreadyCreated && Boolean(recentCompletedEventSlug)
@@ -376,7 +375,7 @@ export function HackathonDraftEditor({
         submittedEnvelope.state,
         submittedEnvelope.draftId,
         submittedEnvelope.source,
-        organization!.id,
+        orgId!,
       )
       if (slug.length > 100 || !isValidSlugFormat(slug)) {
         throw new Error("The event was created, but its page address was invalid. Keep this page open and try again.")
@@ -487,7 +486,7 @@ export function HackathonDraftEditor({
     clearSavedDraft,
     ensureSavedDraft,
     preserveDraftAfterConflict,
-    organization,
+    orgId,
   ])
 
   const handleSubmit = useCallback(async () => {
@@ -496,7 +495,7 @@ export function HackathonDraftEditor({
       return
     }
 
-    if (!hydrated || !isLoaded || !isOrgLoaded) {
+    if (!hydrated || !isLoaded) {
       setError("Wait a moment while we restore your draft.")
       return
     }
@@ -531,7 +530,6 @@ export function HackathonDraftEditor({
     state,
     hydrated,
     isLoaded,
-    isOrgLoaded,
     isSignedIn,
     ensureSavedDraft,
     getCurrentEnvelope,
@@ -656,12 +654,12 @@ export function HackathonDraftEditor({
         <div className={cn(
           "mx-auto flex w-full flex-col items-center gap-3 rounded-2xl border bg-background/95 shadow-xl backdrop-blur",
           (sourceDisplayUrl && !isSignedIn) ||
-          (isLoaded && isOrgLoaded && isSignedIn && !canCreateInActiveOrganization)
+          (isLoaded && isSignedIn && !canCreateInActiveOrganization)
             ? "max-w-md px-3 py-2"
             : "max-w-3xl px-3 py-3 sm:px-4"
         )}>
           {sourceDisplayUrl && !(
-            isLoaded && isOrgLoaded && isSignedIn && !canCreateInActiveOrganization
+            isLoaded && isSignedIn && !canCreateInActiveOrganization
           ) && (
             <div className="flex w-full items-center gap-2 rounded-full border bg-muted/50 px-3 py-2">
               <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={sourceUrl}>
@@ -714,7 +712,7 @@ export function HackathonDraftEditor({
             </p>
           )}
           {!eventAlreadyCreated &&
-          isLoaded && isOrgLoaded && isSignedIn && !canCreateInActiveOrganization ? (
+          isLoaded && isSignedIn && !canCreateInActiveOrganization ? (
             <div className="flex w-full flex-col items-center gap-2">
               <p className="cursor-default select-none text-center text-sm text-muted-foreground">
                 Connect an organization to create your private event draft
@@ -731,7 +729,6 @@ export function HackathonDraftEditor({
                     eventAlreadyCreated ||
                     !hydrated ||
                     !isLoaded ||
-                    !isOrgLoaded ||
                     !state.name.trim()
                   )
                 }
@@ -758,7 +755,6 @@ export function HackathonDraftEditor({
                   eventAlreadyCreated ||
                   !hydrated ||
                   !isLoaded ||
-                  !isOrgLoaded ||
                   !state.name.trim()
                 )
               }
@@ -789,11 +785,13 @@ export function HackathonDraftEditor({
         }}
       />
 
-      <OrgGateDialog
-        open={orgGateOpen}
-        onOpenChange={setOrgGateOpen}
-        onOrgSelected={() => {}}
-      />
+      {isSignedIn && (
+        <OrgGateDialog
+          open={orgGateOpen}
+          onOpenChange={setOrgGateOpen}
+          onOrgSelected={() => {}}
+        />
+      )}
       <CreateDraftWebMcpTools
         enabled={hydrated && !isSubmitting && !eventAlreadyCreated}
         canOpenSignIn={Boolean(

@@ -35,6 +35,7 @@ const {
   createTeamInvitation,
   getInvitationByToken,
   acceptTeamInvitation,
+  cancelOtherPendingTeamInvitations,
   declineTeamInvitation,
   cancelTeamInvitation,
   listTeamInvitations,
@@ -80,6 +81,7 @@ const mockInvitation = {
 describe("Team Invitations Service", () => {
   beforeEach(() => {
     resetSupabaseMocks()
+    mockCancelRemindersForEntity.mockClear()
     mockWithDeliveryLease.mockClear()
     mockWithDeliveryLease.mockImplementation(async (_key, work) => ({
       acquired: true as const,
@@ -788,7 +790,7 @@ describe("Team Invitations Service", () => {
         createChainableMock({ data: null, error: null })
       )
 
-      const result = await declineTeamInvitation("test_token", "user@example.com")
+      const result = await declineTeamInvitation("test_token", ["user@example.com"])
 
       expect(result.success).toBe(false)
       expect(result.code).toBe("not_found")
@@ -800,27 +802,31 @@ describe("Team Invitations Service", () => {
         callCount++
         if (callCount === 1) {
           return createChainableMock({
-            data: { email: "test@example.com" },
+            data: { id: "inv_1", email: "test@example.com" },
             error: null,
           })
         }
         return createChainableMock({ data: null, error: null })
       })
 
-      const result = await declineTeamInvitation("test_token", "test@example.com")
+      const result = await declineTeamInvitation("test_token", ["primary@example.com", "test@example.com"])
 
       expect(result.success).toBe(true)
+      expect(mockCancelRemindersForEntity).toHaveBeenCalledWith(
+        "team_invitation",
+        "inv_1",
+      )
     })
 
     it("returns error when email does not match", async () => {
       setMockFromImplementation(() =>
         createChainableMock({
-          data: { email: "different@example.com" },
+          data: { id: "inv_1", email: "different@example.com" },
           error: null,
         })
       )
 
-      const result = await declineTeamInvitation("test_token", "test@example.com")
+      const result = await declineTeamInvitation("test_token", ["test@example.com"])
 
       expect(result.success).toBe(false)
       expect(result.code).toBe("email_mismatch")
@@ -831,7 +837,7 @@ describe("Team Invitations Service", () => {
         createChainableMock({ data: null, error: null })
       )
 
-      const result = await declineTeamInvitation("nonexistent", "test@example.com")
+      const result = await declineTeamInvitation("nonexistent", ["test@example.com"])
 
       expect(result.success).toBe(false)
       expect(result.code).toBe("not_found")
@@ -843,16 +849,40 @@ describe("Team Invitations Service", () => {
         callCount++
         if (callCount === 1) {
           return createChainableMock({
-            data: { email: "TEST@EXAMPLE.COM" },
+            data: { id: "inv_1", email: "TEST@EXAMPLE.COM" },
             error: null,
           })
         }
         return createChainableMock({ data: null, error: null })
       })
 
-      const result = await declineTeamInvitation("test_token", "test@example.com")
+      const result = await declineTeamInvitation("test_token", ["test@example.com"])
 
       expect(result.success).toBe(true)
+    })
+  })
+
+  describe("cancelOtherPendingTeamInvitations", () => {
+    it("cancels sibling invites across every verified email", async () => {
+      const chain = createChainableMock({
+        data: [{ id: "inv_2" }, { id: "inv_3" }],
+        error: null,
+      })
+      setMockFromImplementation(() => chain)
+
+      const result = await cancelOtherPendingTeamInvitations(
+        "h1",
+        ["Primary@Example.com", "secondary@example.com", "primary@example.com"],
+        "inv_1",
+      )
+
+      expect(result).toBe(2)
+      expect(chain.in).toHaveBeenCalledWith("email", [
+        "primary@example.com",
+        "secondary@example.com",
+      ])
+      expect(chain.neq).toHaveBeenCalledWith("id", "inv_1")
+      expect(mockCancelRemindersForEntity).toHaveBeenCalledTimes(2)
     })
   })
 

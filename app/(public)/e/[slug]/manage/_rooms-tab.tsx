@@ -29,6 +29,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog"
 import {
   AlertDialog,
@@ -899,6 +900,7 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
             <DialogTitle>
               {editingRoom ? "Edit Room" : "Create Room"}
             </DialogTitle>
+            <DialogDescription>Set up a room for teams and judges.</DialogDescription>
           </DialogHeader>
           <form
             onSubmit={handleRoomSubmit}
@@ -942,6 +944,7 @@ export function RoomsTab({ hackathonId }: RoomsTabProps) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Set Room Timer</DialogTitle>
+            <DialogDescription>Choose how long this room&apos;s timer should run.</DialogDescription>
           </DialogHeader>
           <form
             onSubmit={handleTimerSubmit}

@@ -17,6 +17,7 @@ export type ScheduleItem = {
 }
 
 export type CreateScheduleItemInput = {
+  id?: string
   title: string
   description?: string
   startsAt: string
@@ -52,11 +53,31 @@ export async function listScheduleItems(hackathonId: string): Promise<ScheduleIt
   return data as unknown as ScheduleItem[]
 }
 
+export async function getScheduleItemById(
+  itemId: string,
+  hackathonId: string,
+): Promise<ScheduleItem | null> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const { data } = await client
+    .from("hackathon_schedule_items")
+    .select("*")
+    .eq("id", itemId)
+    .eq("hackathon_id", hackathonId)
+    .maybeSingle()
+  return data ? data as ScheduleItem : null
+}
+
 export async function createScheduleItem(hackathonId: string, input: CreateScheduleItemInput): Promise<ScheduleItem | null> {
   const client = getSupabase() as unknown as SupabaseClient
+  if (input.id) {
+    const existing = await getScheduleItemById(input.id, hackathonId)
+    if (existing) return existing as ScheduleItem
+  }
+
   const { data, error } = await client
     .from("hackathon_schedule_items")
     .insert({
+      ...(input.id ? { id: input.id } : {}),
       hackathon_id: hackathonId,
       title: input.title,
       description: input.description ?? null,
@@ -70,6 +91,10 @@ export async function createScheduleItem(hackathonId: string, input: CreateSched
     .single()
 
   if (error) {
+    if (input.id) {
+      const existing = await getScheduleItemById(input.id, hackathonId)
+      if (existing) return existing as ScheduleItem
+    }
     console.error("Failed to create schedule item:", error)
     return null
   }

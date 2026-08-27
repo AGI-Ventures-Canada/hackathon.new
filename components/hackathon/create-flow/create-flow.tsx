@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { useAuth, useOrganization } from "@clerk/nextjs"
+import { useAuth } from "@clerk/nextjs"
 import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
 import { ArrowLeft, Loader2, X } from "lucide-react"
@@ -48,8 +48,7 @@ export function CreateFlow({
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const { isSignedIn, isLoaded, has } = useAuth()
-  const { organization, isLoaded: isOrgLoaded } = useOrganization()
+  const { isSignedIn, isLoaded, has, orgId } = useAuth()
 
   const draft = useHackathonDraft({
     initialState,
@@ -112,7 +111,7 @@ export function CreateFlow({
 
   const canSkip = state.name.trim().length > 0
   const canCreateInActiveOrganization = Boolean(
-    organization && has?.({ role: "org:admin" }) === true,
+    orgId && has?.({ role: "org:admin" }) === true,
   )
   const eventAlreadyCreated = persistenceStatus === "completed"
   const canOpenCompletedEvent = eventAlreadyCreated && Boolean(recentCompletedEventSlug)
@@ -153,7 +152,7 @@ export function CreateFlow({
       const { slug } = await onSubmit(
         submittedEnvelope.state,
         submittedEnvelope.draftId,
-        organization!.id,
+        orgId!,
       )
       if (slug.length > 100 || !isValidSlugFormat(slug)) {
         throw new Error("The event was created, but its page address was invalid. Keep this page open and try again.")
@@ -265,7 +264,7 @@ export function CreateFlow({
     clearSavedDraft,
     ensureSavedDraft,
     preserveDraftAfterConflict,
-    organization,
+    orgId,
   ])
 
   const handleSubmit = useCallback(async () => {
@@ -275,7 +274,7 @@ export function CreateFlow({
       return
     }
 
-    if (!hydrated || !isLoaded || !isOrgLoaded) {
+    if (!hydrated || !isLoaded) {
       setError("Wait a moment while we restore your draft.")
       return
     }
@@ -309,7 +308,6 @@ export function CreateFlow({
     state,
     hydrated,
     isLoaded,
-    isOrgLoaded,
     isSignedIn,
     ensureSavedDraft,
     getCurrentEnvelope,
@@ -524,8 +522,7 @@ export function CreateFlow({
                       isSubmitting ||
                       eventAlreadyCreated ||
                       !hydrated ||
-                      !isLoaded ||
-                      !isOrgLoaded
+                      !isLoaded
                     )
                   }
                 >
@@ -559,11 +556,13 @@ export function CreateFlow({
         }}
       />
 
-      <OrgGateDialog
-        open={orgGateOpen}
-        onOpenChange={setOrgGateOpen}
-        onOrgSelected={() => undefined}
-      />
+      {isSignedIn && (
+        <OrgGateDialog
+          open={orgGateOpen}
+          onOpenChange={setOrgGateOpen}
+          onOrgSelected={() => undefined}
+        />
+      )}
       <CreateDraftWebMcpTools
         enabled={hydrated && !isSubmitting && !eventAlreadyCreated}
         canOpenSignIn={Boolean(

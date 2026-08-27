@@ -1,5 +1,5 @@
 import { z } from "zod"
-import type { Prize } from "@/lib/db/hackathon-types"
+import type { HackathonStatus, Prize } from "@/lib/db/hackathon-types"
 import type { Announcement } from "@/lib/services/announcements"
 import type { Challenge } from "@/lib/services/challenges"
 import type { ScheduleItem } from "@/lib/services/schedule-items"
@@ -13,12 +13,20 @@ import type {
   ManageWebMcpOptimisticChange,
 } from "@/lib/webmcp/manage-optimistic-state"
 import {
+  clearMutationReceipt,
+  createMutationFingerprint,
+  readMutationReceipt,
+  saveCommittedMutationReceipt,
+  savePendingMutationReceipt,
+} from "@/lib/webmcp/mutation-receipts"
+import {
   createWebMcpMutationHeaders,
   isWebMcpPreCompletionStatus,
   WEBMCP_PRE_COMPLETION_STATUSES,
 } from "@/lib/webmcp/mutation-context"
 import { defineWebMcpTool } from "@/lib/webmcp/tool"
 import type { WebMcpTool } from "@/lib/webmcp/types"
+import { stageKeyForStatus } from "@/lib/utils/lifecycle-stages"
 
 export type {
   ManageWebMcpCommittedChange,
@@ -32,8 +40,8 @@ export type ManageHackathonWebMcpContext = {
     name: string
     description: string | null
     locale: string | null
-    status: string
-    storedStatus: string
+    status: HackathonStatus
+    storedStatus: HackathonStatus
     phase: string | null
     eventVersion: string
     startsAt: string | null
@@ -98,7 +106,10 @@ type ManageHackathonToolDependencies = {
     optimistic: ManageWebMcpOptimisticChange,
     message: string,
   ) => void
-  onNavigate: (href: string) => void
+  onNavigate: (
+    href: string,
+    section: z.output<typeof sectionInput>["section"],
+  ) => Promise<boolean>
   onOpenTransition: (status: string) => void
   onEventVersionUpdated?: (eventVersion: string) => void
 }
@@ -223,7 +234,6 @@ const MAX_ACTION_ITEMS = 1
 const MAX_SCHEDULE_ITEMS = 2
 const MAX_CHALLENGE_ITEMS = 3
 const MAX_PRIZE_ITEMS = 2
-let optimisticMutationSequence = 0
 
 const draftOnlyToolNames = new Set([
   "set_hackathon_timeline",
@@ -241,9 +251,8 @@ function manageHref(slug: string, params: string): string {
   return `/e/${slug}/manage?${params}`
 }
 
-function createMutationId(kind: ManageWebMcpOptimisticChange["kind"]): string {
-  optimisticMutationSequence += 1
-  return `webmcp-${kind}-${optimisticMutationSequence}`
+function createMutationId(_kind: ManageWebMcpOptimisticChange["kind"]): string {
+  return crypto.randomUUID()
 }
 
 function getDraftContext(
@@ -286,7 +295,18 @@ async function sendMutation<T>(
     toCommitted: (result: T) => ManageWebMcpCommittedChange
   },
 ): Promise<T> {
-  dependencies.onOptimistic(options.optimistic)
+  const fingerprint = createMutationFingerprint({
+    method: options.method,
+    url: options.url,
+    body: options.body,
+  })
+  const receipt = readMutationReceipt(fingerprint)
+  if (receipt?.state === "committed") return receipt.result as T
+
+  const mutationId = receipt?.mutationId ?? options.optimistic.mutationId
+  const optimistic = { ...options.optimistic, mutationId } as ManageWebMcpOptimisticChange
+  if (!receipt) savePendingMutationReceipt(fingerprint, mutationId)
+  dependencies.onOptimistic(optimistic)
   try {
     const result = await fetchWebMcpJson<T>(dependencies.fetcher, options.url, {
       method: options.method,
@@ -295,7 +315,7 @@ async function sendMutation<T>(
         ...createWebMcpMutationHeaders({
           status: options.context.hackathon.status,
           eventVersion: options.context.hackathon.eventVersion,
-        }),
+        }, mutationId),
       },
       body: JSON.stringify(options.body),
       signal: options.signal,
@@ -308,11 +328,19 @@ async function sendMutation<T>(
     ) {
       dependencies.onEventVersionUpdated?.(result.updatedAt as string)
     }
-    dependencies.onCommitted(options.optimistic, options.toCommitted(result))
+    saveCommittedMutationReceipt(fingerprint, mutationId, result)
+    const committed = {
+      ...options.toCommitted(result),
+      mutationId,
+    } as ManageWebMcpCommittedChange
+    dependencies.onCommitted(optimistic, committed)
     return result
   } catch (error) {
+    if (error instanceof WebMcpRequestError && !error.retryable) {
+      clearMutationReceipt(fingerprint)
+    }
     dependencies.onReverted(
-      options.optimistic,
+      optimistic,
       error instanceof WebMcpRequestError
         ? error.message
         : "We couldn't save that change. Review the page and try again.",
@@ -347,7 +375,12 @@ function createReadTools(
             slug: clip(hackathon.slug, 80),
             name: clip(hackathon.name, 100),
             summary: clip(hackathon.description, 160),
-            status: hackathon.status,
+            status: stageKeyForStatus(hackathon.storedStatus),
+            registrationStatus: ["published", "registration_open", "active"].includes(
+              hackathon.status,
+            )
+              ? "open"
+              : "closed",
             phase: hackathon.phase,
             startsAt: hackathon.startsAt,
             endsAt: hackathon.endsAt,
@@ -468,11 +501,16 @@ function createReadTools(
         "Open one organizer section for review. This doesn't change saved event data.",
       schema: sectionInput,
       annotations: { readOnlyHint: true },
-      execute: ({ section }) => {
+      execute: async ({ section }) => {
         const slug = dependencies.getContext().hackathon.slug
         const url = manageHref(slug, sectionParams[section])
-        dependencies.onNavigate(url)
-        return { opened: section, url }
+        const opened = await dependencies.onNavigate(url, section)
+        return {
+          opened: opened ? section : null,
+          requested: section,
+          status: opened ? "opened" : "navigation_pending",
+          url,
+        }
       },
     }),
   ]
@@ -873,12 +911,12 @@ function createPublishReviewTool(
       "Open results for review. The organizer must check winners and click the final publish button.",
     schema: emptyInput,
     annotations: { readOnlyHint: true },
-    execute: () => {
+    execute: async () => {
       const slug = dependencies.getContext().hackathon.slug
       const url = manageHref(slug, "tab=judging&jtab=results")
-      dependencies.onNavigate(url)
+      const opened = await dependencies.onNavigate(url, "results")
       return {
-        data: { status: "review_opened", url },
+        data: { status: opened ? "review_opened" : "navigation_pending", url },
         requiresHumanAction: true,
       }
     },

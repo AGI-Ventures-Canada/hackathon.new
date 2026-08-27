@@ -1645,7 +1645,6 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
             bannerUrl: body.bannerUrl,
             startsAt: body.startsAt,
             endsAt: body.endsAt,
-            registrationClosesAt: body.startsAt,
             allowLateRegistration: body.allowLateRegistration,
             anonymousJudging: body.anonymousJudging,
             judgingMode: body.judgingMode as
@@ -1734,7 +1733,6 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
               rules: body.rules,
               startsAt: body.startsAt,
               endsAt: body.endsAt,
-              registrationClosesAt: body.startsAt,
               allowLateRegistration: body.allowLateRegistration,
               anonymousJudging: body.anonymousJudging,
               judgingMode: body.judgingMode as
@@ -1779,6 +1777,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           reschedulePreEventReminders(params.id).catch(console.error)
         }
 
+        let notificationDispatch: "queued" | undefined
         if (hasStatusTransition) {
           const { executeTransition } = await import("@/lib/services/lifecycle")
           const triggeredBy =
@@ -1786,10 +1785,21 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           const opensRegistration =
             previousStatus === "draft" && body.status !== "draft"
           const registrationOpensAt = opensRegistration
-            ? new Date().toISOString()
+            ? (currentHackathon.registration_opens_at ?? new Date().toISOString())
+            : undefined
+          const transitionStartsAt = body.startsAt ?? currentHackathon.starts_at
+          const defaultRegistrationClosesAt = opensRegistration && transitionStartsAt
+            ? (() => {
+                const startsAt = new Date(transitionStartsAt).getTime()
+                const opensAt = new Date(registrationOpensAt!).getTime()
+                const dayBefore = startsAt - 86_400_000
+                return new Date(
+                  dayBefore > opensAt ? dayBefore : Math.max(startsAt, opensAt),
+                ).toISOString()
+              })()
             : undefined
           const registrationClosesAt = opensRegistration
-            ? (currentHackathon.starts_at ?? registrationOpensAt)
+            ? currentHackathon.registration_closes_at ?? defaultRegistrationClosesAt
             : undefined
           const transitionResult = await executeTransition({
             hackathonId: params.id,
@@ -1828,6 +1838,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           hackathon = transitionedHackathon
 
           if (previousStatus === "draft" && body.status !== "draft") {
+            notificationDispatch = "queued"
             const { resolveAdderName } =
               await import("@/lib/auth/resolve-adder-name")
             const inviterName = await resolveAdderName(principal)
@@ -1985,6 +1996,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           resultsPublishedAt: h.results_published_at,
           createdAt: h.created_at,
           updatedAt: h.updated_at,
+          notificationDispatch,
         }
       }
 

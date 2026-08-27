@@ -14,6 +14,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogTrigger,
 } from "@/components/ui/dialog"
 import {
@@ -701,6 +702,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Create Team</DialogTitle>
+              <DialogDescription>Add a team and invite its captain by email.</DialogDescription>
             </DialogHeader>
             <form
               onSubmit={handleCreate}
@@ -842,6 +844,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Change captain invite email</DialogTitle>
+            <DialogDescription>Send the captain invite to a different address.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">

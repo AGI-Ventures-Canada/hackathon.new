@@ -2,7 +2,7 @@
 
 import { useState, useImperativeHandle, forwardRef } from "react"
 import { useRouter } from "next/navigation"
-import { assertOk } from "@/lib/utils/fetch"
+import { assertOk, assertOkJson } from "@/lib/utils/fetch"
 import { AlertTriangle, Loader2 } from "lucide-react"
 import {
   AlertDialog,
@@ -43,6 +43,7 @@ export const TransitionConfirmDialog = forwardRef<TransitionConfirmDialogHandle,
     const [pendingTarget, setPendingTarget] = useState<StageKey | null>(null)
     const [updating, setUpdating] = useState(false)
     const [error, setError] = useState<string | null>(null)
+    const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
     const skippedItems = pendingTarget
       ? activeItems.filter((i) => i.close.kind !== "transition" && !isCompleted(i))
@@ -52,6 +53,7 @@ export const TransitionConfirmDialog = forwardRef<TransitionConfirmDialogHandle,
       openTransitionDialog(targetStatus: string) {
         if (!isStageKey(targetStatus)) return
         setError(null)
+        setSuccessMessage(null)
         setPendingTarget(targetStatus)
       },
     }))
@@ -59,6 +61,7 @@ export const TransitionConfirmDialog = forwardRef<TransitionConfirmDialogHandle,
     function closeDialog() {
       setPendingTarget(null)
       setError(null)
+      setSuccessMessage(null)
     }
 
     async function commitTransition() {
@@ -123,17 +126,21 @@ export const TransitionConfirmDialog = forwardRef<TransitionConfirmDialogHandle,
 
         const body = buildStatusTransitionBody(pendingTarget, endsAt)
 
-        await fetch(
+        const result = await fetch(
           `/api/dashboard/hackathons/${hackathonId}/settings`,
           {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body),
           },
-        ).then(assertOk)
+        ).then(assertOkJson<{ notificationDispatch?: "queued" }>)
         onTransitioned?.()
         router.refresh()
-        closeDialog()
+        if (result.notificationDispatch === "queued") {
+          setSuccessMessage("Your event is live. Any saved team and judge emails are sending now.")
+        } else {
+          closeDialog()
+        }
       } catch (err) {
         setOptimisticStage(null)
         setError(err instanceof Error ? err.message : "Something went wrong")
@@ -173,6 +180,11 @@ export const TransitionConfirmDialog = forwardRef<TransitionConfirmDialogHandle,
               <p className="text-sm text-destructive">{error}</p>
             </div>
           )}
+          {successMessage && (
+            <div className="rounded-md border p-3">
+              <p className="text-sm">{successMessage}</p>
+            </div>
+          )}
           {pendingTarget === "judging" && judgingSetupIssues.length > 0 && (
             <div className="flex items-start gap-3 rounded-md border border-destructive/50 bg-destructive/10 p-3">
               <AlertTriangle className="size-5 shrink-0 text-destructive" />
@@ -185,14 +197,20 @@ export const TransitionConfirmDialog = forwardRef<TransitionConfirmDialogHandle,
             </div>
           )}
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={updating} onClick={closeDialog}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => { e.preventDefault(); commitTransition() }}
-              disabled={updating || (pendingTarget === "judging" && judgingSetupIssues.length > 0)}
-            >
-              {updating && <Loader2 className="size-3.5 animate-spin mr-1.5" />}
-              Confirm
-            </AlertDialogAction>
+            {successMessage ? (
+              <AlertDialogAction onClick={closeDialog}>Close</AlertDialogAction>
+            ) : (
+              <>
+                <AlertDialogCancel disabled={updating} onClick={closeDialog}>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={(e) => { e.preventDefault(); commitTransition() }}
+                  disabled={updating || (pendingTarget === "judging" && judgingSetupIssues.length > 0)}
+                >
+                  {updating && <Loader2 className="size-3.5 animate-spin mr-1.5" />}
+                  Confirm
+                </AlertDialogAction>
+              </>
+            )}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

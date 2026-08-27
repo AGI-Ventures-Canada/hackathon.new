@@ -10,6 +10,12 @@ const mockClerkClient = mock(() =>
       getUser: mock(() =>
         Promise.resolve({
           primaryEmailAddress: { emailAddress: "user@example.com" },
+          emailAddresses: [
+            {
+              emailAddress: "user@example.com",
+              verification: { status: "verified" },
+            },
+          ],
         })
       ),
     },
@@ -39,6 +45,7 @@ const mockCreateTeamInvitation = mock(() =>
 )
 const mockListTeamInvitations = mock(() => Promise.resolve({ success: true, invitations: [] }))
 const mockCancelTeamInvitation = mock(() => Promise.resolve({ success: true }))
+const mockCancelOtherPendingTeamInvitations = mock(() => Promise.resolve(0))
 const mockReleaseTeamInvitationReminderClaim = mock(() => Promise.resolve())
 const mockGetTeamWithHackathon = mock(() =>
   Promise.resolve({
@@ -70,6 +77,7 @@ mock.module("@/lib/services/team-invitations", () => ({
   createTeamInvitation: mockCreateTeamInvitation,
   listTeamInvitations: mockListTeamInvitations,
   cancelTeamInvitation: mockCancelTeamInvitation,
+  cancelOtherPendingTeamInvitations: mockCancelOtherPendingTeamInvitations,
   releaseTeamInvitationReminderClaim: mockReleaseTeamInvitationReminderClaim,
   getTeamWithHackathon: mockGetTeamWithHackathon,
   remindTeamInvitation: mockRemindTeamInvitation,
@@ -231,7 +239,7 @@ const mockInvitation = {
     require_terms_acceptance: false,
     terms_content: null,
   },
-  email: "invitee@example.com",
+  email: "user@example.com",
   expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
 }
 
@@ -246,6 +254,8 @@ describe("Team Invitations API Routes", () => {
     mockListTeamInvitations.mockReset()
     mockCancelTeamInvitation.mockReset()
     mockCancelTeamInvitation.mockResolvedValue({ success: true })
+    mockCancelOtherPendingTeamInvitations.mockReset()
+    mockCancelOtherPendingTeamInvitations.mockResolvedValue(0)
     mockReleaseTeamInvitationReminderClaim.mockReset()
     mockReleaseTeamInvitationReminderClaim.mockResolvedValue()
     mockGetTeamWithHackathon.mockReset()
@@ -291,7 +301,10 @@ describe("Team Invitations API Routes", () => {
     })
 
     it("returns invitation details when found", async () => {
-      mockGetInvitationByToken.mockResolvedValue(mockInvitation)
+      mockGetInvitationByToken.mockResolvedValue({
+        ...mockInvitation,
+        email: "invitee@example.com",
+      })
 
       const res = await publicApp.handle(
         new Request("http://localhost/api/public/invitations/valid_token")
@@ -445,6 +458,60 @@ describe("Team Invitations API Routes", () => {
       )
 
       expect(mockAcceptTeamInvitation).toHaveBeenCalledWith("my_token", "user_456", "user@example.com")
+    })
+
+    it("accepts an invitation sent to a verified secondary email", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_456" })
+      mockClerkClient.mockResolvedValueOnce({
+        organizations: {
+          getOrganization: mock(() => Promise.resolve({ name: "Test Org" })),
+        },
+        users: {
+          getUser: mock(() =>
+            Promise.resolve({
+              primaryEmailAddress: { emailAddress: "primary@example.com" },
+              emailAddresses: [
+                {
+                  emailAddress: "primary@example.com",
+                  verification: { status: "verified" },
+                },
+                {
+                  emailAddress: "invitee@example.com",
+                  verification: { status: "verified" },
+                },
+              ],
+            })
+          ),
+        },
+      } as never)
+      mockGetInvitationByToken.mockResolvedValue({
+        ...mockInvitation,
+        email: "invitee@example.com",
+      })
+      mockAcceptTeamInvitation.mockResolvedValue({
+        success: true,
+        teamId: "team_1",
+        hackathonId: "h1",
+      })
+      mockGetPublicHackathonById.mockResolvedValue({ slug: "test-hackathon" })
+
+      const res = await publicApp.handle(
+        new Request("http://localhost/api/public/invitations/secondary/accept", {
+          method: "POST",
+        })
+      )
+
+      expect(res.status).toBe(200)
+      expect(mockAcceptTeamInvitation).toHaveBeenCalledWith(
+        "secondary",
+        "user_456",
+        "invitee@example.com"
+      )
+      expect(mockCancelOtherPendingTeamInvitations).toHaveBeenCalledWith(
+        "h1",
+        ["primary@example.com", "invitee@example.com"],
+        "inv_1",
+      )
     })
 
     it("returns 400 with terms_required when terms enabled and no hash provided", async () => {
@@ -619,7 +686,7 @@ describe("Team Invitations API Routes", () => {
       expect(data.code).toBe("not_found")
     })
 
-    it("passes user email to declineTeamInvitation", async () => {
+    it("passes every verified email to declineTeamInvitation", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
       mockDeclineTeamInvitation.mockResolvedValue({ success: true })
 
@@ -629,7 +696,45 @@ describe("Team Invitations API Routes", () => {
         })
       )
 
-      expect(mockDeclineTeamInvitation).toHaveBeenCalledWith("token", "user@example.com")
+      expect(mockDeclineTeamInvitation).toHaveBeenCalledWith("token", ["user@example.com"])
+    })
+
+    it("allows a verified secondary email to decline an invite", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockClerkClient.mockResolvedValueOnce({
+        organizations: {
+          getOrganization: mock(() => Promise.resolve({ name: "Test Org" })),
+        },
+        users: {
+          getUser: mock(() =>
+            Promise.resolve({
+              emailAddresses: [
+                {
+                  emailAddress: "primary@example.com",
+                  verification: { status: "verified" },
+                },
+                {
+                  emailAddress: "invitee@example.com",
+                  verification: { status: "verified" },
+                },
+              ],
+            })
+          ),
+        },
+      } as never)
+      mockDeclineTeamInvitation.mockResolvedValue({ success: true })
+
+      const res = await publicApp.handle(
+        new Request("http://localhost/api/public/invitations/token/decline", {
+          method: "POST",
+        })
+      )
+
+      expect(res.status).toBe(200)
+      expect(mockDeclineTeamInvitation).toHaveBeenCalledWith("token", [
+        "primary@example.com",
+        "invitee@example.com",
+      ])
     })
   })
 })

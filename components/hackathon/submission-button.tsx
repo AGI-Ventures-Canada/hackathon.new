@@ -53,6 +53,11 @@ import {
   PREPARE_PROJECT_EVENT,
   type PrepareProjectEvent,
 } from "@/lib/webmcp/client-events"
+import {
+  readProjectDraft,
+  removeProjectDraft,
+  writeProjectDraft,
+} from "@/lib/webmcp/project-draft-storage"
 
 const submissionSteps = [
   { key: "title", label: "Title", icon: Type },
@@ -169,7 +174,7 @@ export function SubmissionButton({
   pendingTeamApproval = false,
   teamStatus = null,
 }: SubmissionButtonProps) {
-  const { isSignedIn, isLoaded } = useUser()
+  const { isSignedIn, isLoaded, user } = useUser()
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const screenshotPickerModeRef = useRef<{ replaceSlot: SubmissionScreenshotSlot | null }>({
@@ -197,7 +202,7 @@ export function SubmissionButton({
   const canSubmit = status === "active"
   const isPendingTeam = pendingTeamApproval || teamStatus === "pending_approval"
   const isDisbandedTeam = teamStatus === "disbanded"
-  const draftStorageKey = `oatmeal:submission-draft:${hackathonSlug}`
+  const draftOwnerId = isSignedIn ? user?.id ?? null : null
   const videoPreview = demoVideoUrl.trim() ? getVideoEmbedInfo(demoVideoUrl) : null
 
   useEffect(() => {
@@ -226,12 +231,18 @@ export function SubmissionButton({
         .map(({ slot, url }) => ({ slot, url })),
     }
 
-    window.localStorage.setItem(draftStorageKey, JSON.stringify(draft))
+    writeProjectDraft(
+      window.localStorage,
+      hackathonSlug,
+      draftOwnerId,
+      JSON.stringify(draft),
+    )
   }, [
     currentStep,
     description,
     demoVideoUrl,
-    draftStorageKey,
+    draftOwnerId,
+    hackathonSlug,
     githubUrl,
     isDialogOpen,
     liveAppUrl,
@@ -243,7 +254,9 @@ export function SubmissionButton({
     const prepareProject = (event: Event) => {
       const { draft, acknowledge } = (event as PrepareProjectEvent).detail
       try {
-        const savedDraft = parseSubmissionDraft(window.localStorage.getItem(draftStorageKey))
+        const savedDraft = parseSubmissionDraft(
+          readProjectDraft(window.localStorage, hackathonSlug, draftOwnerId),
+        )
         const preservedProgress = isDialogOpen
           ? {
               currentStep,
@@ -261,8 +274,16 @@ export function SubmissionButton({
         }
         const serializedDraft = JSON.stringify(mergedDraft)
 
-        window.localStorage.setItem(draftStorageKey, serializedDraft)
-        if (window.localStorage.getItem(draftStorageKey) !== serializedDraft) {
+        writeProjectDraft(
+          window.localStorage,
+          hackathonSlug,
+          draftOwnerId,
+          serializedDraft,
+        )
+        if (
+          readProjectDraft(window.localStorage, hackathonSlug, draftOwnerId) !==
+          serializedDraft
+        ) {
           throw new Error("Project draft storage verification failed")
         }
         aggregateRequestIdRef.current = null
@@ -302,7 +323,8 @@ export function SubmissionButton({
   }, [
     canSubmit,
     currentStep,
-    draftStorageKey,
+    draftOwnerId,
+    hackathonSlug,
     isDialogOpen,
     isRegistered,
     isSignedIn,
@@ -405,7 +427,9 @@ export function SubmissionButton({
       return null
     }
 
-    return parseSubmissionDraft(window.localStorage.getItem(draftStorageKey))
+    return parseSubmissionDraft(
+      readProjectDraft(window.localStorage, hackathonSlug, draftOwnerId),
+    )
   }
 
   function restoreDraft() {
@@ -429,7 +453,7 @@ export function SubmissionButton({
       return
     }
 
-    window.localStorage.removeItem(draftStorageKey)
+    removeProjectDraft(window.localStorage, hackathonSlug, draftOwnerId)
   }
 
   function validateScreenshotFile(file: File): string | null {

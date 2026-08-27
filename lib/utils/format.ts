@@ -16,6 +16,7 @@ export function formatDateRange(
   if (!startsAt) return "Dates TBD"
 
   const start = new Date(startsAt)
+  if (Number.isNaN(start.getTime())) return "Dates TBD"
   const opts: Intl.DateTimeFormatOptions = {
     month: "short",
     day: "numeric",
@@ -26,6 +27,9 @@ export function formatDateRange(
   if (!endsAt) return start.toLocaleDateString("en-US", opts)
 
   const end = new Date(endsAt)
+  if (Number.isNaN(end.getTime()) || end.getTime() < start.getTime()) {
+    return `${start.toLocaleDateString("en-US", opts)} · Check end date`
+  }
   const startParts = getCalendarParts(start, timeZone)
   const endParts = getCalendarParts(end, timeZone)
 

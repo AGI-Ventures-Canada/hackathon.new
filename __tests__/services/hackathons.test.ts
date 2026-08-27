@@ -512,6 +512,31 @@ describe("Hackathons Service", () => {
   })
 
   describe("registerForHackathon", () => {
+    it("passes every verified email to the registration guard", async () => {
+      let rpcArgs: Record<string, unknown> | undefined
+      setMockRpcImplementation((_name, args) => {
+        rpcArgs = args as Record<string, unknown>
+        return Promise.resolve({
+          data: [{ success: true, participant_id: "p123", team_id: "t123" }],
+          error: null,
+        })
+      })
+
+      await registerForHackathon(
+        "h1",
+        "user_123",
+        "Test Team",
+        ["primary@example.com", "captain@example.com"],
+      )
+
+      expect(rpcArgs).toMatchObject({
+        p_hackathon_id: "h1",
+        p_clerk_user_id: "user_123",
+        p_team_name: "Test Team",
+        p_user_emails: ["primary@example.com", "captain@example.com"],
+      })
+    })
+
     it("returns success when registration succeeds", async () => {
       setMockRpcImplementation(() =>
         Promise.resolve({
