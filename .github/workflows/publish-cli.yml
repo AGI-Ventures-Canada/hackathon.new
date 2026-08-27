@@ -3,25 +3,24 @@ name: Publish CLI
 on:
   push:
     branches: [main]
-    tags:
-      - "cli-v*"
-  workflow_dispatch:
 
 jobs:
-  publish:
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/cli-v')
+  prepare:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      id-token: write
+      contents: read
+    outputs:
+      changed: ${{ steps.changes.outputs.changed }}
+      version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          bun-version: latest
+          bun-version: "1.3.14"
 
       - name: Install dependencies
         run: |
@@ -30,7 +29,6 @@ jobs:
 
       - name: Check for CLI changes since last release
         id: changes
-        if: "!startsWith(github.ref, 'refs/tags/cli-v')"
         run: |
           LAST_TAG=$(git tag -l 'cli-v*' --sort=-v:refname | head -1)
           if [ -z "$LAST_TAG" ]; then
@@ -48,7 +46,7 @@ jobs:
           fi
 
       - name: Resolve next version
-        if: "!startsWith(github.ref, 'refs/tags/cli-v') && steps.changes.outputs.changed == 'true'"
+        if: steps.changes.outputs.changed == 'true'
         id: version
         run: |
           cd packages/cli
@@ -76,54 +74,79 @@ jobs:
           echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Run CLI tests
-        if: "startsWith(github.ref, 'refs/tags/cli-v') || steps.changes.outputs.changed == 'true'"
+        if: steps.changes.outputs.changed == 'true'
         run: bun cli:test
 
       - name: Type check
-        if: "startsWith(github.ref, 'refs/tags/cli-v') || steps.changes.outputs.changed == 'true'"
+        if: steps.changes.outputs.changed == 'true'
         run: cd packages/cli && bunx tsc --noEmit
 
       - name: Build
-        if: "startsWith(github.ref, 'refs/tags/cli-v') || steps.changes.outputs.changed == 'true'"
+        if: steps.changes.outputs.changed == 'true'
         run: cd packages/cli && bun run build
 
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
-        if: "startsWith(github.ref, 'refs/tags/cli-v') || steps.changes.outputs.changed == 'true'"
+      - name: Pack reviewed CLI artifact
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/cli-package"
+          cd packages/cli
+          npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/cli-package"
+
+      - name: Upload reviewed CLI artifact
+        if: steps.changes.outputs.changed == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cli-package-${{ steps.version.outputs.version }}
+          path: ${{ runner.temp }}/cli-package/*.tgz
+          if-no-files-found: error
+
+  publish:
+    needs: prepare
+    if: needs.prepare.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download reviewed CLI artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: cli-package-${{ needs.prepare.outputs.version }}
+          path: cli-package
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Upgrade npm for trusted publishing
-        if: "startsWith(github.ref, 'refs/tags/cli-v') || steps.changes.outputs.changed == 'true'"
-        run: npm install -g npm@latest
+        run: npm install -g npm@12.0.2
 
       - name: Publish to npm
-        if: "startsWith(github.ref, 'refs/tags/cli-v') || steps.changes.outputs.changed == 'true'"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: cd packages/cli && npm publish --provenance --access public
-
-      - name: Get version for tag-triggered runs
-        if: "startsWith(github.ref, 'refs/tags/cli-v')"
-        id: tag-version
-        run: echo "version=${GITHUB_REF#refs/tags/cli-v}" >> "$GITHUB_OUTPUT"
+        run: npm publish cli-package/*.tgz --provenance --access public --ignore-scripts
 
       - name: Tag release
-        if: "!startsWith(github.ref, 'refs/tags/cli-v') && steps.changes.outputs.changed == 'true'"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          TAG="cli-v${{ steps.version.outputs.version }}"
-          if ! git rev-parse "$TAG" >/dev/null 2>&1; then
-            git tag "$TAG"
-            git push origin "$TAG"
+          TAG="cli-v${VERSION}"
+          if ! gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/${TAG}" \
+              -f sha="${GITHUB_SHA}"
           fi
 
       - name: Create GitHub Release
-        if: "startsWith(github.ref, 'refs/tags/cli-v') || steps.changes.outputs.changed == 'true'"
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.version.outputs.version || steps.tag-version.outputs.version }}
+          VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           gh release create "cli-v${VERSION}" \
             --title "CLI v${VERSION}" \
-            --generate-notes \
-            --notes-start-tag "$(git tag -l 'cli-v*' --sort=-v:refname | sed -n '2p')"
+            --generate-notes

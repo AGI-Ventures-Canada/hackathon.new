@@ -6,8 +6,10 @@ import { useTheme } from "next-themes"
 
 export function ThemedClerkProvider({
   children,
+  nonce,
 }: {
   children: React.ReactNode
+  nonce?: string
 }) {
   const { resolvedTheme } = useTheme()
 
@@ -17,6 +19,8 @@ export function ThemedClerkProvider({
 
   return (
     <ClerkProvider
+      dynamic
+      nonce={nonce}
       appearance={{
         baseTheme: resolvedTheme === "dark" ? dark : undefined,
         elements: {
