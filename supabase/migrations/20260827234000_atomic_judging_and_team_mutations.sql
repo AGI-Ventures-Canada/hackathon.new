@@ -1,3 +1,6 @@
+drop trigger if exists prevent_late_team_creation on public.teams;
+drop function if exists public.prevent_late_team_creation();
+
 create or replace function public.save_prize_configuration_atomic(
   p_hackathon_id uuid,
   p_prize_id uuid,
