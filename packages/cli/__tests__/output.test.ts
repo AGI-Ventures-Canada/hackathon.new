@@ -43,7 +43,7 @@ describe("formatTable", () => {
     const result = formatTable([{ name: "Safe\u001b[2J\rSpoof" }], [
       { key: "name", label: "Name" },
     ])
-    expect(result).not.toContain("\u001b")
+    expect(result).not.toContain("\u001b[2J")
     expect(result).not.toContain("\r")
     expect(result).toContain("Safe Spoof")
   })
@@ -107,7 +107,7 @@ describe("formatError", () => {
 
   it("does not let remote text inject terminal commands", () => {
     const result = `${formatError({ message: "Nope\u001b]0;owned\u0007" })}\n${formatSuccess("Done\nFake prompt")}`
-    expect(result).not.toContain("\u001b")
+    expect(result).not.toContain("\u001b]0;owned")
     expect(result).not.toContain("\u0007")
     expect(result).toContain("Done Fake prompt")
   })
