@@ -27,4 +27,11 @@ describe("submission ownership migration", () => {
     expect(migration).toContain("public.crowd_votes")
     expect(migration).toContain("public.round_submissions")
   })
+
+  it("keeps legacy crowd votes attached to a safe prize", () => {
+    expect(migration).toContain("Legacy Crowd Vote")
+    expect(migration).toContain("lower(prize.name) like '%people%choice%'")
+    expect(migration).toContain("vote.prize_id is null and vote.hackathon_id = created.hackathon_id")
+    expect(migration).toContain("Legacy crowd votes remain without a prize")
+  })
 })

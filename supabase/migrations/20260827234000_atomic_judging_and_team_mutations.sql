@@ -1341,27 +1341,67 @@ create unique index if not exists submissions_one_per_solo_attendee
   on public.submissions(hackathon_id, participant_id)
   where participant_id is not null and team_id is null;
 
+with affected_hackathons as (
+  select distinct vote.hackathon_id
+  from public.crowd_votes vote
+  where vote.prize_id is null
+    and not exists (
+      select 1
+      from public.prizes prize
+      where prize.hackathon_id = vote.hackathon_id
+        and (prize.judging_style = 'crowd_vote' or prize.type = 'crowd')
+    )
+), created_prizes as (
+  insert into public.prizes (
+    hackathon_id,
+    name,
+    description,
+    display_order,
+    judging_style,
+    type,
+    is_screening
+  )
+  select
+    affected.hackathon_id,
+    'Legacy Crowd Vote',
+    'Keeps votes created before each crowd prize had its own ballot.',
+    coalesce((
+      select max(prize.display_order) + 1
+      from public.prizes prize
+      where prize.hackathon_id = affected.hackathon_id
+    ), 0),
+    'crowd_vote',
+    'crowd',
+    true
+  from affected_hackathons affected
+  returning id, hackathon_id
+)
+update public.crowd_votes vote
+set prize_id = created.id
+from created_prizes created
+where vote.prize_id is null and vote.hackathon_id = created.hackathon_id;
+
 update public.crowd_votes vote
 set prize_id = (
   select prize.id
   from public.prizes prize
   where prize.hackathon_id = vote.hackathon_id
     and (prize.judging_style = 'crowd_vote' or prize.type = 'crowd')
-  order by prize.created_at, prize.id
+  order by
+    (lower(prize.name) like '%people%choice%') desc,
+    (prize.type = 'crowd') desc,
+    prize.is_screening,
+    prize.display_order,
+    prize.created_at,
+    prize.id
   limit 1
 )
-where vote.prize_id is null
-  and 1 = (
-    select count(*)
-    from public.prizes prize
-    where prize.hackathon_id = vote.hackathon_id
-      and (prize.judging_style = 'crowd_vote' or prize.type = 'crowd')
-  );
+where vote.prize_id is null;
 
 do $$
 begin
   if exists (select 1 from public.crowd_votes where prize_id is null) then
-    raise exception 'Legacy crowd votes need a prize before this migration can continue';
+    raise exception 'Legacy crowd votes remain without a prize';
   end if;
 end;
 $$;
