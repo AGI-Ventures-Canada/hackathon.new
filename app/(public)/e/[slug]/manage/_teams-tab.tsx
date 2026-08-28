@@ -59,6 +59,15 @@ import { getDisplayName } from "@/lib/utils/person-display"
 import { SubmissionMedia } from "@/components/hackathon/submission-media"
 import { SubmissionLinks } from "@/components/hackathon/submission-links"
 import { DEFAULT_TEAM_STATUS, TEAM_STATUS_LABELS, type TeamStatus } from "@/lib/db/hackathon-types"
+import {
+  InvitationDeliveryBadge,
+  QueuedEmailNotice,
+} from "@/components/hackathon/email-delivery-status"
+import {
+  getInvitationDeliveryState,
+  getQueueReasonText,
+  type QueueReasonCode,
+} from "@/lib/utils/notification-delivery"
 
 type TeamMember = {
   clerkUserId: string
@@ -86,6 +95,7 @@ type TeamPendingInvitation = {
   isCaptainInvite: boolean
   createdAt: string
   remindedAt: string | null
+  emailedAt: string | null
 }
 
 type Team = {
@@ -157,13 +167,14 @@ type TeamsTabProps = {
   allowSolo: boolean
   requireTeamApproval: boolean
   hackathonStatus: string | null
+  notificationDisposition: "queue" | "send" | "reject"
 }
 
-const STATUS_LOCKS_TEAM_DELETE = new Set(["judging", "completed", "archived"])
+const STATUS_LOCKS_TEAM_MUTATIONS = new Set(["judging", "completed", "archived"])
 
 const UNASSIGNED_ROOM = "__unassigned__"
 
-export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: initialMin, allowSolo: initialSolo, requireTeamApproval: initialApproval, hackathonStatus }: TeamsTabProps) {
+export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: initialMin, allowSolo: initialSolo, requireTeamApproval: initialApproval, hackathonStatus, notificationDisposition }: TeamsTabProps) {
   const router = useRouter()
   const ctx = useActionItemsOptional()
   const [teams, setTeams] = useState<Team[]>([])
@@ -192,6 +203,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
   const [remindError, setRemindError] = useState<string | null>(null)
   const [remindPendingIds, setRemindPendingIds] = useState<Set<string>>(new Set())
   const [actionSuccess, setActionSuccess] = useState<string | null>(null)
+  const teamsLocked = Boolean(hackathonStatus && STATUS_LOCKS_TEAM_MUTATIONS.has(hackathonStatus))
 
   useEffect(() => {
     if (!ctx) return
@@ -261,7 +273,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
     setTeams((prev) => prev.map((t) => (t.id === teamId ? { ...t, room: newRoom } : t)))
 
     try {
-      if (previousRoomId) {
+      if (!newRoomId && previousRoomId) {
         await fetch(
           `/api/dashboard/hackathons/${hackathonId}/rooms/${previousRoomId}/teams/${teamId}`,
           { method: "DELETE" },
@@ -276,6 +288,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
       }
     } catch (err) {
       setTeams((prev) => prev.map((t) => (t.id === teamId ? { ...t, room: previousRoom } : t)))
+      void fetchTeams()
       setRoomError(err instanceof Error ? err.message : "Failed to update room")
       setTimeout(() => setRoomError(null), 8000)
     }
@@ -290,6 +303,10 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
+    if (teamsLocked) {
+      setCreateError("Teams are locked because judging has started")
+      return
+    }
     if (!teamName.trim() || !captainEmail.trim()) {
       setCreateError("Both fields are required")
       return
@@ -330,17 +347,17 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         invited?: boolean
         queued?: boolean
         delivery?: "sent" | "queued" | "failed"
+        queueReason?: QueueReasonCode
       }>)
 
       if (data.invited) {
         if (data.delivery === "failed") {
           showActionError(`Team created and invite saved for ${email}, but we couldn't confirm the email was sent. Use Send again in the invite list.`)
         } else {
-          setInviteSuccess(
-            data.queued
-            ? `Invite saved for ${email}. We'll send it when you go live.`
-            : `Invite sent to ${email}`
-          )
+          const queueCopy = getQueueReasonText(data.queueReason ?? "event_draft")
+          setInviteSuccess(data.queued
+            ? `Invite saved for ${email}. ${queueCopy.reason} ${queueCopy.release}`
+            : `Invite sent to ${email}`)
           setTimeout(() => setInviteSuccess(null), 5000)
         }
       }
@@ -438,7 +455,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
   })
 
   function deleteBlockReason(team: Team): string | null {
-    if (hackathonStatus && STATUS_LOCKS_TEAM_DELETE.has(hackathonStatus)) {
+    if (teamsLocked) {
       return "Teams can't be deleted once judging has started"
     }
     if (team.submission) return "This team has a submission. Delete the submission first."
@@ -578,6 +595,10 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
 
   async function handleChangeCaptainInviteEmail() {
     if (!reinviteTarget) return
+    if (teamsLocked) {
+      setReinviteError("Teams are locked because judging has started")
+      return
+    }
     const email = reinviteEmail.trim().toLowerCase()
     if (!email) {
       setReinviteError("Email is required")
@@ -603,15 +624,18 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
-      }).then(assertOkJson<{ queued?: boolean; delivery?: "sent" | "queued" | "failed" }>)
+      }).then(assertOkJson<{
+        queued?: boolean
+        delivery?: "sent" | "queued" | "failed"
+        queueReason?: QueueReasonCode
+      }>)
       if (data.delivery === "failed") {
         showActionError(`Invite saved for ${email}, but we couldn't confirm the email was sent. Use Send again in the invite list.`)
       } else {
-        setInviteSuccess(
-          data.queued
-          ? `Invite saved for ${email}. We'll send it when you go live.`
-          : `Invite sent to ${email}`
-        )
+        const queueCopy = getQueueReasonText(data.queueReason ?? "event_draft")
+        setInviteSuccess(data.queued
+          ? `Invite saved for ${email}. ${queueCopy.reason} ${queueCopy.release}`
+          : `Invite sent to ${email}`)
         setTimeout(() => setInviteSuccess(null), 5000)
       }
       await fetchTeams()
@@ -642,6 +666,17 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
       </div>
     )
   }
+
+  const queuedInvitationCount = teams.reduce(
+    (count, team) => count + team.pendingInvitations.filter((invitation) =>
+      getInvitationDeliveryState({
+        emailedAt: invitation.emailedAt,
+        hackathonStatus,
+        notificationDisposition,
+      }) === "queued"
+    ).length,
+    0,
+  )
 
   return (
     <div className="space-y-6">
@@ -681,6 +716,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
           {[actionError, remindError, approveError, denyError].filter(Boolean).join(" · ")}
         </p>
       )}
+      <QueuedEmailNotice count={queuedInvitationCount} />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-muted-foreground">
           {teams.length === 0
@@ -693,7 +729,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         </p>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
-            <Button>
+            <Button disabled={teamsLocked} title={teamsLocked ? "Teams are locked because judging has started" : undefined}>
               <Plus className="size-4" />
               <span className="hidden sm:inline">Create Team</span>
               <span className="sm:hidden">Create</span>
@@ -963,7 +999,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                {team.status === "pending_approval" && (
+                                {team.status === "pending_approval" && !teamsLocked && (
                                   <>
                                     <DropdownMenuItem onSelect={() => { void approveTeam(team) }}>
                                       <Check className="size-4" />
@@ -1017,25 +1053,31 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                                       const captainInvitationId = team.pendingCaptainInvitationId
                                       const captainEmail = team.pendingCaptainEmail
                                       if (!captainInvitationId || !captainEmail) return null
+                                      const captainInvitation = team.pendingInvitations.find(
+                                        (invitation) => invitation.id === captainInvitationId,
+                                      )
+                                      if (!captainInvitation) return null
                                       return (
                                         <div className="flex items-center gap-2 text-sm">
                                           <Mail className="size-3 text-muted-foreground shrink-0" />
                                           <span className="min-w-0 flex-1 break-all text-muted-foreground">{captainEmail}</span>
-                                          {team.pendingCaptainRemindedAt ? (
-                                            <Badge variant="secondary" className="shrink-0 font-normal">
-                                              <Bell className="mr-1 size-3" />
-                                              Reminded
-                                            </Badge>
-                                          ) : (
-                                            <Badge variant="secondary" className="shrink-0 font-normal">Pending</Badge>
-                                          )}
+                                          <InvitationDeliveryBadge
+                                            emailedAt={captainInvitation.emailedAt}
+                                            remindedAt={captainInvitation.remindedAt}
+                                            hackathonStatus={hackathonStatus}
+                                            notificationDisposition={notificationDisposition}
+                                          />
                                           <Button
                                             variant="ghost"
                                             size="icon"
                                             className="size-6"
-                                            aria-label={`Send reminder to ${captainEmail}`}
-                                            title="Send reminder"
-                                            disabled={remindPendingIds.has(captainInvitationId)}
+                                            aria-label={`${captainInvitation.emailedAt ? "Send reminder" : "Send invite"} to ${captainEmail}`}
+                                            title={notificationDisposition === "queue"
+                                              ? "This will send when you go live"
+                                              : notificationDisposition === "reject"
+                                                ? "This event has ended"
+                                                : captainInvitation.emailedAt ? "Send reminder" : "Send now"}
+                                            disabled={notificationDisposition !== "send" || remindPendingIds.has(captainInvitationId)}
                                             onClick={() => handleResendInvite(team, captainInvitationId)}
                                           >
                                             <Bell className="size-3.5" />
@@ -1047,7 +1089,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                                               </Button>
                                             </DropdownMenuTrigger>
                                             <DropdownMenuContent align="end">
-                                              <DropdownMenuItem onSelect={() => {
+                                              <DropdownMenuItem disabled={teamsLocked} onSelect={() => {
                                                 setReinviteTarget({ team, invitationId: captainInvitationId, previousEmail: captainEmail })
                                                 setReinviteEmail("")
                                                 setReinviteError(null)
@@ -1102,6 +1144,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                                                   )}
                                                   <DropdownMenuItem
                                                     variant="destructive"
+                                                    disabled={teamsLocked}
                                                     onSelect={() => handleRemoveMember(team, m)}
                                                   >
                                                     <UserMinus className="size-4" />
@@ -1116,25 +1159,27 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                                     )}
                                     {team.pendingInvitations.filter((i) => !i.isCaptainInvite).length > 0 && (
                                       <ul className="mt-2 flex flex-col gap-1.5 border-t pt-2">
-                                        {team.pendingInvitations.filter((i) => !i.isCaptainInvite).map((inv) => (
-                                          <li key={inv.id} className="flex items-center gap-2 text-sm">
+                                        {team.pendingInvitations.filter((i) => !i.isCaptainInvite).map((inv) => {
+                                          return <li key={inv.id} className="flex items-center gap-2 text-sm">
                                             <Mail className="size-3 text-muted-foreground shrink-0" />
                                             <span className="min-w-0 flex-1 break-all text-muted-foreground">{inv.email}</span>
-                                            {inv.remindedAt ? (
-                                              <Badge variant="secondary" className="shrink-0 font-normal">
-                                                <Bell className="mr-1 size-3" />
-                                                Reminded
-                                              </Badge>
-                                            ) : (
-                                              <Badge variant="secondary" className="shrink-0 font-normal">Pending</Badge>
-                                            )}
+                                            <InvitationDeliveryBadge
+                                              emailedAt={inv.emailedAt}
+                                              remindedAt={inv.remindedAt}
+                                              hackathonStatus={hackathonStatus}
+                                              notificationDisposition={notificationDisposition}
+                                            />
                                             <Button
                                               variant="ghost"
                                               size="icon"
                                               className="size-6"
-                                              aria-label={`Send reminder to ${inv.email}`}
-                                              title="Send reminder"
-                                              disabled={remindPendingIds.has(inv.id)}
+                                              aria-label={`${inv.emailedAt ? "Send reminder" : "Send invite"} to ${inv.email}`}
+                                              title={notificationDisposition === "queue"
+                                                ? "This will send when you go live"
+                                                : notificationDisposition === "reject"
+                                                  ? "This event has ended"
+                                                  : inv.emailedAt ? "Send reminder" : "Send now"}
+                                              disabled={notificationDisposition !== "send" || remindPendingIds.has(inv.id)}
                                               onClick={() => handleResendInvite(team, inv.id)}
                                             >
                                               <Bell className="size-3.5" />
@@ -1153,7 +1198,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                                               </DropdownMenuContent>
                                             </DropdownMenu>
                                           </li>
-                                        ))}
+                                        })}
                                       </ul>
                                     )}
                                   </div>

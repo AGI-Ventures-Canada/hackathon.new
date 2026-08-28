@@ -1,4 +1,5 @@
 import { Elysia, t } from "elysia"
+import { waitUntil } from "@vercel/functions"
 import { normalizeOptionalUrl, normalizeUrl } from "@/lib/utils/url"
 import { isValidSlugFormat } from "@/lib/utils/slug"
 import {
@@ -17,6 +18,8 @@ import { dashboardSponsorFulfillmentRoutes } from "./dashboard-sponsor-fulfillme
 import { dashboardPrizeTracksRoutes } from "./dashboard-prize-tracks"
 import { getEffectiveStatus } from "@/lib/utils/timeline"
 import { getNotificationDisposition, getNotificationLifecycleError } from "@/lib/utils/notification-lifecycle"
+import { getQueueReason } from "@/lib/utils/notification-delivery"
+import { getEventLifecycleAlerts } from "@/lib/utils/event-lifecycle-alerts"
 import { getRequestIdempotencyFingerprint } from "@/lib/utils/request-idempotency"
 import { normalizeLocale } from "@/lib/utils/language"
 import type { UserPrincipal } from "@/lib/auth/types"
@@ -31,6 +34,7 @@ import {
   EventMutationLeaseError,
   withEventMutationLease,
 } from "@/lib/services/event-mutation-lease"
+import { BoundedFormDataError, readBoundedFormData } from "@/lib/utils/bounded-form-data"
 
 function organizationAdminError(principal: UserPrincipal): Response | null {
   if (principal.orgRole === "org:admin") {
@@ -654,6 +658,20 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
     async ({ principal, body }) => {
       requirePrincipal(principal, ["user", "api_key"], ["schedules:write"])
 
+      const { isSupportedJobType } = await import("@/lib/workflows/jobs/handlers")
+      if (!isSupportedJobType(body.jobType)) {
+        return new Response(JSON.stringify({ error: "Unsupported job type" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+      if (JSON.stringify(body.input ?? null).length > 64_000) {
+        return new Response(JSON.stringify({ error: "Schedule input is too large" }), {
+          status: 413,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+
       const { createSchedule } = await import("@/lib/services/schedules")
       const schedule = await createSchedule({
         tenantId: principal.tenantId,
@@ -746,6 +764,13 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
     "/schedules/:id",
     async ({ principal, params, body }) => {
       requirePrincipal(principal, ["user", "api_key"], ["schedules:write"])
+
+      if (body.input !== undefined && JSON.stringify(body.input).length > 64_000) {
+        return new Response(JSON.stringify({ error: "Schedule input is too large" }), {
+          status: 413,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
 
       const { updateSchedule } = await import("@/lib/services/schedules")
       const schedule = await updateSchedule(params.id, principal.tenantId, {
@@ -1469,6 +1494,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       })
     }
     const hackathon = result.hackathon
+    const storedStatus = hackathon.status
 
     return {
       id: hackathon.id,
@@ -1478,6 +1504,15 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       rules: hackathon.rules,
       bannerUrl: hackathon.banner_url,
       status: getEffectiveStatus(hackathon),
+      storedStatus,
+      lifecycleAlerts: getEventLifecycleAlerts({
+        storedStatus,
+        startsAt: hackathon.starts_at,
+        endsAt: hackathon.ends_at,
+        registrationOpensAt: hackathon.registration_opens_at,
+        registrationClosesAt: hackathon.registration_closes_at,
+        requireLocationVerification: hackathon.require_location_verification,
+      }),
       startsAt: hackathon.starts_at,
       endsAt: hackathon.ends_at,
       registrationOpensAt: hackathon.registration_opens_at,
@@ -1561,8 +1596,9 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
 
       const hasStatusField = body.status !== undefined
+      const canCoupleEndDate = body.status === "active" || body.status === "judging"
       const hasOtherFields = Object.entries(body).some(
-        ([field, value]) => field !== "status" && value !== undefined,
+        ([field, value]) => field !== "status" && !(field === "endsAt" && canCoupleEndDate) && value !== undefined,
       )
       if (hasStatusField && hasOtherFields) {
         set.status = 400
@@ -1838,6 +1874,22 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
 
         let notificationDispatch: "queued" | undefined
         if (hasStatusTransition) {
+          if (previousStatus === "draft" && body.status !== "draft") {
+            const { canPublishEventDates } =
+              await import("@/lib/utils/event-lifecycle-alerts")
+            if (!canPublishEventDates({
+              startsAt: hackathon.starts_at,
+              endsAt: hackathon.ends_at,
+            })) {
+              return new Response(
+                JSON.stringify({
+                  error: "Update the event dates before publishing. The end time must be in the future.",
+                  code: "event_dates_invalid",
+                }),
+                { status: 400, headers: { "Content-Type": "application/json" } },
+              )
+            }
+          }
           const { executeTransition } = await import("@/lib/services/lifecycle")
           const triggeredBy =
             principal.kind === "user" ? principal.userId : principal.keyId
@@ -1903,7 +1955,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
             const inviterName = await resolveAdderName(principal)
             const { sendPendingJudgeInvitationEmails } =
               await import("@/lib/services/judge-invitations")
-            sendPendingJudgeInvitationEmails(
+            const judgeInvitationDelivery = sendPendingJudgeInvitationEmails(
               transitionedHackathon.id,
               transitionedHackathon.name,
               inviterName,
@@ -1932,7 +1984,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
               await import("@/lib/workflows/judge-notifications")
             const { sendPendingTeamInvitationEmails } =
               await import("@/lib/services/team-invitations")
-            sendPendingTeamInvitationEmails(transitionedHackathon.id)
+            const teamInvitationDelivery = sendPendingTeamInvitationEmails(transitionedHackathon.id)
               .then(({ sent, total, failedEmails }) => {
                 if (total === 0) return
                 if (failedEmails.length > 0) {
@@ -1947,7 +1999,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
                   err,
                 )
               })
-            start(sendJudgeNotificationsWorkflow, [
+            const judgeNotificationDelivery = start(sendJudgeNotificationsWorkflow, [
               {
                 hackathonId: transitionedHackathon.id,
                 hackathonName: transitionedHackathon.name,
@@ -1989,6 +2041,13 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
                 )
               }
             })
+            waitUntil(
+              Promise.allSettled([
+                judgeInvitationDelivery,
+                teamInvitationDelivery,
+                judgeNotificationDelivery,
+              ]).then(() => undefined),
+            )
           }
         }
 
@@ -2000,7 +2059,11 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           resourceType: "hackathon",
           resourceId: params.id,
           metadata: hasStatusTransition
-            ? { fromStatus: previousStatus, toStatus: body.status }
+            ? {
+                fromStatus: previousStatus,
+                toStatus: body.status,
+                ...(notificationDispatch ? { notificationDispatch } : {}),
+              }
             : undefined,
         })
 
@@ -2038,6 +2101,15 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           rules: h.rules,
           bannerUrl: h.banner_url,
           status: getEffectiveStatus(h),
+          storedStatus: h.status,
+          lifecycleAlerts: getEventLifecycleAlerts({
+            storedStatus: h.status,
+            startsAt: h.starts_at,
+            endsAt: h.ends_at,
+            registrationOpensAt: h.registration_opens_at,
+            registrationClosesAt: h.registration_closes_at,
+            requireLocationVerification: h.require_location_verification,
+          }),
           startsAt: h.starts_at,
           endsAt: h.ends_at,
           registrationOpensAt: h.registration_opens_at,
@@ -2050,6 +2122,14 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           requireTeamApproval: h.require_team_approval,
           anonymousJudging: h.anonymous_judging,
           judgingMode: h.judging_mode,
+          locationType: h.location_type,
+          locationName: h.location_name,
+          locationUrl: h.location_url,
+          locationLatitude: h.location_latitude,
+          locationLongitude: h.location_longitude,
+          requireLocationVerification: h.require_location_verification,
+          communityUrl: h.community_url,
+          communityLabel: h.community_label,
           requireTermsAcceptance: h.require_terms_acceptance ?? false,
           termsContent: h.terms_content ?? null,
           resultsPublishedAt: h.results_published_at,
@@ -2131,7 +2211,25 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         })
       }
 
-      const formData = await request.formData()
+      const actorId = principal.kind === "user" ? principal.userId : principal.keyId
+      const uploadLimit = await checkRateLimit(
+        `event-banner:${params.id}:${actorId}`,
+        { maxRequests: 10, windowMs: 60 * 60_000 },
+        { failureMode: "closed" },
+      )
+      if (!uploadLimit.allowed) {
+        throw new RateLimitError(uploadLimit.resetAt, uploadLimit.remaining)
+      }
+      let formData: FormData
+      try {
+        formData = await readBoundedFormData(request, 52 * 1024 * 1024)
+      } catch (error) {
+        const tooLarge = error instanceof BoundedFormDataError && error.code === "request_too_large"
+        return new Response(JSON.stringify({ error: tooLarge ? "Request too large" : "Invalid upload" }), {
+          status: tooLarge ? 413 : 400,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
       const file = formData.get("file") as File | null
 
       if (!file) {
@@ -2303,18 +2401,33 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
 
       const { addSponsor } = await import("@/lib/services/sponsors")
 
+      if (body.sponsorTenantId || body.useOrgAssets) {
+        return new Response(JSON.stringify({ error: "Add this sponsor with its name and logo. Organization links need the sponsor's approval." }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+
       const logoUrl = normalizeOptionalUrl(body.logoUrl)
       const websiteUrl = body.websiteUrl ? normalizeUrl(body.websiteUrl) : body.websiteUrl
+      if (websiteUrl && !isAllowedHttpsUrl(websiteUrl)) {
+        return new Response(JSON.stringify({ error: "Enter a safe website link that starts with https://" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
 
       let tenantSponsorId: string | null = null
-      const { upsertTenantSponsor } = await import("@/lib/services/tenant-sponsors")
-      const tenantSponsor = await upsertTenantSponsor(principal.tenantId, {
-        name: body.name,
-        websiteUrl,
-      })
-      tenantSponsorId = tenantSponsor?.id ?? null
-      if (!tenantSponsorId) {
-        console.warn(`upsertTenantSponsor returned null for tenant ${principal.tenantId}, sponsor "${body.name}" will be added without a library link`)
+      if (!body.sponsorTenantId) {
+        const { upsertTenantSponsor } = await import("@/lib/services/tenant-sponsors")
+        const tenantSponsor = await upsertTenantSponsor(principal.tenantId, {
+          name: body.name,
+          websiteUrl,
+        })
+        tenantSponsorId = tenantSponsor?.id ?? null
+        if (!tenantSponsorId) {
+          console.warn(`upsertTenantSponsor returned null for tenant ${principal.tenantId}, sponsor "${body.name}" will be added without a library link`)
+        }
       }
 
       const sponsor = await addSponsor({
@@ -2324,6 +2437,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         websiteUrl,
         tier: body.tier as SponsorTier | undefined,
         customTierLabel: body.customTierLabel,
+        sponsorTenantId: body.sponsorTenantId,
         tenantSponsorId,
         useOrgAssets: body.useOrgAssets,
         displayOrder: body.displayOrder,
@@ -2362,6 +2476,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         websiteUrl: t.Optional(t.Union([t.String(), t.Null()])),
         tier: t.Optional(t.String()),
         customTierLabel: t.Optional(t.Union([t.String(), t.Null()])),
+        sponsorTenantId: t.Optional(t.Union([t.String(), t.Null()])),
         useOrgAssets: t.Optional(t.Boolean()),
         displayOrder: t.Optional(t.Number()),
       }),
@@ -2397,6 +2512,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         websiteUrl: sponsorWebsiteUrl,
         tier: body.tier as SponsorTier | undefined,
         customTierLabel: body.customTierLabel,
+        sponsorTenantId: body.sponsorTenantId,
         useOrgAssets: body.useOrgAssets,
         displayOrder: body.displayOrder,
       }, params.id)
@@ -2431,6 +2547,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         websiteUrl: t.Optional(t.Union([t.String(), t.Null()])),
         tier: t.Optional(t.String()),
         customTierLabel: t.Optional(t.Union([t.String(), t.Null()])),
+        sponsorTenantId: t.Optional(t.Union([t.String(), t.Null()])),
         useOrgAssets: t.Optional(t.Boolean()),
         displayOrder: t.Optional(t.Number()),
       }),
@@ -2558,15 +2675,16 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         { failureMode: "closed" },
       )
       if (!uploadLimit.allowed) throw new RateLimitError(uploadLimit.resetAt, uploadLimit.remaining)
-      const contentLength = Number(request.headers.get("content-length") ?? 0)
-      if (contentLength > 7 * 1024 * 1024) {
-        return new Response(JSON.stringify({ error: "Request too large" }), {
-          status: 413,
+      let formData: FormData
+      try {
+        formData = await readBoundedFormData(request, 7 * 1024 * 1024)
+      } catch (error) {
+        const tooLarge = error instanceof BoundedFormDataError && error.code === "request_too_large"
+        return new Response(JSON.stringify({ error: tooLarge ? "Request too large" : "Invalid upload" }), {
+          status: tooLarge ? 413 : 400,
           headers: { "Content-Type": "application/json" },
         })
       }
-
-      const formData = await request.formData()
       const file = formData.get("file") as File | null
       const variant = (formData.get("variant") as string) || "light"
 
@@ -2830,7 +2948,25 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
     async ({ principal, request }) => {
       requirePrincipal(principal, ["user", "api_key"], ["org:write"])
 
-      const formData = await request.formData()
+      const actorId = principal.kind === "user" ? principal.userId : principal.keyId
+      const uploadLimit = await checkRateLimit(
+        `organization-logo:${principal.tenantId}:${actorId}`,
+        { maxRequests: 10, windowMs: 60 * 60_000 },
+        { failureMode: "closed" },
+      )
+      if (!uploadLimit.allowed) {
+        throw new RateLimitError(uploadLimit.resetAt, uploadLimit.remaining)
+      }
+      let formData: FormData
+      try {
+        formData = await readBoundedFormData(request, 32 * 1024 * 1024)
+      } catch (error) {
+        const tooLarge = error instanceof BoundedFormDataError && error.code === "request_too_large"
+        return new Response(JSON.stringify({ error: tooLarge ? "Request too large" : "Invalid upload" }), {
+          status: tooLarge ? 413 : 400,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
       const file = formData.get("file") as File | null
       const variant = formData.get("variant") as "light" | "dark" | null
 
@@ -3063,7 +3199,13 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
             : "team_invitation.delivery_failed",
         resourceType: "team_invitation",
         resourceId: result.invitation.id,
-        metadata: { teamId: params.teamId, email: body.email, queued: delivery === "queued", delivery },
+        metadata: {
+          teamId: params.teamId,
+          email: body.email,
+          queued: delivery === "queued",
+          delivery,
+          queueReason: getQueueReason(delivery),
+        },
       })
 
       return {
@@ -3072,6 +3214,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         expiresAt: result.invitation.expires_at,
         queued: delivery === "queued",
         delivery,
+        queueReason: getQueueReason(delivery),
       }
     },
     {

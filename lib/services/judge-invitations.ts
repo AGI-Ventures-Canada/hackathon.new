@@ -259,46 +259,50 @@ export async function acceptJudgeInvitation(
     return { success: false, error: "Your email does not match the invitation", code: "email_mismatch" }
   }
 
-  const roleCheck = await checkRoleConflict(invitation.hackathon_id, clerkUserId, "judge")
-  if (roleCheck.conflict) {
-    return { success: false, error: roleCheck.error, code: roleCheck.code }
-  }
-
-  const { addJudge } = await import("@/lib/services/judging")
-  const addResult = await addJudge(invitation.hackathon_id, clerkUserId)
-
-  if (!addResult.success) {
-    if (addResult.code !== "already_judge") {
-      return { success: false, error: addResult.error, code: addResult.code }
-    }
-  }
-
-  // Add the judge first. The operation is idempotent, so a concurrent
-  // acceptance cannot strand an invitation in the accepted state without a
-  // judge participant. The conditional update then claims the invitation.
-  const { data: claimedInvitation, error: claimError } = await client
-    .from("judge_invitations")
-    .update({
-      status: "accepted",
-      accepted_by_clerk_user_id: clerkUserId,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", invitation.id)
-    .eq("status", "pending")
-    .select("id")
-    .maybeSingle()
-
+  const matchedEmail = emails.find(
+    (email) => email.trim().toLowerCase() === invitation.email.trim().toLowerCase()
+  ) as string
+  const { data, error: claimError } = await client.rpc("accept_judge_invitation_atomic", {
+    p_token: token,
+    p_clerk_user_id: clerkUserId,
+    p_email: matchedEmail,
+  })
   if (claimError) {
+    console.error("Failed to accept judge invitation:", claimError)
     return { success: false, error: "Failed to accept invitation", code: "claim_failed" }
   }
-  if (!claimedInvitation) {
-    return { success: true, hackathonId: invitation.hackathon_id, hackathonSlug: invitation.hackathon.slug }
+  const claimed = (Array.isArray(data) ? data[0] : data) as {
+    success: boolean
+    error_code: string | null
+    hackathon_id: string | null
+    hackathon_slug: string | null
+    cancelled_invitation_ids: string[] | null
+  } | null
+  if (!claimed?.success) {
+    const code = claimed?.error_code ?? "claim_failed"
+    const messages: Record<string, string> = {
+      not_found: "Invitation not found",
+      not_pending: "Invitation is no longer pending",
+      expired: "Invitation has expired",
+      email_mismatch: "Your email does not match the invitation",
+      hackathon_ended: "Hackathon has ended",
+      project_role_conflict: "You are on a team with a project. Leave or remove the project before becoming a judge.",
+    }
+    return { success: false, error: messages[code] ?? "Failed to accept invitation", code }
+  }
+  if (claimed.cancelled_invitation_ids?.length) {
+    const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
+    for (const invitationId of claimed.cancelled_invitation_ids) {
+      cancelRemindersForEntity("team_invitation", invitationId).catch((err) =>
+        console.error(`Failed to cancel reminders for team_invitation ${invitationId}:`, err)
+      )
+    }
   }
 
   return {
     success: true,
-    hackathonId: invitation.hackathon_id,
-    hackathonSlug: invitation.hackathon.slug,
+    hackathonId: claimed.hackathon_id as string,
+    hackathonSlug: claimed.hackathon_slug as string,
   }
 }
 
@@ -803,6 +807,32 @@ export async function createJudgePendingNotification(
   }
 }
 
+export async function listPendingJudgeNotifications(
+  hackathonId: string,
+): Promise<Array<{ participantId: string; email: string; createdAt: string }>> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const { data, error } = await client
+    .from("judge_pending_notifications")
+    .select("participant_id, email, created_at")
+    .eq("hackathon_id", hackathonId)
+    .is("sent_at", null)
+
+  if (error) {
+    console.error("Failed to list pending judge notifications:", error)
+    return []
+  }
+
+  return ((data ?? []) as Array<{
+    participant_id: string
+    email: string
+    created_at: string
+  }>).map((notification) => ({
+    participantId: notification.participant_id,
+    email: notification.email,
+    createdAt: notification.created_at,
+  }))
+}
+
 export async function countPendingJudgeInvitations(hackathonId: string): Promise<number> {
   const client = getSupabase() as unknown as SupabaseClient
   const now = new Date().toISOString()
@@ -819,17 +849,20 @@ export async function countPendingJudgeInvitations(hackathonId: string): Promise
 export async function listJudgeInvitations(
   hackathonId: string,
   status?: string
-): Promise<JudgeInvitation[]> {
+): Promise<Array<Omit<JudgeInvitation, "token">>> {
   const client = getSupabase() as unknown as SupabaseClient
 
   let query = client
     .from("judge_invitations")
-    .select("*")
+    .select("id, hackathon_id, email, invited_by_clerk_user_id, status, accepted_by_clerk_user_id, expires_at, emailed_at, reminded_at, created_at, updated_at")
     .eq("hackathon_id", hackathonId)
     .order("created_at", { ascending: false })
 
   if (status) {
     query = query.eq("status", status)
+  }
+  if (status === "pending") {
+    query = query.gt("expires_at", new Date().toISOString())
   }
 
   const { data, error } = await query
@@ -839,5 +872,9 @@ export async function listJudgeInvitations(
     return []
   }
 
-  return data as JudgeInvitation[]
+  return (data ?? []).map((row) => {
+    const invitation = { ...(row as JudgeInvitation) } as Partial<JudgeInvitation>
+    delete invitation.token
+    return invitation as Omit<JudgeInvitation, "token">
+  })
 }

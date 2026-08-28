@@ -18,6 +18,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { UserPlus, Check, AlertCircle } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { QueuedDeliveryMessage } from "@/components/hackathon/email-delivery-status"
+import type { QueueReasonCode } from "@/lib/utils/notification-delivery"
 import {
   PREPARE_TEAM_INVITE_EVENT,
   type PrepareTeamInviteEvent,
@@ -40,6 +42,7 @@ export function TeamInviteDialog({ teamId, hackathonId, teamName, maxTeamSize }:
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   const [queued, setQueued] = useState(false)
+  const [queueReason, setQueueReason] = useState<QueueReasonCode>("event_draft")
   const [deliveryFailed, setDeliveryFailed] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [progressValue, setProgressValue] = useState(0)
@@ -60,6 +63,7 @@ export function TeamInviteDialog({ teamId, hackathonId, teamName, maxTeamSize }:
       setError(null)
       setSuccess(false)
       setQueued(false)
+      setQueueReason("event_draft")
       setDeliveryFailed(false)
       setOpen(true)
       acknowledge({ ok: true })
@@ -130,6 +134,7 @@ export function TeamInviteDialog({ teamId, hackathonId, teamName, maxTeamSize }:
       }
 
       setQueued(data.queued === true)
+      setQueueReason(data.queueReason ?? "event_draft")
       setDeliveryFailed(data.delivery === "failed")
       setSuccess(true)
     } catch {
@@ -145,6 +150,7 @@ export function TeamInviteDialog({ teamId, hackathonId, teamName, maxTeamSize }:
       setEmail("")
       setError(null)
       setQueued(false)
+      setQueueReason("event_draft")
       setDeliveryFailed(false)
       if (success) {
         setSuccess(false)
@@ -178,7 +184,7 @@ export function TeamInviteDialog({ teamId, hackathonId, teamName, maxTeamSize }:
               {deliveryFailed
                 ? `Invitation saved for ${email}, but we couldn't confirm the email was sent.`
                 : queued
-                ? `Invitation saved for ${email}. We'll send it when the event goes live.`
+                ? `Invitation saved for ${email}. This event is still a draft. We'll send it when you go live.`
                 : `Invitation sent to ${email}`}
             </AlertDialogDescription>
             <div className="flex flex-col items-center gap-3 py-6">
@@ -198,7 +204,7 @@ export function TeamInviteDialog({ teamId, hackathonId, teamName, maxTeamSize }:
                   </p>
                 ) : queued && (
                   <p className="text-sm text-muted-foreground mt-1">
-                    We&apos;ll send it when the event goes live.
+                    <QueuedDeliveryMessage reason={queueReason} />
                   </p>
                 )}
               </div>

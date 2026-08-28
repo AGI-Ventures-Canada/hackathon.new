@@ -24,6 +24,13 @@ export interface Hackathon {
   slug: string
   description?: string
   status?: string
+  storedStatus?: string
+  lifecycleAlerts?: Array<{
+    code: string
+    title: string
+    message: string
+    severity: "warning" | "error"
+  }>
   phase?: string
   startsAt?: string
   endsAt?: string
@@ -106,6 +113,7 @@ export interface JudgeAddResponse {
   }
   queued?: boolean
   delivery?: "sent" | "queued" | "failed"
+  queueReason?: "event_draft"
 }
 
 export interface Prize {
@@ -116,6 +124,8 @@ export interface Prize {
   type?: string
   value?: string
   displayOrder?: number
+  judgingStyle?: string | null
+  judging_style?: string | null
   assignedSubmissionId?: string
   assignedSubmissionName?: string
 }
@@ -226,8 +236,8 @@ export interface Webhook {
   id: string
   url: string
   events: string[]
-  active: boolean
-  signingSecret?: string
+  isActive: boolean
+  secret?: string
   createdAt?: string
 }
 

@@ -5,6 +5,7 @@ import {
   resetClerkMocks,
   mockClerkClient,
   setMockFromImplementation,
+  setMockRpcImplementation,
 } from "../lib/supabase-mock"
 
 const mockSendTeamInvitationEmail = mock(() => Promise.resolve({ success: true }))
@@ -247,9 +248,19 @@ describe("replaceTeamCaptainInvitation", () => {
         ],
       })
     )
+    setMockRpcImplementation(() => Promise.resolve({
+      data: [{ invitation_id: "new_inv_1", cancelled_ids: ["old_inv_1"] }],
+      error: null,
+    }))
 
     const result = await replaceTeamCaptainInvitation("team_1", "h_1", "NEW@Example.com", "organizer_1")
-    expect(result).toEqual({ success: true, invitationId: "new_inv_1", queued: true, delivery: "queued" })
+    expect(result).toEqual({
+      success: true,
+      invitationId: "new_inv_1",
+      queued: true,
+      delivery: "queued",
+      queueReason: "event_draft",
+    })
     expect(mockSendTeamInvitationEmail).not.toHaveBeenCalled()
     expect(mockScheduleReminders).not.toHaveBeenCalled()
   })
@@ -274,6 +285,10 @@ describe("replaceTeamCaptainInvitation", () => {
         ],
       })
     )
+    setMockRpcImplementation(() => Promise.resolve({
+      data: [{ invitation_id: "new_inv_1", cancelled_ids: ["old_inv_1"] }],
+      error: null,
+    }))
 
     const result = await replaceTeamCaptainInvitation("team_1", "h_1", "new@example.com", "organizer_1")
     expect(result.success).toBe(true)
@@ -301,11 +316,21 @@ describe("replaceTeamCaptainInvitation", () => {
         ],
       })
     )
+    setMockRpcImplementation(() => Promise.resolve({
+      data: [{ invitation_id: "new_inv_1", cancelled_ids: ["old_inv_1"] }],
+      error: null,
+    }))
     mockSendTeamInvitationEmail.mockResolvedValueOnce({ success: false })
 
     const result = await replaceTeamCaptainInvitation("team_1", "h_1", "new@example.com", "organizer_1")
 
-    expect(result).toEqual({ success: true, invitationId: "new_inv_1", queued: false, delivery: "failed" })
+    expect(result).toEqual({
+      success: true,
+      invitationId: "new_inv_1",
+      queued: false,
+      delivery: "failed",
+      queueReason: undefined,
+    })
     expect(mockScheduleReminders).not.toHaveBeenCalled()
   })
 })

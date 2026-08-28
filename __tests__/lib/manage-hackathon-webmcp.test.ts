@@ -24,7 +24,12 @@ const baseContext: ManageHackathonWebMcpContext = {
     eventVersion: "2026-08-25T15:00:00.000Z",
     startsAt: "2026-09-10T16:00:00.000Z",
     endsAt: "2026-09-11T23:00:00.000Z",
+    registrationOpensAt: "2026-08-25T15:00:00.000Z",
     registrationClosesAt: "2026-09-10T16:00:00.000Z",
+    rules: "Be kind.",
+    bannerUrl: null,
+    allowLateRegistration: false,
+    maxParticipants: 500,
     locationType: "hybrid",
     locationName: "Main Hall",
     locationUrl: "https://example.com/room",
@@ -32,6 +37,15 @@ const baseContext: ManageHackathonWebMcpContext = {
     maxTeamSize: 5,
     allowSolo: true,
     requireTeamApproval: false,
+    anonymousJudging: false,
+    judgingMode: "points",
+    locationLatitude: null,
+    locationLongitude: null,
+    requireLocationVerification: false,
+    communityUrl: null,
+    communityLabel: null,
+    requireTermsAcceptance: false,
+    termsContent: null,
   },
   stats: {
     attendeeCount: 24,
@@ -180,6 +194,8 @@ describe("createManageHackathonTools", () => {
     expect(createTools().map((tool) => tool.name)).toEqual([
       "get_hackathon_overview",
       "get_organizer_page_support",
+      "get_hackathon_settings",
+      "inspect_organizer_section",
       "list_hackathon_schedule",
       "list_hackathon_challenges",
       "list_hackathon_prizes",
@@ -188,6 +204,7 @@ describe("createManageHackathonTools", () => {
       "list_hackathon_perks",
       "list_hackathon_announcements",
       "open_hackathon_section",
+      "update_hackathon_settings",
       "update_hackathon_details",
       "set_hackathon_timeline",
       "add_schedule_item",
@@ -203,6 +220,8 @@ describe("createManageHackathonTools", () => {
     expect(createTools().map((tool) => tool.name)).toEqual([
       "get_hackathon_overview",
       "get_organizer_page_support",
+      "get_hackathon_settings",
+      "inspect_organizer_section",
       "list_hackathon_schedule",
       "list_hackathon_challenges",
       "list_hackathon_prizes",
@@ -211,6 +230,7 @@ describe("createManageHackathonTools", () => {
       "list_hackathon_perks",
       "list_hackathon_announcements",
       "open_hackathon_section",
+      "update_hackathon_settings",
       "update_hackathon_details",
       "add_schedule_item",
       "draft_announcement",
@@ -225,6 +245,8 @@ describe("createManageHackathonTools", () => {
     expect(createTools().map((tool) => tool.name)).toEqual([
       "get_hackathon_overview",
       "get_organizer_page_support",
+      "get_hackathon_settings",
+      "inspect_organizer_section",
       "list_hackathon_schedule",
       "list_hackathon_challenges",
       "list_hackathon_prizes",
@@ -336,6 +358,29 @@ describe("createManageHackathonTools", () => {
     }
   })
 
+  it("uses aggregate data for perk and fulfillment sections", async () => {
+    const tools = createTools()
+
+    const perks = dataOf<{ pageData: { perkCount: number; releasedCount: number } }>(
+      await execute(tools, "inspect_organizer_section", {
+        section: "perks",
+        offset: 0,
+        limit: 20,
+      }),
+    )
+    const fulfillment = dataOf<{ pageData: { eventStatus: string } }>(
+      await execute(tools, "inspect_organizer_section", {
+        section: "fulfillment",
+        offset: 0,
+        limit: 20,
+      }),
+    )
+
+    expect(perks.pageData).toEqual({ perkCount: 1, releasedCount: 0 })
+    expect(fulfillment.pageData.eventStatus).toBe("draft")
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+
   it("opens organizer sections without changing data", async () => {
     const result = dataOf<{ opened: string; url: string }>(
       await execute(createTools(), "open_hackathon_section", {
@@ -365,7 +410,7 @@ describe("createManageHackathonTools", () => {
       title: "Rooms",
       summary: "Review room assignments and automatic room setup.",
       eventStatus: "draft",
-      webMcpTools: ["open_hackathon_section"],
+      webMcpTools: ["inspect_organizer_section", "open_hackathon_section"],
       unavailableWebMcpTools: [],
       cliCommands: [
         "rooms auto-assign-get",
@@ -388,7 +433,11 @@ describe("createManageHackathonTools", () => {
       section: "prizes",
     }))
 
-    expect(result.webMcpTools).toEqual(["list_hackathon_prizes"])
+    expect(result.webMcpTools).toEqual([
+      "list_hackathon_prizes",
+      "inspect_organizer_section",
+      "open_hackathon_section",
+    ])
     expect(result.unavailableWebMcpTools).toEqual(["add_prize"])
   })
 

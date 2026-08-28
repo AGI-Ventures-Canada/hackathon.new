@@ -14,7 +14,9 @@ import { trackEvent } from "@/lib/analytics/posthog"
 import { getSubmissionScreenshotUrls } from "@/lib/utils/submission-screenshots"
 import { isValidUuid } from "@/lib/utils/uuid"
 import { getNotificationDisposition } from "@/lib/utils/notification-lifecycle"
+import { getQueueReason, type QueueReasonCode } from "@/lib/utils/notification-delivery"
 import { isHackathonCreationReady } from "@/lib/utils/hackathon-creation-state"
+import { withEventMutationLease } from "@/lib/services/event-mutation-lease"
 
 type ParticipantWithHackathon = HackathonParticipant & {
   hackathons: Hackathon
@@ -412,6 +414,7 @@ export type ParticipantTeamInfo = {
     expiresAt: string
     createdAt: string
     remindedAt: string | null
+    emailedAt: string | null
     token: string | null
   }[]
   isCaptain: boolean
@@ -449,9 +452,10 @@ export async function getParticipantTeamInfo(
       .order("registered_at", { ascending: true }),
     client
       .from("team_invitations")
-      .select("id, email, expires_at, created_at, reminded_at, token")
+      .select("id, email, expires_at, created_at, reminded_at, emailed_at, token")
       .eq("team_id", participant.team_id)
       .eq("status", "pending")
+      .gt("expires_at", new Date().toISOString())
       .order("created_at", { ascending: false }),
     typedClient
       .from("room_teams")
@@ -505,6 +509,7 @@ export async function getParticipantTeamInfo(
     expiresAt: inv.expires_at,
     createdAt: inv.created_at,
     remindedAt: inv.reminded_at ?? null,
+    emailedAt: inv.emailed_at ?? null,
     token: isCaptain ? inv.token : null,
   }))
 
@@ -536,6 +541,7 @@ export type TeamPendingInvitation = {
   isCaptainInvite: boolean
   createdAt: string
   remindedAt: string | null
+  emailedAt: string | null
 }
 
 export type TeamWithMembers = {
@@ -596,9 +602,10 @@ export async function listTeamsWithMembers(hackathonId: string): Promise<TeamWit
       .in("team_id", teamIds),
     client
       .from("team_invitations")
-      .select("id, team_id, email, is_captain_invite, created_at, reminded_at")
+      .select("id, team_id, email, is_captain_invite, created_at, reminded_at, emailed_at")
       .eq("hackathon_id", hackathonId)
       .eq("status", "pending")
+      .gt("expires_at", new Date().toISOString())
       .in("team_id", teamIds)
       .order("created_at", { ascending: true }),
   ])
@@ -606,7 +613,7 @@ export async function listTeamsWithMembers(hackathonId: string): Promise<TeamWit
   const invitesByTeam: Record<string, TeamPendingInvitation[]> = {}
   const captainInviteIdByTeam: Record<string, string> = {}
   const captainInviteRemindedAtByTeam: Record<string, string | null> = {}
-  for (const inv of (invites ?? []) as Array<{ id: string; team_id: string; email: string; is_captain_invite: boolean; created_at: string; reminded_at: string | null }>) {
+  for (const inv of (invites ?? []) as Array<{ id: string; team_id: string; email: string; is_captain_invite: boolean; created_at: string; reminded_at: string | null; emailed_at: string | null }>) {
     const list = invitesByTeam[inv.team_id] ?? (invitesByTeam[inv.team_id] = [])
     list.push({
       id: inv.id,
@@ -614,6 +621,7 @@ export async function listTeamsWithMembers(hackathonId: string): Promise<TeamWit
       isCaptainInvite: !!inv.is_captain_invite,
       createdAt: inv.created_at,
       remindedAt: inv.reminded_at,
+      emailedAt: inv.emailed_at,
     })
     if (inv.is_captain_invite && !captainInviteIdByTeam[inv.team_id]) {
       captainInviteIdByTeam[inv.team_id] = inv.id
@@ -703,16 +711,16 @@ export async function listTeamsWithMembers(hackathonId: string): Promise<TeamWit
 
 export type CreateTeamResult =
   | { team: { id: string; name: string }; invited?: undefined; queued?: undefined; delivery?: undefined }
-  | { team: { id: string; name: string }; invited: true; queued: boolean; delivery: "sent" | "queued" | "failed" }
-  | { error: string; code?: "hackathon_not_found" | "hackathon_ended" }
+  | { team: { id: string; name: string }; invited: true; queued: boolean; delivery: "sent" | "queued" | "failed"; queueReason?: QueueReasonCode }
+  | { error: string; code?: "hackathon_not_found" | "hackathon_ended" | "status_locked" | "role_conflict" }
 
 export type ReviewTeamResult =
   | { success: true; team: { id: string; name: string; status: TeamStatus }; membersUnassigned?: number; invitesCancelled?: number; membersNotified?: number }
-  | { error: string; code: "not_found" | "not_pending" | "failed" }
+  | { error: string; code: "not_found" | "not_pending" | "status_locked" | "failed" }
 
 type ApprovePendingTeamRpcRow = {
   success: boolean
-  error_code: "not_found" | "not_pending" | null
+  error_code: "not_found" | "not_pending" | "status_locked" | null
   error_message: string | null
   team_id: string | null
   team_name: string | null
@@ -722,7 +730,7 @@ type ApprovePendingTeamRpcRow = {
 
 type DenyPendingTeamRpcRow = {
   success: boolean
-  error_code: "not_found" | "not_pending" | null
+  error_code: "not_found" | "not_pending" | "status_locked" | null
   error_message: string | null
   team_id: string | null
   team_name: string | null
@@ -739,6 +747,12 @@ export type TeamReviewHackathon = {
   status: string | null
 }
 
+const TEAM_MUTATION_LOCKED_STATUSES: ReadonlySet<HackathonStatus> = new Set([
+  "judging",
+  "completed",
+  "archived",
+])
+
 export async function createTeamWithMembers(
   hackathonId: string,
   input: { name: string; captainEmail: string; organizerClerkUserId?: string }
@@ -753,13 +767,17 @@ export async function createTeamWithMembers(
   if (captainClerkUserId) {
     const { data: participant } = await client
       .from("hackathon_participants")
-      .select("id, team_id")
+      .select("id, team_id, role")
       .eq("hackathon_id", hackathonId)
       .eq("clerk_user_id", captainClerkUserId)
       .single()
 
     if (participant?.team_id) {
       return { error: "That user is already on a team" }
+    }
+
+    if (participant && participant.role !== "participant") {
+      return { error: "Only attendees can captain a team", code: "role_conflict" }
     }
 
     if (participant) {
@@ -779,6 +797,9 @@ export async function createTeamWithMembers(
       }) === "reject") {
         return { error: "Hackathon has ended", code: "hackathon_ended" }
       }
+      if (TEAM_MUTATION_LOCKED_STATUSES.has(hackathon.status as HackathonStatus)) {
+        return { error: "Teams are locked because judging has started", code: "status_locked" }
+      }
 
       const { data: team, error } = await client
         .from("teams")
@@ -797,11 +818,27 @@ export async function createTeamWithMembers(
         return { error: "Failed to create team" }
       }
 
-      await client
+      const { data: assignedCaptain, error: assignError } = await client
         .from("hackathon_participants")
         .update({ team_id: team.id })
         .eq("hackathon_id", hackathonId)
         .eq("clerk_user_id", captainClerkUserId)
+        .eq("role", "participant")
+        .is("team_id", null)
+        .select("id")
+        .maybeSingle()
+
+      if (assignError || !assignedCaptain) {
+        const { error: cleanupError } = await client
+          .from("teams")
+          .delete()
+          .eq("id", team.id)
+          .eq("hackathon_id", hackathonId)
+        if (cleanupError) {
+          console.error("Failed to clean up a team after captain assignment lost a race:", cleanupError)
+        }
+        return { error: "That attendee joined another team. Try again." }
+      }
 
       return { team }
     }
@@ -825,7 +862,6 @@ async function createPendingTeamWithInvite(
   if (!hackathon) {
     return { error: "Hackathon not found" }
   }
-
   const disposition = getNotificationDisposition({
     status: hackathon.status as HackathonStatus,
     starts_at: hackathon.starts_at,
@@ -834,8 +870,49 @@ async function createPendingTeamWithInvite(
   if (disposition === "reject") {
     return { error: "Hackathon has ended", code: "hackathon_ended" }
   }
+  if (TEAM_MUTATION_LOCKED_STATUSES.has(hackathon.status as HackathonStatus)) {
+    return { error: "Teams are locked because judging has started", code: "status_locked" }
+  }
 
   let delivery: "sent" | "queued" | "failed" = disposition === "queue" ? "queued" : "sent"
+  const normalizedCaptainEmail = input.captainEmail.trim().toLowerCase()
+  const now = new Date().toISOString()
+  const { error: expireInvitationError } = await client
+    .from("team_invitations")
+    .update({ status: "expired", updated_at: now })
+    .eq("hackathon_id", hackathonId)
+    .eq("email", normalizedCaptainEmail)
+    .eq("status", "pending")
+    .eq("is_captain_invite", true)
+    .lte("expires_at", now)
+  if (expireInvitationError) return { error: "Failed to refresh expired team invites" }
+
+  const { data: existingInvitations, error: existingInvitationError } = await client
+    .from("team_invitations")
+    .select("emailed_at, teams!inner(id, name, status)")
+    .eq("hackathon_id", hackathonId)
+    .eq("email", normalizedCaptainEmail)
+    .eq("status", "pending")
+    .eq("is_captain_invite", true)
+    .limit(1)
+  if (existingInvitationError) return { error: "Failed to check pending teams" }
+  const existingInvitation = existingInvitations?.[0] as {
+    emailed_at: string | null
+    teams: { id: string; name: string; status: string } | Array<{ id: string; name: string; status: string }>
+  } | undefined
+  const existingTeam = existingInvitation
+    ? (Array.isArray(existingInvitation.teams) ? existingInvitation.teams[0] : existingInvitation.teams)
+    : null
+  if (existingTeam && existingTeam.status !== "disbanded") {
+    delivery = existingInvitation?.emailed_at ? "sent" : disposition === "queue" ? "queued" : "failed"
+    return {
+      team: { id: existingTeam.id, name: existingTeam.name },
+      invited: true,
+      queued: delivery === "queued",
+      delivery,
+      queueReason: getQueueReason(delivery),
+    }
+  }
 
   let inviterName = "The organizer"
   let inviterEmail: string | undefined
@@ -857,7 +934,7 @@ async function createPendingTeamWithInvite(
       hackathon_id: hackathonId,
       name: input.name,
       captain_clerk_user_id: null,
-      pending_captain_email: input.captainEmail.toLowerCase(),
+      pending_captain_email: normalizedCaptainEmail,
       invite_code: crypto.randomUUID().slice(0, 8),
       status: DEFAULT_TEAM_STATUS,
     })
@@ -877,7 +954,7 @@ async function createPendingTeamWithInvite(
     .insert({
       team_id: team.id,
       hackathon_id: hackathonId,
-      email: input.captainEmail.toLowerCase(),
+      email: normalizedCaptainEmail,
       token,
       invited_by_clerk_user_id: input.organizerClerkUserId || "system",
       status: "pending",
@@ -890,13 +967,16 @@ async function createPendingTeamWithInvite(
   if (inviteError || !invitation) {
     console.error("Failed to create captain invitation:", inviteError)
     await client.from("teams").delete().eq("id", team.id)
+    if (inviteError?.code === "23505") {
+      return createPendingTeamWithInvite(client, clerk, hackathonId, input)
+    }
     return { error: "Failed to send invitation" }
   }
 
   if (disposition === "send") {
     const { sendTeamInvitationEmail } = await import("@/lib/email/team-invitations")
     const sendResult = await sendTeamInvitationEmail({
-      to: input.captainEmail.toLowerCase(),
+      to: normalizedCaptainEmail,
       teamName: input.name,
       hackathonName: hackathon.name,
       inviterName,
@@ -930,7 +1010,7 @@ async function createPendingTeamWithInvite(
           new Date(),
           new Date(expiresAt),
           {
-            email: input.captainEmail.toLowerCase(),
+            email: normalizedCaptainEmail,
             teamName: input.name,
             hackathonName: hackathon.name,
             inviterName,
@@ -947,7 +1027,13 @@ async function createPendingTeamWithInvite(
     }
   }
 
-  return { team, invited: true, queued: delivery === "queued", delivery }
+  return {
+    team,
+    invited: true,
+    queued: delivery === "queued",
+    delivery,
+    queueReason: getQueueReason(delivery),
+  }
 }
 
 export async function approvePendingTeam(
@@ -1015,7 +1101,7 @@ export async function denyPendingTeam(
 ): Promise<ReviewTeamResult> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { data, error } = await client.rpc("deny_pending_team", {
+  const { data, error } = await client.rpc(options.skipNotifications ? "deny_pending_team_for_closeout" : "deny_pending_team", {
     p_team_id: teamId,
     p_hackathon_id: hackathonId,
   })
@@ -1228,43 +1314,35 @@ export async function modifyTeamMembers(
 ): Promise<boolean> {
   if (!isValidUuid(teamId) || !isValidUuid(hackathonId)) return false
 
+  try {
+    return await withEventMutationLease(hackathonId, () =>
+      modifyTeamMembersUnlocked(teamId, hackathonId, changes),
+    )
+  } catch {
+    return false
+  }
+}
+
+async function modifyTeamMembersUnlocked(
+  teamId: string,
+  hackathonId: string,
+  changes: { add?: string[]; remove?: string[] },
+): Promise<boolean> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { data: team, error: teamError } = await client
-    .from("teams")
-    .select("id")
-    .eq("id", teamId)
-    .eq("hackathon_id", hackathonId)
-    .maybeSingle()
-
-  if (teamError || !team) return false
-
-  if (changes.add && changes.add.length > 0) {
-    for (const clerkUserId of changes.add) {
-      const { data, error } = await client
-        .from("hackathon_participants")
-        .update({ team_id: teamId })
-        .eq("hackathon_id", hackathonId)
-        .eq("clerk_user_id", clerkUserId)
-        .select("id")
-      if (error || !data || data.length === 0) return false
-    }
-  }
-
-  if (changes.remove && changes.remove.length > 0) {
-    for (const clerkUserId of changes.remove) {
-      const { data, error } = await client
-        .from("hackathon_participants")
-        .update({ team_id: null })
-        .eq("hackathon_id", hackathonId)
-        .eq("clerk_user_id", clerkUserId)
-        .eq("team_id", teamId)
-        .select("id")
-      if (error || !data || data.length === 0) return false
-    }
-  }
-
-  return true
+  const add = [...new Set(changes.add ?? [])]
+  const remove = [...new Set(changes.remove ?? [])]
+  const allUserIds = [...new Set([...add, ...remove])]
+  if (allUserIds.length === 0) return true
+  if (allUserIds.length !== 1 || (add.length > 0 && remove.length > 0)) return false
+  const { data, error } = await client.rpc("modify_team_member_atomic", {
+    p_hackathon_id: hackathonId,
+    p_team_id: teamId,
+    p_clerk_user_id: allUserIds[0],
+    p_action: add.length > 0 ? "add" : "remove",
+  })
+  const result = Array.isArray(data) ? data[0] : data
+  return !error && result?.success === true
 }
 
 export async function bulkAssignTeams(
@@ -1320,94 +1398,41 @@ export type DeleteTeamResult =
 export async function deleteTeam(teamId: string, hackathonId: string): Promise<DeleteTeamResult> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { data: team, error: teamErr } = await client
-    .from("teams")
-    .select("id, hackathon_id, hackathons(status)")
-    .eq("id", teamId)
-    .eq("hackathon_id", hackathonId)
-    .single()
-
-  if (teamErr || !team) return { error: "Team not found", code: "not_found" }
-
-  const status = (team as unknown as { hackathons?: { status?: string } | null }).hackathons?.status
-  if (status === "judging" || status === "completed" || status === "archived") {
-    return { error: "Teams can't be deleted once judging has started", code: "status_locked" }
+  const { data, error } = await client.rpc("delete_team_atomic", {
+    p_hackathon_id: hackathonId,
+    p_team_id: teamId,
+  })
+  const result = Array.isArray(data) ? data[0] : data
+  if (error || !result) {
+    console.error("Failed to delete team:", error)
+    return { error: "Failed to delete team", code: "failed" }
   }
-
-  const { count: submissionCount, error: submissionErr } = await client
-    .from("submissions")
-    .select("id", { count: "exact", head: true })
-    .eq("team_id", teamId)
-    .eq("status", "submitted")
-
-  if (submissionErr) {
-    console.error("Failed to check team submissions:", submissionErr)
+  if (!result.success) {
+    if (result.error_code === "not_found") return { error: "Team not found", code: "not_found" }
+    if (result.error_code === "status_locked") {
+      return { error: "Teams can't be deleted once judging has started", code: "status_locked" }
+    }
+    if (result.error_code === "submission_exists") {
+      return { error: "This team has a submission. Delete the submission first.", code: "submission_exists" }
+    }
     return { error: "Failed to delete team", code: "failed" }
   }
 
-  if ((submissionCount ?? 0) > 0) {
-    return { error: "This team has a submission. Delete the submission first.", code: "submission_exists" }
-  }
-
-  const { count: memberCount, error: memberCountErr } = await client
-    .from("hackathon_participants")
-    .select("id", { count: "exact", head: true })
-    .eq("team_id", teamId)
-    .eq("hackathon_id", hackathonId)
-
-  if (memberCountErr) {
-    console.error("Failed to count team members:", memberCountErr)
-    return { error: "Failed to delete team", code: "failed" }
-  }
-
-  const { count: roomCount, error: roomCountErr } = await client
-    .from("room_teams")
-    .select("room_id", { count: "exact", head: true })
-    .eq("team_id", teamId)
-
-  if (roomCountErr) {
-    console.error("Failed to count team rooms:", roomCountErr)
-    return { error: "Failed to delete team", code: "failed" }
-  }
-
-  const { data: cancelledInvites, error: inviteErr } = await client
-    .from("team_invitations")
-    .update({ status: "cancelled", updated_at: new Date().toISOString() })
-    .eq("team_id", teamId)
-    .eq("status", "pending")
-    .select("id")
-
-  if (inviteErr) {
-    console.error("Failed to cancel team invitations:", inviteErr)
-    return { error: "Failed to delete team", code: "failed" }
-  }
-
-  if (cancelledInvites && cancelledInvites.length > 0) {
+  const invitationIds = (result.invitation_ids ?? []) as string[]
+  if (invitationIds.length > 0) {
     const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
-    for (const inv of cancelledInvites as Array<{ id: string }>) {
-      cancelRemindersForEntity("team_invitation", inv.id).catch((err) =>
-        console.error(`Failed to cancel reminders for team_invitation ${inv.id}:`, err)
+    for (const invitationId of invitationIds) {
+      cancelRemindersForEntity("team_invitation", invitationId).catch((err) =>
+        console.error(`Failed to cancel reminders for team_invitation ${invitationId}:`, err)
       )
     }
   }
 
-  // hackathon_participants.team_id → ON DELETE SET NULL; room_teams.team_id → ON DELETE CASCADE
-  const { error: deleteErr } = await client
-    .from("teams")
-    .delete()
-    .eq("id", teamId)
-    .eq("hackathon_id", hackathonId)
-
-  if (deleteErr) {
-    console.error("Failed to delete team:", deleteErr)
-    return { error: "Failed to delete team", code: "failed" }
-  }
-
   return {
     success: true,
-    membersUnassigned: memberCount ?? 0,
-    invitesCancelled: cancelledInvites?.length ?? 0,
-    roomsCleared: roomCount ?? 0,
+    membersUnassigned: Number(result.members_unassigned ?? 0),
+    invitesCancelled: Number(result.invites_cancelled ?? 0),
+    roomsCleared: Number(result.rooms_cleared ?? 0),
   }
 }
 
@@ -1434,8 +1459,6 @@ export type SetTeamCaptainResult =
   | { success: true; team: { id: string; name: string; mode: "in_person" | "virtual" | null } }
   | { error: string; code: "not_found" | "not_member" | "status_locked" | "failed" }
 
-const TEAM_MUTATION_LOCKED_STATUSES = new Set(["judging", "completed", "archived"])
-
 export async function setTeamCaptain(
   teamId: string,
   hackathonId: string,
@@ -1453,7 +1476,7 @@ export async function setTeamCaptain(
   if (teamErr || !team) return { error: "Team not found", code: "not_found" }
 
   const status = (team as unknown as { hackathons?: { status?: string } | null }).hackathons?.status
-  if (status && TEAM_MUTATION_LOCKED_STATUSES.has(status)) {
+  if (status && TEAM_MUTATION_LOCKED_STATUSES.has(status as HackathonStatus)) {
     return { error: "Captain changes are locked once judging has started", code: "status_locked" }
   }
 
@@ -1513,6 +1536,16 @@ export async function setTeamCaptain(
 
   if (updateErr || !updated) {
     console.error("Failed to update team captain:", updateErr)
+    if (cancelledInvites && cancelledInvites.length > 0) {
+      const { error: restoreError } = await client
+        .from("team_invitations")
+        .update({ status: "pending", updated_at: new Date().toISOString() })
+        .in("id", (cancelledInvites as Array<{ id: string }>).map((invite) => invite.id))
+        .eq("status", "cancelled")
+      if (restoreError) {
+        console.error("Failed to restore captain invitations:", restoreError)
+      }
+    }
     return { error: "Failed to change captain", code: "failed" }
   }
 

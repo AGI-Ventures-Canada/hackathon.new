@@ -7,7 +7,7 @@ import {
 describe("getJudgeInvitationMessage", () => {
   it("says when a draft-event invitation is queued", () => {
     expect(getJudgeInvitationMessage("judge@example.com", true)).toBe(
-      "Invite saved for judge@example.com. It'll send when the event goes live.",
+      "Invite saved for judge@example.com. This event is still a draft. We'll send it when you go live.",
     )
   })
 
@@ -30,7 +30,7 @@ describe("getJudgeAddedMessage", () => {
       "Jamie was added as a judge and emailed.",
     )
     expect(getJudgeAddedMessage("Jamie", true)).toBe(
-      "Jamie was added as a judge. Their email will send when the event goes live.",
+      "Jamie was added as a judge. This event is still a draft. We'll send it when you go live.",
     )
     expect(getJudgeAddedMessage("Jamie", false, true)).toBe(
       "Jamie was added as a judge, but we couldn't confirm the email was sent.",

@@ -44,8 +44,14 @@ const getMentorQueuePage = mock(async () => ({
   truncated: false,
 }))
 const getHackathonSubmissions = mock(async () => submissions)
-const getVoteCounts = mock(async () => ({ "submission-1": 4 }))
+const getVoteCounts = mock(async () => [{ submissionId: "submission-1", voteCount: 4 }])
 const getUserVote = mock(async () => "submission-1")
+const listPrizes = mock(async () => [{
+  id: "prize-crowd",
+  name: "Crowd favorite",
+  judging_style: "crowd_vote",
+  type: "crowd",
+}])
 const notFound = mock((): never => {
   throw new Error("NEXT_NOT_FOUND")
 })
@@ -75,6 +81,7 @@ mock.module("@/lib/services/crowd-voting", () => ({
   getVoteCounts,
   getUserVote,
 }))
+mock.module("@/lib/services/prizes", () => ({ listPrizes }))
 
 function capture(name: string) {
   const CapturedComponent = (props: Props) => {
@@ -170,6 +177,7 @@ beforeEach(() => {
     getQueueStats,
     getMentorQueuePage,
     getHackathonSubmissions,
+    listPrizes,
     getVoteCounts,
     getUserVote,
     notFound,
@@ -386,11 +394,23 @@ describe("public role page boundaries", () => {
       isSignedIn: true,
       userVote: "submission-1",
     })
-    expect(getUserVote).toHaveBeenCalledWith(eventId, "user-attendee")
+    expect(getUserVote).toHaveBeenCalledWith(eventId, "prize-crowd", "user-attendee")
 
     submissions = []
     cleanup()
     render(await votePage.default({ params }))
     expect(screen.getByText("No submissions yet")).toBeDefined()
+  })
+
+  it("does not load unpublished vote totals after voting closes", async () => {
+    hackathon.status = "completed"
+    hackathon.results_published_at = null
+
+    render(await votePage.default({ params }))
+
+    expect(screen.getByText("Voting is closed")).toBeDefined()
+    expect(getHackathonSubmissions).not.toHaveBeenCalled()
+    expect(getVoteCounts).not.toHaveBeenCalled()
+    expect(getUserVote).not.toHaveBeenCalled()
   })
 })

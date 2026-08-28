@@ -503,10 +503,21 @@ describe("Team Invitations Service", () => {
 
     it("expires an old pending invitation before creating a replacement", async () => {
       let invitationCalls = 0
+      let teamCalls = 0
       let expiredUpdate: Record<string, unknown> | null = null
+      let teamUpdate: Record<string, unknown> | null = null
       setMockFromImplementation((table) => {
         if (table === "teams") {
-          return createChainableMock({ data: mockTeam, error: null })
+          teamCalls++
+          const chain = createChainableMock({ data: teamCalls === 1 ? mockTeam : null, error: null })
+          if (teamCalls > 1) {
+            const originalUpdate = chain.update
+            chain.update = mock((value: Record<string, unknown>) => {
+              teamUpdate = value
+              return originalUpdate(value)
+            }) as typeof chain.update
+          }
+          return chain
         }
         if (table === "hackathons") {
           return createChainableMock({ data: mockHackathon, error: null })
@@ -529,7 +540,14 @@ describe("Team Invitations Service", () => {
             })
           }
           if (invitationCalls === 3) {
-            const chain = createChainableMock({ data: null, error: null })
+            const chain = createChainableMock({
+              data: {
+                team_id: "team_1",
+                email: "invitee@example.com",
+                is_captain_invite: true,
+              },
+              error: null,
+            })
             const originalUpdate = chain.update
             chain.update = mock((value: Record<string, unknown>) => {
               expiredUpdate = value
@@ -551,6 +569,7 @@ describe("Team Invitations Service", () => {
 
       expect(result.success).toBe(true)
       expect(expiredUpdate).toEqual(expect.objectContaining({ status: "expired" }))
+      expect(teamUpdate).toEqual(expect.objectContaining({ pending_captain_email: null }))
     })
 
     it("fails closed when pending invitations cannot be checked", async () => {
@@ -620,7 +639,7 @@ describe("Team Invitations Service", () => {
       expect(capturedEmail).toBe("test@example.com")
     })
 
-    it("returns role_conflict when invitee is a judge", async () => {
+    it("returns a private role-unavailable error when invitee is a judge", async () => {
       const { mockClerkClient } = await import("../lib/supabase-mock")
       mockClerkClient.mockResolvedValueOnce({
         organizations: {
@@ -664,7 +683,8 @@ describe("Team Invitations Service", () => {
 
       expect(result.success).toBe(false)
       if (!result.success) {
-        expect(result.code).toBe("role_conflict")
+        expect(result.code).toBe("role_unavailable")
+        expect(result.error).not.toContain("judge")
       }
     })
   })
@@ -1585,26 +1605,62 @@ describe("Team Invitations Service", () => {
       })
     })
 
-    it("does not send when a stale event row has effectively ended", async () => {
+    it("cancels an unsent captain invite and clears its stale team marker after the event ends", async () => {
       const pending = [
-        { ...mockInvitation, id: "inv_1", email: "a@example.com", token: "t1", team_id: "team_1" },
+        {
+          ...mockInvitation,
+          id: "inv_1",
+          email: "a@example.com",
+          token: "t1",
+          team_id: "team_1",
+          is_captain_invite: true,
+        },
       ]
+      let invitationCalls = 0
+      let teamCalls = 0
+      let cancelledUpdate: Record<string, unknown> | null = null
+      let teamUpdate: Record<string, unknown> | null = null
       setMockFromImplementation((table) => {
         if (table === "team_invitations") {
-          return createChainableMock({ data: pending, error: null })
+          invitationCalls++
+          const data = invitationCalls === 1
+            ? pending
+            : invitationCalls === 2
+              ? pending[0]
+              : {
+                  team_id: "team_1",
+                  email: "a@example.com",
+                  is_captain_invite: true,
+                }
+          const chain = createChainableMock({ data, error: null })
+          if (invitationCalls === 3) {
+            const originalUpdate = chain.update
+            chain.update = mock((value: Record<string, unknown>) => {
+              cancelledUpdate = value
+              return originalUpdate(value)
+            }) as typeof chain.update
+          }
+          return chain
         }
         if (table === "teams") {
-          return createChainableMock({
-            data: {
+          teamCalls++
+          if (teamCalls === 1) {
+            return createChainableMock({ data: {
               ...teamRow,
               hackathons: {
                 ...teamRow.hackathons,
                 starts_at: "2026-01-01T00:00:00.000Z",
                 ends_at: "2026-01-02T00:00:00.000Z",
               },
-            },
-            error: null,
-          })
+            }, error: null })
+          }
+          const chain = createChainableMock({ data: null, error: null })
+          const originalUpdate = chain.update
+          chain.update = mock((value: Record<string, unknown>) => {
+            teamUpdate = value
+            return originalUpdate(value)
+          }) as typeof chain.update
+          return chain
         }
         return createChainableMock({ data: null, error: null })
       })
@@ -1614,6 +1670,8 @@ describe("Team Invitations Service", () => {
         total: 1,
         failedEmails: [],
       })
+      expect(cancelledUpdate).toEqual(expect.objectContaining({ status: "cancelled" }))
+      expect(teamUpdate).toEqual(expect.objectContaining({ pending_captain_email: null }))
       expect(mockSendTeamInvitationEmail).not.toHaveBeenCalled()
     })
 

@@ -25,6 +25,7 @@ import { listSocialSubmissions, reviewSocialSubmission } from "@/lib/services/so
 import { getQueueStats } from "@/lib/services/mentor-requests"
 import {
   listChallenges,
+  getChallengeById,
   createChallenge,
   updateChallenge,
   deleteChallenge,
@@ -580,12 +581,20 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     const authErr = await checkOrganizer(params.id, principal.tenantId, set)
     if ("error" in authErr) return authErr
     const b = body as { name: string; captainEmail: string }
+    const actorId = principal.kind === "user" ? principal.userId : principal.keyId
+    const createLimit = await checkRateLimit(
+      `team_create:${params.id}:${actorId}`,
+      { maxRequests: 30, windowMs: 60 * 60_000 },
+      { failureMode: "closed" },
+    )
+    if (!createLimit.allowed) throw new RateLimitError(createLimit.resetAt, createLimit.remaining)
     const result = await createTeamWithMembers(params.id, {
       ...b,
       organizerClerkUserId: principal.kind === "user" ? principal.userId : undefined,
     })
     if ("error" in result) {
-      set.status = result.code === "hackathon_not_found" ? 404 : result.code === "hackathon_ended" ? 409 : 400
+      set.status = result.code === "hackathon_not_found" ? 404 :
+        result.code === "hackathon_ended" || result.code === "status_locked" ? 409 : 400
       return { error: result.error, ...(result.code ? { code: result.code } : {}) }
     }
     await logAudit({
@@ -596,7 +605,12 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       metadata: {
         hackathonId: params.id,
         name: b.name,
-        ...(result.invited ? { captainEmail: b.captainEmail, queued: result.queued, delivery: result.delivery } : {}),
+        ...(result.invited ? {
+          captainEmail: b.captainEmail,
+          queued: result.queued,
+          delivery: result.delivery,
+          queueReason: result.queueReason,
+        } : {}),
       },
     })
     return result
@@ -908,7 +922,8 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     const { replaceTeamCaptainInvitation } = await import("@/lib/services/team-invitations")
     const result = await replaceTeamCaptainInvitation(params.teamId, params.id, email.trim(), actorClerkUserId)
     if (!result.success) {
-      set.status = result.code === "team_not_found" ? 404 : result.code === "captain_set" ? 409 : 400
+      set.status = result.code === "team_not_found" ? 404 :
+        result.code === "captain_set" || result.code === "status_locked" ? 409 : 400
       return { error: result.error, code: result.code }
     }
 
@@ -917,10 +932,22 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       action: "team_invitation.replaced",
       resourceType: "team",
       resourceId: params.teamId,
-      metadata: { hackathonId: params.id, email: email.trim().toLowerCase(), queued: result.queued, delivery: result.delivery },
+      metadata: {
+        hackathonId: params.id,
+        email: email.trim().toLowerCase(),
+        queued: result.queued,
+        delivery: result.delivery,
+        queueReason: result.queueReason,
+      },
     })
 
-    return { success: true, invitationId: result.invitationId, queued: result.queued, delivery: result.delivery }
+    return {
+      success: true,
+      invitationId: result.invitationId,
+      queued: result.queued,
+      delivery: result.delivery,
+      queueReason: result.queueReason,
+    }
   }, {
     body: t.Object({ email: t.String({ format: "email" }) }),
     detail: { summary: "Replace the pending captain invitation email" },
@@ -938,7 +965,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     if ("error" in result) {
       set.status =
         result.code === "not_found" ? 404 :
-        result.code === "not_pending" ? 409 : 500
+        result.code === "not_pending" || result.code === "status_locked" ? 409 : 500
       return { error: result.error, code: result.code }
     }
 
@@ -967,7 +994,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
     if ("error" in result) {
       set.status =
         result.code === "not_found" ? 404 :
-        result.code === "not_pending" ? 409 : 500
+        result.code === "not_pending" || result.code === "status_locked" ? 409 : 500
       return { error: result.error, code: result.code }
     }
 
@@ -1045,6 +1072,10 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       set.status = 400
       return { error: "No changes to update" }
     }
+    if (b.teamId !== undefined && b.role !== undefined) {
+      set.status = 400
+      return { error: "Change the role and team separately" }
+    }
 
     const { assignParticipantToTeam, updateParticipantRole } = await import("@/lib/services/hackathon-participants-admin")
     let teamResult: Awaited<ReturnType<typeof assignParticipantToTeam>> | null = null
@@ -1056,7 +1087,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
         set.status =
           roleResult.code === "not_found" ? 404 :
           roleResult.code === "invalid_role" ? 400 :
-          roleResult.code === "status_locked" ? 409 : 500
+          roleResult.code === "status_locked" || roleResult.code === "project_role_conflict" ? 409 : 500
         return { error: roleResult.error }
       }
       await logAudit({
@@ -1274,7 +1305,16 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
         const b = body as { title: string; description?: string | null; resources?: { label: string; url: string }[] }
         const resources = validateChallengeResources(b.resources)
         if (!resources.ok) { set.status = 400; return { error: "Resource links must use safe HTTPS URLs" } }
-        const created = await createChallenge(params.id, principal.tenantId, { ...b, resources: resources.resources })
+        const idempotencyKey = getWebMcpIdempotencyKey(request)
+        if (idempotencyKey) {
+          const existing = await getChallengeById(idempotencyKey)
+          if (existing?.hackathonId === params.id) return { challenge: existing }
+        }
+        const created = await createChallenge(params.id, principal.tenantId, {
+          ...b,
+          id: idempotencyKey ?? undefined,
+          resources: resources.resources,
+        })
         if (!created) { set.status = 400; return { error: "Failed to create challenge" } }
         await logAudit({ principal, action: "challenge.created", resourceType: "challenge", resourceId: created.id, metadata: { hackathonId: params.id, title: b.title } })
 
@@ -1567,7 +1607,16 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
           set.status = webMcpError.status
           return { error: webMcpError.error, code: webMcpError.code }
         }
-        const announcement = await createAnnouncement(params.id, body as CreateAnnouncementInput)
+        const idempotencyKey = getWebMcpIdempotencyKey(request)
+        if (idempotencyKey) {
+          const { getAnnouncementById } = await import("@/lib/services/announcements")
+          const existing = await getAnnouncementById(idempotencyKey, params.id)
+          if (existing) return existing
+        }
+        const announcement = await createAnnouncement(params.id, {
+          ...(body as CreateAnnouncementInput),
+          id: idempotencyKey ?? undefined,
+        })
         if (!announcement) { set.status = 400; return { error: "Failed to create announcement" } }
         await logAudit({ principal, action: "announcement.created", resourceType: "announcement", resourceId: announcement.id, metadata: { hackathonId: params.id, title: (body as CreateAnnouncementInput).title } })
         return announcement

@@ -223,8 +223,8 @@ const mockHackathonResponse = {
   rules: null,
   banner_url: null,
   status: "published",
-  starts_at: null,
-  ends_at: null,
+  starts_at: "2099-09-10T12:00:00.000Z",
+  ends_at: "2099-09-11T12:00:00.000Z",
   registration_opens_at: null,
   registration_closes_at: null,
   anonymous_judging: false,
@@ -287,7 +287,7 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - status change emails", 
     expect(mockExecuteTransition).toHaveBeenCalledWith(
       expect.objectContaining({
         registrationOpensAt: expect.any(String),
-        registrationClosesAt: undefined,
+        registrationClosesAt: expect.any(String),
       }),
     )
     expect(mockSendPendingJudgeInvitationEmails).toHaveBeenCalledTimes(1)
@@ -295,10 +295,34 @@ describe("PATCH /api/dashboard/hackathons/:id/settings - status change emails", 
       "h1",
       "Test Hackathon",
       "Jane Doe",
-      { hackathonSlug: "test-hackathon", hackathonStartsAt: null, hackathonEndsAt: null }
+      {
+        hackathonSlug: "test-hackathon",
+        hackathonStartsAt: "2099-09-10T12:00:00.000Z",
+        hackathonEndsAt: "2099-09-11T12:00:00.000Z",
+      }
     )
     expect(mockSendPendingTeamInvitationEmails).toHaveBeenCalledTimes(1)
     expect(mockSendPendingTeamInvitationEmails).toHaveBeenCalledWith("h1")
+  })
+
+  it("does not publish a draft event whose dates have ended", async () => {
+    mockCheckHackathonOrganizer.mockResolvedValue({
+      status: "ok",
+      hackathon: {
+        ...mockHackathonResponse,
+        status: "draft",
+        starts_at: "2026-06-20T12:00:00.000Z",
+        ends_at: "2026-06-21T12:00:00.000Z",
+      },
+    })
+
+    const res = await patchSettings({ status: "published" })
+
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ code: "event_dates_invalid" })
+    expect(mockExecuteTransition).not.toHaveBeenCalled()
+    expect(mockSendPendingTeamInvitationEmails).not.toHaveBeenCalled()
+    expect(mockSendPendingJudgeInvitationEmails).not.toHaveBeenCalled()
   })
 
   it("keeps organizer-set registration dates when publishing", async () => {

@@ -46,16 +46,16 @@ export async function createRound(
 ): Promise<JudgingRound | null> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { data, error } = await client
-    .from("judging_rounds")
-    .insert({
-      hackathon_id: hackathonId,
+  const { data, error } = await client.rpc("create_judging_round_atomic", {
+    p_hackathon_id: hackathonId,
+    p_values: {
       name: input.name,
       round_type: input.roundType,
-      display_order: input.displayOrder ?? 0,
-    })
-    .select()
-    .single()
+      ...(input.displayOrder !== undefined
+        ? { display_order: input.displayOrder }
+        : {}),
+    },
+  })
 
   if (error) {
     console.error("Failed to create judging round:", error)
@@ -79,13 +79,11 @@ export async function updateRound(
 
   if (Object.keys(updates).length === 0) return null
 
-  const { data, error } = await client
-    .from("judging_rounds")
-    .update(updates)
-    .eq("id", roundId)
-    .eq("hackathon_id", hackathonId)
-    .select()
-    .single()
+  const { data, error } = await client.rpc("update_judging_round_atomic", {
+    p_hackathon_id: hackathonId,
+    p_round_id: roundId,
+    p_updates: updates,
+  })
 
   if (error) {
     console.error("Failed to update judging round:", error)
@@ -98,13 +96,12 @@ export async function updateRound(
 export async function deleteRound(roundId: string, hackathonId: string): Promise<boolean> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { error } = await client
-    .from("judging_rounds")
-    .delete()
-    .eq("id", roundId)
-    .eq("hackathon_id", hackathonId)
+  const { data, error } = await client.rpc("delete_judging_round_atomic", {
+    p_hackathon_id: hackathonId,
+    p_round_id: roundId,
+  })
 
-  if (error) {
+  if (error || data !== "deleted") {
     console.error("Failed to delete judging round:", error)
     return false
   }
@@ -115,27 +112,13 @@ export async function deleteRound(roundId: string, hackathonId: string): Promise
 export async function activateRound(roundId: string, hackathonId: string): Promise<boolean> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { error: deactivateErr } = await client
-    .from("judging_rounds")
-    .update({ is_active: false })
-    .eq("hackathon_id", hackathonId)
-    .neq("id", roundId)
+  const { data, error } = await client.rpc("activate_judging_round_atomic", {
+    p_hackathon_id: hackathonId,
+    p_round_id: roundId,
+  })
 
-  if (deactivateErr) {
-    console.error("Failed to deactivate rounds:", deactivateErr)
-    return false
-  }
-
-  const { data, error: activateErr } = await client
-    .from("judging_rounds")
-    .update({ is_active: true })
-    .eq("id", roundId)
-    .eq("hackathon_id", hackathonId)
-    .select("id")
-    .single()
-
-  if (activateErr || !data) {
-    console.error("Failed to activate round:", activateErr)
+  if (error || data !== true) {
+    console.error("Failed to activate round:", error)
     return false
   }
 

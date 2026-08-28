@@ -183,6 +183,7 @@ type ProviderProps = {
   slug: string;
   name: string;
   status: HackathonStatus;
+  storedStatus: HackathonStatus;
   phase: HackathonPhase | null;
   challengeExists: boolean;
   challengeReleasedAt: string | null;
@@ -193,6 +194,7 @@ type ProviderProps = {
   scheduleItems: ScheduleItem[];
   startsAt: string | null;
   endsAt: string | null;
+  registrationOpensAt: string | null;
   registrationClosesAt: string | null;
   allowLateRegistration: boolean;
   description: string | null;
@@ -213,6 +215,7 @@ export function ActionItemsProvider({
   slug,
   name: serverName,
   status: serverStatus,
+  storedStatus: serverStoredStatus,
   phase: serverPhase,
   challengeExists,
   challengeReleasedAt,
@@ -223,6 +226,7 @@ export function ActionItemsProvider({
   scheduleItems: serverScheduleItems,
   startsAt: serverStartsAt,
   endsAt: serverEndsAt,
+  registrationOpensAt: serverRegistrationOpensAt,
   registrationClosesAt: serverRegistrationClosesAt,
   allowLateRegistration: serverAllowLateRegistration,
   description,
@@ -413,6 +417,9 @@ export function ActionItemsProvider({
     ? getOrganizerActionItems({
         ...pollData,
         status: effectiveStatus,
+        storedStatus: pollData.storedStatus ?? serverStoredStatus,
+        registrationOpensAt:
+          pollData.registrationOpensAt ?? serverRegistrationOpensAt,
         registrationClosesAt: liveRegistrationClosesAt,
         allowLateRegistration: liveAllowLateRegistration,
         judgingSetupReady: !serverActionItems.some((item) => item.id === "finish-scoring-setup"),

@@ -3,6 +3,7 @@ import {
   createChainableMock,
   resetSupabaseMocks,
   setMockFromImplementation,
+  setMockRpcImplementation,
 } from "../lib/supabase-mock"
 
 const {
@@ -46,9 +47,13 @@ const TEAM_UUID = "22222222-2222-2222-2222-222222222222"
 const TEAM_UUID_2 = "33333333-3333-3333-3333-333333333333"
 
 describe("assignParticipantToTeam", () => {
-  beforeEach(() => resetSupabaseMocks())
+  beforeEach(() => {
+    resetSupabaseMocks()
+    setMockRpcImplementation(() => Promise.resolve({ data: [{ success: true, error_code: null, capacity_handed_off: false, cancelled_invitation_ids: [] }], error: null }))
+  })
 
   it("rejects when status is judging", async () => {
+    setMockRpcImplementation(() => Promise.resolve({ data: [{ success: false, error_code: "status_locked", capacity_handed_off: false, cancelled_invitation_ids: [] }], error: null }))
     setMockFromImplementation(tableImpl({
       hackathon_participants: { data: participantRow({ hackathonStatus: "judging" }), error: null },
     }))
@@ -58,6 +63,7 @@ describe("assignParticipantToTeam", () => {
   })
 
   it("returns not_found when the participant doesn't exist", async () => {
+    setMockRpcImplementation(() => Promise.resolve({ data: [{ success: false, error_code: "not_found", capacity_handed_off: false, cancelled_invitation_ids: [] }], error: null }))
     setMockFromImplementation(tableImpl({
       hackathon_participants: { data: null, error: null },
     }))
@@ -66,6 +72,7 @@ describe("assignParticipantToTeam", () => {
   })
 
   it("rejects assigning a non-participant role to a team", async () => {
+    setMockRpcImplementation(() => Promise.resolve({ data: [{ success: false, error_code: "not_participant", capacity_handed_off: false, cancelled_invitation_ids: [] }], error: null }))
     setMockFromImplementation(tableImpl({
       hackathon_participants: { data: participantRow({ role: "judge" }), error: null },
     }))
@@ -75,6 +82,7 @@ describe("assignParticipantToTeam", () => {
   })
 
   it("returns team_not_found when the target team doesn't exist", async () => {
+    setMockRpcImplementation(() => Promise.resolve({ data: [{ success: false, error_code: "team_not_found", capacity_handed_off: false, cancelled_invitation_ids: [] }], error: null }))
     setMockFromImplementation(tableImpl({
       hackathon_participants: { data: participantRow(), error: null },
       teams: { data: null, error: null },
@@ -85,6 +93,7 @@ describe("assignParticipantToTeam", () => {
   })
 
   it("returns team_full when capacity is reached", async () => {
+    setMockRpcImplementation(() => Promise.resolve({ data: [{ success: false, error_code: "team_full", capacity_handed_off: false, cancelled_invitation_ids: [] }], error: null }))
     setMockFromImplementation(tableImpl({
       hackathons: { data: { max_team_size: 5 }, error: null },
       hackathon_participants: [
@@ -113,6 +122,7 @@ describe("assignParticipantToTeam", () => {
   })
 
   it("hands off captaincy when moving the captain off a team", async () => {
+    setMockRpcImplementation(() => Promise.resolve({ data: [{ success: true, error_code: null, capacity_handed_off: true, cancelled_invitation_ids: [] }], error: null }))
     setMockFromImplementation(tableImpl({
       hackathons: { data: { max_team_size: 5 }, error: null },
       hackathon_participants: [
@@ -157,39 +167,33 @@ describe("updateParticipantRole", () => {
         { data: null, error: null },
       ],
     }))
+    setMockRpcImplementation(() => Promise.resolve({
+      data: [{ success: true, error_code: null, capacity_handed_off: false, cancelled_invitation_ids: [] }],
+      error: null,
+    }))
 
     const result = await updateParticipantRole(VALID_UUID, VALID_UUID, "judge")
 
     expect(result).toEqual({ success: true, role: "judge", capacityHandedOff: false })
   })
 
-  it("clears the team link when an attendee becomes a judge", async () => {
-    let participantCalls = 0
-    let updatePayload: Record<string, unknown> | null = null
-    setMockFromImplementation((table) => {
-      if (table === "hackathon_participants") {
-        participantCalls++
-        const chain = createChainableMock(
-          participantCalls === 1
-            ? { data: participantRow({ team_id: "team_1" }), error: null }
-            : { data: null, error: null }
-        )
-        chain.update.mockImplementation((payload: Record<string, unknown>) => {
-          updatePayload = payload
-          return chain
-        })
-        return chain
-      }
-      if (table === "teams") {
-        return createChainableMock({ data: { captain_clerk_user_id: "user_2" }, error: null })
-      }
-      return createChainableMock({ data: null, error: null })
+  it("uses the atomic promotion when an attendee becomes a judge", async () => {
+    setMockFromImplementation(tableImpl({
+      hackathon_participants: { data: participantRow({ team_id: "team_1" }), error: null },
+    }))
+    let rpcArgs: Record<string, unknown> | undefined
+    setMockRpcImplementation((_name, args) => {
+      rpcArgs = args
+      return Promise.resolve({
+        data: [{ success: true, error_code: null, capacity_handed_off: false, cancelled_invitation_ids: [] }],
+        error: null,
+      })
     })
 
     const result = await updateParticipantRole(VALID_UUID, VALID_UUID, "judge")
 
     expect(result.success).toBe(true)
-    expect(updatePayload).toEqual({ role: "judge", team_id: null })
+    expect(rpcArgs).toEqual({ p_hackathon_id: VALID_UUID, p_participant_id: VALID_UUID })
   })
 
   it("keeps judge promotion locked after judging ends", async () => {
@@ -212,20 +216,29 @@ describe("updateParticipantRole", () => {
   })
 
   it("hands off captain when participant leaves the participant role", async () => {
-    setMockFromImplementation(tableImpl({
-      hackathon_participants: [
-        { data: participantRow({ team_id: "team_1" }), error: null },
-        { data: [{ clerk_user_id: "user_2" }], error: null },
-        { data: null, error: null },
-      ],
-      teams: [
-        { data: { captain_clerk_user_id: "user_1" }, error: null },
-        { data: null, error: null },
-      ],
+    setMockFromImplementation(tableImpl({ hackathon_participants: { data: participantRow({ team_id: "team_1" }), error: null } }))
+    setMockRpcImplementation(() => Promise.resolve({
+      data: [{ success: true, error_code: null, capacity_handed_off: true, cancelled_invitation_ids: [] }],
+      error: null,
     }))
     const result = await updateParticipantRole(VALID_UUID, VALID_UUID, "judge")
     expect(result.success).toBe(true)
     if (result.success) expect(result.capacityHandedOff).toBe(true)
+  })
+
+  it("blocks an attendee with a project from becoming a judge", async () => {
+    setMockFromImplementation(tableImpl({ hackathon_participants: { data: participantRow(), error: null } }))
+    setMockRpcImplementation(() => Promise.resolve({
+      data: [{ success: false, error_code: "project_role_conflict", capacity_handed_off: false, cancelled_invitation_ids: [] }],
+      error: null,
+    }))
+
+    const result = await updateParticipantRole(VALID_UUID, VALID_UUID, "judge")
+
+    expect(result).toEqual({
+      error: "This person is on a team with a project. Remove the project before making them a judge.",
+      code: "project_role_conflict",
+    })
   })
 
   it("clears judge assignments when demoting a judge to participant", async () => {
@@ -237,6 +250,7 @@ describe("updateParticipantRole", () => {
       judge_assignments: { data: null, error: null },
       judge_room_assignments: { data: null, error: null },
     }))
+    setMockRpcImplementation(() => Promise.resolve({ data: true, error: null }))
     const result = await updateParticipantRole(VALID_UUID, VALID_UUID, "participant")
     expect(result.success).toBe(true)
     if (result.success) expect(result.role).toBe("participant")
@@ -244,9 +258,13 @@ describe("updateParticipantRole", () => {
 })
 
 describe("removeParticipantFromEvent", () => {
-  beforeEach(() => resetSupabaseMocks())
+  beforeEach(() => {
+    resetSupabaseMocks()
+    setMockRpcImplementation(() => Promise.resolve({ data: [{ success: true, error_code: null, capacity_handed_off: false, cancelled_invitation_ids: [] }], error: null }))
+  })
 
   it("rejects when status is judging", async () => {
+    setMockRpcImplementation(() => Promise.resolve({ data: [{ success: false, error_code: "status_locked", capacity_handed_off: false, cancelled_invitation_ids: [] }], error: null }))
     setMockFromImplementation(tableImpl({
       hackathon_participants: { data: participantRow({ hackathonStatus: "judging" }), error: null },
     }))
@@ -256,6 +274,7 @@ describe("removeParticipantFromEvent", () => {
   })
 
   it("rejects when status is completed", async () => {
+    setMockRpcImplementation(() => Promise.resolve({ data: [{ success: false, error_code: "status_locked", capacity_handed_off: false, cancelled_invitation_ids: [] }], error: null }))
     setMockFromImplementation(tableImpl({
       hackathon_participants: { data: participantRow({ hackathonStatus: "completed" }), error: null },
     }))
@@ -265,6 +284,7 @@ describe("removeParticipantFromEvent", () => {
   })
 
   it("returns not_found when participant doesn't exist", async () => {
+    setMockRpcImplementation(() => Promise.resolve({ data: [{ success: false, error_code: "not_found", capacity_handed_off: false, cancelled_invitation_ids: [] }], error: null }))
     setMockFromImplementation(tableImpl({
       hackathon_participants: { data: null, error: null },
     }))
@@ -274,6 +294,7 @@ describe("removeParticipantFromEvent", () => {
   })
 
   it("deletes the participant and hands off captain when removed", async () => {
+    setMockRpcImplementation(() => Promise.resolve({ data: [{ success: true, error_code: null, capacity_handed_off: true, cancelled_invitation_ids: [] }], error: null }))
     setMockFromImplementation(tableImpl({
       hackathon_participants: [
         { data: participantRow({ team_id: "team_1" }), error: null },

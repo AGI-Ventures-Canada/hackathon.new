@@ -5,6 +5,7 @@ import { getHackathonSubmissions } from "@/lib/services/submissions"
 import { getVoteCounts, getUserVote } from "@/lib/services/crowd-voting"
 import { VoteGallery } from "@/components/hackathon/voting/vote-gallery"
 import { publicSubmitterName } from "@/lib/utils/anonymous-judging"
+import { listPrizes } from "@/lib/services/prizes"
 
 type PageProps = {
   params: Promise<{ slug: string }>
@@ -20,11 +21,26 @@ export default async function VotePage({ params }: PageProps) {
 
   const { userId } = await auth()
 
-  const [submissions, voteCounts, userVote] = await Promise.all([
+  const votingIsOpen = hackathon.status === "active" || hackathon.status === "judging"
+  if (!votingIsOpen && !hackathon.results_published_at) {
+    return (
+      <div className="mx-auto max-w-4xl px-4 py-16 text-center">
+        <h1 className="text-2xl font-bold mb-2">Voting is closed</h1>
+        <p className="text-muted-foreground">Results will show here when the organizer shares them.</p>
+      </div>
+    )
+  }
+
+  const [submissions, prizes] = await Promise.all([
     getHackathonSubmissions(hackathon.id),
-    getVoteCounts(hackathon.id),
-    userId ? getUserVote(hackathon.id, userId) : Promise.resolve(null),
+    listPrizes(hackathon.id),
   ])
+  const crowdPrizes = prizes.filter((prize) => prize.judging_style === "crowd_vote" || prize.type === "crowd")
+  const voting = await Promise.all(crowdPrizes.map(async (prize) => ({
+    prize,
+    voteCounts: await getVoteCounts(hackathon.id, prize.id),
+    userVote: userId ? await getUserVote(hackathon.id, prize.id, userId) : null,
+  })))
 
   const submittedProjects = submissions.filter((s) => s.status === "submitted")
 
@@ -39,6 +55,15 @@ export default async function VotePage({ params }: PageProps) {
     )
   }
 
+  if (voting.length === 0) {
+    return (
+      <div className="mx-auto max-w-4xl px-4 py-16 text-center">
+        <h1 className="text-2xl font-bold mb-2">Voting isn’t open</h1>
+        <p className="text-muted-foreground">The organizer hasn’t added a crowd prize yet.</p>
+      </div>
+    )
+  }
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 space-y-6">
       <div className="text-center space-y-2">
@@ -48,22 +73,33 @@ export default async function VotePage({ params }: PageProps) {
         </p>
       </div>
 
-      <VoteGallery
-        hackathonSlug={slug}
-        submissions={submittedProjects.map((s) => ({
-          id: s.id,
-          title: s.title,
-          description: s.description,
-          screenshotUrl: s.screenshot_url,
-          submitterName: publicSubmitterName(hackathon, s.submitter_name),
-          liveAppUrl: s.live_app_url,
-          githubUrl: s.github_url,
-          demoVideoUrl: s.demo_video_url,
-        }))}
-        voteCounts={voteCounts}
-        userVote={userVote}
-        isSignedIn={!!userId}
-      />
+      {voting.map(({ prize, voteCounts, userVote }) => (
+        <section key={prize.id} className="space-y-4">
+          {voting.length > 1 && <h2 className="text-xl font-semibold">{prize.name}</h2>}
+          <VoteGallery
+            hackathonSlug={slug}
+            prizeId={prize.id}
+            submissions={submittedProjects
+              .filter((submission) =>
+                !prize.allowed_team_modes?.length ||
+                (submission.team_mode !== null && prize.allowed_team_modes.includes(submission.team_mode)),
+              )
+              .map((s) => ({
+              id: s.id,
+              title: s.title,
+              description: s.description,
+              screenshotUrl: s.screenshot_url,
+              submitterName: publicSubmitterName(hackathon, s.submitter_name),
+              liveAppUrl: s.live_app_url,
+              githubUrl: s.github_url,
+              demoVideoUrl: s.demo_video_url,
+              }))}
+            voteCounts={voteCounts}
+            userVote={userVote}
+            isSignedIn={!!userId}
+          />
+        </section>
+      ))}
     </div>
   )
 }

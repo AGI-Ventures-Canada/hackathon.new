@@ -222,6 +222,10 @@ The reference implementation's `email_log` and email-preference tables were revi
 | `RESEND_RECEIVING_DOMAIN` | Domain for inbound email addresses |
 | `CLERK_WEBHOOK_SIGNING_SECRET` | Verifies Clerk `email.created` webhooks |
 
+Deliverability references:
+- Resend guidance on reply-friendly senders: https://resend.com/docs/dashboard/emails/deliverability-insights
+- Resend guidance on sending subdomains: https://resend.com/docs/knowledge-base/is-it-better-to-send-emails-from-a-subdomain-or-the-root-domain
+
 ## Email-Triggered Agent Example
 
 1. Create inbound email address:

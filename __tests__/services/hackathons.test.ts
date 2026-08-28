@@ -1129,26 +1129,32 @@ describe("Hackathons Service", () => {
     const teamId = "22222222-2222-2222-2222-222222222222"
 
     it("updates members only after verifying the team belongs to the hackathon", async () => {
-      setMockFromImplementation((table) => {
-        if (table === "teams") return createChainableMock({ data: { id: "team_1" }, error: null })
-        if (table === "hackathon_participants") return createChainableMock({ data: [{ id: "participant_1" }], error: null })
-        return createChainableMock({ data: null, error: null })
+      setMockRpcImplementation((fn, params) => {
+        expect(fn).toBe("modify_team_member_atomic")
+        expect(params).toMatchObject({
+          p_hackathon_id: hackathonId,
+          p_team_id: teamId,
+          p_clerk_user_id: "user_1",
+          p_action: "add",
+        })
+        return Promise.resolve({ data: [{ success: true, error_code: null }], error: null })
       })
 
       expect(await modifyTeamMembers(teamId, hackathonId, { add: ["user_1"] })).toBe(true)
     })
 
     it("rejects a team from another hackathon", async () => {
-      setMockFromImplementation(() => createChainableMock({ data: null, error: null }))
+      setMockRpcImplementation(() => Promise.resolve({
+        data: [{ success: false, error_code: "team_not_found" }], error: null,
+      }))
 
       expect(await modifyTeamMembers("33333333-3333-3333-3333-333333333333", hackathonId, { add: ["user_1"] })).toBe(false)
     })
 
     it("fails when a requested member was not updated", async () => {
-      setMockFromImplementation((table) => {
-        if (table === "teams") return createChainableMock({ data: { id: "team_1" }, error: null })
-        return createChainableMock({ data: [], error: null })
-      })
+      setMockRpcImplementation(() => Promise.resolve({
+        data: [{ success: false, error_code: "participant_not_found" }], error: null,
+      }))
 
       expect(await modifyTeamMembers(teamId, hackathonId, { remove: ["user_missing"] })).toBe(false)
     })

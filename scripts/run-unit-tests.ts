@@ -116,7 +116,6 @@ const RADIX_ISOLATED_TESTS = [
   "__tests__/components/dashboard/api-key-create-dialog.test.tsx",
   "__tests__/components/hackathon/judging/judges-section.test.tsx",
   "__tests__/components/hackathon/judging/assignments-section.test.tsx",
-  "__tests__/components/hackathon/judging/judge-assignments.test.tsx",
 ]
 const radixSet = new Set(RADIX_ISOLATED_TESTS)
 

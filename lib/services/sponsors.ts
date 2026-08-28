@@ -17,8 +17,11 @@ export interface AddSponsorInput {
 }
 
 export async function addSponsor(input: AddSponsorInput): Promise<HackathonSponsor | null> {
-  if (input.sponsorTenantId) return null
   const client = getSupabase() as unknown as SupabaseClient
+  if (input.sponsorTenantId || input.useOrgAssets) {
+    console.error("A sponsor organization can't be linked without its approval")
+    return null
+  }
   const { data, error } = await client
     .from("hackathon_sponsors")
     .insert({
@@ -100,14 +103,21 @@ export async function updateSponsor(
 ): Promise<HackathonSponsor | null> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  if (updates.sponsorTenantId !== undefined) {
-    const { data: existing } = await client
+  if (updates.sponsorTenantId !== undefined || updates.useOrgAssets === true) {
+    const { data: currentSponsor, error: currentError } = await client
       .from("hackathon_sponsors")
       .select("sponsor_tenant_id")
       .eq("id", sponsorId)
       .eq("hackathon_id", hackathonId)
       .maybeSingle()
-    if (!existing || existing.sponsor_tenant_id !== updates.sponsorTenantId) return null
+    if (currentError || !currentSponsor) return null
+    if (
+      (updates.sponsorTenantId && updates.sponsorTenantId !== currentSponsor.sponsor_tenant_id) ||
+      (updates.useOrgAssets === true && !currentSponsor.sponsor_tenant_id)
+    ) {
+      console.error("A sponsor organization can't be linked without its approval")
+      return null
+    }
   }
 
   const updateData: Record<string, unknown> = {}
@@ -146,25 +156,12 @@ export async function reorderSponsors(
 ): Promise<boolean> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const updates = sponsorIds.map((id, index) => ({
-    id,
-    display_order: index,
-  }))
-
-  for (const update of updates) {
-    const { error } = await client
-      .from("hackathon_sponsors")
-      .update({ display_order: update.display_order })
-      .eq("id", update.id)
-      .eq("hackathon_id", hackathonId)
-
-    if (error) {
-      console.error("Failed to reorder sponsor:", error)
-      return false
-    }
-  }
-
-  return true
+  const { data, error } = await client.rpc("reorder_sponsors_atomic", {
+    p_hackathon_id: hackathonId,
+    p_sponsor_ids: sponsorIds,
+  })
+  if (error) console.error("Failed to reorder sponsors:", error)
+  return !error && data === true
 }
 
 export type SponsorWithTenant = HackathonSponsor & {

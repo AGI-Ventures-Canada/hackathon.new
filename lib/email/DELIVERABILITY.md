@@ -49,10 +49,11 @@ the mistake.
    - `{ name: "hackathon", value: sanitizeTag(hackathonName) }` whenever
      the email is hackathon-scoped.
 
-6. **Verify `RESEND_FROM_EMAIL` points at a domain set up in Resend with
-   DKIM + SPF.** The default `onboarding@resend.dev` is shared across every
-   Resend trial account and is heavily filtered. Production should send
-   from `noreply@hackathon.new` (or another verified domain).
+6. **Verify `RESEND_FROM_EMAIL` points at a sending subdomain set up in
+   Resend with DKIM + SPF.** The default `onboarding@resend.dev` is shared
+   across every Resend trial account and is heavily filtered. Production
+   sends from `hello@notifications.hackathon.new` and uses a monitored
+   `RESEND_REPLY_TO_EMAIL`. Never use `no-reply` or `noreply`.
 
 ## Subject lines
 

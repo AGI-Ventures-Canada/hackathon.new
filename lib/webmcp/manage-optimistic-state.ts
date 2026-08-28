@@ -34,6 +34,10 @@ export type ManageWebMcpOptimisticChange =
       kind: "announcement"
       announcement: Announcement
     })
+  | (ChangeBase & {
+      kind: "settings"
+      patch: Record<string, unknown>
+    })
 
 type CommitBase = {
   mutationId: string
@@ -63,6 +67,10 @@ export type ManageWebMcpCommittedChange =
   | (CommitBase & {
       kind: "announcement"
       announcement: Announcement
+    })
+  | (CommitBase & {
+      kind: "settings"
+      patch: Record<string, unknown>
     })
 
 export type ManageWebMcpVisibleState = {
@@ -158,6 +166,8 @@ function applyOptimisticChange(
           "start",
         ),
       }
+    case "settings":
+      return state
   }
 }
 
@@ -194,6 +204,8 @@ function applyCommittedChange(
           "start",
         ),
       }
+    case "settings":
+      return state
   }
 }
 

@@ -102,11 +102,31 @@ export function validateWebMcpSettingsMutationContext(
     .filter(([, value]) => value !== undefined)
     .map(([name]) => name)
   const allowedFields = new Set([
+    "bannerUrl",
     "name",
     "description",
+    "rules",
     "locale",
     "startsAt",
     "endsAt",
+    "allowLateRegistration",
+    "anonymousJudging",
+    "judgingMode",
+    "locationType",
+    "locationName",
+    "locationUrl",
+    "locationLatitude",
+    "locationLongitude",
+    "requireLocationVerification",
+    "maxParticipants",
+    "minTeamSize",
+    "maxTeamSize",
+    "allowSolo",
+    "requireTeamApproval",
+    "communityUrl",
+    "communityLabel",
+    "requireTermsAcceptance",
+    "termsContent",
   ])
   if (isWebMcpMutationRequest(request)) {
     const hasEditableField = suppliedFields.some((field) => field !== "locale")
@@ -117,7 +137,7 @@ export function validateWebMcpSettingsMutationContext(
       return {
         status: 400,
         code: "webmcp_invalid_mutation",
-        error: "WebMCP can only update event details or draft dates here.",
+        error: "WebMCP can only update organizer settings here.",
       }
     }
   } else if (suppliedFields.includes("status")) {

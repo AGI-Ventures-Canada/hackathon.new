@@ -90,7 +90,12 @@ const context: ManageHackathonWebMcpContext = {
     eventVersion: "2026-08-25T15:00:00.000Z",
     startsAt: null,
     endsAt: null,
+    registrationOpensAt: null,
     registrationClosesAt: null,
+    rules: null,
+    bannerUrl: null,
+    allowLateRegistration: false,
+    maxParticipants: null,
     locationType: "hybrid",
     locationName: "Main Hall",
     locationUrl: null,
@@ -98,6 +103,15 @@ const context: ManageHackathonWebMcpContext = {
     maxTeamSize: 5,
     allowSolo: true,
     requireTeamApproval: false,
+    anonymousJudging: false,
+    judgingMode: "points",
+    locationLatitude: null,
+    locationLongitude: null,
+    requireLocationVerification: false,
+    communityUrl: null,
+    communityLabel: null,
+    requireTermsAcceptance: false,
+    termsContent: null,
   },
   stats: {
     attendeeCount: 10,
@@ -263,5 +277,73 @@ describe("ManageHackathonWebMcpTools", () => {
     expect(navigation.__nextNavState.router.push).toHaveBeenCalledWith(
       "/e/build-day/manage?tab=judging&jtab=results",
     )
+  })
+
+  it("covers every setting and safely inspects organizer data", async () => {
+    globalThis.fetch = mock(async (input, init) => {
+      const url = String(input)
+      if (url.endsWith("/teams")) {
+        return Response.json({
+          teams: [{ id: "team-1", name: "Builders", invite_token: "secret", note: "ready" }],
+        })
+      }
+      expect(init?.method).toBe("PATCH")
+      return Response.json({
+        name: "Visible event",
+        slug: "build-day",
+        description: "Visible details",
+        status: "draft",
+        storedStatus: "draft",
+        minTeamSize: 2,
+        maxTeamSize: 6,
+        allowSolo: false,
+        requireTeamApproval: true,
+        updatedAt: "2026-08-25T15:01:00.000Z",
+      })
+    }) as unknown as typeof fetch
+
+    render(<ManageHackathonWebMcpTools context={context} />)
+    await waitFor(() => expect(tools.has("get_hackathon_settings")).toBe(true))
+
+    const settings = await execute("get_hackathon_settings")
+    expect(settings).toMatchObject({
+      ok: true,
+      data: {
+        teams: { minTeamSize: 1, maxTeamSize: 5, allowSolo: true },
+        location: { type: "hybrid", requireCheckIn: false },
+        judging: { anonymous: false, mode: "points" },
+        terms: { acceptanceRequired: false },
+      },
+    })
+
+    const update = await execute("update_hackathon_settings", {
+      minTeamSize: 2,
+      maxTeamSize: 6,
+      allowSolo: false,
+      requireTeamApproval: true,
+    })
+    expect(update).toMatchObject({ ok: true })
+    expect(beginManageWebMcpChange).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "settings" }),
+    )
+
+    const teams = await execute("inspect_organizer_section", {
+      section: "teams",
+      offset: 0,
+      limit: 20,
+    })
+    expect(teams).toMatchObject({
+      ok: true,
+      data: {
+        section: "teams",
+        collection: "teams",
+        items: [{ name: "Builders", note: "ready" }],
+        totalCount: 1,
+        hasMore: false,
+      },
+    })
+    expect(JSON.stringify(teams)).not.toContain("team-1")
+    expect(JSON.stringify(teams)).not.toContain("invite_token")
+    expect(JSON.stringify(teams)).not.toContain("secret")
   })
 })

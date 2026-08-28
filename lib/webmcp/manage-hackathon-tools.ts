@@ -29,6 +29,7 @@ import type { WebMcpTool } from "@/lib/webmcp/types"
 import {
   ORGANIZER_SECTION_CONFIG,
   ORGANIZER_SECTIONS,
+  type OrganizerSection,
 } from "@/lib/webmcp/organizer-parity"
 import { stageKeyForStatus } from "@/lib/utils/lifecycle-stages"
 
@@ -51,6 +52,11 @@ export type ManageHackathonWebMcpContext = {
     startsAt: string | null
     endsAt: string | null
     registrationClosesAt: string | null
+    registrationOpensAt: string | null
+    rules: string | null
+    bannerUrl: string | null
+    allowLateRegistration: boolean
+    maxParticipants: number | null
     locationType: string | null
     locationName: string | null
     locationUrl: string | null
@@ -58,6 +64,15 @@ export type ManageHackathonWebMcpContext = {
     maxTeamSize: number
     allowSolo: boolean
     requireTeamApproval: boolean
+    anonymousJudging: boolean
+    judgingMode: "points" | "subjective" | "rubric"
+    locationLatitude: number | null
+    locationLongitude: number | null
+    requireLocationVerification: boolean
+    communityUrl: string | null
+    communityLabel: string | null
+    requireTermsAcceptance: boolean
+    termsContent: string | null
   }
   stats: {
     attendeeCount: number
@@ -223,19 +238,57 @@ const sectionInput = z
   })
   .strict()
 
+const paginationInput = z.object({
+  offset: z.number().int().min(0).max(10_000).default(0),
+  limit: z.number().int().min(1).max(50).default(2),
+}).strict()
+
+const organizerDataInput = paginationInput.extend({
+  section: z.enum(ORGANIZER_SECTIONS),
+}).strict()
+
+const optionalUrl = z.string().trim().max(2_000).nullable().optional()
+const updateSettingsInput = z.object({
+  name: z.string().trim().min(1).max(200).optional(),
+  description: z.string().trim().max(5_000).nullable().optional(),
+  rules: z.string().trim().max(50_000).nullable().optional(),
+  bannerUrl: optionalUrl,
+  allowLateRegistration: z.boolean().optional(),
+  anonymousJudging: z.boolean().optional(),
+  judgingMode: z.enum(["points", "subjective", "rubric"]).optional(),
+  locationType: z.enum(["in_person", "virtual", "hybrid"]).nullable().optional(),
+  locationName: z.string().trim().max(300).nullable().optional(),
+  locationUrl: optionalUrl,
+  locationLatitude: z.number().min(-90).max(90).nullable().optional(),
+  locationLongitude: z.number().min(-180).max(180).nullable().optional(),
+  requireLocationVerification: z.boolean().optional(),
+  maxParticipants: z.number().int().min(1).max(1_000_000).nullable().optional(),
+  minTeamSize: z.number().int().min(1).max(100).optional(),
+  maxTeamSize: z.number().int().min(1).max(100).optional(),
+  allowSolo: z.boolean().optional(),
+  requireTeamApproval: z.boolean().optional(),
+  communityUrl: optionalUrl,
+  communityLabel: z.string().trim().max(100).nullable().optional(),
+  requireTermsAcceptance: z.boolean().optional(),
+  termsContent: z.string().trim().max(50_000).nullable().optional(),
+}).strict().superRefine((input, ctx) => {
+  if (Object.keys(input).length === 0) {
+    ctx.addIssue({ code: "custom", message: "Add at least one setting to update" })
+  }
+  if (input.minTeamSize !== undefined && input.maxTeamSize !== undefined && input.minTeamSize > input.maxTeamSize) {
+    ctx.addIssue({ code: "custom", message: "The minimum team size can't be larger than the maximum" })
+  }
+  if (input.requireTermsAcceptance === true && !input.termsContent) {
+    ctx.addIssue({ code: "custom", message: "Include termsContent when turning terms acceptance on" })
+  }
+})
+
 const untrustedReadAnnotations = {
   readOnlyHint: true,
   untrustedContentHint: true,
 } as const
 
 const MAX_ACTION_ITEMS = 1
-const MAX_SCHEDULE_ITEMS = 2
-const MAX_CHALLENGE_ITEMS = 3
-const MAX_PRIZE_ITEMS = 2
-const MAX_PROJECT_ITEMS = 3
-const MAX_SPONSOR_ITEMS = 4
-const MAX_PERK_ITEMS = 4
-const MAX_ANNOUNCEMENT_ITEMS = 3
 
 const draftOnlyToolNames = new Set([
   "set_hackathon_timeline",
@@ -246,6 +299,7 @@ const draftOnlyToolNames = new Set([
 
 const preCompletionToolNames = new Set([
   "update_hackathon_details",
+  "update_hackathon_settings",
   "set_hackathon_timeline",
   "add_schedule_item",
   "add_challenge",
@@ -271,6 +325,86 @@ function toolIsAvailableForStatus(
 function clip(value: string | null, maxLength: number): string | null {
   if (value === null || value.length <= maxLength) return value
   return `${value.slice(0, maxLength - 1)}…`
+}
+
+function pageItems<T>(items: T[], input: z.output<typeof paginationInput>) {
+  const page = items.slice(input.offset, input.offset + input.limit)
+  return {
+    totalCount: items.length,
+    offset: input.offset,
+    limit: input.limit,
+    items: page,
+    hasMore: input.offset + page.length < items.length,
+    truncated: input.offset + page.length < items.length,
+    nextOffset: input.offset + page.length < items.length
+      ? input.offset + page.length
+      : null,
+  }
+}
+
+const organizerSectionEndpoint: Partial<Record<OrganizerSection, string>> = {
+  teams: "teams",
+  projects: "submissions",
+  people: "people",
+  judges: "judging/judges",
+  rounds: "rounds",
+  prizes: "prizes",
+  assignments: "judging/progress",
+  results: "results",
+  mentors: "mentor-requests",
+  social: "social-submissions",
+  rooms: "rooms",
+  exports: "exports",
+  schedule: "schedule",
+  challenges: "challenges",
+  announcements: "announcements",
+  sponsors: "sponsors",
+}
+
+const hiddenWebMcpKeys = new Set([
+  "token",
+  "invite_token",
+  "access_token",
+  "refresh_token",
+  "secret",
+  "password",
+  "code",
+  "redemptioncode",
+  "redemption_code",
+  "redemptionurl",
+  "redemption_url",
+  "instructions",
+  "paymentdetail",
+  "payment_detail",
+  "paymentmethod",
+  "payment_method",
+  "shippingaddress",
+  "shipping_address",
+  "trackingnumber",
+  "tracking_number",
+  "recipientemail",
+  "recipient_email",
+  "recipientname",
+  "recipient_name",
+])
+
+function sanitizeOrganizerData(value: unknown, depth = 0): unknown {
+  if (depth > 6) return "[nested data hidden]"
+  if (typeof value === "string") return clip(value, 2_000)
+  if (Array.isArray(value)) return value.slice(0, 50).map((item) => sanitizeOrganizerData(item, depth + 1))
+  if (!value || typeof value !== "object") return value
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => {
+        const normalized = key.replace(/[_-]/g, "").toLowerCase()
+        return !hiddenWebMcpKeys.has(key.toLowerCase())
+          && normalized !== "id"
+          && !normalized.endsWith("id")
+          && !normalized.endsWith("ids")
+      })
+      .slice(0, 100)
+      .map(([key, entry]) => [key, sanitizeOrganizerData(entry, depth + 1)]),
+  )
 }
 
 function manageHref(slug: string, params: string): string {
@@ -536,17 +670,124 @@ function createReadTools(
       },
     }),
     defineWebMcpTool({
-      name: "list_hackathon_schedule",
-      title: "List hackathon schedule",
+      name: "get_hackathon_settings",
+      title: "Get all hackathon settings",
       description:
-        "Read the first two event schedule items in time order. This doesn't change the schedule.",
+        "Read every event, registration, team, location, judging, community, and terms setting available to organizers. This doesn't change the event.",
       schema: emptyInput,
       annotations: untrustedReadAnnotations,
       execute: () => {
+        const { hackathon } = dependencies.getContext()
+        return {
+          event: {
+            name: clip(hackathon.name, 200),
+            description: clip(hackathon.description, 300),
+            rules: clip(hackathon.rules, 300),
+            bannerUrl: clip(hackathon.bannerUrl, 300),
+            locale: hackathon.locale,
+            storedStatus: hackathon.storedStatus,
+            effectiveStatus: hackathon.status,
+            phase: hackathon.phase,
+          },
+          dates: {
+            startsAt: hackathon.startsAt,
+            endsAt: hackathon.endsAt,
+            registrationOpensAt: hackathon.registrationOpensAt,
+            registrationClosesAt: hackathon.registrationClosesAt,
+            allowLateRegistration: hackathon.allowLateRegistration,
+          },
+          registration: { maxParticipants: hackathon.maxParticipants },
+          teams: {
+            minTeamSize: hackathon.minTeamSize,
+            maxTeamSize: hackathon.maxTeamSize,
+            allowSolo: hackathon.allowSolo,
+            requireTeamApproval: hackathon.requireTeamApproval,
+          },
+          location: {
+            type: hackathon.locationType,
+            name: clip(hackathon.locationName, 300),
+            url: clip(hackathon.locationUrl, 300),
+            latitude: hackathon.locationLatitude,
+            longitude: hackathon.locationLongitude,
+            requireCheckIn: hackathon.requireLocationVerification,
+          },
+          judging: {
+            anonymous: hackathon.anonymousJudging,
+            mode: hackathon.judgingMode,
+          },
+          community: {
+            url: clip(hackathon.communityUrl, 300),
+            label: clip(hackathon.communityLabel, 100),
+          },
+          terms: {
+            acceptanceRequired: hackathon.requireTermsAcceptance,
+            content: clip(hackathon.termsContent, 300),
+          },
+          inspectUrl: manageHref(hackathon.slug, "tab=edit"),
+        }
+      },
+    }),
+    defineWebMcpTool({
+      name: "inspect_organizer_section",
+      title: "Inspect organizer section data",
+      description:
+        "Read current operational data for an organizer section, including teams, people, projects, judging, results, messages, rooms, and post-event work. Invite tokens, secrets, passwords, and perk codes stay hidden.",
+      schema: organizerDataInput,
+      annotations: untrustedReadAnnotations,
+      execute: async ({ section, offset, limit }, { signal }) => {
         const context = dependencies.getContext()
-        const items = context.scheduleItems
-          .slice(0, MAX_SCHEDULE_ITEMS)
-          .map((item) => ({
+        const endpoint = organizerSectionEndpoint[section]
+        if (!endpoint) {
+          return {
+            section,
+            pageData: organizerSectionData(context, section),
+            inspectUrl: manageHref(context.hackathon.slug, ORGANIZER_SECTION_CONFIG[section].params),
+          }
+        }
+        const raw = await fetchWebMcpJson<unknown>(
+          dependencies.fetcher,
+          `/api/dashboard/hackathons/${context.hackathon.id}/${endpoint}`,
+          { signal },
+        )
+        const sanitized = sanitizeOrganizerData(raw)
+        if (Array.isArray(sanitized)) {
+          return {
+            section,
+            ...pageItems(sanitized, { offset, limit }),
+            inspectUrl: manageHref(context.hackathon.slug, ORGANIZER_SECTION_CONFIG[section].params),
+          }
+        }
+        if (sanitized && typeof sanitized === "object") {
+          const entries = Object.entries(sanitized as Record<string, unknown>)
+          const collection = entries.find(([, value]) => Array.isArray(value))
+          if (collection) {
+            const [collectionName, items] = collection as [string, unknown[]]
+            return {
+              section,
+              collection: collectionName,
+              summary: Object.fromEntries(entries.filter(([key]) => key !== collectionName)),
+              ...pageItems(items, { offset, limit }),
+              inspectUrl: manageHref(context.hackathon.slug, ORGANIZER_SECTION_CONFIG[section].params),
+            }
+          }
+        }
+        return {
+          section,
+          sectionData: sanitized,
+          inspectUrl: manageHref(context.hackathon.slug, ORGANIZER_SECTION_CONFIG[section].params),
+        }
+      },
+    }),
+    defineWebMcpTool({
+      name: "list_hackathon_schedule",
+      title: "List hackathon schedule",
+      description:
+        "Read a page of event schedule items in time order. This doesn't change the schedule.",
+      schema: paginationInput,
+      annotations: untrustedReadAnnotations,
+      execute: (input) => {
+        const context = dependencies.getContext()
+        const items = context.scheduleItems.map((item) => ({
             title: clip(item.title, 100),
             description: clip(item.description, 160),
             startsAt: item.startsAt,
@@ -554,9 +795,7 @@ function createReadTools(
             location: clip(item.location, 100),
           }))
         return {
-          totalCount: context.scheduleItems.length,
-          items,
-          truncated: context.scheduleItems.length > items.length,
+          ...pageItems(items, input),
           inspectUrl: manageHref(context.hackathon.slug, "tab=overview"),
         }
       },
@@ -565,22 +804,19 @@ function createReadTools(
       name: "list_hackathon_challenges",
       title: "List hackathon challenges",
       description:
-        "Read the first three event challenges. This doesn't release or change them.",
-      schema: emptyInput,
+        "Read a page of event challenges. This doesn't release or change them.",
+      schema: paginationInput,
       annotations: untrustedReadAnnotations,
-      execute: () => {
+      execute: (input) => {
         const context = dependencies.getContext()
         const items = context.challenges
-          .slice(0, MAX_CHALLENGE_ITEMS)
           .map((challenge) => ({
             title: clip(challenge.title, 100),
             description: clip(challenge.description, 180),
             resourceCount: challenge.resourceCount,
           }))
         return {
-          totalCount: context.challenges.length,
-          items,
-          truncated: context.challenges.length > items.length,
+          ...pageItems(items, input),
           inspectUrl: manageHref(context.hackathon.slug, "tab=challenges"),
         }
       },
@@ -589,12 +825,12 @@ function createReadTools(
       name: "list_hackathon_prizes",
       title: "List hackathon prizes",
       description:
-        "Read the first two prizes and their judging progress. This doesn't change judging.",
-      schema: emptyInput,
+        "Read a page of prizes and their judging progress. This doesn't change judging.",
+      schema: paginationInput,
       annotations: untrustedReadAnnotations,
-      execute: () => {
+      execute: (input) => {
         const context = dependencies.getContext()
-        const items = context.prizes.slice(0, MAX_PRIZE_ITEMS).map((prize) => ({
+        const items = context.prizes.map((prize) => ({
           name: clip(prize.name, 100),
           description: clip(prize.description, 160),
           value: clip(prize.value, 80),
@@ -604,9 +840,7 @@ function createReadTools(
           completedAssignments: prize.completedAssignments,
         }))
         return {
-          totalCount: context.prizes.length,
-          items,
-          truncated: context.prizes.length > items.length,
+          ...pageItems(items, input),
           inspectUrl: manageHref(
             context.hackathon.slug,
             "tab=judging&jtab=prizes",
@@ -617,20 +851,18 @@ function createReadTools(
     defineWebMcpTool({
       name: "list_hackathon_projects",
       title: "List hackathon projects",
-      description: "Read the first three submitted projects. This doesn't change projects or judging.",
-      schema: emptyInput,
+      description: "Read a page of submitted projects. This doesn't change projects or judging.",
+      schema: paginationInput,
       annotations: untrustedReadAnnotations,
-      execute: () => {
+      execute: (input) => {
         const context = dependencies.getContext()
-        const items = context.projects.slice(0, MAX_PROJECT_ITEMS).map((project) => ({
+        const items = context.projects.map((project) => ({
           title: clip(project.title, 100),
           description: clip(project.description, 180),
           submittedBy: clip(project.submitterName, 80),
         }))
         return {
-          totalCount: context.projects.length,
-          items,
-          truncated: context.projects.length > items.length,
+          ...pageItems(items, input),
           inspectUrl: manageHref(context.hackathon.slug, "tab=teams"),
         }
       },
@@ -638,19 +870,17 @@ function createReadTools(
     defineWebMcpTool({
       name: "list_hackathon_sponsors",
       title: "List hackathon sponsors",
-      description: "Read the first four sponsors shown on the event page. This doesn't change sponsor details.",
-      schema: emptyInput,
+      description: "Read a page of sponsors shown on the event page. This doesn't change sponsor details.",
+      schema: paginationInput,
       annotations: untrustedReadAnnotations,
-      execute: () => {
+      execute: (input) => {
         const context = dependencies.getContext()
-        const items = context.sponsors.slice(0, MAX_SPONSOR_ITEMS).map((sponsor) => ({
+        const items = context.sponsors.map((sponsor) => ({
           name: clip(sponsor.name, 100),
           tier: clip(sponsor.tier, 60),
         }))
         return {
-          totalCount: context.sponsors.length,
-          items,
-          truncated: context.sponsors.length > items.length,
+          ...pageItems(items, input),
           inspectUrl: manageHref(context.hackathon.slug, "tab=edit"),
         }
       },
@@ -658,20 +888,18 @@ function createReadTools(
     defineWebMcpTool({
       name: "list_hackathon_perks",
       title: "List hackathon perks",
-      description: "Read the first four perks and release state. Codes and private instructions stay hidden.",
-      schema: emptyInput,
+      description: "Read a page of perks and release state. Codes and private instructions stay hidden.",
+      schema: paginationInput,
       annotations: untrustedReadAnnotations,
-      execute: () => {
+      execute: (input) => {
         const context = dependencies.getContext()
-        const items = context.perks.slice(0, MAX_PERK_ITEMS).map((perk) => ({
+        const items = context.perks.map((perk) => ({
           name: clip(perk.name, 100),
           type: perk.type,
           released: perk.released,
         }))
         return {
-          totalCount: context.perks.length,
-          items,
-          truncated: context.perks.length > items.length,
+          ...pageItems(items, input),
           inspectUrl: manageHref(context.hackathon.slug, "tab=perks"),
         }
       },
@@ -679,13 +907,12 @@ function createReadTools(
     defineWebMcpTool({
       name: "list_hackathon_announcements",
       title: "List announcements",
-      description: "Read the first three announcement summaries. This doesn't publish or send a message.",
-      schema: emptyInput,
+      description: "Read a page of announcement summaries. This doesn't publish or send a message.",
+      schema: paginationInput,
       annotations: untrustedReadAnnotations,
-      execute: () => {
+      execute: (input) => {
         const context = dependencies.getContext()
         const items = context.announcements
-          .slice(0, MAX_ANNOUNCEMENT_ITEMS)
           .map((announcement) => ({
             title: clip(announcement.title, 100),
             audience: announcement.audience,
@@ -693,9 +920,7 @@ function createReadTools(
             state: announcement.publishedAt ? "published" : "draft",
           }))
         return {
-          totalCount: context.announcements.length,
-          items,
-          truncated: context.announcements.length > items.length,
+          ...pageItems(items, input),
           inspectUrl: manageHref(context.hackathon.slug, "tab=event"),
         }
       },
@@ -726,6 +951,66 @@ function createOrganizerWriteTools(
   dependencies: ManageHackathonToolDependencies,
 ): WebMcpTool[] {
   return [
+    defineWebMcpTool({
+      name: "update_hackathon_settings",
+      title: "Update hackathon settings",
+      description:
+        "Update event page, registration, team, location, judging, community, or terms settings before completion. This can't change the event stage, send messages, or publish results.",
+      schema: updateSettingsInput,
+      annotations: { untrustedContentHint: true },
+      execute: async (input, { signal }) => {
+        const context = getPreCompletionContext(dependencies)
+        const currentMin = input.minTeamSize ?? context.hackathon.minTeamSize
+        const currentMax = input.maxTeamSize ?? context.hackathon.maxTeamSize
+        if (currentMin > currentMax) {
+          throw new WebMcpRequestError({
+            code: "invalid_team_size",
+            message: "The minimum team size can't be larger than the maximum.",
+            retryable: false,
+          })
+        }
+        if (
+          input.requireTermsAcceptance === true &&
+          !input.termsContent &&
+          !context.hackathon.termsContent
+        ) {
+          throw new WebMcpRequestError({
+            code: "terms_content_required",
+            message: "Add the terms before requiring people to accept them.",
+            retryable: false,
+          })
+        }
+        const inspectUrl = manageHref(context.hackathon.slug, "tab=edit")
+        const mutationId = createMutationId("settings")
+        const optimistic: ManageWebMcpOptimisticChange = {
+          mutationId,
+          kind: "settings",
+          href: inspectUrl,
+          summary: "Updating the event settings",
+          patch: input,
+        }
+        const updated = await sendMutation<Record<string, unknown>>(dependencies, {
+          context,
+          url: `/api/dashboard/hackathons/${context.hackathon.id}/settings`,
+          method: "PATCH",
+          body: {
+            ...input,
+            ...(context.hackathon.locale ? { locale: context.hackathon.locale } : {}),
+          },
+          signal,
+          optimistic,
+          toCommitted: (result) => ({
+            mutationId,
+            kind: "settings",
+            patch: result,
+          }),
+        })
+        return {
+          updated: sanitizeOrganizerData(updated),
+          inspectUrl,
+        }
+      },
+    }),
     defineWebMcpTool({
       name: "update_hackathon_details",
       title: "Update hackathon details",

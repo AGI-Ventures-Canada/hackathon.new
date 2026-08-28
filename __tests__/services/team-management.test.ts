@@ -6,7 +6,6 @@ import {
   resetClerkMocks,
   setMockFromImplementation,
   setMockRpcImplementation,
-  type ChainableMock,
 } from "../lib/supabase-mock"
 
 const mockSendTeamDeniedEmail = mock(() => Promise.resolve({ success: true }))
@@ -47,33 +46,30 @@ describe("deleteTeam", () => {
   })
 
   it("returns not_found when team doesn't exist", async () => {
-    setMockFromImplementation(
-      tableImpl({
-        teams: { data: null, error: { message: "no rows" } },
-      })
-    )
+    setMockRpcImplementation(() => Promise.resolve({
+      data: [{ success: false, error_code: "not_found" }],
+      error: null,
+    }))
 
     const result = await deleteTeam("team_1", "hackathon_1")
     expect(result).toEqual({ error: "Team not found", code: "not_found" })
   })
 
   it("blocks delete when hackathon status is judging", async () => {
-    setMockFromImplementation(
-      tableImpl({
-        teams: { data: { id: "team_1", hackathon_id: "h_1", hackathons: { status: "judging" } }, error: null },
-      })
-    )
+    setMockRpcImplementation(() => Promise.resolve({
+      data: [{ success: false, error_code: "status_locked" }],
+      error: null,
+    }))
 
     const result = await deleteTeam("team_1", "h_1")
     expect(result).toEqual({ error: "Teams can't be deleted once judging has started", code: "status_locked" })
   })
 
   it("blocks delete when hackathon status is completed", async () => {
-    setMockFromImplementation(
-      tableImpl({
-        teams: { data: { id: "team_1", hackathon_id: "h_1", hackathons: { status: "completed" } }, error: null },
-      })
-    )
+    setMockRpcImplementation(() => Promise.resolve({
+      data: [{ success: false, error_code: "status_locked" }],
+      error: null,
+    }))
 
     const result = await deleteTeam("team_1", "h_1")
     expect(result.success).toBeUndefined()
@@ -81,73 +77,59 @@ describe("deleteTeam", () => {
   })
 
   it("blocks delete when a submitted submission exists", async () => {
-    setMockFromImplementation(
-      tableImpl({
-        teams: { data: { id: "team_1", hackathon_id: "h_1", hackathons: { status: "active" } }, error: null },
-        submissions: { data: null, error: null, count: 1 },
-      })
-    )
+    setMockRpcImplementation(() => Promise.resolve({
+      data: [{ success: false, error_code: "submission_exists" }],
+      error: null,
+    }))
 
     const result = await deleteTeam("team_1", "h_1")
     expect(result.success).toBeUndefined()
     if ("error" in result) expect(result.code).toBe("submission_exists")
   })
 
-  it("filters submission lookup by status='submitted' (drafts/withdrawn don't block)", async () => {
-    const submissionsChain = createChainableMock({ data: null, error: null, count: 0 })
-    const invitationsChain = createChainableMock({ data: [], error: null })
-    setMockFromImplementation((table: string): ChainableMock => {
-      if (table === "teams") {
-        return createChainableMock({
-          data: { id: "team_1", hackathon_id: "h_1", hackathons: { status: "active" } },
-          error: null,
-        })
-      }
-      if (table === "submissions") return submissionsChain
-      if (table === "team_invitations") return invitationsChain
-      return createChainableMock({ data: null, error: null, count: 0 })
+  it("blocks deletion for any project state so draft work is not lost", async () => {
+    setMockRpcImplementation(() => Promise.resolve({
+      data: [{ success: false, error_code: "submission_exists" }],
+      error: null,
+    }))
+
+    const result = await deleteTeam("team_1", "h_1")
+    expect(result).toEqual({
+      error: "This team has a submission. Delete the submission first.",
+      code: "submission_exists",
     })
-
-    await deleteTeam("team_1", "h_1")
-
-    const submissionEqCalls = submissionsChain.eq.mock.calls as unknown as unknown[][]
-    expect(submissionEqCalls).toContainEqual(["status", "submitted"])
   })
 
-  it("sets updated_at when cancelling pending invitations on delete", async () => {
-    const invitationsChain = createChainableMock({ data: [{ id: "i_1" }], error: null })
-    setMockFromImplementation((table: string): ChainableMock => {
-      if (table === "teams") {
-        return createChainableMock({
-          data: { id: "team_1", hackathon_id: "h_1", hackathons: { status: "active" } },
-          error: null,
-        })
-      }
-      if (table === "team_invitations") return invitationsChain
-      return createChainableMock({ data: null, error: null, count: 0 })
-    })
+  it("returns the invitation count from the atomic delete", async () => {
+    setMockRpcImplementation(() => Promise.resolve({
+      data: [{
+        success: true,
+        error_code: null,
+        members_unassigned: 0,
+        invites_cancelled: 1,
+        rooms_cleared: 0,
+        invitation_ids: [],
+      }],
+      error: null,
+    }))
 
-    await deleteTeam("team_1", "h_1")
-
-    const updateCalls = invitationsChain.update.mock.calls as unknown as unknown[][]
-    const updateCall = updateCalls[0]?.[0] as Record<string, unknown> | undefined
-    expect(updateCall?.status).toBe("cancelled")
-    expect(typeof updateCall?.updated_at).toBe("string")
+    const result = await deleteTeam("team_1", "h_1")
+    expect(result.success).toBe(true)
+    if ("success" in result) expect(result.invitesCancelled).toBe(1)
   })
 
   it("deletes the team and cascades members, invites, and room assignments", async () => {
-    setMockFromImplementation(
-      tableImpl({
-        teams: [
-          { data: { id: "team_1", hackathon_id: "h_1", hackathons: { status: "active" } }, error: null },
-          { data: null, error: null },
-        ],
-        submissions: { data: null, error: null, count: 0 },
-        hackathon_participants: { data: null, error: null, count: 2 },
-        room_teams: { data: null, error: null, count: 1 },
-        team_invitations: { data: [{ id: "i_1" }], error: null },
-      })
-    )
+    setMockRpcImplementation(() => Promise.resolve({
+      data: [{
+        success: true,
+        error_code: null,
+        members_unassigned: 2,
+        invites_cancelled: 1,
+        rooms_cleared: 1,
+        invitation_ids: [],
+      }],
+      error: null,
+    }))
 
     const result = await deleteTeam("team_1", "h_1")
     expect(result).toEqual({

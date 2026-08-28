@@ -18,6 +18,7 @@ export type Challenge = {
 }
 
 export type ChallengeInput = {
+  id?: string
   title: string
   description?: string | null
   resources?: ChallengeResource[]
@@ -145,6 +146,7 @@ export async function createChallenge(
   const { data, error } = await client
     .from("challenges")
     .insert({
+      ...(input.id ? { id: input.id } : {}),
       hackathon_id: hackathonId,
       title: input.title,
       description: input.description ?? null,
@@ -223,31 +225,14 @@ export async function reorderChallenges(
   const owns = await assertHackathonOwnership(client, hackathonId, tenantId)
   if (!owns) return false
 
-  const { data: existing, error: listErr } = await client
-    .from("challenges")
-    .select("id")
-    .eq("hackathon_id", hackathonId)
+  const { data, error } = await client.rpc("reorder_challenges_atomic", {
+    p_hackathon_id: hackathonId,
+    p_ordered_ids: orderedIds,
+  })
 
-  if (listErr || !existing) return false
-
-  const existingIds = new Set(existing.map((r) => r.id))
-  if (orderedIds.length !== existingIds.size) return false
-  if (new Set(orderedIds).size !== orderedIds.length) return false
-  if (orderedIds.some((id) => !existingIds.has(id))) return false
-
-  const updates = orderedIds.map((id, idx) =>
-    client
-      .from("challenges")
-      .update({ sort_order: idx, updated_at: new Date().toISOString() })
-      .eq("id", id),
-  )
-
-  const results = await Promise.all(updates)
-  for (const { error } of results) {
-    if (error) {
-      console.error("Failed to reorder challenges:", error)
-      return false
-    }
+  if (error || data !== true) {
+    console.error("Failed to reorder challenges:", error)
+    return false
   }
 
   return true

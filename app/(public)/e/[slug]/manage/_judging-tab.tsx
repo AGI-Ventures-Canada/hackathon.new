@@ -1,6 +1,6 @@
 import { listPrizes, listJudges, getJudgingProgress, listRounds, listCoreCriteria, listPrizeCriteriaByPrizeIds, getWeightedScoreAssignmentSummary } from "@/lib/services/judging"
-import { listJudgeInvitations } from "@/lib/services/judge-invitations"
-import { calculateResults, getResults, getResultsByPrize } from "@/lib/services/results"
+import { listJudgeInvitations, listPendingJudgeNotifications } from "@/lib/services/judge-invitations"
+import { getResults, getResultsByPrize } from "@/lib/services/results"
 import { JudgingTabClient } from "@/components/hackathon/judging/judging-tab-client"
 import type { ManageJtab } from "@/lib/utils/manage-tabs"
 
@@ -11,6 +11,8 @@ export type JudgingTabContentProps = {
   resultsPublishedAt: string | null
   activeJtab: ManageJtab
   locationType: "in_person" | "virtual" | "hybrid" | null
+  hackathonStatus?: string | null
+  notificationDisposition?: "queue" | "send" | "reject"
 }
 
 export async function JudgingTabContent({
@@ -20,11 +22,9 @@ export async function JudgingTabContent({
   resultsPublishedAt,
   activeJtab,
   locationType,
+  hackathonStatus = null,
+  notificationDisposition,
 }: JudgingTabContentProps) {
-  if (!resultsPublishedAt) {
-    await calculateResults(hackathonId)
-  }
-
   const prizes = await listPrizes(hackathonId)
   const visiblePrizes = prizes.filter((p) => !p.is_screening)
 
@@ -33,17 +33,22 @@ export async function JudgingTabContent({
     .map((p) => p.id)
   const hasWeightedPrizes = weightedPrizeIds.length > 0
 
-  const [judges, progress, rounds, pendingInvitations, results, coreCriteria, weightedAssignmentSummary, weightedPrizeCriteriaMap, resultsByPrize] = await Promise.all([
+  const [judges, progress, rounds, pendingInvitations, pendingNotifications, results, coreCriteria, weightedAssignmentSummary, weightedPrizeCriteriaMap, resultsByPrize] = await Promise.all([
     listJudges(hackathonId),
     getJudgingProgress(hackathonId),
     listRounds(hackathonId),
     listJudgeInvitations(hackathonId, "pending"),
+    listPendingJudgeNotifications(hackathonId),
     getResults(hackathonId),
     listCoreCriteria(hackathonId),
     hasWeightedPrizes ? getWeightedScoreAssignmentSummary(hackathonId) : Promise.resolve(undefined),
     listPrizeCriteriaByPrizeIds(weightedPrizeIds),
     getResultsByPrize(hackathonId),
   ])
+
+  const queuedNotificationParticipantIds = new Set(
+    pendingNotifications.map((notification) => notification.participantId),
+  )
 
   const prizesForClient = visiblePrizes.map((p) => ({
     id: p.id,
@@ -90,6 +95,7 @@ export async function JudgingTabContent({
     email: j.email,
     imageUrl: j.imageUrl,
     prizeIds: j.prizeIds,
+    notificationQueued: queuedNotificationParticipantIds.has(j.participantId),
   }))
 
   const roundsForClient = rounds.map((r) => ({
@@ -111,7 +117,8 @@ export async function JudgingTabContent({
     status: inv.status,
     createdAt: inv.created_at,
     remindedAt: inv.reminded_at ?? null,
-    token: inv.token,
+    emailedAt: inv.emailed_at ?? null,
+    token: null,
   }))
 
   return (
@@ -138,6 +145,8 @@ export async function JudgingTabContent({
       submissions={submissions}
       isPublished={resultsPublishedAt !== null}
       locationType={locationType}
+      hackathonStatus={hackathonStatus}
+      notificationDisposition={notificationDisposition}
       activeJtab={activeJtab}
       coreCriteria={coreCriteria}
       weightedAssignmentSummary={weightedAssignmentSummary}

@@ -134,7 +134,8 @@ describe("judging commands", () => {
       await runJudgesAdd(client, hackathonId, ["--email", "judge@test.com"])
 
       expect(consoleLogSpy.mock.calls[0][0]).toContain("Saved judge invitation for judge@test.com")
-      expect(consoleLogSpy.mock.calls[0][0]).toContain("event goes live")
+      expect(consoleLogSpy.mock.calls[0][0]).toContain("This event is still a draft")
+      expect(consoleLogSpy.mock.calls[0][0]).toContain("when you go live")
     })
 
     it("reports an invitation saved after email delivery fails", async () => {
@@ -179,18 +180,43 @@ describe("judging commands", () => {
 
       expect(consoleLogSpy.mock.calls[0][0]).toContain("Added judge Judge One")
     })
+
+    it("reports a queued email for a directly added judge", async () => {
+      mockFetch.mockResolvedValueOnce(
+        jsonResponse({
+          participant: { id: "participant1", name: "Judge One" },
+          queued: true,
+          delivery: "queued",
+          queueReason: "event_draft",
+        })
+      )
+      const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
+      const { runJudgesAdd } = await import("../../src/commands/judging/judges-add")
+
+      await runJudgesAdd(client, hackathonId, ["--user-id", "user1"])
+
+      expect(consoleLogSpy.mock.calls[0][0]).toContain("This event is still a draft")
+      expect(consoleLogSpy.mock.calls[0][0]).toContain("when you go live")
+    })
   })
 
   describe("auto-assign", () => {
     it("sends request with --per-judge", async () => {
-      mockFetch.mockResolvedValueOnce(jsonResponse({ created: 15 }))
+      mockFetch
+        .mockResolvedValueOnce(jsonResponse({
+          prizes: [{ id: "prize1", judgingStyle: "judges_pick" }],
+        }))
+        .mockResolvedValueOnce(jsonResponse({ assignedCount: 15 }))
       const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
       const { runAutoAssign } = await import("../../src/commands/judging/auto-assign")
       await runAutoAssign(client, hackathonId, ["--per-judge", "3"])
 
-      const init = mockFetch.mock.calls[0][1] as RequestInit
+      expect(mockFetch.mock.calls[1][0]).toContain(
+        `/prizes/prize1/auto-assign`,
+      )
+      const init = mockFetch.mock.calls[1][1] as RequestInit
       const body = JSON.parse(init.body as string)
-      expect(body.per_judge).toBe(3)
+      expect(body.submissionsPerJudge).toBe(3)
     })
   })
 

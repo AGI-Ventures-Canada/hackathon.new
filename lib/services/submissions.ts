@@ -327,7 +327,7 @@ export type PublicSubmission = {
 
 export async function getHackathonSubmissions(
   hackathonId: string
-): Promise<(PublicSubmission & { submitter_name: string })[]> {
+): Promise<(PublicSubmission & { submitter_name: string; team_mode: "in_person" | "virtual" | null })[]> {
   const client = getSupabase() as unknown as SupabaseClient
 
   const { data: submissions, error: submissionsError } = await client
@@ -370,7 +370,7 @@ export async function getHackathonSubmissions(
 
   const [teamsResult, participantsResult] = await Promise.all([
     teamIds.length > 0
-      ? client.from("teams").select("id, name").in("id", teamIds)
+      ? client.from("teams").select("id, name, mode").in("id", teamIds)
       : Promise.resolve({ data: null }),
     participantIds.length > 0
       ? client
@@ -382,6 +382,9 @@ export async function getHackathonSubmissions(
 
   const teamsMap: Record<string, string> = teamsResult.data
     ? Object.fromEntries(teamsResult.data.map((t) => [t.id, t.name]))
+    : {}
+  const teamModesMap: Record<string, "in_person" | "virtual" | null> = teamsResult.data
+    ? Object.fromEntries(teamsResult.data.map((team) => [team.id, team.mode]))
     : {}
   const participantsMap: Record<string, string> = participantsResult.data
     ? Object.fromEntries(
@@ -395,6 +398,7 @@ export async function getHackathonSubmissions(
       (s.team_id && teamsMap[s.team_id]) ||
       (s.participant_id && participantsMap[s.participant_id]) ||
       "Anonymous",
+    team_mode: s.team_id ? teamModesMap[s.team_id] ?? null : null,
   }))
 }
 

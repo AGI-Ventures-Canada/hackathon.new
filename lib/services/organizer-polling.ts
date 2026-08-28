@@ -17,6 +17,7 @@ interface RpcPollRow {
   starts_at: string | null
   ends_at: string | null
   registration_closes_at: string | null
+  registration_opens_at?: string | null
   allow_late_registration: boolean | null
   location_type: string | null
   feedback_survey_url: string | null
@@ -61,6 +62,7 @@ export async function buildOrganizerPollPayload(hackathonId: string): Promise<Or
 
   return {
     status,
+    storedStatus: r.status as HackathonStatus,
     phase: r.phase as HackathonPhase | null,
     submissionCount: r.submission_count ?? 0,
     unassignedSubmissionCount: r.unassigned_submission_count ?? 0,
@@ -84,6 +86,7 @@ export async function buildOrganizerPollPayload(hackathonId: string): Promise<Or
     startsAt: r.starts_at,
     endsAt: r.ends_at,
     registrationClosesAt: r.registration_closes_at ?? null,
+    registrationOpensAt: r.registration_opens_at ?? null,
     allowLateRegistration: r.allow_late_registration ?? true,
     locationType: r.location_type as ActionItemsInput["locationType"],
     feedbackSurveyUrl: r.feedback_survey_url ?? null,

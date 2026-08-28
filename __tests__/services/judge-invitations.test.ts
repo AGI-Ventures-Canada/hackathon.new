@@ -9,6 +9,7 @@ import {
   mockCount,
   mockError,
   mockClerkClient,
+  setMockRpcImplementation,
 } from "../lib/supabase-mock"
 
 const mockSendJudgeInvitationEmail = mock(() => Promise.resolve({ success: true }))
@@ -44,6 +45,7 @@ const {
   sendPendingJudgeInvitationEmails,
   retryPendingJudgeInvitationEmails,
   createJudgePendingNotification,
+  listPendingJudgeNotifications,
   hasPendingJudgeInvitation,
   hasPendingJudgeEntry,
   countPendingJudgeInvitations,
@@ -798,6 +800,36 @@ describe("Judge Invitations Service", () => {
     })
   })
 
+  describe("listPendingJudgeNotifications", () => {
+    it("returns unsent judge notifications in a UI-safe shape", async () => {
+      const chain = createChainableMock({
+        data: [{
+          participant_id: "participant1",
+          email: "judge@example.com",
+          created_at: "2026-08-27T12:00:00.000Z",
+        }],
+        error: null,
+      })
+      setMockFromImplementation(() => chain)
+
+      await expect(listPendingJudgeNotifications("h1")).resolves.toEqual([{
+        participantId: "participant1",
+        email: "judge@example.com",
+        createdAt: "2026-08-27T12:00:00.000Z",
+      }])
+      expect(chain.is).toHaveBeenCalledWith("sent_at", null)
+    })
+
+    it("keeps the page available when pending-notification lookup fails", async () => {
+      setMockFromImplementation(() => createChainableMock({
+        data: null,
+        error: { message: "connection failed" },
+      }))
+
+      await expect(listPendingJudgeNotifications("h1")).resolves.toEqual([])
+    })
+  })
+
   describe("hasPendingJudgeInvitation", () => {
     it("returns true when a pending invitation exists", async () => {
       setMockFromImplementation(() =>
@@ -914,6 +946,7 @@ describe("Judge Invitations Service", () => {
       const result = await listJudgeInvitations("h1")
 
       expect(result).toHaveLength(2)
+      expect(result[0]).not.toHaveProperty("token")
     })
 
     it("filters by status when provided", async () => {
@@ -974,6 +1007,16 @@ describe("Judge Invitations Service", () => {
         }
         return createChainableMock({ data: null, error: null })
       })
+      setMockRpcImplementation(() => Promise.resolve({
+        data: [{
+          success: true,
+          error_code: null,
+          hackathon_id: "h1",
+          hackathon_slug: "test-hack",
+          cancelled_invitation_ids: [],
+        }],
+        error: null,
+      }))
 
       const result = await acceptJudgeInvitation("test-token-123", "user_123", "judge@example.com")
 

@@ -1,5 +1,6 @@
 import * as p from "@clack/prompts"
 import type { OatmealClient } from "../../client.js"
+import { formatQueueReason } from "../../notification-delivery.js"
 import { formatJson, formatSuccess, formatWarning } from "../../output.js"
 
 interface TeamCreateOptions {
@@ -62,6 +63,7 @@ export async function runTeamsCreate(
     invited?: boolean
     queued?: boolean
     delivery?: "sent" | "queued" | "failed"
+    queueReason?: "event_draft"
   }>(
     `/api/dashboard/hackathons/${hackathonId}/teams`,
     { name, captainEmail }
@@ -79,7 +81,7 @@ export async function runTeamsCreate(
 
   const msg = response.invited
     ? response.queued
-      ? `Created team "${response.team.name}" and queued invite to ${captainEmail} (sent when hackathon goes live)`
+      ? `Created team "${response.team.name}" and queued invite to ${captainEmail}. ${formatQueueReason(response.queueReason)}`
       : `Created team "${response.team.name}" and sent invite to ${captainEmail}`
     : `Created team "${response.team.name}" (${response.team.id})`
   console.log(formatSuccess(msg))

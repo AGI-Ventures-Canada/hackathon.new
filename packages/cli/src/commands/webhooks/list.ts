@@ -21,7 +21,7 @@ export async function runWebhooksList(
   const rows = data.webhooks.map((w) => ({
     ...w,
     events_list: w.events.join(", "),
-    active_str: w.active ? "Active" : "Inactive",
+    active_str: w.isActive ? "Active" : "Inactive",
   }))
 
   console.log(
