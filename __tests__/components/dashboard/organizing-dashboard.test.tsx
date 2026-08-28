@@ -1,9 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test"
-import { render, screen, cleanup, waitFor } from "@testing-library/react"
-import type { WebMcpTool } from "@/lib/webmcp/types"
+import { describe, it, expect, beforeEach, afterEach } from "bun:test"
+import { render, screen, cleanup } from "@testing-library/react"
 import { resetComponentMocks } from "../../lib/component-mocks"
-
-const registeredTools = new Map<string, WebMcpTool>()
 
 const { OrganizingDashboard } = await import(
   "@/app/(dashboard)/home/organizing/organizing-dashboard"
@@ -11,17 +8,10 @@ const { OrganizingDashboard } = await import(
 
 beforeEach(() => {
   resetComponentMocks()
-  registeredTools.clear()
-  document.modelContext = {
-    registerTool: mock(async (tool: WebMcpTool) => {
-      registeredTools.set(tool.name, tool)
-    }),
-  }
 })
 
 afterEach(() => {
   cleanup()
-  delete document.modelContext
 })
 
 const makeHackathon = (overrides: Record<string, unknown> = {}) => ({
@@ -100,17 +90,4 @@ describe("OrganizingDashboard", () => {
     expect(screen.getByText("Your events at a glance")).toBeDefined()
   })
 
-  it("registers organizer portfolio tools for empty and populated workspaces", async () => {
-    const { rerender } = render(<OrganizingDashboard hackathons={[]} stats={{}} />)
-    await waitFor(() => expect(registeredTools.has("open_create_event")).toBe(true))
-
-    rerender(
-      <OrganizingDashboard
-        hackathons={[makeHackathon()]}
-        stats={{ h1: makeStats("h1") }}
-      />,
-    )
-    await waitFor(() => expect(registeredTools.has("list_my_organized_events")).toBe(true))
-    expect(registeredTools.has("open_organized_event")).toBe(true)
-  })
 })

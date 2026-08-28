@@ -59,6 +59,10 @@ import {
   formatPreviewScheduleTime,
   getPendingInvitationTiming,
 } from "./preview-date-formatting"
+import {
+  PREPARE_SPONSOR_EVENT,
+  type PrepareSponsorEvent,
+} from "@/lib/webmcp/client-events"
 
 interface HackathonPreviewClientProps {
   hackathon: PublicHackathon
@@ -144,6 +148,10 @@ function HackathonPreviewContent({
   const [pendingJudges, setPendingJudges] = useState<HackathonJudgeDisplay[]>([])
   const [pendingPrizes, setPendingPrizes] = useState<PublicPrize[]>([])
   const [judgingDialogOpen, setJudgingDialogOpen] = useState(false)
+  const [preparedSponsor, setPreparedSponsor] = useState<{
+    name: string
+    revision: number
+  }>()
   const invitationHackathonStatus = hackathon.stored_status ?? hackathon.status
   const queuedInvitationCount = teamInfo?.pendingInvitations.filter(
     (invitation) => getInvitationDeliveryState({
@@ -162,6 +170,31 @@ function HackathonPreviewContent({
   useEffect(() => {
     setBannerUrl(hackathon.banner_url)
   }, [hackathon.banner_url])
+
+  useEffect(() => {
+    const prepareSponsor = (rawEvent: Event) => {
+      const event = rawEvent as PrepareSponsorEvent
+      if (!isEditable) {
+        event.detail.acknowledge({
+          ok: false,
+          error: {
+            code: "preparation_unavailable",
+            message: "Open this event as an organizer, then try again.",
+            retryable: false,
+          },
+        })
+        return
+      }
+      setPreparedSponsor((current) => ({
+        name: event.detail.name,
+        revision: (current?.revision ?? 0) + 1,
+      }))
+      openSection("sponsors")
+      event.detail.acknowledge({ ok: true })
+    }
+    window.addEventListener(PREPARE_SPONSOR_EVENT, prepareSponsor)
+    return () => window.removeEventListener(PREPARE_SPONSOR_EVENT, prepareSponsor)
+  }, [isEditable, openSection])
 
   useEffect(() => {
     const serverIds = new Set(hackathon.prizes.map((p) => p.id))
@@ -532,6 +565,8 @@ function HackathonPreviewContent({
         initialSponsors={hackathon.sponsors}
         onSaveAndNext={() => handleSaveAndNext("sponsors")}
         onSave={onFormSave ? (data) => onFormSave(data) : undefined}
+        preparedName={preparedSponsor?.name}
+        preparedNameRevision={preparedSponsor?.revision}
       />
     </div>
   ) : (

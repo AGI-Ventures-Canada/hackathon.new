@@ -3,6 +3,8 @@ import { defineWebMcpTool } from "@/lib/webmcp/tool"
 import type { WebMcpTool } from "@/lib/webmcp/types"
 import type { HackathonStatus, TeamStatus } from "@/lib/db/hackathon-types"
 import { stageKeyForStatus } from "@/lib/utils/lifecycle-stages"
+import { isHttpsUrlWithoutCredentials, normalizeUrl } from "@/lib/utils/url"
+import { WebMcpRequestError } from "@/lib/webmcp/fetch"
 
 export function getProjectDraftNextStep(input: {
   signedIn: boolean
@@ -73,10 +75,85 @@ export type PreparedProjectDraft = {
   description: string
 }
 
+export function parsePreparedProjectDraft(
+  raw: string | null,
+): PreparedProjectDraft | null {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw) as Partial<PreparedProjectDraft>
+    if (
+      typeof parsed.title !== "string" ||
+      typeof parsed.githubUrl !== "string" ||
+      typeof parsed.liveAppUrl !== "string" ||
+      typeof parsed.demoVideoUrl !== "string" ||
+      typeof parsed.description !== "string"
+    ) {
+      return null
+    }
+    return {
+      title: parsed.title.slice(0, 100),
+      githubUrl: parsed.githubUrl.slice(0, 2_048),
+      liveAppUrl: parsed.liveAppUrl.slice(0, 2_048),
+      demoVideoUrl: parsed.demoVideoUrl.slice(0, 2_048),
+      description: parsed.description.slice(0, 280),
+    }
+  } catch {
+    return null
+  }
+}
+
+export function normalizePreparedProjectDraft(
+  draft: PreparedProjectDraft,
+): PreparedProjectDraft {
+  try {
+    const githubUrl = normalizeUrl(draft.githubUrl)
+    const github = new URL(githubUrl)
+    if (
+      !isHttpsUrlWithoutCredentials(githubUrl) ||
+      !["github.com", "www.github.com"].includes(github.hostname)
+    ) {
+      throw new WebMcpRequestError({
+        code: "invalid_github_url",
+        message: "Use a GitHub repository URL.",
+        retryable: false,
+      })
+    }
+
+    const normalizeOptional = (value: string) => {
+      if (!value.trim()) return ""
+      const normalized = normalizeUrl(value)
+      if (!isHttpsUrlWithoutCredentials(normalized)) {
+        throw new WebMcpRequestError({
+          code: "invalid_url",
+          message: "Project and video links must use HTTPS.",
+          retryable: false,
+        })
+      }
+      return normalized
+    }
+
+    return {
+      title: draft.title.trim(),
+      githubUrl,
+      liveAppUrl: normalizeOptional(draft.liveAppUrl),
+      demoVideoUrl: normalizeOptional(draft.demoVideoUrl),
+      description: draft.description.trim(),
+    }
+  } catch (error) {
+    if (error instanceof WebMcpRequestError) throw error
+    throw new WebMcpRequestError({
+      code: "invalid_url",
+      message: "Check the project links and try again.",
+      retryable: false,
+    })
+  }
+}
+
 export type EventGuideContext = {
   name: string
   slug: string
   description: string | null
+  rules?: string | null
   status: HackathonStatus
   startsAt: string | null
   endsAt: string | null
@@ -135,7 +212,7 @@ function snippet(value: string | null, maxLength: number): string | null {
   return `${value.slice(0, maxLength - 1)}…`
 }
 
-function summarizeViewer(viewer: EventViewerContext) {
+export function summarizeEventViewer(viewer: EventViewerContext) {
   return {
     signedIn: viewer.signedIn,
     registered: viewer.registered,
@@ -165,7 +242,7 @@ function summarizeViewer(viewer: EventViewerContext) {
   }
 }
 
-function summarizeProject(draft: PreparedProjectDraft | null) {
+export function summarizeProjectDraft(draft: PreparedProjectDraft | null) {
   if (!draft) return null
   return {
     title: snippet(draft.title, 100),
@@ -178,12 +255,13 @@ function summarizeProject(draft: PreparedProjectDraft | null) {
 
 const eventGuideSectionSchema = z.enum([
   "overview",
+  "rules",
   "schedule",
   "announcements",
   "challenges",
 ])
 
-function summarizeGuide(
+export function summarizeEventGuide(
   guide: EventGuideContext,
   section: z.infer<typeof eventGuideSectionSchema>,
   offset: number,
@@ -212,6 +290,14 @@ function summarizeGuide(
         announcements: guide.announcements.length,
         challenges: guide.challenges.length,
       },
+    }
+  }
+
+  if (section === "rules") {
+    return {
+      section,
+      rules: snippet(guide.rules ?? null, 900),
+      available: Boolean(guide.rules?.trim()),
     }
   }
 
@@ -275,7 +361,7 @@ export function createEventAttendeeTools(
         offset: z.number().int().nonnegative().max(100).default(0),
       }).strict(),
       annotations: { readOnlyHint: true, untrustedContentHint: true },
-      execute: ({ section, offset }) => summarizeGuide(actions.guide, section, offset),
+      execute: ({ section, offset }) => summarizeEventGuide(actions.guide, section, offset),
     }),
     defineWebMcpTool({
       name: "get_my_event_status",
@@ -284,7 +370,7 @@ export function createEventAttendeeTools(
         "Read whether this viewer is signed in, registered, on a team, and ready to prepare a project.",
       schema: z.object({}).strict(),
       annotations: { readOnlyHint: true, untrustedContentHint: true },
-      execute: () => summarizeViewer(actions.viewer),
+      execute: () => summarizeEventViewer(actions.viewer),
     }),
   ]
 
@@ -297,7 +383,7 @@ export function createEventAttendeeTools(
           "Read the project draft saved in this browser. This does not submit or save a project to the event.",
         schema: z.object({}).strict(),
         annotations: { readOnlyHint: true, untrustedContentHint: true },
-        execute: () => ({ draft: summarizeProject(actions.getProjectDraft()) }),
+        execute: () => ({ draft: summarizeProjectDraft(actions.getProjectDraft()) }),
       }),
       defineWebMcpTool({
         name: "prepare_project",
@@ -352,7 +438,7 @@ export function createEventAttendeeTools(
         "Read the viewer's team name, status, members, and open spots without exposing internal IDs.",
       schema: z.object({}).strict(),
       annotations: { readOnlyHint: true, untrustedContentHint: true },
-      execute: () => summarizeViewer(actions.viewer).team,
+      execute: () => summarizeEventViewer(actions.viewer).team,
     }))
   }
 

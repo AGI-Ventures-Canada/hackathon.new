@@ -3,6 +3,19 @@ import { resetClerkMocks } from "../lib/supabase-mock"
 
 const mockCheckHackathonOrganizer = mock(() => Promise.resolve({ status: "ok" }))
 const mockDeleteHackathon = mock(() => Promise.resolve(true))
+const mockGetPublicHackathon = mock(() => Promise.resolve<unknown>(null))
+const mockGetRegistrationInfo = mock(() => Promise.resolve({ participantRole: null }))
+const mockGetParticipantCount = mock(() => Promise.resolve(12))
+const mockGetParticipantTeamInfo = mock(() => Promise.resolve<unknown>(null))
+const mockGetSubmissionForParticipant = mock(() => Promise.resolve<unknown>(null))
+const mockListScheduleItems = mock(() => Promise.resolve<unknown[]>([]))
+const mockListPublishedAnnouncements = mock(() => Promise.resolve<unknown[]>([]))
+const mockListChallenges = mock(() => Promise.resolve<unknown[]>([]))
+const mockCheckRateLimit = mock(() => ({
+  allowed: true,
+  remaining: 100,
+  resetAt: Date.now() + 60_000,
+}))
 const mockLogAudit = mock(() => Promise.resolve(null))
 const mockTriggerWebhooks = mock(() => Promise.resolve())
 const mockCreateHackathon = mock(() =>
@@ -54,10 +67,37 @@ const mockGetTenantById = mock(() =>
 mock.module("@/lib/services/public-hackathons", () => ({
   checkHackathonOrganizer: mockCheckHackathonOrganizer,
   deleteHackathon: mockDeleteHackathon,
+  getPublicHackathon: mockGetPublicHackathon,
 }))
 
 mock.module("@/lib/services/hackathons", () => ({
   createHackathon: mockCreateHackathon,
+  getRegistrationInfo: mockGetRegistrationInfo,
+  getParticipantCount: mockGetParticipantCount,
+  getParticipantTeamInfo: mockGetParticipantTeamInfo,
+}))
+
+mock.module("@/lib/services/submissions", () => ({
+  getSubmissionForParticipant: mockGetSubmissionForParticipant,
+}))
+
+mock.module("@/lib/services/schedule-items", () => ({
+  listScheduleItems: mockListScheduleItems,
+}))
+
+mock.module("@/lib/services/announcements", () => ({
+  listPublishedAnnouncements: mockListPublishedAnnouncements,
+  filterAnnouncementsForViewer: (
+    announcements: { audience: string }[],
+    viewer: { hasSubmitted: boolean },
+  ) => announcements.filter((announcement) =>
+    announcement.audience === "all"
+      || (announcement.audience === "submitted" && viewer.hasSubmitted),
+  ),
+}))
+
+mock.module("@/lib/services/challenges", () => ({
+  listChallenges: mockListChallenges,
 }))
 
 mock.module("@/lib/services/luma-import-create", () => ({
@@ -126,7 +166,7 @@ mock.module("@/lib/auth/principal", () => {
 })
 
 mock.module("@/lib/services/rate-limit", () => ({
-  checkRateLimit: () => ({ allowed: true, remaining: 100, resetAt: Date.now() + 60000 }),
+  checkRateLimit: mockCheckRateLimit,
   getRateLimitHeaders: () => ({}),
   defaultRateLimits: { "api_key:default": { maxRequests: 100, windowMs: 60000 } },
   RateLimitError: class RateLimitError extends Error {
@@ -732,5 +772,201 @@ describe("POST /api/dashboard/hackathons", () => {
     expect(res.status).toBe(400)
     expect(await res.json()).toEqual({ error: "Give your event a name." })
     expect(mockCreateHackathonAggregate).not.toHaveBeenCalled()
+  })
+})
+
+describe("GET /api/dashboard/webmcp/attendee-events/:slug", () => {
+  const publicHackathon = {
+    id: "event-1",
+    slug: "agent-jam",
+    name: "Agent Jam",
+    description: "Build something useful.",
+    rules: "Be kind.",
+    status: "active",
+    stored_status: "active",
+    starts_at: "2026-08-28T13:00:00.000Z",
+    ends_at: "2099-08-29T21:00:00.000Z",
+    registration_opens_at: "2026-08-01T13:00:00.000Z",
+    registration_closes_at: "2099-08-28T13:00:00.000Z",
+    location_type: "virtual",
+    location_name: "Online",
+    location_url: "https://example.com/room",
+    challenge_released_at: "2026-08-28T14:00:00.000Z",
+    results_published_at: null,
+    min_team_size: 1,
+    max_team_size: 4,
+    allow_solo: true,
+    organizer: { name: "AGIV" },
+  }
+
+  beforeEach(() => {
+    mockResolvePrincipal.mockReset()
+    mockGetPublicHackathon.mockReset()
+    mockGetRegistrationInfo.mockReset()
+    mockGetParticipantCount.mockReset()
+    mockGetParticipantTeamInfo.mockReset()
+    mockGetSubmissionForParticipant.mockReset()
+    mockListScheduleItems.mockReset()
+    mockListPublishedAnnouncements.mockReset()
+    mockListChallenges.mockReset()
+    mockCheckRateLimit.mockReset()
+    mockCheckRateLimit.mockReturnValue({
+      allowed: true,
+      remaining: 100,
+      resetAt: Date.now() + 60_000,
+    })
+    mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+    mockGetPublicHackathon.mockResolvedValue(publicHackathon)
+    mockGetRegistrationInfo.mockResolvedValue({ participantRole: "participant" })
+    mockGetParticipantCount.mockResolvedValue(12)
+    mockGetParticipantTeamInfo.mockResolvedValue({
+      team: { name: "Builders", status: "forming" },
+      isCaptain: true,
+      members: [{ displayName: "Avery" }],
+      pendingInvitations: [],
+    })
+    mockGetSubmissionForParticipant.mockResolvedValue({
+      id: "submission-1",
+      title: "Queue Coach",
+      status: "submitted",
+      github_url: "https://github.com/example/queue-coach",
+      live_app_url: null,
+      demo_video_url: null,
+    })
+    mockListScheduleItems.mockResolvedValue([{
+      title: "Projects due",
+      starts_at: "2099-08-29T20:00:00.000Z",
+      ends_at: null,
+      location: null,
+      trigger_type: "submission_deadline",
+    }])
+    mockListPublishedAnnouncements.mockResolvedValue([
+      { title: "Welcome", body: "Have fun.", priority: "normal", audience: "all" },
+      { title: "Project tip", body: "Check every link.", priority: "high", audience: "submitted" },
+      { title: "Judge note", body: "Private.", priority: "normal", audience: "judges" },
+    ])
+    mockListChallenges.mockResolvedValue([{
+      title: "Useful agents",
+      description: "Help someone.",
+      resources: [{ title: "Guide" }],
+    }])
+  })
+
+  it("rejects a signed-in user who is not an attendee", async () => {
+    mockGetRegistrationInfo.mockResolvedValue({ participantRole: "judge" })
+    const response = await app.handle(new Request(
+      "http://localhost/api/dashboard/webmcp/attendee-events/agent-jam",
+    ))
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({ code: "not_attendee" })
+    expect(mockGetParticipantTeamInfo).not.toHaveBeenCalled()
+    expect(mockGetSubmissionForParticipant).not.toHaveBeenCalled()
+  })
+
+  it("returns stable errors for throttled, missing, and changed events", async () => {
+    mockCheckRateLimit.mockReturnValueOnce({
+      allowed: false,
+      remaining: 0,
+      resetAt: Date.now() + 60_000,
+    })
+    const throttled = await app.handle(new Request(
+      "http://localhost/api/dashboard/webmcp/attendee-events/agent-jam",
+    ))
+    expect(throttled.status).toBe(429)
+
+    mockGetPublicHackathon.mockResolvedValueOnce(null)
+    const missing = await app.handle(new Request(
+      "http://localhost/api/dashboard/webmcp/attendee-events/missing",
+    ))
+    expect(missing.status).toBe(404)
+    expect(await missing.json()).toMatchObject({ code: "not_found" })
+
+    mockGetParticipantTeamInfo.mockResolvedValueOnce(null)
+    const changed = await app.handle(new Request(
+      "http://localhost/api/dashboard/webmcp/attendee-events/agent-jam",
+    ))
+    expect(changed.status).toBe(409)
+    expect(await changed.json()).toMatchObject({ code: "event_changed" })
+  })
+
+  it("returns private, role-filtered attendee context", async () => {
+    const response = await app.handle(new Request(
+      "http://localhost/api/dashboard/webmcp/attendee-events/agent-jam",
+    ))
+    const body = await response.json()
+    expect(response.status).toBe(200)
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store")
+    expect(response.headers.get("Vary")).toBe("Cookie, Authorization")
+    expect(body).toMatchObject({
+      guide: {
+        rules: "Be kind.",
+        challenges: [{ title: "Useful agents", resourceCount: 1 }],
+        announcements: [
+          { title: "Welcome" },
+          { title: "Project tip" },
+        ],
+      },
+      viewer: {
+        role: "participant",
+        team: { name: "Builders", memberNames: ["Avery"] },
+        project: { title: "Queue Coach", hasGithubUrl: true },
+      },
+      projectReview: {
+        submissionDeadline: "2099-08-29T20:00:00.000Z",
+        teamStatus: "forming",
+      },
+    })
+    expect(JSON.stringify(body)).not.toContain("Judge note")
+  })
+
+  it("hides challenges while the attendee team awaits approval", async () => {
+    mockGetParticipantTeamInfo.mockResolvedValue({
+      team: { name: "Builders", status: "pending_approval" },
+      isCaptain: true,
+      members: [{ displayName: "Avery" }],
+      pendingInvitations: [],
+    })
+    const response = await app.handle(new Request(
+      "http://localhost/api/dashboard/webmcp/attendee-events/agent-jam",
+    ))
+    const body = await response.json()
+    expect(response.status).toBe(200)
+    expect(body.guide.challenges).toEqual([])
+    expect(body.viewer.nextStep).toContain("Wait for team approval")
+  })
+
+  it("explains disbanded teams, passed deadlines, and events that have not started", async () => {
+    mockGetParticipantTeamInfo.mockResolvedValueOnce({
+      team: { name: "Builders", status: "disbanded" },
+      isCaptain: false,
+      members: [{ displayName: "Avery" }],
+      pendingInvitations: [],
+    })
+    const disbanded = await app.handle(new Request(
+      "http://localhost/api/dashboard/webmcp/attendee-events/agent-jam",
+    ))
+    expect((await disbanded.json()).viewer.nextStep).toContain("no longer active")
+
+    mockListScheduleItems.mockResolvedValueOnce([{
+      title: "Projects due",
+      starts_at: "2026-08-27T20:00:00.000Z",
+      ends_at: null,
+      location: null,
+      trigger_type: "submission_deadline",
+    }])
+    const passed = await app.handle(new Request(
+      "http://localhost/api/dashboard/webmcp/attendee-events/agent-jam",
+    ))
+    expect((await passed.json()).viewer.nextStep).toContain("deadline has passed")
+
+    mockGetPublicHackathon.mockResolvedValueOnce({
+      ...publicHackathon,
+      status: "published",
+      stored_status: "published",
+    })
+    const upcoming = await app.handle(new Request(
+      "http://localhost/api/dashboard/webmcp/attendee-events/agent-jam",
+    ))
+    expect((await upcoming.json()).viewer.nextStep).toContain("schedule")
   })
 })

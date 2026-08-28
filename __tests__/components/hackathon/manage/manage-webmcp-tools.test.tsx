@@ -2,6 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test"
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react"
 import type { ManageHackathonWebMcpContext } from "@/lib/webmcp/manage-hackathon-tools"
 import type { WebMcpTool } from "@/lib/webmcp/types"
+import {
+  PREPARE_SPONSOR_EVENT,
+  type PrepareSponsorEvent,
+} from "@/lib/webmcp/client-events"
 
 const beginManageWebMcpChange = mock(() => {})
 const commitManageWebMcpChange = mock(() => {})
@@ -277,6 +281,33 @@ describe("ManageHackathonWebMcpTools", () => {
     expect(navigation.__nextNavState.router.push).toHaveBeenCalledWith(
       "/e/build-day/manage?tab=judging&jtab=results",
     )
+  })
+
+  it("opens sponsor review and fills the requested name without saving", async () => {
+    const acknowledge = (rawEvent: Event) => {
+      const event = rawEvent as PrepareSponsorEvent
+      expect(event.detail.name).toBe("Acme")
+      event.detail.acknowledge({ ok: true })
+    }
+    window.addEventListener(PREPARE_SPONSOR_EVENT, acknowledge)
+    try {
+      render(
+        <>
+          <ManageHackathonWebMcpTools context={context} />
+          <div data-webmcp-section="sponsors" />
+        </>,
+      )
+      await waitFor(() => expect(tools.has("prepare_sponsor")).toBe(true))
+      const result = await execute("prepare_sponsor", { name: "Acme" })
+      expect(result).toMatchObject({
+        ok: true,
+        requiresHumanAction: true,
+        data: { prepared: true, status: "review_opened" },
+      })
+      expect(globalThis.fetch).not.toHaveBeenCalled()
+    } finally {
+      window.removeEventListener(PREPARE_SPONSOR_EVENT, acknowledge)
+    }
   })
 
   it("covers every setting and safely inspects organizer data", async () => {

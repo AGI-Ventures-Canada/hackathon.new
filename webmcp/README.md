@@ -1,6 +1,6 @@
 # hackathon.new WebMCP
 
-hackathon.new registers browser-native tools with `document.modelContext.registerTool`. Registration follows the current route, signed-in role, event lifecycle, judging style, and visible capabilities. An `AbortController` removes tools when that context changes.
+hackathon.new registers browser-native tools with `document.modelContext.registerTool`. Signed-in workspace tools stay available across the app. Page tools still follow the current route, role, event lifecycle, judging style, and visible capabilities. An `AbortController` removes page tools when that context changes.
 
 ## Human control
 
@@ -12,13 +12,14 @@ No WebMCP tool deletes data, sends email, transitions an event, chooses winners,
 
 | Surface | Tools | When shown |
 |---|---|---|
+| Signed-in workspace | `open_create_event`, `list_my_organized_events`, `open_organized_event`, `get_organized_event_tasks`, `list_my_attendee_events`, `get_attendee_event_guide`, `get_attendee_event_status`, `get_attendee_project_draft`, `prepare_attendee_project`, `open_attendee_event` | Available from every signed-in app page. Events use opaque references from the matching list tool. Attendee reads recheck the current participant role. Project preparation opens the normal review on the current page. |
 | Create or import | `get_hackathon_draft`, `update_hackathon_draft`, `open_hackathon_review`, `open_sign_in` | The draft tools stay stable while fields change. Sign in appears only for a signed-out person. |
 | Visitor or attendee | `get_event_guide`, `get_my_event_status`, `open_registration`, `get_my_team`, `prepare_team_invite`, `get_project_draft`, `prepare_project` | Only the next useful tools appear for the viewer's registration, team, and project state. |
 | Attendee mentor help | `get_my_mentor_request`, `prepare_mentor_request` | The prepare tool appears only when the attendee can open a new request. |
 | Sponsor portfolio | `list_my_sponsorships`, `open_sponsor_event` | A signed-in sponsor can review its events and open the event or prize page. |
 | Sponsor prize delivery | `get_sponsor_fulfillments`, `prepare_fulfillment` | Safe delivery status omits recipient, address, and payment details. Preparation opens the final human review. |
 | Organizer reads and navigation | Overview, schedule, challenge, prize, project, sponsor, perk, and announcement reads, plus `open_hackathon_section` | Available to the exact event organizer. Perk codes stay hidden. Results and unreleased content are still filtered by lifecycle. |
-| Organizer edits | `update_hackathon_details`, `add_schedule_item`, `set_hackathon_timeline`, `add_challenge`, `add_prize`, `draft_announcement` | Details and ordinary schedule items stop at completion. Timeline, challenge, and prize writes are draft-only. Announcements are saved as drafts. |
+| Organizer edits | `update_hackathon_details`, `add_schedule_item`, `set_hackathon_timeline`, `add_challenge`, `add_prize`, `prepare_sponsor`, `draft_announcement` | Details and ordinary schedule items stop at completion. Timeline, challenge, and prize writes are draft-only. Sponsor preparation opens and fills the normal editor. Announcements are saved as drafts. |
 | Organizer reviews | `open_go_live_review`, `open_publish_review` | Go-live appears for drafts. Results review appears during judging or after completion. Both require a human click. |
 | Judge | `get_my_judging_status`, `get_judge_assignments`, `get_judge_assignment`, `open_judge_assignment`, plus one of `prepare_judge_scores`, `prepare_judge_picks`, `prepare_judge_bucket`, or `prepare_judge_gates` | Only an assigned judge sees these tools. The preparation tool matches the configured response style and makes no request. |
 | Public mentor queue | `get_mentor_queue_status` | Signed-out visitors receive aggregate counts only. |
@@ -40,7 +41,7 @@ or:
 
 Tool names and parameter names are at most 30 characters. Descriptions are at most 500 characters, parameter descriptions at most 150, and each serialized result at most 1,500 characters. Read tools use `readOnlyHint`. Tools that return project, attendee, request, or imported text use `untrustedContentHint`.
 
-Database, Clerk, participant, team, assignment, prize, criterion, and mentor-request IDs never enter tool results. Page sessions map them to opaque references and reject references after their source record disappears.
+Database, Clerk, participant, team, assignment, prize, criterion, and mentor-request IDs never enter tool results. Browser sessions map them to opaque references and reject references that were not issued or whose source record disappeared.
 
 ## Server checks
 

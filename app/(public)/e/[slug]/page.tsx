@@ -274,6 +274,7 @@ export default async function EventPage({ params, searchParams }: PageProps) {
     name: hackathon.name,
     slug: hackathon.slug,
     description: hackathon.description,
+    rules: hackathon.rules,
     status: hackathon.status,
     startsAt: hackathon.starts_at,
     endsAt: hackathon.ends_at,

@@ -36,7 +36,7 @@ Major additions since 2026-02:
 - **Action items** — organizer to-do list that surfaces what still needs attention before the event starts.
 - **Mentor queue** — attendees request help, mentors triage and claim requests in real time.
 - **Announcements** — publish immediately or schedule, target specific audiences (all, teams-only, judges).
-- **WebMCP** — let a browser agent read the page, fill visible work, and open reviews while people keep every final submit, publish, invite, judging, and mentor action.
+- **WebMCP** — let a browser agent find your events from anywhere, fill visible work, and open reviews while people keep every final submit, publish, invite, judging, and mentor action.
 
 ## Dashboard, CLI, or API — pick your surface
 

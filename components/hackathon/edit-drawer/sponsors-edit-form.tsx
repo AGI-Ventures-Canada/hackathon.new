@@ -61,6 +61,8 @@ interface SponsorsEditFormProps {
   initialSponsors: SponsorWithTenant[];
   onSaveAndNext?: () => void;
   onSave?: (data: { sponsors: { name: string; tier: string | null }[] }) => Promise<boolean>;
+  preparedName?: string;
+  preparedNameRevision?: number;
 }
 
 const TIER_OPTIONS: {
@@ -295,6 +297,8 @@ export function SponsorsEditForm({
   initialSponsors,
   onSaveAndNext,
   onSave,
+  preparedName,
+  preparedNameRevision,
 }: SponsorsEditFormProps) {
   const isLocalMode = !!onSave;
   const router = useRouter();
@@ -346,6 +350,10 @@ export function SponsorsEditForm({
     : orgSearch.results.filter((org) => org.isSaved);
   const loading = isLocalMode ? false : orgSearch.loading;
   const searched = isLocalMode ? true : orgSearch.searched;
+
+  useEffect(() => {
+    if (preparedName) setQuery(preparedName);
+  }, [preparedName, preparedNameRevision, setQuery]);
 
   function saveLocalSponsors(sponsors: SponsorWithTenant[]) {
     const sponsorsData = sponsors.map((s) => ({
@@ -655,6 +663,7 @@ export function SponsorsEditForm({
           <FieldLabel>Add Sponsor</FieldLabel>
           <div className="relative">
             <Input
+              autoFocus
               placeholder="Sponsor organization name..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}

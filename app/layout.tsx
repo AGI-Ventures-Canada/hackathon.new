@@ -8,6 +8,7 @@ import { ThemedClerkProvider } from "@/components/clerk-provider"
 import { PostHogProvider } from "@/components/posthog-provider"
 import { SearchCommand } from "@/components/search-command"
 import { DevTool } from "@/components/dev-tool/dev-tool"
+import { GlobalWebMcpTools } from "@/components/global-webmcp-tools"
 import "./globals.css"
 
 const jetbrainsMono = JetBrains_Mono({
@@ -55,6 +56,7 @@ export default async function RootLayout({
         <ThemeProvider nonce={nonce}>
           <ThemedClerkProvider nonce={nonce}>
             <PostHogProvider>{children}</PostHogProvider>
+            <GlobalWebMcpTools />
             <SearchCommand />
             {showDevTool && <DevTool />}
           </ThemedClerkProvider>

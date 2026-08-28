@@ -165,6 +165,8 @@ interface SubmissionButtonProps {
   pendingTeamApproval?: boolean
   teamStatus?: TeamStatus | null
   submissionDeadline?: string | null
+  hideTrigger?: boolean
+  prepareTarget?: string
 }
 
 export function SubmissionButton({
@@ -176,6 +178,8 @@ export function SubmissionButton({
   pendingTeamApproval = false,
   teamStatus = null,
   submissionDeadline,
+  hideTrigger = false,
+  prepareTarget,
 }: SubmissionButtonProps) {
   const { isSignedIn, isLoaded, user } = useUser()
   const router = useRouter()
@@ -259,7 +263,9 @@ export function SubmissionButton({
 
   useEffect(() => {
     const prepareProject = (event: Event) => {
-      const { draft, acknowledge } = (event as PrepareProjectEvent).detail
+      const { slug, target, draft, acknowledge } = (event as PrepareProjectEvent).detail
+      if (slug !== hackathonSlug) return
+      if (prepareTarget ? target !== prepareTarget : target !== undefined) return
       try {
         const savedDraft = parseSubmissionDraft(
           readProjectDraft(window.localStorage, hackathonSlug, draftOwnerId),
@@ -332,6 +338,7 @@ export function SubmissionButton({
     currentStep,
     draftOwnerId,
     hackathonSlug,
+    prepareTarget,
     isDialogOpen,
     isRegistered,
     isSignedIn,
@@ -869,19 +876,21 @@ export function SubmissionButton({
 
   return (
     <>
-      <Button onClick={() => handleOpenChange(true)} variant="outline" size="lg">
-        {submission ? (
-          <>
-            <Pencil className="size-4" />
-            Edit Submission
-          </>
-        ) : (
-          <>
-            <Send className="size-4" />
-            Submit Project
-          </>
-        )}
-      </Button>
+      {!hideTrigger && (
+        <Button onClick={() => handleOpenChange(true)} variant="outline" size="lg">
+          {submission ? (
+            <>
+              <Pencil className="size-4" />
+              Edit Submission
+            </>
+          ) : (
+            <>
+              <Send className="size-4" />
+              Submit Project
+            </>
+          )}
+        </Button>
+      )}
 
       <Dialog open={isDialogOpen} onOpenChange={handleOpenChange}>
         <SteppedDialogContent

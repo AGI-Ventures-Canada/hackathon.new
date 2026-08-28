@@ -458,6 +458,17 @@ curl -s "$BASE_URL/api/dashboard/hackathons?q=ai" \
 
 ---
 
+#### Read one attendee event workspace
+
+Requires a Clerk session for a registered attendee. The response is private and includes only the current attendee's team and project review data.
+
+```bash
+curl -s "$BASE_URL/api/dashboard/webmcp/attendee-events/ai-builders-2026" \
+  --cookie "clerk-session=..." | jq .
+```
+
+---
+
 #### Create a hackathon
 
 Scope: `hackathons:write`
