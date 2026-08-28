@@ -68,6 +68,17 @@ const mockInvitation = {
 describe("Judge Invitations Integration - acceptJudgeInvitation", () => {
   beforeEach(() => {
     mockFrom.mockClear()
+    mockRpc.mockClear()
+    mockRpc.mockResolvedValue({
+      data: [{
+        success: true,
+        error_code: null,
+        hackathon_id: "h1",
+        hackathon_slug: "test-hackathon",
+        cancelled_invitation_ids: [],
+      }],
+      error: null,
+    })
     mockAddJudge.mockClear()
     mockAddJudge.mockImplementation(() =>
       Promise.resolve({ success: true, participant: { id: "j1", clerkUserId: "user_123" } })
@@ -91,18 +102,16 @@ describe("Judge Invitations Integration - acceptJudgeInvitation", () => {
       expect(result.hackathonSlug).toBe("test-hackathon")
       expect(result.hackathonId).toBe("h1")
     }
-    expect(mockAddJudge).toHaveBeenCalledWith("h1", "user_123")
+    expect(mockRpc).toHaveBeenCalledWith("accept_judge_invitation_atomic", {
+      p_token: "test-token-123",
+      p_clerk_user_id: "user_123",
+      p_email: "judge@example.com",
+    })
   })
 
   it("claims a pending invitation when the user is already a judge", async () => {
-    const claim = createIntegrationChainableMock({ data: { id: "inv1" }, error: null })
-    let call = 0
     mockFrom.mockImplementation(() => {
-      call++
-      if (call === 1) {
-        return createIntegrationChainableMock({ data: mockInvitation, error: null })
-      }
-      return claim
+      return createIntegrationChainableMock({ data: mockInvitation, error: null })
     })
     mockAddJudge.mockResolvedValue({
       success: false,
@@ -119,10 +128,7 @@ describe("Judge Invitations Integration - acceptJudgeInvitation", () => {
       hackathonId: "h1",
       hackathonSlug: "test-hackathon",
     })
-    expect(claim.update).toHaveBeenCalledWith(expect.objectContaining({
-      status: "accepted",
-      accepted_by_clerk_user_id: "user_123",
-    }))
+    expect(mockRpc).toHaveBeenCalledTimes(1)
   })
 
   it("returns email_mismatch error when user email does not match invitation", async () => {
@@ -158,7 +164,7 @@ describe("Judge Invitations Integration - acceptJudgeInvitation", () => {
     if (result.success) {
       expect(result.hackathonSlug).toBe("test-hackathon")
     }
-    expect(mockAddJudge).toHaveBeenCalledWith("h1", "user_123")
+    expect(mockRpc).toHaveBeenCalledTimes(1)
   })
 
   it("returns email_mismatch when no email in array matches invitation", async () => {
@@ -268,9 +274,16 @@ describe("Judge Invitations Integration - acceptJudgeInvitation", () => {
   })
 
   it("returns insert_failed error when judge creation fails", async () => {
-    mockAddJudge.mockImplementation(() =>
-      Promise.resolve({ success: false, error: "Failed to add", code: "insert_failed" })
-    )
+    mockRpc.mockResolvedValue({
+      data: [{
+        success: false,
+        error_code: "insert_failed",
+        hackathon_id: null,
+        hackathon_slug: null,
+        cancelled_invitation_ids: [],
+      }],
+      error: null,
+    })
 
     mockFrom.mockImplementation(() =>
       createIntegrationChainableMock({ data: mockInvitation, error: null })

@@ -9,6 +9,7 @@ import {
   mockCount,
   mockError,
   mockClerkClient,
+  setMockRpcImplementation,
 } from "../lib/supabase-mock"
 
 const mockSendJudgeInvitationEmail = mock(() => Promise.resolve({ success: true }))
@@ -945,6 +946,7 @@ describe("Judge Invitations Service", () => {
       const result = await listJudgeInvitations("h1")
 
       expect(result).toHaveLength(2)
+      expect(result[0]).not.toHaveProperty("token")
     })
 
     it("filters by status when provided", async () => {
@@ -1005,6 +1007,16 @@ describe("Judge Invitations Service", () => {
         }
         return createChainableMock({ data: null, error: null })
       })
+      setMockRpcImplementation(() => Promise.resolve({
+        data: [{
+          success: true,
+          error_code: null,
+          hackathon_id: "h1",
+          hackathon_slug: "test-hack",
+          cancelled_invitation_ids: [],
+        }],
+        error: null,
+      }))
 
       const result = await acceptJudgeInvitation("test-token-123", "user_123", "judge@example.com")
 

@@ -2839,11 +2839,11 @@ describe("createPrizesFromImport", () => {
   })
 
   it("creates prizes with correct display order", async () => {
-    const prizesChain = createChainableMock({
-      data: { id: "p1", hackathon_id: "h1", name: "Grand Prize", description: "Top team", value: "$5,000", display_order: 0, created_at: "" },
-      error: null,
+    const payloads: Record<string, unknown>[] = []
+    setMockRpcImplementation((_fn, params) => {
+      payloads.push((params as { p_prize_values: Record<string, unknown> }).p_prize_values)
+      return Promise.resolve({ data: { id: `p${payloads.length}` }, error: null })
     })
-    setMockFromImplementation(() => prizesChain)
 
     await createPrizesFromImport("h1", [
       { name: "Grand Prize", description: "Top team", value: "$5,000" },
@@ -2851,21 +2851,20 @@ describe("createPrizesFromImport", () => {
       { name: "Best Design", description: "Most creative UI", value: null },
     ])
 
-    expect(prizesChain.insert).toHaveBeenCalledTimes(3)
-    expect(prizesChain.insert).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      hackathon_id: "h1",
+    expect(payloads).toHaveLength(3)
+    expect(payloads[0]).toEqual(expect.objectContaining({
       name: "Grand Prize",
       description: "Top team",
       value: "$5,000",
       display_order: 0,
     }))
-    expect(prizesChain.insert).toHaveBeenNthCalledWith(2, expect.objectContaining({
+    expect(payloads[1]).toEqual(expect.objectContaining({
       name: "Runner Up",
       description: null,
       value: "$2,500",
       display_order: 1,
     }))
-    expect(prizesChain.insert).toHaveBeenNthCalledWith(3, expect.objectContaining({
+    expect(payloads[2]).toEqual(expect.objectContaining({
       name: "Best Design",
       description: "Most creative UI",
       value: null,
@@ -2883,17 +2882,17 @@ describe("createPrizesFromImport", () => {
   })
 
   it("defaults null description and value", async () => {
-    const prizesChain = createChainableMock({
-      data: { id: "p1", hackathon_id: "h1", name: "Participation Award", description: null, value: null, display_order: 0, created_at: "" },
-      error: null,
+    let payload: Record<string, unknown> | null = null
+    setMockRpcImplementation((_fn, params) => {
+      payload = (params as { p_prize_values: Record<string, unknown> }).p_prize_values
+      return Promise.resolve({ data: { id: "p1" }, error: null })
     })
-    setMockFromImplementation(() => prizesChain)
 
     await createPrizesFromImport("h1", [
       { name: "Participation Award" },
     ])
 
-    expect(prizesChain.insert).toHaveBeenCalledWith(expect.objectContaining({
+    expect(payload).toEqual(expect.objectContaining({
       name: "Participation Award",
       description: null,
       value: null,

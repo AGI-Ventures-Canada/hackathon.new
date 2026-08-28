@@ -38,6 +38,7 @@ import {
 } from "@/lib/utils/anonymous-judging"
 import { syncSubmissionChallenges } from "@/lib/services/challenges"
 import { RateLimitError } from "@/lib/services/rate-limit"
+import { BoundedFormDataError, readBoundedFormData } from "@/lib/utils/bounded-form-data"
 
 const aggregateSubmissionPayloadSchema = z.object({
   title: z.string().trim().min(1).max(100),
@@ -63,6 +64,32 @@ const aggregateScreenshotCleanupKey = "submissionScreenshotCleanup"
 const aggregateSubmissionRequestKey = "submissionAggregateRequestId"
 
 type AggregateScreenshot = SubmissionScreenshot & { path: string | null }
+
+async function consumeJudgingWriteLimit(hackathonId: string, userId: string) {
+  const { checkRateLimit } = await import("@/lib/services/rate-limit")
+  const limit = await checkRateLimit(
+    `judge_score:${hackathonId}:${userId}`,
+    { maxRequests: 30, windowMs: 60_000 },
+    { failureMode: "closed" },
+  )
+  if (!limit.allowed) throw new RateLimitError(limit.resetAt, limit.remaining)
+}
+
+async function recalculateAssignmentWithLease(hackathonId: string, assignmentId: string) {
+  const [{ recalculateForAssignment }, { withEventMutationLease }] = await Promise.all([
+    import("@/lib/services/judging"),
+    import("@/lib/services/event-mutation-lease"),
+  ])
+  return withEventMutationLease(hackathonId, () => recalculateForAssignment(assignmentId))
+}
+
+async function recalculatePrizeWithLease(hackathonId: string, prizeId: string) {
+  const [{ calculatePrizeResults }, { withEventMutationLease }] = await Promise.all([
+    import("@/lib/services/judging"),
+    import("@/lib/services/event-mutation-lease"),
+  ])
+  return withEventMutationLease(hackathonId, () => calculatePrizeResults(hackathonId, prizeId))
+}
 
 async function persistRequiredTermsAcceptance(
   hackathonId: string,
@@ -287,28 +314,13 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       hackathon.location_latitude != null &&
       hackathon.location_longitude != null
     ) {
-      if (body?.latitude == null || body?.longitude == null) {
-        return new Response(
-          JSON.stringify({ error: "Location verification required. Please share your location.", code: "location_required" }),
-          { status: 400, headers: { "Content-Type": "application/json" } }
-        )
-      }
-      const { haversineDistance, MAX_DISTANCE_KM } = await import("@/lib/utils/geo")
-      const distance = haversineDistance(
-        body.latitude,
-        body.longitude,
-        hackathon.location_latitude,
-        hackathon.location_longitude
+      return new Response(
+        JSON.stringify({
+          error: "This event needs organizer check-in. Ask the organizer to add you.",
+          code: "organizer_check_in_required",
+        }),
+        { status: 409, headers: { "Content-Type": "application/json" } }
       )
-      if (distance > MAX_DISTANCE_KM) {
-        return new Response(
-          JSON.stringify({
-            error: `You appear to be ${Math.round(distance)} km away. This in-person event requires you to be within ${MAX_DISTANCE_KM} km of the venue.`,
-            code: "location_too_far",
-          }),
-          { status: 400, headers: { "Content-Type": "application/json" } }
-        )
-      }
     }
 
     const expectedTermsHash = await currentTermsHash({
@@ -593,11 +605,13 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         teamSizeWarning = `Solo participants are not allowed — this event requires teams of at least ${hackathon.min_team_size}.`
       }
 
-      const githubUrl = normalizeUrl(body.githubUrl)
-      const liveAppUrl = body.liveAppUrl ? normalizeUrl(body.liveAppUrl) : body.liveAppUrl
-      const demoVideoUrl = body.demoVideoUrl ? normalizeUrl(body.demoVideoUrl) : body.demoVideoUrl
-
+      let githubUrl: string
+      let liveAppUrl: string | null | undefined
+      let demoVideoUrl: string | null | undefined
       try {
+        githubUrl = validateSubmissionUrl(body.githubUrl) as string
+        liveAppUrl = validateSubmissionUrl(body.liveAppUrl)
+        demoVideoUrl = validateSubmissionUrl(body.demoVideoUrl)
         const url = new URL(githubUrl)
         if (url.hostname !== "github.com" && url.hostname !== "www.github.com") {
           return new Response(
@@ -607,20 +621,9 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         }
       } catch {
         return new Response(
-          JSON.stringify({ error: "Invalid GitHub URL", code: "invalid_github_url" }),
+          JSON.stringify({ error: "Check the project links and try again", code: "invalid_url" }),
           { status: 400, headers: { "Content-Type": "application/json" } }
         )
-      }
-
-      if (demoVideoUrl) {
-        try {
-          new URL(demoVideoUrl)
-        } catch {
-          return new Response(
-            JSON.stringify({ error: "Invalid video link", code: "invalid_demo_video_url" }),
-            { status: 400, headers: { "Content-Type": "application/json" } }
-          )
-        }
       }
 
       if (body.challengeIds?.some((id) => !isValidUuid(id))) {
@@ -666,6 +669,17 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       }
 
       if (!submission) {
+        const racedSubmission = await getExistingSubmission(
+          hackathon.id,
+          participant.participantId,
+          participant.teamId,
+        )
+        if (racedSubmission) {
+          return new Response(
+            JSON.stringify({ error: "You have already submitted a project", code: "already_submitted" }),
+            { status: 409, headers: { "Content-Type": "application/json" } },
+          )
+        }
         return new Response(
           JSON.stringify({ error: "Failed to create submission", code: "create_failed" }),
           { status: 500, headers: { "Content-Type": "application/json" } }
@@ -764,12 +778,14 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
-      const normalizedGithubUrl = body.githubUrl ? normalizeUrl(body.githubUrl) : body.githubUrl
-      const normalizedLiveAppUrl = body.liveAppUrl ? normalizeUrl(body.liveAppUrl) : body.liveAppUrl
-      const normalizedDemoVideoUrl = body.demoVideoUrl ? normalizeUrl(body.demoVideoUrl) : body.demoVideoUrl
-
-      if (normalizedGithubUrl) {
-        try {
+      let normalizedGithubUrl: string | undefined
+      let normalizedLiveAppUrl: string | null | undefined
+      let normalizedDemoVideoUrl: string | null | undefined
+      try {
+        normalizedGithubUrl = validateSubmissionUrl(body.githubUrl) ?? undefined
+        normalizedLiveAppUrl = validateSubmissionUrl(body.liveAppUrl)
+        normalizedDemoVideoUrl = validateSubmissionUrl(body.demoVideoUrl)
+        if (normalizedGithubUrl) {
           const url = new URL(normalizedGithubUrl)
           if (url.hostname !== "github.com" && url.hostname !== "www.github.com") {
             return new Response(
@@ -777,23 +793,12 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
               { status: 400, headers: { "Content-Type": "application/json" } }
             )
           }
-        } catch {
-          return new Response(
-            JSON.stringify({ error: "Invalid GitHub URL", code: "invalid_github_url" }),
-            { status: 400, headers: { "Content-Type": "application/json" } }
-          )
         }
-      }
-
-      if (normalizedDemoVideoUrl) {
-        try {
-          new URL(normalizedDemoVideoUrl)
-        } catch {
-          return new Response(
-            JSON.stringify({ error: "Invalid video link", code: "invalid_demo_video_url" }),
-            { status: 400, headers: { "Content-Type": "application/json" } }
-          )
-        }
+      } catch {
+        return new Response(
+          JSON.stringify({ error: "Check the project links and try again", code: "invalid_url" }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        )
       }
 
       if (body.challengeIds?.some((id) => !isValidUuid(id))) {
@@ -926,15 +931,16 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     if (!completionLimit.allowed) {
       throw new RateLimitError(completionLimit.resetAt, completionLimit.remaining)
     }
-    const contentLength = Number(request.headers.get("content-length") ?? 0)
-    if (contentLength > MAX_SUBMISSION_SCREENSHOT_REQUEST_BYTES + 256 * 1024) {
-      return submissionErrorResponse("Project upload is too large", "request_too_large", 413)
-    }
-
     let formData: FormData
     try {
-      formData = await request.formData()
-    } catch {
+      formData = await readBoundedFormData(
+        request,
+        MAX_SUBMISSION_SCREENSHOT_REQUEST_BYTES + 256 * 1024,
+      )
+    } catch (error) {
+      if (error instanceof BoundedFormDataError && error.code === "request_too_large") {
+        return submissionErrorResponse("Project upload is too large", "request_too_large", 413)
+      }
       return submissionErrorResponse("Invalid project form", "invalid_form", 400)
     }
 
@@ -1311,15 +1317,30 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
-    const contentLength = Number(request.headers.get("content-length"))
-    if (Number.isFinite(contentLength) && contentLength > MAX_SUBMISSION_SCREENSHOT_REQUEST_BYTES) {
+    const { checkRateLimit } = await import("@/lib/services/rate-limit")
+    const screenshotLimit = await checkRateLimit(
+      `submission_screenshot:${hackathon.id}:${userId}`,
+      { maxRequests: 30, windowMs: 60 * 60_000 },
+      { failureMode: "closed" },
+    )
+    if (!screenshotLimit.allowed) throw new RateLimitError(screenshotLimit.resetAt, screenshotLimit.remaining)
+
+    let formData: FormData
+    try {
+      formData = await readBoundedFormData(
+        request,
+        MAX_SUBMISSION_SCREENSHOT_REQUEST_BYTES + 256 * 1024,
+      )
+    } catch (error) {
+      const tooLarge = error instanceof BoundedFormDataError && error.code === "request_too_large"
       return new Response(
-        JSON.stringify({ error: "Request too large (max 4MB)", code: "request_too_large" }),
-        { status: 413, headers: { "Content-Type": "application/json" } },
+        JSON.stringify({
+          error: tooLarge ? "Request too large (max 4MB)" : "Invalid screenshot upload",
+          code: tooLarge ? "request_too_large" : "invalid_form",
+        }),
+        { status: tooLarge ? 413 : 400, headers: { "Content-Type": "application/json" } },
       )
     }
-
-    const formData = await request.formData()
     const file = formData.get("file") as File | null
     const rawSlot = formData.get("slot")
     const slot = typeof rawSlot === "string" ? Number(rawSlot) : 0
@@ -1868,14 +1889,25 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       description: "Returns prize claim details by token. No authentication required.",
     },
   })
-  .post("/prize-claims/:token/claim", async ({ params, body }) => {
+  .post("/prize-claims/:token/claim", async ({ params, body, request }) => {
+    if (!/^[A-Za-z0-9_-]{43}$/.test(params.token)) {
+      return new Response(
+        JSON.stringify({ error: "Prize claim not found", code: "not_found" }),
+        { status: 404, headers: { "Content-Type": "application/json" } },
+      )
+    }
     const { checkRateLimit, RateLimitError } = await import("@/lib/services/rate-limit")
-    const rateLimit = await checkRateLimit(`prize_claim:${params.token}`, {
-      maxRequests: 10,
-      windowMs: 60_000,
-    })
-    if (!rateLimit.allowed) {
-      throw new RateLimitError(rateLimit.resetAt, rateLimit.remaining)
+    const { getPublicRateLimitKey } = await import("@/lib/services/public-import-rate-limit")
+    const rateLimitKey = getPublicRateLimitKey(request.headers, "prize_claim") ?? "prize_claim:local"
+    const [rateLimit, globalLimit] = await Promise.all([
+      checkRateLimit(rateLimitKey, { maxRequests: 10, windowMs: 60_000 }, { failureMode: "closed" }),
+      checkRateLimit("prize_claim:global", { maxRequests: 1_000, windowMs: 60_000 }, { failureMode: "closed" }),
+    ])
+    if (!rateLimit.allowed || !globalLimit.allowed) {
+      throw new RateLimitError(
+        Math.max(rateLimit.resetAt, globalLimit.resetAt),
+        Math.min(rateLimit.remaining, globalLimit.remaining),
+      )
     }
 
     const { recipientName, recipientEmail, shippingAddress, paymentMethod, paymentDetail } = body as {
@@ -2192,7 +2224,9 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
-      const { assertAssignmentWritable, submitScores, recalculateForAssignment } = await import("@/lib/services/judging")
+      await consumeJudgingWriteLimit(hackathon.id, userId)
+
+      const { assertAssignmentWritable, submitScores } = await import("@/lib/services/judging")
       const guard = await assertAssignmentWritable(params.assignmentId, userId, hackathon)
       if (!guard.ok) {
         return new Response(
@@ -2215,7 +2249,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
-      recalculateForAssignment(params.assignmentId).catch((err) => {
+      await recalculateAssignmentWithLease(hackathon.id, params.assignmentId).catch((err) => {
         console.error(`[judging] auto-recalculate failed for assignment ${params.assignmentId}:`, err)
       })
 
@@ -2316,6 +2350,8 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
+      await consumeJudgingWriteLimit(hackathon.id, userId)
+
       const typedBody = body as {
         prizeId: string
         submissionId?: string
@@ -2350,8 +2386,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
           )
         }
 
-        const { calculatePrizeResults } = await import("@/lib/services/judging")
-        calculatePrizeResults(hackathon.id, typedBody.prizeId).catch((err) => {
+        await recalculatePrizeWithLease(hackathon.id, typedBody.prizeId).catch((err) => {
           console.error(`[judging] auto-recalculate failed for prize ${typedBody.prizeId}:`, err)
         })
 
@@ -2382,8 +2417,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
-      const { calculatePrizeResults } = await import("@/lib/services/judging")
-      calculatePrizeResults(hackathon.id, typedBody.prizeId).catch((err) => {
+      await recalculatePrizeWithLease(hackathon.id, typedBody.prizeId).catch((err) => {
         console.error(`[judging] auto-recalculate failed for prize ${typedBody.prizeId}:`, err)
       })
 
@@ -2413,6 +2447,13 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
+    if (!isValidUuid(params.prizeId) || !isValidUuid(params.submissionId)) {
+      return new Response(
+        JSON.stringify({ error: "Invalid prize or project", code: "validation" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      )
+    }
+
     const hackathon = await getPublicHackathon(params.slug)
     if (!hackathon) {
       return new Response(
@@ -2430,6 +2471,8 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
+    await consumeJudgingWriteLimit(hackathon.id, userId)
+
     const { removePick } = await import("@/lib/services/judge-picks")
     const success = await removePick(hackathon.id, regInfo.participantId, params.prizeId, params.submissionId)
 
@@ -2440,8 +2483,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
-    const { calculatePrizeResults } = await import("@/lib/services/judging")
-    calculatePrizeResults(hackathon.id, params.prizeId).catch((err) => {
+    await recalculatePrizeWithLease(hackathon.id, params.prizeId).catch((err) => {
       console.error(`[judging] auto-recalculate failed for prize ${params.prizeId}:`, err)
     })
 
@@ -2516,6 +2558,8 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
+      await consumeJudgingWriteLimit(hackathon.id, userId)
+
       const { assertAssignmentWritable } = await import("@/lib/services/judging")
       const guard = await assertAssignmentWritable(params.assignmentId, userId, hackathon)
       if (!guard.ok) {
@@ -2539,8 +2583,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
-      const { recalculateForAssignment } = await import("@/lib/services/judging")
-      recalculateForAssignment(params.assignmentId).catch((err) => {
+      recalculateAssignmentWithLease(hackathon.id, params.assignmentId).catch((err) => {
         console.error(`[judging] auto-recalculate failed for assignment ${params.assignmentId}:`, err)
       })
 
@@ -2588,6 +2631,8 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
+      await consumeJudgingWriteLimit(hackathon.id, userId)
+
       const { assertAssignmentWritable } = await import("@/lib/services/judging")
       const guard = await assertAssignmentWritable(params.assignmentId, userId, hackathon)
       if (!guard.ok) {
@@ -2607,8 +2652,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
-      const { recalculateForAssignment } = await import("@/lib/services/judging")
-      recalculateForAssignment(params.assignmentId).catch((err) => {
+      recalculateAssignmentWithLease(hackathon.id, params.assignmentId).catch((err) => {
         console.error(`[judging] auto-recalculate failed for assignment ${params.assignmentId}:`, err)
       })
 
@@ -2864,7 +2908,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     const { listPrizes } = await import("@/lib/services/prizes")
     const { listPrizeAssignments } = await import("@/lib/services/prizes")
     const [prizes, assignments] = await Promise.all([
-      listPrizes(hackathon.id),
+      listPrizes(hackathon.id, { includeScreening: false }),
       hackathon.results_published_at
         ? listPrizeAssignments(hackathon.id)
         : Promise.resolve([]),
@@ -2905,6 +2949,13 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
+    if (!isValidUuid(body.prizeId) || !isValidUuid(body.submissionId)) {
+      return new Response(
+        JSON.stringify({ error: "Project or prize not found" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      )
+    }
+
     const hackathon = await getPublicHackathon(params.slug)
 
     if (!hackathon) {
@@ -2913,6 +2964,14 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         { status: 404, headers: { "Content-Type": "application/json" } }
       )
     }
+
+    const { checkRateLimit } = await import("@/lib/services/rate-limit")
+    const voteLimit = await checkRateLimit(
+      `crowd_vote:${hackathon.id}:${userId}`,
+      { maxRequests: 30, windowMs: 60_000 },
+      { failureMode: "closed" },
+    )
+    if (!voteLimit.allowed) throw new RateLimitError(voteLimit.resetAt, voteLimit.remaining)
 
     const { supabase: getSupabase } = await import("@/lib/db/client")
     const { data: submission } = await getSupabase()
@@ -2929,7 +2988,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     }
 
     const { castVote } = await import("@/lib/services/crowd-voting")
-    const result = await castVote(hackathon.id, body.submissionId, userId)
+    const result = await castVote(hackathon.id, body.prizeId, body.submissionId, userId)
 
     if (!result.success) {
       return new Response(
@@ -2942,19 +3001,27 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
   }, {
     detail: {
       summary: "Cast vote",
-      description: "Casts a vote for a submission. One vote per user per hackathon. Requires Clerk session.",
+      description: "Casts a vote for a project and crowd prize. One vote per account for each prize.",
     },
     body: t.Object({
-      submissionId: t.String({ description: "The submission ID to vote for" }),
+      submissionId: t.String({ minLength: 36, maxLength: 36, description: "The submission ID to vote for" }),
+      prizeId: t.String({ minLength: 36, maxLength: 36, description: "The crowd prize ID" }),
     }),
   })
-  .delete("/hackathons/:slug/vote", async ({ params }) => {
+  .delete("/hackathons/:slug/vote", async ({ params, query }) => {
     const { userId } = await auth()
 
     if (!userId) {
       return new Response(
         JSON.stringify({ error: "Sign in required", code: "not_authenticated" }),
         { status: 401, headers: { "Content-Type": "application/json" } }
+      )
+    }
+
+    if (!isValidUuid(query.prizeId)) {
+      return new Response(
+        JSON.stringify({ error: "Prize not found" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
       )
     }
 
@@ -2967,12 +3034,20 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
-    const { removeVote } = await import("@/lib/services/crowd-voting")
-    const success = await removeVote(hackathon.id, userId)
+    const { checkRateLimit } = await import("@/lib/services/rate-limit")
+    const voteLimit = await checkRateLimit(
+      `crowd_vote:${hackathon.id}:${userId}`,
+      { maxRequests: 30, windowMs: 60_000 },
+      { failureMode: "closed" },
+    )
+    if (!voteLimit.allowed) throw new RateLimitError(voteLimit.resetAt, voteLimit.remaining)
 
-    if (!success) {
+    const { removeVote } = await import("@/lib/services/crowd-voting")
+    const result = await removeVote(hackathon.id, query.prizeId, userId)
+
+    if (!result.success) {
       return new Response(
-        JSON.stringify({ error: "Failed to remove vote" }),
+        JSON.stringify({ error: result.error }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       )
     }
@@ -2981,8 +3056,9 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
   }, {
     detail: {
       summary: "Remove vote",
-      description: "Removes user's vote for a hackathon. Requires Clerk session.",
+      description: "Removes the user's vote for one crowd prize.",
     },
+    query: t.Object({ prizeId: t.String({ minLength: 36, maxLength: 36, description: "The crowd prize ID" }) }),
   })
   .get("/cli-auth/poll", async ({ query, request }) => {
     const { isValidCliDeviceToken } = await import("@/lib/services/cli-auth")
@@ -3024,8 +3100,15 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       token: t.String({ minLength: 1, description: "The device token from the CLI" }),
     }),
   })
-  .get("/hackathons/:slug/vote", async ({ params }) => {
+  .get("/hackathons/:slug/vote", async ({ params, query, request }) => {
     const { userId } = await auth()
+
+    if (!isValidUuid(query.prizeId)) {
+      return new Response(JSON.stringify({ error: "Invalid prize ID" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
 
     const hackathon = await getPublicHackathon(params.slug)
 
@@ -3035,11 +3118,41 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         { status: 404, headers: { "Content-Type": "application/json" } }
       )
     }
+    if (hackathon.status !== "active" && hackathon.status !== "judging" && !hackathon.results_published_at) {
+      return new Response(
+        JSON.stringify({ error: "Voting is closed. Results are not public yet." }),
+        { status: 409, headers: { "Content-Type": "application/json" } },
+      )
+    }
+
+    const { getPublicRateLimitKey } = await import("@/lib/services/public-import-rate-limit")
+    const viewerKey = userId
+      ?? getPublicRateLimitKey(request.headers, "crowd_vote_read")
+      ?? "anonymous"
+    const { checkRateLimit } = await import("@/lib/services/rate-limit")
+    const [readLimit, globalReadLimit] = await Promise.all([
+      checkRateLimit(
+        `crowd_vote_read:${hackathon.id}:${viewerKey}`,
+        { maxRequests: 120, windowMs: 60_000 },
+        { failureMode: "closed" },
+      ),
+      checkRateLimit(
+        `crowd_vote_read:${hackathon.id}:global`,
+        { maxRequests: 12_000, windowMs: 60_000 },
+        { failureMode: "closed" },
+      ),
+    ])
+    if (!readLimit.allowed || !globalReadLimit.allowed) {
+      throw new RateLimitError(
+        Math.max(readLimit.resetAt, globalReadLimit.resetAt),
+        Math.min(readLimit.remaining, globalReadLimit.remaining),
+      )
+    }
 
     const { getVoteCounts, getUserVote } = await import("@/lib/services/crowd-voting")
     const [counts, userVote] = await Promise.all([
-      getVoteCounts(hackathon.id),
-      userId ? getUserVote(hackathon.id, userId) : Promise.resolve(null),
+      getVoteCounts(hackathon.id, query.prizeId),
+      userId ? getUserVote(hackathon.id, query.prizeId, userId) : Promise.resolve(null),
     ])
 
     return {
@@ -3049,6 +3162,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
   }, {
     detail: {
       summary: "Get vote info",
-      description: "Returns vote counts per submission and user's current vote.",
+      description: "Returns vote counts and the user's vote for one crowd prize.",
     },
+    query: t.Object({ prizeId: t.String({ description: "The crowd prize ID" }) }),
   })

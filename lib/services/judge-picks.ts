@@ -55,42 +55,29 @@ export async function submitPick(
   rank: number,
   reason?: string
 ): Promise<SubmitPickResult> {
+  if (rank !== 1) {
+    return { success: false, error: "Use the ranked picks form to add more than one project" }
+  }
+
   const client = getSupabase() as unknown as SupabaseClient
-
-  const [{ data: prize }, { data: submission }] = await Promise.all([
-    client
-      .from("prizes")
-      .select("id")
-      .eq("id", prizeId)
-      .eq("hackathon_id", hackathonId)
-      .maybeSingle(),
-    client
-      .from("submissions")
-      .select("id")
-      .eq("id", submissionId)
-      .eq("hackathon_id", hackathonId)
-      .maybeSingle(),
-  ])
-
-  if (!prize || !submission) {
-    return { success: false, error: "Prize or project not found" }
+  const { error: replaceError } = await client.rpc("replace_judge_picks_atomic", {
+    p_hackathon_id: hackathonId,
+    p_judge_participant_id: judgeParticipantId,
+    p_prize_id: prizeId,
+    p_picks: [{ submission_id: submissionId, rank: 1, reason: reason ?? null }],
+  })
+  if (replaceError) {
+    console.error("Failed to submit pick:", replaceError)
+    return { success: false, error: "This pick can't be saved. Check that judging is still open." }
   }
 
   const { data, error } = await client
     .from("judge_picks")
-    .upsert(
-      {
-        hackathon_id: hackathonId,
-        judge_participant_id: judgeParticipantId,
-        prize_id: prizeId,
-        submission_id: submissionId,
-        rank,
-        reason: reason ?? null,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "hackathon_id,judge_participant_id,prize_id,submission_id" }
-    )
-    .select()
+    .select("*")
+    .eq("hackathon_id", hackathonId)
+    .eq("judge_participant_id", judgeParticipantId)
+    .eq("prize_id", prizeId)
+    .eq("submission_id", submissionId)
     .single()
 
   if (error) {
@@ -108,20 +95,19 @@ export async function removePick(
   submissionId: string
 ): Promise<boolean> {
   const client = getSupabase() as unknown as SupabaseClient
-  const { error } = await client
-    .from("judge_picks")
-    .delete()
-    .eq("hackathon_id", hackathonId)
-    .eq("judge_participant_id", judgeParticipantId)
-    .eq("prize_id", prizeId)
-    .eq("submission_id", submissionId)
+  const { data, error } = await client.rpc("remove_judge_pick_atomic", {
+    p_hackathon_id: hackathonId,
+    p_judge_participant_id: judgeParticipantId,
+    p_prize_id: prizeId,
+    p_submission_id: submissionId,
+  })
 
   if (error) {
     console.error("Failed to remove pick:", error)
     return false
   }
 
-  return true
+  return data === true
 }
 
 export type PickResultEntry = {

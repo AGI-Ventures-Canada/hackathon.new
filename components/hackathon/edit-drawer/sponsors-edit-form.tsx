@@ -337,20 +337,15 @@ export function SponsorsEditForm({
   );
 
   const orgSearch = useOrgSearch(isLocalMode ? "" : excludeIdsString);
-  const linkSearch = useOrgSearch(isLocalMode ? "" : excludeIdsString);
   const [localQuery, setLocalQuery] = useState("");
-  const [linkingSponsorId, setLinkingSponsorId] = useState<string | null>(null);
 
   const query = isLocalMode ? localQuery : orgSearch.query;
   const setQuery = isLocalMode ? setLocalQuery : orgSearch.setQuery;
-  const results = isLocalMode ? [] : orgSearch.results;
+  const results = isLocalMode
+    ? []
+    : orgSearch.results.filter((org) => org.isSaved);
   const loading = isLocalMode ? false : orgSearch.loading;
   const searched = isLocalMode ? true : orgSearch.searched;
-  const linkResults = isLocalMode
-    ? []
-    : linkSearch.results.filter((org) => !org.isSaved);
-  const linkLoading = isLocalMode ? false : linkSearch.loading;
-  const linkSearched = isLocalMode ? true : linkSearch.searched;
 
   function saveLocalSponsors(sponsors: SponsorWithTenant[]) {
     const sponsorsData = sponsors.map((s) => ({
@@ -598,53 +593,6 @@ export function SponsorsEditForm({
     }, 500);
   }
 
-  async function handleLinkOrg(sponsorId: string, org: OrgSearchResult) {
-    if (org.isSaved) return;
-
-    linkSearch.setQuery("");
-    setLinkingSponsorId(null);
-    setOptimisticUpdates((prev) =>
-      new Map(prev).set(sponsorId, {
-        ...prev.get(sponsorId),
-        sponsor_tenant_id: org.id,
-        tenant: { slug: org.slug, name: org.name, logo_url: org.logoUrl, logo_url_dark: org.logoUrlDark },
-        website_url: org.websiteUrl,
-        use_org_assets: false,
-      }),
-    );
-    setError(null);
-    setSavingCount((c) => c + 1);
-
-    try {
-      await fetch(
-        `/api/dashboard/hackathons/${hackathonId}/sponsors/${sponsorId}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            sponsorTenantId: org.id,
-            websiteUrl: org.websiteUrl,
-            useOrgAssets: false,
-          }),
-        },
-      ).then(assertOk);
-      router.refresh();
-    } catch (err) {
-      setOptimisticUpdates((prev) => {
-        const next = new Map(prev);
-        const existing = next.get(sponsorId);
-        if (existing) {
-          const { sponsor_tenant_id: _, tenant: _t, website_url: _w, use_org_assets: _u, ...rest } = existing;
-          if (Object.keys(rest).length > 0) { next.set(sponsorId, rest as Partial<SponsorWithTenant>); } else { next.delete(sponsorId); }
-        }
-        return next;
-      });
-      setError(err instanceof Error ? err.message : "Failed to link sponsor");
-    } finally {
-      setSavingCount((c) => c - 1);
-    }
-  }
-
   async function handleUpdateAssetSource(
     sponsorId: string,
     nextUseOrgAssets: boolean,
@@ -811,8 +759,6 @@ export function SponsorsEditForm({
                 useOrgAssets && sponsor.tenant?.name
                   ? sponsor.tenant.name
                   : sponsor.name;
-              const showLinkResults =
-                linkingSponsorId === sponsor.id && linkSearch.query.length >= 2;
 
               return (
                 <div
@@ -915,94 +861,7 @@ export function SponsorsEditForm({
                         Linked
                       </Badge>
                     )}
-                    {!isLocalMode && !isLinked && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          linkSearch.setQuery("");
-                          setLinkingSponsorId((current) =>
-                            current === sponsor.id ? null : sponsor.id,
-                          );
-                        }}
-                        className="h-7 text-xs"
-                      >
-                        Link to an existing org
-                      </Button>
-                    )}
                   </div>
-                  {!isLocalMode && linkingSponsorId === sponsor.id && (
-                    <div className="space-y-2">
-                      <div className="relative">
-                        <Input
-                          placeholder="Search organizations..."
-                          value={linkSearch.query}
-                          onChange={(e) => linkSearch.setQuery(e.target.value)}
-                          autoFocus
-                          autoComplete="off"
-                          data-1p-ignore
-                          data-lpignore="true"
-                          data-form-type="other"
-                        />
-                        {linkLoading && (
-                          <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground animate-spin" />
-                        )}
-                      </div>
-                      {showLinkResults && (
-                        <div className="border rounded-lg divide-y max-h-48 overflow-y-auto">
-                          {linkResults.map((org) => (
-                            <button
-                              key={org.id}
-                              type="button"
-                              onClick={() => handleLinkOrg(sponsor.id, org)}
-                              className="w-full flex items-center gap-3 p-3 hover:bg-muted/50 transition-colors text-left"
-                            >
-                              {org.logoUrl ? (
-                                <>
-                                  <OptimizedImage
-                                    src={org.logoUrl}
-                                    alt={org.name}
-                                    width={32}
-                                    height={32}
-                                    className="rounded-md dark:hidden"
-                                  />
-                                  <OptimizedImage
-                                    src={org.logoUrlDark || org.logoUrl}
-                                    alt={org.name}
-                                    width={32}
-                                    height={32}
-                                    className="rounded-md hidden dark:block"
-                                  />
-                                </>
-                              ) : (
-                                <div className="size-8 rounded-md bg-muted flex items-center justify-center">
-                                  <Building2 className="size-4 text-muted-foreground" />
-                                </div>
-                              )}
-                              <div className="flex-1 min-w-0">
-                                <p className="font-medium truncate text-sm">
-                                  {org.name}
-                                </p>
-                                {org.slug && (
-                                  <p className="text-xs text-muted-foreground">
-                                    @{org.slug}
-                                  </p>
-                                )}
-                              </div>
-                            </button>
-                          ))}
-                          {!linkLoading &&
-                            linkSearched &&
-                            linkResults.length === 0 && (
-                              <div className="p-3 text-xs text-muted-foreground">
-                                No matching organizations found.
-                              </div>
-                            )}
-                        </div>
-                      )}
-                    </div>
-                  )}
                   <div className="flex items-center gap-2">
                     {isLinked && (
                       <Select

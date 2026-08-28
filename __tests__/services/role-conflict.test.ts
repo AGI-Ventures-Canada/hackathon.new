@@ -21,24 +21,43 @@ describe("checkRoleConflict", () => {
     expect(result.conflict).toBe(false)
   })
 
-  it("allows a team member to become a judge", async () => {
-    setMockFromImplementation(() =>
-      createChainableMock({
-        data: { id: "p1", role: "participant", team_id: "team_1" },
-        error: null,
-      })
+  it("allows a team member without a project to become a judge", async () => {
+    setMockFromImplementation((table) =>
+      table === "hackathon_participants"
+        ? createChainableMock({
+            data: { id: "p1", role: "participant", team_id: "team_1" },
+            error: null,
+          })
+        : createChainableMock({ data: [], error: null })
     )
 
     const result = await checkRoleConflict("h1", "user_123", "judge")
     expect(result.conflict).toBe(false)
   })
 
+  it("blocks an attendee whose team already has a project", async () => {
+    setMockFromImplementation((table) =>
+      table === "hackathon_participants"
+        ? createChainableMock({
+            data: { id: "p1", role: "participant", team_id: "team_1" },
+            error: null,
+          })
+        : createChainableMock({ data: [{ id: "project_1" }], error: null })
+    )
+
+    const result = await checkRoleConflict("h1", "user_123", "judge")
+    expect(result.conflict).toBe(true)
+    if (result.conflict) expect(result.code).toBe("project_role_conflict")
+  })
+
   it("allows an attendee without a team to become a judge", async () => {
-    setMockFromImplementation(() =>
-      createChainableMock({
-        data: { id: "p1", role: "participant", team_id: null },
-        error: null,
-      })
+    setMockFromImplementation((table) =>
+      table === "hackathon_participants"
+        ? createChainableMock({
+            data: { id: "p1", role: "participant", team_id: null },
+            error: null,
+          })
+        : createChainableMock({ data: [], error: null })
     )
 
     const result = await checkRoleConflict("h1", "user_123", "judge")
@@ -56,7 +75,8 @@ describe("checkRoleConflict", () => {
     const result = await checkRoleConflict("h1", "user_123", "participant")
     expect(result.conflict).toBe(true)
     if (result.conflict) {
-      expect(result.code).toBe("role_conflict")
+      expect(result.code).toBe("role_unavailable")
+      expect(result.error).not.toContain("judge")
       expect(result.existingRole).toBe("judge")
     }
   })

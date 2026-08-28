@@ -147,6 +147,23 @@ describe("WebMCP mutation context", () => {
     ).toMatchObject({ status: 400, code: "webmcp_invalid_mutation" })
   })
 
+  it("allows the complete organizer settings contract", () => {
+    const request = new Request("https://hackathon.new/api/example", {
+      headers: createWebMcpMutationHeaders(current),
+    })
+    expect(validateWebMcpSettingsMutationContext(request, current, {
+      minTeamSize: 2,
+      maxTeamSize: 6,
+      requireTeamApproval: true,
+      locationType: "hybrid",
+      requireLocationVerification: true,
+      anonymousJudging: true,
+      communityUrl: "https://community.example.com",
+      termsContent: "Be kind.",
+      requireTermsAcceptance: true,
+    })).toBeNull()
+  })
+
   it("leaves ordinary settings requests to the normal API contract", () => {
     expect(
       validateWebMcpSettingsMutationContext(

@@ -116,14 +116,6 @@ export const TransitionConfirmDialog = forwardRef<TransitionConfirmDialogHandle,
           return
         }
 
-        // Reverting from completed — unpublish results first
-        if (status === "completed" || status === "archived") {
-          await fetch(
-            `/api/dashboard/hackathons/${hackathonId}/results/unpublish`,
-            { method: "POST" },
-          )
-        }
-
         const body = buildStatusTransitionBody(pendingTarget, endsAt)
 
         const result = await fetch(
@@ -137,7 +129,7 @@ export const TransitionConfirmDialog = forwardRef<TransitionConfirmDialogHandle,
         onTransitioned?.()
         router.refresh()
         if (result.notificationDispatch === "queued") {
-          setSuccessMessage("Your event is live. Any saved team and judge emails are sending now.")
+          setSuccessMessage("Your event is live. Saved invite emails are sending now. We'll keep retrying any that fail.")
         } else {
           closeDialog()
         }

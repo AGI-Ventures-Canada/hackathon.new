@@ -9,6 +9,7 @@ import {
 const mockSetPhase = mock(() => Promise.resolve({ success: true }))
 
 const mockListAnnouncements = mock(() => Promise.resolve([]))
+const mockGetAnnouncementById = mock(() => Promise.resolve(null))
 const mockCreateAnnouncement = mock(() => Promise.resolve(null))
 const mockUpdateAnnouncement = mock(() => Promise.resolve(null))
 const mockDeleteAnnouncement = mock(() => Promise.resolve(false))
@@ -19,6 +20,7 @@ const mockScheduleAnnouncement = mock(() => Promise.resolve(null))
 mock.module("@/lib/services/announcements", () => ({
   ANNOUNCEMENT_AUDIENCES: ["everyone", "organizers", "judges", "mentors", "attendees", "submitted", "not_submitted"],
   listAnnouncements: mockListAnnouncements,
+  getAnnouncementById: mockGetAnnouncementById,
   createAnnouncement: mockCreateAnnouncement,
   updateAnnouncement: mockUpdateAnnouncement,
   deleteAnnouncement: mockDeleteAnnouncement,
@@ -67,9 +69,11 @@ mock.module("@/lib/services/hackathon-people", () => ({
 
 const mockMaybeReleaseChallengesForPublishLink = mock(() => Promise.resolve(false))
 const mockCreateChallenge = mock(() => Promise.resolve(null))
+const mockGetChallengeById = mock(() => Promise.resolve(null))
 
 mock.module("@/lib/services/challenges", () => ({
   listChallenges: mock(() => Promise.resolve([])),
+  getChallengeById: mockGetChallengeById,
   createChallenge: mockCreateChallenge,
   updateChallenge: mock(() => Promise.resolve(null)),
   deleteChallenge: mock(() => Promise.resolve(false)),
@@ -1381,6 +1385,22 @@ describe("Dashboard Event Routes Integration Tests", () => {
       expect(data.people).toHaveLength(1)
       expect(data.people[0].email).toBe("ada@example.com")
       expect(mockListHackathonPeople).toHaveBeenCalledWith(hackathonId)
+    })
+  })
+
+  describe("PATCH /api/dashboard/hackathons/:id/participants/:participantId", () => {
+    it("rejects a role and team change in one request before either can commit", async () => {
+      mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+      const participantId = "33333333-3333-4333-8333-333333333333"
+
+      const res = await app.handle(new Request(`${baseUrl}/participants/${participantId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "judge", teamId: "22222222-2222-4222-8222-222222222222" }),
+      }))
+
+      expect(res.status).toBe(400)
+      expect(await res.json()).toEqual({ error: "Change the role and team separately" })
     })
   })
 

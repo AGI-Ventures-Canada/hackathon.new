@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from "bun:test"
-import { formatTable, formatJson, formatDetail, formatError } from "../src/output"
+import { formatTable, formatJson, formatDetail, formatError, formatSuccess } from "../src/output"
 
 describe("formatTable", () => {
   it("renders headers and aligned columns", () => {
@@ -37,6 +37,15 @@ describe("formatTable", () => {
       { key: "desc", label: "Description" },
     ])
     expect(result).toContain("Test")
+  })
+
+  it("strips terminal controls from remote values", () => {
+    const result = formatTable([{ name: "Safe\u001b[2J\rSpoof" }], [
+      { key: "name", label: "Name" },
+    ])
+    expect(result).not.toContain("\u001b[2J")
+    expect(result).not.toContain("\r")
+    expect(result).toContain("Safe Spoof")
   })
 })
 
@@ -94,5 +103,12 @@ describe("formatError", () => {
   it("includes hint when available", () => {
     const result = formatError({ message: "Error", hint: "Try again" })
     expect(result).toContain("Try again")
+  })
+
+  it("does not let remote text inject terminal commands", () => {
+    const result = `${formatError({ message: "Nope\u001b]0;owned\u0007" })}\n${formatSuccess("Done\nFake prompt")}`
+    expect(result).not.toContain("\u001b]0;owned")
+    expect(result).not.toContain("\u0007")
+    expect(result).toContain("Done Fake prompt")
   })
 })

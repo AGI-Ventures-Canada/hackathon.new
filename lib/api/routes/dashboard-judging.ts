@@ -8,7 +8,7 @@ import { getEffectiveStatus } from "@/lib/utils/timeline"
 import { getNotificationDisposition, getNotificationLifecycleError } from "@/lib/utils/notification-lifecycle"
 import { getQueueReason } from "@/lib/utils/notification-delivery"
 import { getRequestIdempotencyFingerprint } from "@/lib/utils/request-idempotency"
-import { validateWebMcpMutationContext } from "@/lib/webmcp/mutation-context"
+import { getWebMcpIdempotencyKey, validateWebMcpMutationContext } from "@/lib/webmcp/mutation-context"
 import {
   EventMutationLeaseError,
   withEventMutationLease,
@@ -105,8 +105,14 @@ export const dashboardJudgingRoutes = new Elysia()
         }
       }
 
-      const { createPrize } = await import("@/lib/services/judging")
+      const { createPrize, getPrizeDetails } = await import("@/lib/services/judging")
+      const idempotencyKey = getWebMcpIdempotencyKey(request)
+      if (idempotencyKey) {
+        const existing = await getPrizeDetails(params.id, idempotencyKey)
+        if (existing) return { prize: existing }
+      }
       const createResult = await createPrize(params.id, {
+        id: idempotencyKey ?? undefined,
         name: body.name,
         description: body.description,
         value: body.value,
@@ -143,7 +149,7 @@ export const dashboardJudgingRoutes = new Elysia()
       const prize = createResult.prize
 
 
-      logAudit({
+      await logAudit({
         principal,
         action: "prize.created",
         resourceType: "prize",
@@ -214,7 +220,7 @@ export const dashboardJudgingRoutes = new Elysia()
 
   .patch(
     "/hackathons/:id/prizes/:prizeId",
-    async ({ principal, params, body }) => {
+    async ({ principal, params, body, set }) => {
       requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
 
       const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
@@ -227,7 +233,16 @@ export const dashboardJudgingRoutes = new Elysia()
         return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
       }
 
-      const effectiveStyle = (body.judgingStyle ?? undefined) as
+      const { getPrizeDetails } = await import("@/lib/services/judging")
+      const existingPrize = await getPrizeDetails(params.id, params.prizeId)
+      if (!existingPrize) {
+        return new Response(JSON.stringify({ error: "Prize not found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+
+      const effectiveStyle = (body.judgingStyle ?? existingPrize.judging_style) as
         | import("@/lib/db/hackathon-types").PrizeJudgingStyle
         | undefined
 
@@ -239,6 +254,15 @@ export const dashboardJudgingRoutes = new Elysia()
               error: "At least one criterion is required for pass-or-fail prizes",
             }),
             { status: 400, headers: { "Content-Type": "application/json" } }
+          )
+        }
+        if (
+          effectiveStyle === "weighted_score" &&
+          body.criteria.some((c) => c.name.trim().length > 0 && (c.weight ?? 0) <= 0)
+        ) {
+          return new Response(
+            JSON.stringify({ error: "Each weighted criterion needs a weight greater than zero" }),
+            { status: 400, headers: { "Content-Type": "application/json" } },
           )
         }
       }
@@ -253,10 +277,10 @@ export const dashboardJudgingRoutes = new Elysia()
         }
       }
 
-      const { updatePrize, replacePrizeCriteria, replaceBucketDefinitions } = await import(
-        "@/lib/services/judging"
-      )
-      const prize = await updatePrize(params.prizeId, params.id, {
+      try {
+        return await withEventMutationLease(params.id, async () => {
+      const { savePrizeConfiguration } = await import("@/lib/services/judging")
+      const prize = await savePrizeConfiguration(params.id, params.prizeId, {
         name: body.name,
         description: body.description,
         value: body.value,
@@ -265,6 +289,7 @@ export const dashboardJudgingRoutes = new Elysia()
         assignmentMode: body.assignmentMode as import("@/lib/db/hackathon-types").PrizeAssignmentMode | undefined,
         maxPicks: body.maxPicks,
         displayOrder: body.displayOrder,
+        allowedTeamModes: body.allowedTeamModes as ("in_person" | "virtual")[] | null | undefined,
         type: body.type as "score" | "favorite" | "crowd" | "criteria" | undefined,
         rank: body.rank,
         kind: body.kind ?? undefined,
@@ -273,55 +298,25 @@ export const dashboardJudgingRoutes = new Elysia()
         criteriaId: body.criteriaId,
         distributionMethod: body.distributionMethod,
         displayValue: body.displayValue,
+      }, {
+        criteria: body.criteria,
+        buckets: body.buckets?.map((bucket, index) => ({
+          level: bucket.level ?? index + 1,
+          label: bucket.label.trim(),
+          description: bucket.description?.trim() || null,
+        })),
+        style: effectiveStyle ?? null,
       })
 
       if (!prize) {
         return new Response(JSON.stringify({ error: "Prize not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
       }
 
-      if (body.criteria !== undefined) {
-        if (
-          effectiveStyle === "weighted_score" &&
-          body.criteria.some((c) => c.name.trim().length > 0 && (c.weight ?? 0) <= 0)
-        ) {
-          return new Response(
-            JSON.stringify({ error: "Each weighted criterion needs a weight greater than zero" }),
-            { status: 400, headers: { "Content-Type": "application/json" } }
-          )
-        }
-        const updatedCriteria = await replacePrizeCriteria(
-          params.id,
-          params.prizeId,
-          body.criteria,
-          { style: effectiveStyle ?? null }
-        )
-        if (updatedCriteria === null) {
-          return new Response(
-            JSON.stringify({ error: "Failed to save criteria" }),
-            { status: 500, headers: { "Content-Type": "application/json" } }
-          )
-        }
-      }
-
-      if (body.buckets !== undefined) {
-        const updatedBuckets = await replaceBucketDefinitions(
-          params.id,
-          params.prizeId,
-          body.buckets.map((b, i) => ({
-            level: b.level ?? i + 1,
-            label: b.label.trim(),
-            description: b.description?.trim() || null,
-          }))
-        )
-        if (updatedBuckets.length === 0) {
-          return new Response(
-            JSON.stringify({ error: "Failed to save sort groups" }),
-            { status: 500, headers: { "Content-Type": "application/json" } }
-          )
-        }
-      }
-
       return { prize }
+        }, principal.tenantId)
+      } catch (error) {
+        return prizeMutationLeaseFailure(error, set)
+      }
     },
     {
       body: t.Object({
@@ -333,6 +328,10 @@ export const dashboardJudgingRoutes = new Elysia()
         assignmentMode: t.Optional(t.String()),
         maxPicks: t.Optional(t.Integer({ minimum: 1, maximum: 100 })),
         displayOrder: t.Optional(t.Number()),
+        allowedTeamModes: t.Optional(t.Union([
+          t.Array(t.Union([t.Literal("in_person"), t.Literal("virtual")])),
+          t.Null(),
+        ])),
         criteria: t.Optional(
           t.Array(
             t.Object({
@@ -392,7 +391,7 @@ export const dashboardJudgingRoutes = new Elysia()
       return new Response(JSON.stringify({ error: "Failed to delete prize" }), { status: 500, headers: { "Content-Type": "application/json" } })
     }
 
-    logAudit({
+    await logAudit({
       principal,
       action: "prize.deleted",
       resourceType: "prize",
@@ -1326,6 +1325,16 @@ export const dashboardJudgingRoutes = new Elysia()
         return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403, headers: { "Content-Type": "application/json" } })
       }
 
+      const actorId = principal.kind === "user" ? principal.userId : principal.keyId
+      const inviteLimit = await checkRateLimit(
+        `judge-invite:${params.id}:${actorId}`,
+        { maxRequests: 20, windowMs: 60 * 60_000 },
+        { failureMode: "closed" },
+      )
+      if (!inviteLimit.allowed) {
+        throw new RateLimitError(inviteLimit.resetAt, inviteLimit.remaining)
+      }
+
       const notificationDisposition = getNotificationDisposition({
         status: result.hackathon.status,
         starts_at: result.hackathon.starts_at,
@@ -1372,7 +1381,9 @@ export const dashboardJudgingRoutes = new Elysia()
         }
 
         const { addJudge } = await import("@/lib/services/judging")
-        const addResult = await addJudge(params.id, typedBody.clerkUserId)
+        const addResult = await addJudge(params.id, typedBody.clerkUserId, {
+          requireExistingParticipant: true,
+        })
 
         if (!addResult.success) {
           return new Response(JSON.stringify({ error: addResult.error, code: addResult.code }), { status: 400, headers: { "Content-Type": "application/json" } })
@@ -1418,7 +1429,7 @@ export const dashboardJudgingRoutes = new Elysia()
           }
         }
 
-        logAudit({
+        await logAudit({
           principal,
           action: "judge.added",
           resourceType: "hackathon",
@@ -1458,11 +1469,15 @@ export const dashboardJudgingRoutes = new Elysia()
           }
 
           const { addJudge } = await import("@/lib/services/judging")
-          const addResult = await addJudge(params.id, existingUser.id)
+          const addResult = await addJudge(params.id, existingUser.id, {
+            requireExistingParticipant: true,
+          })
 
           if (!addResult.success) {
-            return new Response(JSON.stringify({ error: addResult.error, code: addResult.code }), { status: 400, headers: { "Content-Type": "application/json" } })
-          }
+            if (addResult.code !== "not_registered") {
+              return new Response(JSON.stringify({ error: addResult.error, code: addResult.code }), { status: 400, headers: { "Content-Type": "application/json" } })
+            }
+          } else {
 
           try {
             const { createJudgeDisplayProfile } = await import("@/lib/services/judge-display")
@@ -1503,7 +1518,7 @@ export const dashboardJudgingRoutes = new Elysia()
             delivery = "failed"
           }
 
-          logAudit({
+          await logAudit({
             principal,
             action: "judge.added",
             resourceType: "hackathon",
@@ -1521,6 +1536,7 @@ export const dashboardJudgingRoutes = new Elysia()
             queued: delivery === "queued",
             delivery,
             queueReason: getQueueReason(delivery),
+          }
           }
         }
 
@@ -1601,7 +1617,7 @@ export const dashboardJudgingRoutes = new Elysia()
           }
         }
 
-        logAudit({
+        await logAudit({
           principal,
           action: delivery === "queued"
             ? "judge_invitation.queued"
@@ -1658,21 +1674,16 @@ export const dashboardJudgingRoutes = new Elysia()
     const clearResult = await clearAllJudgeAssignments(params.id)
 
     if (!clearResult.success) {
-      const error =
-        clearResult.partialFailure === "prize_assignments"
-          ? "Cleared judge assignments but failed to clear prize assignments. Try again."
-          : "Failed to clear assignments"
       return new Response(
         JSON.stringify({
-          error,
+          error: "Failed to clear assignments",
           removedCount: clearResult.removedCount,
-          partialFailure: clearResult.partialFailure ?? null,
         }),
         { status: 500, headers: { "Content-Type": "application/json" } }
       )
     }
 
-    logAudit({
+    await logAudit({
       principal,
       action: "judging.assignments_cleared",
       resourceType: "hackathon",
@@ -1705,7 +1716,7 @@ export const dashboardJudgingRoutes = new Elysia()
       return new Response(JSON.stringify({ error: "Failed to remove judge" }), { status: 500, headers: { "Content-Type": "application/json" } })
     }
 
-    logAudit({
+    await logAudit({
       principal,
       action: "judge.removed",
       resourceType: "hackathon",

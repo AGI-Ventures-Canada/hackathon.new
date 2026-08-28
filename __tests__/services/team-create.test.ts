@@ -251,7 +251,7 @@ describe("createTeamWithMembers", () => {
       mockClerkUserList([{ id: "user_captain", email: "captain@example.com" }])
       setMockFromImplementation(
         tableImpl({
-          hackathon_participants: { data: { id: "p_1", team_id: null }, error: null },
+          hackathon_participants: { data: { id: "p_1", team_id: null, role: "participant" }, error: null },
           hackathons: { data: { status: "active", starts_at: null, ends_at: null }, error: null },
           teams: { data: { id: "team_1", name: "T" }, error: null },
         })
@@ -272,7 +272,10 @@ describe("createTeamWithMembers", () => {
 
     it("bypasses participant approval for organizer-created registered teams", async () => {
       mockClerkUserList([{ id: "user_captain", email: "captain@example.com" }])
-      const participantChain = createChainableMock({ data: { id: "p_1", team_id: null }, error: null })
+      const participantChain = createChainableMock({
+        data: { id: "p_1", team_id: null, role: "participant" },
+        error: null,
+      })
       const teamChain = createChainableMock({ data: { id: "team_1", name: "T" }, error: null })
       const hackathonChain = createChainableMock({ data: { status: "active", starts_at: null, ends_at: null }, error: null })
       setMockFromImplementation((table) => {
@@ -299,7 +302,10 @@ describe("createTeamWithMembers", () => {
       mockClerkUserList([{ id: "user_captain", email: "captain@example.com" }])
       setMockFromImplementation(
         tableImpl({
-          hackathon_participants: { data: { id: "p_1", team_id: "team_existing" }, error: null },
+          hackathon_participants: {
+            data: { id: "p_1", team_id: "team_existing", role: "participant" },
+            error: null,
+          },
         })
       )
 

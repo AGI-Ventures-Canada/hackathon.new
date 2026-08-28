@@ -57,6 +57,27 @@ mock.module("@/lib/services/tenant-profiles", () => ({
   isSlugAvailable: mock(() => Promise.resolve(true)),
 }))
 
+const mockCheckRateLimit = mock(() => Promise.resolve({
+  allowed: true,
+  remaining: 29,
+  resetAt: Date.now() + 60_000,
+}))
+
+mock.module("@/lib/services/rate-limit", () => ({
+  checkRateLimit: mockCheckRateLimit,
+  getRateLimitHeaders: () => ({}),
+  defaultRateLimits: { "api_key:default": { maxRequests: 100, windowMs: 60_000 } },
+  RateLimitError: class RateLimitError extends Error {
+    constructor(public resetAt: number, public remaining: number) {
+      super("Rate limit exceeded")
+    }
+  },
+}))
+
+mock.module("@/lib/services/event-mutation-lease", () => ({
+  withEventMutationLease: (_hackathonId: string, operation: () => Promise<unknown>) => operation(),
+}))
+
 mock.module("@/lib/integrations/oauth", () => ({
   exchangeCodeForTokens: mock(() => Promise.resolve(null)),
   saveIntegration: mock(() => Promise.resolve()),
@@ -185,6 +206,8 @@ describe("Judging Scoring Routes", () => {
     mockSubmitBucketSortResponse.mockReset()
     mockSubmitGateCheckResponse.mockReset()
     mockAssertAssignmentWritable.mockReset()
+    mockCheckRateLimit.mockReset()
+    mockCheckRateLimit.mockResolvedValue({ allowed: true, remaining: 29, resetAt: Date.now() + 60_000 })
     mockAssertAssignmentWritable.mockImplementation(async (_assignmentId: string, _userId: string, hackathon: { id: string; status: string }) => {
       if (hackathon.status !== "judging" && hackathon.status !== "active") {
         return { ok: false as const, code: "not_judging", status: 400, error: "Hackathon is not in judging phase" }

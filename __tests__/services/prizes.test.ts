@@ -4,6 +4,7 @@ import {
   createChainableMock,
   resetSupabaseMocks,
   setMockFromImplementation,
+  setMockRpcImplementation,
 } from "../lib/supabase-mock"
 
 const {
@@ -70,6 +71,15 @@ describe("Prizes Service", () => {
       expect(result[0].name).toBe("First Place")
     })
 
+    it("can hide organizer-only screening prizes", async () => {
+      const chain = createChainableMock({ data: [mockPrize], error: null })
+      setMockFromImplementation(() => chain)
+
+      await listPrizes("h1", { includeScreening: false })
+
+      expect(chain.eq).toHaveBeenCalledWith("is_screening", false)
+    })
+
     it("returns empty array when database query fails", async () => {
       const chain = createChainableMock({
         data: null,
@@ -97,11 +107,7 @@ describe("Prizes Service", () => {
 
   describe("createPrize", () => {
     it("creates prize with default values", async () => {
-      const chain = createChainableMock({
-        data: mockPrize,
-        error: null,
-      })
-      setMockFromImplementation(() => chain)
+      setMockRpcImplementation(() => Promise.resolve({ data: mockPrize, error: null }))
 
       const result = await createPrize("h1", {
         name: "First Place",
@@ -112,11 +118,7 @@ describe("Prizes Service", () => {
     })
 
     it("creates prize with all values", async () => {
-      const chain = createChainableMock({
-        data: mockPrize,
-        error: null,
-      })
-      setMockFromImplementation(() => chain)
+      setMockRpcImplementation(() => Promise.resolve({ data: mockPrize, error: null }))
 
       const result = await createPrize("h1", {
         name: "First Place",
@@ -142,11 +144,7 @@ describe("Prizes Service", () => {
         distribution_method: "raffle",
         display_value: "$100 CAD",
       }
-      const chain = createChainableMock({
-        data: extendedPrize,
-        error: null,
-      })
-      setMockFromImplementation(() => chain)
+      setMockRpcImplementation(() => Promise.resolve({ data: extendedPrize, error: null }))
 
       const result = await createPrize("h1", {
         name: "First Place",
@@ -169,11 +167,7 @@ describe("Prizes Service", () => {
     })
 
     it("returns null when database insert fails", async () => {
-      const chain = createChainableMock({
-        data: null,
-        error: { message: "DB error" },
-      })
-      setMockFromImplementation(() => chain)
+      setMockRpcImplementation(() => Promise.resolve({ data: null, error: { message: "DB error" } }))
 
       const result = await createPrize("h1", { name: "Test" })
 
@@ -184,11 +178,7 @@ describe("Prizes Service", () => {
   describe("updatePrize", () => {
     it("updates prize name", async () => {
       const updated = { ...mockPrize, name: "Updated Name" }
-      const chain = createChainableMock({
-        data: updated,
-        error: null,
-      })
-      setMockFromImplementation(() => chain)
+      setMockRpcImplementation(() => Promise.resolve({ data: updated, error: null }))
 
       const result = await updatePrize("p1", "h1", {
         name: "Updated Name",
@@ -200,11 +190,7 @@ describe("Prizes Service", () => {
 
     it("updates multiple fields", async () => {
       const updated = { ...mockPrize, name: "New", value: "$10000" }
-      const chain = createChainableMock({
-        data: updated,
-        error: null,
-      })
-      setMockFromImplementation(() => chain)
+      setMockRpcImplementation(() => Promise.resolve({ data: updated, error: null }))
 
       const result = await updatePrize("p1", "h1", {
         name: "New",
@@ -216,11 +202,7 @@ describe("Prizes Service", () => {
     })
 
     it("returns null when database update fails", async () => {
-      const chain = createChainableMock({
-        data: null,
-        error: { message: "DB error" },
-      })
-      setMockFromImplementation(() => chain)
+      setMockRpcImplementation(() => Promise.resolve({ data: null, error: { message: "DB error" } }))
 
       const result = await updatePrize("p1", "h1", { name: "Test" })
 
@@ -229,11 +211,7 @@ describe("Prizes Service", () => {
 
     it("updates display order", async () => {
       const updated = { ...mockPrize, display_order: 2 }
-      const chain = createChainableMock({
-        data: updated,
-        error: null,
-      })
-      setMockFromImplementation(() => chain)
+      setMockRpcImplementation(() => Promise.resolve({ data: updated, error: null }))
 
       const result = await updatePrize("p1", "h1", {
         displayOrder: 2,
@@ -246,11 +224,7 @@ describe("Prizes Service", () => {
 
   describe("deletePrize", () => {
     it("returns true on successful deletion", async () => {
-      const chain = createChainableMock({
-        data: null,
-        error: null,
-      })
-      setMockFromImplementation(() => chain)
+      setMockRpcImplementation(() => Promise.resolve({ data: true, error: null }))
 
       const result = await deletePrize("p1", "h1")
 
@@ -258,11 +232,7 @@ describe("Prizes Service", () => {
     })
 
     it("returns false when database delete fails", async () => {
-      const chain = createChainableMock({
-        data: null,
-        error: { message: "DB error" },
-      })
-      setMockFromImplementation(() => chain)
+      setMockRpcImplementation(() => Promise.resolve({ data: false, error: { message: "DB error" } }))
 
       const result = await deletePrize("p1", "h1")
 

@@ -6,6 +6,7 @@ import {
   mockError,
   resetSupabaseMocks,
   setMockFromImplementation,
+  setMockRpcImplementation,
 } from "../lib/supabase-mock"
 
 const {
@@ -192,6 +193,7 @@ describe("Judging Service", () => {
           error: null,
         })
       })
+      setMockRpcImplementation(() => Promise.resolve({ data: true, error: null }))
 
       const result = await addJudge("h1", "user_123")
 
@@ -222,6 +224,7 @@ describe("Judging Service", () => {
           error: { message: "Update failed" },
         })
       })
+      setMockRpcImplementation(() => Promise.resolve({ data: false, error: { message: "Update failed" } }))
 
       const result = await addJudge("h1", "user_123")
 
@@ -269,6 +272,10 @@ describe("Judging Service", () => {
         }
         return createChainableMock({ data: null, error: null })
       })
+      setMockRpcImplementation(() => Promise.resolve({
+        data: [{ success: true, error_code: null, capacity_handed_off: false, cancelled_invitation_ids: [] }],
+        error: null,
+      }))
 
       const result = await addJudge("h1", "user_123")
 
@@ -343,18 +350,9 @@ describe("Judging Service", () => {
 
   describe("removeJudge", () => {
     it("removes judge participant and all their assignments", async () => {
-      setMockFromImplementation((table) => {
-        if (table === "judge_assignments") {
-          return createChainableMock({ data: null, error: null })
-        }
-        if (table === "hackathon_participants") {
-          return createChainableMock({ data: null, error: null })
-        }
-        if (table === "hackathon_results") {
-          return createChainableMock({ data: [], error: null })
-        }
-        return createChainableMock({ data: null, error: null })
-      })
+      mockRpcCall("remove_judge_atomic", mockSuccess([
+        { removed: true, results_stale: false },
+      ]))
 
       const result = await removeJudge("h1", "j1")
 
@@ -363,18 +361,9 @@ describe("Judging Service", () => {
     })
 
     it("marks results as stale if results exist", async () => {
-      setMockFromImplementation((table) => {
-        if (table === "judge_assignments") {
-          return createChainableMock({ data: null, error: null })
-        }
-        if (table === "hackathon_participants") {
-          return createChainableMock({ data: null, error: null })
-        }
-        if (table === "hackathon_results") {
-          return createChainableMock({ data: [{ id: "r1" }], error: null })
-        }
-        return createChainableMock({ data: null, error: null })
-      })
+      mockRpcCall("remove_judge_atomic", mockSuccess([
+        { removed: true, results_stale: true },
+      ]))
 
       const result = await removeJudge("h1", "j1")
 
@@ -382,60 +371,28 @@ describe("Judging Service", () => {
       expect(result.resultsStale).toBe(true)
     })
 
-    it("returns error when judge_assignments deletion fails", async () => {
-      setMockFromImplementation((table) => {
-        if (table === "judge_assignments") {
-          return createChainableMock({
-            data: null,
-            error: { message: "Delete failed" },
-          })
-        }
-        return createChainableMock({ data: null, error: null })
-      })
+    it("returns error when the atomic removal fails", async () => {
+      mockRpcCall("remove_judge_atomic", mockError("Delete failed"))
 
       const result = await removeJudge("h1", "j1")
 
       expect(result.success).toBe(false)
     })
 
-    it("returns error when hackathon_participants deletion fails", async () => {
-      setMockFromImplementation((table) => {
-        if (table === "judge_assignments") {
-          return createChainableMock({ data: null, error: null })
-        }
-        if (table === "hackathon_participants") {
-          return createChainableMock({
-            data: null,
-            error: { message: "Delete failed" },
-          })
-        }
-        return createChainableMock({ data: null, error: null })
-      })
+    it("returns error when the judge does not exist", async () => {
+      mockRpcCall("remove_judge_atomic", mockSuccess([
+        { removed: false, results_stale: false },
+      ]))
 
       const result = await removeJudge("h1", "j1")
 
       expect(result.success).toBe(false)
     })
 
-    it("succeeds even when hackathon_judges_display deletion fails", async () => {
-      setMockFromImplementation((table) => {
-        if (table === "judge_assignments") {
-          return createChainableMock({ data: null, error: null })
-        }
-        if (table === "hackathon_judges_display") {
-          return createChainableMock({
-            data: null,
-            error: { message: "Display delete failed" },
-          })
-        }
-        if (table === "hackathon_participants") {
-          return createChainableMock({ data: null, error: null })
-        }
-        if (table === "hackathon_results") {
-          return createChainableMock({ data: [], error: null })
-        }
-        return createChainableMock({ data: null, error: null })
-      })
+    it("returns the atomic removal result", async () => {
+      mockRpcCall("remove_judge_atomic", mockSuccess([
+        { removed: true, results_stale: false },
+      ]))
 
       const result = await removeJudge("h1", "j1")
 
@@ -445,12 +402,9 @@ describe("Judging Service", () => {
 
   describe("clearAllJudgeAssignments", () => {
     it("returns success with zero count when there are no assignments", async () => {
-      setMockFromImplementation((table) => {
-        if (table === "judge_assignments") {
-          return createChainableMock({ data: [], error: null })
-        }
-        return createChainableMock({ data: null, error: null })
-      })
+      mockRpcCall("clear_judge_assignments_atomic", mockSuccess([
+        { removed_count: 0, results_stale: false },
+      ]))
 
       const result = await clearAllJudgeAssignments("h1")
 
@@ -460,21 +414,9 @@ describe("Judging Service", () => {
     })
 
     it("deletes assignments and prize-mappings, reports stale results when results exist", async () => {
-      setMockFromImplementation((table) => {
-        if (table === "judge_assignments") {
-          return createChainableMock({
-            data: [{ id: "a1" }, { id: "a2" }, { id: "a3" }],
-            error: null,
-          })
-        }
-        if (table === "judge_prize_assignments") {
-          return createChainableMock({ data: null, error: null })
-        }
-        if (table === "hackathon_results") {
-          return createChainableMock({ data: [{ id: "r1" }], error: null })
-        }
-        return createChainableMock({ data: null, error: null })
-      })
+      mockRpcCall("clear_judge_assignments_atomic", mockSuccess([
+        { removed_count: 3, results_stale: true },
+      ]))
 
       const result = await clearAllJudgeAssignments("h1")
 
@@ -484,15 +426,7 @@ describe("Judging Service", () => {
     })
 
     it("returns failure when judge_assignments delete errors", async () => {
-      setMockFromImplementation((table) => {
-        if (table === "judge_assignments") {
-          return createChainableMock({
-            data: null,
-            error: { message: "Delete failed" },
-          })
-        }
-        return createChainableMock({ data: null, error: null })
-      })
+      mockRpcCall("clear_judge_assignments_atomic", mockError("Delete failed"))
 
       const result = await clearAllJudgeAssignments("h1")
 
@@ -500,28 +434,13 @@ describe("Judging Service", () => {
       expect(result.removedCount).toBe(0)
     })
 
-    it("reports partial failure when judge_prize_assignments cleanup fails", async () => {
-      setMockFromImplementation((table) => {
-        if (table === "judge_assignments") {
-          return createChainableMock({ data: [{ id: "a1" }], error: null })
-        }
-        if (table === "judge_prize_assignments") {
-          return createChainableMock({
-            data: null,
-            error: { message: "Cleanup failed" },
-          })
-        }
-        if (table === "hackathon_results") {
-          return createChainableMock({ data: [], error: null })
-        }
-        return createChainableMock({ data: null, error: null })
-      })
+    it("rolls back the whole clear when either delete fails", async () => {
+      mockRpcCall("clear_judge_assignments_atomic", mockError("Cleanup failed"))
 
       const result = await clearAllJudgeAssignments("h1")
 
       expect(result.success).toBe(false)
-      expect(result.partialFailure).toBe("prize_assignments")
-      expect(result.removedCount).toBe(1)
+      expect(result.removedCount).toBe(0)
       expect(result.resultsStale).toBe(false)
     })
   })
@@ -1069,7 +988,7 @@ describe("Judging Service", () => {
 
       setMockFromImplementation((table) => {
         if (table === "hackathon_participants") {
-          return createChainableMock({ data: { id: "j1", team_id: null }, error: null })
+          return createChainableMock({ data: { id: "j1", team_id: null, role: "judge" }, error: null })
         }
         if (table === "room_teams") {
           return createChainableMock({ data: [{ team_id: "t1" }, { team_id: "t3" }], error: null })
@@ -1104,7 +1023,7 @@ describe("Judging Service", () => {
     it("returns zero assignments when room has no teams", async () => {
       setMockFromImplementation((table) => {
         if (table === "hackathon_participants") {
-          return createChainableMock({ data: { id: "j1", team_id: null }, error: null })
+          return createChainableMock({ data: { id: "j1", team_id: null, role: "judge" }, error: null })
         }
         if (table === "room_teams") {
           return createChainableMock({ data: [], error: null })
@@ -1122,7 +1041,7 @@ describe("Judging Service", () => {
       let inserted: { submission_id: string }[] = []
       setMockFromImplementation((table) => {
         if (table === "hackathon_participants") {
-          return createChainableMock({ data: { id: "j1", team_id: "t1" }, error: null })
+          return createChainableMock({ data: { id: "j1", team_id: "t1", role: "judge" }, error: null })
         }
         if (table === "submissions") {
           return createChainableMock({
@@ -1197,7 +1116,7 @@ describe("Judging Service", () => {
     it("throws when a database query fails", async () => {
       setMockFromImplementation((table) => {
         if (table === "hackathon_participants") {
-          return createChainableMock({ data: { id: "j1", team_id: null }, error: null })
+          return createChainableMock({ data: { id: "j1", team_id: null, role: "judge" }, error: null })
         }
         if (table === "submissions") {
           return createChainableMock({ data: null, error: { message: "boom" } })
@@ -1221,7 +1140,7 @@ describe("Judging Service", () => {
           })
         }
         if (table === "hackathon_participants") {
-          return createChainableMock({ data: { id: "j1", team_id: null }, error: null })
+          return createChainableMock({ data: { id: "j1", team_id: null, role: "judge" }, error: null })
         }
         if (table === "submissions") {
           const m = createChainableMock({
@@ -1258,7 +1177,7 @@ describe("Judging Service", () => {
       let inserted: { submission_id: string; assignment_kind: string } | null = null
       setMockFromImplementation((table) => {
         if (table === "hackathon_participants") {
-          return createChainableMock({ data: { id: "j1", team_id: null }, error: null })
+          return createChainableMock({ data: { id: "j1", team_id: null, role: "judge" }, error: null })
         }
         if (table === "submissions") {
           return createChainableMock({ data: { id: "s1", team_id: "t1" }, error: null })
@@ -1285,7 +1204,7 @@ describe("Judging Service", () => {
     it("returns alreadyAssigned when the insert hits a unique-constraint conflict", async () => {
       setMockFromImplementation((table) => {
         if (table === "hackathon_participants") {
-          return createChainableMock({ data: { id: "j1", team_id: null }, error: null })
+          return createChainableMock({ data: { id: "j1", team_id: null, role: "judge" }, error: null })
         }
         if (table === "submissions") {
           return createChainableMock({ data: { id: "s1", team_id: "t1" }, error: null })
@@ -1309,7 +1228,7 @@ describe("Judging Service", () => {
     it("rejects when judge belongs to the project's team", async () => {
       setMockFromImplementation((table) => {
         if (table === "hackathon_participants") {
-          return createChainableMock({ data: { id: "j1", team_id: "t1" }, error: null })
+          return createChainableMock({ data: { id: "j1", team_id: "t1", role: "judge" }, error: null })
         }
         if (table === "submissions") {
           return createChainableMock({ data: { id: "s1", team_id: "t1" }, error: null })
@@ -1341,7 +1260,7 @@ describe("Judging Service", () => {
     it("returns error when submission is missing", async () => {
       setMockFromImplementation((table) => {
         if (table === "hackathon_participants") {
-          return createChainableMock({ data: { id: "j1", team_id: null }, error: null })
+          return createChainableMock({ data: { id: "j1", team_id: null, role: "judge" }, error: null })
         }
         if (table === "submissions") {
           return createChainableMock({ data: null, error: null })
@@ -1376,7 +1295,7 @@ describe("Judging Service", () => {
           return createChainableMock({ data: [{ submission_id: "s1" }], error: null })
         }
         if (table === "hackathon_participants") {
-          return createChainableMock({ data: { id: "j1", team_id: null }, error: null })
+          return createChainableMock({ data: { id: "j1", team_id: null, role: "judge" }, error: null })
         }
         if (table === "submissions") {
           return createChainableMock({ data: { id: "s1", team_id: "t1" }, error: null })
@@ -1398,8 +1317,8 @@ describe("Judging Service", () => {
       expect(inserted?.round_id).toBe("round-1")
     })
 
-    it("inserts with null round_id when the submission is not in the active round", async () => {
-      let inserted: { round_id: string | null } | null = null
+    it("rejects a project that is not in the active round", async () => {
+      const insert = mock(() => Promise.resolve({ data: null, error: null }))
       setMockFromImplementation((table) => {
         if (table === "judging_rounds") {
           return createChainableMock({ data: { id: "round-1" }, error: null })
@@ -1408,17 +1327,14 @@ describe("Judging Service", () => {
           return createChainableMock({ data: [{ submission_id: "s-other" }], error: null })
         }
         if (table === "hackathon_participants") {
-          return createChainableMock({ data: { id: "j1", team_id: null }, error: null })
+          return createChainableMock({ data: { id: "j1", team_id: null, role: "judge" }, error: null })
         }
         if (table === "submissions") {
           return createChainableMock({ data: { id: "s1", team_id: "t1" }, error: null })
         }
         if (table === "judge_assignments") {
           const m = createChainableMock({ data: null, error: null })
-          m.insert = mock((row: { round_id: string | null }) => {
-            inserted = row
-            return Promise.resolve({ data: null, error: null })
-          }) as typeof m.insert
+          m.insert = insert as typeof m.insert
           return m
         }
         return createChainableMock({ data: null, error: null })
@@ -1426,8 +1342,31 @@ describe("Judging Service", () => {
 
       const result = await assignJudgeToSubmission("h1", "j1", "s1")
 
-      expect(result.success).toBe(true)
-      expect(inserted?.round_id).toBeNull()
+      expect(result.success).toBe(false)
+      if (!result.success) expect(result.error).toContain("active judging round")
+      expect(insert).not.toHaveBeenCalled()
+    })
+
+    it("rejects a participant who is not a judge", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants") {
+          return createChainableMock({
+            data: { id: "p1", team_id: null, role: "participant" },
+            error: null,
+          })
+        }
+        if (table === "submissions") {
+          return createChainableMock({ data: { id: "s1", team_id: "t1" }, error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await assignJudgeToSubmission("h1", "p1", "s1")
+
+      expect(result).toEqual({
+        success: false,
+        error: "Only judges can be assigned to score projects",
+      })
     })
   })
 
@@ -1829,6 +1768,40 @@ describe("Judging Service", () => {
       const result = await getJudgeAssignments("h1", "user_123")
 
       expect(result).toHaveLength(2)
+    })
+
+    it("getJudgeAssignments: hides assignments for rounds that are not active", async () => {
+      let foundParticipant = false
+      let roundQueryCount = 0
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants" && !foundParticipant) {
+          foundParticipant = true
+          return createChainableMock({ data: { id: "j1", team_id: null }, error: null })
+        }
+        if (table === "judge_assignments") {
+          return createChainableMock({
+            data: [{
+              id: "a-planned",
+              submission_id: "s1",
+              is_complete: false,
+              notes: "",
+              prize_id: "p1",
+              round_id: "round-planned",
+              submission: { title: "Future project", description: null, github_url: null, live_app_url: null, screenshot_url: null, team_id: null },
+            }],
+            error: null,
+          })
+        }
+        if (table === "judging_rounds") {
+          roundQueryCount++
+          return createChainableMock({ data: roundQueryCount === 1 ? [] : null, error: null })
+        }
+        return createChainableMock({ data: [], error: null })
+      })
+
+      const result = await getJudgeAssignments("h1", "user_123")
+
+      expect(result).toEqual([])
     })
 
     it("getJudgeAssignments: returns every assignment when the active round has no finalists yet (screening / single-round)", async () => {
@@ -2239,19 +2212,13 @@ describe("Judging Service", () => {
     })
 
     it("inserts criteria linked to the new prize for gate_check", async () => {
-      const chains: Record<string, ReturnType<typeof createChainableMock>[]> = {}
-
-      setMockFromImplementation((table: string) => {
-        const chain =
-          table === "prizes"
-            ? createChainableMock({
-                data: { id: "prize_new", name: "Best Use of MCP", judging_style: "gate_check" },
-                error: null,
-              })
-            : createChainableMock({ data: null, error: null })
-        if (!chains[table]) chains[table] = []
-        chains[table].push(chain)
-        return chain
+      let rpcParams: Record<string, unknown> | null = null
+      setMockRpcImplementation((_fn, params) => {
+        rpcParams = params as Record<string, unknown>
+        return Promise.resolve({
+          data: { id: "prize_new", name: "Best Use of MCP", judging_style: "gate_check" },
+          error: null,
+        })
       })
 
       const result = await createPrize("h1", {
@@ -2264,40 +2231,23 @@ describe("Judging Service", () => {
       })
 
       expect(result.success).toBe(true)
-      const criteriaChain = chains["judging_criteria"]?.[0]
-      expect(criteriaChain).toBeDefined()
-      const insertArgs = criteriaChain!.insert.mock.calls[0]?.[0] as Record<string, unknown>[]
-      expect(insertArgs).toBeDefined()
-      expect(insertArgs.length).toBe(2)
-      expect(insertArgs[0]).toMatchObject({
-        hackathon_id: "h1",
-        prize_id: "prize_new",
+      const criteriaRows = rpcParams?.p_criteria as Record<string, unknown>[]
+      expect(criteriaRows).toHaveLength(2)
+      expect(criteriaRows[0]).toMatchObject({
         name: "Uses MCP",
-        display_order: 0,
+        min_score: 0,
+        max_score: 1,
       })
     })
 
     it("uses provided buckets for bucket_sort instead of defaults", async () => {
-      const chains: Record<string, ReturnType<typeof createChainableMock>[]> = {}
-
-      setMockFromImplementation((table: string) => {
-        let chain: ReturnType<typeof createChainableMock>
-        if (table === "prizes") {
-          chain = createChainableMock({
-            data: { id: "prize_bs", name: "Grand Prize", judging_style: "bucket_sort" },
-            error: null,
-          })
-        } else if (table === "bucket_definitions") {
-          chain = createChainableMock({
-            data: [{ id: "b1" }, { id: "b2" }],
-            error: null,
-          })
-        } else {
-          chain = createChainableMock({ data: null, error: null })
-        }
-        if (!chains[table]) chains[table] = []
-        chains[table].push(chain)
-        return chain
+      let rpcParams: Record<string, unknown> | null = null
+      setMockRpcImplementation((_fn, params) => {
+        rpcParams = params as Record<string, unknown>
+        return Promise.resolve({
+          data: { id: "prize_bs", name: "Grand Prize", judging_style: "bucket_sort" },
+          error: null,
+        })
       })
 
       const result = await createPrize("h1", {
@@ -2310,11 +2260,9 @@ describe("Judging Service", () => {
       })
 
       expect(result.success).toBe(true)
-      const bucketChains = chains["bucket_definitions"] ?? []
-      const insertCalls = bucketChains.flatMap((c) => c.insert.mock.calls as unknown as [Record<string, unknown>[]][])
-      const bucketInsertArgs = insertCalls.find(([rows]) => Array.isArray(rows) && rows.length === 2)?.[0]
-      expect(bucketInsertArgs).toBeDefined()
-      expect(bucketInsertArgs![0]).toMatchObject({ prize_id: "prize_bs", label: "Yes" })
+      const bucketRows = rpcParams?.p_buckets as Record<string, unknown>[]
+      expect(bucketRows).toHaveLength(2)
+      expect(bucketRows[0]).toMatchObject({ label: "Yes", level: 1 })
     })
 
     it("rejects bucket_sort when fewer than two named buckets are provided", async () => {
@@ -2342,19 +2290,13 @@ describe("Judging Service", () => {
     })
 
     it("stores maxPicks for judges_pick", async () => {
-      const chains: Record<string, ReturnType<typeof createChainableMock>[]> = {}
-
-      setMockFromImplementation((table: string) => {
-        const chain =
-          table === "prizes"
-            ? createChainableMock({
-                data: { id: "prize_jp", name: "Sponsor Pick", judging_style: "judges_pick", max_picks: 5 },
-                error: null,
-              })
-            : createChainableMock({ data: null, error: null })
-        if (!chains[table]) chains[table] = []
-        chains[table].push(chain)
-        return chain
+      let rpcParams: Record<string, unknown> | null = null
+      setMockRpcImplementation((_fn, params) => {
+        rpcParams = params as Record<string, unknown>
+        return Promise.resolve({
+          data: { id: "prize_jp", name: "Sponsor Pick", judging_style: "judges_pick", max_picks: 5 },
+          error: null,
+        })
       })
 
       const result = await createPrize("h1", {
@@ -2364,10 +2306,8 @@ describe("Judging Service", () => {
       })
 
       expect(result.success).toBe(true)
-      const prizeChain = chains["prizes"]?.[0]
-      const insertArgs = prizeChain?.insert.mock.calls[0]?.[0] as Record<string, unknown>
-      expect(insertArgs).toBeDefined()
-      expect(insertArgs.max_picks).toBe(5)
+      const prizeValues = rpcParams?.p_prize_values as Record<string, unknown>
+      expect(prizeValues.max_picks).toBe(5)
     })
 
     it("allows weighted_score with zero bonus criteria when core sums to 100", async () => {
@@ -2393,6 +2333,9 @@ describe("Judging Service", () => {
         chains[table].push(chain)
         return chain
       })
+      mockRpcCall("create_prize_configuration_atomic", mockSuccess({
+        id: "prize_ws", name: "Sponsor Pick", judging_style: "weighted_score",
+      }))
 
       const result = await createPrize("h1", {
         name: "Sponsor Pick",
@@ -2426,6 +2369,9 @@ describe("Judging Service", () => {
         chains[table].push(chain)
         return chain
       })
+      mockRpcCall("create_prize_configuration_atomic", mockSuccess({
+        id: "prize_partial", name: "Sponsor Pick", judging_style: "weighted_score",
+      }))
 
       const result = await createPrize("h1", {
         name: "Sponsor Pick",
@@ -2498,6 +2444,13 @@ describe("Judging Service", () => {
         chains[table].push(chain)
         return chain
       })
+      setMockRpcImplementation(() => Promise.resolve({
+        data: DEFAULT_CORE_CRITERIA.map((c, i) => ({
+          id: `seed-${i}`, name: c.name, description: c.description, weight: c.weight,
+          min_score: c.minScore, max_score: c.maxScore, display_order: i,
+        })),
+        error: null,
+      }))
 
       const result = await seedDefaultCoreCriteria("h1")
       expect(result.success).toBe(true)
@@ -2518,6 +2471,7 @@ describe("Judging Service", () => {
         }
         return createChainableMock({ data: null, error: null })
       })
+      setMockRpcImplementation(() => Promise.resolve({ data: null, error: { message: "Core categories already exist" } }))
 
       const result = await seedDefaultCoreCriteria("h1")
       expect(result.success).toBe(false)
@@ -2597,9 +2551,13 @@ describe("Judging Service", () => {
   })
 
   describe("replacePrizeCriteria", () => {
-    it("deletes existing rows and inserts the new ones with prize_id", async () => {
-      const chains: ReturnType<typeof createChainableMock>[] = []
-      setMockFromImplementation((table: string) => {
+    it("replaces criteria through one atomic database call", async () => {
+      let rpcParams: Record<string, unknown> | null = null
+      setMockRpcImplementation((_fn, params) => {
+        rpcParams = params as Record<string, unknown>
+        return Promise.resolve({ data: { id: "prize_new" }, error: null })
+      })
+      setMockFromImplementation((_table: string) => {
         const chain = createChainableMock({
           data: [
             { id: "c1", name: "Uses MCP", description: null, display_order: 0 },
@@ -2607,7 +2565,6 @@ describe("Judging Service", () => {
           ],
           error: null,
         })
-        if (table === "judging_criteria") chains.push(chain)
         return chain
       })
 
@@ -2620,27 +2577,23 @@ describe("Judging Service", () => {
       expect(result).not.toBeNull()
       expect(result?.length).toBe(2)
       expect(result?.[0]).toMatchObject({ id: "c1", name: "Uses MCP", displayOrder: 0 })
-
-      const insertCalls = chains.flatMap(
-        (c) => c.insert.mock.calls as unknown as [Record<string, unknown>[]][]
-      )
-      const insertArgs = insertCalls.find(([rows]) => Array.isArray(rows))?.[0]
-      expect(insertArgs).toBeDefined()
-      expect(insertArgs?.length).toBe(2)
-      expect(insertArgs?.[0]).toMatchObject({
-        hackathon_id: "h1",
-        prize_id: "prize_new",
+      const savedCriteria = rpcParams?.p_criteria as Record<string, unknown>[]
+      expect(savedCriteria).toHaveLength(2)
+      expect(savedCriteria[0]).toMatchObject({
         name: "Uses MCP",
-        display_order: 0,
       })
     })
 
-    it("returns an empty array (no insert) when every name is blank", async () => {
-      const chains: ReturnType<typeof createChainableMock>[] = []
+    it("atomically clears criteria when every name is blank", async () => {
+      let rpcParams: Record<string, unknown> | null = null
+      setMockRpcImplementation((_fn, params) => {
+        rpcParams = params as Record<string, unknown>
+        return Promise.resolve({ data: { id: "prize_new" }, error: null })
+      })
       setMockFromImplementation((table: string) => {
-        const chain = createChainableMock({ data: null, error: null })
-        if (table === "judging_criteria") chains.push(chain)
-        return chain
+        return table === "judging_criteria"
+          ? createChainableMock({ data: [], error: null })
+          : createChainableMock({ data: null, error: null })
       })
 
       const result = await replacePrizeCriteria("h1", "prize_new", [
@@ -2649,8 +2602,7 @@ describe("Judging Service", () => {
       ])
 
       expect(result).toEqual([])
-      const insertCalled = chains.some((c) => c.insert.mock.calls.length > 0)
-      expect(insertCalled).toBe(false)
+      expect(rpcParams?.p_criteria).toEqual([])
     })
   })
 
@@ -2683,6 +2635,28 @@ describe("Judging Service", () => {
           })
         }
         return createChainableMock({ data: [], error: null })
+      })
+      setMockRpcImplementation((fn) => {
+        if (fn === "create_judging_round_atomic") {
+          roundInsertCount++
+          return Promise.resolve({
+            data: {
+              id: `round-${roundInsertCount}`,
+              hackathon_id: "h1",
+              name: `Round ${roundInsertCount}`,
+              status: "planned",
+              display_order: roundInsertCount - 1,
+              advancement: "manual",
+              advancement_config: {},
+            },
+            error: null,
+          })
+        }
+        if (fn === "create_prize_configuration_atomic") {
+          prizeInsertCount++
+          return Promise.resolve({ data: { id: `prize-${prizeInsertCount}` }, error: null })
+        }
+        return Promise.resolve({ data: null, error: null })
       })
     }
 
@@ -2791,6 +2765,28 @@ describe("Judging Service", () => {
         }
         return createChainableMock({ data: [], error: null })
       })
+      setMockRpcImplementation((fn, params) => {
+        if (fn === "create_judging_round_atomic") {
+          roundInsertPayload = (params as { p_values: Record<string, unknown> }).p_values
+          return Promise.resolve({
+            data: {
+              id: "round-1",
+              hackathon_id: "h1",
+              name: roundInsertPayload.name,
+              status: "planned",
+              display_order: 0,
+              advancement: roundInsertPayload.advancement,
+              advancement_config: {},
+            },
+            error: null,
+          })
+        }
+        if (fn === "create_prize_configuration_atomic") {
+          prizeInsertPayload = (params as { p_prize_values: Record<string, unknown> }).p_prize_values
+          return Promise.resolve({ data: { id: "prize-1" }, error: null })
+        }
+        return Promise.resolve({ data: null, error: null })
+      })
 
       const result = await createRoundsPreset("h1", {
         preset: "finalists_pick",
@@ -2834,6 +2830,27 @@ describe("Judging Service", () => {
           return chain
         }
         return createChainableMock({ data: [], error: null })
+      })
+      setMockRpcImplementation((fn, params) => {
+        if (fn === "create_judging_round_atomic") {
+          return Promise.resolve({
+            data: {
+              id: "round-1",
+              hackathon_id: "h1",
+              name: "Finals",
+              status: "planned",
+              display_order: 0,
+              advancement: "manual",
+              advancement_config: {},
+            },
+            error: null,
+          })
+        }
+        if (fn === "create_prize_configuration_atomic") {
+          prizeInsertPayload = (params as { p_prize_values: Record<string, unknown> }).p_prize_values
+          return Promise.resolve({ data: { id: "prize-1" }, error: null })
+        }
+        return Promise.resolve({ data: null, error: null })
       })
 
       const result = await createRoundsPreset("h1", { preset: "finalists_pick" })
@@ -3090,15 +3107,14 @@ describe("Judging Service", () => {
             error: null,
           })
         }
-        if (table === "hackathon_results") {
-          const chain = createChainableMock({ data: null, error: null })
-          chain.insert = mock((rows: typeof inserted) => {
-            inserted.push(...rows)
-            return Promise.resolve({ data: null, error: null })
-          }) as typeof chain.insert
-          return chain
-        }
         return createChainableMock({ data: null, error: null })
+      })
+      setMockRpcImplementation((fn, params) => {
+        if (fn === "replace_prize_results_atomic") {
+          inserted.push(...(params as { p_results: typeof inserted }).p_results)
+          return Promise.resolve({ data: inserted.length, error: null })
+        }
+        return Promise.resolve({ data: null, error: null })
       })
 
       const result = await calculatePrizeResults("h1", "p1")
@@ -3106,7 +3122,6 @@ describe("Judging Service", () => {
       expect(result).toEqual({ success: true, count: 2 })
       expect(inserted.map((row) => row.submission_id)).toEqual(["s1", "s2"])
       expect(inserted.map((row) => row.rank)).toEqual([1, 2])
-      expect(inserted.every((row) => row.prize_id === "p1")).toBe(true)
     })
 
     it("only counts crowd votes cast for the requested prize", async () => {
@@ -3121,6 +3136,7 @@ describe("Judging Service", () => {
         if (table === "crowd_votes") return crowdVotes
         return createChainableMock({ data: null, error: null })
       })
+      setMockRpcImplementation(() => Promise.resolve({ data: 1, error: null }))
 
       const result = await calculatePrizeResults("h1", "p1")
 
@@ -3178,15 +3194,14 @@ describe("Judging Service", () => {
             error: null,
           })
         }
-        if (table === "hackathon_results") {
-          const m = createChainableMock({ data: null, error: null })
-          m.insert = mock((rows: ResultRow[]) => {
-            insertCapture.push(...rows)
-            return Promise.resolve({ data: null, error: null })
-          }) as typeof m.insert
-          return m
-        }
         return createChainableMock({ data: null, error: null })
+      })
+      setMockRpcImplementation((fn, params) => {
+        if (fn === "replace_prize_results_atomic") {
+          insertCapture.push(...(params as { p_results: ResultRow[] }).p_results)
+          return Promise.resolve({ data: insertCapture.length, error: null })
+        }
+        return Promise.resolve({ data: null, error: null })
       })
 
       const result = await calculateWeightedScoreResults("h1", "p1")
@@ -3246,22 +3261,22 @@ describe("Judging Service", () => {
 
   describe("calculateCoreOnlyResults", () => {
     it("ranks by core-only weighted average", async () => {
-      const inserted: Array<{
+      let inserted: Array<{
         submission_id: string
         rank: number
         weighted_score: number
         result_kind: string
       }> = []
 
-      setMockFromImplementation((table: string) => {
-        if (table === "hackathon_results") {
-          const m = createChainableMock({ data: null, error: null })
-          m.insert = mock((rows: typeof inserted) => {
-            inserted.push(...rows)
-            return Promise.resolve({ data: null, error: null })
-          }) as typeof m.insert
-          return m
+      setMockRpcImplementation((fn, params) => {
+        if (fn === "replace_core_results_atomic") {
+          inserted = (params as { p_results: typeof inserted }).p_results
+          return Promise.resolve({ data: inserted.length, error: null })
         }
+        return Promise.resolve({ data: null, error: null })
+      })
+
+      setMockFromImplementation((table: string) => {
         if (table === "judging_criteria") {
           return createChainableMock({
             data: [
@@ -3300,19 +3315,16 @@ describe("Judging Service", () => {
       expect(s2!.weighted_score).toBeCloseTo(0.56, 5)
       expect(s1!.rank).toBe(1)
       expect(s2!.rank).toBe(2)
-      for (const row of inserted) expect(row.result_kind).toBe("core_only")
     })
 
     it("returns zero count when no core criteria exist", async () => {
       setMockFromImplementation((table: string) => {
-        if (table === "hackathon_results") {
-          return createChainableMock({ data: null, error: null })
-        }
         if (table === "judging_criteria") {
           return createChainableMock({ data: [], error: null })
         }
         return createChainableMock({ data: null, error: null })
       })
+      mockRpcCall("replace_core_results_atomic", mockSuccess(0))
 
       const result = await calculateCoreOnlyResults("h1")
       expect(result.success).toBe(true)
@@ -3942,7 +3954,6 @@ describe("Judging Service", () => {
 
   describe("submitJudgesPick", () => {
     it("saves ranked picks and completes the prize assignments", async () => {
-      const picksChain = createChainableMock({ data: null, error: null })
       const assignmentChain = createChainableMock({
         data: [{ submission_id: "s1" }, { submission_id: "s2" }],
         error: null,
@@ -3952,34 +3963,26 @@ describe("Judging Service", () => {
           return createChainableMock({ data: { id: "p1", max_picks: 2 }, error: null })
         }
         if (table === "judge_assignments") return assignmentChain
-        if (table === "judge_picks") return picksChain
         return createChainableMock({ data: null, error: null })
+      })
+      let rpcParams: unknown
+      setMockRpcImplementation((fn, params) => {
+        if (fn === "replace_judge_picks_atomic") rpcParams = params
+        return Promise.resolve({ data: 2, error: null })
       })
 
       const result = await submitJudgesPick("h1", "j1", "p1", ["s2", "s1"])
 
       expect(result).toEqual({ success: true })
-      expect(picksChain.upsert).toHaveBeenCalledWith(
-        [
-          expect.objectContaining({
-            hackathon_id: "h1",
-            judge_participant_id: "j1",
-            prize_id: "p1",
-            submission_id: "s2",
-            rank: 1,
-          }),
-          expect.objectContaining({
-            hackathon_id: "h1",
-            judge_participant_id: "j1",
-            prize_id: "p1",
-            submission_id: "s1",
-            rank: 2,
-          }),
+      expect(rpcParams).toEqual({
+        p_hackathon_id: "h1",
+        p_judge_participant_id: "j1",
+        p_prize_id: "p1",
+        p_picks: [
+          { submission_id: "s2", rank: 1 },
+          { submission_id: "s1", rank: 2 },
         ],
-        { onConflict: "hackathon_id,judge_participant_id,prize_id,submission_id" }
-      )
-      expect(picksChain.not).toHaveBeenCalledWith("submission_id", "in", "(s2,s1)")
-      expect(assignmentChain.update).toHaveBeenCalled()
+      })
     })
 
     it("rejects projects that aren't assigned to the judge before replacing picks", async () => {
@@ -4026,7 +4029,6 @@ describe("Judging Service", () => {
     })
 
     it("keeps older picks when the new picks fail to save", async () => {
-      const picksChain = createChainableMock({ data: null, error: { message: "DB error" } })
       setMockFromImplementation((table) => {
         if (table === "prizes") {
           return createChainableMock({ data: { id: "p1", max_picks: 1 }, error: null })
@@ -4034,18 +4036,17 @@ describe("Judging Service", () => {
         if (table === "judge_assignments") {
           return createChainableMock({ data: [{ submission_id: "s1" }], error: null })
         }
-        if (table === "judge_picks") return picksChain
         return createChainableMock({ data: null, error: null })
       })
+      setMockRpcImplementation(() => Promise.resolve({ data: null, error: { message: "DB error" } }))
 
       const result = await submitJudgesPick("h1", "j1", "p1", ["s1"])
 
       expect(result).toEqual({
         success: false,
         error: "Failed to submit picks",
-        code: "insert_failed",
+        code: "replace_failed",
       })
-      expect(picksChain.delete).not.toHaveBeenCalled()
     })
   })
 })

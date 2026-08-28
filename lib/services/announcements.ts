@@ -17,6 +17,7 @@ export type Announcement = {
 }
 
 export type CreateAnnouncementInput = {
+  id?: string
   title: string
   body: string
   priority?: "normal" | "urgent"
@@ -98,6 +99,7 @@ export async function createAnnouncement(hackathonId: string, input: CreateAnnou
   const { data, error } = await client
     .from("hackathon_announcements")
     .insert({
+      ...(input.id ? { id: input.id } : {}),
       hackathon_id: hackathonId,
       title: input.title,
       body: input.body,
@@ -111,6 +113,19 @@ export async function createAnnouncement(hackathonId: string, input: CreateAnnou
     console.error("Failed to create announcement:", error)
     return null
   }
+  return data as Announcement
+}
+
+export async function getAnnouncementById(announcementId: string, hackathonId: string): Promise<Announcement | null> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const { data, error } = await client
+    .from("hackathon_announcements")
+    .select("*")
+    .eq("id", announcementId)
+    .eq("hackathon_id", hackathonId)
+    .maybeSingle()
+
+  if (error || !data) return null
   return data as Announcement
 }
 

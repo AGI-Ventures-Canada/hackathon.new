@@ -9,8 +9,9 @@ import {
 import type { HackathonStatus, HackathonPhase } from "@/lib/db/hackathon-types"
 
 function makeInput(overrides: Partial<Parameters<typeof getOrganizerActionItems>[0]> = {}) {
-  return {
+  const input = {
     status: "draft" as HackathonStatus,
+    storedStatus: "draft" as HackathonStatus,
     phase: null as HackathonPhase | null,
     submissionCount: 0,
     unassignedSubmissionCount: 0,
@@ -31,6 +32,7 @@ function makeInput(overrides: Partial<Parameters<typeof getOrganizerActionItems>
     startsAt: null,
     endsAt: null,
     registrationClosesAt: null,
+    registrationOpensAt: null,
     allowLateRegistration: true,
     locationType: null,
     feedbackSurveyUrl: null,
@@ -39,7 +41,12 @@ function makeInput(overrides: Partial<Parameters<typeof getOrganizerActionItems>
     perkCount: 0,
     perksNone: false,
     rounds: { plannedCount: 0, activeCount: 0, completeCount: 0 },
+    now: "2026-04-01T00:00:00.000Z",
     ...overrides,
+  }
+  return {
+    ...input,
+    storedStatus: overrides.storedStatus ?? overrides.status ?? input.status,
   }
 }
 
@@ -166,6 +173,28 @@ describe("getOrganizerActionItems", () => {
       expect(items.find((i) => i.id === "ready-to-publish")).toBeUndefined()
     })
 
+    it("shows an urgent date fix instead of publish when the event has ended", () => {
+      const items = getOrganizerActionItems(makeInput({
+        startsAt: "2026-03-01T09:00:00.000Z",
+        endsAt: "2026-03-02T17:00:00.000Z",
+        locationType: "virtual",
+      }))
+
+      expect(findPending(items, "lifecycle-draft_dates_ended")?.severity).toBe("urgent")
+      expect(findPending(items, "ready-to-publish")).toBeUndefined()
+    })
+
+    it("explains that draft invite emails are saved until publish", () => {
+      const items = getOrganizerActionItems(makeInput({
+        unsentInvitationEmailCount: 1,
+      }))
+
+      expect(findPending(items, "unsent-invitation-emails")).toMatchObject({
+        label: "1 invite email is saved",
+        severity: "warning",
+      })
+    })
+
     it("shows ready-to-publish when dates and location are set", () => {
       const items = getOrganizerActionItems(makeInput({
         startsAt: "2026-05-01T00:00:00Z",
@@ -210,6 +239,17 @@ describe("getOrganizerActionItems", () => {
   })
 
   describe("published status", () => {
+    it("shows unsent invite emails as an urgent action", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "published",
+        unsentInvitationEmailCount: 2,
+      }))
+
+      expect(findPending(items, "unsent-invitation-emails")).toMatchObject({
+        severity: "urgent",
+        tab: "teams",
+      })
+    })
     it("shows promote-event as manual", () => {
       const items = getOrganizerActionItems(makeInput({
         status: "published",

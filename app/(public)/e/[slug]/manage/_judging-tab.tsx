@@ -1,6 +1,6 @@
 import { listPrizes, listJudges, getJudgingProgress, listRounds, listCoreCriteria, listPrizeCriteriaByPrizeIds, getWeightedScoreAssignmentSummary } from "@/lib/services/judging"
 import { listJudgeInvitations, listPendingJudgeNotifications } from "@/lib/services/judge-invitations"
-import { calculateResults, getResults, getResultsByPrize } from "@/lib/services/results"
+import { getResults, getResultsByPrize } from "@/lib/services/results"
 import { JudgingTabClient } from "@/components/hackathon/judging/judging-tab-client"
 import type { ManageJtab } from "@/lib/utils/manage-tabs"
 
@@ -25,10 +25,6 @@ export async function JudgingTabContent({
   hackathonStatus = null,
   notificationDisposition,
 }: JudgingTabContentProps) {
-  if (!resultsPublishedAt) {
-    await calculateResults(hackathonId)
-  }
-
   const prizes = await listPrizes(hackathonId)
   const visiblePrizes = prizes.filter((p) => !p.is_screening)
 
@@ -122,7 +118,7 @@ export async function JudgingTabContent({
     createdAt: inv.created_at,
     remindedAt: inv.reminded_at ?? null,
     emailedAt: inv.emailed_at ?? null,
-    token: inv.token,
+    token: null,
   }))
 
   return (

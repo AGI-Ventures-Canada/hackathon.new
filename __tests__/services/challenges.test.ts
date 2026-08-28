@@ -3,6 +3,7 @@ import {
   createChainableMock,
   resetSupabaseMocks,
   setMockFromImplementation,
+  setMockRpcImplementation,
   mockTableQuery,
   mockSuccess,
   mockError,
@@ -254,13 +255,12 @@ describe("Challenges Service", () => {
         if (table === "hackathons") {
           return createChainableMock({ data: { id: hackathonId }, error: null })
         }
-        if (table === "challenges") {
-          return createChainableMock({
-            data: [{ id: "a" }, { id: "b" }],
-            error: null,
-          })
-        }
         return createChainableMock({ data: null, error: null })
+      })
+      setMockRpcImplementation(async (fn, params) => {
+        expect(fn).toBe("reorder_challenges_atomic")
+        expect(params).toEqual({ p_hackathon_id: hackathonId, p_ordered_ids: ["b", "a"] })
+        return { data: true, error: null }
       })
 
       const result = await reorderChallenges(hackathonId, tenantId, ["b", "a"])
@@ -273,14 +273,9 @@ describe("Challenges Service", () => {
         if (table === "hackathons") {
           return createChainableMock({ data: { id: hackathonId }, error: null })
         }
-        if (table === "challenges") {
-          return createChainableMock({
-            data: [{ id: "a" }],
-            error: null,
-          })
-        }
         return createChainableMock({ data: null, error: null })
       })
+      setMockRpcImplementation(async () => ({ data: false, error: null }))
 
       const result = await reorderChallenges(hackathonId, tenantId, ["a", "unknown"])
 
@@ -300,14 +295,9 @@ describe("Challenges Service", () => {
         if (table === "hackathons") {
           return createChainableMock({ data: { id: hackathonId }, error: null })
         }
-        if (table === "challenges") {
-          return createChainableMock({
-            data: [{ id: "a" }, { id: "b" }],
-            error: null,
-          })
-        }
         return createChainableMock({ data: null, error: null })
       })
+      setMockRpcImplementation(async () => ({ data: false, error: null }))
 
       const result = await reorderChallenges(hackathonId, tenantId, ["a", "a"])
 
