@@ -150,6 +150,7 @@ type ManageHackathonToolDependencies = {
     section: z.output<typeof sectionInput>["section"],
   ) => Promise<boolean>
   onOpenTransition: (status: string) => void
+  onPrepareSponsor?: (name: string) => Promise<boolean>
   onEventVersionUpdated?: (eventVersion: string) => void
 }
 
@@ -237,6 +238,10 @@ const sectionInput = z
     section: z.enum(ORGANIZER_SECTIONS),
   })
   .strict()
+
+const sponsorPreparationInput = z.object({
+  name: z.string().trim().min(1).max(200),
+}).strict()
 
 const paginationInput = z.object({
   offset: z.number().int().min(0).max(10_000).default(0),
@@ -1414,6 +1419,33 @@ function createPublishReviewTool(
   })
 }
 
+function createSponsorPreparationTool(
+  dependencies: ManageHackathonToolDependencies,
+): WebMcpTool {
+  return defineWebMcpTool({
+    name: "prepare_sponsor",
+    title: "Prepare a sponsor",
+    description: "Open the sponsor editor and fill in a sponsor name. A person must review and add it.",
+    schema: sponsorPreparationInput,
+    annotations: { untrustedContentHint: true },
+    execute: async ({ name }) => {
+      const context = dependencies.getContext()
+      const inspectUrl = manageHref(context.hackathon.slug, "tab=edit")
+      const opened = dependencies.onPrepareSponsor
+        ? await dependencies.onPrepareSponsor(name)
+        : await dependencies.onNavigate(inspectUrl, "sponsors")
+      return {
+        data: {
+          prepared: opened,
+          status: opened ? "review_opened" : "navigation_pending",
+          inspectUrl,
+        },
+        requiresHumanAction: true,
+      }
+    },
+  })
+}
+
 export function createManageHackathonTools(
   dependencies: ManageHackathonToolDependencies,
   registrationStatus = dependencies.getContext().hackathon.status,
@@ -1464,6 +1496,7 @@ export function createManageHackathonTools(
     )
   }
   if (registrationStatus !== "archived") {
+    tools.push(createSponsorPreparationTool(currentDependencies))
     tools.push(createAnnouncementTool(currentDependencies))
   }
   if (

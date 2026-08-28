@@ -211,6 +211,7 @@ describe("createManageHackathonTools", () => {
       "add_challenge",
       "add_prize",
       "open_go_live_review",
+      "prepare_sponsor",
       "draft_announcement",
     ])
   })
@@ -233,6 +234,7 @@ describe("createManageHackathonTools", () => {
       "update_hackathon_settings",
       "update_hackathon_details",
       "add_schedule_item",
+      "prepare_sponsor",
       "draft_announcement",
     ])
 

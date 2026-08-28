@@ -124,6 +124,61 @@ function completeRequiredSteps(dialog: HTMLElement) {
 }
 
 describe("SubmissionButton", () => {
+  it("can mount only the agent-opened review without a visible trigger", () => {
+    render(
+      <SubmissionButton
+        hackathonSlug="test-hackathon"
+        status="active"
+        isRegistered
+        submission={null}
+        hideTrigger
+      />,
+    )
+    expect(screen.queryByRole("button", { name: "Submit Project" })).toBeNull()
+    act(() => {
+      expect(dispatchPrepareProjectAction("test-hackathon", {
+        title: "Queue Coach",
+        githubUrl: "https://github.com/example/queue-coach",
+        liveAppUrl: "",
+        demoVideoUrl: "",
+        description: "Helps mentors.",
+      })).toEqual({ ok: true })
+    })
+    expect(screen.getByRole("dialog")).toBeDefined()
+  })
+
+  it("opens only the explicitly targeted review when two forms share a slug", () => {
+    render(
+      <>
+        <SubmissionButton
+          hackathonSlug="test-hackathon"
+          status="active"
+          isRegistered
+          submission={null}
+        />
+        <SubmissionButton
+          hackathonSlug="test-hackathon"
+          status="active"
+          isRegistered
+          submission={null}
+          hideTrigger
+          prepareTarget="global:1"
+        />
+      </>,
+    )
+    act(() => {
+      expect(dispatchPrepareProjectAction("test-hackathon", {
+        title: "Queue Coach",
+        githubUrl: "https://github.com/example/queue-coach",
+        liveAppUrl: "",
+        demoVideoUrl: "",
+        description: "Helps mentors.",
+      }, "global:1")).toEqual({ ok: true })
+    })
+    expect(screen.getAllByRole("dialog")).toHaveLength(1)
+  })
+
+
   it("shows the updated copy and starts with only the title field", () => {
     const dialog = openDialog()
 
@@ -245,7 +300,7 @@ describe("SubmissionButton", () => {
 
     let outcome: ReturnType<typeof dispatchPrepareProjectAction> | undefined
     act(() => {
-      outcome = dispatchPrepareProjectAction({
+      outcome = dispatchPrepareProjectAction("test-hackathon", {
         title: "Prepared title",
         githubUrl: "https://github.com/acme/prepared",
         liveAppUrl: "https://prepared.example.com",
@@ -334,7 +389,7 @@ describe("SubmissionButton", () => {
       renderSubmissionButton()
       let outcome: ReturnType<typeof dispatchPrepareProjectAction> | undefined
       act(() => {
-        outcome = dispatchPrepareProjectAction({
+        outcome = dispatchPrepareProjectAction("test-hackathon", {
           title: "Prepared title",
           githubUrl: "https://github.com/acme/prepared",
           liveAppUrl: "",
@@ -368,7 +423,7 @@ describe("SubmissionButton", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close Dialog" }))
 
     act(() => {
-      dispatchPrepareProjectAction({
+      dispatchPrepareProjectAction("test-hackathon", {
         title: "Prepared title",
         githubUrl: "https://github.com/acme/prepared",
         liveAppUrl: "",

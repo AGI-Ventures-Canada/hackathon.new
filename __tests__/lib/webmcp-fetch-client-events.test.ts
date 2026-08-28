@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, it, mock } from "bun:test"
 import {
   dispatchPrepareProjectAction,
+  dispatchPrepareSponsorAction,
   PREPARE_PROJECT_EVENT,
+  PREPARE_SPONSOR_EVENT,
   type PrepareProjectEvent,
+  type PrepareSponsorEvent,
 } from "@/lib/webmcp/client-events"
 import {
   fetchWebMcpJson,
@@ -20,6 +23,7 @@ const draft = {
 
 afterEach(() => {
   window.removeEventListener(PREPARE_PROJECT_EVENT, acknowledgePrepared)
+  window.removeEventListener(PREPARE_SPONSOR_EVENT, acknowledgeSponsor)
 })
 
 function acknowledgePrepared(event: Event) {
@@ -35,20 +39,40 @@ function acknowledgePrepared(event: Event) {
   })
 }
 
+function acknowledgeSponsor(event: Event) {
+  const detail = (event as PrepareSponsorEvent).detail
+  expect(detail.name).toBe("Acme")
+  detail.acknowledge({ ok: true })
+}
+
 describe("WebMCP project preparation dispatch", () => {
   it("returns a synchronous listener acknowledgement and accepts only the first result", () => {
     window.addEventListener(PREPARE_PROJECT_EVENT, acknowledgePrepared)
-    expect(dispatchPrepareProjectAction(draft)).toEqual({ ok: true })
+    expect(dispatchPrepareProjectAction("test-event", draft)).toEqual({ ok: true })
   })
 
   it("fails closed when no visible project form acknowledges preparation", () => {
-    expect(dispatchPrepareProjectAction(draft)).toEqual({
+    expect(dispatchPrepareProjectAction("test-event", draft)).toEqual({
       ok: false,
       error: {
         code: "preparation_unavailable",
         message: "The project form isn't ready. Reload the page and try again.",
         retryable: false,
       },
+    })
+  })
+})
+
+describe("WebMCP sponsor preparation dispatch", () => {
+  it("passes a sponsor name to the visible editor", () => {
+    window.addEventListener(PREPARE_SPONSOR_EVENT, acknowledgeSponsor)
+    expect(dispatchPrepareSponsorAction("Acme")).toEqual({ ok: true })
+  })
+
+  it("fails closed without a visible sponsor editor", () => {
+    expect(dispatchPrepareSponsorAction("Acme")).toMatchObject({
+      ok: false,
+      error: { code: "preparation_unavailable" },
     })
   })
 })

@@ -146,6 +146,31 @@ afterEach(() => {
 });
 
 describe("SponsorsEditForm", () => {
+  it("fills a prepared sponsor name and keeps the final add click human", () => {
+    const view = render(
+      <SponsorsEditForm
+        hackathonId="h1"
+        initialSponsors={[]}
+        preparedName="Acme"
+        preparedNameRevision={1}
+      />,
+    );
+
+    const input = screen.getByPlaceholderText("Sponsor organization name...") as HTMLInputElement;
+    expect(input.value).toBe("Acme");
+    fireEvent.change(input, { target: { value: "Changed" } });
+    view.rerender(
+      <SponsorsEditForm
+        hackathonId="h1"
+        initialSponsors={[]}
+        preparedName="Acme"
+        preparedNameRevision={2}
+      />,
+    );
+    expect(input.value).toBe("Acme");
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
   it("does not let organizers link a sponsor without its approval", () => {
     render(
       <SponsorsEditForm
