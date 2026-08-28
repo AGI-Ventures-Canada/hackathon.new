@@ -1248,8 +1248,9 @@ begin
   ) or exists (
     select 1
     from public.submissions
+    where participant_id is not null and team_id is null
     group by hackathon_id, participant_id
-    having participant_id is not null and count(*) > 1
+    having count(*) > 1
   ) then
     raise exception 'Duplicate projects must be resolved before adding one-project-per-attendee constraints';
   end if;
@@ -1261,7 +1262,7 @@ create unique index if not exists submissions_one_per_team
   where team_id is not null;
 create unique index if not exists submissions_one_per_solo_attendee
   on public.submissions(hackathon_id, participant_id)
-  where participant_id is not null;
+  where participant_id is not null and team_id is null;
 
 update public.crowd_votes vote
 set prize_id = (
