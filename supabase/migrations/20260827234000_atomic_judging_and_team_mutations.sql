@@ -1238,6 +1238,83 @@ begin
 end;
 $$;
 
+with ranked as (
+  select
+    submission.id,
+    submission.team_id,
+    submission.participant_id,
+    row_number() over (
+      partition by submission.hackathon_id, submission.team_id
+      order by
+        (
+          exists (select 1 from public.judge_assignments item where item.submission_id = submission.id)
+          or exists (select 1 from public.judge_picks item where item.submission_id = submission.id)
+          or exists (select 1 from public.prize_assignments item where item.submission_id = submission.id)
+          or exists (select 1 from public.hackathon_results item where item.submission_id = submission.id)
+          or exists (select 1 from public.crowd_votes item where item.submission_id = submission.id)
+          or exists (select 1 from public.round_submissions item where item.submission_id = submission.id)
+          or exists (select 1 from public.submission_category_entries item where item.submission_id = submission.id)
+          or exists (select 1 from public.submission_challenges item where item.submission_id = submission.id)
+        ) desc,
+        (submission.status = 'submitted') desc,
+        submission.updated_at desc,
+        submission.created_at desc,
+        submission.id
+    ) as owner_rank
+  from public.submissions submission
+  where submission.team_id is not null
+)
+update public.submissions submission
+set
+  metadata = coalesce(submission.metadata, '{}'::jsonb) || jsonb_strip_nulls(jsonb_build_object(
+    'ownership_repaired_at', now(),
+    'ownership_repair_reason', 'duplicate_team_project',
+    'previous_team_id', ranked.team_id,
+    'previous_participant_id', ranked.participant_id
+  )),
+  team_id = null,
+  participant_id = null,
+  updated_at = now()
+from ranked
+where submission.id = ranked.id and ranked.owner_rank > 1;
+
+with ranked as (
+  select
+    submission.id,
+    submission.participant_id,
+    row_number() over (
+      partition by submission.hackathon_id, submission.participant_id
+      order by
+        (
+          exists (select 1 from public.judge_assignments item where item.submission_id = submission.id)
+          or exists (select 1 from public.judge_picks item where item.submission_id = submission.id)
+          or exists (select 1 from public.prize_assignments item where item.submission_id = submission.id)
+          or exists (select 1 from public.hackathon_results item where item.submission_id = submission.id)
+          or exists (select 1 from public.crowd_votes item where item.submission_id = submission.id)
+          or exists (select 1 from public.round_submissions item where item.submission_id = submission.id)
+          or exists (select 1 from public.submission_category_entries item where item.submission_id = submission.id)
+          or exists (select 1 from public.submission_challenges item where item.submission_id = submission.id)
+        ) desc,
+        (submission.status = 'submitted') desc,
+        submission.updated_at desc,
+        submission.created_at desc,
+        submission.id
+    ) as owner_rank
+  from public.submissions submission
+  where submission.team_id is null and submission.participant_id is not null
+)
+update public.submissions submission
+set
+  metadata = coalesce(submission.metadata, '{}'::jsonb) || jsonb_build_object(
+    'ownership_repaired_at', now(),
+    'ownership_repair_reason', 'duplicate_solo_project',
+    'previous_participant_id', ranked.participant_id
+  ),
+  participant_id = null,
+  updated_at = now()
+from ranked
+where submission.id = ranked.id and ranked.owner_rank > 1;
+
 do $$
 begin
   if exists (
@@ -1252,7 +1329,7 @@ begin
     group by hackathon_id, participant_id
     having count(*) > 1
   ) then
-    raise exception 'Duplicate projects must be resolved before adding one-project-per-attendee constraints';
+    raise exception 'Duplicate projects remain after ownership repair';
   end if;
 end;
 $$;
