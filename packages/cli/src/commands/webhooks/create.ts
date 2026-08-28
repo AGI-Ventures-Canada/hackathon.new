@@ -71,8 +71,8 @@ export async function runWebhooksCreate(
   }
 
   console.log(formatSuccess(`Created webhook ${webhook.id}`))
-  if (webhook.signingSecret) {
+  if (webhook.secret) {
     console.log(formatWarning("Save this signing secret — it won't be shown again:"))
-    console.log(webhook.signingSecret)
+    console.log(webhook.secret)
   }
 }

@@ -5,6 +5,7 @@ import { getManageHackathon } from "@/lib/services/manage-hackathon"
 import { getHackathonSubmissions } from "@/lib/services/submissions"
 import { countJudges, countUnassignedSubmissions, getJudgingProgress, getJudgingSetupStatus, listPrizes, listRounds } from "@/lib/services/judging"
 import { countPendingJudgeInvitations } from "@/lib/services/judge-invitations"
+import { countUnsentInvitationEmails } from "@/lib/services/invitation-email-health"
 import { countJudgeDisplayProfiles } from "@/lib/services/judge-display"
 import { getManageOverviewStats } from "@/lib/services/manage-overview"
 import { listChallenges } from "@/lib/services/challenges"
@@ -12,6 +13,7 @@ import { listAnnouncements } from "@/lib/services/announcements"
 import { isPerkReleased, listPerks } from "@/lib/services/perks"
 import { listScheduleItems, getSubmissionDeadline } from "@/lib/services/schedule-items"
 import { getOrganizerActionItems } from "@/lib/utils/organizer-actions"
+import { getEventLifecycleAlerts } from "@/lib/utils/event-lifecycle-alerts"
 import { getNotificationDisposition } from "@/lib/utils/notification-lifecycle"
 import type { HackathonStatus } from "@/lib/db/hackathon-types"
 import { VALID_TABS, VALID_ETABS, VALID_MTABS, VALID_JTABS, VALID_PTABS, DEFAULT_TAB, DEFAULT_MTAB, DEFAULT_JTAB, DEFAULT_PTAB, resolveTab } from "@/lib/utils/manage-tabs"
@@ -31,6 +33,7 @@ import {
   ManageHackathonTabCount,
 } from "@/components/hackathon/manage/manage-hackathon-name"
 import { StatusBadgeMenu } from "@/components/hackathon/manage/status-badge-menu"
+import { EventHealthAlerts } from "@/components/hackathon/manage/event-health-alerts"
 import { ChallengesTab } from "@/components/hackathon/manage/challenges-tab"
 import { PerksTab } from "@/components/hackathon/manage/perks-tab"
 import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -45,7 +48,11 @@ import { PeopleTab } from "./_people-tab"
 
 type PageProps = {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ tab?: string; etab?: string; mtab?: string; jtab?: string; ptab?: string; lang?: string }>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}
+
+function firstQueryValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value
 }
 
 function TabLoadingSkeleton() {
@@ -54,7 +61,13 @@ function TabLoadingSkeleton() {
 
 export default async function ManagePage({ params, searchParams }: PageProps) {
   const { slug } = await params
-  const { tab, etab, mtab, jtab, ptab, lang } = await searchParams
+  const query = await searchParams
+  const tab = firstQueryValue(query.tab)
+  const etab = firstQueryValue(query.etab)
+  const mtab = firstQueryValue(query.mtab)
+  const jtab = firstQueryValue(query.jtab)
+  const ptab = firstQueryValue(query.ptab)
+  const lang = firstQueryValue(query.lang)
   const [{ userId }, result] = await Promise.all([auth(), getManageHackathon(slug)])
 
   if (!result.ok) {
@@ -88,6 +101,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     unassignedSubmissionCount,
     judgingSetupStatus,
     announcements,
+    unsentInvitationEmailCount,
   ] = await Promise.all([
     getHackathonSubmissions(hackathon.id),
     getJudgingProgress(hackathon.id),
@@ -104,6 +118,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     countUnassignedSubmissions(hackathon.id),
     getJudgingSetupStatus(hackathon.id),
     listAnnouncements(hackathon.id),
+    countUnsentInvitationEmails(hackathon.id),
   ])
 
   const submissionCount = submissions.length
@@ -120,6 +135,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
   )
   const actionItems = getOrganizerActionItems({
     status: hackathon.status,
+    storedStatus: (hackathon.stored_status ?? hackathon.status) as HackathonStatus,
     phase: hackathon.phase,
     submissionCount,
     unassignedSubmissionCount,
@@ -140,17 +156,28 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     startsAt: hackathon.starts_at,
     endsAt: hackathon.ends_at,
     registrationClosesAt: hackathon.registration_closes_at,
+    registrationOpensAt: hackathon.registration_opens_at,
+    requireLocationVerification: hackathon.require_location_verification,
     allowLateRegistration: hackathon.allow_late_registration,
     locationType: hackathon.location_type ?? null,
     feedbackSurveyUrl: hackathon.feedback_survey_url ?? null,
     feedbackSurveySentAt: hackathon.feedback_survey_sent_at ?? null,
     pendingJudgeInvitationCount,
+    unsentInvitationEmailCount,
     perkCount: perks.length,
     perksNone: hackathon.perks_none ?? false,
     rounds: roundsSummary,
     communityUrl: hackathon.community_url ?? null,
     termsContent: hackathon.terms_content ?? null,
     judgingSetupReady: judgingSetupStatus.isReady,
+  })
+  const lifecycleAlerts = getEventLifecycleAlerts({
+    storedStatus: (hackathon.stored_status ?? hackathon.status) as HackathonStatus,
+    startsAt: hackathon.starts_at,
+    endsAt: hackathon.ends_at,
+    registrationOpensAt: hackathon.registration_opens_at,
+    registrationClosesAt: hackathon.registration_closes_at,
+    requireLocationVerification: hackathon.require_location_verification,
   })
 
   const activeTab = resolveTab(tab, VALID_TABS, DEFAULT_TAB)
@@ -191,7 +218,12 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
       eventVersion: hackathon.updated_at,
       startsAt: hackathon.starts_at,
       endsAt: hackathon.ends_at,
+      registrationOpensAt: hackathon.registration_opens_at,
       registrationClosesAt: hackathon.registration_closes_at,
+      rules: hackathon.rules,
+      bannerUrl: hackathon.banner_url,
+      allowLateRegistration: hackathon.allow_late_registration,
+      maxParticipants: hackathon.max_participants,
       locationType: hackathon.location_type,
       locationName: hackathon.location_name,
       locationUrl: hackathon.location_url,
@@ -199,6 +231,15 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
       maxTeamSize: hackathon.max_team_size ?? 5,
       allowSolo: hackathon.allow_solo ?? true,
       requireTeamApproval: hackathon.require_team_approval ?? false,
+      anonymousJudging: hackathon.anonymous_judging ?? false,
+      judgingMode: hackathon.judging_mode ?? "points",
+      locationLatitude: hackathon.location_latitude,
+      locationLongitude: hackathon.location_longitude,
+      requireLocationVerification: hackathon.require_location_verification,
+      communityUrl: hackathon.community_url,
+      communityLabel: hackathon.community_label,
+      requireTermsAcceptance: hackathon.require_terms_acceptance ?? false,
+      termsContent: hackathon.terms_content,
     },
     stats: {
       attendeeCount: overviewStats.participantCount,
@@ -267,6 +308,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
         slug={hackathon.slug}
         name={hackathon.name}
         status={hackathon.status}
+        storedStatus={(hackathon.stored_status ?? hackathon.status) as HackathonStatus}
         phase={hackathon.phase}
         challengeExists={challengeExists}
         challengeReleasedAt={hackathon.challenge_released_at}
@@ -277,6 +319,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
         scheduleItems={scheduleItems}
         startsAt={hackathon.starts_at}
         endsAt={hackathon.ends_at}
+        registrationOpensAt={hackathon.registration_opens_at}
         registrationClosesAt={hackathon.registration_closes_at}
         allowLateRegistration={hackathon.allow_late_registration}
         description={hackathon.description}
@@ -305,6 +348,12 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
         judgingSetupIssues={judgingSetupStatus.issues}
       >
         <ManageHackathonWebMcpTools context={webMcpContext} />
+        <EventHealthAlerts
+          slug={hackathon.slug}
+          alerts={lifecycleAlerts}
+          unsentInvitationEmailCount={unsentInvitationEmailCount}
+          queuedUntilPublish={(hackathon.stored_status ?? hackathon.status) === "draft"}
+        />
         <TabsUrlSync paramKey="tab" value={activeTab}>
           <ActionItemsLayout>
             <div className="flex items-center gap-1.5">

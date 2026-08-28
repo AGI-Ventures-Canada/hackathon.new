@@ -50,11 +50,18 @@ export function ManageHackathonWebMcpTools({
     message: string
     error: boolean
   } | null>(null)
+  const [settingsOverlay, setSettingsOverlay] = useState<
+    Partial<ManageHackathonWebMcpContext["hackathon"]>
+  >({})
+  const [settingsSnapshots] = useState(
+    () => new Map<string, Partial<ManageHackathonWebMcpContext["hackathon"]>>(),
+  )
   const registryContext = useMemo<ManageHackathonWebMcpContext>(
     () => ({
       ...context,
       hackathon: {
         ...context.hackathon,
+        ...settingsOverlay,
         name: manageWebMcpView.details.name,
         description: manageWebMcpView.details.description,
         status: hackathonStatus,
@@ -96,11 +103,20 @@ export function ManageHackathonWebMcpTools({
         }
       }),
     }),
-    [activeItems, context, hackathonStatus, manageWebMcpView],
+    [activeItems, context, hackathonStatus, manageWebMcpView, settingsOverlay],
   )
   const registrationStatus = hackathonStatus
   const onOptimistic = useCallback(
     (change: ManageWebMcpOptimisticChange) => {
+      if (change.kind === "settings") {
+        setSettingsOverlay((current) => {
+          settingsSnapshots.set(change.mutationId, current)
+          return {
+            ...current,
+            ...(change.patch as Partial<ManageHackathonWebMcpContext["hackathon"]>),
+          }
+        })
+      }
       beginManageWebMcpChange(change)
       setNotice({
         title: "Your agent is making a change",
@@ -109,10 +125,17 @@ export function ManageHackathonWebMcpTools({
       })
       router.push(change.href)
     },
-    [beginManageWebMcpChange, router],
+    [beginManageWebMcpChange, router, settingsSnapshots],
   )
   const onCommitted = useCallback(
     ({ committed }: ManageHackathonWebMcpActions["committed"]) => {
+      if (committed.kind === "settings") {
+        settingsSnapshots.delete(committed.mutationId)
+        setSettingsOverlay((current) => ({
+          ...current,
+          ...(committed.patch as Partial<ManageHackathonWebMcpContext["hackathon"]>),
+        }))
+      }
       commitManageWebMcpChange(committed)
       setNotice({
         title: "The change was saved",
@@ -121,14 +144,19 @@ export function ManageHackathonWebMcpTools({
       })
       router.refresh()
     },
-    [commitManageWebMcpChange, router],
+    [commitManageWebMcpChange, router, settingsSnapshots],
   )
   const onReverted = useCallback(
     ({ optimistic, message }: ManageHackathonWebMcpActions["reverted"]) => {
+      if (optimistic.kind === "settings") {
+        const snapshot = settingsSnapshots.get(optimistic.mutationId)
+        settingsSnapshots.delete(optimistic.mutationId)
+        if (snapshot) setSettingsOverlay(snapshot)
+      }
       rollbackManageWebMcpChange(optimistic.mutationId)
       setNotice({ title: "That change wasn't saved", message, error: true })
     },
-    [rollbackManageWebMcpChange],
+    [rollbackManageWebMcpChange, settingsSnapshots],
   )
   const onNavigate = useCallback((href: string, section: string) => {
     router.push(href)

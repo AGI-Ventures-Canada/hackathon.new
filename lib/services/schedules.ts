@@ -2,6 +2,9 @@ import { supabase as getSupabase } from "@/lib/db/client"
 import type { Job, Schedule, ScheduleFrequency } from "@/lib/db/hackathon-types"
 import type { Json, TablesUpdate } from "@/lib/db/types"
 import { CronExpressionParser } from "cron-parser"
+import { isSupportedJobType } from "@/lib/workflows/jobs/handlers"
+
+const MAX_SCHEDULE_INPUT_LENGTH = 64_000
 
 export type CreateScheduleInput = {
   tenantId: string
@@ -27,8 +30,12 @@ export type UpdateScheduleInput = {
 export async function createSchedule(
   input: CreateScheduleInput
 ): Promise<Schedule | null> {
-  if (!input.jobType) {
-    console.error("jobType must be provided")
+  if (!isSupportedJobType(input.jobType)) {
+    console.error("Unsupported job type")
+    return null
+  }
+  if (JSON.stringify(input.input ?? null).length > MAX_SCHEDULE_INPUT_LENGTH) {
+    console.error("Schedule input is too large")
     return null
   }
 
@@ -109,6 +116,13 @@ export async function updateSchedule(
   updates: UpdateScheduleInput
 ): Promise<Schedule | null> {
   if (updates.timezone !== undefined && !isValidTimezone(updates.timezone)) return null
+  if (updates.input !== undefined && JSON.stringify(updates.input).length > MAX_SCHEDULE_INPUT_LENGTH) {
+    console.error("Schedule input is too large")
+    return null
+  }
+
+  const schedule = await getScheduleById(scheduleId, tenantId)
+  if (!schedule) return null
 
   const updateData: TablesUpdate<"schedules"> = {
     updated_at: new Date().toISOString(),
@@ -128,17 +142,14 @@ export async function updateSchedule(
     updates.timezone !== undefined ||
     updates.runTime !== undefined
   ) {
-    const schedule = await getScheduleById(scheduleId, tenantId)
-    if (schedule) {
-      const nextRunAt = calculateNextRun(
-        updates.frequency ?? schedule.frequency,
-        updates.cronExpression ?? schedule.cron_expression ?? undefined,
-        updates.timezone ?? schedule.timezone,
-        updates.runTime ?? schedule.run_time ?? undefined
-      )
-      if (nextRunAt === null) return null
-      updateData.next_run_at = nextRunAt?.toISOString() ?? null
-    }
+    const nextRunAt = calculateNextRun(
+      updates.frequency ?? schedule.frequency,
+      updates.cronExpression ?? schedule.cron_expression ?? undefined,
+      updates.timezone ?? schedule.timezone,
+      updates.runTime ?? schedule.run_time ?? undefined
+    )
+    if (nextRunAt === null) return null
+    updateData.next_run_at = nextRunAt?.toISOString() ?? null
   }
 
   const { data, error } = await getSupabase()
@@ -146,6 +157,7 @@ export async function updateSchedule(
     .update(updateData)
     .eq("id", scheduleId)
     .eq("tenant_id", tenantId)
+    .eq("updated_at", schedule.updated_at)
     .select()
     .single()
 

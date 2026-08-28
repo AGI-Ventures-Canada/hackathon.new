@@ -16,6 +16,7 @@ interface Submission {
 
 interface VoteGalleryProps {
   hackathonSlug: string
+  prizeId: string
   submissions: Submission[]
   voteCounts: { submissionId: string; voteCount: number }[]
   userVote: string | null
@@ -24,6 +25,7 @@ interface VoteGalleryProps {
 
 export function VoteGallery({
   hackathonSlug,
+  prizeId,
   submissions,
   voteCounts: initialCounts,
   userVote: initialVote,
@@ -40,7 +42,7 @@ export function VoteGallery({
 
     try {
       if (userVote === submissionId) {
-        const res = await fetch(`/api/public/hackathons/${hackathonSlug}/vote`, {
+        const res = await fetch(`/api/public/hackathons/${hackathonSlug}/vote?prizeId=${encodeURIComponent(prizeId)}`, {
           method: "DELETE",
         })
         if (res.ok) {
@@ -57,7 +59,7 @@ export function VoteGallery({
         const res = await fetch(`/api/public/hackathons/${hackathonSlug}/vote`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ submissionId }),
+          body: JSON.stringify({ submissionId, prizeId }),
         })
         if (res.ok) {
           setVoteCounts((prev) => {

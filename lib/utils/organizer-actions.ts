@@ -1,4 +1,8 @@
 import type { HackathonStatus, HackathonPhase } from "@/lib/db/hackathon-types"
+import {
+  canPublishEventDates,
+  getEventLifecycleAlerts,
+} from "@/lib/utils/event-lifecycle-alerts"
 
 export type ActionSeverity = "urgent" | "warning" | "scheduled" | "info"
 
@@ -119,6 +123,7 @@ function transitionAction(args: SharedFields & LabeledState): ActionItem {
 
 export type ActionItemsInput = {
   status: HackathonStatus
+  storedStatus?: HackathonStatus
   phase: HackathonPhase | null
   submissionCount: number
   unassignedSubmissionCount: number
@@ -144,12 +149,16 @@ export type ActionItemsInput = {
   feedbackSurveyUrl: string | null
   feedbackSurveySentAt: string | null
   pendingJudgeInvitationCount: number
+  unsentInvitationEmailCount?: number
   perkCount: number
   perksNone: boolean
   rounds: { plannedCount: number; activeCount: number; completeCount: number }
   communityUrl?: string | null
   termsContent?: string | null
   judgingSetupReady?: boolean
+  registrationOpensAt?: string | null
+  requireLocationVerification?: boolean
+  now?: string
 }
 
 const STATUS_ORDER: HackathonStatus[] = ["draft", "published", "active", "judging", "completed"]
@@ -180,6 +189,7 @@ export function getOrganizerActionItems(input: ActionItemsInput): ActionItem[] {
   }
 
   const items = Array.from(itemMap.values())
+  addLifecycleHealthActions(items, input)
   const missingTargets = validateActionItemTargets(items)
   if (missingTargets.length > 0) {
     throw new Error(
@@ -187,6 +197,72 @@ export function getOrganizerActionItems(input: ActionItemsInput): ActionItem[] {
     )
   }
   return items
+}
+
+function addLifecycleHealthActions(items: ActionItem[], input: ActionItemsInput) {
+  const alerts = getEventLifecycleAlerts({
+    storedStatus: input.storedStatus ?? input.status,
+    startsAt: input.startsAt,
+    endsAt: input.endsAt,
+    registrationOpensAt: input.registrationOpensAt,
+    registrationClosesAt: input.registrationClosesAt,
+    requireLocationVerification: input.requireLocationVerification,
+    now: input.now,
+  })
+
+  for (const alert of alerts) {
+    if (alert.action === "start_event" || alert.action === "finish_event") {
+      const target = alert.action === "start_event" ? "active" : "completed"
+      items.push(transitionAction({
+        id: `lifecycle-${alert.code}`,
+        label: alert.title,
+        hint: alert.message,
+        severity: alert.severity === "error" ? "urgent" : "warning",
+        action: `transition-to-${target}`,
+        ctaLabel: alert.action === "start_event" ? "Start" : "Finish",
+      }))
+    } else if (alert.action === "update_location") {
+      items.push(manualAction({
+        id: `lifecycle-${alert.code}`,
+        label: alert.title,
+        hint: alert.message,
+        severity: "warning",
+        tab: "edit",
+        action: "open-location-dialog",
+        ctaLabel: "Review",
+      }))
+    } else {
+      items.push(manualAction({
+        id: `lifecycle-${alert.code}`,
+        label: alert.title,
+        hint: alert.message,
+        severity: alert.severity === "error" ? "urgent" : "warning",
+        tab: "edit",
+        action: "open-dates-dialog",
+        ctaLabel: "Fix",
+      }))
+    }
+  }
+
+  const unsentCount = input.unsentInvitationEmailCount ?? 0
+  if (
+    unsentCount > 0 &&
+    !["completed", "archived"].includes(input.status)
+  ) {
+    const isDraft = (input.storedStatus ?? input.status) === "draft"
+    items.push(manualAction({
+      id: "unsent-invitation-emails",
+      label: isDraft
+        ? `${unsentCount} invite email${unsentCount === 1 ? " is" : "s are"} saved`
+        : `${unsentCount} invite email${unsentCount === 1 ? " hasn't" : "s haven't"} sent`,
+      hint: isDraft
+        ? "They'll send when you publish. Draft events don't send invite emails."
+        : "We'll keep retrying. Open the invite lists to send them again now.",
+      severity: isDraft ? "warning" : "urgent",
+      tab: "teams",
+      ctaLabel: "Review",
+    }))
+  }
 }
 
 const CHALLENGE_TOOLTIP = "The challenge is the problem statement or theme that participants build around. Without it, teams won't know what to work on. You can schedule it to release at a specific time or publish it immediately."
@@ -475,7 +551,15 @@ function addDraftActions(items: ActionItem[], input: ActionItemsInput) {
 
   addCommunityLinkAction(items, input)
 
-  if (hasDates && hasLocation) {
+  if (
+    hasDates &&
+    hasLocation &&
+    canPublishEventDates({
+      startsAt: input.startsAt,
+      endsAt: input.endsAt,
+      now: input.now,
+    })
+  ) {
     items.push(transitionAction({
       id: "ready-to-publish",
       label: "Ready to publish your event",

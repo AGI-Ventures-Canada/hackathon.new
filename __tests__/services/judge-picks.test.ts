@@ -4,6 +4,7 @@ import {
   createChainableMock,
   resetSupabaseMocks,
   setMockFromImplementation,
+  setMockRpcImplementation,
 } from "../lib/supabase-mock"
 
 const {
@@ -107,31 +108,25 @@ describe("Judge Picks Service", () => {
     })
 
     it("rejects a prize or project from another hackathon", async () => {
-      const pickChain = createChainableMock({ data: mockPick, error: null })
-      setMockFromImplementation((table) => {
-        if (table === "prizes") {
-          return createChainableMock({ data: null, error: null })
-        }
-        if (table === "submissions") {
-          return createChainableMock({ data: { id: "s1" }, error: null })
-        }
-        return pickChain
-      })
+      setMockRpcImplementation(() => Promise.resolve({
+        data: null,
+        error: { message: "Project is not assigned to this judge" },
+      }))
 
       const result = await submitPick("h1", "jp1", "p1", "s1", 1)
 
-      expect(result).toEqual({ success: false, error: "Prize or project not found" })
-      expect(pickChain.upsert).not.toHaveBeenCalled()
+      expect(result.success).toBe(false)
     })
   })
 
   describe("removePick", () => {
     it("removes a pick successfully", async () => {
       const chain = createChainableMock({
-        data: null,
+        data: [{ submission_id: "s1", reason: null }],
         error: null,
       })
       setMockFromImplementation(() => chain)
+      setMockRpcImplementation(() => Promise.resolve({ data: true, error: null }))
 
       const result = await removePick("h1", "jp1", "p1", "s1")
       expect(result).toBe(true)

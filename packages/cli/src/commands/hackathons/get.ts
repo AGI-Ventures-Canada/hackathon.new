@@ -33,4 +33,7 @@ export async function runHackathonsGet(
       { label: "Created", value: hackathon.createdAt },
     ])
   )
+  for (const alert of hackathon.lifecycleAlerts ?? []) {
+    console.log(`${alert.severity === "error" ? "Action needed" : "Warning"}: ${alert.title}. ${alert.message}`)
+  }
 }

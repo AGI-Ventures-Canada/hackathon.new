@@ -146,7 +146,7 @@ afterEach(() => {
 });
 
 describe("SponsorsEditForm", () => {
-  it("shows the link action only for manual sponsors", () => {
+  it("does not let organizers link a sponsor without its approval", () => {
     render(
       <SponsorsEditForm
         hackathonId="h1"
@@ -192,7 +192,7 @@ describe("SponsorsEditForm", () => {
       />,
     );
 
-    expect(screen.getAllByRole("button", { name: "Link to an existing org" })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Link to an existing org" })).toBeNull();
     expect(screen.getByText("Linked")).toBeDefined();
   });
 
@@ -229,7 +229,7 @@ describe("SponsorsEditForm", () => {
     expect(screen.getByText("Gold")).toBeDefined();
   });
 
-  it("auto-saves when linking a manual sponsor to an org", async () => {
+  it("only offers sponsors saved by the organizer", async () => {
     render(
       <SponsorsEditForm
         hackathonId="h1"
@@ -254,43 +254,15 @@ describe("SponsorsEditForm", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Link to an existing org" }));
-    fireEvent.change(screen.getByPlaceholderText("Search organizations..."), {
+    fireEvent.change(screen.getByPlaceholderText("Sponsor organization name..."), {
       target: { value: "go" },
     });
 
     await waitFor(() => {
-      expect(screen.getByText("Google")).toBeDefined();
+      expect(screen.getByText("Google Saved")).toBeDefined();
     }, { timeout: 3000 });
 
-    expect(screen.queryByText("Google Saved")).toBeNull();
-
-    fireEvent.click(screen.getByText("Google"));
-
-    await waitFor(() => {
-      const patchCall = mockFetch.mock.calls.find(
-        ([url, init]) =>
-          typeof url === "string" &&
-          url === "/api/dashboard/hackathons/h1/sponsors/s1" &&
-          init?.method === "PATCH",
-      );
-
-      expect(patchCall).toBeDefined();
-      expect(mockRefresh).toHaveBeenCalledTimes(1);
-    });
-
-    const patchCall = mockFetch.mock.calls.find(
-      ([url, init]) =>
-        typeof url === "string" &&
-        url === "/api/dashboard/hackathons/h1/sponsors/s1" &&
-        init?.method === "PATCH",
-    ) as [string, RequestInit];
-
-    expect(JSON.parse(patchCall[1].body as string)).toEqual({
-      sponsorTenantId: "org-google",
-      useOrgAssets: false,
-      websiteUrl: "https://google.com",
-    });
+    expect(screen.queryByText("Google")).toBeNull();
   });
 
   it("auto-saves when changing a sponsor tier", async () => {

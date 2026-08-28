@@ -639,7 +639,7 @@ describe("Team Invitations Service", () => {
       expect(capturedEmail).toBe("test@example.com")
     })
 
-    it("returns role_conflict when invitee is a judge", async () => {
+    it("returns a private role-unavailable error when invitee is a judge", async () => {
       const { mockClerkClient } = await import("../lib/supabase-mock")
       mockClerkClient.mockResolvedValueOnce({
         organizations: {
@@ -683,7 +683,8 @@ describe("Team Invitations Service", () => {
 
       expect(result.success).toBe(false)
       if (!result.success) {
-        expect(result.code).toBe("role_conflict")
+        expect(result.code).toBe("role_unavailable")
+        expect(result.error).not.toContain("judge")
       }
     })
   })

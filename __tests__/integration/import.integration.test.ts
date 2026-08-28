@@ -159,11 +159,16 @@ describe("POST /api/public/import/url", () => {
 
     const digest = createHash("sha256").update("8.8.8.8").digest("hex")
     expect(mockCheckRateLimit).toHaveBeenCalledWith(
-      `public_import:${digest}`,
+      `public_import:client:${digest.slice(0, 24)}`,
       {
         maxRequests: 10,
         windowMs: 60_000,
       },
+      { failureMode: "closed" },
+    )
+    expect(mockCheckRateLimit).toHaveBeenCalledWith(
+      "public_import:global",
+      { maxRequests: 1_000, windowMs: 60_000 },
       { failureMode: "closed" },
     )
     expect(res.status).toBe(429)

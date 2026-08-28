@@ -5,6 +5,7 @@ import {
   resetClerkMocks,
   mockClerkClient,
   setMockFromImplementation,
+  setMockRpcImplementation,
 } from "../lib/supabase-mock"
 
 const mockSendTeamInvitationEmail = mock(() => Promise.resolve({ success: true }))
@@ -247,6 +248,10 @@ describe("replaceTeamCaptainInvitation", () => {
         ],
       })
     )
+    setMockRpcImplementation(() => Promise.resolve({
+      data: [{ invitation_id: "new_inv_1", cancelled_ids: ["old_inv_1"] }],
+      error: null,
+    }))
 
     const result = await replaceTeamCaptainInvitation("team_1", "h_1", "NEW@Example.com", "organizer_1")
     expect(result).toEqual({
@@ -280,6 +285,10 @@ describe("replaceTeamCaptainInvitation", () => {
         ],
       })
     )
+    setMockRpcImplementation(() => Promise.resolve({
+      data: [{ invitation_id: "new_inv_1", cancelled_ids: ["old_inv_1"] }],
+      error: null,
+    }))
 
     const result = await replaceTeamCaptainInvitation("team_1", "h_1", "new@example.com", "organizer_1")
     expect(result.success).toBe(true)
@@ -307,6 +316,10 @@ describe("replaceTeamCaptainInvitation", () => {
         ],
       })
     )
+    setMockRpcImplementation(() => Promise.resolve({
+      data: [{ invitation_id: "new_inv_1", cancelled_ids: ["old_inv_1"] }],
+      error: null,
+    }))
     mockSendTeamInvitationEmail.mockResolvedValueOnce({ success: false })
 
     const result = await replaceTeamCaptainInvitation("team_1", "h_1", "new@example.com", "organizer_1")

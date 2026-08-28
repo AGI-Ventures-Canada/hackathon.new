@@ -183,7 +183,7 @@ describe("Results Service", () => {
 
       expect(result).toEqual({ success: true, count: 0 })
       expect(prizeQueryCount).toBe(2)
-      expect(rpcCalled).toBe(false)
+      expect(rpcCalled).toBe(true)
     })
 
     it("returns query_failed when prize styles cannot be loaded", async () => {

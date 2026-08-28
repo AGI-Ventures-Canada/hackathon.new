@@ -202,14 +202,21 @@ describe("judging commands", () => {
 
   describe("auto-assign", () => {
     it("sends request with --per-judge", async () => {
-      mockFetch.mockResolvedValueOnce(jsonResponse({ created: 15 }))
+      mockFetch
+        .mockResolvedValueOnce(jsonResponse({
+          prizes: [{ id: "prize1", judgingStyle: "judges_pick" }],
+        }))
+        .mockResolvedValueOnce(jsonResponse({ assignedCount: 15 }))
       const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
       const { runAutoAssign } = await import("../../src/commands/judging/auto-assign")
       await runAutoAssign(client, hackathonId, ["--per-judge", "3"])
 
-      const init = mockFetch.mock.calls[0][1] as RequestInit
+      expect(mockFetch.mock.calls[1][0]).toContain(
+        `/prizes/prize1/auto-assign`,
+      )
+      const init = mockFetch.mock.calls[1][1] as RequestInit
       const body = JSON.parse(init.body as string)
-      expect(body.per_judge).toBe(3)
+      expect(body.submissionsPerJudge).toBe(3)
     })
   })
 

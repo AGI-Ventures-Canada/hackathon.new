@@ -34,13 +34,21 @@ export type UpdatePrizeInput = {
   allowedTeamModes?: TeamMode[] | null
 }
 
-export async function listPrizes(hackathonId: string): Promise<Prize[]> {
+export async function listPrizes(
+  hackathonId: string,
+  options: { includeScreening?: boolean } = {},
+): Promise<Prize[]> {
   const client = getSupabase() as unknown as SupabaseClient
-  const { data, error } = await client
+  let query = client
     .from("prizes")
     .select("*")
     .eq("hackathon_id", hackathonId)
-    .order("display_order")
+
+  if (options.includeScreening === false) {
+    query = query.eq("is_screening", false)
+  }
+
+  const { data, error } = await query.order("display_order")
 
   if (error) {
     console.error("Failed to list prizes:", error)
@@ -55,10 +63,9 @@ export async function createPrize(
   input: CreatePrizeInput
 ): Promise<Prize | null> {
   const client = getSupabase() as unknown as SupabaseClient
-  const { data, error } = await client
-    .from("prizes")
-    .insert({
-      hackathon_id: hackathonId,
+  const { data, error } = await client.rpc("create_prize_configuration_atomic", {
+    p_hackathon_id: hackathonId,
+    p_prize_values: {
       name: input.name,
       description: input.description ?? null,
       value: input.value ?? null,
@@ -72,9 +79,10 @@ export async function createPrize(
       criteria_id: input.criteriaId ?? null,
       display_order: input.displayOrder ?? 0,
       allowed_team_modes: input.allowedTeamModes ?? null,
-    })
-    .select()
-    .single()
+    },
+    p_criteria: null,
+    p_buckets: null,
+  })
 
   if (error) {
     console.error("Failed to create prize:", error)
@@ -107,13 +115,13 @@ export async function updatePrize(
   if (input.allowedTeamModes !== undefined) updates.allowed_team_modes = input.allowedTeamModes
   updates.updated_at = new Date().toISOString()
 
-  const { data, error } = await client
-    .from("prizes")
-    .update(updates)
-    .eq("id", prizeId)
-    .eq("hackathon_id", hackathonId)
-    .select()
-    .single()
+  const { data, error } = await client.rpc("save_prize_configuration_atomic", {
+    p_hackathon_id: hackathonId,
+    p_prize_id: prizeId,
+    p_prize_updates: updates,
+    p_criteria: null,
+    p_buckets: null,
+  })
 
   if (error) {
     console.error("Failed to update prize:", error)
@@ -128,13 +136,12 @@ export async function deletePrize(
   hackathonId: string
 ): Promise<boolean> {
   const client = getSupabase() as unknown as SupabaseClient
-  const { error } = await client
-    .from("prizes")
-    .delete()
-    .eq("id", prizeId)
-    .eq("hackathon_id", hackathonId)
+  const { data, error } = await client.rpc("delete_prize_atomic", {
+    p_hackathon_id: hackathonId,
+    p_prize_id: prizeId,
+  })
 
-  if (error) {
+  if (error || data !== true) {
     console.error("Failed to delete prize:", error)
     return false
   }
@@ -265,6 +272,7 @@ export async function autoAssignPrizes(hackathonId: string): Promise<void> {
     .from("prizes")
     .select("id, type, rank, criteria_id")
     .eq("hackathon_id", hackathonId)
+    .eq("is_screening", false)
 
   if (!prizes || prizes.length === 0) return
 
@@ -334,9 +342,9 @@ export async function autoAssignPrizes(hackathonId: string): Promise<void> {
 
   if (crowdPrizes.length > 0) {
     const { getCrowdFavoriteWinner } = await import("@/lib/services/crowd-voting")
-    const winnerId = await getCrowdFavoriteWinner(hackathonId)
-    if (winnerId) {
-      for (const prize of crowdPrizes) {
+    for (const prize of crowdPrizes) {
+      const winnerId = await getCrowdFavoriteWinner(hackathonId, prize.id)
+      if (winnerId) {
         await assignPrize(prize.id, winnerId, { skipNotifications: true })
       }
     }
@@ -354,32 +362,14 @@ export async function autoAssignPrizes(hackathonId: string): Promise<void> {
     )
 
     for (const prize of favoritePrizes) {
-      const { data: picks } = await client
-        .from("judge_picks")
+      const { data: results } = await client
+        .from("hackathon_results")
         .select("submission_id, rank")
         .eq("hackathon_id", hackathonId)
         .eq("prize_id", prize.id)
-
-      if (!picks || picks.length === 0) continue
-
-      const pickCounts: Record<string, { firstPicks: number; totalRank: number; count: number }> = {}
-      for (const pick of picks) {
-        if (!pickCounts[pick.submission_id]) {
-          pickCounts[pick.submission_id] = { firstPicks: 0, totalRank: 0, count: 0 }
-        }
-        if (pick.rank === 1) pickCounts[pick.submission_id].firstPicks++
-        pickCounts[pick.submission_id].totalRank += pick.rank
-        pickCounts[pick.submission_id].count++
-      }
-
-      const sorted = Object.entries(pickCounts).sort(([, a], [, b]) => {
-        if (b.firstPicks !== a.firstPicks) return b.firstPicks - a.firstPicks
-        return (a.totalRank / a.count) - (b.totalRank / b.count)
-      })
-
-      if (sorted.length > 0) {
-        await assignPrize(prize.id, sorted[0][0], { skipNotifications: true })
-      }
+        .order("rank")
+        .limit(1)
+      if (results?.[0]) await assignPrize(prize.id, results[0].submission_id, { skipNotifications: true })
     }
   }
 }

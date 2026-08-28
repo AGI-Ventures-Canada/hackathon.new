@@ -372,9 +372,33 @@ describe("Public Screenshot Routes", () => {
 
       expect(res.status).toBe(400)
       expect(data).toEqual({
-        error: "Invalid video link",
-        code: "invalid_demo_video_url",
+        error: "Check the project links and try again",
+        code: "invalid_url",
       })
+      expect(mockCreateSubmission).not.toHaveBeenCalled()
+    })
+
+    it("rejects an insecure live project link", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockGetParticipantWithTeam.mockResolvedValue({ participantId: "p1", teamId: null })
+      mockGetExistingSubmission.mockResolvedValue(null)
+
+      const res = await app.handle(
+        new Request("http://localhost/api/public/hackathons/test-hackathon/submissions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: "Project Atlas",
+            description: "A helper for teams.",
+            githubUrl: "github.com/acme/atlas",
+            liveAppUrl: "http://atlas.example.com",
+          }),
+        })
+      )
+
+      expect(res.status).toBe(400)
+      expect((await res.json()).code).toBe("invalid_url")
       expect(mockCreateSubmission).not.toHaveBeenCalled()
     })
 
@@ -456,9 +480,28 @@ describe("Public Screenshot Routes", () => {
 
       expect(res.status).toBe(400)
       expect(data).toEqual({
-        error: "Invalid video link",
-        code: "invalid_demo_video_url",
+        error: "Check the project links and try again",
+        code: "invalid_url",
       })
+      expect(mockUpdateSubmission).not.toHaveBeenCalled()
+    })
+
+    it("rejects an insecure live project link on update", async () => {
+      mockAuth.mockResolvedValue({ userId: "user_123" })
+      mockGetPublicHackathon.mockResolvedValue(mockHackathon)
+      mockGetParticipantWithTeam.mockResolvedValue({ participantId: "p1", teamId: null })
+      mockGetExistingSubmission.mockResolvedValue(mockSubmission)
+
+      const res = await app.handle(
+        new Request("http://localhost/api/public/hackathons/test-hackathon/submissions", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ liveAppUrl: "http://atlas.example.com" }),
+        })
+      )
+
+      expect(res.status).toBe(400)
+      expect((await res.json()).code).toBe("invalid_url")
       expect(mockUpdateSubmission).not.toHaveBeenCalled()
     })
 

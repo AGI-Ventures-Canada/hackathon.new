@@ -20,6 +20,7 @@ const DEFAULT_BUCKETS = [
 // ============================================================
 
 export type CreatePrizeInput = {
+  id?: string
   name: string
   description?: string | null
   value?: string | null
@@ -56,6 +57,7 @@ export type UpdatePrizeInput = {
   assignmentMode?: PrizeAssignmentMode
   maxPicks?: number
   displayOrder?: number
+  allowedTeamModes?: ("in_person" | "virtual")[] | null
   type?: "score" | "favorite" | "crowd" | "criteria"
   rank?: number | null
   kind?: string
@@ -327,6 +329,7 @@ export async function createPrize(
   }
 
   const row: Record<string, unknown> = {
+    ...(input.id ? { id: input.id } : {}),
     hackathon_id: hackathonId,
     name: input.name,
     description: input.description ?? null,
@@ -403,11 +406,25 @@ export async function createPrize(
     }
   }
 
-  const { data: prize, error } = await client
-    .from("prizes")
-    .insert(row)
-    .select()
-    .single()
+  const criteriaRows =
+    input.judgingStyle === "gate_check" || input.judgingStyle === "weighted_score"
+      ? prizeCriteriaRows(cleanCriteria, input.judgingStyle)
+      : null
+  const selectedBuckets = input.judgingStyle === "bucket_sort"
+    ? bucketRows(
+        (cleanBuckets ?? DEFAULT_BUCKETS).map((bucket, index) => ({
+          level: bucket.level ?? index + 1,
+          label: bucket.label,
+          description: bucket.description,
+        })),
+      )
+    : null
+  const { data: prize, error } = await client.rpc("create_prize_configuration_atomic", {
+    p_hackathon_id: hackathonId,
+    p_prize_values: row,
+    p_criteria: criteriaRows,
+    p_buckets: selectedBuckets,
+  })
 
   if (error || !prize) {
     console.error("Failed to create prize:", error)
@@ -415,74 +432,6 @@ export async function createPrize(
       success: false,
       error: error?.message ?? "Database insert failed",
       code: "db_error",
-    }
-  }
-
-  if (input.judgingStyle === "gate_check") {
-    const criteriaRows = cleanCriteria.map((c, i) => ({
-      hackathon_id: hackathonId,
-      prize_id: prize.id,
-      name: c.name.trim(),
-      description: c.description?.trim() || null,
-      max_score: 1,
-      weight: 1,
-      display_order: i,
-    }))
-    const { error: critError } = await client.from("judging_criteria").insert(criteriaRows)
-    if (critError) {
-      console.error("Failed to insert criteria, rolling back prize:", critError)
-      const { error: rollbackError } = await client.from("prizes").delete().eq("id", prize.id)
-      if (rollbackError) {
-        console.error("Prize rollback failed; orphaned prize id:", prize.id, rollbackError)
-      }
-      return { success: false, error: critError.message, code: "db_error" }
-    }
-  }
-
-  if (input.judgingStyle === "weighted_score" && cleanCriteria.length > 0) {
-    const criteriaRows = cleanCriteria.map((c, i) => ({
-      hackathon_id: hackathonId,
-      prize_id: prize.id,
-      name: c.name.trim(),
-      description: c.description?.trim() || null,
-      min_score: c.minScore ?? 1,
-      max_score: c.maxScore ?? 10,
-      weight: c.weight ?? 0,
-      display_order: i,
-    }))
-    const { error: critError } = await client.from("judging_criteria").insert(criteriaRows)
-    if (critError) {
-      console.error("Failed to insert weighted criteria, rolling back prize:", critError)
-      const { error: rollbackError } = await client.from("prizes").delete().eq("id", prize.id)
-      if (rollbackError) {
-        console.error("Prize rollback failed; orphaned prize id:", prize.id, rollbackError)
-      }
-      return { success: false, error: critError.message, code: "db_error" }
-    }
-  }
-
-  if (input.judgingStyle === "bucket_sort") {
-    const created =
-      cleanBuckets !== null
-        ? await replaceBucketDefinitions(
-            hackathonId,
-            prize.id,
-            cleanBuckets.map((b, i) => ({
-              level: b.level ?? i + 1,
-              label: b.label.trim(),
-              description: b.description?.trim() || null,
-            }))
-          )
-        : await createDefaultBucketsForPrize(prize.id)
-
-    if (created.length === 0) {
-      console.error("Failed to create bucket definitions, rolling back prize")
-      await client.from("prizes").delete().eq("id", prize.id)
-      return {
-        success: false,
-        error: "Failed to create sort groups",
-        code: "db_error",
-      }
     }
   }
 
@@ -494,13 +443,14 @@ export async function updatePrize(
   hackathonId: string,
   input: UpdatePrizeInput
 ): Promise<Prize | null> {
-  const client = getSupabase() as unknown as SupabaseClient
-
   if (input.roundId && !(await roundBelongsToHackathon(hackathonId, input.roundId))) {
     return null
   }
+  return savePrizeConfiguration(hackathonId, prizeId, input)
+}
 
-  const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
+function prizeUpdateRow(input: UpdatePrizeInput): Record<string, unknown> {
+  const updates: Record<string, unknown> = {}
   if (input.name !== undefined) updates.name = input.name
   if (input.description !== undefined) updates.description = input.description
   if (input.value !== undefined) updates.value = input.value
@@ -509,6 +459,7 @@ export async function updatePrize(
   if (input.assignmentMode !== undefined) updates.assignment_mode = input.assignmentMode
   if (input.maxPicks !== undefined) updates.max_picks = input.maxPicks
   if (input.displayOrder !== undefined) updates.display_order = input.displayOrder
+  if (input.allowedTeamModes !== undefined) updates.allowed_team_modes = input.allowedTeamModes
   if (input.type !== undefined) updates.type = input.type
   if (input.rank !== undefined) updates.rank = input.rank
   if (input.kind !== undefined) updates.kind = input.kind
@@ -517,21 +468,7 @@ export async function updatePrize(
   if (input.criteriaId !== undefined) updates.criteria_id = input.criteriaId
   if (input.distributionMethod !== undefined) updates.distribution_method = input.distributionMethod
   if (input.displayValue !== undefined) updates.display_value = input.displayValue
-
-  const { data, error } = await client
-    .from("prizes")
-    .update(updates)
-    .eq("id", prizeId)
-    .eq("hackathon_id", hackathonId)
-    .select()
-    .single()
-
-  if (error || !data) {
-    console.error("Failed to update prize:", error)
-    return null
-  }
-
-  return data as unknown as Prize
+  return updates
 }
 
 export type ReplacePrizeCriteriaInput = {
@@ -546,6 +483,63 @@ export type ReplacePrizeCriteriaOptions = {
   style?: PrizeJudgingStyle | null
 }
 
+function prizeCriteriaRows(
+  criteria: ReplacePrizeCriteriaInput[],
+  style: PrizeJudgingStyle | null | undefined,
+) {
+  const isWeighted = style === "weighted_score"
+  return criteria
+    .filter((criterion) => criterion.name.trim().length > 0)
+    .map((criterion) => ({
+      name: criterion.name.trim(),
+      description: criterion.description?.trim() || null,
+      min_score: isWeighted ? criterion.minScore ?? 1 : 0,
+      max_score: isWeighted ? criterion.maxScore ?? 10 : 1,
+      weight: isWeighted ? criterion.weight ?? 0 : 1,
+    }))
+}
+
+function bucketRows(buckets: UpsertBucketInput[]) {
+  return buckets.map((bucket, index) => ({
+    level: bucket.level,
+    label: bucket.label.trim(),
+    description: bucket.description?.trim() || null,
+    display_order: index,
+  }))
+}
+
+export async function savePrizeConfiguration(
+  hackathonId: string,
+  prizeId: string,
+  input: UpdatePrizeInput,
+  options: {
+    criteria?: ReplacePrizeCriteriaInput[]
+    buckets?: UpsertBucketInput[]
+    style?: PrizeJudgingStyle | null
+  } = {},
+): Promise<Prize | null> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const criteria = options.criteria === undefined
+    ? null
+    : prizeCriteriaRows(options.criteria, options.style)
+  const buckets = options.buckets === undefined ? null : bucketRows(options.buckets)
+
+  const { data, error } = await client.rpc("save_prize_configuration_atomic", {
+    p_hackathon_id: hackathonId,
+    p_prize_id: prizeId,
+    p_prize_updates: prizeUpdateRow(input),
+    p_criteria: criteria,
+    p_buckets: buckets,
+  })
+
+  if (error || !data) {
+    console.error("Failed to save prize configuration:", error)
+    return null
+  }
+
+  return data as unknown as Prize
+}
+
 export async function replacePrizeCriteria(
   hackathonId: string,
   prizeId: string,
@@ -553,48 +547,20 @@ export async function replacePrizeCriteria(
   options: ReplacePrizeCriteriaOptions = {}
 ): Promise<PrizeCriterion[] | null> {
   const client = getSupabase() as unknown as SupabaseClient
-  const cleaned = criteria.filter((c) => c.name.trim().length > 0)
-
-  const isWeighted = options.style === "weighted_score"
-
-  const { data: previousRows } = await client
-    .from("judging_criteria")
-    .select("*")
-    .eq("prize_id", prizeId)
-
-  const { error: deleteError } = await client
-    .from("judging_criteria")
-    .delete()
-    .eq("prize_id", prizeId)
-
-  if (deleteError) {
-    console.error("Failed to clear prize criteria:", deleteError)
-    return null
-  }
-
-  if (cleaned.length === 0) return []
-
-  const rows = cleaned.map((c, i) => ({
-    hackathon_id: hackathonId,
-    prize_id: prizeId,
-    name: c.name.trim(),
-    description: c.description?.trim() || null,
-    min_score: isWeighted ? c.minScore ?? 1 : 0,
-    max_score: isWeighted ? c.maxScore ?? 10 : 1,
-    weight: isWeighted ? c.weight ?? 0 : 1,
-    display_order: i,
-  }))
+  const prize = await savePrizeConfiguration(hackathonId, prizeId, {}, {
+    criteria,
+    style: options.style,
+  })
+  if (!prize) return null
 
   const { data, error } = await client
     .from("judging_criteria")
-    .insert(rows)
     .select("id, name, description, display_order")
+    .eq("prize_id", prizeId)
+    .order("display_order")
 
   if (error) {
-    console.error("Failed to insert prize criteria:", error)
-    if (previousRows && previousRows.length > 0) {
-      await client.from("judging_criteria").insert(previousRows)
-    }
+    console.error("Failed to read saved prize criteria:", error)
     return null
   }
 
@@ -608,13 +574,12 @@ export async function replacePrizeCriteria(
 
 export async function deletePrize(prizeId: string, hackathonId: string): Promise<boolean> {
   const client = getSupabase() as unknown as SupabaseClient
-  const { error } = await client
-    .from("prizes")
-    .delete()
-    .eq("id", prizeId)
-    .eq("hackathon_id", hackathonId)
+  const { data, error } = await client.rpc("delete_prize_atomic", {
+    p_hackathon_id: hackathonId,
+    p_prize_id: prizeId,
+  })
 
-  if (error) {
+  if (error || !data) {
     console.error("Failed to delete prize:", error)
     return false
   }
@@ -721,48 +686,17 @@ export async function replaceBucketDefinitions(
   buckets: UpsertBucketInput[]
 ): Promise<BucketDefinition[]> {
   const client = getSupabase() as unknown as SupabaseClient
-
-  const { data: prize } = await client
-    .from("prizes")
-    .select("id")
-    .eq("id", prizeId)
-    .eq("hackathon_id", hackathonId)
-    .maybeSingle()
+  const prize = await savePrizeConfiguration(hackathonId, prizeId, {}, { buckets })
   if (!prize) return []
-
-  const { data: previousRows } = await client
-    .from("bucket_definitions")
-    .select("*")
-    .eq("prize_id", prizeId)
-
-  const { error: deleteError } = await client
-    .from("bucket_definitions")
-    .delete()
-    .eq("prize_id", prizeId)
-
-  if (deleteError) {
-    console.error("Failed to clear bucket definitions:", deleteError)
-    return []
-  }
-
-  const inserts = buckets.map((b, i) => ({
-    prize_id: prizeId,
-    level: b.level,
-    label: b.label,
-    description: b.description ?? null,
-    display_order: i,
-  }))
 
   const { data, error } = await client
     .from("bucket_definitions")
-    .insert(inserts)
     .select()
+    .eq("prize_id", prizeId)
+    .order("display_order")
 
   if (error) {
-    console.error("Failed to insert bucket definitions:", error)
-    if (previousRows && previousRows.length > 0) {
-      await client.from("bucket_definitions").insert(previousRows)
-    }
+    console.error("Failed to read saved bucket definitions:", error)
     return []
   }
 
@@ -895,42 +829,31 @@ export async function createRound(
     typeof input === "string" ? { name: input } : input
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { data: existing } = await client
-    .from("judging_rounds")
-    .select("display_order")
-    .eq("hackathon_id", hackathonId)
-    .order("display_order", { ascending: false })
-    .limit(1)
-
-  const nextOrder = ((existing?.[0]?.display_order ?? -1) + 1)
-
-  const { data, error } = await client
-    .from("judging_rounds")
-    .insert({
-      hackathon_id: hackathonId,
+  const { data, error } = await client.rpc("create_judging_round_atomic", {
+    p_hackathon_id: hackathonId,
+    p_values: {
       name: params.name,
       status: "planned",
       advancement: params.advancement ?? "manual",
       advancement_config: params.advancementConfig ?? {},
-      display_order: nextOrder,
-    })
-    .select()
-    .single()
+    },
+  })
 
   if (error || !data) {
     console.error("Failed to create round:", error)
     return null
   }
 
+  const round = data as Record<string, unknown>
   return {
-    id: data.id,
-    hackathonId: data.hackathon_id,
-    name: data.name,
-    status: data.status ?? "planned",
-    displayOrder: data.display_order,
+    id: round.id as string,
+    hackathonId: round.hackathon_id as string,
+    name: round.name as string,
+    status: (round.status as string | null) ?? "planned",
+    displayOrder: round.display_order as number,
     submissionCount: 0,
-    advancement: (data.advancement ?? "manual") as AdvancementRule,
-    advancementConfig: normalizeAdvancementConfig(data.advancement_config),
+    advancement: (round.advancement ?? "manual") as AdvancementRule,
+    advancementConfig: normalizeAdvancementConfig(round.advancement_config),
     prizeCount: 0,
     screeningPrizeId: null,
   }
@@ -948,13 +871,13 @@ export async function updateRound(
   if (input.advancement !== undefined) updates.advancement = input.advancement
   if (input.advancementConfig !== undefined) updates.advancement_config = input.advancementConfig
 
-  const { error } = await client
-    .from("judging_rounds")
-    .update(updates)
-    .eq("id", roundId)
-    .eq("hackathon_id", hackathonId)
+  const { data, error } = await client.rpc("update_judging_round_atomic", {
+    p_hackathon_id: hackathonId,
+    p_round_id: roundId,
+    p_updates: updates,
+  })
 
-  if (error) {
+  if (error || !data) {
     console.error("Failed to update round:", error)
     return false
   }
@@ -972,54 +895,24 @@ export async function deleteRound(
   hackathonId: string
 ): Promise<DeleteRoundResult> {
   const client = getSupabase() as unknown as SupabaseClient
-
-  const { data: round } = await client
-    .from("judging_rounds")
-    .select("id, status")
-    .eq("id", roundId)
-    .eq("hackathon_id", hackathonId)
-    .maybeSingle()
-
-  if (!round) {
+  const { data, error } = await client.rpc("delete_judging_round_atomic", {
+    p_hackathon_id: hackathonId,
+    p_round_id: roundId,
+  })
+  if (error) {
+    console.error("Failed to delete round:", error)
+    return { success: false, error: "Database delete failed", code: "delete_failed" }
+  }
+  if (data === "not_found") {
     return { success: false, error: "Round not found", code: "not_found" }
   }
-
-  if (round.status === "active") {
+  if (data === "round_active") {
     return {
       success: false,
       error: "Complete the round before deleting it",
       code: "round_active",
     }
   }
-
-  const { data: screeningPrizes } = await client
-    .from("prizes")
-    .select("id")
-    .eq("round_id", roundId)
-    .eq("is_screening", true)
-
-  const screeningPrizeIds = (screeningPrizes ?? []).map((p) => p.id)
-  if (screeningPrizeIds.length > 0) {
-    await client.from("prizes").delete().in("id", screeningPrizeIds)
-  }
-
-  await client
-    .from("prizes")
-    .update({ round_id: null })
-    .eq("round_id", roundId)
-    .eq("hackathon_id", hackathonId)
-
-  const { error } = await client
-    .from("judging_rounds")
-    .delete()
-    .eq("id", roundId)
-    .eq("hackathon_id", hackathonId)
-
-  if (error) {
-    console.error("Failed to delete round:", error)
-    return { success: false, error: "Database delete failed", code: "delete_failed" }
-  }
-
   return { success: true }
 }
 
@@ -1293,11 +1186,16 @@ export async function getRoundPool(hackathonId: string, roundId: string | null):
     }
   }
 
-  const { data } = await client
+  const { data, error } = await client
     .from("submissions")
     .select("id")
     .eq("hackathon_id", hackathonId)
     .eq("status", "submitted")
+
+  if (error) {
+    console.error("Failed to get round submission pool:", error)
+    return []
+  }
 
   return (data ?? []).map((s) => s.id)
 }
@@ -1747,7 +1645,8 @@ export type AddJudgeResult =
 
 export async function addJudge(
   hackathonId: string,
-  clerkUserId: string
+  clerkUserId: string,
+  options: { requireExistingParticipant?: boolean } = {},
 ): Promise<AddJudgeResult> {
   const client = getSupabase() as unknown as SupabaseClient
 
@@ -1779,6 +1678,14 @@ export async function addJudge(
     }
 
     return { success: true, participant: { id: existing.id, clerkUserId } }
+  }
+
+  if (options.requireExistingParticipant) {
+    return {
+      success: false,
+      error: "Invite this person by email first",
+      code: "not_registered",
+    }
   }
 
   const { data: participant, error: insertError } = await client
@@ -1927,48 +1834,16 @@ export async function removeJudge(
   judgeParticipantId: string
 ): Promise<RemoveJudgeResult> {
   const client = getSupabase() as unknown as SupabaseClient
-
-  const { error: assignmentError } = await client
-    .from("judge_assignments")
-    .delete()
-    .eq("hackathon_id", hackathonId)
-    .eq("judge_participant_id", judgeParticipantId)
-
-  if (assignmentError) {
-    console.error("Failed to remove judge assignments:", assignmentError)
-    return { success: false }
-  }
-
-  const { error: displayError } = await client
-    .from("hackathon_judges_display")
-    .delete()
-    .eq("hackathon_id", hackathonId)
-    .eq("participant_id", judgeParticipantId)
-
-  if (displayError) {
-    console.error("Failed to remove judge display profile:", displayError)
-  }
-
-  const { error } = await client
-    .from("hackathon_participants")
-    .delete()
-    .eq("id", judgeParticipantId)
-    .eq("hackathon_id", hackathonId)
-    .eq("role", "judge")
-
-  if (error) {
+  const { data, error } = await client.rpc("remove_judge_atomic", {
+    p_hackathon_id: hackathonId,
+    p_judge_participant_id: judgeParticipantId,
+  })
+  const result = Array.isArray(data) ? data[0] : data
+  if (error || !result?.removed) {
     console.error("Failed to remove judge:", error)
     return { success: false }
   }
-
-  const { data: existingResults } = await client
-    .from("hackathon_results")
-    .select("id")
-    .eq("hackathon_id", hackathonId)
-    .limit(1)
-
-  const resultsStale = (existingResults?.length ?? 0) > 0
-  return { success: true, resultsStale }
+  return { success: true, resultsStale: result.results_stale === true }
 }
 
 // ============================================================
@@ -2213,12 +2088,25 @@ export async function assertAssignmentWritable(
       .eq("id", roundId)
       .maybeSingle()
 
-    if (round && round.status !== "active" && round.status !== "planned") {
+    if (!round || round.status !== "active") {
       return {
         ok: false,
         error: "This round is no longer open for scoring",
         code: "round_not_active",
         status: 400,
+      }
+    }
+  } else {
+    const activeRoundId = await getActiveRoundId(hackathon.id)
+    if (activeRoundId) {
+      const finalistIds = await getRoundSubmissions(activeRoundId)
+      if (!finalistIds.includes(data.submission_id)) {
+        return {
+          ok: false,
+          error: "This project isn't in the active judging round",
+          code: "round_not_active",
+          status: 400,
+        }
       }
     }
   }
@@ -2240,62 +2128,26 @@ export type ClearJudgeAssignmentsResult = {
   success: boolean
   removedCount: number
   resultsStale: boolean
-  partialFailure?: "prize_assignments"
 }
 
 export async function clearAllJudgeAssignments(
   hackathonId: string
 ): Promise<ClearJudgeAssignmentsResult> {
   const client = getSupabase() as unknown as SupabaseClient
-
-  const { data: previousAssignments } = await client
-    .from("judge_assignments")
-    .select("*")
-    .eq("hackathon_id", hackathonId)
-
-  const { data: deleted, error: assignmentError } = await client
-    .from("judge_assignments")
-    .delete()
-    .eq("hackathon_id", hackathonId)
-    .select("id")
-
-  if (assignmentError) {
-    console.error("Failed to clear judge assignments:", assignmentError)
+  const { data, error } = await client.rpc("clear_judge_assignments_atomic", {
+    p_hackathon_id: hackathonId,
+  })
+  const result = Array.isArray(data) ? data[0] : data
+  if (error || !result) {
+    console.error("Failed to clear judge assignments:", error)
     return { success: false, removedCount: 0, resultsStale: false }
   }
 
-  const removedCount = deleted?.length ?? 0
-
-  if (removedCount === 0) {
-    return { success: true, removedCount: 0, resultsStale: false }
+  return {
+    success: true,
+    removedCount: Number(result.removed_count ?? 0),
+    resultsStale: result.results_stale === true,
   }
-
-  const { error: prizeAssignmentError } = await client
-    .from("judge_prize_assignments")
-    .delete()
-    .eq("hackathon_id", hackathonId)
-
-  if (prizeAssignmentError) {
-    console.error("Failed to clear judge_prize_assignments:", prizeAssignmentError)
-    if (previousAssignments && previousAssignments.length > 0) {
-      await client.from("judge_assignments").insert(previousAssignments)
-    }
-    return {
-      success: false,
-      removedCount,
-      resultsStale: false,
-      partialFailure: "prize_assignments",
-    }
-  }
-
-  const { data: existingResults } = await client
-    .from("hackathon_results")
-    .select("id")
-    .eq("hackathon_id", hackathonId)
-    .limit(1)
-
-  const resultsStale = (existingResults?.length ?? 0) > 0
-  return { success: true, removedCount, resultsStale }
 }
 
 export async function removeJudgeFromPrize(
@@ -2305,35 +2157,18 @@ export async function removeJudgeFromPrize(
 ): Promise<{ removedCount: number }> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  await client
-    .from("judge_prize_assignments")
-    .delete()
-    .eq("hackathon_id", hackathonId)
-    .eq("judge_participant_id", judgeParticipantId)
-    .eq("prize_id", prizeId)
-
-  const { data: toDelete } = await client
-    .from("judge_assignments")
-    .select("id")
-    .eq("hackathon_id", hackathonId)
-    .eq("judge_participant_id", judgeParticipantId)
-    .eq("prize_id", prizeId)
-
-  if (!toDelete || toDelete.length === 0) return { removedCount: 0 }
-
-  const { error } = await client
-    .from("judge_assignments")
-    .delete()
-    .eq("hackathon_id", hackathonId)
-    .eq("judge_participant_id", judgeParticipantId)
-    .eq("prize_id", prizeId)
+  const { data, error } = await client.rpc("remove_judge_from_prize_atomic", {
+    p_hackathon_id: hackathonId,
+    p_judge_participant_id: judgeParticipantId,
+    p_prize_id: prizeId,
+  })
 
   if (error) {
     console.error("Failed to remove judge from prize:", error)
     return { removedCount: 0 }
   }
 
-  return { removedCount: toDelete.length }
+  return { removedCount: Number(data ?? 0) }
 }
 
 export async function autoAssignJudges(
@@ -2353,7 +2188,9 @@ export async function autoAssignJudges(
 
   if (!prize) return { assignedCount: 0 }
 
-  if ((prize as { judging_style: string | null }).judging_style === "weighted_score") {
+  if (["weighted_score", "crowd_vote"].includes(
+    (prize as { judging_style: string | null }).judging_style ?? "",
+  )) {
     return { assignedCount: 0 }
   }
 
@@ -2848,7 +2685,7 @@ export async function submitJudgesPick(
 
   const { data: prize } = await client
     .from("prizes")
-    .select("id, max_picks")
+    .select("id, max_picks, round_id")
     .eq("id", prizeId)
     .eq("hackathon_id", hackathonId)
     .eq("judging_style", "judges_pick")
@@ -2856,6 +2693,22 @@ export async function submitJudgesPick(
 
   if (!prize) {
     return { success: false, error: "Prize not found", code: "prize_not_found" }
+  }
+
+  if (prize.round_id) {
+    const { data: round } = await client
+      .from("judging_rounds")
+      .select("status")
+      .eq("id", prize.round_id)
+      .eq("hackathon_id", hackathonId)
+      .maybeSingle()
+    if (!round || round.status !== "active") {
+      return {
+        success: false,
+        error: "This round isn't open for judging",
+        code: "round_not_active",
+      }
+    }
   }
 
   const maxPicks = Math.max(1, prize.max_picks ?? 1)
@@ -2883,43 +2736,18 @@ export async function submitJudgesPick(
     }
   }
 
-  const inserts = uniqueSubmissionIds.map((submissionId, index) => ({
-    hackathon_id: hackathonId,
-    judge_participant_id: judgeParticipantId,
-    prize_id: prizeId,
-    submission_id: submissionId,
-    rank: index + 1,
-    updated_at: new Date().toISOString(),
-  }))
-
-  const { error: upsertError } = await client.from("judge_picks").upsert(inserts, {
-    onConflict: "hackathon_id,judge_participant_id,prize_id,submission_id",
+  const { error: replaceError } = await client.rpc("replace_judge_picks_atomic", {
+    p_hackathon_id: hackathonId,
+    p_judge_participant_id: judgeParticipantId,
+    p_prize_id: prizeId,
+    p_picks: uniqueSubmissionIds.map((submissionId, index) => ({
+      submission_id: submissionId,
+      rank: index + 1,
+    })),
   })
-  if (upsertError) {
-    return { success: false, error: "Failed to submit picks", code: "insert_failed" }
-  }
-
-  const { error: deleteError } = await client
-    .from("judge_picks")
-    .delete()
-    .eq("hackathon_id", hackathonId)
-    .eq("judge_participant_id", judgeParticipantId)
-    .eq("prize_id", prizeId)
-    .not("submission_id", "in", `(${uniqueSubmissionIds.join(",")})`)
-
-  if (deleteError) {
-    return { success: false, error: "Failed to clear older picks", code: "delete_failed" }
-  }
-
-  const { error: completeError } = await client
-    .from("judge_assignments")
-    .update({ is_complete: true, completed_at: new Date().toISOString() })
-    .eq("hackathon_id", hackathonId)
-    .eq("judge_participant_id", judgeParticipantId)
-    .eq("prize_id", prizeId)
-
-  if (completeError) {
-    console.error("Failed to mark assignments complete:", completeError)
+  if (replaceError) {
+    console.error("Failed to submit judge picks:", replaceError)
+    return { success: false, error: "Failed to submit picks", code: "replace_failed" }
   }
 
   return { success: true }
@@ -2968,26 +2796,31 @@ async function calculateBucketSortResults(
 ): Promise<{ success: boolean; count: number }> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { data: assignments } = await client
+  const { data: assignments, error: assignmentsError } = await client
     .from("judge_assignments")
     .select("id, submission_id")
     .eq("hackathon_id", hackathonId)
     .eq("prize_id", prizeId)
     .eq("is_complete", true)
 
-  if (!assignments || assignments.length === 0) return { success: true, count: 0 }
+  if (assignmentsError) return { success: false, count: 0 }
+  if (!assignments || assignments.length === 0) {
+    return insertRankedResults(hackathonId, prizeId, [])
+  }
 
-  const { data: bucketResponses } = await client
+  const { data: bucketResponses, error: responsesError } = await client
     .from("bucket_responses")
     .select("judge_assignment_id, bucket_id")
     .in("judge_assignment_id", assignments.map((a) => a.id))
 
-  const { data: bucketDefs } = await client
+  const { data: bucketDefs, error: definitionsError } = await client
     .from("bucket_definitions")
     .select("id, level")
     .eq("prize_id", prizeId)
 
-  if (!bucketResponses || !bucketDefs) return { success: false, count: 0 }
+  if (responsesError || definitionsError || !bucketResponses || !bucketDefs) {
+    return { success: false, count: 0 }
+  }
 
   const bucketLevelMap = new Map(bucketDefs.map((b) => [b.id, b.level]))
   const assignmentSubMap = new Map(assignments.map((a) => [a.id, a.submission_id]))
@@ -3021,21 +2854,24 @@ async function calculateGateCheckResults(
 ): Promise<{ success: boolean; count: number }> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { data: assignments } = await client
+  const { data: assignments, error: assignmentsError } = await client
     .from("judge_assignments")
     .select("id, submission_id")
     .eq("hackathon_id", hackathonId)
     .eq("prize_id", prizeId)
     .eq("is_complete", true)
 
-  if (!assignments || assignments.length === 0) return { success: true, count: 0 }
+  if (assignmentsError) return { success: false, count: 0 }
+  if (!assignments || assignments.length === 0) {
+    return insertRankedResults(hackathonId, prizeId, [])
+  }
 
-  const { data: binaryResponses } = await client
+  const { data: binaryResponses, error: responsesError } = await client
     .from("binary_responses")
     .select("judge_assignment_id, passed")
     .in("judge_assignment_id", assignments.map((a) => a.id))
 
-  if (!binaryResponses) return { success: false, count: 0 }
+  if (responsesError || !binaryResponses) return { success: false, count: 0 }
 
   const assignmentSubMap = new Map(assignments.map((a) => [a.id, a.submission_id]))
   const subGates: Record<string, { passed: number; total: number; judgeCount: number }> = {}
@@ -3074,21 +2910,25 @@ async function calculateJudgesPickResults(
 ): Promise<{ success: boolean; count: number }> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { data: prize } = await client
+  const { data: prize, error: prizeError } = await client
     .from("prizes")
     .select("max_picks")
     .eq("id", prizeId)
     .single()
 
-  const maxPicks = (prize as unknown as Prize)?.max_picks ?? 3
+  if (prizeError || !prize) return { success: false, count: 0 }
+  const maxPicks = (prize as unknown as Prize).max_picks ?? 3
 
-  const { data: picks } = await client
+  const { data: picks, error: picksError } = await client
     .from("judge_picks")
     .select("judge_participant_id, submission_id, rank")
     .eq("hackathon_id", hackathonId)
     .eq("prize_id", prizeId)
 
-  if (!picks || picks.length === 0) return { success: true, count: 0 }
+  if (picksError) return { success: false, count: 0 }
+  if (!picks || picks.length === 0) {
+    return insertRankedResults(hackathonId, prizeId, [])
+  }
 
   const judgeIds = [...new Set(picks.map((p) => p.judge_participant_id))]
 
@@ -3118,13 +2958,16 @@ async function calculateCrowdVoteResults(
 ): Promise<{ success: boolean; count: number }> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const { data: votes } = await client
+  const { data: votes, error: votesError } = await client
     .from("crowd_votes")
     .select("submission_id")
     .eq("hackathon_id", hackathonId)
     .eq("prize_id", prizeId)
 
-  if (!votes || votes.length === 0) return { success: true, count: 0 }
+  if (votesError) return { success: false, count: 0 }
+  if (!votes || votes.length === 0) {
+    return insertRankedResults(hackathonId, prizeId, [])
+  }
 
   const voteCounts: Record<string, number> = {}
   for (const v of votes) {
@@ -3148,21 +2991,7 @@ async function insertRankedResults(
   prizeId: string,
   ranked: { sid: string; avg: number; total: number; judgeCount: number }[]
 ): Promise<{ success: boolean; count: number }> {
-  if (ranked.length === 0) return { success: true, count: 0 }
-
   const client = getSupabase() as unknown as SupabaseClient
-
-  const { data: previousRows } = await client
-    .from("hackathon_results")
-    .select("*")
-    .eq("hackathon_id", hackathonId)
-    .eq("prize_id", prizeId)
-  const { error: clearError } = await client
-    .from("hackathon_results")
-    .delete()
-    .eq("hackathon_id", hackathonId)
-    .eq("prize_id", prizeId)
-  if (clearError) return { success: false, count: 0 }
 
   let currentRank = 1
   const inserts = ranked.map((r, i) => {
@@ -3184,16 +3013,23 @@ async function insertRankedResults(
     }
   })
 
-  const { error } = await client.from("hackathon_results").insert(inserts)
+  const { data: insertedCount, error } = await client.rpc("replace_prize_results_atomic", {
+    p_hackathon_id: hackathonId,
+    p_prize_id: prizeId,
+    p_results: inserts.map((row) => ({
+      submission_id: row.submission_id,
+      rank: row.rank,
+      total_score: row.total_score,
+      weighted_score: row.weighted_score,
+      judge_count: row.judge_count,
+    })),
+  })
   if (error) {
-    console.error("Failed to insert results:", error)
-    if (previousRows && previousRows.length > 0) {
-      await client.from("hackathon_results").insert(previousRows)
-    }
+    console.error("Failed to replace results:", error)
     return { success: false, count: 0 }
   }
 
-  return { success: true, count: inserts.length }
+  return { success: true, count: Number(insertedCount ?? inserts.length) }
 }
 
 export async function recalculateForAssignment(assignmentId: string): Promise<void> {
@@ -3340,7 +3176,7 @@ export async function getJudgeAssignments(
   const { data: assignmentsRaw, error } = await client
     .from("judge_assignments")
     .select(`
-      id, submission_id, is_complete, notes, viewed_at, prize_id, assignment_kind,
+      id, submission_id, is_complete, notes, viewed_at, prize_id, round_id, assignment_kind,
       submission:submissions!submission_id(title, description, github_url, live_app_url, demo_video_url, screenshot_url, team_id)
     `)
     .eq("hackathon_id", hackathonId)
@@ -3349,12 +3185,34 @@ export async function getJudgeAssignments(
 
   if (error || !assignmentsRaw) return []
 
+  const roundIds = [...new Set(
+    assignmentsRaw
+      .map((assignment: Record<string, unknown>) => assignment.round_id)
+      .filter((roundId): roundId is string => typeof roundId === "string"),
+  )]
+  const activeRoundIds = new Set<string>()
+  if (roundIds.length > 0) {
+    const { data: rounds, error: roundsError } = await client
+      .from("judging_rounds")
+      .select("id")
+      .eq("hackathon_id", hackathonId)
+      .eq("status", "active")
+      .in("id", roundIds)
+    if (roundsError) return []
+    for (const round of rounds ?? []) activeRoundIds.add(round.id)
+  }
+
+  const roundWritableAssignments = assignmentsRaw.filter((assignment: Record<string, unknown>) => {
+    const roundId = assignment.round_id
+    return typeof roundId !== "string" || activeRoundIds.has(roundId)
+  })
+
   const finalistIds = await getActiveRoundFinalistIds(hackathonId)
   const assignments = finalistIds
-    ? assignmentsRaw.filter((a: Record<string, unknown>) =>
+    ? roundWritableAssignments.filter((a: Record<string, unknown>) =>
         finalistIds.includes(a.submission_id as string)
       )
-    : assignmentsRaw
+    : roundWritableAssignments
 
   const prizeIds = [...new Set(assignments.map((a: Record<string, unknown>) => a.prize_id).filter(Boolean))] as string[]
   const prizeMap: Record<string, { name: string; judging_style: string | null; max_picks: number | null }> = {}
@@ -4096,14 +3954,7 @@ export async function seedDefaultCoreCriteria(
 ): Promise<{ success: true; criteria: CoreCriterion[] } | { success: false; error: string }> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const existing = await listCoreCriteria(hackathonId)
-  if (existing.length > 0) {
-    return { success: false, error: "Core categories already exist" }
-  }
-
   const rows = DEFAULT_CORE_CRITERIA.map((c, i) => ({
-    hackathon_id: hackathonId,
-    prize_id: null,
     name: c.name,
     description: c.description ?? null,
     min_score: c.minScore ?? 1,
@@ -4112,10 +3963,10 @@ export async function seedDefaultCoreCriteria(
     display_order: i,
   }))
 
-  const { data, error } = await client
-    .from("judging_criteria")
-    .insert(rows)
-    .select("id, name, description, weight, min_score, max_score, display_order")
+  const { data, error } = await client.rpc("seed_default_core_criteria_atomic", {
+    p_hackathon_id: hackathonId,
+    p_criteria: rows,
+  })
 
   if (error || !data) {
     return { success: false, error: error?.message ?? "Failed to seed core criteria" }
@@ -4123,7 +3974,15 @@ export async function seedDefaultCoreCriteria(
 
   return {
     success: true,
-    criteria: data.map((c) => ({
+    criteria: (data as Array<{
+      id: string
+      name: string
+      description: string | null
+      weight: number
+      min_score: number
+      max_score: number
+      display_order: number
+    }>).map((c) => ({
       id: c.id,
       name: c.name,
       description: c.description,
@@ -4149,7 +4008,11 @@ async function aggregateWeightedScores(
     judge_assignments: { submission_id: string; judge_participant_id: string } | null
   }
 
-  const { data } = await client
+  const activeRoundId = await getActiveRoundId(hackathonId)
+  const finalistIds = activeRoundId ? await getRoundSubmissions(activeRoundId) : null
+  const finalistSet = finalistIds ? new Set(finalistIds) : null
+
+  const { data, error } = await client
     .from("scores")
     .select("criteria_id, score, judge_assignments!inner(submission_id, judge_participant_id, hackathon_id, assignment_kind, is_complete)")
     .eq("judge_assignments.hackathon_id", hackathonId)
@@ -4157,13 +4020,15 @@ async function aggregateWeightedScores(
     .eq("judge_assignments.is_complete", true)
     .in("criteria_id", Array.from(criteriaMap.keys()))
 
+  if (error) throw new Error(`Failed to load weighted scores: ${error.message}`)
+
   const scores = (data ?? []) as unknown as ScoreRow[]
   const subScores: Record<string, { judgeIds: Set<string>; perJudge: Record<string, number> }> = {}
 
   for (const s of scores) {
     const ja = s.judge_assignments
     const c = criteriaMap.get(s.criteria_id)
-    if (!ja || !c) continue
+    if (!ja || !c || (finalistSet && !finalistSet.has(ja.submission_id))) continue
     const range = c.maxScore - c.minScore
     if (range <= 0) continue
     const normalized = (s.score - c.minScore) / range
@@ -4191,7 +4056,7 @@ export async function calculateWeightedScoreResults(
 ): Promise<{ success: boolean; count: number }> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const [{ data: coreCriteria }, { data: prizeCriteria }] = await Promise.all([
+  const [coreResult, prizeResult] = await Promise.all([
     client
       .from("judging_criteria")
       .select("id, weight, min_score, max_score")
@@ -4203,6 +4068,14 @@ export async function calculateWeightedScoreResults(
       .eq("prize_id", prizeId),
   ])
 
+  if (coreResult.error || prizeResult.error) {
+    console.error("Failed to load weighted criteria:", coreResult.error ?? prizeResult.error)
+    return { success: false, count: 0 }
+  }
+
+  const coreCriteria = coreResult.data
+  const prizeCriteria = prizeResult.data
+
   const allCriteria = [...(coreCriteria ?? []), ...(prizeCriteria ?? [])]
   const criteriaMap = new Map(
     allCriteria.map((c) => [
@@ -4210,44 +4083,34 @@ export async function calculateWeightedScoreResults(
       { weight: Number(c.weight), minScore: Number(c.min_score), maxScore: Number(c.max_score) },
     ])
   )
-  if (allCriteria.length === 0) return { success: true, count: 0 }
+  if (allCriteria.length === 0) return insertRankedResults(hackathonId, prizeId, [])
 
   const totalWeightSum = Array.from(criteriaMap.values()).reduce((a, c) => a + c.weight, 0)
-  if (totalWeightSum <= 0) return { success: true, count: 0 }
+  if (totalWeightSum <= 0) return insertRankedResults(hackathonId, prizeId, [])
 
-  const ranked = await aggregateWeightedScores(client, hackathonId, criteriaMap, totalWeightSum)
-  return insertRankedResults(hackathonId, prizeId, ranked)
+  try {
+    const ranked = await aggregateWeightedScores(client, hackathonId, criteriaMap, totalWeightSum)
+    return insertRankedResults(hackathonId, prizeId, ranked)
+  } catch (error) {
+    console.error("Failed to calculate weighted results:", error)
+    return { success: false, count: 0 }
+  }
 }
 
 export async function calculateCoreOnlyResults(
   hackathonId: string
 ): Promise<{ success: boolean; count: number }> {
   const client = getSupabase() as unknown as SupabaseClient
-
-  const { data: previousCoreRows } = await client
-    .from("hackathon_results")
-    .select("*")
-    .eq("hackathon_id", hackathonId)
-    .eq("result_kind", "core_only")
-
-  const { error: deleteError } = await client
-    .from("hackathon_results")
-    .delete()
-    .eq("hackathon_id", hackathonId)
-    .eq("result_kind", "core_only")
-
-  if (deleteError) {
-    console.error("Failed to clear core-only results:", deleteError)
-    return { success: false, count: 0 }
-  }
-
-  const { data: coreCriteria } = await client
+  const { data: coreCriteria, error: criteriaError } = await client
     .from("judging_criteria")
     .select("id, weight, min_score, max_score")
     .eq("hackathon_id", hackathonId)
     .is("prize_id", null)
 
-  if (!coreCriteria || coreCriteria.length === 0) return { success: true, count: 0 }
+  if (criteriaError) {
+    console.error("Failed to load core criteria:", criteriaError)
+    return { success: false, count: 0 }
+  }
 
   const criteriaMap = new Map(
     coreCriteria.map((c) => [
@@ -4256,10 +4119,19 @@ export async function calculateCoreOnlyResults(
     ])
   )
   const coreWeightSum = Array.from(criteriaMap.values()).reduce((a, c) => a + c.weight, 0)
-  if (coreWeightSum <= 0) return { success: true, count: 0 }
+  if (coreCriteria.length > 0 && coreWeightSum <= 0) {
+    return { success: false, count: 0 }
+  }
 
-  const ranked = await aggregateWeightedScores(client, hackathonId, criteriaMap, coreWeightSum)
-  if (ranked.length === 0) return { success: true, count: 0 }
+  let ranked: Awaited<ReturnType<typeof aggregateWeightedScores>> = []
+  if (coreCriteria.length > 0) {
+    try {
+      ranked = await aggregateWeightedScores(client, hackathonId, criteriaMap, coreWeightSum)
+    } catch (error) {
+      console.error("Failed to load core scores:", error)
+      return { success: false, count: 0 }
+    }
+  }
 
   let currentRank = 1
   const inserts = ranked.map((r, i) => {
@@ -4276,16 +4148,22 @@ export async function calculateCoreOnlyResults(
     }
   })
 
-  const { error } = await client.from("hackathon_results").insert(inserts)
+  const { data: insertedCount, error } = await client.rpc("replace_core_results_atomic", {
+    p_hackathon_id: hackathonId,
+    p_results: inserts.map((row) => ({
+      submission_id: row.submission_id,
+      rank: row.rank,
+      total_score: row.total_score,
+      weighted_score: row.weighted_score,
+      judge_count: row.judge_count,
+    })),
+  })
   if (error) {
-    console.error("Failed to insert core-only results:", error)
-    if (previousCoreRows && previousCoreRows.length > 0) {
-      await client.from("hackathon_results").insert(previousCoreRows)
-    }
+    console.error("Failed to replace core-only results:", error)
     return { success: false, count: 0 }
   }
 
-  return { success: true, count: inserts.length }
+  return { success: true, count: Number(insertedCount ?? inserts.length) }
 }
 
 export async function assignWeightedScoreJudge(
@@ -4563,7 +4441,7 @@ export async function assignJudgeToSubmission(
   const [judgeResult, submissionResult] = await Promise.all([
     client
       .from("hackathon_participants")
-      .select("id, team_id")
+      .select("id, team_id, role")
       .eq("id", judgeParticipantId)
       .eq("hackathon_id", hackathonId)
       .maybeSingle(),
@@ -4583,6 +4461,9 @@ export async function assignJudgeToSubmission(
 
   if (!judgeResult.data) return { success: false, error: "Judge not found" }
   if (!submissionResult.data) return { success: false, error: "Project not found" }
+  if ((judgeResult.data as { role: string }).role !== "judge") {
+    return { success: false, error: "Only judges can be assigned to score projects" }
+  }
 
   const judgeTeamId = (judgeResult.data as { team_id: string | null }).team_id
   const submissionTeamId = (submissionResult.data as { team_id: string | null }).team_id
@@ -4592,8 +4473,10 @@ export async function assignJudgeToSubmission(
 
   const activeRoundId = await getActiveRoundId(hackathonId)
   const finalistIds = activeRoundId ? await getRoundSubmissions(activeRoundId) : []
-  const roundId =
-    activeRoundId && finalistIds.includes(submissionId) ? activeRoundId : null
+  if (activeRoundId && !finalistIds.includes(submissionId)) {
+    return { success: false, error: "This project isn't in the active judging round" }
+  }
+  const roundId = activeRoundId ?? null
 
   const { error } = await client.from("judge_assignments").insert({
     hackathon_id: hackathonId,

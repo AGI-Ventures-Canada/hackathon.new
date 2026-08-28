@@ -232,7 +232,7 @@ describe("Schedules Service", () => {
         frequency: "daily",
         timezone: "America/New_York",
         runTime: "14:30",
-        jobType: "agent",
+        jobType: "echo",
       })).toEqual(savedSchedule)
       expect(chain.insert).toHaveBeenCalledWith(expect.objectContaining({
         timezone: "America/New_York",
@@ -249,7 +249,34 @@ describe("Schedules Service", () => {
         name: "Broken schedule",
         frequency: "cron",
         cronExpression: "99 * * * *",
-        jobType: "agent",
+        jobType: "echo",
+      })).toBeNull()
+      expect(chain.insert).not.toHaveBeenCalled()
+    })
+
+    it("rejects unsupported job types before writing", async () => {
+      const chain = createChainableMock({ data: null, error: null })
+      setMockFromImplementation(() => chain)
+
+      expect(await createSchedule({
+        tenantId: "tenant-1",
+        name: "Unknown job",
+        frequency: "daily",
+        jobType: "unknown",
+      })).toBeNull()
+      expect(chain.insert).not.toHaveBeenCalled()
+    })
+
+    it("rejects oversized job input before writing", async () => {
+      const chain = createChainableMock({ data: null, error: null })
+      setMockFromImplementation(() => chain)
+
+      expect(await createSchedule({
+        tenantId: "tenant-1",
+        name: "Large job",
+        frequency: "daily",
+        jobType: "echo",
+        input: { value: "x".repeat(64_001) },
       })).toBeNull()
       expect(chain.insert).not.toHaveBeenCalled()
     })
@@ -266,6 +293,16 @@ describe("Schedules Service", () => {
       setMockFromImplementation(() => chain)
 
       expect(await updateSchedule("schedule-1", "tenant-1", { cronExpression: "" })).toBeNull()
+      expect(chain.update).not.toHaveBeenCalled()
+    })
+
+    it("rejects oversized job input on update before writing", async () => {
+      const chain = createChainableMock({ data: null, error: null })
+      setMockFromImplementation(() => chain)
+
+      expect(await updateSchedule("schedule-1", "tenant-1", {
+        input: { value: "x".repeat(64_001) },
+      })).toBeNull()
       expect(chain.update).not.toHaveBeenCalled()
     })
 

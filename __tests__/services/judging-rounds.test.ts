@@ -3,6 +3,7 @@ import {
   createChainableMock,
   resetSupabaseMocks,
   setMockFromImplementation,
+  setMockRpcImplementation,
   mockSuccess,
   mockError,
 } from "../lib/supabase-mock"
@@ -45,14 +46,14 @@ describe("judging-rounds service", () => {
   describe("createRound", () => {
     it("creates a round", async () => {
       const round = { id: ROUND_ID, hackathon_id: HACKATHON_ID, name: "Finals", round_type: "finals", is_active: false, display_order: 1, created_at: "2026-04-01" }
-      setMockFromImplementation(() => createChainableMock(mockSuccess(round)))
+      setMockRpcImplementation(() => Promise.resolve(mockSuccess(round)))
       const result = await createRound(HACKATHON_ID, { name: "Finals", roundType: "finals" })
       expect(result).not.toBeNull()
       expect(result!.round_type).toBe("finals")
     })
 
     it("returns null on error", async () => {
-      setMockFromImplementation(() => createChainableMock(mockError("Failed")))
+      setMockRpcImplementation(() => Promise.resolve(mockError("Failed")))
       const result = await createRound(HACKATHON_ID, { name: "R", roundType: "preliminary" })
       expect(result).toBeNull()
     })
@@ -61,7 +62,7 @@ describe("judging-rounds service", () => {
   describe("updateRound", () => {
     it("updates a round", async () => {
       const round = { id: ROUND_ID, hackathon_id: HACKATHON_ID, name: "Updated", round_type: "finals", is_active: false, display_order: 0, created_at: "2026-04-01" }
-      setMockFromImplementation(() => createChainableMock(mockSuccess(round)))
+      setMockRpcImplementation(() => Promise.resolve(mockSuccess(round)))
       const result = await updateRound(ROUND_ID, HACKATHON_ID, { name: "Updated" })
       expect(result!.name).toBe("Updated")
     })
@@ -74,31 +75,24 @@ describe("judging-rounds service", () => {
 
   describe("deleteRound", () => {
     it("deletes a round", async () => {
-      setMockFromImplementation(() => createChainableMock({ data: null, error: null }))
+      setMockRpcImplementation(() => Promise.resolve({ data: "deleted", error: null }))
       expect(await deleteRound(ROUND_ID, HACKATHON_ID)).toBe(true)
     })
 
     it("returns false on error", async () => {
-      setMockFromImplementation(() => createChainableMock(mockError("Failed")))
+      setMockRpcImplementation(() => Promise.resolve(mockError("Failed")))
       expect(await deleteRound(ROUND_ID, HACKATHON_ID)).toBe(false)
     })
   })
 
   describe("activateRound", () => {
     it("deactivates all then activates one", async () => {
-      let callCount = 0
-      setMockFromImplementation(() => {
-        callCount++
-        if (callCount === 1) {
-          return createChainableMock({ data: null, error: null })
-        }
-        return createChainableMock({ data: { id: ROUND_ID }, error: null })
-      })
+      setMockRpcImplementation(() => Promise.resolve({ data: true, error: null }))
       expect(await activateRound(ROUND_ID, HACKATHON_ID)).toBe(true)
     })
 
     it("returns false on deactivate error", async () => {
-      setMockFromImplementation(() => createChainableMock(mockError("Failed")))
+      setMockRpcImplementation(() => Promise.resolve(mockError("Failed")))
       expect(await activateRound(ROUND_ID, HACKATHON_ID)).toBe(false)
     })
   })

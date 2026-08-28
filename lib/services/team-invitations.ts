@@ -21,6 +21,11 @@ const TEAM_STATUSES_OPEN_FOR_INVITES: ReadonlySet<TeamStatus> = new Set<TeamStat
   "pending_approval",
 ])
 const INVITATION_DELIVERY_STATUSES = ["published", "registration_open", "active", "judging"] satisfies HackathonStatus[]
+const TEAM_MUTATION_LOCKED_STATUSES: ReadonlySet<HackathonStatus> = new Set([
+  "judging",
+  "completed",
+  "archived",
+])
 
 type PendingCaptainMarker = {
   team_id: string | null
@@ -525,7 +530,7 @@ export async function cancelTeamInvitationAsOrganizer(
 
   const { data: invitation } = await client
     .from("team_invitations")
-    .select("id, hackathon_id, team_id, status, is_captain_invite")
+    .select("id, hackathon_id, team_id, status, is_captain_invite, email")
     .eq("id", invitationId)
     .maybeSingle()
 
@@ -556,6 +561,7 @@ export async function cancelTeamInvitationAsOrganizer(
       .update({ pending_captain_email: null, updated_at: new Date().toISOString() })
       .eq("id", invitation.team_id)
       .eq("hackathon_id", hackathonId)
+      .eq("pending_captain_email", invitation.email)
     if (teamErr) console.error("Failed to clear pending_captain_email:", teamErr)
   }
 
@@ -572,7 +578,7 @@ export async function replaceTeamCaptainInvitation(
   newEmail: string,
   invitedByClerkUserId: string,
 ): Promise<ReplaceCaptainInvitationResult> {
-  const client = getSupabase()
+  const client = getSupabase() as unknown as SupabaseClient
 
   const { data: team, error: teamError } = await client
     .from("teams")
@@ -599,55 +605,38 @@ export async function replaceTeamCaptainInvitation(
   if (disposition === "reject") {
     return { success: false, error: "Hackathon has ended", code: "hackathon_ended" }
   }
+  if (TEAM_MUTATION_LOCKED_STATUSES.has(hackathon.status as HackathonStatus)) {
+    return { success: false, error: "Teams are locked because judging has started", code: "status_locked" }
+  }
 
   const normalized = newEmail.trim().toLowerCase()
-
-  const { data: cancelledInvites } = await client
-    .from("team_invitations")
-    .update({ status: "cancelled", updated_at: new Date().toISOString() })
-    .eq("team_id", teamId)
-    .eq("hackathon_id", hackathonId)
-    .eq("status", "pending")
-    .eq("is_captain_invite", true)
-    .select("id")
-
-  if (cancelledInvites && cancelledInvites.length > 0) {
-    const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
-    for (const inv of cancelledInvites as Array<{ id: string }>) {
-      cancelRemindersForEntity("team_invitation", inv.id).catch((err) =>
-        console.error(`Failed to cancel reminders for replaced team_invitation ${inv.id}:`, err)
-      )
-    }
-  }
 
   const token = createInvitationToken()
   const expiresAt = new Date(Date.now() + INVITATION_EXPIRY_MS).toISOString()
 
-  const { data: invitation, error: insertError } = await client
-    .from("team_invitations")
-    .insert({
-      team_id: teamId,
-      hackathon_id: hackathonId,
-      email: normalized,
-      token,
-      invited_by_clerk_user_id: invitedByClerkUserId,
-      status: "pending",
-      expires_at: expiresAt,
-      is_captain_invite: true,
-    })
-    .select("id")
-    .single()
-
-  if (insertError || !invitation) {
-    console.error("Failed to insert replacement captain invitation:", insertError)
+  const { data, error: insertError } = await client.rpc("replace_captain_invitation_atomic", {
+    p_hackathon_id: hackathonId,
+    p_team_id: teamId,
+    p_email: normalized,
+    p_token: token,
+    p_invited_by: invitedByClerkUserId,
+    p_expires_at: expiresAt,
+  })
+  const replacement = Array.isArray(data) ? data[0] : data
+  if (insertError || !replacement?.invitation_id) {
+    console.error("Failed to replace captain invitation:", insertError)
     return { success: false, error: "Failed to send invitation", code: "insert_failed" }
   }
 
-  await client
-    .from("teams")
-    .update({ pending_captain_email: normalized, updated_at: new Date().toISOString() })
-    .eq("id", teamId)
-    .eq("hackathon_id", hackathonId)
+  const cancelledIds = (replacement.cancelled_ids ?? []) as string[]
+  if (cancelledIds.length > 0) {
+    const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
+    for (const invitationId of cancelledIds) {
+      cancelRemindersForEntity("team_invitation", invitationId).catch((err) =>
+        console.error(`Failed to cancel reminders for replaced team_invitation ${invitationId}:`, err)
+      )
+    }
+  }
 
   let delivery: "sent" | "queued" | "failed" = disposition === "queue" ? "queued" : "sent"
 
@@ -679,11 +668,11 @@ export async function replaceTeamCaptainInvitation(
       hackathonSlug: hackathon.slug,
       hackathonStartsAt: hackathon.starts_at,
       hackathonEndsAt: hackathon.ends_at,
-      deliveryId: invitation.id,
+      deliveryId: replacement.invitation_id,
     }
     const { sendTeamInvitationEmail } = await import("@/lib/email/team-invitations")
     const sendResult = await sendTeamInvitationEmail(emailInput).catch((error) => {
-      console.error(`Failed to send replacement captain invitation ${invitation.id}:`, error)
+      console.error(`Failed to send replacement captain invitation ${replacement.invitation_id}:`, error)
       return { success: false }
     })
 
@@ -691,23 +680,23 @@ export async function replaceTeamCaptainInvitation(
       delivery = "failed"
     } else {
       try {
-        await markTeamInvitationEmailed(invitation.id)
+        await markTeamInvitationEmailed(replacement.invitation_id)
       } catch (error) {
-        console.error(`Failed to save replacement captain invitation delivery ${invitation.id}:`, error)
+        console.error(`Failed to save replacement captain invitation delivery ${replacement.invitation_id}:`, error)
         delivery = "failed"
       }
       if (delivery === "sent") {
         const { scheduleReminders } = await import("@/lib/services/smart-reminders")
         await scheduleReminders(
           "team_invitation",
-          invitation.id,
+          replacement.invitation_id,
           hackathonId,
           "invitation_reminder",
           new Date(),
           new Date(expiresAt),
           emailInput,
         ).catch((error) => {
-          console.error(`Failed to schedule replacement captain reminder ${invitation.id}:`, error)
+          console.error(`Failed to schedule replacement captain reminder ${replacement.invitation_id}:`, error)
         })
       }
     }
@@ -715,7 +704,7 @@ export async function replaceTeamCaptainInvitation(
 
   return {
     success: true,
-    invitationId: invitation.id,
+    invitationId: replacement.invitation_id,
     queued: delivery === "queued",
     delivery,
     queueReason: getQueueReason(delivery),

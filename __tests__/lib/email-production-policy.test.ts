@@ -1,13 +1,15 @@
 import { describe, expect, it, mock } from "bun:test"
 import {
   clerkDeliveredEmailTemplateSlugs,
+  invalidProductionEmailEnvironment,
   missingProductionEmailEnvironment,
   verifyProductionEmailDelivery,
 } from "@/lib/email/production-policy"
 
 const configuredEnvironment = {
   RESEND_API_KEY: "re_test",
-  RESEND_FROM_EMAIL: "Oatmeal <hello@example.com>",
+  RESEND_FROM_EMAIL: "hackathon.new <hello@notifications.hackathon.new>",
+  RESEND_REPLY_TO_EMAIL: "support@hackathon.new",
   CLERK_SECRET_KEY: "sk_test",
   CLERK_WEBHOOK_SIGNING_SECRET: "whsec_test",
 } as NodeJS.ProcessEnv
@@ -21,9 +23,36 @@ describe("production email policy", () => {
       } as NodeJS.ProcessEnv),
     ).toEqual([
       "RESEND_FROM_EMAIL",
+      "RESEND_REPLY_TO_EMAIL",
       "CLERK_SECRET_KEY",
       "CLERK_WEBHOOK_SIGNING_SECRET",
     ])
+  })
+
+  it("rejects no-reply senders and the root sending domain", () => {
+    expect(
+      invalidProductionEmailEnvironment({
+        RESEND_FROM_EMAIL: "hackathon.new <no-reply@hackathon.new>",
+        RESEND_REPLY_TO_EMAIL: "noreply@hackathon.new",
+      } as NodeJS.ProcessEnv),
+    ).toEqual([
+      "RESEND_FROM_EMAIL must use a reply-friendly mailbox, not no-reply",
+      "RESEND_FROM_EMAIL must use a sending subdomain of hackathon.new",
+      "RESEND_REPLY_TO_EMAIL must accept replies",
+    ])
+  })
+
+  it("accepts a sending subdomain with a working reply mailbox", () => {
+    expect(invalidProductionEmailEnvironment(configuredEnvironment)).toEqual([])
+  })
+
+  it("rejects senders outside the verified hackathon.new subdomains", () => {
+    expect(
+      invalidProductionEmailEnvironment({
+        ...configuredEnvironment,
+        RESEND_FROM_EMAIL: "hello@example.com",
+      }),
+    ).toEqual(["RESEND_FROM_EMAIL must use a sending subdomain of hackathon.new"])
   })
 
   it("finds Clerk templates that still bypass Resend", () => {

@@ -1,5 +1,6 @@
 import type { OatmealClient } from "../../client.js"
 import { formatJson, formatSuccess } from "../../output.js"
+import type { Prize } from "../../types.js"
 
 interface AutoAssignOptions {
   perJudge?: number
@@ -33,10 +34,26 @@ export async function runAutoAssign(
     process.exit(1)
   }
 
-  const result = await client.post<{ created: number }>(
-    `/api/dashboard/hackathons/${hackathonId}/judging/auto-assign`,
-    { per_judge: options.perJudge }
+  const { prizes } = await client.get<{ prizes: Prize[] }>(
+    `/api/dashboard/hackathons/${hackathonId}/prizes`,
   )
+  const assignablePrizes = prizes.filter(
+    (prize) =>
+      (prize.judgingStyle ?? prize.judging_style) !== "weighted_score" &&
+      (prize.judgingStyle ?? prize.judging_style) !== "crowd_vote",
+  )
+  const assignments = await Promise.all(
+    assignablePrizes.map((prize) =>
+      client.post<{ assignedCount: number }>(
+        `/api/dashboard/hackathons/${hackathonId}/prizes/${prize.id}/auto-assign`,
+        { submissionsPerJudge: options.perJudge },
+      ),
+    ),
+  )
+  const result = {
+    created: assignments.reduce((total, item) => total + item.assignedCount, 0),
+    prizeCount: assignablePrizes.length,
+  }
 
   if (options.json) {
     console.log(formatJson(result))

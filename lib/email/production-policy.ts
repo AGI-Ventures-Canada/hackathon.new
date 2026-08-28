@@ -1,6 +1,7 @@
 const REQUIRED_PRODUCTION_EMAIL_ENV = [
   "RESEND_API_KEY",
   "RESEND_FROM_EMAIL",
+  "RESEND_REPLY_TO_EMAIL",
   "CLERK_SECRET_KEY",
   "CLERK_WEBHOOK_SIGNING_SECRET",
 ] as const
@@ -16,6 +17,45 @@ export function missingProductionEmailEnvironment(
   return REQUIRED_PRODUCTION_EMAIL_ENV.filter(
     (name) => !environment[name]?.trim(),
   )
+}
+
+function extractEmailAddress(value: string | undefined): string | null {
+  if (!value) return null
+  const bracketed = value.match(/<([^<>]+)>/)
+  const candidate = (bracketed?.[1] ?? value).trim().toLowerCase()
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(candidate) ? candidate : null
+}
+
+export function invalidProductionEmailEnvironment(
+  environment: NodeJS.ProcessEnv = process.env,
+): string[] {
+  const problems: string[] = []
+  const from = extractEmailAddress(environment.RESEND_FROM_EMAIL)
+  const replyTo = extractEmailAddress(environment.RESEND_REPLY_TO_EMAIL)
+
+  if (environment.RESEND_FROM_EMAIL?.trim() && !from) {
+    problems.push("RESEND_FROM_EMAIL must contain a valid email address")
+  }
+  if (environment.RESEND_REPLY_TO_EMAIL?.trim() && !replyTo) {
+    problems.push("RESEND_REPLY_TO_EMAIL must contain a valid email address")
+  }
+  if (from) {
+    const [localPart, domain] = from.split("@") as [string, string]
+    if (["noreply", "no-reply"].includes(localPart)) {
+      problems.push("RESEND_FROM_EMAIL must use a reply-friendly mailbox, not no-reply")
+    }
+    if (domain === "hackathon.new" || !domain.endsWith(".hackathon.new")) {
+      problems.push("RESEND_FROM_EMAIL must use a sending subdomain of hackathon.new")
+    }
+  }
+  if (replyTo) {
+    const localPart = replyTo.split("@")[0]
+    if (["noreply", "no-reply"].includes(localPart)) {
+      problems.push("RESEND_REPLY_TO_EMAIL must accept replies")
+    }
+  }
+
+  return problems
 }
 
 export function clerkDeliveredEmailTemplateSlugs(payload: unknown): string[] {
@@ -54,6 +94,10 @@ export async function verifyProductionEmailDelivery(input: {
     throw new Error(
       `Production email delivery is missing: ${missing.join(", ")}.`,
     )
+  }
+  const invalid = invalidProductionEmailEnvironment(environment)
+  if (invalid.length > 0) {
+    throw new Error(`Production email delivery is invalid: ${invalid.join("; ")}.`)
   }
 
   const fetcher = input.fetcher ?? fetch

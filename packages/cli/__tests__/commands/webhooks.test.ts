@@ -30,7 +30,7 @@ describe("webhooks commands", () => {
       mockFetch.mockResolvedValueOnce(
         jsonResponse({
           webhooks: [
-            { id: "w1", url: "https://example.com/hook", events: ["submission.created"], active: true },
+            { id: "w1", url: "https://example.com/hook", events: ["submission.created"], isActive: true },
           ],
         })
       )
@@ -38,6 +38,7 @@ describe("webhooks commands", () => {
       const { runWebhooksList } = await import("../../src/commands/webhooks/list")
       await runWebhooksList(client, { json: false })
       expect(consoleLogSpy.mock.calls[0][0]).toContain("https://example.com/hook")
+      expect(consoleLogSpy.mock.calls[0][0]).toContain("Active")
     })
   })
 
@@ -48,7 +49,7 @@ describe("webhooks commands", () => {
           id: "w1",
           url: "https://example.com/hook",
           events: ["submission.created"],
-          signingSecret: "whsec_test123",
+          secret: "whsec_test123",
         })
       )
       const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })

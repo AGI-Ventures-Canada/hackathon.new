@@ -4,6 +4,7 @@ import {
   createChainableMock,
   resetSupabaseMocks,
   setMockFromImplementation,
+  setMockRpcImplementation,
 } from "../lib/supabase-mock"
 
 const { addSponsor, removeSponsor, listHackathonSponsors, updateSponsor, reorderSponsors, listHackathonSponsorsWithTenants } = await import(
@@ -169,11 +170,16 @@ describe("Sponsors Service", () => {
     })
 
     it("updates the org asset source flag", async () => {
-      const chain = createChainableMock({
-        data: { ...mockSponsor, use_org_assets: true },
-        error: null,
+      let calls = 0
+      setMockFromImplementation(() => {
+        calls++
+        return createChainableMock({
+          data: calls === 1
+            ? { sponsor_tenant_id: "tenant_1" }
+            : { ...mockSponsor, sponsor_tenant_id: "tenant_1", use_org_assets: true },
+          error: null,
+        })
       })
-      setMockFromImplementation(() => chain)
 
       const result = await updateSponsor("s1", { useOrgAssets: true }, "h1")
 
@@ -183,8 +189,7 @@ describe("Sponsors Service", () => {
 
   describe("reorderSponsors", () => {
     it("reorders sponsors successfully", async () => {
-      const chain = createChainableMock({ data: null, error: null })
-      setMockFromImplementation(() => chain)
+      setMockRpcImplementation(() => Promise.resolve({ data: true, error: null }))
 
       const result = await reorderSponsors("h1", ["s1", "s2", "s3"])
 
@@ -192,11 +197,7 @@ describe("Sponsors Service", () => {
     })
 
     it("returns false on error", async () => {
-      const chain = createChainableMock({
-        data: null,
-        error: { message: "DB error" },
-      })
-      setMockFromImplementation(() => chain)
+      setMockRpcImplementation(() => Promise.resolve({ data: null, error: { message: "DB error" } }))
 
       const result = await reorderSponsors("h1", ["s1"])
 

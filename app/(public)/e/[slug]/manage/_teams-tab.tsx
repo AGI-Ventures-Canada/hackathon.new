@@ -170,7 +170,7 @@ type TeamsTabProps = {
   notificationDisposition: "queue" | "send" | "reject"
 }
 
-const STATUS_LOCKS_TEAM_DELETE = new Set(["judging", "completed", "archived"])
+const STATUS_LOCKS_TEAM_MUTATIONS = new Set(["judging", "completed", "archived"])
 
 const UNASSIGNED_ROOM = "__unassigned__"
 
@@ -203,6 +203,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
   const [remindError, setRemindError] = useState<string | null>(null)
   const [remindPendingIds, setRemindPendingIds] = useState<Set<string>>(new Set())
   const [actionSuccess, setActionSuccess] = useState<string | null>(null)
+  const teamsLocked = Boolean(hackathonStatus && STATUS_LOCKS_TEAM_MUTATIONS.has(hackathonStatus))
 
   useEffect(() => {
     if (!ctx) return
@@ -272,7 +273,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
     setTeams((prev) => prev.map((t) => (t.id === teamId ? { ...t, room: newRoom } : t)))
 
     try {
-      if (previousRoomId) {
+      if (!newRoomId && previousRoomId) {
         await fetch(
           `/api/dashboard/hackathons/${hackathonId}/rooms/${previousRoomId}/teams/${teamId}`,
           { method: "DELETE" },
@@ -287,6 +288,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
       }
     } catch (err) {
       setTeams((prev) => prev.map((t) => (t.id === teamId ? { ...t, room: previousRoom } : t)))
+      void fetchTeams()
       setRoomError(err instanceof Error ? err.message : "Failed to update room")
       setTimeout(() => setRoomError(null), 8000)
     }
@@ -301,6 +303,10 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
+    if (teamsLocked) {
+      setCreateError("Teams are locked because judging has started")
+      return
+    }
     if (!teamName.trim() || !captainEmail.trim()) {
       setCreateError("Both fields are required")
       return
@@ -449,7 +455,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
   })
 
   function deleteBlockReason(team: Team): string | null {
-    if (hackathonStatus && STATUS_LOCKS_TEAM_DELETE.has(hackathonStatus)) {
+    if (teamsLocked) {
       return "Teams can't be deleted once judging has started"
     }
     if (team.submission) return "This team has a submission. Delete the submission first."
@@ -589,6 +595,10 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
 
   async function handleChangeCaptainInviteEmail() {
     if (!reinviteTarget) return
+    if (teamsLocked) {
+      setReinviteError("Teams are locked because judging has started")
+      return
+    }
     const email = reinviteEmail.trim().toLowerCase()
     if (!email) {
       setReinviteError("Email is required")
@@ -719,7 +729,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         </p>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
-            <Button>
+            <Button disabled={teamsLocked} title={teamsLocked ? "Teams are locked because judging has started" : undefined}>
               <Plus className="size-4" />
               <span className="hidden sm:inline">Create Team</span>
               <span className="sm:hidden">Create</span>
@@ -989,7 +999,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                {team.status === "pending_approval" && (
+                                {team.status === "pending_approval" && !teamsLocked && (
                                   <>
                                     <DropdownMenuItem onSelect={() => { void approveTeam(team) }}>
                                       <Check className="size-4" />
@@ -1079,7 +1089,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                                               </Button>
                                             </DropdownMenuTrigger>
                                             <DropdownMenuContent align="end">
-                                              <DropdownMenuItem onSelect={() => {
+                                              <DropdownMenuItem disabled={teamsLocked} onSelect={() => {
                                                 setReinviteTarget({ team, invitationId: captainInvitationId, previousEmail: captainEmail })
                                                 setReinviteEmail("")
                                                 setReinviteError(null)
@@ -1134,6 +1144,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                                                   )}
                                                   <DropdownMenuItem
                                                     variant="destructive"
+                                                    disabled={teamsLocked}
                                                     onSelect={() => handleRemoveMember(team, m)}
                                                   >
                                                     <UserMinus className="size-4" />
