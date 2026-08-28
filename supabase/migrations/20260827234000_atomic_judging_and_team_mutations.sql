@@ -369,29 +369,6 @@ create trigger prevent_team_delete_with_projects
 before delete on public.teams
 for each row execute function public.prevent_team_delete_with_projects();
 
-create or replace function public.prevent_late_team_creation()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare v_status text;
-begin
-  select status::text into v_status from public.hackathons
-  where id = new.hackathon_id for update;
-  if not found then raise exception 'Hackathon not found'; end if;
-  if v_status in ('judging', 'completed', 'archived') then
-    raise exception 'Teams are locked because judging has started';
-  end if;
-  return new;
-end;
-$$;
-
-drop trigger if exists prevent_late_team_creation on public.teams;
-create trigger prevent_late_team_creation
-before insert on public.teams
-for each row execute function public.prevent_late_team_creation();
-
 create or replace function public.delete_team_atomic(p_hackathon_id uuid, p_team_id uuid)
 returns table(success boolean, error_code text, members_unassigned integer, invites_cancelled integer, rooms_cleared integer, invitation_ids uuid[])
 language plpgsql
@@ -1976,7 +1953,6 @@ revoke all on function public.replace_core_results_atomic(uuid, jsonb) from publ
 revoke all on function public.clear_judge_assignments_atomic(uuid) from public, anon, authenticated;
 revoke all on function public.modify_team_member_atomic(uuid, uuid, text, text) from public, anon, authenticated;
 revoke all on function public.prevent_team_delete_with_projects() from public, anon, authenticated;
-revoke all on function public.prevent_late_team_creation() from public, anon, authenticated;
 revoke all on function public.delete_team_atomic(uuid, uuid) from public, anon, authenticated;
 revoke all on function public.replace_captain_invitation_atomic(uuid, uuid, text, text, text, timestamptz) from public, anon, authenticated;
 revoke all on function public.delete_judging_round_atomic(uuid, uuid) from public, anon, authenticated;
@@ -2019,7 +1995,6 @@ grant execute on function public.reorder_challenges_atomic(uuid, jsonb) to servi
 grant execute on function public.clear_judge_assignments_atomic(uuid) to service_role;
 grant execute on function public.modify_team_member_atomic(uuid, uuid, text, text) to service_role;
 grant execute on function public.prevent_team_delete_with_projects() to service_role;
-grant execute on function public.prevent_late_team_creation() to service_role;
 grant execute on function public.delete_team_atomic(uuid, uuid) to service_role;
 grant execute on function public.replace_captain_invitation_atomic(uuid, uuid, text, text, text, timestamptz) to service_role;
 grant execute on function public.delete_judging_round_atomic(uuid, uuid) to service_role;
