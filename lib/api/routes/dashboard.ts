@@ -1187,6 +1187,8 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
     },
   })
   .get("/webmcp/attendee-events/:slug", async ({ principal, params, set }) => {
+    set.headers["Cache-Control"] = "private, no-store"
+    set.headers.Vary = "Cookie, Authorization"
     requirePrincipal(principal, ["user"])
 
     const limit = await checkRateLimit(
@@ -1266,8 +1268,6 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       pendingInviteCount: teamInfo.pendingInvitations.length,
     })?.message ?? null
 
-    set.headers["Cache-Control"] = "private, no-store"
-    set.headers.Vary = "Cookie, Authorization"
     return {
       guide: {
         name: hackathon.name,

@@ -776,6 +776,11 @@ describe("POST /api/dashboard/hackathons", () => {
 })
 
 describe("GET /api/dashboard/webmcp/attendee-events/:slug", () => {
+  const expectPrivateNoStore = (response: Response) => {
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store")
+    expect(response.headers.get("Vary")).toBe("Cookie, Authorization")
+  }
+
   const publicHackathon = {
     id: "event-1",
     slug: "agent-jam",
@@ -852,12 +857,23 @@ describe("GET /api/dashboard/webmcp/attendee-events/:slug", () => {
     }])
   })
 
+  it("keeps unauthenticated errors private and non-cacheable", async () => {
+    mockResolvePrincipal.mockResolvedValueOnce({ kind: "anon" })
+    const response = await app.handle(new Request(
+      "http://localhost/api/dashboard/webmcp/attendee-events/agent-jam",
+    ))
+
+    expect(response.status).toBe(401)
+    expectPrivateNoStore(response)
+  })
+
   it("rejects a signed-in user who is not an attendee", async () => {
     mockGetRegistrationInfo.mockResolvedValue({ participantRole: "judge" })
     const response = await app.handle(new Request(
       "http://localhost/api/dashboard/webmcp/attendee-events/agent-jam",
     ))
     expect(response.status).toBe(403)
+    expectPrivateNoStore(response)
     expect(await response.json()).toMatchObject({ code: "not_attendee" })
     expect(mockGetParticipantTeamInfo).not.toHaveBeenCalled()
     expect(mockGetSubmissionForParticipant).not.toHaveBeenCalled()
@@ -873,12 +889,14 @@ describe("GET /api/dashboard/webmcp/attendee-events/:slug", () => {
       "http://localhost/api/dashboard/webmcp/attendee-events/agent-jam",
     ))
     expect(throttled.status).toBe(429)
+    expectPrivateNoStore(throttled)
 
     mockGetPublicHackathon.mockResolvedValueOnce(null)
     const missing = await app.handle(new Request(
       "http://localhost/api/dashboard/webmcp/attendee-events/missing",
     ))
     expect(missing.status).toBe(404)
+    expectPrivateNoStore(missing)
     expect(await missing.json()).toMatchObject({ code: "not_found" })
 
     mockGetParticipantTeamInfo.mockResolvedValueOnce(null)
@@ -886,6 +904,7 @@ describe("GET /api/dashboard/webmcp/attendee-events/:slug", () => {
       "http://localhost/api/dashboard/webmcp/attendee-events/agent-jam",
     ))
     expect(changed.status).toBe(409)
+    expectPrivateNoStore(changed)
     expect(await changed.json()).toMatchObject({ code: "event_changed" })
   })
 
@@ -895,8 +914,7 @@ describe("GET /api/dashboard/webmcp/attendee-events/:slug", () => {
     ))
     const body = await response.json()
     expect(response.status).toBe(200)
-    expect(response.headers.get("Cache-Control")).toBe("private, no-store")
-    expect(response.headers.get("Vary")).toBe("Cookie, Authorization")
+    expectPrivateNoStore(response)
     expect(body).toMatchObject({
       guide: {
         rules: "Be kind.",
