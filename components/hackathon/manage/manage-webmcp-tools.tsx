@@ -13,6 +13,8 @@ import type {
   ManageWebMcpOptimisticChange,
 } from "@/lib/webmcp/manage-optimistic-state"
 import { WebMcpActionRegistry } from "@/lib/webmcp/action-registry"
+import { dispatchPrepareSponsorAction } from "@/lib/webmcp/client-events"
+import { WebMcpRequestError } from "@/lib/webmcp/fetch"
 import { useActionItems } from "./action-items-context"
 
 type ManageHackathonWebMcpToolsProps = {
@@ -195,6 +197,14 @@ export function ManageHackathonWebMcpTools({
     (status: string) => triggerTransition(status),
     [triggerTransition],
   )
+  const onPrepareSponsor = useCallback(async (name: string) => {
+    const href = `/e/${context.hackathon.slug}/manage?tab=edit`
+    const opened = await onNavigate(href, "sponsors")
+    if (!opened) return false
+    const outcome = dispatchPrepareSponsorAction(name)
+    if (!outcome.ok) throw new WebMcpRequestError(outcome.error)
+    return true
+  }, [context.hackathon.slug, onNavigate])
   const [actionRegistry] = useState(
     () =>
       new WebMcpActionRegistry<
@@ -237,12 +247,13 @@ export function ManageHackathonWebMcpTools({
           onReverted: (optimistic, message) =>
             actionRegistry.dispatch("reverted", { optimistic, message }),
           onNavigate,
+          onPrepareSponsor,
           onOpenTransition: (status) =>
             actionRegistry.dispatch("openTransition", status),
         },
         registrationStatus,
       ),
-    [actionRegistry, onNavigate, registrationStatus],
+    [actionRegistry, onNavigate, onPrepareSponsor, registrationStatus],
   )
 
   useWebMcpTools(tools)

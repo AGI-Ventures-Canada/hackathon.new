@@ -1186,6 +1186,165 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       description: "Lists hackathons the user is participating in. Clerk-only.",
     },
   })
+  .get("/webmcp/attendee-events/:slug", async ({ principal, params, set }) => {
+    requirePrincipal(principal, ["user"])
+
+    const limit = await checkRateLimit(
+      `webmcp_attendee_event:${principal.userId}`,
+      { maxRequests: 60, windowMs: 60_000 },
+      { failureMode: "closed" },
+    )
+    if (!limit.allowed) throw new RateLimitError(limit.resetAt, limit.remaining)
+
+    const { getPublicHackathon } = await import("@/lib/services/public-hackathons")
+    const hackathon = await getPublicHackathon(params.slug)
+    if (!hackathon) {
+      set.status = 404
+      return { error: "Event not found", code: "not_found" }
+    }
+
+    const { getRegistrationInfo, getParticipantCount, getParticipantTeamInfo } = await import("@/lib/services/hackathons")
+    const registration = await getRegistrationInfo(hackathon.id, principal.userId)
+    if (registration.participantRole !== "participant") {
+      set.status = 403
+      return { error: "Only registered attendees can use this event workspace", code: "not_attendee" }
+    }
+
+    const [participantCount, teamInfo, submission, scheduleItems, announcements, challenges] = await Promise.all([
+      getParticipantCount(hackathon.id),
+      getParticipantTeamInfo(hackathon.id, principal.userId),
+      import("@/lib/services/submissions").then((module) =>
+        module.getSubmissionForParticipant(hackathon.id, principal.userId),
+      ),
+      import("@/lib/services/schedule-items").then((module) =>
+        module.listScheduleItems(hackathon.id),
+      ),
+      import("@/lib/services/announcements").then((module) =>
+        module.listPublishedAnnouncements(hackathon.id),
+      ),
+      import("@/lib/services/challenges").then((module) =>
+        module.listChallenges(hackathon.id),
+      ),
+    ])
+
+    if (!teamInfo) {
+      set.status = 409
+      return { error: "Your attendee record changed. Refresh and try again.", code: "event_changed" }
+    }
+
+    const { filterAnnouncementsForViewer } = await import("@/lib/services/announcements")
+    const visibleAnnouncements = filterAnnouncementsForViewer(announcements, {
+      role: "participant",
+      hasSubmitted: submission?.status === "submitted",
+    })
+    const pendingTeam = teamInfo.team.status === "pending_approval"
+    const disbandedTeam = teamInfo.team.status === "disbanded"
+    const visibleChallenges = pendingTeam || !hackathon.challenge_released_at
+      ? []
+      : challenges
+    const submissionDeadline = scheduleItems.find(
+      (item) => item.trigger_type === "submission_deadline",
+    )?.starts_at ?? hackathon.ends_at
+    const status = getEffectiveStatus(hackathon)
+    const submissionsOpen = status === "active" && Boolean(
+      submissionDeadline && new Date(submissionDeadline).getTime() > Date.now(),
+    )
+    const nextStep = disbandedTeam
+      ? "Your team is no longer active. Ask the organizer if you need help."
+      : pendingTeam
+        ? "Wait for team approval. You can keep preparing your project."
+        : submissionsOpen
+          ? "Review your project, then submit it."
+          : status === "active"
+            ? "The project deadline has passed."
+            : "Check the schedule for what happens next."
+    const { getTeamSizeWarning } = await import("@/lib/utils/team-size")
+    const teamSizeWarning = getTeamSizeWarning({
+      memberCount: teamInfo.members.length,
+      minTeamSize: hackathon.min_team_size,
+      allowSolo: hackathon.allow_solo,
+      pendingInviteCount: teamInfo.pendingInvitations.length,
+    })?.message ?? null
+
+    set.headers["Cache-Control"] = "private, no-store"
+    set.headers.Vary = "Cookie, Authorization"
+    return {
+      guide: {
+        name: hackathon.name,
+        slug: hackathon.slug,
+        description: hackathon.description,
+        rules: hackathon.rules,
+        status,
+        startsAt: hackathon.starts_at,
+        endsAt: hackathon.ends_at,
+        locationType: hackathon.location_type,
+        locationName: hackathon.location_name,
+        locationUrl: hackathon.location_url,
+        organizerName: hackathon.organizer.name,
+        schedule: scheduleItems.map((item) => ({
+          title: item.title,
+          startsAt: item.starts_at,
+          endsAt: item.ends_at,
+          location: item.location,
+        })),
+        announcements: visibleAnnouncements.map((announcement) => ({
+          title: announcement.title,
+          body: announcement.body,
+          priority: announcement.priority,
+        })),
+        challenges: visibleChallenges.map((challenge) => ({
+          title: challenge.title,
+          description: challenge.description,
+          resourceCount: challenge.resources.length,
+        })),
+        resultsPublished: Boolean(hackathon.results_published_at),
+      },
+      viewer: {
+        signedIn: true,
+        registered: true,
+        role: "participant",
+        participantCount,
+        nextStep,
+        sponsor: null,
+        team: {
+          name: teamInfo.team.name,
+          status: teamInfo.team.status,
+          isCaptain: teamInfo.isCaptain,
+          memberNames: teamInfo.members.map((member) => member.displayName || "Teammate"),
+          memberCount: teamInfo.members.length,
+          pendingInviteCount: teamInfo.pendingInvitations.length,
+          maxTeamSize: hackathon.max_team_size,
+        },
+        project: submission ? {
+          title: submission.title,
+          status: submission.status,
+          hasGithubUrl: Boolean(submission.github_url),
+          hasLiveAppUrl: Boolean(submission.live_app_url),
+          hasDemoVideoUrl: Boolean(submission.demo_video_url),
+        } : null,
+      },
+      projectReview: {
+        submission: submission ? {
+          title: submission.title,
+          description: submission.description,
+          github_url: submission.github_url,
+          live_app_url: submission.live_app_url,
+          demo_video_url: submission.demo_video_url,
+          screenshot_url: submission.screenshot_url,
+          status: submission.status,
+          metadata: submission.metadata,
+        } : null,
+        submissionDeadline,
+        teamSizeWarning,
+        teamStatus: teamInfo.team.status,
+      },
+    }
+  }, {
+    detail: {
+      summary: "Get attendee WebMCP event context",
+      description: "Returns current, role-filtered event, team, and project-review data for one registered attendee. Clerk-only.",
+    },
+  })
   .get("/hackathons/sponsored", async ({ principal, query }) => {
     requirePrincipal(principal, ["user"])
 

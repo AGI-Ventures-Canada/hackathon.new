@@ -3,6 +3,7 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react"
 import { useEffect, type ReactNode } from "react"
 import type { PublicHackathon } from "@/lib/services/public-hackathons"
 import type { ParticipantTeamInfo } from "@/lib/services/hackathons"
+import { dispatchPrepareSponsorAction } from "@/lib/webmcp/client-events"
 
 type Props = Record<string, unknown>
 
@@ -10,6 +11,8 @@ let captures: Record<string, Props> = {}
 let editable = false
 let editMode = false
 let canInvite = true
+let activeSection: string | null = null
+const openSection = mock(() => {})
 
 const manageView = {
   details: { name: "Agent Build Day", description: "Agent description" },
@@ -98,8 +101,8 @@ mock.module("@/components/hackathon/preview/edit-context", () => ({
   useEdit: () => ({
     isEditable: editable,
     editMode,
-    activeSection: null,
-    openSection: mock(() => {}),
+    activeSection,
+    openSection,
     closeDrawer: mock(() => {}),
   }),
   SECTION_ORDER: ["name", "dates", "location", "about"],
@@ -298,8 +301,10 @@ beforeEach(() => {
   editable = false
   editMode = false
   canInvite = true
+  activeSection = null
   actionItems.registerTabAction.mockClear()
   actionItems.unregisterTabAction.mockClear()
+  openSection.mockClear()
 })
 
 afterEach(cleanup)
@@ -316,6 +321,23 @@ describe("HackathonPreviewClient WebMCP convergence", () => {
     render(preview(baseHackathon, true))
 
     expect(screen.getByRole("button", { name: "Community" })).toBeDefined()
+  })
+
+  it("prepares a sponsor only for the organizer preview", () => {
+    const view = render(preview(baseHackathon, false))
+    expect(dispatchPrepareSponsorAction("Acme")).toMatchObject({
+      ok: false,
+      error: { code: "preparation_unavailable" },
+    })
+    expect(openSection).not.toHaveBeenCalled()
+
+    view.rerender(preview(baseHackathon, true))
+    expect(dispatchPrepareSponsorAction("Acme")).toEqual({ ok: true })
+    expect(openSection).toHaveBeenCalledWith("sponsors")
+    activeSection = "sponsors"
+    editMode = true
+    view.rerender(preview(baseHackathon, true))
+    expect(captures["sponsors-form"].preparedName).toBe("Acme")
   })
 
   it("does not tell captains they can invite after invitations close", () => {

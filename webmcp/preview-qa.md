@@ -19,9 +19,10 @@ Record the handoff owner and rotation date in the private submission record. Rot
 
 | Surface | States to prove | Required evidence |
 |---|---|---|
+| Signed-in workspace | Home, participating, organizing, and unrelated dashboard pages as attendee and organizer | Stable global tool list, opaque event refs, attendee rules/status/project review without event navigation, organizer to-do list and create navigation |
 | Create/import | Signed out, refresh, two tabs, sign-in/sign-up/SSO continuation, organization setup, full review, one human create click, failed navigation recovery | Tool list, visible field changes, no lost draft, safe conflict/retry link, one create request, no duplicate child records |
 | Public event | Visitor, unregistered attendee, captain, pending team, submitted project | Dynamic tool list, published-only guide, invitation/project preparation, human final actions |
-| Organizer | Draft, registration, active, judging, completed, stale event version | Correct tool appearance/removal, optimistic visible edits, server `409 event_changed`, no email or publish side effect |
+| Organizer | Draft, registration, active, judging, completed, stale event version, sponsor prep from every manage tab | Correct tool appearance/removal, optimistic visible edits, sponsor editor opens with the name filled, server `409 event_changed`, no email or publish side effect |
 | Judge | Weighted score, judges' picks, bucket sort, gate checks, anonymous mode | Only the matching prepare tool, opaque refs, no hidden identity, zero prepare requests, one human save request |
 | Mentor | Public counts, verified queue, open, claimed by me, claimed by someone else, claim race | No public request text, exact role check, human claim/finish, stable conflict codes |
 | Sponsor | Signed out, verified sponsor, assigned prize, pending claim, fulfilled claim | Published-only data, exact sponsor access, no other sponsor details, human claim/fulfillment actions |

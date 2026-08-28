@@ -4,7 +4,6 @@ import { useCallback, useMemo, useState } from "react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useEventLifecycleClock } from "@/hooks/use-event-lifecycle-clock"
 import { useWebMcpTools } from "@/hooks/use-webmcp-tools"
-import { isHttpsUrlWithoutCredentials, normalizeUrl } from "@/lib/utils/url"
 import {
   dispatchPrepareProjectAction,
   dispatchPrepareTeamInviteAction,
@@ -15,6 +14,8 @@ import {
   createEventAttendeeTools,
   getProjectCapabilities,
   getProjectDraftNextStep,
+  normalizePreparedProjectDraft,
+  parsePreparedProjectDraft,
   type EventGuideContext,
   type EventViewerContext,
   type PreparedProjectDraft,
@@ -36,76 +37,6 @@ type EventWebMcpToolsProps = {
   isOrganizer: boolean
   viewerUserId: string | null
   submissionDeadline?: string | null
-}
-
-function parseProjectDraft(raw: string | null): PreparedProjectDraft | null {
-  if (!raw) return null
-  try {
-    const parsed = JSON.parse(raw) as Partial<PreparedProjectDraft>
-    if (
-      typeof parsed.title !== "string" ||
-      typeof parsed.githubUrl !== "string" ||
-      typeof parsed.liveAppUrl !== "string" ||
-      typeof parsed.demoVideoUrl !== "string" ||
-      typeof parsed.description !== "string"
-    ) {
-      return null
-    }
-    return {
-      title: parsed.title.slice(0, 100),
-      githubUrl: parsed.githubUrl.slice(0, 2_048),
-      liveAppUrl: parsed.liveAppUrl.slice(0, 2_048),
-      demoVideoUrl: parsed.demoVideoUrl.slice(0, 2_048),
-      description: parsed.description.slice(0, 280),
-    }
-  } catch {
-    return null
-  }
-}
-
-function normalizeProjectDraft(draft: PreparedProjectDraft): PreparedProjectDraft {
-  try {
-    const githubUrl = normalizeUrl(draft.githubUrl)
-    const github = new URL(githubUrl)
-    if (
-      !isHttpsUrlWithoutCredentials(githubUrl) ||
-      !["github.com", "www.github.com"].includes(github.hostname)
-    ) {
-      throw new WebMcpRequestError({
-        code: "invalid_github_url",
-        message: "Use a GitHub repository URL.",
-        retryable: false,
-      })
-    }
-
-    const normalizeOptional = (value: string) => {
-      if (!value.trim()) return ""
-      const normalized = normalizeUrl(value)
-      if (!isHttpsUrlWithoutCredentials(normalized)) {
-        throw new WebMcpRequestError({
-          code: "invalid_url",
-          message: "Project and video links must use HTTPS.",
-          retryable: false,
-        })
-      }
-      return normalized
-    }
-
-    return {
-      title: draft.title.trim(),
-      githubUrl,
-      liveAppUrl: normalizeOptional(draft.liveAppUrl),
-      demoVideoUrl: normalizeOptional(draft.demoVideoUrl),
-      description: draft.description.trim(),
-    }
-  } catch (error) {
-    if (error instanceof WebMcpRequestError) throw error
-    throw new WebMcpRequestError({
-      code: "invalid_url",
-      message: "Check the project links and try again.",
-      retryable: false,
-    })
-  }
 }
 
 export function EventWebMcpTools({
@@ -180,12 +111,14 @@ export function EventWebMcpTools({
   }, [])
 
   const getProjectDraft = useCallback(() => {
-    return parseProjectDraft(readProjectDraft(localStorage, guide.slug, viewerUserId))
+    return parsePreparedProjectDraft(
+      readProjectDraft(localStorage, guide.slug, viewerUserId),
+    )
   }, [guide.slug, viewerUserId])
 
   const prepareProject = useCallback((input: PreparedProjectDraft) => {
-    const draft = normalizeProjectDraft(input)
-    const outcome = dispatchPrepareProjectAction(draft)
+    const draft = normalizePreparedProjectDraft(input)
+    const outcome = dispatchPrepareProjectAction(guide.slug, draft)
     if (!outcome.ok) {
       throw new WebMcpRequestError(outcome.error)
     }
@@ -205,7 +138,7 @@ export function EventWebMcpTools({
       openedReview: canOpenProjectReview,
       nextStep,
     }
-  }, [canOpenProjectReview, effectiveStatus, submissionsOpen, viewer])
+  }, [canOpenProjectReview, effectiveStatus, guide.slug, submissionsOpen, viewer])
 
   const preparedProjectNextStep = getProjectDraftNextStep({
     signedIn: viewer.signedIn,
