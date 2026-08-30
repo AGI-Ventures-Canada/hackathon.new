@@ -15,6 +15,7 @@ import { listScheduleItems, getSubmissionDeadline } from "@/lib/services/schedul
 import { getOrganizerActionItems } from "@/lib/utils/organizer-actions"
 import { getEventLifecycleAlerts } from "@/lib/utils/event-lifecycle-alerts"
 import { getNotificationDisposition } from "@/lib/utils/notification-lifecycle"
+import { hasRegistrationOpened } from "@/lib/utils/team-invite"
 import type { HackathonStatus } from "@/lib/db/hackathon-types"
 import { VALID_TABS, VALID_ETABS, VALID_MTABS, VALID_JTABS, VALID_PTABS, DEFAULT_TAB, DEFAULT_MTAB, DEFAULT_JTAB, DEFAULT_PTAB, resolveTab } from "@/lib/utils/manage-tabs"
 import { HackathonPreviewClient } from "@/components/hackathon/preview/hackathon-preview-client"
@@ -84,6 +85,10 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     starts_at: hackathon.starts_at,
     ends_at: hackathon.ends_at,
   })
+  const teamInvitationQueueReason = notificationDisposition === "send" &&
+    !hasRegistrationOpened(hackathon.registration_opens_at, new Date().toISOString())
+    ? "registration_not_open"
+    : "event_draft"
 
   const [
     submissions,
@@ -510,6 +515,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
                 requireTeamApproval={hackathon.require_team_approval ?? false}
                 hackathonStatus={hackathon.stored_status ?? hackathon.status}
                 notificationDisposition={notificationDisposition}
+                queueReason={teamInvitationQueueReason}
               />
             </TabsContent>
 

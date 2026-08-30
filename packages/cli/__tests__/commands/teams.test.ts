@@ -95,6 +95,23 @@ describe("teams commands", () => {
       expect(consoleLogSpy.mock.calls[0][0]).toContain("This event is still a draft")
       expect(consoleLogSpy.mock.calls[0][0]).toContain("when you go live")
     })
+
+    it("reports when a captain invite waits for registration", async () => {
+      mockFetch.mockResolvedValueOnce(jsonResponse({
+        team: { id: "t1", name: "Alpha" },
+        invited: true,
+        queued: true,
+        delivery: "queued",
+        queueReason: "registration_not_open",
+      }))
+      const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
+      const { runTeamsCreate } = await import("../../src/commands/teams/create")
+
+      await runTeamsCreate(client, hackathonId, ["--name", "Alpha", "--captain-email", "captain@example.com"])
+
+      expect(consoleLogSpy.mock.calls[0][0]).toContain("Registration isn't open yet")
+      expect(consoleLogSpy.mock.calls[0][0]).toContain("when registration opens")
+    })
   })
 
   describe("update", () => {

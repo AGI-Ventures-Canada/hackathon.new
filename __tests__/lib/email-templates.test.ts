@@ -21,6 +21,7 @@ import SubmissionExportReadyEmail from "@/emails/submission-export-ready"
 import TeamApprovedEmail from "@/emails/team-approved"
 import TeamDeniedEmail from "@/emails/team-denied"
 import TeamInvitationReminderEmail from "@/emails/team-invitation-reminder"
+import RegistrationConfirmationEmail from "@/emails/registration-confirmation"
 
 describe("Email Template Rendering", () => {
   it("renders the shared Oatmeal card, wordmark, CTA, and info-box styles", async () => {
@@ -53,6 +54,7 @@ describe("Email Template Rendering", () => {
       PostEventReminderEmail(PostEventReminderEmail.PreviewProps),
       PreEventReminderEmail(PreEventReminderEmail.PreviewProps),
       PrizeShippedEmail(PrizeShippedEmail.PreviewProps),
+      RegistrationConfirmationEmail(RegistrationConfirmationEmail.PreviewProps),
       ResultsAnnouncementEmail(ResultsAnnouncementEmail.PreviewProps),
       SponsorClaimNotificationEmail(SponsorClaimNotificationEmail.PreviewProps),
       SubmissionConfirmationEmail(SubmissionConfirmationEmail.PreviewProps),

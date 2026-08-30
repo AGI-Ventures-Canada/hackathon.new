@@ -1,19 +1,20 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test"
 import {
   createChainableMock,
-  mockClerkClient,
   resetSupabaseMocks,
-  resetClerkMocks,
   setMockFromImplementation,
   setMockRpcImplementation,
 } from "../lib/supabase-mock"
 
-const mockSendTeamDeniedEmail = mock(() => Promise.resolve({ success: true }))
-const mockSendTeamApprovedEmail = mock(() => Promise.resolve({ success: true }))
+const mockDeliverAttendeeLifecycleEmailsForUser = mock(() => Promise.resolve({
+  attempted: 1,
+  sent: 1,
+  skipped: 0,
+  failed: 0,
+}))
 
-mock.module("@/lib/email/team-review", () => ({
-  sendTeamApprovedEmail: mockSendTeamApprovedEmail,
-  sendTeamDeniedEmail: mockSendTeamDeniedEmail,
+mock.module("@/lib/services/attendee-lifecycle-notifications", () => ({
+  deliverAttendeeLifecycleEmailsForUser: mockDeliverAttendeeLifecycleEmailsForUser,
 }))
 
 const {
@@ -212,26 +213,16 @@ describe("setTeamCaptain", () => {
 describe("team approvals", () => {
   beforeEach(() => {
     resetSupabaseMocks()
-    resetClerkMocks()
-    mockSendTeamApprovedEmail.mockClear()
-    mockSendTeamApprovedEmail.mockResolvedValue({ success: true })
-    mockSendTeamDeniedEmail.mockClear()
-    mockSendTeamDeniedEmail.mockResolvedValue({ success: true })
+    mockDeliverAttendeeLifecycleEmailsForUser.mockClear()
+    mockDeliverAttendeeLifecycleEmailsForUser.mockResolvedValue({
+      attempted: 1,
+      sent: 1,
+      skipped: 0,
+      failed: 0,
+    })
   })
 
   it("approves a pending team", async () => {
-    setMockFromImplementation(
-      tableImpl({
-        hackathons: { data: { name: "Hack One", slug: "hack-one" }, error: null },
-        hackathon_participants: {
-          data: [
-            { clerk_user_id: "user_1" },
-            { clerk_user_id: "user_2" },
-          ],
-          error: null,
-        },
-      })
-    )
     setMockRpcImplementation(() =>
       Promise.resolve({
         data: [{
@@ -246,61 +237,25 @@ describe("team approvals", () => {
         error: null,
       })
     )
-    const mockGetUserList = mock(() =>
-      Promise.resolve({
-        data: [
-          { primaryEmailAddress: { emailAddress: "one@example.com" }, emailAddresses: [] },
-          { primaryEmailAddress: { emailAddress: "two@example.com" }, emailAddresses: [] },
-        ],
-      })
-    )
-    mockClerkClient.mockImplementation(() =>
-      Promise.resolve({
-        organizations: {
-          getOrganization: mock(() => Promise.resolve({ name: "Test Org" })),
-        },
-        users: {
-          getUserList: mockGetUserList,
-        },
-      })
-    )
-
     const result = await approvePendingTeam("team_1", "h_1")
     expect(result).toEqual({
       success: true,
       team: { id: "team_1", name: "Team One", status: "forming" },
       membersNotified: 2,
     })
-    expect(mockSendTeamApprovedEmail).toHaveBeenCalledTimes(2)
-    expect(mockSendTeamApprovedEmail).toHaveBeenNthCalledWith(1, {
-      to: "one@example.com",
-      teamId: "team_1",
-      teamName: "Team One",
-      hackathonName: "Hack One",
-      hackathonSlug: "hack-one",
-    })
-    expect(mockSendTeamApprovedEmail).toHaveBeenNthCalledWith(2, {
-      to: "two@example.com",
-      teamId: "team_1",
-      teamName: "Team One",
-      hackathonName: "Hack One",
-      hackathonSlug: "hack-one",
-    })
-    expect(mockGetUserList).toHaveBeenCalledWith({ userId: ["user_1", "user_2"], limit: 100 })
+    expect(mockDeliverAttendeeLifecycleEmailsForUser.mock.calls).toEqual([
+      ["h_1", "user_1", "team_approved"],
+      ["h_1", "user_2", "team_approved"],
+    ])
   })
 
-  it("does not email team members while the hackathon is a draft", async () => {
-    setMockFromImplementation(
-      tableImpl({
-        hackathons: { data: { name: "Hack One", slug: "hack-one", status: "draft" }, error: null },
-        hackathon_participants: {
-          data: [
-            { clerk_user_id: "user_1" },
-          ],
-          error: null,
-        },
-      })
-    )
+  it("keeps a draft team decision queued for retry", async () => {
+    mockDeliverAttendeeLifecycleEmailsForUser.mockResolvedValue({
+      attempted: 0,
+      sent: 0,
+      skipped: 0,
+      failed: 0,
+    })
     setMockRpcImplementation(() =>
       Promise.resolve({
         data: [{
@@ -323,24 +278,14 @@ describe("team approvals", () => {
       team: { id: "team_1", name: "Team One", status: "forming" },
       membersNotified: 0,
     })
-    expect(mockClerkClient).not.toHaveBeenCalled()
-    expect(mockSendTeamApprovedEmail).not.toHaveBeenCalled()
+    expect(mockDeliverAttendeeLifecycleEmailsForUser).toHaveBeenCalledWith(
+      "h_1",
+      "user_1",
+      "team_approved",
+    )
   })
 
-  it("sends one approval email per unique member email", async () => {
-    setMockFromImplementation(
-      tableImpl({
-        hackathons: { data: { name: "Hack One", slug: "hack-one" }, error: null },
-        hackathon_participants: {
-          data: [
-            { clerk_user_id: "user_1" },
-            { clerk_user_id: "user_2" },
-            { clerk_user_id: "user_3" },
-          ],
-          error: null,
-        },
-      })
-    )
+  it("delivers one approval email per unique member", async () => {
     setMockRpcImplementation(() =>
       Promise.resolve({
         data: [{
@@ -350,30 +295,11 @@ describe("team approvals", () => {
           team_id: "team_1",
           team_name: "Team One",
           team_status: "forming",
-          member_clerk_user_ids: ["user_1", "user_2", "user_3"],
+          member_clerk_user_ids: ["user_1", "user_1", "user_2"],
         }],
         error: null,
       })
     )
-    mockClerkClient.mockImplementation(() =>
-      Promise.resolve({
-        organizations: {
-          getOrganization: mock(() => Promise.resolve({ name: "Test Org" })),
-        },
-        users: {
-          getUserList: mock(() =>
-            Promise.resolve({
-              data: [
-                { primaryEmailAddress: { emailAddress: "one@example.com" }, emailAddresses: [] },
-                { primaryEmailAddress: { emailAddress: " One@example.com " }, emailAddresses: [] },
-                { primaryEmailAddress: { emailAddress: "two@example.com" }, emailAddresses: [] },
-              ],
-            })
-          ),
-        },
-      })
-    )
-
     const result = await approvePendingTeam("team_1", "h_1")
 
     expect(result).toEqual({
@@ -381,10 +307,9 @@ describe("team approvals", () => {
       team: { id: "team_1", name: "Team One", status: "forming" },
       membersNotified: 2,
     })
-    expect(mockSendTeamApprovedEmail).toHaveBeenCalledTimes(2)
-    expect(mockSendTeamApprovedEmail.mock.calls.map((call) => call[0].to)).toEqual([
-      "one@example.com",
-      "two@example.com",
+    expect(mockDeliverAttendeeLifecycleEmailsForUser.mock.calls).toEqual([
+      ["h_1", "user_1", "team_approved"],
+      ["h_1", "user_2", "team_approved"],
     ])
   })
 
@@ -409,11 +334,6 @@ describe("team approvals", () => {
   })
 
   it("denies a pending team and unassigns people", async () => {
-    setMockFromImplementation(
-      tableImpl({
-        hackathons: { data: { name: "Hack One", slug: "hack-one" }, error: null },
-      })
-    )
     setMockRpcImplementation(() =>
       Promise.resolve({
         data: [{
@@ -431,25 +351,6 @@ describe("team approvals", () => {
         error: null,
       })
     )
-    const mockGetUserList = mock(() =>
-      Promise.resolve({
-        data: [
-          { primaryEmailAddress: { emailAddress: "one@example.com" }, emailAddresses: [] },
-          { primaryEmailAddress: { emailAddress: "two@example.com" }, emailAddresses: [] },
-        ],
-      })
-    )
-    mockClerkClient.mockImplementation(() =>
-      Promise.resolve({
-        organizations: {
-          getOrganization: mock(() => Promise.resolve({ name: "Test Org" })),
-        },
-        users: {
-          getUserList: mockGetUserList,
-        },
-      })
-    )
-
     const result = await denyPendingTeam("team_1", "h_1")
     expect(result).toEqual({
       success: true,
@@ -458,22 +359,10 @@ describe("team approvals", () => {
       invitesCancelled: 1,
       membersNotified: 2,
     })
-    expect(mockSendTeamDeniedEmail).toHaveBeenCalledTimes(2)
-    expect(mockSendTeamDeniedEmail).toHaveBeenNthCalledWith(1, {
-      to: "one@example.com",
-      teamId: "team_1",
-      teamName: "Team One",
-      hackathonName: "Hack One",
-      hackathonSlug: "hack-one",
-    })
-    expect(mockSendTeamDeniedEmail).toHaveBeenNthCalledWith(2, {
-      to: "two@example.com",
-      teamId: "team_1",
-      teamName: "Team One",
-      hackathonName: "Hack One",
-      hackathonSlug: "hack-one",
-    })
-    expect(mockGetUserList).toHaveBeenCalledWith({ userId: ["user_1", "user_2"], limit: 100 })
+    expect(mockDeliverAttendeeLifecycleEmailsForUser.mock.calls).toEqual([
+      ["h_1", "user_1", "team_denied"],
+      ["h_1", "user_2", "team_denied"],
+    ])
   })
 
   it("returns not_pending from the deny RPC", async () => {
@@ -528,7 +417,7 @@ describe("team approvals", () => {
     const result = await denyPendingTeamsForClosedHackathon("h_1")
 
     expect(result).toEqual({ denied: 2, failed: [] })
-    expect(mockSendTeamDeniedEmail).not.toHaveBeenCalled()
+    expect(mockDeliverAttendeeLifecycleEmailsForUser).not.toHaveBeenCalled()
   })
 
   it("reports pending closeout failures without stopping later teams", async () => {

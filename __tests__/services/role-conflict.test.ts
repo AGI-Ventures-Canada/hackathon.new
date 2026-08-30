@@ -5,7 +5,9 @@ import {
   setMockFromImplementation,
 } from "../lib/supabase-mock"
 
-const { checkRoleConflict } = await import("@/lib/services/role-conflict")
+const { checkRoleConflict, isParticipantRoleUnavailable } = await import(
+  "@/lib/services/role-conflict"
+)
 
 describe("checkRoleConflict", () => {
   beforeEach(() => {
@@ -79,6 +81,13 @@ describe("checkRoleConflict", () => {
       expect(result.error).not.toContain("judge")
       expect(result.existingRole).toBe("judge")
     }
+  })
+
+  it("allows only the attendee role to join a team", () => {
+    expect(isParticipantRoleUnavailable("participant")).toBe(false)
+    expect(isParticipantRoleUnavailable("judge")).toBe(true)
+    expect(isParticipantRoleUnavailable("mentor")).toBe(true)
+    expect(isParticipantRoleUnavailable("organizer")).toBe(true)
   })
 
   it("returns no conflict when user is participant targeting participant", async () => {

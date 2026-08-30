@@ -170,6 +170,37 @@ describe("createTeamWithMembers", () => {
       expect(mockScheduleReminders).toHaveBeenCalledTimes(1)
     })
 
+    it("holds a published event invite until registration opens", async () => {
+      mockClerkUserList([])
+      setMockFromImplementation(
+        tableImpl({
+          hackathons: {
+            data: {
+              name: "H",
+              slug: "h",
+              status: "published",
+              starts_at: "2099-06-01T00:00:00Z",
+              ends_at: "2099-06-02T00:00:00Z",
+              registration_opens_at: "2099-05-01T00:00:00Z",
+            },
+            error: null,
+          },
+          teams: { data: { id: "team_1", name: "T" }, error: null },
+          team_invitations: { data: { id: "inv_1" }, error: null },
+        })
+      )
+
+      const result = await createTeamWithMembers("h1", {
+        name: "T",
+        captainEmail: "new@example.com",
+        organizerClerkUserId: "organizer_1",
+      })
+
+      expect("team" in result && result.queued).toBe(true)
+      expect("team" in result && result.queueReason).toBe("registration_not_open")
+      expect(mockSendTeamInvitationEmail).not.toHaveBeenCalled()
+    })
+
     it("keeps a failed live captain invite pending and schedules no reminders", async () => {
       mockClerkUserList([])
       setMockFromImplementation(

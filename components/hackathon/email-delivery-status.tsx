@@ -8,9 +8,15 @@ import {
   type QueueReasonCode,
 } from "@/lib/utils/notification-delivery"
 
-export function QueuedEmailNotice({ count }: { count: number }) {
+export function QueuedEmailNotice({
+  count,
+  reason = "event_draft",
+}: {
+  count: number
+  reason?: QueueReasonCode
+}) {
   if (count <= 0) return null
-  const copy = getQueueReasonText("event_draft")
+  const copy = getQueueReasonText(reason)
   return (
     <Alert>
       <Clock className="size-4" />
@@ -29,22 +35,25 @@ export function InvitationDeliveryBadge({
   remindedAt,
   hackathonStatus,
   notificationDisposition,
+  queueReason = "event_draft",
   state: explicitState,
 }: {
   emailedAt: string | null
   remindedAt: string | null
   hackathonStatus: string | null
   notificationDisposition?: "queue" | "send" | "reject"
+  queueReason?: QueueReasonCode
   state?: NotificationDeliveryState
 }) {
   const state = explicitState ?? getInvitationDeliveryState({
     emailedAt,
     hackathonStatus,
     notificationDisposition,
+    queueReason,
   })
 
   if (state === "queued") {
-    const copy = getQueueReasonText("event_draft")
+    const copy = getQueueReasonText(queueReason)
     return (
       <Badge variant="outline" title={`${copy.reason} ${copy.release}`}>
         <Clock className="mr-1 size-3" />

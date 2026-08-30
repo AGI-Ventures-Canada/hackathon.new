@@ -46,6 +46,15 @@ const mockCreateTeamInvitation = mock(() =>
 const mockListTeamInvitations = mock(() => Promise.resolve({ success: true, invitations: [] }))
 const mockCancelTeamInvitation = mock(() => Promise.resolve({ success: true }))
 const mockCancelOtherPendingTeamInvitations = mock(() => Promise.resolve(0))
+const mockDeliverAttendeeLifecycleEmailsForUser = mock(() => Promise.resolve({
+  attempted: 1,
+  sent: 1,
+  skipped: 0,
+  failed: 0,
+}))
+mock.module("@/lib/services/attendee-lifecycle-notifications", () => ({
+  deliverAttendeeLifecycleEmailsForUser: mockDeliverAttendeeLifecycleEmailsForUser,
+}))
 const mockReleaseTeamInvitationReminderClaim = mock(() => Promise.resolve())
 const mockGetTeamWithHackathon = mock(() =>
   Promise.resolve({
@@ -256,6 +265,13 @@ describe("Team Invitations API Routes", () => {
     mockCancelTeamInvitation.mockResolvedValue({ success: true })
     mockCancelOtherPendingTeamInvitations.mockReset()
     mockCancelOtherPendingTeamInvitations.mockResolvedValue(0)
+    mockDeliverAttendeeLifecycleEmailsForUser.mockReset()
+    mockDeliverAttendeeLifecycleEmailsForUser.mockResolvedValue({
+      attempted: 1,
+      sent: 1,
+      skipped: 0,
+      failed: 0,
+    })
     mockReleaseTeamInvitationReminderClaim.mockReset()
     mockReleaseTeamInvitationReminderClaim.mockResolvedValue()
     mockGetTeamWithHackathon.mockReset()
@@ -382,6 +398,10 @@ describe("Team Invitations API Routes", () => {
       expect(data.success).toBe(true)
       expect(data.teamId).toBe("team_1")
       expect(data.hackathonSlug).toBe("test-hackathon")
+      expect(mockDeliverAttendeeLifecycleEmailsForUser).toHaveBeenCalledWith(
+        "h1",
+        "user_123",
+      )
     })
 
     it("returns error when accept fails", async () => {
@@ -929,6 +949,43 @@ describe("Dashboard Team Invitations Routes", () => {
           }),
         })
       )
+    })
+
+    it("queues invitations until registration opens", async () => {
+      mockGetTeamWithHackathon.mockResolvedValue({
+        name: "Test Team",
+        hackathon: {
+          name: "Test Hackathon",
+          slug: "test-hackathon",
+          starts_at: "2099-06-01T00:00:00Z",
+          ends_at: "2099-06-02T00:00:00Z",
+          registration_opens_at: "2099-05-01T00:00:00Z",
+          status: "published",
+        },
+        memberNames: [],
+      })
+      mockCreateTeamInvitation.mockResolvedValue({
+        success: true,
+        invitation: {
+          id: "inv_1",
+          email: "test@example.com",
+          token: "token123",
+          expires_at: "2099-05-08T00:00:00Z",
+        },
+      })
+
+      const res = await dashboardApp.handle(
+        new Request("http://localhost/api/dashboard/teams/team_1/invitations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ hackathonId: "h1", email: "test@example.com" }),
+        })
+      )
+      const data = await res.json()
+
+      expect(data.delivery).toBe("queued")
+      expect(data.queueReason).toBe("registration_not_open")
+      expect(mockSendTeamInvitationEmail).not.toHaveBeenCalled()
     })
 
     it("keeps a failed immediate send pending and schedules no reminders", async () => {

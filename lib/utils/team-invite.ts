@@ -8,6 +8,18 @@ interface CanInviteTeamMembersInput {
   nowIso: string | null
 }
 
+export function hasRegistrationOpened(
+  registrationOpensAt: string | null | undefined,
+  nowIso: string | null,
+): boolean {
+  if (!nowIso) return false
+  const now = new Date(nowIso).getTime()
+  if (!Number.isFinite(now)) return false
+  if (!registrationOpensAt) return true
+  const opensAt = new Date(registrationOpensAt).getTime()
+  return Number.isFinite(opensAt) && now >= opensAt
+}
+
 export function canInviteTeamMembers({
   isFormingCaptain,
   hackathonStatus,
