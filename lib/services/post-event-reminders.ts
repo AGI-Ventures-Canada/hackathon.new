@@ -17,14 +17,19 @@ export async function schedulePostEventReminders(hackathonId: string): Promise<n
 
   const { data: hackathon, error: hackathonError } = await client
     .from("hackathons")
-    .select("id, name, slug, status, results_published_at, feedback_survey_sent_at, feedback_survey_url")
+    .select("id, name, slug, status, results_published_at, feedback_survey_sent_at, feedback_survey_url, is_test_event")
     .eq("id", hackathonId)
     .single()
 
   if (hackathonError) {
     throw new Error(`Failed to load event for post-event reminders: ${hackathonError.message}`)
   }
-  if (!hackathon || !hackathon.results_published_at || hackathon.status !== "completed") return 0
+  if (
+    !hackathon ||
+    hackathon.is_test_event ||
+    !hackathon.results_published_at ||
+    hackathon.status !== "completed"
+  ) return 0
 
   const now = new Date()
   const reminders: Array<{
@@ -254,7 +259,7 @@ async function validateReminderLifecycle(
   const client = getSupabase() as unknown as SupabaseClient
   const { data, error } = await client
     .from("hackathons")
-    .select("status, results_published_at")
+    .select("status, results_published_at, is_test_event")
     .eq("id", reminder.hackathon_id)
     .maybeSingle()
 
@@ -262,7 +267,11 @@ async function validateReminderLifecycle(
     throw new Error(`Failed to validate post-event reminder: ${error.message}`)
   }
 
-  if (!data?.results_published_at || data.status !== "completed") return "cancel"
+  if (
+    !data?.results_published_at ||
+    data.is_test_event ||
+    data.status !== "completed"
+  ) return "cancel"
 
   const metadata = reminder.metadata as Record<string, unknown>
   const publicationVersion = typeof metadata.publicationVersion === "string"

@@ -25,22 +25,23 @@ describe("StepImport", () => {
   }
 
   describe("choose mode", () => {
-    it("renders two option cards", () => {
+    it("renders all three creation choices with exact labels", () => {
       render(<StepImport {...defaultProps} />)
-      expect(screen.getByText("Start from scratch")).toBeDefined()
-      expect(screen.getByText("Import from URL")).toBeDefined()
+      expect(screen.getByText("Create from scratch")).toBeDefined()
+      expect(screen.getByText("Import from a URL")).toBeDefined()
+      expect(screen.getByText("Create a test event with test data")).toBeDefined()
     })
 
-    it("calls onSkipToScratch when Start from scratch is clicked", () => {
+    it("calls onSkipToScratch when Create from scratch is clicked", () => {
       const onSkipToScratch = mock(() => {})
       render(<StepImport {...defaultProps} onSkipToScratch={onSkipToScratch} />)
-      fireEvent.click(screen.getByText("Start from scratch"))
+      fireEvent.click(screen.getByText("Create from scratch"))
       expect(onSkipToScratch).toHaveBeenCalled()
     })
 
-    it("switches to import mode when Import from URL is clicked", async () => {
+    it("switches to import mode when Import from a URL is clicked", async () => {
       render(<StepImport {...defaultProps} />)
-      fireEvent.click(screen.getByText("Import from URL"))
+      fireEvent.click(screen.getByText("Import from a URL"))
       await waitFor(() => {
         expect(screen.getByText("Paste the event URL")).toBeDefined()
       })
@@ -49,14 +50,49 @@ describe("StepImport", () => {
     it("calls onModeChange when switching to import mode", () => {
       const onModeChange = mock(() => {})
       render(<StepImport {...defaultProps} onModeChange={onModeChange} />)
-      fireEvent.click(screen.getByText("Import from URL"))
+      fireEvent.click(screen.getByText("Import from a URL"))
       expect(onModeChange).toHaveBeenCalledWith("import")
+    })
+
+    it("opens the test event setup and creates the default registration stage", () => {
+      const onCreateTestEvent = mock(() => {})
+      const onModeChange = mock(() => {})
+      render(
+        <StepImport
+          {...defaultProps}
+          onModeChange={onModeChange}
+          onCreateTestEvent={onCreateTestEvent}
+        />,
+      )
+
+      fireEvent.click(screen.getByText("Create a test event with test data"))
+      expect(onModeChange).toHaveBeenCalledWith("test")
+      expect(screen.getByText("Try a full test event")).toBeDefined()
+      expect(screen.getByText("Registration is open")).toBeDefined()
+      fireEvent.click(screen.getByRole("button", { name: "Create test event" }))
+      expect(onCreateTestEvent).toHaveBeenCalledWith("registration")
+    })
+
+    it("uses the requested test stage when opened from a link", () => {
+      const onCreateTestEvent = mock(() => {})
+      render(
+        <StepImport
+          {...defaultProps}
+          initialMode="test"
+          initialTestStage="judging"
+          onCreateTestEvent={onCreateTestEvent}
+        />,
+      )
+
+      expect(screen.getByText("Judging is underway")).toBeDefined()
+      fireEvent.click(screen.getByRole("button", { name: "Create test event" }))
+      expect(onCreateTestEvent).toHaveBeenCalledWith("judging")
     })
   })
 
   describe("import mode", () => {
     function goToImportMode() {
-      fireEvent.click(screen.getByText("Import from URL"))
+      fireEvent.click(screen.getByText("Import from a URL"))
     }
 
     it("shows URL input with placeholder", async () => {

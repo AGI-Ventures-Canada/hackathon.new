@@ -191,13 +191,26 @@ describe("EventWebMcpTools", () => {
       act(() => window.dispatchEvent(new Event("focus")))
       await waitFor(() => {
         expect(registered.get("get_event_guide")).not.toBe(activeGuide)
-        expect(registered.has("prepare_project")).toBe(false)
-        expect(registered.has("get_project_draft")).toBe(false)
+        expect(registered.has("prepare_project")).toBe(true)
+        expect(registered.has("get_project_draft")).toBe(true)
       })
       expect(await tool("get_event_guide").execute(
         { section: "overview", offset: 0 },
         { signal: new AbortController().signal },
-      )).toMatchObject({ ok: true, data: { status: "completed" } })
+      )).toMatchObject({ ok: true, data: { status: "active" } })
+      expect(await tool("prepare_project").execute({
+        title: "After deadline",
+        githubUrl: "https://github.com/oatmeal/after-deadline",
+        liveAppUrl: "",
+        demoVideoUrl: "",
+        description: "Saved for later.",
+      }, { signal: new AbortController().signal })).toMatchObject({
+        ok: true,
+        data: {
+          openedReview: false,
+          nextStep: expect.stringContaining("deadline has passed"),
+        },
+      })
     } finally {
       window.removeEventListener(PREPARE_PROJECT_EVENT, listener)
     }

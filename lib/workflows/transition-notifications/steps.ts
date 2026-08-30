@@ -11,16 +11,33 @@ function recipientFingerprint(email: string): string {
   return createHash("sha256").update(email.trim().toLowerCase()).digest("hex").slice(0, 24)
 }
 
-export async function fetchRecipientEmails(
+export type TransitionRecipient = {
+  email: string
+  role: string
+}
+
+const ROLE_PRIORITY: Record<string, number> = {
+  judge: 2,
+  participant: 1,
+}
+
+function preferredRole(current: string | undefined, candidate: string): string {
+  if (!current) return candidate
+  return (ROLE_PRIORITY[candidate] ?? 0) > (ROLE_PRIORITY[current] ?? 0)
+    ? candidate
+    : current
+}
+
+export async function fetchTransitionRecipients(
   hackathonId: string,
   roles: string[]
-): Promise<string[]> {
+): Promise<TransitionRecipient[]> {
   const { supabase: getSupabase } = await import("@/lib/db/client")
   const client = getSupabase() as unknown as SupabaseClient
 
   let query = client
     .from("hackathon_participants")
-    .select("clerk_user_id")
+    .select("clerk_user_id, role")
     .eq("hackathon_id", hackathonId)
 
   if (roles.length > 0) {
@@ -36,10 +53,19 @@ export async function fetchRecipientEmails(
     return []
   }
 
-  const clerkUserIds = [...new Set(participants.map(
-    (p: { clerk_user_id: string }) => p.clerk_user_id
-  ))]
-  const emails: string[] = []
+  const rolesByUserId = new Map<string, string>()
+  for (const participant of participants as Array<{
+    clerk_user_id: string
+    role?: string | null
+  }>) {
+    const role = participant.role ?? "participant"
+    rolesByUserId.set(
+      participant.clerk_user_id,
+      preferredRole(rolesByUserId.get(participant.clerk_user_id), role),
+    )
+  }
+  const clerkUserIds = [...rolesByUserId.keys()]
+  const recipientsByEmail = new Map<string, TransitionRecipient>()
 
   const { clerkClient } = await import("@clerk/nextjs/server")
   const clerk = await clerkClient()
@@ -49,17 +75,36 @@ export async function fetchRecipientEmails(
     const users = await clerk.users.getUserList({ userId: batch, limit: 100 })
     for (const user of users.data) {
       const email = user.primaryEmailAddress?.emailAddress ?? user.emailAddresses[0]?.emailAddress
-      if (email) emails.push(email)
+      if (!email || !user.id) continue
+      const normalizedEmail = email.trim().toLowerCase()
+      const role = rolesByUserId.get(user.id) ?? "participant"
+      const current = recipientsByEmail.get(normalizedEmail)
+      recipientsByEmail.set(normalizedEmail, {
+        email: normalizedEmail,
+        role: preferredRole(current?.role, role),
+      })
     }
   }
 
-  return [...new Set(emails.map((email) => email.trim().toLowerCase()))]
+  return [...recipientsByEmail.values()].sort((left, right) =>
+    left.email.localeCompare(right.email),
+  )
+}
+
+export async function fetchRecipientEmails(
+  hackathonId: string,
+  roles: string[],
+): Promise<string[]> {
+  return (await fetchTransitionRecipients(hackathonId, roles)).map(
+    (recipient) => recipient.email,
+  )
 }
 
 export type SendTransitionEmailInput = {
   notificationId: string
   to: string
   event: TransitionEvent
+  recipientRole?: string
   hackathonName: string
   hackathonSlug: string
   hackathonStartsAt?: string | null
@@ -87,6 +132,7 @@ export async function sendTransitionEmail(
       hackathonStartsAt: input.hackathonStartsAt,
       hackathonEndsAt: input.hackathonEndsAt,
       challenges: input.challenges,
+      recipientRole: input.recipientRole,
     }
   )
 

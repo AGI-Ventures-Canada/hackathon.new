@@ -16,6 +16,7 @@ const mockSendJudgeInvitationEmail = mock(() => Promise.resolve({ success: true 
 const mockSendJudgeAddedNotification = mock(() => Promise.resolve({ success: true }))
 const mockScheduleReminders = mock(() => Promise.resolve(1))
 const mockCancelRemindersForEntity = mock(() => Promise.resolve())
+const mockScheduleAcceptedJudgeReminders = mock(() => Promise.resolve(2))
 
 mock.module("@/lib/email/judge-invitations", () => ({
   sendJudgeInvitationEmail: mockSendJudgeInvitationEmail,
@@ -25,6 +26,10 @@ mock.module("@/lib/email/judge-invitations", () => ({
 mock.module("@/lib/services/smart-reminders", () => ({
   scheduleReminders: mockScheduleReminders,
   cancelRemindersForEntity: mockCancelRemindersForEntity,
+}))
+
+mock.module("@/lib/services/pre-event-reminders", () => ({
+  scheduleAcceptedJudgeReminders: mockScheduleAcceptedJudgeReminders,
 }))
 
 const mockWithDeliveryLease = mock(async (
@@ -44,6 +49,7 @@ const {
   listJudgeInvitations,
   sendPendingJudgeInvitationEmails,
   retryPendingJudgeInvitationEmails,
+  retryPendingJudgeNotifications,
   createJudgePendingNotification,
   listPendingJudgeNotifications,
   hasPendingJudgeInvitation,
@@ -74,6 +80,10 @@ describe("Judge Invitations Service", () => {
     resetSupabaseMocks()
     mockCancelRemindersForEntity.mockClear()
     mockCancelRemindersForEntity.mockResolvedValue()
+    mockScheduleAcceptedJudgeReminders.mockClear()
+    mockScheduleAcceptedJudgeReminders.mockResolvedValue(2)
+    mockSendJudgeAddedNotification.mockClear()
+    mockSendJudgeAddedNotification.mockResolvedValue({ success: true })
     mockWithDeliveryLease.mockClear()
     mockWithDeliveryLease.mockImplementation(async (_key, work) => ({
       acquired: true as const,
@@ -402,7 +412,7 @@ describe("Judge Invitations Service", () => {
         updated_at: expect.any(String),
       })
       expect(chain.eq).toHaveBeenCalledWith("hackathon_id", "h1")
-      expect(chain.eq).toHaveBeenCalledWith("status", "pending")
+      expect(chain.in).toHaveBeenCalledWith("status", ["pending", "declined"])
       expect(mockCancelRemindersForEntity).toHaveBeenCalledWith("judge_invitation", "inv1")
     })
 
@@ -411,8 +421,18 @@ describe("Judge Invitations Service", () => {
 
       await expect(declineJudgeInvitation("inv1", "h1")).resolves.toEqual({
         success: false,
-        error: "Invitation not found or not pending",
+        error: "Invitation not found or cannot be declined",
       })
+    })
+
+    it("treats a repeated decline as success", async () => {
+      const chain = createChainableMock({ data: { id: "inv1" }, error: null })
+      setMockFromImplementation(() => chain)
+
+      await expect(declineJudgeInvitation("inv1", "h1")).resolves.toEqual({
+        success: true,
+      })
+      expect(chain.in).toHaveBeenCalledWith("status", ["pending", "declined"])
     })
   })
 
@@ -485,20 +505,34 @@ describe("Judge Invitations Service", () => {
         })
       )
       expect(mockScheduleReminders).toHaveBeenCalledTimes(2)
-      expect(mockScheduleReminders).toHaveBeenCalledWith(
+      const [firstEmailInput] = mockSendJudgeInvitationEmail.mock.calls[0] as unknown as [{
+        expiresAt: string
+      }]
+      const firstReminder = mockScheduleReminders.mock.calls[0] as unknown as [
+        string,
+        string,
+        string,
+        string,
+        Date,
+        Date,
+        Record<string, unknown>,
+      ]
+      expect(firstReminder.slice(0, 4)).toEqual([
         "judge_invitation",
         "inv1",
         "h1",
         "invitation_reminder",
-        new Date(mockInvitation.created_at),
-        new Date(mockInvitation.expires_at),
-        expect.objectContaining({
-          email: "judge1@example.com",
-          hackathonName: "Test Hackathon",
-          inviterName: "Organizer Name",
-          inviteToken: "token1",
-        }),
-      )
+      ])
+      expect(firstReminder[5].toISOString()).toBe(firstEmailInput.expiresAt)
+      expect(firstReminder[5].getTime() - firstReminder[4].getTime())
+        .toBe(7 * 24 * 60 * 60 * 1000)
+      expect(firstReminder[6]).toEqual(expect.objectContaining({
+        email: "judge1@example.com",
+        hackathonName: "Test Hackathon",
+        inviterName: "Organizer Name",
+        inviteToken: "token1",
+        expiresAt: firstEmailInput.expiresAt,
+      }))
     })
 
     it("returns sent: 0 when no pending invitations exist", async () => {
@@ -535,18 +569,110 @@ describe("Judge Invitations Service", () => {
       expect(result.sent).toBe(1)
       expect(mockSendJudgeInvitationEmail).toHaveBeenCalledTimes(2)
       expect(mockScheduleReminders).toHaveBeenCalledTimes(1)
-      expect(mockScheduleReminders).toHaveBeenCalledWith(
-        "judge_invitation",
-        "inv1",
-        "h1",
-        "invitation_reminder",
-        new Date(mockInvitation.created_at),
-        new Date(mockInvitation.expires_at),
-        expect.objectContaining({ email: "judge1@example.com" }),
-      )
-      expect(chain.update).toHaveBeenCalledTimes(1)
+      const reminder = mockScheduleReminders.mock.calls[0] as unknown as [
+        string,
+        string,
+        string,
+        string,
+        Date,
+        Date,
+        Record<string, unknown>,
+      ]
+      expect(reminder[5].getTime() - reminder[4].getTime())
+        .toBe(7 * 24 * 60 * 60 * 1000)
+      expect(reminder[6]).toEqual(expect.objectContaining({ email: "judge1@example.com" }))
       expect(chain.update).toHaveBeenCalledWith({ emailed_at: expect.any(String) })
-      expect(chain.in).not.toHaveBeenCalled()
+      expect(chain.update).toHaveBeenCalledWith(expect.objectContaining({
+        expires_at: expect.any(String),
+        status: "pending",
+      }))
+      expect(chain.in).toHaveBeenCalledWith("status", ["pending", "expired"])
+    })
+
+    it("gives an expired queued invitation a fresh full window before sending", async () => {
+      const expired = {
+        ...mockInvitation,
+        status: "expired" as const,
+        expires_at: "2026-01-02T00:00:00.000Z",
+      }
+      const chain = createChainableMock({ data: [expired], error: null })
+      setLiveEventAndInvitations(chain)
+
+      const before = Date.now()
+      await expect(
+        sendPendingJudgeInvitationEmails("h1", "Test Hackathon", "Organizer"),
+      ).resolves.toMatchObject({ sent: 1, total: 1, failedEmails: [] })
+
+      const [input] = mockSendJudgeInvitationEmail.mock.calls[0] as unknown as [{
+        expiresAt: string
+        inviteToken: string
+      }]
+      expect(input.inviteToken).toBe(expired.token)
+      expect(new Date(input.expiresAt).getTime() - before)
+        .toBeGreaterThanOrEqual(7 * 24 * 60 * 60 * 1000 - 1_000)
+      expect(chain.update).toHaveBeenCalledWith(expect.objectContaining({
+        status: "pending",
+        expires_at: input.expiresAt,
+      }))
+    })
+
+    it("retries a failed first send as the same original invitation", async () => {
+      let stored: JudgeInvitation = {
+        ...mockInvitation,
+        expires_at: "2026-01-02T00:00:00.000Z",
+      }
+      const invitationChains: ReturnType<typeof createChainableMock>[] = []
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: {
+              name: "Test Hackathon",
+              slug: "test-hackathon",
+              status: "published",
+              starts_at: null,
+              ends_at: null,
+              timezone: "America/Toronto",
+            },
+            error: null,
+          })
+        }
+        const chain = createChainableMock({ data: null, error: null })
+        invitationChains.push(chain)
+        const originalUpdate = chain.update
+        chain.update = mock((value: Partial<JudgeInvitation>) => {
+          stored = { ...stored, ...value }
+          return originalUpdate(value)
+        }) as typeof chain.update
+        chain.then = (resolve) => resolve({
+          data: chain.order.mock.calls.length > 0 ? [stored] : stored,
+          error: null,
+        })
+        return chain
+      })
+      mockSendJudgeInvitationEmail
+        .mockResolvedValueOnce({ success: false })
+        .mockResolvedValueOnce({ success: true })
+
+      await expect(
+        sendPendingJudgeInvitationEmails("h1", "Test Hackathon", "Organizer"),
+      ).resolves.toMatchObject({ sent: 0, failedEmails: [stored.email] })
+      const [firstInput] = mockSendJudgeInvitationEmail.mock.calls[0] as unknown as [{
+        expiresAt: string
+        inviteToken: string
+      }]
+      await expect(
+        sendPendingJudgeInvitationEmails("h1", "Test Hackathon", "Organizer"),
+      ).resolves.toMatchObject({ sent: 1, failedEmails: [] })
+      const [secondInput] = mockSendJudgeInvitationEmail.mock.calls[1] as unknown as [{
+        expiresAt: string
+        inviteToken: string
+      }]
+
+      expect(secondInput).toEqual(firstInput)
+      expect(mockScheduleReminders).toHaveBeenCalledTimes(1)
+      expect(invitationChains.some((chain) => chain.update.mock.calls.some(
+        ([value]) => (value as Partial<JudgeInvitation>).emailed_at !== undefined,
+      ))).toBe(true)
     })
 
     it("keeps a delivered invitation checkpoint when reminder scheduling rejects", async () => {
@@ -694,6 +820,7 @@ describe("Judge Invitations Service", () => {
                 status: "published",
                 starts_at: null,
                 ends_at: null,
+                timezone: "America/Toronto",
               },
             }],
             error: null,
@@ -702,7 +829,7 @@ describe("Judge Invitations Service", () => {
         if (invitationCalls === 2) {
           return createChainableMock({ data: [mockInvitation], error: null })
         }
-        if (invitationCalls === 3) {
+        if (invitationCalls === 3 || invitationCalls === 4) {
           return createChainableMock({ data: mockInvitation, error: null })
         }
         return createChainableMock({ data: null, error: null })
@@ -770,8 +897,33 @@ describe("Judge Invitations Service", () => {
           email: "judge@example.com",
           added_by_name: "Organizer Name",
           sent_at: null,
+          fail_count: 0,
+          last_error: null,
+          next_attempt_at: null,
         }),
         expect.objectContaining({ onConflict: "hackathon_id,participant_id" })
+      )
+    })
+
+    it("starts backoff when an immediate delivery fails", async () => {
+      const chain = createChainableMock({ data: null, error: null })
+      setMockFromImplementation(() => chain)
+
+      await createJudgePendingNotification(
+        "h1",
+        "participant1",
+        "judge@example.com",
+        "Organizer",
+        new Error("provider unavailable"),
+      )
+
+      expect(chain.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fail_count: 1,
+          last_error: "provider unavailable",
+          next_attempt_at: expect.any(String),
+        }),
+        expect.anything(),
       )
     })
 
@@ -797,6 +949,118 @@ describe("Judge Invitations Service", () => {
       await expect(
         createJudgePendingNotification("h1", "participant1", "judge@example.com", "Organizer")
       ).rejects.toThrow("Failed to create judge pending notification: unique constraint violation")
+    })
+  })
+
+  describe("retryPendingJudgeNotifications", () => {
+    const pending = {
+      id: "notification-1",
+      hackathon_id: "h1",
+      participant_id: "participant-1",
+      email: "judge@example.com",
+      added_by_name: "Organizer",
+      fail_count: 0,
+      hackathons: {
+        name: "Build Day",
+        slug: "build-day",
+        status: "judging",
+        starts_at: "2026-09-10T13:00:00.000Z",
+        ends_at: "2026-09-11T21:00:00.000Z",
+        is_test_event: false,
+      },
+    }
+
+    it("sends due rows once with schedule context and a stable identity", async () => {
+      let notificationCall = 0
+      let sentUpdate: ReturnType<typeof createChainableMock> | null = null
+      setMockFromImplementation((table) => {
+        if (table !== "judge_pending_notifications") {
+          return createChainableMock({ data: null, error: null })
+        }
+        notificationCall++
+        if (notificationCall === 1) {
+          return createChainableMock({ data: [pending], error: null })
+        }
+        if (notificationCall === 2) {
+          return createChainableMock({ data: pending, error: null })
+        }
+        sentUpdate = createChainableMock({ data: { id: pending.id }, error: null })
+        return sentUpdate
+      })
+
+      await expect(retryPendingJudgeNotifications()).resolves.toEqual({
+        attempted: 1,
+        sent: 1,
+        failed: 0,
+        exhausted: 0,
+        skippedDueToLease: false,
+      })
+      expect(mockSendJudgeAddedNotification).toHaveBeenCalledWith({
+        to: "judge@example.com",
+        deliveryId: "participant-1",
+        hackathonName: "Build Day",
+        hackathonSlug: "build-day",
+        addedByName: "Organizer",
+        hackathonStartsAt: "2026-09-10T13:00:00.000Z",
+        hackathonEndsAt: "2026-09-11T21:00:00.000Z",
+        hackathonTimezone: "UTC",
+      })
+      expect(sentUpdate?.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sent_at: expect.any(String),
+          last_error: null,
+          next_attempt_at: null,
+        }),
+      )
+    })
+
+    it("backs off and exhausts a row after the fifth failed send", async () => {
+      const exhausted = { ...pending, fail_count: 4 }
+      let notificationCall = 0
+      let failedUpdate: ReturnType<typeof createChainableMock> | null = null
+      setMockFromImplementation((table) => {
+        if (table !== "judge_pending_notifications") {
+          return createChainableMock({ data: null, error: null })
+        }
+        notificationCall++
+        if (notificationCall === 1) {
+          return createChainableMock({ data: [exhausted], error: null })
+        }
+        if (notificationCall === 2) {
+          return createChainableMock({ data: exhausted, error: null })
+        }
+        failedUpdate = createChainableMock({ data: null, error: null })
+        return failedUpdate
+      })
+      mockSendJudgeAddedNotification.mockResolvedValueOnce({ success: false })
+
+      await expect(retryPendingJudgeNotifications()).resolves.toEqual({
+        attempted: 1,
+        sent: 0,
+        failed: 1,
+        exhausted: 1,
+        skippedDueToLease: false,
+      })
+      expect(failedUpdate?.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fail_count: 5,
+          last_error: "Judge notification email was not accepted",
+          next_attempt_at: expect.any(String),
+        }),
+      )
+    })
+
+    it("does no work when another cron owns the lease", async () => {
+      mockWithDeliveryLease.mockResolvedValueOnce({ acquired: false })
+
+      await expect(retryPendingJudgeNotifications()).resolves.toEqual({
+        attempted: 0,
+        sent: 0,
+        failed: 0,
+        exhausted: 0,
+        skippedDueToLease: true,
+      })
+      expect(mockSendJudgeAddedNotification).not.toHaveBeenCalled()
     })
   })
 
@@ -1021,6 +1285,14 @@ describe("Judge Invitations Service", () => {
       const result = await acceptJudgeInvitation("test-token-123", "user_123", "judge@example.com")
 
       expect(result.success).toBe(true)
+      expect(mockScheduleAcceptedJudgeReminders).toHaveBeenCalledWith(
+        expect.objectContaining({
+          invitationId: "inv1",
+          hackathonId: "h1",
+          hackathonSlug: "test-hack",
+          recipientClerkUserId: "user_123",
+        }),
+      )
     })
   })
 

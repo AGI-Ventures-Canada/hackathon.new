@@ -303,6 +303,7 @@ describe("mentor WebMCP tools", () => {
     expect(canPrepareMentorRequest({ ...base, isParticipant: false })).toBe(false)
     expect(canPrepareMentorRequest({ ...base, status: "judging" })).toBe(false)
     expect(canPrepareMentorRequest({ ...base, status: "completed" })).toBe(false)
+    expect(canPrepareMentorRequest({ ...base, eventOpen: false })).toBe(false)
     expect(canPrepareMentorRequest({ ...base, teamStatus: "approved" })).toBe(true)
   })
 

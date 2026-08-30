@@ -1339,6 +1339,7 @@ export const dashboardJudgingRoutes = new Elysia()
         status: result.hackathon.status,
         starts_at: result.hackathon.starts_at,
         ends_at: result.hackathon.ends_at,
+        is_test_event: result.hackathon.is_test_event,
       })
       if (notificationDisposition === "reject") {
         return new Response(JSON.stringify({ error: "This event has ended.", code: "hackathon_ended" }), {
@@ -1404,21 +1405,36 @@ export const dashboardJudgingRoutes = new Elysia()
         let delivery: "sent" | "queued" | "failed" | undefined
         if (judgeEmail) {
           try {
+            const addedByName = await resolveAdderName(principal, client)
             if (notificationDisposition === "send") {
-              const addedByName = await resolveAdderName(principal, client)
-              const { sendJudgeAddedNotification } = await import("@/lib/email/judge-invitations")
-              const notification = await sendJudgeAddedNotification({
-                to: judgeEmail,
-                deliveryId: addResult.participant.id,
-                hackathonName: hackathon.name,
-                hackathonSlug: hackathon.slug,
-                addedByName,
-                hackathonStartsAt: hackathon.starts_at,
-                hackathonEndsAt: hackathon.ends_at,
-              })
-              delivery = notification.success ? "sent" : "failed"
+              try {
+                const { sendJudgeAddedNotification } = await import("@/lib/email/judge-invitations")
+                const notification = await sendJudgeAddedNotification({
+                  to: judgeEmail,
+                  deliveryId: addResult.participant.id,
+                  hackathonName: hackathon.name,
+                  hackathonSlug: hackathon.slug,
+                  addedByName,
+                  hackathonStartsAt: hackathon.starts_at,
+                  hackathonEndsAt: hackathon.ends_at,
+                  hackathonTimezone: "UTC",
+                })
+                if (!notification.success) {
+                  throw new Error("Judge notification email was not accepted")
+                }
+                delivery = "sent"
+              } catch (notificationError) {
+                const { createJudgePendingNotification } = await import("@/lib/services/judge-invitations")
+                await createJudgePendingNotification(
+                  hackathon.id,
+                  addResult.participant.id,
+                  judgeEmail,
+                  addedByName,
+                  notificationError,
+                )
+                delivery = "failed"
+              }
             } else {
-              const addedByName = await resolveAdderName(principal, client)
               const { createJudgePendingNotification } = await import("@/lib/services/judge-invitations")
               await createJudgePendingNotification(hackathon.id, addResult.participant.id, judgeEmail, addedByName)
               delivery = "queued"
@@ -1494,21 +1510,36 @@ export const dashboardJudgingRoutes = new Elysia()
 
           let delivery: "sent" | "queued" | "failed"
           try {
+            const addedByName = await resolveAdderName(principal, client)
             if (notificationDisposition === "send") {
-              const addedByName = await resolveAdderName(principal, client)
-              const { sendJudgeAddedNotification } = await import("@/lib/email/judge-invitations")
-              const notification = await sendJudgeAddedNotification({
-                to: typedBody.email,
-                deliveryId: addResult.participant.id,
-                hackathonName: hackathon.name,
-                hackathonSlug: hackathon.slug,
-                addedByName,
-                hackathonStartsAt: hackathon.starts_at,
-                hackathonEndsAt: hackathon.ends_at,
-              })
-              delivery = notification.success ? "sent" : "failed"
+              try {
+                const { sendJudgeAddedNotification } = await import("@/lib/email/judge-invitations")
+                const notification = await sendJudgeAddedNotification({
+                  to: typedBody.email,
+                  deliveryId: addResult.participant.id,
+                  hackathonName: hackathon.name,
+                  hackathonSlug: hackathon.slug,
+                  addedByName,
+                  hackathonStartsAt: hackathon.starts_at,
+                  hackathonEndsAt: hackathon.ends_at,
+                  hackathonTimezone: "UTC",
+                })
+                if (!notification.success) {
+                  throw new Error("Judge notification email was not accepted")
+                }
+                delivery = "sent"
+              } catch (notificationError) {
+                const { createJudgePendingNotification } = await import("@/lib/services/judge-invitations")
+                await createJudgePendingNotification(
+                  hackathon.id,
+                  addResult.participant.id,
+                  typedBody.email,
+                  addedByName,
+                  notificationError,
+                )
+                delivery = "failed"
+              }
             } else {
-              const addedByName = await resolveAdderName(principal, client)
               const { createJudgePendingNotification } = await import("@/lib/services/judge-invitations")
               await createJudgePendingNotification(hackathon.id, addResult.participant.id, typedBody.email, addedByName)
               delivery = "queued"
@@ -1577,6 +1608,7 @@ export const dashboardJudgingRoutes = new Elysia()
             hackathonSlug: hackathon.slug,
             hackathonStartsAt: hackathon.starts_at,
             hackathonEndsAt: hackathon.ends_at,
+            hackathonTimezone: "UTC",
             deliveryId: invitationResult.invitation.id,
           }).catch((error) => {
             console.error(`Failed to send judge invitation ${invitationResult.invitation.id}:`, error)
@@ -1610,6 +1642,10 @@ export const dashboardJudgingRoutes = new Elysia()
                 inviterName,
                 inviteToken: invitationResult.invitation.token,
                 expiresAt: invitationResult.invitation.expires_at,
+                hackathonSlug: hackathon.slug,
+                hackathonStartsAt: hackathon.starts_at,
+                hackathonEndsAt: hackathon.ends_at,
+                hackathonTimezone: "UTC",
               }
             ).catch((error) => {
               console.error(`Failed to schedule judge invitation ${invitationResult.invitation.id} reminder:`, error)
@@ -1800,6 +1836,7 @@ export const dashboardJudgingRoutes = new Elysia()
       status: hackathon.status,
       starts_at: hackathon.starts_at,
       ends_at: hackathon.ends_at,
+      is_test_event: hackathon.is_test_event,
     }))
     if (lifecycleError) {
       return new Response(

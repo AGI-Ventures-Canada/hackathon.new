@@ -22,7 +22,7 @@ describe("sanitizeTag", () => {
 })
 
 describe("paceBulkSend", () => {
-  it("pauses for one second after each group of eight sends", async () => {
+  it("pauses before each fifth provider call", async () => {
     const waits: number[] = []
     const wait = async (milliseconds: number) => {
       waits.push(milliseconds)
@@ -32,17 +32,19 @@ describe("paceBulkSend", () => {
       await paceBulkSend(index, wait)
     }
 
-    expect(waits).toEqual([1_000, 1_000])
+    expect(waits).toEqual([1_000, 1_000, 1_000, 1_000])
   })
 
   it("does not pause within the first group", async () => {
     const wait = mock(() => Promise.resolve())
 
-    for (let index = 0; index < 8; index += 1) {
+    for (let index = 0; index < 4; index += 1) {
       await paceBulkSend(index, wait)
     }
 
     expect(wait).not.toHaveBeenCalled()
+    await paceBulkSend(4, wait)
+    expect(wait).toHaveBeenCalledWith(1_000)
   })
 })
 

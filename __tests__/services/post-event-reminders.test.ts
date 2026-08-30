@@ -88,6 +88,26 @@ describe("Post-Event Reminders Service", () => {
       expect(count).toBe(0)
     })
 
+    it("does not schedule post-event email for a test event", async () => {
+      const eventQuery = createChainableMock({
+        data: {
+          id: "h1",
+          name: "Practice Event",
+          slug: "practice-event",
+          status: "completed",
+          results_published_at: "2026-01-01T00:00:00Z",
+          feedback_survey_sent_at: null,
+          feedback_survey_url: "https://survey.example.com",
+          is_test_event: true,
+        },
+        error: null,
+      })
+      setMockFromImplementation(() => eventQuery)
+
+      await expect(schedulePostEventReminders("h1")).resolves.toBe(0)
+      expect(eventQuery.upsert).not.toHaveBeenCalled()
+    })
+
     it("surfaces an event lookup failure", async () => {
       setMockFromImplementation(() =>
         createChainableMock({ data: null, error: { message: "database unavailable" } })

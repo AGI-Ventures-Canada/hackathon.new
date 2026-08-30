@@ -189,7 +189,7 @@ describe("POST /api/dashboard/hackathons/:id/exports", () => {
     expect(mockCreateSubmissionExport).not.toHaveBeenCalled()
   })
 
-  it("allows export when the event has ended but stored status was never advanced", async () => {
+  it("keeps an ended pre-live event active until the lifecycle cron advances it", async () => {
     mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
     mockCheckHackathonOrganizer.mockResolvedValue({
       status: "ok" as const,
@@ -214,9 +214,9 @@ describe("POST /api/dashboard/hackathons/:id/exports", () => {
     )
     const data = await res.json()
 
-    expect(res.status).toBe(200)
-    expect(data.exportId).toBe(EXPORT_ID)
-    expect(mockCreateSubmissionExport).toHaveBeenCalledTimes(1)
+    expect(res.status).toBe(400)
+    expect(data.error).toContain("completed")
+    expect(mockCreateSubmissionExport).not.toHaveBeenCalled()
   })
 
   it("creates an export, starts the workflow, and audits", async () => {

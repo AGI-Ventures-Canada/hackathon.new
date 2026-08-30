@@ -286,6 +286,7 @@ type ReleasableHackathon = {
   name: string
   slug: string
   status: string
+  is_test_event: boolean
 }
 
 async function releaseChallengesWithHackathon(
@@ -327,6 +328,7 @@ async function releaseChallengesWithHackathon(
             description: c.description,
           })),
           trigger: options?.trigger ?? "manual",
+          isTestEvent: hackathon.is_test_event,
         }).catch((err) => {
           console.error(
             `Failed to dispatch challenges-released notifications for ${hackathonId}:`,
@@ -354,7 +356,7 @@ export async function releaseChallenges(
 
   const { data: hackathon, error: fetchErr } = await client
     .from("hackathons")
-    .select("challenge_released_at, name, slug, status")
+    .select("challenge_released_at, name, slug, status, is_test_event")
     .eq("id", hackathonId)
     .eq("tenant_id", tenantId)
     .single()
@@ -387,7 +389,7 @@ export async function maybeReleaseChallengesForPublishLink(
   const { data, error: fetchErr } = await client
     .from("hackathon_schedule_items")
     .select(
-      "linked_to, hackathons!inner(tenant_id, status, challenge_released_at, name, slug)",
+      "linked_to, hackathons!inner(tenant_id, status, challenge_released_at, name, slug, is_test_event)",
     )
     .eq("hackathon_id", hackathonId)
     .eq("trigger_type", "challenge_release")

@@ -7,6 +7,9 @@ import { getEffectiveStatus } from "@/lib/utils/timeline"
 export type OrganizerPollResponse = ActionItemsInput
 
 interface RpcPollRow {
+  id?: string
+  slug?: string
+  name?: string
   status: string
   phase: string | null
   description: string | null
@@ -20,6 +23,7 @@ interface RpcPollRow {
   registration_opens_at?: string | null
   allow_late_registration: boolean | null
   location_type: string | null
+  require_location_verification?: boolean | null
   feedback_survey_url: string | null
   feedback_survey_sent_at: string | null
   submission_count: number
@@ -35,6 +39,9 @@ interface RpcPollRow {
   mentor_open_count: number
   challenge_release_time: string | null
   pending_judge_invitation_count: number
+  unsent_team_invitation_email_count?: number | null
+  unsent_judge_invitation_email_count?: number | null
+  failed_reminder_count?: number | null
   planned_round_count: number | null
   active_round_count: number | null
   complete_round_count: number | null
@@ -61,6 +68,9 @@ export async function buildOrganizerPollPayload(hackathonId: string): Promise<Or
   })
 
   return {
+    id: r.id ?? hackathonId,
+    slug: r.slug ?? null,
+    name: r.name ?? null,
     status,
     storedStatus: r.status as HackathonStatus,
     phase: r.phase as HackathonPhase | null,
@@ -92,10 +102,20 @@ export async function buildOrganizerPollPayload(hackathonId: string): Promise<Or
     feedbackSurveyUrl: r.feedback_survey_url ?? null,
     feedbackSurveySentAt: r.feedback_survey_sent_at ?? null,
     pendingJudgeInvitationCount: r.pending_judge_invitation_count ?? 0,
+    unsentTeamInvitationEmailCount:
+      r.unsent_team_invitation_email_count ?? 0,
+    unsentJudgeInvitationEmailCount:
+      r.unsent_judge_invitation_email_count ?? 0,
+    unsentInvitationEmailCount:
+      (r.unsent_team_invitation_email_count ?? 0) +
+      (r.unsent_judge_invitation_email_count ?? 0),
+    failedReminderCount: r.failed_reminder_count ?? 0,
     perkCount: r.perk_count ?? 0,
     perksNone: r.perks_none ?? false,
     communityUrl: r.community_url ?? null,
     termsContent: r.terms_content ?? null,
+    requireLocationVerification:
+      r.require_location_verification ?? false,
     rounds: {
       plannedCount: r.planned_round_count ?? 0,
       activeCount: r.active_round_count ?? 0,

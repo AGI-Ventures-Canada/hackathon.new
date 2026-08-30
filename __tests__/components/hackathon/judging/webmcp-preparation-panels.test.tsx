@@ -7,21 +7,48 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react"
-import { ScoringPanel } from "@/components/hackathon/judging/scoring-panel"
-import { UnifiedScoringPanel } from "@/components/hackathon/judging/unified-scoring-panel"
-import { JudgesPickPanel } from "@/components/hackathon/judging/judges-pick-panel"
-import { BucketSortPanel } from "@/components/hackathon/judging/bucket-sort-panel"
-import { GateCheckPanel } from "@/components/hackathon/judging/gate-check-panel"
-import {
-  JUDGE_WEBMCP_OPEN_EVENT,
-  JudgeWebMcpTools,
-  useJudgeWebMcpEditor,
-} from "@/components/hackathon/judging/judge-webmcp-tools"
 import type { AssignmentDetail } from "@/lib/services/judging"
 import type {
   JudgeWebMcpAssignment,
 } from "@/lib/webmcp/judge-tools"
 import type { WebMcpTool } from "@/lib/webmcp/types"
+
+mock.module("next/image", () => ({
+  default: (props: Record<string, unknown>) => {
+    const { src, alt, width, height, ...rest } = props
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={src as string}
+        alt={alt as string}
+        width={width as number}
+        height={height as number}
+        {...rest}
+      />
+    )
+  },
+}))
+
+const { ScoringPanel } = await import(
+  "@/components/hackathon/judging/scoring-panel"
+)
+const { UnifiedScoringPanel } = await import(
+  "@/components/hackathon/judging/unified-scoring-panel"
+)
+const { JudgesPickPanel } = await import(
+  "@/components/hackathon/judging/judges-pick-panel"
+)
+const { BucketSortPanel } = await import(
+  "@/components/hackathon/judging/bucket-sort-panel"
+)
+const { GateCheckPanel } = await import(
+  "@/components/hackathon/judging/gate-check-panel"
+)
+const {
+  JUDGE_WEBMCP_OPEN_EVENT,
+  JudgeWebMcpTools,
+  useJudgeWebMcpEditor,
+} = await import("@/components/hackathon/judging/judge-webmcp-tools")
 
 const originalFetch = globalThis.fetch
 const assignmentId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
@@ -141,6 +168,22 @@ async function expectSingleRequest(pathSuffix: string, body: unknown) {
   expect(url.endsWith(pathSuffix)).toBe(true)
   expect(options.method).toBe("POST")
   expect(JSON.parse(options.body as string)).toEqual(body)
+}
+
+async function expectNotesThenScoreRequests(
+  notes: string,
+  pathSuffix: string,
+  body: unknown,
+) {
+  await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(2))
+  const [notesUrl, notesOptions] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit]
+  expect(notesUrl.endsWith(`/judging/assignments/${assignmentId}/notes`)).toBe(true)
+  expect(notesOptions.method).toBe("PATCH")
+  expect(JSON.parse(notesOptions.body as string)).toEqual({ notes })
+  const [scoreUrl, scoreOptions] = fetchSpy.mock.calls[1] as unknown as [string, RequestInit]
+  expect(scoreUrl.endsWith(pathSuffix)).toBe(true)
+  expect(scoreOptions.method).toBe("POST")
+  expect(JSON.parse(scoreOptions.body as string)).toEqual(body)
 }
 
 beforeEach(() => {
@@ -297,6 +340,249 @@ describe("mounted judge WebMCP preparation", () => {
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
+  it("requires an explicit score before weighted forms can be submitted", async () => {
+    render(
+      <ScoringPanel
+        hackathonSlug="test-hack"
+        assignmentId={assignmentId}
+        prefetchedDetail={weightedDetail("per_prize")}
+        onClose={() => {}}
+        onScoreSubmitted={() => {}}
+      />,
+    )
+    await screen.findByText("Scoring")
+    const perPrizeScore = screen.getByRole("spinbutton", { name: "Impact score" }) as HTMLInputElement
+    const perPrizeSubmit = screen.getByRole("button", { name: "Submit scores" }) as HTMLButtonElement
+    expect(perPrizeScore.value).toBe("")
+    expect(perPrizeSubmit.disabled).toBe(true)
+    fireEvent.change(perPrizeScore, { target: { value: "7" } })
+    expect(perPrizeSubmit.disabled).toBe(false)
+
+    cleanup()
+    render(
+      <UnifiedScoringPanel
+        hackathonSlug="test-hack"
+        assignmentId={assignmentId}
+        prefetchedDetail={weightedDetail("unified_weighted_score")}
+        onClose={() => {}}
+        onScoreSubmitted={() => {}}
+      />,
+    )
+    await screen.findByText("Core Weighted Categories")
+    const unifiedScore = screen.getByRole("spinbutton", { name: "Impact score" }) as HTMLInputElement
+    const unifiedSubmit = screen.getByRole("button", { name: "Submit scores" }) as HTMLButtonElement
+    expect(unifiedScore.value).toBe("")
+    expect(unifiedSubmit.disabled).toBe(true)
+    fireEvent.change(unifiedScore, { target: { value: "8" } })
+    expect(unifiedSubmit.disabled).toBe(false)
+  })
+
+  it.each(["per-prize", "unified"] as const)(
+    "keeps the %s screenshot control visible on touch and keyboard focus",
+    async (kind) => {
+      const detail = weightedDetail(
+        kind === "per-prize" ? "per_prize" : "unified_weighted_score",
+      )
+      detail.submissionScreenshotUrl = "https://example.com/project.png"
+      const props = {
+        hackathonSlug: "test-hack",
+        assignmentId,
+        prefetchedDetail: detail,
+        onClose: () => {},
+        onScoreSubmitted: () => {},
+      }
+      if (kind === "per-prize") render(<ScoringPanel {...props} />)
+      else render(<UnifiedScoringPanel {...props} />)
+
+      const viewFull = await screen.findByRole("button", { name: "View full" })
+      expect(viewFull.className).toContain("opacity-100")
+      expect(viewFull.className).toContain("sm:opacity-0")
+      expect(viewFull.className).toContain("sm:group-hover:opacity-100")
+      expect(viewFull.className).toContain("sm:focus-visible:opacity-100")
+    },
+  )
+
+  it("requires an explicit rubric answer instead of selecting the minimum", async () => {
+    const detail = weightedDetail("per_prize")
+    detail.criteria[0] = {
+      ...detail.criteria[0],
+      min_score: 1,
+      max_score: 2,
+      rubricLevels: [
+        { id: "level-1", level_number: 1, label: "Needs work", description: null },
+        { id: "level-2", level_number: 2, label: "Strong", description: null },
+      ],
+    }
+    render(
+      <ScoringPanel
+        hackathonSlug="test-hack"
+        assignmentId={assignmentId}
+        prefetchedDetail={detail}
+        onClose={() => {}}
+        onScoreSubmitted={() => {}}
+      />,
+    )
+
+    await screen.findByText("Scoring")
+    const submit = screen.getByRole("button", { name: "Submit scores" }) as HTMLButtonElement
+    expect(submit.disabled).toBe(true)
+    fireEvent.click(screen.getByRole("button", { name: /Strong/ }))
+    expect(submit.disabled).toBe(false)
+    fireEvent.click(screen.getByRole("button", { name: /Strong/ }))
+    expect(submit.disabled).toBe(true)
+  })
+
+  it("shows a failed note save and lets the judge retry it", async () => {
+    fetchSpy.mockImplementation(() => Promise.resolve(
+      new Response(JSON.stringify({ error: "notes unavailable" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }),
+    ))
+    render(
+      <ScoringPanel
+        hackathonSlug="test-hack"
+        assignmentId={assignmentId}
+        prefetchedDetail={weightedDetail("per_prize")}
+        onClose={() => {}}
+        onScoreSubmitted={() => {}}
+      />,
+    )
+
+    fireEvent.change(await screen.findByRole("textbox", { name: "Notes" }), {
+      target: { value: "A note that must not disappear" },
+    })
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1_100))
+    })
+    const retry = await screen.findByRole("button", {
+      name: "Notes weren't saved. Retry",
+    })
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+
+    fetchSpy.mockImplementation(() => successfulResponse())
+    fireEvent.click(retry)
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Notes weren't saved. Retry" }))
+        .toBeNull()
+    })
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(["per-prize", "unified"] as const)(
+    "serializes overlapping %s note saves and keeps the newest value",
+    async (mode) => {
+      const pendingResponses: Array<(response: Response) => void> = []
+      fetchSpy.mockImplementation((input) => {
+        if (String(input).endsWith("/notes")) {
+          return new Promise<Response>((resolve) => pendingResponses.push(resolve))
+        }
+        return successfulResponse()
+      })
+      render(mode === "per-prize" ? (
+        <ScoringPanel
+          hackathonSlug="test-hack"
+          assignmentId={assignmentId}
+          prefetchedDetail={weightedDetail("per_prize")}
+          onClose={() => {}}
+          onScoreSubmitted={() => {}}
+        />
+      ) : (
+        <UnifiedScoringPanel
+          hackathonSlug="test-hack"
+          assignmentId={assignmentId}
+          prefetchedDetail={weightedDetail("unified_weighted_score")}
+          onClose={() => {}}
+          onScoreSubmitted={() => {}}
+        />
+      ))
+
+      const notes = await screen.findByRole("textbox", { name: "Notes" })
+      fireEvent.change(notes, { target: { value: "First note" } })
+      fireEvent.blur(notes)
+      await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1))
+
+      fireEvent.change(notes, { target: { value: "Newest note" } })
+      fireEvent.blur(notes)
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+
+      await act(async () => {
+        pendingResponses[0](await successfulResponse())
+      })
+      await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(2))
+      await act(async () => {
+        pendingResponses[1](await successfulResponse())
+      })
+
+      expect(fetchSpy.mock.calls.map((call) =>
+        JSON.parse(((call[1] as RequestInit).body as string)).notes,
+      )).toEqual(["First note", "Newest note"])
+    },
+  )
+
+  it.each(["per-prize", "unified"] as const)(
+    "blocks %s score submission when the latest note cannot be saved",
+    async (mode) => {
+      fetchSpy.mockImplementation(() => Promise.resolve(
+        new Response(JSON.stringify({ error: "notes unavailable" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ))
+      render(mode === "per-prize" ? (
+        <ScoringPanel
+          hackathonSlug="test-hack"
+          assignmentId={assignmentId}
+          prefetchedDetail={weightedDetail("per_prize")}
+          onClose={() => {}}
+          onScoreSubmitted={() => {}}
+        />
+      ) : (
+        <UnifiedScoringPanel
+          hackathonSlug="test-hack"
+          assignmentId={assignmentId}
+          prefetchedDetail={weightedDetail("unified_weighted_score")}
+          onClose={() => {}}
+          onScoreSubmitted={() => {}}
+        />
+      ))
+
+      fireEvent.change(await screen.findByRole("textbox", { name: "Notes" }), {
+        target: { value: "Keep this note" },
+      })
+      fireEvent.change(screen.getByRole("spinbutton", { name: "Impact score" }), {
+        target: { value: "8" },
+      })
+      fireEvent.click(screen.getByRole("button", { name: "Submit scores" }))
+
+      expect(await screen.findByText(
+        "Save your notes before submitting. Retry the note save, then try again.",
+      )).toBeDefined()
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+      expect(String(fetchSpy.mock.calls[0][0]).endsWith("/notes")).toBe(true)
+      expect(screen.getByRole("button", { name: "Notes weren't saved. Retry" })).toBeDefined()
+    },
+  )
+
+  it("fails visibly when an organizer has not configured score categories", async () => {
+    const noCriteria = { ...weightedDetail("per_prize"), criteria: [] }
+    render(
+      <ScoringPanel
+        hackathonSlug="test-hack"
+        assignmentId={assignmentId}
+        prefetchedDetail={noCriteria}
+        onClose={() => {}}
+        onScoreSubmitted={() => {}}
+      />,
+    )
+
+    expect(await screen.findByText(
+      "Scoring isn't ready yet. Ask the organizer to add score categories.",
+    )).toBeDefined()
+    expect((screen.getByRole("button", { name: "Submit scores" }) as HTMLButtonElement).disabled)
+      .toBe(true)
+  })
+
   it("keeps per-prize score and note preparation local until one human submit", async () => {
     render(
       <JudgeWebMcpTools
@@ -340,11 +626,11 @@ describe("mounted judge WebMCP preparation", () => {
     expect((notes as HTMLTextAreaElement).value).toBe("Prepared note")
 
     fireEvent.click(screen.getByRole("button", { name: "Submit scores" }))
-    await expectSingleRequest(
+    await expectNotesThenScoreRequests(
+      "Prepared note",
       `/judging/assignments/${assignmentId}/scores`,
       {
         scores: [{ criteriaId: "criterion-db-1", score: 8 }],
-        notes: "Prepared note",
       },
     )
   })
@@ -392,11 +678,11 @@ describe("mounted judge WebMCP preparation", () => {
     expect((notes as HTMLTextAreaElement).value).toBe("Prepared unified note")
 
     fireEvent.click(screen.getByRole("button", { name: "Submit scores" }))
-    await expectSingleRequest(
+    await expectNotesThenScoreRequests(
+      "Prepared unified note",
       `/judging/assignments/${assignmentId}/scores`,
       {
         scores: [{ criteriaId: "criterion-db-1", score: 9 }],
-        notes: "Prepared unified note",
       },
     )
   })
@@ -590,7 +876,7 @@ describe("mounted judge WebMCP preparation", () => {
     await screen.findByText("Scoring")
     await waitForEditor()
     const score = screen.getByRole("spinbutton") as HTMLInputElement
-    expect(score.value).toBe("1")
+    expect(score.value).toBe("")
 
     const result = await executeTool(await getTool("prepare_judge_scores"), {
       assignmentRef: "assignment-1",
@@ -606,7 +892,7 @@ describe("mounted judge WebMCP preparation", () => {
       },
       requiresHumanAction: true,
     })
-    expect(score.value).toBe("1")
+    expect(score.value).toBe("")
     expect(screen.queryByDisplayValue("Must not be applied")).toBeNull()
     expect(fetchSpy).not.toHaveBeenCalled()
   })
@@ -854,5 +1140,96 @@ describe("mounted judge WebMCP preparation", () => {
     expect(
       fetchSpy.mock.calls.some(([url]) => String(url).endsWith(secondAssignmentId)),
     ).toBe(true)
+  })
+
+  it("ignores an older gate detail response after moving to another assignment", async () => {
+    const secondAssignmentId = "dddddddd-dddd-dddd-dddd-dddddddddddd"
+    const secondAssignment = {
+      ...panelAssignment(),
+      id: secondAssignmentId,
+      submissionId: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+      submissionTitle: "Project Beta",
+    }
+    const firstDetail = {
+      ...panelAssignment(),
+      criteria: [
+        {
+          id: "gate-alpha",
+          name: "Alpha check",
+          description: null,
+          prizeId,
+        },
+      ],
+      existingGateResponses: [],
+    }
+    const secondDetail = {
+      ...secondAssignment,
+      criteria: [
+        {
+          id: "gate-beta",
+          name: "Beta check",
+          description: null,
+          prizeId,
+        },
+      ],
+      existingGateResponses: [],
+    }
+    let resolveFirstDetail: ((response: Response) => void) | undefined
+    const pendingFirstDetail = new Promise<Response>((resolve) => {
+      resolveFirstDetail = resolve
+    })
+    fetchSpy.mockImplementation((input: RequestInfo | URL, options?: RequestInit) => {
+      const url = String(input)
+      if (options?.method === "POST") return successfulResponse()
+      if (url.endsWith(secondAssignmentId)) return successfulResponse(secondDetail)
+      return pendingFirstDetail
+    })
+
+    const { container } = render(
+      <GateCheckPanel
+        hackathonSlug="test-hack"
+        prizeName="Offline Ready"
+        assignments={[panelAssignment(), secondAssignment]}
+      />,
+    )
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1))
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent(JUDGE_WEBMCP_OPEN_EVENT, {
+          detail: { assignmentId: secondAssignmentId },
+        }),
+      )
+    })
+
+    await screen.findByText("Project Beta")
+    await act(async () => {
+      resolveFirstDetail?.(await successfulResponse(firstDetail))
+      await pendingFirstDetail
+    })
+
+    expect(screen.queryByText("Project Alpha")).toBeNull()
+    expect(screen.getByText("Beta check")).toBeDefined()
+    expect(screen.queryByText("Alpha check")).toBeNull()
+    expect(
+      container.querySelector("[data-judge-assignment]")?.getAttribute(
+        "data-judge-assignment",
+      ),
+    ).toBe(secondAssignmentId)
+
+    fireEvent.click(screen.getByRole("button", { name: "Yes" }))
+    fireEvent.click(screen.getByRole("button", { name: "Submit & next" }))
+    await waitFor(() => {
+      expect(fetchSpy.mock.calls.some(([url, options]) =>
+        options?.method === "POST" &&
+        String(url).endsWith(
+          `/judging/assignments/${secondAssignmentId}/gate-check`,
+        ),
+      )).toBe(true)
+    })
+    expect(fetchSpy.mock.calls.some(([url, options]) =>
+      options?.method === "POST" &&
+      String(url).endsWith(`/judging/assignments/${assignmentId}/gate-check`),
+    )).toBe(false)
   })
 })

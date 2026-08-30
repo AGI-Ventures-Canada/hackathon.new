@@ -18,6 +18,7 @@ import { EventWebMcpTools } from "@/components/hackathon/event-webmcp-tools"
 import { AttendeeMentorWebMcp } from "@/components/hackathon/mentors/attendee-mentor-webmcp"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Eye, Clock, Handshake } from "lucide-react"
+import { FlaskConical } from "lucide-react"
 import type { Metadata } from "next"
 import {
   applyHackathonTranslation,
@@ -64,10 +65,16 @@ export default async function EventPage({ params, searchParams }: PageProps) {
   const { lang } = await searchParams
   const { orgId, userId } = await auth()
 
-  const rawHackathon = await getPublicHackathon(
+  let rawHackathon = await getPublicHackathon(
     slug,
     userId || orgId ? { includeUnpublished: true } : undefined,
   )
+
+  if (!rawHackathon && userId) {
+    const { getManageHackathon } = await import("@/lib/services/manage-hackathon")
+    const organizerResult = await getManageHackathon(slug)
+    if (organizerResult.ok) rawHackathon = organizerResult.hackathon
+  }
 
   if (!rawHackathon) {
     notFound()
@@ -297,6 +304,10 @@ export default async function EventPage({ params, searchParams }: PageProps) {
       title: challenge.title,
       description: challenge.description,
       resourceCount: challenge.resources.length,
+      resources: challenge.resources.map((resource) => ({
+        label: resource.label,
+        url: resource.url,
+      })),
     })),
     resultsPublished: Boolean(hackathon.results_published_at),
   }
@@ -333,11 +344,20 @@ export default async function EventPage({ params, searchParams }: PageProps) {
     status: hackathon.status as HackathonStatus,
     starts_at: hackathon.starts_at,
     ends_at: hackathon.ends_at,
+    is_test_event: hackathon.is_test_event,
   })
 
   return (
     <div>
-      {isPreview && (
+      {hackathon.is_test_event && (
+        <Alert className="rounded-none border-x-0 border-t-0 bg-muted">
+          <FlaskConical className="size-4" />
+          <AlertDescription>
+            This is a private test event. It uses fake data, and emails are off.
+          </AlertDescription>
+        </Alert>
+      )}
+      {isPreview && !hackathon.is_test_event && (
         <Alert className="rounded-none border-x-0 border-t-0 bg-muted">
           <Eye className="size-4" />
           <AlertDescription>

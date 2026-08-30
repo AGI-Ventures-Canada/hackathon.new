@@ -4,10 +4,16 @@ import {
   mockRpcCall,
   mockSuccess,
   mockError,
+  mockClerkClient,
+  resetClerkMocks,
   resetSupabaseMocks,
   setMockFromImplementation,
   setMockRpcImplementation,
 } from "../lib/supabase-mock"
+import {
+  TEST_EVENT_CRITERIA,
+  TEST_EVENT_PRIZES,
+} from "@/lib/fixtures/test-event"
 
 const {
   addJudge,
@@ -28,6 +34,7 @@ const {
   replacePrizeCriteria,
   createRoundsPreset,
   assertAssignmentWritable,
+  isJudgingOpenForHackathon,
   seedDefaultCoreCriteria,
   DEFAULT_CORE_CRITERIA,
   calculateWeightedScoreResults,
@@ -58,9 +65,34 @@ const {
 describe("Judging Service", () => {
   beforeEach(() => {
     resetSupabaseMocks()
+    resetClerkMocks()
   })
 
   describe("judging setup readiness", () => {
+    it("accepts the shared rich test event scoring setup", () => {
+      const result = evaluateJudgingSetup(
+        TEST_EVENT_PRIZES.map((prize, index) => ({
+          id: `prize-${index}`,
+          name: prize.name,
+          judging_style: prize.judgingStyle,
+          max_picks: prize.judgingStyle === "judges_pick" ? 3 : null,
+        })),
+        TEST_EVENT_CRITERIA.map((criterion) => ({
+          prize_id: null,
+          weight: criterion.weight,
+          min_score: 0,
+          max_score: 5,
+        })),
+        [],
+      )
+
+      expect(result).toEqual({
+        isReady: true,
+        issues: [],
+        requiresJudgeScoring: true,
+      })
+    })
+
     it("accepts complete scoring rules for every style", () => {
       const result = evaluateJudgingSetup(
         [
@@ -81,7 +113,11 @@ describe("Judging Service", () => {
         ],
       )
 
-      expect(result).toEqual({ isReady: true, issues: [] })
+      expect(result).toEqual({
+        isReady: true,
+        issues: [],
+        requiresJudgeScoring: true,
+      })
     })
 
     it("lists each broken scoring rule", () => {
@@ -116,6 +152,21 @@ describe("Judging Service", () => {
       expect(result).toEqual({
         isReady: false,
         issues: ["Pick how judges should score at least one prize."],
+        requiresJudgeScoring: false,
+      })
+    })
+
+    it("does not require judges for crowd-only scoring", () => {
+      const result = evaluateJudgingSetup(
+        [{ id: "crowd", name: "Crowd Pick", judging_style: "crowd_vote", max_picks: 1 }],
+        [],
+        [],
+      )
+
+      expect(result).toEqual({
+        isReady: true,
+        issues: [],
+        requiresJudgeScoring: false,
       })
     })
 
@@ -131,6 +182,7 @@ describe("Judging Service", () => {
       expect(result).toEqual({
         isReady: false,
         issues: ["We couldn't check scoring setup. Try again."],
+        requiresJudgeScoring: true,
       })
     })
   })
@@ -345,6 +397,30 @@ describe("Judging Service", () => {
       const result = await listJudges("h1")
 
       expect(result).toEqual([])
+    })
+
+    it("shows clean sandbox judge identities without calling Clerk", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "hackathon_participants") {
+          return createChainableMock({
+            data: [{
+              id: "j1",
+              clerk_user_id: "seed_user_sandbox_judge_dr_rowan_brooks_01",
+            }],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: [], error: null })
+      })
+
+      const result = await listJudges("h1")
+
+      expect(mockClerkClient).not.toHaveBeenCalled()
+      expect(result[0]).toMatchObject({
+        displayName: "Dr. Rowan Brooks",
+        email: "sandbox-person-37@example.invalid",
+        imageUrl: null,
+      })
     })
   })
 
@@ -1550,6 +1626,32 @@ describe("Judging Service", () => {
       expect(result.totalAssignments).toBe(0)
       expect(result.completedAssignments).toBe(0)
       expect(result.judges).toEqual([])
+    })
+
+    it("shows clean sandbox names in judging progress without calling Clerk", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "judge_assignments") {
+          return createChainableMock({
+            data: [{ judge_participant_id: "j1", is_complete: false }],
+            error: null,
+          })
+        }
+        if (table === "hackathon_participants") {
+          return createChainableMock({
+            data: [{
+              id: "j1",
+              clerk_user_id: "seed_user_sandbox_judge_dr_rowan_brooks_01",
+            }],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: [], error: null })
+      })
+
+      const result = await getJudgingProgress("h1")
+
+      expect(mockClerkClient).not.toHaveBeenCalled()
+      expect(result.judges[0].displayName).toBe("Dr. Rowan Brooks")
     })
   })
 
@@ -2943,6 +3045,54 @@ describe("Judging Service", () => {
 
       const result = await getJudgeAssignments("h1", "user_123")
       expect(result[0].selfJudging).toBe(false)
+    })
+  })
+
+  describe("isJudgingOpenForHackathon", () => {
+    it("opens access for the stored judging stage", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({ data: null, error: { message: "offline" } }),
+      )
+
+      await expect(isJudgingOpenForHackathon({
+        id: "h1",
+        status: "judging",
+        phase: "preliminaries",
+      })).resolves.toBe(true)
+    })
+
+    it("keeps active build and project stages closed without an active round", async () => {
+      setMockFromImplementation(() =>
+        createChainableMock({ data: null, error: null }),
+      )
+
+      await expect(isJudgingOpenForHackathon({
+        id: "h1",
+        status: "active",
+        phase: "build",
+      })).resolves.toBe(false)
+      await expect(isJudgingOpenForHackathon({
+        id: "h1",
+        status: "active",
+        phase: "submission_open",
+      })).resolves.toBe(false)
+    })
+
+    it("opens an active event for a judging phase or active round", async () => {
+      await expect(isJudgingOpenForHackathon({
+        id: "h1",
+        status: "active",
+        phase: "finals",
+      })).resolves.toBe(true)
+
+      setMockFromImplementation(() =>
+        createChainableMock({ data: { id: "round-1" }, error: null }),
+      )
+      await expect(isJudgingOpenForHackathon({
+        id: "h1",
+        status: "active",
+        phase: "build",
+      })).resolves.toBe(true)
     })
   })
 

@@ -14,6 +14,9 @@ const hackathonId = "11111111-1111-1111-1111-111111111111"
 
 function makeRpcPayload(overrides: Record<string, unknown> = {}) {
   return {
+    id: hackathonId,
+    slug: "build-day",
+    name: "Build Day",
     status: "active",
     phase: "build",
     description: "A test hackathon",
@@ -24,8 +27,10 @@ function makeRpcPayload(overrides: Record<string, unknown> = {}) {
     starts_at: "2099-04-28T09:00:00Z",
     ends_at: "2099-04-28T17:00:00Z",
     registration_closes_at: "2099-04-28T09:00:00Z",
+    registration_opens_at: "2099-04-01T09:00:00Z",
     allow_late_registration: true,
     location_type: "in_person",
+    require_location_verification: true,
     feedback_survey_url: null,
     feedback_survey_sent_at: null,
     submission_count: 5,
@@ -41,6 +46,9 @@ function makeRpcPayload(overrides: Record<string, unknown> = {}) {
     mentor_open_count: 1,
     challenge_release_time: null,
     pending_judge_invitation_count: 0,
+    unsent_team_invitation_email_count: 2,
+    unsent_judge_invitation_email_count: 1,
+    failed_reminder_count: 3,
     planned_round_count: 0,
     active_round_count: 0,
     complete_round_count: 0,
@@ -77,6 +85,9 @@ describe("Organizer Polling Service", () => {
 
       expect(result).not.toBeNull()
       expect(result!.status).toBe("active")
+      expect(result!.id).toBe(hackathonId)
+      expect(result!.slug).toBe("build-day")
+      expect(result!.name).toBe("Build Day")
       expect(result!.phase).toBe("build")
       expect(result!.submissionCount).toBe(5)
       expect(result!.unassignedSubmissionCount).toBe(0)
@@ -100,11 +111,17 @@ describe("Organizer Polling Service", () => {
       expect(result!.startsAt).toBe("2099-04-28T09:00:00Z")
       expect(result!.endsAt).toBe("2099-04-28T17:00:00Z")
       expect(result!.registrationClosesAt).toBe("2099-04-28T09:00:00Z")
+      expect(result!.registrationOpensAt).toBe("2099-04-01T09:00:00Z")
       expect(result!.allowLateRegistration).toBe(true)
       expect(result!.locationType).toBe("in_person")
+      expect(result!.requireLocationVerification).toBe(true)
       expect(result!.feedbackSurveyUrl).toBeNull()
       expect(result!.feedbackSurveySentAt).toBeNull()
       expect(result!.pendingJudgeInvitationCount).toBe(0)
+      expect(result!.unsentTeamInvitationEmailCount).toBe(2)
+      expect(result!.unsentJudgeInvitationEmailCount).toBe(1)
+      expect(result!.unsentInvitationEmailCount).toBe(3)
+      expect(result!.failedReminderCount).toBe(3)
     })
 
     it("handles challenge schedule item lookup", async () => {

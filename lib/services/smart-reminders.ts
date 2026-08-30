@@ -23,6 +23,16 @@ export type ReminderType =
   | "registration_closing"
   | "event_starting"
   | "submission_due"
+  | "judge_event_starting"
+  | "judge_scoring_starting"
+
+export type DesiredReminder = {
+  hackathonId: string
+  reminderType: ReminderType
+  scheduledFor: Date
+  urgency: Urgency
+  metadata: Record<string, unknown>
+}
 
 const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
@@ -30,9 +40,9 @@ const MIN_GAP = 4 * HOUR
 
 export function computeReminderSchedule(
   createdAt: Date,
-  deadline: Date
+  deadline: Date,
+  now: Date = new Date(),
 ): ReminderScheduleEntry[] {
-  const now = new Date()
   const window = deadline.getTime() - createdAt.getTime()
   const raw: ReminderScheduleEntry[] = []
 
@@ -121,9 +131,10 @@ export async function scheduleReminders(
   reminderType: ReminderType,
   createdAt: Date,
   deadline: Date,
-  metadata: Record<string, unknown>
+  metadata: Record<string, unknown>,
+  now: Date = new Date(),
 ): Promise<number> {
-  const schedule = computeReminderSchedule(createdAt, deadline)
+  const schedule = computeReminderSchedule(createdAt, deadline, now)
   if (schedule.length === 0) return 0
 
   const client = getSupabase() as unknown as SupabaseClient
@@ -136,15 +147,16 @@ export async function scheduleReminders(
     scheduled_for: entry.scheduledFor.toISOString(),
     urgency: entry.urgency,
     metadata,
-    sent_at: null,
     cancelled_at: null,
+    fail_count: 0,
+    last_error: null,
   }))
 
   const { data, error } = await client
     .from("scheduled_reminders")
     .upsert(rows, {
-      onConflict: "entity_type,entity_id,scheduled_for",
-      ignoreDuplicates: true,
+      onConflict: "entity_type,entity_id,reminder_type,scheduled_for",
+      ignoreDuplicates: false,
     })
     .select("id")
 
@@ -155,15 +167,133 @@ export async function scheduleReminders(
   return data?.length ?? 0
 }
 
+type ExistingReminderState = {
+  id: string
+  reminder_type: ReminderType
+  scheduled_for: string
+  sent_at: string | null
+  cancelled_at: string | null
+  fail_count: number
+  last_error: string | null
+}
+
+function reminderIdentity(reminderType: ReminderType, scheduledFor: string | Date): string {
+  const parsed = scheduledFor instanceof Date ? scheduledFor : new Date(scheduledFor)
+  const normalized = Number.isFinite(parsed.getTime())
+    ? parsed.toISOString()
+    : String(scheduledFor)
+  return `${reminderType}:${normalized}`
+}
+
+export async function reconcileRemindersForEntity(
+  entityType: EntityType,
+  entityId: string,
+  desired: DesiredReminder[],
+  now: Date = new Date(),
+): Promise<number> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const desiredByIdentity = new Map(
+    desired.map((reminder) => [
+      reminderIdentity(reminder.reminderType, reminder.scheduledFor),
+      reminder,
+    ]),
+  )
+
+  const { data: existingRows, error: existingError } = await client
+    .from("scheduled_reminders")
+    .select("id, reminder_type, scheduled_for, sent_at, cancelled_at, fail_count, last_error")
+    .eq("entity_type", entityType)
+    .eq("entity_id", entityId)
+
+  if (existingError) {
+    throw new Error(`Failed to load reminders: ${existingError.message}`)
+  }
+
+  const existing = (existingRows ?? []) as ExistingReminderState[]
+  const sentIdentities = new Set(
+    existing
+      .filter((reminder) => reminder.sent_at !== null)
+      .map((reminder) =>
+        reminderIdentity(reminder.reminder_type, reminder.scheduled_for),
+      ),
+  )
+  const existingByIdentity = new Map(
+    existing.map((reminder) => [
+      reminderIdentity(reminder.reminder_type, reminder.scheduled_for),
+      reminder,
+    ]),
+  )
+  const rowsToActivate = [...desiredByIdentity.entries()]
+    .filter(([identity]) => {
+      if (sentIdentities.has(identity)) return false
+      const current = existingByIdentity.get(identity)
+      return !current || current.cancelled_at !== null
+    })
+    .map(([, reminder]) => ({
+      entity_type: entityType,
+      entity_id: entityId,
+      hackathon_id: reminder.hackathonId,
+      reminder_type: reminder.reminderType,
+      scheduled_for: reminder.scheduledFor.toISOString(),
+      urgency: reminder.urgency,
+      metadata: reminder.metadata,
+      cancelled_at: null,
+      fail_count: 0,
+      last_error: null,
+    }))
+
+  let activated = 0
+  if (rowsToActivate.length > 0) {
+    const { data, error } = await client
+      .from("scheduled_reminders")
+      .upsert(rowsToActivate, {
+        onConflict: "entity_type,entity_id,reminder_type,scheduled_for",
+        ignoreDuplicates: false,
+      })
+      .select("id")
+
+    if (error) {
+      throw new Error(`Failed to reconcile reminders: ${error.message}`)
+    }
+    activated = data?.length ?? 0
+  }
+
+  const obsoleteIds = existing
+    .filter(
+      (reminder) =>
+        reminder.sent_at === null &&
+        reminder.cancelled_at === null &&
+        !desiredByIdentity.has(
+          reminderIdentity(reminder.reminder_type, reminder.scheduled_for),
+        ),
+    )
+    .map((reminder) => reminder.id)
+
+  if (obsoleteIds.length > 0) {
+    const { error } = await client
+      .from("scheduled_reminders")
+      .update({ cancelled_at: now.toISOString() })
+      .in("id", obsoleteIds)
+      .is("sent_at", null)
+
+    if (error) {
+      throw new Error(`Failed to cancel old reminders: ${error.message}`)
+    }
+  }
+
+  return activated
+}
+
 export async function cancelRemindersForEntity(
   entityType: EntityType,
-  entityId: string
+  entityId: string,
+  now: Date = new Date(),
 ): Promise<number> {
   const client = getSupabase() as unknown as SupabaseClient
 
   const { data, error } = await client
     .from("scheduled_reminders")
-    .update({ cancelled_at: new Date().toISOString() })
+    .update({ cancelled_at: now.toISOString() })
     .eq("entity_type", entityType)
     .eq("entity_id", entityId)
     .is("sent_at", null)
@@ -180,14 +310,15 @@ export async function cancelRemindersForEntity(
 export async function cancelUpcomingReminder(
   entityType: EntityType,
   entityId: string,
-  withinMs: number = 6 * HOUR
+  withinMs: number = 6 * HOUR,
+  now: Date = new Date(),
 ): Promise<number> {
   const client = getSupabase() as unknown as SupabaseClient
-  const cutoff = new Date(Date.now() + withinMs).toISOString()
+  const cutoff = new Date(now.getTime() + withinMs).toISOString()
 
   const { data, error } = await client
     .from("scheduled_reminders")
-    .update({ cancelled_at: new Date().toISOString() })
+    .update({ cancelled_at: now.toISOString() })
     .eq("entity_type", entityType)
     .eq("entity_id", entityId)
     .is("sent_at", null)
@@ -376,17 +507,19 @@ export async function validateReminderEntity(
 
   const { data: hackathon, error: hackathonError } = await client
     .from("hackathons")
-    .select("status, starts_at, ends_at, registration_opens_at, registration_closes_at, allow_late_registration, max_team_size")
+    .select("status, starts_at, ends_at, registration_opens_at, registration_closes_at, allow_late_registration, max_team_size, is_test_event")
     .eq("id", reminder.hackathon_id)
     .single()
   if (hackathonError) {
     throw new Error(`Failed to validate reminder event: ${hackathonError.message}`)
   }
   if (!hackathon) return false
+  if (hackathon.is_test_event) return false
   const disposition = getNotificationDisposition({
     status: hackathon.status,
     starts_at: hackathon.starts_at ?? null,
     ends_at: hackathon.ends_at ?? null,
+    is_test_event: hackathon.is_test_event,
   })
   if (disposition !== "send") return false
 
@@ -434,28 +567,61 @@ export async function validateReminderEntity(
   if (reminder.entity_type === "judge_invitation") {
     const { data, error } = await client
       .from("judge_invitations")
-      .select("status, expires_at")
+      .select("status, expires_at, accepted_by_clerk_user_id")
       .eq("id", reminder.entity_id)
       .single()
 
     if (error) throw new Error(`Failed to validate judge invitation reminder: ${error.message}`)
     if (!data) return false
-    if (data.status !== "pending") return false
-    if (new Date(data.expires_at) < new Date()) return false
-    return true
+    if (reminder.reminder_type === "invitation_reminder") {
+      if (data.status !== "pending") return false
+      if (new Date(data.expires_at) < new Date()) return false
+      return true
+    }
+    if (
+      reminder.reminder_type !== "judge_event_starting" &&
+      reminder.reminder_type !== "judge_scoring_starting"
+    ) return false
+    if (data.status !== "accepted") return false
+    if (
+      typeof reminder.metadata.recipientClerkUserId !== "string" ||
+      data.accepted_by_clerk_user_id !== reminder.metadata.recipientClerkUserId
+    ) return false
   }
 
-  if (reminder.entity_type === "hackathon_event") {
-    if (reminder.entity_id !== reminder.hackathon_id) return false
+  if (
+    reminder.entity_type === "hackathon_event" ||
+    (
+      reminder.entity_type === "judge_invitation" &&
+      (
+        reminder.reminder_type === "judge_event_starting" ||
+        reminder.reminder_type === "judge_scoring_starting"
+      )
+    )
+  ) {
+    if (
+      reminder.entity_type === "hackathon_event" &&
+      reminder.entity_id !== reminder.hackathon_id
+    ) return false
+    if (
+      reminder.entity_type === "judge_invitation" &&
+      reminder.entity_id === reminder.hackathon_id
+    ) return false
     const scheduledDeadline = reminder.metadata.deadlineDate
     if (typeof scheduledDeadline !== "string") return false
 
     let currentDeadline: string | null = null
     if (reminder.reminder_type === "registration_closing") {
       currentDeadline = hackathon.registration_closes_at ?? null
-    } else if (reminder.reminder_type === "event_starting") {
+    } else if (
+      reminder.reminder_type === "event_starting" ||
+      reminder.reminder_type === "judge_event_starting"
+    ) {
       currentDeadline = hackathon.starts_at ?? null
-    } else if (reminder.reminder_type === "submission_due") {
+    } else if (
+      reminder.reminder_type === "submission_due" ||
+      reminder.reminder_type === "judge_scoring_starting"
+    ) {
       const { data: deadline, error: deadlineError } = await client
         .from("hackathon_schedule_items")
         .select("starts_at")
@@ -546,6 +712,20 @@ async function dispatchReminderEmail(
       inviterName: meta.inviterName as string,
       inviteToken: meta.inviteToken as string,
       expiresAt: meta.expiresAt as string,
+      hackathonSlug:
+        typeof meta.hackathonSlug === "string" ? meta.hackathonSlug : undefined,
+      hackathonStartsAt:
+        typeof meta.hackathonStartsAt === "string"
+          ? meta.hackathonStartsAt
+          : undefined,
+      hackathonEndsAt:
+        typeof meta.hackathonEndsAt === "string"
+          ? meta.hackathonEndsAt
+          : undefined,
+      hackathonTimezone:
+        typeof meta.hackathonTimezone === "string"
+          ? meta.hackathonTimezone
+          : undefined,
       urgency: reminder.urgency,
       deliveryId: reminder.id,
     })
@@ -555,19 +735,41 @@ async function dispatchReminderEmail(
     return reminderDeliveryWasSent(delivery)
   }
 
-  if (reminder.entity_type === "hackathon_event") {
+  if (
+    reminder.entity_type === "hackathon_event" ||
+    (
+      reminder.entity_type === "judge_invitation" &&
+      (
+        reminder.reminder_type === "judge_event_starting" ||
+        reminder.reminder_type === "judge_scoring_starting"
+      )
+    )
+  ) {
     requireMeta(meta, "hackathonName", "hackathonSlug", "deadlineDate")
     const { sendPreEventReminderEmail } = await import(
       "@/lib/email/pre-event-reminders"
     )
     const delivery = await sendPreEventReminderEmail({
       hackathonId: reminder.hackathon_id,
-      reminderType: reminder.reminder_type as "registration_closing" | "event_starting" | "submission_due",
+      reminderType: reminder.reminder_type as
+        | "registration_closing"
+        | "event_starting"
+        | "submission_due"
+        | "judge_event_starting"
+        | "judge_scoring_starting",
       hackathonName: meta.hackathonName as string,
       hackathonSlug: meta.hackathonSlug as string,
       deadlineDate: meta.deadlineDate as string,
+      hackathonTimezone:
+        typeof meta.hackathonTimezone === "string"
+          ? meta.hackathonTimezone
+          : undefined,
       urgency: reminder.urgency,
       deliveryId: reminder.id,
+      recipientIds:
+        typeof meta.recipientClerkUserId === "string"
+          ? [meta.recipientClerkUserId]
+          : undefined,
       budget,
     })
     if (delivery.deferred) throw new DeliveryBudgetDeferredError()

@@ -54,7 +54,7 @@ export function AttendeeMentorWebMcp({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const submitPending = useRef(false)
   const [error, setError] = useState<string | null>(null)
-  const { effectiveStatus } = useEventLifecycleClock({
+  const { effectiveStatus, nowIso } = useEventLifecycleClock({
     status,
     startsAt,
     endsAt,
@@ -79,12 +79,18 @@ export function AttendeeMentorWebMcp({
   }, [isParticipant, slug])
 
   const requestIsLoaded = loadedSlug === slug
+  const eventOpen = nowIso !== null && (
+    !endsAt ||
+    !Number.isFinite(Date.parse(endsAt)) ||
+    Date.parse(nowIso) < Date.parse(endsAt)
+  )
   const canPrepare = canPrepareMentorRequest({
     requestLoaded: requestIsLoaded,
     request,
     isParticipant,
     status: effectiveStatus,
     teamStatus,
+    eventOpen,
   })
   const tools = useMemo(
     () =>

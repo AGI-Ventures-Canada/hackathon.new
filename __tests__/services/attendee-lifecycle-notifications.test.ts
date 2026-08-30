@@ -38,6 +38,7 @@ const activeHackathon = {
   status: "active",
   starts_at: "2026-08-01T00:00:00Z",
   ends_at: "2099-08-03T00:00:00Z",
+  is_test_event: false,
 }
 
 function notification(
@@ -149,6 +150,25 @@ describe("attendee lifecycle notification delivery", () => {
     const result = await retryPendingAttendeeLifecycleEmails(20)
 
     expect(result).toEqual({ attempted: 1, sent: 0, skipped: 0, failed: 1 })
+  })
+
+  it("keeps test-event notices queued without sending them", async () => {
+    setMockFromImplementation((table) =>
+      table === "attendee_lifecycle_notifications"
+        ? createChainableMock({
+            data: [{
+              ...notification("registration_confirmed"),
+              hackathons: { ...activeHackathon, is_test_event: true },
+            }],
+            error: null,
+          })
+        : createChainableMock({ data: null, error: null })
+    )
+
+    const result = await retryPendingAttendeeLifecycleEmails(20)
+
+    expect(result).toEqual({ attempted: 0, sent: 0, skipped: 1, failed: 0 })
+    expect(mockRegistrationEmail).not.toHaveBeenCalled()
   })
 
   it("cancels a stale registration notice after the attendee leaves", async () => {

@@ -270,6 +270,31 @@ describe("Judging Scoring Service", () => {
       expect(result).toEqual({ success: true })
     })
 
+    it("does not overwrite separately autosaved notes when score submit omits them", async () => {
+      const assignment = createChainableMock({ data: null, error: null })
+      setMockFromImplementation((table) => {
+        if (table === "judging_criteria") {
+          return createChainableMock({
+            data: [{ id: CRITERIA_ID_1, min_score: 0, max_score: 10 }],
+            error: null,
+          })
+        }
+        if (table === "judge_assignments") return assignment
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await submitScores(
+        ASSIGNMENT_ID,
+        MOCK_OWNERSHIP,
+        [{ criteriaId: CRITERIA_ID_1, score: 8 }],
+      )
+
+      expect(result).toEqual({ success: true })
+      const update = assignment.update.mock.calls[0]?.[0] as Record<string, unknown>
+      expect(update.notes).toBeUndefined()
+      expect(update.is_complete).toBe(true)
+    })
+
     it("returns error when score upsert fails", async () => {
       setMockFromImplementation((table) => {
         if (table === "judging_criteria") {
@@ -384,7 +409,7 @@ describe("Judging Scoring Service", () => {
       }
     })
 
-    it("succeeds with empty scores when no criteria exist", async () => {
+    it("fails closed when no score criteria exist", async () => {
       setMockFromImplementation((table) => {
         if (table === "judging_criteria") {
           return createChainableMock({ data: [], error: null })
@@ -394,7 +419,45 @@ describe("Judging Scoring Service", () => {
 
       const result = await submitScores(ASSIGNMENT_ID, MOCK_OWNERSHIP, [], "just notes")
 
-      expect(result).toEqual({ success: true })
+      expect(result).toEqual({
+        success: false,
+        error: "Scoring is not ready because this assignment has no score categories",
+        code: "criteria_missing",
+      })
+    })
+
+    it("fails closed when score criteria cannot be loaded", async () => {
+      setMockFromImplementation((table) => table === "judging_criteria"
+        ? createChainableMock({ data: null, error: { message: "database unavailable" } })
+        : createChainableMock({ data: null, error: null }))
+
+      await expect(
+        submitScores(ASSIGNMENT_ID, MOCK_OWNERSHIP, [], "just notes"),
+      ).resolves.toEqual({
+        success: false,
+        error: "Scoring categories could not be loaded",
+        code: "criteria_lookup_failed",
+      })
+    })
+
+    it("rejects a non-finite service-layer score", async () => {
+      setMockFromImplementation((table) => table === "judging_criteria"
+        ? createChainableMock({
+            data: [{ id: CRITERIA_ID_1, min_score: 0, max_score: 10 }],
+            error: null,
+          })
+        : createChainableMock({ data: null, error: null }))
+
+      await expect(submitScores(
+        ASSIGNMENT_ID,
+        MOCK_OWNERSHIP,
+        [{ criteriaId: CRITERIA_ID_1, score: Number.NaN }],
+        "",
+      )).resolves.toEqual({
+        success: false,
+        error: "Scores must be numbers",
+        code: "invalid_score",
+      })
     })
 
     it("accepts score exactly at max_score", async () => {

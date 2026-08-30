@@ -3,12 +3,14 @@
 import { useRef, useState, useEffect } from "react"
 import { Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
 import type { ActionSeverity } from "@/lib/utils/organizer-actions"
 
-const severities: { key: ActionSeverity; label: string; dot: string; active: string }[] = [
-  { key: "urgent", label: "Blocker", dot: "bg-destructive", active: "border-destructive/50 bg-destructive/10 text-destructive" },
-  { key: "warning", label: "Warning", dot: "bg-primary", active: "border-primary/50 bg-primary/10 text-primary" },
-  { key: "info", label: "Optional", dot: "bg-muted-foreground", active: "border-muted-foreground/50 bg-muted-foreground/10" },
+const severities: { key: ActionSeverity; label: string; dot: string }[] = [
+  { key: "urgent", label: "Blocker", dot: "bg-destructive" },
+  { key: "warning", label: "Warning", dot: "bg-primary" },
+  { key: "scheduled", label: "Later", dot: "bg-muted-foreground" },
+  { key: "info", label: "Optional", dot: "bg-muted-foreground" },
 ]
 
 type Props = {
@@ -55,10 +57,17 @@ export function AddItemInput({ onAdd, compact }: Props) {
   }
 
   return (
-    <div className={cn(
+    <form
+      autoComplete="off"
+      onSubmit={(event) => {
+        event.preventDefault()
+        handleSubmit()
+      }}
+      className={cn(
       "rounded-md border border-dashed border-muted-foreground/25",
       compact ? "px-2 py-1.5 space-y-1.5" : "px-2 py-2 space-y-2",
-    )}>
+      )}
+    >
       <input
         ref={inputRef}
         type="text"
@@ -68,7 +77,10 @@ export function AddItemInput({ onAdd, compact }: Props) {
           compact ? "text-xs" : "text-sm",
         )}
         onKeyDown={(e) => {
-          if (e.key === "Enter") handleSubmit()
+          if (e.key === "Enter") {
+            e.preventDefault()
+            handleSubmit()
+          }
           if (e.key === "Escape") handleCancel()
         }}
         autoComplete="off"
@@ -76,24 +88,26 @@ export function AddItemInput({ onAdd, compact }: Props) {
         data-lpignore="true"
         data-form-type="other"
       />
-      <div className="flex items-center gap-1">
+      <div className="flex flex-wrap items-center gap-1">
         {severities.map((s) => (
-          <button
+          <Button
             key={s.key}
             type="button"
+            size="xs"
+            variant={severity === s.key ? "secondary" : "ghost"}
             onClick={() => setSeverity(s.key)}
-            className={cn(
-              "flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors",
-              severity === s.key
-                ? s.active
-                : "border-transparent text-muted-foreground hover:bg-muted",
-            )}
+            aria-pressed={severity === s.key}
           >
             <span className={cn("size-1.5 rounded-full", s.dot)} />
             {s.label}
-          </button>
+          </Button>
         ))}
+        <span className="flex-1" />
+        <Button type="button" size="xs" variant="ghost" onClick={handleCancel}>
+          Cancel
+        </Button>
+        <Button type="submit" size="xs">Add</Button>
       </div>
-    </div>
+    </form>
   )
 }

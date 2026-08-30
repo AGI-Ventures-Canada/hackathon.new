@@ -23,7 +23,7 @@ export async function paceBulkSend(
   wait: (milliseconds: number) => Promise<void> = (milliseconds) =>
     new Promise((resolve) => setTimeout(resolve, milliseconds)),
 ): Promise<void> {
-  if (index > 0 && index % 8 === 0) {
+  if (index > 0 && index % 4 === 0) {
     await wait(1_000)
   }
 }

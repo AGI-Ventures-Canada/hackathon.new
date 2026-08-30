@@ -236,6 +236,25 @@ describe("listHackathonPeople", () => {
     expect(result[0].email).toBe("alice@seed.local")
   })
 
+  it("renders sandbox fixture people with clean names and safe fake emails", async () => {
+    mockTables({
+      hackathon_participants: [
+        {
+          id: "p1",
+          clerk_user_id: "seed_user_sandbox_attendee_avery_chen_01",
+          role: "participant",
+          team_id: null,
+          registered_at: "2026-05-01T00:00:00Z",
+        },
+      ],
+    })
+
+    const result = await listHackathonPeople(HACKATHON_ID)
+    expect(getUserList).not.toHaveBeenCalled()
+    expect(result[0].name).toBe("Avery Chen")
+    expect(result[0].email).toBe("sandbox-person-1@example.invalid")
+  })
+
   it("sorts accepted before pending, each group by joinedOrInvitedAt desc", async () => {
     mockTables({
       hackathon_participants: [

@@ -1,6 +1,12 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js"
 import * as readline from "readline"
 import { requireLocalSupabaseUrl } from "../local-supabase"
+import {
+  TEST_EVENT_ATTENDEES,
+  TEST_EVENT_CRITERIA,
+  TEST_EVENT_PROJECTS,
+  TEST_EVENT_TEAMS,
+} from "../../lib/fixtures/test-event"
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -34,14 +40,14 @@ export async function promptForOptionalTenantId(): Promise<string | undefined> {
 }
 
 export const SEED_USERS = [
-  "seed_user_alice_001",
-  "seed_user_bob_002",
-  "seed_user_carol_003",
-  "seed_user_dave_004",
-  "seed_user_eve_005",
+  ...TEST_EVENT_ATTENDEES.slice(0, 5).map((attendee) => attendee.clerkUserId),
 ]
 
 function friendlyTeamName(captainUserId: string): string {
+  const fixtureIndex = TEST_EVENT_ATTENDEES.findIndex(
+    (attendee) => attendee.clerkUserId === captainUserId,
+  )
+  if (fixtureIndex >= 0) return TEST_EVENT_TEAMS[fixtureIndex % TEST_EVENT_TEAMS.length]
   const match = captainUserId.match(/^seed_user_([a-z]+)_/)
   if (match) {
     const name = match[1].charAt(0).toUpperCase() + match[1].slice(1)
@@ -53,19 +59,17 @@ function friendlyTeamName(captainUserId: string): string {
   return "Test Team"
 }
 
-const SUBMISSION_DATA = [
-  { title: "AI Research Assistant", desc: "An AI-powered research tool that synthesizes academic papers", github: "https://github.com/example/ai-research" },
-  { title: "Code Reviewer Bot", desc: "Automated code review with context-aware suggestions", github: "https://github.com/example/code-reviewer" },
-  { title: "DataViz Agent", desc: "Natural language to data visualization pipeline", github: "https://github.com/example/dataviz" },
-  { title: "HealthCheck AI", desc: "Predictive health monitoring dashboard using wearable data", github: "https://github.com/example/healthcheck" },
-  { title: "EcoTracker", desc: "Carbon footprint tracking with AI-driven recommendations", github: "https://github.com/example/ecotracker" },
-]
+const SUBMISSION_DATA = TEST_EVENT_PROJECTS.map((project) => ({
+  title: project.title,
+  desc: project.description,
+  github: `https://github.com/example/${project.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+}))
 
-const CRITERIA_PRESETS = [
-  { name: "Innovation", description: "Novelty and creativity of the solution", max_score: 10, weight: 1.5, category: "core" as const },
-  { name: "Technical Execution", description: "Code quality, architecture, and reliability", max_score: 10, weight: 1.0, category: "core" as const },
-  { name: "Presentation", description: "Demo clarity, documentation, and communication", max_score: 10, weight: 0.5, category: "bonus" as const },
-]
+const CRITERIA_PRESETS = TEST_EVENT_CRITERIA.map((criterion) => ({
+  ...criterion,
+  max_score: 5,
+  category: "core" as const,
+}))
 
 const DEFAULT_RUBRIC_LEVELS = [
   { level_number: 1, label: "Far Below Expectations" },

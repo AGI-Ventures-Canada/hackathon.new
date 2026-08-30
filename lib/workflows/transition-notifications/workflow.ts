@@ -20,19 +20,23 @@ export type TransitionNotificationInput = {
 export async function sendTransitionNotificationsWorkflow(
   input: TransitionNotificationInput
 ): Promise<{ sent: number; failed: number }> {
-  const { fetchRecipientEmails, sendTransitionEmail } = await import("./steps")
+  const { fetchTransitionRecipients, sendTransitionEmail } = await import("./steps")
 
-  const emails = await fetchRecipientEmails(input.hackathonId, input.recipientRoles)
+  const recipients = await fetchTransitionRecipients(
+    input.hackathonId,
+    input.recipientRoles,
+  )
 
-  if (emails.length === 0) return { sent: 0, failed: 0 }
+  if (recipients.length === 0) return { sent: 0, failed: 0 }
 
   let sent = 0
   let failed = 0
-  for (const email of emails) {
+  for (const recipient of recipients) {
     try {
       await sendTransitionEmail({
         notificationId: input.notificationId,
-        to: email,
+        to: recipient.email,
+        recipientRole: recipient.role,
         event: input.event,
         hackathonName: input.hackathonName,
         hackathonSlug: input.hackathonSlug,
@@ -42,14 +46,14 @@ export async function sendTransitionNotificationsWorkflow(
       })
       sent++
     } catch (err) {
-      console.error(`Failed to send transition email to ${email}:`, err)
+      console.error(`Failed to send transition email to ${recipient.email}:`, err)
       failed++
     }
   }
 
   if (failed > 0) {
     throw new Error(
-      `${failed}/${emails.length} transition emails failed — workflow will retry`
+      `${failed}/${recipients.length} transition emails failed — workflow will retry`
     )
   }
 

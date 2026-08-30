@@ -308,7 +308,10 @@ describe("createTeamWithMembers", () => {
         error: null,
       })
       const teamChain = createChainableMock({ data: { id: "team_1", name: "T" }, error: null })
-      const hackathonChain = createChainableMock({ data: { status: "active", starts_at: null, ends_at: null }, error: null })
+      const hackathonChain = createChainableMock({
+        data: { status: "active", starts_at: null, ends_at: null, is_test_event: false },
+        error: null,
+      })
       setMockFromImplementation((table) => {
         if (table === "hackathon_participants") return participantChain
         if (table === "teams") return teamChain
@@ -325,7 +328,9 @@ describe("createTeamWithMembers", () => {
       expect(teamChain.insert).toHaveBeenCalledWith(expect.objectContaining({
         status: "forming",
       }))
-      expect(hackathonChain.select).toHaveBeenCalledWith("status, starts_at, ends_at")
+      expect(hackathonChain.select).toHaveBeenCalledWith(
+        "status, starts_at, ends_at, is_test_event",
+      )
       expect(mockSendTeamInvitationEmail).not.toHaveBeenCalled()
     })
 

@@ -16,20 +16,18 @@ export function getEffectiveStatusAt(
   },
   now: Date,
 ): HackathonStatus {
-  const { status, starts_at, ends_at } = hackathon
+  const { status, starts_at } = hackathon
 
   if (status === "draft" || status === "completed" || status === "archived") {
     return status
   }
 
   const startsAt = starts_at ? new Date(starts_at) : null
-  const endsAt = ends_at ? new Date(ends_at) : null
-
-  if (endsAt && now >= endsAt) {
-    return status === "judging" ? "judging" : "completed"
-  }
-
-  if (startsAt && now >= startsAt) {
+  if (
+    (status === "published" || status === "registration_open") &&
+    startsAt &&
+    now >= startsAt
+  ) {
     return "active"
   }
 
@@ -107,7 +105,7 @@ export function getTimelineStateAt(
     return { label: "Judging", variant: "default" }
   }
 
-  if (status === "active") {
+  if (effectiveStatus === "active") {
     return { label: "Live", variant: "default" }
   }
 

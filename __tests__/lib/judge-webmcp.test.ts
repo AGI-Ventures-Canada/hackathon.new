@@ -71,7 +71,14 @@ describe("judge WebMCP tools", () => {
     expect(tools.some((candidate) => candidate.name === "prepare_judge_scores")).toBe(false)
     expect(await execute(findTool(tools, "get_judge_assignments"))).toEqual({
       ok: true,
-      data: { assignments: [], total: 0, truncated: false },
+      data: {
+        assignments: [],
+        total: 0,
+        returned: 0,
+        hasMore: false,
+        nextCursor: null,
+        truncated: false,
+      },
     })
   })
 
@@ -95,6 +102,59 @@ describe("judge WebMCP tools", () => {
     expect(tools.filter((tool) => tool.name.startsWith("prepare_judge_")))
       .toHaveLength(1)
     expect(tools.some((tool) => tool.name === "prepare_judge_scores")).toBe(true)
+  })
+
+  it("paginates assignments with stable opaque cursors", async () => {
+    const assignments = Array.from({ length: 5 }, (_, index) => ({
+      ...assignment,
+      id: `${String(index + 1).padStart(8, "0")}-aaaa-aaaa-aaaa-aaaaaaaaaaaa`,
+      submissionId: `${String(index + 1).padStart(8, "0")}-bbbb-bbbb-bbbb-bbbbbbbbbbbb`,
+      title: `Project ${index + 1}`,
+    }))
+    const tools = createJudgeWebMcpTools({
+      slug: "safe-event",
+      assignments,
+      getEditorInfo: () => null,
+      onOpen: () => {},
+      onPrepare: () => ({ prepared: false, message: "not ready" }),
+    })
+    const list = findTool(tools, "get_judge_assignments")
+
+    const first = await execute(list, { limit: 2 })
+    expect(first).toMatchObject({
+      ok: true,
+      data: {
+        returned: 2,
+        total: 5,
+        hasMore: true,
+        nextCursor: "assignment-2",
+        assignments: [
+          { assignmentRef: "assignment-1", title: "Project 1" },
+          { assignmentRef: "assignment-2", title: "Project 2" },
+        ],
+      },
+    })
+
+    const second = await execute(list, { cursor: "assignment-2", limit: 2 })
+    expect(second).toMatchObject({
+      ok: true,
+      data: {
+        returned: 2,
+        total: 5,
+        hasMore: true,
+        nextCursor: "assignment-4",
+        assignments: [
+          { assignmentRef: "assignment-3", title: "Project 3" },
+          { assignmentRef: "assignment-4", title: "Project 4" },
+        ],
+      },
+    })
+
+    expect(await execute(list, { cursor: "assignment-999", limit: 2 }))
+      .toMatchObject({
+        ok: false,
+        error: { code: "assignment_cursor_not_found", retryable: true },
+      })
   })
 
   it("keeps large assignment reads inside the WebMCP output budget", async () => {
@@ -152,7 +212,81 @@ describe("judge WebMCP tools", () => {
     })
 
     expect(JSON.stringify(result).length).toBeLessThanOrEqual(1_500)
-    expect(result).toMatchObject({ ok: true })
+    expect(result).toMatchObject({
+      ok: true,
+      data: { omittedLinks: expect.arrayContaining(["github", "liveApp", "demoVideo"]) },
+    })
+    const links = (result as {
+      data: { links: Record<string, string | null> }
+    }).data.links
+    for (const link of Object.values(links)) {
+      if (link) expect(link.endsWith("…")).toBe(false)
+    }
+  })
+
+  it("returns complete links when they fit instead of shortening URLs", async () => {
+    const githubUrl = `https://github.com/example/${"repository".repeat(8)}`
+    const liveAppUrl = `https://demo.example.com/${"preview".repeat(8)}`
+    const tools = createJudgeWebMcpTools({
+      slug: "safe-event",
+      assignments: [{ ...assignment, githubUrl, liveAppUrl }],
+      getEditorInfo: () => null,
+      onOpen: () => {},
+      onPrepare: () => ({ prepared: false, message: "not ready" }),
+    })
+
+    const result = await execute(findTool(tools, "get_judge_assignment"), {
+      assignmentRef: "assignment-1",
+    })
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: { links: { github: githubUrl, liveApp: liveAppUrl } },
+    })
+  })
+
+  it("keeps long editor references intact across choice pages", async () => {
+    const firstRef = `criterion-${"a".repeat(70)}`
+    const secondRef = `criterion-${"b".repeat(70)}`
+    const tools = createJudgeWebMcpTools({
+      slug: "safe-event",
+      assignments: [assignment],
+      getEditorInfo: () => ({
+        criteria: [
+          { ref: firstRef, name: "Impact", min: 1, max: 10 },
+          { ref: secondRef, name: "Clarity", min: 1, max: 10 },
+        ],
+      }),
+      onOpen: () => {},
+      onPrepare: () => ({ prepared: false, message: "not ready" }),
+    })
+    const detail = findTool(tools, "get_judge_assignment")
+
+    expect(await execute(detail, {
+      assignmentRef: "assignment-1",
+      choiceLimit: 1,
+    })).toMatchObject({
+      ok: true,
+      data: {
+        responseChoices: {
+          criteria: [{ ref: firstRef }],
+          criteriaNextCursor: firstRef,
+        },
+      },
+    })
+    expect(await execute(detail, {
+      assignmentRef: "assignment-1",
+      criteriaCursor: firstRef,
+      choiceLimit: 1,
+    })).toMatchObject({
+      ok: true,
+      data: {
+        responseChoices: {
+          criteria: [{ ref: secondRef }],
+          criteriaNextCursor: null,
+        },
+      },
+    })
   })
 
   it("bounds large bucket choices and keeps max picks when details must shrink", async () => {
@@ -457,7 +591,7 @@ describe("judge WebMCP tools", () => {
     expect(onPrepare).not.toHaveBeenCalled()
   })
 
-  it("returns bounded editor choices with optional limits represented exactly", async () => {
+  it("paginates editor choices without truncating their usable references", async () => {
     const tools = createJudgeWebMcpTools({
       slug: "safe-event",
       assignments: [assignment],
@@ -481,6 +615,7 @@ describe("judge WebMCP tools", () => {
 
     const result = await execute(findTool(tools, "get_judge_assignment"), {
       assignmentRef: "assignment-1",
+      choiceLimit: 4,
     })
     expect(result).toMatchObject({
       ok: true,
@@ -489,6 +624,10 @@ describe("judge WebMCP tools", () => {
         responseChoices: {
           maxPicks: 0,
           truncated: true,
+          criteriaTotal: 5,
+          criteriaNextCursor: "extra-2",
+          bucketTotal: 9,
+          bucketNextCursor: "bucket-3",
           criteria: [
             { ref: "impact", name: "Impact", min: 0, max: 10 },
             { ref: "clarity", name: "Clarity" },
@@ -502,7 +641,32 @@ describe("judge WebMCP tools", () => {
       data: { responseChoices: { criteria: unknown[]; buckets: unknown[] } }
     }).data.responseChoices
     expect(choices.criteria).toHaveLength(4)
-    expect(choices.buckets).toHaveLength(8)
+    expect(choices.buckets).toHaveLength(4)
+
+    const next = await execute(findTool(tools, "get_judge_assignment"), {
+      assignmentRef: "assignment-1",
+      criteriaCursor: "extra-2",
+      bucketCursor: "bucket-3",
+      choiceLimit: 4,
+    })
+    expect(next).toMatchObject({
+      ok: true,
+      data: {
+        responseChoices: {
+          criteriaTotal: 5,
+          criteriaNextCursor: null,
+          criteria: [{ ref: "extra-3", name: "Must be truncated" }],
+          bucketTotal: 9,
+          bucketNextCursor: "bucket-7",
+          buckets: [
+            { ref: "bucket-4" },
+            { ref: "bucket-5" },
+            { ref: "bucket-6" },
+            { ref: "bucket-7" },
+          ],
+        },
+      },
+    })
   })
 
   it("reports an unloaded editor without leaking notes or internal IDs", async () => {

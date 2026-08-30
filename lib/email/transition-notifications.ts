@@ -27,9 +27,15 @@ export async function buildTransitionEmail(
     hackathonStartsAt?: string | null
     hackathonEndsAt?: string | null
     challenges?: ChallengeSummary[]
+    recipientRole?: string
   }
 ): Promise<EmailContent> {
-  const eventUrl = buildEventUrl(hackathonSlug)
+  const isJudgeScoringStart =
+    event === "judging_started" && options?.recipientRole === "judge"
+  const eventUrl = buildEventUrl(
+    hackathonSlug,
+    isJudgeScoringStart ? "/judge" : undefined,
+  )
   const tag = sanitizeTag(hackathonName)
   const hasChallenges = !!options?.challenges && options.challenges.length > 0
 
@@ -41,11 +47,14 @@ export async function buildTransitionEmail(
       hackathonStartsAt: options?.hackathonStartsAt,
       hackathonEndsAt: options?.hackathonEndsAt,
       challenges: options?.challenges,
+      recipientRole: options?.recipientRole,
     })
   )
 
   const shortName = shortHackathonName(hackathonName)
-  const subject = hasChallenges
+  const subject = isJudgeScoringStart
+    ? `Your judging is ready for ${shortName}`
+    : hasChallenges
     ? `${shortName} is live — see the challenges`
     : subjectMap[event](shortName)
 

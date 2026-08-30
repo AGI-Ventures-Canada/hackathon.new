@@ -152,6 +152,25 @@ describe("lifecycle email delivery", () => {
       .resolves.toEqual({ sent: 0, failed: 0 })
   })
 
+  it("never sends a feedback survey for a test event", async () => {
+    fromImpl = () => query({
+      data: {
+        name: "Practice Event",
+        slug: "practice-event",
+        status: "completed",
+        results_published_at: "2026-08-20T00:00:00Z",
+        feedback_survey_sent_at: null,
+        is_test_event: true,
+      },
+      error: null,
+    })
+
+    await expect(sendFeedbackSurveyEmails("hack_1", "https://survey.example.com"))
+      .resolves.toEqual({ sent: 0, failed: 0 })
+    expect(mockGetUserList).not.toHaveBeenCalled()
+    expect(mockSendEmail).not.toHaveBeenCalled()
+  })
+
   it("surfaces feedback event, attendee, and checkpoint read failures", async () => {
     fromImpl = () => query({ data: null, error: { message: "event read failed" } })
     await expect(sendFeedbackSurveyEmails("hack_1", "https://survey.example.com"))
@@ -305,6 +324,73 @@ describe("lifecycle email delivery", () => {
     expect(mockSendEmail).toHaveBeenCalledTimes(2)
   })
 
+  it("sends judge reminders to judges with an exact time and direct judge link", async () => {
+    const participantsQuery = query({
+      data: [{ clerk_user_id: "judge_1" }],
+      error: null,
+    })
+    fromImpl = (table) => table === "hackathon_participants"
+      ? participantsQuery
+      : query({ data: null, error: null })
+    mockGetUserList.mockResolvedValue({ data: [{
+      id: "judge_1",
+      firstName: "Jordan",
+      primaryEmailAddress: { emailAddress: "judge@example.com" },
+    }] })
+
+    await expect(sendPreEventReminderEmail({
+      hackathonId: "hack_1",
+      reminderType: "judge_event_starting",
+      hackathonName: "Build Together",
+      hackathonSlug: "build-together",
+      deadlineDate: "2026-09-10T12:00:00.000Z",
+      hackathonTimezone: "UTC",
+      urgency: "medium",
+      deliveryId: "judge_event_24h",
+    })).resolves.toEqual({ sent: 1, failed: 0 })
+
+    expect(participantsQuery.eq).toHaveBeenCalledWith("role", "judge")
+    const email = mockSendEmail.mock.calls[0]?.[0]
+    expect(email?.to).toBe("judge@example.com")
+    expect(email?.subject).toContain("Judge plan: event starts soon")
+    expect(email?.text).toContain(
+      "Thursday, September 10, 2026 at 12:00 PM UTC",
+    )
+    expect(email?.text).toContain(
+      "https://preview.hackathon.new/e/build-together/judge",
+    )
+    expect(email?.text).toContain("you're a judge for Build Together")
+  })
+
+  it("uses one provider identity for the same judge reminder window", async () => {
+    mockGetUserList.mockResolvedValue({ data: [{
+      id: "judge_1",
+      firstName: "Jordan",
+      primaryEmailAddress: { emailAddress: "judge@example.com" },
+    }] })
+    const shared = {
+      hackathonId: "hack_1",
+      reminderType: "judge_event_starting" as const,
+      hackathonName: "Build Together",
+      hackathonSlug: "build-together",
+      deadlineDate: "2026-09-10T12:00:00.000Z",
+      hackathonTimezone: "UTC",
+      urgency: "medium" as const,
+      recipientIds: ["judge_1"],
+    }
+
+    await sendPreEventReminderEmail({ ...shared, deliveryId: "event-row" })
+    await sendPreEventReminderEmail({ ...shared, deliveryId: "catch-up-row" })
+
+    expect(mockSendEmail).toHaveBeenCalledTimes(2)
+    expect(mockSendEmail.mock.calls[0]?.[0].idempotencyKey).toBe(
+      mockSendEmail.mock.calls[1]?.[0].idempotencyKey,
+    )
+    expect(mockSendEmail.mock.calls[0]?.[0].idempotencyKey).toBe(
+      "pre-event-reminder/hack_1/judge_event_starting/2026-09-10T12:00:00.000Z/medium/judge_1",
+    )
+  })
+
   it("resumes budgeted pre-event delivery by stable recipient instead of list position", async () => {
     fromImpl = () => query({
         data: [{ clerk_user_id: "user_2" }, { clerk_user_id: "user_3" }],
@@ -374,6 +460,35 @@ describe("lifecycle email delivery", () => {
       budget: createDeliveryBudget(1, Date.now() - 1),
     })).resolves.toEqual({ sent: 0, failed: 0, deferred: true })
     expect(mockGetUserList).not.toHaveBeenCalled()
+  })
+
+  it("never sends post-event email for a test event", async () => {
+    fromImpl = (table) => table === "hackathons"
+      ? query({
+          data: {
+            name: "Practice Event",
+            slug: "practice-event",
+            is_test_event: true,
+          },
+          error: null,
+        })
+      : query({ data: [{ clerk_user_id: "user_1" }], error: null })
+
+    await expect(sendReminderEmailsWithResult(
+      "hack_1",
+      "feedback_followup",
+      "all_participants",
+      () => ({
+        hackathonName: "Practice Event",
+        subject: "Share feedback",
+        heading: "Share feedback",
+        body: "Tell us what you think.",
+        ctaLabel: "Share feedback",
+        ctaUrl: "https://survey.example.com",
+      }),
+    )).resolves.toEqual({ eligible: 0, sent: 0, failed: 0 })
+    expect(mockGetUserList).not.toHaveBeenCalled()
+    expect(mockSendEmail).not.toHaveBeenCalled()
   })
 
   it("deduplicates post-event recipients and isolates partial failures", async () => {

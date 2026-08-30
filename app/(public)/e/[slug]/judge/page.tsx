@@ -7,11 +7,11 @@ import { GateCheckPanel } from "@/components/hackathon/judging/gate-check-panel"
 import { JudgesPickPanel } from "@/components/hackathon/judging/judges-pick-panel"
 import { PageHeader } from "@/components/page-header"
 import { AutoRefresh } from "@/components/ui/auto-refresh"
-import { Clock } from "lucide-react"
 import type { JudgePick } from "@/lib/db/hackathon-types"
 import { routeJudgeAssignments } from "@/lib/utils/judging-assignment-routing"
 import { JudgeWebMcpTools } from "@/components/hackathon/judging/judge-webmcp-tools"
 import type { JudgeWebMcpAssignment } from "@/lib/webmcp/judge-tools"
+import { JudgeWorkspaceState } from "@/components/hackathon/judging/judge-workspace-state"
 
 const JUDGE_PAGE_REFRESH_INTERVAL_MS = 15000
 
@@ -33,29 +33,47 @@ export default async function JudgePage({ params }: PageProps) {
     notFound()
   }
 
+  const { getRegistrationInfo } = await import("@/lib/services/hackathons")
+  const registrationInfo = await getRegistrationInfo(hackathon.id, userId)
+
   if (!PUBLISHED_STATUSES.includes(hackathon.status)) {
-    const { getRegistrationInfo } = await import("@/lib/services/hackathons")
-    const regInfo = await getRegistrationInfo(hackathon.id, userId)
-    if (regInfo.participantRole === "judge") {
+    if (registrationInfo.participantRole === "judge") {
       return (
-        <div className="flex min-h-[60vh] flex-col items-center justify-center px-4 text-center">
-          <Clock className="size-10 text-muted-foreground mb-4" />
-          <h1 className="text-xl font-semibold mb-2">This event isn&apos;t live yet</h1>
-          <p className="text-muted-foreground max-w-md">
-            Judging assignments will appear here once the hackathon is published.
-            Check back later.
-          </p>
+        <div className="p-4 md:p-6">
+          {hackathon.status !== "archived" && (
+            <AutoRefresh intervalMs={JUDGE_PAGE_REFRESH_INTERVAL_MS} />
+          )}
+          <JudgeWorkspaceState
+            state={hackathon.status === "archived" ? "closed" : "draft"}
+          />
         </div>
       )
     }
     notFound()
   }
 
-  const { getRegistrationInfo } = await import("@/lib/services/hackathons")
-  const registrationInfo = await getRegistrationInfo(hackathon.id, userId)
-
   if (registrationInfo.participantRole !== "judge") {
     redirect(`/e/${slug}`)
+  }
+
+  const { isJudgingOpenForHackathon } = await import("@/lib/services/judging")
+  const judgingIsOpen = await isJudgingOpenForHackathon(hackathon)
+
+  if (!judgingIsOpen && hackathon.status !== "completed" && hackathon.status !== "archived") {
+    return (
+      <div className="p-4 md:p-6">
+        <AutoRefresh intervalMs={JUDGE_PAGE_REFRESH_INTERVAL_MS} />
+        <JudgeWorkspaceState state="before_judging" eventHref={`/e/${slug}`} />
+      </div>
+    )
+  }
+
+  if (hackathon.status !== "active" && hackathon.status !== "judging") {
+    return (
+      <div className="p-4 md:p-6">
+        <JudgeWorkspaceState state="closed" eventHref={`/e/${slug}`} />
+      </div>
+    )
   }
 
   const { getJudgeAssignments } = await import("@/lib/services/judging")
@@ -117,7 +135,7 @@ export default async function JudgePage({ params }: PageProps) {
     <JudgeWebMcpTools
       slug={slug}
       assignments={webMcpAssignments}
-      enabled={hackathon.status === "active" || hackathon.status === "judging"}
+      enabled={judgingIsOpen}
     >
       <div className="p-4 md:p-6 space-y-6">
         <AutoRefresh intervalMs={JUDGE_PAGE_REFRESH_INTERVAL_MS} />
@@ -131,9 +149,10 @@ export default async function JudgePage({ params }: PageProps) {
         />
 
         {visibleAssignmentCount === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-12">
-            You don&apos;t have any assignments yet.
-          </p>
+          <JudgeWorkspaceState
+            state="waiting_for_assignments"
+            eventHref={`/e/${slug}`}
+          />
         ) : (
           <div className="space-y-6">
             {pickGroups.map(([prizeId, assignments]) => (

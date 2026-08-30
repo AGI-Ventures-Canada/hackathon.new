@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, mock } from "bun:test"
 import type { JudgePendingNotification } from "@/lib/db/hackathon-types"
 import {
   createChainableMock,
+  mockFrom,
   resetSupabaseMocks,
   setMockFromImplementation,
 } from "../lib/supabase-mock"
@@ -27,7 +28,46 @@ const baseNotification: JudgePendingNotification = {
   email: "judge@example.com",
   added_by_name: "Organizer",
   sent_at: null,
+  fail_count: 0,
+  last_error: null,
+  next_attempt_at: null,
   created_at: "2026-01-01T00:00:00Z",
+  updated_at: "2026-01-01T00:00:00Z",
+}
+
+function claimedNotification(
+  notification: JudgePendingNotification = baseNotification,
+  overrides: {
+    hackathonName?: string
+    hackathonSlug?: string
+    isTestEvent?: boolean
+    participantRole?: string
+  } = {},
+) {
+  return {
+    ...notification,
+    hackathons: {
+      name: overrides.hackathonName ?? "Test Hackathon",
+      slug: overrides.hackathonSlug ?? "test-hackathon",
+      status: "active",
+      starts_at: "2026-09-10T13:00:00.000Z",
+      ends_at: "2026-09-11T21:00:00.000Z",
+      is_test_event: overrides.isTestEvent ?? false,
+    },
+    participant: { role: overrides.participantRole ?? "judge" },
+  }
+}
+
+function setQueryResults(
+  results: Array<{ data: unknown; error: { message: string } | null }>,
+) {
+  const chains = results.map((result) => createChainableMock(result))
+  let index = 0
+  setMockFromImplementation(() => chains[index++] ?? createChainableMock({
+    data: null,
+    error: null,
+  }))
+  return chains
 }
 
 describe("fetchPendingNotifications", () => {
@@ -70,29 +110,38 @@ describe("sendJudgeNotification", () => {
   })
 
   it("sends email and marks sent_at", async () => {
-    const chain = createChainableMock({ data: null, error: null })
-    setMockFromImplementation(() => chain)
+    const [, sentChain] = setQueryResults([
+      { data: claimedNotification(), error: null },
+      { data: { id: baseNotification.id }, error: null },
+    ])
 
-    await sendJudgeNotification({
+    const result = await sendJudgeNotification({
       notification: baseNotification,
       hackathonName: "Test Hackathon",
       hackathonSlug: "test-hackathon",
+      hackathonStartsAt: "2026-09-10T13:00:00.000Z",
+      hackathonEndsAt: "2026-09-11T21:00:00.000Z",
+      hackathonTimezone: "UTC",
     })
 
+    expect(result).toEqual({ sent: true })
     expect(mockSendJudgeAddedNotification).toHaveBeenCalledWith({
       to: "judge@example.com",
-      deliveryId: "notif1",
+      deliveryId: "participant1",
       hackathonName: "Test Hackathon",
       hackathonSlug: "test-hackathon",
       addedByName: "Organizer",
+      hackathonStartsAt: "2026-09-10T13:00:00.000Z",
+      hackathonEndsAt: "2026-09-11T21:00:00.000Z",
+      hackathonTimezone: "UTC",
     })
-    expect(chain.update).toHaveBeenCalledWith(
+    expect(sentChain.update).toHaveBeenCalledWith(
       expect.objectContaining({ sent_at: expect.any(String) })
     )
   })
 
   it("throws when email send fails", async () => {
-    setMockFromImplementation(() => createChainableMock({ data: null, error: null }))
+    setQueryResults([{ data: claimedNotification(), error: null }])
     mockSendJudgeAddedNotification.mockResolvedValueOnce({ success: false })
 
     await expect(
@@ -105,9 +154,10 @@ describe("sendJudgeNotification", () => {
   })
 
   it("throws when sent_at DB update fails", async () => {
-    setMockFromImplementation(() =>
-      createChainableMock({ data: null, error: { message: "update failed" } })
-    )
+    setQueryResults([
+      { data: claimedNotification(), error: null },
+      { data: null, error: { message: "update failed" } },
+    ])
 
     await expect(
       sendJudgeNotification({
@@ -118,9 +168,10 @@ describe("sendJudgeNotification", () => {
     ).rejects.toThrow("Failed to mark notification notif1 as sent: update failed")
   })
 
-  it("does not call update when email fails", async () => {
-    const chain = createChainableMock({ data: null, error: null })
-    setMockFromImplementation(() => chain)
+  it("does not mark the row sent when email fails", async () => {
+    const [claimChain] = setQueryResults([
+      { data: claimedNotification(), error: null },
+    ])
     mockSendJudgeAddedNotification.mockResolvedValueOnce({ success: false })
 
     await expect(
@@ -131,7 +182,43 @@ describe("sendJudgeNotification", () => {
       })
     ).rejects.toThrow()
 
-    expect(chain.update).not.toHaveBeenCalled()
+    expect(claimChain.update).toHaveBeenCalledTimes(1)
+    expect(mockFrom).toHaveBeenCalledTimes(1)
+  })
+
+  it("skips a stale workflow snapshot after the judge is removed", async () => {
+    setQueryResults([{ data: null, error: null }])
+
+    const result = await sendJudgeNotification({
+      notification: baseNotification,
+      hackathonName: "Old event name",
+      hackathonSlug: "old-event-slug",
+    })
+
+    expect(result).toEqual({ sent: false })
+    expect(mockSendJudgeAddedNotification).not.toHaveBeenCalled()
+  })
+
+  it("releases a claimed row without sending when the event becomes a test event", async () => {
+    const [, releaseChain] = setQueryResults([
+      {
+        data: claimedNotification(baseNotification, { isTestEvent: true }),
+        error: null,
+      },
+      { data: null, error: null },
+    ])
+
+    const result = await sendJudgeNotification({
+      notification: baseNotification,
+      hackathonName: "Test Hackathon",
+      hackathonSlug: "test-hackathon",
+    })
+
+    expect(result).toEqual({ sent: false })
+    expect(mockSendJudgeAddedNotification).not.toHaveBeenCalled()
+    expect(releaseChain.update).toHaveBeenCalledWith(
+      expect.objectContaining({ next_attempt_at: null }),
+    )
   })
 })
 
@@ -143,7 +230,7 @@ describe("sendJudgeNotificationsWorkflow", () => {
   })
 
   it("returns sent: 0 when no pending notifications", async () => {
-    setMockFromImplementation(() => createChainableMock({ data: [], error: null }))
+    setQueryResults([{ data: [], error: null }])
 
     const result = await sendJudgeNotificationsWorkflow({
       hackathonId: "h1",
@@ -161,7 +248,13 @@ describe("sendJudgeNotificationsWorkflow", () => {
       { ...baseNotification, id: "n2", email: "b@example.com" },
       { ...baseNotification, id: "n3", email: "c@example.com" },
     ]
-    setMockFromImplementation(() => createChainableMock({ data: notifications, error: null }))
+    setQueryResults([
+      { data: notifications, error: null },
+      ...notifications.flatMap((notification) => [
+        { data: claimedNotification(notification), error: null },
+        { data: { id: notification.id }, error: null },
+      ]),
+    ])
 
     const result = await sendJudgeNotificationsWorkflow({
       hackathonId: "h1",
@@ -179,7 +272,14 @@ describe("sendJudgeNotificationsWorkflow", () => {
       { ...baseNotification, id: "n2" },
       { ...baseNotification, id: "n3" },
     ]
-    setMockFromImplementation(() => createChainableMock({ data: notifications, error: null }))
+    setQueryResults([
+      { data: notifications, error: null },
+      { data: claimedNotification(notifications[0]), error: null },
+      { data: { id: notifications[0].id }, error: null },
+      { data: claimedNotification(notifications[1]), error: null },
+      { data: claimedNotification(notifications[2]), error: null },
+      { data: { id: notifications[2].id }, error: null },
+    ])
     mockSendJudgeAddedNotification
       .mockResolvedValueOnce({ success: true })
       .mockResolvedValueOnce({ success: false })
@@ -195,7 +295,7 @@ describe("sendJudgeNotificationsWorkflow", () => {
           hackathonName: "Test",
           hackathonSlug: "test",
         })
-      ).rejects.toThrow("Only sent 2/3 judge notifications")
+      ).rejects.toThrow("Only processed 2/3 judge notifications")
       expect(mockSendJudgeAddedNotification).toHaveBeenCalledTimes(3)
       expect(String(error.mock.calls[0]?.[0])).toBe(
         "Failed to send judge notification n2:",
@@ -206,10 +306,18 @@ describe("sendJudgeNotificationsWorkflow", () => {
     }
   })
 
-  it("passes hackathonName and hackathonSlug to each notification", async () => {
-    setMockFromImplementation(() =>
-      createChainableMock({ data: [baseNotification], error: null })
-    )
+  it("uses the current event name and slug for each notification", async () => {
+    setQueryResults([
+      { data: [baseNotification], error: null },
+      {
+        data: claimedNotification(baseNotification, {
+          hackathonName: "My Hackathon",
+          hackathonSlug: "my-hackathon",
+        }),
+        error: null,
+      },
+      { data: { id: baseNotification.id }, error: null },
+    ])
 
     await sendJudgeNotificationsWorkflow({
       hackathonId: "h1",

@@ -3,19 +3,26 @@ import { AlertTriangle, MailWarning } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import type { EventLifecycleAlert } from "@/lib/utils/event-lifecycle-alerts"
+import type { UnsentInvitationEmailCounts } from "@/lib/services/invitation-email-health"
 
 export function EventHealthAlerts({
   slug,
   alerts,
-  unsentInvitationEmailCount,
+  invitationEmailCounts,
+  failedReminderCount,
   queuedUntilPublish,
 }: {
   slug: string
   alerts: EventLifecycleAlert[]
-  unsentInvitationEmailCount: number
+  invitationEmailCounts: UnsentInvitationEmailCounts
+  failedReminderCount: number
   queuedUntilPublish: boolean
 }) {
-  if (alerts.length === 0 && unsentInvitationEmailCount === 0) return null
+  if (
+    alerts.length === 0 &&
+    invitationEmailCounts.total === 0 &&
+    failedReminderCount === 0
+  ) return null
 
   return (
     <div className="space-y-3">
@@ -34,22 +41,50 @@ export function EventHealthAlerts({
         </Alert>
       ))}
 
-      {unsentInvitationEmailCount > 0 && (
-        <Alert>
+      {([
+        {
+          key: "teams",
+          count: invitationEmailCounts.teams,
+          name: "team invite",
+          href: `/e/${slug}/manage?tab=teams`,
+        },
+        {
+          key: "judges",
+          count: invitationEmailCounts.judges,
+          name: "judge invite",
+          href: `/e/${slug}/manage?tab=judging&jtab=judges`,
+        },
+      ] as const).map((invite) => invite.count > 0 && (
+        <Alert key={invite.key}>
           <MailWarning className="size-4" />
           <AlertTitle>
             {queuedUntilPublish
-              ? `${unsentInvitationEmailCount} invite email${unsentInvitationEmailCount === 1 ? " is" : "s are"} saved`
-              : `${unsentInvitationEmailCount} invite email${unsentInvitationEmailCount === 1 ? "" : "s"} still need to send`}
+              ? `${invite.count} ${invite.name} email${invite.count === 1 ? " is" : "s are"} saved`
+              : `${invite.count} ${invite.name} email${invite.count === 1 ? "" : "s"} still need to send`}
           </AlertTitle>
           <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <span>
               {queuedUntilPublish
-                ? "They’ll send when you publish. Draft events don’t send invite emails."
-                : "We’ll keep retrying. Open Teams or Judging to send them again now."}
+                ? "It’ll send when you publish. Draft events don’t send invite emails."
+                : "We’ll keep trying. Open the invite list to send it again now."}
             </span>
             <Button asChild size="sm" variant="outline">
-              <Link href={`/e/${slug}/manage?tab=teams`}>Review emails</Link>
+              <Link href={invite.href}>Review emails</Link>
+            </Button>
+          </AlertDescription>
+        </Alert>
+      ))}
+
+      {failedReminderCount > 0 && (
+        <Alert variant="destructive">
+          <MailWarning className="size-4" />
+          <AlertTitle>
+            {failedReminderCount} delivery issue{failedReminderCount === 1 ? " needs" : "s need"} help
+          </AlertTitle>
+          <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <span>Some emails or event updates stopped retrying. Review the email setup.</span>
+            <Button asChild size="sm" variant="outline">
+              <Link href={`/e/${slug}/manage?tab=event&etab=email`}>Review email</Link>
             </Button>
           </AlertDescription>
         </Alert>

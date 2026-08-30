@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -69,6 +69,7 @@ export function GateCheckPanel({
   const [gateResponses, setGateResponses] = useState<Record<string, boolean>>({})
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const detailRequestRef = useRef(0)
 
   useEffect(() => {
     setAssignments((current) =>
@@ -83,7 +84,11 @@ export function GateCheckPanel({
 
   const fetchDetail = useCallback(
     async (assignmentId: string) => {
+      const requestId = ++detailRequestRef.current
       setDetailLoading(true)
+      setDetail(null)
+      setGateResponses({})
+      setSubmitted(false)
       setError(null)
       try {
         const res = await fetch(
@@ -91,6 +96,10 @@ export function GateCheckPanel({
         )
         if (!res.ok) throw new Error("Failed to load assignment detail")
         const data = await res.json()
+        if (detailRequestRef.current !== requestId) return
+        if (data.id !== assignmentId) {
+          throw new Error("Loaded the wrong assignment detail")
+        }
         const nextDetail = {
           ...data,
           gates: (data.criteria ?? []).filter(
@@ -108,9 +117,12 @@ export function GateCheckPanel({
         setGateResponses(existingGates)
         setSubmitted(nextDetail.isComplete ?? false)
       } catch (err) {
+        if (detailRequestRef.current !== requestId) return
         setError(err instanceof Error ? err.message : "Something went wrong")
       } finally {
-        setDetailLoading(false)
+        if (detailRequestRef.current === requestId) {
+          setDetailLoading(false)
+        }
       }
     },
     [hackathonSlug]
@@ -119,7 +131,10 @@ export function GateCheckPanel({
   const currentAssignmentId = assignments[currentIndex]?.id
 
   useEffect(() => {
-    if (currentAssignmentId) fetchDetail(currentAssignmentId)
+    if (currentAssignmentId) void fetchDetail(currentAssignmentId)
+    return () => {
+      detailRequestRef.current += 1
+    }
   }, [currentAssignmentId, fetchDetail])
 
   useEffect(() => {
@@ -127,7 +142,7 @@ export function GateCheckPanel({
       const assignmentId = (event as CustomEvent<{ assignmentId?: string }>).detail
         ?.assignmentId
       const index = assignments.findIndex((assignment) => assignment.id === assignmentId)
-      if (index >= 0) {
+      if (index >= 0 && !submitting) {
         setCurrentIndex(index)
         setSubmitted(false)
       }
@@ -135,31 +150,38 @@ export function GateCheckPanel({
 
     window.addEventListener(JUDGE_WEBMCP_OPEN_EVENT, handleOpen)
     return () => window.removeEventListener(JUDGE_WEBMCP_OPEN_EVENT, handleOpen)
-  }, [assignments])
+  }, [assignments, submitting])
 
   function goNext() {
-    if (currentIndex < assignments.length - 1) {
+    if (!submitting && currentIndex < assignments.length - 1) {
       setCurrentIndex(currentIndex + 1)
       setSubmitted(false)
     }
   }
 
   function goPrev() {
-    if (currentIndex > 0) {
+    if (!submitting && currentIndex > 0) {
       setCurrentIndex(currentIndex - 1)
       setSubmitted(false)
     }
   }
 
   async function handleSubmit() {
-    if (!detail) return
+    if (!detail || submitting) return
+
+    const submittedAssignmentId = detail.id
+
+    if (detail.gates.length === 0) {
+      setError("Judging isn't ready yet. Ask the organizer to add the required checks.")
+      return
+    }
 
     const gates = Object.entries(gateResponses).map(([criteriaId, passed]) => ({
       criteriaId,
       passed,
     }))
 
-    if (detail.gates.length > 0 && gates.length < detail.gates.length) {
+    if (gates.length < detail.gates.length) {
       setError("Answer all gate criteria before submitting")
       return
     }
@@ -169,7 +191,7 @@ export function GateCheckPanel({
 
     try {
       const res = await fetch(
-        `/api/public/hackathons/${hackathonSlug}/judging/assignments/${detail.id}/gate-check`,
+        `/api/public/hackathons/${hackathonSlug}/judging/assignments/${submittedAssignmentId}/gate-check`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -183,22 +205,33 @@ export function GateCheckPanel({
       }
 
       setSubmitted(true)
-      setDetail((current) => current ? { ...current, isComplete: true } : current)
+      setDetail((current) =>
+        current?.id === submittedAssignmentId
+          ? { ...current, isComplete: true }
+          : current
+      )
       setAssignments((prev) =>
         prev.map((a) =>
-          a.id === detail.id ? { ...a, isComplete: true } : a
+          a.id === submittedAssignmentId ? { ...a, isComplete: true } : a
         )
       )
       onComplete?.()
 
       setTimeout(() => {
-        const nextUnscored = assignments.findIndex(
-          (a, i) => i > currentIndex && !a.isComplete && a.id !== detail.id
-        )
-        if (nextUnscored >= 0) {
-          setCurrentIndex(nextUnscored)
+        setCurrentIndex((selectedIndex) => {
+          if (assignments[selectedIndex]?.id !== submittedAssignmentId) {
+            return selectedIndex
+          }
+          const nextUnscored = assignments.findIndex(
+            (a, i) =>
+              i > selectedIndex &&
+              !a.isComplete &&
+              a.id !== submittedAssignmentId
+          )
+          if (nextUnscored < 0) return selectedIndex
           setSubmitted(false)
-        }
+          return nextUnscored
+        })
       }, 600)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong")
@@ -273,6 +306,7 @@ export function GateCheckPanel({
   const scored = assignments.filter((a) => a.isComplete).length
   const passCount = Object.values(gateResponses).filter(Boolean).length
   const totalGates = detail?.gates.length ?? 0
+  const hasMissingGates = totalGates === 0 || Object.keys(gateResponses).length < totalGates
 
   return (
     <Card
@@ -285,13 +319,13 @@ export function GateCheckPanel({
           <div>
             <p className="font-medium">{prizeName}</p>
             <div className="mt-2 flex items-center gap-3">
-              <Button variant="ghost" size="icon" className="size-8" onClick={goPrev} disabled={currentIndex === 0}>
+              <Button variant="ghost" size="icon" className="size-8" onClick={goPrev} disabled={submitting || currentIndex === 0}>
                 <ChevronLeft className="size-4" />
               </Button>
               <span className="text-sm text-muted-foreground">
                 {currentIndex + 1} of {assignments.length}
               </span>
-              <Button variant="ghost" size="icon" className="size-8" onClick={goNext} disabled={currentIndex >= assignments.length - 1}>
+              <Button variant="ghost" size="icon" className="size-8" onClick={goNext} disabled={submitting || currentIndex >= assignments.length - 1}>
                 <ChevronRight className="size-4" />
               </Button>
             </div>
@@ -384,6 +418,11 @@ export function GateCheckPanel({
                   {passCount}/{totalGates} passed
                 </Badge>
               </div>
+              {detail.gates.length === 0 && (
+                <p className="text-sm text-destructive">
+                  Judging isn&apos;t ready yet. Ask the organizer to add the required checks.
+                </p>
+              )}
               {detail.gates.map((gate) => {
                 const value = gateResponses[gate.id]
                 return (
@@ -398,6 +437,7 @@ export function GateCheckPanel({
                       <Button
                         size="sm"
                         variant={value === true ? "default" : "outline"}
+                        disabled={submitting}
                         onClick={() =>
                           setGateResponses({ ...gateResponses, [gate.id]: true })
                         }
@@ -408,6 +448,7 @@ export function GateCheckPanel({
                       <Button
                         size="sm"
                         variant={value === false ? "destructive" : "outline"}
+                        disabled={submitting}
                         onClick={() =>
                           setGateResponses({ ...gateResponses, [gate.id]: false })
                         }
@@ -429,7 +470,7 @@ export function GateCheckPanel({
                 <span>to submit</span>
               </div>
               <Button
-                disabled={submitting || Object.keys(gateResponses).length < totalGates}
+                disabled={submitting || hasMissingGates}
                 onClick={handleSubmit}
                 className="ml-auto"
               >

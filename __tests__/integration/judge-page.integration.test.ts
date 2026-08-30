@@ -53,6 +53,13 @@ mock.module("@/lib/services/hackathons", () => ({
 }))
 
 const mockGetJudgeAssignments = mock(() => Promise.resolve([]))
+const mockIsJudgingOpenForHackathon = mock((event: { status: string; phase?: string | null }) =>
+  Promise.resolve(
+    event.status === "judging" ||
+    (event.status === "active" &&
+      (event.phase === "preliminaries" || event.phase === "finals")),
+  ),
+)
 
 mock.module("@/lib/services/judging", () => ({
   addJudge: mock(() => Promise.resolve({ success: true })),
@@ -68,6 +75,7 @@ mock.module("@/lib/services/judging", () => ({
   autoAssignJudges: mock(() => Promise.resolve({ assignedCount: 0 })),
   getJudgingProgress: mock(() => Promise.resolve({ totalAssignments: 0, completedAssignments: 0, judges: [] })),
   getJudgeAssignments: mockGetJudgeAssignments,
+  isJudgingOpenForHackathon: mockIsJudgingOpenForHackathon,
   getAssignmentDetail: mock(() => Promise.resolve(null)),
   submitScores: mock(() => Promise.resolve({ success: true })),
   saveNotes: mock(() => Promise.resolve(true)),
@@ -120,6 +128,12 @@ describe("JudgePage", () => {
     mockGetPublicHackathon.mockReset()
     mockGetRegistrationInfo.mockReset()
     mockGetJudgeAssignments.mockReset()
+    mockIsJudgingOpenForHackathon.mockReset()
+    mockIsJudgingOpenForHackathon.mockImplementation((event) => Promise.resolve(
+      event.status === "judging" ||
+      (event.status === "active" &&
+        (event.phase === "preliminaries" || event.phase === "finals")),
+    ))
     mockRedirect.mockClear()
     mockNotFound.mockClear()
 

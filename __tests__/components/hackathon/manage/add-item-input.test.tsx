@@ -67,6 +67,19 @@ describe("AddItemInput", () => {
     expect(onAdd.mock.calls[0][1]).toBe("info")
   })
 
+  it("adds a task for later with the shared scheduled priority", () => {
+    const onAdd = mock(() => {})
+    render(<AddItemInput onAdd={onAdd} />)
+    fireEvent.click(screen.getByText("Add item"))
+    fireEvent.click(screen.getByRole("button", { name: "Later" }))
+
+    const input = screen.getByPlaceholderText("What needs to be done?")
+    fireEvent.change(input, { target: { value: "Book the room" } })
+    fireEvent.click(screen.getByRole("button", { name: "Add" }))
+
+    expect(onAdd).toHaveBeenCalledWith("Book the room", "scheduled")
+  })
+
   it("closes on Escape", () => {
     render(<AddItemInput onAdd={() => {}} />)
     fireEvent.click(screen.getByText("Add item"))

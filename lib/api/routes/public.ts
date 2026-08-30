@@ -1986,7 +1986,8 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
-    if (hackathon.status !== "judging" && hackathon.status !== "active") {
+    const { getJudgeAssignments, isJudgingOpenForHackathon } = await import("@/lib/services/judging")
+    if (!(await isJudgingOpenForHackathon(hackathon))) {
       return new Response(
         JSON.stringify({ error: "Hackathon is not in judging phase", code: "not_judging" }),
         { status: 409, headers: { "Content-Type": "application/json" } }
@@ -2002,7 +2003,6 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
-    const { getJudgeAssignments } = await import("@/lib/services/judging")
     const assignments = await getJudgeAssignments(hackathon.id, userId)
 
     const anonymize = hackathon.anonymous_judging
@@ -2052,6 +2052,14 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
+    const { getJudgeSummary, isJudgingOpenForHackathon } = await import("@/lib/services/judging")
+    if (!(await isJudgingOpenForHackathon(hackathon))) {
+      return new Response(
+        JSON.stringify({ error: "Hackathon is not in judging phase", code: "not_judging" }),
+        { status: 409, headers: { "Content-Type": "application/json" } }
+      )
+    }
+
     const { supabase: getSupabase } = await import("@/lib/db/client")
     const client = getSupabase()
     const { data: participant } = await client
@@ -2069,7 +2077,6 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
-    const { getJudgeSummary } = await import("@/lib/services/judging")
     const summary = await getJudgeSummary(hackathon.id, participant.id, {
       anonymousJudging: hackathon.anonymous_judging,
     })
@@ -2165,14 +2172,17 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
-      if (hackathon.status !== "judging" && hackathon.status !== "active") {
+      const {
+        getAssignmentDetail,
+        isJudgingOpenForHackathon,
+        verifyAssignmentOwnership,
+      } = await import("@/lib/services/judging")
+      if (!(await isJudgingOpenForHackathon(hackathon))) {
         return new Response(
           JSON.stringify({ error: "Hackathon is not in judging phase", code: "not_judging" }),
           { status: 400, headers: { "Content-Type": "application/json" } }
         )
       }
-
-      const { getAssignmentDetail, verifyAssignmentOwnership } = await import("@/lib/services/judging")
 
       const ownerCheck = await verifyAssignmentOwnership(params.assignmentId, userId)
       if (!ownerCheck) {
@@ -2253,7 +2263,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         params.assignmentId,
         guard.ownership,
         body.scores,
-        body.notes ?? ""
+        body.notes
       )
 
       if (!result.success) {
@@ -2298,6 +2308,14 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       return new Response(
         JSON.stringify({ error: "Hackathon not found" }),
         { status: 404, headers: { "Content-Type": "application/json" } }
+      )
+    }
+
+    const { isJudgingOpenForHackathon } = await import("@/lib/services/judging")
+    if (!(await isJudgingOpenForHackathon(hackathon))) {
+      return new Response(
+        JSON.stringify({ error: "Hackathon is not in judging phase", code: "not_judging" }),
+        { status: 409, headers: { "Content-Type": "application/json" } }
       )
     }
 
@@ -2348,7 +2366,8 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
-      if (hackathon.status !== "judging" && hackathon.status !== "active") {
+      const { isJudgingOpenForHackathon } = await import("@/lib/services/judging")
+      if (!(await isJudgingOpenForHackathon(hackathon))) {
         return new Response(
           JSON.stringify({ error: "Hackathon is not in judging phase", code: "not_judging" }),
           { status: 400, headers: { "Content-Type": "application/json" } }
@@ -2745,12 +2764,45 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
     const { acceptJudgeInvitation, getJudgeInvitationByToken } = await import("@/lib/services/judge-invitations")
     const judgeInvitation = await getJudgeInvitationByToken(params.token)
 
-    const expectedTermsHash = judgeInvitation
-      ? await currentTermsHash({
-          require_terms_acceptance: judgeInvitation.hackathon.require_terms_acceptance,
-          terms_content: judgeInvitation.hackathon.terms_content,
-        })
-      : null
+    if (!judgeInvitation) {
+      return new Response(
+        JSON.stringify({ error: "Invitation not found", code: "not_found" }),
+        { status: 404, headers: { "Content-Type": "application/json" } },
+      )
+    }
+
+    const invitedEmail = judgeInvitation.email.trim().toLowerCase()
+    if (!userEmails.includes(invitedEmail)) {
+      return new Response(
+        JSON.stringify({
+          error: "Sign in with the email that received this invite.",
+          code: "email_mismatch",
+        }),
+        { status: 403, headers: { "Content-Type": "application/json" } },
+      )
+    }
+
+    if (judgeInvitation.status !== "pending") {
+      return new Response(
+        JSON.stringify({
+          error: `Invitation is ${judgeInvitation.status}`,
+          code: "not_pending",
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      )
+    }
+
+    if (new Date(judgeInvitation.expires_at).getTime() <= Date.now()) {
+      return new Response(
+        JSON.stringify({ error: "Invitation has expired", code: "expired" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      )
+    }
+
+    const expectedTermsHash = await currentTermsHash({
+      require_terms_acceptance: judgeInvitation.hackathon.require_terms_acceptance,
+      terms_content: judgeInvitation.hackathon.terms_content,
+    })
     if (expectedTermsHash && (!body?.terms_hash || body.terms_hash !== expectedTermsHash)) {
       return new Response(
         JSON.stringify({ error: "You must accept the terms and conditions to judge this event.", code: "terms_required" }),
@@ -2758,7 +2810,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
-    if (judgeInvitation && expectedTermsHash) {
+    if (expectedTermsHash) {
       const termsFailure = await persistRequiredTermsAcceptance(
         judgeInvitation.hackathon.id,
         userId,
@@ -2777,12 +2829,10 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       )
     }
 
-    if (judgeInvitation) {
-      const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
-      cancelRemindersForEntity("judge_invitation", judgeInvitation.id).catch((err) =>
-        console.error(`Failed to cancel reminders for judge_invitation ${judgeInvitation.id}:`, err)
-      )
-    }
+    const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
+    cancelRemindersForEntity("judge_invitation", judgeInvitation.id).catch((err) =>
+      console.error(`Failed to cancel reminders for judge_invitation ${judgeInvitation.id}:`, err)
+    )
 
     return {
       success: true,
@@ -2834,9 +2884,6 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         { status: 400, headers: { "Content-Type": "application/json" } }
       )
     }
-
-    const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
-    await cancelRemindersForEntity("judge_invitation", invitation.id)
 
     return { success: true }
   }, {

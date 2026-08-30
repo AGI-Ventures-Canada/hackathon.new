@@ -115,6 +115,7 @@ export type JobStatus = "queued" | "running" | "succeeded" | "failed" | "cancele
 export interface Hackathon {
   id: string
   tenant_id: string
+  is_test_event: boolean
   name: string
   slug: string
   description: string | null
@@ -545,6 +546,7 @@ export interface PrizeAssignment {
   id: string
   prize_id: string
   submission_id: string
+  assignment_source: "manual" | "automatic"
   assigned_at: string
 }
 
@@ -586,7 +588,11 @@ export interface JudgePendingNotification {
   email: string
   added_by_name: string
   sent_at: string | null
+  fail_count: number
+  last_error: string | null
+  next_attempt_at: string | null
   created_at: string
+  updated_at: string
 }
 
 export interface HackathonJudgeDisplay {

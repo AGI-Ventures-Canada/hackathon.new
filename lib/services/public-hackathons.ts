@@ -55,6 +55,7 @@ export function toPublicHackathonClientDto(
 ): PublicHackathonClientDto {
   const {
     stored_status: _storedStatus,
+    is_test_event: _isTestEvent,
     tenant_id: _tenantId,
     metadata: _metadata,
     created_at: _createdAt,
@@ -136,6 +137,7 @@ export async function getPublicHackathonById(
     .from("hackathons")
     .select("slug, metadata")
     .eq("id", id)
+    .eq("is_test_event", false)
     .single()
 
   if (error || !data || !isHackathonCreationReady(data)) {
@@ -147,7 +149,7 @@ export async function getPublicHackathonById(
 
 export async function getPublicHackathon(
   slug: string,
-  options?: { includeUnpublished?: boolean }
+  options?: { includeUnpublished?: boolean; includeTestEvents?: boolean }
 ): Promise<PublicHackathon | null> {
   const client = getSupabase() as unknown as SupabaseClient
 
@@ -158,6 +160,10 @@ export async function getPublicHackathon(
       organizer:tenants!tenant_id(id, name, slug, logo_url, logo_url_dark, clerk_org_id, clerk_user_id)
     `)
     .eq("slug", slug)
+
+  if (!options?.includeTestEvents) {
+    query = query.eq("is_test_event", false)
+  }
 
   if (!options?.includeUnpublished) {
     query = query.in("status", PUBLISHED_STATUSES)
@@ -244,6 +250,7 @@ export async function listPublicHackathons(
     .from("hackathons")
     .select("id", { count: "exact", head: true })
     .in("status", PUBLISHED_STATUSES)
+    .eq("is_test_event", false)
     .or(READY_HACKATHON_POSTGREST_FILTER)
 
   let dataQuery = client
@@ -253,6 +260,7 @@ export async function listPublicHackathons(
       organizer:tenants!tenant_id(id, name, slug, logo_url, logo_url_dark, clerk_org_id)
     `)
     .in("status", PUBLISHED_STATUSES)
+    .eq("is_test_event", false)
     .or(READY_HACKATHON_POSTGREST_FILTER)
     .order("status", { ascending: true })
     .order("starts_at", { ascending: true })

@@ -26,6 +26,7 @@ type LifecycleNotificationRow = {
     status: string
     starts_at: string | null
     ends_at: string | null
+    is_test_event: boolean
   } | null
   teams: { name: string } | null
 }
@@ -137,12 +138,13 @@ export async function retryPendingAttendeeLifecycleEmails(
   let query = client
     .from("attendee_lifecycle_notifications")
     .select(
-      "id, hackathon_id, team_id, clerk_user_id, notification_type, fail_count, hackathons!inner(name, slug, status, starts_at, ends_at), teams(name)"
+      "id, hackathon_id, team_id, clerk_user_id, notification_type, fail_count, hackathons!inner(name, slug, status, starts_at, ends_at, is_test_event), teams(name)"
     )
     .is("sent_at", null)
     .is("cancelled_at", null)
     .lt("fail_count", 5)
     .neq("hackathons.status", "draft")
+    .eq("hackathons.is_test_event", false)
     .order("created_at", { ascending: true })
     .limit(limit)
   if (filter) {
@@ -177,6 +179,10 @@ export async function retryPendingAttendeeLifecycleEmails(
       continue
     }
     if (hackathon.status === "draft") {
+      result.skipped++
+      continue
+    }
+    if (hackathon.is_test_event) {
       result.skipped++
       continue
     }

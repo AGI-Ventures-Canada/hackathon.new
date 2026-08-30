@@ -17,6 +17,7 @@ mock.module("resend", () => ({
 
 const {
   classifySendEmailError,
+  resetEmailProviderPacing,
   resolveResendTimeoutMs,
   sendEmail,
   sendEmailWithResult,
@@ -32,6 +33,7 @@ const input = {
 
 describe("Resend delivery wrapper", () => {
   beforeEach(() => {
+    resetEmailProviderPacing()
     mockResendSend.mockClear()
     mockResendSend.mockImplementation(() =>
       Promise.resolve({ data: { id: "resend_123" }, error: null, headers: null })
@@ -75,6 +77,30 @@ describe("Resend delivery wrapper", () => {
       html: input.html,
       text: input.text,
     })
+  })
+
+  it("never sends fixture email addresses to the provider", async () => {
+    const transport = mock(async () => ({
+      data: { id: "should-not-send" },
+      error: null,
+      headers: null,
+    }))
+
+    for (const to of [
+      "alice@seed.local",
+      "sandbox-person-1@example.invalid",
+      ["real@example.com", "sandbox-person-2@example.invalid"],
+    ]) {
+      const result = await sendEmailWithResult({ ...input, to }, { transport })
+      expect(result).toMatchObject({
+        ok: false,
+        attempts: 0,
+        error: { code: "email_recipient_suppressed", retryable: false },
+      })
+    }
+
+    expect(transport).not.toHaveBeenCalled()
+    expect(mockResendSend).not.toHaveBeenCalled()
   })
 
   it("uses the configured reply-to by default", async () => {
@@ -319,11 +345,20 @@ describe("Resend delivery wrapper", () => {
 
   it("retries retryable failures with backoff and one idempotency key", async () => {
     let attempts = 0
+    let providerNow = 0
     const waits: number[] = []
+    const providerWaits: number[] = []
     const keys: Array<string | undefined> = []
     const result = await sendEmailWithResult(input, {
       wait: async (milliseconds) => {
         waits.push(milliseconds)
+      },
+      providerPacing: {
+        now: () => providerNow,
+        wait: async (milliseconds) => {
+          providerWaits.push(milliseconds)
+          providerNow += milliseconds
+        },
       },
       transport: async (_payload, options) => {
         attempts++
@@ -345,11 +380,42 @@ describe("Resend delivery wrapper", () => {
 
     expect(result).toMatchObject({ ok: true, attempts: 3, id: "accepted_123" })
     expect(waits).toEqual([250, 500])
+    expect(providerWaits).toEqual([250, 250])
     expect(keys).toEqual([
       input.idempotencyKey,
       input.idempotencyKey,
       input.idempotencyKey,
     ])
+  })
+
+  it("spaces concurrent provider calls across separate email jobs", async () => {
+    let providerNow = 0
+    const providerWaits: number[] = []
+    const attemptTimes: number[] = []
+    const providerPacing = {
+      now: () => providerNow,
+      wait: async (milliseconds: number) => {
+        providerWaits.push(milliseconds)
+        await Promise.resolve()
+        providerNow += milliseconds
+      },
+    }
+
+    await Promise.all(["one", "two", "three"].map((suffix) =>
+      sendEmailWithResult(
+        { ...input, idempotencyKey: `${input.idempotencyKey}_${suffix}` },
+        {
+          providerPacing,
+          transport: async () => {
+            attemptTimes.push(providerNow)
+            return { data: { id: `accepted_${suffix}` }, error: null, headers: null }
+          },
+        },
+      ),
+    ))
+
+    expect(attemptTimes).toEqual([0, 250, 500])
+    expect(providerWaits).toEqual([250, 250])
   })
 
   it("retries Resend's concurrent idempotency replay with the same key", async () => {

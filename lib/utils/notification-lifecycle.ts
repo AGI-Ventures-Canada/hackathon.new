@@ -14,11 +14,13 @@ export type NotificationLifecycleHackathon = {
   status: HackathonStatus
   starts_at?: string | null
   ends_at?: string | null
+  is_test_event: boolean
 }
 
 export function getNotificationDisposition(
   hackathon: NotificationLifecycleHackathon,
 ): NotificationDisposition {
+  if (hackathon.is_test_event) return "queue"
   if (hackathon.status === "completed" || hackathon.status === "archived") return "reject"
 
   const endsAt = hackathon.ends_at ? new Date(hackathon.ends_at) : null

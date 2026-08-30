@@ -158,12 +158,13 @@ export async function sendWinnerEmailsWithResult(
 
   const { data: hackathon } = await client
     .from("hackathons")
-    .select("name, slug, starts_at, ends_at, status, results_published_at, winner_emails_sent_at")
+    .select("name, slug, starts_at, ends_at, status, results_published_at, winner_emails_sent_at, is_test_event")
     .eq("id", hackathonId)
     .single()
 
   if (!hackathon) throw new Error("The event was not found for winner emails.")
   if (
+    hackathon.is_test_event ||
     hackathon.status !== "completed" ||
     !hackathon.results_published_at ||
     hackathon.winner_emails_sent_at
@@ -375,11 +376,11 @@ export async function sendPrizeClaimEmail(
 
   const { data: hackathon } = await client
     .from("hackathons")
-    .select("name, slug, starts_at, ends_at")
+    .select("name, slug, starts_at, ends_at, is_test_event")
     .eq("id", hackathonId)
     .single()
 
-  if (!hackathon) return 0
+  if (!hackathon || hackathon.is_test_event) return 0
 
   const { data: assignment } = await client
     .from("prize_assignments")

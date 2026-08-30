@@ -83,6 +83,7 @@ function stateToHackathon(state: DraftState): PublicHackathon {
   return {
     id: "draft",
     tenant_id: "",
+    is_test_event: false,
     name: state.name,
     slug: "",
     description: state.description,

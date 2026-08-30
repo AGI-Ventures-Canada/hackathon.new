@@ -194,6 +194,37 @@ describe("Results Integration - publishResults", () => {
     expect(mockSendWinnerEmails).toHaveBeenCalledWith("h1")
   })
 
+  it("does not start result email delivery for a test event", async () => {
+    const publishedAt = "2026-03-01T00:00:00Z"
+    mockFrom.mockImplementation((table: string) => {
+      if (table === "hackathons") {
+        return createIntegrationChainableMock({
+          data: {
+            id: "h1",
+            name: "Test event",
+            slug: "test-event",
+            status: "completed",
+            tenant_id: "t1",
+            results_published_at: publishedAt,
+            is_test_event: true,
+          },
+          error: null,
+        })
+      }
+      if (table === "hackathon_results") {
+        return createIntegrationChainableMock({
+          data: [{ id: "r1", published_at: publishedAt }],
+          error: null,
+        })
+      }
+      return createIntegrationChainableMock({ data: [], error: null })
+    })
+
+    await expect(publishResults("h1", "t1")).resolves.toEqual({ success: true })
+    expect(mockSendWinnerEmails).not.toHaveBeenCalled()
+    expect(mockSendResultsAnnouncementEmails).not.toHaveBeenCalled()
+  })
+
   it("does not expose results or report success when completion fails", async () => {
     mockExecuteTransition.mockResolvedValueOnce({
       success: false,
@@ -469,6 +500,7 @@ describe("Results Integration - retryPendingResultEmails", () => {
 
   it("delivers each pending result email once and stamps winner delivery", async () => {
     const updateChains: ReturnType<typeof createIntegrationChainableMock>[] = []
+    let pendingChain: ReturnType<typeof createIntegrationChainableMock> | null = null
     let hackathonCall = 0
     mockFrom.mockImplementation((table: string) => {
       if (table !== "hackathons") {
@@ -477,7 +509,7 @@ describe("Results Integration - retryPendingResultEmails", () => {
 
       hackathonCall++
       if (hackathonCall === 1) {
-        return createIntegrationChainableMock({
+        pendingChain = createIntegrationChainableMock({
           data: [{
             id: "hack_pending",
             results_published_at: "2026-08-01T00:00:00.000Z",
@@ -486,6 +518,7 @@ describe("Results Integration - retryPendingResultEmails", () => {
           }],
           error: null,
         })
+        return pendingChain
       }
 
       const chain = createIntegrationChainableMock({ data: { id: "hack_pending" }, error: null })
@@ -504,6 +537,7 @@ describe("Results Integration - retryPendingResultEmails", () => {
     expect(mockGetNotificationSettings).toHaveBeenCalledTimes(1)
     expect(mockSendResultsAnnouncementEmails).toHaveBeenCalledTimes(1)
     expect(mockSendResultsAnnouncementEmails).toHaveBeenCalledWith("hack_pending")
+    expect(pendingChain?.eq).toHaveBeenCalledWith("is_test_event", false)
     expect(updateChains).toHaveLength(1)
     expect(updateChains[0]?.update).toHaveBeenCalledTimes(1)
     expect(updateChains[0]?.is).toHaveBeenCalledWith("winner_emails_sent_at", null)

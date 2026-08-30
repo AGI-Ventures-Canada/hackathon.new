@@ -7,6 +7,7 @@ import {
 
 const mockSendSponsorClaimNotification = mock(() => Promise.resolve(1))
 const mockSendOrganizerClaimNotification = mock(() => Promise.resolve(1))
+const mockSendPrizeShippedEmail = mock(() => Promise.resolve(true))
 
 mock.module("@/lib/email/sponsor-notifications", () => ({
   sendSponsorClaimNotification: mockSendSponsorClaimNotification,
@@ -16,7 +17,11 @@ mock.module("@/lib/email/organizer-notifications", () => ({
   sendOrganizerClaimNotification: mockSendOrganizerClaimNotification,
 }))
 
-function setClaimWithSponsorMock(): void {
+mock.module("@/lib/email/prize-shipped", () => ({
+  sendPrizeShippedEmail: mockSendPrizeShippedEmail,
+}))
+
+function setClaimWithSponsorMock(isTestEvent = false): void {
   let fulfillmentCall = 0
   setMockFromImplementation((table) => {
     if (table === "prize_fulfillments") {
@@ -47,7 +52,7 @@ function setClaimWithSponsorMock(): void {
     }
     if (table === "hackathons") {
       return createChainableMock({
-        data: { name: "AI Hack", slug: "ai-hack" },
+        data: { name: "AI Hack", slug: "ai-hack", is_test_event: isTestEvent },
         error: null,
       })
     }
@@ -73,9 +78,24 @@ describe("Prize Fulfillment Service", () => {
     mockSendSponsorClaimNotification.mockImplementation(() => Promise.resolve(1))
     mockSendOrganizerClaimNotification.mockReset()
     mockSendOrganizerClaimNotification.mockImplementation(() => Promise.resolve(1))
+    mockSendPrizeShippedEmail.mockReset()
+    mockSendPrizeShippedEmail.mockImplementation(() => Promise.resolve(true))
   })
 
   describe("initializeFulfillments", () => {
+    it("does not create claim tokens for a test event", async () => {
+      const prizes = createChainableMock({
+        data: [{ id: "p1", hackathons: { is_test_event: true } }],
+        error: null,
+      })
+      setMockFromImplementation(() => prizes)
+
+      const count = await initializeFulfillments("11111111-1111-1111-1111-111111111111")
+
+      expect(count).toBe(0)
+      expect(prizes.insert).not.toHaveBeenCalled()
+    })
+
     it("returns 0 when no prizes exist", async () => {
       setMockFromImplementation(() =>
         createChainableMock({ data: [], error: null })
@@ -237,6 +257,41 @@ describe("Prize Fulfillment Service", () => {
       )
       expect(result).not.toBeNull()
       expect(result!.status).toBe("shipped")
+    })
+
+    it("does not send shipping email for a test event", async () => {
+      let fulfillmentCalls = 0
+      setMockFromImplementation((table) => {
+        if (table === "prize_fulfillments") {
+          fulfillmentCalls++
+          return createChainableMock({
+            data: {
+              id: "f1",
+              status: fulfillmentCalls === 1 ? "assigned" : "shipped",
+              prize_assignment_id: "pa1",
+              recipient_email: "winner@example.com",
+              recipient_name: "Winner",
+              tracking_number: "track-1",
+            },
+            error: null,
+          })
+        }
+        if (table === "prize_assignments") {
+          return createChainableMock({ data: { prize: { name: "Prize" } }, error: null })
+        }
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: { name: "Practice Event", slug: "practice-event", is_test_event: true },
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      await expect(updateFulfillmentStatus("f1", "h1", "shipped", {
+        trackingNumber: "track-1",
+      })).resolves.not.toBeNull()
+      expect(mockSendPrizeShippedEmail).not.toHaveBeenCalled()
     })
   })
 
@@ -506,6 +561,17 @@ describe("Prize Fulfillment Service", () => {
       await organizerStarted
       expect(mockSendSponsorClaimNotification).toHaveBeenCalledTimes(1)
       expect(mockSendOrganizerClaimNotification).toHaveBeenCalledTimes(1)
+    })
+
+    it("does not send sponsor or organizer claim emails for a test event", async () => {
+      setClaimWithSponsorMock(true)
+
+      await expect(claimPrize("valid-token", {
+        recipientName: "Alice",
+        recipientEmail: "alice@test.com",
+      })).resolves.toEqual({ success: true })
+      expect(mockSendSponsorClaimNotification).not.toHaveBeenCalled()
+      expect(mockSendOrganizerClaimNotification).not.toHaveBeenCalled()
     })
 
     it("successfully claims with payment fields", async () => {

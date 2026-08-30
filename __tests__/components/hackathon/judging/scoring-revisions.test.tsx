@@ -77,4 +77,29 @@ describe("completed scoring responses", () => {
     expect(screen.getByRole("button", { name: "Save changes" })).toBeDefined()
     expect(screen.getByText("Works offline")).toBeDefined()
   })
+
+  it("blocks a gate response when no required checks are configured", async () => {
+    globalThis.fetch = mock(() =>
+      Promise.resolve(new Response(JSON.stringify({
+        ...completeAssignment,
+        isComplete: false,
+        criteria: [],
+        existingGateResponses: [],
+      }), { status: 200 }))
+    ) as unknown as typeof fetch
+
+    render(
+      <GateCheckPanel
+        hackathonSlug="test-hack"
+        prizeName="Offline Ready"
+        assignments={[{ ...completeAssignment, isComplete: false }]}
+      />,
+    )
+
+    expect(await screen.findByText(
+      "Judging isn't ready yet. Ask the organizer to add the required checks.",
+    )).toBeDefined()
+    expect((screen.getByRole("button", { name: "Submit & next" }) as HTMLButtonElement).disabled)
+      .toBe(true)
+  })
 })

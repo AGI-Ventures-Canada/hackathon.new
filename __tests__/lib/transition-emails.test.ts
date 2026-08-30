@@ -37,6 +37,22 @@ describe("Transition Email Templates", () => {
     expect(email.text).toContain("Judging is now underway")
   })
 
+  it("sends judges straight to clear scoring steps", async () => {
+    const email = await buildTransitionEmail(
+      "judging_started",
+      "Code Jam",
+      "code-jam",
+      { recipientRole: "judge" },
+    )
+
+    expect(email.subject).toBe("Your judging is ready for Code Jam")
+    expect(email.html).toContain("Your Scores Are Ready")
+    expect(email.html).toContain("Your judging tasks are ready")
+    expect(email.html).toContain("Start Judging")
+    expect(email.html).toContain("https://test.hackathon.new/e/code-jam/judge")
+    expect(email.text).not.toContain("Check the event page for updates")
+  })
+
   it("builds results_published email", async () => {
     const email = await buildTransitionEmail("results_published", "Hack Day", "hack-day")
 

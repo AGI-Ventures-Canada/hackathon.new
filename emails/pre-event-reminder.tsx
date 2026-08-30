@@ -14,6 +14,7 @@ interface PreEventReminderEmailProps {
   ctaLabel: string
   heading: string
   body: string
+  recipientReason?: string
 }
 
 export default function PreEventReminderEmail({
@@ -26,12 +27,13 @@ export default function PreEventReminderEmail({
   ctaLabel,
   heading,
   body,
+  recipientReason,
 }: PreEventReminderEmailProps) {
   return (
     <OatmealLayout
       heading={heading}
       preview={`${deadlineLabel} in ${timeLeft} \u2014 ${hackathonName}`}
-      footerText={`You\u2019re receiving this because you\u2019re registered for ${hackathonName}.`}
+      footerText={`You\u2019re receiving this because ${recipientReason ?? `you\u2019re registered for ${hackathonName}`}.`}
     >
       <Text
         style={{

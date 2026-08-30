@@ -44,7 +44,11 @@ mock.module("@/lib/email/challenges-released", () => ({
   buildChallengesReleasedEmail: mockBuildChallengesEmail,
 }))
 
-const { fetchRecipientEmails, sendTransitionEmail } = await import(
+const {
+  fetchRecipientEmails,
+  fetchTransitionRecipients,
+  sendTransitionEmail,
+} = await import(
   "@/lib/workflows/transition-notifications/steps"
 )
 const { sendChallengesReleasedEmail } = await import(
@@ -65,23 +69,40 @@ describe("transition delivery steps", () => {
   it("deduplicates role recipients and normalizes Clerk addresses", async () => {
     const recipients = query({
       data: [
-        { clerk_user_id: "user_1" },
-        { clerk_user_id: "user_1" },
-        { clerk_user_id: "user_2" },
+        { clerk_user_id: "user_1", role: "participant" },
+        { clerk_user_id: "user_1", role: "participant" },
+        { clerk_user_id: "user_2", role: "judge" },
       ],
       error: null,
     })
     fromImpl = () => recipients
     mockGetUserList.mockResolvedValue({ data: [
-      { primaryEmailAddress: { emailAddress: " Avery@Example.com " }, emailAddresses: [] },
-      { primaryEmailAddress: null, emailAddresses: [{ emailAddress: "river@example.com" }] },
-      { primaryEmailAddress: { emailAddress: "avery@example.com" }, emailAddresses: [] },
+      { id: "user_1", primaryEmailAddress: { emailAddress: " Avery@Example.com " }, emailAddresses: [] },
+      { id: "user_2", primaryEmailAddress: null, emailAddresses: [{ emailAddress: "river@example.com" }] },
     ] })
 
     await expect(fetchRecipientEmails("hack_1", ["participant", "judge"]))
       .resolves.toEqual(["avery@example.com", "river@example.com"])
     expect(recipients.in).toHaveBeenCalledWith("role", ["participant", "judge"])
     expect(mockGetUserList).toHaveBeenCalledWith({ userId: ["user_1", "user_2"], limit: 100 })
+  })
+
+  it("keeps one judge-first role when a person has more than one role", async () => {
+    fromImpl = () => query({
+      data: [
+        { clerk_user_id: "user_1", role: "participant" },
+        { clerk_user_id: "user_1", role: "judge" },
+        { clerk_user_id: "user_2", role: "participant" },
+      ],
+      error: null,
+    })
+    mockGetUserList.mockResolvedValue({ data: [
+      { id: "user_2", primaryEmailAddress: { emailAddress: "same@example.com" }, emailAddresses: [] },
+      { id: "user_1", primaryEmailAddress: { emailAddress: "Same@Example.com" }, emailAddresses: [] },
+    ] })
+
+    await expect(fetchTransitionRecipients("hack_1", ["participant", "judge"]))
+      .resolves.toEqual([{ email: "same@example.com", role: "judge" }])
   })
 
   it("surfaces recipient database failures before Clerk lookup", async () => {
@@ -126,6 +147,24 @@ describe("transition delivery steps", () => {
       hackathonName: "Build Together",
       hackathonSlug: "build-together",
     })).rejects.toThrow("Failed to send transition email to avery@example.com")
+  })
+
+  it("passes the judge role into the scoring-start email", async () => {
+    await sendTransitionEmail({
+      notificationId: "notification_1",
+      to: "judge@example.com",
+      recipientRole: "judge",
+      event: "judging_started",
+      hackathonName: "Build Together",
+      hackathonSlug: "build-together",
+    })
+
+    expect(mockBuildTransitionEmail).toHaveBeenCalledWith(
+      "judging_started",
+      "Build Together",
+      "build-together",
+      expect.objectContaining({ recipientRole: "judge" }),
+    )
   })
 
   it("uses a hashed challenge notification key and rejects failed sends", async () => {

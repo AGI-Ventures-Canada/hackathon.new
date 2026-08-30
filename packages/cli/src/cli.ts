@@ -97,10 +97,16 @@ const BANNER = `
   ${pc.dim("EVENT MANAGEMENT (auth required)")}
     events list                List your hackathons
     events get <id>            Get hackathon details
-    events create              Create a hackathon
+    events create              Create a hackathon (--test-stage registration|hacking|judging|results)
     events update <id>         Update a hackathon
     events delete <id>         Delete a hackathon
     events activity <id>       View activity log for a hackathon
+    events tasks list <id>     List organizer tasks
+    events tasks add <id>      Add an organizer task
+    events tasks complete <id> <task-ref>  Finish a task
+    events tasks reopen <id> <task-ref>    Reopen a task
+    events tasks dismiss <id> <task-ref>   Dismiss a task
+    events tasks remove <id> <task-ref>    Remove a custom task
     ${pc.dim("(alias: hackathons)")}
 
   ${pc.dim("JUDGING")}
@@ -361,6 +367,16 @@ async function main() {
           case "activity": {
             const { runHackathonsActivity } = await import("./commands/hackathons/activity.js")
             await runHackathonsActivity(client, rest[2], rest.slice(3).concat(flags.json ? ["--json"] : []))
+            break
+          }
+          case "tasks": {
+            const { runHackathonTasks } = await import("./commands/hackathons/tasks.js")
+            await runHackathonTasks(
+              client,
+              rest[2],
+              rest[3],
+              rest.slice(4).concat(flags.json ? ["--json"] : []),
+            )
             break
           }
           default:

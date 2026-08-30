@@ -18,6 +18,7 @@ export type DispatchInput = {
   challenges?: ChallengeSummary[]
   sendEmail?: boolean
   idempotencyKey?: string
+  isTestEvent?: boolean
 }
 
 const EVENT_TO_WEBHOOK: Record<TransitionEvent, WebhookEvent> = {
@@ -44,6 +45,8 @@ const EVENT_TO_SETTING_KEY: Record<TransitionEvent, string> = {
 export async function dispatchTransitionNotifications(
   input: DispatchInput
 ): Promise<void> {
+  if (input.isTestEvent) return
+
   const { getNotificationSettings } = await import("./notification-settings")
   const settings = await getNotificationSettings(input.hackathonId)
 
@@ -53,35 +56,46 @@ export async function dispatchTransitionNotifications(
   const hasChallenges = !!input.challenges && input.challenges.length > 0
 
   if (input.sendEmail !== false && emailEnabled && roles.length > 0) {
+    const notificationId = randomUUID()
+    const workflowInput = {
+      notificationId,
+      hackathonId: input.hackathonId,
+      hackathonName: input.hackathon.name,
+      hackathonSlug: input.hackathon.slug,
+      hackathonStartsAt: input.hackathon.starts_at ?? null,
+      hackathonEndsAt: input.hackathon.ends_at ?? null,
+      event: input.type,
+      recipientRoles: roles,
+      challenges: input.challenges,
+    }
     try {
       const { start } = await import("workflow/api")
       const { sendTransitionNotificationsWorkflow } = await import(
         "@/lib/workflows/transition-notifications"
       )
-      await start(sendTransitionNotificationsWorkflow, [
-        {
-          notificationId: randomUUID(),
-          hackathonId: input.hackathonId,
-          hackathonName: input.hackathon.name,
-          hackathonSlug: input.hackathon.slug,
-          hackathonStartsAt: input.hackathon.starts_at ?? null,
-          hackathonEndsAt: input.hackathon.ends_at ?? null,
-          event: input.type,
-          recipientRoles: roles,
-          // Challenges are merged into the transition email by design, gated
-          // only by the transition's own setting (e.g. email_on_hackathon_active).
-          // email_on_challenges_released controls the *standalone* path in
-          // dispatchChallengesReleasedNotifications — when challenges land in
-          // the same window as a status transition, recipients get one email,
-          // not two.
-          challenges: input.challenges,
-        },
-      ])
+      await start(sendTransitionNotificationsWorkflow, [workflowInput])
     } catch (err) {
       console.error(
         `Failed to dispatch transition emails for ${input.type}:`,
         err
       )
+      try {
+        const { queueFailedLifecycleNotificationDispatch } = await import(
+          "@/lib/services/lifecycle-notification-retries"
+        )
+        await queueFailedLifecycleNotificationDispatch({
+          id: notificationId,
+          hackathonId: input.hackathonId,
+          kind: "transition",
+          payload: workflowInput,
+          error: err,
+        })
+      } catch (queueError) {
+        console.error(
+          `Failed to save transition email retry for ${input.type}:`,
+          queueError,
+        )
+      }
     }
   }
 
@@ -140,38 +154,56 @@ export type ChallengesReleasedDispatchInput = {
   hackathon: { name: string; slug: string }
   challenges: ChallengeSummary[]
   trigger: ChallengesReleasedTrigger
+  isTestEvent?: boolean
 }
 
 export async function dispatchChallengesReleasedNotifications(
   input: ChallengesReleasedDispatchInput
 ): Promise<void> {
-  if (input.challenges.length === 0) return
+  if (input.isTestEvent || input.challenges.length === 0) return
 
   const { getNotificationSettings } = await import("./notification-settings")
   const settings = await getNotificationSettings(input.hackathonId)
   const emailEnabled = settings.email_on_challenges_released
 
   if (emailEnabled) {
+    const notificationId = randomUUID()
+    const workflowInput = {
+      notificationId,
+      hackathonId: input.hackathonId,
+      hackathonName: input.hackathon.name,
+      hackathonSlug: input.hackathon.slug,
+      recipientRoles: [...CHALLENGES_RELEASED_RECIPIENT_ROLES],
+      challenges: input.challenges,
+    }
     try {
       const { start } = await import("workflow/api")
       const { sendChallengesReleasedNotificationsWorkflow } = await import(
         "@/lib/workflows/challenges-released"
       )
-      await start(sendChallengesReleasedNotificationsWorkflow, [
-        {
-          notificationId: randomUUID(),
-          hackathonId: input.hackathonId,
-          hackathonName: input.hackathon.name,
-          hackathonSlug: input.hackathon.slug,
-          recipientRoles: [...CHALLENGES_RELEASED_RECIPIENT_ROLES],
-          challenges: input.challenges,
-        },
-      ])
+      await start(sendChallengesReleasedNotificationsWorkflow, [workflowInput])
     } catch (err) {
       console.error(
         `Failed to dispatch challenges-released emails for ${input.hackathonId}:`,
         err
       )
+      try {
+        const { queueFailedLifecycleNotificationDispatch } = await import(
+          "@/lib/services/lifecycle-notification-retries"
+        )
+        await queueFailedLifecycleNotificationDispatch({
+          id: notificationId,
+          hackathonId: input.hackathonId,
+          kind: "challenges_released",
+          payload: workflowInput,
+          error: err,
+        })
+      } catch (queueError) {
+        console.error(
+          `Failed to save challenges-released email retry for ${input.hackathonId}:`,
+          queueError,
+        )
+      }
     }
   }
 
