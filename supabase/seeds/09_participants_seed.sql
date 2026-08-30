@@ -137,5 +137,6 @@ VALUES
   ('10591059-1059-1059-1059-105910591059', 'd0d0d0d0-d0d0-d0d0-d0d0-d0d0d0d0d0d0', 'user_seed_069', 'participant', now() - interval '68 days'),
   ('105a105a-105a-105a-105a-105a105a105a', 'd0d0d0d0-d0d0-d0d0-d0d0-d0d0d0d0d0d0', 'user_seed_070', 'participant', now() - interval '67 days'),
   ('105b105b-105b-105b-105b-105b105b105b', 'd0d0d0d0-d0d0-d0d0-d0d0-d0d0d0d0d0d0', 'user_seed_056', 'participant', now() - interval '67 days'),
-  ('105c105c-105c-105c-105c-105c105c105c', 'd0d0d0d0-d0d0-d0d0-d0d0-d0d0d0d0d0d0', 'user_seed_057', 'participant', now() - interval '66 days')
+  ('105c105c-105c-105c-105c-105c105c105c', 'd0d0d0d0-d0d0-d0d0-d0d0-d0d0d0d0d0d0', 'user_seed_057', 'participant', now() - interval '66 days'),
+  ('105d105d-105d-105d-105d-105d105d105d', 'd0d0d0d0-d0d0-d0d0-d0d0-d0d0d0d0d0d0', 'user_seed_071', 'participant', now() - interval '66 days')
 ON CONFLICT (id) DO NOTHING;

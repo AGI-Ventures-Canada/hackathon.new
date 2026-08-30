@@ -529,6 +529,7 @@ export function EventHero({
                   src={bannerUrl}
                   alt={`${name} banner`}
                   fill
+                  sizes="(min-width: 768px) 28rem, calc(100vw - 2rem)"
                   className="object-cover"
                   priority
                 />
