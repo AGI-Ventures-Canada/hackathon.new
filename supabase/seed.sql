@@ -1414,7 +1414,7 @@ VALUES
   ('105a105a-105a-105a-105a-105a105a105a', 'd0d0d0d0-d0d0-d0d0-d0d0-d0d0d0d0d0d0', 'user_seed_070', 'participant', now() - interval '67 days'),
   ('105b105b-105b-105b-105b-105b105b105b', 'd0d0d0d0-d0d0-d0d0-d0d0-d0d0d0d0d0d0', 'user_seed_056', 'participant', now() - interval '67 days'),
   ('105c105c-105c-105c-105c-105c105c105c', 'd0d0d0d0-d0d0-d0d0-d0d0-d0d0d0d0d0d0', 'user_seed_057', 'participant', now() - interval '66 days'),
-  ('105d105d-105d-105d-105d-105d105d105d', 'd0d0d0d0-d0d0-d0d0-d0d0-d0d0d0d0d0d0', 'user_seed_058', 'participant', now() - interval '66 days')
+  ('105d105d-105d-105d-105d-105d105d105d', 'd0d0d0d0-d0d0-d0d0-d0d0-d0d0d0d0d0d0', 'user_seed_071', 'participant', now() - interval '66 days')
 ON CONFLICT (id) DO NOTHING;
 -- ============================================================================
 -- AGI HOUSE HACKATHON PARTICIPANTS
@@ -2371,3 +2371,1466 @@ VALUES
     now() - interval '31 days'
   )
 ON CONFLICT (id) DO NOTHING;
+-- ============================================================================
+-- RICH LIFECYCLE SHOWCASE - EVENTS
+-- 14 event themes x 7 lifecycle stages = 98 detailed events.
+--
+-- These events are inserted as drafts so related judging data can be built
+-- without lifecycle mutation locks. 27_rich_lifecycle_finalize.sql applies the
+-- target status only after every related record exists.
+-- Depends on: tenants
+-- ============================================================================
+
+WITH themes(theme_index, slug, name, focus, city, country, location_name, banner_photo, community_label) AS (
+  VALUES
+    (1, 'ai-agents', 'AI Agents Forge', 'helpful agents that plan, reason, and take action', 'Toronto', 'Canada', 'MaRS Discovery District', '1518770660439-4636190af475', 'Agent Builders'),
+    (2, 'climate-energy', 'Climate & Clean Energy Lab', 'clean power, resilient cities, and measurable climate action', 'Vancouver', 'Canada', 'Vancouver Convention Centre', '1473341304170-971dccb5ac1e', 'Climate Builders'),
+    (3, 'health-wellness', 'Health & Wellness Build', 'safer care, prevention, accessibility, and healthy daily habits', 'Boston', 'United States', 'District Hall Boston', '1576091160399-112ba8d25d1d', 'Health Makers'),
+    (4, 'fintech-commerce', 'Fintech & Commerce Sprint', 'fairer payments, small-business tools, and financial confidence', 'New York', 'United States', 'Brooklyn Navy Yard', '1555949963-aa79dcee981c', 'Commerce Creators'),
+    (5, 'education', 'Learning Futures Jam', 'personal learning, teacher support, and open education', 'Montreal', 'Canada', 'Notman House', '1509062522246-3755977927d7', 'Learning Lab'),
+    (6, 'accessibility', 'Access for Everyone', 'products that work for people with different bodies, senses, and minds', 'Chicago', 'United States', 'mHUB Chicago', '1550751827-4bd374c3f58b', 'Access Makers'),
+    (7, 'robotics', 'Robotics & Industry Works', 'robots, safer factories, and practical automation', 'Detroit', 'United States', 'Michigan Central', '1485827404703-89b55fcc595e', 'Robot Builders'),
+    (8, 'space', 'Space & Aerospace Mission', 'earth observation, flight, exploration, and space operations', 'Houston', 'United States', 'Space Center Houston', '1446776811953-b23d57bd21aa', 'Mission Control'),
+    (9, 'civic-community', 'Civic & Community Challenge', 'trusted public services and stronger local communities', 'Ottawa', 'Canada', 'Bayview Yards', '1532094349884-543bc11b234d', 'Community Builders'),
+    (10, 'creative-media', 'Creative Media Studio', 'new ways to make, share, and experience stories', 'Los Angeles', 'United States', 'The Reef', '1527430253228-e93688616381', 'Creative Studio'),
+    (11, 'food-agriculture', 'Food & Agriculture Field Lab', 'better farms, less waste, and healthier food systems', 'Calgary', 'Canada', 'Platform Calgary', '1508514177221-188b1cf16e9d', 'Food Systems Lab'),
+    (12, 'cybersecurity', 'Cybersecurity & Privacy Defense', 'safer software, usable privacy, and resilient infrastructure', 'Washington', 'United States', 'Capital Factory DC', '1563013544-824ae1b704d3', 'Security Guild'),
+    (13, 'gaming-xr', 'Games & Immersive Worlds', 'playful games, social worlds, and useful immersive tools', 'Seattle', 'United States', 'Seattle Convention Center', '1535223289827-42f1e9919769', 'World Builders'),
+    (14, 'open-source', 'Open Source Builders Week', 'developer tools and public software that anyone can improve', 'San Francisco', 'United States', 'GitHub HQ', '1498050108023-c5249f4df085', 'Open Builders')
+),
+lifecycles(stage_index, status, label, people_count) AS (
+  VALUES
+    (1, 'draft'::hackathon_status, 'Planning Draft', 4),
+    (2, 'published'::hackathon_status, 'Save the Date', 12),
+    (3, 'registration_open'::hackathon_status, 'Registration Open', 24),
+    (4, 'active'::hackathon_status, 'Build Weekend Live', 40),
+    (5, 'judging'::hackathon_status, 'Judging in Progress', 48),
+    (6, 'completed'::hackathon_status, 'Results Published', 52),
+    (7, 'archived'::hackathon_status, 'Alumni Archive', 36)
+),
+event_rows AS (
+  SELECT
+    md5('rich-event-' || themes.slug || '-' || lifecycles.status::text)::uuid AS id,
+    (ARRAY[
+      '12345678-1234-1234-1234-123456789012'::uuid,
+      '99990000-9999-9999-9999-999900009999'::uuid,
+      '22222222-2222-2222-2222-222222222222'::uuid,
+      '11111111-1111-1111-1111-111111111111'::uuid
+    ])[1 + ((themes.theme_index - 1) % 4)] AS tenant_id,
+    themes.name || ': ' || lifecycles.label AS name,
+    'showcase-' || themes.slug || '-' || replace(lifecycles.status::text, '_', '-') AS slug,
+    themes,
+    lifecycles,
+    CASE lifecycles.stage_index
+      WHEN 1 THEN now() + interval '90 days'
+      WHEN 2 THEN now() + interval '60 days'
+      WHEN 3 THEN now() + interval '30 days'
+      WHEN 4 THEN now() - interval '1 day'
+      WHEN 5 THEN now() - interval '5 days'
+      WHEN 6 THEN now() - interval '30 days'
+      ELSE now() - interval '180 days'
+    END AS starts_at
+  FROM themes
+  CROSS JOIN lifecycles
+)
+INSERT INTO hackathons (
+  id,
+  tenant_id,
+  name,
+  slug,
+  description,
+  rules,
+  starts_at,
+  ends_at,
+  registration_opens_at,
+  registration_closes_at,
+  allow_late_registration,
+  status,
+  phase,
+  banner_url,
+  min_team_size,
+  max_team_size,
+  max_participants,
+  allow_solo,
+  require_team_approval,
+  require_terms_acceptance,
+  terms_content,
+  judging_mode,
+  anonymous_judging,
+  auto_assign_by_room,
+  location_type,
+  location_name,
+  location_url,
+  location_latitude,
+  location_longitude,
+  community_label,
+  community_url,
+  feedback_survey_url,
+  default_locale,
+  translations,
+  metadata,
+  created_at,
+  updated_at
+)
+SELECT
+  id,
+  tenant_id,
+  name,
+  slug,
+  format(
+    E'%s is a detailed showcase event for %s.\n\n## What you will do\n\n- Meet teammates and mentors\n- Pick a clear problem\n- Build and test a working project\n- Share a short demo with judges\n\n## Who should join\n\nStudents, designers, engineers, researchers, founders, and first-time builders are welcome. Every event includes quiet work areas, beginner help, remote access, and clear team rules.',
+    name,
+    (themes).focus
+  ),
+  E'1. Be kind and make space for others.\n2. Teams may have one to five people.\n3. New work must be made during the event.\n4. Open-source tools and prior learning are welcome.\n5. Tell judges what you built, what changed, and what you learned.\n6. Do not use private data without permission.\n7. Organizers may remove unsafe or copied work.',
+  starts_at,
+  starts_at + CASE WHEN (themes).theme_index % 4 = 0 THEN interval '3 days' ELSE interval '2 days' END,
+  CASE (lifecycles).stage_index
+    WHEN 1 THEN starts_at - interval '45 days'
+    WHEN 2 THEN starts_at - interval '20 days'
+    ELSE starts_at - interval '40 days'
+  END,
+  starts_at - interval '1 day',
+  (themes).theme_index % 3 = 0,
+  'draft'::hackathon_status,
+  CASE (lifecycles).status::text
+    WHEN 'active' THEN 'build'::hackathon_phase
+    WHEN 'judging' THEN 'finals'::hackathon_phase
+    WHEN 'completed' THEN 'results_pending'::hackathon_phase
+    WHEN 'archived' THEN 'results_pending'::hackathon_phase
+    ELSE NULL
+  END,
+  'https://images.unsplash.com/photo-' || (themes).banner_photo || '?auto=format&fit=crop&w=1800&q=85',
+  CASE WHEN (themes).theme_index % 4 = 0 THEN 2 ELSE 1 END,
+  5,
+  (lifecycles).people_count + 24,
+  (themes).theme_index % 4 <> 0,
+  (themes).theme_index % 3 = 0,
+  (themes).theme_index % 2 = 0,
+  CASE WHEN (themes).theme_index % 2 = 0
+    THEN E'By joining, you agree to the code of conduct, photo notice, project sharing rules, and event safety policy. Ask an organizer if you need an accommodation or a private demo.'
+    ELSE NULL
+  END,
+  (ARRAY['points'::judging_mode, 'rubric'::judging_mode, 'subjective'::judging_mode])[1 + ((themes).theme_index - 1) % 3],
+  (themes).theme_index % 2 = 1,
+  (themes).theme_index % 3 = 1,
+  (ARRAY['in_person'::location_type, 'virtual'::location_type, 'hybrid'::location_type])[1 + ((themes).theme_index - 1) % 3],
+  CASE WHEN (themes).theme_index % 3 = 2 THEN 'Online — worldwide' ELSE (themes).location_name || ', ' || (themes).city END,
+  CASE WHEN (themes).theme_index % 3 IN (1, 2) THEN 'https://meet.example.com/' || (themes).slug ELSE NULL END,
+  CASE WHEN (themes).theme_index % 3 = 2 THEN NULL ELSE 43.6532 + ((themes).theme_index::numeric / 100) END,
+  CASE WHEN (themes).theme_index % 3 = 2 THEN NULL ELSE -79.3832 - ((themes).theme_index::numeric / 100) END,
+  (themes).community_label,
+  'https://community.example.com/' || (themes).slug,
+  'https://forms.example.com/' || (themes).slug || '-feedback',
+  CASE WHEN (themes).theme_index IN (5, 9) THEN 'fr' ELSE 'en' END,
+  jsonb_build_object(
+    'fr', jsonb_build_object(
+      'name', (themes).name || ' — vitrine',
+      'description', 'Un evenement accueillant pour apprendre, construire et partager.'
+    )
+  ),
+  jsonb_build_object(
+    'seed', jsonb_build_object(
+      'collection', 'rich-lifecycle-showcase',
+      'theme_index', (themes).theme_index,
+      'theme_slug', (themes).slug,
+      'theme_focus', (themes).focus,
+      'lifecycle_index', (lifecycles).stage_index,
+      'target_status', (lifecycles).status::text,
+      'expected_people', (lifecycles).people_count,
+      'expected_attendees', greatest((lifecycles).people_count - 6, 0),
+      'format', CASE (themes).theme_index % 3 WHEN 1 THEN 'in_person' WHEN 2 THEN 'virtual' ELSE 'hybrid' END,
+      'city', (themes).city,
+      'country', (themes).country,
+      'size', CASE WHEN (lifecycles).people_count < 20 THEN 'small' WHEN (lifecycles).people_count < 45 THEN 'medium' ELSE 'large' END,
+      'image_credit', 'Unsplash demo imagery',
+      'purpose', 'Local development, lifecycle QA, visual demos, and organizer training'
+    ),
+    'accessibility', jsonb_build_object(
+      'captions', true,
+      'quiet_room', (themes).theme_index % 3 <> 2,
+      'step_free_access', true,
+      'dietary_options', jsonb_build_array('vegetarian', 'vegan', 'gluten-free')
+    )
+  ),
+  now() - make_interval(days => 220 - ((lifecycles).stage_index * 20)),
+  now()
+FROM event_rows
+ON CONFLICT (id) DO UPDATE SET
+  name = EXCLUDED.name,
+  description = EXCLUDED.description,
+  rules = EXCLUDED.rules,
+  banner_url = EXCLUDED.banner_url,
+  metadata = EXCLUDED.metadata,
+  updated_at = now();
+-- ============================================================================
+-- RICH LIFECYCLE SHOWCASE - PEOPLE AND JUDGE INVITES
+-- 3,024 people across organizer, judge, mentor, and attendee roles.
+-- Depends on: 20_rich_lifecycle_events.sql
+-- ============================================================================
+
+WITH rich_events AS (
+  SELECT
+    id,
+    (metadata->'seed'->>'theme_index')::int AS theme_index,
+    metadata->'seed'->>'theme_slug' AS theme_slug,
+    (metadata->'seed'->>'lifecycle_index')::int AS lifecycle_index,
+    metadata->'seed'->>'target_status' AS target_status,
+    (metadata->'seed'->>'expected_people')::int AS people_count
+  FROM hackathons
+  WHERE metadata->'seed'->>'collection' = 'rich-lifecycle-showcase'
+),
+people AS (
+  SELECT
+    rich_events.*,
+    person_index,
+    (ARRAY[
+      'Amina', 'Mateo', 'Priya', 'Noah', 'Sofia', 'Ethan', 'Maya', 'Lucas',
+      'Zoe', 'Omar', 'Chloe', 'Liam', 'Nia', 'Arjun', 'Leila', 'Theo',
+      'Mei', 'Sam', 'Fatima', 'Leo', 'Anika', 'Jonah', 'Iris', 'Kai'
+    ])[1 + ((person_index + theme_index - 2) % 24)] AS first_name,
+    (ARRAY[
+      'Chen', 'Singh', 'Garcia', 'Williams', 'Patel', 'Kim', 'Brown', 'Nguyen',
+      'Martin', 'Ali', 'Wilson', 'Khan', 'Taylor', 'Park', 'Davis', 'Lopez',
+      'Johnson', 'Murphy', 'Sato', 'Okafor', 'Dubois', 'Rossi', 'Silva', 'Cohen'
+    ])[1 + (((person_index * 3) + theme_index - 2) % 24)] AS last_name
+  FROM rich_events
+  CROSS JOIN LATERAL generate_series(1, rich_events.people_count) AS person_index
+),
+identified AS (
+  SELECT
+    *,
+    lower(format(
+      'seed_user_%s_%s_%s_%s_%s',
+      regexp_replace(first_name, '[^a-zA-Z]', '', 'g'),
+      regexp_replace(last_name, '[^a-zA-Z]', '', 'g'),
+      lpad(theme_index::text, 2, '0'),
+      lifecycle_index,
+      lpad(person_index::text, 3, '0')
+    )) AS clerk_user_id
+  FROM people
+)
+INSERT INTO hackathon_participants (
+  id,
+  hackathon_id,
+  clerk_user_id,
+  role,
+  registered_at
+)
+SELECT
+  md5('rich-person-' || theme_slug || '-' || target_status || '-' || person_index)::uuid,
+  id,
+  clerk_user_id,
+  CASE
+    WHEN person_index <= 2 THEN 'organizer'::participant_role
+    WHEN person_index <= 4 THEN 'judge'::participant_role
+    WHEN person_index <= 6 THEN 'mentor'::participant_role
+    ELSE 'participant'::participant_role
+  END,
+  now() - make_interval(days => greatest(1, 80 - (lifecycle_index * 10) + (person_index % 8)))
+FROM identified
+ON CONFLICT (id) DO NOTHING;
+
+WITH rich_people AS (
+  SELECT
+    h.id AS hackathon_id,
+    h.metadata->'seed'->>'theme_slug' AS theme_slug,
+    (h.metadata->'seed'->>'theme_index')::int AS theme_index,
+    h.metadata->'seed'->>'target_status' AS target_status,
+    (h.metadata->'seed'->>'lifecycle_index')::int AS lifecycle_index,
+    p.id AS participant_id,
+    p.clerk_user_id,
+    row_number() OVER (PARTITION BY h.id ORDER BY p.clerk_user_id) AS judge_number
+  FROM hackathons h
+  JOIN hackathon_participants p ON p.hackathon_id = h.id AND p.role = 'judge'
+  WHERE h.metadata->'seed'->>'collection' = 'rich-lifecycle-showcase'
+)
+INSERT INTO hackathon_judges_display (
+  id,
+  hackathon_id,
+  participant_id,
+  clerk_user_id,
+  name,
+  title,
+  organization,
+  headshot_url,
+  display_order,
+  created_at,
+  updated_at
+)
+SELECT
+  md5('rich-judge-display-' || theme_slug || '-' || target_status || '-' || judge_number)::uuid,
+  hackathon_id,
+  participant_id,
+  clerk_user_id,
+  (ARRAY[
+    'Amina Chen', 'Mateo Garcia', 'Priya Singh', 'Noah Williams', 'Sofia Kim', 'Ethan Patel',
+    'Maya Brown', 'Lucas Nguyen', 'Zoe Martin', 'Omar Ali', 'Chloe Wilson', 'Liam Khan',
+    'Nia Taylor', 'Arjun Park', 'Leila Davis', 'Theo Lopez', 'Mei Johnson', 'Sam Murphy'
+  ])[1 + ((theme_index + judge_number - 2) % 18)],
+  CASE judge_number WHEN 1 THEN 'Product and community judge' ELSE 'Technical and impact judge' END,
+  (ARRAY['Northstar Labs', 'Open Works', 'Civic Studio', 'Maker Commons', 'Field Notes'])[1 + ((theme_index + judge_number - 2) % 5)],
+  'https://images.unsplash.com/photo-' ||
+    (ARRAY[
+      '1494790108377-be9c29b29330', '1500648767791-00dcc994a43e', '1534528741775-53994a69daeb',
+      '1507003211169-0a1dd7228f2d', '1438761681033-6461ffad8d80', '1506794778202-cad84cf45f1d',
+      '1544005313-94ddf0286df2', '1517841905240-472988babdf9', '1531123897727-8f129e1688ce',
+      '1527980965255-d3b416303d12', '1547425260-76bcadfb4f2c', '1535713875002-d1d0cf377fde',
+      '1524504388940-b1c1722653e1', '1520813792240-56fc4a3765a7'
+    ])[1 + ((theme_index + lifecycle_index + judge_number - 3) % 14)] ||
+    '?auto=format&fit=crop&w=500&h=500&q=82',
+  judge_number - 1,
+  now() - interval '20 days',
+  now()
+FROM rich_people
+ON CONFLICT (id) DO NOTHING;
+
+WITH rich_events AS (
+  SELECT
+    h.id,
+    h.metadata->'seed'->>'theme_slug' AS theme_slug,
+    h.metadata->'seed'->>'target_status' AS target_status,
+    (h.metadata->'seed'->>'lifecycle_index')::int AS lifecycle_index,
+    organizer.clerk_user_id AS invited_by,
+    judge.clerk_user_id AS accepted_by
+  FROM hackathons h
+  JOIN LATERAL (
+    SELECT clerk_user_id
+    FROM hackathon_participants
+    WHERE hackathon_id = h.id AND role = 'organizer'
+    ORDER BY clerk_user_id
+    LIMIT 1
+  ) organizer ON true
+  JOIN LATERAL (
+    SELECT clerk_user_id
+    FROM hackathon_participants
+    WHERE hackathon_id = h.id AND role = 'judge'
+    ORDER BY clerk_user_id
+    LIMIT 1
+  ) judge ON true
+  WHERE h.metadata->'seed'->>'collection' = 'rich-lifecycle-showcase'
+    AND (h.metadata->'seed'->>'lifecycle_index')::int >= 2
+),
+invites AS (
+  SELECT rich_events.*, invite_number
+  FROM rich_events
+  CROSS JOIN generate_series(1, 3) AS invite_number
+)
+INSERT INTO judge_invitations (
+  id,
+  hackathon_id,
+  email,
+  token,
+  invited_by_clerk_user_id,
+  status,
+  accepted_by_clerk_user_id,
+  expires_at,
+  emailed_at,
+  reminded_at,
+  created_at,
+  updated_at
+)
+SELECT
+  md5('rich-judge-invite-' || theme_slug || '-' || target_status || '-' || invite_number)::uuid,
+  id,
+  format('judge.%s.%s.%s@example.com', invite_number, theme_slug, replace(target_status, '_', '-')),
+  encode(digest('rich-judge-token-' || theme_slug || '-' || target_status || '-' || invite_number, 'sha256'), 'hex'),
+  invited_by,
+  CASE
+    WHEN invite_number = 1 THEN 'pending'
+    WHEN invite_number = 2 AND lifecycle_index = 2 THEN 'cancelled'
+    WHEN invite_number = 2 THEN 'accepted'
+    ELSE 'expired'
+  END,
+  CASE WHEN invite_number = 2 AND lifecycle_index >= 3 THEN accepted_by ELSE NULL END,
+  CASE WHEN invite_number = 3 THEN now() - interval '2 days' ELSE now() + interval '30 days' END,
+  CASE WHEN lifecycle_index = 2 THEN NULL ELSE now() - interval '8 days' END,
+  CASE WHEN invite_number = 1 AND lifecycle_index >= 4 THEN now() - interval '2 days' ELSE NULL END,
+  now() - interval '12 days',
+  now()
+FROM invites
+ON CONFLICT (id) DO NOTHING;
+-- ============================================================================
+-- RICH LIFECYCLE SHOWCASE - TEAMS AND INVITATIONS
+-- 574 teams plus invitation states for queueing, acceptance, decline, expiry,
+-- cancellation, reminders, approval review, and disbanded alumni teams.
+-- Depends on: 21_rich_lifecycle_people.sql
+-- ============================================================================
+
+WITH event_counts AS (
+  SELECT
+    h.id AS hackathon_id,
+    h.require_team_approval,
+    h.metadata->'seed'->>'theme_slug' AS theme_slug,
+    h.metadata->'seed'->>'target_status' AS target_status,
+    (h.metadata->'seed'->>'theme_index')::int AS theme_index,
+    (h.metadata->'seed'->>'lifecycle_index')::int AS lifecycle_index,
+    greatest(floor(((h.metadata->'seed'->>'expected_attendees')::int - 2) / 4.0)::int, 0) AS team_count
+  FROM hackathons h
+  WHERE h.metadata->'seed'->>'collection' = 'rich-lifecycle-showcase'
+),
+team_rows AS (
+  SELECT event_counts.*, team_number
+  FROM event_counts
+  CROSS JOIN LATERAL generate_series(1, event_counts.team_count) AS team_number
+),
+captains AS (
+  SELECT
+    team_rows.*,
+    captain.clerk_user_id AS captain_clerk_user_id
+  FROM team_rows
+  JOIN LATERAL (
+    SELECT p.clerk_user_id
+    FROM hackathon_participants p
+    WHERE p.hackathon_id = team_rows.hackathon_id
+      AND p.role = 'participant'
+    ORDER BY p.clerk_user_id
+    OFFSET ((team_rows.team_number - 1) * 4)
+    LIMIT 1
+  ) captain ON true
+)
+INSERT INTO teams (
+  id,
+  hackathon_id,
+  name,
+  captain_clerk_user_id,
+  invite_code,
+  mode,
+  status,
+  created_at,
+  updated_at
+)
+SELECT
+  md5('rich-team-' || theme_slug || '-' || target_status || '-' || team_number)::uuid,
+  hackathon_id,
+  (ARRAY[
+    'Northstar Makers', 'Bright Ideas Lab', 'Open Trail Crew', 'Signal Foundry',
+    'Kindred Systems', 'Field Testers', 'Common Ground', 'Bold Prototype',
+    'Good Trouble Studio', 'Launch Window', 'Careful Builders', 'Fresh Perspective'
+  ])[1 + ((team_number + theme_index - 2) % 12)] || ' ' || lpad(team_number::text, 2, '0'),
+  captain_clerk_user_id,
+  upper(substr(md5('rich-invite-code-' || theme_slug || '-' || target_status || '-' || team_number), 1, 10)),
+  CASE WHEN (team_number + theme_index) % 3 = 0 THEN 'virtual'::team_mode ELSE 'in_person'::team_mode END,
+  CASE
+    WHEN lifecycle_index = 2 THEN 'forming'::team_status
+    WHEN lifecycle_index = 3 AND require_team_approval AND team_number % 2 = 0 THEN 'pending_approval'::team_status
+    WHEN lifecycle_index = 3 THEN 'forming'::team_status
+    WHEN lifecycle_index = 4 AND require_team_approval AND team_number = team_count THEN 'pending_approval'::team_status
+    WHEN lifecycle_index = 7 AND team_number = team_count THEN 'disbanded'::team_status
+    ELSE 'locked'::team_status
+  END,
+  now() - make_interval(days => greatest(2, 60 - (lifecycle_index * 8) + (team_number % 4))),
+  now() - make_interval(days => greatest(0, 10 - lifecycle_index))
+FROM captains
+ON CONFLICT (id) DO NOTHING;
+
+WITH numbered_attendees AS (
+  SELECT
+    h.id AS hackathon_id,
+    h.metadata->'seed'->>'theme_slug' AS theme_slug,
+    h.metadata->'seed'->>'target_status' AS target_status,
+    p.id AS participant_id,
+    row_number() OVER (PARTITION BY h.id ORDER BY p.clerk_user_id) AS attendee_number,
+    greatest(floor(((h.metadata->'seed'->>'expected_attendees')::int - 2) / 4.0)::int, 0) AS team_count
+  FROM hackathons h
+  JOIN hackathon_participants p ON p.hackathon_id = h.id AND p.role = 'participant'
+  WHERE h.metadata->'seed'->>'collection' = 'rich-lifecycle-showcase'
+),
+assignments AS (
+  SELECT
+    numbered_attendees.participant_id,
+    md5(
+      'rich-team-' || theme_slug || '-' || target_status || '-' ||
+      ceil(attendee_number / 4.0)::int
+    )::uuid AS team_id
+  FROM numbered_attendees
+  WHERE attendee_number <= team_count * 4
+)
+UPDATE hackathon_participants p
+SET team_id = assignments.team_id
+FROM assignments
+WHERE p.id = assignments.participant_id;
+
+WITH event_teams AS (
+  SELECT
+    h.id AS hackathon_id,
+    h.metadata->'seed'->>'theme_slug' AS theme_slug,
+    h.metadata->'seed'->>'target_status' AS target_status,
+    (h.metadata->'seed'->>'lifecycle_index')::int AS lifecycle_index,
+    t.id AS team_id,
+    t.captain_clerk_user_id,
+    row_number() OVER (PARTITION BY h.id ORDER BY t.id) AS invite_number
+  FROM hackathons h
+  JOIN teams t ON t.hackathon_id = h.id
+  WHERE h.metadata->'seed'->>'collection' = 'rich-lifecycle-showcase'
+    AND (h.metadata->'seed'->>'lifecycle_index')::int >= 2
+),
+invite_rows AS (
+  SELECT *
+  FROM event_teams
+  WHERE invite_number <= 5
+),
+accepted_people AS (
+  SELECT
+    invite_rows.*,
+    accepted.clerk_user_id AS accepted_by_clerk_user_id
+  FROM invite_rows
+  LEFT JOIN LATERAL (
+    SELECT p.clerk_user_id
+    FROM hackathon_participants p
+    WHERE p.hackathon_id = invite_rows.hackathon_id
+      AND p.role = 'participant'
+      AND p.team_id IS NULL
+    ORDER BY p.clerk_user_id
+    LIMIT 1
+  ) accepted ON invite_rows.invite_number = 2
+)
+INSERT INTO team_invitations (
+  id,
+  hackathon_id,
+  team_id,
+  email,
+  token,
+  invited_by_clerk_user_id,
+  status,
+  accepted_by_clerk_user_id,
+  accepted_at,
+  expires_at,
+  emailed_at,
+  reminded_at,
+  is_captain_invite,
+  created_at,
+  updated_at
+)
+SELECT
+  md5('rich-team-invite-' || theme_slug || '-' || target_status || '-' || invite_number)::uuid,
+  hackathon_id,
+  team_id,
+  format('teammate.%s.%s.%s@example.com', invite_number, theme_slug, replace(target_status, '_', '-')),
+  encode(digest('rich-team-token-' || theme_slug || '-' || target_status || '-' || invite_number, 'sha256'), 'hex'),
+  captain_clerk_user_id,
+  (ARRAY['pending'::invitation_status, 'accepted'::invitation_status, 'declined'::invitation_status, 'expired'::invitation_status, 'cancelled'::invitation_status])[invite_number::int],
+  CASE WHEN invite_number = 2 THEN accepted_by_clerk_user_id ELSE NULL END,
+  CASE WHEN invite_number = 2 THEN now() - interval '6 days' ELSE NULL END,
+  CASE WHEN invite_number = 4 THEN now() - interval '2 days' ELSE now() + interval '30 days' END,
+  CASE WHEN lifecycle_index = 2 THEN NULL ELSE now() - interval '10 days' END,
+  CASE WHEN invite_number = 1 AND lifecycle_index >= 4 THEN now() - interval '3 days' ELSE NULL END,
+  false,
+  now() - interval '14 days',
+  now()
+FROM accepted_people
+ON CONFLICT (id) DO NOTHING;
+
+WITH accepted_invites AS (
+  SELECT
+    invitation.accepted_by_clerk_user_id,
+    invitation.hackathon_id,
+    invitation.team_id
+  FROM team_invitations invitation
+  JOIN hackathons h ON h.id = invitation.hackathon_id
+  WHERE h.metadata->'seed'->>'collection' = 'rich-lifecycle-showcase'
+    AND invitation.status = 'accepted'
+    AND invitation.accepted_by_clerk_user_id IS NOT NULL
+)
+UPDATE hackathon_participants participant
+SET team_id = accepted_invites.team_id
+FROM accepted_invites
+WHERE participant.hackathon_id = accepted_invites.hackathon_id
+  AND participant.clerk_user_id = accepted_invites.accepted_by_clerk_user_id;
+-- ============================================================================
+-- RICH LIFECYCLE SHOWCASE - SPONSORS
+-- 392 fictional sponsors across gold, silver, bronze, and custom tiers.
+-- Every sponsor has safe demo branding, a website, and visual assets.
+-- Depends on: 20_rich_lifecycle_events.sql
+-- ============================================================================
+
+WITH rich_events AS (
+  SELECT
+    h.id AS hackathon_id,
+    h.metadata->'seed'->>'theme_slug' AS theme_slug,
+    h.metadata->'seed'->>'target_status' AS target_status,
+    (h.metadata->'seed'->>'theme_index')::int AS theme_index,
+    (h.metadata->'seed'->>'lifecycle_index')::int AS lifecycle_index
+  FROM hackathons h
+  WHERE h.metadata->'seed'->>'collection' = 'rich-lifecycle-showcase'
+),
+sponsor_rows AS (
+  SELECT rich_events.*, sponsor_number
+  FROM rich_events
+  CROSS JOIN generate_series(1, 4) AS sponsor_number
+)
+INSERT INTO hackathon_sponsors (
+  id,
+  hackathon_id,
+  sponsor_tenant_id,
+  name,
+  logo_url,
+  logo_url_dark,
+  website_url,
+  tier,
+  custom_tier_label,
+  display_order,
+  use_org_assets,
+  created_at
+)
+SELECT
+  md5('rich-sponsor-' || theme_slug || '-' || target_status || '-' || sponsor_number)::uuid,
+  hackathon_id,
+  CASE sponsor_number
+    WHEN 1 THEN '12345678-1234-1234-1234-123456789012'::uuid
+    WHEN 2 THEN '99990000-9999-9999-9999-999900009999'::uuid
+    ELSE NULL
+  END,
+  (ARRAY[
+    'Northstar Cloud', 'Harbour Compute', 'Maple Seed Fund', 'Open Door Foundation',
+    'Bright Path Labs', 'Fieldstone Ventures', 'Common Good Network', 'Makers Supply Co.'
+  ])[1 + ((theme_index + lifecycle_index + sponsor_number - 3) % 8)] ||
+    CASE sponsor_number
+      WHEN 1 THEN ' — Presenting Partner'
+      WHEN 2 THEN ' — Builder Partner'
+      WHEN 3 THEN ' — Community Partner'
+      ELSE ' — Accessibility Partner'
+    END,
+  'https://images.unsplash.com/photo-' ||
+    (ARRAY[
+      '1563013544-824ae1b704d3', '1451187580459-43490279c0fa', '1531746790731-6c087fecd65a',
+      '1488590528505-98d2b5aba04b', '1677442136019-21780ecad995', '1473341304170-971dccb5ac1e',
+      '1508514177221-188b1cf16e9d', '1555949963-aa79dcee981c', '1516321318423-f06f85e504b3',
+      '1446776811953-b23d57bd21aa', '1485827404703-89b55fcc595e', '1527430253228-e93688616381'
+    ])[1 + ((theme_index * 2 + lifecycle_index + sponsor_number - 4) % 12)] ||
+    '?auto=format&fit=crop&w=800&h=420&q=80',
+  CASE WHEN sponsor_number % 2 = 0 THEN
+    'https://images.unsplash.com/photo-' ||
+      (ARRAY[
+        '1518770660439-4636190af475', '1498050108023-c5249f4df085', '1535223289827-42f1e9919769',
+        '1509062522246-3755977927d7', '1550751827-4bd374c3f58b', '1576091160399-112ba8d25d1d'
+      ])[1 + ((theme_index + lifecycle_index + sponsor_number - 3) % 6)] ||
+      '?auto=format&fit=crop&w=800&h=420&q=78'
+    ELSE NULL
+  END,
+  'https://' || replace(theme_slug, '-', '') || '-partner-' || sponsor_number || '.example.com',
+  (ARRAY['gold'::sponsor_tier, 'silver'::sponsor_tier, 'bronze'::sponsor_tier, 'custom'::sponsor_tier])[sponsor_number],
+  CASE WHEN sponsor_number = 4 THEN 'Access for All Partner' ELSE NULL END,
+  sponsor_number - 1,
+  false,
+  now() - make_interval(days => 90 - (lifecycle_index * 7) + sponsor_number)
+FROM sponsor_rows
+ON CONFLICT (id) DO NOTHING;
+-- ============================================================================
+-- RICH LIFECYCLE SHOWCASE - PROJECTS
+-- Team and solo projects cover draft, submitted, review, accepted, rejected,
+-- and winner states. Every project includes a rich screenshot and demo metadata.
+-- Depends on: 22_rich_lifecycle_teams_and_invites.sql
+-- ============================================================================
+
+WITH eligible_events AS (
+  SELECT
+    h.id AS hackathon_id,
+    h.metadata->'seed'->>'theme_slug' AS theme_slug,
+    h.metadata->'seed'->>'theme_focus' AS theme_focus,
+    h.metadata->'seed'->>'target_status' AS target_status,
+    (h.metadata->'seed'->>'theme_index')::int AS theme_index,
+    (h.metadata->'seed'->>'lifecycle_index')::int AS lifecycle_index
+  FROM hackathons h
+  WHERE h.metadata->'seed'->>'collection' = 'rich-lifecycle-showcase'
+    AND (h.metadata->'seed'->>'lifecycle_index')::int >= 4
+),
+owners AS (
+  SELECT
+    eligible_events.*,
+    team.id AS team_id,
+    NULL::uuid AS participant_id,
+    team.name AS owner_name
+  FROM eligible_events
+  JOIN teams team ON team.hackathon_id = eligible_events.hackathon_id
+
+  UNION ALL
+
+  SELECT
+    eligible_events.*,
+    NULL::uuid AS team_id,
+    participant.id AS participant_id,
+    'Solo Builder' AS owner_name
+  FROM eligible_events
+  JOIN hackathon_participants participant
+    ON participant.hackathon_id = eligible_events.hackathon_id
+   AND participant.role = 'participant'
+   AND participant.team_id IS NULL
+),
+numbered_projects AS (
+  SELECT
+    owners.*,
+    row_number() OVER (
+      PARTITION BY hackathon_id
+      ORDER BY team_id NULLS LAST, participant_id NULLS LAST
+    ) AS project_number
+  FROM owners
+)
+INSERT INTO submissions (
+  id,
+  hackathon_id,
+  participant_id,
+  team_id,
+  title,
+  description,
+  github_url,
+  live_app_url,
+  demo_video_url,
+  screenshot_url,
+  status,
+  metadata,
+  created_at,
+  updated_at
+)
+SELECT
+  md5('rich-project-' || theme_slug || '-' || target_status || '-' || project_number)::uuid,
+  hackathon_id,
+  participant_id,
+  team_id,
+  (ARRAY[
+    'Compass', 'Bridge', 'Lantern', 'Pulse', 'Garden', 'Scout', 'Harbour', 'Patchwork',
+    'Beacon', 'Atlas', 'Bloom', 'Relay', 'Mosaic', 'Nest', 'Trailhead', 'Telescope'
+  ])[1 + ((project_number + theme_index - 2) % 16)] || ' for ' ||
+  (ARRAY[
+    'Agents', 'Clean Energy', 'Healthy Lives', 'Local Commerce', 'Learning', 'Access',
+    'Robotics', 'Space', 'Communities', 'Creators', 'Food Systems', 'Safer Software',
+    'Play', 'Open Source'
+  ])[theme_index],
+  format(
+    '%s built a practical prototype for %s. The team interviewed users, tested the main task on phones and laptops, added a clear empty state, and wrote down what still needs work. The demo includes sample data only, a two-minute guided tour, and a public build log.',
+    owner_name,
+    theme_focus
+  ),
+  format('https://github.com/hackathon-showcase/%s-project-%s', theme_slug, lpad(project_number::text, 2, '0')),
+  format('https://%s-%s.demo.example.com', theme_slug, lpad(project_number::text, 2, '0')),
+  format('https://video.example.com/watch/%s-%s', theme_slug, lpad(project_number::text, 2, '0')),
+  'https://images.unsplash.com/photo-' ||
+    (ARRAY[
+      '1518770660439-4636190af475', '1488590528505-98d2b5aba04b', '1498050108023-c5249f4df085',
+      '1461749280684-dccba630e2f6', '1516321318423-f06f85e504b3', '1451187580459-43490279c0fa',
+      '1550751827-4bd374c3f58b', '1535223289827-42f1e9919769', '1563013544-824ae1b704d3',
+      '1576091160399-112ba8d25d1d', '1532094349884-543bc11b234d', '1508514177221-188b1cf16e9d',
+      '1473341304170-971dccb5ac1e', '1446776811953-b23d57bd21aa', '1454789548928-9efd52dc4031',
+      '1527430253228-e93688616381', '1485827404703-89b55fcc595e', '1531746790731-6c087fecd65a',
+      '1555949963-aa79dcee981c', '1677442136019-21780ecad995'
+    ])[1 + ((project_number * 3 + theme_index + lifecycle_index - 5) % 20)] ||
+    '?auto=format&fit=crop&w=1400&h=900&q=82',
+  CASE target_status
+    WHEN 'active' THEN CASE WHEN project_number % 3 = 0 THEN 'draft'::submission_status ELSE 'submitted'::submission_status END
+    WHEN 'judging' THEN CASE project_number % 3 WHEN 0 THEN 'under_review'::submission_status WHEN 1 THEN 'submitted'::submission_status ELSE 'accepted'::submission_status END
+    WHEN 'completed' THEN CASE WHEN project_number <= 3 THEN 'winner'::submission_status WHEN project_number % 5 = 0 THEN 'rejected'::submission_status ELSE 'accepted'::submission_status END
+    ELSE CASE WHEN project_number <= 3 THEN 'winner'::submission_status WHEN project_number % 4 = 0 THEN 'rejected'::submission_status ELSE 'accepted'::submission_status END
+  END,
+  jsonb_build_object(
+    'seed', jsonb_build_object(
+      'collection', 'rich-lifecycle-showcase',
+      'project_number', project_number,
+      'owner_type', CASE WHEN team_id IS NULL THEN 'solo' ELSE 'team' END,
+      'theme', theme_slug,
+      'lifecycle', target_status
+    ),
+    'demo', jsonb_build_object(
+      'tested_with_people', 3 + (project_number % 14),
+      'mobile_ready', project_number % 2 = 0,
+      'captions', true,
+      'sample_data_only', true,
+      'demo_length_minutes', 2 + (project_number % 4)
+    ),
+    'build', jsonb_build_object(
+      'stack', (ARRAY['Next.js + Supabase', 'Python + FastAPI', 'React Native', 'SvelteKit', 'Arduino + Web'])[1 + ((project_number + theme_index) % 5)],
+      'license', (ARRAY['MIT', 'Apache-2.0', 'MPL-2.0'])[1 + ((project_number + theme_index) % 3)],
+      'lessons', jsonb_build_array('Start with one user task', 'Test early', 'Keep the demo simple')
+    )
+  ),
+  now() - make_interval(days => greatest(1, 20 - lifecycle_index + (project_number::int % 6))),
+  now() - make_interval(hours => project_number::int % 36)
+FROM numbered_projects
+ON CONFLICT (id) DO NOTHING;
+-- ============================================================================
+-- RICH LIFECYCLE SHOWCASE - PROGRAMS AND ORGANIZER CONTENT
+-- Adds schedules, announcements, challenges, prizes, perks, and social posts.
+-- Depends on: 23_rich_lifecycle_sponsors.sql, 24_rich_lifecycle_projects.sql
+-- ============================================================================
+
+WITH rich_events AS (
+  SELECT
+    h.id AS hackathon_id,
+    h.starts_at,
+    h.ends_at,
+    h.location_name,
+    h.metadata->'seed'->>'theme_slug' AS theme_slug,
+    h.metadata->'seed'->>'target_status' AS target_status,
+    (h.metadata->'seed'->>'theme_index')::int AS theme_index,
+    (h.metadata->'seed'->>'lifecycle_index')::int AS lifecycle_index
+  FROM hackathons h
+  WHERE h.metadata->'seed'->>'collection' = 'rich-lifecycle-showcase'
+),
+schedule_rows AS (
+  SELECT rich_events.*, item_number
+  FROM rich_events
+  CROSS JOIN generate_series(1, 6) AS item_number
+)
+INSERT INTO hackathon_schedule_items (
+  id,
+  hackathon_id,
+  title,
+  description,
+  starts_at,
+  ends_at,
+  location,
+  sort_order,
+  created_at,
+  updated_at
+)
+SELECT
+  md5('rich-schedule-' || theme_slug || '-' || target_status || '-' || item_number)::uuid,
+  hackathon_id,
+  (ARRAY[
+    'Doors open and friendly check-in',
+    'Welcome, safety notes, and challenge tour',
+    'Team matching and idea clinic',
+    'Mentor office hours and build check',
+    'Project hand-in and demo practice',
+    'Demos, judging, prizes, and community photo'
+  ])[item_number],
+  (ARRAY[
+    'Pick up your badge, confirm your team, share access needs, and meet the help desk.',
+    'Hear the short event plan, where to get help, how judging works, and what to do in an emergency.',
+    'Meet people by skill and interest. Organizers help solo attendees find a good next step.',
+    'Book a fifteen-minute mentor visit. Bring one clear question and show what you have tried.',
+    'Check every link, add captions, confirm team members, and submit before the deadline.',
+    'Each team gets a short demo. Judges leave useful notes, then everyone celebrates the work.'
+  ])[item_number],
+  starts_at + (ARRAY[
+    interval '0 hours', interval '1 hour', interval '2 hours',
+    interval '8 hours', interval '30 hours', interval '34 hours'
+  ])[item_number],
+  starts_at + (ARRAY[
+    interval '1 hour', interval '2 hours', interval '3 hours',
+    interval '10 hours', interval '32 hours', interval '36 hours'
+  ])[item_number],
+  CASE WHEN theme_index % 3 = 2 THEN 'Online main stage' ELSE coalesce(location_name, 'Main hall') END,
+  item_number - 1,
+  now() - interval '45 days',
+  now()
+FROM schedule_rows
+ON CONFLICT (id) DO NOTHING;
+
+WITH rich_events AS (
+  SELECT
+    h.id AS hackathon_id,
+    h.metadata->'seed'->>'theme_slug' AS theme_slug,
+    h.metadata->'seed'->>'target_status' AS target_status,
+    (h.metadata->'seed'->>'lifecycle_index')::int AS lifecycle_index
+  FROM hackathons h
+  WHERE h.metadata->'seed'->>'collection' = 'rich-lifecycle-showcase'
+    AND (h.metadata->'seed'->>'lifecycle_index')::int >= 2
+),
+announcement_rows AS (
+  SELECT rich_events.*, announcement_number
+  FROM rich_events
+  CROSS JOIN generate_series(1, 3) AS announcement_number
+)
+INSERT INTO hackathon_announcements (
+  id,
+  hackathon_id,
+  title,
+  body,
+  priority,
+  audience,
+  published_at,
+  created_at,
+  updated_at
+)
+SELECT
+  md5('rich-announcement-' || theme_slug || '-' || target_status || '-' || announcement_number)::uuid,
+  hackathon_id,
+  (ARRAY['Your event guide is ready', 'What to do before project hand-in', 'Demos, results, and what comes next'])[announcement_number],
+  (ARRAY[
+    'Save the schedule, join the community space, and reply to the organizer if you need an accommodation. Bring a charger and one goal for the weekend.',
+    'Open your project page early. Add working links, captions, a short problem statement, and every teammate. Ask the help desk before the deadline if anything is stuck.',
+    'Thank you for building with care. Demo notes will stay on your project page. Winners get a separate email, and every attendee gets the feedback survey.'
+  ])[announcement_number],
+  CASE WHEN announcement_number = 2 AND lifecycle_index >= 4 THEN 'urgent' ELSE 'normal' END,
+  (ARRAY['everyone', 'not_submitted', 'attendees'])[announcement_number],
+  CASE WHEN lifecycle_index = 2 THEN NULL ELSE now() - make_interval(days => greatest(1, 10 - lifecycle_index - announcement_number)) END,
+  now() - interval '14 days',
+  now()
+FROM announcement_rows
+ON CONFLICT (id) DO NOTHING;
+
+WITH rich_events AS (
+  SELECT
+    h.id AS hackathon_id,
+    h.metadata->'seed'->>'theme_slug' AS theme_slug,
+    h.metadata->'seed'->>'theme_focus' AS theme_focus,
+    h.metadata->'seed'->>'target_status' AS target_status,
+    (h.metadata->'seed'->>'theme_index')::int AS theme_index
+  FROM hackathons h
+  WHERE h.metadata->'seed'->>'collection' = 'rich-lifecycle-showcase'
+),
+challenge_rows AS (
+  SELECT rich_events.*, challenge_number
+  FROM rich_events
+  CROSS JOIN generate_series(1, 2) AS challenge_number
+)
+INSERT INTO challenges (
+  id,
+  hackathon_id,
+  title,
+  description,
+  resources,
+  sort_order,
+  created_at,
+  updated_at
+)
+SELECT
+  md5('rich-challenge-' || theme_slug || '-' || target_status || '-' || challenge_number)::uuid,
+  hackathon_id,
+  CASE challenge_number WHEN 1 THEN 'Make the first step easier' ELSE 'Show a result people can trust' END,
+  CASE challenge_number
+    WHEN 1 THEN 'Build one clear path that helps a new person begin without training. Test it with someone outside your team and improve the hardest step.'
+    ELSE 'Help people understand where an answer came from, what might be wrong, and what they can do next. Use safe sample data in the demo.'
+  END,
+  jsonb_build_array(
+    jsonb_build_object('label', 'Starter kit', 'url', 'https://docs.example.com/' || theme_slug || '/starter'),
+    jsonb_build_object('label', 'Sample data', 'url', 'https://data.example.com/' || theme_slug || '/sample'),
+    jsonb_build_object('label', 'User test guide', 'url', 'https://docs.example.com/community-testing')
+  ),
+  challenge_number - 1,
+  now() - interval '35 days',
+  now()
+FROM challenge_rows
+ON CONFLICT (id) DO NOTHING;
+
+WITH rich_events AS (
+  SELECT
+    h.id AS hackathon_id,
+    h.metadata->'seed'->>'theme_slug' AS theme_slug,
+    h.metadata->'seed'->>'target_status' AS target_status,
+    (h.metadata->'seed'->>'theme_index')::int AS theme_index
+  FROM hackathons h
+  WHERE h.metadata->'seed'->>'collection' = 'rich-lifecycle-showcase'
+),
+prize_rows AS (
+  SELECT rich_events.*, prize_number
+  FROM rich_events
+  CROSS JOIN generate_series(1, 3) AS prize_number
+)
+INSERT INTO prizes (
+  id,
+  hackathon_id,
+  name,
+  description,
+  value,
+  display_value,
+  monetary_value,
+  currency,
+  kind,
+  type,
+  rank,
+  display_order,
+  assignment_mode,
+  distribution_method,
+  judging_style,
+  max_picks,
+  is_screening,
+  created_at,
+  updated_at
+)
+SELECT
+  md5('rich-prize-' || theme_slug || '-' || target_status || '-' || prize_number)::uuid,
+  hackathon_id,
+  (ARRAY['Best Overall Project', 'Best Real-World Impact', 'Community Choice'])[prize_number],
+  (ARRAY[
+    'For the strongest mix of a clear problem, thoughtful design, working build, and useful demo.',
+    'For the project most likely to help real people, with a practical next step after the event.',
+    'Picked by attendees for a project that was easy to understand, welcoming, and memorable.'
+  ])[prize_number],
+  CASE prize_number WHEN 1 THEN '$5,000 plus mentor support' WHEN 2 THEN '$2,500 plus pilot introductions' ELSE '$1,000 community award' END,
+  CASE prize_number WHEN 1 THEN '$5,000' WHEN 2 THEN '$2,500' ELSE '$1,000' END,
+  CASE prize_number WHEN 1 THEN 5000 WHEN 2 THEN 2500 ELSE 1000 END,
+  'USD',
+  CASE prize_number WHEN 3 THEN 'crowd' ELSE 'score' END,
+  CASE prize_number WHEN 3 THEN 'crowd'::prize_type ELSE 'score'::prize_type END,
+  prize_number,
+  prize_number - 1,
+  CASE prize_number WHEN 3 THEN 'self_select' ELSE 'organizer_assigned' END,
+  CASE prize_number WHEN 3 THEN 'single' ELSE 'ranked' END,
+  CASE prize_number WHEN 3 THEN 'crowd_vote' ELSE 'weighted_score' END,
+  1,
+  false,
+  now() - interval '40 days',
+  now()
+FROM prize_rows
+ON CONFLICT (id) DO NOTHING;
+
+WITH rich_events AS (
+  SELECT
+    h.id AS hackathon_id,
+    h.starts_at,
+    h.metadata->'seed'->>'theme_slug' AS theme_slug,
+    h.metadata->'seed'->>'target_status' AS target_status,
+    (h.metadata->'seed'->>'lifecycle_index')::int AS lifecycle_index
+  FROM hackathons h
+  WHERE h.metadata->'seed'->>'collection' = 'rich-lifecycle-showcase'
+    AND (h.metadata->'seed'->>'lifecycle_index')::int >= 2
+),
+perk_rows AS (
+  SELECT rich_events.*, perk_number, sponsor.id AS sponsor_id
+  FROM rich_events
+  CROSS JOIN generate_series(1, 2) AS perk_number
+  JOIN LATERAL (
+    SELECT id
+    FROM hackathon_sponsors
+    WHERE hackathon_id = rich_events.hackathon_id
+    ORDER BY display_order
+    OFFSET (perk_number - 1)
+    LIMIT 1
+  ) sponsor ON true
+)
+INSERT INTO hackathon_perks (
+  id,
+  hackathon_id,
+  sponsor_id,
+  name,
+  description,
+  type,
+  code,
+  redemption_url,
+  instructions,
+  scheduled_release_at,
+  released_at,
+  sort_order,
+  created_at,
+  updated_at
+)
+SELECT
+  md5('rich-perk-' || theme_slug || '-' || target_status || '-' || perk_number)::uuid,
+  hackathon_id,
+  sponsor_id,
+  CASE perk_number WHEN 1 THEN 'Builder API credits' ELSE 'Team meal and supply credit' END,
+  CASE perk_number
+    WHEN 1 THEN 'A safe demo account with enough credit to build and test during the event.'
+    ELSE 'A small credit for team food, accessibility supplies, or a missing build part.'
+  END,
+  CASE perk_number WHEN 1 THEN 'credit' ELSE 'coupon' END,
+  upper(substr(md5('rich-perk-code-' || theme_slug || '-' || target_status || '-' || perk_number), 1, 12)),
+  'https://perks.example.com/redeem/' || theme_slug || '/' || perk_number,
+  CASE perk_number
+    WHEN 1 THEN 'Sign in with the same email used for the event. Do not put the key in a public repository.'
+    ELSE 'One claim per team. Keep the receipt and ask the help desk if the code does not work.'
+  END,
+  starts_at - interval '2 days',
+  CASE WHEN lifecycle_index >= 4 THEN starts_at - interval '2 days' ELSE NULL END,
+  perk_number - 1,
+  now() - interval '30 days',
+  now()
+FROM perk_rows
+ON CONFLICT (id) DO NOTHING;
+
+WITH eligible_people AS (
+  SELECT
+    h.id AS hackathon_id,
+    h.metadata->'seed'->>'theme_slug' AS theme_slug,
+    h.metadata->'seed'->>'target_status' AS target_status,
+    (h.metadata->'seed'->>'lifecycle_index')::int AS lifecycle_index,
+    p.id AS participant_id,
+    p.team_id,
+    row_number() OVER (PARTITION BY h.id ORDER BY p.clerk_user_id) AS post_number
+  FROM hackathons h
+  JOIN hackathon_participants p ON p.hackathon_id = h.id AND p.role = 'participant'
+  WHERE h.metadata->'seed'->>'collection' = 'rich-lifecycle-showcase'
+    AND (h.metadata->'seed'->>'lifecycle_index')::int >= 4
+),
+social_rows AS (
+  SELECT * FROM eligible_people WHERE post_number <= 2
+)
+INSERT INTO social_media_submissions (
+  id,
+  hackathon_id,
+  participant_id,
+  team_id,
+  url,
+  platform,
+  og_title,
+  og_description,
+  og_image_url,
+  status,
+  reviewed_at,
+  created_at
+)
+SELECT
+  md5('rich-social-' || theme_slug || '-' || target_status || '-' || post_number)::uuid,
+  hackathon_id,
+  participant_id,
+  team_id,
+  format('https://social.example.com/%s/%s/%s', theme_slug, target_status, post_number),
+  CASE post_number WHEN 1 THEN 'LinkedIn' ELSE 'X' END,
+  CASE post_number WHEN 1 THEN 'What our team learned while building' ELSE 'A quick look at our working demo' END,
+  'A friendly public update with the problem, one build lesson, a captioned demo image, and thanks to teammates and mentors.',
+  'https://images.unsplash.com/photo-' ||
+    (ARRAY[
+      '1516321318423-f06f85e504b3', '1454789548928-9efd52dc4031', '1531746790731-6c087fecd65a',
+      '1485827404703-89b55fcc595e', '1677442136019-21780ecad995', '1508514177221-188b1cf16e9d'
+    ])[1 + ((lifecycle_index + post_number - 1) % 6)] ||
+    '?auto=format&fit=crop&w=1200&h=630&q=80',
+  CASE WHEN lifecycle_index = 4 THEN 'pending' WHEN post_number = 2 AND lifecycle_index = 5 THEN 'rejected' ELSE 'approved' END,
+  CASE WHEN lifecycle_index = 4 THEN NULL ELSE now() - interval '1 day' END,
+  now() - interval '3 days'
+FROM social_rows
+ON CONFLICT (id) DO NOTHING;
+-- ============================================================================
+-- RICH LIFECYCLE SHOWCASE - JUDGING AND RESULTS
+-- Adds planned/active/complete rounds, weighted rubrics, judge work, partial
+-- scoring, final results, and prize assignments.
+-- Depends on: 25_rich_lifecycle_programs.sql
+-- ============================================================================
+
+WITH judging_events AS (
+  SELECT
+    h.id AS hackathon_id,
+    h.metadata->'seed'->>'theme_slug' AS theme_slug,
+    h.metadata->'seed'->>'target_status' AS target_status,
+    (h.metadata->'seed'->>'lifecycle_index')::int AS lifecycle_index
+  FROM hackathons h
+  WHERE h.metadata->'seed'->>'collection' = 'rich-lifecycle-showcase'
+    AND (h.metadata->'seed'->>'lifecycle_index')::int >= 5
+),
+round_rows AS (
+  SELECT judging_events.*, round_number
+  FROM judging_events
+  CROSS JOIN generate_series(1, 2) AS round_number
+)
+INSERT INTO judging_rounds (
+  id,
+  hackathon_id,
+  name,
+  round_type,
+  is_active,
+  display_order,
+  style,
+  status,
+  advancement,
+  advancement_config,
+  created_at,
+  updated_at
+)
+SELECT
+  md5('rich-round-' || theme_slug || '-' || target_status || '-' || round_number)::uuid,
+  hackathon_id,
+  CASE round_number WHEN 1 THEN 'First look' ELSE 'Final scorecards' END,
+  CASE round_number WHEN 1 THEN 'preliminary' ELSE 'finals' END,
+  lifecycle_index = 5 AND round_number = 2,
+  round_number - 1,
+  CASE round_number WHEN 1 THEN 'gate_check'::judging_style ELSE 'points'::judging_style END,
+  CASE
+    WHEN lifecycle_index = 5 AND round_number = 1 THEN 'advanced'::round_status
+    WHEN lifecycle_index = 5 THEN 'active'::round_status
+    ELSE 'complete'::round_status
+  END,
+  CASE round_number WHEN 1 THEN 'top_n'::advancement_rule ELSE 'manual'::advancement_rule END,
+  CASE round_number
+    WHEN 1 THEN jsonb_build_object('count', 12, 'tie_breaker', 'judge discussion')
+    ELSE jsonb_build_object('publish_after_review', true)
+  END,
+  now() - interval '8 days',
+  now()
+FROM round_rows
+ON CONFLICT (id) DO NOTHING;
+
+WITH final_rounds AS (
+  SELECT
+    h.id AS hackathon_id,
+    h.metadata->'seed'->>'theme_slug' AS theme_slug,
+    h.metadata->'seed'->>'target_status' AS target_status,
+    round.id AS round_id
+  FROM hackathons h
+  JOIN judging_rounds round
+    ON round.id = md5(
+      'rich-round-' || (h.metadata->'seed'->>'theme_slug') || '-' ||
+      (h.metadata->'seed'->>'target_status') || '-2'
+    )::uuid
+  WHERE h.metadata->'seed'->>'collection' = 'rich-lifecycle-showcase'
+    AND (h.metadata->'seed'->>'lifecycle_index')::int >= 5
+),
+criteria_rows AS (
+  SELECT final_rounds.*, criterion_number
+  FROM final_rounds
+  CROSS JOIN generate_series(1, 4) AS criterion_number
+)
+INSERT INTO judging_criteria (
+  id,
+  hackathon_id,
+  round_id,
+  name,
+  description,
+  min_score,
+  max_score,
+  weight,
+  category,
+  display_order,
+  created_at,
+  updated_at
+)
+SELECT
+  md5('rich-criterion-' || theme_slug || '-' || target_status || '-' || criterion_number)::uuid,
+  hackathon_id,
+  round_id,
+  (ARRAY['Problem and people', 'Working build', 'Useful impact', 'Clear and inclusive demo'])[criterion_number],
+  (ARRAY[
+    'The team names a real problem, shows who has it, and explains what they learned from people.',
+    'The main task works in the live demo. The team can explain the hard parts and the choices they made.',
+    'The next step is practical. The team names risks, limits, and a useful way to measure progress.',
+    'The demo is easy to follow, uses plain words, includes captions, and gives every teammate a role.'
+  ])[criterion_number],
+  0,
+  10,
+  25,
+  'core'::criterion_category,
+  criterion_number - 1,
+  now() - interval '7 days',
+  now()
+FROM criteria_rows
+ON CONFLICT (id) DO NOTHING;
+
+WITH prize_rounds AS (
+  SELECT
+    prize.id AS prize_id,
+    md5(
+      'rich-round-' || (h.metadata->'seed'->>'theme_slug') || '-' ||
+      (h.metadata->'seed'->>'target_status') || '-2'
+    )::uuid AS round_id
+  FROM hackathons h
+  JOIN prizes prize ON prize.hackathon_id = h.id
+  WHERE h.metadata->'seed'->>'collection' = 'rich-lifecycle-showcase'
+    AND (h.metadata->'seed'->>'lifecycle_index')::int >= 5
+)
+UPDATE prizes
+SET round_id = prize_rounds.round_id,
+    updated_at = now()
+FROM prize_rounds
+WHERE prizes.id = prize_rounds.prize_id;
+
+WITH judging_events AS (
+  SELECT
+    h.id AS hackathon_id,
+    h.metadata->'seed'->>'theme_slug' AS theme_slug,
+    h.metadata->'seed'->>'target_status' AS target_status,
+    (h.metadata->'seed'->>'lifecycle_index')::int AS lifecycle_index,
+    md5(
+      'rich-round-' || (h.metadata->'seed'->>'theme_slug') || '-' ||
+      (h.metadata->'seed'->>'target_status') || '-2'
+    )::uuid AS round_id
+  FROM hackathons h
+  WHERE h.metadata->'seed'->>'collection' = 'rich-lifecycle-showcase'
+    AND (h.metadata->'seed'->>'lifecycle_index')::int >= 5
+),
+judges AS (
+  SELECT
+    judging_events.*,
+    participant.id AS judge_participant_id,
+    row_number() OVER (PARTITION BY judging_events.hackathon_id ORDER BY participant.clerk_user_id) AS judge_number
+  FROM judging_events
+  JOIN hackathon_participants participant
+    ON participant.hackathon_id = judging_events.hackathon_id
+   AND participant.role = 'judge'
+),
+projects AS (
+  SELECT
+    submission.id AS submission_id,
+    submission.hackathon_id,
+    (submission.metadata->'seed'->>'project_number')::int AS project_number
+  FROM submissions submission
+  JOIN judging_events ON judging_events.hackathon_id = submission.hackathon_id
+  WHERE submission.metadata->'seed'->>'collection' = 'rich-lifecycle-showcase'
+),
+assignment_rows AS (
+  SELECT
+    judges.*,
+    projects.submission_id,
+    projects.project_number,
+    CASE
+      WHEN judges.lifecycle_index >= 6 THEN true
+      ELSE (projects.project_number + judges.judge_number) % 2 = 0
+    END AS is_complete
+  FROM judges
+  JOIN projects ON projects.hackathon_id = judges.hackathon_id
+)
+INSERT INTO judge_assignments (
+  id,
+  hackathon_id,
+  judge_participant_id,
+  submission_id,
+  round_id,
+  assignment_kind,
+  notes,
+  viewed_at,
+  is_complete,
+  completed_at,
+  assigned_at
+)
+SELECT
+  md5('rich-assignment-' || theme_slug || '-' || target_status || '-' || project_number || '-' || judge_number)::uuid,
+  hackathon_id,
+  judge_participant_id,
+  submission_id,
+  round_id,
+  'unified_weighted_score',
+  CASE WHEN is_complete THEN 'Reviewed the live demo, project page, safety notes, and user test summary.' ELSE '' END,
+  CASE WHEN is_complete OR project_number % 3 = 0 THEN now() - interval '1 day' ELSE NULL END,
+  is_complete,
+  CASE WHEN is_complete THEN now() - make_interval(hours => (project_number + judge_number)::int) ELSE NULL END,
+  now() - interval '4 days'
+FROM assignment_rows
+ON CONFLICT (id) DO NOTHING;
+
+WITH complete_assignments AS (
+  SELECT
+    assignment.id AS assignment_id,
+    assignment.hackathon_id,
+    h.metadata->'seed'->>'theme_slug' AS theme_slug,
+    h.metadata->'seed'->>'target_status' AS target_status,
+    (submission.metadata->'seed'->>'project_number')::int AS project_number,
+    row_number() OVER (
+      PARTITION BY assignment.hackathon_id, assignment.submission_id
+      ORDER BY assignment.judge_participant_id
+    ) AS judge_number
+  FROM judge_assignments assignment
+  JOIN hackathons h ON h.id = assignment.hackathon_id
+  JOIN submissions submission ON submission.id = assignment.submission_id
+  WHERE h.metadata->'seed'->>'collection' = 'rich-lifecycle-showcase'
+    AND assignment.is_complete
+),
+score_rows AS (
+  SELECT complete_assignments.*, criterion_number
+  FROM complete_assignments
+  CROSS JOIN generate_series(1, 4) AS criterion_number
+)
+INSERT INTO scores (
+  id,
+  judge_assignment_id,
+  criteria_id,
+  score,
+  created_at,
+  updated_at
+)
+SELECT
+  md5('rich-score-' || assignment_id || '-' || criterion_number)::uuid,
+  assignment_id,
+  md5('rich-criterion-' || theme_slug || '-' || target_status || '-' || criterion_number)::uuid,
+  6 + ((project_number + judge_number + criterion_number) % 5),
+  now() - interval '2 days',
+  now()
+FROM score_rows
+ON CONFLICT (id) DO NOTHING;
+
+WITH result_events AS (
+  SELECT
+    h.id AS hackathon_id,
+    h.metadata->'seed'->>'theme_slug' AS theme_slug,
+    h.metadata->'seed'->>'target_status' AS target_status,
+    md5(
+      'rich-round-' || (h.metadata->'seed'->>'theme_slug') || '-' ||
+      (h.metadata->'seed'->>'target_status') || '-2'
+    )::uuid AS round_id
+  FROM hackathons h
+  WHERE h.metadata->'seed'->>'collection' = 'rich-lifecycle-showcase'
+    AND (h.metadata->'seed'->>'lifecycle_index')::int >= 6
+),
+ranked_projects AS (
+  SELECT
+    result_events.*,
+    submission.id AS submission_id,
+    row_number() OVER (
+      PARTITION BY result_events.hackathon_id
+      ORDER BY (submission.metadata->'seed'->>'project_number')::int
+    ) AS rank
+  FROM result_events
+  JOIN submissions submission ON submission.hackathon_id = result_events.hackathon_id
+  WHERE submission.metadata->'seed'->>'collection' = 'rich-lifecycle-showcase'
+),
+winners AS (
+  SELECT * FROM ranked_projects WHERE rank <= 3
+)
+INSERT INTO hackathon_results (
+  id,
+  hackathon_id,
+  submission_id,
+  prize_id,
+  round_id,
+  rank,
+  total_score,
+  weighted_score,
+  judge_count,
+  result_kind,
+  published_at,
+  created_at
+)
+SELECT
+  md5('rich-result-' || theme_slug || '-' || target_status || '-' || rank)::uuid,
+  hackathon_id,
+  submission_id,
+  md5('rich-prize-' || theme_slug || '-' || target_status || '-' || rank)::uuid,
+  round_id,
+  rank,
+  38 - (rank * 2),
+  95 - (rank * 4),
+  2,
+  'prize',
+  now() - interval '2 days',
+  now() - interval '2 days'
+FROM winners
+ON CONFLICT (id) DO NOTHING;
+
+WITH result_prizes AS (
+  SELECT result.prize_id, result.submission_id
+  FROM hackathon_results result
+  JOIN hackathons h ON h.id = result.hackathon_id
+  WHERE h.metadata->'seed'->>'collection' = 'rich-lifecycle-showcase'
+    AND result.prize_id IS NOT NULL
+)
+INSERT INTO prize_assignments (
+  id,
+  prize_id,
+  submission_id,
+  assigned_at
+)
+SELECT
+  md5('rich-prize-assignment-' || prize_id || '-' || submission_id)::uuid,
+  prize_id,
+  submission_id,
+  now() - interval '2 days'
+FROM result_prizes
+ON CONFLICT (prize_id, submission_id) DO NOTHING;
+-- ============================================================================
+-- RICH LIFECYCLE SHOWCASE - FINALIZE EVENT STATES
+-- Apply lifecycle states after all mutation-sensitive related data exists.
+-- Depends on: 26_rich_lifecycle_judging.sql
+-- ============================================================================
+
+UPDATE hackathons
+SET
+  status = (metadata->'seed'->>'target_status')::hackathon_status,
+  challenge_released_at = CASE
+    WHEN (metadata->'seed'->>'lifecycle_index')::int >= 4 THEN starts_at - interval '5 days'
+    ELSE NULL
+  END,
+  results_published_at = CASE
+    WHEN (metadata->'seed'->>'lifecycle_index')::int >= 6 THEN ends_at + interval '2 days'
+    ELSE NULL
+  END,
+  results_announcement_sent_at = CASE
+    WHEN (metadata->'seed'->>'lifecycle_index')::int >= 6 THEN ends_at + interval '2 days 15 minutes'
+    ELSE NULL
+  END,
+  winner_emails_sent_at = CASE
+    WHEN (metadata->'seed'->>'lifecycle_index')::int >= 6 THEN ends_at + interval '2 days 30 minutes'
+    ELSE NULL
+  END,
+  feedback_survey_sent_at = CASE
+    WHEN (metadata->'seed'->>'lifecycle_index')::int >= 6 THEN ends_at + interval '3 days'
+    ELSE NULL
+  END,
+  updated_at = now()
+WHERE metadata->'seed'->>'collection' = 'rich-lifecycle-showcase';
