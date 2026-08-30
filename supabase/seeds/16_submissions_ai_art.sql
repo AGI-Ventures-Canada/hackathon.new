@@ -58,7 +58,7 @@ VALUES
    'https://github.com/seed/voiceclone-studio', 'https://voiceclone.demo.dev', 'https://youtube.com/watch?v=seed_voiceclone',
    'submitted', '{}'::jsonb, now() - interval '62 days', now() - interval '60 days'),
 
-  ('301d301d-301d-301d-301d-301d301d301d', 'd0d0d0d0-d0d0-d0d0-d0d0-d0d0d0d0d0d0', '10351035-1035-1035-1035-103510351035', NULL,
+  ('301d301d-301d-301d-301d-301d301d301d', 'd0d0d0d0-d0d0-d0d0-d0d0-d0d0d0d0d0d0', '105d105d-105d-105d-105d-105d105d105d', NULL,
    'PixelUpscaler', 'Retro pixel art upscaler that converts low-resolution sprites to high-res illustrations while preserving artistic intent.',
    'https://github.com/seed/pixel-upscaler', NULL, NULL,
    'submitted', '{}'::jsonb, now() - interval '62 days', now() - interval '60 days'),
