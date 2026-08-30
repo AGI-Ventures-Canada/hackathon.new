@@ -1,6 +1,6 @@
 {
   "name": "@agi-ventures-canada/hackathon-cli",
-  "version": "0.2.11",
+  "version": "0.2.12",
   "description": "CLI for the hackathon.new platform",
   "keywords": [
     "hackathon",
