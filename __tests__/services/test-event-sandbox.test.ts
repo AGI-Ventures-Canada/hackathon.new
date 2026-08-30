@@ -269,6 +269,17 @@ describe("test event sandbox service", () => {
         if (call === 7) result = { data: { id: EVENT_ID }, error: null }
       } else if (table === "challenges") {
         result = { data: [0, 1, 2].map((index) => ({ id: `challenge-${index}` })), error: null }
+      } else if (table === "hackathon_schedule_items") {
+        if (call <= 2) {
+          result = { data: { id: `schedule-trigger-${call}` }, error: null }
+        } else if (call === 3) {
+          result = {
+            data: Array.from({ length: 8 }, (_, index) => ({ id: `schedule-${index}` })),
+            error: null,
+          }
+        } else {
+          result = { data: null, error: null }
+        }
       } else if (table === "hackathon_participants") {
         if (call === 1) {
           result = {
@@ -361,6 +372,11 @@ describe("test event sandbox service", () => {
     expect(insertPayloads("crowd_votes")[0]).toHaveLength(36)
     expect(insertPayloads("hackathon_results")[0]).toHaveLength(12)
     expect(insertPayloads("prize_assignments")[0]).toHaveLength(5)
+    expect(insertPayloads("hackathon_schedule_items")[0]).toHaveLength(8)
+    expect(updatePayloads("hackathon_schedule_items")).toHaveLength(2)
+    expect((chainsByTable.get("hackathon_schedule_items") ?? []).some(
+      (chain) => chain.delete.mock.calls.length > 0,
+    )).toBe(true)
 
     const pickAssignmentsByPrize = assignments.filter(
       (assignment) => assignment.assignment_kind === "per_prize",

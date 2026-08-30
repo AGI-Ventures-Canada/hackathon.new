@@ -110,6 +110,70 @@ function summary(
   }
 }
 
+async function addTestEventSchedule(
+  client: SupabaseClient,
+  hackathonId: string,
+  stage: TestEventStage,
+  now: Date,
+  timeZone: string,
+): Promise<void> {
+  const schedule = getTestEventSchedule(stage, now, timeZone)
+  const triggerItems = schedule
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => item.triggerType !== null)
+
+  for (const { item, index } of triggerItems) {
+    const { data, error } = await client
+      .from("hackathon_schedule_items")
+      .update({
+        title: item.title,
+        description: item.description,
+        starts_at: item.startsAt,
+        ends_at: item.endsAt,
+        location: item.location,
+        sort_order: index,
+      })
+      .eq("hackathon_id", hackathonId)
+      .eq("trigger_type", item.triggerType)
+      .select("id")
+      .maybeSingle()
+    if (error || !data) {
+      throw new TestEventSandboxError("Could not set up the event schedule.", "creation_failed")
+    }
+  }
+
+  const regularItems = schedule
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => item.triggerType === null)
+  const inserted = requireRows<{ id: string }>(
+    await client.from("hackathon_schedule_items").insert(
+      regularItems.map(({ item, index }) => ({
+        hackathon_id: hackathonId,
+        title: item.title,
+        description: item.description,
+        starts_at: item.startsAt,
+        ends_at: item.endsAt,
+        location: item.location,
+        sort_order: index,
+      })),
+    ).select("id"),
+    "schedule items",
+  )
+  if (inserted.length !== regularItems.length) {
+    throw new TestEventSandboxError("Could not set up the event schedule.", "creation_failed")
+  }
+
+  const { error: deleteError } = await client
+    .from("hackathon_schedule_items")
+    .delete()
+    .eq("hackathon_id", hackathonId)
+    .is("trigger_type", null)
+    .not("id", "in", `(${inserted.map((row) => row.id).join(",")})`)
+  if (deleteError) {
+    throw new TestEventSandboxError("Could not set up the event schedule.", "creation_failed")
+  }
+}
+
 async function findExistingSandbox(
   client: SupabaseClient,
   tenantId: string,
@@ -347,21 +411,7 @@ export async function createTestEventSandbox(
       "challenges",
     )
 
-    requireRows(
-      await client.from("hackathon_schedule_items").insert(
-        getTestEventSchedule(stage, now, timeline.timezone).map((item, index) => ({
-          hackathon_id: created.id,
-          title: item.title,
-          description: item.description,
-          starts_at: item.startsAt,
-          ends_at: item.endsAt,
-          location: item.location,
-          trigger_type: item.triggerType,
-          sort_order: index,
-        })),
-      ).select("id"),
-      "schedule items",
-    )
+    await addTestEventSchedule(client, created.id, stage, now, timeline.timezone)
 
     const attendeeRows = requireRows<{ id: string; clerk_user_id: string }>(
       await client.from("hackathon_participants").insert(
