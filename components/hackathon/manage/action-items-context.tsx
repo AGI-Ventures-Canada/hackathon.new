@@ -16,6 +16,7 @@ import {
   getOrganizerActionItems,
   isCompleted,
   type ActionItem,
+  type ActionItemsInput,
   type ActionSeverity,
 } from "@/lib/utils/organizer-actions";
 import type {
@@ -76,7 +77,16 @@ import type { RoundData } from "@/components/hackathon/judging/rounds-types";
 import type { Challenge } from "@/lib/services/challenges";
 import type { Announcement } from "@/lib/services/announcements";
 import type { Perk } from "@/lib/services/perks";
-import { assertOk } from "@/lib/utils/fetch";
+import { assertOk, assertOkJson, FetchResponseError } from "@/lib/utils/fetch";
+import type {
+  OrganizerActionStateSnapshot,
+  CustomOrganizerActionItemRow,
+} from "@/lib/services/organizer-action-items";
+import type {
+  OrganizerTask,
+  OrganizerTaskPage,
+} from "@/lib/utils/organizer-action-board";
+import { MAX_CUSTOM_ORGANIZER_ACTION_ITEMS } from "@/lib/utils/organizer-action-board";
 import {
   createManageWebMcpState,
   manageWebMcpStateReducer,
@@ -122,6 +132,7 @@ interface ActionItemsContextValue {
   replaceManageChallenges: (items: Challenge[]) => void;
   replaceManagePrizes: (items: Prize[]) => void;
   replaceManageAnnouncements: (items: Announcement[]) => void;
+  actionItemsError: string | null;
 }
 
 const ActionItemsContext = createContext<ActionItemsContextValue | null>(null);
@@ -179,6 +190,7 @@ type LocationInitialData = {
 
 type ProviderProps = {
   actionItems: ActionItem[];
+  persistedActionState: OrganizerActionStateSnapshot;
   hackathonId: string;
   slug: string;
   name: string;
@@ -206,11 +218,103 @@ type ProviderProps = {
   sponsors: SponsorOption[];
   rounds: RoundData[];
   judgingSetupIssues: string[];
+  requiresJudgeScoring: boolean;
+  judgingCompletionReadiness?: ActionItemsInput["judgingCompletionReadiness"];
   children: React.ReactNode;
 };
 
+function isStoredActionItem(value: unknown): value is ActionItem {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Partial<ActionItem>;
+  return (
+    typeof item.id === "string" &&
+    typeof item.label === "string" &&
+    ["urgent", "warning", "scheduled", "info"].includes(item.severity ?? "") &&
+    !!item.close &&
+    ["auto", "manual", "dismiss", "transition"].includes(item.close.kind)
+  );
+}
+
+function customRowToActionItem(row: CustomOrganizerActionItemRow): ActionItem {
+  return {
+    id: row.id,
+    label: row.label,
+    severity: row.severity,
+    close: { kind: "manual" },
+  };
+}
+
+function stateFromSnapshot(
+  snapshot: OrganizerActionStateSnapshot,
+  currentItems: ActionItem[] = [],
+) {
+  const completedIds = new Set<string>();
+  const dismissedIds = new Set<string>();
+  const completedSnapshots: Record<string, ActionItem> = {};
+  const currentById = new Map(currentItems.map((item) => [item.id, item]));
+
+  for (const row of snapshot.generated) {
+    const current = currentById.get(row.action_id);
+    if (row.state === "completed") {
+      if (current) {
+        if (current.close.kind !== "manual" && !isCompleted(current)) continue;
+        completedIds.add(row.action_id);
+        completedSnapshots[row.action_id] = current;
+      } else if (isStoredActionItem(row.item)) {
+        completedIds.add(row.action_id);
+        completedSnapshots[row.action_id] = row.item;
+      }
+    } else if (current?.close.kind === "dismiss") {
+      dismissedIds.add(row.action_id);
+    }
+  }
+  for (const row of snapshot.custom) {
+    if (row.completed_at) {
+      completedIds.add(row.id);
+      completedSnapshots[row.id] = customRowToActionItem(row);
+    }
+  }
+  for (const item of currentItems) {
+    if (isCompleted(item)) {
+      completedIds.add(item.id);
+      completedSnapshots[item.id] = item;
+    }
+  }
+
+  return {
+    completedIds,
+    dismissedIds,
+    completedSnapshots,
+    customItems: snapshot.custom.map(customRowToActionItem),
+  };
+}
+
+function taskToActionItem(task: OrganizerTask): ActionItem {
+  return {
+    id: task.taskRef,
+    label: task.label,
+    hint: task.hint ?? undefined,
+    tooltip: task.tooltip ?? undefined,
+    severity: task.severity,
+    ctaLabel: task.ctaLabel ?? undefined,
+    close: task.custom
+      ? { kind: "manual" }
+      : task.completionPolicy === "auto"
+        ? { kind: "auto", isComplete: task.state === "completed" }
+        : { kind: task.completionPolicy },
+  };
+}
+
+function taskVersionsFromSnapshot(snapshot: OrganizerActionStateSnapshot) {
+  return new Map<string, string>([
+    ...snapshot.generated.map((row) => [row.action_id, row.updated_at] as const),
+    ...snapshot.custom.map((row) => [row.id, row.updated_at] as const),
+  ]);
+}
+
 export function ActionItemsProvider({
   actionItems: serverActionItems,
+  persistedActionState,
   hackathonId,
   slug,
   name: serverName,
@@ -238,6 +342,8 @@ export function ActionItemsProvider({
   sponsors,
   rounds,
   judgingSetupIssues,
+  requiresJudgeScoring: serverRequiresJudgeScoring,
+  judgingCompletionReadiness: serverJudgingCompletionReadiness,
   children,
 }: ProviderProps) {
   const router = useRouter();
@@ -423,57 +529,43 @@ export function ActionItemsProvider({
         registrationClosesAt: liveRegistrationClosesAt,
         allowLateRegistration: liveAllowLateRegistration,
         judgingSetupReady: !serverActionItems.some((item) => item.id === "finish-scoring-setup"),
+        requiresJudgeScoring: serverRequiresJudgeScoring,
+        judgingCompletionReadiness:
+          pollData.judgingCompletionReadiness ?? serverJudgingCompletionReadiness,
       })
     : serverActionItems;
 
-  const [completedIds, setCompletedIds] = useState<Set<string>>(() => {
-    if (typeof window === "undefined") return new Set<string>();
-    try {
-      const s = localStorage.getItem(`completed-actions-${hackathonId}`);
-      if (s) return new Set(JSON.parse(s) as string[]);
-    } catch {}
-    return new Set<string>();
-  });
-  const [dismissedIds, setDismissedIds] = useState<Set<string>>(() => {
-    if (typeof window === "undefined") return new Set<string>();
-    try {
-      const s = localStorage.getItem(`dismissed-actions-${hackathonId}`);
-      if (s) return new Set(JSON.parse(s) as string[]);
-    } catch {}
-    return new Set<string>();
-  });
-  const [customItems, setCustomItems] = useState<ActionItem[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const s = localStorage.getItem(`custom-actions-${hackathonId}`);
-      if (s) {
-        const raw = JSON.parse(s) as Array<Partial<ActionItem> & { id: string; label: string; severity: ActionSeverity }>;
-        return raw.map((i) => ({ ...i, close: i.close ?? { kind: "manual" as const } }) as ActionItem);
-      }
-    } catch {}
-    return [];
-  });
+  const initialActionState = useMemo(
+    () => stateFromSnapshot(persistedActionState, serverActionItems),
+    [persistedActionState, serverActionItems],
+  );
+  const [completedIds, setCompletedIds] = useState<Set<string>>(
+    () => initialActionState.completedIds,
+  );
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(
+    () => initialActionState.dismissedIds,
+  );
+  const [customItems, setCustomItems] = useState<ActionItem[]>(
+    () => initialActionState.customItems,
+  );
   const [completedSnapshots, setCompletedSnapshots] = useState<
     Record<string, ActionItem>
-  >(() => {
-    if (typeof window === "undefined") return {};
-    try {
-      const s = localStorage.getItem(`completed-snapshots-${hackathonId}`);
-      if (s) {
-        const raw = JSON.parse(s) as Record<string, Partial<ActionItem> & { id: string; label: string; severity: ActionSeverity }>;
-        const out: Record<string, ActionItem> = {};
-        for (const [k, v] of Object.entries(raw)) {
-          out[k] = { ...v, close: v.close ?? { kind: "auto" as const, isComplete: true } } as ActionItem;
-        }
-        return out;
-      }
-    } catch {}
-    return {};
-  });
+  >(() => initialActionState.completedSnapshots);
+  const [actionItemsError, setActionItemsError] = useState<string | null>(null);
+  const taskVersionsRef = useRef(taskVersionsFromSnapshot(persistedActionState));
   const snapshotsRef = useRef(completedSnapshots);
   useEffect(() => {
     snapshotsRef.current = completedSnapshots;
   }, [completedSnapshots]);
+
+  useEffect(() => {
+    const next = stateFromSnapshot(persistedActionState, serverActionItems);
+    taskVersionsRef.current = taskVersionsFromSnapshot(persistedActionState);
+    setCompletedIds(next.completedIds);
+    setDismissedIds(next.dismissedIds);
+    setCustomItems(next.customItems);
+    setCompletedSnapshots(next.completedSnapshots);
+  }, [persistedActionState, serverActionItems]);
 
   const [panelOpen, setPanelOpenState] = useState(true);
 
@@ -515,20 +607,200 @@ export function ActionItemsProvider({
     return filtered.size !== dismissedIds.size ? filtered : dismissedIds;
   }, [dismissedIds, allItems]);
 
-  useEffect(() => {
-    if (effectiveDismissedIds !== dismissedIds) {
-      localStorage.setItem(
-        `dismissed-actions-${hackathonId}`,
-        JSON.stringify([...effectiveDismissedIds]),
+  const pendingTaskMutationsRef = useRef(new Set<string>());
+  const legacyImportRef = useRef<string | null>(null);
+
+  const refreshSharedActionState = useCallback(async (showError = false) => {
+    if (pendingTaskMutationsRef.current.size > 0) return;
+    try {
+      const tasks: OrganizerTask[] = [];
+      let customTaskCount = 0;
+      let offset = 0;
+      while (true) {
+        const page = await fetch(
+          `/api/dashboard/hackathons/${hackathonId}/action-items?state=all&offset=${offset}&limit=50`,
+          { cache: "no-store" },
+        ).then(assertOkJson<OrganizerTaskPage>);
+        tasks.push(...page.items);
+        customTaskCount += page.items.filter((task) => task.custom).length;
+        if (customTaskCount > MAX_CUSTOM_ORGANIZER_ACTION_ITEMS) {
+          throw new Error(
+            `This event has more than ${MAX_CUSTOM_ORGANIZER_ACTION_ITEMS} custom tasks. Remove older tasks and try again.`,
+          );
+        }
+        if (!page.hasMore || page.nextOffset === null) break;
+        if (
+          page.nextOffset <= offset ||
+          page.nextOffset !== offset + page.items.length
+        ) {
+          throw new Error(
+            "The shared task list changed while it was loading. Try again.",
+          );
+        }
+        offset = page.nextOffset;
+      }
+
+      const nextCompleted = new Set(
+        tasks.filter((task) => task.state === "completed").map((task) => task.taskRef),
       );
+      const nextDismissed = new Set(
+        tasks.filter((task) => task.state === "dismissed").map((task) => task.taskRef),
+      );
+      const nextCustom = tasks.filter((task) => task.custom).map(taskToActionItem);
+      const nextSnapshots: Record<string, ActionItem> = {};
+      for (const task of tasks) {
+        if (task.state === "completed") nextSnapshots[task.taskRef] = taskToActionItem(task);
+      }
+      for (const item of serverActionItems) {
+        if (isCompleted(item)) nextSnapshots[item.id] = item;
+      }
+
+      taskVersionsRef.current = new Map(
+        tasks.flatMap((task) => task.updatedAt ? [[task.taskRef, task.updatedAt]] : []),
+      );
+      setCompletedIds(nextCompleted);
+      setDismissedIds(nextDismissed);
+      setCustomItems(nextCustom);
+      setCompletedSnapshots(nextSnapshots);
+      setActionItemsError(null);
+    } catch (error) {
+      if (showError || error instanceof Error) {
+        setActionItemsError(
+          error instanceof Error ? error.message : "We couldn't refresh the task list.",
+        );
+      }
     }
-  }, [effectiveDismissedIds, dismissedIds, hackathonId]);
+  }, [hackathonId, serverActionItems]);
+
+  useEffect(() => {
+    if (!pollData) return;
+    void refreshSharedActionState(false);
+  }, [pollData, refreshSharedActionState]);
+
+  useEffect(() => {
+    if (legacyImportRef.current === hackathonId) return;
+    legacyImportRef.current = hackathonId;
+    try {
+      const completedIds = JSON.parse(
+        localStorage.getItem(`completed-actions-${hackathonId}`) ?? "[]",
+      ) as unknown;
+      const dismissedIds = JSON.parse(
+        localStorage.getItem(`dismissed-actions-${hackathonId}`) ?? "[]",
+      ) as unknown;
+      const rawCustom = JSON.parse(
+        localStorage.getItem(`custom-actions-${hackathonId}`) ?? "[]",
+      ) as unknown;
+      const rawSnapshots = JSON.parse(
+        localStorage.getItem(`completed-snapshots-${hackathonId}`) ?? "{}",
+      ) as unknown;
+      const cleanCompleted = Array.isArray(completedIds)
+        ? completedIds.filter((id): id is string => typeof id === "string").slice(0, 200)
+        : [];
+      const cleanDismissed = Array.isArray(dismissedIds)
+        ? dismissedIds.filter((id): id is string => typeof id === "string").slice(0, 200)
+        : [];
+      const cleanCustom = Array.isArray(rawCustom)
+        ? rawCustom.flatMap((value) => {
+            if (!value || typeof value !== "object") return [];
+            const item = value as Partial<ActionItem>;
+            if (
+              typeof item.id !== "string" ||
+              typeof item.label !== "string" ||
+              !["urgent", "warning", "scheduled", "info"].includes(item.severity ?? "")
+            ) return [];
+            return [{ id: item.id, label: item.label, severity: item.severity as ActionSeverity }];
+          }).slice(0, 100)
+        : [];
+      const cleanSnapshots: Record<string, ActionItem> = {};
+      if (rawSnapshots && typeof rawSnapshots === "object") {
+        for (const [id, value] of Object.entries(rawSnapshots)) {
+          if (isStoredActionItem(value)) cleanSnapshots[id] = value;
+        }
+      }
+      if (
+        cleanCompleted.length === 0 &&
+        cleanDismissed.length === 0 &&
+        cleanCustom.length === 0 &&
+        Object.keys(cleanSnapshots).length === 0
+      ) return;
+
+      setCompletedIds((previous) => new Set([...previous, ...cleanCompleted]));
+      setDismissedIds((previous) => new Set([...previous, ...cleanDismissed]));
+      setCustomItems((previous) => {
+        const byId = new Map(previous.map((item) => [item.id, item]));
+        for (const item of cleanCustom) {
+          if (!byId.has(item.id)) byId.set(item.id, { ...item, close: { kind: "manual" } });
+        }
+        return [...byId.values()];
+      });
+      setCompletedSnapshots((previous) => ({ ...cleanSnapshots, ...previous }));
+
+      void fetch(`/api/dashboard/hackathons/${hackathonId}/action-items/import`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          completedIds: cleanCompleted,
+          dismissedIds: cleanDismissed,
+          customItems: cleanCustom,
+          completedSnapshots: cleanSnapshots,
+        }),
+      })
+        .then(assertOk)
+        .then(() => {
+          for (const key of [
+            "completed-actions",
+            "dismissed-actions",
+            "custom-actions",
+            "completed-snapshots",
+          ]) {
+            localStorage.removeItem(`${key}-${hackathonId}`);
+          }
+          router.refresh();
+          return refreshSharedActionState(false);
+        })
+        .catch((error) => {
+          setActionItemsError(
+            error instanceof Error
+              ? error.message
+              : "We couldn't move your saved tasks to the shared list.",
+          );
+        });
+    } catch {
+      setActionItemsError("We couldn't read your older saved tasks.");
+    }
+  }, [hackathonId, refreshSharedActionState, router]);
+
+  const saveTaskState = useCallback(
+    async (id: string, state: "pending" | "completed" | "dismissed") => {
+      pendingTaskMutationsRef.current.add(id);
+      let caught: unknown = null;
+      try {
+        const expectedUpdatedAt = taskVersionsRef.current.get(id);
+        const { task } = await fetch(`/api/dashboard/hackathons/${hackathonId}/action-items/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ state, expectedUpdatedAt }),
+        }).then(assertOkJson<{ task: OrganizerTask }>);
+        if (task.updatedAt) taskVersionsRef.current.set(id, task.updatedAt);
+        else taskVersionsRef.current.delete(id);
+        setActionItemsError(null);
+      } catch (error) {
+        caught = error;
+      } finally {
+        pendingTaskMutationsRef.current.delete(id);
+      }
+      if (caught) throw caught;
+    },
+    [hackathonId],
+  );
 
   const toggleComplete = useCallback(
     (id: string) => {
+      if (pendingTaskMutationsRef.current.has(id)) return;
       const item = allItems.find((i) => i.id === id);
       if (!item || item.close.kind !== "manual") return;
       const wasCompleted = completedIds.has(id);
+      setActionItemsError(null);
       setCompletedIds((prev) => {
         const next = new Set(prev);
         if (next.has(id)) {
@@ -536,10 +808,6 @@ export function ActionItemsProvider({
         } else {
           next.add(id);
         }
-        localStorage.setItem(
-          `completed-actions-${hackathonId}`,
-          JSON.stringify([...next]),
-        );
         return next;
       });
       setCompletedSnapshots((prev) => {
@@ -549,112 +817,202 @@ export function ActionItemsProvider({
         } else {
           next[id] = item;
         }
-        localStorage.setItem(
-          `completed-snapshots-${hackathonId}`,
-          JSON.stringify(next),
-        );
         return next;
       });
+      void saveTaskState(id, wasCompleted ? "pending" : "completed")
+        .then(() => {
+          refreshPoll();
+          router.refresh();
+          return refreshSharedActionState(false);
+        })
+        .catch(async (error) => {
+          setCompletedIds((prev) => {
+            const next = new Set(prev);
+            if (wasCompleted) next.add(id);
+            else next.delete(id);
+            return next;
+          });
+          setCompletedSnapshots((prev) => {
+            const next = { ...prev };
+            if (wasCompleted) next[id] = item;
+            else delete next[id];
+            return next;
+          });
+          setActionItemsError(error instanceof Error ? error.message : "We couldn't update the task.");
+          if (error instanceof FetchResponseError && error.status === 409) {
+            await refreshSharedActionState(true);
+          }
+        });
     },
-    [hackathonId, allItems, completedIds],
+    [allItems, completedIds, refreshPoll, refreshSharedActionState, router, saveTaskState],
   );
 
   const markComplete = useCallback(
     (id: string) => {
+      if (pendingTaskMutationsRef.current.has(id)) return;
       const item = allItems.find((i) => i.id === id);
       if (!item || item.close.kind !== "manual") return;
+      if (completedIds.has(id)) return;
+      setActionItemsError(null);
       setCompletedIds((prev) => {
         if (prev.has(id)) return prev;
         const next = new Set(prev);
         next.add(id);
-        localStorage.setItem(
-          `completed-actions-${hackathonId}`,
-          JSON.stringify([...next]),
-        );
         return next;
       });
       setCompletedSnapshots((prev) => {
         if (prev[id]) return prev;
         const next = { ...prev, [id]: item };
-        localStorage.setItem(
-          `completed-snapshots-${hackathonId}`,
-          JSON.stringify(next),
-        );
         return next;
       });
+      void saveTaskState(id, "completed")
+        .then(() => {
+          refreshPoll();
+          router.refresh();
+          return refreshSharedActionState(false);
+        })
+        .catch(async (error) => {
+          setCompletedIds((prev) => {
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
+          });
+          setCompletedSnapshots((prev) => {
+            const next = { ...prev };
+            delete next[id];
+            return next;
+          });
+          setActionItemsError(error instanceof Error ? error.message : "We couldn't update the task.");
+          if (error instanceof FetchResponseError && error.status === 409) {
+            await refreshSharedActionState(true);
+          }
+        });
     },
-    [hackathonId, allItems],
+    [allItems, completedIds, refreshPoll, refreshSharedActionState, router, saveTaskState],
   );
 
   const dismissItem = useCallback(
     (id: string) => {
+      if (pendingTaskMutationsRef.current.has(id)) return;
       const item = allItems.find((i) => i.id === id);
       if (!item || item.close.kind !== "dismiss") return;
+      if (dismissedIds.has(id)) return;
+      setActionItemsError(null);
       setDismissedIds((prev) => {
         const next = new Set(prev);
         next.add(id);
-        localStorage.setItem(
-          `dismissed-actions-${hackathonId}`,
-          JSON.stringify([...next]),
-        );
         return next;
       });
+      void saveTaskState(id, "dismissed")
+        .then(() => {
+          refreshPoll();
+          router.refresh();
+          return refreshSharedActionState(false);
+        })
+        .catch(async (error) => {
+          setDismissedIds((prev) => {
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
+          });
+          setActionItemsError(error instanceof Error ? error.message : "We couldn't dismiss the task.");
+          if (error instanceof FetchResponseError && error.status === 409) {
+            await refreshSharedActionState(true);
+          }
+        });
     },
-    [hackathonId, allItems],
+    [allItems, dismissedIds, refreshPoll, refreshSharedActionState, router, saveTaskState],
   );
 
   const addCustomItem = useCallback(
     (label: string, severity: ActionSeverity = "info") => {
+      const cleanLabel = label.trim();
+      if (!cleanLabel) return;
       const item: ActionItem = {
-        id: `custom-${Date.now()}`,
-        label,
+        id: `custom-${crypto.randomUUID()}`,
+        label: cleanLabel,
         severity,
         close: { kind: "manual" },
       };
-      setCustomItems((prev) => {
-        const next = [...prev, item];
-        localStorage.setItem(
-          `custom-actions-${hackathonId}`,
-          JSON.stringify(next),
-        );
-        return next;
-      });
+      setActionItemsError(null);
+      setCustomItems((prev) => [...prev, item]);
+      pendingTaskMutationsRef.current.add(item.id);
+      void fetch(`/api/dashboard/hackathons/${hackathonId}/action-items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: cleanLabel, severity, taskRef: item.id }),
+      })
+        .then(assertOkJson<{ task: OrganizerTask }>)
+        .then(({ task }) => {
+          if (task.updatedAt) taskVersionsRef.current.set(task.taskRef, task.updatedAt);
+          setActionItemsError(null);
+          refreshPoll();
+          router.refresh();
+        })
+        .catch((error) => {
+          setCustomItems((prev) => prev.filter((candidate) => candidate.id !== item.id));
+          setActionItemsError(error instanceof Error ? error.message : "We couldn't add the task.");
+        })
+        .finally(() => {
+          pendingTaskMutationsRef.current.delete(item.id);
+          void refreshSharedActionState(false);
+        });
     },
-    [hackathonId],
+    [hackathonId, refreshPoll, refreshSharedActionState, router],
   );
 
   const removeCustomItem = useCallback(
     (id: string) => {
-      setCustomItems((prev) => {
-        const next = prev.filter((i) => i.id !== id);
-        localStorage.setItem(
-          `custom-actions-${hackathonId}`,
-          JSON.stringify(next),
-        );
-        return next;
-      });
+      if (pendingTaskMutationsRef.current.has(id)) return;
+      const removedItem = customItems.find((item) => item.id === id);
+      if (!removedItem) return;
+      const wasCompleted = completedIds.has(id);
+      const removedSnapshot = completedSnapshots[id];
+      setActionItemsError(null);
+      setCustomItems((prev) => prev.filter((i) => i.id !== id));
       setCompletedIds((prev) => {
         if (!prev.has(id)) return prev;
         const next = new Set(prev);
         next.delete(id);
-        localStorage.setItem(
-          `completed-actions-${hackathonId}`,
-          JSON.stringify([...next]),
-        );
         return next;
       });
       setCompletedSnapshots((prev) => {
         if (!prev[id]) return prev;
         const next = { ...prev };
         delete next[id];
-        localStorage.setItem(
-          `completed-snapshots-${hackathonId}`,
-          JSON.stringify(next),
-        );
         return next;
       });
+      pendingTaskMutationsRef.current.add(id);
+      const expectedUpdatedAt = taskVersionsRef.current.get(id);
+      const versionQuery = expectedUpdatedAt
+        ? `?${new URLSearchParams({ expectedUpdatedAt }).toString()}`
+        : "";
+      void fetch(`/api/dashboard/hackathons/${hackathonId}/action-items/${encodeURIComponent(id)}${versionQuery}`, {
+        method: "DELETE",
+      })
+        .then(assertOk)
+        .then(() => {
+          taskVersionsRef.current.delete(id);
+          setActionItemsError(null);
+          refreshPoll();
+          router.refresh();
+        })
+        .catch((error) => {
+          setCustomItems((prev) => [...prev, removedItem]);
+          if (wasCompleted) {
+            setCompletedIds((prev) => new Set(prev).add(id));
+          }
+          if (removedSnapshot) {
+            setCompletedSnapshots((prev) => ({ ...prev, [id]: removedSnapshot }));
+          }
+          setActionItemsError(error instanceof Error ? error.message : "We couldn't remove the task.");
+        })
+        .finally(() => {
+          pendingTaskMutationsRef.current.delete(id);
+          void refreshSharedActionState(false);
+        });
     },
-    [hackathonId],
+    [completedIds, completedSnapshots, customItems, hackathonId, refreshPoll, refreshSharedActionState, router],
   );
 
   const setPanelOpen = useCallback(
@@ -851,7 +1209,6 @@ export function ActionItemsProvider({
     transitionRef.current?.openTransitionDialog(targetStatus);
   }, []);
 
-  // Snapshot auto-completed and manually-completed items so they persist across status changes
   useEffect(() => {
     const current = snapshotsRef.current;
     let changed = false;
@@ -870,12 +1227,8 @@ export function ActionItemsProvider({
     if (changed) {
       snapshotsRef.current = next;
       setCompletedSnapshots(next);
-      localStorage.setItem(
-        `completed-snapshots-${hackathonId}`,
-        JSON.stringify(next),
-      );
     }
-  }, [allItems, completedIds, hackathonId]);
+  }, [allItems, completedIds]);
 
   const { activeItems, completedItems } = useMemo(() => {
     const active: ActionItem[] = [];
@@ -950,6 +1303,7 @@ export function ActionItemsProvider({
       replaceManageChallenges,
       replaceManagePrizes,
       replaceManageAnnouncements,
+      actionItemsError,
       openShowcaseDialog: () => setShowcaseDialogOpen(true),
     }),
     [
@@ -984,6 +1338,7 @@ export function ActionItemsProvider({
       replaceManageChallenges,
       replaceManagePrizes,
       replaceManageAnnouncements,
+      actionItemsError,
     ],
   );
 

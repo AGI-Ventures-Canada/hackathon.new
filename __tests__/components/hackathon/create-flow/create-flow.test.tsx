@@ -196,6 +196,7 @@ const defaultSubmit = (_state: DraftState, _draftId: string) =>
   Promise.resolve({ id: "h_1", slug: "test-hackathon" })
 const mockOnSubmit = mock(defaultSubmit)
 const initialState = createDefaultHackathonDraft(new Date("2026-08-25T12:00:00.000Z"))
+const originalFetch = globalThis.fetch
 
 beforeEach(() => {
   resetComponentMocks()
@@ -210,10 +211,12 @@ beforeEach(() => {
   storageMap.clear()
   localStorage.clear()
   sessionStorage.clear()
+  globalThis.fetch = originalFetch
 })
 
 afterEach(() => {
   cleanup()
+  globalThis.fetch = originalFetch
   delete document.modelContext
   storageMap.clear()
   localStorage.clear()
@@ -228,7 +231,7 @@ function renderFlow() {
 
 async function goToNameStep() {
   fireEvent.click(await screen.findByRole("button", {
-    name: /Start from scratch|Keep editing/,
+    name: /Create from scratch|Keep editing/,
   }))
   await waitFor(() => {
     expect(screen.getByPlaceholderText("My Awesome Hackathon")).toBeDefined()
@@ -240,8 +243,9 @@ describe("CreateFlow", () => {
     it("renders import chooser after restoring the saved draft", async () => {
       renderFlow()
       expect(await screen.findByText("Create a hackathon")).toBeDefined()
-      expect(screen.getByText("Start from scratch")).toBeDefined()
-      expect(screen.getByText("Import from URL")).toBeDefined()
+      expect(screen.getByText("Create from scratch")).toBeDefined()
+      expect(screen.getByText("Import from a URL")).toBeDefined()
+      expect(screen.getByText("Create a test event with test data")).toBeDefined()
     })
 
     it("does not show progress bar or action bar on step 0", async () => {
@@ -258,7 +262,7 @@ describe("CreateFlow", () => {
       expect(screen.queryByRole("button", { name: "Close" })).toBeNull()
     })
 
-    it("advances to name step when Start from scratch is clicked", async () => {
+    it("advances to name step when Create from scratch is clicked", async () => {
       renderFlow()
       await goToNameStep()
       expect(screen.getByText("What's your hackathon called?")).toBeDefined()
@@ -295,9 +299,9 @@ describe("CreateFlow", () => {
       expect(mockOnSubmit).not.toHaveBeenCalled()
     })
 
-    it("shows URL input when Import from URL is clicked", async () => {
+    it("shows URL input when Import from a URL is clicked", async () => {
       renderFlow()
-      fireEvent.click(await screen.findByText("Import from URL"))
+      fireEvent.click(await screen.findByText("Import from a URL"))
       await waitFor(() => {
         expect(screen.getByText("Paste the event URL")).toBeDefined()
       })
@@ -305,7 +309,7 @@ describe("CreateFlow", () => {
 
     it("returns from URL import mode to the chooser without keeping its form", async () => {
       renderFlow()
-      fireEvent.click(await screen.findByText("Import from URL"))
+      fireEvent.click(await screen.findByText("Import from a URL"))
       await screen.findByText("Paste the event URL")
 
       fireEvent.click(screen.getByRole("button", { name: /back/i }))
@@ -362,6 +366,177 @@ describe("CreateFlow", () => {
           delete (window.history as { length?: number }).length
         }
       }
+    })
+  })
+
+  describe("test event creation", () => {
+    function jsonResponse(body: unknown, status = 200) {
+      return new Response(JSON.stringify(body), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
+
+    function installFetch(...responses: Response[]) {
+      const fetchMock = mock<typeof globalThis.fetch>()
+      for (const response of responses) fetchMock.mockResolvedValueOnce(response)
+      globalThis.fetch = fetchMock
+      return fetchMock
+    }
+
+    async function openTestEventSetup() {
+      fireEvent.click(await screen.findByText("Create a test event with test data"))
+      expect(await screen.findByText("Try a full test event")).toBeDefined()
+    }
+
+    it("asks a signed-out organizer to sign in without making a request", async () => {
+      setClerkIsSignedIn(false)
+      const fetchMock = installFetch()
+      renderFlow()
+      await openTestEventSetup()
+
+      fireEvent.click(screen.getByRole("button", { name: "Create test event" }))
+
+      const dialog = await screen.findByTestId("sign-in-dialog")
+      expect(dialog.textContent).toContain("private test event")
+      expect(dialog.getAttribute("data-redirect-query")).toBe(
+        "testEvent=registration",
+      )
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
+
+    it("resumes after the organizer picks an organization", async () => {
+      setClerkOrganization(null)
+      const fetchMock = installFetch(jsonResponse({
+        id: "11111111-1111-4111-8111-111111111111",
+        slug: "launch-lab-test-event",
+        committed: true,
+        replayed: false,
+      }))
+      const view = renderFlow()
+      await openTestEventSetup()
+      fireEvent.click(screen.getByRole("button", { name: "Create test event" }))
+      expect(await screen.findByTestId("org-gate-dialog")).toBeDefined()
+
+      setClerkOrganization({ id: "org_2", name: "Demo Org" })
+      view.rerender(<CreateFlow initialState={initialState} onSubmit={mockOnSubmit} />)
+      fireEvent.click(screen.getByRole("button", { name: "Pick Test Org" }))
+
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+      const request = fetchMock.mock.calls[0][1] as RequestInit
+      expect(JSON.parse(request.body as string).expectedOrganizationId).toBe("org_2")
+      await waitFor(() => {
+        expect(mockReplace).toHaveBeenCalledWith("/e/launch-lab-test-event/manage")
+      })
+    })
+
+    it("reuses the creation ID for a same-stage retry and then opens the event", async () => {
+      const fetchMock = installFetch(
+        jsonResponse({
+          error: "Test event setup stopped. Try again.",
+          code: "creation_failed",
+          retryable: true,
+          committed: false,
+        }, 503),
+        jsonResponse({
+          id: "11111111-1111-4111-8111-111111111111",
+          slug: "launch-lab-test-event",
+          committed: true,
+          replayed: true,
+        }),
+      )
+      renderFlow()
+      await openTestEventSetup()
+
+      fireEvent.click(screen.getByRole("button", { name: "Create test event" }))
+      expect(await screen.findByText("Test event setup stopped. Try again.")).toBeDefined()
+      fireEvent.click(screen.getByRole("button", { name: "Create test event" }))
+
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+      const first = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
+      const second = JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string)
+      expect(first.creationId).toBe(second.creationId)
+      await waitFor(() => {
+        expect(mockReplace).toHaveBeenCalledWith("/e/launch-lab-test-event/manage")
+      })
+    })
+
+    it("rotates the creation ID when the selected stage changes after a failure", async () => {
+      const fetchMock = installFetch(
+        jsonResponse({ error: "Try another stage.", code: "creation_failed" }, 503),
+        jsonResponse({
+          id: "11111111-1111-4111-8111-111111111111",
+          slug: "judging-test-event",
+          committed: true,
+          replayed: false,
+        }),
+      )
+      const user = userEvent.setup()
+      renderFlow()
+      await openTestEventSetup()
+
+      fireEvent.click(screen.getByRole("button", { name: "Create test event" }))
+      expect(await screen.findByText("Try another stage.")).toBeDefined()
+      await user.click(screen.getByRole("combobox"))
+      await user.click(await screen.findByRole("option", { name: "Judging is underway" }))
+      fireEvent.click(screen.getByRole("button", { name: "Create test event" }))
+
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+      const first = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
+      const second = JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string)
+      expect(first.stage).toBe("registration")
+      expect(second.stage).toBe("judging")
+      expect(first.creationId).not.toBe(second.creationId)
+    })
+
+    it("rotates the creation ID if the active organization changes", async () => {
+      const fetchMock = installFetch(
+        jsonResponse({ error: "Try again.", code: "creation_failed" }, 503),
+        jsonResponse({
+          id: "11111111-1111-4111-8111-111111111111",
+          slug: "second-org-test-event",
+          committed: true,
+          replayed: false,
+        }),
+      )
+      const view = renderFlow()
+      await openTestEventSetup()
+
+      fireEvent.click(screen.getByRole("button", { name: "Create test event" }))
+      expect(await screen.findByText("Try again.")).toBeDefined()
+      setClerkOrganization({ id: "org_2", name: "Second Org" })
+      view.rerender(<CreateFlow initialState={initialState} onSubmit={mockOnSubmit} />)
+      fireEvent.click(screen.getByRole("button", { name: "Create test event" }))
+
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+      const first = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
+      const second = JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string)
+      expect(first.expectedOrganizationId).toBe("org_1")
+      expect(second.expectedOrganizationId).toBe("org_2")
+      expect(first.creationId).not.toBe(second.creationId)
+    })
+
+    it("requires a click after a crafted sign-in redirect", async () => {
+      setSearchParams(new URLSearchParams("testEvent=results&makeTest=results"))
+      const fetchMock = installFetch(jsonResponse({
+        id: "11111111-1111-4111-8111-111111111111",
+        slug: "results-test-event",
+        committed: true,
+        replayed: false,
+      }))
+
+      renderFlow()
+
+      expect(await screen.findByText("Try a full test event")).toBeDefined()
+      expect(fetchMock).not.toHaveBeenCalled()
+      fireEvent.click(screen.getByRole("button", { name: "Create test event" }))
+
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+      const request = fetchMock.mock.calls[0][1] as RequestInit
+      expect(JSON.parse(request.body as string).stage).toBe("results")
+      await waitFor(() => {
+        expect(mockReplace).toHaveBeenCalledWith("/e/results-test-event/manage")
+      })
     })
   })
 

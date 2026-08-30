@@ -24,6 +24,7 @@ import { getWinnerPageData } from "@/lib/services/winner-pages"
 import { resolvePrincipal } from "@/lib/auth/principal"
 import { pendingTeamApprovalResponse } from "@/lib/api/responses"
 import { isValidUuid } from "@/lib/utils/uuid"
+import { getEffectiveStatus } from "@/lib/utils/timeline"
 import { publicTeamName } from "@/lib/utils/anonymous-judging"
 import { checkRateLimit, RateLimitError } from "@/lib/services/rate-limit"
 import { consumePublicPollRateLimit } from "@/lib/services/public-import-rate-limit"
@@ -100,7 +101,13 @@ export const publicEventRoutes = new Elysia({ prefix: "/public" })
     const principal = await resolvePrincipal(request)
     if (principal.kind !== "user" && principal.kind !== "admin") { set.status = 401; return { error: "Authentication required" } }
 
-    if (hackathon!.status !== "active") {
+    const eventEnd = hackathon!.ends_at
+      ? Date.parse(hackathon!.ends_at)
+      : Number.POSITIVE_INFINITY
+    if (
+      getEffectiveStatus(hackathon!) !== "active" ||
+      (Number.isFinite(eventEnd) && Date.now() >= eventEnd)
+    ) {
       set.status = 409
       return { error: "Mentor help is only open while the event is active", code: "event_not_active" }
     }

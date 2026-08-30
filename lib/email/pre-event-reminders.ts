@@ -64,29 +64,71 @@ export function buildSubmissionDueContent(
   hackathonSlug: string
 ): PreEventContent {
   return {
-    heading: "Submissions Due Soon!",
-    body: `the deadline to submit your project for ${hackathonName} is coming up fast. Make sure your team has everything ready.`,
+    heading: "Projects Are Due Soon!",
+    body: `your project for ${hackathonName} is due soon. Make sure your team is ready.`,
     deadlineLabel: "Projects due",
     ctaLabel: "Submit Project",
     ctaUrl: `${process.env.NEXT_PUBLIC_APP_URL}/e/${hackathonSlug}`,
-    subject: `Submissions closing soon \u2014 ${shortHackathonName(hackathonName)}`,
+    subject: `Projects due soon \u2014 ${shortHackathonName(hackathonName)}`,
   }
 }
 
-const CONTENT_BUILDERS: Record<string, (name: string, slug: string) => PreEventContent> = {
+export function buildJudgeEventStartingContent(
+  hackathonName: string,
+  hackathonSlug: string,
+): PreEventContent {
+  return {
+    heading: "Your Judge Page Is Ready",
+    body: `${hackathonName} starts soon. Open your judge page now and check your access before the event begins.`,
+    deadlineLabel: "Event starts",
+    ctaLabel: "Open Judge Page",
+    ctaUrl: `${process.env.NEXT_PUBLIC_APP_URL}/e/${hackathonSlug}/judge`,
+    subject: `Judge plan: event starts soon — ${shortHackathonName(hackathonName)}`,
+  }
+}
+
+export function buildJudgeScoringStartingContent(
+  hackathonName: string,
+  hackathonSlug: string,
+): PreEventContent {
+  return {
+    heading: "Scoring Starts Soon",
+    body: `scoring for ${hackathonName} starts soon. Open your judge page and review what you'll score.`,
+    deadlineLabel: "Scoring starts",
+    ctaLabel: "Open Judge Page",
+    ctaUrl: `${process.env.NEXT_PUBLIC_APP_URL}/e/${hackathonSlug}/judge`,
+    subject: `Judge plan: scoring starts soon — ${shortHackathonName(hackathonName)}`,
+  }
+}
+
+export type PreEventReminderType =
+  | "registration_closing"
+  | "event_starting"
+  | "submission_due"
+  | "judge_event_starting"
+  | "judge_scoring_starting"
+
+const CONTENT_BUILDERS: Record<
+  PreEventReminderType,
+  (name: string, slug: string) => PreEventContent
+> = {
   registration_closing: buildRegistrationClosingContent,
   event_starting: buildEventStartingContent,
   submission_due: buildSubmissionDueContent,
+  judge_event_starting: buildJudgeEventStartingContent,
+  judge_scoring_starting: buildJudgeScoringStartingContent,
 }
 
 export type SendPreEventReminderInput = {
   hackathonId: string
-  reminderType: "registration_closing" | "event_starting" | "submission_due"
+  reminderType: PreEventReminderType
   hackathonName: string
   hackathonSlug: string
   deadlineDate: string
+  hackathonTimezone?: string | null
   urgency: "low" | "medium" | "high"
   deliveryId?: string
+  recipientIds?: string[]
   budget?: DeliveryBudget
 }
 
@@ -96,7 +138,37 @@ const HIGH_URGENCY_SUBJECTS: Record<
 > = {
   registration_closing: (name) => `Registration closes today — ${name}`,
   event_starting: (name) => `Starting today — ${name}`,
-  submission_due: (name) => `Submissions due today — ${name}`,
+  submission_due: (name) => `Projects due today — ${name}`,
+  judge_event_starting: (name) => `Judge plan: event starts in 1 hour — ${name}`,
+  judge_scoring_starting: (name) => `Judge plan: scoring starts in 1 hour — ${name}`,
+}
+
+function safeTimeZone(timeZone?: string | null): string {
+  if (!timeZone) return "UTC"
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone }).format()
+    return timeZone
+  } catch {
+    return "UTC"
+  }
+}
+
+function formatJudgeDeadline(
+  deadlineDate: string,
+  timeZone?: string | null,
+): string {
+  const date = new Date(deadlineDate)
+  if (!Number.isFinite(date.getTime())) return deadlineDate
+  return date.toLocaleString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: safeTimeZone(timeZone),
+    timeZoneName: "short",
+  })
 }
 
 export async function sendPreEventReminderEmail(
@@ -107,19 +179,25 @@ export async function sendPreEventReminderEmail(
 
   const content = builder(input.hackathonName, input.hackathonSlug)
   const timeLeft = formatTimeLeft(input.deadlineDate)
-  const deadlineDateFormatted = new Date(input.deadlineDate).toLocaleDateString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  })
+  const isJudgeReminder = input.reminderType.startsWith("judge_")
+  const deadlineDateFormatted = isJudgeReminder
+    ? formatJudgeDeadline(input.deadlineDate, input.hackathonTimezone)
+    : new Date(input.deadlineDate).toLocaleDateString("en-US", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      })
 
   const subject =
     input.urgency === "high"
       ? HIGH_URGENCY_SUBJECTS[input.reminderType](shortHackathonName(input.hackathonName))
       : content.subject
 
-  const candidateIds = await getRecipientIds(input.hackathonId, input.reminderType)
+  const candidateIds = input.recipientIds ?? await getRecipientIds(
+    input.hackathonId,
+    input.reminderType,
+  )
   let sent = 0
   let failed = 0
   const deliveryId = input.deliveryId ?? `${input.hackathonId}/${input.reminderType}/${input.deadlineDate}`
@@ -193,6 +271,9 @@ export async function sendPreEventReminderEmail(
         ctaLabel: content.ctaLabel,
         heading: content.heading,
         body: content.body,
+        recipientReason: isJudgeReminder
+          ? `you're a judge for ${input.hackathonName}`
+          : undefined,
       })
     )
 
@@ -207,7 +288,9 @@ export async function sendPreEventReminderEmail(
         { name: "type", value: `pre_event_${input.reminderType}` },
         { name: "hackathon", value: sanitizeTag(input.hackathonName) },
       ],
-      idempotencyKey: `pre-event-reminder/${deliveryId}/${recipient.id}`,
+      idempotencyKey: isJudgeReminder
+        ? `pre-event-reminder/${input.hackathonId}/${input.reminderType}/${input.deadlineDate}/${input.urgency}/${recipient.id}`
+        : `pre-event-reminder/${deliveryId}/${recipient.id}`,
     })
 
     if (result !== null) {
@@ -226,7 +309,10 @@ export async function sendPreEventReminderEmail(
   }
 
   if (failed === 0 && !deferred) {
-    const refreshedCandidateIds = await getRecipientIds(input.hackathonId, input.reminderType)
+    const refreshedCandidateIds = input.recipientIds ?? await getRecipientIds(
+      input.hackathonId,
+      input.reminderType,
+    )
     deferred = await hasPendingDeliveryTasks(
       workKey,
       refreshedCandidateIds,
@@ -247,7 +333,7 @@ async function getRecipientIds(
 ): Promise<string[]> {
   const client = getSupabase() as unknown as SupabaseClient
 
-  const role = "participant"
+  const role = reminderType.startsWith("judge_") ? "judge" : "participant"
 
   const { data: participants, error: participantsError } = await client
     .from("hackathon_participants")

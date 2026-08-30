@@ -20,6 +20,8 @@ hackathon login
 
 hackathon events list
 hackathon events create           # interactive prompts
+hackathon events create --test-stage judging --yes  # private event with fake test data
+hackathon events tasks list <event-slug> --state pending
 hackathon prizes create <hackathon-id> --name "Best AI App"
 hackathon announcements create <hackathon-id> --title "Kickoff in 1 hour" --body "See you soon"
 ```
@@ -53,7 +55,7 @@ Run `hackathon --help` for the full list. Highlights:
 
 | Group | What it does |
 |-------|--------------|
-| `events` (alias: `hackathons`) | Create, list, update, and delete events. Import from Luma with `--from-url`. |
+| `events` (alias: `hackathons`) | Create and manage events, including the organizer task board. Import from Luma with `--from-url`. |
 | `judging` | Manage judges, criteria, levels, assignments, and results |
 | `tracks` | Prize tracks, round buckets, advancement rules |
 | `prizes` | Create and assign prizes |
@@ -78,6 +80,21 @@ hackathon announcements publish <hackathon-id> <announcement-id>
 ```
 
 Add `--json` to any command for machine-readable output.
+
+### Organizer tasks
+
+List every task page, then use the shown task ref to update one task:
+
+```bash
+hackathon events tasks list <event-slug> --state pending --offset 0 --limit 20
+hackathon events tasks add <event-slug> --label "Order lunch" --task-ref custom-order-lunch
+hackathon events tasks complete <event-slug> custom-order-lunch
+hackathon events tasks reopen <event-slug> custom-order-lunch
+hackathon events tasks dismiss <event-slug> verify-automated-times
+hackathon events tasks remove <event-slug> custom-order-lunch
+```
+
+Keep and reuse the same `custom-` task ref when you retry an add. This keeps retries from making extra tasks. Add `--expected-updated-at <ISO time>` to a change when you need to stop stale updates. Every task command supports `--json`.
 
 ## AI agents
 

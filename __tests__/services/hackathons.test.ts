@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach } from "bun:test"
+import { describe, it, expect, beforeEach, mock } from "bun:test"
 import type { Hackathon } from "@/lib/db/hackathon-types"
 import {
   createChainableMock,
+  mockFrom,
   resetSupabaseMocks,
   resetClerkMocks,
   mockClerkClient,
@@ -104,6 +105,31 @@ describe("Hackathons Service", () => {
       expect(insert.insert).toHaveBeenCalledWith(expect.objectContaining({
         slug: "same-name-1",
       }))
+    })
+
+    it("does not retry a supplied ID that belongs to another tenant", async () => {
+      const lookup = createChainableMock({ data: null, error: null })
+      const collision = createChainableMock({
+        data: null,
+        error: { code: "23505", message: "duplicate id" },
+      })
+      const tenantLookup = createChainableMock({ data: null, error: null })
+      const calls = [lookup, collision, tenantLookup]
+      let call = 0
+      setMockFromImplementation(() => calls[call++] ?? tenantLookup)
+
+      const result = await createHackathon(
+        "tenant-b",
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+          name: "Cross tenant retry",
+        },
+        { track: false },
+      )
+
+      expect(result).toBeNull()
+      expect(mockFrom).toHaveBeenCalledTimes(3)
+      expect(tenantLookup.eq).toHaveBeenCalledWith("tenant_id", "tenant-b")
     })
   })
 
@@ -1121,6 +1147,38 @@ describe("Hackathons Service", () => {
       expect(capturedArgs!.limit).toBe(100)
       expect(result[0].members).toHaveLength(25)
       expect(result[0].members.every((m) => m.displayName !== null)).toBe(true)
+    })
+
+    it("shows clean fixture identities in the team list without calling Clerk", async () => {
+      const getUserList = mock(() => Promise.resolve({ data: [] }))
+      mockClerkClient.mockResolvedValueOnce({ users: { getUserList } } as never)
+      mockTables({
+        teams: [
+          {
+            id: "team_1",
+            name: "Signal Forge",
+            status: "forming",
+            mode: "in_person",
+            captain_clerk_user_id: "seed_user_sandbox_attendee_avery_chen_01",
+            pending_captain_email: null,
+          },
+        ],
+        participants: [
+          {
+            clerk_user_id: "seed_user_sandbox_attendee_avery_chen_01",
+            role: "participant",
+            team_id: "team_1",
+          },
+        ],
+      })
+
+      const result = await listTeamsWithMembers("h1")
+
+      expect(getUserList).not.toHaveBeenCalled()
+      expect(result[0].members[0]).toMatchObject({
+        displayName: "Avery Chen",
+        email: "sandbox-person-1@example.invalid",
+      })
     })
   })
 

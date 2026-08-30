@@ -186,6 +186,30 @@ describe("sendResultsAnnouncementEmailsWithResult", () => {
     else process.env.NEXT_PUBLIC_APP_URL = savedAppUrl
   })
 
+  it("does not send a results email for a test event", async () => {
+    fromImpl = (table) => query({
+      data: table === "hackathons"
+        ? {
+            name: "Test event",
+            slug: "test-event",
+            status: "completed",
+            results_published_at: "2026-08-20T00:00:00.000Z",
+            results_announcement_sent_at: null,
+            is_test_event: true,
+          }
+        : null,
+      error: null,
+    })
+
+    await expect(sendResultsAnnouncementEmailsWithResult("hack_1")).resolves.toEqual({
+      attempted: 0,
+      sent: 0,
+      failed: 0,
+    })
+    expect(mockGetUserList).not.toHaveBeenCalled()
+    expect(mockSendEmail).not.toHaveBeenCalled()
+  })
+
   it("emails each non-winner once and checkpoints a complete delivery", async () => {
     const { updateQueries } = configureRecipients()
 

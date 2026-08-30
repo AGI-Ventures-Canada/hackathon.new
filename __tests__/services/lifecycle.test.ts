@@ -3,6 +3,7 @@ import {
   createChainableMock,
   resetSupabaseMocks,
   setMockFromImplementation,
+  setMockRpcImplementation,
   type ChainableMock,
 } from "../lib/supabase-mock"
 
@@ -55,16 +56,27 @@ mock.module("@/lib/services/hackathons", () => ({
   denyPendingTeamsForClosedHackathon: mockDenyPendingTeamsForClosedHackathon,
 }))
 
-const mockCancelRemindersForEntity = mock(() => Promise.resolve())
-const mockScheduleReminders = mock(() => Promise.resolve(0))
-mock.module("@/lib/services/smart-reminders", () => ({
-  cancelRemindersForEntity: mockCancelRemindersForEntity,
-  scheduleReminders: mockScheduleReminders,
+const mockReschedulePreEventReminders = mock(() => Promise.resolve(0))
+mock.module("@/lib/services/pre-event-reminders", () => ({
+  reschedulePreEventReminders: mockReschedulePreEventReminders,
+}))
+
+const mockGetJudgingSetupStatus = mock(() =>
+  Promise.resolve({ isReady: true, issues: [] as string[] })
+)
+mock.module("@/lib/services/judging", () => ({
+  getJudgingSetupStatus: mockGetJudgingSetupStatus,
 }))
 
 const {
+  AUTO_TRANSITION_BATCH_LIMIT,
+  AUTO_TRANSITION_PAGE_WINDOW_MS,
+  closePendingJudgeWorkForClosedHackathon,
   executeTransition,
+  getJudgingCompletionReadiness,
+  getJudgingReadiness,
   processAutoTransitions,
+  reconcilePendingJudgeWorkForClosedHackathons,
   reconcilePendingTeamsForClosedHackathons,
 } = await import(
   "@/lib/services/lifecycle"
@@ -85,10 +97,10 @@ describe("Lifecycle Service", () => {
     mockGetTriggerItem.mockResolvedValue(null)
     mockDenyPendingTeamsForClosedHackathon.mockClear()
     mockDenyPendingTeamsForClosedHackathon.mockResolvedValue({ denied: 0, failed: [] })
-    mockCancelRemindersForEntity.mockClear()
-    mockCancelRemindersForEntity.mockResolvedValue(undefined)
-    mockScheduleReminders.mockClear()
-    mockScheduleReminders.mockResolvedValue(0)
+    mockReschedulePreEventReminders.mockClear()
+    mockReschedulePreEventReminders.mockResolvedValue(0)
+    mockGetJudgingSetupStatus.mockClear()
+    mockGetJudgingSetupStatus.mockResolvedValue({ isReady: true, issues: [] })
   })
 
   describe("executeTransition", () => {
@@ -144,6 +156,589 @@ describe("Lifecycle Service", () => {
 
       expect(result.success).toBe(false)
       expect(result.error).toContain("Invalid transition")
+    })
+
+    it("uses one judging gate for scoring setup, real judges, and assignments", async () => {
+      mockGetJudgingSetupStatus.mockResolvedValue({
+        isReady: false,
+        issues: ["Add score categories for Best Demo."],
+      })
+      setMockFromImplementation((table) => {
+        if (table === "submissions") {
+          return createChainableMock({
+            data: [{ id: "project-1" }, { id: "project-2" }],
+            error: null,
+            count: 2,
+          })
+        }
+        if (table === "prizes") {
+          return createChainableMock({
+            data: [{ id: "prize-1", judging_style: "weighted_score", round_id: null }],
+            error: null,
+          })
+        }
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "judge_assignments" || table === "round_submissions") {
+          return createChainableMock({ data: [], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await executeTransition({
+        hackathonId: "h1",
+        tenantId: "t1",
+        fromStatus: "active",
+        toStatus: "judging",
+        trigger: "manual",
+        triggeredBy: "user1",
+      })
+
+      expect(result).toEqual({
+        success: false,
+        error:
+          "Get judging ready first. Add at least one judge. Add score categories for Best Demo. 2 projects still need judge assignments.",
+        code: "judging_not_ready",
+        issues: [
+          "Add at least one judge.",
+          "Add score categories for Best Demo.",
+          "2 projects still need judge assignments.",
+        ],
+      })
+    })
+
+    it("lets crowd-only events start judging without judges or assignments", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "submissions") {
+          return createChainableMock({
+            data: [{ id: "project-1" }],
+            error: null,
+            count: 1,
+          })
+        }
+        if (table === "prizes") {
+          return createChainableMock({
+            data: [{ id: "crowd-prize", judging_style: "crowd_vote", round_id: null }],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: [], error: null })
+      })
+
+      await expect(getJudgingReadiness("h1")).resolves.toEqual({
+        isReady: true,
+        canCompleteWithoutJudging: false,
+        requiresJudgeScoring: false,
+        issues: [],
+        submissionCount: 1,
+        judgeCount: 0,
+        unassignedSubmissionCount: 0,
+      })
+      expect(mockGetJudgingSetupStatus).toHaveBeenCalledWith("h1")
+    })
+
+    it("blocks judging when every prize still needs a judging style", async () => {
+      mockGetJudgingSetupStatus.mockResolvedValue({
+        isReady: false,
+        issues: ["Pick how judges should score at least one prize."],
+      })
+      setMockFromImplementation((table) => {
+        if (table === "submissions") {
+          return createChainableMock({
+            data: [{ id: "project-1" }],
+            error: null,
+            count: 1,
+          })
+        }
+        if (table === "prizes") {
+          return createChainableMock({
+            data: [{ id: "display-prize", judging_style: null, round_id: null }],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: [], error: null })
+      })
+
+      const readiness = await getJudgingReadiness("h1")
+
+      expect(readiness.isReady).toBe(false)
+      expect(readiness.requiresJudgeScoring).toBe(false)
+      expect(readiness.issues).toEqual([
+        "Pick how judges should score at least one prize.",
+      ])
+      expect(mockGetJudgingSetupStatus).toHaveBeenCalledWith("h1")
+    })
+
+    it("blocks judging when the event has no prizes", async () => {
+      mockGetJudgingSetupStatus.mockResolvedValue({
+        isReady: false,
+        issues: ["Pick how judges should score at least one prize."],
+      })
+      setMockFromImplementation((table) => {
+        if (table === "submissions") {
+          return createChainableMock({
+            data: [{ id: "project-1" }],
+            error: null,
+            count: 1,
+          })
+        }
+        if (table === "prizes") {
+          return createChainableMock({ data: [], error: null })
+        }
+        return createChainableMock({ data: [], error: null })
+      })
+
+      await expect(getJudgingReadiness("h1")).resolves.toMatchObject({
+        isReady: false,
+        requiresJudgeScoring: false,
+        issues: ["Pick how judges should score at least one prize."],
+      })
+    })
+
+    it("requires accepted-judge assignments for every judge-scored prize", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "submissions") {
+          return createChainableMock({
+            data: [{ id: "project-1" }, { id: "project-2" }],
+            error: null,
+            count: 2,
+          })
+        }
+        if (table === "prizes") {
+          return createChainableMock({
+            data: [
+              { id: "gate-prize", judging_style: "gate_check", round_id: null },
+              { id: "pick-prize", judging_style: "judges_pick", round_id: null },
+            ],
+            error: null,
+          })
+        }
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: [{ id: "accepted-judge" }], error: null })
+        }
+        if (table === "judge_assignments") {
+          return createChainableMock({
+            data: [
+              {
+                submission_id: "project-1",
+                prize_id: "gate-prize",
+                judge_participant_id: "accepted-judge",
+                assignment_kind: "per_prize",
+              },
+              {
+                submission_id: "project-2",
+                prize_id: "gate-prize",
+                judge_participant_id: "former-judge",
+                assignment_kind: "per_prize",
+              },
+              {
+                submission_id: "project-1",
+                prize_id: "pick-prize",
+                judge_participant_id: "accepted-judge",
+                assignment_kind: "per_prize",
+              },
+            ],
+            error: null,
+          })
+        }
+        if (table === "round_submissions") {
+          return createChainableMock({ data: [], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const readiness = await getJudgingReadiness("h1")
+
+      expect(readiness).toMatchObject({
+        isReady: false,
+        requiresJudgeScoring: true,
+        judgeCount: 1,
+        unassignedSubmissionCount: 1,
+        issues: ["1 project still needs judge assignments."],
+      })
+    })
+
+    it("blocks completion while a required judge task has no score", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "submissions") {
+          return createChainableMock({
+            data: [{ id: "project-1" }],
+            error: null,
+            count: 1,
+          })
+        }
+        if (table === "prizes") {
+          return createChainableMock({
+            data: [{ id: "weighted", judging_style: "weighted_score", round_id: null }],
+            error: null,
+          })
+        }
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: [{ id: "judge-1" }], error: null })
+        }
+        if (table === "judge_assignments") {
+          return createChainableMock({
+            data: [{
+              id: "assignment-1",
+              submission_id: "project-1",
+              prize_id: null,
+              judge_participant_id: "judge-1",
+              assignment_kind: "unified_weighted_score",
+              round_id: null,
+              is_complete: false,
+            }],
+            error: null,
+          })
+        }
+        if (table === "round_submissions") {
+          return createChainableMock({ data: [], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      await expect(getJudgingCompletionReadiness("h1")).resolves.toEqual({
+        isReady: false,
+        issues: ["1 judge task still needs a score."],
+        incompleteAssignmentCount: 1,
+        incompletePickListCount: 0,
+      })
+
+      const result = await executeTransition({
+        hackathonId: "h1",
+        tenantId: "t1",
+        fromStatus: "judging",
+        toStatus: "completed",
+        trigger: "manual",
+        triggeredBy: "user1",
+      })
+      expect(result).toEqual({
+        success: false,
+        error: "Finish judging first. 1 judge task still needs a score.",
+        code: "judging_not_ready",
+        issues: ["1 judge task still needs a score."],
+      })
+    })
+
+    it("uses submitted pick lists instead of assignment completion for judge picks", async () => {
+      let pickRows: Array<{ judge_participant_id: string; prize_id: string }> = []
+      setMockFromImplementation((table) => {
+        if (table === "submissions") {
+          return createChainableMock({
+            data: [{ id: "project-1" }],
+            error: null,
+            count: 1,
+          })
+        }
+        if (table === "prizes") {
+          return createChainableMock({
+            data: [{ id: "pick-prize", judging_style: "judges_pick", round_id: null }],
+            error: null,
+          })
+        }
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: [{ id: "judge-1" }], error: null })
+        }
+        if (table === "judge_assignments") {
+          return createChainableMock({
+            data: [{
+              id: "assignment-1",
+              submission_id: "project-1",
+              prize_id: "pick-prize",
+              judge_participant_id: "judge-1",
+              assignment_kind: "per_prize",
+              round_id: null,
+              is_complete: false,
+            }],
+            error: null,
+          })
+        }
+        if (table === "judge_picks") {
+          return createChainableMock({ data: pickRows, error: null })
+        }
+        if (table === "round_submissions") {
+          return createChainableMock({ data: [], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      await expect(getJudgingCompletionReadiness("h1")).resolves.toMatchObject({
+        isReady: false,
+        issues: ["1 judge still needs to send picks."],
+        incompleteAssignmentCount: 0,
+        incompletePickListCount: 1,
+      })
+
+      pickRows = [{ judge_participant_id: "judge-1", prize_id: "pick-prize" }]
+      await expect(getJudgingCompletionReadiness("h1")).resolves.toEqual({
+        isReady: true,
+        issues: [],
+        incompleteAssignmentCount: 0,
+        incompletePickListCount: 0,
+      })
+    })
+
+    it("lets a crowd-vote event finish without judge tasks", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "submissions") {
+          return createChainableMock({
+            data: [{ id: "project-1" }],
+            error: null,
+            count: 1,
+          })
+        }
+        if (table === "prizes") {
+          return createChainableMock({
+            data: [{ id: "crowd", judging_style: "crowd_vote", round_id: null }],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      await expect(getJudgingCompletionReadiness("h1")).resolves.toEqual({
+        isReady: true,
+        issues: [],
+        incompleteAssignmentCount: 0,
+        incompletePickListCount: 0,
+      })
+    })
+
+    it("does not auto-complete when a project appears during the close check", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "submissions" || table === "hackathon_participants") {
+          return createChainableMock({ data: null, error: null, count: 1 })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+      setMockRpcImplementation(() => Promise.resolve({ data: 0, error: null }))
+
+      const result = await executeTransition({
+        hackathonId: "h1",
+        tenantId: "t1",
+        fromStatus: "active",
+        toStatus: "completed",
+        trigger: "auto",
+        triggeredBy: "system",
+      })
+
+      expect(result).toEqual({
+        success: false,
+        error: "Projects must go through judging before the event can finish.",
+        code: "judging_not_ready",
+      })
+    })
+
+    it("does not let a manual status change skip judging", async () => {
+      setMockFromImplementation((table) => {
+        if (table === "submissions") {
+          return createChainableMock({
+            data: [{ id: "project-1" }],
+            error: null,
+            count: 1,
+          })
+        }
+        if (table === "prizes") {
+          return createChainableMock({
+            data: [{ id: "crowd", judging_style: "crowd_vote", round_id: null }],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await executeTransition({
+        hackathonId: "h1",
+        tenantId: "t1",
+        fromStatus: "active",
+        toStatus: "completed",
+        trigger: "manual",
+        triggeredBy: "user1",
+      })
+
+      expect(result).toEqual({
+        success: false,
+        error: "Projects must go through judging before the event can finish.",
+        code: "judging_not_ready",
+      })
+    })
+
+    it("updates the end time in the same leased transition row update", async () => {
+      const nextEnd = "2030-09-03T17:00:00.000Z"
+      let hackathonCalls = 0
+      let updateChain: ChainableMock | undefined
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          hackathonCalls++
+          if (hackathonCalls === 1) {
+            return createChainableMock({
+              data: {
+                status: "completed",
+                starts_at: "2030-09-02T12:00:00.000Z",
+                ends_at: "2030-09-02T17:00:00.000Z",
+              },
+              error: null,
+            })
+          }
+          updateChain = createChainableMock({
+            data: {
+              id: "h1",
+              tenant_id: "t1",
+              name: "Test Hack",
+              slug: "test-hack",
+              status: "active",
+              starts_at: "2030-09-02T12:00:00.000Z",
+              ends_at: nextEnd,
+            },
+            error: null,
+          })
+          return updateChain
+        }
+        return createChainableMock({ data: [], error: null })
+      })
+
+      const result = await executeTransition({
+        hackathonId: "h1",
+        tenantId: "t1",
+        fromStatus: "completed",
+        toStatus: "active",
+        trigger: "manual",
+        triggeredBy: "user1",
+        endsAt: nextEnd,
+      })
+
+      expect(result.success).toBe(true)
+      expect(updateChain!.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: "active",
+          phase: "submission_open",
+          ends_at: nextEnd,
+        }),
+      )
+      expect(leaseOrder.slice(0, 2)).toEqual(["acquired", "released"])
+      expect(mockReschedulePreEventReminders).toHaveBeenCalledWith("h1")
+    })
+
+    it("closes the active judging round when reopening project work", async () => {
+      const nextEnd = "2030-09-03T17:00:00.000Z"
+      let hackathonCalls = 0
+      let roundCalls = 0
+      let updateChain: ChainableMock | undefined
+      let roundResetChain: ChainableMock | undefined
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          hackathonCalls++
+          if (hackathonCalls === 1) {
+            return createChainableMock({
+              data: {
+                status: "judging",
+                phase: "finals",
+                starts_at: "2030-09-02T12:00:00.000Z",
+                ends_at: "2030-09-02T17:00:00.000Z",
+              },
+              error: null,
+            })
+          }
+          updateChain = createChainableMock({
+            data: {
+              id: "h1",
+              tenant_id: "t1",
+              name: "Test Hack",
+              slug: "test-hack",
+              status: "active",
+              phase: "submission_open",
+              starts_at: "2030-09-02T12:00:00.000Z",
+              ends_at: nextEnd,
+            },
+            error: null,
+          })
+          return updateChain
+        }
+        if (table === "judging_rounds") {
+          roundCalls++
+          if (roundCalls === 1) {
+            return createChainableMock({ data: { id: "round-1" }, error: null })
+          }
+          roundResetChain = createChainableMock({ data: [], error: null })
+          return roundResetChain
+        }
+        return createChainableMock({ data: [], error: null })
+      })
+
+      const result = await executeTransition({
+        hackathonId: "h1",
+        tenantId: "t1",
+        fromStatus: "judging",
+        toStatus: "active",
+        trigger: "manual",
+        triggeredBy: "user1",
+        endsAt: nextEnd,
+      })
+
+      expect(result.success).toBe(true)
+      expect(roundResetChain!.update).toHaveBeenCalledWith(
+        expect.objectContaining({ status: "planned", is_active: false }),
+      )
+      expect(updateChain!.update).toHaveBeenCalledWith(
+        expect.objectContaining({ status: "active", phase: "submission_open" }),
+      )
+    })
+
+    it("does not reopen an ended event without a future end time", async () => {
+      setMockFromImplementation((table) => table === "hackathons"
+        ? createChainableMock({
+            data: {
+              status: "judging",
+              starts_at: "2026-08-29T12:00:00.000Z",
+              ends_at: "2026-08-29T17:00:00.000Z",
+            },
+            error: null,
+          })
+        : createChainableMock({ data: null, error: null }))
+
+      const result = await executeTransition({
+        hackathonId: "h1",
+        tenantId: "t1",
+        fromStatus: "judging",
+        toStatus: "active",
+        trigger: "manual",
+        triggeredBy: "user1",
+      })
+
+      expect(result).toEqual({
+        success: false,
+        error: "Pick a future end time before reopening this event.",
+        code: "invalid_transition",
+      })
+    })
+
+    it("does not reopen an event by clearing its end time", async () => {
+      setMockFromImplementation((table) => table === "hackathons"
+        ? createChainableMock({
+            data: {
+              status: "judging",
+              starts_at: "2026-08-29T12:00:00.000Z",
+              ends_at: "2026-08-29T17:00:00.000Z",
+            },
+            error: null,
+          })
+        : createChainableMock({ data: null, error: null }))
+
+      const result = await executeTransition({
+        hackathonId: "h1",
+        tenantId: "t1",
+        fromStatus: "judging",
+        toStatus: "active",
+        trigger: "manual",
+        triggeredBy: "user1",
+        endsAt: null,
+      })
+
+      expect(result).toEqual({
+        success: false,
+        error: "Pick a future end time before reopening this event.",
+        code: "invalid_transition",
+      })
     })
 
     it("allows draft → published", async () => {
@@ -204,10 +799,16 @@ describe("Lifecycle Service", () => {
         status: "completed",
       }
       let hackathonCalls = 0
-      let hackathonChain: ChainableMock | undefined
+      let committedHackathonChain: ChainableMock | undefined
       let resultsChain: ChainableMock | undefined
       setMockFromImplementation((table) => {
         if (table === "hackathon_transitions") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "submissions") {
+          return createChainableMock({ data: [], error: null, count: 0 })
+        }
+        if (table === "prizes") {
           return createChainableMock({ data: [], error: null })
         }
         if (table === "hackathon_results") {
@@ -215,12 +816,13 @@ describe("Lifecycle Service", () => {
           return resultsChain
         }
         hackathonCalls++
-        hackathonChain = createChainableMock({
+        const hackathonChain = createChainableMock({
           data: hackathonCalls === 1
             ? { status: "judging", results_published_at: null }
             : hackathon,
           error: null,
         })
+        if (hackathonCalls === 2) committedHackathonChain = hackathonChain
         return hackathonChain
       })
 
@@ -235,7 +837,7 @@ describe("Lifecycle Service", () => {
       })
 
       expect(result.success).toBe(true)
-      const update = hackathonChain!.update.mock.calls[0]![0] as Record<string, unknown>
+      const update = committedHackathonChain!.update.mock.calls[0]![0] as Record<string, unknown>
       expect(update).toMatchObject({
         status: "completed",
         results_published_at: "2026-08-26T12:00:00.000Z",
@@ -252,6 +854,12 @@ describe("Lifecycle Service", () => {
       let hackathonCalls = 0
       setMockFromImplementation((table) => {
         if (table === "hackathon_results") return resultsChain
+        if (table === "submissions") {
+          return createChainableMock({ data: [], error: null, count: 0 })
+        }
+        if (table === "prizes") {
+          return createChainableMock({ data: [], error: null })
+        }
         if (table === "hackathons") {
           hackathonCalls++
           return createChainableMock({
@@ -379,6 +987,82 @@ describe("Lifecycle Service", () => {
       expect(result.success).toBe(true)
     })
 
+    it("sets each phase again across a forward and backward status round trip", async () => {
+      let returnedStatus: "active" | "judging" | "published" = "judging"
+      const hackathonUpdates: ChainableMock[] = []
+      setMockFromImplementation((table) => {
+        if (table === "submissions") {
+          return createChainableMock({
+            data: [{ id: "project-1" }],
+            error: null,
+            count: 1,
+          })
+        }
+        if (table === "prizes") {
+          return createChainableMock({
+            data: [{ id: "crowd", judging_style: "crowd_vote", round_id: null }],
+            error: null,
+          })
+        }
+        if (table === "judging_rounds") {
+          return createChainableMock({
+            data: { id: "final-round", round_type: "finals" },
+            error: null,
+          })
+        }
+        if (table === "hackathons") {
+          const chain = createChainableMock({
+            data: {
+              id: "h1",
+              tenant_id: "t1",
+              name: "Test Hack",
+              slug: "test-hack",
+              status: returnedStatus,
+            },
+            error: null,
+          })
+          hackathonUpdates.push(chain)
+          return chain
+        }
+        return createChainableMock({ data: [], error: null })
+      })
+
+      expect(await executeTransition({
+        hackathonId: "h1",
+        tenantId: "t1",
+        fromStatus: "active",
+        toStatus: "judging",
+        trigger: "manual",
+        triggeredBy: "user1",
+      })).toEqual(expect.objectContaining({ success: true }))
+
+      returnedStatus = "published"
+      expect(await executeTransition({
+        hackathonId: "h1",
+        tenantId: "t1",
+        fromStatus: "judging",
+        toStatus: "published",
+        trigger: "manual",
+        triggeredBy: "user1",
+      })).toEqual(expect.objectContaining({ success: true }))
+
+      returnedStatus = "active"
+      expect(await executeTransition({
+        hackathonId: "h1",
+        tenantId: "t1",
+        fromStatus: "published",
+        toStatus: "active",
+        trigger: "manual",
+        triggeredBy: "user1",
+      })).toEqual(expect.objectContaining({ success: true }))
+
+      expect(hackathonUpdates.map((chain) => chain.update.mock.calls[0]?.[0])).toEqual([
+        expect.objectContaining({ status: "judging", phase: "finals" }),
+        expect.objectContaining({ status: "published", phase: null }),
+        expect.objectContaining({ status: "active", phase: "build" }),
+      ])
+    })
+
     it.each([
       ["active", "completed"],
       ["completed", "archived"],
@@ -412,7 +1096,7 @@ describe("Lifecycle Service", () => {
 
       expect(result.success).toBe(true)
       expect(mockDenyPendingTeamsForClosedHackathon).toHaveBeenCalledWith("h1")
-      expect(mockCancelRemindersForEntity).toHaveBeenCalledWith("hackathon_event", "h1")
+      expect(mockReschedulePreEventReminders).toHaveBeenCalledWith("h1")
     })
 
     it("retries pending-team closeout before returning from completion", async () => {
@@ -452,7 +1136,7 @@ describe("Lifecycle Service", () => {
       expect(mockDenyPendingTeamsForClosedHackathon).toHaveBeenCalledTimes(2)
     })
 
-    it("cancels pre-event reminders when moving back to draft", async () => {
+    it("reconciles pre-event reminders when moving back to draft", async () => {
       const hackathon = {
         id: "h1",
         tenant_id: "t1",
@@ -481,10 +1165,10 @@ describe("Lifecycle Service", () => {
 
       expect(result.success).toBe(true)
       expect(mockDenyPendingTeamsForClosedHackathon).not.toHaveBeenCalled()
-      expect(mockCancelRemindersForEntity).toHaveBeenCalledWith("hackathon_event", "h1")
+      expect(mockReschedulePreEventReminders).toHaveBeenCalledWith("h1")
     })
 
-    it("allows the auto path to finalize an ended event that skipped stages", async () => {
+    it("does not let the auto path skip active from registration", async () => {
       const hackathon = {
         id: "h1",
         tenant_id: "t1",
@@ -512,12 +1196,13 @@ describe("Lifecycle Service", () => {
         triggeredBy: "system",
       })
 
-      expect(result.success).toBe(true)
-      expect(mockDenyPendingTeamsForClosedHackathon).toHaveBeenCalledWith("h1")
+      expect(result.success).toBe(false)
+      expect(result.code).toBe("invalid_transition")
+      expect(mockDenyPendingTeamsForClosedHackathon).not.toHaveBeenCalled()
       expect(mockDispatch).not.toHaveBeenCalled()
     })
 
-    it("allows the auto path to finalize an ended event stuck in published", async () => {
+    it("does not let the auto path skip active from published", async () => {
       const hackathon = {
         id: "h1",
         tenant_id: "t1",
@@ -545,8 +1230,9 @@ describe("Lifecycle Service", () => {
         triggeredBy: "system",
       })
 
-      expect(result.success).toBe(true)
-      expect(mockDenyPendingTeamsForClosedHackathon).toHaveBeenCalledWith("h1")
+      expect(result.success).toBe(false)
+      expect(result.code).toBe("invalid_transition")
+      expect(mockDenyPendingTeamsForClosedHackathon).not.toHaveBeenCalled()
       expect(mockDispatch).not.toHaveBeenCalled()
     })
 
@@ -1079,9 +1765,10 @@ describe("Lifecycle Service", () => {
 
   describe("processAutoTransitions", () => {
     it("returns empty when no hackathons need transitions", async () => {
+      const hackathonQuery = createChainableMock({ data: [], error: null })
       setMockFromImplementation((table) => {
         if (table === "hackathons") {
-          return createChainableMock({ data: [], error: null })
+          return hackathonQuery
         }
         return createChainableMock({ data: null, error: null })
       })
@@ -1090,6 +1777,74 @@ describe("Lifecycle Service", () => {
 
       expect(result.processed).toBe(0)
       expect(result.transitions).toHaveLength(0)
+      expect(hackathonQuery.order).toHaveBeenNthCalledWith(
+        1,
+        "updated_at",
+        { ascending: true },
+      )
+      expect(hackathonQuery.order).toHaveBeenNthCalledWith(
+        2,
+        "id",
+        { ascending: true },
+      )
+      expect(hackathonQuery.range).toHaveBeenCalledWith(
+        0,
+        AUTO_TRANSITION_BATCH_LIMIT - 1,
+      )
+    })
+
+    it("rotates bounded pages so blocked events cannot starve later events", async () => {
+      const firstPageQuery = createChainableMock({
+        data: [{ id: "blocked" }],
+        error: null,
+        count: AUTO_TRANSITION_BATCH_LIMIT + 1,
+      })
+      const secondPageQuery = createChainableMock({ data: [], error: null })
+      let hackathonQueries = 0
+      setMockFromImplementation((table) => {
+        if (table !== "hackathons") {
+          return createChainableMock({ data: null, error: null })
+        }
+        hackathonQueries++
+        return hackathonQueries === 1 ? firstPageQuery : secondPageQuery
+      })
+
+      const result = await processAutoTransitions(
+        new Date(AUTO_TRANSITION_PAGE_WINDOW_MS),
+      )
+
+      expect(result).toEqual({ processed: 0, transitions: [], errors: [] })
+      expect(firstPageQuery.range).toHaveBeenCalledWith(
+        0,
+        AUTO_TRANSITION_BATCH_LIMIT - 1,
+      )
+      expect(secondPageQuery.range).toHaveBeenCalledWith(
+        AUTO_TRANSITION_BATCH_LIMIT,
+        AUTO_TRANSITION_BATCH_LIMIT * 2 - 1,
+      )
+    })
+
+    it("does not move test events through the lifecycle", async () => {
+      setMockFromImplementation((table) => table === "hackathons"
+        ? createChainableMock({
+            data: [{
+              id: "h1",
+              tenant_id: "t1",
+              status: "published",
+              starts_at: "2026-08-29T12:00:00.000Z",
+              ends_at: "2026-08-30T12:00:00.000Z",
+              name: "Test Hack",
+              slug: "test-hack",
+              is_test_event: true,
+            }],
+            error: null,
+          })
+        : createChainableMock({ data: null, error: null }))
+
+      expect(await processAutoTransitions(
+        new Date("2026-08-31T12:00:00.000Z"),
+      )).toEqual({ processed: 0, transitions: [], errors: [] })
+      expect(mockWithEventMutationLease).not.toHaveBeenCalled()
     })
 
     it("detects and processes hackathon that should be active", async () => {
@@ -1133,7 +1888,53 @@ describe("Lifecycle Service", () => {
       expect(result.transitions[0].to).toBe("active")
     })
 
-    it("finalizes an event that ended while still in registration_open", async () => {
+    it("opens registration automatically before the event starts", async () => {
+      const now = new Date("2026-08-30T12:00:00.000Z")
+      const hackathon = {
+        id: "h1",
+        tenant_id: "t1",
+        status: "published",
+        registration_opens_at: "2026-08-30T11:00:00.000Z",
+        starts_at: "2026-09-02T12:00:00.000Z",
+        ends_at: "2026-09-03T12:00:00.000Z",
+        name: "Test Hack",
+        slug: "test-hack",
+      }
+      let hackathonCalls = 0
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          hackathonCalls++
+          return createChainableMock({
+            data: hackathonCalls === 1
+              ? [hackathon]
+              : { ...hackathon, status: "registration_open" },
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await processAutoTransitions(now)
+
+      expect(result).toEqual({
+        processed: 1,
+        transitions: [{
+          hackathonId: "h1",
+          from: "published",
+          to: "registration_open",
+        }],
+        errors: [],
+      })
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "registration_opened",
+          fromStatus: "published",
+          toStatus: "registration_open",
+        }),
+      )
+    })
+
+    it("catches up an ended registration event through active first", async () => {
       const past = new Date(Date.now() - 86400000).toISOString()
       const earlier = new Date(Date.now() - 2 * 86400000).toISOString()
 
@@ -1157,7 +1958,7 @@ describe("Lifecycle Service", () => {
             return createChainableMock({ data: hackathons, error: null })
           }
           return createChainableMock({
-            data: { ...hackathons[0], status: "completed" },
+            data: { ...hackathons[0], status: "active" },
             error: null,
           })
         }
@@ -1172,7 +1973,141 @@ describe("Lifecycle Service", () => {
       expect(result.processed).toBe(1)
       expect(result.errors).toHaveLength(0)
       expect(result.transitions[0].from).toBe("registration_open")
-      expect(result.transitions[0].to).toBe("completed")
+      expect(result.transitions[0].to).toBe("active")
+    })
+
+    it("starts judging when a custom project deadline passes and judging is ready", async () => {
+      const now = new Date("2026-08-30T12:00:00.000Z")
+      const hackathon = {
+        id: "h1",
+        tenant_id: "t1",
+        status: "active",
+        starts_at: "2026-08-29T12:00:00.000Z",
+        ends_at: "2026-09-05T12:00:00.000Z",
+        name: "Test Hack",
+        slug: "test-hack",
+      }
+      const deadlineQuery = createChainableMock({
+        data: { starts_at: "2026-08-30T11:00:00.000Z" },
+        error: null,
+      })
+      let hackathonCalls = 0
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          hackathonCalls++
+          return createChainableMock({
+            data: hackathonCalls === 1
+              ? [hackathon]
+              : { ...hackathon, status: "judging" },
+            error: null,
+          })
+        }
+        if (table === "hackathon_schedule_items") {
+          return deadlineQuery
+        }
+        if (table === "submissions") {
+          return createChainableMock({
+            data: [{ id: "project-1" }],
+            error: null,
+            count: 1,
+          })
+        }
+        if (table === "prizes") {
+          return createChainableMock({
+            data: [{
+              id: "weighted-prize",
+              judging_style: "weighted_score",
+              round_id: null,
+            }],
+            error: null,
+          })
+        }
+        if (table === "hackathon_participants") {
+          return createChainableMock({
+            data: [{ id: "judge-1" }],
+            error: null,
+          })
+        }
+        if (table === "judge_assignments") {
+          return createChainableMock({
+            data: [{
+              submission_id: "project-1",
+              prize_id: null,
+              judge_participant_id: "judge-1",
+              assignment_kind: "unified_weighted_score",
+            }],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: [], error: null })
+      })
+
+      const result = await processAutoTransitions(now)
+
+      expect(result).toEqual({
+        processed: 1,
+        transitions: [{ hackathonId: "h1", from: "active", to: "judging" }],
+        errors: [],
+      })
+      expect(mockGetJudgingSetupStatus).toHaveBeenCalledTimes(2)
+      expect(deadlineQuery.order).toHaveBeenCalledWith(
+        "starts_at",
+        { ascending: true },
+      )
+      expect(deadlineQuery.limit).toHaveBeenCalledWith(1)
+    })
+
+    it("keeps an ended event active and lists what judging still needs", async () => {
+      const now = new Date("2026-08-30T12:00:00.000Z")
+      const hackathon = {
+        id: "h1",
+        tenant_id: "t1",
+        status: "active",
+        starts_at: "2026-08-29T12:00:00.000Z",
+        ends_at: "2026-08-30T11:00:00.000Z",
+        name: "Test Hack",
+        slug: "test-hack",
+      }
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({ data: [hackathon], error: null })
+        }
+        if (table === "hackathon_schedule_items") {
+          return createChainableMock({ data: null, error: null })
+        }
+        if (table === "submissions") {
+          return createChainableMock({
+            data: [{ id: "project-1" }, { id: "project-2" }],
+            error: null,
+            count: 2,
+          })
+        }
+        if (table === "prizes") {
+          return createChainableMock({
+            data: [{
+              id: "weighted-prize",
+              judging_style: "weighted_score",
+              round_id: null,
+            }],
+            error: null,
+          })
+        }
+        if (table === "hackathon_participants") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "judge_assignments") {
+          return createChainableMock({ data: [], error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const result = await processAutoTransitions(now)
+
+      expect(result.processed).toBe(0)
+      expect(result.transitions).toEqual([])
+      expect(result.errors).toEqual([
+        "h1: Add at least one judge. 2 projects still need judge assignments.",
+      ])
     })
 
     it("keeps committed transitions successful when pending-team closeout fails", async () => {
@@ -1244,6 +2179,87 @@ describe("Lifecycle Service", () => {
       expect(result.processed).toBe(0)
       expect(result.errors).toHaveLength(1)
       expect(result.errors[0]).toContain("Connection failed")
+    })
+  })
+
+  describe("closed judge work", () => {
+    it("cancels invite links, queued emails, and reminders for a closed event", async () => {
+      const invitationUpdate = createChainableMock({ data: null, error: null })
+      const notificationDelete = createChainableMock({ data: null, error: null })
+      const reminderUpdate = createChainableMock({ data: null, error: null })
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({ data: { status: "completed" }, error: null })
+        }
+        if (table === "judge_invitations") return invitationUpdate
+        if (table === "judge_pending_notifications") return notificationDelete
+        if (table === "scheduled_reminders") return reminderUpdate
+        return createChainableMock({ data: null, error: null })
+      })
+
+      const now = new Date("2026-08-30T12:00:00.000Z")
+      await expect(
+        closePendingJudgeWorkForClosedHackathon("h1", now),
+      ).resolves.toBe(true)
+
+      expect(invitationUpdate.update).toHaveBeenCalledWith({
+        status: "cancelled",
+        updated_at: now.toISOString(),
+      })
+      expect(invitationUpdate.in).toHaveBeenCalledWith("status", [
+        "pending",
+        "expired",
+      ])
+      expect(notificationDelete.delete).toHaveBeenCalledTimes(1)
+      expect(notificationDelete.is).toHaveBeenCalledWith("sent_at", null)
+      expect(reminderUpdate.update).toHaveBeenCalledWith({
+        cancelled_at: now.toISOString(),
+      })
+      expect(reminderUpdate.is).toHaveBeenCalledWith("sent_at", null)
+      expect(reminderUpdate.is).toHaveBeenCalledWith("cancelled_at", null)
+    })
+
+    it("rechecks event status before clearing judge work", async () => {
+      const invitationUpdate = createChainableMock({ data: null, error: null })
+      setMockFromImplementation((table) => table === "hackathons"
+        ? createChainableMock({ data: { status: "active" }, error: null })
+        : invitationUpdate)
+
+      await expect(
+        closePendingJudgeWorkForClosedHackathon("h1"),
+      ).resolves.toBe(false)
+      expect(invitationUpdate.update).not.toHaveBeenCalled()
+    })
+
+    it("repairs a bounded set of closed events with stale judge work", async () => {
+      const invitationCandidates = createChainableMock({
+        data: [{ hackathon_id: "h1" }, { hackathon_id: "h1" }],
+        error: null,
+      })
+      const invitationUpdate = createChainableMock({ data: null, error: null })
+      let invitationCalls = 0
+      setMockFromImplementation((table) => {
+        if (table === "judge_invitations") {
+          invitationCalls++
+          return invitationCalls === 1 ? invitationCandidates : invitationUpdate
+        }
+        if (table === "judge_pending_notifications" || table === "scheduled_reminders") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "hackathons") {
+          return createChainableMock({ data: { status: "archived" }, error: null })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      await expect(
+        reconcilePendingJudgeWorkForClosedHackathons(
+          7,
+          new Date("2026-08-30T12:00:00.000Z"),
+        ),
+      ).resolves.toEqual({ events: 1, failed: 0, errors: [] })
+      expect(invitationCandidates.limit).toHaveBeenCalledWith(7)
+      expect(invitationUpdate.update).toHaveBeenCalledTimes(1)
     })
   })
 

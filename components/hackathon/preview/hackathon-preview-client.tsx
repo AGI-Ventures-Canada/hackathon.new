@@ -842,6 +842,7 @@ function HackathonPreviewContent({
                 <ChallengeSection
                   challenges={visibleChallenges}
                   releasedAt={hackathon.challenge_released_at}
+                  showResources
                 />
               </TabsContent>
             )}

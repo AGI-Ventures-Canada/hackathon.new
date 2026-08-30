@@ -1,12 +1,12 @@
 # Reminders System
 
-Automated, deadline-aware reminder emails for invitations and hackathon events. Reminders are scheduled when entities are created and processed by a Vercel cron job every 15 minutes.
+Automated, deadline-aware reminder emails for invitations and hackathon events. Reminders are scheduled when entities are created and processed by a Vercel cron job every minute.
 
 ## How it works
 
 1. **Something with a deadline gets created** (team invite, judge invite, hackathon going live)
 2. **Reminders are auto-scheduled** based on how far away the deadline is
-3. **A cron job runs every 15 minutes**, loads a bounded pending batch, validates the source entity still needs a reminder, and sends the email with a stable idempotency key
+3. **A cron job runs every minute**, loads a bounded pending batch, validates the source entity still needs a reminder, and sends the email with a stable idempotency key
 4. **Reminders cancel themselves** when the entity is resolved (invite accepted, hackathon completed, dates changed)
 
 ## Scheduling tiers
@@ -38,6 +38,10 @@ Scheduled when a hackathon transitions to an active state or when dates change. 
 
 The same cron also retries database-backed attendee lifecycle emails. Registration confirmations and team approval or denial notices are queued by database triggers/RPCs, sent with stable idempotency keys, and only marked complete after the provider accepts them. Draft-event notices wait until go-live; stale notices are cancelled after attendee changes close.
 
+It also retries lifecycle email workflows that could not start after an event stage change. The original notification ID and payload stay in `lifecycle_notification_dispatches`, so retrying does not duplicate provider delivery. A global lease prevents overlapping cron runs from starting the same queued work, and exponential backoff stops after five failed starts.
+
+Direct judge-added emails use the same safeguards. Unsent rows in `judge_pending_notifications` keep a stable delivery key, retry with backoff, and stop after five attempts. Draft and test events remain queued, and a global lease prevents overlapping cron runs from sending the same row.
+
 - Entity type: `hackathon_event`
 - Reminder types: `registration_closing`, `event_starting`, `submission_due`
 - Recipients: all registered participants (fetched from Clerk)
@@ -60,6 +64,8 @@ The cron endpoint (`GET /api/cron/reminders`) calls `processPendingReminders()` 
 
 Overlapping cron runs reuse the same per-reminder and per-recipient provider idempotency keys. Failed or uncertain deliveries stay pending and retry on the next run, up to 3 dispatch attempts. Database query and completion-write failures return a cron error instead of reporting success.
 
+Each delivery worker may send up to 32 recipients per run. The shared scheduled-reminder worker can therefore reach 1,920 recipients per hour. The email wrapper serializes every provider attempt at least 250 ms apart within a process, including retries and work from different email loops. Bulk loops add a pause after each group of four.
+
 ## Cancellation triggers
 
 | Event | What gets cancelled |
@@ -73,7 +79,7 @@ Overlapping cron runs reuse the same per-reminder and per-recipient provider ide
 
 | File | Purpose |
 |------|---------|
-| `app/api/cron/reminders/route.ts` | Cron endpoint (Vercel, every 15 min) |
+| `app/api/cron/reminders/route.ts` | Cron endpoint (Vercel, every minute) |
 | `lib/services/smart-reminders.ts` | Core engine: scheduling, cancellation, cron processing |
 | `lib/services/pre-event-reminders.ts` | Pre-event reminder scheduling for hackathon deadlines |
 | `lib/services/post-event-reminders.ts` | Post-event reminder scheduling and processing |
@@ -90,6 +96,8 @@ Overlapping cron runs reuse the same per-reminder and per-recipient provider ide
 |-------|---------|
 | `scheduled_reminders` | Smart reminders (invitations + pre-event). Completion via `sent_at`, retry via `fail_count`/`last_error` |
 | `post_event_reminders` | Post-event reminders (prize claims, fulfillment, feedback) |
+| `lifecycle_notification_dispatches` | Failed lifecycle workflow starts, with bounded backoff and the original notification ID |
+| `judge_pending_notifications` | Direct judge-added emails, with a stable delivery key and bounded backoff |
 | `team_invitations.reminded_at` | Tracks manual remind timestamp |
 | `judge_invitations.reminded_at` | Tracks manual remind timestamp |
 
@@ -110,7 +118,7 @@ In `vercel.json`:
 ```json
 {
   "path": "/api/cron/reminders",
-  "schedule": "*/15 * * * *"
+  "schedule": "* * * * *"
 }
 ```
 

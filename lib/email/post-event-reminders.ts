@@ -238,14 +238,16 @@ export async function sendReminderEmailsWithResult(
 
   const { data: hackathon, error: hackathonError } = await client
     .from("hackathons")
-    .select("name, slug")
+    .select("name, slug, is_test_event")
     .eq("id", hackathonId)
     .single()
 
   if (hackathonError) {
     throw new Error(`Failed to load the event for its reminder: ${hackathonError.message}`)
   }
-  if (!hackathon) return { eligible: 0, sent: 0, failed: 0 }
+  if (!hackathon || hackathon.is_test_event) {
+    return { eligible: 0, sent: 0, failed: 0 }
+  }
 
   const clerkUserIds = await getReminderRecipientIds(client, hackathonId, recipientFilter)
   if (clerkUserIds.length === 0) {

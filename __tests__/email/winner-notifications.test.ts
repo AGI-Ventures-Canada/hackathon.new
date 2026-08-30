@@ -132,6 +132,21 @@ describe("sendPrizeClaimEmail", () => {
     expect(mockSendEmail).not.toHaveBeenCalled()
   })
 
+  it("does not send prize claim email for a test event", async () => {
+    mockSingle.mockResolvedValue({
+      data: {
+        name: "Practice Event",
+        slug: "practice-event",
+        is_test_event: true,
+      },
+      error: null,
+    })
+
+    await expect(sendPrizeClaimEmail("hack_1", "pa_1")).resolves.toBe(0)
+    expect(mockGetUserList).not.toHaveBeenCalled()
+    expect(mockSendEmail).not.toHaveBeenCalled()
+  })
+
   it("returns 0 when prize assignment not found", async () => {
     let callCount = 0
     mockSingle.mockImplementation(() => {

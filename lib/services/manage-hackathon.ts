@@ -22,7 +22,10 @@ export const getManageHackathon = cache(
       return { ok: false, reason: "unauthenticated" }
     }
 
-    const hackathon = await getPublicHackathon(slug, { includeUnpublished: true })
+    const hackathon = await getPublicHackathon(slug, {
+      includeUnpublished: true,
+      includeTestEvents: true,
+    })
 
     if (!hackathon) {
       return { ok: false, reason: "not_found" }

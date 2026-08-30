@@ -349,11 +349,6 @@ async function calculateSubjectiveResults(
 
   const uniqueJudges = new Set(picks.map((p) => p.judge_participant_id)).size
 
-  const { data: previousRows } = await client
-    .from("hackathon_results")
-    .select("*")
-    .eq("hackathon_id", hackathonId)
-
   const ranked = Object.entries(submissionStats)
     .sort(([, a], [, b]) => {
       if (b.firstPicks !== a.firstPicks) return b.firstPicks - a.firstPicks
@@ -362,29 +357,41 @@ async function calculateSubjectiveResults(
       return avgA - avgB
     })
 
-  const { error: deleteError } = await client.from("hackathon_results").delete().eq("hackathon_id", hackathonId)
-  if (deleteError) return { success: false, error: "Failed to clear old results", code: "delete_failed" }
+  let currentRank = 0
+  let previousScore: { firstPicks: number; averageRank: number } | null = null
+  const results = ranked.map(([submissionId, stats], index) => {
+    const averageRank = stats.totalRank / stats.totalPicks
+    if (
+      previousScore === null ||
+      previousScore.firstPicks !== stats.firstPicks ||
+      previousScore.averageRank !== averageRank
+    ) {
+      currentRank = index + 1
+      previousScore = { firstPicks: stats.firstPicks, averageRank }
+    }
+    return {
+      submission_id: submissionId,
+      rank: currentRank,
+      total_score: stats.firstPicks,
+      weighted_score: stats.totalPicks > 0 ? stats.firstPicks / stats.totalPicks : 0,
+      judge_count: uniqueJudges,
+    }
+  })
 
-  const results = ranked.map(([submissionId, stats], index) => ({
-    hackathon_id: hackathonId,
-    submission_id: submissionId,
-    rank: index + 1,
-    total_score: stats.firstPicks,
-    weighted_score: stats.totalPicks > 0 ? stats.firstPicks / stats.totalPicks : 0,
-    judge_count: uniqueJudges,
-  }))
+  const { data: insertedCount, error } = await client.rpc(
+    "replace_subjective_results_atomic",
+    {
+      p_hackathon_id: hackathonId,
+      p_results: results,
+    },
+  )
 
-  const { error: insertError } = await client
-    .from("hackathon_results")
-    .insert(results)
-
-  if (insertError) {
-    console.error("Failed to insert subjective results:", insertError)
-    if (previousRows && previousRows.length > 0) await client.from("hackathon_results").insert(previousRows)
-    return { success: false, error: "Failed to save results", code: "insert_failed" }
+  if (error) {
+    console.error("Failed to replace subjective results:", error)
+    return { success: false, error: "Failed to save results", code: "rpc_failed" }
   }
 
-  return { success: true, count: results.length }
+  return { success: true, count: Number(insertedCount ?? results.length) }
 }
 
 export async function getResults(
@@ -547,6 +554,7 @@ export async function publishResults(
       toStatus: "completed",
       sendEmail: false,
       idempotencyKey: `result-publication/${hackathonId}/${publicationVersion}`,
+      isTestEvent: committedHackathon.is_test_event,
     })
   } catch (err) {
     console.error("Failed to dispatch results-published webhooks (non-blocking):", err)
@@ -558,6 +566,8 @@ export async function publishResults(
   } catch (err) {
     console.error("Failed to auto-assign prizes (non-blocking):", err)
   }
+
+  if (committedHackathon.is_test_event) return { success: true }
 
   try {
     const { initializeFulfillments } = await import("@/lib/services/prize-fulfillment")
@@ -642,6 +652,27 @@ export async function unpublishResults(
       const publicationVersion = current.results_published_at
       const fromStatus = current.status as HackathonStatus
       const toStatus = fromStatus === "completed" ? "judging" : fromStatus
+      let judgingPhase: "preliminaries" | "finals" = "preliminaries"
+      if (fromStatus === "completed") {
+        const { data: activeRound, error: activeRoundError } = await client
+          .from("judging_rounds")
+          .select("round_type")
+          .eq("hackathon_id", hackathonId)
+          .eq("status", "active")
+          .limit(1)
+          .maybeSingle()
+        if (activeRoundError) {
+          return {
+            success: false,
+            error: "We couldn't check the current judging round. Try again.",
+          }
+        }
+        judgingPhase =
+          (activeRound as { round_type: string | null } | null)?.round_type ===
+          "finals"
+            ? "finals"
+            : "preliminaries"
+      }
       const { error: resultsError } = await client
         .from("hackathon_results")
         .update({ published_at: null })
@@ -659,6 +690,7 @@ export async function unpublishResults(
           .from("hackathons")
           .update({
             status: toStatus,
+            phase: fromStatus === "completed" ? judgingPhase : current.phase,
             results_published_at: null,
             winner_emails_sent_at: null,
             results_announcement_sent_at: null,
@@ -787,6 +819,7 @@ export async function retryPendingResultEmails(
     .from("hackathons")
     .select("id, results_published_at, winner_emails_sent_at, results_announcement_sent_at")
     .eq("status", "completed")
+    .eq("is_test_event", false)
     .not("results_published_at", "is", null)
     .or("winner_emails_sent_at.is.null,results_announcement_sent_at.is.null")
     .order("results_published_at", { ascending: true })

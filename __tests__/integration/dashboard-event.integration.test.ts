@@ -581,7 +581,7 @@ describe("Dashboard Event Routes Integration Tests", () => {
       expect(mockCreateAnnouncement).toHaveBeenCalledTimes(1)
     })
 
-    it("rejects a stale WebMCP announcement after the event expires", async () => {
+    it("keeps an ended published event catch-up active until cron moves it", async () => {
       mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
       mockCheckHackathonOrganizer.mockResolvedValue({
         status: "authorized" as const,
@@ -593,6 +593,14 @@ describe("Dashboard Event Routes Integration Tests", () => {
           ends_at: "2020-01-01T00:00:00.000Z",
           updated_at: "2026-08-25T15:00:00.000Z",
         },
+      })
+      mockCreateAnnouncement.mockResolvedValue({
+        id: announcementId,
+        hackathon_id: hackathonId,
+        title: "Late update",
+        body: "Too late",
+        priority: "normal",
+        published_at: null,
       })
 
       const res = await app.handle(
@@ -608,9 +616,8 @@ describe("Dashboard Event Routes Integration Tests", () => {
         }),
       )
 
-      expect(res.status).toBe(409)
-      expect(await res.json()).toMatchObject({ code: "event_changed" })
-      expect(mockCreateAnnouncement).not.toHaveBeenCalled()
+      expect(res.status).toBe(200)
+      expect(mockCreateAnnouncement).toHaveBeenCalledTimes(1)
     })
 
     it("returns 400 when creation fails", async () => {
@@ -957,7 +964,7 @@ describe("Dashboard Event Routes Integration Tests", () => {
       expect(mockCreateScheduleItem).not.toHaveBeenCalled()
     })
 
-    it("rejects an expired WebMCP schedule write before creating it", async () => {
+    it("keeps an ended published schedule catch-up active until cron moves it", async () => {
       mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
       mockCheckHackathonOrganizer.mockResolvedValue({
         status: "authorized" as const,
@@ -969,6 +976,10 @@ describe("Dashboard Event Routes Integration Tests", () => {
           ends_at: "2020-01-01T00:00:00.000Z",
           updated_at: "2026-08-25T15:00:00.000Z",
         },
+      })
+      mockCreateScheduleItem.mockResolvedValue({
+        id: itemId,
+        title: "Late item",
       })
 
       const res = await app.handle(
@@ -987,9 +998,8 @@ describe("Dashboard Event Routes Integration Tests", () => {
         }),
       )
 
-      expect(res.status).toBe(409)
-      expect(await res.json()).toMatchObject({ code: "event_changed" })
-      expect(mockCreateScheduleItem).not.toHaveBeenCalled()
+      expect(res.status).toBe(200)
+      expect(mockCreateScheduleItem).toHaveBeenCalledTimes(1)
     })
 
     it("keeps WebMCP from adding a schedule trigger", async () => {

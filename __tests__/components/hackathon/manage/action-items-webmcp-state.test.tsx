@@ -3,6 +3,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { useEffect, type ReactNode } from "react"
 import type { Challenge } from "@/lib/services/challenges"
 import type { ScheduleItem } from "@/lib/services/schedule-items"
+import type { ActionItem } from "@/lib/utils/organizer-actions"
+import type { OrganizerActionStateSnapshot } from "@/lib/services/organizer-action-items"
 
 let overviewScheduleProps: Record<string, unknown> = {}
 
@@ -14,8 +16,9 @@ mock.module("@/components/hackathon/overview-schedule", () => ({
 }))
 
 const refreshPoll = mock(() => {})
+let organizerPollData: Record<string, unknown> | null = null
 mock.module("@/hooks/use-organizer-poll", () => ({
-  useOrganizerPoll: () => ({ data: null, isStale: false, refresh: refreshPoll }),
+  useOrganizerPoll: () => ({ data: organizerPollData, isStale: false, refresh: refreshPoll }),
 }))
 
 mock.module("@/components/hackathon/manage/transition-confirm-dialog", () => ({
@@ -168,16 +171,20 @@ function provider(
     endsAt: string | null
     scheduleItems: ScheduleItem[]
     challenges: Challenge[]
+    actionItems: ActionItem[]
+    persistedActionState: OrganizerActionStateSnapshot
   }> = {},
 ) {
   return (
     <ActionItemsProvider
-      actionItems={[]}
+      actionItems={overrides.actionItems ?? []}
       hackathonId="11111111-1111-1111-1111-111111111111"
       slug="build-day"
       name={overrides.name ?? "Build Day"}
       status="draft"
+      storedStatus="draft"
       phase={null}
+      persistedActionState={overrides.persistedActionState ?? { generated: [], custom: [] }}
       challengeExists
       challengeReleasedAt={null}
       challenges={overrides.challenges ?? [initialChallenge]}
@@ -187,6 +194,7 @@ function provider(
       scheduleItems={overrides.scheduleItems ?? [initialSchedule]}
       startsAt={overrides.startsAt ?? "2026-09-10T16:00:00.000Z"}
       endsAt={overrides.endsAt ?? "2026-09-11T23:00:00.000Z"}
+      registrationOpensAt="2026-08-30T12:00:00.000Z"
       registrationClosesAt="2026-09-09T23:00:00.000Z"
       allowLateRegistration={false}
       description={overrides.description ?? "Make something useful."}
@@ -210,6 +218,7 @@ function provider(
       sponsors={[]}
       rounds={[]}
       judgingSetupIssues={[]}
+      requiresJudgeScoring
     >
       {children}
     </ActionItemsProvider>
@@ -225,6 +234,7 @@ beforeEach(() => {
     ...initialChallenge,
     title: "Updated city helper",
   }
+  organizerPollData = null
 })
 
 afterEach(() => {
@@ -232,6 +242,264 @@ afterEach(() => {
 })
 
 describe("ActionItemsProvider WebMCP state", () => {
+  it("keeps a regressed auto task pending even when old shared state says completed", async () => {
+    const autoTask: ActionItem = {
+      id: "send-judge-emails",
+      label: "Send judge emails",
+      severity: "urgent",
+      close: { kind: "auto", isComplete: false },
+    }
+    render(provider(<ContextProbe />, {
+      actionItems: [autoTask],
+      persistedActionState: {
+        generated: [{
+          hackathon_id: "11111111-1111-1111-1111-111111111111",
+          action_id: autoTask.id,
+          item_kind: "generated",
+          state: "completed",
+          item: { ...autoTask, close: { kind: "auto", isComplete: true } },
+          updated_at: "2026-08-30T12:00:00.000Z",
+        }],
+        custom: [],
+      },
+    }))
+
+    await waitFor(() => expect(currentContext).not.toBeNull())
+    expect(currentContext?.activeItems.map((item) => item.id)).toContain(autoTask.id)
+    expect(currentContext?.completedItems.map((item) => item.id)).not.toContain(autoTask.id)
+  })
+
+  it("sends the shared version from the UI and reloads a stale task", async () => {
+    const manualTask: ActionItem = {
+      id: "review-team-settings",
+      label: "Review team settings",
+      severity: "info",
+      close: { kind: "manual" },
+    }
+    const requests: Array<{ url: string; init?: RequestInit }> = []
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = mock((input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push({ url: String(input), init })
+      if (init?.method === "PATCH") {
+        return Promise.resolve(new Response(JSON.stringify({
+          error: "That task changed. Refresh the list and try again.",
+          code: "stale_action",
+        }), { status: 409, headers: { "Content-Type": "application/json" } }))
+      }
+      return Promise.resolve(new Response(JSON.stringify({
+        event: { name: "Build Day", slug: "build-day" },
+        totalCount: 1,
+        pendingCount: 0,
+        completedCount: 1,
+        dismissedCount: 0,
+        offset: 0,
+        limit: 50,
+        hasMore: false,
+        nextOffset: null,
+        items: [{
+          taskRef: manualTask.id,
+          label: manualTask.label,
+          hint: null,
+          tooltip: null,
+          severity: manualTask.severity,
+          state: "completed",
+          completionPolicy: "manual",
+          custom: false,
+          destination: "action_items",
+          inspectUrl: "/e/build-day/manage?tab=action-items",
+          ctaLabel: null,
+          blocksProgress: false,
+          updatedAt: "2026-08-30T13:00:00.000Z",
+        }],
+      }), { status: 200, headers: { "Content-Type": "application/json" } }))
+    }) as typeof fetch
+
+    try {
+      render(provider(<ContextProbe />, {
+        actionItems: [manualTask],
+        persistedActionState: {
+          generated: [{
+            hackathon_id: "11111111-1111-1111-1111-111111111111",
+            action_id: manualTask.id,
+            item_kind: "generated",
+            state: "completed",
+            item: manualTask,
+            updated_at: "2026-08-30T12:00:00.000Z",
+          }],
+          custom: [],
+        },
+      }))
+      await waitFor(() => expect(currentContext).not.toBeNull())
+
+      act(() => currentContext?.toggleComplete(manualTask.id))
+      await waitFor(() => expect(requests.some((request) => !request.init?.method)).toBe(true))
+
+      const patchRequest = requests.find((request) => request.init?.method === "PATCH")
+      expect(JSON.parse(String(patchRequest?.init?.body))).toMatchObject({
+        state: "pending",
+        expectedUpdatedAt: "2026-08-30T12:00:00.000Z",
+      })
+      await waitFor(() => {
+        expect(currentContext?.completedItems.map((item) => item.id)).toContain(manualTask.id)
+      })
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it("sends the shared version when removing a custom task", async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = []
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = mock((input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push({ url: String(input), init })
+      if (init?.method === "DELETE") {
+        return Promise.resolve(new Response(JSON.stringify({ success: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }))
+      }
+      return Promise.resolve(new Response(JSON.stringify({
+        event: { name: "Build Day", slug: "build-day" },
+        totalCount: 0,
+        pendingCount: 0,
+        completedCount: 0,
+        dismissedCount: 0,
+        offset: 0,
+        limit: 50,
+        hasMore: false,
+        nextOffset: null,
+        items: [],
+      }), { status: 200, headers: { "Content-Type": "application/json" } }))
+    }) as typeof fetch
+
+    try {
+      render(provider(<ContextProbe />, {
+        persistedActionState: {
+          generated: [],
+          custom: [{
+            id: "custom-call-venue",
+            hackathon_id: "11111111-1111-1111-1111-111111111111",
+            label: "Call the venue",
+            severity: "warning",
+            completed_at: null,
+            updated_at: "2026-08-30T12:00:00.000Z",
+          }],
+        },
+      }))
+      await waitFor(() => expect(currentContext?.customItems).toHaveLength(1))
+
+      act(() => currentContext?.removeCustomItem("custom-call-venue"))
+      await waitFor(() => expect(requests.some((request) => request.init?.method === "DELETE")).toBe(true))
+
+      const deleteRequest = requests.find((request) => request.init?.method === "DELETE")
+      expect(deleteRequest?.url).toContain(
+        "expectedUpdatedAt=2026-08-30T12%3A00%3A00.000Z",
+      )
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it("does not truncate shared tasks after ten pages", async () => {
+    organizerPollData = {}
+    const originalFetch = globalThis.fetch
+    const fetchMock = mock((input: RequestInfo | URL) => {
+      const url = new URL(String(input), "https://hackathon.new")
+      const offset = Number(url.searchParams.get("offset") ?? "0")
+      const pageNumber = offset / 50
+      const isLastPage = pageNumber === 10
+      const items = Array.from({ length: isLastPage ? 1 : 50 }, (_, index) => ({
+        taskRef: isLastPage ? "custom-after-page-ten" : `saved-${offset + index}`,
+        label: isLastPage ? "Task after page ten" : `Saved ${offset + index}`,
+        hint: null,
+        tooltip: null,
+        severity: "info",
+        state: "pending",
+        completionPolicy: "manual",
+        custom: isLastPage,
+        destination: "action_items",
+        inspectUrl: "/e/build-day/manage?tab=action-items",
+        ctaLabel: null,
+        blocksProgress: false,
+        updatedAt: "2026-08-30T12:00:00.000Z",
+      }))
+      return Promise.resolve(new Response(JSON.stringify({
+        event: { name: "Build Day", slug: "build-day" },
+        totalCount: 501,
+        pendingCount: 501,
+        completedCount: 0,
+        dismissedCount: 0,
+        offset,
+        limit: 50,
+        hasMore: !isLastPage,
+        nextOffset: isLastPage ? null : offset + 50,
+        items,
+      }), { status: 200, headers: { "Content-Type": "application/json" } }))
+    })
+    globalThis.fetch = fetchMock as typeof fetch
+
+    try {
+      render(provider(<ContextProbe />))
+      await waitFor(() => {
+        expect(
+          currentContext?.activeItems.some(
+            (item) => item.id === "custom-after-page-ten",
+          ),
+        ).toBe(true)
+      })
+      expect(fetchMock).toHaveBeenCalledTimes(11)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it("does not apply a partial refresh when custom tasks exceed the shared cap", async () => {
+    organizerPollData = {}
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = mock((input: RequestInfo | URL) => {
+      const url = new URL(String(input), "https://hackathon.new")
+      const offset = Number(url.searchParams.get("offset") ?? "0")
+      const isLastPage = offset === 500
+      const items = Array.from({ length: isLastPage ? 1 : 50 }, (_, index) => ({
+        taskRef: `custom-${offset + index}`,
+        label: `Custom ${offset + index}`,
+        hint: null,
+        tooltip: null,
+        severity: "info",
+        state: "pending",
+        completionPolicy: "manual",
+        custom: true,
+        destination: "action_items",
+        inspectUrl: "/e/build-day/manage?tab=action-items",
+        ctaLabel: null,
+        blocksProgress: false,
+        updatedAt: "2026-08-30T12:00:00.000Z",
+      }))
+      return Promise.resolve(new Response(JSON.stringify({
+        event: { name: "Build Day", slug: "build-day" },
+        totalCount: 501,
+        pendingCount: 501,
+        completedCount: 0,
+        dismissedCount: 0,
+        offset,
+        limit: 50,
+        hasMore: !isLastPage,
+        nextOffset: isLastPage ? null : offset + 50,
+        items,
+      }), { status: 200, headers: { "Content-Type": "application/json" } }))
+    }) as typeof fetch
+
+    try {
+      render(provider(<ContextProbe />))
+      await waitFor(() => {
+        expect(currentContext?.actionItemsError).toContain("more than 500 custom tasks")
+      })
+      expect(currentContext?.customItems).toEqual([])
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
   it("keeps organizer names, counts, schedules, and pending challenge controls on one visible state", async () => {
     render(
       provider(

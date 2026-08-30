@@ -102,7 +102,7 @@ describe("Email Template Rendering", () => {
       JudgeAddedEmail(JudgeAddedEmail.PreviewProps)
     )
     expect(html).toContain("Added as a Judge")
-    expect(html).toContain("View Event")
+    expect(html).toContain("Open Judging")
     expect(text.length).toBeGreaterThan(0)
   })
 
@@ -248,7 +248,7 @@ describe("Email Template Rendering", () => {
         hackathonEndsAt: "2026-04-22T17:00:00Z",
       })
     )
-    expect(html).toContain("Apr 20")
+    expect(html).toContain("April 20")
   })
 
   it("renders judge-added with event dates", async () => {
@@ -259,7 +259,7 @@ describe("Email Template Rendering", () => {
         hackathonEndsAt: "2026-04-22T17:00:00Z",
       })
     )
-    expect(html).toContain("Apr 20")
+    expect(html).toContain("April 20")
   })
 
   it("renders sponsor-claim-notification with prizeValue", async () => {

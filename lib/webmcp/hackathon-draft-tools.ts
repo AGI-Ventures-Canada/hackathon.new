@@ -7,11 +7,13 @@ import {
 import { WebMcpRequestError } from "@/lib/webmcp/fetch"
 import { defineWebMcpTool } from "@/lib/webmcp/tool"
 import type { WebMcpTool } from "@/lib/webmcp/types"
+import type { TestEventStage } from "@/lib/fixtures/test-event"
 
 type HackathonDraftToolActions = {
   getEnvelope: () => DraftEnvelope
   updateDraft: (expectedRevision: number, patch: DraftPatch) => DraftEnvelope
   openReview: () => void
+  openTestEvent?: (stage: TestEventStage) => void
   openSignIn?: () => void
 }
 
@@ -223,6 +225,30 @@ export function createHackathonDraftTools(
       },
     }),
   ]
+
+  if (actions.openTestEvent) {
+    tools.push(defineWebMcpTool({
+      name: "open_test_event_creator",
+      title: "Try a full test event",
+      description:
+        "Open the visible test event setup at a chosen stage. A person must review it and click Create test event.",
+      schema: z.object({
+        stage: z.enum(["registration", "hacking", "judging", "results"]).default("registration"),
+      }).strict(),
+      annotations: { readOnlyHint: true },
+      execute: ({ stage }) => {
+        actions.openTestEvent?.(stage)
+        return {
+          data: {
+            opened: true,
+            stage,
+            nextStep: "Review the stage, then click Create test event.",
+          },
+          requiresHumanAction: true,
+        }
+      },
+    }))
+  }
 
   if (actions.openSignIn) {
     tools.push(defineWebMcpTool({

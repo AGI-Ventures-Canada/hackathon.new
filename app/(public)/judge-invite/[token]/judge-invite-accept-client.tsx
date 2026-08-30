@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { assertOk } from "@/lib/utils/fetch"
@@ -14,7 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Scale, Check, X, AlertCircle, Clock } from "lucide-react"
+import { AlertCircle, CalendarClock, Check, Clock, Mail, Scale, X } from "lucide-react"
 import { TermsAcceptanceBlock } from "@/components/hackathon/terms-acceptance-block"
 
 interface JudgeInviteAcceptClientProps {
@@ -25,29 +25,35 @@ interface JudgeInviteAcceptClientProps {
     email: string
     status: string
     expiresAt: string
+    expiresLabel?: string | null
+    eventSchedule?: string | null
     requireTermsAcceptance?: boolean
     termsContent?: string | null
     termsHash?: string | null
   }
   isAuthenticated: boolean
+  autoAccept?: boolean
 }
 
 export function JudgeInviteAcceptClient({
   token,
   invitation,
   isAuthenticated,
+  autoAccept = false,
 }: JudgeInviteAcceptClientProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const [termsAccepted, setTermsAccepted] = useState(false)
+  const autoAcceptStarted = useRef(false)
+  const autoAcceptStorageKey = `judge-invite-auto-accept:${token}`
 
   const isValid = invitation.status === "pending"
   const needsTerms = Boolean(invitation.requireTermsAcceptance && invitation.termsContent && invitation.termsHash)
   const canAccept = !loading && (!needsTerms || termsAccepted)
 
-  async function handleAccept() {
+  const handleAccept = useCallback(async () => {
     if (needsTerms && !termsAccepted) {
       setError("Please agree to the terms and conditions to continue.")
       return
@@ -73,13 +79,48 @@ export function JudgeInviteAcceptClient({
       }
 
       setSuccess(true)
-      setTimeout(() => {
-        router.push(`/e/${invitation.hackathonSlug}`)
-      }, 2000)
+      router.replace(`/e/${invitation.hackathonSlug}/judge`)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to accept invitation")
     } finally {
       setLoading(false)
+    }
+  }, [
+    invitation.hackathonSlug,
+    invitation.termsHash,
+    needsTerms,
+    termsAccepted,
+    token,
+    router,
+  ])
+
+  useEffect(() => {
+    if (
+      !autoAccept ||
+      !isAuthenticated ||
+      !isValid ||
+      needsTerms ||
+      autoAcceptStarted.current
+    ) {
+      return
+    }
+    let explicitlyRequested = false
+    try {
+      explicitlyRequested = sessionStorage.getItem(autoAcceptStorageKey) === "1"
+      sessionStorage.removeItem(autoAcceptStorageKey)
+    } catch {
+      explicitlyRequested = false
+    }
+    if (!explicitlyRequested) return
+    autoAcceptStarted.current = true
+    void handleAccept()
+  }, [autoAccept, autoAcceptStorageKey, handleAccept, isAuthenticated, isValid, needsTerms])
+
+  const rememberAcceptIntent = () => {
+    try {
+      sessionStorage.setItem(autoAcceptStorageKey, "1")
+    } catch {
+      return
     }
   }
 
@@ -109,8 +150,11 @@ export function JudgeInviteAcceptClient({
           </div>
           <h2 className="text-xl font-bold mb-2">You&apos;re a Judge!</h2>
           <p className="text-muted-foreground">
-            You&apos;ve accepted the invitation to judge {invitation.hackathonName}. Redirecting...
+            You&apos;ve accepted the invitation to judge {invitation.hackathonName}.
           </p>
+          <Button className="mt-4 w-full" asChild>
+            <Link href={`/e/${invitation.hackathonSlug}/judge`}>Open Judging</Link>
+          </Button>
         </CardContent>
       </Card>
     )
@@ -156,8 +200,14 @@ export function JudgeInviteAcceptClient({
           <p className="text-muted-foreground">{status.description}</p>
         </CardContent>
         <CardFooter>
-          <Button variant="outline" className="w-full" onClick={() => router.push("/")}>
-            Go Home
+          <Button variant="outline" className="w-full" asChild>
+            <Link
+              href={invitation.status === "accepted"
+                ? `/e/${invitation.hackathonSlug}/judge`
+                : `/e/${invitation.hackathonSlug}`}
+            >
+              {invitation.status === "accepted" ? "Open Judging" : "View Event"}
+            </Link>
           </Button>
         </CardFooter>
       </Card>
@@ -189,6 +239,34 @@ export function JudgeInviteAcceptClient({
             <p className="font-medium">{invitation.hackathonName}</p>
           </div>
         </div>
+
+        {invitation.eventSchedule && (
+          <div className="flex items-center gap-3 rounded-lg bg-muted p-3">
+            <CalendarClock className="size-5 text-muted-foreground" />
+            <div>
+              <p className="text-sm text-muted-foreground">Event time</p>
+              <p className="font-medium">{invitation.eventSchedule}</p>
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center gap-3 rounded-lg bg-muted p-3">
+          <Mail className="size-5 text-muted-foreground" />
+          <div className="min-w-0">
+            <p className="text-sm text-muted-foreground">Invitation email</p>
+            <p className="truncate font-medium">{invitation.email}</p>
+          </div>
+        </div>
+
+        {invitation.expiresLabel && (
+          <div className="flex items-center gap-3 rounded-lg bg-muted p-3">
+            <Clock className="size-5 text-muted-foreground" />
+            <div>
+              <p className="text-sm text-muted-foreground">Accept by</p>
+              <p className="font-medium">{invitation.expiresLabel}</p>
+            </div>
+          </div>
+        )}
 
         {!isAuthenticated && (
           <Alert>
@@ -228,14 +306,16 @@ export function JudgeInviteAcceptClient({
           <>
             <Button className="w-full" asChild>
               <Link
-                href={`/sign-in?redirect_url=${encodeURIComponent(`/judge-invite/${token}`)}&email=${encodeURIComponent(invitation.email)}`}
+                href={`/sign-in?redirect_url=${encodeURIComponent(`/judge-invite/${token}?accept=true`)}&email=${encodeURIComponent(invitation.email)}`}
+                onClick={rememberAcceptIntent}
               >
                 Sign In to Accept
               </Link>
             </Button>
             <Button variant="outline" className="w-full" asChild>
               <Link
-                href={`/sign-up?redirect_url=${encodeURIComponent(`/judge-invite/${token}`)}&email=${encodeURIComponent(invitation.email)}`}
+                href={`/sign-up?redirect_url=${encodeURIComponent(`/judge-invite/${token}?accept=true`)}&email=${encodeURIComponent(invitation.email)}`}
+                onClick={rememberAcceptIntent}
               >
                 Create Account
               </Link>

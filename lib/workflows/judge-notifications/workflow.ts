@@ -4,6 +4,9 @@ export type SendJudgeNotificationsInput = {
   hackathonId: string
   hackathonName: string
   hackathonSlug: string
+  hackathonStartsAt?: string | null
+  hackathonEndsAt?: string | null
+  hackathonTimezone?: string | null
 }
 
 export async function sendJudgeNotificationsWorkflow(
@@ -15,15 +18,20 @@ export async function sendJudgeNotificationsWorkflow(
 
   if (notifications.length === 0) return { sent: 0 }
 
+  let processed = 0
   let sent = 0
   for (const notification of notifications) {
     try {
-      await sendJudgeNotification({
+      const result = await sendJudgeNotification({
         notification,
         hackathonName: input.hackathonName,
         hackathonSlug: input.hackathonSlug,
+        hackathonStartsAt: input.hackathonStartsAt,
+        hackathonEndsAt: input.hackathonEndsAt,
+        hackathonTimezone: input.hackathonTimezone,
       })
-      sent++
+      processed++
+      if (result.sent) sent++
     } catch (err) {
       console.error(`Failed to send judge notification ${notification.id}:`, err)
     }
@@ -31,8 +39,8 @@ export async function sendJudgeNotificationsWorkflow(
 
   // Throw on partial success so the workflow runtime retries. Already-sent notifications
   // are filtered out by sent_at IS NULL in fetchPendingNotifications, making retries idempotent.
-  if (sent < notifications.length) {
-    throw new Error(`Only sent ${sent}/${notifications.length} judge notifications — workflow will retry unsent rows`)
+  if (processed < notifications.length) {
+    throw new Error(`Only processed ${processed}/${notifications.length} judge notifications — workflow will retry unsent rows`)
   }
 
   return { sent }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import {
+  CREATE_EVENT_SURFACE_PARITY,
   ORGANIZER_SECTION_CONFIG,
   ORGANIZER_SECTIONS,
 } from "@/lib/webmcp/organizer-parity"
@@ -33,6 +34,14 @@ const nestedSections = {
 }
 
 describe("organizer parity registry", () => {
+  it("records app, WebMCP, and CLI support for rich test events", () => {
+    expect(CREATE_EVENT_SURFACE_PARITY).toEqual({
+      ui: "Create a test event with test data",
+      webMcpTools: ["open_test_event_creator"],
+      cliCommands: ["events create --test-stage"],
+    })
+  })
+
   it("covers every organizer tab and nested page", () => {
     expect(Object.keys(topLevelSections).sort()).toEqual([...VALID_TABS].sort())
     for (const section of Object.values(topLevelSections)) {
@@ -55,5 +64,24 @@ describe("organizer parity registry", () => {
       expect(config.webMcpTools.length).toBeGreaterThan(0)
       expect(Array.isArray(config.cliCommands)).toBe(true)
     }
+  })
+
+  it("keeps every shared organizer task action in WebMCP and the CLI", () => {
+    expect(ORGANIZER_SECTION_CONFIG.action_items.webMcpTools).toEqual([
+      "list_organizer_tasks",
+      "add_organizer_task",
+      "complete_organizer_task",
+      "reopen_organizer_task",
+      "dismiss_organizer_task",
+      "remove_organizer_task",
+    ])
+    expect(ORGANIZER_SECTION_CONFIG.action_items.cliCommands).toEqual([
+      "events tasks list",
+      "events tasks add",
+      "events tasks complete",
+      "events tasks reopen",
+      "events tasks dismiss",
+      "events tasks remove",
+    ])
   })
 })

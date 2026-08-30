@@ -60,11 +60,11 @@ describe("Judge Added Notification Email", () => {
     const call = mockSendEmail.mock.calls[0][0] as SendEmailInput
     expect(call.to).toBe("judge@example.com")
     expect(call.subject).toBe("You're a judge for Test Hackathon")
-    expect(call.html).toContain("https://example.com/e/test-hackathon?as=judge")
+    expect(call.html).toContain("https://example.com/e/test-hackathon/judge")
     expect(call.html).toContain("Jane Organizer")
     expect(call.html).toContain("Test Hackathon")
-    expect(call.html).toContain("View Event")
-    expect(call.text).toContain("https://example.com/e/test-hackathon?as=judge")
+    expect(call.html).toContain("Open Judging")
+    expect(call.text).toContain("https://example.com/e/test-hackathon/judge")
   })
 
   it("keeps a long event name out of an oversized subject", async () => {
@@ -151,10 +151,32 @@ describe("Judge Added Notification Email", () => {
       addedByName: "Organizer",
       hackathonStartsAt: "2026-04-20T08:30:00Z",
       hackathonEndsAt: "2026-04-22T17:00:00Z",
+      hackathonTimezone: "America/Toronto",
     })
 
     const call = mockSendEmail.mock.calls[0][0] as SendEmailInput
     expect(call.html).toContain("Apr")
     expect(call.html).toContain("20")
+    expect(call.text).toContain("4:30 AM EDT")
+    expect(call.text).toContain("1:00 PM EDT")
+  })
+
+  it("uses the event timezone without a conflicting UTC date", async () => {
+    await sendJudgeAddedNotification({
+      to: "judge@example.com",
+      deliveryId: "participant-1",
+      hackathonName: "Night Build",
+      hackathonSlug: "night-build",
+      addedByName: "Organizer",
+      hackathonStartsAt: "2026-04-20T01:30:00Z",
+      hackathonEndsAt: "2026-04-20T03:00:00Z",
+      hackathonTimezone: "America/Toronto",
+    })
+
+    const call = mockSendEmail.mock.calls[0][0] as SendEmailInput
+    expect(call.text).toContain("Sunday, April 19, 2026 at 9:30 PM EDT")
+    expect(call.text).toContain("Sunday, April 19, 2026 at 11:00 PM EDT")
+    expect(call.text).not.toContain("Monday, April 20")
+    expect(call.text).not.toContain("Apr 20")
   })
 })

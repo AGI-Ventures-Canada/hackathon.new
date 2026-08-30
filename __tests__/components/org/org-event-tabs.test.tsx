@@ -146,7 +146,7 @@ describe("OrgEventTabs", () => {
     expect(screen.getByRole("switch")).toBeDefined()
   })
 
-  it("uses the server reference time to hide an ended published event", () => {
+  it("keeps an ended published event visible until the lifecycle cron advances it", () => {
     render(
       <OrgEventTabs
         allHackathons={[activeHackathon, publishedEndedHackathon]}
@@ -157,7 +157,8 @@ describe("OrgEventTabs", () => {
       />
     )
 
-    expect(screen.getByRole("tab", { name: "All 1" })).toBeDefined()
-    expect(screen.queryByText("Ended Published Event")).toBeNull()
+    expect(screen.getByRole("tab", { name: "All 2" })).toBeDefined()
+    expect(screen.getByText("Ended Published Event")).toBeDefined()
+    expect(screen.queryByRole("switch")).toBeNull()
   })
 })

@@ -1,5 +1,6 @@
 import {
   processAutoTransitions,
+  reconcilePendingJudgeWorkForClosedHackathons,
   reconcilePendingTeamsForClosedHackathons,
 } from "@/lib/services/lifecycle"
 import { processScheduledChallengeReleases } from "@/lib/services/challenges"
@@ -14,21 +15,24 @@ export async function GET(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const [transitionsResult, releasesResult, schedulesResult, teamCloseoutResult] = await Promise.allSettled([
+  const [transitionsResult, releasesResult, schedulesResult, teamCloseoutResult, judgeCloseoutResult] = await Promise.allSettled([
     processAutoTransitions(),
     processScheduledChallengeReleases(),
     processDueSchedules(),
     reconcilePendingTeamsForClosedHackathons(),
+    reconcilePendingJudgeWorkForClosedHackathons(),
   ])
   const hasFailures =
     transitionsResult.status === "rejected" ||
     releasesResult.status === "rejected" ||
     schedulesResult.status === "rejected" ||
     teamCloseoutResult.status === "rejected" ||
+    judgeCloseoutResult.status === "rejected" ||
     (transitionsResult.status === "fulfilled" && transitionsResult.value.errors.length > 0) ||
     (releasesResult.status === "fulfilled" && releasesResult.value.errors.length > 0) ||
     (schedulesResult.status === "fulfilled" && schedulesResult.value.failed > 0) ||
-    (teamCloseoutResult.status === "fulfilled" && teamCloseoutResult.value.failed > 0)
+    (teamCloseoutResult.status === "fulfilled" && teamCloseoutResult.value.failed > 0) ||
+    (judgeCloseoutResult.status === "fulfilled" && judgeCloseoutResult.value.failed > 0)
 
   return Response.json({
     transitions:
@@ -47,5 +51,9 @@ export async function GET(request: Request) {
       teamCloseoutResult.status === "fulfilled"
         ? teamCloseoutResult.value
         : { error: String(teamCloseoutResult.reason) },
+    pendingJudgeCloseout:
+      judgeCloseoutResult.status === "fulfilled"
+        ? judgeCloseoutResult.value
+        : { error: String(judgeCloseoutResult.reason) },
   }, { status: hasFailures ? 500 : 200 })
 }

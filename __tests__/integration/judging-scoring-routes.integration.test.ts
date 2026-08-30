@@ -106,6 +106,13 @@ const mockSubmitJudgesPick = mock(() => Promise.resolve({ success: true }))
 const mockCalculatePrizeResults = mock(() => Promise.resolve({ success: true, count: 1 }))
 const mockOwnership = { hackathonId: "22222222-2222-2222-2222-222222222222", prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" }
 const mockAssertAssignmentWritable = mock(() => Promise.resolve({ ok: true, ownership: mockOwnership } as { ok: true; ownership: typeof mockOwnership } | { ok: false; code: string; status: number; error: string }))
+const mockIsJudgingOpenForHackathon = mock((event: { status: string; phase?: string | null }) =>
+  Promise.resolve(
+    event.status === "judging" ||
+    (event.status === "active" &&
+      (event.phase === "preliminaries" || event.phase === "finals")),
+  ),
+)
 
 mock.module("@/lib/services/judging", () => ({
   addJudge: mock(() => Promise.resolve({ success: true })),
@@ -128,6 +135,7 @@ mock.module("@/lib/services/judging", () => ({
   getJudgingSetupStatus: mock(() => Promise.resolve({ hasCriteria: false, allCriteriaHaveLevels: true, judgeCount: 0, hasSubmissions: false, hasUnassignedSubmissions: false, isReady: false })),
   verifyAssignmentOwnership: mockVerifyAssignmentOwnership,
   assertAssignmentWritable: mockAssertAssignmentWritable,
+  isJudgingOpenForHackathon: mockIsJudgingOpenForHackathon,
   recalculateForAssignment: mockRecalculateForAssignment,
   calculatePrizeResults: mockCalculatePrizeResults,
   removeJudgeFromPrize: mock(() => Promise.resolve({ removedCount: 0 })),
@@ -206,10 +214,24 @@ describe("Judging Scoring Routes", () => {
     mockSubmitBucketSortResponse.mockReset()
     mockSubmitGateCheckResponse.mockReset()
     mockAssertAssignmentWritable.mockReset()
+    mockIsJudgingOpenForHackathon.mockReset()
+    mockIsJudgingOpenForHackathon.mockImplementation((event) => Promise.resolve(
+      event.status === "judging" ||
+      (event.status === "active" &&
+        (event.phase === "preliminaries" || event.phase === "finals")),
+    ))
     mockCheckRateLimit.mockReset()
     mockCheckRateLimit.mockResolvedValue({ allowed: true, remaining: 29, resetAt: Date.now() + 60_000 })
-    mockAssertAssignmentWritable.mockImplementation(async (_assignmentId: string, _userId: string, hackathon: { id: string; status: string }) => {
-      if (hackathon.status !== "judging" && hackathon.status !== "active") {
+    mockAssertAssignmentWritable.mockImplementation(async (
+      _assignmentId: string,
+      _userId: string,
+      hackathon: { id: string; status: string; phase?: string | null },
+    ) => {
+      const open = hackathon.status === "judging" || (
+        hackathon.status === "active" &&
+        (hackathon.phase === "preliminaries" || hackathon.phase === "finals")
+      )
+      if (!open) {
         return { ok: false as const, code: "not_judging", status: 400, error: "Hackathon is not in judging phase" }
       }
       return { ok: true as const, ownership: mockOwnership }
@@ -509,7 +531,11 @@ describe("Judging Scoring Routes", () => {
 
     it("allows submission when hackathon status is active", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
-      mockGetPublicHackathon.mockResolvedValue({ ...mockHackathon, status: "active" })
+      mockGetPublicHackathon.mockResolvedValue({
+        ...mockHackathon,
+        status: "active",
+        phase: "preliminaries",
+      })
       mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" })
       mockSubmitBucketSortResponse.mockResolvedValue({ success: true })
 
@@ -726,7 +752,11 @@ describe("Judging Scoring Routes", () => {
 
     it("allows submission when hackathon status is active", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
-      mockGetPublicHackathon.mockResolvedValue({ ...mockHackathon, status: "active" })
+      mockGetPublicHackathon.mockResolvedValue({
+        ...mockHackathon,
+        status: "active",
+        phase: "preliminaries",
+      })
       mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" })
       mockSubmitGateCheckResponse.mockResolvedValue({ success: true })
 

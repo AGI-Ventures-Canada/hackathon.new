@@ -10,6 +10,29 @@ import type {
 } from "@/lib/webmcp/manage-optimistic-state"
 
 const createdAt = "2026-08-25T15:00:00.000Z"
+const taskToolNames = [
+  "list_organizer_tasks",
+  "add_organizer_task",
+  "complete_organizer_task",
+  "reopen_organizer_task",
+  "dismiss_organizer_task",
+  "remove_organizer_task",
+]
+const organizerTask = {
+  taskRef: "custom-run-of-show",
+  label: "Review the run of show",
+  hint: "Check every time and room.",
+  tooltip: "Open the schedule and check the final plan.",
+  severity: "warning" as const,
+  state: "pending" as const,
+  completionPolicy: "manual" as const,
+  custom: true,
+  destination: "schedule" as const,
+  inspectUrl: "/e/build-day/manage?tab=overview",
+  ctaLabel: "Open schedule",
+  blocksProgress: false,
+  updatedAt: "2026-08-30T18:00:00.000Z",
+}
 
 const baseContext: ManageHackathonWebMcpContext = {
   hackathon: {
@@ -78,6 +101,10 @@ const baseContext: ManageHackathonWebMcpContext = {
       title: "Help your city",
       description: "Build for a local need.",
       resourceCount: 2,
+      resources: [
+        { label: "Starter guide", url: "https://example.com/guide" },
+        { label: "Data", url: "https://example.com/data" },
+      ],
     },
   ],
   prizes: [
@@ -128,6 +155,7 @@ let onReverted = mock(
 )
 let onNavigate = mock(async (_href: string, _section: string) => true)
 let onOpenTransition = mock((_status: string) => {})
+let onTasksChanged = mock(() => {})
 let onEventVersionUpdated = mock((eventVersion: string) => {
   context.hackathon.eventVersion = eventVersion
 })
@@ -141,6 +169,7 @@ function createTools() {
     onReverted,
     onNavigate,
     onOpenTransition,
+    onTasksChanged,
     onEventVersionUpdated,
   })
 }
@@ -184,6 +213,7 @@ beforeEach(() => {
   )
   onNavigate = mock(async (_href: string, _section: string) => true)
   onOpenTransition = mock((_status: string) => {})
+  onTasksChanged = mock(() => {})
   onEventVersionUpdated = mock((eventVersion: string) => {
     context.hackathon.eventVersion = eventVersion
   })
@@ -191,8 +221,10 @@ beforeEach(() => {
 
 describe("createManageHackathonTools", () => {
   it("offers reads, draft-safe writes, a draft announcement, and go-live review", () => {
-    expect(createTools().map((tool) => tool.name)).toEqual([
+    const tools = createTools()
+    expect(tools.map((tool) => tool.name)).toEqual([
       "get_hackathon_overview",
+      ...taskToolNames,
       "get_organizer_page_support",
       "get_hackathon_settings",
       "inspect_organizer_section",
@@ -214,12 +246,17 @@ describe("createManageHackathonTools", () => {
       "prepare_sponsor",
       "draft_announcement",
     ])
+    expect(getTool(tools, "list_organizer_tasks").annotations?.readOnlyHint)
+      .toBe(true)
+    expect(getTool(tools, "remove_organizer_task").annotations?.readOnlyHint)
+      .toBe(false)
   })
 
   it("uses lifecycle-specific tool sets", () => {
     context.hackathon.status = "published"
     expect(createTools().map((tool) => tool.name)).toEqual([
       "get_hackathon_overview",
+      ...taskToolNames,
       "get_organizer_page_support",
       "get_hackathon_settings",
       "inspect_organizer_section",
@@ -246,6 +283,7 @@ describe("createManageHackathonTools", () => {
     context.hackathon.status = "archived"
     expect(createTools().map((tool) => tool.name)).toEqual([
       "get_hackathon_overview",
+      ...taskToolNames,
       "get_organizer_page_support",
       "get_hackathon_settings",
       "inspect_organizer_section",
@@ -274,6 +312,136 @@ describe("createManageHackathonTools", () => {
     expect(overview.remainingTaskCount).toBe(0)
   })
 
+  it("lists every requested task page with stable refs and exact links", async () => {
+    fetcher = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.method).toBe("GET")
+      return Response.json({
+        event: { name: "Build Day", slug: "build-day" },
+        totalCount: 8,
+        pendingCount: 5,
+        completedCount: 2,
+        dismissedCount: 1,
+        offset: 4,
+        limit: 2,
+        hasMore: true,
+        nextOffset: 6,
+        items: [
+          organizerTask,
+          {
+            ...organizerTask,
+            taskRef: "custom-check-food",
+            label: "Check the food order",
+            hint: null,
+            tooltip: null,
+          },
+        ],
+      })
+    })
+
+    const page = dataOf<{
+      offset: number
+      limit: number
+      nextOffset: number | null
+      items: (typeof organizerTask)[]
+    }>(await execute(createTools(), "list_organizer_tasks", {
+      offset: 4,
+      limit: 2,
+      state: "completed",
+    }))
+
+    expect(fetcher).toHaveBeenCalledWith(
+      `/api/dashboard/hackathons/${baseContext.hackathon.id}/action-items?offset=4&limit=2&state=completed`,
+      expect.objectContaining({ method: "GET" }),
+    )
+    expect(page).toMatchObject({
+      offset: 4,
+      limit: 2,
+      nextOffset: 6,
+    })
+    expect(page.items).toHaveLength(2)
+    expect(page.items[0]).toMatchObject({
+      taskRef: "custom-run-of-show",
+      destination: "schedule",
+      inspectUrl: "/e/build-day/manage?tab=overview",
+    })
+  })
+
+  it("adds, finishes, reopens, dismisses, and removes custom tasks", async () => {
+    fetcher = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "DELETE") return Response.json({ success: true })
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return Response.json({
+        task: {
+          ...organizerTask,
+          ...body,
+          state: body.state ?? organizerTask.state,
+        },
+      })
+    })
+    const tools = createTools()
+
+    await execute(tools, "add_organizer_task", {
+      label: organizerTask.label,
+      severity: organizerTask.severity,
+      taskRef: organizerTask.taskRef,
+    })
+    await execute(tools, "complete_organizer_task", {
+      taskRef: organizerTask.taskRef,
+      expectedUpdatedAt: organizerTask.updatedAt,
+    })
+    await execute(tools, "reopen_organizer_task", {
+      taskRef: organizerTask.taskRef,
+    })
+    await execute(tools, "dismiss_organizer_task", {
+      taskRef: "verify-automated-times",
+    })
+    const removed = dataOf<{
+      removed: boolean
+      taskRef: string
+      destination: string
+      inspectUrl: string
+    }>(await execute(tools, "remove_organizer_task", {
+      taskRef: organizerTask.taskRef,
+      expectedUpdatedAt: organizerTask.updatedAt,
+    }))
+
+    expect(fetcher.mock.calls.map(([, init]) => init?.method)).toEqual([
+      "POST",
+      "PATCH",
+      "PATCH",
+      "PATCH",
+      "DELETE",
+    ])
+    expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body))).toEqual({
+      label: organizerTask.label,
+      severity: organizerTask.severity,
+      taskRef: organizerTask.taskRef,
+    })
+    expect(JSON.parse(String(fetcher.mock.calls[1][1]?.body))).toEqual({
+      state: "completed",
+      expectedUpdatedAt: organizerTask.updatedAt,
+    })
+    expect(String(fetcher.mock.calls[4][0])).toContain(
+      "custom-run-of-show?expectedUpdatedAt=2026-08-30T18%3A00%3A00.000Z",
+    )
+    expect(onTasksChanged).toHaveBeenCalledTimes(5)
+    expect(removed).toEqual({
+      removed: true,
+      taskRef: organizerTask.taskRef,
+      destination: "action_items",
+      inspectUrl: "/e/build-day/manage?tab=action-items",
+    })
+  })
+
+  it("rejects removing event-made tasks before a request", async () => {
+    const result = await execute(createTools(), "remove_organizer_task", {
+      taskRef: "lifecycle-add-judges",
+    })
+
+    expect(result).toMatchObject({ ok: false, error: { code: "invalid_input" } })
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+
   it("bounds untrusted list output", async () => {
     context.scheduleItems = Array.from({ length: 25 }, (_, index) => ({
       title: `Item ${index}`,
@@ -296,6 +464,21 @@ describe("createManageHackathonTools", () => {
     expect(
       JSON.stringify({ ok: true, data: result }).length,
     ).toBeLessThanOrEqual(1_500)
+  })
+
+  it("shares only safe challenge resource links", async () => {
+    context.challenges[0].resources = [
+      { label: "Starter guide", url: "https://example.com/guide" },
+      { label: "Unsafe", url: "http://127.0.0.1/private" },
+    ]
+
+    const page = dataOf<{
+      items: { resources: { label: string; url: string }[] }[]
+    }>(await execute(createTools(), "list_hackathon_challenges"))
+
+    expect(page.items[0].resources).toEqual([
+      { label: "Starter guide", url: "https://example.com/guide" },
+    ])
   })
 
   it("keeps every organizer read result inside the shared output budget", async () => {
@@ -566,7 +749,7 @@ describe("createManageHackathonTools", () => {
             hackathonId: baseContext.hackathon.id,
             title: body.title,
             description: null,
-            resources: [],
+            resources: body.resources ?? [],
             sortOrder: 1,
             createdAt,
             updatedAt: createdAt,
@@ -625,11 +808,18 @@ describe("createManageHackathonTools", () => {
       title: "Lunch",
       startsAt: "2026-09-12T18:00:00.000Z",
     })
-    await execute(tools, "add_challenge", { title: "City helper" })
+    await execute(tools, "add_challenge", {
+      title: "City helper",
+      resources: [{ label: "Starter", url: "example.com/starter" }],
+    })
     await execute(tools, "add_prize", { name: "Best demo" })
     await execute(tools, "draft_announcement", {
       title: "Doors open",
       body: "Meet in the main hall.",
+    })
+
+    expect(JSON.parse(String(fetcher.mock.calls[3][1]?.body))).toMatchObject({
+      resources: [{ label: "Starter", url: "https://example.com/starter" }],
     })
 
     expect(
@@ -663,6 +853,16 @@ describe("createManageHackathonTools", () => {
       ok: false,
       error: { code: "invalid_input", retryable: false },
     })
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+
+  it("rejects unsafe challenge resources before fetching", async () => {
+    const result = await execute(createTools(), "add_challenge", {
+      title: "Private data",
+      resources: [{ label: "Private", url: "http://127.0.0.1/data" }],
+    })
+
+    expect(result).toMatchObject({ ok: false, error: { code: "invalid_input" } })
     expect(fetcher).not.toHaveBeenCalled()
   })
 

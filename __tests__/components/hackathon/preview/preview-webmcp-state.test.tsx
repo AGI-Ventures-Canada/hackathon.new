@@ -415,6 +415,21 @@ describe("HackathonPreviewClient WebMCP convergence", () => {
     expect(actionItems.registerTabAction).not.toHaveBeenCalled()
   })
 
+  it("shows resource links with released attendee challenges", () => {
+    const releasedHackathon = {
+      ...baseHackathon,
+      status: "active",
+      challenge_released_at: "2026-09-10T16:00:00.000Z",
+    } as PublicHackathon
+
+    render(preview(releasedHackathon, false))
+
+    expect(captures.challenges).toMatchObject({
+      releasedAt: "2026-09-10T16:00:00.000Z",
+      showResources: true,
+    })
+  })
+
   it("removes an optimistic judge by stable display identity when the server confirms it", async () => {
     const view = render(preview(baseHackathon, true))
     const onJudgeAdded = captures["judging-dialog"].onJudgeAdded as (judge: {

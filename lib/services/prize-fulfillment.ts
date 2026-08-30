@@ -32,10 +32,12 @@ export async function initializeFulfillments(hackathonId: string): Promise<numbe
 
   const { data: prizes } = await client
     .from("prizes")
-    .select("id")
+    .select("id, hackathons!inner(is_test_event)")
     .eq("hackathon_id", hackathonId)
 
   if (!prizes || prizes.length === 0) return 0
+  const hackathon = prizes[0].hackathons as unknown as { is_test_event?: boolean } | null
+  if (hackathon?.is_test_event) return 0
 
   const prizeIds = prizes.map((p) => p.id)
 
@@ -210,11 +212,11 @@ async function notifyWinnerOfShipment(
 
   const { data: hackathon } = await client
     .from("hackathons")
-    .select("name, slug")
+    .select("name, slug, is_test_event")
     .eq("id", hackathonId)
     .single()
 
-  if (!assignment || !hackathon) return
+  if (!assignment || !hackathon || hackathon.is_test_event) return
 
   const pa = assignment as unknown as { prize: { name: string } }
   const { sendPrizeShippedEmail } = await import("@/lib/email/prize-shipped")
@@ -523,11 +525,11 @@ async function sendClaimNotifications(params: {
 }): Promise<void> {
   const { data: hackathon } = await params.client
     .from("hackathons")
-    .select("name, slug")
+    .select("name, slug, is_test_event")
     .eq("id", params.hackathonId)
     .single()
 
-  if (!hackathon) return
+  if (!hackathon || hackathon.is_test_event) return
 
   if (params.sponsorTenantId) {
     const { sendSponsorClaimNotification } = await import("@/lib/email/sponsor-notifications")

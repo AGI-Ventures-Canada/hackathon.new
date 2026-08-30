@@ -28,6 +28,8 @@ describe("hackathons commands", () => {
     ttyDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY")
     Object.defineProperty(process.stdout, "isTTY", { value: false, configurable: true })
     mockFetch.mockReset()
+    mockConfirm.mockReset()
+    mockConfirm.mockResolvedValue(false)
     globalThis.fetch = mockFetch as unknown as typeof globalThis.fetch
     consoleLogSpy = spyOn(console, "log").mockImplementation(() => {})
     consoleErrorSpy = spyOn(console, "error").mockImplementation(() => {})
@@ -99,6 +101,151 @@ describe("hackathons commands", () => {
   })
 
   describe("create", () => {
+    it("creates a rich test event with explicit non-interactive confirmation", async () => {
+      const whoami = {
+        tenantId: "tenant-org-1",
+        tenantName: "Acme Labs",
+        tenantType: "organization" as const,
+        keyId: "key-1",
+        scopes: ["hackathons:write"],
+      }
+      mockFetch
+        .mockResolvedValueOnce(jsonResponse(whoami))
+        .mockResolvedValueOnce(jsonResponse({
+          id: "test-id",
+          name: "Launch Lab Test Event",
+          slug: "launch-lab-test",
+          stage: "judging",
+          replayed: false,
+          committed: true,
+          delivery: "suppressed",
+        }))
+      const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
+      const { runHackathonsCreate } = await import("../../src/commands/hackathons/create")
+
+      await runHackathonsCreate(client, [
+        "--test-stage", "judging",
+        "--idempotency-key", "demo-42",
+        "--json",
+        "--yes",
+      ])
+
+      const url = mockFetch.mock.calls[1][0] as string
+      const init = mockFetch.mock.calls[1][1] as RequestInit
+      const body = JSON.parse(init.body as string)
+      expect(url).toContain("/api/dashboard/hackathons/test-event")
+      expect(body).toEqual({
+        creationId: expect.stringMatching(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+        ),
+        stage: "judging",
+        timeZone: expect.any(String),
+      })
+      expect(JSON.parse(consoleLogSpy.mock.calls[0][0])).toMatchObject({
+        id: "test-id",
+        stage: "judging",
+        delivery: "suppressed",
+      })
+    })
+
+    it("requires --yes for a non-interactive test event", async () => {
+      const exitSpy = spyOn(process, "exit").mockImplementation(() => {
+        throw new Error("exit")
+      })
+      const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
+      const { runHackathonsCreate } = await import("../../src/commands/hackathons/create")
+
+      await expect(
+        runHackathonsCreate(client, ["--test-stage", "registration", "--json"]),
+      ).rejects.toThrow("exit")
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("Add --yes"))
+      expect(mockFetch).not.toHaveBeenCalled()
+      exitSpy.mockRestore()
+    })
+
+    it("asks before creating test data in an interactive terminal", async () => {
+      Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true })
+      mockConfirm.mockResolvedValueOnce(true)
+      mockFetch
+        .mockResolvedValueOnce(jsonResponse({
+          tenantId: "tenant-org-1",
+          tenantName: "Acme Labs",
+          tenantType: "organization",
+          keyId: "key-1",
+          scopes: ["hackathons:write"],
+        }))
+        .mockResolvedValueOnce(jsonResponse({
+          id: "test-id",
+          name: "Launch Lab Test Event",
+          slug: "launch-lab-test",
+          stage: "hacking",
+          replayed: false,
+          committed: true,
+          delivery: "suppressed",
+        }))
+      const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
+      const { runHackathonsCreate } = await import("../../src/commands/hackathons/create")
+
+      await runHackathonsCreate(client, ["--test-stage", "hacking"])
+
+      expect(mockConfirm).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining("hacking"),
+      }))
+      expect(mockFetch).toHaveBeenCalledTimes(2)
+    })
+
+    it("cancels an interactive test event before any request", async () => {
+      Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true })
+      mockConfirm.mockResolvedValueOnce(false)
+      const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
+      const { runHackathonsCreate } = await import("../../src/commands/hackathons/create")
+
+      await runHackathonsCreate(client, ["--test-stage", "results"])
+
+      expect(mockConfirm).toHaveBeenCalled()
+      expect(mockFetch).not.toHaveBeenCalled()
+    })
+
+    it("rejects an unknown test stage before any request", async () => {
+      const exitSpy = spyOn(process, "exit").mockImplementation(() => {
+        throw new Error("exit")
+      })
+      const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
+      const { runHackathonsCreate } = await import("../../src/commands/hackathons/create")
+
+      await expect(
+        runHackathonsCreate(client, ["--test-stage", "lunch", "--yes"]),
+      ).rejects.toThrow("exit")
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        "Error: --test-stage must be registration, hacking, judging, or results",
+      )
+      expect(mockFetch).not.toHaveBeenCalled()
+      exitSpy.mockRestore()
+    })
+
+    it.each(["--name", "--slug", "--description"])(
+      "rejects %s with a prefilled test event",
+      async (flag) => {
+        const exitSpy = spyOn(process, "exit").mockImplementation(() => {
+          throw new Error("exit")
+        })
+        const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
+        const { runHackathonsCreate } = await import("../../src/commands/hackathons/create")
+
+        await expect(
+          runHackathonsCreate(client, ["--test-stage", "judging", flag, "custom", "--yes"]),
+        ).rejects.toThrow("exit")
+
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+          expect.stringContaining("test events are prefilled"),
+        )
+        expect(mockFetch).not.toHaveBeenCalled()
+        exitSpy.mockRestore()
+      },
+    )
+
     it("sends POST with provided flags (non-interactive)", async () => {
       mockFetch
         .mockResolvedValueOnce(

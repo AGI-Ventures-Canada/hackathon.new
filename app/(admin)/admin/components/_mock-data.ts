@@ -28,6 +28,7 @@ const addDays = (days: number) => {
 export const mockHackathon: Hackathon = {
   id: MOCK_HACKATHON_ID,
   tenant_id: MOCK_TENANT_ID,
+  is_test_event: false,
   name: "Sandbox Hackathon",
   slug: MOCK_SLUG,
   description:

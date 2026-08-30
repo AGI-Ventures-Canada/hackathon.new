@@ -100,6 +100,34 @@ describe("Notification Dispatcher", () => {
     expect(mockTriggerWebhooks).toHaveBeenCalledTimes(1)
   })
 
+  it("queues the same transition workflow identity when start fails", async () => {
+    const retryQueue = createChainableMock({ data: null, error: null })
+    setMockFromImplementation((table) =>
+      table === "lifecycle_notification_dispatches"
+        ? retryQueue
+        : createChainableMock({ data: null, error: { message: "No rows" } }),
+    )
+    mockStart.mockRejectedValueOnce(new Error("workflow unavailable"))
+
+    await dispatchTransitionNotifications({
+      type: "hackathon_started",
+      hackathonId: "h1",
+      tenantId: "t1",
+      hackathon: { name: "Test Hack", slug: "test-hack" },
+      trigger: "auto",
+      triggeredBy: "system",
+      fromStatus: "registration_open",
+      toStatus: "active",
+    })
+
+    const queued = retryQueue.insert.mock.calls[0][0] as {
+      id: string
+      payload: { notificationId: string }
+    }
+    expect(queued.id).toBe(queued.payload.notificationId)
+    expect(mockTriggerWebhooks).toHaveBeenCalledTimes(1)
+  })
+
   it("fires merged email + both webhooks when challenges coincide with go-live", async () => {
     setMockFromImplementation(() =>
       createChainableMock({ data: null, error: { message: "No rows" } })
@@ -218,5 +246,36 @@ describe("Notification Dispatcher", () => {
 
     expect(mockTriggerWebhooks).toHaveBeenCalledTimes(1)
     expect(mockTriggerWebhooks.mock.calls[0][1]).toBe("hackathon.judging_started")
+  })
+
+  it("suppresses transition workflows and webhooks for test events", async () => {
+    await dispatchTransitionNotifications({
+      type: "hackathon_started",
+      hackathonId: "h1",
+      tenantId: "t1",
+      hackathon: { name: "Test Hack", slug: "test-hack" },
+      trigger: "manual",
+      triggeredBy: "user1",
+      fromStatus: "published",
+      toStatus: "active",
+      isTestEvent: true,
+    })
+
+    expect(mockStart).not.toHaveBeenCalled()
+    expect(mockTriggerWebhooks).not.toHaveBeenCalled()
+  })
+
+  it("suppresses challenge workflows and webhooks for test events", async () => {
+    await dispatchChallengesReleasedNotifications({
+      hackathonId: "h1",
+      tenantId: "t1",
+      hackathon: { name: "Test Hack", slug: "test-hack" },
+      challenges: [{ title: "Build It", description: null }],
+      trigger: "manual",
+      isTestEvent: true,
+    })
+
+    expect(mockStart).not.toHaveBeenCalled()
+    expect(mockTriggerWebhooks).not.toHaveBeenCalled()
   })
 })

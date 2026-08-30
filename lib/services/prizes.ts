@@ -166,7 +166,13 @@ export async function prizeBelongsToHackathon(
 export async function assignPrize(
   prizeId: string,
   submissionId: string,
-  { skipNotifications = false }: { skipNotifications?: boolean } = {}
+  {
+    skipNotifications = false,
+    source = "manual",
+  }: {
+    skipNotifications?: boolean
+    source?: PrizeAssignment["assignment_source"]
+  } = {},
 ): Promise<PrizeAssignment | null> {
   const client = getSupabase() as unknown as SupabaseClient
   const { data, error } = await client
@@ -174,6 +180,7 @@ export async function assignPrize(
     .insert({
       prize_id: prizeId,
       submission_id: submissionId,
+      assignment_source: source,
     })
     .select()
     .single()
@@ -290,15 +297,61 @@ export async function autoAssignPrizes(hackathonId: string): Promise<void> {
       .is("prize_track_id", null)
       .is("round_id", null)
 
-    if (results) {
-      const rankToSubmission = Object.fromEntries(
-        results.map((r: { submission_id: string; rank: number }) => [r.rank, r.submission_id])
-      )
+    const scorePrizeIds = scorePrizes.map((prize) => prize.id)
+    const { data: existingAssignments, error: existingAssignmentsError } = await client
+      .from("prize_assignments")
+      .select("id, prize_id, submission_id, assignment_source")
+      .in("prize_id", scorePrizeIds)
+
+    if (existingAssignmentsError) {
+      console.error("Failed to load score prize assignments:", existingAssignmentsError)
+    } else if (results) {
+      const submissionsByRank = new Map<number, string[]>()
+      for (const result of results as { submission_id: string; rank: number }[]) {
+        const submissions = submissionsByRank.get(result.rank) ?? []
+        submissions.push(result.submission_id)
+        submissionsByRank.set(result.rank, submissions)
+      }
 
       for (const prize of scorePrizes) {
-        const submissionId = rankToSubmission[prize.rank as number]
-        if (submissionId) {
-          await assignPrize(prize.id, submissionId, { skipNotifications: true })
+        const matchingSubmissions = submissionsByRank.get(prize.rank as number) ?? []
+        const prizeAssignments = (existingAssignments ?? []).filter(
+          (assignment) => assignment.prize_id === prize.id,
+        )
+        const manualAssignments = prizeAssignments.filter(
+          (assignment) => assignment.assignment_source !== "automatic",
+        )
+        const automaticAssignments = prizeAssignments.filter(
+          (assignment) => assignment.assignment_source === "automatic",
+        )
+        const desiredSubmissionId = matchingSubmissions.length === 1
+          ? matchingSubmissions[0]
+          : null
+        const automaticIsCurrent =
+          automaticAssignments.length === 1 &&
+          automaticAssignments[0].submission_id === desiredSubmissionId
+
+        if (manualAssignments.length > 0 || !automaticIsCurrent) {
+          const { error: clearError } = await client
+            .from("prize_assignments")
+            .delete()
+            .eq("prize_id", prize.id)
+            .eq("assignment_source", "automatic")
+          if (clearError) {
+            console.error("Failed to clear an old automatic prize assignment:", clearError)
+            continue
+          }
+        }
+
+        if (
+          manualAssignments.length === 0 &&
+          desiredSubmissionId &&
+          !automaticIsCurrent
+        ) {
+          await assignPrize(prize.id, desiredSubmissionId, {
+            skipNotifications: true,
+            source: "automatic",
+          })
         }
       }
     }

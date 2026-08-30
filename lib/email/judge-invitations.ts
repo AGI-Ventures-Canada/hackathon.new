@@ -22,6 +22,7 @@ export type SendJudgeInvitationInput = {
   hackathonSlug?: string
   hackathonStartsAt?: string | null
   hackathonEndsAt?: string | null
+  hackathonTimezone?: string | null
   deliveryId?: string
 }
 
@@ -33,6 +34,43 @@ export type SendJudgeAddedNotificationInput = {
   addedByName: string
   hackathonStartsAt?: string | null
   hackathonEndsAt?: string | null
+  hackathonTimezone?: string | null
+}
+
+function safeTimeZone(timeZone?: string | null): string {
+  if (!timeZone) return "UTC"
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone }).format()
+    return timeZone
+  } catch {
+    return "UTC"
+  }
+}
+
+function formatExactDateTime(value: string, timeZone?: string | null): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: safeTimeZone(timeZone),
+    timeZoneName: "short",
+  })
+}
+
+export function formatJudgeEventSchedule(
+  startsAt?: string | null,
+  endsAt?: string | null,
+  timeZone?: string | null,
+): string | null {
+  if (!startsAt) return null
+  const start = formatExactDateTime(startsAt, timeZone)
+  if (!endsAt) return start
+  return `${start} to ${formatExactDateTime(endsAt, timeZone)}`
 }
 
 export async function sendJudgeAddedNotification(
@@ -43,7 +81,7 @@ export async function sendJudgeAddedNotification(
     return { success: false }
   }
 
-  const eventUrl = buildEventUrl(input.hackathonSlug, "?as=judge")
+  const eventUrl = buildEventUrl(input.hackathonSlug, "/judge")
 
   const { html, text } = await renderEmail(
     JudgeAddedEmail({
@@ -52,6 +90,11 @@ export async function sendJudgeAddedNotification(
       eventUrl,
       hackathonStartsAt: input.hackathonStartsAt,
       hackathonEndsAt: input.hackathonEndsAt,
+      eventSchedule: formatJudgeEventSchedule(
+        input.hackathonStartsAt,
+        input.hackathonEndsAt,
+        input.hackathonTimezone,
+      ),
     })
   )
 
@@ -83,12 +126,7 @@ export async function sendJudgeInvitationEmail(
   }
 
   const acceptUrl = `${process.env.NEXT_PUBLIC_APP_URL}/judge-invite/${input.inviteToken}`
-  const expiresDate = new Date(input.expiresAt).toLocaleDateString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  })
+  const expiresDate = formatExactDateTime(input.expiresAt, input.hackathonTimezone)
 
   const { html, text } = await renderEmail(
     JudgeInvitationEmail({
@@ -96,15 +134,20 @@ export async function sendJudgeInvitationEmail(
       hackathonName: input.hackathonName,
       acceptUrl,
       expiresDate,
-      eventUrl: buildEventUrl(input.hackathonSlug),
+      eventUrl: buildEventUrl(input.hackathonSlug, "/judge"),
       hackathonStartsAt: input.hackathonStartsAt,
       hackathonEndsAt: input.hackathonEndsAt,
+      eventSchedule: formatJudgeEventSchedule(
+        input.hackathonStartsAt,
+        input.hackathonEndsAt,
+        input.hackathonTimezone,
+      ),
     })
   )
 
   const result = await sendEmail({
     to: input.to,
-    subject: `Judge ${shortHackathonName(input.hackathonName)}`,
+    subject: `${shortHackathonName(input.inviterName, 14)} invited you to judge ${shortHackathonName(input.hackathonName, 20)}`,
     html,
     text,
     replyTo: getReplyToAddress(),
@@ -127,6 +170,10 @@ export type SendJudgeInvitationReminderInput = {
   expiresAt: string
   urgency?: "low" | "medium" | "high"
   deliveryId?: string
+  hackathonSlug?: string
+  hackathonStartsAt?: string | null
+  hackathonEndsAt?: string | null
+  hackathonTimezone?: string | null
 }
 
 function judgeReminderSubject(hackathonName: string, urgency: string): string {
@@ -145,12 +192,7 @@ export async function sendJudgeInvitationReminderEmail(
   }
 
   const acceptUrl = `${process.env.NEXT_PUBLIC_APP_URL}/judge-invite/${input.inviteToken}`
-  const expiresDate = new Date(input.expiresAt).toLocaleDateString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  })
+  const expiresDate = formatExactDateTime(input.expiresAt, input.hackathonTimezone)
   const timeLeft = formatTimeLeft(input.expiresAt)
 
   const { html, text } = await renderEmail(
@@ -160,6 +202,14 @@ export async function sendJudgeInvitationReminderEmail(
       acceptUrl,
       expiresDate,
       timeLeft,
+      eventUrl: buildEventUrl(input.hackathonSlug, "/judge"),
+      hackathonStartsAt: input.hackathonStartsAt,
+      hackathonEndsAt: input.hackathonEndsAt,
+      eventSchedule: formatJudgeEventSchedule(
+        input.hackathonStartsAt,
+        input.hackathonEndsAt,
+        input.hackathonTimezone,
+      ),
     })
   )
 

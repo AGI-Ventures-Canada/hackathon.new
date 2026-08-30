@@ -13,9 +13,10 @@ type Props = {
   levels: RubricLevel[]
   selectedLevel: number | null
   onSelect: (levelNumber: number | null) => void
+  disabled?: boolean
 }
 
-export function RubricLevelSelector({ levels, selectedLevel, onSelect }: Props) {
+export function RubricLevelSelector({ levels, selectedLevel, onSelect, disabled = false }: Props) {
   const sortedLevels = [...levels].sort((a, b) => b.level_number - a.level_number)
 
   return (
@@ -24,6 +25,7 @@ export function RubricLevelSelector({ levels, selectedLevel, onSelect }: Props) 
         <button
           key={level.id}
           type="button"
+          disabled={disabled}
           onClick={() =>
             onSelect(selectedLevel === level.level_number ? null : level.level_number)
           }

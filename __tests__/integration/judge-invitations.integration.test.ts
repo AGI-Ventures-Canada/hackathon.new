@@ -18,6 +18,11 @@ mock.module("@clerk/nextjs/server", () => ({
 const mockAddJudge = mock(() =>
   Promise.resolve({ success: true, participant: { id: "j1", clerkUserId: "user_123" } })
 )
+const mockScheduleAcceptedJudgeReminders = mock(() => Promise.resolve(2))
+
+mock.module("@/lib/services/pre-event-reminders", () => ({
+  scheduleAcceptedJudgeReminders: mockScheduleAcceptedJudgeReminders,
+}))
 
 mock.module("@/lib/services/judging", () => ({
   addJudge: mockAddJudge,
@@ -80,6 +85,7 @@ describe("Judge Invitations Integration - acceptJudgeInvitation", () => {
       error: null,
     })
     mockAddJudge.mockClear()
+    mockScheduleAcceptedJudgeReminders.mockClear()
     mockAddJudge.mockImplementation(() =>
       Promise.resolve({ success: true, participant: { id: "j1", clerkUserId: "user_123" } })
     )
@@ -107,6 +113,13 @@ describe("Judge Invitations Integration - acceptJudgeInvitation", () => {
       p_clerk_user_id: "user_123",
       p_email: "judge@example.com",
     })
+    expect(mockScheduleAcceptedJudgeReminders).toHaveBeenCalledWith(
+      expect.objectContaining({
+        invitationId: "inv1",
+        hackathonId: "h1",
+        recipientClerkUserId: "user_123",
+      }),
+    )
   })
 
   it("claims a pending invitation when the user is already a judge", async () => {

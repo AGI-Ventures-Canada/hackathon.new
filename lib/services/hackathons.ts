@@ -18,6 +18,7 @@ import { getQueueReason, type QueueReasonCode } from "@/lib/utils/notification-d
 import { hasRegistrationOpened } from "@/lib/utils/team-invite"
 import { isHackathonCreationReady } from "@/lib/utils/hackathon-creation-state"
 import { withEventMutationLease } from "@/lib/services/event-mutation-lease"
+import { resolveClerkUsers } from "@/lib/services/clerk-users"
 
 type ParticipantWithHackathon = HackathonParticipant & {
   hackathons: Hackathon
@@ -159,6 +160,7 @@ export type CreateHackathonInput = {
   name: string
   description?: string | null
   metadata?: Record<string, unknown>
+  isTestEvent?: boolean
 }
 
 export async function createHackathon(
@@ -202,6 +204,7 @@ export async function createHackathon(
         allow_solo: true,
         allow_late_registration: true,
         require_team_approval: false,
+        is_test_event: input.isTestEvent === true,
         metadata: input.metadata ?? {},
       })
       .select()
@@ -220,6 +223,7 @@ export async function createHackathon(
           return null
         }
         if (existingId) return null
+        return null
       }
       continue
     }
@@ -655,37 +659,10 @@ export async function listTeamsWithMembers(hackathonId: string): Promise<TeamWit
   }
 
   const allUserIds = [...new Set((participants ?? []).map((p: { clerk_user_id: string }) => p.clerk_user_id))]
-  const userDisplayNames: Record<string, string | null> = {}
-  const userEmails: Record<string, string | null> = {}
-
-  if (allUserIds.length > 0) {
-    const realUserIds = allUserIds.filter((id) => !id.startsWith("seed_user_"))
-    const seedUserIds = allUserIds.filter((id) => id.startsWith("seed_user_"))
-
-    for (const seedId of seedUserIds) {
-      const name = seedId.replace(/^seed_user_/, "").replace(/_\d+$/, "")
-      userDisplayNames[seedId] = name.charAt(0).toUpperCase() + name.slice(1)
-      userEmails[seedId] = `${name}@seed.local`
-    }
-
-    if (realUserIds.length > 0) {
-      try {
-        const clerk = await clerkClient()
-        for (let i = 0; i < realUserIds.length; i += 100) {
-          const batch = realUserIds.slice(i, i + 100)
-          const users = await clerk.users.getUserList({ userId: batch, limit: 100 })
-          for (const user of users.data) {
-            userDisplayNames[user.id] = user.firstName
-              ? `${user.firstName}${user.lastName ? ` ${user.lastName}` : ""}`
-              : user.username || null
-            userEmails[user.id] = user.emailAddresses[0]?.emailAddress ?? null
-          }
-        }
-      } catch {
-        // Silently fail
-      }
-    }
-  }
+  const {
+    displayNames: userDisplayNames,
+    emails: userEmails,
+  } = await resolveClerkUsers(allUserIds)
 
   return teams.map((team: { id: string; name: string; status: string; mode: "in_person" | "virtual" | null; captain_clerk_user_id: string | null; pending_captain_email: string | null }) => ({
     id: team.id,
@@ -778,7 +755,7 @@ export async function createTeamWithMembers(
     if (participant) {
       const { data: hackathon, error: hackathonError } = await client
         .from("hackathons")
-        .select("status, starts_at, ends_at")
+        .select("status, starts_at, ends_at, is_test_event")
         .eq("id", hackathonId)
         .maybeSingle()
 
@@ -789,6 +766,7 @@ export async function createTeamWithMembers(
         status: hackathon.status as HackathonStatus,
         starts_at: hackathon.starts_at,
         ends_at: hackathon.ends_at,
+        is_test_event: hackathon.is_test_event,
       }) === "reject") {
         return { error: "Hackathon has ended", code: "hackathon_ended" }
       }
@@ -850,7 +828,7 @@ async function createPendingTeamWithInvite(
 ): Promise<CreateTeamResult> {
   const { data: hackathon } = await client
     .from("hackathons")
-    .select("name, slug, status, starts_at, ends_at, registration_opens_at")
+    .select("name, slug, status, starts_at, ends_at, registration_opens_at, is_test_event")
     .eq("id", hackathonId)
     .single()
 
@@ -861,6 +839,7 @@ async function createPendingTeamWithInvite(
     status: hackathon.status as HackathonStatus,
     starts_at: hackathon.starts_at,
     ends_at: hackathon.ends_at,
+    is_test_event: hackathon.is_test_event,
   })
   if (disposition === "reject") {
     return { error: "Hackathon has ended", code: "hackathon_ended" }

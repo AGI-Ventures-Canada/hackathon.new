@@ -15,6 +15,7 @@ import type {
 import { WebMcpActionRegistry } from "@/lib/webmcp/action-registry"
 import { dispatchPrepareSponsorAction } from "@/lib/webmcp/client-events"
 import { WebMcpRequestError } from "@/lib/webmcp/fetch"
+import { dispatchOpenTestEventConversion } from "@/lib/webmcp/test-event-actions"
 import { useActionItems } from "./action-items-context"
 
 type ManageHackathonWebMcpToolsProps = {
@@ -90,6 +91,7 @@ export function ManageHackathonWebMcpTools({
         title: challenge.title,
         description: challenge.description,
         resourceCount: challenge.resources.length,
+        resources: challenge.resources,
       })),
       prizes: manageWebMcpView.prizes.map((prize) => {
         const existing = context.prizes.find((candidate) => candidate.id === prize.id)
@@ -197,6 +199,7 @@ export function ManageHackathonWebMcpTools({
     (status: string) => triggerTransition(status),
     [triggerTransition],
   )
+  const onTasksChanged = useCallback(() => router.refresh(), [router])
   const onPrepareSponsor = useCallback(async (name: string) => {
     const href = `/e/${context.hackathon.slug}/manage?tab=edit`
     const opened = await onNavigate(href, "sponsors")
@@ -248,12 +251,20 @@ export function ManageHackathonWebMcpTools({
             actionRegistry.dispatch("reverted", { optimistic, message }),
           onNavigate,
           onPrepareSponsor,
+          onTasksChanged,
           onOpenTransition: (status) =>
             actionRegistry.dispatch("openTransition", status),
+          onOpenTestEventConversion: dispatchOpenTestEventConversion,
         },
         registrationStatus,
       ),
-    [actionRegistry, onNavigate, onPrepareSponsor, registrationStatus],
+    [
+      actionRegistry,
+      onNavigate,
+      onPrepareSponsor,
+      onTasksChanged,
+      registrationStatus,
+    ],
   )
 
   useWebMcpTools(tools)

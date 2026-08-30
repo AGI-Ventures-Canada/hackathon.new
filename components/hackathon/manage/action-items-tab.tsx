@@ -20,7 +20,7 @@ const groupColor: Record<ActionSeverity, string> = {
 }
 
 export function ActionItemsTab() {
-  const { activeItems, completedItems, addCustomItem, remainingCount, totalCount } = useActionItems()
+  const { activeItems, completedItems, addCustomItem, remainingCount, totalCount, actionItemsError } = useActionItems()
   const isClient = useIsClient()
 
   const transitionItems = activeItems.filter((i) => i.close.kind === "transition")
@@ -39,15 +39,24 @@ export function ActionItemsTab() {
 
   if (isClient && totalCount === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <CircleCheck className="size-8 text-muted-foreground/50 mb-2" />
-        <p className="text-sm text-muted-foreground">No action items</p>
+      <div className="mx-auto max-w-2xl space-y-6">
+        {actionItemsError && (
+          <p role="alert" className="text-sm text-destructive">{actionItemsError}</p>
+        )}
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <CircleCheck className="mb-2 size-8 text-muted-foreground/50" />
+          <p className="text-sm text-muted-foreground">No action items</p>
+        </div>
+        <AddItemInput onAdd={addCustomItem} />
       </div>
     )
   }
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
+      {actionItemsError && (
+        <p role="alert" className="text-sm text-destructive">{actionItemsError}</p>
+      )}
       {isClient && (
         <>
           <div className="space-y-2">

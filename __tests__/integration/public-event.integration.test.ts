@@ -694,6 +694,27 @@ describe("Public Event Routes Integration Tests", () => {
       expect(await inactive.json()).toMatchObject({ code: "event_not_active" })
       expect(mockCreateMentorRequest).not.toHaveBeenCalled()
     })
+
+    it("closes mentor requests at the event end before cron advances status", async () => {
+      mockGetPublicHackathon.mockResolvedValue({
+        ...mockHackathon,
+        status: "active",
+        starts_at: new Date(Date.now() - 60_000).toISOString(),
+        ends_at: new Date(Date.now() - 1).toISOString(),
+      })
+      mockResolvePrincipal.mockResolvedValue({ kind: "user", userId: "user_1" })
+
+      const response = await app.handle(new Request(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description: "Need help" }),
+      }))
+
+      expect(response.status).toBe(409)
+      expect(await response.json()).toMatchObject({ code: "event_not_active" })
+      expect(mockGetRegistrationInfo).not.toHaveBeenCalled()
+      expect(mockCreateMentorRequest).not.toHaveBeenCalled()
+    })
   })
 
   describe("GET /api/public/hackathons/:slug/mentor-request/me", () => {

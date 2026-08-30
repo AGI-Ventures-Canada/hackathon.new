@@ -133,7 +133,7 @@ export async function sendResultsAnnouncementEmailsWithResult(
 
   const { data: hackathon, error: hackathonError } = await client
     .from("hackathons")
-    .select("name, slug, status, results_published_at, results_announcement_sent_at")
+    .select("name, slug, status, results_published_at, results_announcement_sent_at, is_test_event")
     .eq("id", hackathonId)
     .single()
 
@@ -142,6 +142,7 @@ export async function sendResultsAnnouncementEmailsWithResult(
   }
   if (
     !hackathon ||
+    hackathon.is_test_event ||
     hackathon.status !== "completed" ||
     !hackathon.results_published_at ||
     hackathon.results_announcement_sent_at

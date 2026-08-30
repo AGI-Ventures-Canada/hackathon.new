@@ -274,6 +274,50 @@ describe("Webhooks Service", () => {
   })
 
   describe("triggerWebhooks", () => {
+    it("does not send real webhooks for test events", async () => {
+      const testEvent = createChainableMock({
+        data: { is_test_event: true },
+        error: null,
+      })
+      const activeWebhooks = createChainableMock({
+        data: [mockWebhook],
+        error: null,
+      })
+      setMockFromImplementation((table) =>
+        table === "hackathons" ? testEvent : activeWebhooks,
+      )
+
+      await triggerWebhooks("tenant-123", "hackathon.updated", {
+        event: "hackathon.updated",
+        timestamp: "2026-08-30T12:00:00.000Z",
+        data: { hackathonId: "11111111-1111-4111-8111-111111111111" },
+      })
+
+      expect(testEvent.maybeSingle).toHaveBeenCalledTimes(1)
+      expect(activeWebhooks.select).not.toHaveBeenCalled()
+      expect(mockFetch).not.toHaveBeenCalled()
+    })
+
+    it("fails closed when a required test-event check cannot be recorded", async () => {
+      const testEvent = createChainableMock({
+        data: null,
+        error: { message: "Database error" },
+      })
+      setMockFromImplementation(() => testEvent)
+
+      await expect(triggerWebhooks(
+        "tenant-123",
+        "results.published",
+        {
+          event: "results.published",
+          timestamp: "2026-08-30T12:00:00.000Z",
+          data: { hackathonId: "11111111-1111-4111-8111-111111111111" },
+        },
+        { requireRecorded: true },
+      )).rejects.toThrow("Failed to check test event webhook")
+      expect(mockFetch).not.toHaveBeenCalled()
+    })
+
     it("records a remote failure without blocking event creation", async () => {
       mockFetch.mockResolvedValueOnce(new Response("unavailable", { status: 503 }))
       const list = createChainableMock({ data: [mockWebhook], error: null })

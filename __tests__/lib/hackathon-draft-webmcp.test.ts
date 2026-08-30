@@ -134,6 +134,34 @@ describe("hackathon draft WebMCP tools", () => {
     expect(openSignIn).toHaveBeenCalledTimes(1)
   })
 
+  it("opens the visible rich test-event review at the requested stage", async () => {
+    const envelope = createDraftEnvelope(
+      createDefaultHackathonDraft(new Date("2026-08-25T12:00:00.000Z")),
+      { draftId: "draft-1" },
+    )
+    const openTestEvent = mock((_stage: string) => {})
+    const tools = createHackathonDraftTools({
+      getEnvelope: () => envelope,
+      updateDraft: () => envelope,
+      openReview: () => {},
+      openTestEvent,
+    })
+
+    const tool = tools.find((candidate) => candidate.name === "open_test_event_creator")!
+    const result = await tool.execute({ stage: "judging" }, { signal }) as {
+      ok: boolean
+      data: { opened: boolean; stage: string }
+      requiresHumanAction: boolean
+    }
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: { opened: true, stage: "judging" },
+      requiresHumanAction: true,
+    })
+    expect(openTestEvent).toHaveBeenCalledWith("judging")
+  })
+
   it("keeps every paged read section within the output budget", async () => {
     const long = "x".repeat(2_000)
     const state = {

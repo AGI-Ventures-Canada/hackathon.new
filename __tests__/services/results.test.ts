@@ -6,6 +6,7 @@ import {
   setMockFromImplementation,
   setMockRpcImplementation,
   mockClerkClient,
+  resetClerkMocks,
 } from "../lib/supabase-mock"
 
 class MockEventMutationLeaseError extends Error {
@@ -45,6 +46,7 @@ const mockResult: HackathonResult = {
 describe("Results Service", () => {
   beforeEach(() => {
     resetSupabaseMocks()
+    resetClerkMocks()
     mockWithEventMutationLease.mockClear()
   })
 
@@ -144,6 +146,48 @@ describe("Results Service", () => {
       const result = await calculateResults("h1")
       expect(result.success).toBe(true)
       if (result.success) expect(result.count).toBe(3)
+    })
+
+    it("replaces subjective results atomically and gives exact ties the same rank", async () => {
+      let rpcName = ""
+      let rpcParams: Record<string, unknown> = {}
+      setMockFromImplementation((table) => {
+        if (table === "hackathons") {
+          return createChainableMock({
+            data: { judging_mode: "subjective", results_published_at: null },
+            error: null,
+          })
+        }
+        if (table === "prizes") {
+          return createChainableMock({ data: [], error: null })
+        }
+        if (table === "judge_picks") {
+          return createChainableMock({
+            data: [
+              { submission_id: "s1", prize_id: "p1", rank: 1, judge_participant_id: "j1" },
+              { submission_id: "s2", prize_id: "p1", rank: 1, judge_participant_id: "j2" },
+              { submission_id: "s3", prize_id: "p1", rank: 2, judge_participant_id: "j1" },
+            ],
+            error: null,
+          })
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+      setMockRpcImplementation((name, params) => {
+        rpcName = name
+        rpcParams = params as Record<string, unknown>
+        return Promise.resolve({ data: 3, error: null })
+      })
+
+      const result = await calculateResults("h1")
+
+      expect(result).toEqual({ success: true, count: 3 })
+      expect(rpcName).toBe("replace_subjective_results_atomic")
+      expect(rpcParams.p_results).toEqual([
+        expect.objectContaining({ submission_id: "s1", rank: 1 }),
+        expect.objectContaining({ submission_id: "s2", rank: 1 }),
+        expect.objectContaining({ submission_id: "s3", rank: 3 }),
+      ])
     })
 
     it("routes styled prizes through their dedicated calculators", async () => {
@@ -510,6 +554,53 @@ describe("Results Service", () => {
         results_published_at: null,
         winner_emails_sent_at: null,
         results_announcement_sent_at: null,
+      }))
+    })
+
+    it("restores a completed event to the active judging round", async () => {
+      let hackathonCalls = 0
+      let hackathonUpdate: Record<string, unknown> | null = null
+      const current = {
+        id: "h1",
+        tenant_id: "t1",
+        status: "completed",
+        phase: null,
+        results_published_at: "2026-01-01T00:00:00.000Z",
+      }
+      setMockFromImplementation((table) => {
+        if (table === "judging_rounds") {
+          return createChainableMock({
+            data: { id: "round-1", round_type: "finals" },
+            error: null,
+          })
+        }
+        if (table === "hackathon_results") {
+          return createChainableMock({ data: null, error: null })
+        }
+        if (table === "hackathons") {
+          hackathonCalls++
+          const chain = createChainableMock({
+            data: hackathonCalls === 1
+              ? current
+              : { ...current, status: "judging", phase: "finals", results_published_at: null },
+            error: null,
+          })
+          if (hackathonCalls === 2) {
+            const originalUpdate = chain.update
+            chain.update = mock((value: Record<string, unknown>) => {
+              hackathonUpdate = value
+              return originalUpdate(value)
+            }) as typeof chain.update
+          }
+          return chain
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      await expect(unpublishResults("h1", "t1")).resolves.toEqual({ success: true })
+      expect(hackathonUpdate).toEqual(expect.objectContaining({
+        status: "judging",
+        phase: "finals",
       }))
     })
 

@@ -10,6 +10,7 @@ interface CreateOptions {
   slug?: string
   description?: string
   fromUrl?: string
+  testStage?: string
   idempotencyKey?: string
   json?: boolean
   yes?: boolean
@@ -20,6 +21,15 @@ interface ImportedHackathonResponse {
   name: string
   slug: string
 }
+
+interface TestHackathonResponse extends ImportedHackathonResponse {
+  stage: "registration" | "hacking" | "judging" | "results"
+  replayed: boolean
+  committed: boolean
+  delivery: "suppressed"
+}
+
+const TEST_STAGES = new Set(["registration", "hacking", "judging", "results"])
 
 export function parseCreateOptions(args: string[]): CreateOptions {
   const options: CreateOptions = {}
@@ -36,6 +46,9 @@ export function parseCreateOptions(args: string[]): CreateOptions {
         break
       case "--from-url":
         options.fromUrl = args[++i]
+        break
+      case "--test-stage":
+        options.testStage = args[++i]
         break
       case "--idempotency-key":
         if (args[i + 1] && !args[i + 1].startsWith("-")) {
@@ -69,10 +82,70 @@ export async function runHackathonsCreate(
     console.error("Error: --idempotency-key must be 1 to 200 characters")
     process.exit(1)
   }
+  if (
+    args.includes("--test-stage") &&
+    (!options.testStage || !TEST_STAGES.has(options.testStage))
+  ) {
+    console.error("Error: --test-stage must be registration, hacking, judging, or results")
+    process.exit(1)
+  }
+  if (options.testStage && options.fromUrl) {
+    console.error("Error: use --test-stage or --from-url, not both")
+    process.exit(1)
+  }
+  if (
+    options.testStage &&
+    (options.name !== undefined || options.slug !== undefined || options.description !== undefined)
+  ) {
+    console.error(
+      "Error: test events are prefilled. Remove --name, --slug, and --description, then edit the event after it is made.",
+    )
+    process.exit(1)
+  }
 
   let name = options.name
   let slug = options.slug
   let description = options.description
+
+  if (options.testStage) {
+    if (!options.yes) {
+      if (!process.stdout.isTTY) {
+        console.error(
+          "Error: creating a test event adds a large set of fake data. Add --yes to confirm.",
+        )
+        process.exit(1)
+      }
+
+      const confirmed = await p.confirm({
+        message: `Create a test event at the ${options.testStage} stage with fake data?`,
+        initialValue: false,
+      })
+      if (p.isCancel(confirmed) || !confirmed) {
+        p.log.info("Cancelled.")
+        return
+      }
+    }
+
+    const workspace = await confirmPersonalWorkspace(client)
+    const creationId = createDraftId(workspace.tenantId, idempotencyKey)
+    const hackathon = await client.post<TestHackathonResponse>(
+      "/api/dashboard/hackathons/test-event",
+      {
+        creationId,
+        stage: options.testStage,
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      },
+    )
+
+    if (options.json) {
+      console.log(formatJson(hackathon))
+      return
+    }
+
+    console.log(formatSuccess(`Created test event "${hackathon.name}" (${hackathon.id})`))
+    console.log("Emails are off while it uses test data.")
+    return
+  }
 
   if (options.fromUrl) {
     const workspace = await confirmPersonalWorkspace(client)

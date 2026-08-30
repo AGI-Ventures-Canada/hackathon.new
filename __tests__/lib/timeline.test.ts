@@ -78,22 +78,22 @@ describe("getEffectiveStatus", () => {
     })).toBe("active")
   })
 
-  it("returns completed when active and ends_at has passed", () => {
+  it("keeps an ended active event live until cron saves the next stage", () => {
     mockDate("2026-03-10T00:00:00Z")
     expect(getEffectiveStatus({
       status: "active",
       starts_at: "2026-03-01T00:00:00Z",
       ends_at: "2026-03-05T00:00:00Z",
-    })).toBe("completed")
+    })).toBe("active")
   })
 
-  it("returns completed when published and both starts_at and ends_at have passed", () => {
+  it("keeps an ended published event active until cron catches up", () => {
     mockDate("2026-03-10T00:00:00Z")
     expect(getEffectiveStatus({
       status: "published",
       starts_at: "2026-03-01T00:00:00Z",
       ends_at: "2026-03-05T00:00:00Z",
-    })).toBe("completed")
+    })).toBe("active")
   })
 
   it("preserves judging status even when ends_at has passed", () => {
@@ -172,14 +172,14 @@ describe("getTimelineState", () => {
       expect(result).toEqual({ label: "Live", variant: "default" })
     })
 
-    it("returns Completed when an active event has ended", () => {
+    it("keeps showing Live until cron saves the next stage", () => {
       mockDate("2026-03-10T00:00:00Z")
       const result = getTimelineState({
         status: "active",
         starts_at: "2026-03-01T00:00:00Z",
         ends_at: "2026-03-05T00:00:00Z",
       })
-      expect(result).toEqual({ label: "Completed", variant: "outline" })
+      expect(result).toEqual({ label: "Live", variant: "default" })
     })
 
     it("returns Draft for draft status", () => {
@@ -236,10 +236,10 @@ describe("getTimelineState", () => {
       expect(result).toEqual({ label: "Live", variant: "default" })
     })
 
-    it("returns Completed after event ends", () => {
+    it("keeps an ended published event Live until cron saves the next stage", () => {
       mockDate("2026-03-03T00:00:00Z")
       const result = getTimelineState(baseHackathon)
-      expect(result).toEqual({ label: "Completed", variant: "outline" })
+      expect(result).toEqual({ label: "Live", variant: "default" })
     })
   })
 
@@ -271,7 +271,7 @@ describe("getTimelineState", () => {
   })
 
   describe("countdown field behavior", () => {
-    it("does not include countdown when registration is open but event already started", () => {
+    it("shows Live without a countdown when registration is open but the event started", () => {
       mockDate("2026-02-10T00:00:00Z")
       const result = getTimelineState({
         status: "published",
@@ -280,7 +280,7 @@ describe("getTimelineState", () => {
         starts_at: "2026-02-05T00:00:00Z",
         ends_at: "2026-03-01T00:00:00Z",
       })
-      expect(result).toEqual({ label: "Registration Open", variant: "default" })
+      expect(result).toEqual({ label: "Live", variant: "default" })
       expect(result.showCountdown).toBeUndefined()
     })
 
@@ -356,7 +356,7 @@ describe("getHydrationSafeTimelineState", () => {
     expect(getHydrationSafeTimelineState(hackathon, true).label).toBe("Coming Soon")
 
     mockDateGlobal(originalDate, "2026-03-03T00:00:00Z")
-    expect(getHydrationSafeTimelineState(hackathon, true).label).toBe("Completed")
+    expect(getHydrationSafeTimelineState(hackathon, true).label).toBe("Live")
   })
 })
 
@@ -375,7 +375,7 @@ describe("getTimelineStateAt", () => {
     ).toEqual({ label: "Coming Soon", variant: "secondary" })
     expect(
       getTimelineStateAt(hackathon, new Date("2026-03-03T00:00:00Z")),
-    ).toEqual({ label: "Completed", variant: "outline" })
+    ).toEqual({ label: "Live", variant: "default" })
   })
 })
 

@@ -9,6 +9,7 @@ import {
   redactFetchErrorForLogs,
   readResponseText,
 } from "@/lib/utils/safe-fetch-url"
+import { isValidUuid } from "@/lib/utils/uuid"
 import { generateWebhookSecret, signWebhookPayload } from "./encryption"
 
 export type CreateWebhookInput = {
@@ -33,6 +34,42 @@ export type WebhookDeliveryOptions = {
 
 export type TriggerWebhooksOptions = WebhookDeliveryOptions & {
   requireRecorded?: boolean
+}
+
+function payloadHackathonId(payload: Json): string | null {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null
+  const data = (payload as Record<string, unknown>).data
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null
+  const hackathonId = (data as Record<string, unknown>).hackathonId
+  return typeof hackathonId === "string" && isValidUuid(hackathonId)
+    ? hackathonId
+    : null
+}
+
+async function shouldSuppressTestEventWebhook(
+  tenantId: string,
+  payload: Json,
+  requireRecorded: boolean,
+): Promise<boolean> {
+  const hackathonId = payloadHackathonId(payload)
+  if (!hackathonId) return false
+
+  const { data, error } = await getSupabase()
+    .from("hackathons")
+    .select("is_test_event")
+    .eq("id", hackathonId)
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+
+  if (error) {
+    if (requireRecorded) {
+      throw new Error(`Failed to check test event webhook: ${error.message}`)
+    }
+    console.error("Failed to check whether a webhook belongs to a test event:", error)
+    return true
+  }
+
+  return data?.is_test_event === true
 }
 
 export async function createWebhook(
@@ -286,6 +323,12 @@ export async function triggerWebhooks(
   payload: Json,
   options: TriggerWebhooksOptions = {},
 ): Promise<void> {
+  if (await shouldSuppressTestEventWebhook(
+    tenantId,
+    payload,
+    options.requireRecorded === true,
+  )) return
+
   const webhooks = await listActiveWebhooks(tenantId, event, {
     throwOnError: options.requireRecorded,
   })

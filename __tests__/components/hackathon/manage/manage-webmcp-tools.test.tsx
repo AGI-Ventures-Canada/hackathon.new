@@ -218,11 +218,8 @@ describe("ManageHackathonWebMcpTools", () => {
           summary: "Visible details",
         },
         counts: { prizes: 1 },
-        nextTask: {
-          label: "Add judges",
-          hint: "Pick who will review projects.",
-        },
         remainingTaskCount: 1,
+        taskListTool: "list_organizer_tasks",
       },
     })
 
@@ -252,6 +249,50 @@ describe("ManageHackathonWebMcpTools", () => {
     expect(navigation.__nextNavState.router.push).toHaveBeenCalledWith(
       "/e/build-day/manage?tab=edit",
     )
+    expect(navigation.__nextNavState.router.refresh).toHaveBeenCalledTimes(1)
+  })
+
+  it("refreshes the shared task board after a WebMCP task change", async () => {
+    globalThis.fetch = mock(async (input, init) => {
+      expect(String(input)).toBe(
+        "/api/dashboard/hackathons/11111111-1111-1111-1111-111111111111/action-items",
+      )
+      expect(init?.method).toBe("POST")
+      const body = JSON.parse(String(init?.body))
+      return Response.json({
+        task: {
+          taskRef: body.taskRef,
+          label: body.label,
+          hint: null,
+          tooltip: null,
+          severity: body.severity,
+          state: "pending",
+          completionPolicy: "manual",
+          custom: true,
+          destination: "action_items",
+          inspectUrl: "/e/build-day/manage?tab=action-items",
+          ctaLabel: "Open tasks",
+          blocksProgress: false,
+          updatedAt: "2026-08-30T18:00:00.000Z",
+        },
+      })
+    }) as unknown as typeof fetch
+    render(<ManageHackathonWebMcpTools context={context} />)
+    await waitFor(() => expect(tools.has("add_organizer_task")).toBe(true))
+
+    const result = await execute("add_organizer_task", {
+      label: "Order lunch",
+      severity: "info",
+      taskRef: "custom-order-lunch",
+    })
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: { task: { taskRef: "custom-order-lunch" } },
+    })
+    const navigation = globalThis as typeof globalThis & {
+      __nextNavState: { router: { refresh: ReturnType<typeof mock> } }
+    }
     expect(navigation.__nextNavState.router.refresh).toHaveBeenCalledTimes(1)
   })
 

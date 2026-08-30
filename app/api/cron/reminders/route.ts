@@ -2,10 +2,14 @@ import { processPendingReminders } from "@/lib/services/smart-reminders"
 import { processAllPendingReminders } from "@/lib/services/post-event-reminders"
 import { retryPendingResultEmails } from "@/lib/services/results"
 import { retryPendingTeamInvitationEmails } from "@/lib/services/team-invitations"
-import { retryPendingJudgeInvitationEmails } from "@/lib/services/judge-invitations"
+import {
+  retryPendingJudgeInvitationEmails,
+  retryPendingJudgeNotifications,
+} from "@/lib/services/judge-invitations"
 import { retryPendingAttendeeLifecycleEmails } from "@/lib/services/attendee-lifecycle-notifications"
 import { isAuthorizedCronRequest } from "@/lib/auth/cron"
 import { createDeliveryBudget } from "@/lib/services/delivery-budget"
+import { retryPendingLifecycleNotificationDispatches } from "@/lib/services/lifecycle-notification-retries"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -16,10 +20,12 @@ const CRON_BATCH_LIMITS = {
   results: 5,
   teamInvitations: 20,
   judgeInvitations: 20,
+  judgeNotifications: 20,
   attendeeLifecycle: 20,
+  lifecycleWorkflows: 10,
 } as const
 
-const CRON_RECIPIENT_LIMIT = 12
+const CRON_RECIPIENT_LIMIT = 32
 const WORKER_WINDOW_MS = 30_000
 const CRON_WORK_DEADLINE_MS = 250_000
 
@@ -67,10 +73,19 @@ export async function GET(request: Request) {
       CRON_BATCH_LIMITS.judgeInvitations,
       createWorkerBudget(startedAt),
     ))
+  const judgeNotifications = await settle(() =>
+    retryPendingJudgeNotifications(
+      CRON_BATCH_LIMITS.judgeNotifications,
+      createWorkerBudget(startedAt),
+    ))
   const attendeeLifecycle = await settle(() =>
     retryPendingAttendeeLifecycleEmails(
       CRON_BATCH_LIMITS.attendeeLifecycle,
       createWorkerBudget(startedAt),
+    ))
+  const lifecycleWorkflows = await settle(() =>
+    retryPendingLifecycleNotificationDispatches(
+      CRON_BATCH_LIMITS.lifecycleWorkflows,
     ))
 
   const hasFailures =
@@ -79,13 +94,17 @@ export async function GET(request: Request) {
     results.status === "rejected" ||
     teamInvitations.status === "rejected" ||
     judgeInvitations.status === "rejected" ||
+    judgeNotifications.status === "rejected" ||
     attendeeLifecycle.status === "rejected" ||
+    lifecycleWorkflows.status === "rejected" ||
     (scheduled.status === "fulfilled" && scheduled.value.errors > 0) ||
     (postEvent.status === "fulfilled" && postEvent.value.errors > 0) ||
     (results.status === "fulfilled" && results.value.errors > 0) ||
     (teamInvitations.status === "fulfilled" && teamInvitations.value.failed > 0) ||
     (judgeInvitations.status === "fulfilled" && judgeInvitations.value.failed > 0) ||
-    (attendeeLifecycle.status === "fulfilled" && attendeeLifecycle.value.failed > 0)
+    (judgeNotifications.status === "fulfilled" && judgeNotifications.value.failed > 0) ||
+    (attendeeLifecycle.status === "fulfilled" && attendeeLifecycle.value.failed > 0) ||
+    (lifecycleWorkflows.status === "fulfilled" && lifecycleWorkflows.value.failed > 0)
 
   return Response.json({
     scheduled:
@@ -108,9 +127,17 @@ export async function GET(request: Request) {
       judgeInvitations.status === "fulfilled"
         ? judgeInvitations.value
         : { error: String(judgeInvitations.reason) },
+    judgeNotifications:
+      judgeNotifications.status === "fulfilled"
+        ? judgeNotifications.value
+        : { error: String(judgeNotifications.reason) },
     attendeeLifecycle:
       attendeeLifecycle.status === "fulfilled"
         ? attendeeLifecycle.value
         : { error: String(attendeeLifecycle.reason) },
+    lifecycleWorkflows:
+      lifecycleWorkflows.status === "fulfilled"
+        ? lifecycleWorkflows.value
+        : { error: String(lifecycleWorkflows.reason) },
   }, { status: hasFailures ? 500 : 200 })
 }

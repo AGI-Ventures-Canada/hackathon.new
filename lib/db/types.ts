@@ -996,6 +996,7 @@ export type Database = {
           feedback_survey_sent_at: string | null
           feedback_survey_url: string | null
           id: string
+          is_test_event: boolean
           judging_mode: Database["public"]["Enums"]["judging_mode"] | null
           location_latitude: number | null
           location_longitude: number | null
@@ -1042,6 +1043,7 @@ export type Database = {
           feedback_survey_sent_at?: string | null
           feedback_survey_url?: string | null
           id?: string
+          is_test_event?: boolean
           judging_mode?: Database["public"]["Enums"]["judging_mode"] | null
           location_latitude?: number | null
           location_longitude?: number | null
@@ -1088,6 +1090,7 @@ export type Database = {
           feedback_survey_sent_at?: string | null
           feedback_survey_url?: string | null
           id?: string
+          is_test_event?: boolean
           judging_mode?: Database["public"]["Enums"]["judging_mode"] | null
           location_latitude?: number | null
           location_longitude?: number | null
@@ -1193,6 +1196,7 @@ export type Database = {
       }
       judge_assignments: {
         Row: {
+          assignment_source: string
           assigned_at: string
           assignment_kind: string
           completed_at: string | null
@@ -1208,6 +1212,7 @@ export type Database = {
           viewed_at: string | null
         }
         Insert: {
+          assignment_source?: string
           assigned_at?: string
           assignment_kind?: string
           completed_at?: string | null
@@ -1223,6 +1228,7 @@ export type Database = {
           viewed_at?: string | null
         }
         Update: {
+          assignment_source?: string
           assigned_at?: string
           assignment_kind?: string
           completed_at?: string | null
@@ -3187,6 +3193,14 @@ export type Database = {
           team_id: string
           team_name: string
           team_status: Database["public"]["Enums"]["team_status"]
+        }[]
+      }
+      convert_test_event_to_draft: {
+        Args: { p_hackathon_id: string; p_tenant_id: string }
+        Returns: {
+          id: string
+          name: string
+          slug: string
         }[]
       }
       assign_participant_to_team_atomic: {

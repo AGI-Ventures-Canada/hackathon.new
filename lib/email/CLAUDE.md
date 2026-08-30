@@ -206,7 +206,7 @@ const isValid = verifyResendWebhook(rawBody, {
 
 Both HTML and plain text are required. Subjects are normalized to one line. Sender and reply-to values containing CR/LF are rejected before provider dispatch. A missing API key or sender returns `email_provider_not_configured` instead of throwing from the delivery wrapper.
 
-Every retryable or bulk path must use a stable, privacy-safe idempotency key. Batch sends need a different key per recipient. Use `paceBulkSend(index)` to pause after each group of eight provider calls. Persist `sent_at`, `emailed_at`, or other completion state only after the provider returns an accepted message ID; a queued workflow or started request is not a completed delivery.
+Every retryable or bulk path must use a stable, privacy-safe idempotency key. Batch sends need a different key per recipient. `sendEmailWithResult()` serializes provider attempts at least 250 ms apart within each process, including retries and calls from different workers. Bulk loops also use `paceBulkSend(index)` as a second bound after each group of four. This leaves room under Resend's default five-request-per-second team limit for live mail. Persist `sent_at`, `emailed_at`, or other completion state only after the provider returns an accepted message ID; a queued workflow or started request is not a completed delivery.
 
 The reference implementation's `email_log` and email-preference tables were reviewed but intentionally not copied here. They require schema and product-policy work outside this PR.
 
