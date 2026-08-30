@@ -12,6 +12,7 @@ interface JudgeInvitationEmailProps {
   eventUrl?: string
   hackathonStartsAt?: string | null
   hackathonEndsAt?: string | null
+  eventSchedule?: string | null
 }
 
 export default function JudgeInvitationEmail({
@@ -22,6 +23,7 @@ export default function JudgeInvitationEmail({
   eventUrl,
   hackathonStartsAt,
   hackathonEndsAt,
+  eventSchedule,
 }: JudgeInvitationEmailProps) {
   return (
     <OatmealLayout
@@ -42,11 +44,34 @@ export default function JudgeInvitationEmail({
         <strong>{hackathonName}</strong>.
       </Text>
 
-      <EventDetailBox
-        hackathonName={hackathonName}
-        startsAt={hackathonStartsAt}
-        endsAt={hackathonEndsAt}
-      />
+      {eventSchedule ? (
+        <Text
+          style={{
+            fontSize: fontSize.base,
+            marginBottom: spacing.lg,
+            lineHeight: "1.6",
+          }}
+        >
+          <strong>Event time:</strong> {eventSchedule}
+        </Text>
+      ) : (
+        <EventDetailBox
+          hackathonName={hackathonName}
+          startsAt={hackathonStartsAt}
+          endsAt={hackathonEndsAt}
+        />
+      )}
+
+      <Text
+        style={{
+          fontSize: fontSize.base,
+          marginBottom: spacing.lg,
+          lineHeight: "1.6",
+        }}
+      >
+        Accept the invite first. You can sign in or make an account, then
+        we&rsquo;ll take you straight to your judging page.
+      </Text>
 
       <CTAButton href={acceptUrl}>Accept Invitation</CTAButton>
 
@@ -70,7 +95,8 @@ JudgeInvitationEmail.PreviewProps = {
   hackathonName: "AI Innovation Hackathon 2026",
   acceptUrl: "https://hackathon.new/judge-invite/xyz789",
   expiresDate: "Friday, April 17, 2026",
-  eventUrl: "https://hackathon.new/e/ai-innovation-2026",
+  eventUrl: "https://hackathon.new/e/ai-innovation-2026/judge",
   hackathonStartsAt: "2026-04-20T08:30:00Z",
   hackathonEndsAt: "2026-04-22T17:00:00Z",
+  eventSchedule: "Monday, April 20, 2026 at 8:30 AM UTC to Wednesday, April 22, 2026 at 5:00 PM UTC",
 } satisfies JudgeInvitationEmailProps

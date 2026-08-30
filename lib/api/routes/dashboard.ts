@@ -16,6 +16,8 @@ import { dashboardJudgeDisplayRoutes } from "./dashboard-judge-display"
 import { dashboardPostEventRoutes } from "./dashboard-post-event"
 import { dashboardSponsorFulfillmentRoutes } from "./dashboard-sponsor-fulfillments"
 import { dashboardPrizeTracksRoutes } from "./dashboard-prize-tracks"
+import { dashboardOrganizerActionRoutes } from "./dashboard-organizer-actions"
+import { dashboardTestEventRoutes } from "./dashboard-test-events"
 import { getEffectiveStatus } from "@/lib/utils/timeline"
 import { getNotificationDisposition, getNotificationLifecycleError } from "@/lib/utils/notification-lifecycle"
 import { getQueueReason } from "@/lib/utils/notification-delivery"
@@ -1297,6 +1299,10 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           title: challenge.title,
           description: challenge.description,
           resourceCount: challenge.resources.length,
+          resources: challenge.resources.map((resource) => ({
+            label: resource.label,
+            url: resource.url,
+          })),
         })),
         resultsPublished: Boolean(hackathon.results_published_at),
       },
@@ -1708,8 +1714,37 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
     const { buildOrganizerPollPayload } = await import("@/lib/services/organizer-polling")
     const payload = await buildOrganizerPollPayload(params.id)
     if (!payload) { set.status = 500; return { error: "Failed to build poll payload" } }
+    const [
+      judgingSetupStatus,
+      judgingCompletionReadiness,
+      invitationEmailCounts,
+      failedReminderCount,
+    ] = await Promise.all([
+      import("@/lib/services/judging").then(({ getJudgingSetupStatus }) =>
+        getJudgingSetupStatus(params.id),
+      ),
+      import("@/lib/services/lifecycle").then(({ getJudgingCompletionReadiness }) =>
+        getJudgingCompletionReadiness(params.id),
+      ),
+      import("@/lib/services/invitation-email-health").then(
+        ({ getUnsentInvitationEmailCounts }) =>
+          getUnsentInvitationEmailCounts(params.id),
+      ),
+      import("@/lib/services/invitation-email-health").then(
+        ({ countFailedReminderEmails }) => countFailedReminderEmails(params.id),
+      ),
+    ])
     set.headers["Cache-Control"] = "private, max-age=2, stale-while-revalidate=5"
-    return payload
+    return {
+      ...payload,
+      judgingSetupReady: judgingSetupStatus.isReady,
+      requiresJudgeScoring: judgingSetupStatus.requiresJudgeScoring,
+      judgingCompletionReadiness,
+      unsentInvitationEmailCount: invitationEmailCounts.total,
+      unsentTeamInvitationEmailCount: invitationEmailCounts.teams,
+      unsentJudgeInvitationEmailCount: invitationEmailCounts.judges,
+      failedReminderCount,
+    }
   }, {
     detail: {
       summary: "Poll action items data",
@@ -1815,9 +1850,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           return { error: webMcpError.error, code: webMcpError.code }
         }
 
-        const isTransition =
-          body.status !== undefined && body.status !== previousStatus
-        if (hasDateUpdate && !isTransition) {
+        if (hasDateUpdate) {
           const { validateTimelineDates } = await import("@/lib/utils/timeline")
           const dateError = validateTimelineDates({
             startsAt:
@@ -1849,22 +1882,6 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
                 code: "terms_content_required",
               }),
               { status: 400, headers: { "Content-Type": "application/json" } },
-            )
-          }
-        }
-
-        if (body.status === "judging" && previousStatus === "active") {
-          const { getJudgingSetupStatus } =
-            await import("@/lib/services/judging")
-          const setup = await getJudgingSetupStatus(params.id)
-          if (!setup.isReady) {
-            return new Response(
-              JSON.stringify({
-                error: `Finish scoring setup before judging starts. ${setup.issues.join(" ")}`,
-                code: "judging_setup_incomplete",
-                issues: setup.issues,
-              }),
-              { status: 409, headers: { "Content-Type": "application/json" } },
             )
           }
         }
@@ -2029,7 +2046,14 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         if (hasDateUpdate && !hasStatusTransition) {
           const { reschedulePreEventReminders } =
             await import("@/lib/services/pre-event-reminders")
-          reschedulePreEventReminders(params.id).catch(console.error)
+          try {
+            await reschedulePreEventReminders(params.id)
+          } catch (error) {
+            console.error(
+              `Failed to reconcile pre-event reminders for ${params.id}:`,
+              error,
+            )
+          }
         }
 
         let notificationDispatch: "queued" | undefined
@@ -2083,12 +2107,14 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
             triggeredBy,
             registrationOpensAt,
             registrationClosesAt,
+            endsAt: body.endsAt,
           })
 
           if (!transitionResult.success) {
             const status =
               transitionResult.code === "event_busy" ||
-              transitionResult.code === "event_changed"
+              transitionResult.code === "event_changed" ||
+              transitionResult.code === "judging_not_ready"
                 ? 409
                 : transitionResult.code === "lease_unavailable" ||
                     transitionResult.code === "transition_unavailable"
@@ -2099,6 +2125,9 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
                 error: transitionResult.error,
                 ...(transitionResult.code
                   ? { code: transitionResult.code }
+                  : {}),
+                ...(transitionResult.issues
+                  ? { issues: transitionResult.issues }
                   : {}),
               }),
               { status, headers: { "Content-Type": "application/json" } },
@@ -2164,42 +2193,15 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
                 hackathonId: transitionedHackathon.id,
                 hackathonName: transitionedHackathon.name,
                 hackathonSlug: transitionedHackathon.slug,
+                hackathonStartsAt: transitionedHackathon.starts_at,
+                hackathonEndsAt: transitionedHackathon.ends_at,
+                hackathonTimezone: "UTC",
               },
-            ]).catch(async (err) => {
+            ]).catch((err) => {
               console.error(
-                "Failed to start judge notifications workflow, falling back to direct send:",
+                "Failed to start judge notifications workflow; the reminders cron will retry the queued notifications:",
                 err,
               )
-              const { fetchPendingNotifications, sendJudgeNotification } =
-                await import("@/lib/workflows/judge-notifications/steps")
-              const notifications = await fetchPendingNotifications(
-                transitionedHackathon.id,
-              ).catch((fetchErr) => {
-                console.error(
-                  `Judge notification fallback: failed to fetch pending notifications for hackathon ${transitionedHackathon.id}:`,
-                  fetchErr,
-                )
-                return [] as Awaited<
-                  ReturnType<typeof fetchPendingNotifications>
-                >
-              })
-              const failedIds: string[] = []
-              for (const n of notifications) {
-                try {
-                  await sendJudgeNotification({
-                    notification: n,
-                    hackathonName: transitionedHackathon.name,
-                    hackathonSlug: transitionedHackathon.slug,
-                  })
-                } catch {
-                  failedIds.push(n.id)
-                }
-              }
-              if (failedIds.length > 0) {
-                console.error(
-                  `Judge notification fallback: ${failedIds.length} notification(s) failed to send and remain stuck (ids: ${failedIds.join(", ")}). These will not be automatically retried.`,
-                )
-              }
             })
             waitUntil(
               Promise.allSettled([
@@ -2227,7 +2229,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
             : undefined,
         })
 
-        if (!hasStatusTransition) {
+        if (!hasStatusTransition && !hackathon.is_test_event) {
           const { triggerWebhooks } = await import("@/lib/services/webhooks")
           triggerWebhooks(principal.tenantId, "hackathon.updated", {
             event: "hackathon.updated",
@@ -3271,6 +3273,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
             status: teamInfo.hackathon.status as import("@/lib/db/hackathon-types").HackathonStatus,
             starts_at: teamInfo.hackathon.starts_at,
             ends_at: teamInfo.hackathon.ends_at,
+            is_test_event: teamInfo.hackathon.is_test_event,
           })
         : "reject"
 
@@ -3506,6 +3509,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       status: teamInfo.hackathon.status as import("@/lib/db/hackathon-types").HackathonStatus,
       starts_at: teamInfo.hackathon.starts_at,
       ends_at: teamInfo.hackathon.ends_at,
+      is_test_event: teamInfo.hackathon.is_test_event,
     }))
     if (lifecycleError) {
       return new Response(
@@ -3604,3 +3608,5 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
   .use(dashboardPostEventRoutes)
   .use(dashboardSponsorFulfillmentRoutes)
   .use(dashboardPrizeTracksRoutes)
+  .use(dashboardOrganizerActionRoutes)
+  .use(dashboardTestEventRoutes)

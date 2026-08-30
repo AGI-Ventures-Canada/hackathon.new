@@ -54,8 +54,18 @@ mock.module("@/lib/services/public-hackathons", () => ({
 const mockExecuteTransition = mock(() =>
   Promise.resolve({ success: true, hackathon: mockHackathonResponse }),
 )
+const mockGetJudgingCompletionReadiness = mock(() =>
+  Promise.resolve({
+    ready: true,
+    requiresJudgeScoring: false,
+    incompleteAssignmentCount: 0,
+    incompleteResponseCount: 0,
+    reasons: [],
+  }),
+)
 mock.module("@/lib/services/lifecycle", () => ({
   executeTransition: mockExecuteTransition,
+  getJudgingCompletionReadiness: mockGetJudgingCompletionReadiness,
 }))
 
 mock.module("@/lib/services/judge-invitations", () => ({

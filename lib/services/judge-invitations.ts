@@ -16,6 +16,71 @@ import {
 const INVITATION_EXPIRY_DAYS = 7
 const INVITATION_EXPIRY_MS = INVITATION_EXPIRY_DAYS * 24 * 60 * 60 * 1000
 const INVITATION_DELIVERY_STATUSES = ["published", "registration_open", "active", "judging"] satisfies HackathonStatus[]
+const JUDGE_NOTIFICATION_MAX_ATTEMPTS = 5
+const JUDGE_NOTIFICATION_FIRST_RETRY_MS = 5 * 60 * 1_000
+
+function judgeNotificationRetryDelayMs(failCount: number): number {
+  return Math.min(
+    JUDGE_NOTIFICATION_FIRST_RETRY_MS * 2 ** Math.max(0, failCount - 1),
+    60 * 60 * 1_000,
+  )
+}
+
+function safeDeliveryError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  return message.slice(0, 500)
+}
+
+function hasPreparedFirstDeliveryWindow(invitation: JudgeInvitation): boolean {
+  const createdAt = new Date(invitation.created_at).getTime()
+  const updatedAt = new Date(invitation.updated_at).getTime()
+  const expiresAt = new Date(invitation.expires_at).getTime()
+  if (![createdAt, updatedAt, expiresAt].every(Number.isFinite)) return false
+  return updatedAt !== createdAt && Math.abs(expiresAt - updatedAt - INVITATION_EXPIRY_MS) < 1_000
+}
+
+async function prepareJudgeInvitationForFirstDelivery(
+  client: SupabaseClient,
+  invitation: JudgeInvitation,
+): Promise<JudgeInvitation | null> {
+  const now = new Date()
+  const expiresAt = new Date(invitation.expires_at).getTime()
+  if (hasPreparedFirstDeliveryWindow(invitation) && expiresAt > now.getTime()) {
+    return invitation
+  }
+
+  const deliveryWindowStartedAt = now.toISOString()
+  const freshExpiresAt = new Date(now.getTime() + INVITATION_EXPIRY_MS).toISOString()
+  const { data, error } = await client
+    .from("judge_invitations")
+    .update({
+      status: "pending",
+      expires_at: freshExpiresAt,
+      updated_at: deliveryWindowStartedAt,
+    })
+    .eq("id", invitation.id)
+    .eq("hackathon_id", invitation.hackathon_id)
+    .in("status", ["pending", "expired"])
+    .is("emailed_at", null)
+    .select()
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(`Failed to start judge invitation delivery window: ${error.message}`)
+  }
+  if (!data) return null
+
+  const updatedInvitation = Array.isArray(data)
+    ? (data as JudgeInvitation[]).find((candidate) => candidate.id === invitation.id) ?? invitation
+    : data as JudgeInvitation
+
+  return {
+    ...updatedInvitation,
+    expires_at: freshExpiresAt,
+    updated_at: deliveryWindowStartedAt,
+    status: "pending",
+  }
+}
 
 async function expirePendingJudgeInvitation(
   invitationId: string,
@@ -66,7 +131,7 @@ export async function createJudgeInvitation(
 
   const { data: hackathon, error: hackathonError } = await client
     .from("hackathons")
-    .select("status, starts_at, ends_at")
+    .select("status, starts_at, ends_at, is_test_event")
     .eq("id", input.hackathonId)
     .maybeSingle()
 
@@ -77,6 +142,7 @@ export async function createJudgeInvitation(
     status: hackathon.status as HackathonStatus,
     starts_at: hackathon.starts_at,
     ends_at: hackathon.ends_at,
+    is_test_event: hackathon.is_test_event,
   }) === "reject") {
     return { success: false, error: "Hackathon has ended", code: "hackathon_ended" }
   }
@@ -161,6 +227,7 @@ export type JudgeInvitationWithDetails = JudgeInvitation & {
     status: string
     starts_at: string | null
     ends_at: string | null
+    is_test_event: boolean
     require_terms_acceptance: boolean
     terms_content: string | null
   }
@@ -175,7 +242,7 @@ export async function getJudgeInvitationByToken(
     .from("judge_invitations")
     .select(`
       *,
-      hackathons!inner(id, name, slug, status, starts_at, ends_at, require_terms_acceptance, terms_content)
+      hackathons!inner(id, name, slug, status, starts_at, ends_at, is_test_event, require_terms_acceptance, terms_content)
     `)
     .eq("token", token)
     .single()
@@ -191,6 +258,7 @@ export async function getJudgeInvitationByToken(
     status: string
     starts_at: string | null
     ends_at: string | null
+    is_test_event: boolean | null
     require_terms_acceptance: boolean | null
     terms_content: string | null
   }
@@ -204,6 +272,7 @@ export async function getJudgeInvitationByToken(
       status: hackathon.status,
       starts_at: hackathon.starts_at,
       ends_at: hackathon.ends_at,
+      is_test_event: hackathon.is_test_event ?? false,
       require_terms_acceptance: hackathon.require_terms_acceptance ?? false,
       terms_content: hackathon.terms_content ?? null,
     },
@@ -245,6 +314,7 @@ export async function acceptJudgeInvitation(
       status: invitation.hackathon.status as HackathonStatus,
       starts_at: invitation.hackathon.starts_at,
       ends_at: invitation.hackathon.ends_at,
+      is_test_event: invitation.hackathon.is_test_event,
     }) === "reject"
   ) {
     return { success: false, error: "Hackathon has ended", code: "hackathon_ended" }
@@ -293,11 +363,27 @@ export async function acceptJudgeInvitation(
   if (claimed.cancelled_invitation_ids?.length) {
     const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
     for (const invitationId of claimed.cancelled_invitation_ids) {
-      cancelRemindersForEntity("team_invitation", invitationId).catch((err) =>
-        console.error(`Failed to cancel reminders for team_invitation ${invitationId}:`, err)
+      cancelRemindersForEntity("judge_invitation", invitationId).catch((err) =>
+        console.error(`Failed to cancel reminders for judge_invitation ${invitationId}:`, err)
       )
     }
   }
+
+  const { scheduleAcceptedJudgeReminders } = await import(
+    "@/lib/services/pre-event-reminders"
+  )
+  await scheduleAcceptedJudgeReminders({
+    invitationId: invitation.id,
+    hackathonId: claimed.hackathon_id as string,
+    hackathonName: invitation.hackathon.name,
+    hackathonSlug: claimed.hackathon_slug as string,
+    startsAt: invitation.hackathon.starts_at,
+    endsAt: invitation.hackathon.ends_at,
+    recipientClerkUserId: clerkUserId,
+    isTestEvent: invitation.hackathon.is_test_event,
+  }).catch((error) => {
+    console.error("Failed to schedule accepted judge reminders:", error)
+  })
 
   return {
     success: true,
@@ -351,13 +437,13 @@ export async function declineJudgeInvitation(
     .update({ status: "declined", updated_at: new Date().toISOString() })
     .eq("id", invitationId)
     .eq("hackathon_id", hackathonId)
-    .eq("status", "pending")
+    .in("status", ["pending", "declined"])
     .select("id")
     .maybeSingle()
 
   if (error) return { success: false, error: "Failed to decline invitation" }
   if (!declinedInvitation) {
-    return { success: false, error: "Invitation not found or not pending" }
+    return { success: false, error: "Invitation not found or cannot be declined" }
   }
 
   const { cancelRemindersForEntity } = await import("@/lib/services/smart-reminders")
@@ -402,7 +488,7 @@ export async function remindJudgeInvitation(
 
   const { data: hackathon, error: hackathonError } = await client
     .from("hackathons")
-    .select("status, starts_at, ends_at")
+    .select("status, starts_at, ends_at, is_test_event")
     .eq("id", hackathonId)
     .maybeSingle()
 
@@ -414,6 +500,7 @@ export async function remindJudgeInvitation(
     status: hackathon.status as HackathonStatus,
     starts_at: hackathon.starts_at,
     ends_at: hackathon.ends_at,
+    is_test_event: hackathon.is_test_event,
   })
   if (disposition === "queue") {
     return { success: false, error: "Go live before sending reminders", code: "hackathon_draft" }
@@ -477,7 +564,12 @@ export async function sendPendingJudgeInvitationEmails(
   hackathonId: string,
   hackathonName: string,
   inviterName: string,
-  opts?: { hackathonSlug?: string; hackathonStartsAt?: string | null; hackathonEndsAt?: string | null },
+  opts?: {
+    hackathonSlug?: string
+    hackathonStartsAt?: string | null
+    hackathonEndsAt?: string | null
+    hackathonTimezone?: string | null
+  },
   limit = 100,
   budget?: DeliveryBudget,
 ): Promise<{ sent: number; total: number; failedEmails: string[] }> {
@@ -501,16 +593,20 @@ async function sendPendingJudgeInvitationEmailsUnlocked(
   hackathonId: string,
   hackathonName: string,
   inviterName: string,
-  opts: { hackathonSlug?: string; hackathonStartsAt?: string | null; hackathonEndsAt?: string | null } | undefined,
+  opts: {
+    hackathonSlug?: string
+    hackathonStartsAt?: string | null
+    hackathonEndsAt?: string | null
+    hackathonTimezone?: string | null
+  } | undefined,
   limit: number,
   budget?: DeliveryBudget,
 ): Promise<{ sent: number; total: number; failedEmails: string[] }> {
   const client = getSupabase() as unknown as SupabaseClient
-  const now = new Date().toISOString()
 
   const { data: hackathon, error: hackathonError } = await client
     .from("hackathons")
-    .select("status, starts_at, ends_at")
+    .select("status, starts_at, ends_at, is_test_event")
     .eq("id", hackathonId)
     .maybeSingle()
 
@@ -523,6 +619,7 @@ async function sendPendingJudgeInvitationEmailsUnlocked(
     status: hackathon.status as HackathonStatus,
     starts_at: hackathon.starts_at ?? null,
     ends_at: hackathon.ends_at ?? null,
+    is_test_event: hackathon.is_test_event,
   })
   if (disposition !== "send") {
     return { sent: 0, total: 0, failedEmails: [] }
@@ -532,9 +629,8 @@ async function sendPendingJudgeInvitationEmailsUnlocked(
     .from("judge_invitations")
     .select("*")
     .eq("hackathon_id", hackathonId)
-    .eq("status", "pending")
+    .in("status", ["pending", "expired"])
     .is("emailed_at", null)
-    .gt("expires_at", now)
     .order("created_at")
     .limit(limit)
 
@@ -563,43 +659,46 @@ async function sendPendingJudgeInvitationEmailsUnlocked(
         .select("*")
         .eq("id", listedInvitation.id)
         .eq("hackathon_id", hackathonId)
-        .eq("status", "pending")
+        .in("status", ["pending", "expired"])
         .is("emailed_at", null)
-        .gt("expires_at", new Date().toISOString())
         .maybeSingle()
       if (currentInvitationError) {
         throw new Error(`Failed to revalidate judge invitation: ${currentInvitationError.message}`)
       }
-      const invitation = Array.isArray(currentInvitation)
+      const current = Array.isArray(currentInvitation)
         ? (currentInvitation as JudgeInvitation[]).find(
             (candidate) => candidate.id === listedInvitation.id,
           ) ?? null
         : currentInvitation as JudgeInvitation | null
-      if (!invitation) continue
-      total++
+      if (!current) continue
 
       const { data: currentHackathon, error: currentHackathonError } = await client
         .from("hackathons")
-        .select("name, slug, status, starts_at, ends_at")
+        .select("name, slug, status, starts_at, ends_at, is_test_event")
         .eq("id", hackathonId)
         .maybeSingle()
       if (currentHackathonError) {
         throw new Error(`Failed to revalidate judge invitation event: ${currentHackathonError.message}`)
       }
       if (!currentHackathon) {
-        await cancelPendingJudgeInvitation(invitation.id)
+        await cancelPendingJudgeInvitation(current.id)
         continue
       }
       const currentDisposition = getNotificationDisposition({
         status: currentHackathon.status as HackathonStatus,
         starts_at: currentHackathon.starts_at ?? null,
         ends_at: currentHackathon.ends_at ?? null,
+        is_test_event: currentHackathon.is_test_event,
       })
       if (currentDisposition === "queue") break
       if (currentDisposition === "reject") {
-        await cancelPendingJudgeInvitation(invitation.id)
+        await cancelPendingJudgeInvitation(current.id)
         continue
       }
+
+      const invitation = await prepareJudgeInvitationForFirstDelivery(client, current)
+      if (!invitation) continue
+      total++
 
       const recipientUsers = await clerk.users.getUserList({
         emailAddress: [invitation.email.trim().toLowerCase()],
@@ -631,6 +730,7 @@ async function sendPendingJudgeInvitationEmailsUnlocked(
         hackathonSlug: currentHackathon.slug ?? opts?.hackathonSlug,
         hackathonStartsAt: currentHackathon.starts_at ?? opts?.hackathonStartsAt,
         hackathonEndsAt: currentHackathon.ends_at ?? opts?.hackathonEndsAt,
+        hackathonTimezone: opts?.hackathonTimezone ?? "UTC",
         deliveryId: invitation.id,
       }
       if (!consumeDeliverySlot(budget)) break
@@ -645,7 +745,7 @@ async function sendPendingJudgeInvitationEmailsUnlocked(
         invitation.id,
         hackathonId,
         "invitation_reminder",
-        new Date(invitation.created_at),
+        new Date(invitation.updated_at),
         new Date(invitation.expires_at),
         {
           email: invitation.email,
@@ -653,6 +753,10 @@ async function sendPendingJudgeInvitationEmailsUnlocked(
           inviterName,
           inviteToken: invitation.token,
           expiresAt: invitation.expires_at,
+          hackathonSlug: currentHackathon.slug ?? opts?.hackathonSlug,
+          hackathonStartsAt: currentHackathon.starts_at ?? opts?.hackathonStartsAt,
+          hackathonEndsAt: currentHackathon.ends_at ?? opts?.hackathonEndsAt,
+          hackathonTimezone: opts?.hackathonTimezone ?? "UTC",
         },
       ).catch((error) => {
         console.error(`Failed to schedule judge invitation reminder ${invitation.id}:`, error)
@@ -674,13 +778,11 @@ export async function retryPendingJudgeInvitationEmails(
   budget?: DeliveryBudget,
 ): Promise<{ events: number; sent: number; failed: number }> {
   const client = getSupabase() as unknown as SupabaseClient
-  const now = new Date().toISOString()
   const { data, error } = await client
     .from("judge_invitations")
-    .select("hackathon_id, hackathons!inner(name, slug, status, starts_at, ends_at)")
-    .eq("status", "pending")
+    .select("hackathon_id, hackathons!inner(name, slug, status, starts_at, ends_at, is_test_event)")
+    .in("status", ["pending", "expired"])
     .is("emailed_at", null)
-    .gt("expires_at", now)
     .in("hackathons.status", INVITATION_DELIVERY_STATUSES)
     .order("created_at")
     .limit(limit)
@@ -694,6 +796,7 @@ export async function retryPendingJudgeInvitationEmails(
     slug: string
     starts_at: string | null
     ends_at: string | null
+    is_test_event: boolean
   }>()
   for (const row of (data ?? []) as unknown as Array<{
     hackathon_id: string
@@ -703,6 +806,7 @@ export async function retryPendingJudgeInvitationEmails(
       status: HackathonStatus
       starts_at: string | null
       ends_at: string | null
+      is_test_event: boolean
     }
   }>) {
     const disposition = getNotificationDisposition(row.hackathons)
@@ -726,6 +830,7 @@ export async function retryPendingJudgeInvitationEmails(
         hackathonSlug: hackathon.slug,
         hackathonStartsAt: hackathon.starts_at,
         hackathonEndsAt: hackathon.ends_at,
+        hackathonTimezone: "UTC",
       },
       remaining,
       budget,
@@ -787,9 +892,12 @@ export async function createJudgePendingNotification(
   hackathonId: string,
   participantId: string,
   email: string,
-  addedByName: string
+  addedByName: string,
+  failure?: unknown,
 ): Promise<void> {
   const client = getSupabase() as unknown as SupabaseClient
+  const now = Date.now()
+  const failed = failure !== undefined
 
   const { error } = await client.from("judge_pending_notifications").upsert(
     {
@@ -798,6 +906,12 @@ export async function createJudgePendingNotification(
       email: email.trim().toLowerCase(),
       added_by_name: addedByName,
       sent_at: null,
+      fail_count: failed ? 1 : 0,
+      last_error: failed ? safeDeliveryError(failure) : null,
+      next_attempt_at: failed
+        ? new Date(now + JUDGE_NOTIFICATION_FIRST_RETRY_MS).toISOString()
+        : null,
+      updated_at: new Date(now).toISOString(),
     },
     { onConflict: "hackathon_id,participant_id" }
   )
@@ -805,6 +919,153 @@ export async function createJudgePendingNotification(
   if (error) {
     throw new Error(`Failed to create judge pending notification: ${error.message}`)
   }
+}
+
+type PendingJudgeNotificationRetryRow = {
+  id: string
+  hackathon_id: string
+  participant_id: string
+  email: string
+  added_by_name: string
+  fail_count: number
+  hackathons: {
+    name: string
+    slug: string
+    status: HackathonStatus
+    starts_at: string | null
+    ends_at: string | null
+    is_test_event: boolean
+  }
+}
+
+export type JudgeNotificationRetryResult = {
+  attempted: number
+  sent: number
+  failed: number
+  exhausted: number
+  skippedDueToLease: boolean
+}
+
+async function retryPendingJudgeNotificationsUnlocked(
+  limit: number,
+  budget?: DeliveryBudget,
+): Promise<Omit<JudgeNotificationRetryResult, "skippedDueToLease">> {
+  const client = getSupabase() as unknown as SupabaseClient
+  const now = new Date().toISOString()
+  const { data, error } = await client
+    .from("judge_pending_notifications")
+    .select("id, hackathon_id, participant_id, email, added_by_name, fail_count, hackathons!inner(name, slug, status, starts_at, ends_at, is_test_event)")
+    .is("sent_at", null)
+    .lt("fail_count", JUDGE_NOTIFICATION_MAX_ATTEMPTS)
+    .or(`next_attempt_at.is.null,next_attempt_at.lte.${now}`)
+    .in("hackathons.status", INVITATION_DELIVERY_STATUSES)
+    .order("created_at", { ascending: true })
+    .limit(Math.min(50, Math.max(1, limit)))
+
+  if (error) {
+    throw new Error(`Failed to load pending judge notifications: ${error.message}`)
+  }
+
+  const result = { attempted: 0, sent: 0, failed: 0, exhausted: 0 }
+  const { sendJudgeAddedNotification } = await import("@/lib/email/judge-invitations")
+  for (const listed of (data ?? []) as unknown as PendingJudgeNotificationRetryRow[]) {
+    if (!hasDeliveryCapacity(budget)) break
+
+    const currentResult = await client
+      .from("judge_pending_notifications")
+      .select("id, hackathon_id, participant_id, email, added_by_name, fail_count, hackathons!inner(name, slug, status, starts_at, ends_at, is_test_event)")
+      .eq("id", listed.id)
+      .is("sent_at", null)
+      .lt("fail_count", JUDGE_NOTIFICATION_MAX_ATTEMPTS)
+      .maybeSingle()
+    if (currentResult.error) {
+      throw new Error(`Failed to revalidate judge notification: ${currentResult.error.message}`)
+    }
+    const current = currentResult.data as unknown as PendingJudgeNotificationRetryRow | null
+    if (!current) continue
+    if (getNotificationDisposition(current.hackathons) !== "send") continue
+    if (!consumeDeliverySlot(budget)) break
+
+    result.attempted++
+    try {
+      const delivery = await sendJudgeAddedNotification({
+        to: current.email,
+        deliveryId: current.participant_id,
+        hackathonName: current.hackathons.name,
+        hackathonSlug: current.hackathons.slug,
+        addedByName: current.added_by_name,
+        hackathonStartsAt: current.hackathons.starts_at,
+        hackathonEndsAt: current.hackathons.ends_at,
+        hackathonTimezone: "UTC",
+      })
+      if (!delivery.success) throw new Error("Judge notification email was not accepted")
+
+      const sentAt = new Date().toISOString()
+      const sentResult = await client
+        .from("judge_pending_notifications")
+        .update({
+          sent_at: sentAt,
+          last_error: null,
+          next_attempt_at: null,
+          updated_at: sentAt,
+        })
+        .eq("id", current.id)
+        .eq("fail_count", current.fail_count)
+        .is("sent_at", null)
+        .select("id")
+        .maybeSingle()
+      if (sentResult.error) {
+        throw new Error(`Failed to save judge notification delivery: ${sentResult.error.message}`)
+      }
+      if (!sentResult.data) continue
+      result.sent++
+    } catch (deliveryError) {
+      const nextFailCount = Math.min(
+        JUDGE_NOTIFICATION_MAX_ATTEMPTS,
+        current.fail_count + 1,
+      )
+      const failedAt = Date.now()
+      const failedResult = await client
+        .from("judge_pending_notifications")
+        .update({
+          fail_count: nextFailCount,
+          last_error: safeDeliveryError(deliveryError),
+          next_attempt_at: new Date(
+            failedAt + judgeNotificationRetryDelayMs(nextFailCount),
+          ).toISOString(),
+          updated_at: new Date(failedAt).toISOString(),
+        })
+        .eq("id", current.id)
+        .eq("fail_count", current.fail_count)
+        .is("sent_at", null)
+      if (failedResult.error) {
+        throw new Error(`Failed to save judge notification retry: ${failedResult.error.message}`)
+      }
+      result.failed++
+      if (nextFailCount >= JUDGE_NOTIFICATION_MAX_ATTEMPTS) result.exhausted++
+    }
+  }
+  return result
+}
+
+export async function retryPendingJudgeNotifications(
+  limit = 20,
+  budget?: DeliveryBudget,
+): Promise<JudgeNotificationRetryResult> {
+  const claimed = await withDeliveryLease(
+    "judge-pending-notifications",
+    () => retryPendingJudgeNotificationsUnlocked(limit, budget),
+  )
+  if (!claimed.acquired) {
+    return {
+      attempted: 0,
+      sent: 0,
+      failed: 0,
+      exhausted: 0,
+      skippedDueToLease: true,
+    }
+  }
+  return { ...claimed.value, skippedDueToLease: false }
 }
 
 export async function listPendingJudgeNotifications(

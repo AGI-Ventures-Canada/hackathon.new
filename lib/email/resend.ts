@@ -12,6 +12,7 @@ import {
 } from "./utils"
 import AgentNotificationEmail from "@/emails/agent-notification"
 import { sha256Fingerprint } from "@/lib/utils/hash"
+import { isSyntheticEmail } from "@/lib/utils/synthetic-user"
 
 let resendClient: Resend | null = null
 let resendClientApiKey: string | null = null
@@ -43,6 +44,7 @@ export type SendEmailInput = {
 
 export type SendEmailFailureCode =
   | "email_content_invalid"
+  | "email_recipient_suppressed"
   | "email_header_invalid"
   | "email_provider_not_configured"
   | "email_provider_timeout"
@@ -96,11 +98,18 @@ export type SendEmailExecutionOptions = {
   beforeAttempt?: () => Promise<void>
   transport?: SendEmailTransport
   wait?: (milliseconds: number) => Promise<void>
+  providerPacing?: {
+    now?: () => number
+    wait?: (milliseconds: number) => Promise<void>
+  }
 }
 
 const DEFAULT_RESEND_TIMEOUT_MS = 10_000
 const MAX_RESEND_TIMEOUT_MS = 30_000
 const MAX_SEND_ATTEMPTS = 3
+const PROVIDER_ATTEMPT_INTERVAL_MS = 250
+let providerPacingTail: Promise<void> = Promise.resolve()
+let nextProviderAttemptAt = 0
 
 function boundedInteger(
   value: number | undefined,
@@ -287,6 +296,27 @@ function sleep(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds))
 }
 
+async function acquireProviderAttemptSlot(
+  options: SendEmailExecutionOptions["providerPacing"] = {},
+): Promise<void> {
+  const now = options.now ?? Date.now
+  const wait = options.wait ?? sleep
+  const turn = providerPacingTail.then(async () => {
+    const current = now()
+    const scheduledAt = Math.max(current, nextProviderAttemptAt)
+    const delay = scheduledAt - current
+    if (delay > 0) await wait(delay)
+    nextProviderAttemptAt = Math.max(scheduledAt, now()) + PROVIDER_ATTEMPT_INTERVAL_MS
+  })
+  providerPacingTail = turn.catch(() => undefined)
+  await turn
+}
+
+export function resetEmailProviderPacing(): void {
+  providerPacingTail = Promise.resolve()
+  nextProviderAttemptAt = 0
+}
+
 function failedResult(
   startedAt: number,
   attempts: number,
@@ -347,6 +377,17 @@ export async function sendEmailWithResult(
   const plainText = typeof input.text === "string" ? input.text : ""
   const subject = rawSubject.replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim()
   const idempotencyKey = input.idempotencyKey
+  const recipients = Array.isArray(input.to) ? input.to : [input.to]
+
+  if (recipients.some(isSyntheticEmail)) {
+    return failedResult(startedAt, 0, {
+      code: "email_recipient_suppressed",
+      providerCode: null,
+      message: "Test data email addresses cannot receive messages.",
+      statusCode: null,
+      retryable: false,
+    })
+  }
 
   if (!fromEmail) {
     return failedResult(startedAt, 0, {
@@ -451,6 +492,7 @@ export async function sendEmailWithResult(
     const attemptStartedAt = Date.now()
     try {
       await execution.beforeAttempt?.()
+      await acquireProviderAttemptSlot(execution.providerPacing)
       const response = await settleWithin(
         transport(payload, requestOptions),
         timeoutMs,

@@ -15,7 +15,10 @@ const challenge: Challenge = {
   hackathonId: "11111111-1111-1111-1111-111111111111",
   title: "City helper",
   description: "Make city services easier to use.",
-  resources: [],
+  resources: [
+    { label: "Starter docs", url: "docs.example.com/start" },
+    { label: "Old unsafe link", url: "javascript:alert(1)" },
+  ],
   sortOrder: 0,
   createdAt: "2030-04-01T12:00:00.000Z",
   updatedAt: "2030-04-01T12:00:00.000Z",
@@ -103,8 +106,25 @@ describe("manage tab hydration", () => {
 
     await hydrateFromUtcToToronto(
       renderComponent,
-      (html) => expect(html).toContain("released Apr 10 at 12:30 AM"),
-      (container) => expect(container.textContent).toContain("released Apr 9 at 8:30 PM"),
+      (html) => {
+        expect(html).toContain("released Apr 10 at 12:30 AM")
+        expect(html).toContain('href="https://docs.example.com/start"')
+        expect(html).toContain("Starter docs (opens in a new tab)")
+        expect(html).not.toContain('href="javascript:')
+      },
+      (container) => {
+        expect(container.textContent).toContain("released Apr 9 at 8:30 PM")
+        const link = container.querySelector<HTMLAnchorElement>(
+          'a[href="https://docs.example.com/start"]',
+        )
+        expect(link?.target).toBe("_blank")
+        expect(link?.rel).toBe("noopener noreferrer")
+        expect(link?.getAttribute("aria-label")).toBe(
+          "Starter docs (opens in a new tab)",
+        )
+        expect(container.querySelector('a[href^="javascript:"]')).toBeNull()
+        expect(container.textContent).toContain("Old unsafe link")
+      },
     )
   })
 

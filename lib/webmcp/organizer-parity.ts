@@ -33,6 +33,12 @@ export const ORGANIZER_SECTIONS = [
 
 export type OrganizerSection = (typeof ORGANIZER_SECTIONS)[number]
 
+export const CREATE_EVENT_SURFACE_PARITY = {
+  ui: "Create a test event with test data",
+  webMcpTools: ["open_test_event_creator"],
+  cliCommands: ["events create --test-stage"],
+} as const
+
 type OrganizerSectionConfig = {
   title: string
   summary: string
@@ -47,16 +53,30 @@ export const ORGANIZER_SECTION_CONFIG: Record<
 > = {
   action_items: {
     title: "Action items",
-    summary: "See the most important work to do next.",
+    summary: "See, add, finish, reopen, dismiss, or remove organizer tasks.",
     params: "tab=action-items",
-    webMcpTools: ["get_hackathon_overview", "get_hackathon_settings"],
-    cliCommands: ["events get", "events activity"],
+    webMcpTools: [
+      "list_organizer_tasks",
+      "add_organizer_task",
+      "complete_organizer_task",
+      "reopen_organizer_task",
+      "dismiss_organizer_task",
+      "remove_organizer_task",
+    ],
+    cliCommands: [
+      "events tasks list",
+      "events tasks add",
+      "events tasks complete",
+      "events tasks reopen",
+      "events tasks dismiss",
+      "events tasks remove",
+    ],
   },
   overview: {
     title: "Overview",
     summary: "Review event status, timing, totals, and progress.",
     params: "tab=overview",
-    webMcpTools: ["get_hackathon_overview", "get_hackathon_settings", "update_hackathon_settings", "set_hackathon_timeline"],
+    webMcpTools: ["get_hackathon_overview", "get_hackathon_settings", "update_hackathon_settings", "set_hackathon_timeline", "open_test_event_conversion"],
     cliCommands: ["events get", "events update"],
   },
   schedule: {

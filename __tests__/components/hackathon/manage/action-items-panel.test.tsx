@@ -16,10 +16,12 @@ mock.module("@/components/hackathon/manage/action-items-context", () => ({
     panelOpen,
     setPanelOpen,
     isStale: false,
+    actionItemsError: null,
+    totalCount: 0,
   }),
 }))
 mock.module("@/components/hackathon/manage/add-item-input", () => ({
-  AddItemInput: () => null,
+  AddItemInput: () => <button type="button">Add a task</button>,
 }))
 mock.module("@/components/hackathon/manage/action-item-row", () => ({
   ActionItemRow: () => null,
@@ -27,6 +29,9 @@ mock.module("@/components/hackathon/manage/action-item-row", () => ({
 
 const { ActionItemsPanel } = await import(
   "@/components/hackathon/manage/action-items-panel"
+)
+const { ActionItemsTab } = await import(
+  "@/components/hackathon/manage/action-items-tab"
 )
 
 beforeEach(() => {
@@ -58,5 +63,18 @@ describe("ActionItemsPanel", () => {
     const panel = document.getElementById("action-items-panel")!
     expect(panel.getAttribute("aria-hidden")).toBe("false")
     expect(panel.hasAttribute("inert")).toBe(false)
+  })
+
+  it("keeps add task available when the panel is empty", () => {
+    panelOpen = true
+    render(<ActionItemsPanel visible />)
+
+    expect(screen.getAllByRole("button", { name: "Add a task" }).length).toBeGreaterThan(0)
+  })
+
+  it("keeps add task available when the full tab is empty", () => {
+    render(<ActionItemsTab />)
+
+    expect(screen.getByRole("button", { name: "Add a task" })).toBeDefined()
   })
 })

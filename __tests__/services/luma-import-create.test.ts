@@ -663,16 +663,18 @@ describe("createHackathonAggregate", () => {
       },
       error: null,
     })
+    const calls = [
+      emptyLookup,
+      emptyLookup,
+      slugLookup,
+      insertCollision,
+      emptyLookup,
+      emptyLookup,
+      emptyLookup,
+      trustedCollision,
+    ]
     let call = 0
-    setMockFromImplementation(() => {
-      call += 1
-      if (call <= 2 || call === 63 || call === 64) return emptyLookup
-      if (call === 65) return trustedCollision
-      const insertAttemptCall = (call - 3) % 3
-      if (insertAttemptCall === 0) return slugLookup
-      if (insertAttemptCall === 1) return insertCollision
-      return emptyLookup
-    })
+    setMockFromImplementation(() => calls[call++] ?? emptyLookup)
 
     const result = await createHackathonAggregateWithResult("tenant-b", {
       ...aggregateInput,
@@ -683,7 +685,7 @@ describe("createHackathonAggregate", () => {
     if (result.status !== "invalid") throw new Error("Expected draft conflict")
     expect(result.hackathon).toBeNull()
     expect(result.error.code).toBe("draft_organization_conflict")
-    expect(insertCollision.insert).toHaveBeenCalledTimes(20)
+    expect(insertCollision.insert).toHaveBeenCalledTimes(1)
     expect(trustedCollision.neq).toHaveBeenCalledWith("tenant_id", "tenant-b")
     expect(JSON.stringify(result)).not.toContain("tenant-a")
   })

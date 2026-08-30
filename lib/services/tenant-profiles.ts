@@ -118,7 +118,7 @@ export type TenantWithEvents = TenantProfile & {
   sponsoredHackathons: SponsoredHackathon[]
 }
 
-const PUBLIC_EVENT_FIELDS = "id, slug, name, description, banner_url, status, starts_at, ends_at, registration_opens_at, registration_closes_at, metadata"
+const PUBLIC_EVENT_FIELDS = "id, slug, name, description, banner_url, status, starts_at, ends_at, registration_opens_at, registration_closes_at, is_test_event, metadata"
 
 export async function getPublicTenantWithHackathons(
   slug: string
@@ -140,6 +140,7 @@ export async function getPublicTenantWithHackathons(
     .from("hackathons")
     .select(PUBLIC_EVENT_FIELDS)
     .eq("tenant_id", tenant.id)
+    .eq("is_test_event", false)
     .in("status", ["published", "registration_open", "active", "judging", "completed"])
     .order("starts_at", { ascending: false })
 
@@ -180,6 +181,7 @@ export async function getPublicTenantWithEvents(
     .from("hackathons")
     .select(PUBLIC_EVENT_FIELDS)
     .eq("tenant_id", tenant.id)
+    .eq("is_test_event", false)
     .in("status", ["published", "registration_open", "active", "judging", "completed"])
     .order("starts_at", { ascending: false })
 
@@ -192,11 +194,12 @@ export async function getPublicTenantWithEvents(
     .select(`
       hackathon_id,
       hackathons!inner(
-        id, slug, name, description, banner_url, status, starts_at, ends_at, registration_opens_at, registration_closes_at, metadata,
+        id, slug, name, description, banner_url, status, starts_at, ends_at, registration_opens_at, registration_closes_at, is_test_event, metadata,
         organizer:tenants!tenant_id(id, name, slug, logo_url, logo_url_dark)
       )
     `)
     .eq("sponsor_tenant_id", tenant.id)
+    .eq("hackathons.is_test_event", false)
 
   if (sponsorshipsError) {
     console.error("Failed to get sponsored hackathons:", sponsorshipsError)

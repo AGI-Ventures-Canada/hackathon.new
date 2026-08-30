@@ -1,8 +1,13 @@
 import { z } from "zod"
 import type { HackathonStatus, Submission, TeamStatus } from "@/lib/db/hackathon-types"
-import { getOrganizerActionItems, isCompleted, type ActionItemsInput } from "@/lib/utils/organizer-actions"
+import type {
+  OrganizerTask,
+  OrganizerTaskPage,
+  OrganizerTaskState,
+} from "@/lib/utils/organizer-action-board"
 import {
   normalizePreparedProjectDraft,
+  summarizeChallengeResourcePage,
   summarizeEventGuide,
   summarizeEventViewer,
   summarizeProjectDraft,
@@ -19,7 +24,10 @@ import {
   ORGANIZER_SECTION_CONFIG,
   ORGANIZER_SECTIONS,
 } from "@/lib/webmcp/organizer-parity"
-import { defineWebMcpTool } from "@/lib/webmcp/tool"
+import {
+  defineWebMcpTool,
+  MAX_WEBMCP_OUTPUT_CHARACTERS,
+} from "@/lib/webmcp/tool"
 import type { WebMcpTool } from "@/lib/webmcp/types"
 
 type WorkspaceEvent = {
@@ -71,6 +79,31 @@ const pageInput = z.object({
 const eventRefInput = z.object({
   eventRef: z.string().min(1).max(30),
 }).strict()
+const organizerTaskState = z.enum(["all", "pending", "completed", "dismissed"])
+const organizerTaskRef = z.string().min(1).max(160).regex(/^[A-Za-z0-9_-]+$/)
+const customOrganizerTaskRef = z.string()
+  .min(8)
+  .max(160)
+  .regex(/^custom-[A-Za-z0-9_-]+$/)
+const expectedTaskUpdate = z.iso.datetime({ offset: true }).max(64).optional()
+const organizerTaskPageInput = eventRefInput.extend({
+  offset: z.number().int().min(0).max(10_000).default(0),
+  limit: z.number().int().min(1).max(50).default(2),
+  state: organizerTaskState.default("all"),
+}).strict()
+const addOrganizerTaskInput = eventRefInput.extend({
+  label: z.string().trim().min(1).max(200),
+  severity: z.enum(["urgent", "warning", "scheduled", "info"]).default("info"),
+  taskRef: customOrganizerTaskRef,
+}).strict()
+const changeOrganizerTaskInput = eventRefInput.extend({
+  taskRef: organizerTaskRef,
+  expectedUpdatedAt: expectedTaskUpdate,
+}).strict()
+const removeOrganizerTaskInput = eventRefInput.extend({
+  taskRef: customOrganizerTaskRef,
+  expectedUpdatedAt: expectedTaskUpdate,
+}).strict()
 const attendeeGuideInput = eventRefInput.extend({
   section: z.enum([
     "overview",
@@ -80,6 +113,11 @@ const attendeeGuideInput = eventRefInput.extend({
     "challenges",
   ]).default("overview"),
   offset: z.number().int().min(0).max(100).default(0),
+}).strict()
+const attendeeChallengeResourcesInput = eventRefInput.extend({
+  challengeRef: z.string().min(1).max(40),
+  offset: z.number().int().min(0).max(500).default(0),
+  limit: z.number().int().min(1).max(4).default(4),
 }).strict()
 const projectInput = eventRefInput.extend({
   title: z.string().trim().min(1).max(100),
@@ -91,10 +129,89 @@ const projectInput = eventRefInput.extend({
 const organizedEventInput = eventRefInput.extend({
   destination: z.enum(ORGANIZER_SECTIONS).default("action_items"),
 }).strict()
+const untrustedWriteAnnotations = {
+  readOnlyHint: false,
+  untrustedContentHint: true,
+} as const
 
 function clip(value: string | null, max: number): string | null {
   if (value === null || value.length <= max) return value
   return `${value.slice(0, max - 1)}…`
+}
+
+function compactOrganizerTask(task: OrganizerTask): OrganizerTask {
+  return {
+    ...task,
+    label: clip(task.label, 120) ?? task.label,
+    hint: clip(task.hint, 140),
+    tooltip: clip(task.tooltip, 160),
+    ctaLabel: clip(task.ctaLabel, 60),
+  }
+}
+
+function compactOrganizerTaskPage(page: OrganizerTaskPage): OrganizerTaskPage {
+  const sourceItems = page.items.map(compactOrganizerTask)
+  let items: OrganizerTask[] = []
+
+  for (const task of sourceItems) {
+    const nextItems = [...items, task]
+    const hasMore = nextItems.length < sourceItems.length || page.hasMore
+    const candidate = {
+      ...page,
+      event: {
+        name: clip(page.event.name, 100) ?? page.event.name,
+        slug: clip(page.event.slug, 80) ?? page.event.slug,
+      },
+      items: nextItems,
+      hasMore,
+      nextOffset: hasMore ? page.offset + nextItems.length : null,
+    }
+    if (
+      JSON.stringify({ ok: true, data: candidate }).length >
+      MAX_WEBMCP_OUTPUT_CHARACTERS - 40
+    ) {
+      break
+    }
+    items = nextItems
+  }
+
+  if (items.length === 0 && sourceItems.length > 0) {
+    const task = sourceItems[0]
+    items = [{
+      ...task,
+      hint: clip(task.hint, 80),
+      tooltip: null,
+    }]
+  }
+
+  const hasMore = items.length < sourceItems.length || page.hasMore
+  return {
+    ...page,
+    event: {
+      name: clip(page.event.name, 100) ?? page.event.name,
+      slug: clip(page.event.slug, 80) ?? page.event.slug,
+    },
+    items,
+    hasMore,
+    nextOffset: hasMore ? page.offset + items.length : null,
+  }
+}
+
+function organizerTaskPageUrl(
+  eventId: string,
+  input: { offset: number; limit: number; state: OrganizerTaskState | "all" },
+): string {
+  const query = new URLSearchParams({
+    offset: String(input.offset),
+    limit: String(input.limit),
+    state: input.state,
+  })
+  return `/api/dashboard/hackathons/${eventId}/action-items?${query}`
+}
+
+function organizerTaskUrl(eventId: string, taskRef?: string): string {
+  const base = `/api/dashboard/hackathons/${eventId}/action-items`
+  return taskRef ? `${base}/${encodeURIComponent(taskRef)}` : base
 }
 
 function missingEvent(): never {
@@ -220,28 +337,92 @@ export function createGlobalWebMcpTools(
     }),
     defineWebMcpTool({
       name: "get_organized_event_tasks",
-      title: "Read event tasks",
-      description: "Read the current action items for one listed organized event without opening its manage page.",
-      schema: eventRefInput,
+      title: "List event tasks",
+      description:
+        "List one page of shared organizer tasks for a listed event. Use nextOffset to keep reading.",
+      schema: organizerTaskPageInput,
       annotations: { readOnlyHint: true, untrustedContentHint: true },
-      execute: async ({ eventRef }, { signal }) => {
+      execute: async ({ eventRef, offset, limit, state }, { signal }) => {
         const event = resolveOrganized(eventRef)
-        const payload = await fetchWebMcpJson<ActionItemsInput>(
+        const page = await fetchWebMcpJson<OrganizerTaskPage>(
           dependencies.fetcher,
-          `/api/dashboard/hackathons/${event.id}/action-items-poll`,
+          organizerTaskPageUrl(event.id, { offset, limit, state }),
           { method: "GET", signal },
         )
-        const pending = getOrganizerActionItems(payload).filter((item) => !isCompleted(item))
+        return compactOrganizerTaskPage(page)
+      },
+    }),
+    defineWebMcpTool({
+      name: "add_organized_event_task",
+      title: "Add event task",
+      description:
+        "Add a shared custom task. Reuse the same custom taskRef when retrying so only one task is made.",
+      schema: addOrganizerTaskInput,
+      annotations: untrustedWriteAnnotations,
+      execute: async ({ eventRef, label, severity, taskRef }, { signal }) => {
+        const event = resolveOrganized(eventRef)
+        const result = await fetchWebMcpJson<{ task: OrganizerTask }>(
+          dependencies.fetcher,
+          organizerTaskUrl(event.id),
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ label, severity, taskRef }),
+            signal,
+          },
+        )
+        return { task: compactOrganizerTask(result.task) }
+      },
+    }),
+    ...([
+      ["complete_organized_event_task", "Complete event task", "completed"],
+      ["reopen_organized_event_task", "Reopen event task", "pending"],
+      ["dismiss_organized_event_task", "Dismiss event task", "dismissed"],
+    ] as const).map(([name, title, state]) =>
+      defineWebMcpTool({
+        name,
+        title,
+        description: `${title}. The task rules are checked before anything changes.`,
+        schema: changeOrganizerTaskInput,
+        annotations: untrustedWriteAnnotations,
+        execute: async ({ eventRef, taskRef, expectedUpdatedAt }, { signal }) => {
+          const event = resolveOrganized(eventRef)
+          const result = await fetchWebMcpJson<{ task: OrganizerTask }>(
+            dependencies.fetcher,
+            organizerTaskUrl(event.id, taskRef),
+            {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ state, expectedUpdatedAt }),
+              signal,
+            },
+          )
+          return { task: compactOrganizerTask(result.task) }
+        },
+      }),
+    ),
+    defineWebMcpTool({
+      name: "remove_organized_event_task",
+      title: "Remove custom event task",
+      description:
+        "Remove one custom task. Event-made tasks cannot be removed.",
+      schema: removeOrganizerTaskInput,
+      annotations: untrustedWriteAnnotations,
+      execute: async ({ eventRef, taskRef, expectedUpdatedAt }, { signal }) => {
+        const event = resolveOrganized(eventRef)
+        const query = expectedUpdatedAt
+          ? `?${new URLSearchParams({ expectedUpdatedAt })}`
+          : ""
+        await fetchWebMcpJson<{ success: true }>(
+          dependencies.fetcher,
+          `${organizerTaskUrl(event.id, taskRef)}${query}`,
+          { method: "DELETE", signal },
+        )
         return {
-          event: clip(event.name, 100),
-          totalCount: pending.length,
-          items: pending.slice(0, 3).map((item) => ({
-            label: clip(item.label, 80),
-            hint: clip(item.hint ?? null, 100),
-            severity: item.severity,
-            destination: item.tab ?? "action-items",
-          })),
-          manageUrl: `/e/${event.slug}/manage?tab=action-items`,
+          removed: true,
+          taskRef,
+          destination: "action_items",
+          inspectUrl: `/e/${event.slug}/manage?tab=action-items`,
         }
       },
     }),
@@ -290,6 +471,24 @@ export function createGlobalWebMcpTools(
         const event = resolveAttendee(eventRef)
         const context = await loadAttendeeContext(event, signal)
         return summarizeEventViewer(context.viewer)
+      },
+    }),
+    defineWebMcpTool({
+      name: "get_attendee_challenge_links",
+      title: "Read attendee challenge links",
+      description:
+        "Read safe resource links for one released challenge. First get its challengeRef from the attendee event guide.",
+      schema: attendeeChallengeResourcesInput,
+      annotations: { readOnlyHint: true, untrustedContentHint: true },
+      execute: async ({ eventRef, challengeRef, offset, limit }, { signal }) => {
+        const event = resolveAttendee(eventRef)
+        const context = await loadAttendeeContext(event, signal)
+        return summarizeChallengeResourcePage(
+          context.guide,
+          challengeRef,
+          offset,
+          limit,
+        )
       },
     }),
     defineWebMcpTool({

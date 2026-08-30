@@ -3,6 +3,12 @@ import type { HackathonStatus, TeamStatus } from "@/lib/db/hackathon-types"
 import { getOrCreateTenant } from "@/lib/services/tenants"
 import { getSeedUserIds, findPersonaByUserId, getPersonaUserId } from "@/lib/dev/test-personas"
 import { SCENARIOS } from "@/lib/dev/scenarios"
+import {
+  TEST_EVENT_ATTENDEES,
+  TEST_EVENT_CRITERIA,
+  TEST_EVENT_PROJECTS,
+  TEST_EVENT_TEAMS,
+} from "@/lib/fixtures/test-event"
 
 export type ScenarioOptions = Record<string, boolean>
 
@@ -13,13 +19,7 @@ export function listScenarios() {
 function getSeedUsers(): string[] {
   const real = getSeedUserIds()
   if (real.length > 0) return real
-  return [
-    "seed_user_alice_001",
-    "seed_user_bob_002",
-    "seed_user_carol_003",
-    "seed_user_dave_004",
-    "seed_user_eve_005",
-  ]
+  return TEST_EVENT_ATTENDEES.slice(0, 5).map((attendee) => attendee.clerkUserId)
 }
 
 async function resolveScenarioTenant(overrideTenantId?: string, principalOrgId?: string | null): Promise<string> {
@@ -142,7 +142,9 @@ async function createTeamWithMembers(
     .from("teams")
     .insert({
       hackathon_id: hackathonId,
-      name: opts.name ?? `Team ${captainUserId.slice(-3)}`,
+      name: opts.name ?? TEST_EVENT_TEAMS[
+        Math.max(0, getSeedUsers().indexOf(captainUserId)) % TEST_EVENT_TEAMS.length
+      ],
       captain_clerk_user_id: captainUserId,
       invite_code: crypto.randomUUID().slice(0, 8),
       status: opts.status ?? "forming",
@@ -172,8 +174,7 @@ async function createSubmission(
   index: number = 0
 ): Promise<string> {
   const db = getSupabase()
-  const titles = ["AI Research Assistant", "Code Reviewer Bot", "DataViz Agent", "HealthCheck AI", "EcoTracker"]
-  const title = titles[index % titles.length]
+  const project = TEST_EVENT_PROJECTS[index % TEST_EVENT_PROJECTS.length]
 
   const { data, error } = await db
     .from("submissions")
@@ -181,9 +182,9 @@ async function createSubmission(
       hackathon_id: hackathonId,
       team_id: teamId,
       participant_id: participantId,
-      title,
-      description: `Test submission: ${title}`,
-      github_url: `https://github.com/example/${title.toLowerCase().replace(/\s+/g, "-")}`,
+      title: project.title,
+      description: project.description,
+      github_url: `https://github.com/example/${project.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
       status: "submitted",
     })
     .select("id")
@@ -196,11 +197,11 @@ async function createSubmission(
   return data.id
 }
 
-const CRITERIA_PRESETS = [
-  { name: "Innovation", description: "Novelty and creativity of the solution", max_score: 10, weight: 1.5, category: "core" as const },
-  { name: "Technical Execution", description: "Code quality, architecture, and reliability", max_score: 10, weight: 1.0, category: "core" as const },
-  { name: "Presentation", description: "Demo clarity, documentation, and communication", max_score: 10, weight: 0.5, category: "bonus" as const },
-]
+const CRITERIA_PRESETS = TEST_EVENT_CRITERIA.map((criterion) => ({
+  ...criterion,
+  max_score: 5,
+  category: "core" as const,
+}))
 
 const DEFAULT_RUBRIC_LEVELS = [
   { level_number: 1, label: "Far Below Expectations" },

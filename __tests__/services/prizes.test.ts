@@ -49,6 +49,7 @@ const mockPrizeAssignment: PrizeAssignment = {
   id: "pa1",
   prize_id: "p1",
   submission_id: "s1",
+  assignment_source: "manual",
   assigned_at: "2026-01-01T00:00:00Z",
 }
 
@@ -535,7 +536,7 @@ describe("Prizes Service", () => {
 
   describe("autoAssignPrizes", () => {
     it("assigns score-based prizes by matching rank", async () => {
-      const insertedAssignments: { prize_id: string; submission_id: string }[] = []
+      const assignmentChain = createChainableMock({ data: [], error: null })
       setMockFromImplementation((table) => {
         if (table === "prizes") {
           return createChainableMock({
@@ -556,21 +557,24 @@ describe("Prizes Service", () => {
           })
         }
         if (table === "prize_assignments") {
-          return {
-            insert: (row: { prize_id: string; submission_id: string }) => {
-              insertedAssignments.push(row)
-              return createChainableMock({ data: row, error: null })
-            },
-          }
+          return assignmentChain
         }
         return createChainableMock({ data: null, error: null })
       })
 
       await autoAssignPrizes("h1")
 
-      expect(insertedAssignments).toHaveLength(2)
-      expect(insertedAssignments[0]).toEqual({ prize_id: "p1", submission_id: "s1" })
-      expect(insertedAssignments[1]).toEqual({ prize_id: "p2", submission_id: "s2" })
+      expect(assignmentChain.insert).toHaveBeenCalledTimes(2)
+      expect(assignmentChain.insert).toHaveBeenNthCalledWith(1, {
+        prize_id: "p1",
+        submission_id: "s1",
+        assignment_source: "automatic",
+      })
+      expect(assignmentChain.insert).toHaveBeenNthCalledWith(2, {
+        prize_id: "p2",
+        submission_id: "s2",
+        assignment_source: "automatic",
+      })
     })
 
     it("does nothing when no prizes exist", async () => {
@@ -581,7 +585,7 @@ describe("Prizes Service", () => {
     })
 
     it("skips score prizes with no matching rank in results", async () => {
-      const insertedAssignments: { prize_id: string; submission_id: string }[] = []
+      const assignmentChain = createChainableMock({ data: [], error: null })
       setMockFromImplementation((table) => {
         if (table === "prizes") {
           return createChainableMock({
@@ -599,19 +603,54 @@ describe("Prizes Service", () => {
           })
         }
         if (table === "prize_assignments") {
-          return {
-            insert: (row: { prize_id: string; submission_id: string }) => {
-              insertedAssignments.push(row)
-              return createChainableMock({ data: row, error: null })
-            },
-          }
+          return assignmentChain
         }
         return createChainableMock({ data: null, error: null })
       })
 
       await autoAssignPrizes("h1")
 
-      expect(insertedAssignments).toHaveLength(0)
+      expect(assignmentChain.insert).not.toHaveBeenCalled()
+    })
+
+    it("leaves tied score prizes for organizer review", async () => {
+      const assignmentChain = createChainableMock({
+        data: [
+          {
+            id: "pa-auto",
+            prize_id: "p1",
+            submission_id: "s1",
+            assignment_source: "automatic",
+          },
+        ],
+        error: null,
+      })
+      setMockFromImplementation((table) => {
+        if (table === "prizes") {
+          return createChainableMock({
+            data: [{ id: "p1", type: "score", rank: 1 }],
+            error: null,
+          })
+        }
+        if (table === "hackathon_results") {
+          return createChainableMock({
+            data: [
+              { submission_id: "s1", rank: 1 },
+              { submission_id: "s2", rank: 1 },
+            ],
+            error: null,
+          })
+        }
+        if (table === "prize_assignments") {
+          return assignmentChain
+        }
+        return createChainableMock({ data: null, error: null })
+      })
+
+      await autoAssignPrizes("h1")
+
+      expect(assignmentChain.insert).not.toHaveBeenCalled()
+      expect(assignmentChain.delete).toHaveBeenCalledTimes(1)
     })
 
     it("handles favorite prizes without assignment", async () => {

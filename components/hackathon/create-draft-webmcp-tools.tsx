@@ -5,6 +5,7 @@ import { useWebMcpTools } from "@/hooks/use-webmcp-tools"
 import type { DraftEnvelope, DraftPatch } from "@/lib/hackathon-draft"
 import { WebMcpActionRegistry } from "@/lib/webmcp/action-registry"
 import { createHackathonDraftTools } from "@/lib/webmcp/hackathon-draft-tools"
+import type { TestEventStage } from "@/lib/fixtures/test-event"
 
 type CreateDraftWebMcpToolsProps = {
   enabled: boolean
@@ -12,6 +13,7 @@ type CreateDraftWebMcpToolsProps = {
   envelope: DraftEnvelope
   onPatch: (expectedRevision: number, patch: DraftPatch) => DraftEnvelope
   onOpenReview: () => void
+  onOpenTestEvent?: (stage: TestEventStage) => void
   onOpenSignIn: () => void
 }
 
@@ -19,6 +21,7 @@ type DraftToolContext = {
   envelope: DraftEnvelope
   onPatch: CreateDraftWebMcpToolsProps["onPatch"]
   onOpenReview: CreateDraftWebMcpToolsProps["onOpenReview"]
+  onOpenTestEvent: CreateDraftWebMcpToolsProps["onOpenTestEvent"]
   onOpenSignIn: CreateDraftWebMcpToolsProps["onOpenSignIn"]
 }
 
@@ -28,17 +31,18 @@ export function CreateDraftWebMcpTools({
   envelope,
   onPatch,
   onOpenReview,
+  onOpenTestEvent,
   onOpenSignIn,
 }: CreateDraftWebMcpToolsProps) {
   const [actionRegistry] = useState(
     () => new WebMcpActionRegistry<DraftToolContext, Record<never, never>>(
-      { envelope, onPatch, onOpenReview, onOpenSignIn },
+      { envelope, onPatch, onOpenReview, onOpenTestEvent, onOpenSignIn },
       {},
     ),
   )
   useEffect(() => {
-    actionRegistry.update({ envelope, onPatch, onOpenReview, onOpenSignIn }, {})
-  }, [actionRegistry, envelope, onOpenReview, onOpenSignIn, onPatch])
+    actionRegistry.update({ envelope, onPatch, onOpenReview, onOpenTestEvent, onOpenSignIn }, {})
+  }, [actionRegistry, envelope, onOpenReview, onOpenSignIn, onOpenTestEvent, onPatch])
 
   const tools = useMemo(
     () =>
@@ -47,6 +51,9 @@ export function CreateDraftWebMcpTools({
         updateDraft: (expectedRevision, patch) =>
           actionRegistry.getContext().onPatch(expectedRevision, patch),
         openReview: () => actionRegistry.getContext().onOpenReview(),
+        openTestEvent: actionRegistry.getContext().onOpenTestEvent
+          ? (stage) => actionRegistry.getContext().onOpenTestEvent?.(stage)
+          : undefined,
         openSignIn: canOpenSignIn
           ? () => actionRegistry.getContext().onOpenSignIn()
           : undefined,

@@ -22,7 +22,15 @@ const attendeeContext = {
     organizerName: "AGIV",
     schedule: [],
     announcements: [],
-    challenges: [],
+    challenges: [{
+      title: "Web tools",
+      description: "Build one.",
+      resourceCount: 2,
+      resources: [
+        { label: "Starter docs", url: "https://docs.example.com/start" },
+        { label: "API guide", url: "https://docs.example.com/api" },
+      ],
+    }],
     resultsPublished: false,
   },
   viewer: {
@@ -51,6 +59,22 @@ const attendeeContext = {
   },
 }
 
+const organizerTask = {
+  taskRef: "custom-run-of-show",
+  label: "Review the run of show",
+  hint: "Check every time and room.",
+  tooltip: "Open the schedule and check the final plan.",
+  severity: "warning" as const,
+  state: "pending" as const,
+  completionPolicy: "manual" as const,
+  custom: true,
+  destination: "schedule" as const,
+  inspectUrl: "/e/organizer-jam/manage?tab=overview",
+  ctaLabel: "Open schedule",
+  blocksProgress: false,
+  updatedAt: "2026-08-30T18:00:00.000Z",
+}
+
 let fetcher: WebMcpFetcher
 let onNavigate: ReturnType<typeof mock>
 let prepareProject: ReturnType<typeof mock>
@@ -61,7 +85,7 @@ beforeEach(() => {
     openedReview: true,
     nextStep: "Review every field, then save.",
   }))
-  fetcher = mock(async (input: RequestInfo | URL) => {
+  fetcher = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     if (url.endsWith("/hackathons/participating")) {
       return Response.json({
@@ -92,31 +116,35 @@ beforeEach(() => {
     if (url.includes("/webmcp/attendee-events/")) {
       return Response.json(attendeeContext)
     }
-    if (url.includes("/action-items-poll")) {
+    if (url.includes("/action-items")) {
+      const method = init?.method ?? "GET"
+      if (method === "DELETE") return Response.json({ success: true })
+      if (method === "POST") {
+        const body = JSON.parse(String(init?.body))
+        return Response.json({
+          task: { ...organizerTask, ...body },
+        })
+      }
+      if (method === "PATCH") {
+        const body = JSON.parse(String(init?.body))
+        return Response.json({
+          task: { ...organizerTask, state: body.state },
+        })
+      }
+      const query = new URL(url, "https://hackathon.new").searchParams
+      const offset = Number(query.get("offset"))
+      const limit = Number(query.get("limit"))
       return Response.json({
-        status: "draft",
-        phase: null,
-        submissionCount: 0,
-        unassignedSubmissionCount: 0,
-        participantCount: 0,
-        teamCount: 0,
-        pendingTeamApprovalCount: 0,
-        judgingProgress: { totalAssignments: 0, completedAssignments: 0 },
-        judgeCount: 0,
-        prizeCount: 0,
-        judgeDisplayCount: 0,
-        mentorQueue: { open: 0 },
-        challengeReleased: false,
-        challengeExists: false,
-        challengeReleaseTime: null,
-        resultsPublishedAt: null,
-        description: null,
-        bannerUrl: null,
-        startsAt: null,
-        endsAt: null,
-        locationType: null,
-        feedbackSurveyUrl: null,
-        feedbackSurveySentAt: null,
+        event: { name: "Organizer Jam", slug: "organizer-jam" },
+        totalCount: 4,
+        pendingCount: 2,
+        completedCount: 1,
+        dismissedCount: 1,
+        offset,
+        limit,
+        hasMore: true,
+        nextOffset: offset + 1,
+        items: [organizerTask],
       })
     }
     return Response.json({
@@ -154,18 +182,33 @@ async function execute(
 
 describe("global WebMCP tools", () => {
   it("registers stable signed-in tools for organizer and attendee work", () => {
-    expect(tools().map((tool) => tool.name)).toEqual([
+    const allTools = tools()
+    expect(allTools.map((tool) => tool.name)).toEqual([
       "open_create_event",
       "list_my_organized_events",
       "open_organized_event",
       "get_organized_event_tasks",
+      "add_organized_event_task",
+      "complete_organized_event_task",
+      "reopen_organized_event_task",
+      "dismiss_organized_event_task",
+      "remove_organized_event_task",
       "list_my_attendee_events",
       "get_attendee_event_guide",
       "get_attendee_event_status",
+      "get_attendee_challenge_links",
       "get_attendee_project_draft",
       "prepare_attendee_project",
       "open_attendee_event",
     ])
+    expect(
+      allTools.find((tool) => tool.name === "get_organized_event_tasks")
+        ?.annotations?.readOnlyHint,
+    ).toBe(true)
+    expect(
+      allTools.find((tool) => tool.name === "remove_organized_event_task")
+        ?.annotations?.readOnlyHint,
+    ).toBe(false)
   })
 
   it("uses opaque references and ignores non-attendee roles", async () => {
@@ -194,6 +237,9 @@ describe("global WebMCP tools", () => {
     })
     const tasks = await execute(allTools, "get_organized_event_tasks", {
       eventRef: "organized-1",
+      offset: 3,
+      limit: 1,
+      state: "dismissed",
     })
     expect(create).toMatchObject({
       ok: true,
@@ -207,16 +253,96 @@ describe("global WebMCP tools", () => {
     expect(tasks).toMatchObject({
       ok: true,
       data: {
-        event: "Organizer Jam",
-        manageUrl: "/e/organizer-jam/manage?tab=action-items",
+        event: { name: "Organizer Jam", slug: "organizer-jam" },
+        offset: 3,
+        limit: 1,
+        hasMore: true,
+        nextOffset: 4,
+        items: [{
+          taskRef: "custom-run-of-show",
+          destination: "schedule",
+          inspectUrl: "/e/organizer-jam/manage?tab=overview",
+        }],
       },
     })
-    if (!tasks.ok) throw new Error(tasks.error.message)
-    const taskData = tasks.data as { items: { severity: string }[] }
-    expect(taskData.items.length).toBeGreaterThan(0)
-    expect(taskData.items[0]?.severity).toEqual(expect.any(String))
+    expect(fetcher).toHaveBeenCalledWith(
+      `/api/dashboard/hackathons/${organizedId}/action-items?offset=3&limit=1&state=dismissed`,
+      expect.objectContaining({ method: "GET" }),
+    )
+    expect(JSON.stringify(tasks)).not.toContain(organizedId)
     expect(onNavigate).toHaveBeenCalledWith("/create")
     expect(onNavigate).toHaveBeenCalledWith("/e/organizer-jam/manage?tab=edit")
+  })
+
+  it("adds, finishes, reopens, dismisses, and removes organizer tasks", async () => {
+    const allTools = tools()
+    await execute(allTools, "list_my_organized_events", { offset: 0 })
+
+    const added = await execute(allTools, "add_organized_event_task", {
+      eventRef: "organized-1",
+      label: "Review the run of show",
+      severity: "warning",
+      taskRef: "custom-run-of-show",
+    })
+    const completed = await execute(allTools, "complete_organized_event_task", {
+      eventRef: "organized-1",
+      taskRef: "custom-run-of-show",
+      expectedUpdatedAt: organizerTask.updatedAt,
+    })
+    await execute(allTools, "reopen_organized_event_task", {
+      eventRef: "organized-1",
+      taskRef: "custom-run-of-show",
+    })
+    await execute(allTools, "dismiss_organized_event_task", {
+      eventRef: "organized-1",
+      taskRef: "verify-automated-times",
+    })
+    const removed = await execute(allTools, "remove_organized_event_task", {
+      eventRef: "organized-1",
+      taskRef: "custom-run-of-show",
+      expectedUpdatedAt: organizerTask.updatedAt,
+    })
+
+    expect(added).toMatchObject({
+      ok: true,
+      data: { task: { taskRef: "custom-run-of-show" } },
+    })
+    expect(completed).toMatchObject({
+      ok: true,
+      data: { task: { state: "completed" } },
+    })
+    expect(removed).toMatchObject({
+      ok: true,
+      data: {
+        removed: true,
+        taskRef: "custom-run-of-show",
+        destination: "action_items",
+        inspectUrl: "/e/organizer-jam/manage?tab=action-items",
+      },
+    })
+
+    const actionCalls = fetcher.mock.calls.filter(([input]) =>
+      String(input).includes("/action-items")
+    )
+    expect(actionCalls.map(([, init]) => init?.method)).toEqual([
+      "POST",
+      "PATCH",
+      "PATCH",
+      "PATCH",
+      "DELETE",
+    ])
+    expect(JSON.parse(String(actionCalls[0][1]?.body))).toEqual({
+      label: "Review the run of show",
+      severity: "warning",
+      taskRef: "custom-run-of-show",
+    })
+    expect(JSON.parse(String(actionCalls[1][1]?.body))).toEqual({
+      state: "completed",
+      expectedUpdatedAt: organizerTask.updatedAt,
+    })
+    expect(String(actionCalls[4][0])).toContain(
+      "custom-run-of-show?expectedUpdatedAt=2026-08-30T18%3A00%3A00.000Z",
+    )
   })
 
   it("reads current attendee rules and status without navigating", async () => {
@@ -239,6 +365,32 @@ describe("global WebMCP tools", () => {
       data: { team: { name: "Builders" }, nextStep: "Review your project, then submit it." },
     })
     expect(onNavigate).not.toHaveBeenCalled()
+  })
+
+  it("pages safe resources using the challenge reference from the guide", async () => {
+    const allTools = tools()
+    await execute(allTools, "list_my_attendee_events", { offset: 0 })
+    const guideResult = await execute(allTools, "get_attendee_event_guide", {
+      eventRef: "attendee-1",
+      section: "challenges",
+      offset: 0,
+    }) as { data: { items: Array<{ challengeRef: string }> } }
+    const resources = await execute(allTools, "get_attendee_challenge_links", {
+      eventRef: "attendee-1",
+      challengeRef: guideResult.data.items[0].challengeRef,
+      offset: 1,
+      limit: 1,
+    })
+
+    expect(resources).toMatchObject({
+      ok: true,
+      data: {
+        total: 2,
+        offset: 1,
+        nextOffset: null,
+        items: [{ label: "API guide", url: "https://docs.example.com/api" }],
+      },
+    })
   })
 
   it("normalizes a project and opens human review", async () => {

@@ -22,7 +22,12 @@ const guide: EventGuideContext = {
   organizerName: "AGI Ventures",
   schedule: [],
   announcements: [],
-  challenges: [{ title: "Web tools", description: "Build one.", resourceCount: 1 }],
+  challenges: [{
+    title: "Web tools",
+    description: "Build one.",
+    resourceCount: 1,
+    resources: [{ label: "Starter docs", url: "https://docs.example.com/start" }],
+  }],
   resultsPublished: false,
 }
 
@@ -141,6 +146,7 @@ describe("event attendee WebMCP tools", () => {
     })
     expect(tools.map((tool) => tool.name)).toEqual([
       "get_event_guide",
+      "get_challenge_resources",
       "get_my_event_status",
       "get_project_draft",
       "prepare_project",
@@ -220,8 +226,120 @@ describe("event attendee WebMCP tools", () => {
 
     expect(tools.map((tool) => tool.name)).toEqual([
       "get_event_guide",
+      "get_challenge_resources",
       "get_my_event_status",
     ])
+  })
+
+  it("returns every safe challenge resource through bounded pages", async () => {
+    const tools = createEventAttendeeTools({
+      guide: {
+        ...guide,
+        challenges: [{
+          title: "Web tools",
+          description: "Build one.",
+          resourceCount: 4,
+          resources: [
+            { label: "Unsafe", url: "javascript:alert(1)" },
+            {
+              label: "Too long",
+              url: `https://example.com/${"x".repeat(240)}`,
+            },
+            { label: "L".repeat(100), url: "docs.example.com/start" },
+            { label: "Second safe link", url: "https://example.org/second" },
+          ],
+        }],
+      },
+      viewer,
+      canOpenRegistration: false,
+      canInviteTeamMembers: false,
+      canPrepareProject: false,
+      openRegistration: () => false,
+      prepareTeamInvite: () => false,
+      getProjectDraft: () => null,
+      prepareProject: () => ({ openedReview: false, nextStep: "Event ended" }),
+    })
+
+    const result = await executeByName(tools, "get_event_guide", {
+      section: "challenges",
+      offset: 0,
+    })
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        section: "challenges",
+        total: 1,
+        items: [{
+          resourceCount: 4,
+          availableResourceCount: 2,
+          resources: [{
+            label: `${"L".repeat(59)}…`,
+            url: "https://docs.example.com/start",
+          }],
+        }],
+      },
+    })
+    expect(JSON.stringify(result)).not.toContain("javascript:")
+    expect(JSON.stringify(result)).not.toContain("Second safe link")
+
+    const challengeRef = (result as {
+      data: { items: Array<{ challengeRef: string }> }
+    }).data.items[0].challengeRef
+    const firstPage = await executeByName(tools, "get_challenge_resources", {
+      challengeRef,
+      offset: 0,
+      limit: 1,
+    })
+    const secondPage = await executeByName(tools, "get_challenge_resources", {
+      challengeRef,
+      offset: 1,
+      limit: 1,
+    })
+
+    expect(firstPage).toMatchObject({
+      ok: true,
+      data: {
+        total: 2,
+        nextOffset: 1,
+        items: [{ url: "https://docs.example.com/start" }],
+      },
+    })
+    expect(secondPage).toMatchObject({
+      ok: true,
+      data: {
+        nextOffset: null,
+        items: [{
+          label: "Second safe link",
+          url: "https://example.org/second",
+        }],
+      },
+    })
+    expect(JSON.stringify([firstPage, secondPage])).not.toContain("javascript:")
+  })
+
+  it("rejects a challenge reference after the challenge changes", async () => {
+    const tools = createEventAttendeeTools({
+      guide,
+      viewer,
+      canOpenRegistration: false,
+      canInviteTeamMembers: false,
+      canPrepareProject: false,
+      openRegistration: () => false,
+      prepareTeamInvite: () => false,
+      getProjectDraft: () => null,
+      prepareProject: () => ({ openedReview: false, nextStep: "Event ended" }),
+    })
+
+    const result = await executeByName(tools, "get_challenge_resources", {
+      challengeRef: "challenge-stale",
+      offset: 0,
+      limit: 4,
+    })
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: "stale_challenge_ref", retryable: true },
+    })
   })
 
   it("pages long public content within the output budget", async () => {
@@ -248,6 +366,10 @@ describe("event attendee WebMCP tools", () => {
         title: "t".repeat(200),
         description: "d".repeat(2_000),
         resourceCount: 20,
+        resources: Array.from({ length: 20 }, (_, index) => ({
+          label: `${index}-${"r".repeat(100)}`,
+          url: `https://docs-${index}.example.com/${"u".repeat(190)}`,
+        })),
       })),
     }
     const tools = createEventAttendeeTools({
@@ -440,8 +562,12 @@ describe("event attendee WebMCP tools", () => {
   })
 })
 
-function executeByName(tools: WebMcpTool[], name: string) {
+function executeByName(
+  tools: WebMcpTool[],
+  name: string,
+  input: Record<string, unknown> = {},
+) {
   const tool = tools.find((candidate) => candidate.name === name)
   if (!tool) throw new Error(`Missing tool ${name}`)
-  return tool.execute({}, { signal })
+  return tool.execute(input, { signal })
 }

@@ -19,6 +19,7 @@ const {
   processPendingReminders,
   reminderDeliveryWasSent,
   validateReminderEntity,
+  reconcileRemindersForEntity,
 } = await import(
   "@/lib/services/smart-reminders"
 )
@@ -205,6 +206,21 @@ describe("computeReminderSchedule", () => {
         )
       }
     })
+
+    it("uses the supplied clock when filtering old reminder times", () => {
+      const created = new Date("2026-08-01T12:00:00.000Z")
+      const deadline = new Date("2026-08-08T12:00:00.000Z")
+      const now = new Date("2026-08-07T13:00:00.000Z")
+
+      const schedule = computeReminderSchedule(created, deadline, now)
+
+      expect(schedule).toEqual([
+        {
+          scheduledFor: new Date("2026-08-08T09:00:00.000Z"),
+          urgency: "high",
+        },
+      ])
+    })
   })
 })
 
@@ -216,15 +232,20 @@ describe("scheduleReminders", () => {
   it("inserts computed reminders into database", async () => {
     const { scheduleReminders } = await import("@/lib/services/smart-reminders")
 
-    let upsertedRows: unknown[] = []
+    let upsertedRows: Array<Record<string, unknown>> = []
+    let conflictTarget = ""
     setMockFromImplementation((table) => {
       if (table === "scheduled_reminders") {
         const mock = createChainableMock({
           data: [{ id: "r1" }, { id: "r2" }, { id: "r3" }],
           error: null,
         })
-        mock.upsert = ((rows: unknown[]) => {
+        mock.upsert = ((
+          rows: Array<Record<string, unknown>>,
+          options: { onConflict: string },
+        ) => {
           upsertedRows = rows
+          conflictTarget = options.onConflict
           return mock
         }) as typeof mock.upsert
         return mock
@@ -247,6 +268,10 @@ describe("scheduleReminders", () => {
 
     expect(count).toBe(3)
     expect(upsertedRows.length).toBe(3)
+    expect(conflictTarget).toBe(
+      "entity_type,entity_id,reminder_type,scheduled_for",
+    )
+    expect(upsertedRows.every((row) => !("sent_at" in row))).toBe(true)
   })
 
   it("returns 0 when all reminders are in the past", async () => {
@@ -285,6 +310,170 @@ describe("scheduleReminders", () => {
         { email: "test@example.com" },
       ),
     ).rejects.toThrow("Failed to schedule reminders: database unavailable")
+  })
+})
+
+describe("reconcileRemindersForEntity", () => {
+  beforeEach(() => {
+    resetSupabaseMocks()
+  })
+
+  it("reactivates A after A to B to A, keeps sent rows, and allows two types at one time", async () => {
+    const sameTime = "2026-09-10T12:00:00.000Z"
+    const operations: string[] = []
+    let upsertedRows: Array<Record<string, unknown>> = []
+    let upsertOptions: { onConflict?: string } = {}
+    let cancelledIds: string[] = []
+    let call = 0
+
+    setMockFromImplementation((table) => {
+      if (table !== "scheduled_reminders") {
+        return createChainableMock({ data: null, error: null })
+      }
+      call++
+      if (call === 1) {
+        return createChainableMock({
+          data: [
+            {
+              id: "old-a",
+              reminder_type: "event_starting",
+              scheduled_for: sameTime,
+            sent_at: null,
+            cancelled_at: "2026-09-01T12:00:00.000Z",
+            fail_count: 3,
+            last_error: "old failure",
+            },
+            {
+              id: "old-b",
+              reminder_type: "event_starting",
+              scheduled_for: "2026-09-11T12:00:00.000Z",
+            sent_at: null,
+            cancelled_at: null,
+            fail_count: 0,
+            last_error: null,
+            },
+            {
+              id: "sent-row",
+              reminder_type: "registration_closing",
+              scheduled_for: sameTime,
+            sent_at: "2026-09-01T11:00:00.000Z",
+            cancelled_at: null,
+            fail_count: 0,
+            last_error: null,
+            },
+          ],
+          error: null,
+        })
+      }
+      if (call === 2) {
+        const chain = createChainableMock({
+          data: [{ id: "old-a" }, { id: "new-type" }],
+          error: null,
+        })
+        chain.upsert = ((
+          rows: Array<Record<string, unknown>>,
+          options: { onConflict: string },
+        ) => {
+          operations.push("upsert")
+          upsertedRows = rows
+          upsertOptions = options
+          return chain
+        }) as typeof chain.upsert
+        return chain
+      }
+
+      const chain = createChainableMock({ data: [], error: null })
+      chain.update = ((value: Record<string, unknown>) => {
+        operations.push("cancel")
+        expect(value.cancelled_at).toBe("2026-09-02T12:00:00.000Z")
+        return chain
+      }) as typeof chain.update
+      chain.in = ((field: string, values: string[]) => {
+        expect(field).toBe("id")
+        cancelledIds = values
+        return chain
+      }) as typeof chain.in
+      return chain
+    })
+
+    const count = await reconcileRemindersForEntity(
+      "hackathon_event",
+      "11111111-1111-1111-1111-111111111111",
+      [
+        {
+          hackathonId: "11111111-1111-1111-1111-111111111111",
+          reminderType: "event_starting",
+          scheduledFor: new Date(sameTime),
+          urgency: "medium",
+          metadata: { version: "A-again" },
+        },
+        {
+          hackathonId: "11111111-1111-1111-1111-111111111111",
+          reminderType: "submission_due",
+          scheduledFor: new Date(sameTime),
+          urgency: "high",
+          metadata: { version: "same-time-other-type" },
+        },
+        {
+          hackathonId: "11111111-1111-1111-1111-111111111111",
+          reminderType: "registration_closing",
+          scheduledFor: new Date(sameTime),
+          urgency: "low",
+          metadata: { version: "already-sent" },
+        },
+      ],
+      new Date("2026-09-02T12:00:00.000Z"),
+    )
+
+    expect(count).toBe(2)
+    expect(operations).toEqual(["upsert", "cancel"])
+    expect(upsertOptions.onConflict).toBe(
+      "entity_type,entity_id,reminder_type,scheduled_for",
+    )
+    expect(upsertedRows.map((row) => row.reminder_type).sort()).toEqual([
+      "event_starting",
+      "submission_due",
+    ])
+    expect(upsertedRows[0]?.cancelled_at).toBeNull()
+    expect(upsertedRows.every((row) => !("sent_at" in row))).toBe(true)
+    expect(cancelledIds).toEqual(["old-b"])
+  })
+
+  it("keeps retry state for an unchanged active reminder identity", async () => {
+    const sameTime = "2026-09-10T12:00:00.000Z"
+    const scheduled = createChainableMock({
+      data: [{
+        id: "failed-a",
+        reminder_type: "event_starting",
+        scheduled_for: sameTime,
+        sent_at: null,
+        cancelled_at: null,
+        fail_count: 3,
+        last_error: "provider unavailable",
+      }],
+      error: null,
+    })
+    setMockFromImplementation((table) =>
+      table === "scheduled_reminders"
+        ? scheduled
+        : createChainableMock({ data: null, error: null }),
+    )
+
+    const count = await reconcileRemindersForEntity(
+      "hackathon_event",
+      "11111111-1111-1111-1111-111111111111",
+      [{
+        hackathonId: "11111111-1111-1111-1111-111111111111",
+        reminderType: "event_starting",
+        scheduledFor: new Date(sameTime),
+        urgency: "medium",
+        metadata: { version: "unchanged" },
+      }],
+    )
+
+    expect(count).toBe(0)
+    expect(scheduled.upsert).not.toHaveBeenCalled()
+    expect(scheduled.update).not.toHaveBeenCalled()
   })
 })
 

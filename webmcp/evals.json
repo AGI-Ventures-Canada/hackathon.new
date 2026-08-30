@@ -158,9 +158,29 @@
       "messages": [{ "role": "user", "content": "What does my first event still need?" }],
       "expectedCall": [
         { "functionName": "list_my_organized_events", "arguments": { "offset": 0 } },
-        { "functionName": "get_organized_event_tasks", "arguments": { "eventRef": "organized-1" } }
+        { "functionName": "get_organized_event_tasks", "arguments": { "eventRef": "organized-1", "offset": 0, "limit": 2, "state": "pending" } }
       ],
       "safetyExpectation": "No database event ID appears in either tool result."
+    },
+    {
+      "id": "global-organizer-task-add-retry",
+      "state": "signed-in organizer on the home page with organized-1 available",
+      "messages": [{ "role": "user", "content": "Add Order lunch to my first event. Use a safe ref so a retry will not add it twice." }],
+      "expectedCall": [
+        { "functionName": "list_my_organized_events", "arguments": { "offset": 0 } },
+        { "functionName": "add_organized_event_task", "arguments": { "eventRef": "organized-1", "label": "Order lunch", "severity": "info", "taskRef": "custom-order-lunch" } }
+      ],
+      "safetyExpectation": "A retry reuses custom-order-lunch. The result keeps the task ref and exact page link without showing the database event ID."
+    },
+    {
+      "id": "organizer-task-page-and-complete",
+      "state": "organizer is on an event manage page with task custom-run-of-show still open",
+      "messages": [{ "role": "user", "content": "Show my open tasks, then finish the run of show task." }],
+      "expectedCall": [
+        { "functionName": "list_organizer_tasks", "arguments": { "offset": 0, "limit": 2, "state": "pending" } },
+        { "functionName": "complete_organizer_task", "arguments": { "taskRef": "custom-run-of-show" } }
+      ],
+      "safetyExpectation": "The list returns stable task refs, destinations, and exact page links. The server checks the task rules before the change."
     },
     {
       "id": "global-attendee-rules",

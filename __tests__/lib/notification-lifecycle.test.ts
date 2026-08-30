@@ -10,6 +10,7 @@ describe("getNotificationDisposition", () => {
       status: "draft",
       starts_at: "2026-01-01T00:00:00.000Z",
       ends_at: "2026-01-02T00:00:00.000Z",
+      is_test_event: false,
     })).toBe("queue")
   })
 
@@ -19,6 +20,7 @@ describe("getNotificationDisposition", () => {
       status: "draft",
       starts_at: "2026-01-01T00:00:00.000Z",
       ends_at: "2026-01-02T00:00:00.000Z",
+      is_test_event: false,
     })).toBe("reject")
   })
 
@@ -30,6 +32,7 @@ describe("getNotificationDisposition", () => {
         status,
         starts_at: "2026-08-20T00:00:00.000Z",
         ends_at: "2026-08-30T00:00:00.000Z",
+        is_test_event: false,
       })).toBe("send")
     },
   )
@@ -40,6 +43,7 @@ describe("getNotificationDisposition", () => {
       status: "active",
       starts_at: "2026-08-20T00:00:00.000Z",
       ends_at: "2026-08-25T00:00:00.000Z",
+      is_test_event: false,
     })).toBe("reject")
   })
 
@@ -48,6 +52,16 @@ describe("getNotificationDisposition", () => {
       status,
       starts_at: "2026-08-20T00:00:00.000Z",
       ends_at: null,
+      is_test_event: false,
     })).toBe("reject")
+  })
+
+  it("keeps test-event messages queued at every live stage", () => {
+    expect(getNotificationDisposition({
+      status: "active",
+      starts_at: "2026-08-20T00:00:00.000Z",
+      ends_at: null,
+      is_test_event: true,
+    })).toBe("queue")
   })
 })

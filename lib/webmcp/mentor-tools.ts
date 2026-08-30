@@ -52,17 +52,20 @@ export function canPrepareMentorRequest({
   isParticipant,
   status,
   teamStatus,
+  eventOpen = true,
 }: {
   requestLoaded: boolean
   request: MyMentorRequest | null
   isParticipant: boolean
   status: string
   teamStatus: string | null
+  eventOpen?: boolean
 }): boolean {
   return Boolean(
     requestLoaded &&
     request === null &&
     isParticipant &&
+    eventOpen &&
     status === "active" &&
     teamStatus !== "pending_approval" &&
     teamStatus !== "disbanded",

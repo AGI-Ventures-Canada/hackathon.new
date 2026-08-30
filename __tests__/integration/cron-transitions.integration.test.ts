@@ -21,9 +21,15 @@ const mockReconcilePendingTeams = mock(() => Promise.resolve({
   failed: 0,
   errors: [],
 }))
+const mockReconcilePendingJudgeWork = mock(() => Promise.resolve({
+  events: 0,
+  failed: 0,
+  errors: [],
+}))
 
 mock.module("@/lib/services/lifecycle", () => ({
   processAutoTransitions: mockProcessAutoTransitions,
+  reconcilePendingJudgeWorkForClosedHackathons: mockReconcilePendingJudgeWork,
   reconcilePendingTeamsForClosedHackathons: mockReconcilePendingTeams,
 }))
 mock.module("@/lib/services/challenges", () => ({
@@ -70,6 +76,12 @@ describe("transition cron route", () => {
       failed: 0,
       errors: [],
     })
+    mockReconcilePendingJudgeWork.mockClear()
+    mockReconcilePendingJudgeWork.mockResolvedValue({
+      events: 0,
+      failed: 0,
+      errors: [],
+    })
   })
 
   afterAll(() => {
@@ -88,6 +100,7 @@ describe("transition cron route", () => {
     expect(mockProcessScheduledChallengeReleases).toHaveBeenCalledTimes(1)
     expect(mockProcessDueSchedules).toHaveBeenCalledTimes(1)
     expect(mockReconcilePendingTeams).toHaveBeenCalledTimes(1)
+    expect(mockReconcilePendingJudgeWork).toHaveBeenCalledTimes(1)
   })
 
   it("reports a failed schedule occurrence as a failed cron run", async () => {
@@ -131,4 +144,5 @@ describe("transition cron route", () => {
       pendingTeamCloseout: { events: 1, denied: 0, failed: 1 },
     })
   })
+
 })

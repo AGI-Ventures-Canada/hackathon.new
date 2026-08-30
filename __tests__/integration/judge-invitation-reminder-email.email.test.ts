@@ -57,6 +57,10 @@ describe("Judge Invitation Reminder Email", () => {
       inviterName: "Jordan Lee",
       inviteToken: "xyz789token",
       expiresAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+      hackathonSlug: "ai-hackathon-2026",
+      hackathonStartsAt: "2026-04-20T08:30:00Z",
+      hackathonEndsAt: "2026-04-22T17:00:00Z",
+      hackathonTimezone: "America/Toronto",
     }
 
     it("sends email successfully", async () => {
@@ -116,6 +120,16 @@ describe("Judge Invitation Reminder Email", () => {
       expect(callArgs.text).toContain("left")
     })
 
+    it("includes the exact event time, timezone, and next step", async () => {
+      await sendJudgeInvitationReminderEmail(validInput)
+
+      const callArgs = mockSendEmail.mock.calls[0][0]
+      expect(callArgs.text).toContain("4:30 AM EDT")
+      expect(callArgs.text).toContain("1:00 PM EDT")
+      expect(callArgs.text).toContain("Accept now")
+      expect(callArgs.text).toContain("https://example.com/e/ai-hackathon-2026/judge")
+    })
+
     it("includes inviter name in body", async () => {
       await sendJudgeInvitationReminderEmail(validInput)
 
@@ -148,6 +162,37 @@ describe("Judge Invitation Reminder Email", () => {
       expect(mockSendEmail.mock.calls[0][0].idempotencyKey).toBe(
         "judge-invitation/xyz789token"
       )
+    })
+
+    it("uses a clear inviter subject and direct judging event link", async () => {
+      await sendJudgeInvitationEmail(validInput)
+
+      const callArgs = mockSendEmail.mock.calls[0][0]
+      expect(callArgs.subject).toContain("Jordan Lee invited you to judge")
+      expect(callArgs.subject.length).toBeLessThanOrEqual(60)
+      expect(callArgs.text).toContain("https://example.com/e/ai-hackathon-2026/judge")
+      expect(callArgs.text).toContain("straight to your judging page")
+    })
+
+    it("keeps invitation dates in one truthful event timezone", async () => {
+      const boundaryInput = {
+        ...validInput,
+        hackathonStartsAt: "2026-04-20T01:30:00Z",
+        hackathonEndsAt: "2026-04-20T03:00:00Z",
+      }
+
+      await sendJudgeInvitationEmail(boundaryInput)
+      const invite = mockSendEmail.mock.calls[0][0]
+      expect(invite.text).toContain("Sunday, April 19, 2026 at 9:30 PM EDT")
+      expect(invite.text).not.toContain("Monday, April 20")
+      expect(invite.text).not.toContain("Apr 20")
+
+      mockSendEmail.mockClear()
+      await sendJudgeInvitationReminderEmail(boundaryInput)
+      const reminder = mockSendEmail.mock.calls[0][0]
+      expect(reminder.text).toContain("Sunday, April 19, 2026 at 9:30 PM EDT")
+      expect(reminder.text).not.toContain("Monday, April 20")
+      expect(reminder.text).not.toContain("Apr 20")
     })
 
     it("returns success false when sendEmail returns null", async () => {

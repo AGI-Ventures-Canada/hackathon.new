@@ -174,6 +174,7 @@ mock.module("@/lib/services/rate-limit", () => ({
 }))
 
 mock.module("@/lib/services/hackathons", () => ({
+  createHackathon: mock(() => Promise.resolve({ id: "h1" })),
   registerForHackathon: mock(() => Promise.resolve({ success: true })),
   getParticipantCount: mock(() => Promise.resolve(0)),
   isUserRegistered: mock(() => Promise.resolve(false)),

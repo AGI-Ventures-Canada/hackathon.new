@@ -9,10 +9,11 @@ import { Slider } from "@/components/ui/slider"
 import { Badge } from "@/components/ui/badge"
 import { Loader2, ExternalLink, Github, Maximize2, AlertTriangle, Play } from "lucide-react"
 import Image from "next/image"
-import { assertOkJson } from "@/lib/utils/fetch"
+import { assertOk, assertOkJson } from "@/lib/utils/fetch"
 import type { AssignmentDetail } from "@/lib/services/judging"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { useJudgeWebMcpEditor } from "./judge-webmcp-tools"
+import { useSerializedNoteSave } from "./use-serialized-note-save"
 
 interface UnifiedScoringPanelProps {
   hackathonSlug: string
@@ -60,16 +61,33 @@ export function UnifiedScoringPanel({
 }: UnifiedScoringPanelProps) {
   const [detail, setDetail] = useState<AssignmentDetail | null>(null)
   const [loading, setLoading] = useState(!(prefetchedDetail && prefetchedDetail.id === assignmentId))
-  const [scores, setScores] = useState<Record<string, number>>({})
+  const [scores, setScores] = useState<Record<string, number | null>>({})
   const [notes, setNotes] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [savingNotes, setSavingNotes] = useState(false)
   const [screenshotOpen, setScreenshotOpen] = useState(false)
-  const notesTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const appliedDetailRef = useRef<string | null>(null)
   const prefetchedDetailRef = useRef(prefetchedDetail)
   prefetchedDetailRef.current = prefetchedDetail
+
+  const persistNotes = useCallback(async (value: string) => {
+    await fetch(
+      `/api/public/hackathons/${hackathonSlug}/judging/assignments/${assignmentId}/notes`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes: value }),
+      },
+    ).then(assertOk)
+  }, [assignmentId, hackathonSlug])
+  const {
+    saving: savingNotes,
+    saveError: notesSaveError,
+    reset: resetNotesSave,
+    stage: stageNotesSave,
+    schedule: scheduleNotesSave,
+    flush: flushNotesSave,
+  } = useSerializedNoteSave(persistNotes)
 
   useEffect(() => {
     setError(null)
@@ -77,13 +95,14 @@ export function UnifiedScoringPanel({
 
     function applyDetail(data: AssignmentDetail) {
       setDetail(data)
-      const initialScores: Record<string, number> = {}
+      const initialScores: Record<string, number | null> = {}
       for (const c of data.criteria ?? []) {
-        const mid = Math.round((c.min_score + c.max_score) / 2)
-        initialScores[c.id] = c.currentScore ?? mid
+        initialScores[c.id] = c.currentScore ?? null
       }
       setScores(initialScores)
-      setNotes(data.notes ?? "")
+      const savedNotes = data.notes ?? ""
+      setNotes(savedNotes)
+      resetNotesSave(savedNotes)
       setLoading(false)
       appliedDetailRef.current = data.id
     }
@@ -102,35 +121,11 @@ export function UnifiedScoringPanel({
       })
       .catch(() => setError("Failed to load assignment"))
       .finally(() => setLoading(false))
-  }, [assignmentId, hackathonSlug])
-
-  const debouncedSaveNotes = useCallback(
-    (value: string) => {
-      clearTimeout(notesTimeoutRef.current)
-      notesTimeoutRef.current = setTimeout(async () => {
-        setSavingNotes(true)
-        try {
-          await fetch(
-            `/api/public/hackathons/${hackathonSlug}/judging/assignments/${assignmentId}/notes`,
-            {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ notes: value }),
-            }
-          )
-        } catch {
-          // ignore — notes auto-save retries on next edit
-        } finally {
-          setSavingNotes(false)
-        }
-      }, 1000)
-    },
-    [hackathonSlug, assignmentId]
-  )
+  }, [assignmentId, hackathonSlug, resetNotesSave])
 
   function handleNotesChange(value: string) {
     setNotes(value)
-    debouncedSaveNotes(value)
+    scheduleNotesSave(value)
   }
 
   const groups = useMemo<CriterionGroup[]>(() => {
@@ -171,6 +166,11 @@ export function UnifiedScoringPanel({
   async function handleSubmit() {
     if (!detail) return
 
+    if (detail.criteria.length === 0) {
+      setError("Scoring isn't ready yet. Ask the organizer to add score categories.")
+      return
+    }
+
     for (const c of detail.criteria) {
       const v = scores[c.id]
       if (v == null || v < c.min_score || v > c.max_score) {
@@ -183,9 +183,14 @@ export function UnifiedScoringPanel({
     setError(null)
 
     try {
-      const validScores = Object.entries(scores).map(([criteriaId, score]) => ({
-        criteriaId,
-        score,
+      const notesSaved = await flushNotesSave(notes)
+      if (!notesSaved) {
+        setError("Save your notes before submitting. Retry the note save, then try again.")
+        return
+      }
+      const validScores = detail.criteria.map((criterion) => ({
+        criteriaId: criterion.id,
+        score: scores[criterion.id] as number,
       }))
 
       const res = await fetch(
@@ -193,7 +198,7 @@ export function UnifiedScoringPanel({
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ scores: validScores, notes }),
+          body: JSON.stringify({ scores: validScores }),
         }
       )
 
@@ -255,8 +260,8 @@ export function UnifiedScoringPanel({
 
         setScores((current) => ({ ...current, ...nextScores }))
         if (preparation.notes !== undefined) {
-          clearTimeout(notesTimeoutRef.current)
           setNotes(preparation.notes)
+          stageNotesSave(preparation.notes)
         }
         setError(null)
         return {
@@ -265,7 +270,7 @@ export function UnifiedScoringPanel({
         }
       },
     }
-  }, [detail])
+  }, [detail, stageNotesSave])
 
   const webMcpAssignmentIds = useMemo(() => (detail ? [assignmentId] : []), [assignmentId, detail])
   useJudgeWebMcpEditor(webMcpAssignmentIds, webMcpEditor)
@@ -286,6 +291,10 @@ export function UnifiedScoringPanel({
     )
   }
 
+  const hasMissingScores =
+    detail.criteria.length === 0 ||
+    detail.criteria.some((criterion) => scores[criterion.id] == null)
+
   return (
     <div
       className="space-y-6"
@@ -305,7 +314,7 @@ export function UnifiedScoringPanel({
             <button
               type="button"
               onClick={() => setScreenshotOpen(true)}
-              className="absolute top-2 right-2 flex items-center gap-1.5 rounded-md bg-background/80 backdrop-blur-sm border px-2 py-1 text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity"
+              className="absolute top-2 right-2 flex items-center gap-1.5 rounded-md bg-background/80 backdrop-blur-sm border px-2 py-1 text-xs font-medium opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
             >
               <Maximize2 className="size-3" />
               View full
@@ -365,6 +374,11 @@ export function UnifiedScoringPanel({
       </div>
 
       <div className="space-y-4">
+        {detail.criteria.length === 0 && (
+          <p className="text-sm text-destructive">
+            Scoring isn&apos;t ready yet. Ask the organizer to add score categories.
+          </p>
+        )}
         {groups.map((g) => {
           const isCore = g.prizeId == null
           const prizeSubtotal = isCore
@@ -401,7 +415,7 @@ export function UnifiedScoringPanel({
                   <div className="flex items-center gap-3">
                     <Slider
                       aria-label={`${c.name} score slider`}
-                      value={[scores[c.id] ?? Math.round((c.min_score + c.max_score) / 2)]}
+                      value={[scores[c.id] ?? c.min_score]}
                       onValueChange={([val]) =>
                         setScores((prev) => ({ ...prev, [c.id]: val }))
                       }
@@ -409,6 +423,7 @@ export function UnifiedScoringPanel({
                       max={c.max_score}
                       step={1}
                       className="flex-1"
+                      disabled={submitting}
                     />
                     <Input
                       id={`score-${assignmentId}-${c.id}`}
@@ -416,16 +431,22 @@ export function UnifiedScoringPanel({
                       type="number"
                       min={c.min_score}
                       max={c.max_score}
-                      value={scores[c.id] ?? Math.round((c.min_score + c.max_score) / 2)}
+                      value={scores[c.id] ?? ""}
+                      placeholder={String(c.min_score)}
                       onChange={(e) => {
-                        const val = Math.max(
-                          c.min_score,
-                          Math.min(c.max_score, parseInt(e.target.value) || c.min_score)
-                        )
+                        if (e.target.value === "") {
+                          setScores((prev) => ({ ...prev, [c.id]: null }))
+                          return
+                        }
+                        const parsed = parseInt(e.target.value)
+                        const val = Number.isNaN(parsed)
+                          ? null
+                          : Math.max(c.min_score, Math.min(c.max_score, parsed))
                         setScores((prev) => ({ ...prev, [c.id]: val }))
                       }}
                       className="w-16 text-center"
                       autoComplete="off"
+                      disabled={submitting}
                     />
                     <span className="text-xs text-muted-foreground w-12 text-right">
                       /{c.max_score}
@@ -458,28 +479,36 @@ export function UnifiedScoringPanel({
         <div className="flex items-center justify-between">
           <Label htmlFor={`notes-${assignmentId}`}>Notes</Label>
           {savingNotes && <span className="text-xs text-muted-foreground">Saving...</span>}
+          {!savingNotes && notesSaveError && (
+            <Button variant="link" size="sm" disabled={submitting} onClick={() => void flushNotesSave(notes)}>
+              Notes weren&apos;t saved. Retry
+            </Button>
+          )}
         </div>
         <Textarea
           id={`notes-${assignmentId}`}
           value={notes}
           onChange={(e) => handleNotesChange(e.target.value)}
+          onBlur={() => void flushNotesSave(notes)}
           placeholder="Add your notes about this submission..."
           rows={3}
+          maxLength={2_000}
           autoComplete="off"
           data-1p-ignore
           data-lpignore="true"
           data-form-type="other"
+          disabled={submitting}
         />
       </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <div className="flex gap-2">
-        <Button onClick={handleSubmit} disabled={submitting}>
+        <Button onClick={handleSubmit} disabled={submitting || hasMissingScores}>
           {submitting && <Loader2 className="mr-2 size-4 animate-spin" />}
           {detail.isComplete ? "Save changes" : "Submit scores"}
         </Button>
-        <Button variant="outline" onClick={onClose}>
+        <Button variant="outline" onClick={onClose} disabled={submitting}>
           {cancelLabel}
         </Button>
       </div>

@@ -81,6 +81,30 @@ describe("winner result delivery", () => {
     mockGetClaimTokens.mockResolvedValue({ assignment_1: "claim_1" })
   })
 
+  it("does not send winner email for a test event", async () => {
+    fromImpl = (table) => table === "hackathons"
+      ? query({
+          data: {
+            name: "Practice Event",
+            slug: "practice-event",
+            status: "completed",
+            results_published_at: "2026-08-20T00:00:00.000Z",
+            winner_emails_sent_at: null,
+            is_test_event: true,
+          },
+          error: null,
+        })
+      : query({ data: null, error: null })
+
+    await expect(sendWinnerEmailsWithResult("hack_1")).resolves.toEqual({
+      attempted: 0,
+      sent: 0,
+      failed: 0,
+    })
+    expect(mockGetUserList).not.toHaveBeenCalled()
+    expect(mockSendEmail).not.toHaveBeenCalled()
+  })
+
   it("delivers team and solo wins independently with private idempotency keys", async () => {
     let participantCall = 0
     fromImpl = (table) => {

@@ -6,20 +6,20 @@ hackathon.new registers browser-native tools with `document.modelContext.registe
 
 Agents may read, navigate, edit ordinary organizer data, and prepare visible work. A person keeps the final click for event creation, sign in, registration, terms and location consent, invitations, project saves and submissions, go-live, announcements, results, judging responses, mentor requests, claims, and resolutions.
 
-No WebMCP tool deletes data, sends email, transitions an event, chooses winners, or publishes results.
+Organizer task tools can remove only custom checklist tasks. No WebMCP tool deletes event content, sends email, transitions an event, chooses winners, or publishes results.
 
 ## Tool inventory
 
 | Surface | Tools | When shown |
 |---|---|---|
-| Signed-in workspace | `open_create_event`, `list_my_organized_events`, `open_organized_event`, `get_organized_event_tasks`, `list_my_attendee_events`, `get_attendee_event_guide`, `get_attendee_event_status`, `get_attendee_project_draft`, `prepare_attendee_project`, `open_attendee_event` | Available from every signed-in app page. Events use opaque references from the matching list tool. Attendee reads recheck the current participant role. Project preparation opens the normal review on the current page. |
+| Signed-in workspace | `open_create_event`, `list_my_organized_events`, `open_organized_event`, `get_organized_event_tasks`, `add_organized_event_task`, `complete_organized_event_task`, `reopen_organized_event_task`, `dismiss_organized_event_task`, `remove_organized_event_task`, `list_my_attendee_events`, `get_attendee_event_guide`, `get_attendee_challenge_links`, `get_attendee_event_status`, `get_attendee_project_draft`, `prepare_attendee_project`, `open_attendee_event` | Available from every signed-in app page. Events use opaque references from the matching list tool. Task lists use offset, limit, and state pages. Challenge links use the opaque challenge reference and paged safe URLs. Attendee reads recheck the current participant role. Project preparation opens the normal review on the current page. |
 | Create or import | `get_hackathon_draft`, `update_hackathon_draft`, `open_hackathon_review`, `open_sign_in` | The draft tools stay stable while fields change. Sign in appears only for a signed-out person. |
-| Visitor or attendee | `get_event_guide`, `get_my_event_status`, `open_registration`, `get_my_team`, `prepare_team_invite`, `get_project_draft`, `prepare_project` | Only the next useful tools appear for the viewer's registration, team, and project state. |
+| Visitor or attendee | `get_event_guide`, `get_challenge_resources`, `get_my_event_status`, `open_registration`, `get_my_team`, `prepare_team_invite`, `get_project_draft`, `prepare_project` | Only the next useful tools appear for the viewer's registration, team, and project state. Released challenge links are safe, complete, and paged. |
 | Attendee mentor help | `get_my_mentor_request`, `prepare_mentor_request` | The prepare tool appears only when the attendee can open a new request. |
 | Sponsor portfolio | `list_my_sponsorships`, `open_sponsor_event` | A signed-in sponsor can review its events and open the event or prize page. |
 | Sponsor prize delivery | `get_sponsor_fulfillments`, `prepare_fulfillment` | Safe delivery status omits recipient, address, and payment details. Preparation opens the final human review. |
-| Organizer reads and navigation | Overview, schedule, challenge, prize, project, sponsor, perk, and announcement reads, plus `open_hackathon_section` | Available to the exact event organizer. Perk codes stay hidden. Results and unreleased content are still filtered by lifecycle. |
-| Organizer edits | `update_hackathon_details`, `add_schedule_item`, `set_hackathon_timeline`, `add_challenge`, `add_prize`, `prepare_sponsor`, `draft_announcement` | Details and ordinary schedule items stop at completion. Timeline, challenge, and prize writes are draft-only. Sponsor preparation opens and fills the normal editor. Announcements are saved as drafts. |
+| Organizer reads and navigation | `list_organizer_tasks`, overview, schedule, challenge, prize, project, sponsor, perk, and announcement reads, plus `open_hackathon_section` | Available to the exact event organizer. Task pages include stable task refs and exact links. Perk codes stay hidden. Results and unreleased content are still filtered by lifecycle. |
+| Organizer edits | `add_organizer_task`, `complete_organizer_task`, `reopen_organizer_task`, `dismiss_organizer_task`, `remove_organizer_task`, `update_hackathon_details`, `add_schedule_item`, `set_hackathon_timeline`, `add_challenge`, `add_prize`, `prepare_sponsor`, `draft_announcement` | Custom task adds use a client-made `custom-` task ref, so a safe retry does not make a second task. Only custom tasks can be removed. Other writes follow the event stage. Sponsor preparation opens the normal editor. Announcements are saved as drafts. |
 | Organizer reviews | `open_go_live_review`, `open_publish_review` | Go-live appears for drafts. Results review appears during judging or after completion. Both require a human click. |
 | Judge | `get_my_judging_status`, `get_judge_assignments`, `get_judge_assignment`, `open_judge_assignment`, plus one of `prepare_judge_scores`, `prepare_judge_picks`, `prepare_judge_bucket`, or `prepare_judge_gates` | Only an assigned judge sees these tools. The preparation tool matches the configured response style and makes no request. |
 | Public mentor queue | `get_mentor_queue_status` | Signed-out visitors receive aggregate counts only. |
@@ -39,7 +39,9 @@ or:
 {"ok":false,"error":{"code":"event_changed","message":"Refresh the page.","retryable":true}}
 ```
 
-Tool names and parameter names are at most 30 characters. Descriptions are at most 500 characters, parameter descriptions at most 150, and each serialized result at most 1,500 characters. Read tools use `readOnlyHint`. Tools that return project, attendee, request, or imported text use `untrustedContentHint`.
+Tool names and parameter names are at most 30 characters. Descriptions are at most 500 characters, parameter descriptions at most 150, and each serialized result at most 1,500 characters. Read tools use `readOnlyHint: true`; task changes use `readOnlyHint: false`. Tools that return project, attendee, request, or imported text use `untrustedContentHint`.
+
+Organizer task lists accept `offset`, `limit`, and `state`. Each task keeps its stable `taskRef`, exact `destination`, and exact `inspectUrl`. If a browser result reaches its size limit, `nextOffset` points to the first task not shown.
 
 Database, Clerk, participant, team, assignment, prize, criterion, and mentor-request IDs never enter tool results. Browser sessions map them to opaque references and reject references that were not issued or whose source record disappeared.
 

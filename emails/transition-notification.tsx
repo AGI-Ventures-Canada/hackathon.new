@@ -13,6 +13,7 @@ interface TransitionNotificationEmailProps {
   hackathonStartsAt?: string | null
   hackathonEndsAt?: string | null
   challenges?: ChallengeSummary[]
+  recipientRole?: string
 }
 
 const eventConfig: Record<
@@ -57,13 +58,20 @@ export default function TransitionNotificationEmail({
   hackathonStartsAt,
   hackathonEndsAt,
   challenges,
+  recipientRole,
 }: TransitionNotificationEmailProps) {
   const config = eventConfig[event]
   const hasChallenges = !!challenges && challenges.length > 0
-  const heading = hasChallenges
+  const isJudgeScoringStart =
+    event === "judging_started" && recipientRole === "judge"
+  const heading = isJudgeScoringStart
+    ? "Your Scores Are Ready"
+    : hasChallenges
     ? `${hackathonName} Is Live — Here Are the Challenges`
     : config.heading(hackathonName)
-  const bodyText = hasChallenges
+  const bodyText = isJudgeScoringStart
+    ? ". Your judging tasks are ready. Review each project and send your scores."
+    : hasChallenges
     ? ` is live and the challenges are out. Take a look and start building.`
     : config.bodySuffix
 
@@ -71,7 +79,9 @@ export default function TransitionNotificationEmail({
     <OatmealLayout
       heading={heading}
       preview={heading}
-      footerText={`You got this because you’re registered for ${hackathonName}.`}
+      footerText={isJudgeScoringStart
+        ? `You got this because you’re judging ${hackathonName}.`
+        : `You got this because you’re registered for ${hackathonName}.`}
       eventUrl={eventUrl}
       hackathonName={hackathonName}
     >
@@ -82,7 +92,7 @@ export default function TransitionNotificationEmail({
           lineHeight: "1.6",
         }}
       >
-        {hasChallenges ? "" : config.bodyPrefix}
+        {hasChallenges || isJudgeScoringStart ? "" : config.bodyPrefix}
         <strong>{hackathonName}</strong>
         {bodyText}
       </Text>
@@ -110,7 +120,11 @@ export default function TransitionNotificationEmail({
       )}
 
       <CTAButton href={eventUrl}>
-        {hasChallenges ? "View Challenges" : config.ctaLabel}
+        {isJudgeScoringStart
+          ? "Start Judging"
+          : hasChallenges
+            ? "View Challenges"
+            : config.ctaLabel}
       </CTAButton>
     </OatmealLayout>
   )

@@ -21,6 +21,7 @@ import type { ScheduleItem } from "@/lib/services/schedule-items"
 import type { HackathonStatus } from "@/lib/db/hackathon-types"
 import { useIsClient } from "@/hooks/use-is-client"
 import { useActionItemsOptional } from "./action-items-context"
+import { isSafeExternalUrl, normalizeUrl } from "@/lib/utils/url"
 
 type Props = {
   hackathonId: string
@@ -239,12 +240,31 @@ export function ChallengesTab({
                   ) : null}
                   {c.resources.length > 0 ? (
                     <div className="mt-2 flex flex-wrap gap-1.5">
-                      {c.resources.map((r, i) => (
-                        <Badge key={i} variant="outline" className="gap-1">
-                          <LinkIcon className="size-3" />
-                          {r.label || r.url}
-                        </Badge>
-                      ))}
+                      {c.resources.map((r, i) => {
+                        const label = r.label || r.url
+                        const url = normalizeUrl(r.url)
+                        if (!isSafeExternalUrl(url)) {
+                          return (
+                            <Badge key={i} variant="outline" className="gap-1">
+                              <LinkIcon className="size-3" aria-hidden="true" />
+                              {label}
+                            </Badge>
+                          )
+                        }
+                        return (
+                          <Badge key={i} asChild variant="outline">
+                            <a
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              aria-label={`${label} (opens in a new tab)`}
+                            >
+                              <LinkIcon aria-hidden="true" />
+                              {label}
+                            </a>
+                          </Badge>
+                        )
+                      })}
                     </div>
                   ) : null}
                 </div>

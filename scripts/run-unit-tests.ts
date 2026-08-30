@@ -20,8 +20,10 @@ const SERVICE_MOCK_PROCESS_ISOLATED_TESTS = [
   "__tests__/services/challenges.test.ts",
   "__tests__/services/event-mutation-lease.test.ts",
   "__tests__/services/judge-invitations.test.ts",
+  "__tests__/services/organization-members.test.ts",
   "__tests__/services/smart-reminders.test.ts",
   "__tests__/services/team-management.test.ts",
+  "__tests__/services/test-event-sandbox.test.ts",
 ]
 
 const SERVICE_MOCK_ISOLATED_TESTS = [
@@ -34,6 +36,7 @@ const SERVICE_MOCK_ISOLATED_TESTS = [
   "__tests__/services/public-hackathons.test.ts",
   "__tests__/services/post-event-reminders.test.ts",
   "__tests__/services/smart-reminders-delivery.test.ts",
+  "__tests__/services/results.test.ts",
   ...SERVICE_MOCK_PROCESS_ISOLATED_TESTS,
 ]
 const serviceMockSet = new Set(SERVICE_MOCK_ISOLATED_TESTS)
@@ -68,6 +71,10 @@ const SERVICE_MOCK_POST_EVENT_REMINDERS_TESTS = [
 
 const SERVICE_MOCK_SMART_REMINDERS_DELIVERY_TESTS = [
   "__tests__/services/smart-reminders-delivery.test.ts",
+]
+
+const SERVICE_MOCK_RESULTS_TESTS = [
+  "__tests__/services/results.test.ts",
 ]
 
 const CRON_REMINDERS_ISOLATED_TESTS = [
@@ -157,6 +164,7 @@ const MANAGE_WEBMCP_ISOLATED_TESTS = [
   "__tests__/components/hackathon/preview/preview-webmcp-state.test.tsx",
   "__tests__/components/hackathon/manage/manage-role-tabs.test.tsx",
   "__tests__/components/hackathon/manage/manage-page-boundary.test.tsx",
+  "__tests__/components/hackathon/manage/test-event-banner.test.tsx",
   "__tests__/components/ai-elements/reasoning.test.tsx",
 ]
 const manageWebMcpSet = new Set(MANAGE_WEBMCP_ISOLATED_TESTS)
@@ -277,6 +285,10 @@ const groups: Group[] = [
   {
     name: "services (service-mock isolated: smart-reminders delivery)",
     args: SERVICE_MOCK_SMART_REMINDERS_DELIVERY_TESTS,
+  },
+  {
+    name: "services (service-mock isolated: results)",
+    args: SERVICE_MOCK_RESULTS_TESTS,
   },
   ...SERVICE_MOCK_PROCESS_ISOLATED_TESTS.map((testPath, index) => ({
     name: `services (service-mock process-isolated ${index + 1})`,

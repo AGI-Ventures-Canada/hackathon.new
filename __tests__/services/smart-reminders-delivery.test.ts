@@ -46,6 +46,9 @@ const baseReminder = {
     teamName: "Team One",
     hackathonName: "Build Together",
     hackathonSlug: "build-together",
+    hackathonStartsAt: "2026-09-10T12:00:00.000Z",
+    hackathonEndsAt: "2026-09-11T17:00:00.000Z",
+    hackathonTimezone: "America/Toronto",
     inviterName: "Avery",
     inviteToken: "token_1",
     expiresAt: "2099-09-01T00:00:00Z",
@@ -78,6 +81,23 @@ describe("smart reminder default delivery", () => {
         entity_id: "hack_1",
         reminder_type: "submission_due" as const,
       },
+      {
+        ...baseReminder,
+        id: "reminder_4",
+        entity_type: "hackathon_event" as const,
+        entity_id: "hack_1",
+        reminder_type: "judge_scoring_starting" as const,
+      },
+      {
+        ...baseReminder,
+        id: "reminder_5",
+        entity_type: "judge_invitation" as const,
+        reminder_type: "judge_event_starting" as const,
+        metadata: {
+          ...baseReminder.metadata,
+          recipientClerkUserId: "judge-user",
+        },
+      },
     ]
 
     for (const variant of variants) {
@@ -95,11 +115,26 @@ describe("smart reminder default delivery", () => {
     expect(mockJudgeReminder).toHaveBeenCalledWith(expect.objectContaining({
       deliveryId: "reminder_2",
       to: "person@example.com",
+      hackathonSlug: "build-together",
+      hackathonStartsAt: "2026-09-10T12:00:00.000Z",
+      hackathonEndsAt: "2026-09-11T17:00:00.000Z",
+      hackathonTimezone: "America/Toronto",
     }))
     expect(mockEventReminder).toHaveBeenCalledWith(expect.objectContaining({
       deliveryId: "reminder_3",
       hackathonId: "hack_1",
       reminderType: "submission_due",
+    }))
+    expect(mockEventReminder).toHaveBeenCalledWith(expect.objectContaining({
+      deliveryId: "reminder_4",
+      hackathonId: "hack_1",
+      reminderType: "judge_scoring_starting",
+      hackathonTimezone: "America/Toronto",
+    }))
+    expect(mockEventReminder).toHaveBeenCalledWith(expect.objectContaining({
+      deliveryId: "reminder_5",
+      reminderType: "judge_event_starting",
+      recipientIds: ["judge-user"],
     }))
   })
 
@@ -236,6 +271,25 @@ describe("smart reminder default delivery", () => {
     }
   })
 
+  it("never sends reminders for a test event", async () => {
+    setMockFromImplementation(() => createChainableMock({
+      data: {
+        status: "active",
+        starts_at: "2026-09-01T12:00:00.000Z",
+        ends_at: "2099-09-02T12:00:00.000Z",
+        is_test_event: true,
+      },
+      error: null,
+    }))
+
+    await expect(validateReminderEntity({
+      ...baseReminder,
+      entity_type: "hackathon_event",
+      entity_id: "hack_1",
+      reminder_type: "judge_event_starting",
+    })).resolves.toBe(false)
+  })
+
   it("rejects stale invitation states without treating them as delivery failures", async () => {
     for (const invitation of [
       null,
@@ -331,12 +385,57 @@ describe("smart reminder default delivery", () => {
     await expect(validateReminderEntity({
       ...baseReminder,
       entity_type: "hackathon_event",
+      entity_id: "hack_1",
+      reminder_type: "judge_event_starting",
+    })).resolves.toBe(true)
+    await expect(validateReminderEntity({
+      ...baseReminder,
+      entity_type: "hackathon_event",
       entity_id: "another_event",
       reminder_type: "event_starting",
     })).resolves.toBe(false)
     await expect(validateReminderEntity({
       ...baseReminder,
       entity_type: "unknown" as never,
+    })).resolves.toBe(false)
+  })
+
+  it("validates invitation-scoped judge reminders against the accepted judge", async () => {
+    setMockFromImplementation((table) => {
+      if (table === "hackathons") {
+        return createChainableMock({
+          data: {
+            status: "active",
+            starts_at: "2099-09-01T00:00:00Z",
+            ends_at: "2099-09-02T00:00:00Z",
+          },
+          error: null,
+        })
+      }
+      return createChainableMock({
+        data: {
+          status: "accepted",
+          expires_at: "2099-01-01T00:00:00Z",
+          accepted_by_clerk_user_id: "judge-user",
+        },
+        error: null,
+      })
+    })
+
+    const reminder = {
+      ...baseReminder,
+      entity_type: "judge_invitation" as const,
+      reminder_type: "judge_event_starting" as const,
+      metadata: {
+        ...baseReminder.metadata,
+        deadlineDate: "2099-09-01T00:00:00Z",
+        recipientClerkUserId: "judge-user",
+      },
+    }
+    await expect(validateReminderEntity(reminder)).resolves.toBe(true)
+    await expect(validateReminderEntity({
+      ...reminder,
+      metadata: { ...reminder.metadata, recipientClerkUserId: "someone-else" },
     })).resolves.toBe(false)
   })
 

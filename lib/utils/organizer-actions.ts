@@ -122,6 +122,9 @@ function transitionAction(args: SharedFields & LabeledState): ActionItem {
 }
 
 export type ActionItemsInput = {
+  id?: string
+  slug?: string | null
+  name?: string | null
   status: HackathonStatus
   storedStatus?: HackathonStatus
   phase: HackathonPhase | null
@@ -150,12 +153,22 @@ export type ActionItemsInput = {
   feedbackSurveySentAt: string | null
   pendingJudgeInvitationCount: number
   unsentInvitationEmailCount?: number
+  unsentTeamInvitationEmailCount?: number
+  unsentJudgeInvitationEmailCount?: number
+  failedReminderCount?: number
   perkCount: number
   perksNone: boolean
   rounds: { plannedCount: number; activeCount: number; completeCount: number }
   communityUrl?: string | null
   termsContent?: string | null
   judgingSetupReady?: boolean
+  requiresJudgeScoring?: boolean
+  judgingCompletionReadiness?: {
+    isReady: boolean
+    issues: string[]
+    incompleteAssignmentCount: number
+    incompletePickListCount: number
+  }
   registrationOpensAt?: string | null
   requireLocationVerification?: boolean
   now?: string
@@ -166,6 +179,11 @@ const STATUS_ORDER: HackathonStatus[] = ["draft", "published", "active", "judgin
 function statusIndex(status: HackathonStatus): number {
   if (status === "registration_open") return STATUS_ORDER.indexOf("published")
   return STATUS_ORDER.indexOf(status)
+}
+
+function nowTimestamp(input: ActionItemsInput): number {
+  const timestamp = input.now ? new Date(input.now).getTime() : Number.NaN
+  return Number.isFinite(timestamp) ? timestamp : new Date().getTime()
 }
 
 export function getOrganizerActionItems(input: ActionItemsInput): ActionItem[] {
@@ -244,23 +262,74 @@ function addLifecycleHealthActions(items: ActionItem[], input: ActionItemsInput)
     }
   }
 
-  const unsentCount = input.unsentInvitationEmailCount ?? 0
-  if (
-    unsentCount > 0 &&
-    !["completed", "archived"].includes(input.status)
-  ) {
-    const isDraft = (input.storedStatus ?? input.status) === "draft"
-    items.push(manualAction({
-      id: "unsent-invitation-emails",
-      label: isDraft
-        ? `${unsentCount} invite email${unsentCount === 1 ? " is" : "s are"} saved`
-        : `${unsentCount} invite email${unsentCount === 1 ? " hasn't" : "s haven't"} sent`,
-      hint: isDraft
-        ? "They'll send when you publish. Draft events don't send invite emails."
-        : "We'll keep retrying. Open the invite lists to send them again now.",
+  const isOpen = !["completed", "archived"].includes(input.status)
+  const isDraft = (input.storedStatus ?? input.status) === "draft"
+  const inviteKinds = input.unsentTeamInvitationEmailCount !== undefined ||
+    input.unsentJudgeInvitationEmailCount !== undefined
+    ? [
+        {
+          id: "unsent-team-invitation-emails",
+          count: input.unsentTeamInvitationEmailCount ?? 0,
+          people: "team invite",
+          tab: "teams",
+          subtab: undefined,
+          subtabKey: undefined,
+        },
+        {
+          id: "unsent-judge-invitation-emails",
+          count: input.unsentJudgeInvitationEmailCount ?? 0,
+          people: "judge invite",
+          tab: "judging",
+          subtab: "judges",
+          subtabKey: "jtab",
+        },
+      ]
+    : [{
+        id: "unsent-invitation-emails",
+        count: input.unsentInvitationEmailCount ?? 0,
+        people: "invite",
+        tab: "teams",
+        subtab: undefined,
+        subtabKey: undefined,
+      }]
+
+  for (const invite of inviteKinds) {
+    if (!isOpen || invite.count === 0) continue
+    items.push(autoAction({
+      id: invite.id,
       severity: isDraft ? "warning" : "urgent",
-      tab: "teams",
+      tab: invite.tab,
+      subtab: invite.subtab,
+      subtabKey: invite.subtabKey,
       ctaLabel: "Review",
+      isComplete: false,
+      pending: {
+        label: isDraft
+          ? `${invite.count} ${invite.people} email${invite.count === 1 ? " is" : "s are"} saved`
+          : `${invite.count} ${invite.people} email${invite.count === 1 ? " hasn't" : "s haven't"} sent`,
+        hint: isDraft
+          ? "It'll send when you publish. Draft events don't send invite emails."
+          : "We'll keep trying. Open the invite list to send it again now.",
+      },
+      completed: { label: "Invite emails sent", hint: "Everyone has their invite" },
+    }))
+  }
+
+  const failedReminderCount = input.failedReminderCount ?? 0
+  if (isOpen && failedReminderCount > 0) {
+    items.push(autoAction({
+      id: "failed-reminder-emails",
+      severity: "urgent",
+      tab: "event",
+      subtab: "email",
+      subtabKey: "etab",
+      ctaLabel: "Review",
+      isComplete: false,
+      pending: {
+        label: `${failedReminderCount} delivery issue${failedReminderCount === 1 ? " needs" : "s need"} help`,
+        hint: "Some emails or event updates stopped retrying. Review the email setup.",
+      },
+      completed: { label: "Deliveries recovered", hint: "Emails and event updates are moving again" },
     }))
   }
 }
@@ -302,7 +371,14 @@ function addChallengeActions(items: ActionItem[], input: ActionItemsInput) {
     }))
   }
   if (input.challengeExists && input.challengeReleaseTime) {
-    const time = new Date(input.challengeReleaseTime).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+    const time = new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: "UTC",
+      timeZoneName: "short",
+    }).format(new Date(input.challengeReleaseTime))
     items.push(autoAction({
       id: "release-challenge",
       severity: "scheduled",
@@ -380,10 +456,11 @@ function addPendingTeamApprovalAction(items: ActionItem[], input: ActionItemsInp
 }
 
 function addLateRegistrationAction(items: ActionItem[], input: ActionItemsInput) {
+  if (input.status !== "active") return
   if (input.allowLateRegistration !== false) return
   if (!input.startsAt || !input.registrationClosesAt) return
 
-  const now = Date.now()
+  const now = nowTimestamp(input)
   const startsAt = new Date(input.startsAt).getTime()
   const closesAt = new Date(input.registrationClosesAt).getTime()
   const endsAt = input.endsAt ? new Date(input.endsAt).getTime() : null
@@ -488,20 +565,22 @@ function addDraftActions(items: ActionItem[], input: ActionItemsInput) {
     },
   }))
 
-  const hasJudges = input.judgeDisplayCount > 0 || input.judgeCount > 0
-  items.push(autoAction({
-    id: "no-judges",
-    severity: "warning",
-    tab: "judging",
-    subtab: hasJudges ? undefined : "setup",
-    subtabKey: hasJudges ? undefined : "jtab",
-    action: hasJudges ? undefined : "open-judge-dialog",
-    ctaLabel: "Invite",
-    tooltip: JUDGES_TOOLTIP,
-    isComplete: hasJudges,
-    pending: { label: "Invite judges", hint: "Assemble your judging panel" },
-    completed: { label: judgesLabel(input), hint: "Your judging panel is being assembled" },
-  }))
+  if (input.requiresJudgeScoring !== false) {
+    const hasJudges = input.judgeDisplayCount > 0 || input.judgeCount > 0
+    items.push(autoAction({
+      id: "no-judges",
+      severity: "warning",
+      tab: "judging",
+      subtab: hasJudges ? undefined : "setup",
+      subtabKey: hasJudges ? undefined : "jtab",
+      action: hasJudges ? undefined : "open-judge-dialog",
+      ctaLabel: "Invite",
+      tooltip: JUDGES_TOOLTIP,
+      isComplete: hasJudges,
+      pending: { label: "Invite judges", hint: "Assemble your judging panel" },
+      completed: { label: judgesLabel(input), hint: "Your judging panel is being assembled" },
+    }))
+  }
 
   items.push(manualAction({
     id: "review-team-settings",
@@ -597,20 +676,22 @@ function addPublishedActions(items: ActionItem[], input: ActionItemsInput) {
     tooltip: "Share your event link on social media, Slack communities, university mailing lists, and relevant forums. The more visibility your hackathon gets before it starts, the better the turnout and quality of submissions.",
   }))
 
-  const hasJudges = input.judgeDisplayCount > 0 || input.judgeCount > 0
-  items.push(autoAction({
-    id: "no-judges",
-    severity: "warning",
-    tab: "judging",
-    subtab: hasJudges ? undefined : "setup",
-    subtabKey: hasJudges ? undefined : "jtab",
-    action: hasJudges ? undefined : "open-judge-dialog",
-    ctaLabel: "Invite",
-    tooltip: JUDGES_TOOLTIP,
-    isComplete: hasJudges,
-    pending: { label: "No judges invited yet", hint: "You'll need judges to evaluate submissions" },
-    completed: { label: judgesLabel(input), hint: "Your judging panel is being assembled" },
-  }))
+  if (input.requiresJudgeScoring !== false) {
+    const hasJudges = input.judgeDisplayCount > 0 || input.judgeCount > 0
+    items.push(autoAction({
+      id: "no-judges",
+      severity: "warning",
+      tab: "judging",
+      subtab: hasJudges ? undefined : "setup",
+      subtabKey: hasJudges ? undefined : "jtab",
+      action: hasJudges ? undefined : "open-judge-dialog",
+      ctaLabel: "Invite",
+      tooltip: JUDGES_TOOLTIP,
+      isComplete: hasJudges,
+      pending: { label: "No judges invited yet", hint: "You'll need judges to evaluate projects" },
+      completed: { label: judgesLabel(input), hint: "Your judging panel is being assembled" },
+    }))
+  }
 
   const hasPrizes = input.prizeCount > 0
   items.push(autoAction({
@@ -635,7 +716,8 @@ function addPublishedActions(items: ActionItem[], input: ActionItemsInput) {
   addPerksAction(items, input)
 
   if (input.startsAt) {
-    const hoursUntilStart = (new Date(input.startsAt).getTime() - Date.now()) / (1000 * 60 * 60)
+    const hoursUntilStart =
+      (new Date(input.startsAt).getTime() - nowTimestamp(input)) / (1000 * 60 * 60)
     if (hoursUntilStart > 0 && hoursUntilStart <= 24) {
       items.push(dismissAction({
         id: "starting-soon",
@@ -661,7 +743,8 @@ function addPublishedActions(items: ActionItem[], input: ActionItemsInput) {
 
   const hasDates = !!input.startsAt && !!input.endsAt
   const hasLocation = !!input.locationType
-  const eventHasStarted = !!input.startsAt && new Date(input.startsAt).getTime() <= Date.now()
+  const eventHasStarted =
+    !!input.startsAt && new Date(input.startsAt).getTime() <= nowTimestamp(input)
   if (hasDates && hasLocation && !eventHasStarted) {
     items.push(transitionAction({
       id: "ready-to-go-live",
@@ -712,27 +795,32 @@ function addActiveActions(items: ActionItem[], input: ActionItemsInput) {
     }))
   }
 
+  const requiresJudgeScoring = input.requiresJudgeScoring !== false
   const hasJudges = input.judgeCount > 0
-  items.push(autoAction({
-    id: "no-judges",
-    severity: "warning",
-    tab: "judging",
-    subtab: hasJudges ? undefined : "setup",
-    subtabKey: hasJudges ? undefined : "jtab",
-    action: hasJudges ? undefined : "open-judge-dialog",
-    ctaLabel: "Invite",
-    tooltip: "Judges are needed to evaluate submissions once the hackathon ends. Without judges, you won't be able to score projects and determine winners. Invite them now so they're ready when judging begins.",
-    isComplete: hasJudges,
-    pending: { label: "No judges assigned yet", hint: "You'll need judges before starting the judging phase" },
-    completed: { label: "Judges assigned", hint: "Ready to evaluate submissions when the time comes" },
-  }))
+  if (requiresJudgeScoring) {
+    items.push(autoAction({
+      id: "no-judges",
+      severity: "warning",
+      tab: "judging",
+      subtab: hasJudges ? undefined : "setup",
+      subtabKey: hasJudges ? undefined : "jtab",
+      action: hasJudges ? undefined : "open-judge-dialog",
+      ctaLabel: "Invite",
+      tooltip: "Judges are needed to evaluate projects once the hackathon ends. Without judges, you won't be able to score projects and determine winners. Invite them now so they're ready when judging begins.",
+      isComplete: hasJudges,
+      pending: { label: "No judges assigned yet", hint: "You'll need judges before starting the judging phase" },
+      completed: { label: "Judges assigned", hint: "Ready to evaluate projects when the time comes" },
+    }))
+  }
 
-  if (input.submissionCount > 0) {
+  if (requiresJudgeScoring && input.submissionCount > 0) {
     const count = input.unassignedSubmissionCount
     items.push(autoAction({
       id: "unassigned-submissions",
       severity: "urgent",
       tab: "judging",
+      subtab: "assignments",
+      subtabKey: "jtab",
       ctaLabel: "Assign",
       tooltip: "Every submitted project needs a judge. Without an assignment, no one will score it and the project won't show up in results. Open the Judging tab to assign judges.",
       isComplete: count === 0,
@@ -791,7 +879,9 @@ function addActiveActions(items: ActionItem[], input: ActionItemsInput) {
 
   if (
     input.submissionCount > 0 &&
-    hasJudges &&
+    (!requiresJudgeScoring || (
+      input.unassignedSubmissionCount === 0 && hasJudges
+    )) &&
     input.challengeReleased &&
     input.judgingSetupReady !== false
   ) {
@@ -841,6 +931,8 @@ function addJudgingActions(items: ActionItem[], input: ActionItemsInput) {
       id: "judging-incomplete",
       severity: "info",
       tab: "judging",
+      subtab: "assignments",
+      subtabKey: "jtab",
       ctaLabel: "View",
       tooltip: judgingTooltip,
       isComplete: completedAssignments >= totalAssignments,
@@ -870,15 +962,36 @@ function addJudgingActions(items: ActionItem[], input: ActionItemsInput) {
     }))
   }
 
-  const judgingDone = totalAssignments > 0 && completedAssignments >= totalAssignments
-  items.push(transitionAction({
-    id: "ready-to-complete",
-    label: judgingDone ? "Ready to wrap up" : "Complete event early",
-    hint: judgingDone ? "All judging is complete — publish results" : "Judging is still in progress",
-    severity: "info",
-    action: "transition-to-completed",
-    ctaLabel: "Complete Event",
-  }))
+  const completion = input.judgingCompletionReadiness
+  if (completion?.isReady) {
+    items.push(transitionAction({
+      id: "ready-to-complete",
+      label: "Ready to wrap up",
+      hint: "All judging is complete — publish results",
+      severity: "info",
+      action: "transition-to-completed",
+      ctaLabel: "Complete Event",
+    }))
+  } else {
+    const issue = completion?.issues.join(" ") || "Finish every score and judge pick first."
+    items.push(autoAction({
+      id: "ready-to-complete",
+      severity: "urgent",
+      tab: "judging",
+      subtab: "assignments",
+      subtabKey: "jtab",
+      ctaLabel: "Review",
+      isComplete: false,
+      pending: {
+        label: "Finish judging before you wrap up",
+        hint: issue,
+      },
+      completed: {
+        label: "Judging is ready",
+        hint: "Every score and judge pick is in",
+      },
+    }))
+  }
 }
 
 function addCompletedActions(items: ActionItem[], input: ActionItemsInput) {
@@ -888,6 +1001,8 @@ function addCompletedActions(items: ActionItem[], input: ActionItemsInput) {
     id: "results-not-published",
     severity: "urgent",
     tab: "judging",
+    subtab: "results",
+    subtabKey: "jtab",
     ctaLabel: "Publish",
     tooltip: "Publishing results calculates final scores, assigns prizes to top submissions, and automatically sends notification emails to winners and all participants. Review the scores to make sure everything looks right before publishing.",
     isComplete: resultsPublished,
@@ -901,6 +1016,8 @@ function addCompletedActions(items: ActionItem[], input: ActionItemsInput) {
       id: "feedback-survey-not-sent",
       severity: "info",
       tab: "post-event",
+      subtab: "feedback",
+      subtabKey: "ptab",
       ctaLabel: "Send",
       tooltip: "Post-event feedback helps you understand what worked and what to improve for next time. Response rates are highest within 24 hours of the event ending, so send it soon.",
       isComplete: surveySent,

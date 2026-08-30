@@ -8,6 +8,9 @@ import {
 } from "@/lib/utils/organizer-actions"
 import type { HackathonStatus, HackathonPhase } from "@/lib/db/hackathon-types"
 
+const FIXED_NOW = "2026-04-01T00:00:00.000Z"
+const FIXED_NOW_MS = new Date(FIXED_NOW).getTime()
+
 function makeInput(overrides: Partial<Parameters<typeof getOrganizerActionItems>[0]> = {}) {
   const input = {
     status: "draft" as HackathonStatus,
@@ -41,7 +44,7 @@ function makeInput(overrides: Partial<Parameters<typeof getOrganizerActionItems>
     perkCount: 0,
     perksNone: false,
     rounds: { plannedCount: 0, activeCount: 0, completeCount: 0 },
-    now: "2026-04-01T00:00:00.000Z",
+    now: FIXED_NOW,
     ...overrides,
   }
   return {
@@ -133,6 +136,14 @@ describe("getOrganizerActionItems", () => {
     it("marks judges completed when judgeCount > 0", () => {
       const items = getOrganizerActionItems(makeInput({ judgeCount: 3 }))
       expect(isCompleted(items.find((i) => i.id === "no-judges")!)).toBe(true)
+    })
+
+    it("does not ask crowd-only events to add judges", () => {
+      const items = getOrganizerActionItems(makeInput({
+        requiresJudgeScoring: false,
+      }))
+
+      expect(items.some((item) => item.id === "no-judges")).toBe(false)
     })
 
     it("shows pending judge invitation count in completed label", () => {
@@ -250,6 +261,43 @@ describe("getOrganizerActionItems", () => {
         tab: "teams",
       })
     })
+
+    it("keeps team and judge email problems separate", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "published",
+        unsentTeamInvitationEmailCount: 2,
+        unsentJudgeInvitationEmailCount: 1,
+      }))
+
+      expect(findPending(items, "unsent-team-invitation-emails")).toMatchObject({
+        severity: "urgent",
+        tab: "teams",
+        close: { kind: "auto", isComplete: false },
+      })
+      expect(findPending(items, "unsent-judge-invitation-emails")).toMatchObject({
+        severity: "urgent",
+        tab: "judging",
+        subtab: "judges",
+        subtabKey: "jtab",
+        close: { kind: "auto", isComplete: false },
+      })
+    })
+
+    it("blocks on reminder emails that need help", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "published",
+        failedReminderCount: 3,
+      }))
+
+      expect(findPending(items, "failed-reminder-emails")).toMatchObject({
+        label: "3 delivery issues need help",
+        severity: "urgent",
+        tab: "event",
+        subtab: "email",
+        subtabKey: "etab",
+        close: { kind: "auto", isComplete: false },
+      })
+    })
     it("shows promote-event as manual", () => {
       const items = getOrganizerActionItems(makeInput({
         status: "published",
@@ -261,7 +309,7 @@ describe("getOrganizerActionItems", () => {
     })
 
     it("shows starting soon when event starts within 24 hours", () => {
-      const soon = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString()
+      const soon = new Date(FIXED_NOW_MS + 12 * 60 * 60 * 1000).toISOString()
       const items = getOrganizerActionItems(makeInput({
         status: "published",
         participantCount: 10,
@@ -276,7 +324,7 @@ describe("getOrganizerActionItems", () => {
     })
 
     it("does not show starting soon for distant events", () => {
-      const far = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+      const far = new Date(FIXED_NOW_MS + 7 * 24 * 60 * 60 * 1000).toISOString()
       const items = getOrganizerActionItems(makeInput({
         status: "published",
         participantCount: 10,
@@ -289,8 +337,8 @@ describe("getOrganizerActionItems", () => {
     })
 
     it("shows ready-to-go-live when dates and location are set", () => {
-      const futureStart = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
-      const futureEnd = new Date(Date.now() + 8 * 24 * 60 * 60 * 1000).toISOString()
+      const futureStart = new Date(FIXED_NOW_MS + 7 * 24 * 60 * 60 * 1000).toISOString()
+      const futureEnd = new Date(FIXED_NOW_MS + 8 * 24 * 60 * 60 * 1000).toISOString()
       const items = getOrganizerActionItems(makeInput({
         status: "published",
         participantCount: 0,
@@ -306,8 +354,8 @@ describe("getOrganizerActionItems", () => {
     })
 
     it("does not show ready-to-go-live when location is missing", () => {
-      const futureStart = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
-      const futureEnd = new Date(Date.now() + 8 * 24 * 60 * 60 * 1000).toISOString()
+      const futureStart = new Date(FIXED_NOW_MS + 7 * 24 * 60 * 60 * 1000).toISOString()
+      const futureEnd = new Date(FIXED_NOW_MS + 8 * 24 * 60 * 60 * 1000).toISOString()
       const items = getOrganizerActionItems(makeInput({
         status: "published",
         participantCount: 0,
@@ -319,8 +367,8 @@ describe("getOrganizerActionItems", () => {
     })
 
     it("does not show ready-to-go-live when event has already started", () => {
-      const pastStart = new Date(Date.now() - 60 * 60 * 1000).toISOString()
-      const futureEnd = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+      const pastStart = new Date(FIXED_NOW_MS - 60 * 60 * 1000).toISOString()
+      const futureEnd = new Date(FIXED_NOW_MS + 24 * 60 * 60 * 1000).toISOString()
       const items = getOrganizerActionItems(makeInput({
         status: "published",
         participantCount: 0,
@@ -360,6 +408,21 @@ describe("getOrganizerActionItems", () => {
   })
 
   describe("active status", () => {
+    it("lets crowd-only events move on without judges or assignments", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "active",
+        submissionCount: 3,
+        unassignedSubmissionCount: 3,
+        judgeCount: 0,
+        challengeReleased: true,
+        judgingSetupReady: true,
+        requiresJudgeScoring: false,
+      }))
+
+      expect(items.some((item) => item.id === "no-judges")).toBe(false)
+      expect(items.some((item) => item.id === "unassigned-submissions")).toBe(false)
+      expect(items.some((item) => item.id === "ready-for-judging")).toBe(true)
+    })
     it("flags unreleased challenge as warning with hint", () => {
       const items = getOrganizerActionItems(makeInput({
         status: "active",
@@ -387,6 +450,7 @@ describe("getOrganizerActionItems", () => {
       expect(item).toBeDefined()
       expect(item?.severity).toBe("scheduled")
       expect(item?.action).toBe("release-challenge")
+      expect(item?.label).toBe("Challenge releases at May 1 at 9:00 AM UTC")
     })
 
     it("shows pending mentor requests", () => {
@@ -418,8 +482,8 @@ describe("getOrganizerActionItems", () => {
     })
 
     it("marks all auto-close items completed when everything is set up", () => {
-      const startsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
-      const endsAt = new Date(Date.now() + 8 * 24 * 60 * 60 * 1000).toISOString()
+      const startsAt = new Date(FIXED_NOW_MS + 7 * 24 * 60 * 60 * 1000).toISOString()
+      const endsAt = new Date(FIXED_NOW_MS + 8 * 24 * 60 * 60 * 1000).toISOString()
 
       const items = getOrganizerActionItems(makeInput({
         status: "active",
@@ -468,6 +532,19 @@ describe("getOrganizerActionItems", () => {
       expect(item?.ctaLabel).toBe("Start Judging")
     })
 
+    it("does not show ready-for-judging while a project has no judge", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "active",
+        submissionCount: 5,
+        unassignedSubmissionCount: 1,
+        judgeCount: 3,
+        challengeReleased: true,
+        challengeExists: true,
+      }))
+
+      expect(items.find((i) => i.id === "ready-for-judging")).toBeUndefined()
+    })
+
     it("does not show ready-for-judging when no submissions", () => {
       const items = getOrganizerActionItems(makeInput({
         status: "active",
@@ -506,6 +583,8 @@ describe("getOrganizerActionItems", () => {
       expect(item).toBeDefined()
       expect(item?.severity).toBe("urgent")
       expect(item?.tab).toBe("judging")
+      expect(item?.subtab).toBe("assignments")
+      expect(item?.subtabKey).toBe("jtab")
       expect(item?.label).toContain("4")
       expect(item?.label).toContain("project")
       expect(item?.ctaLabel).toBe("Assign")
@@ -549,7 +628,7 @@ describe("getOrganizerActionItems", () => {
     })
 
     it("shows a late signup todo when people cannot join after the event starts", () => {
-      const now = Date.now()
+      const now = FIXED_NOW_MS
       const items = getOrganizerActionItems(makeInput({
         status: "active",
         startsAt: new Date(now - 2 * 60 * 60 * 1000).toISOString(),
@@ -567,7 +646,7 @@ describe("getOrganizerActionItems", () => {
     })
 
     it("does not show a late signup todo when late signups are on", () => {
-      const now = Date.now()
+      const now = FIXED_NOW_MS
       const items = getOrganizerActionItems(makeInput({
         status: "active",
         startsAt: new Date(now - 2 * 60 * 60 * 1000).toISOString(),
@@ -605,6 +684,18 @@ describe("getOrganizerActionItems", () => {
       expect(item).toBeUndefined()
     })
 
+    it("does not carry the active late signup todo into judging", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "judging",
+        startsAt: new Date(FIXED_NOW_MS - 2 * 60 * 60 * 1000).toISOString(),
+        endsAt: new Date(FIXED_NOW_MS + 6 * 60 * 60 * 1000).toISOString(),
+        registrationClosesAt: new Date(FIXED_NOW_MS - 60 * 60 * 1000).toISOString(),
+        allowLateRegistration: false,
+      }))
+
+      expect(items.find((i) => i.id === "allow-late-registration")).toBeUndefined()
+    })
+
     it("shows judging progress percentage", () => {
       const items = getOrganizerActionItems(makeInput({
         status: "judging",
@@ -616,6 +707,9 @@ describe("getOrganizerActionItems", () => {
       expect(item).toBeDefined()
       expect(item?.label).toContain("60%")
       expect(item?.label).toContain("12/20")
+      expect(item?.tab).toBe("judging")
+      expect(item?.subtab).toBe("assignments")
+      expect(item?.subtabKey).toBe("jtab")
     })
 
     it("shows judging progress as info regardless of percentage", () => {
@@ -640,22 +734,37 @@ describe("getOrganizerActionItems", () => {
       expect(isCompleted(item)).toBe(true)
     })
 
-    it("shows complete-early when judging is incomplete", () => {
+    it("shows a blocker instead of an impossible complete action", () => {
       const items = getOrganizerActionItems(makeInput({
         status: "judging",
         judgingProgress: { totalAssignments: 20, completedAssignments: 10 },
+        judgingCompletionReadiness: {
+          isReady: false,
+          issues: ["10 judge tasks still need a score."],
+          incompleteAssignmentCount: 10,
+          incompletePickListCount: 0,
+        },
       }))
       const item = items.find((i) => i.id === "ready-to-complete")
       expect(item).toBeDefined()
-      expect(item?.label).toBe("Complete event early")
-      expect(item?.hint).toBe("Judging is still in progress")
-      expect(item?.close.kind).toBe("transition")
+      expect(item?.label).toBe("Finish judging before you wrap up")
+      expect(item?.hint).toBe("10 judge tasks still need a score.")
+      expect(item?.close.kind).toBe("auto")
+      expect(item?.tab).toBe("judging")
+      expect(item?.subtab).toBe("assignments")
+      expect(item?.ctaLabel).toBe("Review")
     })
 
-    it("shows ready-to-wrap-up when all judging is done", () => {
+    it("shows ready-to-wrap-up only when the full readiness check passes", () => {
       const items = getOrganizerActionItems(makeInput({
         status: "judging",
         judgingProgress: { totalAssignments: 20, completedAssignments: 20 },
+        judgingCompletionReadiness: {
+          isReady: true,
+          issues: [],
+          incompleteAssignmentCount: 0,
+          incompletePickListCount: 0,
+        },
       }))
       const item = items.find((i) => i.id === "ready-to-complete")
       expect(item).toBeDefined()
@@ -663,6 +772,25 @@ describe("getOrganizerActionItems", () => {
       expect(item?.hint).toBe("All judging is complete — publish results")
       expect(item?.close.kind).toBe("transition")
       expect(item?.ctaLabel).toBe("Complete Event")
+    })
+
+    it("keeps the completion action blocked while judge pick lists are missing", () => {
+      const items = getOrganizerActionItems(makeInput({
+        status: "judging",
+        judgingProgress: { totalAssignments: 20, completedAssignments: 20 },
+        judgingCompletionReadiness: {
+          isReady: false,
+          issues: ["2 judges still need to send picks."],
+          incompleteAssignmentCount: 0,
+          incompletePickListCount: 2,
+        },
+      }))
+
+      expect(items.find((i) => i.id === "ready-to-complete")).toMatchObject({
+        label: "Finish judging before you wrap up",
+        hint: "2 judges still need to send picks.",
+        close: { kind: "auto", isComplete: false },
+      })
     })
   })
 
@@ -687,6 +815,9 @@ describe("getOrganizerActionItems", () => {
       expect(item).toBeDefined()
       expect(item?.severity).toBe("urgent")
       expect(item?.hint).toBe("Publishing announces winners and automatically emails them")
+      expect(item?.tab).toBe("judging")
+      expect(item?.subtab).toBe("results")
+      expect(item?.subtabKey).toBe("jtab")
     })
 
     it("marks results completed when published", () => {
@@ -710,6 +841,8 @@ describe("getOrganizerActionItems", () => {
       expect(item).toBeDefined()
       expect(item?.hint).toBe("Learn what worked and what to improve")
       expect(item?.tab).toBe("post-event")
+      expect(item?.subtab).toBe("feedback")
+      expect(item?.subtabKey).toBe("ptab")
     })
 
     it("marks feedback survey completed when sent", () => {
@@ -793,8 +926,8 @@ describe("getOrganizerActionItems", () => {
       const pubItems = getOrganizerActionItems(makeInput({
         status: "published",
         participantCount: 5,
-        startsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        endsAt: new Date(Date.now() + 8 * 24 * 60 * 60 * 1000).toISOString(),
+        startsAt: new Date(FIXED_NOW_MS + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        endsAt: new Date(FIXED_NOW_MS + 8 * 24 * 60 * 60 * 1000).toISOString(),
         locationType: "virtual",
       }))
       const goLiveItem = pubItems.find((i) => i.id === "ready-to-go-live")
@@ -813,6 +946,12 @@ describe("getOrganizerActionItems", () => {
       const judgingItems = getOrganizerActionItems(makeInput({
         status: "judging",
         judgingProgress: { totalAssignments: 10, completedAssignments: 10 },
+        judgingCompletionReadiness: {
+          isReady: true,
+          issues: [],
+          incompleteAssignmentCount: 0,
+          incompletePickListCount: 0,
+        },
       }))
       const completeItem = judgingItems.find((i) => i.id === "ready-to-complete")
       expect(completeItem?.close.kind).toBe("transition")
@@ -836,7 +975,7 @@ describe("getOrganizerActionItems", () => {
       ["published fresh", makeInput({ status: "published", participantCount: 0 })],
       ["published starting soon", makeInput({
         status: "published",
-        startsAt: new Date(Date.now() + 10 * 60 * 60 * 1000).toISOString(),
+        startsAt: new Date(FIXED_NOW_MS + 10 * 60 * 60 * 1000).toISOString(),
       })],
       ["active with everything", makeInput({
         status: "active",
@@ -922,8 +1061,8 @@ describe("getOrganizerActionItems", () => {
     it("excludes transition actions from previous phases", () => {
       const items = getOrganizerActionItems(makeInput({
         status: "published",
-        startsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        endsAt: new Date(Date.now() + 8 * 24 * 60 * 60 * 1000).toISOString(),
+        startsAt: new Date(FIXED_NOW_MS + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        endsAt: new Date(FIXED_NOW_MS + 8 * 24 * 60 * 60 * 1000).toISOString(),
         locationType: "virtual",
       }))
       expect(items.find((i) => i.id === "ready-to-publish")).toBeUndefined()

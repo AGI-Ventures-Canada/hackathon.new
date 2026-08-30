@@ -18,8 +18,8 @@ mock.module("@clerk/nextjs/server", () => ({
   clerkClient: () => Promise.resolve({ users: { getUserList: mockGetUserList } }),
 }))
 
-let hackathonRow: { data: { name: string; status: string; starts_at: string | null; ends_at: string | null } | null; error: unknown } = {
-  data: { name: "AI Hackathon", status: "active", starts_at: null, ends_at: null },
+let hackathonRow: { data: { name: string; status: string; starts_at: string | null; ends_at: string | null; is_test_event: boolean } | null; error: unknown } = {
+  data: { name: "AI Hackathon", status: "active", starts_at: null, ends_at: null, is_test_event: false },
   error: null,
 }
 let participantsRow: { data: Array<{ clerk_user_id: string; role: string }>; error: unknown } = {
@@ -61,7 +61,7 @@ describe("sendBulkEmail", () => {
     mockFrom.mockClear()
     mockSingle.mockClear()
     sendEmailImpl = () => Promise.resolve({ id: "email_1" })
-    hackathonRow = { data: { name: "AI Hackathon", status: "active", starts_at: null, ends_at: null }, error: null }
+    hackathonRow = { data: { name: "AI Hackathon", status: "active", starts_at: null, ends_at: null, is_test_event: false }, error: null }
     participantsRow = { data: [{ clerk_user_id: "user_1", role: "participant" }], error: null }
     process.env.RESEND_REPLY_TO_EMAIL = "support@hackathon.new"
     process.env.RESEND_FROM_EMAIL = "noreply@hackathon.new"
@@ -129,6 +129,7 @@ describe("sendBulkEmail", () => {
         status: "active",
         starts_at: "2020-01-01T00:00:00.000Z",
         ends_at: "2020-01-02T00:00:00.000Z",
+        is_test_event: false,
       },
       error: null,
     }
@@ -138,6 +139,27 @@ describe("sendBulkEmail", () => {
       html: "<p>Body</p>",
       deliveryId: "operation_4",
     })).rejects.toThrow("This event has ended")
+    expect(mockSendEmail).not.toHaveBeenCalled()
+    expect(mockGetUserList).not.toHaveBeenCalled()
+  })
+
+  it("does not send a blast from a test event", async () => {
+    hackathonRow = {
+      data: {
+        name: "AI Hackathon",
+        status: "active",
+        starts_at: null,
+        ends_at: null,
+        is_test_event: true,
+      },
+      error: null,
+    }
+
+    await expect(sendBulkEmail("hack_1", {
+      subject: "Sandbox update",
+      html: "<p>Body</p>",
+      deliveryId: "operation_test",
+    })).rejects.toThrow("Go live before sending an email blast")
     expect(mockSendEmail).not.toHaveBeenCalled()
     expect(mockGetUserList).not.toHaveBeenCalled()
   })

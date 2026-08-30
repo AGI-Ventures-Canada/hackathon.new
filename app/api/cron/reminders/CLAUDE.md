@@ -1,6 +1,6 @@
 # Reminders System
 
-Automated reminder emails for invitations and hackathon events, processed by a cron job every 15 minutes.
+Automated reminder emails for invitations and hackathon events, processed by a cron job every minute.
 
 ## Architecture
 
@@ -23,6 +23,8 @@ emails/post-event-reminder.tsx        # React Email template: post-event follow-
 
 - `scheduled_reminders` — smart reminders (invitations + pre-event). Loads a bounded pending batch, sends with stable provider idempotency keys, and writes `sent_at` only after provider acceptance. Failed dispatches leave `sent_at` null, increment `fail_count`, and record `last_error` for retry on the next cron run (max 3 attempts)
 - `post_event_reminders` — post-event reminders (prize claims, fulfillment, feedback). Separate table, separate processing path
+- `lifecycle_notification_dispatches` — failed lifecycle workflow starts. Retries keep the original notification ID, run under a global lease, back off, and stop after five failed starts
+- `judge_pending_notifications` — direct judge-added emails. Retries keep the participant delivery identity, run under a global lease, back off, and stop after five failed sends
 - `team_invitations.reminded_at` / `judge_invitations.reminded_at` — manual remind tracking
 
 ## Key functions
@@ -37,6 +39,8 @@ emails/post-event-reminder.tsx        # React Email template: post-event follow-
 | `schedulePreEventReminders()` | `pre-event-reminders.ts` | Schedule reminders for hackathon deadlines |
 | `reschedulePreEventReminders()` | `pre-event-reminders.ts` | Cancel + reschedule (called on date changes) |
 | `processAllPendingReminders()` | `post-event-reminders.ts` | Post-event cron processor |
+| `retryPendingLifecycleNotificationDispatches()` | `lifecycle-notification-retries.ts` | Restarts lifecycle email workflows with stable identities and bounded backoff |
+| `retryPendingJudgeNotifications()` | `judge-invitations.ts` | Sends queued direct judge notices with stable identities and bounded backoff |
 
 ## How to modify
 
@@ -79,4 +83,4 @@ bun run test:integration              # End-to-end reminder flow tests
 
 ## Cron configuration
 
-The cron runs every 15 minutes via Vercel (`vercel.json`). Authenticated with `CRON_SECRET` bearer token. Concurrent invocations reuse stable provider idempotency keys and never use `sent_at` as a pre-delivery claim. Failed reminders retry up to 3 dispatch attempts across cron runs. Query `SELECT * FROM scheduled_reminders WHERE fail_count >= 3` to find rows that need manual investigation.
+The cron runs every minute via Vercel (`vercel.json`). Each email worker gets a 32-recipient budget. The shared email wrapper spaces provider attempts at least 250 ms apart within a process, and bulk loops add a pause after each group of four. Authenticated with `CRON_SECRET` bearer token. Concurrent invocations reuse stable provider idempotency keys and never use `sent_at` as a pre-delivery claim. Failed reminders retry up to 3 dispatch attempts across cron runs. Query `SELECT * FROM scheduled_reminders WHERE fail_count >= 3` to find rows that need manual investigation.

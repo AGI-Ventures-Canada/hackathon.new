@@ -5,7 +5,8 @@ import { getManageHackathon } from "@/lib/services/manage-hackathon"
 import { getHackathonSubmissions } from "@/lib/services/submissions"
 import { countJudges, countUnassignedSubmissions, getJudgingProgress, getJudgingSetupStatus, listPrizes, listRounds } from "@/lib/services/judging"
 import { countPendingJudgeInvitations } from "@/lib/services/judge-invitations"
-import { countUnsentInvitationEmails } from "@/lib/services/invitation-email-health"
+import { countFailedReminderEmails, getUnsentInvitationEmailCounts } from "@/lib/services/invitation-email-health"
+import { listOrganizerActionState } from "@/lib/services/organizer-action-items"
 import { countJudgeDisplayProfiles } from "@/lib/services/judge-display"
 import { getManageOverviewStats } from "@/lib/services/manage-overview"
 import { listChallenges } from "@/lib/services/challenges"
@@ -15,6 +16,7 @@ import { listScheduleItems, getSubmissionDeadline } from "@/lib/services/schedul
 import { getOrganizerActionItems } from "@/lib/utils/organizer-actions"
 import { getEventLifecycleAlerts } from "@/lib/utils/event-lifecycle-alerts"
 import { getNotificationDisposition } from "@/lib/utils/notification-lifecycle"
+import { getJudgingCompletionReadiness } from "@/lib/services/lifecycle"
 import { hasRegistrationOpened } from "@/lib/utils/team-invite"
 import type { HackathonStatus } from "@/lib/db/hackathon-types"
 import { VALID_TABS, VALID_ETABS, VALID_MTABS, VALID_JTABS, VALID_PTABS, DEFAULT_TAB, DEFAULT_MTAB, DEFAULT_JTAB, DEFAULT_PTAB, resolveTab } from "@/lib/utils/manage-tabs"
@@ -35,6 +37,7 @@ import {
 } from "@/components/hackathon/manage/manage-hackathon-name"
 import { StatusBadgeMenu } from "@/components/hackathon/manage/status-badge-menu"
 import { EventHealthAlerts } from "@/components/hackathon/manage/event-health-alerts"
+import { TestEventBanner } from "@/components/hackathon/manage/test-event-banner"
 import { ChallengesTab } from "@/components/hackathon/manage/challenges-tab"
 import { PerksTab } from "@/components/hackathon/manage/perks-tab"
 import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -84,8 +87,11 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     status: (hackathon.stored_status ?? hackathon.status) as HackathonStatus,
     starts_at: hackathon.starts_at,
     ends_at: hackathon.ends_at,
+    is_test_event: hackathon.is_test_event,
   })
-  const teamInvitationQueueReason = notificationDisposition === "send" &&
+  const teamInvitationQueueReason = hackathon.is_test_event
+    ? "test_event"
+    : notificationDisposition === "send" &&
     !hasRegistrationOpened(hackathon.registration_opens_at, new Date().toISOString())
     ? "registration_not_open"
     : "event_draft"
@@ -105,8 +111,10 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     perks,
     unassignedSubmissionCount,
     judgingSetupStatus,
+    judgingCompletionReadiness,
     announcements,
-    unsentInvitationEmailCount,
+    invitationEmailCounts,
+    failedReminderCount,
   ] = await Promise.all([
     getHackathonSubmissions(hackathon.id),
     getJudgingProgress(hackathon.id),
@@ -122,8 +130,10 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     listPerks(hackathon.id),
     countUnassignedSubmissions(hackathon.id),
     getJudgingSetupStatus(hackathon.id),
+    getJudgingCompletionReadiness(hackathon.id),
     listAnnouncements(hackathon.id),
-    countUnsentInvitationEmails(hackathon.id),
+    getUnsentInvitationEmailCounts(hackathon.id),
+    countFailedReminderEmails(hackathon.id),
   ])
 
   const submissionCount = submissions.length
@@ -139,6 +149,9 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     { plannedCount: 0, activeCount: 0, completeCount: 0 },
   )
   const actionItems = getOrganizerActionItems({
+    id: hackathon.id,
+    slug: hackathon.slug,
+    name: hackathon.name,
     status: hackathon.status,
     storedStatus: (hackathon.stored_status ?? hackathon.status) as HackathonStatus,
     phase: hackathon.phase,
@@ -168,14 +181,20 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     feedbackSurveyUrl: hackathon.feedback_survey_url ?? null,
     feedbackSurveySentAt: hackathon.feedback_survey_sent_at ?? null,
     pendingJudgeInvitationCount,
-    unsentInvitationEmailCount,
+    unsentInvitationEmailCount: invitationEmailCounts.total,
+    unsentTeamInvitationEmailCount: invitationEmailCounts.teams,
+    unsentJudgeInvitationEmailCount: invitationEmailCounts.judges,
+    failedReminderCount,
     perkCount: perks.length,
     perksNone: hackathon.perks_none ?? false,
     rounds: roundsSummary,
     communityUrl: hackathon.community_url ?? null,
     termsContent: hackathon.terms_content ?? null,
     judgingSetupReady: judgingSetupStatus.isReady,
+    requiresJudgeScoring: judgingSetupStatus.requiresJudgeScoring,
+    judgingCompletionReadiness,
   })
+  const persistedActionState = await listOrganizerActionState(hackathon.id, actionItems)
   const lifecycleAlerts = getEventLifecycleAlerts({
     storedStatus: (hackathon.stored_status ?? hackathon.status) as HackathonStatus,
     startsAt: hackathon.starts_at,
@@ -245,6 +264,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
       communityLabel: hackathon.community_label,
       requireTermsAcceptance: hackathon.require_terms_acceptance ?? false,
       termsContent: hackathon.terms_content,
+      isTestEvent: hackathon.is_test_event,
     },
     stats: {
       attendeeCount: overviewStats.participantCount,
@@ -309,6 +329,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     <div className="space-y-6">
       <ActionItemsProvider
         actionItems={actionItems}
+        persistedActionState={persistedActionState}
         hackathonId={hackathon.id}
         slug={hackathon.slug}
         name={hackathon.name}
@@ -351,12 +372,16 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
         sponsors={hackathon.sponsors.map((s) => ({ id: s.id, name: s.name }))}
         rounds={roundsForDialogs}
         judgingSetupIssues={judgingSetupStatus.issues}
+        requiresJudgeScoring={judgingSetupStatus.requiresJudgeScoring}
+        judgingCompletionReadiness={judgingCompletionReadiness}
       >
         <ManageHackathonWebMcpTools context={webMcpContext} />
+        {hackathon.is_test_event && <TestEventBanner hackathonId={hackathon.id} />}
         <EventHealthAlerts
           slug={hackathon.slug}
           alerts={lifecycleAlerts}
-          unsentInvitationEmailCount={unsentInvitationEmailCount}
+          invitationEmailCounts={invitationEmailCounts}
+          failedReminderCount={failedReminderCount}
           queuedUntilPublish={(hackathon.stored_status ?? hackathon.status) === "draft"}
         />
         <TabsUrlSync paramKey="tab" value={activeTab}>
@@ -383,7 +408,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
               <TabsTrigger value="judging">Judging &amp; Prizes<ManageHackathonTabCount kind="prizes" /></TabsTrigger>
               <TabsTrigger value="post-event">Post-Event</TabsTrigger>
               <TabsTrigger value="event">Communications</TabsTrigger>
-              <TabsTrigger value="miscs">Miscs</TabsTrigger>
+              <TabsTrigger value="miscs">More</TabsTrigger>
             </TabsList>
 
             <TabsContent value="action-items" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="action_items">

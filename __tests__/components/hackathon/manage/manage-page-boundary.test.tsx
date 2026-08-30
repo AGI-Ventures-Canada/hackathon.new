@@ -19,6 +19,7 @@ function boundary(name: string): ComponentType<Props> {
 
 const ActionItemsProvider = boundary("ActionItemsProvider")
 const ManageHackathonWebMcpTools = boundary("ManageHackathonWebMcpTools")
+const TestEventBanner = boundary("TestEventBanner")
 const HackathonPreviewClient = boundary("HackathonPreviewClient")
 const JudgingTabContent = boundary("JudgingTabContent")
 const EventTabContent = boundary("EventTabContent")
@@ -37,6 +38,7 @@ const componentModules: Array<[string, Record<string, ComponentType<Props>>]> = 
   ["@/components/hackathon/manage/action-items-layout", { ActionItemsLayout: boundary("ActionItemsLayout") }],
   ["@/components/hackathon/manage/action-items-tab-badge", { ActionItemsTabBadge: boundary("ActionItemsTabBadge") }],
   ["@/components/hackathon/manage/manage-webmcp-tools", { ManageHackathonWebMcpTools }],
+  ["@/components/hackathon/manage/test-event-banner", { TestEventBanner }],
   [
     "@/components/hackathon/manage/manage-hackathon-name",
     {

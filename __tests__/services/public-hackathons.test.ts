@@ -119,6 +119,7 @@ describe("Public Hackathons Service", () => {
         "judging",
         "completed",
       ])
+      expect(chain.eq).toHaveBeenCalledWith("is_test_event", false)
     })
 
     it("allows an explicit authenticated preview lookup", async () => {
@@ -136,6 +137,27 @@ describe("Public Hackathons Service", () => {
 
       expect(result?.status).toBe("draft")
       expect(chain.in).not.toHaveBeenCalled()
+      expect(chain.eq).toHaveBeenCalledWith("is_test_event", false)
+    })
+
+    it("loads a test event only for an explicit organizer preview", async () => {
+      const chain = createChainableMock({
+        data: { ...mockHackathon, is_test_event: true, organizer: mockOrganizer },
+        error: null,
+      })
+      setMockFromImplementation((table) =>
+        table === "hackathons"
+          ? chain
+          : createChainableMock({ data: [], error: null }),
+      )
+
+      const result = await getPublicHackathon("test-hackathon", {
+        includeUnpublished: true,
+        includeTestEvents: true,
+      })
+
+      expect(result?.is_test_event).toBe(true)
+      expect(chain.eq).not.toHaveBeenCalledWith("is_test_event", false)
     })
 
     it("hides a partial aggregate before loading any related public data", async () => {

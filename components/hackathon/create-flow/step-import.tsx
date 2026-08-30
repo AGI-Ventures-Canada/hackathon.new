@@ -5,12 +5,30 @@ import { useRouter } from "next/navigation"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
-import { ArrowRight, Globe, Loader2, PenLine } from "lucide-react"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { ArrowRight, Database, Globe, Loader2, PenLine } from "lucide-react"
 import { normalizeImportUrl } from "@/lib/utils/url"
+import {
+  TEST_EVENT_STAGE_OPTIONS,
+  type TestEventStage,
+} from "@/lib/fixtures/test-event"
+
+export type CreateChoiceMode = "choose" | "import" | "test"
 
 interface StepImportProps {
   onSkipToScratch: () => void
-  onModeChange?: (mode: "choose" | "import") => void
+  onModeChange?: (mode: CreateChoiceMode) => void
+  onCreateTestEvent?: (stage: TestEventStage) => void
+  initialMode?: CreateChoiceMode
+  initialTestStage?: TestEventStage
+  isCreatingTestEvent?: boolean
+  testEventError?: string | null
   savedDraftName?: string | null
 }
 
@@ -23,12 +41,18 @@ function looksLikeUrl(input: string): boolean {
 export function StepImport({
   onSkipToScratch,
   onModeChange,
+  onCreateTestEvent,
+  initialMode = "choose",
+  initialTestStage = "registration",
+  isCreatingTestEvent = false,
+  testEventError,
   savedDraftName,
 }: StepImportProps) {
   const router = useRouter()
-  const [mode, _setMode] = useState<"choose" | "import">("choose")
+  const [mode, _setMode] = useState<CreateChoiceMode>(initialMode)
+  const [testStage, setTestStage] = useState<TestEventStage>(initialTestStage)
 
-  function setMode(m: "choose" | "import") {
+  function setMode(m: CreateChoiceMode) {
     _setMode(m)
     onModeChange?.(m)
   }
@@ -128,6 +152,63 @@ export function StepImport({
     )
   }
 
+  if (mode === "test") {
+    const selectedStage = TEST_EVENT_STAGE_OPTIONS.find((option) => option.value === testStage)
+    return (
+      <div className="space-y-8">
+        <div className="space-y-3">
+          <h1 className="text-3xl font-medium tracking-tight sm:text-5xl">
+            Try a full test event
+          </h1>
+          <p className="text-muted-foreground">
+            We&apos;ll add fake people, teams, projects, judges, sponsors, and a schedule.
+          </p>
+        </div>
+
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="test-event-stage">Which part do you want to see?</Label>
+            <Select
+              value={testStage}
+              onValueChange={(value) => setTestStage(value as TestEventStage)}
+              disabled={isCreatingTestEvent}
+            >
+              <SelectTrigger id="test-event-stage" className="w-full" autoFocus>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TEST_EVENT_STAGE_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-sm text-muted-foreground">
+              {selectedStage?.description}
+            </p>
+          </div>
+
+          <p className="text-sm text-muted-foreground">
+            This stays private. Emails are off until you make it a real event.
+          </p>
+          {testEventError && (
+            <p className="text-sm text-destructive" role="alert">{testEventError}</p>
+          )}
+          <Button
+            type="button"
+            size="lg"
+            onClick={() => onCreateTestEvent?.(testStage)}
+            disabled={isCreatingTestEvent || !onCreateTestEvent}
+          >
+            {isCreatingTestEvent && <Loader2 className="size-4 animate-spin" />}
+            {isCreatingTestEvent ? "Creating test event…" : "Create test event"}
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-8">
       <div className="space-y-3">
@@ -136,41 +217,58 @@ export function StepImport({
         </h1>
         <p className="text-muted-foreground">
           {savedDraftName
-            ? "Your saved draft is ready. Keep editing or import another event."
-            : "Start fresh or import from an existing event page."}
+            ? "Your saved draft is ready. Keep editing, import, or try test data."
+            : "Start fresh, import an event, or try a full test event."}
         </p>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <button
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Button
           type="button"
+          variant="outline"
           onClick={onSkipToScratch}
-          className="flex flex-col items-center gap-3 rounded-lg border p-6 text-center transition-colors hover:border-primary hover:bg-muted/50"
+          className="h-auto flex-col gap-3 whitespace-normal p-6"
         >
           <PenLine className="size-6 text-muted-foreground" />
           <div>
             <div className="font-medium">
-              {savedDraftName ? "Keep editing" : "Start from scratch"}
+              {savedDraftName ? "Keep editing" : "Create from scratch"}
             </div>
             <div className="mt-1 text-sm text-muted-foreground">
               {savedDraftName || "Name it, set dates, and go"}
             </div>
           </div>
-        </button>
+        </Button>
 
-        <button
+        <Button
           type="button"
+          variant="outline"
           onClick={() => setMode("import")}
-          className="flex flex-col items-center gap-3 rounded-lg border p-6 text-center transition-colors hover:border-primary hover:bg-muted/50"
+          className="h-auto flex-col gap-3 whitespace-normal p-6"
         >
           <Globe className="size-6 text-muted-foreground" />
           <div>
-            <div className="font-medium">Import from URL</div>
+            <div className="font-medium">Import from a URL</div>
             <div className="mt-1 text-sm text-muted-foreground">
               Paste a Luma or event page link
             </div>
           </div>
-        </button>
+        </Button>
+
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setMode("test")}
+          className="h-auto flex-col gap-3 whitespace-normal p-6"
+        >
+          <Database className="size-6 text-muted-foreground" />
+          <div>
+            <div className="font-medium">Create a test event with test data</div>
+            <div className="mt-1 text-sm text-muted-foreground">
+              See a full event before you set up yours
+            </div>
+          </div>
+        </Button>
       </div>
     </div>
   )

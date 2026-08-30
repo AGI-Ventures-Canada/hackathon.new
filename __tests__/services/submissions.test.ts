@@ -551,6 +551,7 @@ describe("Submissions Service", () => {
 
   describe("notifySubmissionMembers", () => {
     beforeEach(() => {
+      mockClerkClient.mockClear()
       mockSendSubmissionConfirmationEmail.mockReset()
       mockSendSubmissionConfirmationEmail.mockImplementation(() =>
         Promise.resolve({ success: true })
@@ -769,6 +770,29 @@ describe("Submissions Service", () => {
       })
 
       expect(sent).toBe(0)
+      expect(mockSendSubmissionConfirmationEmail).not.toHaveBeenCalled()
+    })
+
+    it("never sends submission emails for a test event", async () => {
+      setMockFromImplementation((table) => table === "hackathons"
+        ? createChainableMock({
+            data: {
+              name: "Practice Event",
+              slug: "practice-event",
+              status: "active",
+              is_test_event: true,
+            },
+            error: null,
+          })
+        : createChainableMock({ data: null, error: null }))
+
+      await expect(notifySubmissionMembers({
+        hackathonId: "h1",
+        participantId: "p1",
+        teamId: null,
+        projectTitle: "Practice Project",
+      })).resolves.toBe(0)
+      expect(mockClerkClient).not.toHaveBeenCalled()
       expect(mockSendSubmissionConfirmationEmail).not.toHaveBeenCalled()
     })
 

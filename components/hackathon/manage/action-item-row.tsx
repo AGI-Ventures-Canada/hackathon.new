@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { X } from "lucide-react"
+import { Info, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
@@ -33,17 +33,38 @@ type Props = {
   compact?: boolean
 }
 
-function WithTooltip({ tooltip, children }: { tooltip?: string; children: React.ReactNode }) {
+function WithTooltip({
+  tooltip,
+  label,
+  children,
+}: {
+  tooltip?: string
+  label: string
+  children: React.ReactNode
+}) {
   const isMobile = useIsMobile()
   if (!tooltip) return <>{children}</>
   if (isMobile) {
     return (
-      <Popover>
-        <PopoverTrigger asChild>{children}</PopoverTrigger>
-        <PopoverContent side="top" align="start" className="w-72 text-sm">
-          {tooltip}
-        </PopoverContent>
-      </Popover>
+      <>
+        {children}
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              className="shrink-0"
+              aria-label={`More information: ${label}`}
+            >
+              <Info className="size-3.5" aria-hidden="true" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent side="top" align="end" className="w-72 text-sm">
+            {tooltip}
+          </PopoverContent>
+        </Popover>
+      </>
     )
   }
   return (
@@ -66,22 +87,16 @@ export function ActionItemRow({ item, completed, compact }: Props) {
   const canDismiss = item.close.kind === "dismiss"
 
   if (isTransition) {
-    if (compact) {
-      return (
-        <Button size="sm" className="w-full" onClick={() => handleActionClick(item)}>
-          {item.ctaLabel || item.label}
-        </Button>
-      )
-    }
     return (
-      <div
-        role="button"
-        tabIndex={0}
+      <Button
+        type="button"
+        size={compact ? "sm" : "default"}
+        variant={compact ? "default" : "outline"}
         onClick={() => handleActionClick(item)}
-        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleActionClick(item) } }}
-        className="group block w-full text-left rounded-md px-2 hover:bg-primary/5 transition-colors cursor-pointer border border-primary/20 bg-primary/5 my-1"
+        className="h-auto w-full justify-start text-left"
       >
-        <span className="flex items-center gap-3 py-2.5">
+        {compact ? (item.ctaLabel || item.label) : (
+          <span className="flex w-full items-center gap-3 py-1">
           <span className="flex-1 min-w-0">
             <span className="text-sm font-medium block">{item.label}</span>
             {item.hint && (
@@ -93,8 +108,9 @@ export function ActionItemRow({ item, completed, compact }: Props) {
               {item.ctaLabel}
             </Badge>
           )}
-        </span>
-      </div>
+          </span>
+        )}
+      </Button>
     )
   }
 
@@ -108,89 +124,69 @@ export function ActionItemRow({ item, completed, compact }: Props) {
     </Badge>
   ) : null
 
-  const indicator = (
-    <span
-      className="shrink-0"
-      onClick={(e) => { e.preventDefault(); e.stopPropagation() }}
-    >
-      <Checkbox
-        checked={completed}
-        disabled={!canToggle}
-        onCheckedChange={canToggle ? () => toggleComplete(item.id) : undefined}
-      />
-    </span>
-  )
-
-  const content = (
-    <span className={cn("flex items-center gap-3 py-2.5", compact && "py-2")}>
-      {indicator}
-      <span className={cn("flex-1 min-w-0", completed && "opacity-50")}>
+  const mainContent = (
+    <span className={cn("flex min-w-0 flex-1 items-center gap-3 py-2.5", compact && "py-2", completed && "opacity-50")}>
+      <span className="min-w-0 flex-1">
         <span className={cn("text-sm block", compact && "text-sm")}>{item.label}</span>
         {!compact && !completed && item.hint && (
           <span className="text-xs text-muted-foreground block">{item.hint}</span>
         )}
       </span>
       {ctaBadge}
-      {(isCustom || canDismiss) && !completed && (
-        <span
-          role="button"
-          tabIndex={0}
-          aria-label={isCustom ? "Remove custom item" : "Dismiss"}
-          className="shrink-0 rounded p-0.5 opacity-0 group-hover:opacity-100 hover:bg-muted-foreground/10 transition-opacity"
-          onClick={(e) => {
-            e.preventDefault()
-            e.stopPropagation()
-            if (isCustom) removeCustomItem(item.id)
-            else dismissItem(item.id)
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault()
-              e.stopPropagation()
-              if (isCustom) removeCustomItem(item.id)
-              else dismissItem(item.id)
-            }
-          }}
-        >
-          <X className="size-3.5 text-muted-foreground" />
-        </span>
-      )}
     </span>
   )
 
-  if (completed) {
-    return <WithTooltip tooltip={item.tooltip}><div className="px-2">{content}</div></WithTooltip>
-  }
-
-  if (href) {
-    return (
-      <WithTooltip tooltip={item.tooltip}>
+  let target: React.ReactNode = mainContent
+  if (!completed && href) {
+    target = (
         <Link
           href={href}
           onClick={(e) => { e.preventDefault(); handleActionClick(item) }}
-          className="group block rounded-md px-2 hover:bg-muted transition-colors"
+          className="flex min-w-0 flex-1 rounded-md hover:bg-muted"
         >
-          {content}
+          {mainContent}
         </Link>
-      </WithTooltip>
     )
-  }
-
-  if (hasAction) {
-    return (
-      <WithTooltip tooltip={item.tooltip}>
-        <div
-          role="button"
-          tabIndex={0}
+  } else if (!completed && hasAction) {
+    target = (
+        <button
+          type="button"
           onClick={() => handleActionClick(item)}
-          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleActionClick(item) } }}
-          className="group block w-full text-left rounded-md px-2 hover:bg-muted transition-colors cursor-pointer"
+          className="flex min-w-0 flex-1 rounded-md text-left hover:bg-muted"
         >
-          {content}
-        </div>
-      </WithTooltip>
+          {mainContent}
+        </button>
     )
   }
 
-  return <WithTooltip tooltip={item.tooltip}><div className="px-2">{content}</div></WithTooltip>
+  return (
+    <div className="group flex items-center gap-2 px-2">
+      <Checkbox
+        checked={completed}
+        disabled={!canToggle}
+        aria-label={
+          canToggle
+            ? `${completed ? "Reopen" : "Complete"}: ${item.label}`
+            : `Status is updated automatically: ${item.label}`
+        }
+        onCheckedChange={canToggle ? () => toggleComplete(item.id) : undefined}
+      />
+      <WithTooltip tooltip={item.tooltip} label={item.label}>{target}</WithTooltip>
+      {(isCustom || (canDismiss && !completed)) && (
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="ghost"
+          aria-label={isCustom ? `Remove custom item: ${item.label}` : `Dismiss: ${item.label}`}
+          className="shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
+          onClick={() => {
+            if (isCustom) removeCustomItem(item.id)
+            else dismissItem(item.id)
+          }}
+        >
+          <X className="size-3.5 text-muted-foreground" />
+        </Button>
+      )}
+    </div>
+  )
 }

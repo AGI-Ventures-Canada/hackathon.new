@@ -812,6 +812,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       status: authErr.hackathon.status,
       starts_at: authErr.hackathon.starts_at,
       ends_at: authErr.hackathon.ends_at,
+      is_test_event: authErr.hackathon.is_test_event,
     }))
     if (lifecycleError) {
       set.status = lifecycleError.status
@@ -1532,6 +1533,7 @@ export const dashboardEventRoutes = new Elysia({ prefix: "/dashboard" })
       status: check.hackathon.status,
       starts_at: check.hackathon.starts_at,
       ends_at: check.hackathon.ends_at,
+      is_test_event: check.hackathon.is_test_event,
     }))
     if (lifecycleError) {
       set.status = lifecycleError.status

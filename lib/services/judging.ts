@@ -7,6 +7,7 @@ import type {
   PrizeJudgingStyle,
   PrizeAssignmentMode,
 } from "@/lib/db/hackathon-types"
+import { resolveClerkUsers } from "@/lib/services/clerk-users"
 
 const DEFAULT_BUCKETS = [
   { level: 1, label: "Not Ready", description: "No working demo or unclear problem statement" },
@@ -101,6 +102,22 @@ type JudgingSetupBucket = {
 export type JudgingSetupStatus = {
   isReady: boolean
   issues: string[]
+  requiresJudgeScoring: boolean
+}
+
+const JUDGE_SCORED_STYLES = new Set([
+  "weighted_score",
+  "gate_check",
+  "bucket_sort",
+  "judges_pick",
+])
+
+export function requiresJudgeScoring(
+  prizes: Array<Pick<JudgingSetupPrize, "judging_style">>,
+): boolean {
+  return prizes.some((prize) =>
+    JUDGE_SCORED_STYLES.has(prize.judging_style ?? ""),
+  )
 }
 
 export function evaluateJudgingSetup(
@@ -160,7 +177,11 @@ export function evaluateJudgingSetup(
     }
   }
 
-  return { isReady: issues.length === 0, issues }
+  return {
+    isReady: issues.length === 0,
+    issues,
+    requiresJudgeScoring: requiresJudgeScoring(prizes),
+  }
 }
 
 export async function getJudgingSetupStatus(hackathonId: string): Promise<JudgingSetupStatus> {
@@ -172,7 +193,11 @@ export async function getJudgingSetupStatus(hackathonId: string): Promise<Judgin
 
   if (prizesError || !prizes) {
     console.error("Failed to check judging prizes:", prizesError)
-    return { isReady: false, issues: ["We couldn't check scoring setup. Try again."] }
+    return {
+      isReady: false,
+      issues: ["We couldn't check scoring setup. Try again."],
+      requiresJudgeScoring: true,
+    }
   }
 
   const bucketPrizeIds = prizes
@@ -194,7 +219,11 @@ export async function getJudgingSetupStatus(hackathonId: string): Promise<Judgin
 
   if (criteriaResult.error || bucketsResult.error) {
     console.error("Failed to check judging rules:", criteriaResult.error ?? bucketsResult.error)
-    return { isReady: false, issues: ["We couldn't check scoring setup. Try again."] }
+    return {
+      isReady: false,
+      issues: ["We couldn't check scoring setup. Try again."],
+      requiresJudgeScoring: true,
+    }
   }
 
   return evaluateJudgingSetup(
@@ -1794,30 +1823,15 @@ export async function listJudges(hackathonId: string): Promise<JudgeInfo[]> {
     countMap[link.judge_participant_id].prizeIds.add(link.prize_id)
   }
 
-  const userMap: Record<string, { displayName: string; email: string | null; imageUrl: string | null }> = {}
-  try {
-    const { clerkClient } = await import("@clerk/nextjs/server")
-    const clerk = await clerkClient()
-    const clerkUserIds = judges.map((j) => j.clerk_user_id)
-    const clerkUsers = await clerk.users.getUserList({ userId: clerkUserIds, limit: 100 })
-    for (const u of clerkUsers.data) {
-      const name = [u.firstName, u.lastName].filter(Boolean).join(" ") || u.username || u.id
-      userMap[u.id] = {
-        displayName: name,
-        email: u.primaryEmailAddress?.emailAddress ?? null,
-        imageUrl: u.imageUrl ?? null,
-      }
-    }
-  } catch (err) {
-    console.error("Failed to fetch Clerk users for judges:", err)
-  }
+  const clerkUserIds = judges.map((judge) => judge.clerk_user_id)
+  const { displayNames, emails } = await resolveClerkUsers(clerkUserIds)
 
   return judges.map((j) => ({
     participantId: j.id,
     clerkUserId: j.clerk_user_id,
-    displayName: userMap[j.clerk_user_id]?.displayName ?? j.clerk_user_id,
-    email: userMap[j.clerk_user_id]?.email ?? null,
-    imageUrl: userMap[j.clerk_user_id]?.imageUrl ?? null,
+    displayName: displayNames[j.clerk_user_id] ?? j.clerk_user_id,
+    email: emails[j.clerk_user_id] ?? null,
+    imageUrl: null,
     assignmentCount: countMap[j.id]?.total ?? 0,
     completedCount: countMap[j.id]?.completed ?? 0,
     prizeIds: [...(countMap[j.id]?.prizeIds ?? [])],
@@ -1987,6 +2001,33 @@ export type AssertAssignmentWritableResult =
   | { ok: true; ownership: AssignmentOwnership }
   | { ok: false; error: string; code: AssignmentWritableErrorCode; status: number }
 
+export type JudgingAccessHackathon = {
+  id: string
+  status: string
+  phase?: string | null
+}
+
+export async function isJudgingOpenForHackathon(
+  hackathon: JudgingAccessHackathon,
+): Promise<boolean> {
+  if (hackathon.status === "judging") return true
+  if (hackathon.status !== "active") return false
+  if (hackathon.phase === "preliminaries" || hackathon.phase === "finals") {
+    return true
+  }
+
+  const client = getSupabase() as unknown as SupabaseClient
+  const { data, error } = await client
+    .from("judging_rounds")
+    .select("id")
+    .eq("hackathon_id", hackathon.id)
+    .eq("status", "active")
+    .limit(1)
+    .maybeSingle()
+
+  return !error && data !== null
+}
+
 function toJudgeShape(value: unknown): { clerk_user_id: string; team_id: string | null } | null {
   if (!value || typeof value !== "object") return null
   const v = value as Record<string, unknown>
@@ -2007,11 +2048,11 @@ function toSubmissionShape(value: unknown): { team_id: string | null } | null {
 export async function assertAssignmentWritable(
   assignmentId: string,
   clerkUserId: string,
-  hackathon: { id: string; status: string }
+  hackathon: JudgingAccessHackathon,
 ): Promise<AssertAssignmentWritableResult> {
   const client = getSupabase()
 
-  if (hackathon.status !== "judging" && hackathon.status !== "active") {
+  if (!(await isJudgingOpenForHackathon(hackathon))) {
     return {
       ok: false,
       error: "Hackathon is not in judging phase",
@@ -3100,20 +3141,9 @@ export async function getJudgingProgress(hackathonId: string): Promise<JudgingPr
     if (a.is_complete) judgeMap[a.judge_participant_id].completed++
   }
 
-  const userMap: Record<string, string> = {}
-  if (judges && judges.length > 0) {
-    try {
-      const { clerkClient } = await import("@clerk/nextjs/server")
-      const clerk = await clerkClient()
-      const clerkUserIds = judges.map((j) => j.clerk_user_id)
-      const clerkUsers = await clerk.users.getUserList({ userId: clerkUserIds, limit: 100 })
-      for (const u of clerkUsers.data) {
-        userMap[u.id] = [u.firstName, u.lastName].filter(Boolean).join(" ") || u.username || u.id
-      }
-    } catch (err) {
-      console.error("Failed to fetch Clerk users for judging progress:", err)
-    }
-  }
+  const { displayNames } = await resolveClerkUsers(
+    (judges ?? []).map((judge) => judge.clerk_user_id),
+  )
 
   return {
     totalAssignments,
@@ -3121,7 +3151,7 @@ export async function getJudgingProgress(hackathonId: string): Promise<JudgingPr
     judges: (judges ?? []).map((j) => ({
       participantId: j.id,
       clerkUserId: j.clerk_user_id,
-      displayName: userMap[j.clerk_user_id] ?? j.clerk_user_id,
+      displayName: displayNames[j.clerk_user_id] ?? j.clerk_user_id,
       completed: judgeMap[j.id]?.completed ?? 0,
       total: judgeMap[j.id]?.total ?? 0,
     })),
@@ -3599,11 +3629,19 @@ export type SubmitScoresResult =
   | { success: true }
   | { success: false; error: string; code: string }
 
+function scoreCriteriaLookupFailure(): SubmitScoresResult {
+  return {
+    success: false,
+    error: "Scoring categories could not be loaded",
+    code: "criteria_lookup_failed",
+  }
+}
+
 export async function submitScores(
   assignmentId: string,
   ownership: AssignmentOwnership,
   scores: { criteriaId: string; score: number }[],
-  notes: string
+  notes?: string
 ): Promise<SubmitScoresResult> {
   const client = getSupabase() as unknown as SupabaseClient
 
@@ -3611,11 +3649,12 @@ export async function submitScores(
   let criteria: CriterionRow[] = []
 
   if (ownership.assignmentKind === "unified_weighted_score") {
-    const { data: weightedPrizes } = await client
+    const { data: weightedPrizes, error: weightedPrizesError } = await client
       .from("prizes")
       .select("id")
       .eq("hackathon_id", ownership.hackathonId)
       .eq("judging_style", "weighted_score")
+    if (weightedPrizesError) return scoreCriteriaLookupFailure()
     const prizeIds = (weightedPrizes ?? []).map((p) => p.id)
 
     const corePromise = client
@@ -3629,30 +3668,38 @@ export async function submitScores(
             .from("judging_criteria")
             .select("id, min_score, max_score")
             .in("prize_id", prizeIds)
-        : Promise.resolve({ data: [] as CriterionRow[] })
+        : Promise.resolve({ data: [] as CriterionRow[], error: null })
 
     const [coreResult, prizeResult] = await Promise.all([corePromise, prizePromise])
+    if (coreResult.error || prizeResult.error) return scoreCriteriaLookupFailure()
     criteria = [...((coreResult.data ?? []) as CriterionRow[]), ...((prizeResult.data ?? []) as CriterionRow[])]
   } else if (ownership.prizeId) {
-    const { data } = await client
+    const { data, error } = await client
       .from("judging_criteria")
       .select("id, min_score, max_score")
       .eq("prize_id", ownership.prizeId)
+    if (error) return scoreCriteriaLookupFailure()
     criteria = (data ?? []) as CriterionRow[]
   } else {
-    const { data } = await client
+    const { data, error } = await client
       .from("judging_criteria")
       .select("id, min_score, max_score")
       .eq("hackathon_id", ownership.hackathonId)
       .is("prize_id", null)
+    if (error) return scoreCriteriaLookupFailure()
     criteria = (data ?? []) as CriterionRow[]
   }
 
+  if (criteria.length === 0) {
+    return {
+      success: false,
+      error: "Scoring is not ready because this assignment has no score categories",
+      code: "criteria_missing",
+    }
+  }
+
   const submittedCriteriaIds = new Set(scores.map((score) => score.criteriaId))
-  if (
-    criteria.length > 0 &&
-    (scores.length !== criteria.length || submittedCriteriaIds.size !== criteria.length)
-  ) {
+  if (scores.length !== criteria.length || submittedCriteriaIds.size !== criteria.length) {
     return { success: false, error: "Scores are required for all criteria", code: "empty_scores" }
   }
 
@@ -3662,6 +3709,9 @@ export async function submitScores(
     const minScoreMap = new Map(criteria.map((c) => [c.id, c.min_score]))
 
     for (const s of scores) {
+      if (!Number.isFinite(s.score)) {
+        return { success: false, error: "Scores must be numbers", code: "invalid_score" }
+      }
       if (!validCriteriaIds.has(s.criteriaId)) {
         return { success: false, error: "One or more criteria IDs are invalid", code: "invalid_criteria" }
       }
@@ -3701,7 +3751,7 @@ export async function submitScores(
   const { error: updateError } = await client
     .from("judge_assignments")
     .update({
-      notes,
+      ...(notes === undefined ? {} : { notes }),
       is_complete: true,
       completed_at: new Date().toISOString(),
     })

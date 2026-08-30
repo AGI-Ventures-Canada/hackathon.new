@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test"
-import { render, screen } from "@testing-library/react"
+import { cleanup, render, screen } from "@testing-library/react"
 import type { ReactNode } from "react"
 
 const redirect = mock((path: string) => {
@@ -15,6 +15,13 @@ const getRegistrationInfo = mock(() => Promise.resolve<unknown>({
   participantId: "judge-participant",
 }))
 const getJudgeAssignments = mock(() => Promise.resolve<unknown[]>([]))
+const isJudgingOpenForHackathon = mock((event: { status: string; phase?: string | null }) =>
+  Promise.resolve(
+    event.status === "judging" ||
+    (event.status === "active" &&
+      (event.phase === "preliminaries" || event.phase === "finals")),
+  ),
+)
 const getJudgePicks = mock(() => Promise.resolve<unknown[]>([]))
 const routeJudgeAssignments = mock((_assignments: unknown[]) => ({
   scored: [],
@@ -33,7 +40,10 @@ mock.module("@/lib/services/public-hackathons", () => ({
   PUBLISHED_STATUSES: ["published", "registration_open", "active", "judging", "completed"],
 }))
 mock.module("@/lib/services/hackathons", () => ({ getRegistrationInfo }))
-mock.module("@/lib/services/judging", () => ({ getJudgeAssignments }))
+mock.module("@/lib/services/judging", () => ({
+  getJudgeAssignments,
+  isJudgingOpenForHackathon,
+}))
 mock.module("@/lib/services/judge-picks", () => ({ getJudgePicks }))
 mock.module("@/lib/utils/judging-assignment-routing", () => ({
   routeJudgeAssignments: (assignments: Array<Record<string, unknown>>) => {
@@ -80,6 +90,7 @@ mock.module("@/components/ui/auto-refresh", () => ({
 }))
 mock.module("lucide-react", () => ({
   Clock: () => <span data-testid="clock" />,
+  Gavel: () => <span data-testid="gavel" />,
 }))
 
 const { default: JudgePage } = await import(
@@ -139,6 +150,12 @@ beforeEach(() => {
   })
   getJudgeAssignments.mockReset()
   getJudgeAssignments.mockResolvedValue([])
+  isJudgingOpenForHackathon.mockReset()
+  isJudgingOpenForHackathon.mockImplementation((event) => Promise.resolve(
+    event.status === "judging" ||
+    (event.status === "active" &&
+      (event.phase === "preliminaries" || event.phase === "finals")),
+  ))
   getJudgePicks.mockReset()
   getJudgePicks.mockResolvedValue([])
   routeJudgeAssignments.mockReset()
@@ -173,6 +190,8 @@ describe("judge page boundary", () => {
     render(waiting)
     expect(screen.getByText("This event isn't live yet")).toBeDefined()
     expect(screen.getByTestId("clock")).toBeDefined()
+    expect(screen.getByTestId("refresh-interval").textContent).toBe("15000")
+    expect(screen.queryByRole("link", { name: "View Event" })).toBeNull()
     expect(getJudgeAssignments).not.toHaveBeenCalled()
 
     getRegistrationInfo.mockResolvedValueOnce({ participantRole: null })
@@ -254,7 +273,41 @@ describe("judge page boundary", () => {
       participantId: null,
     })
     render(await callPage())
-    expect(screen.getByText("You don't have any assignments yet.")).toBeDefined()
+    expect(screen.getByText("No projects are assigned yet")).toBeDefined()
+    expect(screen.getByText(/You don't need to do anything right now/)).toBeDefined()
     expect(getJudgePicks).not.toHaveBeenCalled()
+  })
+
+  it("shows phase-aware waiting and closed states without loading assignments", async () => {
+    getPublicHackathon.mockResolvedValueOnce({ ...hackathon, status: "published" })
+    render(await callPage())
+    expect(screen.getByText("Judging hasn't started")).toBeDefined()
+    expect(screen.getByTestId("refresh-interval").textContent).toBe("15000")
+    expect(getJudgeAssignments).not.toHaveBeenCalled()
+
+    cleanup()
+    getPublicHackathon.mockResolvedValueOnce({
+      ...hackathon,
+      status: "active",
+      phase: "build",
+    })
+    render(await callPage())
+    expect(screen.getByText("Judging hasn't started")).toBeDefined()
+    expect(screen.queryByTestId("judge-webmcp")).toBeNull()
+    expect(getJudgeAssignments).not.toHaveBeenCalled()
+
+    cleanup()
+    getJudgeAssignments.mockClear()
+    getPublicHackathon.mockResolvedValueOnce({ ...hackathon, status: "completed" })
+    render(await callPage())
+    expect(screen.getByText("Judging is closed")).toBeDefined()
+    expect(getJudgeAssignments).not.toHaveBeenCalled()
+
+    cleanup()
+    getPublicHackathon.mockResolvedValueOnce({ ...hackathon, status: "archived" })
+    render(await callPage())
+    expect(screen.getByText("Judging is closed")).toBeDefined()
+    expect(screen.queryByTestId("refresh-interval")).toBeNull()
+    expect(getJudgeAssignments).not.toHaveBeenCalled()
   })
 })

@@ -12,8 +12,12 @@ import type { DraftEnvelope, DraftState } from "@/lib/hackathon-draft"
 import { useHackathonDraft } from "@/hooks/use-hackathon-draft"
 import { CreateDraftWebMcpTools } from "@/components/hackathon/create-draft-webmcp-tools"
 import { DraftReview } from "@/components/hackathon/draft-review"
-import { FetchResponseError } from "@/lib/utils/fetch"
+import { assertOkJson, FetchResponseError } from "@/lib/utils/fetch"
 import { isValidSlugFormat } from "@/lib/utils/slug"
+import {
+  isTestEventStage,
+  type TestEventStage,
+} from "@/lib/fixtures/test-event"
 import {
   getPendingCreatedEventNavigation,
   rememberCreatedEventNavigation,
@@ -38,6 +42,13 @@ interface CreateFlowProps {
     draftId: string,
     expectedOrganizationId: string,
   ) => Promise<{ id: string; slug: string }>
+}
+
+type TestEventCreateResponse = {
+  id: string
+  slug: string
+  committed: boolean
+  replayed: boolean
 }
 
 export function CreateFlow({
@@ -75,8 +86,21 @@ export function CreateFlow({
   const [error, setError] = useState<string | null>(null)
   const [showSignInDialog, setShowSignInDialog] = useState(false)
   const [orgGateOpen, setOrgGateOpen] = useState(false)
-  const [importMode, setImportMode] = useState<"choose" | "import">("choose")
+  const requestedTestStage = isTestEventStage(searchParams.get("testEvent"))
+    ? searchParams.get("testEvent") as TestEventStage
+    : "registration"
+  const [importMode, setImportMode] = useState<"choose" | "import" | "test">(
+    isTestEventStage(searchParams.get("testEvent")) ? "test" : "choose",
+  )
+  const [testStage, setTestStage] = useState<TestEventStage>(requestedTestStage)
+  const [pendingTestStage, setPendingTestStage] = useState<TestEventStage | null>(null)
+  const [resumeTestAfterOrg, setResumeTestAfterOrg] = useState(false)
   const submitInFlightRef = useRef(false)
+  const testCreationRef = useRef<{
+    id: string
+    stage: TestEventStage
+    organizationId: string
+  } | null>(null)
   const autoTriggeredRef = useRef(false)
   const completedEventNavigationRef = useRef<string | null>(null)
 
@@ -267,6 +291,93 @@ export function CreateFlow({
     orgId,
   ])
 
+  const handleCreateTestEvent = useCallback(async (stage: TestEventStage) => {
+    setTestStage(stage)
+    setPendingTestStage(stage)
+    if (!isLoaded) {
+      setError("Wait a moment while we check your sign-in.")
+      return
+    }
+    if (!isSignedIn) {
+      setShowSignInDialog(true)
+      return
+    }
+    if (!canCreateInActiveOrganization || !orgId) {
+      setOrgGateOpen(true)
+      return
+    }
+    if (submitInFlightRef.current) return
+
+    submitInFlightRef.current = true
+    setIsSubmitting(true)
+    setError(null)
+    if (
+      !testCreationRef.current ||
+      testCreationRef.current.stage !== stage ||
+      testCreationRef.current.organizationId !== orgId
+    ) {
+      testCreationRef.current = {
+        id: crypto.randomUUID(),
+        stage,
+        organizationId: orgId,
+      }
+    }
+
+    try {
+      const result = await fetch("/api/dashboard/hackathons/test-event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          creationId: testCreationRef.current.id,
+          stage,
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          expectedOrganizationId: orgId,
+        }),
+      }).then(assertOkJson<TestEventCreateResponse>)
+
+      if (!result.committed || result.slug.length > 100 || !isValidSlugFormat(result.slug)) {
+        throw new Error("The test event was made, but its page address was invalid. Try again.")
+      }
+      openCreatedEvent(result.slug)
+    } catch (err) {
+      if (err instanceof FetchResponseError && err.status === 401) {
+        setShowSignInDialog(true)
+        return
+      }
+      if (err instanceof FetchResponseError && err.code === "organization_context_changed") {
+        setOrgGateOpen(true)
+        return
+      }
+      setError(err instanceof Error ? err.message : "We couldn't make the test event. Try again.")
+    } finally {
+      submitInFlightRef.current = false
+      setIsSubmitting(false)
+    }
+  }, [
+    canCreateInActiveOrganization,
+    isLoaded,
+    isSignedIn,
+    openCreatedEvent,
+    orgId,
+  ])
+
+  useEffect(() => {
+    if (
+      !resumeTestAfterOrg ||
+      !pendingTestStage ||
+      orgGateOpen ||
+      !canCreateInActiveOrganization
+    ) return
+    setResumeTestAfterOrg(false)
+    void handleCreateTestEvent(pendingTestStage)
+  }, [
+    canCreateInActiveOrganization,
+    handleCreateTestEvent,
+    orgGateOpen,
+    pendingTestStage,
+    resumeTestAfterOrg,
+  ])
+
   const handleSubmit = useCallback(async () => {
     if (!state.name.trim()) {
       setError("Hackathon name is required")
@@ -336,8 +447,9 @@ export function CreateFlow({
   const importKeyRef = useRef(0)
 
   const goBack = useCallback(() => {
-    if (currentStep === 0 && importMode === "import") {
+    if (currentStep === 0 && importMode !== "choose") {
       setImportMode("choose")
+      setPendingTestStage(null)
       importKeyRef.current += 1
     } else if (currentStep > 0) {
       setError(null)
@@ -402,8 +514,19 @@ export function CreateFlow({
             {currentStep === 0 && (
               <StepImport
                 key={importKeyRef.current}
-                onSkipToScratch={() => setCurrentStep(1)}
-                onModeChange={setImportMode}
+                onSkipToScratch={() => {
+                  setPendingTestStage(null)
+                  setCurrentStep(1)
+                }}
+                onModeChange={(mode) => {
+                  setImportMode(mode)
+                  if (mode !== "test") setPendingTestStage(null)
+                }}
+                onCreateTestEvent={(stage) => void handleCreateTestEvent(stage)}
+                initialMode={importMode}
+                initialTestStage={testStage}
+                isCreatingTestEvent={isSubmitting}
+                testEventError={importMode === "test" ? error : null}
                 savedDraftName={hasStoredDraft ? state.name.trim() || null : null}
               />
             )}
@@ -444,7 +567,7 @@ export function CreateFlow({
             {currentStep === 5 && <DraftReview state={state} />}
           </CreateFlowStep>
 
-          {error && (
+          {error && importMode !== "test" && (
             <p className="mt-4 text-center text-sm text-destructive">{error}</p>
           )}
           {conflictMessage && conflictMessage !== error && (
@@ -475,7 +598,7 @@ export function CreateFlow({
         </div>
       </div>
 
-      {(currentStep > 0 || importMode === "import") && (
+      {(currentStep > 0 || importMode !== "choose") && (
         <div className="w-full border-t px-4 py-4 sm:px-8">
           <div className="mx-auto flex max-w-2xl items-center justify-between">
             <Button
@@ -531,9 +654,15 @@ export function CreateFlow({
       <SignInRequiredDialog
         open={showSignInDialog}
         onOpenChange={setShowSignInDialog}
-        description="Your draft has been saved. Sign in to create your hackathon."
-        redirectQuery="review=true"
+        title={pendingTestStage ? "Sign in to make a test event" : undefined}
+        description={pendingTestStage
+          ? "Sign in, then review and create your private test event."
+          : "Your draft has been saved. Sign in to create your hackathon."}
+        redirectQuery={pendingTestStage
+          ? `testEvent=${pendingTestStage}`
+          : "review=true"}
         beforeNavigate={() => {
+          if (pendingTestStage) return true
           const result = ensureSavedDraft()
           if (result === "saved" || result === "conflict") return true
           return result === "completed"
@@ -546,7 +675,9 @@ export function CreateFlow({
         <OrgGateDialog
           open={orgGateOpen}
           onOpenChange={setOrgGateOpen}
-          onOrgSelected={() => undefined}
+          onOrgSelected={() => {
+            if (pendingTestStage) setResumeTestAfterOrg(true)
+          }}
         />
       )}
       <CreateDraftWebMcpTools
@@ -557,6 +688,11 @@ export function CreateFlow({
         envelope={envelope}
         onPatch={patchState}
         onOpenReview={openReview}
+        onOpenTestEvent={(stage) => {
+          setImportMode("test")
+          setTestStage(stage)
+          setPendingTestStage(stage)
+        }}
         onOpenSignIn={() => {
           const saveResult = ensureSavedDraft()
           if (saveResult !== "saved") {

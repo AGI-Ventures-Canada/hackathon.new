@@ -38,7 +38,7 @@ export async function sendBulkEmail(
 
   const { data: hackathon, error: hackathonError } = await client
     .from("hackathons")
-    .select("name, status, starts_at, ends_at")
+    .select("name, status, starts_at, ends_at, is_test_event")
     .eq("id", hackathonId)
     .single()
 
@@ -51,6 +51,7 @@ export async function sendBulkEmail(
     status: hackathon.status as HackathonStatus,
     starts_at: hackathon.starts_at,
     ends_at: hackathon.ends_at,
+    is_test_event: hackathon.is_test_event,
   })
   if (disposition === "queue") {
     throw new Error("Go live before sending an email blast.")

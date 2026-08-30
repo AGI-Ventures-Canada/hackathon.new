@@ -3,7 +3,11 @@ import { defineWebMcpTool } from "@/lib/webmcp/tool"
 import type { WebMcpTool } from "@/lib/webmcp/types"
 import type { HackathonStatus, TeamStatus } from "@/lib/db/hackathon-types"
 import { stageKeyForStatus } from "@/lib/utils/lifecycle-stages"
-import { isHttpsUrlWithoutCredentials, normalizeUrl } from "@/lib/utils/url"
+import {
+  isHttpsUrlWithoutCredentials,
+  isSafeExternalUrl,
+  normalizeUrl,
+} from "@/lib/utils/url"
 import { WebMcpRequestError } from "@/lib/webmcp/fetch"
 
 export function getProjectDraftNextStep(input: {
@@ -163,7 +167,12 @@ export type EventGuideContext = {
   organizerName: string
   schedule: { title: string; startsAt: string; endsAt: string | null; location: string | null }[]
   announcements: { title: string; body: string; priority: string }[]
-  challenges: { title: string; description: string | null; resourceCount: number }[]
+  challenges: {
+    title: string
+    description: string | null
+    resourceCount: number
+    resources?: { label: string; url: string }[]
+  }[]
   resultsPublished: boolean
 }
 
@@ -210,6 +219,60 @@ type EventAttendeeToolActions = {
 function snippet(value: string | null, maxLength: number): string | null {
   if (!value || value.length <= maxLength) return value
   return `${value.slice(0, maxLength - 1)}…`
+}
+
+function summarizeChallengeResources(
+  resources: { label: string; url: string }[] | undefined,
+) {
+  const seen = new Set<string>()
+  return (resources ?? []).flatMap((resource) => {
+    const url = normalizeUrl(resource.url)
+    if (url.length > 240 || !isSafeExternalUrl(url) || seen.has(url)) return []
+    seen.add(url)
+    return [{
+      label: snippet(resource.label.trim() || url, 60),
+      url,
+    }]
+  })
+}
+
+function challengeRef(challenge: EventGuideContext["challenges"][number]): string {
+  const source = `${challenge.title}\u0000${challenge.description ?? ""}`
+  let hash = 2_166_136_261
+  for (let index = 0; index < source.length; index += 1) {
+    hash ^= source.charCodeAt(index)
+    hash = Math.imul(hash, 16_777_619)
+  }
+  return `challenge-${(hash >>> 0).toString(36)}`
+}
+
+export function summarizeChallengeResourcePage(
+  guide: EventGuideContext,
+  requestedRef: string,
+  offset: number,
+  limit: number,
+) {
+  const matches = guide.challenges.filter(
+    (challenge) => challengeRef(challenge) === requestedRef,
+  )
+  if (matches.length !== 1) {
+    throw new WebMcpRequestError({
+      code: "stale_challenge_ref",
+      message: "That challenge changed. Read the challenge list and try again.",
+      retryable: true,
+    })
+  }
+  const challenge = matches[0]
+  const resources = summarizeChallengeResources(challenge.resources)
+  const items = resources.slice(offset, offset + limit)
+  return {
+    challengeRef: requestedRef,
+    title: snippet(challenge.title, 80),
+    offset,
+    total: resources.length,
+    nextOffset: offset + items.length < resources.length ? offset + items.length : null,
+    items,
+  }
 }
 
 export function summarizeEventViewer(viewer: EventViewerContext) {
@@ -333,10 +396,13 @@ export function summarizeEventGuide(
     }
   }
 
-  const items = guide.challenges.slice(offset, offset + 4).map((challenge) => ({
+  const items = guide.challenges.slice(offset, offset + 2).map((challenge) => ({
+    challengeRef: challengeRef(challenge),
     title: snippet(challenge.title, 80),
     description: snippet(challenge.description, 120),
     resourceCount: challenge.resourceCount,
+    availableResourceCount: summarizeChallengeResources(challenge.resources).length,
+    resources: summarizeChallengeResources(challenge.resources).slice(0, 1),
   }))
   return {
     section,
@@ -362,6 +428,20 @@ export function createEventAttendeeTools(
       }).strict(),
       annotations: { readOnlyHint: true, untrustedContentHint: true },
       execute: ({ section, offset }) => summarizeEventGuide(actions.guide, section, offset),
+    }),
+    defineWebMcpTool({
+      name: "get_challenge_resources",
+      title: "Read challenge resources",
+      description:
+        "Read safe resource links for one challenge from get_event_guide. Use nextOffset until it is null.",
+      schema: z.object({
+        challengeRef: z.string().min(1).max(40),
+        offset: z.number().int().nonnegative().max(500).default(0),
+        limit: z.number().int().min(1).max(4).default(4),
+      }).strict(),
+      annotations: { readOnlyHint: true, untrustedContentHint: true },
+      execute: ({ challengeRef: ref, offset, limit }) =>
+        summarizeChallengeResourcePage(actions.guide, ref, offset, limit),
     }),
     defineWebMcpTool({
       name: "get_my_event_status",

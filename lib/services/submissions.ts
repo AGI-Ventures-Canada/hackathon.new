@@ -413,7 +413,7 @@ export async function notifySubmissionMembers(input: {
 
   const { data: hackathon, error: hackathonError } = await client
     .from("hackathons")
-    .select("name, slug, status")
+    .select("name, slug, status, is_test_event")
     .eq("id", input.hackathonId)
     .maybeSingle()
 
@@ -422,7 +422,7 @@ export async function notifySubmissionMembers(input: {
     return 0
   }
 
-  if (hackathon.status === "draft") return 0
+  if (hackathon.status === "draft" || hackathon.is_test_event) return 0
 
   let teamName: string | null = null
   let clerkUserIds: string[] = []

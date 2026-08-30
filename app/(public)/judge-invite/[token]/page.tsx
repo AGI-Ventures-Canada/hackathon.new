@@ -2,11 +2,13 @@ import { notFound } from "next/navigation"
 import { auth } from "@clerk/nextjs/server"
 import { getJudgeInvitationByToken } from "@/lib/services/judge-invitations"
 import { currentTermsHash } from "@/lib/services/hackathon-terms"
+import { formatJudgeEventSchedule } from "@/lib/email/judge-invitations"
 import { JudgeInviteAcceptClient } from "./judge-invite-accept-client"
 import type { Metadata } from "next"
 
 type PageProps = {
   params: Promise<{ token: string }>
+  searchParams: Promise<{ accept?: string }>
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
@@ -23,8 +25,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   }
 }
 
-export default async function JudgeInvitePage({ params }: PageProps) {
+export default async function JudgeInvitePage({ params, searchParams }: PageProps) {
   const { token } = await params
+  const { accept } = await searchParams
   const { userId } = await auth()
 
   const invitation = await getJudgeInvitationByToken(token)
@@ -51,11 +54,22 @@ export default async function JudgeInvitePage({ params }: PageProps) {
           email: invitation.email,
           status: effectiveStatus,
           expiresAt: invitation.expires_at,
+          expiresLabel: formatJudgeEventSchedule(
+            invitation.expires_at,
+            null,
+            "UTC",
+          ),
+          eventSchedule: formatJudgeEventSchedule(
+            invitation.hackathon.starts_at,
+            invitation.hackathon.ends_at,
+            "UTC",
+          ),
           requireTermsAcceptance: Boolean(termsHash),
           termsContent: termsHash ? invitation.hackathon.terms_content : null,
           termsHash,
         }}
         isAuthenticated={!!userId}
+        autoAccept={accept === "true"}
       />
     </div>
   )

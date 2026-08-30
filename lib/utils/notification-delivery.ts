@@ -1,4 +1,4 @@
-export const QUEUE_REASON_CODES = ["event_draft", "registration_not_open"] as const
+export const QUEUE_REASON_CODES = ["event_draft", "registration_not_open", "test_event"] as const
 
 export type QueueReasonCode = (typeof QUEUE_REASON_CODES)[number]
 export type NotificationDelivery = "sent" | "queued" | "failed"
@@ -50,6 +50,10 @@ export function getQueueReasonText(reason: QueueReasonCode): {
     registration_not_open: {
       reason: "Registration isn't open yet.",
       release: "We'll send it when registration opens.",
+    },
+    test_event: {
+      reason: "This is a test event.",
+      release: "Emails stay off until you make it a real event.",
     },
   }
   return copy[reason]

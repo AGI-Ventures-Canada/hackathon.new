@@ -1,4 +1,8 @@
 import { clerkClient } from "@clerk/nextjs/server"
+import {
+  getSyntheticUserIdentity,
+  isSyntheticUserId,
+} from "@/lib/utils/synthetic-user"
 
 export type ClerkUserLookup = {
   displayNames: Record<string, string | null>
@@ -11,13 +15,13 @@ export async function resolveClerkUsers(userIds: string[]): Promise<ClerkUserLoo
 
   if (userIds.length === 0) return { displayNames, emails }
 
-  const realUserIds = userIds.filter((id) => !id.startsWith("seed_user_"))
-  const seedUserIds = userIds.filter((id) => id.startsWith("seed_user_"))
+  const realUserIds = userIds.filter((id) => !isSyntheticUserId(id))
+  const seedUserIds = userIds.filter(isSyntheticUserId)
 
   for (const seedId of seedUserIds) {
-    const name = seedId.replace(/^seed_user_/, "").replace(/_\d+$/, "")
-    displayNames[seedId] = name.charAt(0).toUpperCase() + name.slice(1)
-    emails[seedId] = `${name}@seed.local`
+    const identity = getSyntheticUserIdentity(seedId)
+    displayNames[seedId] = identity?.displayName ?? "Test person"
+    emails[seedId] = identity?.email ?? null
   }
 
   if (realUserIds.length === 0) return { displayNames, emails }
