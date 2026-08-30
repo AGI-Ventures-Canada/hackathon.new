@@ -450,7 +450,7 @@ describe("getOrganizerActionItems", () => {
       expect(item).toBeDefined()
       expect(item?.severity).toBe("scheduled")
       expect(item?.action).toBe("release-challenge")
-      expect(item?.label).toBe("Challenge releases at May 1 at 9:00 AM UTC")
+      expect(item?.label).toBe("Challenge releases at May 1, 9:00 AM UTC")
     })
 
     it("shows pending mentor requests", () => {

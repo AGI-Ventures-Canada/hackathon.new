@@ -10,7 +10,7 @@ const migration = readFileSync(
 describe("subjective results migration", () => {
   it("replaces only core results and keeps prize rankings", () => {
     expect(migration).toContain(
-      "where hackathon_id = p_hackathon_id\n    and result_kind = 'core_only';",
+      "where hackathon_id = p_hackathon_id\n    and prize_id is null\n    and prize_track_id is null\n    and round_id is null;",
     )
   })
 
