@@ -168,13 +168,14 @@ type TeamsTabProps = {
   requireTeamApproval: boolean
   hackathonStatus: string | null
   notificationDisposition: "queue" | "send" | "reject"
+  queueReason: QueueReasonCode
 }
 
 const STATUS_LOCKS_TEAM_MUTATIONS = new Set(["judging", "completed", "archived"])
 
 const UNASSIGNED_ROOM = "__unassigned__"
 
-export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: initialMin, allowSolo: initialSolo, requireTeamApproval: initialApproval, hackathonStatus, notificationDisposition }: TeamsTabProps) {
+export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: initialMin, allowSolo: initialSolo, requireTeamApproval: initialApproval, hackathonStatus, notificationDisposition, queueReason }: TeamsTabProps) {
   const router = useRouter()
   const ctx = useActionItemsOptional()
   const [teams, setTeams] = useState<Team[]>([])
@@ -673,6 +674,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
         emailedAt: invitation.emailedAt,
         hackathonStatus,
         notificationDisposition,
+        queueReason,
       }) === "queued"
     ).length,
     0,
@@ -716,7 +718,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
           {[actionError, remindError, approveError, denyError].filter(Boolean).join(" · ")}
         </p>
       )}
-      <QueuedEmailNotice count={queuedInvitationCount} />
+      <QueuedEmailNotice count={queuedInvitationCount} reason={queueReason} />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-muted-foreground">
           {teams.length === 0
@@ -1066,6 +1068,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                                             remindedAt={captainInvitation.remindedAt}
                                             hackathonStatus={hackathonStatus}
                                             notificationDisposition={notificationDisposition}
+                                            queueReason={queueReason}
                                           />
                                           <Button
                                             variant="ghost"
@@ -1168,6 +1171,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                                               remindedAt={inv.remindedAt}
                                               hackathonStatus={hackathonStatus}
                                               notificationDisposition={notificationDisposition}
+                                              queueReason={queueReason}
                                             />
                                             <Button
                                               variant="ghost"

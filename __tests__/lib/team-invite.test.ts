@@ -1,5 +1,22 @@
 import { describe, expect, it } from "bun:test"
-import { canInviteTeamMembers } from "@/lib/utils/team-invite"
+import { canInviteTeamMembers, hasRegistrationOpened } from "@/lib/utils/team-invite"
+
+describe("hasRegistrationOpened", () => {
+  it("holds messages until registration opens", () => {
+    expect(
+      hasRegistrationOpened(
+        "2026-05-11T12:00:00.000Z",
+        "2026-05-11T11:59:00.000Z",
+      ),
+    ).toBe(false)
+    expect(
+      hasRegistrationOpened(
+        "2026-05-11T12:00:00.000Z",
+        "2026-05-11T12:00:00.000Z",
+      ),
+    ).toBe(true)
+  })
+})
 
 describe("canInviteTeamMembers", () => {
   it("does not allow invites when a close time exists but current time is not ready", () => {

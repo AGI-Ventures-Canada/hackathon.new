@@ -15,6 +15,7 @@ import { getSubmissionScreenshotUrls } from "@/lib/utils/submission-screenshots"
 import { isValidUuid } from "@/lib/utils/uuid"
 import { getNotificationDisposition } from "@/lib/utils/notification-lifecycle"
 import { getQueueReason, type QueueReasonCode } from "@/lib/utils/notification-delivery"
+import { hasRegistrationOpened } from "@/lib/utils/team-invite"
 import { isHackathonCreationReady } from "@/lib/utils/hackathon-creation-state"
 import { withEventMutationLease } from "@/lib/services/event-mutation-lease"
 
@@ -741,12 +742,6 @@ type DenyPendingTeamRpcRow = {
   member_clerk_user_ids: Array<string | null> | null
 }
 
-export type TeamReviewHackathon = {
-  name: string | null
-  slug: string | null
-  status: string | null
-}
-
 const TEAM_MUTATION_LOCKED_STATUSES: ReadonlySet<HackathonStatus> = new Set([
   "judging",
   "completed",
@@ -855,7 +850,7 @@ async function createPendingTeamWithInvite(
 ): Promise<CreateTeamResult> {
   const { data: hackathon } = await client
     .from("hackathons")
-    .select("name, slug, status, starts_at, ends_at")
+    .select("name, slug, status, starts_at, ends_at, registration_opens_at")
     .eq("id", hackathonId)
     .single()
 
@@ -874,7 +869,16 @@ async function createPendingTeamWithInvite(
     return { error: "Teams are locked because judging has started", code: "status_locked" }
   }
 
-  let delivery: "sent" | "queued" | "failed" = disposition === "queue" ? "queued" : "sent"
+  const registrationOpened = hasRegistrationOpened(
+    hackathon.registration_opens_at,
+    new Date().toISOString(),
+  )
+  const queuedReason = disposition === "queue"
+    ? "event_draft"
+    : "registration_not_open"
+  let delivery: "sent" | "queued" | "failed" = disposition === "queue" || !registrationOpened
+    ? "queued"
+    : "sent"
   const normalizedCaptainEmail = input.captainEmail.trim().toLowerCase()
   const now = new Date().toISOString()
   const { error: expireInvitationError } = await client
@@ -904,13 +908,17 @@ async function createPendingTeamWithInvite(
     ? (Array.isArray(existingInvitation.teams) ? existingInvitation.teams[0] : existingInvitation.teams)
     : null
   if (existingTeam && existingTeam.status !== "disbanded") {
-    delivery = existingInvitation?.emailed_at ? "sent" : disposition === "queue" ? "queued" : "failed"
+    delivery = existingInvitation?.emailed_at
+      ? "sent"
+      : disposition === "queue" || !registrationOpened
+        ? "queued"
+        : "failed"
     return {
       team: { id: existingTeam.id, name: existingTeam.name },
       invited: true,
       queued: delivery === "queued",
       delivery,
-      queueReason: getQueueReason(delivery),
+      queueReason: getQueueReason(delivery, queuedReason),
     }
   }
 
@@ -947,7 +955,13 @@ async function createPendingTeamWithInvite(
   }
 
   const token = createToken()
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+  const registrationOpensAt = hackathon.registration_opens_at
+    ? new Date(hackathon.registration_opens_at).getTime()
+    : Date.now()
+  const expiresAt = new Date(
+    Math.max(Date.now(), Number.isFinite(registrationOpensAt) ? registrationOpensAt : Date.now()) +
+      7 * 24 * 60 * 60 * 1000,
+  ).toISOString()
 
   const { data: invitation, error: inviteError } = await client
     .from("team_invitations")
@@ -973,7 +987,7 @@ async function createPendingTeamWithInvite(
     return { error: "Failed to send invitation" }
   }
 
-  if (disposition === "send") {
+  if (disposition === "send" && registrationOpened) {
     const { sendTeamInvitationEmail } = await import("@/lib/email/team-invitations")
     const sendResult = await sendTeamInvitationEmail({
       to: normalizedCaptainEmail,
@@ -1032,14 +1046,13 @@ async function createPendingTeamWithInvite(
     invited: true,
     queued: delivery === "queued",
     delivery,
-    queueReason: getQueueReason(delivery),
+    queueReason: getQueueReason(delivery, queuedReason),
   }
 }
 
 export async function approvePendingTeam(
   teamId: string,
   hackathonId: string,
-  options: { notificationHackathon?: TeamReviewHackathon } = {}
 ): Promise<ReviewTeamResult> {
   const client = getSupabase() as unknown as SupabaseClient
 
@@ -1075,13 +1088,9 @@ export async function approvePendingTeam(
     .filter((id): id is string => Boolean(id))
 
   const membersNotified = await notifyReviewedTeamMembers({
-    client,
     hackathonId,
-    teamId: row.team_id,
-    teamName: row.team_name,
     acceptedMemberClerkUserIds: memberClerkUserIds,
     review: "approved",
-    hackathon: options.notificationHackathon,
   })
 
   return {
@@ -1095,7 +1104,6 @@ export async function denyPendingTeam(
   teamId: string,
   hackathonId: string,
   options: {
-    notificationHackathon?: TeamReviewHackathon
     skipNotifications?: boolean
   } = {}
 ): Promise<ReviewTeamResult> {
@@ -1145,13 +1153,9 @@ export async function denyPendingTeam(
   const membersNotified = options.skipNotifications
     ? 0
     : await notifyReviewedTeamMembers({
-        client,
         hackathonId,
-        teamId: row.team_id,
-        teamName: row.team_name,
         acceptedMemberClerkUserIds: memberClerkUserIds,
         review: "denied",
-        hackathon: options.notificationHackathon,
       })
 
   return {
@@ -1211,100 +1215,36 @@ export async function denyPendingTeamsForClosedHackathon(
 }
 
 export async function notifyReviewedTeamMembers({
-  client,
   hackathonId,
-  teamId,
-  teamName,
   acceptedMemberClerkUserIds,
   review,
-  hackathon: providedHackathon,
 }: {
-  client: SupabaseClient
   hackathonId: string
-  teamId: string
-  teamName: string
   acceptedMemberClerkUserIds: string[]
   review: "approved" | "denied"
-  hackathon?: TeamReviewHackathon
 }): Promise<number> {
   if (acceptedMemberClerkUserIds.length === 0) return 0
 
-  try {
-    let hackathon = providedHackathon
-    if (!hackathon) {
-      const { data, error } = await client
-        .from("hackathons")
-        .select("name, slug, status")
-        .eq("id", hackathonId)
-        .maybeSingle()
+  const { deliverAttendeeLifecycleEmailsForUser } = await import(
+    "@/lib/services/attendee-lifecycle-notifications"
+  )
+  const notificationType = review === "approved" ? "team_approved" : "team_denied"
+  let sent = 0
 
-      if (error) {
-        console.error(`Failed to load hackathon for team ${review} notifications:`, error)
-        return 0
-      }
-      hackathon = data ?? undefined
+  for (const userId of [...new Set(acceptedMemberClerkUserIds)]) {
+    try {
+      const result = await deliverAttendeeLifecycleEmailsForUser(
+        hackathonId,
+        userId,
+        notificationType,
+      )
+      sent += result.sent
+    } catch (err) {
+      console.error(`Failed to notify ${review} team member ${userId}:`, err)
     }
-
-    if (!hackathon?.name || !hackathon?.slug) {
-      console.error(`Failed to load hackathon for team ${review} notifications`)
-      return 0
-    }
-    if (hackathon.status === "draft") return 0
-
-    const hackathonName = hackathon.name
-    const hackathonSlug = hackathon.slug
-    const clerk = await clerkClient()
-    const { sendTeamApprovedEmail, sendTeamDeniedEmail } = await import("@/lib/email/team-review")
-    const { paceBulkSend } = await import("@/lib/email/utils")
-    const sendEmail = review === "approved" ? sendTeamApprovedEmail : sendTeamDeniedEmail
-    const seenRecipients = new Set<string>()
-    const uniqueUserIds = [...new Set(acceptedMemberClerkUserIds)]
-    let sent = 0
-    let deliveryAttempts = 0
-
-    for (let i = 0; i < uniqueUserIds.length; i += 100) {
-      const batch = uniqueUserIds.slice(i, i + 100)
-      let users: Awaited<ReturnType<typeof clerk.users.getUserList>>
-      try {
-        users = await clerk.users.getUserList({ userId: batch, limit: 100 })
-      } catch (err) {
-        console.error(`Failed to load ${review} team notification recipients:`, err)
-        continue
-      }
-      const recipients: string[] = []
-      for (const user of users.data) {
-        const email = user.primaryEmailAddress?.emailAddress ?? user.emailAddresses[0]?.emailAddress
-        const normalizedEmail = email?.trim().toLowerCase()
-        if (normalizedEmail && !seenRecipients.has(normalizedEmail)) {
-          seenRecipients.add(normalizedEmail)
-          recipients.push(normalizedEmail)
-        }
-      }
-
-      if (recipients.length === 0) continue
-      for (const to of recipients) {
-        await paceBulkSend(deliveryAttempts)
-        deliveryAttempts += 1
-        try {
-          const result = await sendEmail({
-            to,
-            teamId,
-            teamName,
-            hackathonName,
-            hackathonSlug,
-          })
-          if (result.success) sent += 1
-        } catch (err) {
-          console.error(`Failed to send ${review} team notification:`, err)
-        }
-      }
-    }
-
-    return sent
-  } catch (err) {
-    console.error(`Failed to notify ${review} team members:`, err)
-    return 0
   }
+
+  return sent
 }
 
 export async function modifyTeamMembers(

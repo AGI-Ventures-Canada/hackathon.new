@@ -3,6 +3,7 @@ import { processAllPendingReminders } from "@/lib/services/post-event-reminders"
 import { retryPendingResultEmails } from "@/lib/services/results"
 import { retryPendingTeamInvitationEmails } from "@/lib/services/team-invitations"
 import { retryPendingJudgeInvitationEmails } from "@/lib/services/judge-invitations"
+import { retryPendingAttendeeLifecycleEmails } from "@/lib/services/attendee-lifecycle-notifications"
 import { isAuthorizedCronRequest } from "@/lib/auth/cron"
 import { createDeliveryBudget } from "@/lib/services/delivery-budget"
 
@@ -15,6 +16,7 @@ const CRON_BATCH_LIMITS = {
   results: 5,
   teamInvitations: 20,
   judgeInvitations: 20,
+  attendeeLifecycle: 20,
 } as const
 
 const CRON_RECIPIENT_LIMIT = 12
@@ -65,6 +67,11 @@ export async function GET(request: Request) {
       CRON_BATCH_LIMITS.judgeInvitations,
       createWorkerBudget(startedAt),
     ))
+  const attendeeLifecycle = await settle(() =>
+    retryPendingAttendeeLifecycleEmails(
+      CRON_BATCH_LIMITS.attendeeLifecycle,
+      createWorkerBudget(startedAt),
+    ))
 
   const hasFailures =
     scheduled.status === "rejected" ||
@@ -72,11 +79,13 @@ export async function GET(request: Request) {
     results.status === "rejected" ||
     teamInvitations.status === "rejected" ||
     judgeInvitations.status === "rejected" ||
+    attendeeLifecycle.status === "rejected" ||
     (scheduled.status === "fulfilled" && scheduled.value.errors > 0) ||
     (postEvent.status === "fulfilled" && postEvent.value.errors > 0) ||
     (results.status === "fulfilled" && results.value.errors > 0) ||
     (teamInvitations.status === "fulfilled" && teamInvitations.value.failed > 0) ||
-    (judgeInvitations.status === "fulfilled" && judgeInvitations.value.failed > 0)
+    (judgeInvitations.status === "fulfilled" && judgeInvitations.value.failed > 0) ||
+    (attendeeLifecycle.status === "fulfilled" && attendeeLifecycle.value.failed > 0)
 
   return Response.json({
     scheduled:
@@ -99,5 +108,9 @@ export async function GET(request: Request) {
       judgeInvitations.status === "fulfilled"
         ? judgeInvitations.value
         : { error: String(judgeInvitations.reason) },
+    attendeeLifecycle:
+      attendeeLifecycle.status === "fulfilled"
+        ? attendeeLifecycle.value
+        : { error: String(attendeeLifecycle.reason) },
   }, { status: hasFailures ? 500 : 200 })
 }

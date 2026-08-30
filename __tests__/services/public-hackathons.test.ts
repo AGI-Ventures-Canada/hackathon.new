@@ -613,7 +613,7 @@ describe("Public Hackathons Service", () => {
       expect(result?.require_team_approval).toBe(true)
     })
 
-    it("moves waiting teams to forming and notifies their members when team review is turned off", async () => {
+    it("delivers queued team approvals when team review is turned off", async () => {
       mockNotifyReviewedTeamMembers.mockClear()
       const hackathonChain = createChainableMock({
         data: { ...mockHackathon, require_team_approval: false },
@@ -644,20 +644,10 @@ describe("Public Hackathons Service", () => {
       expect(teamsChain.eq).toHaveBeenCalledWith("status", "pending_approval")
 
       expect(mockNotifyReviewedTeamMembers).toHaveBeenCalledTimes(2)
-      const calls = mockNotifyReviewedTeamMembers.mock.calls as Array<
-        [
-          {
-            teamName: string
-            acceptedMemberClerkUserIds: string[]
-            review: "approved" | "denied"
-          },
-        ]
-      >
-      const alphaCall = calls.find((c) => c[0].teamName === "Alpha")?.[0]
-      expect(alphaCall?.review).toBe("approved")
-      expect(alphaCall?.acceptedMemberClerkUserIds).toEqual(["u1"])
-      const betaCall = calls.find((c) => c[0].teamName === "Beta")?.[0]
-      expect(betaCall?.acceptedMemberClerkUserIds).toEqual([])
+      expect(mockNotifyReviewedTeamMembers.mock.calls).toEqual([
+        [{ hackathonId: "h1", acceptedMemberClerkUserIds: ["u1"], review: "approved" }],
+        [{ hackathonId: "h1", acceptedMemberClerkUserIds: [], review: "approved" }],
+      ])
     })
 
     it("still returns the saved hackathon when waiting teams cannot be moved after team review is turned off", async () => {

@@ -148,16 +148,30 @@ function HackathonPreviewContent({
   const [pendingJudges, setPendingJudges] = useState<HackathonJudgeDisplay[]>([])
   const [pendingPrizes, setPendingPrizes] = useState<PublicPrize[]>([])
   const [judgingDialogOpen, setJudgingDialogOpen] = useState(false)
+  const [nowIso, setNowIso] = useState<string | null>(null)
+  useEffect(() => {
+    const tick = () => setNowIso(new Date().toISOString())
+    tick()
+    const interval = setInterval(tick, 30_000)
+    return () => clearInterval(interval)
+  }, [])
   const [preparedSponsor, setPreparedSponsor] = useState<{
     name: string
     revision: number
   }>()
   const invitationHackathonStatus = hackathon.stored_status ?? hackathon.status
+  const invitationQueueReason = notificationDisposition === "send" &&
+    nowIso !== null &&
+    hackathon.registration_opens_at !== null &&
+    new Date(nowIso).getTime() < new Date(hackathon.registration_opens_at).getTime()
+    ? "registration_not_open"
+    : "event_draft"
   const queuedInvitationCount = teamInfo?.pendingInvitations.filter(
     (invitation) => getInvitationDeliveryState({
       emailedAt: invitation.emailedAt,
       hackathonStatus: invitationHackathonStatus,
       notificationDisposition,
+      queueReason: invitationQueueReason,
     }) === "queued",
   ).length ?? 0
 
@@ -227,13 +241,6 @@ function HackathonPreviewContent({
     ]
   }, [hackathon.prizes, manageView?.prizes, pendingPrizes])
 
-  const [nowIso, setNowIso] = useState<string | null>(null)
-  useEffect(() => {
-    const tick = () => setNowIso(new Date().toISOString())
-    tick()
-    const interval = setInterval(tick, 30_000)
-    return () => clearInterval(interval)
-  }, [])
   const isChallengesFreshlyReleased = useMemo(() => {
     if (!isClient) return false
     if (!hackathon.challenge_released_at) return false
@@ -375,7 +382,7 @@ function HackathonPreviewContent({
       )}
       {teamInfo && (
         <div className="space-y-1 pl-1">
-          <QueuedEmailNotice count={queuedInvitationCount} />
+          <QueuedEmailNotice count={queuedInvitationCount} reason={invitationQueueReason} />
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-muted-foreground">
               {teamInfo.members.length} / {hackathon.max_team_size} members
@@ -432,6 +439,7 @@ function HackathonPreviewContent({
                 emailedAt: invitation.emailedAt,
                 hackathonStatus: invitationHackathonStatus,
                 notificationDisposition,
+                queueReason: invitationQueueReason,
               })
 
               return (
@@ -450,6 +458,7 @@ function HackathonPreviewContent({
                           remindedAt={invitation.remindedAt}
                           hackathonStatus={invitationHackathonStatus}
                           notificationDisposition={notificationDisposition}
+                          queueReason={invitationQueueReason}
                         />
                       </button>
                     </PopoverTrigger>

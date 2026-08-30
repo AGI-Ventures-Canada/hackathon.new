@@ -19,6 +19,7 @@ import { dashboardPrizeTracksRoutes } from "./dashboard-prize-tracks"
 import { getEffectiveStatus } from "@/lib/utils/timeline"
 import { getNotificationDisposition, getNotificationLifecycleError } from "@/lib/utils/notification-lifecycle"
 import { getQueueReason } from "@/lib/utils/notification-delivery"
+import { hasRegistrationOpened } from "@/lib/utils/team-invite"
 import { getEventLifecycleAlerts } from "@/lib/utils/event-lifecycle-alerts"
 import { getRequestIdempotencyFingerprint } from "@/lib/utils/request-idempotency"
 import { normalizeLocale } from "@/lib/utils/language"
@@ -3283,7 +3284,15 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         })
       }
 
-      const willSendImmediately = !!teamInfo && disposition === "send"
+      const willSendImmediately = !!teamInfo &&
+        disposition === "send" &&
+        hasRegistrationOpened(
+          teamInfo.hackathon.registration_opens_at,
+          new Date().toISOString(),
+        )
+      const queueReason = disposition === "send" && !willSendImmediately
+        ? "registration_not_open"
+        : "event_draft"
       let delivery: "queued" | "sent" | "failed" = !teamInfo
         ? "failed"
         : willSendImmediately
@@ -3363,7 +3372,7 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           email: body.email,
           queued: delivery === "queued",
           delivery,
-          queueReason: getQueueReason(delivery),
+          queueReason: getQueueReason(delivery, queueReason),
         },
       })
 
@@ -3373,14 +3382,14 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         expiresAt: result.invitation.expires_at,
         queued: delivery === "queued",
         delivery,
-        queueReason: getQueueReason(delivery),
+        queueReason: getQueueReason(delivery, queueReason),
       }
     },
     {
       detail: {
         summary: "Send team invitation",
         description:
-          "Creates a team invitation. It sends now or queues until the event goes live. Rate limited. Clerk-only.",
+          "Creates a team invitation. It sends now or queues until the event and registration are open. Rate limited. Clerk-only.",
       },
       body: t.Object({
         hackathonId: t.String(),

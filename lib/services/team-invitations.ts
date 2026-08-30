@@ -3,7 +3,7 @@ import type { HackathonStatus, TeamInvitation, TeamStatus } from "@/lib/db/hacka
 import { checkRoleConflict } from "@/lib/services/role-conflict"
 import { paceBulkSend } from "@/lib/email/utils"
 import { isValidUuid } from "@/lib/utils/uuid"
-import { canInviteTeamMembers } from "@/lib/utils/team-invite"
+import { canInviteTeamMembers, hasRegistrationOpened } from "@/lib/utils/team-invite"
 import { getNotificationDisposition } from "@/lib/utils/notification-lifecycle"
 import { getQueueReason, type QueueReasonCode } from "@/lib/utils/notification-delivery"
 import type { SupabaseClient } from "@supabase/supabase-js"
@@ -151,7 +151,7 @@ export async function createTeamInvitation(
 
   const { data: hackathon, error: hackathonError } = await client
     .from("hackathons")
-    .select("id, status, starts_at, ends_at, registration_closes_at, allow_late_registration, max_team_size")
+    .select("id, status, starts_at, ends_at, registration_opens_at, registration_closes_at, allow_late_registration, max_team_size")
     .eq("id", input.hackathonId)
     .single()
 
@@ -262,6 +262,13 @@ export async function createTeamInvitation(
   }
 
   const token = createInvitationToken()
+  const registrationOpensAt = hackathon.registration_opens_at
+    ? new Date(hackathon.registration_opens_at).getTime()
+    : Date.now()
+  const expiresAt = new Date(
+    Math.max(Date.now(), Number.isFinite(registrationOpensAt) ? registrationOpensAt : Date.now()) +
+      INVITATION_EXPIRY_MS,
+  ).toISOString()
 
   const { data: invitation, error: insertError } = await client
     .from("team_invitations")
@@ -272,7 +279,7 @@ export async function createTeamInvitation(
       token,
       invited_by_clerk_user_id: input.invitedByClerkUserId,
       status: "pending",
-      expires_at: new Date(Date.now() + INVITATION_EXPIRY_MS).toISOString(),
+      expires_at: expiresAt,
     })
     .select()
     .single()
@@ -592,7 +599,7 @@ export async function replaceTeamCaptainInvitation(
 
   const { data: hackathon } = await client
     .from("hackathons")
-    .select("name, slug, status, starts_at, ends_at")
+    .select("name, slug, status, starts_at, ends_at, registration_opens_at")
     .eq("id", hackathonId)
     .single()
 
@@ -608,11 +615,24 @@ export async function replaceTeamCaptainInvitation(
   if (TEAM_MUTATION_LOCKED_STATUSES.has(hackathon.status as HackathonStatus)) {
     return { success: false, error: "Teams are locked because judging has started", code: "status_locked" }
   }
+  const registrationOpened = hasRegistrationOpened(
+    hackathon.registration_opens_at,
+    new Date().toISOString(),
+  )
+  const queuedReason = disposition === "queue"
+    ? "event_draft"
+    : "registration_not_open"
 
   const normalized = newEmail.trim().toLowerCase()
 
   const token = createInvitationToken()
-  const expiresAt = new Date(Date.now() + INVITATION_EXPIRY_MS).toISOString()
+  const registrationOpensAt = hackathon.registration_opens_at
+    ? new Date(hackathon.registration_opens_at).getTime()
+    : Date.now()
+  const expiresAt = new Date(
+    Math.max(Date.now(), Number.isFinite(registrationOpensAt) ? registrationOpensAt : Date.now()) +
+      INVITATION_EXPIRY_MS,
+  ).toISOString()
 
   const { data, error: insertError } = await client.rpc("replace_captain_invitation_atomic", {
     p_hackathon_id: hackathonId,
@@ -638,9 +658,11 @@ export async function replaceTeamCaptainInvitation(
     }
   }
 
-  let delivery: "sent" | "queued" | "failed" = disposition === "queue" ? "queued" : "sent"
+  let delivery: "sent" | "queued" | "failed" = disposition === "queue" || !registrationOpened
+    ? "queued"
+    : "sent"
 
-  if (disposition === "send") {
+  if (disposition === "send" && registrationOpened) {
     let inviterName = "The organizer"
     let inviterEmail: string | undefined
     if (invitedByClerkUserId !== "system") {
@@ -707,7 +729,7 @@ export async function replaceTeamCaptainInvitation(
     invitationId: replacement.invitation_id,
     queued: delivery === "queued",
     delivery,
-    queueReason: getQueueReason(delivery),
+    queueReason: getQueueReason(delivery, queuedReason),
   }
 }
 
@@ -814,6 +836,47 @@ export type RemindTeamInvitationResult =
   | { success: true; invitation: TeamInvitation }
   | { success: false; error: string; code: string }
 
+type TeamInvitationHackathonState = {
+  status: HackathonStatus
+  starts_at: string | null
+  ends_at: string | null
+  registration_opens_at: string | null
+  registration_closes_at: string | null
+  allow_late_registration: boolean | null
+  max_team_size: number | null
+}
+
+function getTeamInvitationReminderLifecycleError(
+  hackathon: TeamInvitationHackathonState,
+): { error: string; code: string } | null {
+  const disposition = getNotificationDisposition({
+    status: hackathon.status,
+    starts_at: hackathon.starts_at,
+    ends_at: hackathon.ends_at,
+  })
+  if (disposition === "queue") {
+    return { error: "Go live before sending reminders", code: "hackathon_draft" }
+  }
+  if (disposition === "reject") {
+    return { error: "Hackathon has ended", code: "hackathon_ended" }
+  }
+  if (!hasRegistrationOpened(hackathon.registration_opens_at, new Date().toISOString())) {
+    return { error: "Registration isn't open", code: "registration_not_open" }
+  }
+  if (!canInviteTeamMembers({
+    isFormingCaptain: true,
+    hackathonStatus: hackathon.status,
+    startsAt: hackathon.starts_at,
+    endsAt: hackathon.ends_at,
+    registrationClosesAt: hackathon.registration_closes_at,
+    allowLateRegistration: hackathon.allow_late_registration,
+    nowIso: new Date().toISOString(),
+  })) {
+    return { error: "Team invites are closed", code: "registration_closed" }
+  }
+  return null
+}
+
 export async function remindTeamInvitationAsOrganizer(
   invitationId: string,
   teamId: string,
@@ -827,7 +890,7 @@ export async function remindTeamInvitationAsOrganizer(
 
   const { data: invitation, error: fetchError } = await client
     .from("team_invitations")
-    .select("id, status, expires_at")
+    .select("id, status, expires_at, teams!inner(status, hackathon_id)")
     .eq("id", invitationId)
     .eq("team_id", teamId)
     .eq("hackathon_id", hackathonId)
@@ -845,9 +908,21 @@ export async function remindTeamInvitationAsOrganizer(
     return { success: false, error: "Invitation has expired", code: "expired" }
   }
 
+  const invitationTeam = invitation.teams as unknown as {
+    status: TeamStatus
+    hackathon_id: string
+  } | null
+  if (
+    !invitationTeam ||
+    invitationTeam.hackathon_id !== hackathonId ||
+    !TEAM_STATUSES_OPEN_FOR_INVITES.has(invitationTeam.status)
+  ) {
+    return { success: false, error: "Team invites are closed", code: "team_not_open" }
+  }
+
   const { data: hackathon, error: hackathonError } = await client
     .from("hackathons")
-    .select("status, starts_at, ends_at")
+    .select("status, starts_at, ends_at, registration_opens_at, registration_closes_at, allow_late_registration, max_team_size")
     .eq("id", hackathonId)
     .maybeSingle()
 
@@ -855,16 +930,23 @@ export async function remindTeamInvitationAsOrganizer(
     return { success: false, error: "Hackathon not found", code: "hackathon_not_found" }
   }
 
-  const disposition = getNotificationDisposition({
-    status: hackathon.status as HackathonStatus,
-    starts_at: hackathon.starts_at,
-    ends_at: hackathon.ends_at,
-  })
-  if (disposition === "queue") {
-    return { success: false, error: "Go live before sending reminders", code: "hackathon_draft" }
-  }
-  if (disposition === "reject") {
-    return { success: false, error: "Hackathon has ended", code: "hackathon_ended" }
+  const lifecycleError = getTeamInvitationReminderLifecycleError(
+    hackathon as TeamInvitationHackathonState,
+  )
+  if (lifecycleError) return { success: false, ...lifecycleError }
+
+  if (hackathon.max_team_size !== null && hackathon.max_team_size !== undefined) {
+    const { count, error: countError } = await client
+      .from("hackathon_participants")
+      .select("id", { count: "exact", head: true })
+      .eq("team_id", teamId)
+      .eq("role", "participant")
+    if (countError) {
+      return { success: false, error: "Couldn't check the team", code: "check_failed" }
+    }
+    if ((count ?? 0) >= hackathon.max_team_size) {
+      return { success: false, error: "Team is full", code: "team_full" }
+    }
   }
 
   const remindedAt = new Date().toISOString()
@@ -901,7 +983,7 @@ export async function remindTeamInvitation(
 
   const { data: invitation, error: fetchError } = await client
     .from("team_invitations")
-    .select("*, teams!inner(captain_clerk_user_id)")
+    .select("*, teams!inner(captain_clerk_user_id, status, hackathon_id)")
     .eq("id", invitationId)
     .eq("team_id", teamId)
     .single()
@@ -910,7 +992,11 @@ export async function remindTeamInvitation(
     return { success: false, error: "Invitation not found", code: "not_found" }
   }
 
-  const team = invitation.teams as unknown as { captain_clerk_user_id: string }
+  const team = invitation.teams as unknown as {
+    captain_clerk_user_id: string
+    status: TeamStatus
+    hackathon_id: string
+  }
   if (team.captain_clerk_user_id !== clerkUserId) {
     return { success: false, error: "Only team captain can send reminders", code: "not_captain" }
   }
@@ -923,9 +1009,16 @@ export async function remindTeamInvitation(
     return { success: false, error: "Invitation has expired", code: "expired" }
   }
 
+  if (!TEAM_STATUSES_OPEN_FOR_INVITES.has(team.status)) {
+    return { success: false, error: "Team invites are closed", code: "team_not_open" }
+  }
+  if (team.hackathon_id !== invitation.hackathon_id) {
+    return { success: false, error: "Invitation doesn't match this event", code: "invalid_invitation" }
+  }
+
   const { data: hackathon, error: hackathonError } = await client
     .from("hackathons")
-    .select("status, starts_at, ends_at")
+    .select("status, starts_at, ends_at, registration_opens_at, registration_closes_at, allow_late_registration, max_team_size")
     .eq("id", invitation.hackathon_id)
     .maybeSingle()
 
@@ -933,16 +1026,23 @@ export async function remindTeamInvitation(
     return { success: false, error: "Hackathon not found", code: "hackathon_not_found" }
   }
 
-  const disposition = getNotificationDisposition({
-    status: hackathon.status as HackathonStatus,
-    starts_at: hackathon.starts_at,
-    ends_at: hackathon.ends_at,
-  })
-  if (disposition === "queue") {
-    return { success: false, error: "Go live before sending reminders", code: "hackathon_draft" }
-  }
-  if (disposition === "reject") {
-    return { success: false, error: "Hackathon has ended", code: "hackathon_ended" }
+  const lifecycleError = getTeamInvitationReminderLifecycleError(
+    hackathon as TeamInvitationHackathonState,
+  )
+  if (lifecycleError) return { success: false, ...lifecycleError }
+
+  if (hackathon.max_team_size !== null && hackathon.max_team_size !== undefined) {
+    const { count, error: countError } = await client
+      .from("hackathon_participants")
+      .select("id", { count: "exact", head: true })
+      .eq("team_id", teamId)
+      .eq("role", "participant")
+    if (countError) {
+      return { success: false, error: "Couldn't check the team", code: "check_failed" }
+    }
+    if ((count ?? 0) >= hackathon.max_team_size) {
+      return { success: false, error: "Team is full", code: "team_full" }
+    }
   }
 
   const remindedAt = new Date().toISOString()
@@ -994,6 +1094,7 @@ interface TeamWithHackathon {
     status: HackathonStatus
     starts_at: string | null
     ends_at: string | null
+    registration_opens_at: string | null
     registration_closes_at: string | null
     allow_late_registration: boolean
     max_team_size: number | null
@@ -1019,7 +1120,7 @@ export async function getTeamWithHackathon(
       id,
       name,
       status,
-      hackathons!inner(id, name, slug, status, starts_at, ends_at, registration_closes_at, allow_late_registration, max_team_size, max_participants),
+      hackathons!inner(id, name, slug, status, starts_at, ends_at, registration_opens_at, registration_closes_at, allow_late_registration, max_team_size, max_participants),
       hackathon_participants!hackathon_participants_team_id_fkey(clerk_user_id, role)
     `)
     .eq("id", teamId)
@@ -1036,6 +1137,7 @@ export async function getTeamWithHackathon(
     status: HackathonStatus
     starts_at: string | null
     ends_at: string | null
+    registration_opens_at: string | null
     registration_closes_at: string | null
     allow_late_registration: boolean
     max_team_size: number | null
@@ -1076,6 +1178,7 @@ export async function getTeamWithHackathon(
       status: hackathon.status,
       starts_at: hackathon.starts_at,
       ends_at: hackathon.ends_at,
+      registration_opens_at: hackathon.registration_opens_at,
       registration_closes_at: hackathon.registration_closes_at,
       allow_late_registration: hackathon.allow_late_registration,
       max_team_size: hackathon.max_team_size,
@@ -1205,6 +1308,10 @@ async function sendPendingTeamInvitationEmailsUnlocked(
         ends_at: teamInfo.hackathon.ends_at,
       })
       if (disposition === "queue") continue
+      if (!hasRegistrationOpened(
+        teamInfo.hackathon.registration_opens_at,
+        new Date().toISOString(),
+      )) continue
       if (
         disposition === "reject" ||
         !TEAM_STATUSES_OPEN_FOR_INVITES.has(teamInfo.status) ||
@@ -1347,11 +1454,14 @@ export async function retryPendingTeamInvitationEmails(
   const now = new Date().toISOString()
   const { data, error } = await client
     .from("team_invitations")
-    .select("hackathon_id, hackathons!inner(status, starts_at, ends_at)")
+    .select("hackathon_id, hackathons!inner(status, starts_at, ends_at, registration_opens_at)")
     .eq("status", "pending")
     .is("emailed_at", null)
     .gt("expires_at", now)
     .in("hackathons.status", INVITATION_DELIVERY_STATUSES)
+    .or(`registration_opens_at.is.null,registration_opens_at.lte.${now}`, {
+      referencedTable: "hackathons",
+    })
     .order("created_at")
     .limit(limit)
 
@@ -1362,7 +1472,12 @@ export async function retryPendingTeamInvitationEmails(
   const eventIds: string[] = []
   for (const row of (data ?? []) as unknown as Array<{
     hackathon_id: string
-    hackathons: { status: HackathonStatus; starts_at: string | null; ends_at: string | null }
+    hackathons: {
+      status: HackathonStatus
+      starts_at: string | null
+      ends_at: string | null
+      registration_opens_at: string | null
+    }
   }>) {
     const disposition = getNotificationDisposition(row.hackathons)
     if (disposition === "send" && !eventIds.includes(row.hackathon_id)) {

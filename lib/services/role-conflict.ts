@@ -5,6 +5,10 @@ export type RoleConflictCheck =
   | { conflict: false }
   | { conflict: true; error: string; code: string; existingRole: string }
 
+export function isParticipantRoleUnavailable(existingRole: string): boolean {
+  return existingRole !== "participant"
+}
+
 export async function checkRoleConflict(
   hackathonId: string,
   clerkUserId: string,
@@ -33,7 +37,7 @@ export async function checkRoleConflict(
     return { conflict: false }
   }
 
-  if (targetRole === "participant" && existing.role === "judge") {
+  if (targetRole === "participant" && isParticipantRoleUnavailable(existing.role)) {
     return {
       conflict: true,
       error: "This person can't join this team. Ask an organizer for help.",

@@ -981,6 +981,8 @@ describe("GET /api/dashboard/webmcp/attendee-events/:slug", () => {
       ...publicHackathon,
       status: "published",
       stored_status: "published",
+      starts_at: "2099-08-28T13:00:00.000Z",
+      ends_at: "2099-08-29T21:00:00.000Z",
     })
     const upcoming = await app.handle(new Request(
       "http://localhost/api/dashboard/webmcp/attendee-events/agent-jam",

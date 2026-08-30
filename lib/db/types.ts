@@ -78,6 +78,63 @@ export type Database = {
           },
         ]
       }
+      attendee_lifecycle_notifications: {
+        Row: {
+          cancelled_at: string | null
+          clerk_user_id: string
+          created_at: string
+          fail_count: number
+          hackathon_id: string
+          id: string
+          last_error: string | null
+          notification_type: string
+          sent_at: string | null
+          team_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          cancelled_at?: string | null
+          clerk_user_id: string
+          created_at?: string
+          fail_count?: number
+          hackathon_id: string
+          id?: string
+          last_error?: string | null
+          notification_type: string
+          sent_at?: string | null
+          team_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          cancelled_at?: string | null
+          clerk_user_id?: string
+          created_at?: string
+          fail_count?: number
+          hackathon_id?: string
+          id?: string
+          last_error?: string | null
+          notification_type?: string
+          sent_at?: string | null
+          team_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attendee_lifecycle_notifications_hackathon_id_fkey"
+            columns: ["hackathon_id"]
+            isOneToOne: false
+            referencedRelation: "hackathons"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attendee_lifecycle_notifications_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_logs: {
         Row: {
           action: string
@@ -352,7 +409,7 @@ export type Database = {
           created_at: string
           hackathon_id: string
           id: string
-          prize_id: string | null
+          prize_id: string
           submission_id: string
         }
         Insert: {
@@ -360,7 +417,7 @@ export type Database = {
           created_at?: string
           hackathon_id: string
           id?: string
-          prize_id?: string | null
+          prize_id: string
           submission_id: string
         }
         Update: {
@@ -368,7 +425,7 @@ export type Database = {
           created_at?: string
           hackathon_id?: string
           id?: string
-          prize_id?: string | null
+          prize_id?: string
           submission_id?: string
         }
         Relationships: [
@@ -3088,6 +3145,16 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      accept_judge_invitation_atomic: {
+        Args: { p_clerk_user_id: string; p_email: string; p_token: string }
+        Returns: {
+          cancelled_invitation_ids: string[]
+          error_code: string
+          hackathon_id: string
+          hackathon_slug: string
+          success: boolean
+        }[]
+      }
       accept_team_invitation: {
         Args: {
           p_clerk_user_id: string
@@ -3106,6 +3173,10 @@ export type Database = {
         Args: { p_hackathon_id: string; p_round_id: string }
         Returns: boolean
       }
+      activate_judging_round_atomic: {
+        Args: { p_hackathon_id: string; p_round_id: string }
+        Returns: boolean
+      }
       approve_pending_team: {
         Args: { p_hackathon_id: string; p_team_id: string }
         Returns: {
@@ -3116,6 +3187,19 @@ export type Database = {
           team_id: string
           team_name: string
           team_status: Database["public"]["Enums"]["team_status"]
+        }[]
+      }
+      assign_participant_to_team_atomic: {
+        Args: {
+          p_hackathon_id: string
+          p_participant_id: string
+          p_team_id: string
+        }
+        Returns: {
+          cancelled_invitation_ids: string[]
+          capacity_handed_off: boolean
+          error_code: string
+          success: boolean
         }[]
       }
       bulk_assign_teams: {
@@ -3145,6 +3229,44 @@ export type Database = {
           success: boolean
         }[]
       }
+      cast_crowd_vote_atomic: {
+        Args: {
+          p_clerk_user_id: string
+          p_hackathon_id: string
+          p_prize_id: string
+          p_submission_id: string
+        }
+        Returns: string
+      }
+      change_judge_role_atomic: {
+        Args: {
+          p_hackathon_id: string
+          p_participant_id: string
+          p_role: string
+        }
+        Returns: boolean
+      }
+      change_other_role_atomic: {
+        Args: {
+          p_hackathon_id: string
+          p_participant_id: string
+          p_role: string
+        }
+        Returns: boolean
+      }
+      change_participant_role_atomic: {
+        Args: {
+          p_hackathon_id: string
+          p_participant_id: string
+          p_role: string
+        }
+        Returns: {
+          cancelled_invitation_ids: string[]
+          capacity_handed_off: boolean
+          error_code: string
+          success: boolean
+        }[]
+      }
       check_rate_limit: {
         Args: { p_key: string; p_max_requests: number; p_window_ms: number }
         Returns: Json
@@ -3153,12 +3275,85 @@ export type Database = {
         Args: { p_limit?: number }
         Returns: number
       }
+      clear_judge_assignments_atomic: {
+        Args: { p_hackathon_id: string }
+        Returns: {
+          removed_count: number
+          results_stale: boolean
+        }[]
+      }
       count_unassigned_submissions: {
         Args: { p_hackathon_id: string }
         Returns: number
       }
+      create_judging_round_atomic: {
+        Args: { p_hackathon_id: string; p_values: Json }
+        Returns: Json
+      }
+      create_prize_configuration_atomic: {
+        Args: {
+          p_buckets?: Json
+          p_criteria?: Json
+          p_hackathon_id: string
+          p_prize_values: Json
+        }
+        Returns: Json
+      }
+      delete_judging_round_atomic: {
+        Args: { p_hackathon_id: string; p_round_id: string }
+        Returns: string
+      }
+      delete_prize_atomic: {
+        Args: { p_hackathon_id: string; p_prize_id: string }
+        Returns: boolean
+      }
+      delete_team_atomic: {
+        Args: { p_hackathon_id: string; p_team_id: string }
+        Returns: {
+          error_code: string
+          invitation_ids: string[]
+          invites_cancelled: number
+          members_unassigned: number
+          rooms_cleared: number
+          success: boolean
+        }[]
+      }
       deny_pending_team: {
         Args: { p_hackathon_id: string; p_team_id: string }
+        Returns: {
+          cancelled_invitation_ids: string[]
+          error_code: string
+          error_message: string
+          invites_cancelled: number
+          member_clerk_user_ids: string[]
+          members_unassigned: number
+          success: boolean
+          team_id: string
+          team_name: string
+          team_status: Database["public"]["Enums"]["team_status"]
+        }[]
+      }
+      deny_pending_team_for_closeout: {
+        Args: { p_hackathon_id: string; p_team_id: string }
+        Returns: {
+          cancelled_invitation_ids: string[]
+          error_code: string
+          error_message: string
+          invites_cancelled: number
+          member_clerk_user_ids: string[]
+          members_unassigned: number
+          success: boolean
+          team_id: string
+          team_name: string
+          team_status: Database["public"]["Enums"]["team_status"]
+        }[]
+      }
+      deny_pending_team_internal: {
+        Args: {
+          p_allow_closed: boolean
+          p_hackathon_id: string
+          p_team_id: string
+        }
         Returns: {
           cancelled_invitation_ids: string[]
           error_code: string
@@ -3180,6 +3375,13 @@ export type Database = {
         }
         Returns: Database["public"]["Enums"]["hackathon_status"]
       }
+      get_crowd_vote_counts: {
+        Args: { p_hackathon_id: string; p_prize_id: string }
+        Returns: {
+          submission_id: string
+          vote_count: number
+        }[]
+      }
       get_organizer_poll_data: {
         Args: { p_hackathon_id: string }
         Returns: Json
@@ -3187,6 +3389,27 @@ export type Database = {
       increment_webhook_failure: {
         Args: { p_webhook_id: string }
         Returns: boolean
+      }
+      modify_team_member_atomic: {
+        Args: {
+          p_action: string
+          p_clerk_user_id: string
+          p_hackathon_id: string
+          p_team_id: string
+        }
+        Returns: {
+          error_code: string
+          success: boolean
+        }[]
+      }
+      promote_participant_to_judge_atomic: {
+        Args: { p_hackathon_id: string; p_participant_id: string }
+        Returns: {
+          cancelled_invitation_ids: string[]
+          capacity_handed_off: boolean
+          error_code: string
+          success: boolean
+        }[]
       }
       register_for_hackathon: {
         Args: {
@@ -3203,6 +3426,121 @@ export type Database = {
           team_id: string
         }[]
       }
+      remove_crowd_vote_atomic: {
+        Args: {
+          p_clerk_user_id: string
+          p_hackathon_id: string
+          p_prize_id: string
+        }
+        Returns: string
+      }
+      remove_judge_atomic: {
+        Args: { p_hackathon_id: string; p_judge_participant_id: string }
+        Returns: {
+          removed: boolean
+          results_stale: boolean
+        }[]
+      }
+      remove_judge_from_prize_atomic: {
+        Args: {
+          p_hackathon_id: string
+          p_judge_participant_id: string
+          p_prize_id: string
+        }
+        Returns: number
+      }
+      remove_judge_pick_atomic: {
+        Args: {
+          p_hackathon_id: string
+          p_judge_participant_id: string
+          p_prize_id: string
+          p_submission_id: string
+        }
+        Returns: boolean
+      }
+      remove_participant_from_event_atomic: {
+        Args: { p_hackathon_id: string; p_participant_id: string }
+        Returns: {
+          cancelled_invitation_ids: string[]
+          capacity_handed_off: boolean
+          error_code: string
+          success: boolean
+        }[]
+      }
+      reorder_challenges_atomic: {
+        Args: { p_hackathon_id: string; p_ordered_ids: Json }
+        Returns: boolean
+      }
+      reorder_sponsors_atomic: {
+        Args: { p_hackathon_id: string; p_sponsor_ids: Json }
+        Returns: boolean
+      }
+      replace_captain_invitation_atomic: {
+        Args: {
+          p_email: string
+          p_expires_at: string
+          p_hackathon_id: string
+          p_invited_by: string
+          p_team_id: string
+          p_token: string
+        }
+        Returns: {
+          cancelled_ids: string[]
+          invitation_id: string
+        }[]
+      }
+      replace_core_results_atomic: {
+        Args: { p_hackathon_id: string; p_results: Json }
+        Returns: number
+      }
+      replace_judge_picks_atomic: {
+        Args: {
+          p_hackathon_id: string
+          p_judge_participant_id: string
+          p_picks: Json
+          p_prize_id: string
+        }
+        Returns: number
+      }
+      replace_prize_results_atomic: {
+        Args: { p_hackathon_id: string; p_prize_id: string; p_results: Json }
+        Returns: number
+      }
+      save_prize_configuration_atomic: {
+        Args: {
+          p_buckets?: Json
+          p_criteria?: Json
+          p_hackathon_id: string
+          p_prize_id: string
+          p_prize_updates?: Json
+        }
+        Returns: Json
+      }
+      seed_default_core_criteria_atomic: {
+        Args: { p_criteria: Json; p_hackathon_id: string }
+        Returns: {
+          category: Database["public"]["Enums"]["criterion_category"] | null
+          category_id: string | null
+          created_at: string
+          description: string | null
+          display_order: number
+          hackathon_id: string
+          id: string
+          max_score: number
+          min_score: number
+          name: string
+          prize_id: string | null
+          round_id: string | null
+          updated_at: string
+          weight: number
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "judging_criteria"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       submit_scores: {
         Args: {
           p_judge_assignment_id: string
@@ -3214,6 +3552,10 @@ export type Database = {
           error_message: string
           success: boolean
         }[]
+      }
+      update_judging_round_atomic: {
+        Args: { p_hackathon_id: string; p_round_id: string; p_updates: Json }
+        Returns: Json
       }
       upsert_hackathon_translation: {
         Args: {

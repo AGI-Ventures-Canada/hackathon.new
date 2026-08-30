@@ -1,4 +1,4 @@
-export const QUEUE_REASON_CODES = ["event_draft"] as const
+export const QUEUE_REASON_CODES = ["event_draft", "registration_not_open"] as const
 
 export type QueueReasonCode = (typeof QUEUE_REASON_CODES)[number]
 export type NotificationDelivery = "sent" | "queued" | "failed"
@@ -11,21 +11,28 @@ export type NotificationDeliveryResult = {
 
 export function getQueueReason(
   delivery: NotificationDelivery | undefined,
+  queuedReason: QueueReasonCode = "event_draft",
 ): QueueReasonCode | undefined {
-  return delivery === "queued" ? "event_draft" : undefined
+  return delivery === "queued" ? queuedReason : undefined
 }
 
 export function getInvitationDeliveryState({
   emailedAt,
   hackathonStatus,
   notificationDisposition,
+  queueReason,
 }: {
   emailedAt: string | null
   hackathonStatus: string | null
   notificationDisposition?: "queue" | "send" | "reject"
+  queueReason?: QueueReasonCode
 }): NotificationDeliveryState {
   if (emailedAt) return "sent"
   if (notificationDisposition) {
+    if (
+      notificationDisposition === "send" &&
+      queueReason === "registration_not_open"
+    ) return "queued"
     return notificationDisposition === "queue" ? "queued" : "not_sent"
   }
   return hackathonStatus === "draft" ? "queued" : "not_sent"
@@ -39,6 +46,10 @@ export function getQueueReasonText(reason: QueueReasonCode): {
     event_draft: {
       reason: "This event is still a draft.",
       release: "We'll send it when you go live.",
+    },
+    registration_not_open: {
+      reason: "Registration isn't open yet.",
+      release: "We'll send it when registration opens.",
     },
   }
   return copy[reason]
