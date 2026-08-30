@@ -396,6 +396,7 @@ describe("Resend delivery wrapper", () => {
       now: () => providerNow,
       wait: async (milliseconds: number) => {
         providerWaits.push(milliseconds)
+        await Promise.resolve()
         providerNow += milliseconds
       },
     }
