@@ -392,6 +392,13 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       data: { hackathonId: hackathon.id, participantId: result.participantId, teamId: result.teamId },
     }).catch(console.error)
 
+    const { deliverAttendeeLifecycleEmailsForUser } = await import(
+      "@/lib/services/attendee-lifecycle-notifications"
+    )
+    await deliverAttendeeLifecycleEmailsForUser(hackathon.id, userId).catch((error) =>
+      console.error("Failed to send registration confirmation:", error)
+    )
+
     return {
       success: true,
       participantId: result.participantId,
@@ -1798,6 +1805,13 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         console.error(`Failed to cancel reminders for team_invitation ${invitation.id}:`, err)
       )
     }
+
+    const { deliverAttendeeLifecycleEmailsForUser } = await import(
+      "@/lib/services/attendee-lifecycle-notifications"
+    )
+    await deliverAttendeeLifecycleEmailsForUser(result.hackathonId, userId).catch((error) =>
+      console.error("Failed to send attendee confirmation:", error)
+    )
 
     const { getPublicHackathonById } = await import("@/lib/services/public-hackathons")
     const hackathon = await getPublicHackathonById(result.hackathonId)

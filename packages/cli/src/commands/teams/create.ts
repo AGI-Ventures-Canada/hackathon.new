@@ -63,7 +63,7 @@ export async function runTeamsCreate(
     invited?: boolean
     queued?: boolean
     delivery?: "sent" | "queued" | "failed"
-    queueReason?: "event_draft"
+    queueReason?: "event_draft" | "registration_not_open"
   }>(
     `/api/dashboard/hackathons/${hackathonId}/teams`,
     { name, captainEmail }

@@ -8,6 +8,16 @@ const mockRegisterForHackathon = mock(() =>
 const mockGetParticipantCount = mock(() => Promise.resolve(42))
 const mockIsUserRegistered = mock(() => Promise.resolve(false))
 const mockFindPendingTeamInvitationForEmails = mock(() => Promise.resolve(null))
+const mockDeliverAttendeeLifecycleEmailsForUser = mock(() => Promise.resolve({
+  attempted: 1,
+  sent: 1,
+  skipped: 0,
+  failed: 0,
+}))
+
+mock.module("@/lib/services/attendee-lifecycle-notifications", () => ({
+  deliverAttendeeLifecycleEmailsForUser: mockDeliverAttendeeLifecycleEmailsForUser,
+}))
 
 mock.module("@clerk/nextjs/server", () => ({
   auth: mockAuth,
@@ -111,7 +121,14 @@ describe("Public Registration Routes", () => {
     mockCurrentTermsHash.mockReset()
     mockRecordTermsAcceptance.mockReset()
     mockFindPendingTeamInvitationForEmails.mockReset()
+    mockDeliverAttendeeLifecycleEmailsForUser.mockReset()
     mockFindPendingTeamInvitationForEmails.mockResolvedValue(null)
+    mockDeliverAttendeeLifecycleEmailsForUser.mockResolvedValue({
+      attempted: 1,
+      sent: 1,
+      skipped: 0,
+      failed: 0,
+    })
     mockCurrentTermsHash.mockResolvedValue(null)
   })
 
@@ -177,6 +194,10 @@ describe("Public Registration Routes", () => {
       expect(data.success).toBe(true)
       expect(data.participantId).toBe("p123")
       expect(data.teamId).toBe("t123")
+      expect(mockDeliverAttendeeLifecycleEmailsForUser).toHaveBeenCalledWith(
+        "h1",
+        "user_123",
+      )
     })
 
     it("returns 409 when already registered", async () => {

@@ -165,7 +165,12 @@ describe("remindTeamInvitationAsOrganizer", () => {
   })
 
   it("updates the reminder timestamp on success", async () => {
-    const fresh = { id: VALID_UUID, status: "pending", expires_at: new Date(Date.now() + 60_000).toISOString() }
+    const fresh = {
+      id: VALID_UUID,
+      status: "pending",
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+      teams: { status: "forming", hackathon_id: "h_1" },
+    }
     setMockFromImplementation(
       tableImpl({
         team_invitations: [
@@ -178,6 +183,33 @@ describe("remindTeamInvitationAsOrganizer", () => {
 
     const result = await remindTeamInvitationAsOrganizer(VALID_UUID, VALID_UUID, "h_1")
     expect(result.success).toBe(true)
+  })
+
+  it("rejects reminders after team joining closes", async () => {
+    const fresh = {
+      id: VALID_UUID,
+      status: "pending",
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+      teams: { status: "forming", hackathon_id: "h_1" },
+    }
+    setMockFromImplementation(
+      tableImpl({
+        team_invitations: { data: fresh, error: null },
+        hackathons: {
+          data: {
+            status: "judging",
+            starts_at: "2026-08-01T00:00:00Z",
+            ends_at: "2099-08-03T00:00:00Z",
+            registration_closes_at: "2099-08-02T00:00:00Z",
+            allow_late_registration: true,
+          },
+          error: null,
+        },
+      })
+    )
+
+    const result = await remindTeamInvitationAsOrganizer(VALID_UUID, VALID_UUID, "h_1")
+    expect(result).toMatchObject({ success: false, code: "registration_closed" })
   })
 })
 

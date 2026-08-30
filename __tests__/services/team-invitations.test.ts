@@ -1145,7 +1145,11 @@ describe("Team Invitations Service", () => {
     const pendingInvitation = {
       ...mockInvitation,
       reminded_at: null,
-      teams: { captain_clerk_user_id: "user_captain" },
+      teams: {
+        captain_clerk_user_id: "user_captain",
+        status: "forming",
+        hackathon_id: "h1",
+      },
     }
 
     it("succeeds for a pending invitation with no prior reminder", async () => {
@@ -1313,6 +1317,46 @@ describe("Team Invitations Service", () => {
                 : "hackathon_ended",
           )
         }
+      }
+    })
+
+    it("rejects reminders after team joining closes", async () => {
+      for (const hackathon of [
+        {
+          status: "judging",
+          starts_at: "2026-08-01T00:00:00Z",
+          ends_at: "2099-08-03T00:00:00Z",
+          registration_closes_at: "2099-08-02T00:00:00Z",
+          allow_late_registration: true,
+        },
+        {
+          status: "active",
+          starts_at: "2026-08-01T00:00:00Z",
+          ends_at: "2099-08-03T00:00:00Z",
+          registration_closes_at: "2026-08-02T00:00:00Z",
+          allow_late_registration: false,
+        },
+      ]) {
+        let invitationCalls = 0
+        setMockFromImplementation((table) => {
+          if (table === "hackathons") {
+            return createChainableMock({ data: hackathon, error: null })
+          }
+          invitationCalls++
+          return createChainableMock({
+            data: invitationCalls === 1
+              ? pendingInvitation
+              : { ...pendingInvitation, reminded_at: new Date().toISOString() },
+            error: null,
+          })
+        })
+
+        const result = await remindTeamInvitation(
+          "11111111-1111-1111-1111-111111111111",
+          "user_captain",
+          "22222222-2222-2222-2222-222222222222",
+        )
+        expect(result).toMatchObject({ success: false, code: "registration_closed" })
       }
     })
 

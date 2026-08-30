@@ -555,9 +555,7 @@ export async function updateHackathonSettings(
 
   if (updates.requireTeamApproval === false) {
     await notifyAutoPromotedTeams(
-      client,
       hackathonId,
-      data as unknown as Hackathon,
       pendingTeamsToNotify,
     )
   }
@@ -566,9 +564,7 @@ export async function updateHackathonSettings(
 }
 
 async function notifyAutoPromotedTeams(
-  client: SupabaseClient,
   hackathonId: string,
-  hackathon: Hackathon,
   promoted: Array<{
     id: string
     name: string
@@ -577,24 +573,14 @@ async function notifyAutoPromotedTeams(
 ): Promise<void> {
   if (promoted.length === 0) return
 
-  const notificationHackathon = {
-    name: hackathon.name,
-    slug: hackathon.slug,
-    status: hackathon.status,
-  }
-
   await Promise.all(
     promoted.map((team) =>
       notifyReviewedTeamMembers({
-        client,
         hackathonId,
-        teamId: team.id,
-        teamName: team.name,
         acceptedMemberClerkUserIds: (team.hackathon_participants ?? []).map(
           (m) => m.clerk_user_id
         ),
         review: "approved",
-        hackathon: notificationHackathon,
       }).catch((err) =>
         console.error(`Failed to notify auto-promoted team ${team.id}:`, err)
       )

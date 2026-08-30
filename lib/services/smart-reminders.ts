@@ -1,5 +1,6 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import { getNotificationDisposition } from "@/lib/utils/notification-lifecycle"
+import { canInviteTeamMembers, hasRegistrationOpened } from "@/lib/utils/team-invite"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { withDeliveryLease } from "@/lib/services/delivery-lease"
 import {
@@ -375,7 +376,7 @@ export async function validateReminderEntity(
 
   const { data: hackathon, error: hackathonError } = await client
     .from("hackathons")
-    .select("status, starts_at, ends_at, registration_closes_at")
+    .select("status, starts_at, ends_at, registration_opens_at, registration_closes_at, allow_late_registration, max_team_size")
     .eq("id", reminder.hackathon_id)
     .single()
   if (hackathonError) {
@@ -392,14 +393,41 @@ export async function validateReminderEntity(
   if (reminder.entity_type === "team_invitation") {
     const { data, error } = await client
       .from("team_invitations")
-      .select("status, expires_at")
+      .select("status, expires_at, hackathon_id, team_id, teams!inner(status, hackathon_id)")
       .eq("id", reminder.entity_id)
       .single()
 
     if (error) throw new Error(`Failed to validate team invitation reminder: ${error.message}`)
     if (!data) return false
+    if (data.hackathon_id !== reminder.hackathon_id) return false
     if (data.status !== "pending") return false
     if (new Date(data.expires_at) < new Date()) return false
+    const team = data.teams as unknown as { status: string; hackathon_id: string } | null
+    if (team?.hackathon_id !== reminder.hackathon_id) return false
+    if (!team || !["forming", "pending_approval"].includes(team.status)) return false
+    if (!hasRegistrationOpened(hackathon.registration_opens_at, new Date().toISOString())) {
+      return false
+    }
+    if (!canInviteTeamMembers({
+      isFormingCaptain: true,
+      hackathonStatus: hackathon.status,
+      startsAt: hackathon.starts_at,
+      endsAt: hackathon.ends_at,
+      registrationClosesAt: hackathon.registration_closes_at,
+      allowLateRegistration: hackathon.allow_late_registration,
+      nowIso: new Date().toISOString(),
+    })) return false
+    if (hackathon.max_team_size !== null && hackathon.max_team_size !== undefined) {
+      const { count, error: countError } = await client
+        .from("hackathon_participants")
+        .select("id", { count: "exact", head: true })
+        .eq("team_id", data.team_id)
+        .eq("role", "participant")
+      if (countError) {
+        throw new Error(`Failed to validate team capacity: ${countError.message}`)
+      }
+      if ((count ?? 0) >= hackathon.max_team_size) return false
+    }
     return true
   }
 

@@ -36,6 +36,8 @@ Scheduled when a team or judge invitation is created. Cancelled when the invitat
 
 Scheduled when a hackathon transitions to an active state or when dates change. Cancelled on completion/archival.
 
+The same cron also retries database-backed attendee lifecycle emails. Registration confirmations and team approval or denial notices are queued by database triggers/RPCs, sent with stable idempotency keys, and only marked complete after the provider accepts them. Draft-event notices wait until go-live; stale notices are cancelled after attendee changes close.
+
 - Entity type: `hackathon_event`
 - Reminder types: `registration_closing`, `event_starting`, `submission_due`
 - Recipients: all registered participants (fetched from Clerk)

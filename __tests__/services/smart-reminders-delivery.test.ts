@@ -209,7 +209,15 @@ describe("smart reminder default delivery", () => {
               error: null,
             })
           : createChainableMock({
-              data: { status: "pending", expires_at: "2099-01-01T00:00:00Z" },
+              data: entityType === "team_invitation"
+                ? {
+                    status: "pending",
+                    expires_at: "2099-01-01T00:00:00Z",
+                    hackathon_id: "hack_1",
+                    team_id: "team_1",
+                    teams: { status: "forming", hackathon_id: "hack_1" },
+                  }
+                : { status: "pending", expires_at: "2099-01-01T00:00:00Z" },
               error: null,
             })
       })
@@ -243,6 +251,40 @@ describe("smart reminder default delivery", () => {
         }
         return createChainableMock({ data: invitation, error: null })
       })
+
+      await expect(validateReminderEntity(baseReminder)).resolves.toBe(false)
+    }
+  })
+
+  it("rejects team invite reminders after team joining closes", async () => {
+    for (const hackathon of [
+      {
+        status: "judging",
+        starts_at: "2026-08-01T00:00:00Z",
+        ends_at: "2099-08-03T00:00:00Z",
+        registration_closes_at: "2099-08-02T00:00:00Z",
+        allow_late_registration: true,
+      },
+      {
+        status: "active",
+        starts_at: "2026-08-01T00:00:00Z",
+        ends_at: "2099-08-03T00:00:00Z",
+        registration_closes_at: "2026-08-02T00:00:00Z",
+        allow_late_registration: false,
+      },
+    ]) {
+      setMockFromImplementation((table) => table === "hackathons"
+        ? createChainableMock({ data: hackathon, error: null })
+        : createChainableMock({
+            data: {
+              status: "pending",
+              expires_at: "2099-01-01T00:00:00Z",
+              hackathon_id: "hack_1",
+              team_id: "team_1",
+              teams: { status: "forming", hackathon_id: "hack_1" },
+            },
+            error: null,
+          }))
 
       await expect(validateReminderEntity(baseReminder)).resolves.toBe(false)
     }

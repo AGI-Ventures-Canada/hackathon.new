@@ -8,6 +8,7 @@ import {
 describe("invitation delivery status", () => {
   it("returns a machine-readable reason whenever delivery is queued", () => {
     expect(getQueueReason("queued")).toBe("event_draft")
+    expect(getQueueReason("queued", "registration_not_open")).toBe("registration_not_open")
     expect(getQueueReason("sent")).toBeUndefined()
     expect(getQueueReason("failed")).toBeUndefined()
   })
@@ -16,6 +17,12 @@ describe("invitation delivery status", () => {
     expect(getInvitationDeliveryState({ emailedAt: null, hackathonStatus: "draft" })).toBe("queued")
     expect(getInvitationDeliveryState({ emailedAt: "2026-08-27T12:00:00.000Z", hackathonStatus: "draft" })).toBe("sent")
     expect(getInvitationDeliveryState({ emailedAt: null, hackathonStatus: "registration_open" })).toBe("not_sent")
+    expect(getInvitationDeliveryState({
+      emailedAt: null,
+      hackathonStatus: "published",
+      notificationDisposition: "send",
+      queueReason: "registration_not_open",
+    })).toBe("queued")
     expect(getInvitationDeliveryState({
       emailedAt: null,
       hackathonStatus: "draft",
@@ -27,6 +34,10 @@ describe("invitation delivery status", () => {
     expect(getQueueReasonText("event_draft")).toEqual({
       reason: "This event is still a draft.",
       release: "We'll send it when you go live.",
+    })
+    expect(getQueueReasonText("registration_not_open")).toEqual({
+      reason: "Registration isn't open yet.",
+      release: "We'll send it when registration opens.",
     })
   })
 })
