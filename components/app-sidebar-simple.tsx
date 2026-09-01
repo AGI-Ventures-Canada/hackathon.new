@@ -132,6 +132,14 @@ export function AppSidebarSimple() {
     return pathname.startsWith(item.href)
   }
 
+  function deferredPrefetch(href: string) {
+    return {
+      prefetch: false as const,
+      onPointerEnter: () => router.prefetch(href),
+      onFocus: () => router.prefetch(href),
+    }
+  }
+
   return (
     <Sidebar>
       <SidebarHeader>
@@ -215,7 +223,7 @@ export function AppSidebarSimple() {
                 {organization && (
                   <>
                     <DropdownMenuItem asChild>
-                      <Link href="/settings/profile">
+                      <Link href="/settings/profile" {...deferredPrefetch("/settings/profile")}>
                         <Settings className="size-4 mr-2" />
                         Organization Settings
                       </Link>
@@ -255,7 +263,7 @@ export function AppSidebarSimple() {
               <SidebarMenu>
                 <SidebarMenuItem>
                   <SidebarMenuButton asChild className="h-10">
-                    <Link href="/home">
+                    <Link href="/home" {...deferredPrefetch("/home")}>
                       <ChevronLeft />
                       <span className="font-semibold text-sm">Settings</span>
                     </Link>
@@ -268,7 +276,7 @@ export function AppSidebarSimple() {
                 {settingsItems.map((item) => (
                   <SidebarMenuItem key={item.href}>
                     <SidebarMenuButton asChild isActive={pathname === item.href} className="h-10">
-                      <Link href={item.href}>
+                      <Link href={item.href} {...deferredPrefetch(item.href)}>
                         <item.icon />
                         <span className="text-sm">{item.title}</span>
                       </Link>
@@ -286,7 +294,7 @@ export function AppSidebarSimple() {
                   {mainItems.map((item) => (
                     <SidebarMenuItem key={item.href}>
                       <SidebarMenuButton asChild isActive={isActive(item)} className="h-10">
-                        <Link href={item.href}>
+                        <Link href={item.href} {...deferredPrefetch(item.href)}>
                           <item.icon />
                           <span className="text-sm">{item.title}</span>
                         </Link>
@@ -313,7 +321,7 @@ export function AppSidebarSimple() {
                   {hackathonItems.map((item) => (
                     <SidebarMenuItem key={item.href}>
                       <SidebarMenuButton asChild isActive={isActive(item)} className="h-10">
-                        <Link href={item.href}>
+                        <Link href={item.href} {...deferredPrefetch(item.href)}>
                           <item.icon />
                           <span className="text-sm">{item.title}</span>
                         </Link>
@@ -330,7 +338,7 @@ export function AppSidebarSimple() {
                   {manageItems.map((item) => (
                     <SidebarMenuItem key={item.href}>
                       <SidebarMenuButton asChild isActive={isActive(item)} className="h-10">
-                        <Link href={item.href}>
+                        <Link href={item.href} {...deferredPrefetch(item.href)}>
                           <item.icon />
                           <span className="text-sm">{item.title}</span>
                         </Link>

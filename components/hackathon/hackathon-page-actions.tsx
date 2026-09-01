@@ -73,7 +73,7 @@ export function HackathonPageActions({
       <Tooltip>
         <TooltipTrigger asChild>
           <Button asChild variant="ghost" size="icon-sm">
-            <Link href={`/e/${slug}`} target="_blank">
+            <Link href={`/e/${slug}`} target="_blank" prefetch={false}>
               <ExternalLink className="size-4" />
               <span className="sr-only">View Live</span>
             </Link>
@@ -102,7 +102,7 @@ export function HackathonPageActions({
             <DropdownMenuLabel>Projection Displays</DropdownMenuLabel>
             {DISPLAY_LINKS.map(({ href, label, icon: Icon }) => (
               <DropdownMenuItem key={href} asChild>
-                <Link href={`/e/${slug}/${href}`} target="_blank">
+                <Link href={`/e/${slug}/${href}`} target="_blank" prefetch={false}>
                   <Icon className="mr-2 size-4" />
                   {label}
                 </Link>
@@ -123,7 +123,7 @@ export function HackathonPageActions({
             <DropdownMenuLabel>Public Pages</DropdownMenuLabel>
             {PAGE_LINKS.map(({ href, label, icon: Icon }) => (
               <DropdownMenuItem key={href} asChild>
-                <Link href={`/e/${slug}/${href}`} target="_blank">
+                <Link href={`/e/${slug}/${href}`} target="_blank" prefetch={false}>
                   <Icon className="mr-2 size-4" />
                   {label}
                 </Link>

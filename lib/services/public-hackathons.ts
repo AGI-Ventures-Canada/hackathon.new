@@ -1,3 +1,4 @@
+import { cache } from "react"
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import {
@@ -147,10 +148,11 @@ export async function getPublicHackathonById(
   return { slug: data.slug }
 }
 
-export async function getPublicHackathon(
+const getPublicHackathonCached = cache(async (
   slug: string,
-  options?: { includeUnpublished?: boolean; includeTestEvents?: boolean }
-): Promise<PublicHackathon | null> {
+  includeUnpublished: boolean,
+  includeTestEvents: boolean,
+): Promise<PublicHackathon | null> => {
   const client = getSupabase() as unknown as SupabaseClient
 
   let query = client
@@ -161,11 +163,11 @@ export async function getPublicHackathon(
     `)
     .eq("slug", slug)
 
-  if (!options?.includeTestEvents) {
+  if (!includeTestEvents) {
     query = query.eq("is_test_event", false)
   }
 
-  if (!options?.includeUnpublished) {
+  if (!includeUnpublished) {
     query = query.in("status", PUBLISHED_STATUSES)
   }
 
@@ -180,35 +182,41 @@ export async function getPublicHackathon(
   }
   if (!isHackathonCreationReady(hackathon)) return null
 
-  const { data: sponsors, error: sponsorsError } = await client
-    .from("hackathon_sponsors")
-    .select(`
-      *,
-      tenant:tenants!sponsor_tenant_id(slug, name, logo_url, logo_url_dark, website_url, description)
-    `)
-    .eq("hackathon_id", hackathon.id)
-    .order("tier")
-    .order("display_order")
+  const [
+    { data: sponsors, error: sponsorsError },
+    { data: judges, error: judgesError },
+    { data: prizes, error: prizesError },
+    termsHash,
+  ] = await Promise.all([
+    client
+      .from("hackathon_sponsors")
+      .select(`
+        *,
+        tenant:tenants!sponsor_tenant_id(slug, name, logo_url, logo_url_dark, website_url, description)
+      `)
+      .eq("hackathon_id", hackathon.id)
+      .order("tier")
+      .order("display_order"),
+    client
+      .from("hackathon_judges_display")
+      .select("*")
+      .eq("hackathon_id", hackathon.id)
+      .order("display_order"),
+    client
+      .from("prizes")
+      .select("*")
+      .eq("hackathon_id", hackathon.id)
+      .order("display_order"),
+    currentTermsHash(hackathon as Hackathon),
+  ])
 
   if (sponsorsError) {
     console.error("Failed to get hackathon sponsors:", sponsorsError)
   }
 
-  const { data: judges, error: judgesError } = await client
-    .from("hackathon_judges_display")
-    .select("*")
-    .eq("hackathon_id", hackathon.id)
-    .order("display_order")
-
   if (judgesError) {
     console.error("Failed to get hackathon judges:", judgesError)
   }
-
-  const { data: prizes, error: prizesError } = await client
-    .from("prizes")
-    .select("*")
-    .eq("hackathon_id", hackathon.id)
-    .order("display_order")
 
   if (prizesError) {
     console.error("Failed to get hackathon prizes:", prizesError)
@@ -221,8 +229,6 @@ export async function getPublicHackathon(
     ...rest
   }) => rest)
 
-  const termsHash = await currentTermsHash(hackathon as Hackathon)
-
   return {
     ...hackathon,
     stored_status: hackathon.status,
@@ -232,6 +238,17 @@ export async function getPublicHackathon(
     prizes: publicPrizes,
     terms_hash: termsHash,
   } as unknown as PublicHackathon
+})
+
+export async function getPublicHackathon(
+  slug: string,
+  options?: { includeUnpublished?: boolean; includeTestEvents?: boolean },
+): Promise<PublicHackathon | null> {
+  return getPublicHackathonCached(
+    slug,
+    options?.includeUnpublished ?? false,
+    options?.includeTestEvents ?? false,
+  )
 }
 
 type HackathonWithOrganizer = Hackathon & {
@@ -362,31 +379,37 @@ export async function getHackathonByIdWithFullData(
   }
   if (!isHackathonCreationReady(hackathon)) return null
 
-  const { data: sponsors, error: sponsorsError } = await client
-    .from("hackathon_sponsors")
-    .select(`
-      *,
-      tenant:tenants!sponsor_tenant_id(slug, name, logo_url, logo_url_dark)
-    `)
-    .eq("hackathon_id", hackathon.id)
-    .order("tier")
-    .order("display_order")
+  const [
+    { data: sponsors, error: sponsorsError },
+    { data: judges },
+    { data: prizes },
+    termsHash,
+  ] = await Promise.all([
+    client
+      .from("hackathon_sponsors")
+      .select(`
+        *,
+        tenant:tenants!sponsor_tenant_id(slug, name, logo_url, logo_url_dark)
+      `)
+      .eq("hackathon_id", hackathon.id)
+      .order("tier")
+      .order("display_order"),
+    client
+      .from("hackathon_judges_display")
+      .select("*")
+      .eq("hackathon_id", hackathon.id)
+      .order("display_order"),
+    client
+      .from("prizes")
+      .select("*")
+      .eq("hackathon_id", hackathon.id)
+      .order("display_order"),
+    currentTermsHash(hackathon as Hackathon),
+  ])
 
   if (sponsorsError) {
     console.error("Failed to get hackathon sponsors:", sponsorsError)
   }
-
-  const { data: judges } = await client
-    .from("hackathon_judges_display")
-    .select("*")
-    .eq("hackathon_id", hackathon.id)
-    .order("display_order")
-
-  const { data: prizes } = await client
-    .from("prizes")
-    .select("*")
-    .eq("hackathon_id", hackathon.id)
-    .order("display_order")
 
   const fullPrizes = ((prizes || []) as unknown as Prize[]).map(({
     distribution_method: _distributionMethod,
@@ -394,8 +417,6 @@ export async function getHackathonByIdWithFullData(
     currency: _currency,
     ...rest
   }) => rest)
-
-  const termsHash = await currentTermsHash(hackathon as Hackathon)
 
   return {
     ...hackathon,
