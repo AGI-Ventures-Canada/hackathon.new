@@ -12,6 +12,7 @@ import type {
 const createdAt = "2026-08-25T15:00:00.000Z"
 const taskToolNames = [
   "list_organizer_tasks",
+  "open_organizer_task",
   "add_organizer_task",
   "complete_organizer_task",
   "reopen_organizer_task",
@@ -155,6 +156,8 @@ let onReverted = mock(
 )
 let onNavigate = mock(async (_href: string, _section: string) => true)
 let onOpenTransition = mock((_status: string) => {})
+let onOpenTask = mock((_taskRef: string) => true)
+let onOpenJudgingReview = mock((_review: string) => true)
 let onTasksChanged = mock(() => {})
 let onEventVersionUpdated = mock((eventVersion: string) => {
   context.hackathon.eventVersion = eventVersion
@@ -169,6 +172,8 @@ function createTools() {
     onReverted,
     onNavigate,
     onOpenTransition,
+    onOpenTask,
+    onOpenJudgingReview,
     onTasksChanged,
     onEventVersionUpdated,
   })
@@ -213,6 +218,8 @@ beforeEach(() => {
   )
   onNavigate = mock(async (_href: string, _section: string) => true)
   onOpenTransition = mock((_status: string) => {})
+  onOpenTask = mock((_taskRef: string) => true)
+  onOpenJudgingReview = mock((_review: string) => true)
   onTasksChanged = mock(() => {})
   onEventVersionUpdated = mock((eventVersion: string) => {
     context.hackathon.eventVersion = eventVersion
@@ -236,6 +243,7 @@ describe("createManageHackathonTools", () => {
       "list_hackathon_perks",
       "list_hackathon_announcements",
       "open_hackathon_section",
+      "open_judging_review",
       "update_hackathon_settings",
       "update_hackathon_details",
       "set_hackathon_timeline",
@@ -268,6 +276,7 @@ describe("createManageHackathonTools", () => {
       "list_hackathon_perks",
       "list_hackathon_announcements",
       "open_hackathon_section",
+      "open_judging_review",
       "update_hackathon_settings",
       "update_hackathon_details",
       "add_schedule_item",
@@ -295,6 +304,7 @@ describe("createManageHackathonTools", () => {
       "list_hackathon_perks",
       "list_hackathon_announcements",
       "open_hackathon_section",
+      "open_judging_review",
     ])
   })
 
@@ -363,6 +373,34 @@ describe("createManageHackathonTools", () => {
       taskRef: "custom-run-of-show",
       destination: "schedule",
       inspectUrl: "/e/build-day/manage?tab=overview",
+    })
+  })
+
+  it("opens an organizer task for human review without changing it", async () => {
+    const result = dataOf<{ taskRef: string; status: string; requiresHumanAction: boolean }>(
+      await execute(createTools(), "open_organizer_task", {
+        taskRef: "finish-scoring-setup",
+      }),
+    )
+
+    expect(onOpenTask).toHaveBeenCalledWith("finish-scoring-setup")
+    expect(result).toEqual({
+      taskRef: "finish-scoring-setup",
+      status: "opened",
+      requiresHumanAction: true,
+    })
+  })
+
+  it("opens a judging review without making the judging change", async () => {
+    const result = dataOf<{ review: string; status: string; requiresHumanAction: boolean }>(
+      await execute(createTools(), "open_judging_review", { review: "assignments" }),
+    )
+
+    expect(onOpenJudgingReview).toHaveBeenCalledWith("assignments")
+    expect(result).toEqual({
+      review: "assignments",
+      status: "opened",
+      requiresHumanAction: true,
     })
   })
 

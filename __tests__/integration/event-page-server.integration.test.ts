@@ -365,7 +365,19 @@ describe("public event server page", () => {
     ])
     mockListPerks.mockResolvedValueOnce([{ id: "perk-1" }, { id: "perk-2" }])
     mockIsPerkReleased.mockImplementation((perk) => perk.id === "perk-1")
-    mockGetPublicResults.mockResolvedValueOnce([{ id: "result-1" }])
+    mockGetPublicResults.mockResolvedValueOnce([{
+      rank: 1,
+      submissionTitle: "Winning Project",
+      submissionDescription: "A helpful project",
+      submissionGithubUrl: null,
+      submissionLiveAppUrl: null,
+      submissionScreenshotUrl: null,
+      teamName: "Builders",
+      members: ["Ava"],
+      weightedScore: 92,
+      judgeCount: 3,
+      prizes: [{ name: "First place", value: "$1,000" }],
+    }])
 
     const result = await EventPage(pageProps())
     const tools = childFor(result, mockEventTools)
@@ -390,7 +402,16 @@ describe("public event server page", () => {
       teamStatus: "forming",
     }))
     expect(preview.props.viewerPerks).toEqual([{ id: "perk-1" }])
-    expect(preview.props.publicResults).toEqual([{ id: "result-1" }])
+    expect(preview.props.publicResults).toEqual([
+      expect.objectContaining({ submissionTitle: "Winning Project" }),
+    ])
+    expect(tools.props.guide.results).toEqual([{
+      rank: 1,
+      projectTitle: "Winning Project",
+      teamName: "Builders",
+      weightedScore: 92,
+      prizes: [{ name: "First place", value: "$1,000" }],
+    }])
     expect(preview.props.challenges).toHaveLength(1)
   })
 

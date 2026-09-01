@@ -80,13 +80,17 @@ describe("Schedules Service", () => {
     })
 
     describe("monthly frequency", () => {
-      it("returns a date in the next month", () => {
+      it("returns the next monthly run on the first day", () => {
         const now = new Date()
         const result = calculateNextRun("monthly")
 
         expect(result).not.toBeNull()
-        const expectedMonth = (now.getUTCMonth() + 1) % 12
-        expect(result!.getUTCMonth()).toBe(expectedMonth)
+        expect(result!.getTime()).toBeGreaterThan(now.getTime())
+        expect(result!.getUTCDate()).toBe(1)
+        expect(result!.getUTCHours()).toBe(9)
+        expect(result!.getTime() - now.getTime()).toBeLessThanOrEqual(
+          32 * 24 * 60 * 60 * 1000,
+        )
       })
 
       it("handles year rollover (December to January)", () => {
