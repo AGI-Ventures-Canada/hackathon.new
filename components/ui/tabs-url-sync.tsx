@@ -9,6 +9,23 @@ export function useOptimisticTab() {
   return useContext(OptimisticTabContext)
 }
 
+export function TabsPendingFallback({
+  serverValue,
+  children,
+}: {
+  serverValue: string
+  children: React.ReactNode
+}) {
+  const optimisticValue = useOptimisticTab()
+  if (!optimisticValue || optimisticValue === serverValue) return null
+
+  return (
+    <div aria-busy="true" aria-label="Loading section">
+      {children}
+    </div>
+  )
+}
+
 export function TabsUrlSync({
   paramKey,
   value: serverValue,

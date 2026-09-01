@@ -63,12 +63,16 @@ export async function generateMetadata({ params, searchParams }: PageProps): Pro
 export default async function EventPage({ params, searchParams }: PageProps) {
   const { slug } = await params
   const { lang } = await searchParams
-  const { orgId, userId } = await auth()
+  const [{ orgId, userId }, publishedHackathon] = await Promise.all([
+    auth(),
+    getPublicHackathon(slug),
+  ])
 
-  let rawHackathon = await getPublicHackathon(
-    slug,
-    userId || orgId ? { includeUnpublished: true } : undefined,
-  )
+  let rawHackathon = publishedHackathon
+
+  if (!rawHackathon && (userId || orgId)) {
+    rawHackathon = await getPublicHackathon(slug, { includeUnpublished: true })
+  }
 
   if (!rawHackathon && userId) {
     const { getManageHackathon } = await import("@/lib/services/manage-hackathon")
@@ -130,9 +134,24 @@ export default async function EventPage({ params, searchParams }: PageProps) {
     notFound()
   }
 
+  const participantCountPromise = getParticipantCount(hackathon.id)
+  const eventContentPromise = Promise.all([
+    import("@/lib/services/submissions").then((module) =>
+      module.getHackathonSubmissions(hackathon.id),
+    ),
+    listScheduleItems(hackathon.id),
+    listPublishedAnnouncements(hackathon.id),
+    listChallenges(hackathon.id),
+  ])
+  const publicResultsPromise = hackathon.results_published_at
+    ? import("@/lib/services/results").then((module) =>
+        module.getPublicResultsWithDetails(hackathon.id),
+      )
+    : Promise.resolve([])
+
   let isRegistered = false
   let participantRole: string | null = null
-  const participantCount = await getParticipantCount(hackathon.id)
+  const participantCount = await participantCountPromise
   let submission = null
   let teamInfo = null
   let judgeAssignments: {
@@ -191,13 +210,8 @@ export default async function EventPage({ params, searchParams }: PageProps) {
     }
   }
 
-  const { getHackathonSubmissions } = await import("@/lib/services/submissions")
-  const [rawSubmissions, scheduleItems, allPublishedAnnouncements, challenges] = await Promise.all([
-    getHackathonSubmissions(hackathon.id),
-    listScheduleItems(hackathon.id),
-    listPublishedAnnouncements(hackathon.id),
-    listChallenges(hackathon.id),
-  ])
+  const [rawSubmissions, scheduleItems, allPublishedAnnouncements, challenges] =
+    await eventContentPromise
   const publishedAnnouncements = filterAnnouncementsForViewer(allPublishedAnnouncements, {
     role: isOrganizer
       ? "organizer"
@@ -237,12 +251,7 @@ export default async function EventPage({ params, searchParams }: PageProps) {
     createdAt: s.created_at,
   }))
 
-  let publicResults: import("@/lib/services/results").PublicResultWithDetails[] = []
-
-  if (hackathon.results_published_at) {
-    const { getPublicResultsWithDetails } = await import("@/lib/services/results")
-    publicResults = (await getPublicResultsWithDetails(hackathon.id)) ?? []
-  }
+  const publicResults = (await publicResultsPromise) ?? []
 
   const isAttendee = isRegistered && participantRole === "participant"
   const isFormingCaptain = Boolean(
