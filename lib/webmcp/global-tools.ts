@@ -111,6 +111,7 @@ const attendeeGuideInput = eventRefInput.extend({
     "schedule",
     "announcements",
     "challenges",
+    "results",
   ]).default("overview"),
   offset: z.number().int().min(0).max(100).default(0),
 }).strict()
@@ -452,7 +453,7 @@ export function createGlobalWebMcpTools(
     defineWebMcpTool({
       name: "get_attendee_event_guide",
       title: "Read attendee event guide",
-      description: "Read rules, schedule, announcements, released challenges, or event details for one listed attendee event.",
+      description: "Read rules, schedule, announcements, released challenges, published results, or event details for one listed attendee event.",
       schema: attendeeGuideInput,
       annotations: { readOnlyHint: true, untrustedContentHint: true },
       execute: async ({ eventRef, section, offset }, { signal }) => {

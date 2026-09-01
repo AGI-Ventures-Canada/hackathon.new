@@ -41,6 +41,13 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import type { PrizeResultsGroup } from "@/lib/services/results"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { TabsUrlSync } from "@/components/ui/tabs-url-sync"
@@ -90,6 +97,7 @@ import { AssignJudgesDialog } from "./assign-judges-dialog"
 import { AssignmentsSection } from "./assignments-section"
 import { JudgePill } from "./judge-pill"
 import { RoundsSection } from "./rounds-section"
+import { ScoringProgress } from "./scoring-progress"
 import type { RoundData } from "./rounds-types"
 import type { Prize } from "@/lib/db/hackathon-types"
 
@@ -266,6 +274,10 @@ export function JudgingTabClient({
   const [showAddPrize, setShowAddPrize] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [publishDialogOpen, setPublishDialogOpen] = useState(false)
+  const [taskPublishDialogOpen, setTaskPublishDialogOpen] = useState(false)
+  const [judgingTaskDialog, setJudgingTaskDialog] = useState<
+    "setup" | "rounds" | "assignments" | "progress" | "results" | null
+  >(null)
   const weightedScoringLocked =
     coreCriteria.length > 0 ||
     sharedPrizes.some((p) => p.judgingStyle === "weighted_score")
@@ -283,12 +295,22 @@ export function JudgingTabClient({
     registerTabAction("no-prizes", () => setShowAddPrize(true))
     registerTabAction("no-judges", () => setShowAddJudge(true))
     registerTabAction("no-judges-active", () => setShowAddJudge(true))
-    registerTabAction("results-not-published", () => setPublishDialogOpen(true))
+    registerTabAction("results-not-published", () => setJudgingTaskDialog("results"))
+    registerTabAction("finish-scoring-setup", () => setJudgingTaskDialog("setup"))
+    registerTabAction("activate-first-round", () => setJudgingTaskDialog("rounds"))
+    registerTabAction("unassigned-submissions", () => setJudgingTaskDialog("assignments"))
+    registerTabAction("judging-incomplete", () => setJudgingTaskDialog("progress"))
+    registerTabAction("ready-to-complete", () => setJudgingTaskDialog("progress"))
     return () => {
       unregisterTabAction("no-prizes")
       unregisterTabAction("no-judges")
       unregisterTabAction("no-judges-active")
       unregisterTabAction("results-not-published")
+      unregisterTabAction("finish-scoring-setup")
+      unregisterTabAction("activate-first-round")
+      unregisterTabAction("unassigned-submissions")
+      unregisterTabAction("judging-incomplete")
+      unregisterTabAction("ready-to-complete")
     }
   }, [actionItems])
 
@@ -645,6 +667,110 @@ export function JudgingTabClient({
           )}
         </TabsContent>
       </TabsUrlSync>
+
+      <Dialog
+        open={judgingTaskDialog !== null}
+        onOpenChange={(open) => !open && setJudgingTaskDialog(null)}
+      >
+        <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>
+              {judgingTaskDialog === "setup" && "Finish scoring setup"}
+              {judgingTaskDialog === "rounds" && "Judging rounds"}
+              {judgingTaskDialog === "assignments" && "Assign projects"}
+              {judgingTaskDialog === "progress" && "Judging progress"}
+              {judgingTaskDialog === "results" && "Review results"}
+            </DialogTitle>
+            <DialogDescription>
+              Make the needed changes here. Your task list stays open behind this window.
+            </DialogDescription>
+          </DialogHeader>
+          {judgingTaskDialog === "setup" && (
+            <JudgingSetupWizard
+              hackathonId={hackathonId}
+              slug={slug}
+              prizes={prizes.map((p) => ({
+                id: p.id,
+                name: p.name,
+                description: p.description,
+                value: p.value,
+                judgingStyle: p.judgingStyle,
+                assignmentMode: p.assignmentMode,
+                maxPicks: p.maxPicks,
+                roundId: p.roundId,
+                displayOrder: p.displayOrder,
+                totalAssignments: p.totalAssignments,
+                completedAssignments: p.completedAssignments,
+                judgeCount: p.judgeCount,
+                sponsorName: p.sponsorName ?? null,
+                bonusCriteriaCount:
+                  p.judgingStyle === "weighted_score" ? (p.criteria?.length ?? 0) : 0,
+                bonusWeightSum:
+                  p.judgingStyle === "weighted_score"
+                    ? (p.criteria ?? []).reduce((sum, criterion) => sum + (criterion.weight ?? 0), 0)
+                    : 0,
+              }))}
+              judges={judges}
+              rounds={rounds}
+              pendingInvitations={invitations}
+              coreCriteria={coreCriteria}
+              syncUrl={false}
+              onEditPrize={(prizeId) => {
+                const prize = prizes.find((candidate) => candidate.id === prizeId)
+                if (prize) handleEditPrize(prize)
+              }}
+            />
+          )}
+          {judgingTaskDialog === "rounds" && (
+            <RoundsSection hackathonId={hackathonId} rounds={rounds} />
+          )}
+          {judgingTaskDialog === "assignments" && (
+            <AssignmentsSection
+              hackathonId={hackathonId}
+              judges={judges.map((judge) => ({
+                participantId: judge.participantId,
+                displayName: judge.displayName,
+                imageUrl: judge.imageUrl,
+              }))}
+              totalSubmissionCount={
+                weightedAssignmentSummary?.totalSubmissionCount ?? _submissions.length
+              }
+              rooms={weightedAssignmentSummary?.rooms ?? []}
+              countsByJudge={weightedAssignmentSummary?.countsByJudge ?? {}}
+              hasWeightedScoring={
+                coreCriteria.length > 0 ||
+                prizes.some((prize) => prize.judgingStyle === "weighted_score")
+              }
+            />
+          )}
+          {judgingTaskDialog === "progress" && (
+            <ScoringProgress progress={initialProgress} />
+          )}
+          {judgingTaskDialog === "results" && (
+            prizes.length > 0 || results.length > 0 ? (
+              <ResultsSection
+                hackathonId={hackathonId}
+                slug={slug}
+                results={results}
+                resultsByPrize={resultsByPrize}
+                isPublished={isPublished}
+                publishing={publishing}
+                publishDialogOpen={taskPublishDialogOpen}
+                onPublishDialogChange={setTaskPublishDialogOpen}
+                onPublish={handlePublish}
+                onUnpublish={handleUnpublish}
+                incompleteAssignments={
+                  initialProgress.totalAssignments - initialProgress.completedAssignments
+                }
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Add prizes and judges to see results here.
+              </p>
+            )
+          )}
+        </DialogContent>
+      </Dialog>
 
       <AddJudgeDialog
         hackathonId={hackathonId}

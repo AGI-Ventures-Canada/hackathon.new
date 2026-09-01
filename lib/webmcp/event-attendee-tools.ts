@@ -174,6 +174,13 @@ export type EventGuideContext = {
     resources?: { label: string; url: string }[]
   }[]
   resultsPublished: boolean
+  results?: {
+    rank: number
+    projectTitle: string
+    teamName: string | null
+    weightedScore: number | null
+    prizes: { name: string; value: string | null }[]
+  }[]
 }
 
 export type EventViewerContext = {
@@ -322,6 +329,7 @@ const eventGuideSectionSchema = z.enum([
   "schedule",
   "announcements",
   "challenges",
+  "results",
 ])
 
 export function summarizeEventGuide(
@@ -352,6 +360,7 @@ export function summarizeEventGuide(
         schedule: guide.schedule.length,
         announcements: guide.announcements.length,
         challenges: guide.challenges.length,
+        results: guide.results?.length ?? 0,
       },
     }
   }
@@ -396,6 +405,28 @@ export function summarizeEventGuide(
     }
   }
 
+  if (section === "results") {
+    const results = guide.results ?? []
+    const items = results.slice(offset, offset + 5).map((result) => ({
+      rank: result.rank,
+      projectTitle: snippet(result.projectTitle, 100),
+      teamName: snippet(result.teamName, 100),
+      weightedScore: result.weightedScore,
+      prizes: result.prizes.slice(0, 5).map((prize) => ({
+        name: snippet(prize.name, 100),
+        value: snippet(prize.value, 80),
+      })),
+    }))
+    return {
+      section,
+      published: guide.resultsPublished,
+      offset,
+      total: results.length,
+      nextOffset: offset + items.length < results.length ? offset + items.length : null,
+      items,
+    }
+  }
+
   const items = guide.challenges.slice(offset, offset + 2).map((challenge) => ({
     challengeRef: challengeRef(challenge),
     title: snippet(challenge.title, 80),
@@ -421,7 +452,7 @@ export function createEventAttendeeTools(
       name: "get_event_guide",
       title: "Read event guide",
       description:
-        "Read one bounded section of the public event guide. Start with overview, then page through schedule, announcements, or released challenges.",
+        "Read one bounded section of the public event guide. Start with overview, then page through schedule, announcements, released challenges, or published results.",
       schema: z.object({
         section: eventGuideSectionSchema.default("overview"),
         offset: z.number().int().nonnegative().max(100).default(0),

@@ -22,6 +22,58 @@ const JUDGE_REMINDER_WINDOWS = [
   { offsetMs: 24 * HOUR, urgency: "medium" as const, window: "24_hours" },
   { offsetMs: HOUR, urgency: "high" as const, window: "1_hour" },
 ]
+const ORGANIZER_EVENT_WINDOWS = [
+  { offsetMs: 7 * 24 * HOUR, urgency: "low" as const, window: "7_days" },
+  { offsetMs: 24 * HOUR, urgency: "medium" as const, window: "24_hours" },
+]
+const ORGANIZER_JUDGING_WINDOWS = [
+  { offsetMs: 24 * HOUR, urgency: "medium" as const, window: "24_hours" },
+  { offsetMs: HOUR, urgency: "high" as const, window: "1_hour" },
+]
+
+function appendOrganizerReminders(
+  desired: DesiredReminder[],
+  input: {
+    hackathonId: string
+    hackathonName: string
+    hackathonSlug: string
+    reminderType: "organizer_event_readiness" | "organizer_judging_readiness"
+    deadlineStr: string | null
+    now: Date
+  },
+): void {
+  if (!input.deadlineStr) return
+  const deadline = new Date(input.deadlineStr)
+  if (!Number.isFinite(deadline.getTime()) || deadline <= input.now) return
+  const windows = input.reminderType === "organizer_event_readiness"
+    ? ORGANIZER_EVENT_WINDOWS
+    : ORGANIZER_JUDGING_WINDOWS
+  const scheduled = windows.map((window) => ({
+    ...window,
+    scheduledFor: new Date(deadline.getTime() - window.offsetMs),
+  }))
+  const latestMissed = scheduled
+    .filter((window) => window.scheduledFor <= input.now)
+    .sort((left, right) => right.scheduledFor.getTime() - left.scheduledFor.getTime())[0]
+  const selected = latestMissed
+    ? [latestMissed, ...scheduled.filter((window) => window.scheduledFor > input.now)]
+    : scheduled.filter((window) => window.scheduledFor > input.now)
+
+  for (const window of selected) {
+    desired.push({
+      hackathonId: input.hackathonId,
+      reminderType: input.reminderType,
+      scheduledFor: window.scheduledFor,
+      urgency: window.urgency,
+      metadata: {
+        hackathonName: input.hackathonName,
+        hackathonSlug: input.hackathonSlug,
+        deadlineDate: input.deadlineStr,
+        reminderWindow: window.window,
+      },
+    })
+  }
+}
 
 function appendJudgeReminders(
   desired: DesiredReminder[],
@@ -241,6 +293,22 @@ export async function schedulePreEventReminders(
     ...judgeReminderBase,
     reminderType: "judge_scoring_starting",
     deadlineStr: submissionDeadlineStr as string | null,
+  })
+  appendOrganizerReminders(desired, {
+    hackathonId,
+    hackathonName: hackathon.name as string,
+    hackathonSlug: hackathon.slug as string,
+    reminderType: "organizer_event_readiness",
+    deadlineStr: hackathon.starts_at as string | null,
+    now,
+  })
+  appendOrganizerReminders(desired, {
+    hackathonId,
+    hackathonName: hackathon.name as string,
+    hackathonSlug: hackathon.slug as string,
+    reminderType: "organizer_judging_readiness",
+    deadlineStr: submissionDeadlineStr as string | null,
+    now,
   })
 
   return reconcileRemindersForEntity(

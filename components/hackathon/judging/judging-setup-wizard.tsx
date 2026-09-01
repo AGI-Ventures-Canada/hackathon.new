@@ -93,6 +93,7 @@ type Props = {
   onJudgeAdded?: (judge: WizardJudgeAdded) => void
   onPrizeAdded?: (prize: WizardPrizeAdded) => void
   onEditPrize?: (prizeId: string) => void
+  syncUrl?: boolean
 }
 
 const STEPS = [
@@ -132,16 +133,18 @@ function JudgingSetupWizardContent({
   onJudgeAdded,
   onPrizeAdded,
   onEditPrize,
+  syncUrl = true,
 }: Props) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
   useEffect(() => {
+    if (!syncUrl) return
     if (searchParams.get("jtab") === "setup") return
     const params = new URLSearchParams(searchParams.toString())
     params.set("jtab", "setup")
     router.replace(`${pathname}?${params.toString()}`, { scroll: false })
-  }, [pathname, router, searchParams])
+  }, [pathname, router, searchParams, syncUrl])
   const [roundsAcknowledged, setRoundsAcknowledged] = useState(false)
   const [hiddenPrizeIds, setHiddenPrizeIds] = useState<Set<string>>(new Set())
   const [hiddenRoundIds, setHiddenRoundIds] = useState<Set<string>>(new Set())

@@ -11,15 +11,22 @@ const beginManageWebMcpChange = mock(() => {})
 const commitManageWebMcpChange = mock(() => {})
 const rollbackManageWebMcpChange = mock(() => {})
 const triggerTransition = mock(() => {})
+const handleActionClick = mock(() => {})
+const openRegisteredAction = mock(() => true)
 
 const actionItemsState = {
   triggerTransition,
+  handleActionClick,
+  openRegisteredAction,
   hackathonStatus: "draft" as const,
   activeItems: [
     {
+      id: "finish-scoring-setup",
       label: "Add judges",
       hint: "Pick who will review projects.",
       severity: "warning" as const,
+      tab: "judging",
+      action: "open-judge-dialog",
     },
   ],
   manageWebMcpView: {
@@ -294,6 +301,36 @@ describe("ManageHackathonWebMcpTools", () => {
       __nextNavState: { router: { refresh: ReturnType<typeof mock> } }
     }
     expect(navigation.__nextNavState.router.refresh).toHaveBeenCalledTimes(1)
+  })
+
+  it("opens the matching task dialog from WebMCP", async () => {
+    render(<ManageHackathonWebMcpTools context={context} />)
+    await waitFor(() => expect(tools.has("open_organizer_task")).toBe(true))
+
+    const result = await execute("open_organizer_task", {
+      taskRef: "finish-scoring-setup",
+    })
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: { status: "opened", requiresHumanAction: true },
+    })
+    expect(handleActionClick).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "finish-scoring-setup" }),
+    )
+  })
+
+  it("opens a judging review from WebMCP", async () => {
+    render(<ManageHackathonWebMcpTools context={context} />)
+    await waitFor(() => expect(tools.has("open_judging_review")).toBe(true))
+
+    const result = await execute("open_judging_review", { review: "rounds" })
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: { review: "rounds", status: "opened", requiresHumanAction: true },
+    })
+    expect(openRegisteredAction).toHaveBeenCalledWith("activate-first-round")
   })
 
   it("rolls back failed changes and routes human-only review actions", async () => {

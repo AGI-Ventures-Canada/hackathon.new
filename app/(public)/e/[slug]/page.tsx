@@ -310,6 +310,16 @@ export default async function EventPage({ params, searchParams }: PageProps) {
       })),
     })),
     resultsPublished: Boolean(hackathon.results_published_at),
+    results: publicResults.map((result) => ({
+      rank: result.rank,
+      projectTitle: result.submissionTitle,
+      teamName: result.teamName,
+      weightedScore: result.weightedScore,
+      prizes: result.prizes.map((prize) => ({
+        name: prize.name,
+        value: prize.value,
+      })),
+    })),
   }
 
   const eventViewer = {

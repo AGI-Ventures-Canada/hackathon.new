@@ -117,6 +117,7 @@ interface ActionItemsContextValue {
   customItems: ActionItem[];
   registerTabAction: (actionItemId: string, callback: () => void) => void;
   unregisterTabAction: (actionItemId: string) => void;
+  openRegisteredAction: (actionItemId: string) => boolean;
   openShowcaseDialog: () => void;
   isStale: boolean;
   hackathonStatus: HackathonStatus;
@@ -136,6 +137,14 @@ interface ActionItemsContextValue {
 }
 
 const ActionItemsContext = createContext<ActionItemsContextValue | null>(null);
+const CROSS_TAB_DIALOG_ACTIONS = new Set([
+  "activate-first-round",
+  "finish-scoring-setup",
+  "judging-incomplete",
+  "ready-to-complete",
+  "results-not-published",
+  "unassigned-submissions",
+]);
 
 export function useActionItems() {
   const ctx = useContext(ActionItemsContext);
@@ -366,6 +375,7 @@ export function ActionItemsProvider({
   const [promoteDialogOpen, setPromoteDialogOpen] = useState(false);
   const [showcaseDialogOpen, setShowcaseDialogOpen] = useState(false);
   const [agendaDialogOpen, setAgendaDialogOpen] = useState(false);
+  const [reviewDialogItem, setReviewDialogItem] = useState<ActionItem | null>(null);
   const [releasingChallenge, setReleasingChallenge] = useState(false);
   const [releaseChallengeError, setReleaseChallengeError] = useState<string | null>(null);
   const [settingsDialogError, setSettingsDialogError] = useState<string | null>(null);
@@ -1033,6 +1043,12 @@ export function ActionItemsProvider({
   const unregisterTabAction = useCallback((actionItemId: string) => {
     tabActionsRef.current.delete(actionItemId);
   }, []);
+  const openRegisteredAction = useCallback((actionItemId: string) => {
+    const action = tabActionsRef.current.get(actionItemId);
+    if (!action) return false;
+    action();
+    return true;
+  }, []);
 
   useEffect(() => {
     if (!pendingTargetRefreshHref) return;
@@ -1183,26 +1199,23 @@ export function ActionItemsProvider({
         const targetStatus = item.action.replace("transition-to-", "");
         transitionRef.current?.openTransitionDialog(targetStatus);
       } else {
-        const href = buildActionHref(slug, item);
-        if (href && item.tab) {
-          const currentTab = searchParams.get("tab") ?? "action-items";
-          const isOnTargetTab =
-            currentTab === item.tab &&
-            (!item.subtab ||
-              !item.subtabKey ||
-              searchParams.get(item.subtabKey) === item.subtab);
-          if (isOnTargetTab) {
-            const tabAction = tabActionsRef.current.get(item.id);
-            if (tabAction) {
-              tabAction();
-              return;
-            }
-          }
-          router.push(href);
+        const tabAction = tabActionsRef.current.get(item.id);
+        const opensAcrossTabs = CROSS_TAB_DIALOG_ACTIONS.has(item.id);
+        const currentTab = searchParams.get("tab") ?? "action-items";
+        const isOnTargetTab =
+          currentTab === item.tab &&
+          (!item.subtab ||
+            !item.subtabKey ||
+            searchParams.get(item.subtabKey) === item.subtab);
+        if (tabAction && (opensAcrossTabs || isOnTargetTab)) {
+          tabAction();
+          return;
         }
+        const href = buildActionHref(slug, item);
+        if (href && item.tab) setReviewDialogItem(item);
       }
     },
-    [slug, router, searchParams],
+    [searchParams, slug],
   );
 
   const triggerTransition = useCallback((targetStatus: string) => {
@@ -1289,6 +1302,7 @@ export function ActionItemsProvider({
       customItems,
       registerTabAction,
       unregisterTabAction,
+      openRegisteredAction,
       isStale,
       hackathonStatus: effectiveStatus,
       hackathonPhase: livePhase,
@@ -1325,6 +1339,7 @@ export function ActionItemsProvider({
       customItems,
       registerTabAction,
       unregisterTabAction,
+      openRegisteredAction,
       isStale,
       effectiveStatus,
       livePhase,
@@ -1525,7 +1540,7 @@ export function ActionItemsProvider({
         onSuccess={handleJudgeActionDone}
       />
       <Dialog open={agendaDialogOpen} onOpenChange={setAgendaDialogOpen}>
-        <DialogContent className="sm:max-w-3xl">
+        <DialogContent className="max-h-[85svh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>Your agenda</DialogTitle>
             <DialogDescription>Add and update the event schedule.</DialogDescription>
@@ -1556,6 +1571,35 @@ export function ActionItemsProvider({
               replaceManageSchedule(items as ScheduleItem[])
             }
           />
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={!!reviewDialogItem}
+        onOpenChange={(open) => !open && setReviewDialogItem(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{reviewDialogItem?.label}</DialogTitle>
+            <DialogDescription>
+              {reviewDialogItem?.tooltip ?? reviewDialogItem?.hint ?? "Review this task before you continue."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReviewDialogItem(null)}>
+              Stay here
+            </Button>
+            <Button
+              onClick={() => {
+                const href = reviewDialogItem
+                  ? buildActionTargetHref(slug, reviewDialogItem)
+                  : null;
+                setReviewDialogItem(null);
+                if (href) router.push(href);
+              }}
+            >
+              {reviewDialogItem?.ctaLabel ?? "Open task"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
       <LocationEditDialog

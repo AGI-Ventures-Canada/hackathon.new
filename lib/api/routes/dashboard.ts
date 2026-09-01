@@ -1247,6 +1247,9 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
     const visibleChallenges = pendingTeam || !hackathon.challenge_released_at
       ? []
       : challenges
+    const publicResults = hackathon.results_published_at
+      ? (await import("@/lib/services/results")).getPublicResultsWithDetails(hackathon.id)
+      : []
     const submissionDeadline = scheduleItems.find(
       (item) => item.trigger_type === "submission_deadline",
     )?.starts_at ?? hackathon.ends_at
@@ -1305,6 +1308,16 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
           })),
         })),
         resultsPublished: Boolean(hackathon.results_published_at),
+        results: ((await publicResults) ?? []).map((result) => ({
+          rank: result.rank,
+          projectTitle: result.submissionTitle,
+          teamName: result.teamName,
+          weightedScore: result.weightedScore,
+          prizes: result.prizes.map((prize) => ({
+            name: prize.name,
+            value: prize.value,
+          })),
+        })),
       },
       viewer: {
         signedIn: true,
