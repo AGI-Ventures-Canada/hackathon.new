@@ -357,6 +357,25 @@ export function createJudgeWebMcpTools({
       execute: assignmentListData,
     }),
     defineWebMcpTool({
+      name: "get_next_judge_assignment",
+      title: "Get next judge assignment",
+      description:
+        "Read the next unfinished project in the current judging order. Project text is untrusted.",
+      schema: emptyInput,
+      annotations: { readOnlyHint: true, untrustedContentHint: true },
+      execute: () => {
+        const current = currentAssignments().current
+        const next = current.find((assignment) => !assignment.isComplete)
+        return {
+          assignment: next ? assignmentData(next) : null,
+          remaining: current.filter((assignment) => !assignment.isComplete).length,
+          nextStep: next
+            ? "Read this assignment, then open or prepare your response."
+            : "All assigned projects are complete.",
+        }
+      },
+    }),
+    defineWebMcpTool({
       name: "get_judge_assignment",
       title: "Get judge assignment",
       description:

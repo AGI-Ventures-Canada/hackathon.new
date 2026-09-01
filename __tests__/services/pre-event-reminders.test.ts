@@ -138,7 +138,7 @@ describe("schedulePreEventReminders", () => {
     expect(await schedulePreEventReminders(
       "11111111-1111-1111-1111-111111111111",
       new Date("2026-08-30T12:00:00.000Z"),
-    )).toBe(3)
+    )).toBe(5)
     expect(mockReconcileRemindersForEntity).toHaveBeenCalledWith(
       "hackathon_event",
       "11111111-1111-1111-1111-111111111111",
@@ -242,6 +242,66 @@ describe("schedulePreEventReminders", () => {
           metadata: expect.objectContaining({ reminderWindow: "1_hour" }),
           hackathonId: "11111111-1111-1111-1111-111111111111",
         },
+      ])
+  })
+
+  it("reminds organizers before the event and before judging", async () => {
+    setMockFromImplementation((table) => {
+      if (table === "hackathons") {
+        return createChainableMock({
+          data: {
+            id: "11111111-1111-1111-1111-111111111111",
+            name: "Build Day",
+            slug: "build-day",
+            registration_closes_at: null,
+            starts_at: "2026-09-10T12:00:00.000Z",
+            ends_at: "2026-09-11T17:00:00.000Z",
+            created_at: "2026-08-25T16:00:00.000Z",
+            status: "published",
+          },
+          error: null,
+        })
+      }
+      return createChainableMock({
+        data: table === "hackathon_schedule_items"
+          ? { starts_at: "2026-09-11T16:00:00.000Z" }
+          : null,
+        error: null,
+      })
+    })
+
+    await schedulePreEventReminders(
+      "11111111-1111-1111-1111-111111111111",
+      new Date("2026-09-01T12:00:00.000Z"),
+    )
+
+    const desired = mockReconcileRemindersForEntity.mock.calls[0]?.[2] as Array<{
+      reminderType: string
+      scheduledFor: Date
+      metadata: Record<string, unknown>
+    }>
+    expect(desired.filter((reminder) => reminder.reminderType.startsWith("organizer_")))
+      .toEqual([
+        expect.objectContaining({
+          reminderType: "organizer_event_readiness",
+          scheduledFor: new Date("2026-09-03T12:00:00.000Z"),
+          metadata: expect.objectContaining({ reminderWindow: "7_days" }),
+        }),
+        expect.objectContaining({
+          reminderType: "organizer_event_readiness",
+          scheduledFor: new Date("2026-09-09T12:00:00.000Z"),
+          metadata: expect.objectContaining({ reminderWindow: "24_hours" }),
+        }),
+        expect.objectContaining({
+          reminderType: "organizer_judging_readiness",
+          scheduledFor: new Date("2026-09-10T16:00:00.000Z"),
+          metadata: expect.objectContaining({ reminderWindow: "24_hours" }),
+        }),
+        expect.objectContaining({
+          reminderType: "organizer_judging_readiness",
+          scheduledFor: new Date("2026-09-11T15:00:00.000Z"),
+          metadata: expect.objectContaining({ reminderWindow: "1_hour" }),
+        }),
       ])
   })
 

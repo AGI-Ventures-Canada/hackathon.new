@@ -25,6 +25,8 @@ export type ReminderType =
   | "submission_due"
   | "judge_event_starting"
   | "judge_scoring_starting"
+  | "organizer_event_readiness"
+  | "organizer_judging_readiness"
 
 export type DesiredReminder = {
   hackathonId: string
@@ -615,12 +617,14 @@ export async function validateReminderEntity(
       currentDeadline = hackathon.registration_closes_at ?? null
     } else if (
       reminder.reminder_type === "event_starting" ||
-      reminder.reminder_type === "judge_event_starting"
+      reminder.reminder_type === "judge_event_starting" ||
+      reminder.reminder_type === "organizer_event_readiness"
     ) {
       currentDeadline = hackathon.starts_at ?? null
     } else if (
       reminder.reminder_type === "submission_due" ||
-      reminder.reminder_type === "judge_scoring_starting"
+      reminder.reminder_type === "judge_scoring_starting" ||
+      reminder.reminder_type === "organizer_judging_readiness"
     ) {
       const { data: deadline, error: deadlineError } = await client
         .from("hackathon_schedule_items")
@@ -731,6 +735,34 @@ async function dispatchReminderEmail(
     })
     if (hasReminderDeliveryFailure(delivery)) {
       throw new Error("Judge invitation reminder email was not accepted")
+    }
+    return reminderDeliveryWasSent(delivery)
+  }
+
+  if (
+    reminder.entity_type === "hackathon_event" &&
+    (
+      reminder.reminder_type === "organizer_event_readiness" ||
+      reminder.reminder_type === "organizer_judging_readiness"
+    )
+  ) {
+    requireMeta(meta, "hackathonName", "hackathonSlug", "deadlineDate")
+    const { sendOrganizerReadinessReminder } = await import(
+      "@/lib/email/organizer-notifications"
+    )
+    const delivery = await sendOrganizerReadinessReminder({
+      hackathonId: reminder.hackathon_id,
+      hackathonName: meta.hackathonName as string,
+      hackathonSlug: meta.hackathonSlug as string,
+      deadlineDate: meta.deadlineDate as string,
+      reminderType: reminder.reminder_type,
+      urgency: reminder.urgency,
+      deliveryId: reminder.id,
+      budget,
+    })
+    if (delivery.deferred) throw new DeliveryBudgetDeferredError()
+    if (hasReminderDeliveryFailure(delivery)) {
+      throw new Error("One or more organizer reminder emails were not accepted")
     }
     return reminderDeliveryWasSent(delivery)
   }

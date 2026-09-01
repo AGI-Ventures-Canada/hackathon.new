@@ -164,6 +164,10 @@ type ManageHackathonToolDependencies = {
     section: z.output<typeof sectionInput>["section"],
   ) => Promise<boolean>
   onOpenTransition: (status: string) => void
+  onOpenTask?: (taskRef: string) => boolean
+  onOpenJudgingReview?: (
+    review: "setup" | "add_judge" | "rounds" | "assignments" | "progress" | "results",
+  ) => boolean
   onOpenTestEventConversion?: () => boolean
   onPrepareSponsor?: (name: string) => Promise<boolean>
   onEventVersionUpdated?: (eventVersion: string) => void
@@ -300,6 +304,12 @@ const addOrganizerTaskInput = z.object({
 const changeOrganizerTaskInput = z.object({
   taskRef: organizerTaskRef,
   expectedUpdatedAt: dateTime.optional(),
+}).strict()
+const openOrganizerTaskInput = z.object({
+  taskRef: organizerTaskRef,
+}).strict()
+const judgingReviewInput = z.object({
+  review: z.enum(["setup", "add_judge", "rounds", "assignments", "progress", "results"]),
 }).strict()
 const removeOrganizerTaskInput = z.object({
   taskRef: customOrganizerTaskRef,
@@ -738,6 +748,22 @@ function createOrganizerTaskTools(
           { method: "GET", signal },
         )
         return compactOrganizerTaskPage(page)
+      },
+    }),
+    defineWebMcpTool({
+      name: "open_organizer_task",
+      title: "Open organizer task",
+      description:
+        "Open a shared task in the organizer's current page. This doesn't finish the task or save a change.",
+      schema: openOrganizerTaskInput,
+      annotations: { readOnlyHint: true },
+      execute: ({ taskRef }) => {
+        const opened = dependencies.onOpenTask?.(taskRef) === true
+        return {
+          taskRef,
+          status: opened ? "opened" : "not_available",
+          requiresHumanAction: true,
+        }
       },
     }),
     defineWebMcpTool({
@@ -1185,6 +1211,22 @@ function createReadTools(
           requested: section,
           status: opened ? "opened" : "navigation_pending",
           url,
+        }
+      },
+    }),
+    defineWebMcpTool({
+      name: "open_judging_review",
+      title: "Open judging review",
+      description:
+        "Open one judging review in the organizer's current page. This doesn't assign, invite, score, or publish anything.",
+      schema: judgingReviewInput,
+      annotations: { readOnlyHint: true },
+      execute: ({ review }) => {
+        const opened = dependencies.onOpenJudgingReview?.(review) === true
+        return {
+          review,
+          status: opened ? "opened" : "not_available",
+          requiresHumanAction: true,
         }
       },
     }),

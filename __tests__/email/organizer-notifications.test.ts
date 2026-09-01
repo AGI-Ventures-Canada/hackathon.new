@@ -41,7 +41,17 @@ mock.module("@/lib/db/client", () => ({
   supabase: () => ({ from: mockFrom }),
 }))
 
-const { sendOrganizerClaimNotification } = await import(
+const mockGetOrganizerTaskBoard = mock(() => Promise.resolve({
+  items: [
+    { label: "Invite judges" },
+    { label: "Assign every project" },
+  ],
+}))
+mock.module("@/lib/services/organizer-action-items", () => ({
+  getOrganizerTaskBoard: mockGetOrganizerTaskBoard,
+}))
+
+const { sendOrganizerClaimNotification, sendOrganizerReadinessReminder } = await import(
   "@/lib/email/organizer-notifications"
 )
 
@@ -57,6 +67,7 @@ describe("sendOrganizerClaimNotification", () => {
     mockSelect.mockClear()
     mockEq.mockClear()
     mockSingle.mockClear()
+    mockGetOrganizerTaskBoard.mockClear()
     sendEmailImpl = () => Promise.resolve({ id: "email_123" })
     delete process.env.NEXT_PUBLIC_APP_URL
   })
@@ -262,5 +273,44 @@ describe("sendOrganizerClaimNotification", () => {
       value: "organizer_claim_notification",
     })
     expect(tags.find((t) => t.name === "hackathon")?.value).toBe("My_Hack")
+  })
+
+  it("sends organizers a live task digest before judging", async () => {
+    process.env.NEXT_PUBLIC_APP_URL = "https://test.hackathon.new"
+    let callCount = 0
+    mockSingle.mockImplementation(() => {
+      callCount++
+      if (callCount === 1) {
+        return Promise.resolve({ data: { tenant_id: "tenant_1" }, error: null })
+      }
+      return Promise.resolve({
+        data: { clerk_org_id: "org_123", clerk_user_id: null },
+        error: null,
+      })
+    })
+
+    const result = await sendOrganizerReadinessReminder({
+      hackathonId: "hack_1",
+      hackathonName: "Build Day",
+      hackathonSlug: "build-day",
+      deadlineDate: "2026-09-11T16:00:00.000Z",
+      reminderType: "organizer_judging_readiness",
+      urgency: "high",
+      deliveryId: "reminder_1",
+    })
+
+    expect(result).toEqual({ sent: 1, failed: 0 })
+    expect(mockGetOrganizerTaskBoard).toHaveBeenCalledWith("hack_1", {
+      state: "pending",
+      limit: 5,
+    })
+    const call = mockSendEmail.mock.calls[0]![0] as Record<string, unknown>
+    expect(call.subject).toContain("Action needed: Judging starts soon")
+    expect(call.html).toContain("Invite judges")
+    expect(call.html).toContain("Assign every project")
+    expect(call.html).toContain("/e/build-day/manage?tab=action-items")
+    expect(call.idempotencyKey).toMatch(
+      /^organizer-readiness\/reminder_1\/[a-f0-9]{24}$/,
+    )
   })
 })

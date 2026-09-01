@@ -69,6 +69,7 @@ describe("organizer parity registry", () => {
   it("keeps every shared organizer task action in WebMCP and the CLI", () => {
     expect(ORGANIZER_SECTION_CONFIG.action_items.webMcpTools).toEqual([
       "list_organizer_tasks",
+      "open_organizer_task",
       "add_organizer_task",
       "complete_organizer_task",
       "reopen_organizer_task",
