@@ -96,8 +96,8 @@ export function SubmissionGallery({ submissions }: SubmissionGalleryProps) {
             <Accordion type="single" collapsible className="w-full">
               {paged.map((submission, index) => (
                 <AccordionItem key={submission.id} value={submission.id} className="group/accordion">
-                  <AccordionTrigger className="py-4 text-sm hover:no-underline">
-                    <div className="flex items-center gap-4 text-left">
+                  <AccordionTrigger className="min-w-0 py-4 text-sm hover:no-underline">
+                    <div className="flex min-w-0 items-center gap-4 text-left">
                       <span className="text-muted-foreground w-6 text-right shrink-0">
                         {(safePage - 1) * PAGE_SIZE + index + 1}
                       </span>
