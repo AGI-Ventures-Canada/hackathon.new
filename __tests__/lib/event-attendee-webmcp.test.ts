@@ -29,6 +29,7 @@ const guide: EventGuideContext = {
     resources: [{ label: "Starter docs", url: "https://docs.example.com/start" }],
   }],
   resultsPublished: false,
+  results: [],
 }
 
 const viewer: EventViewerContext = {
@@ -316,6 +317,46 @@ describe("event attendee WebMCP tools", () => {
       },
     })
     expect(JSON.stringify([firstPage, secondPage])).not.toContain("javascript:")
+  })
+
+  it("returns published results without internal IDs", async () => {
+    const tools = createEventAttendeeTools({
+      guide: {
+        ...guide,
+        status: "completed",
+        resultsPublished: true,
+        results: [{
+          rank: 1,
+          projectTitle: "Oat Agent",
+          teamName: "Oats",
+          weightedScore: 94.5,
+          prizes: [{ name: "Best overall", value: "$1,000" }],
+        }],
+      },
+      viewer,
+      canOpenRegistration: false,
+      canInviteTeamMembers: false,
+      canPrepareProject: false,
+      openRegistration: () => false,
+      prepareTeamInvite: () => false,
+      getProjectDraft: () => null,
+      prepareProject: () => ({ openedReview: false, nextStep: "Event ended" }),
+    })
+
+    const result = await executeByName(tools, "get_event_guide", {
+      section: "results",
+      offset: 0,
+    })
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        published: true,
+        total: 1,
+        items: [{ rank: 1, projectTitle: "Oat Agent", teamName: "Oats" }],
+      },
+    })
+    expect(JSON.stringify(result)).not.toContain("submissionId")
   })
 
   it("rejects a challenge reference after the challenge changes", async () => {

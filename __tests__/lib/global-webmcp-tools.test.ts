@@ -31,7 +31,14 @@ const attendeeContext = {
         { label: "API guide", url: "https://docs.example.com/api" },
       ],
     }],
-    resultsPublished: false,
+    resultsPublished: true,
+    results: [{
+      rank: 1,
+      projectTitle: "Helpful Agent",
+      teamName: "Builders",
+      weightedScore: 9.2,
+      prizes: [{ name: "Grand Prize", value: "$1,000" }],
+    }],
   },
   viewer: {
     signedIn: true,
@@ -363,6 +370,34 @@ describe("global WebMCP tools", () => {
     expect(status).toMatchObject({
       ok: true,
       data: { team: { name: "Builders" }, nextStep: "Review your project, then submit it." },
+    })
+    expect(onNavigate).not.toHaveBeenCalled()
+  })
+
+  it("reads published attendee results from the signed-in app", async () => {
+    const allTools = tools()
+    await execute(allTools, "list_my_attendee_events", { offset: 0 })
+    const results = await execute(allTools, "get_attendee_event_guide", {
+      eventRef: "attendee-1",
+      section: "results",
+      offset: 0,
+    })
+
+    expect(results).toMatchObject({
+      ok: true,
+      data: {
+        section: "results",
+        published: true,
+        total: 1,
+        nextOffset: null,
+        items: [{
+          rank: 1,
+          projectTitle: "Helpful Agent",
+          teamName: "Builders",
+          weightedScore: 9.2,
+          prizes: [{ name: "Grand Prize", value: "$1,000" }],
+        }],
+      },
     })
     expect(onNavigate).not.toHaveBeenCalled()
   })

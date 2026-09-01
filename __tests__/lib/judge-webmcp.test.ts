@@ -104,6 +104,34 @@ describe("judge WebMCP tools", () => {
     expect(tools.some((tool) => tool.name === "prepare_judge_scores")).toBe(true)
   })
 
+  it("returns the next unfinished assignment without exposing its ID", async () => {
+    const tools = createJudgeWebMcpTools({
+      slug: "safe-event",
+      assignments: [
+        { ...assignment, isComplete: true },
+        {
+          ...assignment,
+          id: "cccccccc-cccc-cccc-cccc-cccccccccccc",
+          submissionId: "dddddddd-dddd-dddd-dddd-dddddddddddd",
+          title: "Next project",
+        },
+      ],
+      getEditorInfo: () => null,
+      onOpen: () => {},
+      onPrepare: () => ({ prepared: false, message: "not ready" }),
+    })
+
+    const result = await execute(findTool(tools, "get_next_judge_assignment"))
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        assignment: { assignmentRef: "assignment-2", title: "Next project" },
+        remaining: 1,
+      },
+    })
+    expect(JSON.stringify(result)).not.toContain("cccccccc-cccc")
+  })
+
   it("paginates assignments with stable opaque cursors", async () => {
     const assignments = Array.from({ length: 5 }, (_, index) => ({
       ...assignment,

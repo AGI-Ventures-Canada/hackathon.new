@@ -41,6 +41,8 @@ export function ManageHackathonWebMcpTools({
   const router = useRouter()
   const {
     triggerTransition,
+    handleActionClick,
+    openRegisteredAction,
     hackathonStatus,
     activeItems,
     manageWebMcpView,
@@ -200,6 +202,23 @@ export function ManageHackathonWebMcpTools({
     [triggerTransition],
   )
   const onTasksChanged = useCallback(() => router.refresh(), [router])
+  const onOpenTask = useCallback((taskRef: string) => {
+    const item = activeItems.find((candidate) => candidate.id === taskRef)
+    if (!item || (!item.action && !item.tab)) return false
+    handleActionClick(item)
+    return true
+  }, [activeItems, handleActionClick])
+  const onOpenJudgingReview = useCallback((review: "setup" | "add_judge" | "rounds" | "assignments" | "progress" | "results") => {
+    const actionIds = {
+      setup: "finish-scoring-setup",
+      add_judge: "no-judges",
+      rounds: "activate-first-round",
+      assignments: "unassigned-submissions",
+      progress: "judging-incomplete",
+      results: "results-not-published",
+    } as const
+    return openRegisteredAction(actionIds[review])
+  }, [openRegisteredAction])
   const onPrepareSponsor = useCallback(async (name: string) => {
     const href = `/e/${context.hackathon.slug}/manage?tab=edit`
     const opened = await onNavigate(href, "sponsors")
@@ -252,6 +271,8 @@ export function ManageHackathonWebMcpTools({
           onNavigate,
           onPrepareSponsor,
           onTasksChanged,
+          onOpenTask,
+          onOpenJudgingReview,
           onOpenTransition: (status) =>
             actionRegistry.dispatch("openTransition", status),
           onOpenTestEventConversion: dispatchOpenTestEventConversion,
@@ -263,6 +284,8 @@ export function ManageHackathonWebMcpTools({
       onNavigate,
       onPrepareSponsor,
       onTasksChanged,
+      onOpenTask,
+      onOpenJudgingReview,
       registrationStatus,
     ],
   )

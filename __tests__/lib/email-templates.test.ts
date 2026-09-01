@@ -12,6 +12,7 @@ import WinnerNotificationEmail from "@/emails/winner-notification"
 import AgentNotificationEmail from "@/emails/agent-notification"
 import SponsorClaimNotificationEmail from "@/emails/sponsor-claim-notification"
 import OrganizerClaimNotificationEmail from "@/emails/organizer-claim-notification"
+import OrganizerReadinessReminderEmail from "@/emails/organizer-readiness-reminder"
 import JudgeInvitationReminderEmail from "@/emails/judge-invitation-reminder"
 import PreEventReminderEmail from "@/emails/pre-event-reminder"
 import PrizeShippedEmail from "@/emails/prize-shipped"
@@ -51,6 +52,7 @@ describe("Email Template Rendering", () => {
       JudgeInvitationEmail(JudgeInvitationEmail.PreviewProps),
       JudgeInvitationReminderEmail(JudgeInvitationReminderEmail.PreviewProps),
       OrganizerClaimNotificationEmail(OrganizerClaimNotificationEmail.PreviewProps),
+      OrganizerReadinessReminderEmail(OrganizerReadinessReminderEmail.PreviewProps),
       PostEventReminderEmail(PostEventReminderEmail.PreviewProps),
       PreEventReminderEmail(PreEventReminderEmail.PreviewProps),
       PrizeShippedEmail(PrizeShippedEmail.PreviewProps),

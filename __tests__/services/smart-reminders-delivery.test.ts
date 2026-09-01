@@ -8,6 +8,7 @@ import {
 const mockTeamReminder = mock(() => Promise.resolve({ success: true }))
 const mockJudgeReminder = mock(() => Promise.resolve({ success: true }))
 const mockEventReminder = mock(() => Promise.resolve({ sent: 1, failed: 0 }))
+const mockOrganizerReminder = mock(() => Promise.resolve({ sent: 1, failed: 0 }))
 
 mock.module("@/lib/email/team-invitations", () => ({
   sendTeamInvitationReminderEmail: mockTeamReminder,
@@ -17,6 +18,9 @@ mock.module("@/lib/email/judge-invitations", () => ({
 }))
 mock.module("@/lib/email/pre-event-reminders", () => ({
   sendPreEventReminderEmail: mockEventReminder,
+}))
+mock.module("@/lib/email/organizer-notifications", () => ({
+  sendOrganizerReadinessReminder: mockOrganizerReminder,
 }))
 
 const mockWithDeliveryLease = mock(async (
@@ -65,9 +69,11 @@ describe("smart reminder default delivery", () => {
     mockTeamReminder.mockClear()
     mockJudgeReminder.mockClear()
     mockEventReminder.mockClear()
+    mockOrganizerReminder.mockClear()
     mockTeamReminder.mockResolvedValue({ success: true })
     mockJudgeReminder.mockResolvedValue({ success: true })
     mockEventReminder.mockResolvedValue({ sent: 1, failed: 0 })
+    mockOrganizerReminder.mockResolvedValue({ sent: 1, failed: 0 })
   })
 
   it("dispatches team, judge, and event reminders with durable row ids", async () => {
@@ -98,6 +104,13 @@ describe("smart reminder default delivery", () => {
           recipientClerkUserId: "judge-user",
         },
       },
+      {
+        ...baseReminder,
+        id: "reminder_6",
+        entity_type: "hackathon_event" as const,
+        entity_id: "hack_1",
+        reminder_type: "organizer_judging_readiness" as const,
+      },
     ]
 
     for (const variant of variants) {
@@ -119,6 +132,10 @@ describe("smart reminder default delivery", () => {
       hackathonStartsAt: "2026-09-10T12:00:00.000Z",
       hackathonEndsAt: "2026-09-11T17:00:00.000Z",
       hackathonTimezone: "America/Toronto",
+    }))
+    expect(mockOrganizerReminder).toHaveBeenCalledWith(expect.objectContaining({
+      deliveryId: "reminder_6",
+      reminderType: "organizer_judging_readiness",
     }))
     expect(mockEventReminder).toHaveBeenCalledWith(expect.objectContaining({
       deliveryId: "reminder_3",
@@ -387,6 +404,12 @@ describe("smart reminder default delivery", () => {
       entity_type: "hackathon_event",
       entity_id: "hack_1",
       reminder_type: "judge_event_starting",
+    })).resolves.toBe(true)
+    await expect(validateReminderEntity({
+      ...baseReminder,
+      entity_type: "hackathon_event",
+      entity_id: "hack_1",
+      reminder_type: "organizer_event_readiness",
     })).resolves.toBe(true)
     await expect(validateReminderEntity({
       ...baseReminder,
