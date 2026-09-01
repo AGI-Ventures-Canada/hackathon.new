@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import dynamic from "next/dynamic"
 import { useIsClient } from "@/hooks/use-is-client"
 import { useRouter } from "next/navigation"
 import { useOptimisticMutation } from "@/hooks/use-optimistic-mutation"
@@ -8,10 +9,7 @@ import { assertOk } from "@/lib/utils/fetch"
 import { EditProvider, useEdit, SECTION_ORDER } from "./edit-context"
 import { useActionItemsOptional } from "@/components/hackathon/manage/action-items-context"
 import { EditableSection } from "./editable-section"
-import { FloatingActionBar } from "./floating-action-bar"
-import { OrganizerLogoPrompt } from "@/components/hackathon/organizer-logo-prompt"
 import { EventHero } from "@/components/hackathon/event-hero"
-import { BannerUpload } from "@/components/hackathon/banner-upload"
 import { SponsorSection } from "@/components/hackathon/sponsor-section"
 import { JudgeSection } from "@/components/hackathon/judge-section"
 import { PrizeSection } from "@/components/hackathon/prize-section"
@@ -33,14 +31,7 @@ import { PublicResults } from "@/components/hackathon/results/public-results"
 import { MarkdownContent } from "@/components/ui/markdown-content"
 import { TruncatableContent } from "./truncatable-content"
 import { canInviteTeamMembers as getCanInviteTeamMembers } from "@/lib/utils/team-invite"
-import { NameEditForm } from "@/components/hackathon/edit-drawer/name-edit-form"
-import { AboutEditForm } from "@/components/hackathon/edit-drawer/about-edit-form"
-import { TimelineEditForm } from "@/components/hackathon/edit-drawer/timeline-edit-form"
-import { LocationEditForm } from "@/components/hackathon/edit-drawer/location-edit-form"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
-import { SponsorsEditForm } from "@/components/hackathon/edit-drawer/sponsors-edit-form"
-import { CommunityEditForm } from "@/components/hackathon/edit-drawer/community-edit-form"
-import { JudgingSetupDialog } from "@/components/hackathon/judging/judging-setup-dialog"
 import type { PublicPrize } from "@/lib/services/public-hackathons"
 import type { PrizeType } from "@/lib/db/hackathon-types"
 import type { PublicResultWithDetails } from "@/lib/services/results"
@@ -63,6 +54,53 @@ import {
   PREPARE_SPONSOR_EVENT,
   type PrepareSponsorEvent,
 } from "@/lib/webmcp/client-events"
+
+const FloatingActionBar = dynamic(() =>
+  import("./floating-action-bar").then((module) => module.FloatingActionBar),
+)
+const OrganizerLogoPrompt = dynamic(() =>
+  import("@/components/hackathon/organizer-logo-prompt").then(
+    (module) => module.OrganizerLogoPrompt,
+  ),
+)
+const BannerUpload = dynamic(() =>
+  import("@/components/hackathon/banner-upload").then((module) => module.BannerUpload),
+)
+const NameEditForm = dynamic(() =>
+  import("@/components/hackathon/edit-drawer/name-edit-form").then(
+    (module) => module.NameEditForm,
+  ),
+)
+const AboutEditForm = dynamic(() =>
+  import("@/components/hackathon/edit-drawer/about-edit-form").then(
+    (module) => module.AboutEditForm,
+  ),
+)
+const TimelineEditForm = dynamic(() =>
+  import("@/components/hackathon/edit-drawer/timeline-edit-form").then(
+    (module) => module.TimelineEditForm,
+  ),
+)
+const LocationEditForm = dynamic(() =>
+  import("@/components/hackathon/edit-drawer/location-edit-form").then(
+    (module) => module.LocationEditForm,
+  ),
+)
+const SponsorsEditForm = dynamic(() =>
+  import("@/components/hackathon/edit-drawer/sponsors-edit-form").then(
+    (module) => module.SponsorsEditForm,
+  ),
+)
+const CommunityEditForm = dynamic(() =>
+  import("@/components/hackathon/edit-drawer/community-edit-form").then(
+    (module) => module.CommunityEditForm,
+  ),
+)
+const JudgingSetupDialog = dynamic(() =>
+  import("@/components/hackathon/judging/judging-setup-dialog").then(
+    (module) => module.JudgingSetupDialog,
+  ),
+)
 
 interface HackathonPreviewClientProps {
   hackathon: PublicHackathon
@@ -969,7 +1007,7 @@ function HackathonPreviewContent({
 
   return (
     <>
-      {showActionBar && (
+      {showActionBar && isEditable && (
         <FloatingActionBar isOrganizer={isEditable} />
       )}
       <div className="pb-16">

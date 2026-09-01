@@ -42,7 +42,7 @@ import { ChallengesTab } from "@/components/hackathon/manage/challenges-tab"
 import { PerksTab } from "@/components/hackathon/manage/perks-tab"
 import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { TabCount } from "@/components/ui/tab-count"
-import { TabsUrlSync } from "@/components/ui/tabs-url-sync"
+import { TabsPendingFallback, TabsUrlSync } from "@/components/ui/tabs-url-sync"
 import { JudgingTabContent } from "./_judging-tab"
 import { PostEventTabContent } from "./_post-event-tab"
 import { EventTabContent } from "./_event-tab"
@@ -411,13 +411,16 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
               <TabsTrigger value="miscs">More</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="action-items" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="action_items">
-              <ActionItemsTab />
-            </TabsContent>
+            {activeTab === "action-items" && (
+              <TabsContent value="action-items" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="action_items">
+                <ActionItemsTab />
+              </TabsContent>
+            )}
 
-            <TabsContent value="overview" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="overview schedule">
-              <div className="space-y-4">
-                <LifecycleStepper
+            {activeTab === "overview" && (
+              <TabsContent value="overview" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="overview schedule">
+                <div className="space-y-4">
+                  <LifecycleStepper
                   hackathonId={hackathon.id}
                   hackathonSlug={hackathon.slug}
                   status={hackathon.status}
@@ -438,7 +441,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
                   judgeDisplayCount={judgeDisplayCount}
                   phase={hackathon.phase}
                 />
-                <TimeRemainingBar
+                  <TimeRemainingBar
                   status={hackathon.status}
                   registrationOpensAt={hackathon.registration_opens_at}
                   registrationClosesAt={hackathon.registration_closes_at}
@@ -446,8 +449,8 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
                   endsAt={hackathon.ends_at}
                   submissionDeadline={submissionDeadline}
                 />
-                <div data-webmcp-section="schedule">
-                  <OrganizerOverview
+                  <div data-webmcp-section="schedule">
+                    <OrganizerOverview
                     slug={hackathon.slug}
                     hackathonId={hackathon.id}
                     stats={{
@@ -463,13 +466,15 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
                     hackathonStartsAt={hackathon.starts_at}
                     hackathonEndsAt={hackathon.ends_at}
                     hackathonStatus={hackathon.status}
-                  />
+                    />
+                  </div>
                 </div>
-              </div>
-            </TabsContent>
+              </TabsContent>
+            )}
 
-            <TabsContent value="challenges" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="challenges">
-              <ChallengesTab
+            {activeTab === "challenges" && (
+              <TabsContent value="challenges" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="challenges">
+                <ChallengesTab
                 hackathonId={hackathon.id}
                 initialChallenges={challenges}
                 releasedAt={hackathon.challenge_released_at}
@@ -477,31 +482,36 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
                 hackathonStartsAt={hackathon.starts_at}
                 hackathonEndsAt={hackathon.ends_at}
                 hackathonStatus={hackathon.status}
-              />
-            </TabsContent>
+                />
+              </TabsContent>
+            )}
 
-            <TabsContent value="perks" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="perks">
-              <PerksTab
+            {activeTab === "perks" && (
+              <TabsContent value="perks" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="perks">
+                <PerksTab
                 hackathonId={hackathon.id}
                 initialPerks={perks}
                 sponsors={hackathon.sponsors.map((s) => ({ id: s.id, name: s.name }))}
                 startsAt={hackathon.starts_at}
                 perksNone={hackathon.perks_none ?? false}
-              />
-            </TabsContent>
+                />
+              </TabsContent>
+            )}
 
-            <TabsContent value="edit" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="event_page sponsors">
-              <div className="rounded-lg border overflow-hidden">
-                <HackathonPreviewClient
+            {activeTab === "edit" && (
+              <TabsContent value="edit" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="event_page sponsors">
+                <div className="rounded-lg border overflow-hidden">
+                  <HackathonPreviewClient
                   hackathon={hackathon}
                   isEditable={true}
                   currentUserId={userId}
                   availableLocales={locales}
                   currentLocale={currentLocale}
                   notificationDisposition={notificationDisposition}
-                />
-              </div>
-            </TabsContent>
+                  />
+                </div>
+              </TabsContent>
+            )}
 
             <TabsContent value="judging" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="judging">
               <Suspense fallback={<TabLoadingSkeleton />}>
@@ -531,8 +541,9 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
               </Suspense>
             </TabsContent>
 
-            <TabsContent value="teams" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="teams projects">
-              <TeamsTab
+            {activeTab === "teams" && (
+              <TabsContent value="teams" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="teams projects">
+                <TeamsTab
                 hackathonId={hackathon.id}
                 maxTeamSize={hackathon.max_team_size ?? 5}
                 minTeamSize={hackathon.min_team_size ?? 1}
@@ -541,31 +552,41 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
                 hackathonStatus={hackathon.stored_status ?? hackathon.status}
                 notificationDisposition={notificationDisposition}
                 queueReason={teamInvitationQueueReason}
-              />
-            </TabsContent>
+                />
+              </TabsContent>
+            )}
 
-            <TabsContent value="people" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="people">
-              <Suspense fallback={<TabLoadingSkeleton />}>
-                <PeopleTab
+            {activeTab === "people" && (
+              <TabsContent value="people" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="people">
+                <Suspense fallback={<TabLoadingSkeleton />}>
+                  <PeopleTab
                   hackathonId={hackathon.id}
                   hackathonStatus={hackathon.stored_status ?? hackathon.status}
                   notificationDisposition={notificationDisposition}
-                />
-              </Suspense>
-            </TabsContent>
+                  />
+                </Suspense>
+              </TabsContent>
+            )}
 
-            <TabsContent value="miscs" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="miscs">
-              <MiscsTabContent
+            {activeTab === "miscs" && (
+              <TabsContent value="miscs" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="miscs">
+                <MiscsTabContent
                 hackathonId={hackathon.id}
                 activeMtab={activeMtab}
                 requireTermsAcceptance={hackathon.require_terms_acceptance ?? false}
                 termsContent={hackathon.terms_content ?? null}
-              />
-            </TabsContent>
+                />
+              </TabsContent>
+            )}
 
-            <TabsContent value="event" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="communications">
-              <EventTabContent hackathonId={hackathon.id} activeEtab={activeEtab} hackathonStatus={hackathon.status} hackathonPhase={hackathon.phase} />
-            </TabsContent>
+            {activeTab === "event" && (
+              <TabsContent value="event" forceMount className="data-[state=inactive]:hidden" data-webmcp-section="communications">
+                <EventTabContent hackathonId={hackathon.id} activeEtab={activeEtab} hackathonStatus={hackathon.status} hackathonPhase={hackathon.phase} />
+              </TabsContent>
+            )}
+            <TabsPendingFallback serverValue={activeTab}>
+              <TabLoadingSkeleton />
+            </TabsPendingFallback>
           </ActionItemsLayout>
         </TabsUrlSync>
       </ActionItemsProvider>

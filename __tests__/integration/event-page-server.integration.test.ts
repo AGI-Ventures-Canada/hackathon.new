@@ -250,7 +250,7 @@ describe("public event server page", () => {
     const tools = childFor(result, mockEventTools)
     const preview = childFor(result, mockPreview)
 
-    expect(mockGetPublicHackathon).toHaveBeenCalledWith("test-event", undefined)
+    expect(mockGetPublicHackathon).toHaveBeenCalledWith("test-event")
     expect(tools.props.viewer).toEqual(expect.objectContaining({
       signedIn: false,
       registered: false,

@@ -323,7 +323,7 @@ describe("HackathonPreviewClient WebMCP convergence", () => {
     expect(screen.getByRole("button", { name: "Community" })).toBeDefined()
   })
 
-  it("prepares a sponsor only for the organizer preview", () => {
+  it("prepares a sponsor only for the organizer preview", async () => {
     const view = render(preview(baseHackathon, false))
     expect(dispatchPrepareSponsorAction("Acme")).toMatchObject({
       ok: false,
@@ -337,7 +337,9 @@ describe("HackathonPreviewClient WebMCP convergence", () => {
     activeSection = "sponsors"
     editMode = true
     view.rerender(preview(baseHackathon, true))
-    expect(captures["sponsors-form"].preparedName).toBe("Acme")
+    await waitFor(() => {
+      expect(captures["sponsors-form"].preparedName).toBe("Acme")
+    })
   })
 
   it("does not tell captains they can invite after invitations close", () => {

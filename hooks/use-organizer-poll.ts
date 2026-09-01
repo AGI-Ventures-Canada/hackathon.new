@@ -7,6 +7,7 @@ export const STALE_THRESHOLD = 3
 
 interface UseOrganizerPollOptions {
   interval?: number
+  initialDelay?: number
   enabled?: boolean
 }
 
@@ -45,7 +46,7 @@ export function useOrganizerPoll(
   hackathonId: string,
   options?: UseOrganizerPollOptions
 ) {
-  const { interval = 30000, enabled = true } = options ?? {}
+  const { interval = 30000, initialDelay = 5000, enabled = true } = options ?? {}
   const [data, setData] = useState<OrganizerPollResponse | null>(null)
   const [isStale, setIsStale] = useState(false)
   const stateRef = useRef<PollState>({ data: null, isStale: false, failCount: 0 })
@@ -65,7 +66,7 @@ export function useOrganizerPoll(
   useEffect(() => {
     if (!enabled) return
 
-    const initialPoll = setTimeout(poll, 0)
+    const initialPoll = setTimeout(poll, Math.min(initialDelay, interval))
     const id = setInterval(poll, interval)
 
     const onVisibilityChange = () => {
@@ -79,7 +80,7 @@ export function useOrganizerPoll(
       document.removeEventListener("visibilitychange", onVisibilityChange)
       abortRef.current?.abort()
     }
-  }, [poll, interval, enabled])
+  }, [poll, interval, initialDelay, enabled])
 
   const refresh = useCallback(() => { poll() }, [poll])
 

@@ -25,7 +25,9 @@ const JudgingTabContent = boundary("JudgingTabContent")
 const EventTabContent = boundary("EventTabContent")
 const TeamsTab = boundary("TeamsTab")
 const TabsUrlSync = boundary("TabsUrlSync")
+const TabsPendingFallback = boundary("TabsPendingFallback")
 const TabsList = boundary("TabsList")
+const TabsContent = boundary("TabsContent")
 
 const componentModules: Array<[string, Record<string, ComponentType<Props>>]> = [
   ["@/components/hackathon/preview/hackathon-preview-client", { HackathonPreviewClient }],
@@ -49,11 +51,11 @@ const componentModules: Array<[string, Record<string, ComponentType<Props>>]> = 
   ["@/components/hackathon/manage/status-badge-menu", { StatusBadgeMenu: boundary("StatusBadgeMenu") }],
   ["@/components/hackathon/manage/challenges-tab", { ChallengesTab: boundary("ChallengesTab") }],
   ["@/components/hackathon/manage/perks-tab", { PerksTab: boundary("PerksTab") }],
-  ["@/components/ui/tabs-url-sync", { TabsUrlSync }],
+  ["@/components/ui/tabs-url-sync", { TabsPendingFallback, TabsUrlSync }],
   [
     "@/components/ui/tabs",
     {
-      TabsContent: boundary("TabsContent"),
+      TabsContent,
       TabsList,
       TabsTrigger: boundary("TabsTrigger"),
     },
@@ -426,11 +428,26 @@ describe("manage page boundary", () => {
     ])
     expect(JSON.stringify(judging.props.submissions)).not.toContain("Private Team")
     expect(findElement(result, TabsUrlSync).props.value).toBe("edit")
-    expect(findElement(result, TabsList).props.className).toContain("flex-wrap")
-    expect(findElement(result, TeamsTab).props.hackathonStatus).toBe("draft")
-    expect(findElement(result, EventTabContent).props.hackathonStatus).toBe(
-      "draft",
+    expect(findElement(result, TabsPendingFallback).props.serverValue).toBe(
+      "edit",
     )
+    expect(findElement(result, TabsList).props.className).toContain("flex-wrap")
+    expect(findElementOrNull(result, TeamsTab)).toBeNull()
+    expect(findElementOrNull(result, EventTabContent)).toBeNull()
+    const mountedTabValues = Children.toArray(
+      findElement(result, TabsUrlSync).props.children,
+    )
+      .flatMap((child) =>
+        isValidElement<Props>(child)
+          ? Children.toArray(child.props.children)
+          : [],
+      )
+      .filter(
+        (child): child is ReactElement<Props> =>
+          isValidElement<Props>(child) && child.type === TabsContent,
+      )
+      .map((child) => child.props.value)
+    expect(mountedTabValues).toEqual(["edit", "judging", "post-event"])
     expect(getOrganizerActionItems).toHaveBeenCalledWith(
       expect.objectContaining({
         status: "draft",
@@ -465,12 +482,21 @@ describe("manage page boundary", () => {
     })
 
     expect(findElement(result, TabsUrlSync).props.value).toBe("action-items")
-    expect(findElement(result, HackathonPreviewClient).props.currentLocale).toBe(
-      "en",
-    )
+    expect(findElementOrNull(result, HackathonPreviewClient)).toBeNull()
     expect(applyHackathonTranslation).toHaveBeenCalledWith(
       expect.objectContaining({ id: "event-1" }),
       "en",
     )
+  })
+
+  it("mounts the selected settings section without mounting other heavy tabs", async () => {
+    const result = await ManagePage({
+      params: Promise.resolve({ slug: "build-day" }),
+      searchParams: Promise.resolve({ tab: "teams" }),
+    })
+
+    expect(findElement(result, TeamsTab).props.hackathonStatus).toBe("draft")
+    expect(findElementOrNull(result, EventTabContent)).toBeNull()
+    expect(findElementOrNull(result, HackathonPreviewClient)).toBeNull()
   })
 })

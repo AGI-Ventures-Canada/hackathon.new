@@ -3,7 +3,11 @@ import { render, screen, cleanup, act } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
 import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { TabsUrlSync, useOptimisticTab } from "@/components/ui/tabs-url-sync"
+import {
+  TabsPendingFallback,
+  TabsUrlSync,
+  useOptimisticTab,
+} from "@/components/ui/tabs-url-sync"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const g = globalThis as any
@@ -17,6 +21,9 @@ function Harness({ value }: { value: string }) {
   return (
     <TabsUrlSync paramKey="tab" value={value}>
       <DisplayActive />
+      <TabsPendingFallback serverValue={value}>
+        <span>Loading next section</span>
+      </TabsPendingFallback>
       <TabsList>
         <TabsTrigger value="one">One</TabsTrigger>
         <TabsTrigger value="two">Two</TabsTrigger>
@@ -63,6 +70,7 @@ describe("TabsUrlSync", () => {
     const [url, opts] = g.__nextNavState.router.replace.mock.calls[0]
     expect(url).toBe("/admin/components?tab=two")
     expect(opts).toEqual({ scroll: false })
+    expect(screen.getByText("Loading next section")).toBeTruthy()
   })
 
   it("preserves unrelated searchParams when switching tabs", async () => {
