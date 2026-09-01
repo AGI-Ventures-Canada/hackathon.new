@@ -3,6 +3,7 @@
 import { Suspense } from "react";
 import { OptimizedImage } from "@/components/ui/optimized-image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Clock, Moon, Sun, Calendar, CalendarDays, Zap, MapPin, Video, Settings, Scale, Pencil } from "lucide-react";
@@ -227,6 +228,7 @@ export function EventHero({
   currentLocale,
 }: EventHeroProps) {
   const isClient = useIsClient();
+  const router = useRouter();
   const displayTimeZone = isClient ? undefined : "UTC";
   const durationInfo = getDurationInfo(startsAt, endsAt, displayTimeZone);
   const timeRange = formatTimeRange(startsAt, endsAt, displayTimeZone);
@@ -458,14 +460,24 @@ export function EventHero({
       {isOrganizer && hackathonSlug ? (
         <div className="flex flex-wrap items-center gap-2">
           <Button asChild>
-            <Link href={`/e/${hackathonSlug}/manage`}>
+            <Link
+              href={`/e/${hackathonSlug}/manage`}
+              prefetch={false}
+              onPointerEnter={() => router.prefetch(`/e/${hackathonSlug}/manage`)}
+              onFocus={() => router.prefetch(`/e/${hackathonSlug}/manage`)}
+            >
               <Settings className="size-4" />
               Manage
             </Link>
           </Button>
           {isJudge && isPersonalWorkspace && (
             <Button variant="outline" asChild>
-              <Link href={`/e/${hackathonSlug}/judge`}>
+              <Link
+                href={`/e/${hackathonSlug}/judge`}
+                prefetch={false}
+                onPointerEnter={() => router.prefetch(`/e/${hackathonSlug}/judge`)}
+                onFocus={() => router.prefetch(`/e/${hackathonSlug}/judge`)}
+              >
                 <Scale className="size-4" />
                 Judge
               </Link>
