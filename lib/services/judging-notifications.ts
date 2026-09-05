@@ -95,7 +95,7 @@ async function loadContext(hackathonId: string) {
   const [event, judges, assignments, rounds, visibility] = await Promise.all([
     client.from("hackathons").select(eventColumns).eq("id", hackathonId).maybeSingle(),
     client.from("hackathon_participants").select("id,clerk_user_id,role,team_id,judging_scope_ready").eq("hackathon_id", hackathonId).in("role", ["judge", "organizer"]),
-    client.from("judge_assignments").select("id,judge_participant_id,is_complete,round_id,submission_id,prize_id,prize:prizes(judging_style),submission:submissions!inner(team_id,status)").eq("hackathon_id", hackathonId),
+    client.from("judge_assignments").select("id,judge_participant_id,is_complete,round_id,submission_id,prize_id,prize:prizes!judge_assignments_prize_id_fkey(judging_style),submission:submissions!judge_assignments_submission_id_fkey!inner(team_id,status)").eq("hackathon_id", hackathonId),
     client.from("judging_rounds").select("id,status,opens_at,closes_at").eq("hackathon_id", hackathonId),
     client.rpc("get_judging_visible_assignment_ids", { p_hackathon_id: hackathonId }),
   ])

@@ -54,6 +54,25 @@ describe("getBatchJudgeStats", () => {
     expect(stats.actionableAssignments).toBe(1)
   })
 
+  it("uses the direct prize relation when coverage creates another route to prizes", async () => {
+    const assignments = createChainableMock({ data: [], error: null })
+    let selection = ""
+    assignments.select.mockImplementation((...args: unknown[]) => { selection = String(args[0]); return assignments })
+    assignments.then = (resolve) => selection.includes("prizes!judge_assignments_prize_id_fkey(")
+      ? resolve({ data: [{ id: "a1", judge_participant_id: "p1", hackathon_id: "h1", prize_id: "prize", is_complete: false, prize: { judging_style: "judges_pick" }, submission: { status: "submitted" } }], error: null })
+      : resolve({ data: null, error: { code: "PGRST201", message: "Multiple prize relationships" } })
+    setMockFromImplementation((table) => table === "judge_assignments" ? assignments : createChainableMock({
+      data: table === "hackathon_participants" ? [{ id: "p1", hackathon_id: "h1" }]
+        : table === "hackathons" ? [{ id: "h1", status: "judging" }] : [],
+      error: null,
+    }))
+
+    const result = await getBatchJudgeStats(["h1"], "user_1")
+
+    expect(result.get("h1")).toMatchObject({ totalAssignments: 1, actionableAssignments: 1 })
+    expect(selection).toContain("submissions!judge_assignments_submission_id_fkey!inner(")
+  })
+
   it("handles multiple hackathons", async () => {
     setMockFromImplementation((table) => {
       if (table === "hackathon_participants") {

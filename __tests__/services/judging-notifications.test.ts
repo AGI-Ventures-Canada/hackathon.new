@@ -81,6 +81,9 @@ function memoryStore(now: Date) {
     chain.maybeSingle.mockImplementation(() => { single = true; return chain })
     chain.single.mockImplementation(() => { single = true; return chain })
     chain.then = (resolve) => {
+      if (table === "judge_assignments" && selected.includes("prize:prizes(")) {
+        return resolve({ data: null, error: { code: "PGRST201", message: "Choose the direct prize relation or coverage relation." } })
+      }
       rows[table] ??= []
       const matches = rows[table].filter((row) => filters.every((filter) => filter(row)))
       if (insert) {

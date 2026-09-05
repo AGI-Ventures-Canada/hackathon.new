@@ -32,7 +32,7 @@ export async function getBatchJudgeStats(
   const participantIds = participants.map((p: { id: string }) => p.id)
   const [assignmentResult, eventResult, roundResult] = await Promise.all([
     client.from("judge_assignments")
-      .select("id,judge_participant_id,hackathon_id,submission_id,is_complete,round_id,prize_id,prize:prizes(judging_style),submission:submissions!inner(team_id,status)")
+      .select("id,judge_participant_id,hackathon_id,submission_id,is_complete,round_id,prize_id,prize:prizes!judge_assignments_prize_id_fkey(judging_style),submission:submissions!judge_assignments_submission_id_fkey!inner(team_id,status)")
       .in("judge_participant_id", participantIds),
     client.from("hackathons").select("id,status,phase,results_published_at,judging_opens_at,judging_closes_at").in("id", hackathonIds),
     client.from("judging_rounds").select("id,hackathon_id,status,opens_at,closes_at").in("hackathon_id", hackathonIds),
