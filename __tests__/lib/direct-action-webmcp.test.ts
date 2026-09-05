@@ -34,6 +34,32 @@ function setup(handler: (url: string, init?: RequestInit) => Promise<Response> =
 }
 
 describe("direct WebMCP actions", () => {
+  it("keeps action identities stable when the catalog gains or loses routes", () => {
+    const before = getDirectActions(document)
+    const after = getDirectActions({ ...document, paths: {
+      "/api/dashboard/hackathons/aaa-new-route": { get: {}, post: {} }, ...document.paths,
+    } })
+    for (const action of before) {
+      expect(after.find((item) => item.path === action.path && item.method === action.method)?.ref).toBe(action.ref)
+    }
+    expect(new Set(after.map((action) => action.ref)).size).toBe(after.length)
+  })
+
+  it("rejects old record and result references in a new session even after new records were read", async () => {
+    const first = setup(async () => Response.json({ id: eventId }))
+    const old = await first.execute("execute_event_action", { actionRef: first.ref("/api/dashboard/hackathons", "GET") })
+    const oldRef = JSON.parse(old.data.text).id
+    const second = setup(async () => Response.json({ id: "22222222-2222-4222-8222-222222222222" }))
+    const current = await second.execute("execute_event_action", { actionRef: second.ref("/api/dashboard/hackathons", "GET") })
+    expect(JSON.parse(current.data.text).id).not.toBe(oldRef)
+    const write = await second.execute("execute_event_action", {
+      actionRef: second.ref("/api/dashboard/hackathons/{id}/results/publish", "POST"), path: JSON.stringify({ id: oldRef }), requestKey: "stale-session-write",
+    })
+    expect(write.error.code).toBe("unknown_reference")
+    expect((await second.execute("read_action_result", { resultRef: old.data.resultRef })).error.code).toBe("result_expired")
+    expect(second.fetcher).toHaveBeenCalledTimes(2)
+  })
+
   it("binds declared organization inputs to the current session without a GUI lookup", async () => {
     const requests: RequestInit[] = []
     const doc = { paths: { "/api/dashboard/hackathons/test-event": { post: {
@@ -48,9 +74,9 @@ describe("direct WebMCP actions", () => {
       },
     })
     const execute = tools.find((tool) => tool.name === "execute_event_action")!
-    expect(await execute.execute({ actionRef: "action-1", body: '{"stage":"registration"}', requestKey: "auto-org-context" })).toMatchObject({ ok: true })
+    expect(await execute.execute({ actionRef: getDirectActions(doc)[0].ref, body: '{"stage":"registration"}', requestKey: "auto-org-context" })).toMatchObject({ ok: true })
     expect(JSON.parse(requests[0].body as string)).toEqual({ stage: "registration", expectedOrganizationId: "org_current" })
-    await execute.execute({ actionRef: "action-1", body: '{"expectedOrganizationId":"org_explicit"}', requestKey: "explicit-org-context" })
+    await execute.execute({ actionRef: getDirectActions(doc)[0].ref, body: '{"expectedOrganizationId":"org_explicit"}', requestKey: "explicit-org-context" })
     expect(JSON.parse(requests[1].body as string).expectedOrganizationId).toBe("org_explicit")
   })
 
@@ -90,10 +116,11 @@ describe("direct WebMCP actions", () => {
       return Response.json(init?.method === "GET" ? { hackathons: [{ id: eventId, name: "Synthetic event" }] } : { published: true })
     })
     const read = await s.execute("execute_event_action", { actionRef: s.ref("/api/dashboard/hackathons", "GET") })
-    expect(read.data.text).toContain('"id":"ref_1"')
+    const eventRef = JSON.parse(read.data.text).hackathons[0].id
+    expect(eventRef).toMatch(/^ref_[a-f0-9]{32}_1$/)
     expect(read.data.text).not.toContain(eventId)
     const published = await s.execute("execute_event_action", {
-      actionRef: s.ref("/api/dashboard/hackathons/{id}/results/publish", "POST"), path: '{"id":"ref_1"}', requestKey: "publish-unique",
+      actionRef: s.ref("/api/dashboard/hackathons/{id}/results/publish", "POST"), path: JSON.stringify({ id: eventRef }), requestKey: "publish-unique",
     })
     expect(published.ok).toBe(true)
     expect(published.data.text).toBe('{"published":true}')
