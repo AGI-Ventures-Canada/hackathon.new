@@ -14,11 +14,11 @@ The catalog loads the deployed OpenAPI schema. It covers event creation/import, 
 
 1. Call `list_event_actions` with search words and optional `writesOnly`.
 2. Read `get_event_action` pages until `nextOffset` is null. Supply its path/query/body inputs as JSON strings. Declared expectedOrganizationId fields use the active organization automatically unless explicitly supplied.
-3. Read event records through `execute_event_action` GET actions to obtain session-scoped `ref_N` identifiers. These refs can be used in nested body fields and path parameters.
+3. Read event records through `execute_event_action` GET actions to obtain session-scoped `ref_<session>_N` identifiers. These refs can be used in nested body fields and path parameters.
 4. Run the write using `execute_event_action` with a unique `requestKey`. File uploads accept base64 bytes, a field name, filename, and media type; server upload validation still applies.
 5. Read all result pages with `read_action_result`. This does not repeat the action. Preserve the API's queued/sent/failed result.
 
-Identical writes with the same key share one request in the current session. Changed input with the same key is rejected. This is session deduplication, not a durable API-wide exactly-once guarantee. Never retry a write with a new key after a lost response without reading current state. A reload starts a new session. Results and refs are reset on identity or organization changes.
+Identical writes with the same key share one request in the current session. Changed input with the same key is rejected. This is session deduplication, not a durable API-wide exactly-once guarantee. Never retry a write with a new key after a lost response without reading current state. A reload starts a new session. Action references are stable across catalog changes. Record and result references carry a random session namespace, so stale values are rejected after reloads or identity/organization changes.
 
 ## Tool inventory
 
