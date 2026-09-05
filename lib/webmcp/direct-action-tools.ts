@@ -28,6 +28,15 @@ const allowedPaths = [
 ]
 const methods = new Set(["get", "post", "patch", "put", "delete"])
 
+function actionReference(method: string, path: string) {
+  let hash = BigInt("14695981039346656037")
+  for (const character of `${method}:${path}`) {
+    hash ^= BigInt(character.charCodeAt(0))
+    hash = BigInt.asUintN(64, hash * BigInt("1099511628211"))
+  }
+  return `action-${hash.toString(16)}`
+}
+
 export function getDirectActions(document: ActionDocument): Action[] {
   return Object.entries(document.paths).sort(([a], [b]) => a.localeCompare(b))
     .filter(([path]) => allowedPaths.some((pattern) => pattern.test(path))
@@ -35,7 +44,7 @@ export function getDirectActions(document: ActionDocument): Action[] {
     .flatMap(([path, operations]) => Object.entries(operations)
       .filter(([method]) => methods.has(method))
       .map(([method, operation]) => ({ path, method: method.toUpperCase(), operation })))
-    .map((action, index) => ({ ...action, ref: `action-${index + 1}` }))
+    .map((action) => ({ ...action, ref: actionReference(action.method, action.path) }))
 }
 
 function fail(code: string, message: string): never {
@@ -84,6 +93,8 @@ export function createDirectActionTools(dependencies: {
   const results = new Map<string, string>()
   const requests = new Map<string, { fingerprint: string; result: Promise<ReturnType<typeof saveResult>> }>()
   let nextResult = 1
+  let namespace: string | undefined
+  const sessionNamespace = () => namespace ??= crypto.randomUUID().replaceAll("-", "")
 
   const checkSession = () => {
     if (dependencies.isCurrent?.() === false) fail("session_changed", "Your account or organization changed. Discover the actions again.")
@@ -110,7 +121,7 @@ export function createDirectActionTools(dependencies: {
     if (typeof value === "string" && (/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(value) || /^(user|org)_[A-Za-z0-9]+$/.test(value))) {
       let ref = reverseRefs.get(value)
       if (!ref) {
-        ref = `ref_${refs.size + 1}`
+        ref = `ref_${sessionNamespace()}_${refs.size + 1}`
         refs.set(ref, value)
         reverseRefs.set(value, ref)
       }
@@ -121,7 +132,7 @@ export function createDirectActionTools(dependencies: {
     return value
   }
   const decode = (value: Json): Json => {
-    if (typeof value === "string" && /^ref_\d+$/.test(value)) {
+    if (typeof value === "string" && /^ref_(?:[a-f0-9]{32}_)?\d+$/.test(value)) {
       return refs.get(value) ?? fail("unknown_reference", "Read the event data again to get a current reference.")
     }
     if (Array.isArray(value)) return value.map(decode)
@@ -129,14 +140,14 @@ export function createDirectActionTools(dependencies: {
     return value
   }
   function saveResult(value: Json, httpStatus: number) {
-    const resultRef = `result-${nextResult++}`
+    const resultRef = `result-${sessionNamespace()}-${nextResult++}`
     const text = JSON.stringify(encode(value))
     results.set(resultRef, text)
     if (results.size > 100) results.delete(results.keys().next().value!)
     return { httpStatus, resultRef, ...textPage(text, 0) }
   }
   const offset = z.number().int().min(0).max(10_000_000).default(0)
-  const actionRef = z.string().regex(/^action-\d+$/).max(30)
+  const actionRef = z.string().regex(/^action-[a-f0-9]+$/).max(30)
   return [
     defineWebMcpTool({
       name: "list_event_actions",
@@ -156,7 +167,7 @@ export function createDirectActionTools(dependencies: {
     }),
     defineWebMcpTool({
       name: "get_event_action",
-      description: "Read an action's path/query parameters and body schema as paged JSON. Follow nextOffset until null. Use returned ref_N values from API reads in place of IDs. File uploads use upload descriptors in execute_event_action.",
+      description: "Read an action's path/query parameters and body schema as paged JSON. Follow nextOffset until null. Use returned record references from API reads in place of IDs. File uploads use upload descriptors in execute_event_action.",
       schema: z.object({ actionRef, offset }).strict(),
       annotations: { readOnlyHint: true },
       execute: async ({ actionRef, offset }) => {
@@ -280,7 +291,7 @@ export function createDirectActionTools(dependencies: {
     defineWebMcpTool({
       name: "read_action_result",
       description: "Read another page of a previous API response without executing it again. Results contain only data the API authorized for this session. Follow nextOffset until null.",
-      schema: z.object({ resultRef: z.string().max(30), offset }).strict(),
+      schema: z.object({ resultRef: z.string().max(80), offset }).strict(),
       annotations: { readOnlyHint: true, untrustedContentHint: true },
       execute: ({ resultRef, offset }) => {
         checkSession()
