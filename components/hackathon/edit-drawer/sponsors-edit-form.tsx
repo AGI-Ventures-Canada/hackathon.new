@@ -660,10 +660,11 @@ export function SponsorsEditForm({
     <div className="space-y-6" onKeyDown={handleKeyDown}>
       <FieldGroup>
         <Field>
-          <FieldLabel>Add Sponsor</FieldLabel>
+          <FieldLabel htmlFor="sponsor-name">Add sponsor</FieldLabel>
           <div className="relative">
             <Input
               autoFocus
+              id="sponsor-name"
               placeholder="Sponsor organization name..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -899,6 +900,7 @@ export function SponsorsEditForm({
                       type="button"
                       variant="ghost"
                       size="sm"
+                      aria-label={`Remove ${displayName}`}
                       onClick={() => handleDeleteSponsor(sponsor.id)}
                       className="text-destructive hover:text-destructive hover:bg-destructive/10 h-8 w-8 p-0"
                     >

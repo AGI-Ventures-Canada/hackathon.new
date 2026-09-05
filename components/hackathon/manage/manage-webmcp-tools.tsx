@@ -257,6 +257,13 @@ export function ManageHackathonWebMcpTools({
     onReverted,
   ])
 
+  const [reviewRegistry] = useState(() =>
+    new WebMcpActionRegistry({ onOpenTask, onOpenJudgingReview }, {}),
+  )
+  useEffect(() => {
+    reviewRegistry.update({ onOpenTask, onOpenJudgingReview }, {})
+  }, [reviewRegistry, onOpenTask, onOpenJudgingReview])
+
   const tools = useMemo(
     () =>
       createManageHackathonTools(
@@ -272,8 +279,8 @@ export function ManageHackathonWebMcpTools({
           onNavigate,
           onPrepareSponsor,
           onTasksChanged,
-          onOpenTask,
-          onOpenJudgingReview,
+          onOpenTask: (taskRef) => reviewRegistry.getContext().onOpenTask(taskRef),
+          onOpenJudgingReview: (review) => reviewRegistry.getContext().onOpenJudgingReview(review),
           onOpenTransition: (status) =>
             actionRegistry.dispatch("openTransition", status),
           onOpenTestEventConversion: dispatchOpenTestEventConversion,
@@ -285,8 +292,7 @@ export function ManageHackathonWebMcpTools({
       onNavigate,
       onPrepareSponsor,
       onTasksChanged,
-      onOpenTask,
-      onOpenJudgingReview,
+      reviewRegistry,
       registrationStatus,
     ],
   )
