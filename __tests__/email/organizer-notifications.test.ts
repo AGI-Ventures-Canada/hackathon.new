@@ -51,6 +51,22 @@ mock.module("@/lib/services/organizer-action-items", () => ({
   getOrganizerTaskBoard: mockGetOrganizerTaskBoard,
 }))
 
+const deliveredRecipients = new Set<string>()
+mock.module("@/lib/services/delivery-budget", () => ({
+  consumeDeliverySlot: (budget?: { remainingRecipients: number }) => {
+    if (!budget) return true
+    if (budget.remainingRecipients <= 0) return false
+    budget.remainingRecipients--
+    return true
+  },
+  selectPendingDeliveryTasks: async (key: string, tasks: string[], _getKey: unknown, budget?: { remainingRecipients: number }) => {
+    const pending = tasks.filter((email) => !deliveredRecipients.has(`${key}/${email}`))
+    const selected = pending.slice(0, budget?.remainingRecipients ?? pending.length)
+    return { tasks: selected, deferred: selected.length < pending.length }
+  },
+  markDeliveryTaskComplete: async (key: string, email: string) => { deliveredRecipients.add(`${key}/${email}`) },
+}))
+
 const { sendOrganizerClaimNotification, sendOrganizerReadinessReminder } = await import(
   "@/lib/email/organizer-notifications"
 )
@@ -59,6 +75,7 @@ const savedAppUrl = process.env.NEXT_PUBLIC_APP_URL
 
 describe("sendOrganizerClaimNotification", () => {
   beforeEach(() => {
+    deliveredRecipients.clear()
     mockSendEmail.mockClear()
     mockGetUser.mockClear()
     mockGetUserList.mockClear()
@@ -313,4 +330,29 @@ describe("sendOrganizerClaimNotification", () => {
       /^organizer-readiness\/reminder_1\/[a-f0-9]{24}$/,
     )
   })
+  it("continues a budgeted organizer reminder without resending to completed recipients", async () => {
+    let callCount = 0
+    mockSingle.mockImplementation(() => Promise.resolve({ data: ++callCount % 2 ? { tenant_id: "tenant_1" } : { clerk_org_id: "org_123", clerk_user_id: null }, error: null }))
+    mockGetUserList.mockResolvedValue({ data: [
+      { primaryEmailAddress: { emailAddress: "a@test.com" } },
+      { primaryEmailAddress: { emailAddress: "b@test.com" } },
+    ] })
+    const input = { hackathonId: "hack_1", hackathonName: "Build Day", hackathonSlug: "build-day", deadlineDate: "2026-09-11T16:00:00Z", reminderType: "organizer_event_readiness" as const, urgency: "low" as const, deliveryId: "budget-test" }
+    const first = await sendOrganizerReadinessReminder({ ...input, budget: { remainingRecipients: 1, deadlineAt: Date.now() + 60000 } })
+    expect(first).toEqual({ sent: 1, failed: 0, deferred: true })
+    const second = await sendOrganizerReadinessReminder({ ...input, budget: { remainingRecipients: 1, deadlineAt: Date.now() + 60000 } })
+    expect(second).toEqual({ sent: 1, failed: 0 })
+    expect(mockSendEmail.mock.calls.map(([mail]) => (mail as { to: string }).to)).toEqual(["a@test.com", "b@test.com"])
+    expect((mockSendEmail.mock.calls[0][0] as { text: string }).text).toContain("4:00 PM UTC")
+    expect((mockSendEmail.mock.calls[0][0] as { text: string }).text).toContain("Reply to stop")
+  })
+  it("keeps an organizer reminder retryable when recipient resolution is empty", async () => {
+    let callCount = 0
+    mockSingle.mockImplementation(() => Promise.resolve({ data: ++callCount % 2 ? { tenant_id: "tenant_1" } : { clerk_org_id: "org_123", clerk_user_id: null }, error: null }))
+    mockGetUserList.mockResolvedValue({ data: [] })
+    const result = await sendOrganizerReadinessReminder({ hackathonId: "hack_1", hackathonName: "Build Day", hackathonSlug: "build-day", deadlineDate: "2026-09-11T16:00:00Z", reminderType: "organizer_event_readiness", urgency: "low", deliveryId: "empty-test" })
+    expect(result).toEqual({ sent: 0, failed: 1 })
+    expect(mockSendEmail).not.toHaveBeenCalled()
+  })
+
 })

@@ -255,7 +255,7 @@ describe("global WebMCP tools", () => {
     })
     expect(open).toMatchObject({
       ok: true,
-      data: { url: "/e/organizer-jam/manage?tab=edit" },
+      data: { url: "/e/organizer-jam/manage?tab=edit&section=sponsors" },
     })
     expect(tasks).toMatchObject({
       ok: true,
@@ -278,7 +278,7 @@ describe("global WebMCP tools", () => {
     )
     expect(JSON.stringify(tasks)).not.toContain(organizedId)
     expect(onNavigate).toHaveBeenCalledWith("/create")
-    expect(onNavigate).toHaveBeenCalledWith("/e/organizer-jam/manage?tab=edit")
+    expect(onNavigate).toHaveBeenCalledWith("/e/organizer-jam/manage?tab=edit&section=sponsors")
   })
 
   it("adds, finishes, reopens, dismisses, and removes organizer tasks", async () => {

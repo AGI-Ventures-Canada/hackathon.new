@@ -110,9 +110,9 @@ export const ORGANIZER_SECTION_CONFIG: Record<
   },
   sponsors: {
     title: "Sponsors",
-    summary: "Review sponsors shown on the event page.",
-    params: "tab=edit",
-    webMcpTools: ["list_hackathon_sponsors", "prepare_sponsor", "inspect_organizer_section", "open_hackathon_section"],
+    summary: "Add, edit, or remove sponsors shown on the event page.",
+    params: "tab=edit&section=sponsors",
+    webMcpTools: ["list_hackathon_sponsors", "get_sponsor_details", "add_sponsor", "update_sponsor", "remove_sponsor", "prepare_sponsor", "inspect_organizer_section", "open_hackathon_section"],
     cliCommands: ["sponsors list", "sponsors add", "sponsors update", "sponsors remove"],
   },
   teams: {

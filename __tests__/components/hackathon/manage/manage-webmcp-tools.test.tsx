@@ -157,6 +157,7 @@ const context: ManageHackathonWebMcpContext = {
 
 const originalFetch = globalThis.fetch
 let tools = new Map<string, WebMcpTool>()
+let registrationSignals = new Map<string, AbortSignal | undefined>()
 
 function getTool(name: string) {
   const tool = tools.get(name)
@@ -176,6 +177,7 @@ async function execute(name: string, input: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   tools = new Map()
+  registrationSignals = new Map()
   beginManageWebMcpChange.mockClear()
   commitManageWebMcpChange.mockClear()
   rollbackManageWebMcpChange.mockClear()
@@ -191,8 +193,9 @@ beforeEach(() => {
   navigation.__nextNavState.router.push.mockClear()
   navigation.__nextNavState.router.refresh.mockClear()
   document.modelContext = {
-    registerTool: mock(async (tool) => {
+    registerTool: mock(async (tool, options) => {
       tools.set(tool.name, tool)
+      registrationSignals.set(tool.name, options?.signal)
     }),
   }
   globalThis.fetch = mock(async () =>
@@ -212,6 +215,22 @@ afterEach(() => {
 })
 
 describe("ManageHackathonWebMcpTools", () => {
+  it("keeps native tool registrations alive when action items change", async () => {
+    const view = render(<ManageHackathonWebMcpTools context={context} />)
+    await waitFor(() => expect(tools.has("add_sponsor")).toBe(true))
+    const original = getTool("add_sponsor")
+    const signal = registrationSignals.get("add_sponsor")
+    const initialItems = actionItemsState.activeItems
+    actionItemsState.activeItems = [{ ...initialItems[0], id: "new-task" }]
+    view.rerender(<ManageHackathonWebMcpTools context={{ ...context }} />)
+    expect(getTool("add_sponsor")).toBe(original)
+    expect(signal?.aborted).toBe(false)
+    expect(await execute("open_organizer_task", { taskRef: "new-task" })).toMatchObject({ ok: true, data: { status: "opened" } })
+    actionItemsState.activeItems = initialItems
+    view.unmount()
+    expect(signal?.aborted).toBe(true)
+  })
+
   it("registers tools against visible optimistic state and converges after a save", async () => {
     render(<ManageHackathonWebMcpTools context={context} />)
     await waitFor(() => expect(tools.has("update_hackathon_details")).toBe(true))

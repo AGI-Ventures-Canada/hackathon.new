@@ -33,7 +33,7 @@ export default function PreEventReminderEmail({
     <OatmealLayout
       heading={heading}
       preview={`${deadlineLabel} in ${timeLeft} \u2014 ${hackathonName}`}
-      footerText={`You\u2019re receiving this because ${recipientReason ?? `you\u2019re registered for ${hackathonName}`}.`}
+      footerText={`You\u2019re receiving this because ${recipientReason ?? `you\u2019re registered for ${hackathonName}`}. Reply to stop these reminders.`}
     >
       <Text
         style={{
@@ -42,7 +42,10 @@ export default function PreEventReminderEmail({
           lineHeight: "1.6",
         }}
       >
-        Hi {participantName}, {body}
+        Hi {participantName},
+      </Text>
+      <Text style={{ fontSize: fontSize.base, marginBottom: spacing.lg, lineHeight: "1.6" }}>
+        {body}
       </Text>
 
       <InfoBox label={deadlineLabel}>
