@@ -76,6 +76,7 @@ export function createDirectActionTools(dependencies: {
   onSaved: () => void
   isCurrent?: () => boolean
 }) {
+  const { fetcher } = dependencies
   let catalog: Promise<{ document: ActionDocument; actions: Action[] }> | undefined
   const refs = new Map<string, string>()
   const reverseRefs = new Map<string, string>()
@@ -89,7 +90,7 @@ export function createDirectActionTools(dependencies: {
 
   const load = () => {
     checkSession()
-    catalog ??= fetchWebMcpJson<ActionDocument>(dependencies.fetcher, "/api/swagger/json", {
+    catalog ??= fetchWebMcpJson<ActionDocument>(fetcher, "/api/swagger/json", {
       credentials: "same-origin", redirect: "error",
     }).then((document) => ({ document, actions: getDirectActions(document) })).catch((error) => {
       catalog = undefined
@@ -229,7 +230,7 @@ export function createDirectActionTools(dependencies: {
           checkSession()
           let response: Response
           try {
-            response = await dependencies.fetcher(`${url}${search.size ? `?${search}` : ""}`, {
+            response = await fetcher(`${url}${search.size ? `?${search}` : ""}`, {
               method: action.method, credentials: "same-origin", redirect: "error", headers, body: payload,
               ...(writing ? {} : { signal }),
             })

@@ -34,6 +34,17 @@ function setup(handler: (url: string, init?: RequestInit) => Promise<Response> =
 }
 
 describe("direct WebMCP actions", () => {
+  it("calls the browser fetch function without binding a foreign receiver", async () => {
+    const fetcher = function(this: unknown, url: RequestInfo | URL) {
+      expect(this).toBeUndefined()
+      return Promise.resolve(Response.json(String(url) === "/api/swagger/json" ? document : { saved: true }))
+    }
+    const tools = createDirectActionTools({ fetcher, onSaved: () => {} })
+    const action = getDirectActions(document).find((item) => item.path === "/api/dashboard/hackathons" && item.method === "POST")!
+    const result = await tools.find((tool) => tool.name === "execute_event_action")!.execute({ actionRef: action.ref, requestKey: "browser-binding-test" })
+    expect(result).toMatchObject({ ok: true })
+  })
+
   it("covers event actions without exposing admin, development, credentials, or arbitrary URLs", () => {
     const actions = getDirectActions(document)
     expect(actions).toHaveLength(10)
