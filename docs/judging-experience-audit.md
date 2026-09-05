@@ -24,17 +24,28 @@ UI verification uses the exact PR Vercel preview. Do not start a local app serve
 
 ## Release checks
 
-- [ ] Local migration replay and generated types
+- [x] All four migrations applied on the isolated PR database; generated database types pass TypeScript
+- [ ] Local migration replay (Docker unavailable; hosted replay used)
 - [x] Focused regression tests
 - [x] Local full test suite: 5,666 passing tests, zero failures; final coverage guard service/API regressions also pass
 - [x] Source TypeScript and CLI build
 - [x] Local PR review with critical issues resolved
-- [ ] Hosted production build (local build deferred due memory/disk limits)
-- [ ] Ready PR to staging with Parity section
+- [x] Hosted production build (local build deferred due memory/disk limits)
+- [x] PR #557 to staging with Parity section
 - [ ] Exact preview organizer and judge browser verification
 - [ ] Synthetic email delivery verification
 
 Production promotion requires separate authorization.
+
+## Hosted verification
+
+PR: https://github.com/AGI-Ventures-Canada/hackathon.new/pull/557
+
+Initial source revision `51feffaaa9567704cfc492f38aa7b0c5eaaeb68d` built successfully at `oatmeal-e6n9s0w17-agi-ventures-canada.vercel.app`. GitHub lint, tests/type check, and CodeQL passed. The isolated Supabase preview (`vvlzsfbzxjsyuuzwlijk`) applied all four migrations. Seed replay exposed old judging fixtures with ineligible project statuses; the modular and combined seeds now keep active projects submitted and explicitly preserve finished historical reviews. A complete corrected seed replay passed in a rolled-back transaction.
+
+Rollback-only SQL checks passed for inclusive opening/exclusive closing, judging after event end, inherited and overridden round windows, completed-round and published-result locks, manual null-time behavior, paired dates, notification preferences and quiet-hour bounds, notice deduplication, read/resolved/retry states, actor-scoped invitation batches, and service/anonymous grants. Verification confirmed no synthetic SQL audit records remained.
+
+Authenticated Chrome verified the empty judge dashboard at desktop and 375px with no document overflow. The separate agent-browser runner reached Vercel protection, so authenticated Chrome is the working hosted UI surface. Google sign-in exposed a same-origin absolute return URL being discarded; the auth pages now normalize that return path safely. Populated organizer/judge journeys and synthetic provider acceptance remain pending the refreshed preview.
 
 Local `bun db:sync` was authorized and attempted, but Docker hung before migration replay started. The task-owned command was stopped; no reset or generated type update completed. The user requested exact PR preview UI verification because the local machine exhausted memory. Disk pressure also blocked writes temporarily; only generated `.next` output was removed. Hosted build and preview database checks remain required and must not be reported as passed until observed.
 

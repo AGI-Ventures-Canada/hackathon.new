@@ -48,6 +48,21 @@ describe("rich lifecycle seed data", () => {
     expect(generatedSeed).toBe(modularSeed)
   })
 
+  it("keeps active judging projects eligible and finished reviews historical", () => {
+    const projectSeed = readFileSync(
+      join(seedsDirectory, "24_rich_lifecycle_projects.sql"),
+      "utf8",
+    )
+    const judgingSeed = readFileSync(
+      join(seedsDirectory, "26_rich_lifecycle_judging.sql"),
+      "utf8",
+    )
+
+    expect(projectSeed).toContain("WHEN 'judging' THEN 'submitted'::submission_status")
+    expect(judgingSeed).toContain("scoring_scope,")
+    expect(judgingSeed).toContain("CASE WHEN lifecycle_index >= 6 THEN 'legacy_unscoped' ELSE 'scoped' END")
+  })
+
   it("covers every theme at every event stage", () => {
     for (const theme of themes) {
       expect(eventSeed).toContain(`'${theme}'`)
