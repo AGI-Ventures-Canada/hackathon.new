@@ -9,6 +9,7 @@ import { PostHogProvider } from "@/components/posthog-provider"
 import { SearchCommand } from "@/components/search-command"
 import { DevTool } from "@/components/dev-tool/dev-tool"
 import { GlobalWebMcpTools } from "@/components/global-webmcp-tools"
+import { DirectWebMcpTools } from "@/components/direct-webmcp-tools"
 import "./globals.css"
 
 const jetbrainsMono = JetBrains_Mono({
@@ -57,6 +58,7 @@ export default async function RootLayout({
           <ThemedClerkProvider nonce={nonce}>
             <PostHogProvider>{children}</PostHogProvider>
             <GlobalWebMcpTools />
+            <DirectWebMcpTools />
             <SearchCommand />
             {showDevTool && <DevTool />}
           </ThemedClerkProvider>

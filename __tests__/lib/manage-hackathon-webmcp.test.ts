@@ -1,3 +1,4 @@
+import { DIRECT_ACTION_TOOL_NAMES } from "@/lib/webmcp/direct-action-tools"
 import { beforeEach, describe, expect, it, mock } from "bun:test"
 import {
   createManageHackathonTools,
@@ -396,7 +397,7 @@ describe("createManageHackathonTools", () => {
     expect(result).toEqual({
       taskRef: "finish-scoring-setup",
       status: "opened",
-      requiresHumanAction: true,
+      requiresHumanAction: false,
     })
   })
 
@@ -409,7 +410,7 @@ describe("createManageHackathonTools", () => {
     expect(result).toEqual({
       review: "assignments",
       status: "opened",
-      requiresHumanAction: true,
+      requiresHumanAction: false,
     })
   })
 
@@ -642,7 +643,7 @@ describe("createManageHackathonTools", () => {
       title: "Rooms",
       summary: "Review room assignments and automatic room setup.",
       eventStatus: "draft",
-      webMcpTools: ["inspect_organizer_section", "open_hackathon_section"],
+      webMcpTools: [...DIRECT_ACTION_TOOL_NAMES, "inspect_organizer_section", "open_hackathon_section"],
       unavailableWebMcpTools: [],
       cliCommands: [
         "rooms auto-assign-get",
@@ -666,6 +667,7 @@ describe("createManageHackathonTools", () => {
     }))
 
     expect(result.webMcpTools).toEqual([
+      ...DIRECT_ACTION_TOOL_NAMES,
       "list_hackathon_prizes",
       "inspect_organizer_section",
       "open_hackathon_section",
@@ -1173,7 +1175,7 @@ describe("createManageHackathonTools", () => {
     const result = await execute(createTools(), "open_go_live_review")
     expect(result).toMatchObject({
       ok: true,
-      requiresHumanAction: true,
+      requiresHumanAction: false,
       data: { status: "review_opened" },
     })
     expect(onOpenTransition).toHaveBeenCalledWith("published")
@@ -1196,7 +1198,7 @@ describe("createManageHackathonTools", () => {
     })
     expect(result).toMatchObject({
       ok: true,
-      requiresHumanAction: true,
+      requiresHumanAction: false,
       data: { announcement: { published: false } },
     })
     expect(fetcher.mock.calls[0][0]).toBe(
@@ -1237,7 +1239,7 @@ describe("createManageHackathonTools", () => {
         status: "review_opened",
         url: "/e/build-day/manage?tab=judging&jtab=results",
       },
-      requiresHumanAction: true,
+      requiresHumanAction: false,
     })
     expect(onNavigate).toHaveBeenCalledWith(
       "/e/build-day/manage?tab=judging&jtab=results",

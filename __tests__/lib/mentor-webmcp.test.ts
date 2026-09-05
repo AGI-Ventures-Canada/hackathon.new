@@ -201,7 +201,7 @@ describe("mentor WebMCP tools", () => {
     expect(result).toEqual({
       ok: true,
       data: { requestRef: "request-1", opened: true },
-      requiresHumanAction: true,
+      requiresHumanAction: false,
     })
   })
 
@@ -253,7 +253,7 @@ describe("mentor WebMCP tools", () => {
     expect(result).toEqual({
       ok: true,
       data: { prepared: true },
-      requiresHumanAction: true,
+      requiresHumanAction: false,
     })
   })
 
@@ -366,7 +366,7 @@ describe("mentor WebMCP tools", () => {
     })).toEqual({
       ok: true,
       data: { requestRef: "request-1", opened: true },
-      requiresHumanAction: true,
+      requiresHumanAction: false,
     })
     expect(onReview).toHaveBeenCalledWith(
       "44444444-4444-4444-4444-444444444444",
