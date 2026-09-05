@@ -75,6 +75,7 @@ export function createDirectActionTools(dependencies: {
   fetcher: WebMcpFetcher
   onSaved: () => void
   isCurrent?: () => boolean
+  organizationId?: string | null
 }) {
   const { fetcher } = dependencies
   let catalog: Promise<{ document: ActionDocument; actions: Action[] }> | undefined
@@ -163,6 +164,7 @@ export function createDirectActionTools(dependencies: {
         const content = action.operation.requestBody?.content
         return textPage(JSON.stringify({
           method: action.method, path: action.path, description: action.operation.description,
+          automaticInputs: dependencies.organizationId ? ["expectedOrganizationId"] : [],
           parameters: resolveSchema(action.operation.parameters ?? [], document),
           body: resolveSchema(content?.["application/json"]?.schema ?? content?.["multipart/form-data"]?.schema ?? null, document),
         }), offset)
@@ -181,7 +183,7 @@ export function createDirectActionTools(dependencies: {
         uploads: z.array(z.object({ field: z.string().min(1).max(80), name: z.string().min(1).max(200), type: z.string().max(100), base64: z.string().max(14_000_000) }).strict()).max(4).optional(),
       }).strict(),
       execute: async (input, { signal }) => {
-        const { action } = await find(input.actionRef)
+        const { action, document } = await find(input.actionRef)
         const writing = action.method !== "GET"
         if (writing && !input.requestKey) return fail("request_key_required", "Provide a unique requestKey for this change.")
         const fingerprint = JSON.stringify(input)
@@ -195,6 +197,10 @@ export function createDirectActionTools(dependencies: {
         }
         const path = decode(parseObject(input.path)) as Record<string, Json>
         const query = decode(parseObject(input.query)) as Record<string, Json>
+        if (dependencies.organizationId && action.operation.parameters?.some((parameter) => record(parameter)
+          && parameter.in === "query" && parameter.name === "expectedOrganizationId") && query.expectedOrganizationId === undefined) {
+          query.expectedOrganizationId = dependencies.organizationId
+        }
         const expected = [...action.path.matchAll(/\{([^}]+)\}/g)].map((match) => match[1])
         if (Object.keys(path).some((key) => !expected.includes(key))) return fail("invalid_path", "Use only the path fields in the action schema.")
         const url = action.path.replace(/\{([^}]+)\}/g, (_, key: string) => {
@@ -209,7 +215,14 @@ export function createDirectActionTools(dependencies: {
           if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") return fail("invalid_query", "Query values must be strings, numbers, or booleans.")
           search.set(key, String(value))
         }
-        const body = input.body === undefined ? undefined : decode(parseObject(input.body))
+        let body = input.body === undefined ? undefined : decode(parseObject(input.body))
+        const content = action.operation.requestBody?.content
+        const bodySchema = resolveSchema(content?.["application/json"]?.schema ?? content?.["multipart/form-data"]?.schema ?? null, document)
+        if (writing && dependencies.organizationId && record(bodySchema) && record(bodySchema.properties)
+          && Object.hasOwn(bodySchema.properties, "expectedOrganizationId")) {
+          body ??= {}
+          if (record(body) && body.expectedOrganizationId === undefined) body.expectedOrganizationId = dependencies.organizationId
+        }
         let payload: BodyInit | undefined = body === undefined ? undefined : JSON.stringify(body)
         const headers: Record<string, string> = {}
         if (payload !== undefined) headers["Content-Type"] = "application/json"

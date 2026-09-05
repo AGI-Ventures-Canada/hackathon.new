@@ -13,7 +13,7 @@ Event actions can run directly through `list_event_actions`, `get_event_action`,
 The catalog loads the deployed OpenAPI schema. It covers event creation/import, registration, team and judge invitations, project submission, all judging response styles, status changes, result publishing, mentor requests, sponsors, prize delivery, announcements, email, schedule, rooms, and other event APIs. The API rechecks the signed-in session, organization, role, ownership, validation, and lifecycle rules. Authentication and required event inputs still apply. Admin/development routes, credentials, API keys, and arbitrary external URLs are outside this catalog.
 
 1. Call `list_event_actions` with search words and optional `writesOnly`.
-2. Read `get_event_action` pages until `nextOffset` is null. Supply its path/query/body inputs as JSON strings.
+2. Read `get_event_action` pages until `nextOffset` is null. Supply its path/query/body inputs as JSON strings. Declared expectedOrganizationId fields use the active organization automatically unless explicitly supplied.
 3. Read event records through `execute_event_action` GET actions to obtain session-scoped `ref_N` identifiers. These refs can be used in nested body fields and path parameters.
 4. Run the write using `execute_event_action` with a unique `requestKey`. File uploads accept base64 bytes, a field name, filename, and media type; server upload validation still applies.
 5. Read all result pages with `read_action_result`. This does not repeat the action. Preserve the API's queued/sent/failed result.

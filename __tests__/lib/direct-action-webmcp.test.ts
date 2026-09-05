@@ -34,6 +34,26 @@ function setup(handler: (url: string, init?: RequestInit) => Promise<Response> =
 }
 
 describe("direct WebMCP actions", () => {
+  it("binds declared organization inputs to the current session without a GUI lookup", async () => {
+    const requests: RequestInit[] = []
+    const doc = { paths: { "/api/dashboard/hackathons/test-event": { post: {
+      requestBody: { content: { "application/json": { schema: { type: "object", properties: { expectedOrganizationId: { type: "string" } } } } } },
+    } } } }
+    const tools = createDirectActionTools({
+      organizationId: "org_current", onSaved: () => {},
+      fetcher: async (url, init) => {
+        if (url === "/api/swagger/json") return Response.json(doc)
+        requests.push(init!)
+        return Response.json({ saved: true })
+      },
+    })
+    const execute = tools.find((tool) => tool.name === "execute_event_action")!
+    expect(await execute.execute({ actionRef: "action-1", body: '{"stage":"registration"}', requestKey: "auto-org-context" })).toMatchObject({ ok: true })
+    expect(JSON.parse(requests[0].body as string)).toEqual({ stage: "registration", expectedOrganizationId: "org_current" })
+    await execute.execute({ actionRef: "action-1", body: '{"expectedOrganizationId":"org_explicit"}', requestKey: "explicit-org-context" })
+    expect(JSON.parse(requests[1].body as string).expectedOrganizationId).toBe("org_explicit")
+  })
+
   it("calls the browser fetch function without binding a foreign receiver", async () => {
     const fetcher = function(this: unknown, url: RequestInfo | URL) {
       expect(this).toBeUndefined()

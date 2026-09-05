@@ -17,8 +17,8 @@ export function DirectWebMcpTools() {
     return () => { session.update({ scope: "closed" }, {}) }
   }, [scope, session])
   const tools = useMemo(() => isLoaded && isSignedIn && userId
-    ? createDirectActionTools({ fetcher: fetch, onSaved: () => router.refresh(), isCurrent: () => session.getContext().scope === scope })
-    : [], [isLoaded, isSignedIn, userId, scope, router, session])
+    ? createDirectActionTools({ fetcher: fetch, onSaved: () => router.refresh(), isCurrent: () => session.getContext().scope === scope, organizationId: orgId })
+    : [], [isLoaded, isSignedIn, userId, scope, orgId, router, session])
   useWebMcpTools(tools)
   return null
 }
