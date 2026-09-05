@@ -130,7 +130,7 @@
     "engine.io": "6.6.9",
     "esbuild": "0.28.2",
     "eslint-plugin-react-hooks": "7.0.1",
-    "fast-uri": "3.1.5",
+    "fast-uri": "3.1.6",
     "fast-xml-parser": "5.11.0",
     "flatted": "3.4.4",
     "follow-redirects": "1.16.0",
