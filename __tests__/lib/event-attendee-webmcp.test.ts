@@ -70,7 +70,7 @@ describe("event attendee WebMCP tools", () => {
       status: "active",
       teamStatus: "active",
       canOpenProjectReview: true,
-    })).toContain("Submit Project")
+    })).toContain("submit or save it directly")
   })
 
   it("keeps local project preparation available before sign-in", () => {
@@ -176,7 +176,7 @@ describe("event attendee WebMCP tools", () => {
       ok: boolean
       requiresHumanAction: boolean
     }
-    expect(inviteResult.requiresHumanAction).toBe(true)
+    expect(inviteResult.requiresHumanAction).toBe(false)
     expect(prepareTeamInvite).toHaveBeenCalledWith("friend@example.com")
 
     const project = tools.find((tool) => tool.name === "prepare_project")!
@@ -186,7 +186,7 @@ describe("event attendee WebMCP tools", () => {
       description: "Helps people run a hackathon.",
     }, { signal }) as { ok: boolean; requiresHumanAction: boolean }
     expect(projectResult.ok).toBe(true)
-    expect(projectResult.requiresHumanAction).toBe(true)
+    expect(projectResult.requiresHumanAction).toBe(false)
     expect(prepareProject).toHaveBeenCalledTimes(1)
   })
 
@@ -566,9 +566,9 @@ describe("event attendee WebMCP tools", () => {
       ok: true,
       data: {
         opened: false,
-        nextStep: "Review the page and click Register to Attend.",
+        nextStep: "Your agent can register you directly with the required event inputs.",
       },
-      requiresHumanAction: true,
+      requiresHumanAction: false,
     })
   })
 

@@ -1029,7 +1029,7 @@ describe("CreateFlow", () => {
       }) as { ok: boolean; requiresHumanAction: boolean }
 
       expect(result.ok).toBe(true)
-      expect(result.requiresHumanAction).toBe(true)
+      expect(result.requiresHumanAction).toBe(false)
       await waitFor(() => {
         expect(screen.getByTestId("sign-in-dialog")).toBeDefined()
       })

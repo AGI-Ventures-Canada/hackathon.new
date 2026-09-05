@@ -250,7 +250,7 @@ describe("global WebMCP tools", () => {
     })
     expect(create).toMatchObject({
       ok: true,
-      requiresHumanAction: true,
+      requiresHumanAction: false,
       data: { url: "/create" },
     })
     expect(open).toMatchObject({
@@ -441,7 +441,7 @@ describe("global WebMCP tools", () => {
     })
     expect(result).toMatchObject({
       ok: true,
-      requiresHumanAction: true,
+      requiresHumanAction: false,
       data: { prepared: true, openedReview: true },
     })
     expect(prepareProject).toHaveBeenCalledWith(

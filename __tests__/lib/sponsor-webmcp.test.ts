@@ -114,7 +114,7 @@ describe("sponsor WebMCP tools", () => {
       trackingNumber: "TRACK-1",
     }, { signal })).toMatchObject({
       ok: true,
-      requiresHumanAction: true,
+      requiresHumanAction: false,
       data: { reviewOpened: true },
     })
     expect(onPrepare).toHaveBeenCalledWith(fulfillments[0]!.id, "TRACK-1")
