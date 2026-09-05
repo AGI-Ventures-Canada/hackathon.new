@@ -1,3 +1,5 @@
+import { dashboardJudgingSetupRoutes } from "./dashboard-judging-setup"
+import { judgingNotificationRoutes } from "./judging-notifications"
 import { Elysia, t } from "elysia"
 import { waitUntil } from "@vercel/functions"
 import { normalizeOptionalUrl, normalizeUrl } from "@/lib/utils/url"
@@ -3820,6 +3822,8 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
       description: "Sends the one allowed manual reminder for a pending team invitation. Reuse an optional Idempotency-Key header when retrying the same request. Clerk-only.",
     },
   })
+  .use(dashboardJudgingSetupRoutes)
+  .use(judgingNotificationRoutes)
   .use(dashboardJudgingRoutes)
   .use(dashboardResultsRoutes)
   .use(dashboardJudgeDisplayRoutes)

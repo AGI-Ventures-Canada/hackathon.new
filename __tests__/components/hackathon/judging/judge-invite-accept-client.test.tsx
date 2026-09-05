@@ -57,7 +57,7 @@ describe("judge invitation acceptance", () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole("button", { name: "Accept & Become Judge" }))
+    fireEvent.click(screen.getByRole("button", { name: "Accept invitation" }))
 
     await waitFor(() => {
       expect(navigation.__nextNavState.router.replace).toHaveBeenCalledWith(
@@ -115,7 +115,7 @@ describe("judge invitation acceptance", () => {
     )
 
     await waitFor(() => expect(globalThis.fetch).not.toHaveBeenCalled())
-    expect(screen.getByRole("button", { name: "Accept & Become Judge" })).toBeDefined()
+    expect(screen.getByRole("button", { name: "Accept invitation" })).toBeDefined()
   })
 
   it("still asks for terms after sign in", () => {
@@ -136,7 +136,7 @@ describe("judge invitation acceptance", () => {
 
     expect(globalThis.fetch).not.toHaveBeenCalled()
     expect(
-      screen.getByRole("button", { name: "Accept & Become Judge" }).hasAttribute("disabled"),
+      screen.getByRole("button", { name: "Accept invitation" }).hasAttribute("disabled"),
     ).toBe(true)
   })
 

@@ -58,7 +58,8 @@ describe("judging commands", () => {
       const init = mockFetch.mock.calls[0][1] as RequestInit
       const body = JSON.parse(init.body as string)
       expect(body.name).toBe("Design")
-      expect(body.category).toBe("core")
+      expect(body.category).toBeUndefined()
+      expect(body.weight).toBe(25)
     })
 
     it("defaults category to core when not provided", async () => {
@@ -71,20 +72,15 @@ describe("judging commands", () => {
 
       const init = mockFetch.mock.calls[0][1] as RequestInit
       const body = JSON.parse(init.body as string)
-      expect(body.category).toBe("core")
+      expect(body.category).toBeUndefined()
+      expect(body.weight).toBe(25)
     })
 
-    it("supports bonus category", async () => {
-      mockFetch.mockResolvedValueOnce(
-        jsonResponse({ id: "c2", name: "Bonus", category: "bonus" })
-      )
+    it("requires prize context for bonus categories", async () => {
       const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
       const { runCriteriaCreate } = await import("../../src/commands/judging/criteria-create")
-      await runCriteriaCreate(client, hackathonId, ["--name", "Bonus", "--category", "bonus"])
-
-      const init = mockFetch.mock.calls[0][1] as RequestInit
-      const body = JSON.parse(init.body as string)
-      expect(body.category).toBe("bonus")
+      await expect(runCriteriaCreate(client, hackathonId, ["--name", "Bonus", "--category", "bonus"])).rejects.toThrow("scorecards update")
+      expect(mockFetch).not.toHaveBeenCalled()
     })
   })
 
@@ -201,22 +197,15 @@ describe("judging commands", () => {
   })
 
   describe("auto-assign", () => {
-    it("sends request with --per-judge", async () => {
-      mockFetch
-        .mockResolvedValueOnce(jsonResponse({
-          prizes: [{ id: "prize1", judgingStyle: "judges_pick" }],
-        }))
-        .mockResolvedValueOnce(jsonResponse({ assignedCount: 15 }))
+    it("preserves the legacy judge cap while including weighted prizes", async () => {
+      mockFetch.mockResolvedValueOnce(jsonResponse({ prizes: [{ id: "weighted", judgingStyle: "weighted_score" }, { id: "crowd", judgingStyle: "crowd_vote" }] }))
+      mockFetch.mockResolvedValueOnce(jsonResponse({ assignedCount: 6 }))
       const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
       const { runAutoAssign } = await import("../../src/commands/judging/auto-assign")
       await runAutoAssign(client, hackathonId, ["--per-judge", "3"])
-
-      expect(mockFetch.mock.calls[1][0]).toContain(
-        `/prizes/prize1/auto-assign`,
-      )
-      const init = mockFetch.mock.calls[1][1] as RequestInit
-      const body = JSON.parse(init.body as string)
-      expect(body.submissionsPerJudge).toBe(3)
+      expect(mockFetch.mock.calls[1][0]).toContain("/prizes/weighted/auto-assign")
+      expect(JSON.parse(String(mockFetch.mock.calls[1][1]?.body))).toEqual({ submissionsPerJudge: 3 })
+      expect(mockFetch).toHaveBeenCalledTimes(2)
     })
   })
 
@@ -245,15 +234,15 @@ describe("judging commands", () => {
       mockFetch.mockResolvedValueOnce(jsonResponse({ id: "c1", name: "Innovation v2", category: "bonus" }))
       const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
       const { runCriteriaUpdate } = await import("../../src/commands/judging/criteria-update")
-      await runCriteriaUpdate(client, hackathonId, "c1", ["--name", "Innovation v2", "--category", "bonus"])
+      await runCriteriaUpdate(client, hackathonId, "c1", ["--name", "Innovation v2", "--weight", "30"])
 
       const url = mockFetch.mock.calls[0][0] as string
       const init = mockFetch.mock.calls[0][1] as RequestInit
-      expect(url).toContain(`/judging/criteria/c1`)
+      expect(url).toContain(`/core-criteria/c1`)
       expect(init.method).toBe("PATCH")
       const body = JSON.parse(init.body as string)
       expect(body.name).toBe("Innovation v2")
-      expect(body.category).toBe("bonus")
+      expect(body.weight).toBe(30)
     })
 
     it("--json outputs updated criteria", async () => {
@@ -286,7 +275,7 @@ describe("judging commands", () => {
 
       const url = mockFetch.mock.calls[0][0] as string
       const init = mockFetch.mock.calls[0][1] as RequestInit
-      expect(url).toContain(`/judging/criteria/c1`)
+      expect(url).toContain(`/core-criteria/c1`)
       expect(init.method).toBe("DELETE")
     })
 
@@ -444,110 +433,29 @@ describe("judging commands", () => {
   })
 
   describe("levels list", () => {
-    it("fetches and displays rubric levels", async () => {
-      mockFetch.mockResolvedValueOnce(
-        jsonResponse({
-          levels: [
-            { id: "l1", criteriaId: "c1", levelNumber: 1, label: "Novice", description: "Basic attempt" },
-            { id: "l2", criteriaId: "c1", levelNumber: 2, label: "Proficient", description: "Solid work" },
-          ],
-        })
-      )
+    it("points to supported scorecards without calling a removed API", async () => {
       const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
       const { runLevelsList } = await import("../../src/commands/judging/levels-list")
-      await runLevelsList(client, hackathonId, "c1", { json: false })
-
-      expect(consoleLogSpy.mock.calls[0][0]).toContain("Novice")
-      expect(consoleLogSpy.mock.calls[0][0]).toContain("Proficient")
-    })
-
-    it("--json outputs raw data", async () => {
-      const data = { levels: [{ id: "l1", criteriaId: "c1", levelNumber: 1, label: "Novice" }] }
-      mockFetch.mockResolvedValueOnce(jsonResponse(data))
-      const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
-      const { runLevelsList } = await import("../../src/commands/judging/levels-list")
-      await runLevelsList(client, hackathonId, "c1", { json: true })
-
-      expect(JSON.parse(consoleLogSpy.mock.calls[0][0])).toEqual(data)
-    })
-
-    it("shows empty message when no levels", async () => {
-      mockFetch.mockResolvedValueOnce(jsonResponse({ levels: [] }))
-      const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
-      const { runLevelsList } = await import("../../src/commands/judging/levels-list")
-      await runLevelsList(client, hackathonId, "c1", { json: false })
-
-      expect(consoleLogSpy.mock.calls[0][0]).toContain("No rubric levels found")
+      await expect(runLevelsList(client, hackathonId, "c1", {})).rejects.toThrow("scorecards update")
+      expect(mockFetch).not.toHaveBeenCalled()
     })
   })
 
   describe("levels add", () => {
-    it("sends POST with required flags", async () => {
-      mockFetch.mockResolvedValueOnce(
-        jsonResponse({ id: "l1", criteriaId: "c1", levelNumber: 1, label: "Novice" })
-      )
+    it("points to supported scorecards without calling a removed API", async () => {
       const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
       const { runLevelsAdd } = await import("../../src/commands/judging/levels-add")
-      await runLevelsAdd(client, hackathonId, "c1", ["--label", "Novice"])
-
-      const url = mockFetch.mock.calls[0][0] as string
-      const init = mockFetch.mock.calls[0][1] as RequestInit
-      expect(url).toContain(`/judging/criteria/c1/levels`)
-      expect(init.method).toBe("POST")
-      const body = JSON.parse(init.body as string)
-      expect(body.label).toBe("Novice")
-    })
-
-    it("sends POST with optional description", async () => {
-      mockFetch.mockResolvedValueOnce(
-        jsonResponse({ id: "l1", criteriaId: "c1", levelNumber: 1, label: "Novice", description: "Entry level" })
-      )
-      const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
-      const { runLevelsAdd } = await import("../../src/commands/judging/levels-add")
-      await runLevelsAdd(client, hackathonId, "c1", ["--label", "Novice", "--description", "Entry level"])
-
-      const init = mockFetch.mock.calls[0][1] as RequestInit
-      const body = JSON.parse(init.body as string)
-      expect(body.label).toBe("Novice")
-      expect(body.description).toBe("Entry level")
-    })
-
-    it("exits with error when --label is missing", async () => {
-      const exitSpy = spyOn(process, "exit").mockImplementation(() => { throw new Error("exit") })
-      const consoleErrorSpy = spyOn(console, "error").mockImplementation(() => {})
-      const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
-      const { runLevelsAdd } = await import("../../src/commands/judging/levels-add")
-      await expect(runLevelsAdd(client, hackathonId, "c1", [])).rejects.toThrow()
-      exitSpy.mockRestore()
-      consoleErrorSpy.mockRestore()
+      await expect(runLevelsAdd(client, hackathonId, "c1", ["--label", "Novice"])).rejects.toThrow("scorecards update")
+      expect(mockFetch).not.toHaveBeenCalled()
     })
   })
 
   describe("levels update", () => {
-    it("sends PATCH with updated label", async () => {
-      mockFetch.mockResolvedValueOnce(
-        jsonResponse({ id: "l1", criteriaId: "c1", levelNumber: 1, label: "Expert" })
-      )
+    it("points to supported scorecards without calling a removed API", async () => {
       const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
       const { runLevelsUpdate } = await import("../../src/commands/judging/levels-update")
-      await runLevelsUpdate(client, hackathonId, "c1", "l1", ["--label", "Expert"])
-
-      const url = mockFetch.mock.calls[0][0] as string
-      const init = mockFetch.mock.calls[0][1] as RequestInit
-      expect(url).toContain(`/judging/criteria/c1/levels/l1`)
-      expect(init.method).toBe("PATCH")
-      const body = JSON.parse(init.body as string)
-      expect(body.label).toBe("Expert")
-    })
-
-    it("exits with error when no fields provided", async () => {
-      const exitSpy = spyOn(process, "exit").mockImplementation(() => { throw new Error("exit") })
-      const consoleErrorSpy = spyOn(console, "error").mockImplementation(() => {})
-      const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
-      const { runLevelsUpdate } = await import("../../src/commands/judging/levels-update")
-      await expect(runLevelsUpdate(client, hackathonId, "c1", "l1", [])).rejects.toThrow()
-      exitSpy.mockRestore()
-      consoleErrorSpy.mockRestore()
+      await expect(runLevelsUpdate(client, hackathonId, "c1", "l1", ["--label", "Expert"])).rejects.toThrow("scorecards update")
+      expect(mockFetch).not.toHaveBeenCalled()
     })
   })
 
@@ -612,29 +520,12 @@ describe("judging commands", () => {
   })
 
   describe("levels delete", () => {
-    it("sends DELETE and shows updated levels list", async () => {
-      mockFetch
-        .mockResolvedValueOnce(new Response(null, { status: 204 }))
-        .mockResolvedValueOnce(
-          jsonResponse({ levels: [{ id: "l2", criteriaId: "c1", levelNumber: 2, label: "Proficient" }] })
-        )
+    it("points to supported scorecards without calling a removed API", async () => {
       const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
       const { runLevelsDelete } = await import("../../src/commands/judging/levels-delete")
-      await runLevelsDelete(client, hackathonId, "c1", "l1", { yes: true })
-
-      const url = mockFetch.mock.calls[0][0] as string
-      const init = mockFetch.mock.calls[0][1] as RequestInit
-      expect(url).toContain(`/judging/criteria/c1/levels/l1`)
-      expect(init.method).toBe("DELETE")
-      expect(consoleLogSpy.mock.calls[1][0]).toContain("Proficient")
-    })
-
-    it("skips delete when user declines confirmation", async () => {
-      mockConfirm.mockResolvedValueOnce(false)
-      const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
-      const { runLevelsDelete } = await import("../../src/commands/judging/levels-delete")
-      await runLevelsDelete(client, hackathonId, "c1", "l1", { yes: false })
+      await expect(runLevelsDelete(client, hackathonId, "c1", "l1", { yes: true })).rejects.toThrow("scorecards update")
       expect(mockFetch).not.toHaveBeenCalled()
     })
   })
+
 })

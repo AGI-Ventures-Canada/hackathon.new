@@ -13,7 +13,7 @@ export async function castVote(
   prizeId: string,
   submissionId: string,
   clerkUserId: string,
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; code?: string }> {
   const client = getSupabase() as unknown as SupabaseClient
   const { data, error } = await client.rpc("cast_crowd_vote_atomic", {
     p_hackathon_id: hackathonId,
@@ -26,7 +26,7 @@ export async function castVote(
     return { success: false, error: "Failed to cast vote" }
   }
   const code = data as string | null
-  if (code !== "success") return { success: false, error: VOTE_ERRORS[code ?? ""] ?? "Failed to cast vote" }
+  if (code !== "success") return { success: false, code: code ?? "vote_failed", error: VOTE_ERRORS[code ?? ""] ?? "Failed to cast vote" }
   return { success: true }
 }
 
@@ -34,7 +34,7 @@ export async function removeVote(
   hackathonId: string,
   prizeId: string,
   clerkUserId: string,
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; code?: string }> {
   const client = getSupabase() as unknown as SupabaseClient
   const { data, error } = await client.rpc("remove_crowd_vote_atomic", {
     p_hackathon_id: hackathonId,
@@ -46,7 +46,7 @@ export async function removeVote(
     return { success: false, error: "Failed to remove vote" }
   }
   const code = data as string | null
-  if (code !== "success") return { success: false, error: VOTE_ERRORS[code ?? ""] ?? "Failed to remove vote" }
+  if (code !== "success") return { success: false, code: code ?? "vote_failed", error: VOTE_ERRORS[code ?? ""] ?? "Failed to remove vote" }
   return { success: true }
 }
 

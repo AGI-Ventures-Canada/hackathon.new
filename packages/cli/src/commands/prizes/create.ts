@@ -71,7 +71,7 @@ export async function runPrizesCreate(
     process.exit(1)
   }
 
-  const prize = await client.post<Prize>(
+  const response = await client.post<{ prize: Prize } | Prize>(
     `/api/dashboard/hackathons/${hackathonId}/prizes`,
     {
       name,
@@ -81,6 +81,8 @@ export async function runPrizesCreate(
       allowedTeamModes: parseModes(options.modes),
     }
   )
+
+  const prize = "prize" in response ? response.prize : response
 
   if (options.json) {
     console.log(formatJson(prize))

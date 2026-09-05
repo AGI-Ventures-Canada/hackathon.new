@@ -56,7 +56,7 @@ export default function JudgeInvitationReminderEmail({
             lineHeight: "1.6",
           }}
         >
-          <strong>Event time:</strong> {eventSchedule}
+          <strong>Schedule:</strong> {eventSchedule}
         </Text>
       ) : hackathonStartsAt ? (
         <EventDetailBox

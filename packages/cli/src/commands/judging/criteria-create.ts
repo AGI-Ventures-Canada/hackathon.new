@@ -6,6 +6,7 @@ import type { JudgingCriteria } from "../../types.js"
 interface CriteriaCreateOptions {
   name?: string
   description?: string
+  minScore?: number
   maxScore?: number
   weight?: number
   category?: "core" | "bonus"
@@ -21,6 +22,9 @@ export function parseCriteriaCreateOptions(args: string[]): CriteriaCreateOption
         break
       case "--description":
         options.description = args[++i]
+        break
+      case "--min-score":
+        options.minScore = Number(args[++i])
         break
       case "--max-score":
         options.maxScore = parseInt(args[++i], 10)
@@ -66,16 +70,20 @@ export async function runCriteriaCreate(
     process.exit(1)
   }
 
-  const criteria = await client.post<JudgingCriteria>(
-    `/api/dashboard/hackathons/${hackathonId}/judging/criteria`,
+  if (category === "bonus") throw new Error("Prize bonus categories need a prize. Use judging scorecards update <event> <prize> --file scorecard.json")
+
+  const response = await client.post<{ criterion: JudgingCriteria } | JudgingCriteria>(
+    `/api/dashboard/hackathons/${hackathonId}/core-criteria`,
     {
       name,
       description: options.description,
-      category,
+      ...(options.minScore !== undefined && { minScore: options.minScore }),
       ...(options.maxScore !== undefined && { maxScore: options.maxScore }),
-      ...(options.weight !== undefined && { weight: options.weight }),
+      weight: options.weight ?? 25,
     }
   )
+
+  const criteria = "criterion" in response ? response.criterion : response
 
   if (options.json) {
     console.log(formatJson(criteria))

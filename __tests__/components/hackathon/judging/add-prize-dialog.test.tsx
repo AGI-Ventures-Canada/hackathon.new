@@ -12,7 +12,7 @@ const { AddPrizeDialog } = await import(
 )
 
 function openToDetailsStep() {
-  fireEvent.click(screen.getByRole("button", { name: /Sort into groups/i }))
+  expect(screen.getByLabelText("Name")).toBeTruthy()
 }
 
 describe("AddPrizeDialog duplicate detection", () => {

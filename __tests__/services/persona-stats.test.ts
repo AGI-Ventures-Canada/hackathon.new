@@ -28,20 +28,19 @@ describe("getBatchJudgeStats", () => {
   })
 
   it("returns stats with assignment counts", async () => {
-    let callCount = 0
-    setMockFromImplementation(() => {
-      callCount++
-      if (callCount === 1) {
+    setMockFromImplementation((table) => {
+      if (table === "hackathon_participants") {
         return createChainableMock({
           data: [{ id: "p1", hackathon_id: "h1" }],
           error: null,
         })
       }
+      if (table !== "judge_assignments") return createChainableMock({ data: table === "hackathons" ? [{ id: "h1", status: "judging" }] : [], error: null })
       return createChainableMock({
         data: [
-          { judge_participant_id: "p1", hackathon_id: "h1", is_complete: true },
-          { judge_participant_id: "p1", hackathon_id: "h1", is_complete: false },
-          { judge_participant_id: "p1", hackathon_id: "h1", is_complete: true },
+          { id: "a1", judge_participant_id: "p1", hackathon_id: "h1", is_complete: true, submission: { status: "submitted" } },
+          { id: "a2", judge_participant_id: "p1", hackathon_id: "h1", is_complete: false, submission: { status: "submitted" } },
+          { id: "a3", judge_participant_id: "p1", hackathon_id: "h1", is_complete: true, submission: { status: "submitted" } },
         ],
         error: null,
       })
@@ -52,13 +51,12 @@ describe("getBatchJudgeStats", () => {
     const stats = result.get("h1")!
     expect(stats.totalAssignments).toBe(3)
     expect(stats.completedAssignments).toBe(2)
+    expect(stats.actionableAssignments).toBe(1)
   })
 
   it("handles multiple hackathons", async () => {
-    let callCount = 0
-    setMockFromImplementation(() => {
-      callCount++
-      if (callCount === 1) {
+    setMockFromImplementation((table) => {
+      if (table === "hackathon_participants") {
         return createChainableMock({
           data: [
             { id: "p1", hackathon_id: "h1" },
@@ -67,10 +65,11 @@ describe("getBatchJudgeStats", () => {
           error: null,
         })
       }
+      if (table !== "judge_assignments") return createChainableMock({ data: [], error: null })
       return createChainableMock({
         data: [
-          { judge_participant_id: "p1", hackathon_id: "h1", is_complete: true },
-          { judge_participant_id: "p2", hackathon_id: "h2", is_complete: false },
+          { id: "a1", judge_participant_id: "p1", hackathon_id: "h1", is_complete: true, submission: { status: "submitted" } },
+          { id: "a2", judge_participant_id: "p2", hackathon_id: "h2", is_complete: false, submission: { status: "submitted" } },
         ],
         error: null,
       })
@@ -80,6 +79,52 @@ describe("getBatchJudgeStats", () => {
     expect(result.size).toBe(2)
     expect(result.get("h1")!.completedAssignments).toBe(1)
     expect(result.get("h2")!.completedAssignments).toBe(0)
+  })
+
+  it("excludes own-team and withdrawn projects and treats a partially completed ballot as one pending review", async () => {
+    const base = { judge_participant_id: "p1", hackathon_id: "h1", is_complete: false, submission: { team_id: "other-team", status: "submitted" } }
+    const ballot = { ...base, prize_id: "prize-1", prize: { judging_style: "judges_pick" } }
+    setMockFromImplementation((table) => createChainableMock({ data: table === "hackathon_participants" ? [{ id: "p1", hackathon_id: "h1", team_id: "own-team" }]
+      : table === "hackathons" ? [{ id: "h1", status: "judging" }]
+      : table === "judge_assignments" ? [
+        { ...base, id: "own", submission: { team_id: "own-team", status: "submitted" } },
+        { ...base, id: "withdrawn", submission: { team_id: "other-team", status: "draft" } },
+        { ...ballot, id: "pick-1", is_complete: true },
+        { ...ballot, id: "pick-2" },
+      ] : [], error: null }))
+    const result = await getBatchJudgeStats(["h1"], "user_1")
+    expect(result.get("h1")).toMatchObject({ totalAssignments: 1, completedAssignments: 0, actionableAssignments: 1 })
+  })
+
+  it("applies event and round windows while retaining closed reviews in the history count", async () => {
+    const past = { opens_at: "2000-01-01T00:00:00Z", closes_at: "2000-01-02T00:00:00Z" }
+    const future = { opens_at: "2999-01-01T00:00:00Z", closes_at: "2999-01-02T00:00:00Z" }
+    const eventIds = ["closed-event", "future-event", "round-event", "published-event"]
+    setMockFromImplementation((table) => createChainableMock({ data: table === "hackathon_participants" ? eventIds.map((id) => ({ id: `p-${id}`, hackathon_id: id }))
+      : table === "hackathons" ? [
+        { id: "closed-event", status: "judging", judging_opens_at: past.opens_at, judging_closes_at: past.closes_at },
+        { id: "future-event", status: "judging", judging_opens_at: future.opens_at, judging_closes_at: future.closes_at },
+        { id: "round-event", status: "judging" },
+        { id: "published-event", status: "judging", results_published_at: past.closes_at },
+      ] : table === "judging_rounds" ? [{ id: "closed-round", hackathon_id: "round-event", status: "active", ...past }]
+      : table === "judge_assignments" ? eventIds.map((id) => ({ id: `a-${id}`, judge_participant_id: `p-${id}`, hackathon_id: id, is_complete: false, round_id: id === "round-event" ? "closed-round" : null, submission: { status: "submitted" } })) : [], error: null }))
+    const result = await getBatchJudgeStats(eventIds, "user_1")
+    for (const id of eventIds) expect(result.get(id)).toMatchObject({ totalAssignments: 1, actionableAssignments: 0 })
+  })
+
+  it("keeps only active-round finalists actionable and waits for invitation scope to finish", async () => {
+    setMockFromImplementation((table) => createChainableMock({ data: table === "hackathon_participants" ? [{ id: "p1", hackathon_id: "h1" }, { id: "p2", hackathon_id: "h2", judging_scope_ready: false }]
+      : table === "hackathons" ? [{ id: "h1", status: "active" }, { id: "h2", status: "judging" }]
+      : table === "judging_rounds" ? [{ id: "round-1", hackathon_id: "h1", status: "active" }]
+      : table === "round_submissions" ? [{ round_id: "round-1", submission_id: "finalist" }]
+      : table === "judge_assignments" ? [
+        { id: "a1", judge_participant_id: "p1", hackathon_id: "h1", submission_id: "finalist", submission: { status: "submitted" } },
+        { id: "a2", judge_participant_id: "p1", hackathon_id: "h1", submission_id: "other", submission: { status: "submitted" } },
+        { id: "a3", judge_participant_id: "p2", hackathon_id: "h2", submission: { status: "submitted" } },
+      ] : [], error: null }))
+    const result = await getBatchJudgeStats(["h1", "h2"], "user_1")
+    expect(result.get("h1")).toMatchObject({ totalAssignments: 2, actionableAssignments: 1, hasActiveRound: true })
+    expect(result.get("h2")).toMatchObject({ totalAssignments: 1, actionableAssignments: 0 })
   })
 })
 

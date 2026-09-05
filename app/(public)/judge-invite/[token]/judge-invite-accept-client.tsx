@@ -16,6 +16,7 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AlertCircle, CalendarClock, Check, Clock, Mail, Scale, X } from "lucide-react"
 import { TermsAcceptanceBlock } from "@/components/hackathon/terms-acceptance-block"
+import { useClerk } from "@clerk/nextjs"
 
 interface JudgeInviteAcceptClientProps {
   token: string
@@ -30,9 +31,13 @@ interface JudgeInviteAcceptClientProps {
     requireTermsAcceptance?: boolean
     termsContent?: string | null
     termsHash?: string | null
+    judgingSchedule?: boolean
+    instructions?: string | null
   }
   isAuthenticated: boolean
   autoAccept?: boolean
+  signedInEmail?: string | null
+  emailMatches?: boolean
 }
 
 export function JudgeInviteAcceptClient({
@@ -40,8 +45,11 @@ export function JudgeInviteAcceptClient({
   invitation,
   isAuthenticated,
   autoAccept = false,
+  signedInEmail = null,
+  emailMatches = true,
 }: JudgeInviteAcceptClientProps) {
   const router = useRouter()
+  const { signOut } = useClerk()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
@@ -51,7 +59,7 @@ export function JudgeInviteAcceptClient({
 
   const isValid = invitation.status === "pending"
   const needsTerms = Boolean(invitation.requireTermsAcceptance && invitation.termsContent && invitation.termsHash)
-  const canAccept = !loading && (!needsTerms || termsAccepted)
+  const canAccept = !loading && emailMatches && (!needsTerms || termsAccepted)
 
   const handleAccept = useCallback(async () => {
     if (needsTerms && !termsAccepted) {
@@ -99,6 +107,7 @@ export function JudgeInviteAcceptClient({
       !autoAccept ||
       !isAuthenticated ||
       !isValid ||
+      !emailMatches ||
       needsTerms ||
       autoAcceptStarted.current
     ) {
@@ -114,7 +123,7 @@ export function JudgeInviteAcceptClient({
     if (!explicitlyRequested) return
     autoAcceptStarted.current = true
     void handleAccept()
-  }, [autoAccept, autoAcceptStorageKey, handleAccept, isAuthenticated, isValid, needsTerms])
+  }, [autoAccept, autoAcceptStorageKey, handleAccept, isAuthenticated, isValid, needsTerms, emailMatches])
 
   const rememberAcceptIntent = () => {
     try {
@@ -133,7 +142,8 @@ export function JudgeInviteAcceptClient({
         method: "POST",
       }).then(assertOk)
 
-      router.push("/")
+      router.replace(`/judge-invite/${token}`)
+      router.refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to decline invitation")
     } finally {
@@ -220,8 +230,8 @@ export function JudgeInviteAcceptClient({
         <div className="rounded-full bg-primary/10 p-4 w-fit mx-auto mb-4">
           <Scale className="size-8 text-primary" />
         </div>
-        <CardTitle>Judge Invitation</CardTitle>
-        <CardDescription>You&apos;ve been invited to judge a hackathon</CardDescription>
+        <CardTitle>You&apos;re invited to judge</CardTitle>
+        <CardDescription>Accept once. Your projects and next steps will be here.</CardDescription>
       </CardHeader>
 
       <CardContent className="space-y-4">
@@ -244,7 +254,7 @@ export function JudgeInviteAcceptClient({
           <div className="flex items-center gap-3 rounded-lg bg-muted p-3">
             <CalendarClock className="size-5 text-muted-foreground" />
             <div>
-              <p className="text-sm text-muted-foreground">Event time</p>
+              <p className="text-sm text-muted-foreground">{invitation.judgingSchedule ? "Judging time" : "Event time"}</p>
               <p className="font-medium">{invitation.eventSchedule}</p>
             </div>
           </div>
@@ -257,6 +267,10 @@ export function JudgeInviteAcceptClient({
             <p className="truncate font-medium">{invitation.email}</p>
           </div>
         </div>
+
+        {signedInEmail && <p className="break-words text-sm text-muted-foreground">You&apos;re signed in as {signedInEmail}.</p>}
+        {!emailMatches && <Alert variant="destructive"><AlertDescription>Switch to {invitation.email} to accept this invitation.</AlertDescription></Alert>}
+        {invitation.instructions && <div className="space-y-2"><p className="text-sm font-medium">A note from your organizer</p><p className="whitespace-pre-wrap text-sm text-muted-foreground">{invitation.instructions}</p></div>}
 
         {invitation.expiresLabel && (
           <div className="flex items-center gap-3 rounded-lg bg-muted p-3">
@@ -288,10 +302,10 @@ export function JudgeInviteAcceptClient({
       </CardContent>
 
       <CardFooter className="flex-col gap-3">
-        {isAuthenticated ? (
+        {isAuthenticated && !emailMatches ? <Button onClick={() => { void signOut({ redirectUrl: `/sign-in?redirect_url=${encodeURIComponent(`/judge-invite/${token}`)}&email=${encodeURIComponent(invitation.email)}` }) }}>Switch to the invited account</Button> : isAuthenticated ? (
           <>
             <Button className="w-full" onClick={handleAccept} disabled={!canAccept}>
-              {loading ? "Accepting..." : "Accept & Become Judge"}
+              {loading ? "Accepting..." : "Accept invitation"}
             </Button>
             <Button
               variant="outline"

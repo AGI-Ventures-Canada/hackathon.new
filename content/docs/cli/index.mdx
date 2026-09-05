@@ -94,20 +94,33 @@ hackathon prizes create <hackathon-id> --name "Best AI App"
 
 | Command | Description |
 |---------|-------------|
-| `hackathon judging criteria list <id>` | List judging criteria |
+| `hackathon judging setup inspect <id>` | Check prizes, dates, and next steps |
+| `hackathon judging setup configure <id>` | Save judging settings or apply `--starter` |
+| `hackathon judging scorecards list <id>` | Inspect shared and prize scorecards |
+| `hackathon judging scorecards update <id> <pid>` | Save a prize scorecard with `--file` |
+| `hackathon judging rounds list/create/preset <id>` | Manage optional rounds |
+| `hackathon judging rounds update/activate/complete/advance <id> <rid>` | Change or run a round |
+| `hackathon judging assignments preview <id>` | Preview balanced project reviews |
+| `hackathon judging assignments apply <id>` | Apply with `--expected-version` |
+| `hackathon judging invitations batch <id>` | Preview email invitations; `--send` sends |
+| `hackathon judging invitations remind <id>` | Check reminder eligibility; `--send` sends |
+| `hackathon judging criteria list <id>` | List shared scoring categories |
 | `hackathon judging criteria create <id>` | Add a criterion |
 | `hackathon judging criteria update <id> <cid>` | Update a criterion |
 | `hackathon judging criteria delete <id> <cid>` | Delete a criterion |
 | `hackathon judging judges list <id>` | List judges with progress |
+| `hackathon judging judges scope <id> <pid>` | Inspect or change a judge's prizes and rooms |
 | `hackathon judging judges add <id>` | Add a judge |
 | `hackathon judging judges remove <id> <pid>` | Remove a judge |
 | `hackathon judging assignments list <id>` | List judge assignments |
 | `hackathon judging assignments create <id>` | Create an assignment |
 | `hackathon judging assignments delete <id> <aid>` | Delete an assignment |
-| `hackathon judging auto-assign <id>` | Auto-distribute submissions |
+| `hackathon judging auto-assign <id>` | Legacy per-judge cap, or assignment preview |
 | `hackathon judging invitations list <id>` | List pending invitations |
 | `hackathon judging invitations cancel <id> <iid>` | Cancel an invitation |
 | `hackathon judging pick-results <id>` | View subjective judging tallies |
+
+See [the judging CLI guide](/docs/guides/cli-judging) for setup and retry examples. The retired `judging levels` aliases explain the supported scorecard commands; they do not call an unavailable rubric API.
 
 ### Prizes
 

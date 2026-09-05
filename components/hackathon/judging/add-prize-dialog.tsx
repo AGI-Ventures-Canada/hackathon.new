@@ -1,7 +1,8 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
+import { useJudgingFormDraft } from "@/hooks/use-judging-form-draft"
 import { assertOkJson } from "@/lib/utils/fetch"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -79,10 +80,6 @@ interface AddPrizeDialogProps {
   onEditExisting?: (prizeId: string) => void
 }
 
-function initialWeightedCriteria(): WeightedCriterionDraft[] {
-  return [{ id: nextDraftId(), name: "", description: "", weight: "", minScore: "1", maxScore: "10" }]
-}
-
 function emptyWeightedCriteria(): WeightedCriterionDraft[] {
   return []
 }
@@ -116,31 +113,20 @@ export function AddPrizeDialog({
   const defaultRoundId = visibleRounds.length > 0
     ? visibleRounds[visibleRounds.length - 1].id
     : null
-  const [step, setStep] = useState<CreateStep>("style")
-  const [form, setForm] = useState({
+  const [step, setStep] = useState<CreateStep>("details")
+  const [form, setForm, clearDraft] = useJudgingFormDraft(hackathonId, "new-prize", {
     name: "",
     description: "",
     value: "",
-    judgingStyle: "bucket_sort" as PrizeJudgingStyle,
+    judgingStyle: "weighted_score" as PrizeJudgingStyle,
     roundId: defaultRoundId,
     criteria: initialCriteria(),
-    weightedCriteria: initialWeightedCriteria(),
+    weightedCriteria: emptyWeightedCriteria(),
     buckets: initialBuckets(),
     maxPicks: "3",
   })
   const [error, setError] = useState<string | null>(null)
-  const [coreWeightSum, setCoreWeightSum] = useState(coreWeightSumProp)
-  const [coreCriteriaCount, setCoreCriteriaCount] = useState(coreCriteriaCountProp)
-  const [seedingCore, setSeedingCore] = useState(false)
-  const [seededInThisFlow, setSeededInThisFlow] = useState(false)
-  const seedAttemptedRef = useRef(false)
-
-  useEffect(() => {
-    setCoreWeightSum(coreWeightSumProp)
-  }, [coreWeightSumProp])
-  useEffect(() => {
-    setCoreCriteriaCount(coreCriteriaCountProp)
-  }, [coreCriteriaCountProp])
+  const coreWeightSum = coreWeightSumProp
 
   useEffect(() => {
     if (!open) return
@@ -154,68 +140,17 @@ export function AddPrizeDialog({
   }, [open, rounds])
 
   function handleOpenChange(nextOpen: boolean) {
-    if (!nextOpen) {
-      setStep("style")
-      setForm({
-        name: "",
-        description: "",
-        value: "",
-        judgingStyle: "bucket_sort",
-        roundId: defaultRoundId,
-        criteria: initialCriteria(),
-        weightedCriteria: initialWeightedCriteria(),
-        buckets: initialBuckets(),
-        maxPicks: "3",
-      })
-      setError(null)
-      setSeededInThisFlow(false)
-      seedAttemptedRef.current = false
-    }
     onOpenChange(nextOpen)
   }
 
-  async function maybeSeedCoreCriteria() {
-    if (seedAttemptedRef.current) return
-    if (coreCriteriaCount > 0) return
-    seedAttemptedRef.current = true
-    setSeedingCore(true)
-    try {
-      const data = await fetch(
-        `/api/dashboard/hackathons/${hackathonId}/core-criteria/seed-defaults`,
-        { method: "POST" }
-      ).then(assertOkJson<{ criteria: { weight: number }[] }>)
-      const seededSum = data.criteria.reduce((acc, c) => acc + c.weight, 0)
-      setCoreWeightSum(seededSum)
-      setCoreCriteriaCount(data.criteria.length)
-      setSeededInThisFlow(true)
-      router.refresh()
-    } catch {
-      // Seeding is best-effort. If it fails (e.g., already exists), the user can still configure.
-    } finally {
-      setSeedingCore(false)
-    }
-  }
-
   function selectStyle(style: PrizeJudgingStyle) {
-    const willSeed = style === "weighted_score" && coreCriteriaCount === 0
-    setForm({
-      ...form,
-      name: "",
+    setForm((previous) => ({
+      ...previous,
       judgingStyle: style,
-      criteria: style === "gate_check" ? initialCriteria() : form.criteria,
-      weightedCriteria:
-        style === "weighted_score"
-          ? willSeed
-            ? emptyWeightedCriteria()
-            : initialWeightedCriteria()
-          : form.weightedCriteria,
-      buckets: style === "bucket_sort" ? initialBuckets() : form.buckets,
-      maxPicks: style === "judges_pick" ? "3" : form.maxPicks,
-    })
+      weightedCriteria: style === "weighted_score" && coreCriteriaCountProp > 0
+        ? emptyWeightedCriteria() : previous.weightedCriteria,
+    }))
     setStep("details")
-    if (style === "weighted_score") {
-      void maybeSeedCoreCriteria()
-    }
   }
 
   function updateWeighted(index: number, patch: Partial<WeightedCriterionDraft>) {
@@ -293,11 +228,6 @@ export function AddPrizeDialog({
     const name = form.name.trim()
     if (!name) {
       setError("Name is required")
-      return
-    }
-    const description = form.description.trim()
-    if (!description) {
-      setError("Description is required — judges need to know what this prize is for")
       return
     }
 
@@ -389,6 +319,7 @@ export function AddPrizeDialog({
         }
       ).then(assertOkJson<{ prize: { id: string; name: string; description: string | null; value: string | null; type: string | null; judging_style: string | null; round_id: string | null } }>)
 
+      clearDraft()
       router.refresh()
       onSuccess?.({
         id: data.prize.id,
@@ -490,7 +421,7 @@ export function AddPrizeDialog({
                 className="h-auto shrink-0 px-2 py-1 text-xs"
                 onClick={() => setStep("style")}
               >
-                Change
+                More judging options
               </Button>
             </div>
             {visibleRounds.length >= 1 && (
@@ -571,7 +502,7 @@ export function AddPrizeDialog({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="add-prize-description">Description</Label>
+              <Label htmlFor="add-prize-description">Description (optional)</Label>
               <Textarea
                 id="add-prize-description"
                 name="add-prize-description"
@@ -696,14 +627,6 @@ export function AddPrizeDialog({
 
             {form.judgingStyle === "weighted_score" && (
               <div className="space-y-2">
-                {seedingCore && (
-                  <p className="text-xs text-muted-foreground">Setting up starter score categories…</p>
-                )}
-                {seededInThisFlow && !seedingCore && (
-                  <div className="rounded-md border bg-muted/40 p-2 text-xs text-muted-foreground">
-                    We added 4 starter score categories you can edit later. Together they cover the full 100%, so this prize doesn&apos;t need any extra categories.
-                  </div>
-                )}
                 <div className="flex items-center justify-between">
                   <div>
                     <Label>Bonus categories for this prize (optional)</Label>

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test"
 
+const mockJudgingUpdates = mock(() => Promise.resolve({ sent: 0, failed: 0, skipped: 0 }))
 const mockAuthorized = mock(() => true)
 const mockScheduled = mock(() => Promise.resolve({ processed: 2, sent: 2, skipped: 0, errors: 0 }))
 const mockPostEvent = mock(() => Promise.resolve({ processed: 1, totalSent: 3, errors: 0 }))
@@ -32,6 +33,7 @@ const mockLifecycleWorkflows = mock(() => Promise.resolve({
   skippedDueToLease: false,
 }))
 
+mock.module("@/lib/services/judging-notifications", () => ({ processJudgingNotifications: mockJudgingUpdates }))
 mock.module("@/lib/auth/cron", () => ({ isAuthorizedCronRequest: mockAuthorized }))
 mock.module("@/lib/services/smart-reminders", () => ({ processPendingReminders: mockScheduled }))
 mock.module("@/lib/services/post-event-reminders", () => ({ processAllPendingReminders: mockPostEvent }))
@@ -52,6 +54,8 @@ const { GET } = await import("@/app/api/cron/reminders/route")
 
 describe("reminder cron delivery", () => {
   beforeEach(() => {
+    mockJudgingUpdates.mockClear()
+    mockJudgingUpdates.mockResolvedValue({ sent: 0, failed: 0, skipped: 0 })
     mockAuthorized.mockClear()
     mockScheduled.mockClear()
     mockPostEvent.mockClear()
@@ -88,6 +92,7 @@ describe("reminder cron delivery", () => {
     mockAuthorized.mockReturnValue(false)
     const response = await GET(new Request("https://example.com/api/cron/reminders"))
     expect(response.status).toBe(401)
+    expect(mockJudgingUpdates).not.toHaveBeenCalled()
     expect(mockScheduled).not.toHaveBeenCalled()
     expect(mockPostEvent).not.toHaveBeenCalled()
     expect(mockResults).not.toHaveBeenCalled()
@@ -102,6 +107,7 @@ describe("reminder cron delivery", () => {
     const response = await GET(new Request("https://example.com/api/cron/reminders"))
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({
+      judgingUpdates: { sent: 0, failed: 0, skipped: 0 },
       scheduled: { processed: 2, sent: 2, skipped: 0, errors: 0 },
       postEvent: { processed: 1, totalSent: 3, errors: 0 },
       results: { processed: 1, winnerEmailsSent: 2, resultEmailsSent: 4, errors: 0 },
@@ -124,6 +130,7 @@ describe("reminder cron delivery", () => {
       },
     })
     for (const worker of [
+      mockJudgingUpdates,
       mockScheduled,
       mockPostEvent,
       mockResults,
@@ -136,6 +143,7 @@ describe("reminder cron delivery", () => {
       expect(worker).toHaveBeenCalledTimes(1)
     }
     const budgets = [
+      mockJudgingUpdates.mock.calls[0]?.[0],
       mockScheduled.mock.calls[0]?.[2],
       mockPostEvent.mock.calls[0]?.[1],
       mockResults.mock.calls[0]?.[1],
@@ -146,7 +154,7 @@ describe("reminder cron delivery", () => {
     ] as Array<{ remainingRecipients: number; deadlineAt: number }>
     expect(budgets.every((budget) => budget.remainingRecipients === 32)).toBe(true)
     expect(budgets.every((budget) => budget.deadlineAt > Date.now())).toBe(true)
-    expect(new Set(budgets).size).toBe(7)
+    expect(new Set(budgets).size).toBe(8)
     expect(60 * budgets[0]!.remainingRecipients).toBe(1_920)
   })
 
@@ -160,6 +168,7 @@ describe("reminder cron delivery", () => {
       activeWorkers--
       return value
     }
+    mockJudgingUpdates.mockImplementation(() => track({ sent: 0, failed: 0, skipped: 0 }))
     mockScheduled.mockImplementation(() => track({ processed: 0, sent: 0, skipped: 0, errors: 0 }))
     mockPostEvent.mockImplementation(() => track({ processed: 0, totalSent: 0, errors: 0 }))
     mockResults.mockImplementation(() => track({ processed: 0, winnerEmailsSent: 0, resultEmailsSent: 0, errors: 0 }))
@@ -205,6 +214,7 @@ describe("reminder cron delivery", () => {
   })
 
   it("reports each rejected worker without starving the others", async () => {
+    mockJudgingUpdates.mockRejectedValue(new Error("judging updates failed"))
     mockScheduled.mockRejectedValue(new Error("scheduled failed"))
     mockPostEvent.mockRejectedValue(new Error("post-event failed"))
     mockResults.mockRejectedValue(new Error("results failed"))
@@ -217,6 +227,7 @@ describe("reminder cron delivery", () => {
     const response = await GET(new Request("https://example.com/api/cron/reminders"))
     expect(response.status).toBe(500)
     expect(await response.json()).toEqual({
+      judgingUpdates: { error: "Error: judging updates failed" },
       scheduled: { error: "Error: scheduled failed" },
       postEvent: { error: "Error: post-event failed" },
       results: { error: "Error: results failed" },
@@ -227,6 +238,7 @@ describe("reminder cron delivery", () => {
       lifecycleWorkflows: { error: "Error: lifecycle workflow failed" },
     })
     for (const worker of [
+      mockJudgingUpdates,
       mockScheduled,
       mockPostEvent,
       mockResults,

@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
+import { useJudgingFormDraft } from "@/hooks/use-judging-form-draft"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -46,10 +47,12 @@ export function CoreCriteriaEditor({
 }: CoreCriteriaEditorProps) {
   const router = useRouter()
   const [items, setItems] = useState<CoreCriterion[]>(criteria)
-  const [adding, setAdding] = useState(false)
-  const [draft, setDraft] = useState<DraftRow>(EMPTY_DRAFT)
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editDraft, setEditDraft] = useState<DraftRow>(EMPTY_DRAFT)
+  const [formDraft, setFormDraft] = useJudgingFormDraft(hackathonId,"shared-scorecard",{adding:false,draft:EMPTY_DRAFT,editingId:null as string|null,editDraft:EMPTY_DRAFT})
+  const {adding,draft,editingId,editDraft} = formDraft
+  const setAdding = (adding:boolean) => setFormDraft((current) => ({...current,adding}))
+  const setDraft = (draft:DraftRow) => setFormDraft((current) => ({...current,draft}))
+  const setEditingId = (editingId:string|null) => setFormDraft((current) => ({...current,editingId}))
+  const setEditDraft = (editDraft:DraftRow) => setFormDraft((current) => ({...current,editDraft}))
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -114,8 +117,14 @@ export function CoreCriteriaEditor({
       return
     }
 
+    if (busy) return
     setBusy(true)
     setError(null)
+    const previous = items
+    const savedDraft = draft
+    const pendingId = `pending-${crypto.randomUUID()}`
+    setItems((current) => [...current,{id:pendingId,...result.payload,displayOrder:current.length}])
+    setAdding(false)
     try {
       const data = await fetch(
         `/api/dashboard/hackathons/${hackathonId}/core-criteria`,
@@ -126,11 +135,12 @@ export function CoreCriteriaEditor({
         },
       ).then(assertOkJson<{ criterion: CoreCriterion }>)
 
-      setItems([...items, data.criterion])
+      setItems((current) => current.map((item) => item.id === pendingId ? data.criterion : item))
       setDraft(EMPTY_DRAFT)
       setAdding(false)
       router.refresh()
     } catch (err) {
+      setItems(previous); setDraft(savedDraft); setAdding(true)
       setError(err instanceof Error ? err.message : "Failed to add")
     } finally {
       setBusy(false)
@@ -144,8 +154,13 @@ export function CoreCriteriaEditor({
       return
     }
 
+    if (busy) return
     setBusy(true)
     setError(null)
+    const previous = items
+    const savedDraft = editDraft
+    setItems((current) => current.map((item) => item.id === id ? {...item,...result.payload} : item))
+    setEditingId(null)
     try {
       const data = await fetch(
         `/api/dashboard/hackathons/${hackathonId}/core-criteria/${id}`,
@@ -156,10 +171,11 @@ export function CoreCriteriaEditor({
         },
       ).then(assertOkJson<{ criterion: CoreCriterion }>)
 
-      setItems(items.map((c) => (c.id === id ? data.criterion : c)))
+      setItems((current) => current.map((c) => (c.id === id ? data.criterion : c)))
       setEditingId(null)
       router.refresh()
     } catch (err) {
+      setItems(previous); setEditDraft(savedDraft); setEditingId(id)
       setError(err instanceof Error ? err.message : "Failed to save")
     } finally {
       setBusy(false)
@@ -167,17 +183,20 @@ export function CoreCriteriaEditor({
   }
 
   async function handleDelete(id: string) {
+    if (busy) return
     setBusy(true)
     setError(null)
+    const previous = items
+    setItems((current) => current.filter((item) => item.id !== id))
     try {
       await fetch(
         `/api/dashboard/hackathons/${hackathonId}/core-criteria/${id}`,
         { method: "DELETE" },
       ).then(assertOk)
 
-      setItems(items.filter((c) => c.id !== id))
       router.refresh()
     } catch (err) {
+      setItems(previous)
       setError(err instanceof Error ? err.message : "Failed to delete")
     } finally {
       setBusy(false)
@@ -195,7 +214,7 @@ export function CoreCriteriaEditor({
       <div className="space-y-1.5">
         <Label className="text-sm font-medium">Score range</Label>
         <p className="text-xs text-muted-foreground">
-          The slider judges see runs from this lowest score to highest score.
+          Judges choose a score between these two numbers.
         </p>
         <div className="flex items-end gap-2">
           <div className="flex flex-col w-20">
@@ -212,7 +231,7 @@ export function CoreCriteriaEditor({
               value={d.minScore}
               onChange={(e) => setD({ ...d, minScore: e.target.value })}
               className="text-center"
-              autoComplete="off"
+              autoComplete="off" data-1p-ignore data-lpignore="true" data-form-type="other"
             />
           </div>
           <span className="text-muted-foreground pb-2">–</span>
@@ -230,7 +249,7 @@ export function CoreCriteriaEditor({
               value={d.maxScore}
               onChange={(e) => setD({ ...d, maxScore: e.target.value })}
               className="text-center"
-              autoComplete="off"
+              autoComplete="off" data-1p-ignore data-lpignore="true" data-form-type="other"
             />
           </div>
           {trailing}
@@ -241,15 +260,14 @@ export function CoreCriteriaEditor({
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" onKeyDown={(event) => {if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && !busy) {event.preventDefault(); if (editingId) void handleSaveEdit(editingId); else if (adding) void handleAdd()}}}>
       <div className="flex items-start justify-between gap-2">
         <div>
           <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-            Core Weighted Categories
+            Shared scorecard
           </h4>
           <p className="text-sm text-muted-foreground mt-1">
-            Shared scoring criteria applied to every weighted-scoring prize.
-            Prize-specific criteria are layered on top.
+            Judges answer these questions once per project. Each prize can add more.
           </p>
         </div>
         {!adding && (
@@ -258,6 +276,7 @@ export function CoreCriteriaEditor({
             variant="outline"
             size="sm"
             onClick={() => setAdding(true)}
+            disabled={busy}
           >
             <Plus className="mr-1 size-3.5" />
             Add criterion
@@ -291,8 +310,8 @@ export function CoreCriteriaEditor({
                     onChange={(e) =>
                       setEditDraft({ ...editDraft, name: e.target.value })
                     }
-                    placeholder="Criterion name"
-                    autoComplete="off"
+                    placeholder="Question name" aria-label="Question name"
+                    autoComplete="off" data-1p-ignore data-lpignore="true" data-form-type="other"
                   />
                   <Textarea
                     value={editDraft.description}
@@ -302,9 +321,9 @@ export function CoreCriteriaEditor({
                         description: e.target.value,
                       })
                     }
-                    placeholder="Helper text (optional)"
+                    placeholder="Help text (optional)" aria-label="Help text (optional)"
                     rows={2}
-                    autoComplete="off"
+                    autoComplete="off" data-1p-ignore data-lpignore="true" data-form-type="other"
                   />
                 </div>
 
@@ -330,7 +349,7 @@ export function CoreCriteriaEditor({
                         setEditDraft({ ...editDraft, weight: e.target.value })
                       }
                       className="text-center"
-                      autoComplete="off"
+                      autoComplete="off" data-1p-ignore data-lpignore="true" data-form-type="other"
                     />
                   </div>,
                   <>
@@ -380,6 +399,7 @@ export function CoreCriteriaEditor({
                   size="icon"
                   className="size-8"
                   onClick={() => startEdit(c)}
+                  disabled={busy}
                   aria-label="Edit criterion"
                 >
                   <Pencil className="size-4" />
@@ -407,18 +427,18 @@ export function CoreCriteriaEditor({
             <Input
               value={draft.name}
               onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-              placeholder="e.g. Agentic Build Quality"
+              placeholder="e.g. Does it work?" aria-label="Question name"
               autoFocus
-              autoComplete="off"
+              autoComplete="off" data-1p-ignore data-lpignore="true" data-form-type="other"
             />
             <Textarea
               value={draft.description}
               onChange={(e) =>
                 setDraft({ ...draft, description: e.target.value })
               }
-              placeholder="Helper text (optional)"
+              placeholder="Help text (optional)" aria-label="Help text (optional)"
               rows={2}
-              autoComplete="off"
+              autoComplete="off" data-1p-ignore data-lpignore="true" data-form-type="other"
             />
           </div>
 
@@ -443,7 +463,7 @@ export function CoreCriteriaEditor({
                 onChange={(e) => setDraft({ ...draft, weight: e.target.value })}
                 placeholder="%"
                 className="text-center"
-                autoComplete="off"
+                autoComplete="off" data-1p-ignore data-lpignore="true" data-form-type="other"
               />
             </div>,
             <>
@@ -467,7 +487,7 @@ export function CoreCriteriaEditor({
         </div>
       )}
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     </div>
   )
 }

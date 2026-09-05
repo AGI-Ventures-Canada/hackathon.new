@@ -1,6 +1,6 @@
 import { Glob } from "bun"
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises"
-import { join } from "node:path"
+import { isAbsolute, join, relative, resolve } from "node:path"
 import {
   collectChangedCoverageInput,
   evaluateChangedCoverage,
@@ -20,6 +20,9 @@ const SERVICE_MOCK_PROCESS_ISOLATED_TESTS = [
   "__tests__/services/challenges.test.ts",
   "__tests__/services/event-mutation-lease.test.ts",
   "__tests__/services/judge-invitations.test.ts",
+  "__tests__/services/judging-notifications.test.ts",
+  "__tests__/services/judging-invite-batch.test.ts",
+  "__tests__/services/judging-reviews.test.ts",
   "__tests__/services/organization-members.test.ts",
   "__tests__/services/smart-reminders.test.ts",
   "__tests__/services/team-management.test.ts",
@@ -101,6 +104,7 @@ const WORKFLOW_DELIVERY_ISOLATED_TESTS = [
 const workflowDeliverySet = new Set(WORKFLOW_DELIVERY_ISOLATED_TESTS)
 
 const EMAIL_DELIVERY_ISOLATED_TESTS = [
+  "__tests__/email/judging-updates.test.tsx",
   "__tests__/email/winner-delivery.test.ts",
   "__tests__/email/winner-notifications.test.ts",
   "__tests__/integration/judge-added-email.email.test.ts",
@@ -129,6 +133,7 @@ const RADIX_ISOLATED_TESTS = [
 const radixSet = new Set(RADIX_ISOLATED_TESTS)
 
 const COMPONENT_PROCESS_ISOLATED_TESTS = [
+  "__tests__/components/hackathon/judging/judging-inbox.test.tsx",
   "__tests__/components/hackathon/manage/action-item-row.test.tsx",
   "__tests__/components/hackathon/judging/judge-invite-accept-client.test.tsx",
   "__tests__/components/global-webmcp-tools.test.tsx",
@@ -193,6 +198,18 @@ const EVENT_WEBMCP_ISOLATED_TESTS = [
 const eventWebMcpSet = new Set(EVENT_WEBMCP_ISOLATED_TESTS)
 const coverageEnabled = process.argv.includes("--coverage")
 const repositoryRoot = join(import.meta.dir, "..")
+const fileFlagIndex = process.argv.indexOf("--files")
+const requestedFiles = fileFlagIndex < 0 ? null : new Set(
+  process.argv.slice(fileFlagIndex + 1).filter((value) => value !== "--coverage").map((value) => {
+    const path = relative(repositoryRoot, resolve(repositoryRoot, value))
+    if (value.startsWith("--") || isAbsolute(path) || path.startsWith("../") || !/\.test\.tsx?$/.test(path)) {
+      throw new Error(`Invalid test file: ${value}. Use repository test file paths after --files.`)
+    }
+    return path
+  }),
+)
+if (requestedFiles?.size === 0) throw new Error("Provide at least one test file after --files.")
+if (requestedFiles && coverageEnabled) throw new Error("Run --coverage without --files to measure the full changed-code coverage gate.")
 const coverageRoot = join(repositoryRoot, "coverage")
 const coverageGroupsRoot = join(coverageRoot, "unit-groups")
 const coverageDocuments: CoverageDocument[] = []
@@ -455,8 +472,24 @@ if (coverageEnabled) {
   await mkdir(coverageGroupsRoot, { recursive: true })
 }
 
-for (const [index, group] of groups.entries()) {
-  const files = group.exclude ? await resolveArgs(group.args, group.exclude) : group.args
+if (requestedFiles && [...requestedFiles].some((path) => path.startsWith("packages/cli/__tests__/"))) {
+  groups.push({ name: "CLI focused", args: ["packages/cli/__tests__"] })
+}
+const resolvedGroups = await Promise.all(groups.map(async (group) => ({
+  ...group,
+  files: requestedFiles || group.exclude ? await resolveArgs(group.args, group.exclude) : group.args,
+})))
+if (requestedFiles) {
+  const availableFiles = new Set(resolvedGroups.flatMap((group) => group.files))
+  for (const path of requestedFiles) {
+    if (!availableFiles.has(path) || !await Bun.file(join(repositoryRoot, path)).exists()) {
+      throw new Error(`Test file is not part of the unit test groups: ${path}`)
+    }
+  }
+}
+
+for (const [index, group] of resolvedGroups.entries()) {
+  const files = requestedFiles ? group.files.filter((file) => requestedFiles.has(file)) : group.files
   if (files.length === 0) continue
 
   const groupCoverageDirectory = join(

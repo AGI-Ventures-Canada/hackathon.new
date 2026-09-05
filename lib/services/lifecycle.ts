@@ -17,6 +17,7 @@ import {
   stageResultPublication,
 } from "@/lib/services/result-publication"
 import { getJudgingSetupStatus } from "@/lib/services/judging"
+import { resolveJudgingWindow } from "@/lib/utils/judging-window"
 
 const VALID_TRANSITIONS: Record<HackathonStatus, HackathonStatus[]> = {
   draft: ["published", "registration_open"],
@@ -1241,7 +1242,7 @@ export async function processAutoTransitions(
   const firstPageResult = await client
     .from("hackathons")
     .select(
-      "id, tenant_id, status, registration_opens_at, starts_at, ends_at, name, slug, is_test_event",
+      "id, tenant_id, status, registration_opens_at, starts_at, ends_at, name, slug, is_test_event, judging_opens_at, judging_closes_at",
       { count: "exact" },
     )
     .not("status", "in", "(draft,completed,archived)")
@@ -1271,7 +1272,7 @@ export async function processAutoTransitions(
     const pageStart = pageIndex * AUTO_TRANSITION_BATCH_LIMIT
     const pageResult = await client
       .from("hackathons")
-      .select("id, tenant_id, status, registration_opens_at, starts_at, ends_at, name, slug, is_test_event")
+      .select("id, tenant_id, status, registration_opens_at, starts_at, ends_at, name, slug, is_test_event, judging_opens_at, judging_closes_at")
       .not("status", "in", "(draft,completed,archived)")
       .order("updated_at", { ascending: true })
       .order("id", { ascending: true })
@@ -1328,7 +1329,10 @@ export async function processAutoTransitions(
         )
         continue
       }
-      if (!eventEndReached && !submissionDeadlineReached) continue
+      const judgingWindow = resolveJudgingWindow(h, null, now)
+      if (judgingWindow.state !== "unscheduled") {
+        if (judgingWindow.state !== "open") continue
+      } else if (!eventEndReached && !submissionDeadlineReached) continue
 
       let readiness: JudgingReadiness
       try {

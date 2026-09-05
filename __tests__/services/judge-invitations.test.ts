@@ -443,7 +443,7 @@ describe("Judge Invitations Service", () => {
 
       await markJudgeInvitationEmailed("inv1")
 
-      expect(chain.update).toHaveBeenCalledWith({ emailed_at: expect.any(String) })
+      expect(chain.update).toHaveBeenCalledWith(expect.objectContaining({ emailed_at: expect.any(String), delivery_fail_count: 0, delivery_last_error: null }))
       expect(chain.eq).toHaveBeenCalledWith("id", "inv1")
     })
 
@@ -581,7 +581,7 @@ describe("Judge Invitations Service", () => {
       expect(reminder[5].getTime() - reminder[4].getTime())
         .toBe(7 * 24 * 60 * 60 * 1000)
       expect(reminder[6]).toEqual(expect.objectContaining({ email: "judge1@example.com" }))
-      expect(chain.update).toHaveBeenCalledWith({ emailed_at: expect.any(String) })
+      expect(chain.update).toHaveBeenCalledWith(expect.objectContaining({ emailed_at: expect.any(String), delivery_fail_count: 0, delivery_last_error: null }))
       expect(chain.update).toHaveBeenCalledWith(expect.objectContaining({
         expires_at: expect.any(String),
         status: "pending",
@@ -691,7 +691,7 @@ describe("Judge Invitations Service", () => {
         failedEmails: [],
       })
       expect(mockScheduleReminders).toHaveBeenCalledTimes(1)
-      expect(chain.update).toHaveBeenCalledWith({ emailed_at: expect.any(String) })
+      expect(chain.update).toHaveBeenCalledWith(expect.objectContaining({ emailed_at: expect.any(String), delivery_fail_count: 0, delivery_last_error: null }))
     })
 
     it("returns sent: 0 when DB returns empty result (emailed_at filter applied at query level)", async () => {
@@ -708,7 +708,7 @@ describe("Judge Invitations Service", () => {
       expect(mockScheduleReminders).not.toHaveBeenCalled()
     })
 
-    it("does not send after the event has effectively ended", async () => {
+    it("does not send after the judging deadline", async () => {
       const pendingInvitations = [mockInvitation]
       setMockFromImplementation((table) =>
         table === "hackathons"
@@ -717,6 +717,8 @@ describe("Judge Invitations Service", () => {
                 status: "published",
                 starts_at: "2026-01-01T00:00:00.000Z",
                 ends_at: "2026-01-02T00:00:00.000Z",
+                judging_opens_at: "2026-01-02T00:00:00.000Z",
+                judging_closes_at: "2026-01-03T00:00:00.000Z",
               },
               error: null,
             })
@@ -974,6 +976,7 @@ describe("Judge Invitations Service", () => {
       let notificationCall = 0
       let sentUpdate: ReturnType<typeof createChainableMock> | null = null
       setMockFromImplementation((table) => {
+        if (table === "hackathon_participants") return createChainableMock({ data: { role: "judge" }, error: null })
         if (table !== "judge_pending_notifications") {
           return createChainableMock({ data: null, error: null })
         }
@@ -1019,6 +1022,7 @@ describe("Judge Invitations Service", () => {
       let notificationCall = 0
       let failedUpdate: ReturnType<typeof createChainableMock> | null = null
       setMockFromImplementation((table) => {
+        if (table === "hackathon_participants") return createChainableMock({ data: { role: "judge" }, error: null })
         if (table !== "judge_pending_notifications") {
           return createChainableMock({ data: null, error: null })
         }
@@ -1473,7 +1477,7 @@ describe("Judge Invitations Service", () => {
       }
     })
 
-    it("rejects repeat reminders after the one-time claim", async () => {
+    it("rejects repeat reminders within the 24-hour cooldown", async () => {
       let invitationCalls = 0
       setMockFromImplementation((table) => {
         if (table === "hackathons") {
@@ -1490,7 +1494,7 @@ describe("Judge Invitations Service", () => {
 
       const result = await remindJudgeInvitation("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")
 
-      expect(result).toMatchObject({ success: false, code: "already_reminded" })
+      expect(result).toMatchObject({ success: false, code: "reminder_cooldown" })
     })
   })
 

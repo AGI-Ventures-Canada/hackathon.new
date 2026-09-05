@@ -75,20 +75,22 @@ async function consumeJudgingWriteLimit(hackathonId: string, userId: string) {
   if (!limit.allowed) throw new RateLimitError(limit.resetAt, limit.remaining)
 }
 
-async function recalculateAssignmentWithLease(hackathonId: string, assignmentId: string) {
-  const [{ recalculateForAssignment }, { withEventMutationLease }] = await Promise.all([
-    import("@/lib/services/judging"),
-    import("@/lib/services/event-mutation-lease"),
-  ])
-  return withEventMutationLease(hackathonId, () => recalculateForAssignment(assignmentId))
-}
-
 async function recalculatePrizeWithLease(hackathonId: string, prizeId: string) {
   const [{ calculatePrizeResults }, { withEventMutationLease }] = await Promise.all([
     import("@/lib/services/judging"),
     import("@/lib/services/event-mutation-lease"),
   ])
   return withEventMutationLease(hackathonId, () => calculatePrizeResults(hackathonId, prizeId))
+}
+
+
+async function publishReviewFromLegacyRoute(...args: Parameters<typeof import("@/lib/services/judging-reviews").publishLegacyJudgingReview>): Promise<Response | null> {
+  const {publishLegacyJudgingReview, JudgingReviewError} = await import("@/lib/services/judging-reviews")
+  try { await publishLegacyJudgingReview(...args); return null }
+  catch (error) {
+    if (error instanceof JudgingReviewError) return Response.json({error:error.message,code:error.code},{status:error.status})
+    throw error
+  }
 }
 
 async function persistRequiredTermsAcceptance(
@@ -2250,7 +2252,7 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
 
       await consumeJudgingWriteLimit(hackathon.id, userId)
 
-      const { assertAssignmentWritable, submitScores } = await import("@/lib/services/judging")
+      const { assertAssignmentWritable } = await import("@/lib/services/judging")
       const guard = await assertAssignmentWritable(params.assignmentId, userId, hackathon)
       if (!guard.ok) {
         return new Response(
@@ -2259,23 +2261,9 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
-      const result = await submitScores(
-        params.assignmentId,
-        guard.ownership,
-        body.scores,
-        body.notes
-      )
-
-      if (!result.success) {
-        return new Response(
-          JSON.stringify({ error: result.error, code: result.code }),
-          { status: 400, headers: { "Content-Type": "application/json" } }
-        )
-      }
-
-      await recalculateAssignmentWithLease(hackathon.id, params.assignmentId).catch((err) => {
-        console.error(`[judging] auto-recalculate failed for assignment ${params.assignmentId}:`, err)
-      })
+      if (new Set(body.scores.map((score) => score.criteriaId)).size !== body.scores.length) return Response.json({error:"Score each category once.",code:"invalid_response"},{status:400})
+      const failure = await publishReviewFromLegacyRoute(params.slug,userId,{assignmentId:params.assignmentId},{kind:"weighted_score",scores:Object.fromEntries(body.scores.map((score) => [score.criteriaId,score.score])),notes:body.notes})
+      if (failure) return failure
 
       return { success: true }
     },
@@ -2404,24 +2392,8 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
       }
 
       if (typedBody.rankedSubmissionIds) {
-        const { submitJudgesPick } = await import("@/lib/services/judging")
-        const result = await submitJudgesPick(
-          hackathon.id,
-          regInfo.participantId,
-          typedBody.prizeId,
-          typedBody.rankedSubmissionIds
-        )
-
-        if (!result.success) {
-          return new Response(
-            JSON.stringify({ error: result.error, code: result.code }),
-            { status: 400, headers: { "Content-Type": "application/json" } }
-          )
-        }
-
-        await recalculatePrizeWithLease(hackathon.id, typedBody.prizeId).catch((err) => {
-          console.error(`[judging] auto-recalculate failed for prize ${typedBody.prizeId}:`, err)
-        })
+        const failure = await publishReviewFromLegacyRoute(params.slug,userId,{prizeId:typedBody.prizeId},{kind:"judges_pick",rankedSubmissionIds:typedBody.rankedSubmissionIds,notes:typedBody.reason})
+        if (failure) return failure
 
         return { success: true }
       }
@@ -2433,28 +2405,14 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
-      const { submitPick } = await import("@/lib/services/judge-picks")
-      const result = await submitPick(
-        hackathon.id,
-        regInfo.participantId,
-        typedBody.prizeId,
-        typedBody.submissionId,
-        typedBody.rank ?? 1,
-        typedBody.reason
-      )
-
-      if (!result.success) {
-        return new Response(
-          JSON.stringify({ error: result.error }),
-          { status: 400, headers: { "Content-Type": "application/json" } }
-        )
-      }
-
-      await recalculatePrizeWithLease(hackathon.id, typedBody.prizeId).catch((err) => {
-        console.error(`[judging] auto-recalculate failed for prize ${typedBody.prizeId}:`, err)
-      })
-
-      return { id: result.pick.id }
+      if (typedBody.rank !== undefined && typedBody.rank !== 1) return Response.json({error:"Use the ranked picks form to add more than one project",code:"invalid_response"},{status:400})
+      const failure = await publishReviewFromLegacyRoute(params.slug,userId,{prizeId:typedBody.prizeId},{kind:"judges_pick",rankedSubmissionIds:[typedBody.submissionId],notes:typedBody.reason})
+      if (failure) return failure
+      const {getJudgePicks} = await import("@/lib/services/judge-picks")
+      const picks = await getJudgePicks(hackathon.id,regInfo.participantId)
+      const pick = picks.find((item) => item.prize_id === typedBody.prizeId && item.submission_id === typedBody.submissionId)
+      if (!pick) return Response.json({error:"Your pick was submitted, but couldn't be loaded. Refresh your review.",code:"unavailable"},{status:503})
+      return {id:pick.id}
     },
     {
       detail: {
@@ -2602,23 +2560,9 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
-      const { submitBucketSortResponse } = await import("@/lib/services/prize-tracks")
-      const result = await submitBucketSortResponse(params.assignmentId, {
-        gates: body.gates ?? [],
-        bucketId: body.bucketId,
-        notes: body.notes,
-      })
-
-      if (!result.success) {
-        return new Response(
-          JSON.stringify({ error: result.error, code: result.code }),
-          { status: 400, headers: { "Content-Type": "application/json" } }
-        )
-      }
-
-      recalculateAssignmentWithLease(hackathon.id, params.assignmentId).catch((err) => {
-        console.error(`[judging] auto-recalculate failed for assignment ${params.assignmentId}:`, err)
-      })
+      if (body.gates && new Set(body.gates.map((gate) => gate.criteriaId)).size !== body.gates.length) return Response.json({error:"Answer each check once.",code:"invalid_response"},{status:400})
+      const failure = await publishReviewFromLegacyRoute(params.slug,userId,{assignmentId:params.assignmentId},{kind:"bucket_sort",bucketId:body.bucketId,notes:body.notes,...(body.gates?.length ? {gates:Object.fromEntries(body.gates.map((gate) => [gate.criteriaId,gate.passed]))} : {})})
+      if (failure) return failure
 
       return { success: true }
     },
@@ -2675,19 +2619,9 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
         )
       }
 
-      const { submitGateCheckResponse } = await import("@/lib/services/prize-tracks")
-      const result = await submitGateCheckResponse(params.assignmentId, body.gates)
-
-      if (!result.success) {
-        return new Response(
-          JSON.stringify({ error: result.error, code: result.code }),
-          { status: 400, headers: { "Content-Type": "application/json" } }
-        )
-      }
-
-      recalculateAssignmentWithLease(hackathon.id, params.assignmentId).catch((err) => {
-        console.error(`[judging] auto-recalculate failed for assignment ${params.assignmentId}:`, err)
-      })
+      if (new Set(body.gates.map((gate) => gate.criteriaId)).size !== body.gates.length) return Response.json({error:"Answer each check once.",code:"invalid_response"},{status:400})
+      const failure = await publishReviewFromLegacyRoute(params.slug,userId,{assignmentId:params.assignmentId},{kind:"gate_check",gates:Object.fromEntries(body.gates.map((gate) => [gate.criteriaId,gate.passed]))})
+      if (failure) return failure
 
       return { success: true }
     },
@@ -3053,8 +2987,8 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
 
     if (!result.success) {
       return new Response(
-        JSON.stringify({ error: result.error }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
+        JSON.stringify({ error: result.error, code: result.code }),
+        { status: result.code === "voting_closed" ? 409 : 400, headers: { "Content-Type": "application/json" } }
       )
     }
 
@@ -3108,8 +3042,8 @@ export const publicRoutes = new Elysia({ prefix: "/public" })
 
     if (!result.success) {
       return new Response(
-        JSON.stringify({ error: result.error }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
+        JSON.stringify({ error: result.error, code: result.code }),
+        { status: result.code === "voting_closed" ? 409 : 400, headers: { "Content-Type": "application/json" } }
       )
     }
 

@@ -10,11 +10,11 @@ Natural language commands mapped to CLI command sequences.
 | "Import from this Luma event: lu.ma/abcd" | `hackathon events create --from-url https://lu.ma/abcd` |
 | "Add judge@example.com as a judge" | `hackathon events list` → `hackathon judging judges add <id> --email judge@example.com` |
 | "Set up 3 judging criteria" | 3x `hackathon judging criteria create <id> --name "..." --max-score 10` |
-| "Add rubric levels" | `hackathon judging levels add --hackathon-id <id> --criteria-id <cid> --label "Solid"` |
+| "Set up a simple scorecard" | `hackathon judging setup inspect <id>` → `hackathon judging setup configure <id> --starter` |
 | "Create prizes: 1st $5k, 2nd $2.5k, 3rd $1k" | 3x `hackathon prizes create <id> --name "..." --value "..."` |
 | "Set up a Grand Prize track and a Sponsor Award track" | 2x `hackathon tracks create <id> --name "..."` |
-| "Top 5 submissions advance to finals" | `hackathon tracks update-round <id> <track> <round> --advance-top-n 5` |
-| "Auto-assign judges" | `hackathon judging auto-assign <id> --per-judge 5` |
+| "Top 5 projects move to finals" | `hackathon judging rounds preset <id> --preset shortlist --data '{"advanceTopN":5}'` |
+| "Auto-assign judges" | `hackathon judging assignments preview <id> --json` → `hackathon judging assignments apply <id> --expected-version <version>` |
 | "Add Acme Corp as a gold sponsor" | `hackathon sponsors add <id> --name "Acme Corp" --tier gold` |
 | "Give participants $500 OpenAI credits" | `hackathon perks create <id> --name "OpenAI credits" --type credit --sponsor <sid>` |
 | "Release the OpenAI perk now" | `hackathon perks release <id> <perk-id>` |
@@ -173,33 +173,32 @@ hackathon announcements schedule <id> $REMINDER_ID --at 2026-05-02T16:00:00Z
 
 ## End-to-End: Add Judges and Run Judging
 
-When a user says "Add these judges: alice@co.com, bob@co.com, charlie@co.com":
-
-### Step 1: Find the Hackathon
+For a new event, inspect first and save the default scorecard if requested:
 
 ```bash
 hackathon events list
+hackathon judging setup inspect <id> --json
+hackathon judging setup configure <id> --starter
+hackathon judging setup configure <id> --opens-at 2026-09-12T09:00:00-04:00 --closes-at 2026-09-12T17:00:00-04:00 --timezone America/Toronto
 ```
 
-### Step 2: Add Judges
+Preview invitations and read every outcome. Send only the requested invitations:
 
 ```bash
-hackathon judging judges add <id> --email alice@co.com
-hackathon judging judges add <id> --email bob@co.com
-hackathon judging judges add <id> --email charlie@co.com
+hackathon judging invitations batch <id> --emails "alice@co.com,bob@co.com,charlie@co.com"
+hackathon judging invitations batch <id> --emails "alice@co.com,bob@co.com,charlie@co.com" --send --request-key invite-batch-20260912
 ```
 
-### Step 3: Auto-Assign
+After acceptance and project submission, preview the workload and apply its version:
 
 ```bash
-hackathon judging auto-assign <id> --per-judge 5
-```
-
-### Step 4: Check Progress
-
-```bash
+hackathon judging assignments preview <id> --reviews-per-project 3 --json
+hackathon judging assignments apply <id> --reviews-per-project 3 --expected-version <preview-version> --request-key distribution-20260912
+hackathon judging setup inspect <id>
 hackathon judging assignments list <id>
 ```
+
+Reuse the same request key when retrying a send or assignment apply. A stale preview needs a fresh read. Read queued delivery states accurately; draft events do not send invitation email yet.
 
 ## End-to-End: Organize a Hybrid Event
 

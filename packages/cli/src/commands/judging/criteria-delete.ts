@@ -22,7 +22,7 @@ export async function runCriteriaDelete(
   }
 
   await client.delete(
-    `/api/dashboard/hackathons/${hackathonId}/judging/criteria/${criteriaId}`
+    `/api/dashboard/hackathons/${hackathonId}/core-criteria/${criteriaId}`
   )
   console.log(formatSuccess(`Deleted criteria ${criteriaId}`))
 }

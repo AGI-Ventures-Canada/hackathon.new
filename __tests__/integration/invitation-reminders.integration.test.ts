@@ -278,7 +278,7 @@ describe("POST /hackathons/:id/judging/invitations/:invitationId/remind", () => 
     )
   })
 
-  it("rejects effectively ended events before claiming or sending", async () => {
+  it("allows invitation reminders after the event ends while judging remains available", async () => {
     mockCheckHackathonOrganizer.mockResolvedValue({
       status: "ok",
       hackathon: {
@@ -292,11 +292,46 @@ describe("POST /hackathons/:id/judging/invitations/:invitationId/remind", () => 
     })
 
     const res = await app.handle(new Request(remindUrl, { method: "POST" }))
-    expect(res.status).toBe(409)
-    expect(await res.json()).toMatchObject({ code: "hackathon_ended" })
-    expect(mockRemindJudgeInvitation).not.toHaveBeenCalled()
-    expect(mockSendJudgeInvitationReminderEmail).not.toHaveBeenCalled()
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ success: true })
+    expect(mockRemindJudgeInvitation).toHaveBeenCalledWith(INVITATION_ID, HACKATHON_ID)
+    expect(mockSendJudgeInvitationReminderEmail).toHaveBeenCalledTimes(1)
   })
+
+  it("includes the actual judging window in a post-event invitation reminder", async () => {
+    const judgingOpensAt = new Date(Date.now() - 3_600_000).toISOString()
+    const judgingClosesAt = new Date(Date.now() + 3_600_000).toISOString()
+    mockCheckHackathonOrganizer.mockResolvedValue({
+      status: "ok",
+      hackathon: {
+        id: HACKATHON_ID, name: "Post-event judging", slug: "post-event", status: "active",
+        starts_at: "2020-01-01T00:00:00.000Z", ends_at: "2020-01-02T00:00:00.000Z",
+        judging_opens_at: judgingOpensAt, judging_closes_at: judgingClosesAt, judging_timezone: "America/Toronto",
+      },
+    })
+    const res = await app.handle(new Request(remindUrl, { method: "POST" }))
+    expect(res.status).toBe(200)
+    expect(mockSendJudgeInvitationReminderEmail).toHaveBeenCalledWith(expect.objectContaining({ hackathonStartsAt: judgingOpensAt, hackathonEndsAt: judgingClosesAt, hackathonTimezone: "America/Toronto" }))
+  })
+
+  for (const guard of ["closed judging window", "published results"] as const) {
+    it(`rejects ${guard} before claiming or sending an invitation reminder`, async () => {
+      mockCheckHackathonOrganizer.mockResolvedValue({
+        status: "ok",
+        hackathon: {
+          id: HACKATHON_ID, name: "Finished judging", slug: "finished", status: "active",
+          judging_opens_at: new Date(Date.now() - 2 * 3_600_000).toISOString(),
+          judging_closes_at: new Date(Date.now() + (guard === "closed judging window" ? -1 : 1) * 3_600_000).toISOString(),
+          results_published_at: guard === "published results" ? new Date().toISOString() : null,
+        },
+      })
+      const res = await app.handle(new Request(remindUrl, { method: "POST" }))
+      expect(res.status).toBe(409)
+      expect(await res.json()).toMatchObject({ code: "hackathon_ended" })
+      expect(mockRemindJudgeInvitation).not.toHaveBeenCalled()
+      expect(mockSendJudgeInvitationReminderEmail).not.toHaveBeenCalled()
+    })
+  }
 
   it("uses a hashed request idempotency key for provider retries", async () => {
     const res = await app.handle(new Request(remindUrl, {

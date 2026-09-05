@@ -1,159 +1,147 @@
 ---
-title: Managing Judges & Scoring
-description: Set up judging criteria, manage judges, and handle scoring assignments from the CLI.
+title: Set Up Judging from the CLI
+description: Create a prize and scorecard, invite judges, and share project reviews fairly.
 ---
 
-This guide covers the complete judging workflow — defining criteria, inviting judges, distributing submissions, and monitoring scoring progress.
+Start with one prize and a ready-to-use scorecard. Add other methods or rounds when you need them.
 
-## Define Judging Criteria
+## Check What Is Ready
 
-Criteria define how judges score submissions. Each criterion has a name, maximum score, and weight (percentage of the final score):
-
-```bash title="Create criteria"
-hackathon judging criteria create <hackathon> \
-  --name "Innovation" \
-  --description "Novelty and creativity of the solution" \
-  --max-score 10 \
-  --weight 30
-
-hackathon judging criteria create <hackathon> \
-  --name "Technical Execution" \
-  --description "Code quality, architecture, and completeness" \
-  --max-score 10 \
-  --weight 40
-
-hackathon judging criteria create <hackathon> \
-  --name "Presentation" \
-  --description "Demo quality and clarity of explanation" \
-  --max-score 10 \
-  --weight 30
+```bash title="Inspect judging"
+hackathon judging setup inspect <event> --json
 ```
 
-<Callout type="warn">
-Weights should add up to 100. The platform uses weights to calculate the final weighted score for each submission.
-</Callout>
+This returns prizes, scorecards, dates, judge progress, and the steps still needed. Use the event ID from `hackathon events list`.
 
-### Manage Criteria
+## Start with a Prize and Scorecard
 
-```bash title="Criteria management"
-# List all criteria
-hackathon judging criteria list <hackathon>
-
-# Update a criterion
-hackathon judging criteria update <hackathon> <criteria-id> --weight 35
-
-# Delete a criterion
-hackathon judging criteria delete <hackathon> <criteria-id>
+```bash title="Save the starter setup"
+hackathon judging setup configure <event> --starter --prize-name "Best overall"
 ```
 
-## Invite Judges
+The starter adds one prize and four shared categories: Innovation, Technical execution, Design and UX, and Impact. Each uses a 0–10 scale and counts for 25% of the score. It does not replace existing scorecards. Existing events keep their rules until you save a change.
 
-Add judges by email address. They'll receive an invitation to join:
+Set a judging window separate from the event dates. Include the time zone offset in each time:
 
-```bash title="Invite judges"
-hackathon judging judges add <hackathon> --email alice@example.com
-hackathon judging judges add <hackathon> --email bob@example.com
-hackathon judging judges add <hackathon> --email carol@example.com
+```bash title="Set judging dates"
+hackathon judging setup configure <event> \
+  --opens-at 2026-09-12T09:00:00-04:00 \
+  --closes-at 2026-09-12T17:00:00-04:00 \
+  --timezone America/Toronto \
+  --reviews-per-project 3 --reminders on --browse off
 ```
 
-If you have a user's Clerk ID, you can add them directly:
+Use `--instructions "..."` for a note to judges. `--browse on` lets judges find more eligible projects beyond their assigned queue. Use `--file settings.json` or `--data '{"remindersEnabled":true}'` for a JSON settings object.
 
-```bash title="Add by user ID"
-hackathon judging judges add <hackathon> --user-id user_abc123
+Setup saves check the current version. For scripts, pass `--expected-version` from inspection and reuse `--request-key` when retrying the same save.
+
+## Invite Judges by Email
+
+Preview up to 20 addresses, then send:
+
+```bash title="Preview and send invites"
+hackathon judging invitations batch <event> \
+  --emails "alice@example.com,bob@example.com"
+
+hackathon judging invitations batch <event> \
+  --emails "alice@example.com,bob@example.com" --send \
+  --request-key invite-batch-20260912
 ```
 
-### Track Invitations
+The preview shows who can be added, invited, or needs attention. People already registered for this event can be added directly. Everyone else gets an acceptance link. Draft events queue invitations until the event goes live. Read each result's outcome and delivery state; a queued invitation has not been sent.
 
-```bash title="Manage invitations"
-# See pending invitations
-hackathon judging invitations list <hackathon>
+To limit judges to certain prizes or rooms, add `--prizes <prize-id,...>` or `--rooms <room-id,...>`. Find prize IDs with `hackathon prizes list`. Reuse the same request key when retrying a batch.
 
-# Cancel an invitation
-hackathon judging invitations cancel <hackathon> <invitation-id>
+```bash title="Review invitations and reminder eligibility"
+hackathon judging invitations list <event>
+hackathon judging invitations remind <event> --emails "alice@example.com"
+hackathon judging invitations remind <event> --emails "alice@example.com" --send
 ```
 
-## Distribute Submissions
+Reminder previews explain when an invitation cannot be reminded yet. Judges also receive scheduled updates when their work is ready and before the deadline. Completed judges are left out of work reminders.
 
-After the submission deadline, assign submissions to judges. Auto-assign distributes them evenly:
+## Share the Project Reviews
 
-```bash title="Auto-assign"
-hackathon judging auto-assign <hackathon> --per-judge 5
+Once projects are submitted and judges have accepted, preview the assignments:
+
+```bash title="Preview assignments"
+hackathon judging assignments preview <event> --reviews-per-project 3 --json
 ```
 
-The `--per-judge` flag controls how many submissions each judge receives. The algorithm distributes evenly so every submission gets reviewed by roughly the same number of judges.
+The target is reviews per project **for each prize**. The preview shows coverage, each judge's workload, and any shortage of eligible judges. It respects prize and room limits, excludes a judge's own team, and keeps existing assignments and reviews.
 
-### Manual Assignments
+Copy the preview version into the apply command:
 
-For special cases, create individual assignments:
+```bash title="Apply the reviewed plan"
+hackathon judging assignments apply <event> \
+  --reviews-per-project 3 --expected-version <preview-version> \
+  --request-key distribution-20260912
+```
+
+Use the same target, version, and request key when retrying. A changed setup requires a fresh preview. A weighted review can cover several eligible prizes without asking the judge to repeat shared questions.
+
+### Adjust One Judge's Projects
 
 ```bash title="Manual assignments"
-# Assign a specific judge to a specific submission
-hackathon judging assignments create <hackathon> \
-  --judge <judge-participant-id> \
-  --submission <submission-id>
-
-# Remove an assignment
-hackathon judging assignments delete <hackathon> <assignment-id>
+hackathon judging judges list <event>
+hackathon judging assignments list <event>
+hackathon judging assignments create <event> --judge <judge-id> --submission <project-id>
+hackathon judging assignments delete <event> <assignment-id>
 ```
 
-## Monitor Scoring Progress
+Submitted reviews cannot be removed. The older `judging auto-assign <event> --per-judge 5` command remains available; its number caps projects per judge for each prize. Use preview and apply for a reviews-per-project target.
 
-Track how judging is progressing:
+Add `--prize <prize-id>` to `assignments create` for a pass/fail or sort-group scorecard. For favorite picks, set which prizes and rooms the judge can review:
 
-```bash title="Track progress"
-# See each judge's progress (e.g., "3/5 scored")
-hackathon judging judges list <hackathon>
-
-# View all assignments with scores
-hackathon judging assignments list <hackathon>
+```bash title="Change an accepted judge's scope"
+hackathon judging judges scope <event> <judge-id>
+hackathon judging judges scope <event> <judge-id> --prizes <prize-id,...> --rooms <room-id,...>
+hackathon judging judges scope <event> <judge-id> --prizes all --rooms all
 ```
 
-## Subjective Judging (Judge Picks)
+Scope changes keep existing reviews. A judge who has submitted reviews keeps their original prizes and rooms. Unsubmitted projects that become ineligible leave the judge's queue; the organizer can remove those old assignments.
 
-If your hackathon uses subjective judging (where judges pick favorites rather than scoring numerically), view the tallies:
+## Change Scorecards or Add Rounds
 
-```bash title="View pick results"
-hackathon judging pick-results <hackathon>
+```bash title="Inspect and change scorecards"
+hackathon judging scorecards list <event>
+hackathon judging criteria create <event> --name "Clarity" --min-score 0 --max-score 10 --weight 25
+hackathon judging scorecards update <event> <prize-id> --file scorecard.json
 ```
 
-## Calculate Results
+`judging criteria` manages shared categories. `scorecards update` accepts prize settings and prize-specific categories through the same API as the app. Keep existing category IDs in edits. Supported `--style` values are `weighted_score`, `gate_check`, `bucket_sort`, `judges_pick`, and `crowd_vote`. Other options include `--round`, `--judge-scope all|selected`, and `--max-picks`.
 
-Once all judges have finished scoring:
+For example, a gate-check scorecard file can contain:
 
-```bash title="Finalize"
-# Calculate final rankings
-hackathon results calculate <hackathon>
-
-# Review before publishing
-hackathon results get <hackathon>
-
-# Publish results
-hackathon results publish <hackathon>
+```json title="scorecard.json"
+{"judgingStyle":"gate_check","criteria":[{"name":"Does the demo work?"}]}
 ```
 
-## Remove a Judge
+Once a review is submitted, its scoring rules and category wording stay fixed. Prize names and reward descriptions can still change. Use a new round for a new scoring prize or scorecard.
 
-If a judge can no longer participate:
-
-```bash title="Remove judge"
-hackathon judging judges remove <hackathon> <judge-participant-id>
+```bash title="Optional rounds"
+hackathon judging rounds list <event>
+hackathon judging rounds preset <event> --preset shortlist --data '{"advanceTopN":5}'
+hackathon judging rounds update <event> <round-id> --opens-at 2026-09-12T13:00:00-04:00 --closes-at 2026-09-12T17:00:00-04:00
+hackathon judging rounds activate <event> <round-id>
+hackathon judging rounds complete <event> <round-id>
+hackathon judging rounds candidates <event> <round-id>
+hackathon judging rounds advance <event> <round-id> --file advancement.json
 ```
 
-<Callout type="warn">
-Removing a judge also removes their assignments. You may need to re-run auto-assign to redistribute their submissions.
-</Callout>
+Round dates override event judging dates. Leave them unset to use the event window. Round advancement uses the existing API rules; inspect candidates before choosing who moves on.
 
-## JSON Output for Reporting
+The old `judging levels` aliases return guidance because their former API route is unavailable. Use scorecard inspection and editing for supported settings; separate rubric-level edits are not exposed by these commands.
 
-Export judging data as JSON for spreadsheets or custom reporting:
+## Check Progress and Results
 
-```bash title="Export data"
-# Export judge progress
-hackathon judging judges list <hackathon> --json > judges.json
-
-# Export all assignments with scores
-hackathon judging assignments list <hackathon> --json > assignments.json
-
-# Export final results
-hackathon results get <hackathon> --json > results.json
+```bash title="Review progress and winners"
+hackathon judging setup inspect <event>
+hackathon judging judges list <event>
+hackathon judging assignments list <event> --json
+hackathon judging pick-results <event>
+hackathon results calculate <event>
+hackathon results get <event>
 ```
+
+After reviewing the winners, publish with `hackathon results publish <event>`.

@@ -76,6 +76,8 @@ async function run() {
   }
 
   const criteriaIds = await addJudgingCriteria(hackathonId)
+  const prizes = buildDefaultPrizes(criteriaIds)
+  await createPrizes(hackathonId, prizes)
   await seedJudgeDisplayProfiles(hackathonId, judgeUsers, judgeParticipantIds)
   const assignmentIds = await assignJudges(hackathonId, judgeParticipantIds, submissions, judgeTeamIds)
 
@@ -83,9 +85,6 @@ async function run() {
   for (let i = 0; i < halfPoint; i++) {
     await submitRandomScores(assignmentIds[i], criteriaIds)
   }
-
-  const prizes = buildDefaultPrizes(criteriaIds)
-  await createPrizes(hackathonId, prizes)
 
   console.log(`Created 5 teams, 5 submissions, 3 judges, ${assignmentIds.length} assignments.`)
   console.log(`${halfPoint} assignments scored, ${assignmentIds.length - halfPoint} remaining.`)

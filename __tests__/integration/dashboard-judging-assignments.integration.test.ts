@@ -9,6 +9,21 @@ mock.module("@/lib/services/public-hackathons", () => ({
 }))
 
 const mockListJudgeSubmissionAssignments = mock(() => Promise.resolve([]))
+const mockDeleteJudgingAssignment = mock(() => Promise.resolve({ removed: true }))
+const mockListJudgingAssignmentRows = mock(() => Promise.resolve([]))
+const mockGetJudgeAssignmentOptions = mock(() => Promise.resolve({ version: "v1", prizeScope: "all", prizeIds: [], roomIds: [], prizes: [], rooms: [], locked: false }))
+const mockSaveJudgeAssignmentScope = mock(() => Promise.resolve({ version: "v2" }))
+const mockAssignJudgeToPrizeProject = mock(() => Promise.resolve({ success: true, alreadyAssigned: false }))
+const mockUnassignJudgeFromPrizeProject = mock(() => Promise.resolve({ success: true, removed: true }))
+mock.module("@/lib/services/judging-distribution", () => ({
+  listManualJudgeSubmissionAssignments: mockListJudgeSubmissionAssignments,
+  listJudgingAssignmentRows: mockListJudgingAssignmentRows,
+  deleteJudgingAssignment: mockDeleteJudgingAssignment,
+  getJudgeAssignmentOptions: mockGetJudgeAssignmentOptions,
+  saveJudgeAssignmentScope: mockSaveJudgeAssignmentScope,
+  assignJudgeToPrizeProject: mockAssignJudgeToPrizeProject,
+  unassignJudgeFromPrizeProject: mockUnassignJudgeFromPrizeProject,
+}))
 const mockAssignJudgeToSubmission = mock(() =>
   Promise.resolve({ success: true, alreadyAssigned: false })
 )
@@ -122,10 +137,18 @@ function urlFor(path: string) {
 
 describe("dashboard judge↔submission assignment routes", () => {
   beforeEach(() => {
+    mockGetJudgeAssignmentOptions.mockClear()
+    mockSaveJudgeAssignmentScope.mockClear()
+    mockAssignJudgeToPrizeProject.mockClear()
+    mockUnassignJudgeFromPrizeProject.mockClear()
     mockCheckHackathonOrganizer.mockReset()
     mockCheckHackathonOrganizer.mockResolvedValue({ status: "ok" })
     mockListJudgeSubmissionAssignments.mockReset()
     mockListJudgeSubmissionAssignments.mockResolvedValue([])
+    mockDeleteJudgingAssignment.mockReset()
+    mockDeleteJudgingAssignment.mockResolvedValue({ removed: true })
+    mockListJudgingAssignmentRows.mockReset()
+    mockListJudgingAssignmentRows.mockResolvedValue([])
     mockAssignJudgeToSubmission.mockReset()
     mockAssignJudgeToSubmission.mockResolvedValue({ success: true, alreadyAssigned: false })
     mockUnassignJudgeFromSubmission.mockReset()
@@ -173,7 +196,7 @@ describe("dashboard judge↔submission assignment routes", () => {
       expect(mockCreatePrize).toHaveBeenCalledTimes(1)
     })
 
-    it("rejects a stale WebMCP prize after the event expires", async () => {
+    it("rejects a stale WebMCP prize when its event version changes", async () => {
       mockCheckHackathonOrganizer.mockResolvedValueOnce({
         status: "ok",
         hackathon: {
@@ -193,7 +216,7 @@ describe("dashboard judge↔submission assignment routes", () => {
             "Content-Type": "application/json",
             "x-webmcp-request": "1",
             "x-webmcp-expected-status": "active",
-            "x-webmcp-event-version": "2026-08-25T15:00:00.000Z",
+            "x-webmcp-event-version": "2026-08-24T15:00:00.000Z",
           },
           body: JSON.stringify({ name: "Late prize", judgingStyle: "judges_pick" }),
         }),
@@ -202,6 +225,36 @@ describe("dashboard judge↔submission assignment routes", () => {
       expect(res.status).toBe(409)
       expect(await res.json()).toMatchObject({ code: "event_changed" })
       expect(mockCreatePrize).not.toHaveBeenCalled()
+    })
+  })
+
+  describe("assignment compatibility routes", () => {
+    it("lists assignments without private review content", async () => {
+      const response = await app.handle(new Request(urlFor(`/hackathons/${HACKATHON_ID}/judging/assignments`)))
+      expect(response.status).toBe(200)
+      expect(await response.json()).toEqual({ assignments: [] })
+      expect(mockListJudgingAssignmentRows).toHaveBeenCalledWith(HACKATHON_ID)
+    })
+
+    it("uses the same explicit manual assignment service for CLI and WebMCP", async () => {
+      const response = await app.handle(new Request(urlFor(`/hackathons/${HACKATHON_ID}/judging/assignments`), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ judgeParticipantId: JUDGE_ID, submissionId: SUBMISSION_ID }) }))
+      expect(response.status).toBe(200)
+      expect(mockAssignJudgeToSubmission).toHaveBeenCalledWith(HACKATHON_ID, JUDGE_ID, SUBMISSION_ID)
+    })
+
+    it("reports a submitted review lock without deleting its audit history", async () => {
+      mockDeleteJudgingAssignment.mockRejectedValueOnce(new Error("This review has been submitted. Start a new round to change assignments."))
+      const response = await app.handle(new Request(urlFor(`/hackathons/${HACKATHON_ID}/judging/assignments/${SUBMISSION_ID}`), { method: "DELETE" }))
+      expect(response.status).toBe(409)
+      expect((await response.json()).error).toContain("submitted")
+      expect(mockLogAudit).not.toHaveBeenCalled()
+    })
+
+    it("checks organizer access before assignment data is read", async () => {
+      mockCheckHackathonOrganizer.mockResolvedValueOnce({ status: "not_authorized" })
+      const response = await app.handle(new Request(urlFor(`/hackathons/${HACKATHON_ID}/judging/assignments`)))
+      expect(response.status).toBe(403)
+      expect(mockListJudgingAssignmentRows).not.toHaveBeenCalled()
     })
   })
 
@@ -228,7 +281,7 @@ describe("dashboard judge↔submission assignment routes", () => {
       expect(res.status).toBe(200)
       expect(data.submissions).toHaveLength(1)
       expect(data.submissions[0].submissionId).toBe("s1")
-      expect(mockListJudgeSubmissionAssignments).toHaveBeenCalledWith(HACKATHON_ID, JUDGE_ID)
+      expect(mockListJudgeSubmissionAssignments).toHaveBeenCalledWith(HACKATHON_ID, JUDGE_ID, undefined)
     })
 
     it("returns 404 for non-UUID participant", async () => {
@@ -254,6 +307,12 @@ describe("dashboard judge↔submission assignment routes", () => {
   })
 
   describe("POST /judges/:participantId/submissions/:submissionId", () => {
+    it("uses the shared safe planner for a selected advanced scorecard", async () => {
+      const response = await app.handle(new Request(urlFor(`/hackathons/${HACKATHON_ID}/judging/judges/${JUDGE_ID}/submissions/${SUBMISSION_ID}?prizeId=${SUBMISSION_ID}`), { method: "POST" }))
+      expect(response.status).toBe(200)
+      expect(mockAssignJudgeToPrizeProject).toHaveBeenCalledWith(HACKATHON_ID, JUDGE_ID, SUBMISSION_ID, SUBMISSION_ID)
+      expect(mockAssignJudgeToSubmission).not.toHaveBeenCalled()
+    })
     it("calls assignJudgeToSubmission and returns success", async () => {
       const res = await app.handle(
         new Request(
@@ -327,6 +386,28 @@ describe("dashboard judge↔submission assignment routes", () => {
       )
       expect(res.status).toBe(404)
       expect(mockAssignJudgeToSubmission).not.toHaveBeenCalled()
+    })
+  })
+
+  describe("judge prize and room scope", () => {
+    it("reads scope without private review data", async () => {
+      const response = await app.handle(new Request(urlFor(`/hackathons/${HACKATHON_ID}/judging/judges/${JUDGE_ID}/scope`)))
+      expect(response.status).toBe(200)
+      expect(mockGetJudgeAssignmentOptions).toHaveBeenCalledWith(HACKATHON_ID, JUDGE_ID)
+    })
+
+    it("saves scope with its expected configuration version", async () => {
+      const body = { expectedVersion: "v1", prizeScope: "selected", prizeIds: [SUBMISSION_ID], roomIds: [] }
+      const response = await app.handle(new Request(urlFor(`/hackathons/${HACKATHON_ID}/judging/judges/${JUDGE_ID}/scope`), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }))
+      expect(response.status).toBe(200)
+      expect(mockSaveJudgeAssignmentScope).toHaveBeenCalledWith(HACKATHON_ID, JUDGE_ID, body)
+    })
+
+    it("rejects scope writes without organizer access", async () => {
+      mockCheckHackathonOrganizer.mockResolvedValueOnce({ status: "not_authorized" })
+      const response = await app.handle(new Request(urlFor(`/hackathons/${HACKATHON_ID}/judging/judges/${JUDGE_ID}/scope`), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ expectedVersion: "v1", prizeScope: "all", prizeIds: [], roomIds: [] }) }))
+      expect(response.status).toBe(403)
+      expect(mockSaveJudgeAssignmentScope).not.toHaveBeenCalled()
     })
   })
 
