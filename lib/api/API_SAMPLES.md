@@ -1909,3 +1909,15 @@ Wait until the reset timestamp before retrying.
 curl -i "$BASE_URL/api/v1/jobs" \
   -H "Authorization: Bearer $API_KEY"
 ```
+
+
+### Sponsor changes from WebMCP
+
+Sponsor add, update, and remove use the same organizer authorization and pre-completion lifecycle checks as the app and CLI. WebMCP supplies the current event status and version; stale context returns `409 event_changed`. Adding a sponsor also requires a UUID `x-webmcp-idempotency-key`, reused for a retry of the same request. Website edits accept bare domains and reject unsafe URLs. Names must contain text and be at most 200 characters; tiers are `gold`, `silver`, `bronze`, `custom`, or `none`.
+
+```bash
+curl -X PATCH "$BASE_URL/api/dashboard/hackathons/$EVENT_ID/sponsors/$SPONSOR_ID" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Example sponsor","websiteUrl":"example.com","tier":"gold"}'
+```

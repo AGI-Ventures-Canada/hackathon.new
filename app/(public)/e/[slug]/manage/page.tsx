@@ -308,6 +308,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
       description: submission.description,
       submitterName: submission.submitter_name,
     })),
+    sponsorRecords: hackathon.sponsors,
     sponsors: hackathon.sponsors.map((sponsor) => ({
       name: sponsor.name,
       tier: sponsor.tier,
@@ -369,6 +370,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
           url: hackathon.community_url ?? null,
           label: hackathon.community_label ?? null,
         }}
+        webMcpSponsors={hackathon.sponsors}
         sponsors={hackathon.sponsors.map((s) => ({ id: s.id, name: s.name }))}
         rounds={roundsForDialogs}
         judgingSetupIssues={judgingSetupStatus.issues}

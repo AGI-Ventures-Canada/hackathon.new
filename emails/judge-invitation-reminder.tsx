@@ -32,7 +32,7 @@ export default function JudgeInvitationReminderEmail({
     <OatmealLayout
       heading="Friendly Reminder — You're Invited to Judge!"
       preview={`Reminder: ${inviterName} invited you to judge ${hackathonName}`}
-      footerText="If you didn’t expect this invitation, you can safely ignore this email."
+      footerText="Reply if you no longer want reminders about this invitation."
       eventUrl={eventUrl}
       hackathonName={hackathonName}
     >

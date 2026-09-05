@@ -26,7 +26,7 @@ export default function PostEventReminderEmail({
     <OatmealLayout
       heading={heading}
       preview={`${heading} \u2014 ${hackathonName}`}
-      footerText={`You\u2019re getting this because of your involvement in ${hackathonName}.`}
+      footerText={`You\u2019re getting this because you took part in ${hackathonName}. Reply to stop these reminders.`}
       eventUrl={eventUrl}
       hackathonName={hackathonName}
     >

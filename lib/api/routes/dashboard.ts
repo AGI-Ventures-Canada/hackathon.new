@@ -1,6 +1,7 @@
 import { Elysia, t } from "elysia"
 import { waitUntil } from "@vercel/functions"
 import { normalizeOptionalUrl, normalizeUrl } from "@/lib/utils/url"
+import { isValidUuid } from "@/lib/utils/uuid"
 import { isValidSlugFormat } from "@/lib/utils/slug"
 import {
   resolvePrincipal,
@@ -31,6 +32,9 @@ import type { WebhookEvent, SponsorTier } from "@/lib/db/hackathon-types"
 import { isAllowedHttpsUrl } from "@/lib/utils/safe-fetch-url"
 import {
   validateWebMcpSettingsMutationContext,
+  validateWebMcpMutationContext,
+  getWebMcpIdempotencyKey,
+  isWebMcpMutationRequest,
   WEBMCP_PRE_COMPLETION_STATUSES,
 } from "@/lib/webmcp/mutation-context"
 import {
@@ -2555,222 +2559,423 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
   })
   .post(
     "/hackathons/:id/sponsors",
-    async ({ principal, params, body }) => {
+    async ({ principal, params, body, request, set }) => {
       requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
-
-      const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
-      const result = await checkHackathonOrganizer(params.id, principal.tenantId)
-
-      if (result.status === "not_found") {
-        return new Response(JSON.stringify({ error: "Hackathon not found" }), {
-          status: 404,
-          headers: { "Content-Type": "application/json" },
-        })
+      if (!isValidUuid(params.id)) {
+        set.status = 404
+        return { error: "Hackathon not found" }
       }
-      if (result.status === "not_authorized") {
-        return new Response(JSON.stringify({ error: "Not authorized to manage this hackathon. You may need to switch to the correct organization." }), {
-          status: 403,
-          headers: { "Content-Type": "application/json" },
-        })
-      }
+      try {
+        return await withEventMutationLease(
+          params.id,
+          async () => {
+            const { checkHackathonOrganizer } =
+              await import("@/lib/services/public-hackathons")
+            const result = await checkHackathonOrganizer(
+              params.id,
+              principal.tenantId,
+            )
 
-      const { addSponsor } = await import("@/lib/services/sponsors")
+            if (result.status === "not_found") {
+              return new Response(
+                JSON.stringify({ error: "Hackathon not found" }),
+                {
+                  status: 404,
+                  headers: { "Content-Type": "application/json" },
+                },
+              )
+            }
+            if (result.status === "not_authorized") {
+              return new Response(
+                JSON.stringify({
+                  error:
+                    "Not authorized to manage this hackathon. You may need to switch to the correct organization.",
+                }),
+                {
+                  status: 403,
+                  headers: { "Content-Type": "application/json" },
+                },
+              )
+            }
 
-      if (body.sponsorTenantId || body.useOrgAssets) {
-        return new Response(JSON.stringify({ error: "Add this sponsor with its name and logo. Organization links need the sponsor's approval." }), {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
-        })
-      }
+            const contextError = validateWebMcpMutationContext(
+              request,
+              {
+                status: getEffectiveStatus(result.hackathon),
+                eventVersion: result.hackathon.updated_at,
+              },
+              WEBMCP_PRE_COMPLETION_STATUSES,
+            )
+            if (contextError) {
+              set.status = contextError.status
+              return { error: contextError.error, code: contextError.code }
+            }
 
-      const logoUrl = normalizeOptionalUrl(body.logoUrl)
-      const websiteUrl = body.websiteUrl ? normalizeUrl(body.websiteUrl) : body.websiteUrl
-      if (websiteUrl && !isAllowedHttpsUrl(websiteUrl)) {
-        return new Response(JSON.stringify({ error: "Enter a safe website link that starts with https://" }), {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
-        })
-      }
+            const { addSponsor } = await import("@/lib/services/sponsors")
 
-      let tenantSponsorId: string | null = null
-      if (!body.sponsorTenantId) {
-        const { upsertTenantSponsor } = await import("@/lib/services/tenant-sponsors")
-        const tenantSponsor = await upsertTenantSponsor(principal.tenantId, {
-          name: body.name,
-          websiteUrl,
-        })
-        tenantSponsorId = tenantSponsor?.id ?? null
-        if (!tenantSponsorId) {
-          console.warn(`upsertTenantSponsor returned null for tenant ${principal.tenantId}, sponsor "${body.name}" will be added without a library link`)
-        }
-      }
+            if (body.sponsorTenantId || body.useOrgAssets) {
+              return new Response(
+                JSON.stringify({
+                  error:
+                    "Add this sponsor with its name and logo. Organization links need the sponsor's approval.",
+                }),
+                {
+                  status: 400,
+                  headers: { "Content-Type": "application/json" },
+                },
+              )
+            }
 
-      const sponsor = await addSponsor({
-        hackathonId: params.id,
-        name: body.name,
-        logoUrl,
-        websiteUrl,
-        tier: body.tier as SponsorTier | undefined,
-        customTierLabel: body.customTierLabel,
-        sponsorTenantId: body.sponsorTenantId,
-        tenantSponsorId,
-        useOrgAssets: body.useOrgAssets,
-        displayOrder: body.displayOrder,
-      })
+            const logoUrl = normalizeOptionalUrl(body.logoUrl)
+            const websiteUrl = body.websiteUrl
+              ? normalizeUrl(body.websiteUrl)
+              : body.websiteUrl
+            if (websiteUrl && !isAllowedHttpsUrl(websiteUrl)) {
+              return new Response(
+                JSON.stringify({
+                  error: "Enter a safe website link that starts with https://",
+                }),
+                {
+                  status: 400,
+                  headers: { "Content-Type": "application/json" },
+                },
+              )
+            }
 
-      if (!sponsor) {
-        return new Response(JSON.stringify({ error: "Failed to add sponsor" }), {
-          status: 500,
-          headers: { "Content-Type": "application/json" },
-        })
-      }
+            const mutationId = getWebMcpIdempotencyKey(request)
+            if (isWebMcpMutationRequest(request) && !mutationId) {
+              set.status = 400
+              return {
+                error: "Refresh the page before adding a sponsor",
+                code: "webmcp_context_required",
+              }
+            }
 
-      await logAudit({
-        principal,
-        action: "sponsor.added",
-        resourceType: "hackathon_sponsor",
-        resourceId: sponsor.id,
-        metadata: { hackathonId: params.id, name: body.name },
-      })
+            let tenantSponsorId: string | null = null
+            if (!body.sponsorTenantId) {
+              const { upsertTenantSponsor } =
+                await import("@/lib/services/tenant-sponsors")
+              const tenantSponsor = await upsertTenantSponsor(
+                principal.tenantId,
+                {
+                  name: body.name?.trim(),
+                  websiteUrl,
+                },
+              )
+              tenantSponsorId = tenantSponsor?.id ?? null
+              if (!tenantSponsorId) {
+                console.warn(
+                  `upsertTenantSponsor returned null for tenant ${principal.tenantId}, sponsor "${body.name}" will be added without a library link`,
+                )
+              }
+            }
 
-      return {
-        id: sponsor.id,
-        name: sponsor.name,
-        tier: sponsor.tier,
-        createdAt: sponsor.created_at,
+            const sponsor = await addSponsor({
+              id: mutationId ?? undefined,
+              hackathonId: params.id,
+              name: body.name?.trim(),
+              logoUrl,
+              websiteUrl,
+              tier: body.tier as SponsorTier | undefined,
+              customTierLabel: body.customTierLabel,
+              sponsorTenantId: body.sponsorTenantId,
+              tenantSponsorId,
+              useOrgAssets: body.useOrgAssets,
+              displayOrder: body.displayOrder,
+            })
+
+            if (!sponsor) {
+              return new Response(
+                JSON.stringify({ error: "Failed to add sponsor" }),
+                {
+                  status: 500,
+                  headers: { "Content-Type": "application/json" },
+                },
+              )
+            }
+
+            await logAudit({
+              principal,
+              action: "sponsor.added",
+              resourceType: "hackathon_sponsor",
+              resourceId: sponsor.id,
+              metadata: { hackathonId: params.id, name: body.name },
+            })
+
+            return {
+              id: sponsor.id,
+              name: sponsor.name,
+              tier: sponsor.tier,
+              createdAt: sponsor.created_at,
+            }
+          },
+          principal.tenantId,
+        )
+      } catch (error) {
+        return settingsMutationLeaseFailure(error, set)
       }
     },
     {
       detail: {
         summary: "Add sponsor",
-        description: "Adds a sponsor to a hackathon. Requires hackathons:write scope.",
+        description:
+          "Adds a sponsor to a hackathon. Requires hackathons:write scope.",
       },
       body: t.Object({
-        name: t.String({ minLength: 1 }),
+        name: t.String({ minLength: 1, maxLength: 200, pattern: "\\S" }),
         logoUrl: t.Optional(t.Union([t.String(), t.Null()])),
         websiteUrl: t.Optional(t.Union([t.String(), t.Null()])),
-        tier: t.Optional(t.String()),
+        tier: t.Optional(
+          t.Union([
+            t.Literal("gold"),
+            t.Literal("silver"),
+            t.Literal("bronze"),
+            t.Literal("custom"),
+            t.Literal("none"),
+          ]),
+        ),
         customTierLabel: t.Optional(t.Union([t.String(), t.Null()])),
         sponsorTenantId: t.Optional(t.Union([t.String(), t.Null()])),
         useOrgAssets: t.Optional(t.Boolean()),
         displayOrder: t.Optional(t.Number()),
       }),
-    }
+    },
   )
   .patch(
     "/hackathons/:id/sponsors/:sponsorId",
-    async ({ principal, params, body }) => {
+    async ({ principal, params, body, request, set }) => {
       requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
-
-      const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
-      const result = await checkHackathonOrganizer(params.id, principal.tenantId)
-
-      if (result.status === "not_found") {
-        return new Response(JSON.stringify({ error: "Hackathon not found" }), {
-          status: 404,
-          headers: { "Content-Type": "application/json" },
-        })
+      if (!isValidUuid(params.id)) {
+        set.status = 404
+        return { error: "Hackathon not found" }
       }
-      if (result.status === "not_authorized") {
-        return new Response(JSON.stringify({ error: "Not authorized to manage this hackathon. You may need to switch to the correct organization." }), {
-          status: 403,
-          headers: { "Content-Type": "application/json" },
-        })
-      }
+      try {
+        return await withEventMutationLease(
+          params.id,
+          async () => {
+            const { checkHackathonOrganizer } =
+              await import("@/lib/services/public-hackathons")
+            const result = await checkHackathonOrganizer(
+              params.id,
+              principal.tenantId,
+            )
 
-      const { updateSponsor } = await import("@/lib/services/sponsors")
-      const sponsorLogoUrl = normalizeOptionalUrl(body.logoUrl)
-      const sponsorWebsiteUrl = body.websiteUrl ? normalizeUrl(body.websiteUrl) : body.websiteUrl
-      const sponsor = await updateSponsor(params.sponsorId, {
-        name: body.name,
-        logoUrl: sponsorLogoUrl,
-        websiteUrl: sponsorWebsiteUrl,
-        tier: body.tier as SponsorTier | undefined,
-        customTierLabel: body.customTierLabel,
-        sponsorTenantId: body.sponsorTenantId,
-        useOrgAssets: body.useOrgAssets,
-        displayOrder: body.displayOrder,
-      }, params.id)
+            if (result.status === "not_found") {
+              return new Response(
+                JSON.stringify({ error: "Hackathon not found" }),
+                {
+                  status: 404,
+                  headers: { "Content-Type": "application/json" },
+                },
+              )
+            }
+            if (result.status === "not_authorized") {
+              return new Response(
+                JSON.stringify({
+                  error:
+                    "Not authorized to manage this hackathon. You may need to switch to the correct organization.",
+                }),
+                {
+                  status: 403,
+                  headers: { "Content-Type": "application/json" },
+                },
+              )
+            }
 
-      if (!sponsor) {
-        return new Response(JSON.stringify({ error: "Sponsor not found" }), {
-          status: 404,
-          headers: { "Content-Type": "application/json" },
-        })
-      }
+            const contextError = validateWebMcpMutationContext(
+              request,
+              {
+                status: getEffectiveStatus(result.hackathon),
+                eventVersion: result.hackathon.updated_at,
+              },
+              WEBMCP_PRE_COMPLETION_STATUSES,
+            )
+            if (contextError) {
+              set.status = contextError.status
+              return { error: contextError.error, code: contextError.code }
+            }
 
-      await logAudit({
-        principal,
-        action: "sponsor.updated",
-        resourceType: "hackathon_sponsor",
-        resourceId: params.sponsorId,
-      })
+            if (!isValidUuid(params.sponsorId)) {
+              set.status = 404
+              return { error: "Sponsor not found" }
+            }
+            const { updateSponsor } = await import("@/lib/services/sponsors")
+            const sponsorLogoUrl = normalizeOptionalUrl(body.logoUrl)
+            const sponsorWebsiteUrl = body.websiteUrl
+              ? normalizeUrl(body.websiteUrl)
+              : body.websiteUrl
+            if (sponsorWebsiteUrl && !isAllowedHttpsUrl(sponsorWebsiteUrl)) {
+              set.status = 400
+              return {
+                error: "Enter a safe website link that starts with https://",
+              }
+            }
+            const sponsor = await updateSponsor(
+              params.sponsorId,
+              {
+                name: body.name?.trim(),
+                logoUrl: sponsorLogoUrl,
+                websiteUrl: sponsorWebsiteUrl,
+                tier: body.tier as SponsorTier | undefined,
+                customTierLabel: body.customTierLabel,
+                sponsorTenantId: body.sponsorTenantId,
+                useOrgAssets: body.useOrgAssets,
+                displayOrder: body.displayOrder,
+              },
+              params.id,
+            )
 
-      return {
-        id: sponsor.id,
-        updatedAt: sponsor.created_at,
+            if (!sponsor) {
+              return new Response(
+                JSON.stringify({ error: "Sponsor not found" }),
+                {
+                  status: 404,
+                  headers: { "Content-Type": "application/json" },
+                },
+              )
+            }
+
+            await logAudit({
+              principal,
+              action: "sponsor.updated",
+              resourceType: "hackathon_sponsor",
+              resourceId: params.sponsorId,
+            })
+
+            return {
+              id: sponsor.id,
+              updatedAt: result.hackathon.updated_at,
+            }
+          },
+          principal.tenantId,
+        )
+      } catch (error) {
+        return settingsMutationLeaseFailure(error, set)
       }
     },
     {
       detail: {
         summary: "Update sponsor",
-        description: "Updates sponsor details. Requires hackathons:write scope.",
+        description:
+          "Updates sponsor details. Requires hackathons:write scope.",
       },
       body: t.Object({
-        name: t.Optional(t.String()),
+        name: t.Optional(
+          t.String({ minLength: 1, maxLength: 200, pattern: "\\S" }),
+        ),
         logoUrl: t.Optional(t.Union([t.String(), t.Null()])),
         websiteUrl: t.Optional(t.Union([t.String(), t.Null()])),
-        tier: t.Optional(t.String()),
+        tier: t.Optional(
+          t.Union([
+            t.Literal("gold"),
+            t.Literal("silver"),
+            t.Literal("bronze"),
+            t.Literal("custom"),
+            t.Literal("none"),
+          ]),
+        ),
         customTierLabel: t.Optional(t.Union([t.String(), t.Null()])),
         sponsorTenantId: t.Optional(t.Union([t.String(), t.Null()])),
         useOrgAssets: t.Optional(t.Boolean()),
         displayOrder: t.Optional(t.Number()),
       }),
-    }
-  )
-  .delete("/hackathons/:id/sponsors/:sponsorId", async ({ principal, params }) => {
-    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
-
-    const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
-    const result = await checkHackathonOrganizer(params.id, principal.tenantId)
-
-    if (result.status === "not_found") {
-      return new Response(JSON.stringify({ error: "Hackathon not found" }), {
-        status: 404,
-        headers: { "Content-Type": "application/json" },
-      })
-    }
-    if (result.status === "not_authorized") {
-      return new Response(JSON.stringify({ error: "Not authorized to manage this hackathon. You may need to switch to the correct organization." }), {
-        status: 403,
-        headers: { "Content-Type": "application/json" },
-      })
-    }
-
-    const { removeSponsor } = await import("@/lib/services/sponsors")
-    const success = await removeSponsor(params.sponsorId, params.id)
-
-    if (!success) {
-      return new Response(JSON.stringify({ error: "Sponsor not found" }), {
-        status: 404,
-        headers: { "Content-Type": "application/json" },
-      })
-    }
-
-    await logAudit({
-      principal,
-      action: "sponsor.removed",
-      resourceType: "hackathon_sponsor",
-      resourceId: params.sponsorId,
-    })
-
-    return { success: true }
-  }, {
-    detail: {
-      summary: "Remove sponsor",
-      description: "Removes a sponsor from a hackathon. Requires hackathons:write scope.",
     },
-  })
+  )
+  .delete(
+    "/hackathons/:id/sponsors/:sponsorId",
+    async ({ principal, params, request, set }) => {
+      requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+      if (!isValidUuid(params.id)) {
+        set.status = 404
+        return { error: "Hackathon not found" }
+      }
+      try {
+        return await withEventMutationLease(
+          params.id,
+          async () => {
+            const { checkHackathonOrganizer } =
+              await import("@/lib/services/public-hackathons")
+            const result = await checkHackathonOrganizer(
+              params.id,
+              principal.tenantId,
+            )
+
+            if (result.status === "not_found") {
+              return new Response(
+                JSON.stringify({ error: "Hackathon not found" }),
+                {
+                  status: 404,
+                  headers: { "Content-Type": "application/json" },
+                },
+              )
+            }
+            if (result.status === "not_authorized") {
+              return new Response(
+                JSON.stringify({
+                  error:
+                    "Not authorized to manage this hackathon. You may need to switch to the correct organization.",
+                }),
+                {
+                  status: 403,
+                  headers: { "Content-Type": "application/json" },
+                },
+              )
+            }
+
+            const contextError = validateWebMcpMutationContext(
+              request,
+              {
+                status: getEffectiveStatus(result.hackathon),
+                eventVersion: result.hackathon.updated_at,
+              },
+              WEBMCP_PRE_COMPLETION_STATUSES,
+            )
+            if (contextError) {
+              set.status = contextError.status
+              return { error: contextError.error, code: contextError.code }
+            }
+
+            if (!isValidUuid(params.sponsorId)) {
+              set.status = 404
+              return { error: "Sponsor not found" }
+            }
+            const { removeSponsor } = await import("@/lib/services/sponsors")
+            const success = await removeSponsor(params.sponsorId, params.id)
+
+            if (!success) {
+              return new Response(
+                JSON.stringify({ error: "Sponsor not found" }),
+                {
+                  status: 404,
+                  headers: { "Content-Type": "application/json" },
+                },
+              )
+            }
+
+            await logAudit({
+              principal,
+              action: "sponsor.removed",
+              resourceType: "hackathon_sponsor",
+              resourceId: params.sponsorId,
+            })
+
+            return { success: true }
+          },
+          principal.tenantId,
+        )
+      } catch (error) {
+        return settingsMutationLeaseFailure(error, set)
+      }
+    },
+    {
+      detail: {
+        summary: "Remove sponsor",
+        description:
+          "Removes a sponsor from a hackathon. Requires hackathons:write scope.",
+      },
+    },
+  )
+
   .patch(
     "/hackathons/:id/sponsors/reorder",
     async ({ principal, params, body }) => {
