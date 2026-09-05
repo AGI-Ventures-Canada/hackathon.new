@@ -20,19 +20,19 @@ Record the handoff owner and rotation date in the private submission record. Rot
 | Surface | States to prove | Required evidence |
 |---|---|---|
 | Signed-in workspace | Home, participating, organizing, and unrelated dashboard pages as attendee and organizer | Stable global tool list, opaque event refs, attendee rules/status/project review without event navigation, organizer to-do list and create navigation |
-| Create/import | Signed out, refresh, two tabs, sign-in/sign-up/SSO continuation, organization setup, full review, one human create click, failed navigation recovery | Tool list, visible field changes, no lost draft, safe conflict/retry link, one create request, no duplicate child records |
-| Public event | Visitor, unregistered attendee, captain, pending team, submitted project | Dynamic tool list, published-only guide, invitation/project preparation, human final actions |
+| Create/import | Signed out, refresh, two tabs, sign-in/sign-up/SSO continuation, organization setup, full review, one direct create request, failed navigation recovery | Tool list, visible field changes, no lost draft, safe conflict/retry link, one create request, no duplicate child records |
+| Public event | Visitor, unregistered attendee, captain, pending team, submitted project | Dynamic tool list, published-only guide, invitation/project preparation, direct final actions |
 | Organizer | Draft, registration, active, judging, completed, stale event version, sponsor prep from every manage tab | Correct tool appearance/removal, optimistic visible edits, sponsor editor opens with the name filled, server `409 event_changed`, no email or publish side effect |
-| Judge | Weighted score, judges' picks, bucket sort, gate checks, anonymous mode | Only the matching prepare tool, opaque refs, no hidden identity, zero prepare requests, one human save request |
-| Mentor | Public counts, verified queue, open, claimed by me, claimed by someone else, claim race | No public request text, exact role check, human claim/finish, stable conflict codes |
-| Sponsor | Signed out, verified sponsor, assigned prize, pending claim, fulfilled claim | Published-only data, exact sponsor access, no other sponsor details, human claim/fulfillment actions |
+| Judge | Weighted score, judges' picks, bucket sort, gate checks, anonymous mode | Only the matching prepare tool, opaque refs, no hidden identity, zero prepare requests, one direct save request |
+| Mentor | Public counts, verified queue, open, claimed by me, claimed by someone else, claim race | No public request text, exact role check, direct claim/finish, stable conflict codes |
+| Sponsor | Signed out, verified sponsor, assigned prize, pending claim, fulfilled claim | Published-only data, exact sponsor access, no other sponsor details, direct claim/fulfillment actions |
 | Email and cron | Draft queue, go-live flush, provider failure, retry, ended event, duplicate cron invocation, bad cron auth | Accurate queued/sent copy, no draft or ended-event send, stable provider key, bounded retry, partial failure surfaced |
 | Browser lifecycle | Navigation, role change, event lifecycle change, refresh, 375px viewport | Exact-host `Origin-Trial` response header, origin isolation, tool unregistration, no stale execution, visible UI match, no console errors, expected network only |
 
 ## Network rules
 
 - Project, judge, mentor, invitation, and event-create preparation makes zero requests.
-- One human final click makes exactly one request.
+- One direct mutation makes one request; the same requestKey returns the same result without sending again.
 - Never send a real invitation, publish real results, or load customer/contact data.
 - Capture the URL, deployment commit, role, lifecycle, tool call/result, visible UI, console, and network result for each row.
 - In native Chrome, evaluate `await document.modelContext.getTools()` and then `await document.modelContext.executeTool(tool, JSON.stringify(args))`. If a wrapper times out, repeat through raw DevTools evaluation with `awaitPromise: true` before treating it as an app failure.

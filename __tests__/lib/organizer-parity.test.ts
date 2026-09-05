@@ -1,3 +1,4 @@
+import { DIRECT_ACTION_TOOL_NAMES } from "@/lib/webmcp/direct-action-tools"
 import { describe, expect, it } from "bun:test"
 import {
   CREATE_EVENT_SURFACE_PARITY,
@@ -37,7 +38,7 @@ describe("organizer parity registry", () => {
   it("records app, WebMCP, and CLI support for rich test events", () => {
     expect(CREATE_EVENT_SURFACE_PARITY).toEqual({
       ui: "Create a test event with test data",
-      webMcpTools: ["open_test_event_creator"],
+      webMcpTools: [...DIRECT_ACTION_TOOL_NAMES, "open_test_event_creator"],
       cliCommands: ["events create --test-stage"],
     })
   })
@@ -68,6 +69,7 @@ describe("organizer parity registry", () => {
 
   it("keeps every shared organizer task action in WebMCP and the CLI", () => {
     expect(ORGANIZER_SECTION_CONFIG.action_items.webMcpTools).toEqual([
+      ...DIRECT_ACTION_TOOL_NAMES,
       "list_organizer_tasks",
       "open_organizer_task",
       "add_organizer_task",

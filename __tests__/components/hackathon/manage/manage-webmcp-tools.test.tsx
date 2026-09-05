@@ -332,7 +332,7 @@ describe("ManageHackathonWebMcpTools", () => {
 
     expect(result).toMatchObject({
       ok: true,
-      data: { status: "opened", requiresHumanAction: true },
+      data: { status: "opened", requiresHumanAction: false },
     })
     expect(handleActionClick).toHaveBeenCalledWith(
       expect.objectContaining({ id: "finish-scoring-setup" }),
@@ -347,7 +347,7 @@ describe("ManageHackathonWebMcpTools", () => {
 
     expect(result).toMatchObject({
       ok: true,
-      data: { review: "rounds", status: "opened", requiresHumanAction: true },
+      data: { review: "rounds", status: "opened", requiresHumanAction: false },
     })
     expect(openRegisteredAction).toHaveBeenCalledWith("activate-first-round")
   })
@@ -398,7 +398,7 @@ describe("ManageHackathonWebMcpTools", () => {
       const result = await execute("prepare_sponsor", { name: "Acme" })
       expect(result).toMatchObject({
         ok: true,
-        requiresHumanAction: true,
+        requiresHumanAction: false,
         data: { prepared: true, status: "review_opened" },
       })
       expect(globalThis.fetch).not.toHaveBeenCalled()
