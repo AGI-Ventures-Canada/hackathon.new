@@ -1,5 +1,7 @@
 "use client";
 
+import type { HackathonSponsor } from "@/lib/db/hackathon-types";
+
 import {
   createContext,
   useContext,
@@ -225,6 +227,7 @@ type ProviderProps = {
   teamSettingsInitialData: TeamSettingsInitialData;
   communityInitialData: { url: string | null; label: string | null };
   sponsors: SponsorOption[];
+  webMcpSponsors?: HackathonSponsor[];
   rounds: RoundData[];
   judgingSetupIssues: string[];
   requiresJudgeScoring: boolean;
@@ -349,6 +352,7 @@ export function ActionItemsProvider({
   teamSettingsInitialData,
   communityInitialData,
   sponsors,
+  webMcpSponsors,
   rounds,
   judgingSetupIssues,
   requiresJudgeScoring: serverRequiresJudgeScoring,
@@ -389,6 +393,7 @@ export function ActionItemsProvider({
       challenges: serverChallenges,
       prizes: serverPrizes,
       announcements: serverAnnouncements,
+      sponsors: webMcpSponsors,
     },
     createManageWebMcpState,
   );
@@ -396,6 +401,9 @@ export function ActionItemsProvider({
     () => selectManageWebMcpVisibleState(manageWebMcpState),
     [manageWebMcpState],
   );
+  useEffect(() => {
+    if (webMcpSponsors) dispatchManageWebMcpState({ type: "sync_sponsors", sponsors: webMcpSponsors });
+  }, [webMcpSponsors]);
   const scheduleItems = manageWebMcpView.scheduleItems;
   const challenges = manageWebMcpView.challenges;
 

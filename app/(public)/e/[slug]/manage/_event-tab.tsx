@@ -853,6 +853,7 @@ function AnnouncementsSubTab({ hackathonId, hackathonStatus, hackathonPhase }: {
               <Button
                 size="sm"
                 variant="default"
+                aria-label={`Publish ${item.title}`}
                 onClick={() => handleTogglePublish(item)}
                 disabled={isSaving}
               >
@@ -864,6 +865,7 @@ function AnnouncementsSubTab({ hackathonId, hackathonStatus, hackathonPhase }: {
               <Button
                 size="sm"
                 variant="ghost"
+                aria-label={`Unpublish ${item.title}`}
                 onClick={() => handleTogglePublish(item)}
                 disabled={isSaving}
               >
@@ -871,12 +873,12 @@ function AnnouncementsSubTab({ hackathonId, hackathonStatus, hackathonPhase }: {
                 <span className="hidden sm:inline">Unpublish</span>
               </Button>
             )}
-            <Button size="sm" variant="ghost" onClick={() => openEdit(item)} disabled={isSaving}>
+            <Button size="sm" variant="ghost" aria-label={`Edit ${item.title}`} onClick={() => openEdit(item)} disabled={isSaving}>
               <Pencil className="size-4" />
             </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button size="sm" variant="ghost" disabled={isSaving}>
+                <Button size="sm" variant="ghost" aria-label={`Delete ${item.title}`} disabled={isSaving}>
                   <Trash2 className="size-4" />
                 </Button>
               </AlertDialogTrigger>
@@ -902,9 +904,9 @@ function AnnouncementsSubTab({ hackathonId, hackathonStatus, hackathonPhase }: {
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-sm font-medium">Announcements</h3>
-          <p className="text-xs text-muted-foreground">Broadcast messages to participants</p>
+          <p className="text-xs text-muted-foreground">Share updates with people at your event</p>
         </div>
-        <Button size="sm" onClick={openCreate}>
+        <Button size="sm" aria-label="New announcement" onClick={openCreate}>
           <Plus className="size-4" />
           <span className="hidden sm:inline">New Announcement</span>
         </Button>
@@ -998,7 +1000,7 @@ function AnnouncementsSubTab({ hackathonId, hackathonStatus, hackathonPhase }: {
                 data-form-type="other"
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="flex items-center gap-4">
                 <Label>Priority</Label>
                 <div className="flex gap-2">

@@ -129,6 +129,8 @@ const RADIX_ISOLATED_TESTS = [
 const radixSet = new Set(RADIX_ISOLATED_TESTS)
 
 const COMPONENT_PROCESS_ISOLATED_TESTS = [
+  "__tests__/components/hackathon/manage/action-item-row.test.tsx",
+  "__tests__/components/hackathon/judging/judge-invite-accept-client.test.tsx",
   "__tests__/components/global-webmcp-tools.test.tsx",
   "__tests__/components/hackathon/submission-button.test.tsx",
   "__tests__/components/hackathon/submission-gallery.test.tsx",

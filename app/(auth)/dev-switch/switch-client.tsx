@@ -67,12 +67,13 @@ export function DevSwitchClient({
   const { session, isLoaded: sessionLoaded } = useSession()
   const { signOut, setActive: setClerkActive } = useClerk()
   const [error, setError] = useState<string | null>(null)
-  const started = useRef(false)
+  const started = useRef<string | null>(null)
 
   useEffect(() => {
     if (!signInLoaded || !userLoaded || !sessionLoaded || !signIn || !setSignInActive) return
-    if (started.current) return
-    started.current = true
+    const attemptKey = `${token}:${signedOut}`
+    if (started.current === attemptKey) return
+    started.current = attemptKey
     const activeSignIn = signIn
     const activateSignInSession = setSignInActive
 

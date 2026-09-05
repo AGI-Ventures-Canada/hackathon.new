@@ -1,3 +1,4 @@
+import { formatEmailDeadline } from "./deadline"
 import { sendEmail } from "./resend"
 import {
   renderEmail,
@@ -12,7 +13,7 @@ import {
 import OrganizerClaimNotificationEmail from "@/emails/organizer-claim-notification"
 import OrganizerReadinessReminderEmail from "@/emails/organizer-readiness-reminder"
 import { createHash } from "node:crypto"
-import { consumeDeliverySlot, type DeliveryBudget } from "@/lib/services/delivery-budget"
+import { consumeDeliverySlot, selectPendingDeliveryTasks, markDeliveryTaskComplete, type DeliveryBudget } from "@/lib/services/delivery-budget"
 
 function recipientFingerprint(email: string): string {
   return createHash("sha256").update(email.trim().toLowerCase()).digest("hex").slice(0, 24)
@@ -108,24 +109,26 @@ export async function sendOrganizerReadinessReminder(params: {
 }): Promise<{ sent: number; failed: number; deferred?: true }> {
   const { supabase: getSupabase } = await import("@/lib/db/client")
   const client = getSupabase()
-  const { data: hackathon } = await client
+  const { data: hackathon, error: hackathonError } = await client
     .from("hackathons")
     .select("tenant_id")
     .eq("id", params.hackathonId)
     .single()
+  if (hackathonError) throw new Error("Could not load the event for its organizer reminder")
   if (!hackathon?.tenant_id) return { sent: 0, failed: 0 }
 
-  const { data: tenant } = await client
+  const { data: tenant, error: tenantError } = await client
     .from("tenants")
     .select("clerk_org_id, clerk_user_id")
     .eq("id", hackathon.tenant_id)
     .single()
-  if (!tenant) return { sent: 0, failed: 0 }
+  if (tenantError || !tenant) throw new Error("Could not load the event organizer")
 
   const [{ getOrganizerTaskBoard }, emails] = await Promise.all([
     import("@/lib/services/organizer-action-items"),
     resolveEmailsForTenant(tenant),
   ])
+  if (emails.length === 0) return { sent: 0, failed: 1 }
   const taskPage = await getOrganizerTaskBoard(params.hackathonId, {
     state: "pending",
     limit: 5,
@@ -136,15 +139,7 @@ export async function sendOrganizerReadinessReminder(params: {
     ? "Check your judges, project assignments, and scoring rules now."
     : "A few things may still need your attention before people arrive."
   const deadlineLabel = judgingReminder ? "Projects are due" : "Event starts"
-  const deadlineDate = new Date(params.deadlineDate).toLocaleString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZoneName: "short",
-  })
+  const deadlineDate = formatEmailDeadline(params.deadlineDate)
   const ctaUrl = `${buildEventUrl(params.hackathonSlug)}/manage?tab=action-items`
   const { html, text } = await renderEmail(
     OrganizerReadinessReminderEmail({
@@ -158,17 +153,20 @@ export async function sendOrganizerReadinessReminder(params: {
     }),
   )
 
+  const recipients = [...new Set(emails.map((email) => email.trim().toLowerCase()))].sort()
+  const workKey = `organizer-readiness:${params.deliveryId}`
+  const selection = await selectPendingDeliveryTasks(workKey, recipients, (email) => email, params.budget)
   let sent = 0
   let failed = 0
-  for (let index = 0; index < emails.length; index += 1) {
+  for (let index = 0; index < selection.tasks.length; index += 1) {
     if (!consumeDeliverySlot(params.budget)) {
       return { sent, failed, deferred: true }
     }
-    const email = emails[index]
+    const email = selection.tasks[index]
     await paceBulkSend(index)
     const result = await sendEmail({
       to: email,
-      subject: `${params.urgency === "high" ? "Action needed: " : ""}${heading} — ${shortHackathonName(params.hackathonName)}`,
+      subject: `${params.urgency === "high" ? "Action needed: " : ""}${heading} — ${shortHackathonName(params.hackathonName, params.urgency === "high" ? 18 : 30)}`,
       html,
       text,
       replyTo: getReplyToAddress(),
@@ -179,9 +177,13 @@ export async function sendOrganizerReadinessReminder(params: {
       ],
       idempotencyKey: `organizer-readiness/${params.deliveryId}/${recipientFingerprint(email)}`,
     })
-    if (result) sent++
-    else failed++
+    if (result) {
+      sent++
+      await markDeliveryTaskComplete(workKey, email)
+    } else {
+      failed++
+    }
   }
 
-  return { sent, failed }
+  return selection.deferred ? { sent, failed, deferred: true } : { sent, failed }
 }
