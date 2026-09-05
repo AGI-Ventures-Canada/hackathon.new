@@ -1,3 +1,4 @@
+import { getAttendeeNextStep } from "@/lib/utils/attendee-next-step"
 import { notFound } from "next/navigation"
 import { auth } from "@clerk/nextjs/server"
 import {
@@ -274,17 +275,13 @@ export default async function EventPage({ params, searchParams }: PageProps) {
       ? participantRole
         ? `Open the ${participantRole} workspace for this event.`
         : "Register to join this event."
-      : isDisbandedTeam
-        ? "Your team is no longer active. Ask the organizer if you need help."
-      : isPendingTeam
-        ? "Wait for team approval. You can keep preparing your project."
-        : hackathon.status === "active" && (
-          !submissionDeadline || new Date(submissionDeadline).getTime() > Date.now()
-        )
-          ? "Build with your team and review your project draft before submitting."
-          : hackathon.status === "active"
-            ? "The project deadline has passed. Your saved project is locked."
-            : "Check the schedule for what happens next."
+      : getAttendeeNextStep({
+          status: hackathon.status, teamStatus: teamInfo?.team.status ?? null,
+          hasTeam: Boolean(teamInfo), allowSolo: hackathon.allow_solo ?? true,
+          submitted: submission?.status === "submitted",
+          deadlinePassed: Boolean(submissionDeadline && new Date(submissionDeadline).getTime() <= Date.now()),
+          resultsPublished: Boolean(hackathon.results_published_at),
+        })
 
   const eventGuide = {
     name: hackathon.name,
@@ -419,6 +416,7 @@ export default async function EventPage({ params, searchParams }: PageProps) {
         hackathon={clientHackathon}
         isEditable={isOrganizer}
         isRegistered={isRegistered}
+        attendeeNextStep={isAttendee ? viewerNextStep : undefined}
         participantRole={participantRole}
         participantCount={participantCount}
         showActionBar={isOrganizer}

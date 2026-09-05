@@ -159,8 +159,8 @@ function TierPicker({
         </button>
       </DialogTrigger>
       <DialogContent>
-        <div className="flex min-h-[300px]">
-          <div className="w-44 border-r flex flex-col">
+        <div className="flex min-h-[300px] flex-col sm:flex-row">
+          <div className="w-full border-b flex flex-col sm:w-44 sm:shrink-0 sm:border-b-0 sm:border-r">
             <DialogHeader className="px-4 pt-4 pb-3">
               <DialogTitle>Sponsor Tier</DialogTitle>
               <DialogDescription>Pick how this sponsor appears on the event page.</DialogDescription>

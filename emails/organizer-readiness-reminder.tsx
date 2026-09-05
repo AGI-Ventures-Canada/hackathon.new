@@ -27,7 +27,7 @@ export default function OrganizerReadinessReminderEmail({
     <OatmealLayout
       heading={heading}
       preview={`${heading} — ${hackathonName}`}
-      footerText={`You're receiving this because you help organize ${hackathonName}.`}
+      footerText={`You're receiving this because you help organize ${hackathonName}. Reply to stop these reminders.`}
     >
       <Text style={{ fontSize: fontSize.base, lineHeight: "1.6", marginBottom: spacing.lg }}>
         {body}

@@ -64,6 +64,7 @@ export function ManageHackathonWebMcpTools({
   const registryContext = useMemo<ManageHackathonWebMcpContext>(
     () => ({
       ...context,
+      sponsorRecords: manageWebMcpView.sponsors ?? context.sponsorRecords,
       hackathon: {
         ...context.hackathon,
         ...settingsOverlay,

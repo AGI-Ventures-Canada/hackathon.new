@@ -131,3 +131,17 @@ describe("RegistrationButton", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
   })
 })
+
+describe("returning attendees", () => {
+  it.each(["judging", "completed", "archived"] as const)("can sign in from a %s event", (status) => {
+    setClerkAuth({ isSignedIn: false })
+    renderButton({ status })
+    expect(screen.getByRole("link", { name: "Already signed up? Sign in" }).getAttribute("href")).toContain(encodeURIComponent("/e/example"))
+  })
+  it("shows capacity before asking a visitor to sign in", () => {
+    setClerkAuth({ isSignedIn: false })
+    renderButton({ status: "registration_open", registrationClosesAt: FUTURE_DATE, maxParticipants: 10, participantCount: 10 })
+    expect(screen.getByRole("button", { name: "Event Full" })).toBeDefined()
+    expect(screen.queryByRole("link", { name: "Register to Attend" })).toBeNull()
+  })
+})

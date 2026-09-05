@@ -237,3 +237,26 @@ describe("Sponsors Service", () => {
     })
   })
 })
+
+describe("sponsor retry identity", () => {
+  beforeEach(() => resetSupabaseMocks())
+  it("returns an already saved sponsor without inserting it again", async () => {
+    const chain = createChainableMock({ data: mockSponsor, error: null })
+    setMockFromImplementation(() => chain)
+    const result = await addSponsor({ id: mockSponsor.id, hackathonId: mockSponsor.hackathon_id, name: mockSponsor.name, tier: mockSponsor.tier, logoUrl: mockSponsor.logo_url, logoUrlDark: mockSponsor.logo_url_dark, websiteUrl: mockSponsor.website_url })
+    expect(result?.id).toBe(mockSponsor.id)
+    expect(chain.insert).not.toHaveBeenCalled()
+  })
+  it("rejects a retry identity reused for different sponsor data", async () => {
+    const chain = createChainableMock({ data: mockSponsor, error: null })
+    setMockFromImplementation(() => chain)
+    await expect(addSponsor({ id: mockSponsor.id, hackathonId: mockSponsor.hackathon_id, name: "Another sponsor" })).rejects.toThrow("different details")
+    expect(chain.insert).not.toHaveBeenCalled()
+  })
+  it("does not insert if checking the previous save fails", async () => {
+    const chain = createChainableMock({ data: null, error: { message: "Unavailable" } })
+    setMockFromImplementation(() => chain)
+    await expect(addSponsor({ id: mockSponsor.id, hackathonId: mockSponsor.hackathon_id, name: "Example" })).rejects.toThrow("previous sponsor save")
+    expect(chain.insert).not.toHaveBeenCalled()
+  })
+})

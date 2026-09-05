@@ -464,8 +464,8 @@ describe("POST /hackathons/:id/judging/judges - email notifications", () => {
           name: "Active Hackathon",
           slug: "active-hack",
           status: "active",
-          starts_at: "2026-09-01T13:00:00.000Z",
-          ends_at: "2026-09-02T21:00:00.000Z",
+          starts_at: "2099-09-01T13:00:00.000Z",
+          ends_at: "2099-09-02T21:00:00.000Z",
         },
       })
 
@@ -484,8 +484,8 @@ describe("POST /hackathons/:id/judging/judges - email notifications", () => {
         expect.objectContaining({
           email: "newjudge@example.com",
           hackathonSlug: "active-hack",
-          hackathonStartsAt: "2026-09-01T13:00:00.000Z",
-          hackathonEndsAt: "2026-09-02T21:00:00.000Z",
+          hackathonStartsAt: "2099-09-01T13:00:00.000Z",
+          hackathonEndsAt: "2099-09-02T21:00:00.000Z",
           hackathonTimezone: "UTC",
         })
       )

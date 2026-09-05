@@ -1,3 +1,4 @@
+import { formatEmailDeadline } from "./deadline"
 import { sendEmail } from "./resend"
 import {
   sanitizeTag,
@@ -7,6 +8,7 @@ import {
   buildMailtoUnsubscribeHeaders,
   paceBulkSend,
   shortHackathonName,
+  buildEventUrl,
 } from "./utils"
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
@@ -36,11 +38,11 @@ export function buildRegistrationClosingContent(
   hackathonSlug: string
 ): PreEventContent {
   return {
-    heading: "Registration Is Closing Soon!",
-    body: `signups for ${hackathonName} close soon. Check your team and event details.`,
+    heading: "Registration closes soon",
+    body: `Signups for ${hackathonName} close soon. Check your team and event details.`,
     deadlineLabel: "Registration closes",
     ctaLabel: "View Event",
-    ctaUrl: `${process.env.NEXT_PUBLIC_APP_URL}/e/${hackathonSlug}`,
+    ctaUrl: buildEventUrl(hackathonSlug),
     subject: `Registration closing soon \u2014 ${shortHackathonName(hackathonName)}`,
   }
 }
@@ -50,11 +52,11 @@ export function buildEventStartingContent(
   hackathonSlug: string
 ): PreEventContent {
   return {
-    heading: "The Hackathon Is Almost Here!",
-    body: `${hackathonName} is starting soon. Get ready to build something great!`,
+    heading: "Your event starts soon",
+    body: `${hackathonName} is starting soon. Check the schedule, location, and your team on the event page.`,
     deadlineLabel: "Event starts",
     ctaLabel: "View Event",
-    ctaUrl: `${process.env.NEXT_PUBLIC_APP_URL}/e/${hackathonSlug}`,
+    ctaUrl: buildEventUrl(hackathonSlug),
     subject: `Starting soon \u2014 ${shortHackathonName(hackathonName)}`,
   }
 }
@@ -64,11 +66,11 @@ export function buildSubmissionDueContent(
   hackathonSlug: string
 ): PreEventContent {
   return {
-    heading: "Projects Are Due Soon!",
-    body: `your project for ${hackathonName} is due soon. Make sure your team is ready.`,
+    heading: "Your project is due soon",
+    body: `Your project for ${hackathonName} is due soon. Open your project, check the links, and submit before the deadline.`,
     deadlineLabel: "Projects due",
-    ctaLabel: "Submit Project",
-    ctaUrl: `${process.env.NEXT_PUBLIC_APP_URL}/e/${hackathonSlug}`,
+    ctaLabel: "Open my project",
+    ctaUrl: buildEventUrl(hackathonSlug),
     subject: `Projects due soon \u2014 ${shortHackathonName(hackathonName)}`,
   }
 }
@@ -82,7 +84,7 @@ export function buildJudgeEventStartingContent(
     body: `${hackathonName} starts soon. Open your judge page now and check your access before the event begins.`,
     deadlineLabel: "Event starts",
     ctaLabel: "Open Judge Page",
-    ctaUrl: `${process.env.NEXT_PUBLIC_APP_URL}/e/${hackathonSlug}/judge`,
+    ctaUrl: buildEventUrl(hackathonSlug, "/judge"),
     subject: `Judge plan: event starts soon — ${shortHackathonName(hackathonName)}`,
   }
 }
@@ -93,10 +95,10 @@ export function buildJudgeScoringStartingContent(
 ): PreEventContent {
   return {
     heading: "Scoring Starts Soon",
-    body: `scoring for ${hackathonName} starts soon. Open your judge page and review what you'll score.`,
+    body: `Scoring for ${hackathonName} starts soon. Open your judge page and review what you'll score.`,
     deadlineLabel: "Scoring starts",
     ctaLabel: "Open Judge Page",
-    ctaUrl: `${process.env.NEXT_PUBLIC_APP_URL}/e/${hackathonSlug}/judge`,
+    ctaUrl: buildEventUrl(hackathonSlug, "/judge"),
     subject: `Judge plan: scoring starts soon — ${shortHackathonName(hackathonName)}`,
   }
 }
@@ -143,34 +145,6 @@ const HIGH_URGENCY_SUBJECTS: Record<
   judge_scoring_starting: (name) => `Judge plan: scoring starts in 1 hour — ${name}`,
 }
 
-function safeTimeZone(timeZone?: string | null): string {
-  if (!timeZone) return "UTC"
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone }).format()
-    return timeZone
-  } catch {
-    return "UTC"
-  }
-}
-
-function formatJudgeDeadline(
-  deadlineDate: string,
-  timeZone?: string | null,
-): string {
-  const date = new Date(deadlineDate)
-  if (!Number.isFinite(date.getTime())) return deadlineDate
-  return date.toLocaleString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZone: safeTimeZone(timeZone),
-    timeZoneName: "short",
-  })
-}
-
 export async function sendPreEventReminderEmail(
   input: SendPreEventReminderInput
 ): Promise<{ sent: number; failed: number; deferred?: true }> {
@@ -180,14 +154,7 @@ export async function sendPreEventReminderEmail(
   const content = builder(input.hackathonName, input.hackathonSlug)
   const timeLeft = formatTimeLeft(input.deadlineDate)
   const isJudgeReminder = input.reminderType.startsWith("judge_")
-  const deadlineDateFormatted = isJudgeReminder
-    ? formatJudgeDeadline(input.deadlineDate, input.hackathonTimezone)
-    : new Date(input.deadlineDate).toLocaleDateString("en-US", {
-        weekday: "long",
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      })
+  const deadlineDateFormatted = formatEmailDeadline(input.deadlineDate, input.hackathonTimezone ?? "UTC")
 
   const subject =
     input.urgency === "high"
