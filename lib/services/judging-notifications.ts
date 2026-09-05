@@ -5,6 +5,7 @@ import { supabase as getSupabase } from "@/lib/db/client"
 import { resolveJudgingWindow, isValidJudgingTimeZone, type JudgingWindowEvent } from "@/lib/utils/judging-window"
 import { withDeliveryLease } from "@/lib/services/delivery-lease"
 import { consumeDeliverySlot, type DeliveryBudget } from "@/lib/services/delivery-budget"
+import { logJudgingDatabaseError } from "@/lib/services/judging-diagnostics"
 
 export type JudgingNotificationKind = "preparation" | "work_ready" | "work_added" | "scores_due" | "deadline_changed" | "all_done" | "organizer_readiness" | "organizer_progress" | "daily_digest" | "manual_reminder"
 export type JudgingNotificationPreferences = {
@@ -98,7 +99,18 @@ async function loadContext(hackathonId: string) {
     client.from("judging_rounds").select("id,status,opens_at,closes_at").eq("hackathon_id", hackathonId),
     client.rpc("get_judging_visible_assignment_ids", { p_hackathon_id: hackathonId }),
   ])
-  if ([event, judges, assignments, rounds, visibility].some((result) => result.error)) throw new Error("Could not check judging progress.")
+  for (const [operation, result] of [
+    ["notification_event", event],
+    ["notification_judges", judges],
+    ["notification_assignments", assignments],
+    ["notification_rounds", rounds],
+    ["notification_visibility", visibility],
+  ] as const) {
+    if (result.error) {
+      logJudgingDatabaseError(operation, result.error)
+      throw new Error("Could not check judging progress.")
+    }
+  }
   const visibleIds = new Set(Array.isArray(visibility.data) ? visibility.data.filter((value): value is string => typeof value === "string") : [])
   const people = (judges.data ?? []) as Judge[]
   const rawWork = (assignments.data ?? []) as unknown as Array<Assignment & { prize: Assignment["prize"] | Array<NonNullable<Assignment["prize"]>>; submission: Assignment["submission"] | Array<NonNullable<Assignment["submission"]>> }>

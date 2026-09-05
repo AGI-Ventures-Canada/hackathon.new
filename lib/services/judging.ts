@@ -409,25 +409,6 @@ export async function createPrize(
     }
   }
 
-  if (input.judgingStyle === "weighted_score" && cleanCriteria.length === 0) {
-    const { count: coreCount, error: coreCountError } = await client
-      .from("judging_criteria")
-      .select("id", { count: "exact", head: true })
-      .eq("hackathon_id", hackathonId)
-      .is("prize_id", null)
-    if (coreCountError) {
-      console.error("Failed to count core criteria for weighted prize check:", coreCountError)
-      return { success: false, error: coreCountError.message, code: "db_error" }
-    }
-    if (!coreCount || coreCount === 0) {
-      return {
-        success: false,
-        error: "Add at least one shared category before creating a weighted prize, or give this prize its own categories",
-        code: "validation",
-      }
-    }
-  }
-
   const cleanBuckets =
     input.judgingStyle === "bucket_sort" && input.buckets !== undefined
       ? input.buckets.filter((b) => b.label.trim().length > 0)

@@ -152,7 +152,7 @@ const BANNER = `
 
   ${pc.dim("PRIZES")}
     prizes list <id>                         List prizes
-    prizes create <id>                       Create a prize
+    prizes create <id>                       Create a prize (--style weighted_score for a scorecard)
     prizes update <id> <pid>                 Update a prize
     prizes delete <id> <pid>                 Delete a prize
     prizes reorder <id>                      Reorder prizes

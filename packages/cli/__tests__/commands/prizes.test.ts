@@ -51,6 +51,24 @@ describe("prizes commands", () => {
   })
 
   describe("create", () => {
+    it("creates a weighted prize before its scorecard exists", async () => {
+      mockFetch.mockResolvedValueOnce(jsonResponse({ prize: { id: "p1", name: "Best overall", judging_style: "weighted_score" } }))
+      const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
+      const { runPrizesCreate } = await import("../../src/commands/prizes/create")
+      await runPrizesCreate(client, hackathonId, ["--name", "Best overall", "--style", "weighted_score", "--json"])
+
+      expect(mockFetch.mock.calls[0][0]).toContain(`/hackathons/${hackathonId}/prizes`)
+      expect(JSON.parse(String(mockFetch.mock.calls[0][1]?.body))).toEqual({ name: "Best overall", judgingStyle: "weighted_score" })
+      expect(JSON.parse(consoleLogSpy.mock.calls[0][0])).toMatchObject({ id: "p1", judging_style: "weighted_score" })
+    })
+
+    it("rejects an unknown judging method before fetching", async () => {
+      const client = new OatmealClient({ baseUrl: "http://localhost", apiKey: "sk_test" })
+      const { runPrizesCreate } = await import("../../src/commands/prizes/create")
+      await expect(runPrizesCreate(client, hackathonId, ["--name", "Best overall", "--style", "typo"])).rejects.toThrow("--style must be")
+      expect(mockFetch).not.toHaveBeenCalled()
+    })
+
     it("creates prize with flags", async () => {
       mockFetch.mockResolvedValueOnce(
         jsonResponse({ id: "p1", name: "Best AI App" })
@@ -63,6 +81,7 @@ describe("prizes commands", () => {
       const body = JSON.parse(init.body as string)
       expect(body.name).toBe("Best AI App")
       expect(body.type).toBe("cash")
+      expect(body.judgingStyle).toBeUndefined()
     })
   })
 

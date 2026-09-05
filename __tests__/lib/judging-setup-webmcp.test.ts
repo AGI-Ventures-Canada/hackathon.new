@@ -2,6 +2,16 @@ import {describe, expect, it} from "bun:test"
 import {createJudgingSetupTools} from "@/lib/webmcp/judging-setup-tools"
 
 describe("judging task WebMCP tools", () => {
+  it("saves a first prize without requiring scorecard categories", async () => {
+    let sent: {url: string; body: unknown} | null = null
+    const tools = createJudgingSetupTools({hackathonId: "event", slug: "demo", navigate: () => {}, refresh: () => {}, fetcher: async (url, init) => {
+      sent = {url: String(url), body: JSON.parse(String(init?.body))}
+      return Response.json({prize: {id: "prize", name: "Best overall"}})
+    }})
+    const result = await tools.find((tool) => tool.name === "save_judging_prize")!.execute({name: "Best overall", value: "$500"})
+    expect(result).toMatchObject({ok: true, data: {status: "saved", prizeId: "prize"}})
+    expect(sent).toEqual({url: "/api/dashboard/hackathons/event/prizes", body: {name: "Best overall", value: "$500", judgingStyle: "weighted_score"}})
+  })
   it("uses the canonical scoped assignment endpoint and retry key", async () => {
     let sent: {url: string; body: unknown} | null = null
     const tools = createJudgingSetupTools({hackathonId: "event", slug: "demo", navigate: () => {}, refresh: () => {}, fetcher: async (url, init) => {sent = {url: String(url), body: JSON.parse(String(init?.body))}; return Response.json({createdAssignments: 3, createdCoverage: 6})}})

@@ -15,11 +15,19 @@ This returns prizes, scorecards, dates, judge progress, and the steps still need
 
 ## Start with a Prize and Scorecard
 
+You can save the prize first and set up its scorecard later:
+
+```bash title="Save a prize first"
+hackathon prizes create <event> --name "Best overall" --value "$500" --style weighted_score
+```
+
+Judging stays unready until its scorecard is complete. Or save the starter prize and scorecard together:
+
 ```bash title="Save the starter setup"
 hackathon judging setup configure <event> --starter --prize-name "Best overall"
 ```
 
-The starter adds one prize and four shared categories: Innovation, Technical execution, Design and UX, and Impact. Each uses a 0–10 scale and counts for 25% of the score. It does not replace existing scorecards. Existing events keep their rules until you save a change.
+The starter adds a prize when needed and four shared questions: Original idea, Does it work?, Easy to use, and Usefulness. Each uses a 0–10 scale and counts for 25% of the score. It does not replace existing scorecards. Existing events keep their rules until you save a change.
 
 Set a judging window separate from the event dates. Include the time zone offset in each time:
 

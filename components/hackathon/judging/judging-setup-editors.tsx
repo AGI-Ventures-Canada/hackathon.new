@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   Sheet,
@@ -340,7 +341,30 @@ function JudgingScorecardEditor({ setup, onSaved }: { setup: JudgingSetup; onSav
       <p className="text-sm text-muted-foreground">
         Judges answer shared questions once per project. Each prize adds its own questions below.
       </p>
-      {setup.readiness.scoringLocked ? (
+      {canStart ? (
+        <>
+          <div className="rounded-lg border p-4 space-y-3">
+            <p className="font-medium">Start with four simple questions</p>
+            <ul className="text-sm space-y-1">
+              {["Original idea", "Does it work?", "Easy to use", "Usefulness"].map((name) => (
+                <li key={name}>{name} · 0–10 · 25%</li>
+              ))}
+            </ul>
+            <p className="text-sm text-muted-foreground">You can change these after saving.</p>
+            <Button disabled={busy} onClick={() => void apply()}>
+              {busy ? "Saving scorecard…" : "Use this scorecard"}
+            </Button>
+          </div>
+          <Collapsible>
+            <CollapsibleTrigger asChild>
+              <Button variant="outline">Build a custom scorecard</Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="pt-4">
+              <CoreCriteriaEditor hackathonId={setup.id} criteria={setup.coreCriteria} />
+            </CollapsibleContent>
+          </Collapsible>
+        </>
+      ) : setup.readiness.scoringLocked ? (
         <p className="text-sm">Reviews have started. Add a new round to change scoring.</p>
       ) : (
         <CoreCriteriaEditor
@@ -349,21 +373,8 @@ function JudgingScorecardEditor({ setup, onSaved }: { setup: JudgingSetup; onSav
           criteria={setup.coreCriteria}
         />
       )}
-      {canStart && (
-        <div className="rounded-lg border p-4 space-y-3">
-          <p className="font-medium">Start with four simple questions</p>
-          <ul className="text-sm space-y-1">
-            {["Original idea", "Does it work?", "Easy to use", "Usefulness"].map((name) => (
-              <li key={name}>{name} · 0–10 · 25%</li>
-            ))}
-          </ul>
-          <Button disabled={busy} onClick={() => void apply()}>
-            {busy ? "Saving scorecard…" : "Use this scorecard"}
-          </Button>
-        </div>
-      )}
       {setup.prizes
-        .filter((prize) => prize.judging_style === "weighted_score")
+        .filter((prize) => prize.judging_style === "weighted_score" && !canStart)
         .map((prize) => {
           const categories = [
             ...setup.coreCriteria,

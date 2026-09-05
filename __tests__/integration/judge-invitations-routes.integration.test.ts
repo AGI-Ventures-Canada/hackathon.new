@@ -78,6 +78,38 @@ const mockInvitation = {
   },
 }
 
+describe("GET /api/public/judge-invitations/:token", () => {
+  beforeEach(() => {
+    mockCurrentTermsHash.mockReset()
+    mockCurrentTermsHash.mockResolvedValue(null)
+    mockGetJudgeInvitationByToken.mockReset()
+  })
+
+  it("returns the same organizer, personal note, and judging briefing as the invitation page", async () => {
+    mockGetJudgeInvitationByToken.mockResolvedValue({
+      ...mockInvitation,
+      organizerName: "Community Builders",
+      personal_message: "  Your design experience would help our teams.  ",
+      hackathon: { ...mockInvitation.hackathon, judging_instructions: "Watch each demo before scoring." },
+    })
+
+    const res = await app.handle(new Request("http://localhost/api/public/judge-invitations/valid-token"))
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({
+      hackathonName: "Test Hackathon", organizerName: "Community Builders",
+      personalMessage: "Your design experience would help our teams.",
+      instructions: "Watch each demo before scoring.",
+    })
+  })
+
+  it("returns null for optional details absent from older invitations", async () => {
+    mockGetJudgeInvitationByToken.mockResolvedValue(mockInvitation)
+    const res = await app.handle(new Request("http://localhost/api/public/judge-invitations/valid-token"))
+    expect(await res.json()).toMatchObject({ organizerName: null, personalMessage: null, instructions: null })
+  })
+})
+
 describe("POST /api/public/judge-invitations/:token/accept", () => {
   beforeEach(() => {
     mockAuth.mockReset()

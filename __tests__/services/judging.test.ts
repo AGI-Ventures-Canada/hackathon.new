@@ -2330,31 +2330,33 @@ describe("Judging Service", () => {
       expect(result.success).toBe(true)
     })
 
-    it("rejects weighted_score with zero bonus criteria when no core categories exist", async () => {
-      let prizeInsertCount = 0
-      setMockFromImplementation((table: string) => {
-        if (table === "judging_criteria") {
-          return createChainableMock({ data: [], error: null, count: 0 })
-        }
-        if (table === "prizes") {
-          prizeInsertCount++
-          return createChainableMock({ data: null, error: null })
-        }
-        return createChainableMock({ data: null, error: null })
+    it("saves a first weighted prize before the scorecard is set up, while keeping judging unready", async () => {
+      let rpcParams: Record<string, unknown> | undefined
+      setMockRpcImplementation((_name, params) => {
+        rpcParams = params as Record<string, unknown>
+        return mockSuccess({ id: "first-prize", name: "First prize", judging_style: "weighted_score" })
       })
-
       const result = await createPrize("h1", {
-        name: "Orphan Prize",
+        name: "First prize",
         judgingStyle: "weighted_score",
         criteria: [],
       })
 
-      expect(result.success).toBe(false)
-      if (!result.success) {
-        expect(result.code).toBe("validation")
-        expect(result.error).toContain("category")
-      }
-      expect(prizeInsertCount).toBe(0)
+      expect(result.success).toBe(true)
+      expect(rpcParams?.p_criteria).toEqual([])
+      expect(evaluateJudgingSetup(
+        [{ id: "first-prize", name: "First prize", judging_style: "weighted_score", max_picks: null }],
+        [],
+        [],
+      )).toMatchObject({ isReady: false, issues: ["Add score categories for First prize."] })
+    })
+
+    it("keeps submitted round restrictions when saving an unfinished prize", async () => {
+      mockRpcCall("create_prize_configuration_atomic", mockError("judging_rules_locked: Submitted scorecards must stay fixed"))
+
+      const result = await createPrize("h1", { name: "Late prize", judgingStyle: "weighted_score" })
+
+      expect(result).toMatchObject({ success: false, code: "validation" })
     })
   })
 

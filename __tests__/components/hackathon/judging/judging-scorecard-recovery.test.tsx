@@ -10,7 +10,7 @@ afterEach(() => {cleanup();globalThis.fetch=originalFetch})
 describe("scorecard editing recovery", () => {
   it("restores the active custom question and its original ID after changing setup steps",async () => {
     const first=render(<CoreCriteriaEditor hackathonId="event-recovery" criteria={[criterion]} />)
-    fireEvent.click(screen.getByRole("button",{name:"Edit criterion"}))
+    fireEvent.click(screen.getByRole("button",{name:"Edit category"}))
     fireEvent.change(screen.getByRole("textbox",{name:"Question name"}),{target:{value:"Clear custom question"}})
     first.unmount()
     render(<CoreCriteriaEditor hackathonId="event-recovery" criteria={[criterion]} />)
@@ -24,6 +24,18 @@ describe("scorecard editing recovery", () => {
     finish(new Response(JSON.stringify({error:"Try again"}),{status:503}))
     await waitFor(() => expect(screen.getByRole("alert").textContent).toBe("Try again"))
     expect((screen.getByRole("textbox",{name:"Question name"}) as HTMLInputElement).value).toBe("Clear custom question")
+  })
+  it("refreshes saved categories without replacing a category edit in progress", () => {
+    const editor = render(<CoreCriteriaEditor hackathonId="event-recovery" criteria={[criterion]} />)
+    fireEvent.click(screen.getByRole("button", { name: "Edit category" }))
+    fireEvent.change(screen.getByRole("textbox", { name: "Question name" }), { target: { value: "My unsaved question" } })
+    editor.rerender(<CoreCriteriaEditor hackathonId="event-recovery" criteria={[
+      { ...criterion, weight: 75 },
+      { ...criterion, id: "new-category", name: "New shared category", weight: 25 },
+    ]} />)
+    expect(screen.getByText("New shared category")).toBeDefined()
+    expect(screen.getByText(/Shared total:/).textContent).toContain("100%")
+    expect((screen.getByRole("textbox", { name: "Question name" }) as HTMLInputElement).value).toBe("My unsaved question")
   })
   it("keeps an edited prize's scorecard IDs through dialog unmount and recovery",async () => {
     const prize:EditablePrize={id:"prize-recovery",name:"A prize",description:null,value:"Reward",judgingStyle:"weighted_score",maxPicks:null,criteria:[criterion],buckets:null}

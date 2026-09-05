@@ -166,6 +166,20 @@ describe("dashboard judge↔submission assignment routes", () => {
   })
 
   describe("POST /hackathons/:id/prizes", () => {
+    it.each([false, true])("allows an unfinished weighted prize with WebMCP=%s", async (webMcp) => {
+      mockCheckHackathonOrganizer.mockResolvedValueOnce({status: "ok", hackathon: {
+        id: HACKATHON_ID, tenant_id: "org_123", status: "draft", updated_at: "2026-08-25T15:00:00.000Z",
+      }})
+      mockCreatePrize.mockResolvedValueOnce({success: true, prize: {id: "prize-1", name: "First prize", judging_style: "weighted_score"}})
+      const response = await app.handle(new Request(urlFor(`/hackathons/${HACKATHON_ID}/prizes`), {
+        method: "POST",
+        headers: {"Content-Type": "application/json", ...(webMcp ? {"x-webmcp-request": "1", "x-webmcp-expected-status": "draft", "x-webmcp-event-version": "2026-08-25T15:00:00.000Z"} : {})},
+        body: JSON.stringify({name: "First prize", judgingStyle: "weighted_score", criteria: []}),
+      }))
+      expect(response.status).toBe(200)
+      expect(mockCreatePrize).toHaveBeenCalledWith(HACKATHON_ID, expect.objectContaining({name: "First prize", judgingStyle: "weighted_score", criteria: []}))
+    })
+
     it("creates a prize for a current WebMCP draft", async () => {
       mockCheckHackathonOrganizer.mockResolvedValueOnce({
         status: "ok",

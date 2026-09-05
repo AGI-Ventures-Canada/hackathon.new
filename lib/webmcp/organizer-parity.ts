@@ -156,7 +156,7 @@ export const ORGANIZER_SECTION_CONFIG: Record<
   },
   judging_settings: {
     title: "Judging settings",
-    summary: "Edit prizes, scorecards, judging dates, rounds, and notifications.",
+    summary: "Save prizes first, then finish scorecards, judging dates, rounds, and notifications.",
     params: "tab=judging&jtab=setup",
     webMcpTools: [...DIRECT_ACTION_TOOL_NAMES, "inspect_judging", "configure_judging", "save_judging_prize", "save_judging_category", "save_judging_round", "invite_judging_panel", "remind_judging_panel", "inspect_judge_scope", "save_judge_scope", "inspect_judge_projects", "assign_judge_project", "preview_judging_work", "apply_judging_work", "open_judging_settings"],
     cliCommands: ["judging setup inspect", "judging setup configure", "judging scorecards list", "judging judges scope", "judging invitations remind"],

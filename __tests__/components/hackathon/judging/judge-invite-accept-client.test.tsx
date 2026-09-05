@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test"
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { JudgeInviteAcceptClient } from "@/app/(public)/judge-invite/[token]/judge-invite-accept-client"
 
 const originalFetch = globalThis.fetch
@@ -46,6 +46,31 @@ describe("judge invitation acceptance", () => {
     expect(screen.getByText(invitation.eventSchedule)).toBeDefined()
     expect(screen.getByText(invitation.email)).toBeDefined()
     expect(screen.getByText(invitation.expiresLabel)).toBeDefined()
+    expect(screen.queryByText(/Organized by/)).toBeNull()
+    expect(screen.queryByRole("region", { name: "A note from your organizer" })).toBeNull()
+  })
+
+  it("shows the organizer and distinguishes the personal note from the judging briefing", () => {
+    render(
+      <JudgeInviteAcceptClient
+        token="invite-token"
+        invitation={{
+          ...invitation,
+          organizerName: "Community Builders",
+          personalMessage: "Your design experience would help our teams.",
+          instructions: "Watch each demo before scoring.",
+        }}
+        isAuthenticated={false}
+      />,
+    )
+
+    expect(screen.getByText("Organized by Community Builders")).toBeDefined()
+    const personalNote = within(screen.getByRole("region", { name: "A note from your organizer" }))
+    expect(personalNote.getByText("Your design experience would help our teams.")).toBeDefined()
+    expect(personalNote.queryByText("Watch each demo before scoring.")).toBeNull()
+    expect(within(screen.getByRole("region", { name: "Before you judge" }))
+      .getByText("Watch each demo before scoring.")).toBeDefined()
+    expect(screen.getAllByRole("link", { name: "Accept invitation" })).toHaveLength(1)
   })
 
   it("opens the judging workspace immediately after acceptance", async () => {
@@ -77,11 +102,11 @@ describe("judge invitation acceptance", () => {
       />,
     )
 
-    expect(screen.getByRole("link", { name: "Sign In to Accept" }).getAttribute("href"))
+    expect(screen.getByRole("link", { name: "Accept invitation" }).getAttribute("href"))
       .toContain(encodeURIComponent("/judge-invite/invite-token?accept=true"))
     expect(screen.getByRole("link", { name: "Create Account" }).getAttribute("href"))
       .toContain(encodeURIComponent("/judge-invite/invite-token?accept=true"))
-    fireEvent.click(screen.getByRole("link", { name: "Sign In to Accept" }))
+    fireEvent.click(screen.getByRole("link", { name: "Accept invitation" }))
     expect(sessionStorage.getItem("judge-invite-auto-accept:invite-token")).toBe("1")
   })
 

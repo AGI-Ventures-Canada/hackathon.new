@@ -55,6 +55,8 @@ export default async function JudgeInvitePage({ params, searchParams }: PageProp
         invitation={{
           hackathonName: invitation.hackathon.name,
           hackathonSlug: invitation.hackathon.slug,
+          organizerName: invitation.organizerName,
+          personalMessage: invitation.personal_message?.trim() || null,
           email: invitation.email,
           status: effectiveStatus,
           expiresAt: invitation.expires_at,

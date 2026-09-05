@@ -24,6 +24,20 @@ describe("judging reminders and inbox", () => {
   it("rejects invalid preference time zones before writing", async () => {
     await expect(updateJudgingNotificationPreferences("event", "judge", { timezone: "Bogus/Zone" })).rejects.toThrow("valid time zone")
   })
+  it("identifies a failed visibility lookup without logging database details or recipient data", async () => {
+    setMockFromImplementation(() => createChainableMock({ data: null, error: null }))
+    setMockRpcImplementation(() => Promise.resolve({ data: null, error: { code: "PGRST202", message: "private recipient@example.com" } }))
+    const originalError = console.error
+    const logged = mock(() => {})
+    console.error = logged
+    try {
+      await expect(reconcileJudgingNotifications("event")).rejects.toThrow("Could not check judging progress.")
+      expect(logged).toHaveBeenCalledWith("Judging database operation failed.", { operation: "notification_visibility", code: "PGRST202" })
+      expect(JSON.stringify(logged.mock.calls)).not.toContain("recipient@example.com")
+    } finally {
+      console.error = originalError
+    }
+  })
 })
 
 type UpdateInput = { beforeAttempt?: () => Promise<void> }

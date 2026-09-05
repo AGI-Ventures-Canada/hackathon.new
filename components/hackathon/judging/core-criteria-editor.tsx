@@ -55,6 +55,13 @@ export function CoreCriteriaEditor({
   const setEditDraft = (editDraft:DraftRow) => setFormDraft((current) => ({...current,editDraft}))
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const criteriaVersion = JSON.stringify(criteria)
+  const [savedCriteriaVersion, setSavedCriteriaVersion] = useState(criteriaVersion)
+
+  if (!busy && savedCriteriaVersion !== criteriaVersion) {
+    setSavedCriteriaVersion(criteriaVersion)
+    setItems(criteria)
+  }
 
   const sum = items.reduce((acc, c) => acc + c.weight, 0)
 
@@ -279,22 +286,23 @@ export function CoreCriteriaEditor({
             disabled={busy}
           >
             <Plus className="mr-1 size-3.5" />
-            Add criterion
+            Add category
           </Button>
         )}
       </div>
 
       <div className="rounded-md border bg-muted px-3 py-2 text-sm">
-        Core total: <span className="font-medium">{sum}%</span>
+        Shared total: <span className="font-medium">{sum}%</span>
         <span className="text-muted-foreground">
-          {" "}
-          · Each prize fills the remaining {Math.max(0, 100 - sum)}%
+          {sum === 100
+            ? " · Applies to every prize."
+            : ` · Each prize adds the remaining ${Math.max(0, 100 - sum)}%.`}
         </span>
       </div>
 
       {items.length === 0 && !adding && (
         <p className="text-sm text-muted-foreground italic">
-          No core criteria yet.
+          Add your first shared category.
         </p>
       )}
 
@@ -400,7 +408,7 @@ export function CoreCriteriaEditor({
                   className="size-8"
                   onClick={() => startEdit(c)}
                   disabled={busy}
-                  aria-label="Edit criterion"
+                  aria-label="Edit category"
                 >
                   <Pencil className="size-4" />
                 </Button>
@@ -411,7 +419,7 @@ export function CoreCriteriaEditor({
                   className="size-8"
                   onClick={() => handleDelete(c.id)}
                   disabled={busy}
-                  aria-label="Remove criterion"
+                  aria-label="Remove category"
                 >
                   <Trash2 className="size-4" />
                 </Button>

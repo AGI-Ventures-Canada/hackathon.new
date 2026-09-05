@@ -23,6 +23,8 @@ interface JudgeInviteAcceptClientProps {
   invitation: {
     hackathonName: string
     hackathonSlug: string
+    organizerName?: string | null
+    personalMessage?: string | null
     email: string
     status: string
     expiresAt: string
@@ -243,10 +245,13 @@ export function JudgeInviteAcceptClient({
         )}
 
         <div className="flex items-center gap-3 p-3 bg-muted rounded-lg">
-          <Scale className="size-5 text-muted-foreground" />
-          <div>
-            <p className="text-sm text-muted-foreground">Hackathon</p>
-            <p className="font-medium">{invitation.hackathonName}</p>
+          <Scale className="size-5 shrink-0 text-muted-foreground" />
+          <div className="min-w-0">
+            <p className="text-sm text-muted-foreground">Event</p>
+            <p className="break-words font-medium">{invitation.hackathonName}</p>
+            {invitation.organizerName && (
+              <p className="break-words text-sm text-muted-foreground">Organized by {invitation.organizerName}</p>
+            )}
           </div>
         </div>
 
@@ -270,7 +275,18 @@ export function JudgeInviteAcceptClient({
 
         {signedInEmail && <p className="break-words text-sm text-muted-foreground">You&apos;re signed in as {signedInEmail}.</p>}
         {!emailMatches && <Alert variant="destructive"><AlertDescription>Switch to {invitation.email} to accept this invitation.</AlertDescription></Alert>}
-        {invitation.instructions && <div className="space-y-2"><p className="text-sm font-medium">A note from your organizer</p><p className="whitespace-pre-wrap text-sm text-muted-foreground">{invitation.instructions}</p></div>}
+        {invitation.personalMessage && (
+          <section className="space-y-2" aria-label="A note from your organizer">
+            <h2 className="text-sm font-medium">A note from your organizer</h2>
+            <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">{invitation.personalMessage}</p>
+          </section>
+        )}
+        {invitation.instructions && (
+          <section className="space-y-2" aria-label="Before you judge">
+            <h2 className="text-sm font-medium">Before you judge</h2>
+            <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">{invitation.instructions}</p>
+          </section>
+        )}
 
         {invitation.expiresLabel && (
           <div className="flex items-center gap-3 rounded-lg bg-muted p-3">
@@ -323,7 +339,7 @@ export function JudgeInviteAcceptClient({
                 href={`/sign-in?redirect_url=${encodeURIComponent(`/judge-invite/${token}?accept=true`)}&email=${encodeURIComponent(invitation.email)}`}
                 onClick={rememberAcceptIntent}
               >
-                Sign In to Accept
+                Accept invitation
               </Link>
             </Button>
             <Button variant="outline" className="w-full" asChild>

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import {
   Dialog,
   DialogContent,
@@ -114,6 +115,7 @@ export function AddPrizeDialog({
     ? visibleRounds[visibleRounds.length - 1].id
     : null
   const [step, setStep] = useState<CreateStep>("details")
+  const [advancedOpen, setAdvancedOpen] = useState(false)
   const [form, setForm, clearDraft] = useJudgingFormDraft(hackathonId, "new-prize", {
     name: "",
     description: "",
@@ -151,6 +153,7 @@ export function AddPrizeDialog({
         ? emptyWeightedCriteria() : previous.weightedCriteria,
     }))
     setStep("details")
+    setAdvancedOpen(true)
   }
 
   function updateWeighted(index: number, patch: Partial<WeightedCriterionDraft>) {
@@ -167,7 +170,7 @@ export function AddPrizeDialog({
       ...form,
       weightedCriteria: [
         ...form.weightedCriteria,
-        { id: nextDraftId(), name: "", description: "", weight: "", minScore: "1", maxScore: "10" },
+        { id: nextDraftId(), name: "", description: "", weight: "", minScore: "0", maxScore: "10" },
       ],
     })
   }
@@ -249,6 +252,7 @@ export function AddPrizeDialog({
         .filter((c) => c.name.length > 0)
       for (const c of cleaned) {
         if (!Number.isFinite(c.weight) || c.weight < 0 || c.weight > 100) {
+          setAdvancedOpen(true)
           setError("Each weight must be between 0 and 100")
           return
         }
@@ -258,6 +262,7 @@ export function AddPrizeDialog({
           c.minScore < 0 ||
           !(c.minScore < c.maxScore)
         ) {
+          setAdvancedOpen(true)
           setError(`"${c.name}": min must be 0 or higher and less than max`)
           return
         }
@@ -270,6 +275,7 @@ export function AddPrizeDialog({
         .map((c) => ({ name: c.name.trim(), description: c.description.trim() || null }))
         .filter((c) => c.name.length > 0)
       if (cleaned.length === 0) {
+        setAdvancedOpen(true)
         setError("Add at least one check")
         return
       }
@@ -281,6 +287,7 @@ export function AddPrizeDialog({
         .map((b) => ({ level: b.level, label: b.label.trim(), description: b.description.trim() || null }))
         .filter((b) => b.label.length > 0)
       if (cleaned.length < 2) {
+        setAdvancedOpen(true)
         setError("Add at least two sort groups")
         return
       }
@@ -290,6 +297,7 @@ export function AddPrizeDialog({
     if (form.judgingStyle === "judges_pick") {
       const parsed = parseInt(form.maxPicks, 10)
       if (!Number.isFinite(parsed) || parsed < 1) {
+        setAdvancedOpen(true)
         setError("Max picks must be 1 or more")
         return
       }
@@ -375,9 +383,11 @@ export function AddPrizeDialog({
       <DialogContent className={step === "style" ? "sm:max-w-lg" : "sm:max-w-xl max-h-[90vh] overflow-y-auto"}>
         <DialogHeader>
           <DialogTitle>
-            {step === "style" ? "How should judges pick the winner?" : "Prize details"}
+            {step === "style" ? "How should judges pick the winner?" : "Add a prize"}
           </DialogTitle>
-          <DialogDescription>Set up the prize and its judging rules.</DialogDescription>
+          <DialogDescription>
+            {step === "style" ? "Pick how this prize is judged." : "Name the prize and what the winner gets."}
+          </DialogDescription>
         </DialogHeader>
         {step === "style" ? (
           <div className="space-y-2">
@@ -393,12 +403,12 @@ export function AddPrizeDialog({
                   <div className="flex items-start gap-3">
                     <Icon className="size-5 mt-0.5 shrink-0 text-muted-foreground" />
                     <div className="min-w-0 flex-1">
-                      <span className="font-medium">{option.label}</span>
+                      <span className="font-medium">{option.value === "weighted_score" ? "Score projects" : option.label}</span>
                       <p className="text-sm text-muted-foreground mt-0.5">
-                        {option.description}
+                        {option.value === "weighted_score" ? "Judges use a scorecard to rate each project." : option.description}
                       </p>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        {option.detail}
+                        {option.value === "weighted_score" ? "Use the shared scorecard, with optional questions for this prize." : option.detail}
                       </p>
                     </div>
                     <ChevronRight className="size-4 mt-1 shrink-0 text-muted-foreground" />
@@ -406,50 +416,12 @@ export function AddPrizeDialog({
                 </button>
               )
             })}
+            <Button type="button" variant="outline" onClick={() => setStep("details")}>
+              Back to prize
+            </Button>
           </div>
         ) : (
           <form onSubmit={handleCreate} onKeyDown={handleKeyDown} autoComplete="off" className="space-y-4">
-            <div className="flex items-center justify-between gap-2 rounded-md bg-muted px-3 py-2 text-sm">
-              <div className="flex items-center gap-2 min-w-0">
-                <SelectedIcon className="size-4 shrink-0" />
-                <span className="font-medium truncate">{selectedOption?.label}</span>
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-auto shrink-0 px-2 py-1 text-xs"
-                onClick={() => setStep("style")}
-              >
-                More judging options
-              </Button>
-            </div>
-            {visibleRounds.length >= 1 && (
-              <div className="space-y-2">
-                <Label htmlFor="add-prize-round">Round</Label>
-                <Select
-                  value={form.roundId ?? "none"}
-                  onValueChange={(v) =>
-                    setForm({ ...form, roundId: v === "none" ? null : v })
-                  }
-                >
-                  <SelectTrigger id="add-prize-round">
-                    <SelectValue placeholder="Select a round" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {visibleRounds.map((r) => (
-                      <SelectItem key={r.id} value={r.id}>
-                        {r.name}
-                      </SelectItem>
-                    ))}
-                    <SelectItem value="none">No round</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  Judges only score this prize with the projects that made it into this round.
-                </p>
-              </div>
-            )}
             <div className="space-y-2">
               <Label htmlFor="add-prize-name">Name</Label>
               <Input
@@ -517,242 +489,287 @@ export function AddPrizeDialog({
               />
             </div>
 
-            {form.judgingStyle === "gate_check" && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label>What should each project pass?</Label>
-                    <p className="text-xs text-muted-foreground">
-                      Judges answer yes or no for each rule.
-                    </p>
-                  </div>
-                  <Button type="button" variant="outline" size="sm" onClick={addCriterion}>
-                    <Plus className="mr-1 size-3.5" />
-                    Add rule
-                  </Button>
-                </div>
-                <div className="space-y-2">
-                  {form.criteria.map((c, i) => (
-                    <div key={c.id} className="flex items-start gap-2 rounded-md border p-3">
-                      <div className="flex-1 space-y-2 min-w-0">
-                        <Input
-                          value={c.name}
-                          onChange={(e) => updateCriterion(i, { name: e.target.value })}
-                          placeholder="e.g. Uses the sponsor's API"
-                          autoComplete="off"
-                          data-1p-ignore
-                          data-lpignore="true"
-                          data-form-type="other"
-                        />
-                        <Input
-                          value={c.description}
-                          onChange={(e) => updateCriterion(i, { description: e.target.value })}
-                          placeholder="Helper text for judges (optional)"
-                          autoComplete="off"
-                          data-1p-ignore
-                          data-lpignore="true"
-                          data-form-type="other"
-                        />
-                      </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="size-8 shrink-0"
-                        onClick={() => removeCriterion(i)}
-                        disabled={form.criteria.length <= 1}
-                        aria-label="Remove rule"
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
+            <div className="space-y-1 text-sm">
+              <div className="flex items-center gap-2">
+                <SelectedIcon className="size-4 shrink-0" />
+                <span className="font-medium">
+                  {form.judgingStyle === "weighted_score" ? "Score projects" : selectedOption?.label}
+                </span>
               </div>
-            )}
-
-            {form.judgingStyle === "bucket_sort" && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label>Sort groups</Label>
-                    <p className="text-xs text-muted-foreground">
-                      Judges put each project into one of these.
-                    </p>
-                  </div>
-                  <Button type="button" variant="outline" size="sm" onClick={addBucket}>
-                    <Plus className="mr-1 size-3.5" />
-                    Add group
-                  </Button>
-                </div>
-                <div className="space-y-2">
-                  {form.buckets.map((b, i) => (
-                    <div key={b.id} className="flex items-start gap-2 rounded-md border p-3">
-                      <div className="flex-1 space-y-2 min-w-0">
-                        <Input
-                          value={b.label}
-                          onChange={(e) => updateBucket(i, { label: e.target.value })}
-                          placeholder="Group name (e.g. Great)"
-                          autoComplete="off"
-                          data-1p-ignore
-                          data-lpignore="true"
-                          data-form-type="other"
-                        />
-                        <Input
-                          value={b.description}
-                          onChange={(e) => updateBucket(i, { description: e.target.value })}
-                          placeholder="What goes here? (optional)"
-                          autoComplete="off"
-                          data-1p-ignore
-                          data-lpignore="true"
-                          data-form-type="other"
-                        />
-                      </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="size-8 shrink-0"
-                        onClick={() => removeBucket(i)}
-                        disabled={form.buckets.length <= 2}
-                        aria-label="Remove group"
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {form.judgingStyle === "weighted_score" && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label>Bonus categories for this prize (optional)</Label>
-                    <p className="text-xs text-muted-foreground">
-                      Add extra things judges score this prize on. Together with the score categories ({coreWeightSum}%), all weights must add up to 100.
-                    </p>
-                  </div>
-                  <Button type="button" variant="outline" size="sm" onClick={addWeighted}>
-                    <Plus className="mr-1 size-3.5" />
-                    Add bonus category
-                  </Button>
-                </div>
-                <div className="space-y-2">
-                  {form.weightedCriteria.map((c, i) => (
-                    <div key={c.id} className="flex items-start gap-2 rounded-md border p-3">
-                      <div className="flex-1 space-y-2 min-w-0">
-                        <Input
-                          value={c.name}
-                          onChange={(e) => updateWeighted(i, { name: e.target.value })}
-                          placeholder="e.g. Use of sponsor API"
-                          autoComplete="off"
-                          data-1p-ignore
-                          data-lpignore="true"
-                          data-form-type="other"
-                        />
-                        <Input
-                          value={c.description}
-                          onChange={(e) => updateWeighted(i, { description: e.target.value })}
-                          placeholder="Helper text for judges (optional)"
-                          autoComplete="off"
-                          data-1p-ignore
-                          data-lpignore="true"
-                          data-form-type="other"
-                        />
-                        <div className="flex items-center gap-2">
-                          <div className="flex flex-col items-center w-16">
-                            <Input
-                              type="number"
-                              inputMode="numeric"
-                              value={c.minScore}
-                              onChange={(e) => updateWeighted(i, { minScore: e.target.value })}
-                              className="text-center"
-                              autoComplete="off"
-                            />
-                            <span className="text-xs text-muted-foreground mt-1">min</span>
-                          </div>
-                          <span className="text-muted-foreground pt-2">–</span>
-                          <div className="flex flex-col items-center w-16">
-                            <Input
-                              type="number"
-                              inputMode="numeric"
-                              value={c.maxScore}
-                              onChange={(e) => updateWeighted(i, { maxScore: e.target.value })}
-                              className="text-center"
-                              autoComplete="off"
-                            />
-                            <span className="text-xs text-muted-foreground mt-1">max</span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-center w-20 shrink-0">
-                        <Input
-                          type="number"
-                          inputMode="numeric"
-                          min={0}
-                          max={100}
-                          value={c.weight}
-                          onChange={(e) => updateWeighted(i, { weight: e.target.value })}
-                          placeholder="%"
-                          className="text-center"
-                          autoComplete="off"
-                        />
-                        <span className="text-xs text-muted-foreground mt-1">weight %</span>
-                      </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="size-8 shrink-0"
-                        onClick={() => removeWeighted(i)}
-                        aria-label="Remove criterion"
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-                {(() => {
-                  const prizeSum = form.weightedCriteria.reduce(
-                    (acc, c) => acc + (Number(c.weight) || 0),
-                    0
-                  )
-                  const total = coreWeightSum + prizeSum
-                  const ok = Math.abs(total - 100) < 0.01
-                  return (
-                    <p className="text-xs text-muted-foreground">
-                      Score categories {coreWeightSum}% + this prize {prizeSum}% = {total}% {ok ? "✓" : "(aim for 100)"}
-                    </p>
-                  )
-                })()}
-              </div>
-            )}
-
-            {form.judgingStyle === "judges_pick" && (
-              <div className="space-y-2">
-                <Label htmlFor="add-prize-max-picks">How many can each judge pick?</Label>
-                <Input
-                  id="add-prize-max-picks"
-                  type="number"
-                  inputMode="numeric"
-                  min={1}
-                  value={form.maxPicks}
-                  onChange={(e) => setForm({ ...form, maxPicks: e.target.value })}
-                  className="w-full sm:w-32"
-                  autoComplete="off"
-                />
-                <p className="text-xs text-muted-foreground">
-                  For example, 3 means each judge picks their top 3.
+              {form.judgingStyle === "weighted_score" && (
+                <p className="text-muted-foreground">
+                  {coreCriteriaCountProp === 0
+                    ? "Save this prize, then set up the scorecard."
+                    : "Judges use the shared scorecard for this prize."}
                 </p>
-              </div>
-            )}
+              )}
+            </div>
+
+            <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+              <CollapsibleTrigger asChild>
+                <Button type="button" variant="outline">More judging options</Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="space-y-4 pt-4">
+                <Button type="button" variant="outline" onClick={() => setStep("style")}>
+                  Change judging method
+                </Button>
+                {visibleRounds.length >= 1 && (
+                  <div className="space-y-2">
+                    <Label htmlFor="add-prize-round">Round</Label>
+                    <Select value={form.roundId ?? "none"} onValueChange={(v) => setForm({ ...form, roundId: v === "none" ? null : v })}>
+                      <SelectTrigger id="add-prize-round"><SelectValue placeholder="Select a round" /></SelectTrigger>
+                      <SelectContent>
+                        {visibleRounds.map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
+                        <SelectItem value="none">No round</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Judges review the projects in this round.
+                    </p>
+                  </div>
+                )}
+
+                {form.judgingStyle === "gate_check" && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label>What should each project pass?</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Judges answer yes or no for each rule.
+                        </p>
+                      </div>
+                      <Button type="button" variant="outline" size="sm" onClick={addCriterion}>
+                        <Plus className="mr-1 size-3.5" />
+                        Add rule
+                      </Button>
+                    </div>
+                    <div className="space-y-2">
+                      {form.criteria.map((c, i) => (
+                        <div key={c.id} className="flex items-start gap-2 rounded-md border p-3">
+                          <div className="flex-1 space-y-2 min-w-0">
+                            <Input
+                              value={c.name}
+                              onChange={(e) => updateCriterion(i, { name: e.target.value })}
+                              placeholder="e.g. Uses the sponsor's API"
+                              autoComplete="off"
+                              data-1p-ignore
+                              data-lpignore="true"
+                              data-form-type="other"
+                            />
+                            <Input
+                              value={c.description}
+                              onChange={(e) => updateCriterion(i, { description: e.target.value })}
+                              placeholder="Helper text for judges (optional)"
+                              autoComplete="off"
+                              data-1p-ignore
+                              data-lpignore="true"
+                              data-form-type="other"
+                            />
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 shrink-0"
+                            onClick={() => removeCriterion(i)}
+                            disabled={form.criteria.length <= 1}
+                            aria-label="Remove rule"
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {form.judgingStyle === "bucket_sort" && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label>Sort groups</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Judges put each project into one of these.
+                        </p>
+                      </div>
+                      <Button type="button" variant="outline" size="sm" onClick={addBucket}>
+                        <Plus className="mr-1 size-3.5" />
+                        Add group
+                      </Button>
+                    </div>
+                    <div className="space-y-2">
+                      {form.buckets.map((b, i) => (
+                        <div key={b.id} className="flex items-start gap-2 rounded-md border p-3">
+                          <div className="flex-1 space-y-2 min-w-0">
+                            <Input
+                              value={b.label}
+                              onChange={(e) => updateBucket(i, { label: e.target.value })}
+                              placeholder="Group name (e.g. Great)"
+                              autoComplete="off"
+                              data-1p-ignore
+                              data-lpignore="true"
+                              data-form-type="other"
+                            />
+                            <Input
+                              value={b.description}
+                              onChange={(e) => updateBucket(i, { description: e.target.value })}
+                              placeholder="What goes here? (optional)"
+                              autoComplete="off"
+                              data-1p-ignore
+                              data-lpignore="true"
+                              data-form-type="other"
+                            />
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 shrink-0"
+                            onClick={() => removeBucket(i)}
+                            disabled={form.buckets.length <= 2}
+                            aria-label="Remove group"
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {form.judgingStyle === "weighted_score" && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label>Bonus categories for this prize (optional)</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Add extra things judges score this prize on. Together with the score categories ({coreWeightSum}%), all weights must add up to 100.
+                        </p>
+                      </div>
+                      <Button type="button" variant="outline" size="sm" onClick={addWeighted}>
+                        <Plus className="mr-1 size-3.5" />
+                        Add bonus category
+                      </Button>
+                    </div>
+                    <div className="space-y-2">
+                      {form.weightedCriteria.map((c, i) => (
+                        <div key={c.id} className="flex items-start gap-2 rounded-md border p-3">
+                          <div className="flex-1 space-y-2 min-w-0">
+                            <Input
+                              value={c.name}
+                              onChange={(e) => updateWeighted(i, { name: e.target.value })}
+                              placeholder="e.g. Use of sponsor API"
+                              autoComplete="off"
+                              data-1p-ignore
+                              data-lpignore="true"
+                              data-form-type="other"
+                            />
+                            <Input
+                              value={c.description}
+                              onChange={(e) => updateWeighted(i, { description: e.target.value })}
+                              placeholder="Helper text for judges (optional)"
+                              autoComplete="off"
+                              data-1p-ignore
+                              data-lpignore="true"
+                              data-form-type="other"
+                            />
+                            <div className="flex items-center gap-2">
+                              <div className="flex flex-col items-center w-16">
+                                <Input
+                                  type="number"
+                                  inputMode="numeric"
+                                  value={c.minScore}
+                                  aria-label={`Lowest score for bonus category ${i + 1}`}
+                                  onChange={(e) => updateWeighted(i, { minScore: e.target.value })}
+                                  className="text-center"
+                                  autoComplete="off"
+                                />
+                                <span className="text-xs text-muted-foreground mt-1">min</span>
+                              </div>
+                              <span className="text-muted-foreground pt-2">–</span>
+                              <div className="flex flex-col items-center w-16">
+                                <Input
+                                  type="number"
+                                  inputMode="numeric"
+                                  value={c.maxScore}
+                                  aria-label={`Highest score for bonus category ${i + 1}`}
+                                  onChange={(e) => updateWeighted(i, { maxScore: e.target.value })}
+                                  className="text-center"
+                                  autoComplete="off"
+                                />
+                                <span className="text-xs text-muted-foreground mt-1">max</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-center w-20 shrink-0">
+                            <Input
+                              type="number"
+                              inputMode="numeric"
+                              min={0}
+                              max={100}
+                              value={c.weight}
+                              aria-label={`Weight for bonus category ${i + 1}`}
+                              onChange={(e) => updateWeighted(i, { weight: e.target.value })}
+                              placeholder="%"
+                              className="text-center"
+                              autoComplete="off"
+                            />
+                            <span className="text-xs text-muted-foreground mt-1">weight %</span>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 shrink-0"
+                            onClick={() => removeWeighted(i)}
+                            aria-label="Remove criterion"
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                    {(() => {
+                      const prizeSum = form.weightedCriteria.reduce(
+                        (acc, c) => acc + (Number(c.weight) || 0),
+                        0
+                      )
+                      const total = coreWeightSum + prizeSum
+                      const ok = Math.abs(total - 100) < 0.01
+                      return (
+                        <p className="text-xs text-muted-foreground">
+                          Score categories {coreWeightSum}% + this prize {prizeSum}% = {total}% {ok ? "✓" : "(aim for 100)"}
+                        </p>
+                      )
+                    })()}
+                  </div>
+                )}
+
+                {form.judgingStyle === "judges_pick" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="add-prize-max-picks">How many can each judge pick?</Label>
+                    <Input
+                      id="add-prize-max-picks"
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      value={form.maxPicks}
+                      onChange={(e) => setForm({ ...form, maxPicks: e.target.value })}
+                      className="w-full sm:w-32"
+                      autoComplete="off"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      For example, 3 means each judge picks their top 3.
+                    </p>
+                  </div>
+                )}
+              </CollapsibleContent>
+            </Collapsible>
 
             {error && <p className="text-sm text-destructive">{error}</p>}
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setStep("style")}>
-                Back
+              <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
+                Cancel
               </Button>
               <Button type="submit">
                 Create Prize

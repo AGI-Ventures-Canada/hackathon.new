@@ -230,6 +230,7 @@ export async function createJudgeInvitation(
 }
 
 export type JudgeInvitationWithDetails = JudgeInvitation & {
+  organizerName: string | null
   hackathon: {
     id: string
     name: string
@@ -257,7 +258,7 @@ export async function getJudgeInvitationByToken(
     .from("judge_invitations")
     .select(`
       *,
-      hackathons!inner(id, name, slug, status, starts_at, ends_at, judging_opens_at, judging_closes_at, judging_timezone, judging_instructions, results_published_at, is_test_event, require_terms_acceptance, terms_content)
+      hackathons!inner(id, name, slug, status, starts_at, ends_at, judging_opens_at, judging_closes_at, judging_timezone, judging_instructions, results_published_at, is_test_event, require_terms_acceptance, terms_content, organizer:tenants!tenant_id(name))
     `)
     .eq("token", token)
     .single()
@@ -281,10 +282,12 @@ export async function getJudgeInvitationByToken(
     judging_instructions?: string | null
     require_terms_acceptance: boolean | null
     terms_content: string | null
+    organizer?: { name: string | null } | null
   }
 
   return {
     ...data,
+    organizerName: hackathon.organizer?.name?.trim() || null,
     hackathon: {
       id: hackathon.id,
       name: hackathon.name,

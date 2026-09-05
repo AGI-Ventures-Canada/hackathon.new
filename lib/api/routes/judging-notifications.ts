@@ -11,6 +11,7 @@ import { logAudit } from "@/lib/services/audit"
 import { createHash } from "node:crypto"
 import { withDeliveryLease } from "@/lib/services/delivery-lease"
 import type { JudgeInvitationScope } from "@/lib/services/judge-invitation-scope"
+import { logJudgingDatabaseError } from "@/lib/services/judging-diagnostics"
 
 async function requireInboxAccess(principal: Principal, hackathonId: string): Promise<string> {
   requirePrincipal(principal, ["user"])
@@ -30,16 +31,16 @@ async function runBatch(principal: Principal, hackathonId: string, body: { email
   const access = await checkHackathonOrganizer(hackathonId, principal.tenantId)
   if (access.status !== "ok") throw new AuthError("Not found", 404)
   const { processJudgeInvitationBatch } = await import("@/lib/services/judging-invite-batch")
-  const actorId = principal.kind === "user" ? principal.userId : "api"
-  const batchActor = principal.kind === "user" ? principal.userId : principal.keyId
+  const actorId = principal.kind === "api_key" ? "api" : principal.userId
+  const batchActor = principal.kind === "api_key" ? principal.keyId : principal.userId
   const payloadHash = createHash("sha256").update(JSON.stringify({ action, retryFailed: body.retryFailed, emails: body.emails, message: body.message, prizeIds: body.prizeIds, roomIds: body.roomIds })).digest("hex")
   if (!body.preview && !body.requestKey) throw new AuthError("Include a request key before sending invitations.", 400)
   if (!body.preview) {
-    const limited = await checkRateLimit(`judge-batch:${hackathonId}:${principal.kind === "user" ? principal.userId : principal.keyId}`, { maxRequests: 10, windowMs: 3_600_000 }, { failureMode: "closed" })
+    const limited = await checkRateLimit(`judge-batch:${hackathonId}:${batchActor}`, { maxRequests: 10, windowMs: 3_600_000 }, { failureMode: "closed" })
     if (!limited.allowed) throw new AuthError("Too many invitation batches. Try again later.", 429)
   }
   let inviterName = "The event organizer"
-  if (principal.kind === "user") {
+  if (principal.kind !== "api_key") {
     const { clerkClient } = await import("@clerk/nextjs/server")
     const user = await (await clerkClient()).users.getUser(principal.userId)
     inviterName = [user.firstName, user.lastName].filter(Boolean).join(" ") || inviterName
@@ -48,16 +49,25 @@ async function runBatch(principal: Principal, hackathonId: string, body: { email
     const client = getSupabase() as unknown as SupabaseClient
     if (!body.preview) {
       const previous = await client.from("judging_invitation_batches").select("payload_hash,response").eq("hackathon_id", hackathonId).eq("actor_id", batchActor).eq("request_key", body.requestKey).maybeSingle()
-      if (previous.error) throw new Error("Could not check the invitation batch.")
+      if (previous.error) {
+        logJudgingDatabaseError("invitation_batch_read", previous.error)
+        throw new Error("Could not check the invitation batch.")
+      }
       if (previous.data && previous.data.payload_hash !== payloadHash) throw new AuthError("Use a new request key when changing the batch.", 409)
       if (previous.data?.response) return previous.data.response
       const saved = await client.from("judging_invitation_batches").upsert({ hackathon_id: hackathonId, actor_id: batchActor, request_key: body.requestKey, payload_hash: payloadHash }, { onConflict: "hackathon_id,actor_id,request_key", ignoreDuplicates: true })
-      if (saved.error) throw new Error("Could not save the invitation batch.")
+      if (saved.error) {
+        logJudgingDatabaseError("invitation_batch_claim", saved.error)
+        throw new Error("Could not save the invitation batch.")
+      }
     }
     const result = await processJudgeInvitationBatch({ event: access.hackathon, emails: body.emails, actorId, inviterName, preview: body.preview === true, retryFailed: body.retryFailed, action, message: body.message, prizeIds: body.prizeIds, roomIds: body.roomIds })
     if (!body.preview) {
       const saved = await client.from("judging_invitation_batches").update({ response: result }).eq("hackathon_id", hackathonId).eq("actor_id", batchActor).eq("request_key", body.requestKey)
-      if (saved.error) throw new Error("Could not save the invitation batch results.")
+      if (saved.error) {
+        logJudgingDatabaseError("invitation_batch_results", saved.error)
+        throw new Error("Could not save the invitation batch results.")
+      }
       await logAudit({ principal, action: action === "invite" ? "judge.invited" : "judge_invitation.reminded", resourceType: "hackathon", resourceId: hackathonId, metadata: { batch: true, outcomes: result.results.map(({ outcome, delivery }) => ({ outcome, delivery })) } })
     }
     return result

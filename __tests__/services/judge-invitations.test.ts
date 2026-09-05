@@ -307,6 +307,45 @@ describe("Judge Invitations Service", () => {
       expect(result).not.toBeNull()
       expect(result?.hackathon.name).toBe("Test Hackathon")
       expect(result?.hackathon.slug).toBe("test-hackathon")
+      expect(result?.organizerName).toBeNull()
+    })
+
+    it("reads the actual event organizer and keeps the personal note separate from the briefing", async () => {
+      const chain = createChainableMock({
+        data: {
+          ...mockInvitation,
+          personal_message: "Your design experience would help our teams.",
+          hackathons: {
+            name: "Test Hackathon",
+            slug: "test-hackathon",
+            organizer: { name: "  Community Builders  " },
+            judging_instructions: "Watch each demo before scoring.",
+          },
+        },
+        error: null,
+      })
+      setMockFromImplementation(() => chain)
+
+      const result = await getJudgeInvitationByToken("test-token-123")
+
+      expect(chain.select).toHaveBeenCalledWith(expect.stringContaining("organizer:tenants!tenant_id(name)"))
+      expect(result?.organizerName).toBe("Community Builders")
+      expect(result?.personal_message).toBe("Your design experience would help our teams.")
+      expect(result?.hackathon.judging_instructions).toBe("Watch each demo before scoring.")
+    })
+
+    it("keeps the invitation available when the event has no organizer display name", async () => {
+      for (const organizer of [null, { name: null }, { name: " " }]) {
+        setMockFromImplementation(() => createChainableMock({
+          data: { ...mockInvitation, hackathons: { name: "Test Hackathon", organizer } },
+          error: null,
+        }))
+
+        const result = await getJudgeInvitationByToken("test-token-123")
+
+        expect(result?.hackathon.name).toBe("Test Hackathon")
+        expect(result?.organizerName).toBeNull()
+      }
     })
 
     it("returns null when token does not exist in database", async () => {
