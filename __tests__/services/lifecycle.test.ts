@@ -67,6 +67,8 @@ const mockGetJudgingSetupStatus = mock(() =>
 mock.module("@/lib/services/judging", () => ({
   getJudgingSetupStatus: mockGetJudgingSetupStatus,
 }))
+const mockReconcileJudging = mock(() => Promise.resolve())
+mock.module("@/lib/services/judging-notification-events", () => ({ reconcileJudgingAfterMutation: mockReconcileJudging }))
 
 const {
   AUTO_TRANSITION_BATCH_LIMIT,
@@ -85,6 +87,7 @@ const {
 describe("Lifecycle Service", () => {
   beforeEach(() => {
     resetSupabaseMocks()
+    mockReconcileJudging.mockClear()
     leaseOrder.length = 0
     mockWithEventMutationLease.mockReset()
     mockWithEventMutationLease.mockImplementation(runWithEventMutationLease)
@@ -206,6 +209,15 @@ describe("Lifecycle Service", () => {
           "2 projects still need judge assignments.",
         ],
       })
+    })
+
+    it.each([true, false])("uses scheduled readiness before strict legacy scorecard checks (ready=%s)", async (isReady) => {
+      mockGetJudgingSetupStatus.mockResolvedValue({ isReady: false, issues: ["Legacy total is 50."] })
+      setMockFromImplementation((table) => createChainableMock({ data: table === "submissions" ? [{ id: "project" }] : [], count: 1, error: null }))
+      const issues = isReady ? [] : ["Assign eligible judges to every project for Best overall."]
+      setMockRpcImplementation((name) => Promise.resolve({ data: name === "judging_window_is_configured" ? true : { isReady, issues, unassignedProjectCount: isReady ? 0 : 1, requiresJudgeScoring: true }, error: null }))
+      expect(await getJudgingReadiness("event")).toMatchObject({ isReady, issues, submissionCount: 1, unassignedSubmissionCount: isReady ? 0 : 1 })
+      expect(mockGetJudgingSetupStatus).not.toHaveBeenCalled()
     })
 
     it("lets crowd-only events start judging without judges or assignments", async () => {
@@ -1056,7 +1068,7 @@ describe("Lifecycle Service", () => {
         triggeredBy: "user1",
       })).toEqual(expect.objectContaining({ success: true }))
 
-      expect(hackathonUpdates.map((chain) => chain.update.mock.calls[0]?.[0])).toEqual([
+      expect(hackathonUpdates.flatMap((chain) => chain.update.mock.calls.map((call) => call[0]))).toEqual([
         expect.objectContaining({ status: "judging", phase: "finals" }),
         expect.objectContaining({ status: "published", phase: null }),
         expect.objectContaining({ status: "active", phase: "build" }),
@@ -2055,6 +2067,23 @@ describe("Lifecycle Service", () => {
         { ascending: true },
       )
       expect(deadlineQuery.limit).toHaveBeenCalledWith(1)
+    })
+
+    it.each(["Finish the scorecard for Best overall.", "Assign eligible judges to every project for Best overall."])("keeps a scheduled opening closed and alerts the organizer: %s", async (issue) => {
+      const now = new Date("2026-09-06T12:00:00Z")
+      setMockFromImplementation((table) => createChainableMock({ data: table === "hackathons" ? [{
+        id: "h1", tenant_id: "t1", status: "active", starts_at: "2026-09-01T12:00:00Z", ends_at: "2026-09-04T12:00:00Z", judging_opens_at: "2026-09-05T12:00:00Z", judging_closes_at: "2026-09-07T12:00:00Z",
+      }] : null, error: null }))
+      setMockRpcImplementation((name) => {
+        expect(name).toBe("get_scheduled_judging_readiness")
+        return Promise.resolve({ data: { isReady: false, issues: [issue], unassignedProjectCount: 1, requiresJudgeScoring: true }, error: null })
+      })
+
+      const result = await processAutoTransitions(now)
+
+      expect(result).toMatchObject({ processed: 0, transitions: [], errors: [`h1: ${issue}`] })
+      expect(mockReconcileJudging).toHaveBeenCalledWith("h1")
+      expect(mockDispatch).not.toHaveBeenCalled()
     })
 
     it("keeps an ended event active and lists what judging still needs", async () => {

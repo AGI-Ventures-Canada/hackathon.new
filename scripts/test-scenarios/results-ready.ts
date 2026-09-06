@@ -77,6 +77,8 @@ async function run() {
   }
 
   const criteriaIds = await addJudgingCriteria(hackathonId)
+  const prizes = buildDefaultPrizes(criteriaIds)
+  await createPrizes(hackathonId, prizes)
   await seedJudgeDisplayProfiles(hackathonId, judgeUsers, judgeParticipantIds)
   const assignmentIds = await assignJudges(hackathonId, judgeParticipantIds, submissions, judgeTeamIds)
 
@@ -85,9 +87,6 @@ async function run() {
   }
 
   await supabase.rpc("calculate_results", { p_hackathon_id: hackathonId })
-
-  const prizes = buildDefaultPrizes(criteriaIds)
-  await createPrizes(hackathonId, prizes)
 
   const { assigned, fulfillments } = await autoAssignAndInitFulfillments(hackathonId)
 

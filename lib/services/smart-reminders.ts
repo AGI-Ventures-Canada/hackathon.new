@@ -1,5 +1,6 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import { getNotificationDisposition } from "@/lib/utils/notification-lifecycle"
+import { getJudgeNotificationDisposition } from "@/lib/utils/judging-window"
 import { canInviteTeamMembers, hasRegistrationOpened } from "@/lib/utils/team-invite"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { withDeliveryLease } from "@/lib/services/delivery-lease"
@@ -136,7 +137,9 @@ export async function scheduleReminders(
   metadata: Record<string, unknown>,
   now: Date = new Date(),
 ): Promise<number> {
-  const schedule = computeReminderSchedule(createdAt, deadline, now)
+  const schedule = entityType === "judge_invitation" && reminderType === "invitation_reminder"
+    ? computeJudgeInvitationReminderSchedule(createdAt, deadline, now)
+    : computeReminderSchedule(createdAt, deadline, now)
   if (schedule.length === 0) return 0
 
   const client = getSupabase() as unknown as SupabaseClient
@@ -167,6 +170,20 @@ export async function scheduleReminders(
   }
 
   return data?.length ?? 0
+}
+
+export function computeJudgeInvitationReminderSchedule(createdAt: Date, deadline: Date, now: Date = new Date()): ReminderScheduleEntry[] {
+  const candidates: ReminderScheduleEntry[] = [
+    { scheduledFor: new Date(createdAt.getTime() + 48 * HOUR), urgency: "low" },
+    { scheduledFor: new Date(deadline.getTime() - 24 * HOUR), urgency: "medium" },
+  ]
+  const result: ReminderScheduleEntry[] = []
+  for (const candidate of candidates.sort((a, b) => a.scheduledFor.getTime() - b.scheduledFor.getTime())) {
+    if (candidate.scheduledFor <= now || candidate.scheduledFor >= deadline || candidate.scheduledFor.getTime() - createdAt.getTime() < 24 * HOUR) continue
+    if (result.some((previous) => candidate.scheduledFor.getTime() - previous.scheduledFor.getTime() < 24 * HOUR)) continue
+    result.push(candidate)
+  }
+  return result
 }
 
 type ExistingReminderState = {
@@ -509,7 +526,7 @@ export async function validateReminderEntity(
 
   const { data: hackathon, error: hackathonError } = await client
     .from("hackathons")
-    .select("status, starts_at, ends_at, registration_opens_at, registration_closes_at, allow_late_registration, max_team_size, is_test_event")
+    .select("status, starts_at, ends_at, registration_opens_at, registration_closes_at, allow_late_registration, max_team_size, is_test_event, judging_opens_at, judging_closes_at, results_published_at")
     .eq("id", reminder.hackathon_id)
     .single()
   if (hackathonError) {
@@ -517,7 +534,9 @@ export async function validateReminderEntity(
   }
   if (!hackathon) return false
   if (hackathon.is_test_event) return false
-  const disposition = getNotificationDisposition({
+  if (hackathon.judging_opens_at && ["judge_event_starting", "judge_scoring_starting", "organizer_judging_readiness"].includes(reminder.reminder_type)) return false
+  const disposition = (reminder.entity_type === "judge_invitation" ? getJudgeNotificationDisposition : getNotificationDisposition)({
+    ...hackathon,
     status: hackathon.status,
     starts_at: hackathon.starts_at ?? null,
     ends_at: hackathon.ends_at ?? null,
@@ -569,13 +588,14 @@ export async function validateReminderEntity(
   if (reminder.entity_type === "judge_invitation") {
     const { data, error } = await client
       .from("judge_invitations")
-      .select("status, expires_at, accepted_by_clerk_user_id")
+      .select("status, expires_at, accepted_by_clerk_user_id, reminded_at, reminders_stopped_at")
       .eq("id", reminder.entity_id)
       .single()
 
     if (error) throw new Error(`Failed to validate judge invitation reminder: ${error.message}`)
     if (!data) return false
     if (reminder.reminder_type === "invitation_reminder") {
+      if (data.reminders_stopped_at || (data.reminded_at && Date.now() - Date.parse(data.reminded_at) < 24 * HOUR)) return false
       if (data.status !== "pending") return false
       if (new Date(data.expires_at) < new Date()) return false
       return true
@@ -710,30 +730,32 @@ async function dispatchReminderEmail(
     const { sendJudgeInvitationReminderEmail } = await import(
       "@/lib/email/judge-invitations"
     )
+    const { remindJudgeInvitation, releaseJudgeInvitationReminderClaim, getJudgeInvitationByToken } = await import("@/lib/services/judge-invitations")
+    const claim = await remindJudgeInvitation(reminder.entity_id, reminder.hackathon_id)
+    if (!claim.success) {
+      if (["reminder_cooldown", "not_pending", "expired", "hackathon_ended"].includes(claim.code)) return false
+      throw new Error("Could not claim the invitation reminder.")
+    }
+    const latest = await getJudgeInvitationByToken(claim.invitation.token).catch(async (error) => {
+      if (claim.invitation.reminded_at) await releaseJudgeInvitationReminderClaim(claim.invitation.id, claim.invitation.reminded_at)
+      throw error
+    })
+    if (!latest || latest.status !== "pending" || getJudgeNotificationDisposition(latest.hackathon) !== "send") return false
     const delivery = await sendJudgeInvitationReminderEmail({
-      to: meta.email as string,
-      hackathonName: meta.hackathonName as string,
+      to: claim.invitation.email,
+      hackathonName: latest.hackathon.name,
       inviterName: meta.inviterName as string,
-      inviteToken: meta.inviteToken as string,
-      expiresAt: meta.expiresAt as string,
-      hackathonSlug:
-        typeof meta.hackathonSlug === "string" ? meta.hackathonSlug : undefined,
-      hackathonStartsAt:
-        typeof meta.hackathonStartsAt === "string"
-          ? meta.hackathonStartsAt
-          : undefined,
-      hackathonEndsAt:
-        typeof meta.hackathonEndsAt === "string"
-          ? meta.hackathonEndsAt
-          : undefined,
-      hackathonTimezone:
-        typeof meta.hackathonTimezone === "string"
-          ? meta.hackathonTimezone
-          : undefined,
+      inviteToken: claim.invitation.token,
+      expiresAt: claim.invitation.expires_at,
+      hackathonSlug: latest.hackathon.slug,
+      hackathonStartsAt: latest.hackathon.judging_opens_at ?? latest.hackathon.starts_at,
+      hackathonEndsAt: latest.hackathon.judging_closes_at ?? latest.hackathon.ends_at,
+      hackathonTimezone: latest.hackathon.judging_timezone ?? "UTC",
       urgency: reminder.urgency,
       deliveryId: reminder.id,
-    })
+    }).catch(() => ({ success: false }))
     if (hasReminderDeliveryFailure(delivery)) {
+      if (claim.invitation.reminded_at) await releaseJudgeInvitationReminderClaim(claim.invitation.id, claim.invitation.reminded_at)
       throw new Error("Judge invitation reminder email was not accepted")
     }
     return reminderDeliveryWasSent(delivery)

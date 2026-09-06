@@ -60,6 +60,7 @@ export function JudgesPickPanel({
   const [error, setError] = useState<string | null>(null)
 
   function togglePick(submissionId: string) {
+    if (submitting) return
     setSaved(false)
     setError(null)
     setSelectedIds((current) => {
@@ -72,6 +73,7 @@ export function JudgesPickPanel({
   }
 
   function movePick(submissionId: string, direction: -1 | 1) {
+    if (submitting) return
     setSaved(false)
     setSelectedIds((current) => {
       const index = current.indexOf(submissionId)
@@ -197,7 +199,7 @@ export function JudgesPickPanel({
                         variant="outline"
                         size="icon"
                         onClick={() => movePick(assignment.submissionId, -1)}
-                        disabled={selectedIndex === 0}
+                        disabled={submitting || selectedIndex === 0}
                         aria-label={`Move ${assignment.submissionTitle} up`}
                       >
                         <ArrowUp className="size-4" />
@@ -206,7 +208,7 @@ export function JudgesPickPanel({
                         variant="outline"
                         size="icon"
                         onClick={() => movePick(assignment.submissionId, 1)}
-                        disabled={selectedIndex === selectedIds.length - 1}
+                        disabled={submitting || selectedIndex === selectedIds.length - 1}
                         aria-label={`Move ${assignment.submissionTitle} down`}
                       >
                         <ArrowDown className="size-4" />
@@ -216,7 +218,7 @@ export function JudgesPickPanel({
                   <Button
                     variant={isSelected ? "default" : "outline"}
                     onClick={() => togglePick(assignment.submissionId)}
-                    disabled={!isSelected && limitReached}
+                    disabled={submitting || (!isSelected && limitReached)}
                   >
                     {isSelected && <Check className="mr-2 size-4" />}
                     {isSelected ? "Picked" : "Pick"}

@@ -1921,3 +1921,36 @@ curl -X PATCH "$BASE_URL/api/dashboard/hackathons/$EVENT_ID/sponsors/$SPONSOR_ID
   -H 'Content-Type: application/json' \
   -d '{"name":"Example sponsor","websiteUrl":"example.com","tier":"gold"}'
 ```
+
+### Private judging drafts and explicit submission
+
+These routes require the invited judge's Clerk session. API keys cannot read or write a judge's private drafts. Open the review first, and use its returned revision and scorecard version on each write.
+
+```http
+GET /api/public/hackathons/my-event/judging/reviews/ASSIGNMENT_UUID
+```
+
+The response contains `response` (saved draft or submitted answers), `submitted`, `revision`, `criteriaVersion`, `hasDraft`, `isComplete`, `canEdit`, and the assigned project and scorecard. A draft never changes prize results or marks an assignment complete.
+
+```http
+PATCH /api/public/hackathons/my-event/judging/reviews/ASSIGNMENT_UUID
+Content-Type: application/json
+
+{
+  "expectedRevision": 0,
+  "criteriaVersion": "VERSION_FROM_GET",
+  "response": {
+    "kind": "weighted_score",
+    "scores": {"CRITERION_UUID": null},
+    "notes": "Check the live demo later."
+  }
+}
+```
+
+Use `POST` at the same URL to submit a complete review. Each successful draft save or submission returns the next revision. A stale revision or changed scorecard returns `409`; reload and review the preserved choices before retrying. Judging windows, ownership, and criterion membership are checked again in the atomic database transaction.
+
+Other response shapes use `kind: "gate_check"` with a `gates` map of criterion UUIDs to `true`, `false`, or draft-only `null`; or `kind: "bucket_sort"` with `bucketId` and optional legacy `gates`. All include `notes` (up to 2,000 characters).
+
+Ranked choices use the same GET/PATCH/POST lifecycle at `/api/public/hackathons/my-event/judging/pick-reviews/PRIZE_UUID`, with `response: {"kind":"judges_pick","rankedSubmissionIds":["PROJECT_UUID"],"notes":""}`. An empty draft is allowed; submission requires at least one assigned project and enforces the prize limit.
+
+The older score, check, group, and pick POST routes retain their request and response formats and use this same atomic publication service. They return `409` if an unfinished private draft would be overwritten.

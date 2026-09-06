@@ -122,8 +122,9 @@ Create a criterion. Prompts interactively if flags omitted.
 |------|----------|-------------|
 | `--name` | Yes | Criterion name (e.g., "Innovation") |
 | `--description` | No | What judges should evaluate |
+| `--min-score` | No | Minimum score (default 0) |
 | `--max-score` | No | Maximum score (default 10, prompted in TTY) |
-| `--weight` | No | Weight multiplier (default 1, prompted in TTY) |
+| `--weight` | No | Relative weight (default 25, prompted in TTY) |
 
 ### `hackathon judging criteria update <hackathon-id> <criteria-id>`
 
@@ -135,50 +136,61 @@ Delete a criterion. Prompts for confirmation.
 
 ---
 
-## Judging — Levels (Rubric Descriptors)
+## Judging — Setup
 
-Level descriptors tell judges what each score on a criterion means (e.g. "Baseline", "Solid", "Exceptional"). **Unlike other judging commands, levels use verbose flags rather than positional args.**
+`hackathon judging setup inspect <event>` returns readiness, settings, prizes, scorecards, and progress. `setup configure` saves changes through the same API as the app.
 
-### `hackathon judging levels list --hackathon-id <id> --criteria-id <cid>`
+| Flag | Description |
+|------|-------------|
+| `--starter` | Save the default Best overall prize and four equal 0–10 categories |
+| `--prize-name` | Starter prize name |
+| `--opens-at`, `--closes-at` | Judging dates with an explicit UTC offset; `clear` removes a date |
+| `--timezone` | IANA time zone, such as America/Toronto |
+| `--instructions` | Note for judges |
+| `--browse`, `--reminders` | `on` or `off` |
+| `--reviews-per-project` | Target 1–20, default 3 |
+| `--file`, `--data` | JSON settings object |
+| `--expected-version` | Version from inspection; omitted uses a fresh read |
+| `--request-key` | Reuse the same key when retrying a save |
 
-List rubric levels for a criterion.
+## Judging — Scorecards
 
-### `hackathon judging levels add`
+`hackathon judging scorecards list <event>` shows shared categories and each prize's settings. `scorecards update <event> <prize>` accepts `--file scorecard.json` or `--data '<JSON object>'` with the prize API payload. Preserve existing category IDs.
 
-Add a level to a criterion.
+| Flag | Description |
+|------|-------------|
+| `--style` | weighted_score, gate_check, bucket_sort, judges_pick, crowd_vote |
+| `--round` | Round ID, or `none` to clear |
+| `--judge-scope` | `all` or `selected` prize panel |
+| `--max-picks` | Pick limit for a judges-pick prize |
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--hackathon-id` | Yes | Hackathon ID |
-| `--criteria-id` | Yes | Criterion ID |
-| `--label` | Yes | Short label (e.g. "Solid") |
-| `--description` | No | Longer description of what this level means |
+Shared numeric categories use `judging criteria`; prize-specific categories use the scorecard JSON. Submitted reviews freeze scorecard semantics. Use a new round for new scoring rules. Prize names and reward descriptions can still change.
 
-### `hackathon judging levels update`
+The retired `judging levels list/add/update/delete` aliases return an actionable error without calling their missing API. Separate rubric-level edits are not exposed by the scorecard commands.
 
-Update a level.
+## Judging — Optional Rounds
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--hackathon-id` | Yes | Hackathon ID |
-| `--criteria-id` | Yes | Criterion ID |
-| `--level-id` | Yes | Level ID |
-| `--label` | No | New label |
-| `--description` | No | New description |
+```bash
+hackathon judging rounds list <event>
+hackathon judging rounds create <event> --name "Finals"
+hackathon judging rounds preset <event> --preset shortlist --data '{"advanceTopN":5}'
+hackathon judging rounds update <event> <round-id> --file round.json
+hackathon judging rounds activate <event> <round-id>
+hackathon judging rounds complete <event> <round-id>
+hackathon judging rounds candidates <event> <round-id>
+hackathon judging rounds advance <event> <round-id> --file advancement.json
+hackathon judging rounds delete <event> <round-id> --yes
+```
 
-### `hackathon judging levels delete`
-
-Delete a level. Prompts for confirmation.
-
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--hackathon-id` | Yes | Hackathon ID |
-| `--criteria-id` | Yes | Criterion ID |
-| `--level-id` | Yes | Level ID |
+Create and update accept `--name`, `--advancement manual|top_n|threshold`, `--opens-at`, `--closes-at`, and API settings in `--file`/`--data`. Presets: `single`, `shortlist`, `threshold`, `finalists_pick`. Inspect candidates before advancement. Round dates override event judging dates.
 
 ---
 
 ## Judging — Judges
+
+### `hackathon judging judges scope <event> <judge-id>`
+
+Without flags, inspect prizes, rooms, available scorecards, and the current version. To change scope, pass `--prizes <id,...>|all` and/or `--rooms <id,...>|all`. Omitted fields keep their current value. Use `--expected-version` to reject stale changes. Submitted reviews lock that judge's prizes and rooms. Favorite-pick eligibility follows this scope; numeric and pass/fail reviews also need project assignments.
 
 ### `hackathon judging judges list <hackathon-id>`
 
@@ -190,7 +202,7 @@ Add a judge. Provide one of:
 
 | Flag | Description |
 |------|-------------|
-| `--email` | Judge's email (sends invitation if not found on platform) |
+| `--email` | Adds registered event attendees; others receive an acceptance invitation |
 | `--user-id` | Clerk user ID (if known) |
 
 ### `hackathon judging judges remove <hackathon-id> <participant-id>`
@@ -200,6 +212,9 @@ Remove a judge. Prompts for confirmation.
 ---
 
 ## Judging — Invitations
+
+`hackathon judging invitations batch <event> --emails "a@example.com,b@example.com"` previews up to 20 addresses. `invitations remind` previews reminder eligibility for those addresses. Add `--send` to apply either action. `--request-key` makes retries safe; reuse it for the same send. Optional `--message`, `--prizes <id,...>`, and `--rooms <id,...>` define the invitation note and scope. Read each result's outcome and delivery field. Queued email has not been sent.
+
 
 ### `hackathon judging invitations list <hackathon-id>`
 
@@ -213,13 +228,21 @@ Cancel a pending judge invitation. Prompts for confirmation.
 
 ## Judging — Assignments
 
+```bash
+hackathon judging assignments preview <event> --reviews-per-project 3 --json
+hackathon judging assignments apply <event> --reviews-per-project 3 --expected-version <version> --request-key <key>
+```
+
+Preview reports each project/prize's coverage, judge workload, and shortages. Apply requires the same preview version and target (1–20, default 3). Reuse the request key for retries. Existing assignments and submitted reviews stay intact. Submitted reviews cannot be deleted.
+
+
 ### `hackathon judging auto-assign <hackathon-id>`
 
-Auto-distribute submissions across judges.
+With `--per-judge`, distribute projects up to that per-judge cap for each prize. Without it, preview the balanced reviews-per-project plan; add `--expected-version` to apply.
 
 | Flag | Required | Description |
 |------|----------|-------------|
-| `--per-judge` | Yes | Number of submissions per judge |
+| `--per-judge` | No | Legacy per-judge project cap for each prize |
 
 ### `hackathon judging assignments list <hackathon-id>`
 
@@ -233,6 +256,7 @@ Manually assign a judge to a submission.
 |------|----------|-------------|
 | `--judge` | Yes | Judge participant ID |
 | `--submission` | Yes | Submission ID |
+| `--prize` | No | Gate-check or bucket-sort prize ID; omitted uses the shared numeric card |
 
 ### `hackathon judging assignments delete <hackathon-id> <assignment-id>`
 

@@ -19,6 +19,7 @@ let sendEmailImpl: (input: SendEmailInput) => Promise<SendEmailResult> = () =>
 
 const mockSendEmail = mock((input: SendEmailInput) => sendEmailImpl(input))
 
+
 function resetMocks() {
   mockSendEmail.mockClear()
   sendEmailImpl = () => Promise.resolve({ id: "email_123" })
@@ -35,11 +36,13 @@ mock.module("@/lib/email/resend", () => ({
 const { sendJudgeInvitationEmail, sendJudgeInvitationReminderEmail } = await import("@/lib/email/judge-invitations")
 
 const originalAppUrl = process.env.NEXT_PUBLIC_APP_URL
+const originalReplyTo = process.env.RESEND_REPLY_TO_EMAIL
 
 describe("Judge Invitation Reminder Email", () => {
   beforeEach(() => {
     resetMocks()
     process.env.NEXT_PUBLIC_APP_URL = "https://example.com"
+    process.env.RESEND_REPLY_TO_EMAIL = "Judging help <judging@example.com>"
   })
 
   afterEach(() => {
@@ -48,6 +51,8 @@ describe("Judge Invitation Reminder Email", () => {
     } else {
       process.env.NEXT_PUBLIC_APP_URL = originalAppUrl
     }
+    if (originalReplyTo === undefined) delete process.env.RESEND_REPLY_TO_EMAIL
+    else process.env.RESEND_REPLY_TO_EMAIL = originalReplyTo
   })
 
   describe("sendJudgeInvitationReminderEmail", () => {
@@ -174,6 +179,34 @@ describe("Judge Invitation Reminder Email", () => {
       expect(callArgs.text).toContain("straight to your judging page")
     })
 
+    it("includes the organizer's personal message as text, without rendering its HTML", async () => {
+      await sendJudgeInvitationEmail({ ...validInput, personalMessage: "Please review accessibility. <script>alert('hi')</script>" })
+      const callArgs = mockSendEmail.mock.calls[0][0]
+      expect(callArgs.text).toContain("Please review accessibility.")
+      expect(callArgs.html).toContain("&lt;script&gt;")
+      expect(callArgs.html).not.toContain("<script>")
+    })
+
+    it("offers the same token-scoped one-click unsubscribe on invites and reminders", async () => {
+      for (const send of [sendJudgeInvitationEmail, sendJudgeInvitationReminderEmail]) {
+        mockSendEmail.mockClear()
+        await send(validInput)
+        const callArgs = mockSendEmail.mock.calls[0][0]
+        expect(callArgs.headers?.["List-Unsubscribe"]).toContain("<https://example.com/api/public/judge-invitations/xyz789token/unsubscribe>")
+        expect(callArgs.headers?.["List-Unsubscribe"]).toContain("<mailto:judging@example.com?subject=unsubscribe>")
+        expect(callArgs.headers?.["List-Unsubscribe-Post"]).toBe("List-Unsubscribe=One-Click")
+        expect(callArgs.replyTo).toBe("judging@example.com")
+      }
+    })
+
+    it("shows both clock offsets when judging crosses the fall clock change", async () => {
+      await sendJudgeInvitationEmail({ ...validInput, hackathonStartsAt: "2026-11-01T05:30:00Z", hackathonEndsAt: "2026-11-01T07:30:00Z" })
+      const callArgs = mockSendEmail.mock.calls[0][0]
+      expect(callArgs.text).toContain("1:30 AM EDT")
+      expect(callArgs.text).toContain("2:30 AM EST")
+      expect(callArgs.text).toContain("Schedule:")
+    })
+
     it("keeps invitation dates in one truthful event timezone", async () => {
       const boundaryInput = {
         ...validInput,
@@ -201,6 +234,7 @@ describe("Judge Invitation Reminder Email", () => {
       const result = await sendJudgeInvitationReminderEmail(validInput)
 
       expect(result.success).toBe(false)
+      expect((await sendJudgeInvitationEmail(validInput)).success).toBe(false)
     })
 
     it("returns success false when NEXT_PUBLIC_APP_URL is not set", async () => {
@@ -212,4 +246,5 @@ describe("Judge Invitation Reminder Email", () => {
       expect(mockSendEmail).not.toHaveBeenCalled()
     })
   })
+
 })

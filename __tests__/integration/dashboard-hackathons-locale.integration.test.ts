@@ -99,7 +99,9 @@ mock.module("@clerk/nextjs/server", () => ({
   clerkClient: mock(() => Promise.resolve({ users: { getUser: mock(() => Promise.resolve({ firstName: "Jane", lastName: "Doe" })) } })),
 }))
 
+const realTimeline = await import("@/lib/utils/timeline")
 mock.module("@/lib/utils/timeline", () => ({
+  ...realTimeline,
   validateTimelineDates: mock(() => null),
   getEffectiveStatus: mock((h: {
     status: string

@@ -1,3 +1,4 @@
+import { legacyJudgingHref } from "@/lib/judging/setup"
 import { z } from "zod"
 import type { HackathonStatus, Prize, HackathonSponsor } from "@/lib/db/hackathon-types"
 import type { Announcement } from "@/lib/services/announcements"
@@ -570,6 +571,8 @@ function sanitizeOrganizerData(value: unknown, depth = 0): unknown {
 }
 
 function manageHref(slug: string, params: string): string {
+  const query = new URLSearchParams(params)
+  if (query.get("tab") === "judging") return legacyJudgingHref(slug, query.get("jtab") ?? undefined)
   return `/e/${slug}/manage?${params}`
 }
 
@@ -615,7 +618,7 @@ function organizerSectionData(
       judgeCount: context.stats.judgeCount,
     }
   }
-  if (["judging", "judging_setup", "judges", "rounds", "prizes", "assignments", "results"].includes(section)) {
+  if (["judging", "judging_setup", "judging_settings", "judges", "rounds", "prizes", "assignments", "results"].includes(section)) {
     return {
       judgeCount: context.stats.judgeCount,
       prizeCount: context.prizes.length,

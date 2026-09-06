@@ -273,7 +273,7 @@ describe("POST /hackathons/:id/judging/judges - email notifications", () => {
       )
     })
 
-    it("rejects an effectively ended event before Clerk, database, or email work", async () => {
+    it("allows adding a judge after the event ends while judging remains available", async () => {
       mockCheckHackathonOrganizer.mockResolvedValue({
         status: "ok",
         hackathon: {
@@ -287,14 +287,50 @@ describe("POST /hackathons/:id/judging/judges - email notifications", () => {
       })
 
       const res = await postAddJudge({ clerkUserId: "judge_123" })
-      expect(res.status).toBe(409)
-      expect(await res.json()).toMatchObject({ code: "hackathon_ended" })
-      expect(mockGetUser).not.toHaveBeenCalled()
-      expect(mockAddJudge).not.toHaveBeenCalled()
-      expect(mockSendJudgeAddedNotification).not.toHaveBeenCalled()
-      expect(mockCreateJudgeInvitation).not.toHaveBeenCalled()
-      expect(mockScheduleReminders).not.toHaveBeenCalled()
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({ queued: false, delivery: "sent" })
+      expect(mockAddJudge).toHaveBeenCalledWith("h1", "judge_123", { requireExistingParticipant: true })
+      expect(mockSendJudgeAddedNotification).toHaveBeenCalledTimes(1)
     })
+
+    it("uses the separate judging schedule for an event that has already ended", async () => {
+      const judgingOpensAt = new Date(Date.now() - 3_600_000).toISOString()
+      const judgingClosesAt = new Date(Date.now() + 3_600_000).toISOString()
+      mockCheckHackathonOrganizer.mockResolvedValue({
+        status: "ok",
+        hackathon: {
+          id: "h1", name: "Post-event judging", slug: "post-event", status: "active",
+          starts_at: "2020-01-01T00:00:00.000Z", ends_at: "2020-01-02T00:00:00.000Z",
+          judging_opens_at: judgingOpensAt, judging_closes_at: judgingClosesAt, judging_timezone: "America/Toronto",
+        },
+      })
+      const res = await postAddJudge({ clerkUserId: "judge_123" })
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({ delivery: "sent" })
+      expect(mockSendJudgeAddedNotification).toHaveBeenCalledWith(expect.objectContaining({ hackathonStartsAt: judgingOpensAt, hackathonEndsAt: judgingClosesAt, hackathonTimezone: "America/Toronto" }))
+    })
+
+    for (const guard of ["closed judging window", "published results"] as const) {
+      it(`rejects ${guard} before Clerk, database, or email work`, async () => {
+        mockCheckHackathonOrganizer.mockResolvedValue({
+          status: "ok",
+          hackathon: {
+            id: "h1", name: "Finished judging", slug: "finished", status: "active",
+            judging_opens_at: new Date(Date.now() - 2 * 3_600_000).toISOString(),
+            judging_closes_at: new Date(Date.now() + (guard === "closed judging window" ? -1 : 1) * 3_600_000).toISOString(),
+            results_published_at: guard === "published results" ? new Date().toISOString() : null,
+          },
+        })
+        const res = await postAddJudge({ clerkUserId: "judge_123" })
+        expect(res.status).toBe(409)
+        expect(await res.json()).toMatchObject({ code: "hackathon_ended" })
+        expect(mockGetUser).not.toHaveBeenCalled()
+        expect(mockAddJudge).not.toHaveBeenCalled()
+        expect(mockSendJudgeAddedNotification).not.toHaveBeenCalled()
+        expect(mockCreateJudgeInvitation).not.toHaveBeenCalled()
+        expect(mockScheduleReminders).not.toHaveBeenCalled()
+      })
+    }
   })
 
   describe("adding judge by email (existing user)", () => {

@@ -491,8 +491,8 @@ export async function sendEmailWithResult(
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const attemptStartedAt = Date.now()
     try {
-      await execution.beforeAttempt?.()
       await acquireProviderAttemptSlot(execution.providerPacing)
+      if (execution.beforeAttempt) await execution.beforeAttempt()
       const response = await settleWithin(
         transport(payload, requestOptions),
         timeoutMs,

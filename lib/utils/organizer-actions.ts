@@ -1,3 +1,4 @@
+import type { JudgingEditor, JudgingSetupIssue } from "@/lib/judging/setup"
 import type { HackathonStatus, HackathonPhase } from "@/lib/db/hackathon-types"
 import {
   canPublishEventDates,
@@ -24,6 +25,8 @@ export type ActionItem = {
   action?: string
   ctaLabel?: string
   close: CloseCondition
+  judgingEditor?: JudgingEditor
+  judgingPrizeId?: string
 }
 
 export const SEVERITY_GROUP_LABEL: Record<ActionSeverity, string> = {
@@ -162,6 +165,7 @@ export type ActionItemsInput = {
   communityUrl?: string | null
   termsContent?: string | null
   judgingSetupReady?: boolean
+  judgingIssues?: JudgingSetupIssue[]
   requiresJudgeScoring?: boolean
   judgingCompletionReadiness?: {
     isReady: boolean
@@ -206,6 +210,16 @@ export function getOrganizerActionItems(input: ActionItemsInput): ActionItem[] {
     }
   }
 
+  if (input.judgingIssues && !["completed", "archived"].includes(input.status)) {
+    itemMap.delete("finish-scoring-setup")
+    if (input.judgingIssues.some((issue) => issue.code === "no_prizes")) itemMap.delete("no-prizes")
+    if (input.judgingIssues.some((issue) => issue.code === "no_judges")) itemMap.delete("no-judges")
+    if (input.judgingIssues.some((issue) => issue.code.startsWith("coverage:"))) itemMap.delete("unassigned-submissions")
+    for (const issue of input.judgingIssues) {
+      const id = `judging:${issue.code}`
+      itemMap.set(id, { id, label: issue.message, severity: issue.blocking === false ? "info" : "warning", tab: "judging", subtab: issue.editor === "schedule" ? "setup" : issue.editor, subtabKey: "jtab", judgingEditor: issue.editor, judgingPrizeId: issue.prizeId, action: "open-judging-editor", ctaLabel: "Fix this", close: {kind: "auto", isComplete: false} })
+    }
+  }
   const items = Array.from(itemMap.values())
   addLifecycleHealthActions(items, input)
   const missingTargets = validateActionItemTargets(items)
@@ -432,8 +446,8 @@ function addPerksAction(items: ActionItem[], input: ActionItemsInput) {
 
 function judgesLabel(input: ActionItemsInput): string {
   const pending = input.pendingJudgeInvitationCount
-  if (pending > 0) return `Judges invited (${pending} pending)`
-  return "Judges invited"
+  if (pending > 0) return `${input.judgeCount} accepted, ${pending} invited`
+  return `${input.judgeCount} judge${input.judgeCount === 1 ? "" : "s"} accepted`
 }
 
 function addPendingTeamApprovalAction(items: ActionItem[], input: ActionItemsInput) {
@@ -566,7 +580,7 @@ function addDraftActions(items: ActionItem[], input: ActionItemsInput) {
   }))
 
   if (input.requiresJudgeScoring !== false) {
-    const hasJudges = input.judgeDisplayCount > 0 || input.judgeCount > 0
+    const hasJudges = input.judgeCount > 0
     items.push(autoAction({
       id: "no-judges",
       severity: "warning",
@@ -677,7 +691,7 @@ function addPublishedActions(items: ActionItem[], input: ActionItemsInput) {
   }))
 
   if (input.requiresJudgeScoring !== false) {
-    const hasJudges = input.judgeDisplayCount > 0 || input.judgeCount > 0
+    const hasJudges = input.judgeCount > 0
     items.push(autoAction({
       id: "no-judges",
       severity: "warning",
@@ -808,8 +822,8 @@ function addActiveActions(items: ActionItem[], input: ActionItemsInput) {
       ctaLabel: "Invite",
       tooltip: "Judges are needed to evaluate projects once the hackathon ends. Without judges, you won't be able to score projects and determine winners. Invite them now so they're ready when judging begins.",
       isComplete: hasJudges,
-      pending: { label: "No judges assigned yet", hint: "You'll need judges before starting the judging phase" },
-      completed: { label: "Judges assigned", hint: "Ready to evaluate projects when the time comes" },
+      pending: { label: "Invite judges to review projects", hint: "You'll need judges before starting the judging phase" },
+      completed: { label: "Judges accepted", hint: "Ready to evaluate projects when the time comes" },
     }))
   }
 

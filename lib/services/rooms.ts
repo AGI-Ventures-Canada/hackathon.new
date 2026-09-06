@@ -1,4 +1,5 @@
 import { supabase as getSupabase } from "@/lib/db/client"
+import { reconcileJudgingAfterMutation } from "@/lib/services/judging-notification-events"
 import { listJudges } from "@/lib/services/judging"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { isValidUuid } from "@/lib/utils/uuid"
@@ -193,7 +194,7 @@ export async function deleteRoom(roomId: string, hackathonId: string): Promise<b
     console.error("Failed to delete room:", error)
     return false
   }
-
+  if (data?.length) await reconcileJudgingAfterMutation(hackathonId)
   return (data ?? []).length > 0
 }
 
@@ -220,7 +221,7 @@ export async function addTeamToRoom(
     console.error("Failed to add team to room:", error)
     return false
   }
-
+  await reconcileJudgingAfterMutation(hackathonId)
   return true
 }
 
@@ -250,7 +251,7 @@ export async function removeTeamFromRoom(
     console.error("Failed to remove team from room:", error)
     return false
   }
-
+  if (data?.length) await reconcileJudgingAfterMutation(hackathonId)
   return (data ?? []).length > 0
 }
 
@@ -356,7 +357,7 @@ export async function addJudgeToRoom(
     console.error("Failed to add judge to room:", error)
     return { ok: false }
   }
-
+  if (data?.length) await reconcileJudgingAfterMutation(hackathonId)
   return { ok: true, changed: (data ?? []).length > 0 }
 }
 
@@ -397,7 +398,7 @@ export async function removeJudgeFromRoom(
     console.error("Failed to remove judge from room:", error)
     return { ok: false }
   }
-
+  if (data?.length) await reconcileJudgingAfterMutation(hackathonId)
   return { ok: true, changed: (data ?? []).length > 0 }
 }
 

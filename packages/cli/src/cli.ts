@@ -114,11 +114,19 @@ const BANNER = `
     judging criteria create <id>                         Create criteria
     judging criteria update <id> <cid>                   Update criteria
     judging criteria delete <id> <cid>                   Delete criteria
-    judging levels list --hackathon-id <id> --criteria-id <cid>        List rubric levels
-    judging levels add --hackathon-id <id> --criteria-id <cid>         Add a rubric level
-    judging levels update --hackathon-id <id> --criteria-id <cid>      Update a rubric level
-    judging levels delete --hackathon-id <id> --criteria-id <cid>      Delete a rubric level
+    judging setup inspect <id>                          Check judging setup and next steps
+    judging setup configure <id>                        Save dates, preferences, or --starter
+    judging scorecards list <id>                        Inspect every prize's scorecard
+    judging scorecards update <id> <pid>                 Save a scorecard with --file or --data
+    judging rounds list|create|preset <id>              Manage optional judging rounds
+    judging rounds update|activate|complete <id> <rid>   Update an optional round
+    judging assignments preview <id>                    Preview balanced project assignments
+    judging assignments apply <id>                      Apply with --expected-version
+    judging invitations batch <id> --emails <emails>     Preview invites; add --send to send
+    judging invitations remind <id> --emails <emails>    Preview reminders; add --send to send
+    judging levels list|add|update|delete               Retired aliases; use scorecards
     judging judges list <id>                             List judges
+    judging judges scope <id> <judge>                    Inspect or change prizes and rooms
     judging judges add <id>                              Add a judge
     judging judges remove <id> <pid>                     Remove a judge
     judging assignments list <id>                        List assignments
@@ -144,7 +152,7 @@ const BANNER = `
 
   ${pc.dim("PRIZES")}
     prizes list <id>                         List prizes
-    prizes create <id>                       Create a prize
+    prizes create <id>                       Create a prize (--style weighted_score for a scorecard)
     prizes update <id> <pid>                 Update a prize
     prizes delete <id> <pid>                 Delete a prize
     prizes reorder <id>                      Reorder prizes
@@ -390,6 +398,23 @@ async function main() {
         const client = createAuthenticatedClient(flags)
         const hackathonId = rest[2]
         switch (sub) {
+          case "setup": {
+            const { runJudgingSetup } = await import("./commands/judging/workspace.js")
+            await runJudgingSetup(client, sub2, rest[3], rest.slice(4).concat(flags.json ? ["--json"] : []))
+            break
+          }
+          case "scorecards": {
+            const { runJudgingScorecards } = await import("./commands/judging/workspace.js")
+            const updating = sub2 === "update"
+            await runJudgingScorecards(client, sub2, rest[3], updating ? rest[4] : undefined, rest.slice(updating ? 5 : 4).concat(flags.json ? ["--json"] : []))
+            break
+          }
+          case "rounds": {
+            const { runJudgingRounds } = await import("./commands/judging/workspace.js")
+            const hasRound = !["list", "create", "preset"].includes(sub2)
+            await runJudgingRounds(client, sub2, rest[3], hasRound ? rest[4] : undefined, rest.slice(hasRound ? 5 : 4).concat(flags.json ? ["--json"] : []).concat(flags.yes ? ["--yes"] : []))
+            break
+          }
           case "criteria":
             switch (sub2) {
               case "list": {
@@ -465,6 +490,11 @@ async function main() {
 
           case "judges":
             switch (sub2) {
+              case "scope": {
+                const { runJudgeScope } = await import("./commands/judging/workspace.js")
+                await runJudgeScope(client, rest[3], rest[4], rest.slice(5).concat(flags.json ? ["--json"] : []))
+                break
+              }
               case "list": {
                 const { runJudgesList } = await import("./commands/judging/judges-list.js")
                 await runJudgesList(client, rest[3], { json: flags.json })
@@ -488,6 +518,12 @@ async function main() {
 
           case "assignments":
             switch (sub2) {
+              case "preview":
+              case "apply": {
+                const { runJudgingDistribution } = await import("./commands/judging/workspace.js")
+                await runJudgingDistribution(client, sub2, rest[3], rest.slice(4).concat(flags.json ? ["--json"] : []))
+                break
+              }
               case "list": {
                 const { runAssignmentsList } = await import("./commands/judging/assignments-list.js")
                 await runAssignmentsList(client, rest[3], { json: flags.json })
@@ -517,6 +553,12 @@ async function main() {
 
           case "invitations":
             switch (sub2) {
+              case "batch":
+              case "remind": {
+                const { runJudgingInvitationBatch } = await import("./commands/judging/workspace.js")
+                await runJudgingInvitationBatch(client, sub2, rest[3], rest.slice(4).concat(flags.json ? ["--json"] : []))
+                break
+              }
               case "list": {
                 const { runInvitationsList } = await import("./commands/judging/invitations-list.js")
                 await runInvitationsList(client, rest[3], { json: flags.json })

@@ -8,7 +8,7 @@ export async function runCriteriaList(
   options: { json?: boolean }
 ): Promise<void> {
   const data = await client.get<{ criteria: JudgingCriteria[] }>(
-    `/api/dashboard/hackathons/${hackathonId}/judging/criteria`
+    `/api/dashboard/hackathons/${hackathonId}/core-criteria`
   )
 
   if (options.json) {
