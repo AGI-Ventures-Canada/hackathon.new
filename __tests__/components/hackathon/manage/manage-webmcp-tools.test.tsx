@@ -376,7 +376,7 @@ describe("ManageHackathonWebMcpTools", () => {
       __nextNavState: { router: { push: ReturnType<typeof mock> } }
     }
     expect(navigation.__nextNavState.router.push).toHaveBeenCalledWith(
-      "/e/build-day/manage?tab=judging&jtab=results",
+      "/e/build-day/manage/judging/results",
     )
   })
 

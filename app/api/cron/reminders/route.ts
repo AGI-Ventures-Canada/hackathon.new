@@ -1,3 +1,4 @@
+import { processJudgingNotifications } from "@/lib/services/judging-notifications"
 import { processPendingReminders } from "@/lib/services/smart-reminders"
 import { processAllPendingReminders } from "@/lib/services/post-event-reminders"
 import { retryPendingResultEmails } from "@/lib/services/results"
@@ -88,7 +89,11 @@ export async function GET(request: Request) {
       CRON_BATCH_LIMITS.lifecycleWorkflows,
     ))
 
+  const judgingUpdates = await settle(() => processJudgingNotifications(createWorkerBudget(startedAt)))
+
   const hasFailures =
+    judgingUpdates.status === "rejected" ||
+    (judgingUpdates.status === "fulfilled" && judgingUpdates.value.failed > 0) ||
     scheduled.status === "rejected" ||
     postEvent.status === "rejected" ||
     results.status === "rejected" ||
@@ -107,6 +112,7 @@ export async function GET(request: Request) {
     (lifecycleWorkflows.status === "fulfilled" && lifecycleWorkflows.value.failed > 0)
 
   return Response.json({
+    judgingUpdates: judgingUpdates.status === "fulfilled" ? judgingUpdates.value : { error: String(judgingUpdates.reason) },
     scheduled:
       scheduled.status === "fulfilled"
         ? scheduled.value

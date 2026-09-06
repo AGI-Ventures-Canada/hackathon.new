@@ -30,6 +30,7 @@ const TabsList = boundary("TabsList")
 const TabsContent = boundary("TabsContent")
 
 const componentModules: Array<[string, Record<string, ComponentType<Props>>]> = [
+  ["@/components/hackathon/judging/judging-setup-webmcp-tools", {JudgingSetupWebMcpTools: boundary("JudgingSetupWebMcpTools")}],
   ["@/components/hackathon/preview/hackathon-preview-client", { HackathonPreviewClient }],
   ["@/components/hackathon/hackathon-page-actions", { HackathonPageActions: boundary("HackathonPageActions") }],
   ["@/components/hackathon/lifecycle-stepper", { LifecycleStepper: boundary("LifecycleStepper") }],
@@ -199,13 +200,14 @@ const notFound = mock((): never => {
   throw new Error("NEXT_NOT_FOUND")
 })
 
-mock.module("next/navigation", () => ({ notFound }))
+mock.module("next/navigation", () => ({ notFound, redirect: (href: string) => {throw new Error(`Redirect: ${href}`)} }))
 mock.module("@clerk/nextjs/server", () => ({ auth }))
 mock.module("@/lib/services/manage-hackathon", () => ({ getManageHackathon }))
 mock.module("@/lib/services/submissions", () => ({
   getHackathonSubmissions,
   isSubmissionWindowOpen: mock(() => Promise.resolve(true)),
 }))
+mock.module("@/lib/services/judging-setup", () => ({getJudgingSetup: async () => ({readiness: {isReady: false, issues: [{code: "unassigned", message: "Assign every project", editor: "assignments"}], requiresJudgeScoring: true}})}))
 mock.module("@/lib/services/judging", () => ({
   countJudges,
   countUnassignedSubmissions,

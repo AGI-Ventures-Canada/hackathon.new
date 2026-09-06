@@ -1,3 +1,5 @@
+import { judgingReviewRoutes } from "./routes/judging-reviews"
+import { judgeInvitationPublicRoutes } from "./routes/judging-notifications"
 import { Elysia } from "elysia"
 import { swagger } from "@elysiajs/swagger"
 import { publicRoutes } from "./routes/public"
@@ -53,6 +55,7 @@ Authorization: Bearer sk_live_your_api_key_here
       },
     })
   )
+  .use(new Elysia({ prefix: "/public" }).use(judgingReviewRoutes).use(judgeInvitationPublicRoutes))
   .use(publicRoutes)
   .use(publicEventRoutes)
   .use(importRoutes)

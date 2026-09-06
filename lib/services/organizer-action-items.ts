@@ -1,6 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { supabase as getSupabase } from "@/lib/db/client"
-import { getJudgingSetupStatus } from "@/lib/services/judging"
 import { getJudgingCompletionReadiness } from "@/lib/services/lifecycle"
 import {
   countFailedReminderEmails,
@@ -109,7 +108,7 @@ async function loadGeneratedItems(hackathonId: string) {
     failedReminderCount,
   ] = await Promise.all([
     buildOrganizerPollPayload(hackathonId),
-    getJudgingSetupStatus(hackathonId),
+    import("@/lib/services/judging-setup").then(({ getJudgingSetup }) => getJudgingSetup(hackathonId)),
     getJudgingCompletionReadiness(hackathonId),
     getUnsentInvitationEmailCounts(hackathonId),
     countFailedReminderEmails(hackathonId),
@@ -124,8 +123,9 @@ async function loadGeneratedItems(hackathonId: string) {
     event: { name: payload.name ?? "Event", slug: payload.slug ?? "" },
     items: getOrganizerActionItems({
       ...payload,
-      judgingSetupReady: judgingSetup.isReady,
-      requiresJudgeScoring: judgingSetup.requiresJudgeScoring,
+      judgingIssues: judgingSetup.readiness.issues,
+      judgingSetupReady: judgingSetup.readiness.isReady,
+      requiresJudgeScoring: judgingSetup.readiness.requiresJudgeScoring,
       judgingCompletionReadiness,
       unsentInvitationEmailCount: invitationEmailCounts.total,
       unsentTeamInvitationEmailCount: invitationEmailCounts.teams,

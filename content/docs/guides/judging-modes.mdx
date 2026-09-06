@@ -1,115 +1,58 @@
 ---
-title: Judging Modes
-description: Understand the two judging modes — points-based and subjective — and when to use each.
+title: Set up judging
+description: Create prizes, invite judges, share the work, and publish winners.
 ---
 
-hackathon.new supports two distinct judging modes. Choose the right one when setting up your hackathon.
+Open **Judging** from your event's manage page. It has four places: **Overview**, **Judges**, **Settings**, and **Results**. Old judging links still open the matching page.
 
-## Overview
+## Start with the basics
 
-| Mode | How it works | Best for |
-|------|-------------|----------|
-| **Points** | Judges score each submission against weighted criteria (e.g., 1-10) | Large hackathons, objective ranking, detailed feedback |
-| **Subjective** | Judges pick favorites for each prize category | Small hackathons, simple voting, opinionated categories |
+1. **What can teams win?** Add a prize name, reward, and optional description.
+2. **What should judges look for?** Save the starter scorecard or write your own questions.
+3. **Who's judging?** Paste email addresses and preview who will be added or invited.
+4. **When should they judge?** Set the opening, deadline, and time zone.
+5. **Who reviews each project?** Preview the work, check missing judges, then apply it.
 
-Set the mode via the [Hackathons API](/docs/sdk/hackathons):
+You can complete each step from Settings or from a sheet in **Action Items**. Saving one step doesn't require finishing the others. Judging can't open while required setup is missing.
 
-```bash title="Set judging mode"
-curl -s -X PATCH "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/settings" \
-  -H "Authorization: Bearer $API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"judgingMode": "points"}' | jq .
-```
+The starter scorecard has four questions, each worth 25% and scored from 0 to 10: **Original idea**, **Does it work?**, **Easy to use**, and **Usefulness**. It is created only when you choose **Use this scorecard**. Existing events keep their setup.
 
-## Points-Based Judging
+We suggest three judges per project and a two-hour judging window after projects close. If fewer judges qualify, the assignment preview explains the gap. Judges can't review their own teams. Prize and room limits are respected.
 
-Judges evaluate each assigned submission against a set of criteria with numeric scores. Final rankings are calculated by aggregating weighted scores across all judges.
+## Choose how each prize works
 
-### Setup
+Open **More judging options** to use any of these methods:
 
-1. **Define criteria** — Create judging criteria with names, max scores, and weights. Repeat the call for each criterion:
+| Method | What judges do |
+| --- | --- |
+| Score projects | Answer shared and prize-specific questions. Weighted scores determine rankings. |
+| Check requirements | Answer yes or no for each requirement. |
+| Sort into groups | Choose a group using the descriptions you provide. |
+| Pick favorites | Choose and order favorites from their assigned projects. |
+| Audience votes | Let eligible attendees vote under the event's voting rules. |
 
-```bash title="Add a judging criterion"
-curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/judging/criteria" \
-  -H "Authorization: Bearer $API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Technical Innovation", "maxScore": 10, "weight": 1.5}' | jq .
-```
+Shared questions are answered once per project and reused only for prizes the judge is assigned to. The scorecard preview shows the questions and weights that apply to each prize.
 
-2. **Add judges** and **auto-assign submissions**
+Optional rounds let you pick a shortlist before a final review. Each round can inherit the event's judging dates or use its own. Moving projects into the next round requires an explicit selection or an approved rule and a completed review of the previous round.
 
-```bash title="Auto-assign submissions to judges"
-curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/judging/auto-assign" \
-  -H "Authorization: Bearer $API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"submissionsPerJudge": 5}' | jq .
-```
+## Keep saved reviews safe
 
-3. **Judges score** through the web interface at `/e/{slug}/judge`. Each judge sees their assigned submissions and scores them against the criteria you defined.
+Judges have one assigned queue with **To review**, **In progress**, and **Submitted** filters. Each review has its own URL. Partial answers and private notes save as drafts; drafts don't affect results. **Submit review** publishes a complete decision. Changes to a submitted review stay separate until **Save changes**.
 
-### How Scoring Works
+Once reviews are submitted, scoring rules and project eligibility are locked. Prize names and reward details remain editable. Start a new round to change scoring; old answers aren't silently copied or recalculated.
 
-For each submission, the total score is calculated as:
+Assignment previews add missing work. They never silently remove existing reviews. Individual adjustments remain available, while completed reviews stay protected.
 
-```
-totalScore = Σ (criteriaScore × criteriaWeight)
-```
+## Dates and reminders
 
-The weighted score normalizes by judge count so submissions with different numbers of reviewers are compared fairly.
+Event end, project close, and judging close are separate. Judging can happen after the event ends. Events with no judging dates retain manual opening and closing. Closing judging keeps drafts and submitted reviews available to read; it doesn't publish results.
 
-### When to Use Points
+Invitations send when the event is live. Draft-event invitations wait for publication. Judges can control email preferences and quiet hours in their judging inbox. Routine reminders use the selected time zone; opening and imminent-deadline notices follow their scheduled time.
 
-- 10+ submissions where objective comparison matters
-- Multiple judging criteria with different importance levels
-- You want detailed scoring breakdowns per criteria
-- Transparency in how rankings were determined
+For a two-hour session, unfinished work gets an opening notice and a one-hour-remaining reminder. Completed work and stale reminders are suppressed. An email marked **accepted by the provider** is not proof that it reached someone's inbox.
 
-## Subjective Judging
+## Use an agent or the CLI
 
-Judges pick their favorite submissions for each prize category. Results are determined by tallying picks across all judges.
+WebMCP can inspect and configure judging, save prizes and scorecards, invite judges, and preview or apply assignments. These tools use the same permissions, timing rules, revisions, and retry keys as the app. See [WebMCP](/docs/guides/webmcp) and the [CLI judging guide](/docs/guides/cli-judging).
 
-### Setup
-
-1. **Define prizes** — Each prize becomes a category judges vote on. Repeat the call for each prize:
-
-```bash title="Add a prize category"
-curl -s -X POST "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/prizes" \
-  -H "Authorization: Bearer $API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Best Overall", "type": "favorite"}' | jq .
-```
-
-2. **Judges pick favorites** through the web interface at `/e/{slug}/judge`. Each judge selects their top choice for each prize category.
-
-3. **View aggregated results** as the organizer
-
-```bash title="View pick results"
-curl -s "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/judging/pick-results" \
-  -H "Authorization: Bearer $API_KEY" | jq .
-```
-
-### When to Use Subjective
-
-- Fewer than 10 submissions
-- Prize categories are opinion-based ("Most Creative", "Crowd Favorite")
-- You want a faster judging process
-- Rankings don't need numeric justification
-
-## Anonymous Judging
-
-Both modes support anonymous judging. When enabled, team names are hidden from judges so they evaluate submissions purely on merit.
-
-```bash title="Enable anonymous judging"
-curl -s -X PATCH "$BASE_URL/api/dashboard/hackathons/$HACKATHON_ID/settings" \
-  -H "Authorization: Bearer $API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"anonymousJudging": true}' | jq .
-```
-
-## Best Practices
-
-1. **Set up criteria before adding judges** so judges know what to evaluate from the start
-2. **Use auto-assign** to distribute submissions evenly and avoid conflicts of interest
-3. **Enable anonymous judging** for larger events to reduce bias
-4. **Monitor progress** — check the assignments endpoint for completion stats before calculating results
-5. **Recalculate as needed** — if you add or remove judges, recalculate results before publishing
+The canonical setup endpoint is `GET /api/dashboard/hackathons/{id}/judging/setup`. To save settings, `PATCH` the same path with its `expectedVersion` and a stable `requestKey`. Reuse that key when retrying the same change. A conflict asks you to reload the current setup while preserving your draft.

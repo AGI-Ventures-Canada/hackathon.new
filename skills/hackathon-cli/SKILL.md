@@ -103,7 +103,7 @@ When required flags are omitted in a terminal (TTY), the CLI prompts interactive
 
 `events` is an alias for `hackathons` — `hackathon events list` and `hackathon hackathons list` behave identically.
 
-**Exception: judging levels** use verbose flags (`--hackathon-id`, `--criteria-id`, `--level-id`) rather than positional args.
+The retired `judging levels` aliases return guidance without calling their unavailable API. Inspect supported settings with `judging scorecards list`.
 
 ## Core Commands
 
@@ -141,36 +141,55 @@ hackathon judging invitations list <hackathon-id>
 hackathon judging invitations cancel <hackathon-id> <invitation-id>
 ```
 
-### Judging — Criteria + Levels (rubric)
+### Judging — Setup and Scorecards
 
 ```bash
-# Criteria (positional hackathon ID)
-hackathon judging criteria list <hackathon-id>
-hackathon judging criteria create <hackathon-id> --name "Innovation" --max-score 10 --weight 1.0
-hackathon judging criteria update <hackathon-id> <criteria-id> --weight 1.5
-hackathon judging criteria delete <hackathon-id> <criteria-id>
-
-# Rubric levels — descriptors for each score on a criterion.
-# Unlike other judging commands, levels use verbose flags (not positional IDs).
-hackathon judging levels list --hackathon-id <id> --criteria-id <cid>
-hackathon judging levels add --hackathon-id <id> --criteria-id <cid> --label "Solid" --description "..."
-hackathon judging levels update --hackathon-id <id> --criteria-id <cid> --level-id <lid> --label "Excellent"
-hackathon judging levels delete --hackathon-id <id> --criteria-id <cid> --level-id <lid>
+hackathon judging setup inspect <event> --json
+hackathon judging setup configure <event> --starter --prize-name "Best overall"
+hackathon judging setup configure <event> --opens-at 2026-09-12T09:00:00-04:00 --closes-at 2026-09-12T17:00:00-04:00 --timezone America/Toronto --reviews-per-project 3 --reminders on
+hackathon judging scorecards list <event>
+hackathon judging scorecards update <event> <prize-id> --file scorecard.json
+hackathon judging criteria create <event> --name "Innovation" --min-score 0 --max-score 10 --weight 25
+hackathon judging criteria update <event> <criteria-id> --weight 30
+hackathon judging criteria delete <event> <criteria-id>
 ```
 
-### Judging — Assignments + Rounds
+Use the starter only when the user wants the default prize and scorecard. It creates four equal 0–10 categories: Innovation, Technical execution, Design and UX, Impact. Inspect existing settings first. Keep category IDs when editing a scorecard. Supported styles are `weighted_score`, `gate_check`, `bucket_sort`, `judges_pick`, and `crowd_vote`. After a submitted review, changing scoring rules requires a new round; prize metadata remains editable.
+
+### Judging — Invitations and Project Reviews
 
 ```bash
-hackathon judging auto-assign <hackathon-id> --per-judge 5
-hackathon judging assignments list <hackathon-id>
-hackathon judging assignments create <hackathon-id> --judge <pid> --submission <sid>
-hackathon judging assignments delete <hackathon-id> <assignment-id>
-hackathon judging pick-results <hackathon-id>
-
-# Track-based assignment (for multi-track hackathons)
-hackathon judging track-assign <hackathon-id> --judge <pid> --track <track-id>
-hackathon judging track-unassign <hackathon-id> --judge <pid> --track <track-id>
+hackathon judging invitations batch <event> --emails "alice@example.com,bob@example.com"
+hackathon judging invitations batch <event> --emails "alice@example.com,bob@example.com" --send --request-key <key>
+hackathon judging invitations remind <event> --emails "alice@example.com"
+hackathon judging assignments preview <event> --reviews-per-project 3 --json
+hackathon judging assignments apply <event> --reviews-per-project 3 --expected-version <preview-version> --request-key <key>
+hackathon judging assignments list <event>
+hackathon judging assignments create <event> --judge <judge-id> --submission <project-id>
+hackathon judging assignments create <event> --judge <judge-id> --submission <project-id> --prize <gate-or-bucket-prize>
+hackathon judging judges scope <event> <judge-id> --prizes <prize-id,...> --rooms all
+hackathon judging assignments delete <event> <assignment-id>
+hackathon judging pick-results <event>
 ```
+
+Batch invitations and reminders preview by default; `--send` applies them. Optional `--prizes` and `--rooms` limit a judge's scope. Read each result's outcome and delivery; draft events queue email. Assignment targets are reviews per project for each prize. Preserve the target and version when applying a preview. Reuse request keys for retries. Completed reviews cannot be removed.
+
+Use `judges scope` without change flags to inspect current scope and its version. `--prizes all` allows all prizes; `--rooms all` clears room limits. A judge's submitted reviews lock their prizes and rooms.
+
+### Judging — Optional Rounds
+
+```bash
+hackathon judging rounds list <event>
+hackathon judging rounds preset <event> --preset shortlist --data '{"advanceTopN":5}'
+hackathon judging rounds create <event> --name "Finals"
+hackathon judging rounds update <event> <round-id> --file round.json
+hackathon judging rounds activate <event> <round-id>
+hackathon judging rounds complete <event> <round-id>
+hackathon judging rounds candidates <event> <round-id>
+hackathon judging rounds advance <event> <round-id> --file advancement.json
+```
+
+Round dates override the event judging window. Legacy `auto-assign --per-judge 5` keeps its per-prize cap. Existing track commands remain available for older events; new setup does not require tracks or rounds.
 
 ### Prize Tracks (rounds + advancement)
 
@@ -365,7 +384,7 @@ Common errors:
 2. **Use `--json` flag** — parse output programmatically with `--json` for reliable ID extraction
 3. **Check before creating** — list existing resources before creating duplicates
 4. **Confirm destructive actions** — ask the user before deleting or publishing
-5. **Batch operations** — when setting up a full hackathon, create tracks, criteria, prizes, then add judges
+5. **Judging setup** — inspect first; save a starter prize and scorecard when requested, then preview invitations and project assignments. Add rounds only when needed.
 6. **Default to draft** — create hackathons in draft status, let the user decide when to publish
 7. **Use `--yes`** — pass `-y` to skip interactive confirmations when running non-interactively
 8. **Prefer Luma import** — if the user has a Luma event page, use `--from-url` instead of recreating the details manually
