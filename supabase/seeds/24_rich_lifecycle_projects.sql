@@ -99,7 +99,7 @@ SELECT
     '?auto=format&fit=crop&w=1400&h=900&q=82',
   CASE target_status
     WHEN 'active' THEN CASE WHEN project_number % 3 = 0 THEN 'draft'::submission_status ELSE 'submitted'::submission_status END
-    WHEN 'judging' THEN CASE project_number % 3 WHEN 0 THEN 'under_review'::submission_status WHEN 1 THEN 'submitted'::submission_status ELSE 'accepted'::submission_status END
+    WHEN 'judging' THEN 'submitted'::submission_status
     WHEN 'completed' THEN CASE WHEN project_number <= 3 THEN 'winner'::submission_status WHEN project_number % 5 = 0 THEN 'rejected'::submission_status ELSE 'accepted'::submission_status END
     ELSE CASE WHEN project_number <= 3 THEN 'winner'::submission_status WHEN project_number % 4 = 0 THEN 'rejected'::submission_status ELSE 'accepted'::submission_status END
   END,

@@ -5,6 +5,7 @@ import { CTAButton } from "./_components/cta-button"
 import { colors, fontSize, spacing } from "./_components/constants"
 
 interface JudgeInvitationEmailProps {
+  personalMessage?: string
   inviterName: string
   hackathonName: string
   acceptUrl: string
@@ -16,6 +17,7 @@ interface JudgeInvitationEmailProps {
 }
 
 export default function JudgeInvitationEmail({
+  personalMessage,
   inviterName,
   hackathonName,
   acceptUrl,
@@ -52,7 +54,7 @@ export default function JudgeInvitationEmail({
             lineHeight: "1.6",
           }}
         >
-          <strong>Event time:</strong> {eventSchedule}
+          <strong>Schedule:</strong> {eventSchedule}
         </Text>
       ) : (
         <EventDetailBox
@@ -74,6 +76,7 @@ export default function JudgeInvitationEmail({
       </Text>
 
       <CTAButton href={acceptUrl}>Accept Invitation</CTAButton>
+      {personalMessage && <Text>{personalMessage}</Text>}
 
       <Text
         style={{

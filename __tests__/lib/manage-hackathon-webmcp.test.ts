@@ -621,7 +621,7 @@ describe("createManageHackathonTools", () => {
       }),
     )
     expect(onNavigate).toHaveBeenCalledWith(
-      "/e/build-day/manage?tab=judging&jtab=results",
+      "/e/build-day/manage/judging/results",
       "results",
     )
     expect(result.opened).toBe("results")
@@ -668,6 +668,9 @@ describe("createManageHackathonTools", () => {
 
     expect(result.webMcpTools).toEqual([
       ...DIRECT_ACTION_TOOL_NAMES,
+      "inspect_judging",
+      "save_judging_prize",
+      "save_judging_category",
       "list_hackathon_prizes",
       "inspect_organizer_section",
       "open_hackathon_section",
@@ -878,7 +881,7 @@ describe("createManageHackathonTools", () => {
       ["timeline", "/e/build-day/manage?tab=overview"],
       ["schedule", "/e/build-day/manage?tab=overview"],
       ["challenge", "/e/build-day/manage?tab=challenges"],
-      ["prize", "/e/build-day/manage?tab=judging&jtab=prizes"],
+      ["prize", "/e/build-day/manage/judging/settings?edit=prizes"],
       ["announcement", "/e/build-day/manage?tab=event"],
     ])
     expect(
@@ -1237,12 +1240,12 @@ describe("createManageHackathonTools", () => {
       ok: true,
       data: {
         status: "review_opened",
-        url: "/e/build-day/manage?tab=judging&jtab=results",
+        url: "/e/build-day/manage/judging/results",
       },
       requiresHumanAction: false,
     })
     expect(onNavigate).toHaveBeenCalledWith(
-      "/e/build-day/manage?tab=judging&jtab=results",
+      "/e/build-day/manage/judging/results",
       "results",
     )
     expect(fetcher).not.toHaveBeenCalled()

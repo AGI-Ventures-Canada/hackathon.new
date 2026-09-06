@@ -1,9 +1,12 @@
+import { JudgingSetupWebMcpTools } from "@/components/hackathon/judging/judging-setup-webmcp-tools"
+import { getJudgingSetup } from "@/lib/services/judging-setup"
+import { legacyJudgingHref } from "@/lib/judging/setup"
 import { Suspense } from "react"
-import { notFound } from "next/navigation"
+import { notFound, redirect } from "next/navigation"
 import { auth } from "@clerk/nextjs/server"
 import { getManageHackathon } from "@/lib/services/manage-hackathon"
 import { getHackathonSubmissions } from "@/lib/services/submissions"
-import { countJudges, countUnassignedSubmissions, getJudgingProgress, getJudgingSetupStatus, listPrizes, listRounds } from "@/lib/services/judging"
+import { countJudges, countUnassignedSubmissions, getJudgingProgress, listPrizes, listRounds } from "@/lib/services/judging"
 import { countPendingJudgeInvitations } from "@/lib/services/judge-invitations"
 import { countFailedReminderEmails, getUnsentInvitationEmailCounts } from "@/lib/services/invitation-email-health"
 import { listOrganizerActionState } from "@/lib/services/organizer-action-items"
@@ -71,6 +74,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
   const mtab = firstQueryValue(query.mtab)
   const jtab = firstQueryValue(query.jtab)
   const ptab = firstQueryValue(query.ptab)
+  if (tab === "judging" || tab === "prizes") redirect(legacyJudgingHref(slug, tab === "prizes" ? "prizes" : jtab))
   const lang = firstQueryValue(query.lang)
   const [{ userId }, result] = await Promise.all([auth(), getManageHackathon(slug)])
 
@@ -129,7 +133,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     listRounds(hackathon.id),
     listPerks(hackathon.id),
     countUnassignedSubmissions(hackathon.id),
-    getJudgingSetupStatus(hackathon.id),
+    getJudgingSetup(hackathon.id).then((setup) => ({...setup.readiness, targetedIssues: setup.readiness.issues, issues: setup.readiness.issues.filter((issue) => issue.blocking !== false).map((issue) => issue.message)})),
     getJudgingCompletionReadiness(hackathon.id),
     listAnnouncements(hackathon.id),
     getUnsentInvitationEmailCounts(hackathon.id),
@@ -190,6 +194,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
     rounds: roundsSummary,
     communityUrl: hackathon.community_url ?? null,
     termsContent: hackathon.terms_content ?? null,
+    judgingIssues: judgingSetupStatus.targetedIssues,
     judgingSetupReady: judgingSetupStatus.isReady,
     requiresJudgeScoring: judgingSetupStatus.requiresJudgeScoring,
     judgingCompletionReadiness,
@@ -378,6 +383,7 @@ export default async function ManagePage({ params, searchParams }: PageProps) {
         judgingCompletionReadiness={judgingCompletionReadiness}
       >
         <ManageHackathonWebMcpTools context={webMcpContext} />
+        <JudgingSetupWebMcpTools hackathonId={hackathon.id} slug={slug} />
         {hackathon.is_test_event && <TestEventBanner hackathonId={hackathon.id} />}
         <EventHealthAlerts
           slug={hackathon.slug}

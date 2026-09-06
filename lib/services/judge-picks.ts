@@ -1,4 +1,5 @@
 import { supabase as getSupabase } from "@/lib/db/client"
+import { reconcileJudgingAfterMutation } from "@/lib/services/judging-notification-events"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { JudgePick } from "@/lib/db/hackathon-types"
 
@@ -107,6 +108,7 @@ export async function removePick(
     return false
   }
 
+  if (data === true) await reconcileJudgingAfterMutation(hackathonId)
   return data === true
 }
 

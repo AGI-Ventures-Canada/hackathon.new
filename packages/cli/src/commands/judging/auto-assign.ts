@@ -1,64 +1,29 @@
 import type { OatmealClient } from "../../client.js"
 import { formatJson, formatSuccess } from "../../output.js"
 import type { Prize } from "../../types.js"
+import { runJudgingDistribution } from "./workspace.js"
 
-interface AutoAssignOptions {
-  perJudge?: number
-  json?: boolean
+export function parseAutoAssignOptions(args: string[]): { perJudge?: number; json?: boolean } {
+  const index = args.indexOf("--per-judge")
+  return { ...(index >= 0 ? { perJudge: Number(args[index + 1]) } : {}), ...(args.includes("--json") ? { json: true } : {}) }
 }
 
-export function parseAutoAssignOptions(args: string[]): AutoAssignOptions {
-  const options: AutoAssignOptions = {}
-  for (let i = 0; i < args.length; i++) {
-    switch (args[i]) {
-      case "--per-judge":
-        options.perJudge = parseInt(args[++i], 10)
-        break
-      case "--json":
-        options.json = true
-        break
-    }
-  }
-  return options
-}
-
-export async function runAutoAssign(
-  client: OatmealClient,
-  hackathonId: string,
-  args: string[]
-): Promise<void> {
+export async function runAutoAssign(client: OatmealClient, hackathonId: string, args: string[]): Promise<void> {
   const options = parseAutoAssignOptions(args)
-
-  if (!options.perJudge) {
-    console.error("Error: --per-judge is required")
-    process.exit(1)
-  }
-
-  const { prizes } = await client.get<{ prizes: Prize[] }>(
-    `/api/dashboard/hackathons/${hackathonId}/prizes`,
-  )
-  const assignablePrizes = prizes.filter(
-    (prize) =>
-      (prize.judgingStyle ?? prize.judging_style) !== "weighted_score" &&
-      (prize.judgingStyle ?? prize.judging_style) !== "crowd_vote",
-  )
-  const assignments = await Promise.all(
-    assignablePrizes.map((prize) =>
-      client.post<{ assignedCount: number }>(
-        `/api/dashboard/hackathons/${hackathonId}/prizes/${prize.id}/auto-assign`,
-        { submissionsPerJudge: options.perJudge },
-      ),
-    ),
-  )
-  const result = {
-    created: assignments.reduce((total, item) => total + item.assignedCount, 0),
-    prizeCount: assignablePrizes.length,
-  }
-
-  if (options.json) {
-    console.log(formatJson(result))
+  if (options.perJudge === undefined) {
+    await runJudgingDistribution(client, args.includes("--expected-version") ? "apply" : "preview", hackathonId, args)
     return
   }
-
-  console.log(formatSuccess(`Created ${result.created} assignments`))
+  if (!Number.isInteger(options.perJudge) || options.perJudge < 1 || options.perJudge > 1000) throw new Error("--per-judge must be between 1 and 1,000")
+  const { prizes } = await client.get<{ prizes: Prize[] }>(`/api/dashboard/hackathons/${hackathonId}/prizes`)
+  let created = 0
+  let prizeCount = 0
+  for (const prize of prizes) {
+    const style = prize.judgingStyle ?? prize.judging_style
+    if (!style || style === "crowd_vote") continue
+    const result = await client.post<{ assignedCount: number }>(`/api/dashboard/hackathons/${hackathonId}/prizes/${prize.id}/auto-assign`, { submissionsPerJudge: options.perJudge })
+    created += result.assignedCount
+    prizeCount++
+  }
+  console.log(options.json ? formatJson({ created, prizeCount }) : formatSuccess(`Created ${created} project reviews`))
 }

@@ -1,4 +1,6 @@
 import { DIRECT_ACTION_TOOL_NAMES } from "@/lib/webmcp/direct-action-tools"
+import { createJudgingSetupTools } from "@/lib/webmcp/judging-setup-tools"
+import { judgingHref } from "@/lib/judging/setup"
 import { describe, expect, it } from "bun:test"
 import {
   CREATE_EVENT_SURFACE_PARITY,
@@ -86,5 +88,24 @@ describe("organizer parity registry", () => {
       "events tasks dismiss",
       "events tasks remove",
     ])
+  })
+
+  it("registers the dedicated judging settings page and its scope and project tools", async () => {
+    const config = ORGANIZER_SECTION_CONFIG.judging_settings
+    expect(ORGANIZER_SECTIONS).toContain("judging_settings")
+    expect(config.cliCommands).toEqual(expect.arrayContaining(["judging setup inspect", "judging setup configure", "judging scorecards list"]))
+    let destination = ""
+    const tools = createJudgingSetupTools({ hackathonId: "event", slug: "our-event", fetcher: async () => Response.json({}), navigate: (href) => { destination = href }, refresh: () => {} })
+    for (const name of ["inspect_judging", "configure_judging", "inspect_judge_scope", "save_judge_scope", "inspect_judge_projects", "assign_judge_project", "remind_judging_panel", "open_judging_settings"]) {
+      expect(config.webMcpTools).toContain(name)
+      expect(tools.some((tool) => tool.name === name)).toBe(true)
+    }
+    expect((await tools.find((tool) => tool.name === "open_judging_settings")!.execute({ destination: "settings" })).ok).toBe(true)
+    expect(destination).toBe(judgingHref("our-event", "settings"))
+    expect(destination).toBe("/e/our-event/manage/judging/settings")
+    expect(ORGANIZER_SECTION_CONFIG.judges.webMcpTools).toContain("remind_judging_panel")
+    expect(ORGANIZER_SECTION_CONFIG.judges.cliCommands).toContain("judging invitations remind")
+    for (const section of ["judging_settings", "judges", "assignments"] as const)
+      expect(ORGANIZER_SECTION_CONFIG[section].cliCommands).toContain("judging judges scope")
   })
 })

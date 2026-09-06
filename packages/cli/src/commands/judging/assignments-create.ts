@@ -1,10 +1,10 @@
 import type { OatmealClient } from "../../client.js"
 import { formatJson, formatSuccess } from "../../output.js"
-import type { JudgeAssignment } from "../../types.js"
 
 interface AssignmentCreateOptions {
   judge?: string
   submission?: string
+  prize?: string
   json?: boolean
 }
 
@@ -17,6 +17,9 @@ export function parseAssignmentCreateOptions(args: string[]): AssignmentCreateOp
         break
       case "--submission":
         options.submission = args[++i]
+        break
+      case "--prize":
+        options.prize = args[++i]
         break
       case "--json":
         options.json = true
@@ -38,9 +41,11 @@ export async function runAssignmentsCreate(
     process.exit(1)
   }
 
-  const assignment = await client.post<JudgeAssignment>(
-    `/api/dashboard/hackathons/${hackathonId}/judging/assignments`,
-    { judgeParticipantId: options.judge, submissionId: options.submission }
+  const assignment = await client.post<{ success: boolean; alreadyAssigned?: boolean }>(
+    options.prize
+      ? `/api/dashboard/hackathons/${hackathonId}/judging/judges/${encodeURIComponent(options.judge)}/submissions/${encodeURIComponent(options.submission)}?prizeId=${encodeURIComponent(options.prize)}`
+      : `/api/dashboard/hackathons/${hackathonId}/judging/assignments`,
+    options.prize ? {} : { judgeParticipantId: options.judge, submissionId: options.submission }
   )
 
   if (options.json) {
@@ -48,5 +53,5 @@ export async function runAssignmentsCreate(
     return
   }
 
-  console.log(formatSuccess(`Created assignment ${assignment.id}`))
+  console.log(formatSuccess(assignment.alreadyAssigned ? "This project is already assigned" : "Assigned this project"))
 }

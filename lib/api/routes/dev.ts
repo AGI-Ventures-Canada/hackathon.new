@@ -1,3 +1,6 @@
+import type { SupabaseClient } from "@supabase/supabase-js"
+import { getJudgingScenarioSettings } from "@/lib/fixtures/judging-scenario"
+import { validateJudgingSchedule } from "@/lib/utils/judging-window"
 import { Elysia, t } from "elysia"
 import { HackathonStatusEnum } from "@/lib/api/validators"
 
@@ -149,7 +152,7 @@ export const devRoutes = new Elysia({ prefix: "/dev" })
       const db = await getDb()
       const { data, error } = await db
         .from("hackathons")
-        .select("id, slug, name, status, phase, starts_at, ends_at, registration_opens_at, registration_closes_at, allow_late_registration")
+        .select("id, slug, name, status, phase, starts_at, ends_at, registration_opens_at, registration_closes_at, allow_late_registration, judging_opens_at, judging_closes_at, judging_timezone, judging_instructions, judging_browse_enabled, judging_target_reviews, judging_reminders_enabled")
         .eq("slug", params.slug)
         .single()
 
@@ -249,13 +252,21 @@ export const devRoutes = new Elysia({ prefix: "/dev" })
         ends_at?: string | null
         registration_opens_at?: string | null
         registration_closes_at?: string | null
+        judging_opens_at?: string | null
+        judging_closes_at?: string | null
       } = {}
+      if (body.judgingOpensAt !== undefined || body.judgingClosesAt !== undefined) {
+        const issue = validateJudgingSchedule({ opensAt: body.judgingOpensAt ?? null, closesAt: body.judgingClosesAt ?? null })
+        if (issue) { set.status = 400; return { error: issue } }
+        updates.judging_opens_at = body.judgingOpensAt ?? null
+        updates.judging_closes_at = body.judgingClosesAt ?? null
+      }
       if (body.startsAt !== undefined) updates.starts_at = body.startsAt
       if (body.endsAt !== undefined) updates.ends_at = body.endsAt
       if (body.registrationOpensAt !== undefined) updates.registration_opens_at = body.registrationOpensAt
       if (body.registrationClosesAt !== undefined) updates.registration_closes_at = body.registrationClosesAt
 
-      const { error } = await db.from("hackathons").update(updates).eq("id", params.id)
+      const { error } = await (db as unknown as SupabaseClient).from("hackathons").update(updates).eq("id", params.id)
       if (error) { set.status = 500; return { error: "Update failed" } }
       return { updated: Object.keys(updates) }
     },
@@ -263,6 +274,8 @@ export const devRoutes = new Elysia({ prefix: "/dev" })
       body: t.Object({
         startsAt: t.Optional(t.Union([t.String(), t.Null()])),
         endsAt: t.Optional(t.Union([t.String(), t.Null()])),
+        judgingOpensAt: t.Optional(t.Union([t.String(), t.Null()])),
+        judgingClosesAt: t.Optional(t.Union([t.String(), t.Null()])),
         registrationOpensAt: t.Optional(t.Union([t.String(), t.Null()])),
         registrationClosesAt: t.Optional(t.Union([t.String(), t.Null()])),
       }),
@@ -424,6 +437,8 @@ export const devRoutes = new Elysia({ prefix: "/dev" })
 
       const db = await getDb()
 
+      const judgingSettings = await db.from("hackathons").update(getJudgingScenarioSettings("judging")).eq("id", params.id)
+      if (judgingSettings.error) { set.status = 500; return { error: "Could not set the judging schedule" } }
       const criteria = [
         { name: "Innovation", description: "Novelty and creativity of the solution", max_score: 10, weight: 1.5, category: "core" as const },
         { name: "Technical Execution", description: "Code quality, architecture, and reliability", max_score: 10, weight: 1.0, category: "core" as const },
@@ -473,10 +488,11 @@ export const devRoutes = new Elysia({ prefix: "/dev" })
       if (submissions?.length) {
         for (const judgePid of judgePids) {
           for (const sub of submissions) {
-            const { data } = await db
+            const { data } = await (db as unknown as SupabaseClient)
               .from("judge_assignments")
               .insert({
                 hackathon_id: params.id,
+                scoring_scope: "legacy_unscoped",
                 judge_participant_id: judgePid,
                 submission_id: sub.id,
               })

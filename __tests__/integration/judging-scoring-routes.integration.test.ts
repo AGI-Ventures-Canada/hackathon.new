@@ -96,6 +96,11 @@ mock.module("@/lib/services/submissions", () => ({
   isSubmissionWindowOpen: mock(() => Promise.resolve(true)),
 }))
 
+
+class MockReviewError extends Error { constructor(message:string,public code:string,public status=400) {super(message)} }
+const mockPublishReview = mock(() => Promise.resolve())
+mock.module("@/lib/services/judging-reviews", () => ({publishLegacyJudgingReview:mockPublishReview,JudgingReviewError:MockReviewError,getJudgingReview:mock(() => Promise.resolve({})),saveJudgingReview:mock(() => Promise.resolve({}))}))
+
 const VALID_SUBMISSION_ID = "33333333-3333-3333-3333-333333333333"
 const mockVerifyAssignmentOwnership = mock(() => Promise.resolve({ hackathonId: "22222222-2222-2222-2222-222222222222", prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" }))
 const mockRecalculateForAssignment = mock(() => Promise.resolve())
@@ -199,6 +204,7 @@ const mockHackathon = {
 
 describe("Judging Scoring Routes", () => {
   beforeEach(() => {
+    mockPublishReview.mockReset(); mockPublishReview.mockResolvedValue(undefined)
     mockAuth.mockReset()
     mockGetPublicHackathon.mockReset()
     mockListPrizes.mockReset()
@@ -362,12 +368,7 @@ describe("Judging Scoring Routes", () => {
 
       expect(response.status).toBe(200)
       expect(await response.json()).toEqual({ success: true })
-      expect(mockSubmitJudgesPick).toHaveBeenCalledWith(
-        mockHackathon.id,
-        "judge-1",
-        prizeId,
-        [VALID_SUBMISSION_ID]
-      )
+      expect(mockPublishReview).toHaveBeenCalledWith("test-hackathon", "user_judge", {prizeId: "44444444-4444-4444-4444-444444444444"}, {kind:"judges_pick",rankedSubmissionIds:[VALID_SUBMISSION_ID],notes:undefined})
     })
 
     it("rejects malformed project IDs before calling the service", async () => {
@@ -386,7 +387,7 @@ describe("Judging Scoring Routes", () => {
       )
 
       expect(response.status).toBe(400)
-      expect(mockSubmitJudgesPick).not.toHaveBeenCalled()
+      expect(mockPublishReview).not.toHaveBeenCalled()
     })
   })
 
@@ -556,11 +557,7 @@ describe("Judging Scoring Routes", () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
       mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" })
-      mockSubmitBucketSortResponse.mockResolvedValue({
-        success: false,
-        error: "Failed to submit bucket response",
-        code: "bucket_failed",
-      })
+      mockPublishReview.mockRejectedValue(new MockReviewError("Failed to submit bucket response","bucket_failed"))
 
       const res = await app.handle(
         new Request(bucketSortUrl("test-hackathon", VALID_ASSIGNMENT_ID), {
@@ -575,7 +572,7 @@ describe("Judging Scoring Routes", () => {
       expect(data.code).toBe("bucket_failed")
     })
 
-    it("triggers recalculation after successful submission", async () => {
+    it("uses atomic publication after successful submission", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
       mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" })
@@ -590,7 +587,7 @@ describe("Judging Scoring Routes", () => {
       )
 
       await new Promise((r) => setTimeout(r, 50))
-      expect(mockRecalculateForAssignment).toHaveBeenCalledWith(VALID_ASSIGNMENT_ID)
+      expect(mockPublishReview).toHaveBeenCalled()
     })
 
     it("passes correct parameters to assertAssignmentWritable", async () => {
@@ -777,11 +774,7 @@ describe("Judging Scoring Routes", () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
       mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" })
-      mockSubmitGateCheckResponse.mockResolvedValue({
-        success: false,
-        error: "Failed to mark assignment complete",
-        code: "update_failed",
-      })
+      mockPublishReview.mockRejectedValue(new MockReviewError("Failed to mark assignment complete","update_failed"))
 
       const res = await app.handle(
         new Request(gateCheckUrl("test-hackathon", VALID_ASSIGNMENT_ID), {
@@ -796,7 +789,7 @@ describe("Judging Scoring Routes", () => {
       expect(data.code).toBe("update_failed")
     })
 
-    it("triggers recalculation after successful submission", async () => {
+    it("uses atomic publication after successful submission", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
       mockVerifyAssignmentOwnership.mockResolvedValue({ hackathonId: mockHackathon.id, prizeId: null, isComplete: false, submissionId: VALID_SUBMISSION_ID, notes: "" })
@@ -811,7 +804,7 @@ describe("Judging Scoring Routes", () => {
       )
 
       await new Promise((r) => setTimeout(r, 50))
-      expect(mockRecalculateForAssignment).toHaveBeenCalledWith(VALID_ASSIGNMENT_ID)
+      expect(mockPublishReview).toHaveBeenCalled()
     })
 
     it("passes correct parameters to assertAssignmentWritable", async () => {
@@ -844,10 +837,7 @@ describe("Judging Scoring Routes", () => {
         })
       )
 
-      expect(mockSubmitGateCheckResponse).toHaveBeenCalledWith(
-        VALID_ASSIGNMENT_ID,
-        validBody.gates
-      )
+      expect(mockPublishReview).toHaveBeenCalledWith("test-hackathon", "user_123", {assignmentId:VALID_ASSIGNMENT_ID}, {kind:"gate_check",gates:Object.fromEntries(validBody.gates.map((gate) => [gate.criteriaId,gate.passed]))})
     })
   })
 
@@ -1049,7 +1039,7 @@ describe("Judging Scoring Routes", () => {
       expect(data.code).toBe("self_judging")
     })
 
-    it("returns success and triggers recalculation", async () => {
+    it("returns success and uses atomic publication", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
 
@@ -1064,13 +1054,13 @@ describe("Judging Scoring Routes", () => {
 
       expect(res.status).toBe(200)
       expect(data.success).toBe(true)
-      expect(mockRecalculateForAssignment).toHaveBeenCalledWith(VALID_ASSIGNMENT_ID)
+      expect(mockPublishReview).toHaveBeenCalled()
     })
 
     it("returns 400 when submitScores fails", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
-      mockSubmitScores.mockResolvedValue({ success: false, error: "Failed to save scores", code: "upsert_failed" })
+      mockPublishReview.mockRejectedValue(new MockReviewError("Failed to save scores","upsert_failed"))
 
       const res = await app.handle(
         new Request(scoresUrl("test-hackathon", VALID_ASSIGNMENT_ID), {
@@ -1103,13 +1093,8 @@ describe("Judging Scoring Routes", () => {
       )
 
       expect(res.status).toBe(200)
-      expect(mockSubmitScores).toHaveBeenCalledWith(
-        VALID_ASSIGNMENT_ID,
-        completeOwnership,
-        validBody.scores,
-        validBody.notes
-      )
-      expect(mockRecalculateForAssignment).toHaveBeenCalledWith(VALID_ASSIGNMENT_ID)
+      expect(mockPublishReview).toHaveBeenCalledWith("test-hackathon","user_123",{assignmentId:VALID_ASSIGNMENT_ID},{kind:"weighted_score",scores:{c1:8},notes:validBody.notes})
+      expect(mockPublishReview).toHaveBeenCalled()
     })
 
     it("passes correct parameters to assertAssignmentWritable", async () => {
@@ -1127,7 +1112,7 @@ describe("Judging Scoring Routes", () => {
       expect(mockAssertAssignmentWritable).toHaveBeenCalledWith(VALID_ASSIGNMENT_ID, "user_judge", mockHackathon)
     })
 
-    it("passes ownership from guard into submitScores", async () => {
+    it("passes verified judge identity into atomic publication", async () => {
       mockAuth.mockResolvedValue({ userId: "user_judge" })
       mockGetPublicHackathon.mockResolvedValue(mockHackathon)
 
@@ -1139,7 +1124,7 @@ describe("Judging Scoring Routes", () => {
         })
       )
 
-      expect(mockSubmitScores).toHaveBeenCalledWith(VALID_ASSIGNMENT_ID, mockOwnership, validBody.scores, validBody.notes)
+      expect(mockPublishReview).toHaveBeenCalledWith("test-hackathon","user_judge",{assignmentId:VALID_ASSIGNMENT_ID},{kind:"weighted_score",scores:{c1:8},notes:validBody.notes})
     })
   })
 })

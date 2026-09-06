@@ -17,6 +17,9 @@ import {
   stageResultPublication,
 } from "@/lib/services/result-publication"
 import { getJudgingSetupStatus } from "@/lib/services/judging"
+import { resolveJudgingWindow } from "@/lib/utils/judging-window"
+import { getConfiguredJudgingReadiness, getScheduledJudgingReadiness } from "@/lib/services/judging-readiness"
+import { reconcileJudgingAfterMutation } from "@/lib/services/judging-notification-events"
 
 const VALID_TRANSITIONS: Record<HackathonStatus, HackathonStatus[]> = {
   draft: ["published", "registration_open"],
@@ -123,7 +126,7 @@ export async function getJudgingReadiness(
   hackathonId: string,
 ): Promise<JudgingReadiness> {
   const client = getSupabase() as unknown as SupabaseClient
-  const [submissions, prizes] = await Promise.all([
+  const [submissions, prizes, scheduledReadiness] = await Promise.all([
     client
       .from("submissions")
       .select("id", { count: "exact" })
@@ -133,6 +136,7 @@ export async function getJudgingReadiness(
       .from("prizes")
       .select("id, judging_style, round_id")
       .eq("hackathon_id", hackathonId),
+    getConfiguredJudgingReadiness(hackathonId),
   ])
 
   const submissionRows = (submissions.data ?? []) as Array<{ id: string }>
@@ -158,6 +162,19 @@ export async function getJudgingReadiness(
       submissionCount: 0,
       judgeCount: 0,
       unassignedSubmissionCount: 0,
+    }
+  }
+
+  if (scheduledReadiness) {
+    const judges = await client.from("hackathon_participants").select("id", { count: "exact", head: true }).eq("hackathon_id", hackathonId).eq("role", "judge")
+    return {
+      isReady: scheduledReadiness.isReady,
+      canCompleteWithoutJudging: false,
+      requiresJudgeScoring: scheduledReadiness.requiresJudgeScoring,
+      issues: scheduledReadiness.issues,
+      submissionCount,
+      judgeCount: judges.count ?? judges.data?.length ?? 0,
+      unassignedSubmissionCount: scheduledReadiness.unassignedProjectCount,
     }
   }
 
@@ -535,6 +552,17 @@ async function commitTransition(
         code: "judging_not_ready",
         issues: readiness.issues,
       }
+    }
+    const [eventWindow, roundWindow] = await Promise.all([
+      client.from("hackathons").select("judging_opens_at,judging_closes_at").eq("id", hackathonId).maybeSingle(),
+      client.from("judging_rounds").select("id,opens_at,closes_at").eq("hackathon_id", hackathonId).eq("status", "active").limit(1).maybeSingle(),
+    ])
+    if (eventWindow.error || roundWindow.error) {
+      return { success: false, error: "We couldn't check judging setup. Try again.", code: "transition_unavailable" }
+    }
+    if (eventWindow.data?.judging_opens_at || eventWindow.data?.judging_closes_at || roundWindow.data?.opens_at || roundWindow.data?.closes_at) {
+      const scheduled = await getScheduledJudgingReadiness(hackathonId, roundWindow.data?.id ?? null)
+      if (!scheduled.isReady) return { success: false, error: `Get judging ready first. ${scheduled.issues.join(" ")}`, code: "judging_not_ready", issues: scheduled.issues }
     }
   }
 
@@ -1044,6 +1072,7 @@ export async function runTransitionSideEffects(
     }
   }
 
+  await reconcileJudgingAfterMutation(hackathonId)
 }
 
 export type AutoTransitionResult = {
@@ -1241,7 +1270,7 @@ export async function processAutoTransitions(
   const firstPageResult = await client
     .from("hackathons")
     .select(
-      "id, tenant_id, status, registration_opens_at, starts_at, ends_at, name, slug, is_test_event",
+      "id, tenant_id, status, registration_opens_at, starts_at, ends_at, name, slug, is_test_event, judging_opens_at, judging_closes_at",
       { count: "exact" },
     )
     .not("status", "in", "(draft,completed,archived)")
@@ -1271,7 +1300,7 @@ export async function processAutoTransitions(
     const pageStart = pageIndex * AUTO_TRANSITION_BATCH_LIMIT
     const pageResult = await client
       .from("hackathons")
-      .select("id, tenant_id, status, registration_opens_at, starts_at, ends_at, name, slug, is_test_event")
+      .select("id, tenant_id, status, registration_opens_at, starts_at, ends_at, name, slug, is_test_event, judging_opens_at, judging_closes_at")
       .not("status", "in", "(draft,completed,archived)")
       .order("updated_at", { ascending: true })
       .order("id", { ascending: true })
@@ -1328,7 +1357,21 @@ export async function processAutoTransitions(
         )
         continue
       }
-      if (!eventEndReached && !submissionDeadlineReached) continue
+      const judgingWindow = resolveJudgingWindow(h, null, now)
+      if (judgingWindow.state !== "unscheduled") {
+        if (judgingWindow.state !== "open") continue
+        try {
+          const scheduledReadiness = await getScheduledJudgingReadiness(h.id as string)
+          if (!scheduledReadiness.isReady) {
+            result.errors.push(`${h.id}: ${scheduledReadiness.issues.join(" ")}`)
+            await reconcileJudgingAfterMutation(h.id as string)
+            continue
+          }
+        } catch (error) {
+          result.errors.push(`${h.id}: ${error instanceof Error ? error.message : String(error)}`)
+          continue
+        }
+      } else if (!eventEndReached && !submissionDeadlineReached) continue
 
       let readiness: JudgingReadiness
       try {

@@ -56,7 +56,7 @@ Run `hackathon --help` for the full list. Highlights:
 | Group | What it does |
 |-------|--------------|
 | `events` (alias: `hackathons`) | Create and manage events, including the organizer task board. Import from Luma with `--from-url`. |
-| `judging` | Manage judges, criteria, levels, assignments, and results |
+| `judging` | Set up prizes, scorecards, dates, invitations, balanced reviews, and optional rounds |
 | `tracks` | Prize tracks, round buckets, advancement rules |
 | `prizes` | Create and assign prizes |
 | `perks` | Sponsor credits, API keys, coupons — create, update, release |
@@ -80,6 +80,24 @@ hackathon announcements publish <hackathon-id> <announcement-id>
 ```
 
 Add `--json` to any command for machine-readable output.
+
+### Judging
+
+```bash
+hackathon judging setup inspect <event>
+hackathon judging setup configure <event> --starter
+hackathon judging invitations batch <event> --emails "judge@example.com"
+hackathon judging invitations batch <event> --emails "judge@example.com" --send
+hackathon judging assignments preview <event> --reviews-per-project 3 --json
+hackathon judging assignments apply <event> --reviews-per-project 3 --expected-version <version> --request-key <request-key>
+hackathon judging scorecards list <event>
+hackathon judging judges scope <event> <judge> --prizes <prize-id,...> --rooms all
+hackathon judging rounds list <event>
+```
+
+The starter creates a Best overall prize with four equal 0–10 categories. Set a separate judging window with `setup configure --opens-at <time-with-offset> --closes-at <time-with-offset> --timezone <zone>`. Preview invitations and project assignments before applying them. Reuse a request key when retrying the same change. Queued invitations have not been sent.
+
+For advanced methods, use `scorecards update <event> <prize> --file scorecard.json`; preserve existing category IDs. Submitted reviews lock their scoring rules. Legacy `auto-assign --per-judge` retains its per-prize cap. Retired `judging levels` aliases explain the supported scorecard path without calling a missing API.
 
 ### Organizer tasks
 

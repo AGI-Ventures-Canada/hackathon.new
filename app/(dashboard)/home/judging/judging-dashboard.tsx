@@ -30,6 +30,7 @@ type Hackathon = {
   registration_closes_at: string | null
   starts_at: string | null
   ends_at: string | null
+  phase?: string | null
 }
 
 type Props = {
@@ -62,22 +63,16 @@ export function JudgingDashboard({ hackathons, judgeStats, showHeader = true }: 
   )
 
   const { needsAction, upcoming, past } = useMemo(() => {
-    const now = new Date()
     const needsAction: Hackathon[] = []
     const upcoming: Hackathon[] = []
     const past: Hackathon[] = []
 
     for (const h of hackathons) {
-      const endsAt = h.ends_at ? new Date(h.ends_at) : null
-      if (PAST_STATUSES.includes(h.status) || (endsAt && endsAt < now && !JUDGING_ACTIVE.includes(h.status))) {
+      const s = statsMap.get(h.id)
+      if (PAST_STATUSES.includes(h.status) || s?.judgingClosed || (s && s.totalAssignments > 0 && s.completedAssignments === s.totalAssignments)) {
         past.push(h)
-      } else if (JUDGING_ACTIVE.includes(h.status)) {
-        const s = statsMap.get(h.id)
-        if (s && s.totalAssignments > 0 && s.completedAssignments < s.totalAssignments) {
-          needsAction.push(h)
-        } else {
-          upcoming.push(h)
-        }
+      } else if (s && (s.actionableAssignments ?? (JUDGING_ACTIVE.includes(h.status) ? s.totalAssignments - s.completedAssignments : 0)) > 0) {
+        needsAction.push(h)
       } else {
         upcoming.push(h)
       }
@@ -112,7 +107,7 @@ export function JudgingDashboard({ hackathons, judgeStats, showHeader = true }: 
           <Scale className="size-10 text-muted-foreground mb-4" />
           <CardTitle className="mb-2">No judging assignments</CardTitle>
           <CardDescription className="mb-6 max-w-sm">
-            When you&apos;re invited to judge a hackathon, your assignments will appear here
+            Accept a judging invitation to add an event here.
           </CardDescription>
           <Button asChild variant="outline">
             <Link href="/browse">
@@ -158,7 +153,7 @@ export function JudgingDashboard({ hackathons, judgeStats, showHeader = true }: 
               <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-75" />
               <span className="relative inline-flex size-2 rounded-full bg-primary" />
             </span>
-            <h2 className="text-sm font-semibold">Pending reviews</h2>
+            <h2 className="text-sm font-semibold">Ready to review</h2>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             {needsAction.map((h) => {
@@ -167,7 +162,7 @@ export function JudgingDashboard({ hackathons, judgeStats, showHeader = true }: 
               return (
                 <Link
                   key={h.id}
-                  href={`/e/${h.slug}`}
+                  href={`/e/${h.slug}/judge`}
                   className="group flex items-start justify-between gap-3 rounded-lg border border-primary/20 bg-primary/5 p-4 transition-colors hover:border-primary/40 hover:bg-primary/10"
                 >
                   <div className="min-w-0 flex-1 space-y-2">
@@ -193,7 +188,7 @@ export function JudgingDashboard({ hackathons, judgeStats, showHeader = true }: 
       {upcoming.length > 0 && (
         <Collapsible defaultOpen>
           <CollapsibleTrigger className="mb-3 flex w-full items-center gap-2 text-left group">
-            <h2 className="text-sm font-medium text-muted-foreground">Upcoming</h2>
+            <h2 className="text-sm font-medium text-muted-foreground">Coming up</h2>
             <span className="text-xs text-muted-foreground tabular-nums">{upcoming.length}</span>
             <ChevronDown className="ml-auto size-4 text-muted-foreground transition-transform group-data-[state=closed]:-rotate-90" />
           </CollapsibleTrigger>
@@ -205,7 +200,7 @@ export function JudgingDashboard({ hackathons, judgeStats, showHeader = true }: 
                   <div key={h.id}>
                     <HackathonCard
                       hackathon={h}
-                      href={`/e/${h.slug}`}
+                      href={`/e/${h.slug}/judge`}
                       extras={
                         s && s.totalAssignments > 0 ? (
                           <Badge variant="secondary">
@@ -230,7 +225,7 @@ export function JudgingDashboard({ hackathons, judgeStats, showHeader = true }: 
       {past.length > 0 && (
         <Collapsible>
           <CollapsibleTrigger className="mb-3 flex w-full items-center gap-2 text-left group">
-            <h2 className="text-sm font-medium text-muted-foreground">Past events</h2>
+            <h2 className="text-sm font-medium text-muted-foreground">Finished</h2>
             <span className="text-xs text-muted-foreground tabular-nums">{past.length}</span>
             <ChevronDown className="ml-auto size-4 text-muted-foreground transition-transform group-data-[state=closed]:-rotate-90" />
           </CollapsibleTrigger>
@@ -242,7 +237,7 @@ export function JudgingDashboard({ hackathons, judgeStats, showHeader = true }: 
                   <div key={h.id}>
                     <HackathonCard
                       hackathon={h}
-                      href={`/e/${h.slug}`}
+                      href={`/e/${h.slug}/judge/summary`}
                       extras={
                         s && s.totalAssignments > 0 ? (
                           <Badge variant="secondary">

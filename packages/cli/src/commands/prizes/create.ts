@@ -8,6 +8,7 @@ interface PrizeCreateOptions {
   description?: string
   type?: string
   value?: string
+  style?: string
   modes?: string
   json?: boolean
 }
@@ -27,6 +28,12 @@ export function parsePrizeCreateOptions(args: string[]): PrizeCreateOptions {
         break
       case "--value":
         options.value = args[++i]
+        break
+      case "--style":
+        options.style = args[++i]
+        if (!options.style || !["weighted_score", "gate_check", "bucket_sort", "judges_pick", "crowd_vote"].includes(options.style)) {
+          throw new Error("--style must be weighted_score, gate_check, bucket_sort, judges_pick, or crowd_vote")
+        }
         break
       case "--modes":
         options.modes = args[++i]
@@ -71,16 +78,19 @@ export async function runPrizesCreate(
     process.exit(1)
   }
 
-  const prize = await client.post<Prize>(
+  const response = await client.post<{ prize: Prize } | Prize>(
     `/api/dashboard/hackathons/${hackathonId}/prizes`,
     {
       name,
       description: options.description,
       type: options.type,
       value: options.value,
+      judgingStyle: options.style,
       allowedTeamModes: parseModes(options.modes),
     }
   )
+
+  const prize = "prize" in response ? response.prize : response
 
   if (options.json) {
     console.log(formatJson(prize))

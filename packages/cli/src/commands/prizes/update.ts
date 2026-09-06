@@ -76,10 +76,12 @@ export async function runPrizesUpdate(
     process.exit(1)
   }
 
-  const prize = await client.patch<Prize>(
+  const response = await client.patch<{ prize: Prize } | Prize>(
     `/api/dashboard/hackathons/${hackathonId}/prizes/${prizeId}`,
     body
   )
+
+  const prize = "prize" in response ? response.prize : response
 
   if (options.json) {
     console.log(formatJson(prize))
