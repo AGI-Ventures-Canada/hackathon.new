@@ -113,6 +113,33 @@ describe("judging cadence and send-time checks", () => {
     })
     mockClerkClient.mockResolvedValue({ users: { getUser: async () => ({ primaryEmailAddress: { emailAddress: "judge@example.com" } }) } } as unknown)
   })
+  for (const status of ["published", "registration_open"]) {
+    it(`opens reminders for a started ${status} event while judging continues after event end`, async () => {
+      const now = new Date(), store = memoryStore(now)
+      Object.assign(store.rows.hackathons[0], {
+        status,
+        starts_at: new Date(now.getTime() - 48 * 3_600_000).toISOString(),
+        ends_at: new Date(now.getTime() - 2 * 3_600_000).toISOString(),
+      })
+      await reconcileJudgingNotifications("event", now)
+      expect(store.rows.judging_notifications.some((row) => row.kind === "work_ready")).toBe(true)
+      expect((await queueJudgeWorkReminder("event", "user", true)).outcome).toBe("ready")
+      expect((await processJudgingNotifications()).sent).toBe(1)
+      expect(sendUpdate).toHaveBeenCalledTimes(1)
+    })
+  }
+  it("does not treat an event as active before its start or override a manual lifecycle stop", async () => {
+    const now = new Date("2026-09-05T14:00:00Z")
+    for (const status of ["published", "registration_open", "draft", "completed", "archived"]) {
+      const store = memoryStore(now)
+      Object.assign(store.rows.hackathons[0], {
+        status,
+        starts_at: status === "published" || status === "registration_open" ? "2026-09-06T14:00:00Z" : "2026-09-04T14:00:00Z",
+      })
+      await reconcileJudgingNotifications("event", now)
+      expect(store.rows.judging_notifications.some((row) => row.kind === "work_ready")).toBe(false)
+    }
+  })
   it("prepares judges once within 24 hours of the real opening", async () => {
     const now = new Date("2026-09-05T14:00:00Z"), store = memoryStore(now)
     Object.assign(store.rows.hackathons[0], { status: "active", judging_opens_at: "2026-09-06T13:00:00Z" })

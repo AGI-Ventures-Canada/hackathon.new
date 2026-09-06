@@ -64,7 +64,7 @@ export function JudgeReviewPanel({ slug, targetId, ballot = false, assignmentIds
   if (!snapshot || !response) return <Card><CardContent><div className="space-y-4 py-6">{review.error ? <><p role="alert" className="text-destructive">{review.error}</p><Button variant="outline" onClick={review.reload}>Try again</Button></> : <><Skeleton className="h-8 w-2/3" /><Skeleton className="h-48 w-full" /><Skeleton className="h-24 w-full" /></>}</div></CardContent></Card>
   const disabled = !snapshot.canEdit || review.submitting
   const validation = validateReviewResponse(response, snapshot, true)
-  const saveLabel = review.status === "saving" ? "Saving draft…" : review.status === "offline" ? "Offline · draft kept on this device" : review.status === "error" ? "Draft needs a retry" : review.status === "conflict" ? "Review changed · draft kept on this device" : snapshot.hasDraft ? snapshot.isComplete ? "Changes not submitted" : "Draft saved · not submitted" : snapshot.isComplete ? "Review submitted" : "Your draft saves as you go"
+  const saveLabel = review.status === "saving" ? "Saving draft…" : review.status === "offline" ? "Offline · draft kept on this device" : review.status === "error" ? "Draft needs a retry" : review.status === "closed" ? "Judging is read-only right now" : review.status === "conflict" ? "Review changed · draft kept on this device" : snapshot.hasDraft ? snapshot.isComplete ? "Changes not submitted" : "Draft saved · not submitted" : snapshot.isComplete ? "Review submitted" : "Your draft saves as you go"
   const groupNames = new Map((snapshot.detail?.criteria ?? []).map((criterion) => [criterion.id, criterion.prizeName || "What to look for"]))
 
   return <div className="space-y-4" data-judge-assignment={assignmentIds[0]} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && !disabled && !validation) { event.preventDefault(); void submit() } }}>
@@ -94,7 +94,7 @@ export function JudgeReviewPanel({ slug, targetId, ballot = false, assignmentIds
     </div>
     <div className="sticky bottom-0 z-10 space-y-3 border-t bg-background py-4">
       <p role="status" aria-live="polite" className="text-sm text-muted-foreground">{saveLabel}</p>
-      {review.error && <div role="alert" className="space-y-2"><p className="text-sm text-destructive">{review.error}</p><Button variant="outline" onClick={review.status === "conflict" ? review.reload : () => void review.flush()}>{review.status === "conflict" ? "Review latest version" : "Retry save"}</Button></div>}
+      {review.error && <div role="alert" className="space-y-2"><p className="text-sm text-destructive">{review.error}</p><Button variant="outline" onClick={review.status === "conflict" || review.status === "closed" ? review.reload : () => void review.flush()}>{review.status === "closed" ? "Check judging access" : review.status === "conflict" ? "Review latest version" : "Retry save"}</Button></div>}
       {validation && snapshot.canEdit && <p className="text-sm text-muted-foreground">{validation}</p>}
       <div className="flex flex-wrap gap-2"><Button disabled={disabled || Boolean(validation) || review.status === "conflict"} onClick={() => void submit()}>{review.submitting ? "Submitting…" : snapshot.isComplete ? "Save changes" : "Submit review"}<Kbd className="hidden sm:inline-flex">⌘↵</Kbd></Button><Button variant="outline" disabled={review.submitting} onClick={() => { void review.flush(); onSkip() }}>{snapshot.canEdit ? "Skip for now" : "Next review"}<ChevronRight /></Button></div>
     </div>

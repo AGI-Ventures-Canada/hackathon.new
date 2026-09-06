@@ -83,7 +83,7 @@ export async function getJudgingReview(slug: string, userId: string, target: Rev
 
 export async function saveJudgingReview(slug: string, userId: string, target: ReviewTarget, input: { expectedRevision: number; criteriaVersion: string; response: ReviewResponse }, publish = false): Promise<ReviewSnapshot> {
   const { snapshot, hackathonId } = await getReviewContext(slug, userId, target)
-  if (!snapshot.canEdit) throw new JudgingReviewError("Judging is closed. Your saved draft is still here.", "judging_closed", 409)
+  if (!snapshot.canEdit) throw new JudgingReviewError(snapshot.editReason || "Judging is closed. Your saved draft is still here.", "judging_closed", 409)
   if (input.expectedRevision !== snapshot.revision || input.criteriaVersion !== snapshot.criteriaVersion) throw new JudgingReviewError("This review changed. Reload it before saving. Your draft is safe on this device.", "review_changed", 409)
   const parsed = reviewResponseSchema.safeParse(input.response)
   if (!parsed.success) throw new JudgingReviewError("Check your answers and keep notes under 2,000 characters.", "invalid_response")

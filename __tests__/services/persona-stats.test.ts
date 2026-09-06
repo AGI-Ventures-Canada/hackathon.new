@@ -3,6 +3,8 @@ import {
   createChainableMock,
   resetSupabaseMocks,
   setMockFromImplementation,
+  setMockRpcImplementation,
+  mockRpc,
 } from "../lib/supabase-mock"
 
 const { getBatchJudgeStats, getSponsorshipDetails } = await import(
@@ -52,6 +54,26 @@ describe("getBatchJudgeStats", () => {
     expect(stats.totalAssignments).toBe(3)
     expect(stats.completedAssignments).toBe(2)
     expect(stats.actionableAssignments).toBe(1)
+  })
+
+  it("counts open judging after a live event starts without changing future or stopped events", async () => {
+    const cases = [
+      { id: "published", status: "published", starts_at: "2000-01-01T00:00:00Z", actionable: 1 },
+      { id: "registration", status: "registration_open", starts_at: "2000-01-01T00:00:00Z", actionable: 1 },
+      { id: "future", status: "registration_open", starts_at: "2999-01-01T00:00:00Z", actionable: 0 },
+      { id: "draft", status: "draft", starts_at: "2000-01-01T00:00:00Z", actionable: 0 },
+      { id: "completed", status: "completed", starts_at: "2000-01-01T00:00:00Z", actionable: 0 },
+      { id: "archived", status: "archived", starts_at: "2000-01-01T00:00:00Z", actionable: 0 },
+    ]
+    setMockFromImplementation((table) => createChainableMock({ data: table === "hackathon_participants"
+      ? cases.map(({ id }) => ({ id: `p-${id}`, hackathon_id: id }))
+      : table === "hackathons"
+        ? cases.map((event) => ({ ...event, ends_at: "2000-01-02T00:00:00Z", judging_opens_at: "2000-01-01T00:00:00Z", judging_closes_at: "2999-01-01T00:00:00Z" }))
+        : table === "judge_assignments"
+          ? cases.map(({ id }) => ({ id: `a-${id}`, judge_participant_id: `p-${id}`, hackathon_id: id, is_complete: false, submission: { status: "submitted" } }))
+          : [], error: null }))
+    const result = await getBatchJudgeStats(cases.map(({ id }) => id), "user_1")
+    for (const event of cases) expect(result.get(event.id)).toMatchObject({ totalAssignments: 1, actionableAssignments: event.actionable })
   })
 
   it("uses the direct prize relation when coverage creates another route to prizes", async () => {
@@ -113,6 +135,37 @@ describe("getBatchJudgeStats", () => {
       ] : [], error: null }))
     const result = await getBatchJudgeStats(["h1"], "user_1")
     expect(result.get("h1")).toMatchObject({ totalAssignments: 1, completedAssignments: 0, actionableAssignments: 1 })
+  })
+
+  it("recounts a narrowed judge panel using visible projects while keeping completed history", async () => {
+    const base = { hackathon_id: "h1", judge_participant_id: "p1", is_complete: false, scoring_scope: "scoped", submission: { team_id: "other-team", status: "submitted" } }
+    let visible = ["eligible", "removed", "history", "own", "withdrawn"]
+    setMockRpcImplementation(() => Promise.resolve({ data: visible, error: null }))
+    setMockFromImplementation((table) => createChainableMock({ data: table === "hackathon_participants" ? [{ id: "p1", hackathon_id: "h1", team_id: "own-team" }]
+      : table === "hackathons" ? [{ id: "h1", status: "judging" }]
+      : table === "judge_assignments" ? [
+        { ...base, id: "eligible" },
+        { ...base, id: "removed" },
+        { ...base, id: "history", is_complete: true },
+        { ...base, id: "own", submission: { team_id: "own-team", status: "submitted" } },
+        { ...base, id: "withdrawn", submission: { team_id: "other-team", status: "draft" } },
+      ] : [], error: null }))
+    expect((await getBatchJudgeStats(["h1"], "user_1")).get("h1")).toMatchObject({ totalAssignments: 3, completedAssignments: 1, actionableAssignments: 2 })
+    visible = visible.filter((id) => id !== "removed")
+    expect((await getBatchJudgeStats(["h1"], "user_1")).get("h1")).toMatchObject({ totalAssignments: 2, completedAssignments: 1, actionableAssignments: 1 })
+    expect(mockRpc).toHaveBeenCalledWith("get_judging_visible_assignment_ids", { p_hackathon_id: "h1" })
+    expect(mockRpc).toHaveBeenCalledTimes(2)
+  })
+
+  it("surfaces a failed or malformed visibility response instead of showing invented counts", async () => {
+    setMockFromImplementation((table) => createChainableMock({ data: table === "hackathon_participants" ? [{ id: "p1", hackathon_id: "h1" }]
+      : table === "hackathons" ? [{ id: "h1", status: "judging" }]
+      : table === "judge_assignments" ? [{ id: "a1", hackathon_id: "h1", judge_participant_id: "p1", scoring_scope: "scoped", is_complete: false, submission: { status: "submitted" } }]
+      : [], error: null }))
+    setMockRpcImplementation(() => Promise.resolve({ data: null, error: { code: "PGRST202", message: "Resolver missing" } }))
+    await expect(getBatchJudgeStats(["h1"], "user_1")).rejects.toThrow("Could not load your judging progress")
+    setMockRpcImplementation(() => Promise.resolve({ data: null, error: null }))
+    await expect(getBatchJudgeStats(["h1"], "user_1")).rejects.toThrow("Could not load your judging progress")
   })
 
   it("applies event and round windows while retaining closed reviews in the history count", async () => {

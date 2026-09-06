@@ -6,6 +6,8 @@ import { resolveJudgingWindow, isValidJudgingTimeZone, type JudgingWindowEvent }
 import { withDeliveryLease } from "@/lib/services/delivery-lease"
 import { consumeDeliverySlot, type DeliveryBudget } from "@/lib/services/delivery-budget"
 import { logJudgingDatabaseError } from "@/lib/services/judging-diagnostics"
+import type { HackathonStatus } from "@/lib/db/hackathon-types"
+import { getEffectiveStatusAt } from "@/lib/utils/timeline"
 
 export type JudgingNotificationKind = "preparation" | "work_ready" | "work_added" | "scores_due" | "deadline_changed" | "all_done" | "organizer_readiness" | "organizer_progress" | "daily_digest" | "manual_reminder"
 export type JudgingNotificationPreferences = {
@@ -39,7 +41,8 @@ export type JudgingNotification = {
   created_at: string
 }
 type Event = JudgingWindowEvent & {
-  id: string; name: string; slug: string; status: string; phase?: string | null; tenant_id: string
+  id: string; name: string; slug: string; status: HackathonStatus; phase?: string | null; tenant_id: string
+  starts_at?: string | null; ends_at?: string | null
   is_test_event: boolean; judging_reminders_enabled: boolean; results_published_at: string | null
 }
 type Assignment = { id: string; judge_participant_id: string; is_complete: boolean; round_id: string | null; submission_id?: string; prize_id?: string | null; prize?: { judging_style: string | null } | null; submission?: { team_id: string | null; status: string } | null }
@@ -48,7 +51,7 @@ type Round = { id: string; status: string; opens_at: string | null; closes_at: s
 const HOUR = 3_600_000
 const db = () => getSupabase() as unknown as SupabaseClient
 const fingerprint = (value: string) => createHash("sha256").update(value).digest("hex").slice(0, 32)
-const eventColumns = "id,name,slug,status,phase,tenant_id,is_test_event,results_published_at,judging_opens_at,judging_closes_at,judging_timezone,judging_reminders_enabled"
+const eventColumns = "id,name,slug,status,phase,starts_at,ends_at,tenant_id,is_test_event,results_published_at,judging_opens_at,judging_closes_at,judging_timezone,judging_reminders_enabled"
 
 export function notificationLocalClock(now: Date, timezone: string) {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" }).formatToParts(now)
@@ -90,7 +93,7 @@ export async function markJudgingNotificationRead(hackathonId: string, userId: s
   if (error) throw new Error("Could not mark this update as read.")
 }
 
-async function loadContext(hackathonId: string) {
+async function loadContext(hackathonId: string, now: Date = new Date()) {
   const client = db()
   const [event, judges, assignments, rounds, visibility] = await Promise.all([
     client.from("hackathons").select(eventColumns).eq("id", hackathonId).maybeSingle(),
@@ -128,7 +131,12 @@ async function loadContext(hackathonId: string) {
       work = work.filter((assignment) => ids.has(assignment.submission_id))
     }
   }
-  return { event: event.data as Event | null, judges: people, assignments: work, rounds: (rounds.data ?? []) as Round[] }
+  const rawEvent = event.data as Event | null
+  const currentEvent = rawEvent ? {
+    ...rawEvent,
+    status: getEffectiveStatusAt({ ...rawEvent, starts_at: rawEvent.starts_at ?? null, ends_at: rawEvent.ends_at ?? null }, now),
+  } : null
+  return { event: currentEvent, judges: people, assignments: work, rounds: (rounds.data ?? []) as Round[] }
 }
 
 function reviewCount(assignments: Assignment[]): number {
@@ -160,7 +168,7 @@ async function enqueue(input: Omit<JudgingNotification, "id" | "email_sent_at" |
 }
 
 export async function reconcileJudgingNotifications(hackathonId: string, now: Date = new Date()): Promise<void> {
-  const { event, judges, assignments, rounds } = await loadContext(hackathonId)
+  const { event, judges, assignments, rounds } = await loadContext(hackathonId, now)
   if (!event) return
   if (event.is_test_event || event.status === "draft") return
   const client = db()

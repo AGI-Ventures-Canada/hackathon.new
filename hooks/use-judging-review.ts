@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { reconcileReviewResponse, reviewResponseSchema, type ReviewResponse, type ReviewSnapshot } from "@/lib/utils/judging-review"
 
-type SaveStatus = "loading" | "saved" | "saving" | "offline" | "error" | "conflict"
+type SaveStatus = "loading" | "saved" | "saving" | "offline" | "error" | "conflict" | "closed"
 type Recovery = { revision: number; criteriaVersion: string; response: ReviewResponse }
 
 export function useJudgingReview(slug: string, targetId: string, ballot = false) {
@@ -43,7 +43,7 @@ export function useJudgingReview(slug: string, targetId: string, ballot = false)
       cache: "no-store",
     })
     const body = await result.json()
-    if (!result.ok) throw Object.assign(new Error(body.error || "Your review couldn't be saved. Try again."), { status: result.status })
+    if (!result.ok) throw Object.assign(new Error(body.error || "Your review couldn't be saved. Try again."), { status: result.status, code: body.code })
     return body as ReviewSnapshot
   }, [endpoint])
 
@@ -71,10 +71,15 @@ export function useJudgingReview(slug: string, targetId: string, ballot = false)
             if (mountedRef.current) setStatus("saved")
           } else backup()
         } catch (cause) {
-          const conflict = cause instanceof Error && "status" in cause && cause.status === 409
-          pausedRef.current = conflict
+          const closed = cause instanceof Error && "code" in cause && cause.code === "judging_closed"
+          const conflict = !closed && cause instanceof Error && "status" in cause && cause.status === 409
+          pausedRef.current = conflict || closed
+          if (closed && snapshotRef.current) {
+            snapshotRef.current = { ...snapshotRef.current, canEdit: false, editReason: cause.message }
+            if (mountedRef.current) setSnapshot(snapshotRef.current)
+          }
           backup()
-          if (mountedRef.current) { setStatus(conflict ? "conflict" : navigator.onLine ? "error" : "offline"); setError(cause instanceof Error ? cause.message : "Your draft is saved on this device. Try again.") }
+          if (mountedRef.current) { setStatus(closed ? "closed" : conflict ? "conflict" : navigator.onLine ? "error" : "offline"); setError(cause instanceof Error ? cause.message : "Your draft is saved on this device. Try again.") }
           return false
         }
       }
@@ -108,10 +113,11 @@ export function useJudgingReview(slug: string, targetId: string, ballot = false)
       setResponse(responseRef.current)
       pendingRef.current = Boolean(restored)
       const conflict = !keepChanges && (Boolean(recovery && (recovery.revision !== next.revision || recovery.criteriaVersion !== next.criteriaVersion)) || Boolean(next.draftCriteriaVersion && next.draftCriteriaVersion !== next.criteriaVersion))
-      pausedRef.current = conflict
-      setStatus(conflict ? "conflict" : "saved")
-      if (conflict) setError("Your saved review changed on another tab or device. Your changes are still here. Reload the latest version before saving them.")
-      if (keepChanges) { pausedRef.current = false; backup() }
+      pausedRef.current = conflict || !next.canEdit
+      setStatus(!next.canEdit ? "closed" : conflict ? "conflict" : "saved")
+      if (!next.canEdit) setError(next.editReason || "Judging is read-only right now. Your saved draft is still here.")
+      else if (conflict) setError("Your saved review changed on another tab or device. Your changes are still here. Reload the latest version before saving them.")
+      if (keepChanges) { pausedRef.current = !next.canEdit; backup() }
     } catch (cause) {
       if (mountedRef.current) { setStatus("error"); setError(cause instanceof Error ? cause.message : "We couldn't open this review.") }
     }
@@ -173,9 +179,14 @@ export function useJudgingReview(slug: string, targetId: string, ballot = false)
       return true
     } catch (cause) {
       backup()
-      const conflict = cause instanceof Error && "status" in cause && cause.status === 409
-      pausedRef.current = conflict
-      setStatus(conflict ? "conflict" : "error")
+      const closed = cause instanceof Error && "code" in cause && cause.code === "judging_closed"
+      const conflict = !closed && cause instanceof Error && "status" in cause && cause.status === 409
+      pausedRef.current = conflict || closed
+      if (closed && snapshotRef.current) {
+        snapshotRef.current = { ...snapshotRef.current, canEdit: false, editReason: cause.message }
+        setSnapshot(snapshotRef.current)
+      }
+      setStatus(closed ? "closed" : conflict ? "conflict" : "error")
       setError(cause instanceof Error ? cause.message : "Your review wasn't submitted. Try again.")
       return false
     } finally { setSubmitting(false) }

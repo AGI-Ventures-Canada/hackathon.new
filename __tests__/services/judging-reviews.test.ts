@@ -84,6 +84,11 @@ describe("versioned judging publication", () => {
    await expect(saveJudgingReview("event","judge",{assignmentId},{expectedRevision:0,criteriaVersion:"v1",response},true)).rejects.toMatchObject({code:"review_changed",status:409})
    expect(recalculateForAssignment).not.toHaveBeenCalled()
  })
+ it("keeps a SQL window closure distinct from a scorecard conflict",async () => {
+   setMockRpcImplementation(() => ({data:null,error:{message:"judging_closed"}}))
+   await expect(saveJudgingReview("event","judge",{assignmentId},{expectedRevision:0,criteriaVersion:"v1",response})).rejects.toMatchObject({code:"judging_closed",status:409})
+   expect(recalculateForAssignment).not.toHaveBeenCalled()
+ })
  it("publishes once and recalculates only after atomic success",async () => {
    await saveJudgingReview("event","judge",{assignmentId},{expectedRevision:0,criteriaVersion:"v1",response},true)
    expect(rpcCalls[0].args.p_publish).toBe(true);expect(recalculateForAssignment).toHaveBeenCalledWith(assignmentId)

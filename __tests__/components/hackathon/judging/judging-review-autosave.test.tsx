@@ -89,6 +89,45 @@ describe("judge autosave safety", () => {
     expect(requests).toEqual([{method:"PATCH",revision:0},{method:"POST",revision:1}])
     expect(result.current.snapshot?.isComplete).toBe(true)
   })
+  it("keeps a draft when judging closes without calling it a revision conflict", async () => {
+    let open = true, writes = 0
+    globalThis.fetch = mock((_url, init) => {
+      if (init?.method === "GET") return Promise.resolve(reply({ ...base, canEdit: open, editReason: open ? null : "Judging is closed." }))
+      writes++
+      return Promise.resolve(writes === 1
+        ? reply({ error: "Judging is closed. Your draft is still here.", code: "judging_closed" }, 409)
+        : reply({ ...base, revision: 1, response: changeNotes("Keep my notes"), hasDraft: true }))
+    }) as typeof fetch
+    const { result } = renderHook(() => useJudgingReview("event", "project"))
+    await waitFor(() => expect(result.current.snapshot).not.toBeNull())
+    act(() => result.current.change(changeNotes("Keep my notes")))
+    await act(async () => { expect(await result.current.flush()).toBe(false) })
+    expect(result.current.status).toBe("closed")
+    expect(result.current.snapshot?.canEdit).toBe(false)
+    expect(result.current.error).toContain("Judging is closed")
+    expect(localStorage.getItem("judging-review:v1:judge:event:project:project")).toContain("Keep my notes")
+    open = false
+    await act(async () => { await result.current.reload(); expect(await result.current.flush()).toBe(false) })
+    expect(writes).toBe(1)
+    open = true
+    await act(async () => { await result.current.reload(); expect(await result.current.flush()).toBe(true) })
+    expect(result.current.status).toBe("saved")
+    expect(result.current.response?.notes).toBe("Keep my notes")
+    expect(writes).toBe(2)
+  })
+
+  it("reports a deadline closing during publication without marking the review submitted", async () => {
+    globalThis.fetch = mock((_url, init) => Promise.resolve(init?.method === "GET" ? reply(base)
+      : init?.method === "PATCH" ? reply({ ...base, revision: 1, hasDraft: true, response: changeNotes("Last note") })
+        : reply({ error: "Judging is closed.", code: "judging_closed" }, 409))) as typeof fetch
+    const { result } = renderHook(() => useJudgingReview("event", "project"))
+    await waitFor(() => expect(result.current.snapshot).not.toBeNull())
+    act(() => result.current.change(changeNotes("Last note")))
+    await act(async () => { expect(await result.current.submit()).toBe(false) })
+    expect(result.current.status).toBe("closed")
+    expect(result.current.snapshot).toMatchObject({ canEdit: false, isComplete: false, hasDraft: true })
+    expect(result.current.response?.notes).toBe("Last note")
+  })
   it("never restores a different judge's browser draft", async () => {
     localStorage.setItem("judging-review:v1:other:event:project:project",JSON.stringify({revision:0,criteriaVersion:"v1",response:changeNotes("Private other judge note")}))
     globalThis.fetch = mock(() => Promise.resolve(reply(base))) as typeof fetch
