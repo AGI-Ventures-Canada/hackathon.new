@@ -34,7 +34,7 @@ const prizes = [
 let coveredB = false
 let notificationFails = false
 let rpcError: { message: string } | null = null
-const rpc = mock(async (_name: string, _body: unknown) => ({
+const rpc = mock(async (name: string, _body: unknown) => name === "judging_window_is_configured" ? ({ data: false, error: null }) : ({
   data: rpcError ? null : { saved: true },
   error: rpcError,
 }))
@@ -163,7 +163,7 @@ describe("shared judging readiness", () => {
         settings: { opensAt: "2026-09-06T14:00:00Z", closesAt: null },
       }),
     ).rejects.toThrow("later deadline")
-    expect(rpc).not.toHaveBeenCalled()
+    expect(rpc.mock.calls.map(([name]) => name)).not.toContain("configure_judging_setup")
   })
   it("keeps stale configuration a recoverable conflict", async () => {
     rpcError = { message: "judging_changed" }
