@@ -3969,8 +3969,16 @@ export type Database = {
         Args: { p_hackathon_id: string }
         Returns: Json
       }
+      get_scheduled_judging_readiness: {
+        Args: { p_hackathon_id: string; p_round_id?: string }
+        Returns: Json
+      }
       increment_webhook_failure: {
         Args: { p_webhook_id: string }
+        Returns: boolean
+      }
+      judging_assignment_in_active_pool: {
+        Args: { p_assignment_id: string }
         Returns: boolean
       }
       judging_has_submitted_reviews: {
@@ -3987,6 +3995,18 @@ export type Database = {
       }
       judging_prize_assignment_eligible: {
         Args: { p_assignment_id: string; p_prize_id: string }
+        Returns: boolean
+      }
+      judging_submission_in_active_pool: {
+        Args: {
+          p_hackathon_id: string
+          p_round_id?: string
+          p_submission_id: string
+        }
+        Returns: boolean
+      }
+      judging_window_is_configured: {
+        Args: { p_hackathon_id: string; p_round_id?: string }
         Returns: boolean
       }
       judging_window_is_open: {

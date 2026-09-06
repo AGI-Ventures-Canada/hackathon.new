@@ -24,7 +24,7 @@ UI verification uses the exact PR Vercel preview. Do not start a local app serve
 
 ## Release checks
 
-- [x] All four migrations applied on the isolated PR database; generated database types pass TypeScript
+- [x] All six migrations applied on the isolated PR database; database types regenerated
 - [ ] Local migration replay (Docker unavailable; hosted replay used)
 - [x] Focused regression tests
 - [x] Local full test suite: 5,666 passing tests, zero failures; final coverage guard service/API regressions also pass
@@ -68,3 +68,5 @@ Local PR review included independent judge/organizer, SQL/scoring, invitation/de
 Final local gates passed across 4,552 unit/component tests, 813 mounted integration tests, 100 email tests, and 288 CLI tests, followed by focused regressions for the final review fixes. Source checking uses the repository CI command `bunx tsc --noEmit -p tsconfig.build.json`; lint and CLI build also pass. Tab interaction tests run with the real primitives in an isolated process because unrelated link mocks remove ARIA props. Two older mounted-route tests now preserve unmocked timeline exports.
 
 Browser coverage is the basic organizer-to-judge journey above. Offline/concurrent-tab behavior, mixed methods, advanced rounds, and cadence races have automated regression coverage; additional full mixed-method browser journeys were not run before the requested release cutoff. Final forward-migration assertions and one completion-inbox smoke remain part of the release checks.
+
+The final readiness migration `20260906000836` applied on the isolated preview for `dc01ce74`. Rollback-only SQL assertions passed for missing coverage, invalid cards, direct and atomic score writes, post-event boundaries, round inheritance, explicit finalist pools, ranked picks, audience votes, and frozen legacy weight normalization. The script asserted that none of its synthetic event rows remained. Database types were regenerated from that preview.
