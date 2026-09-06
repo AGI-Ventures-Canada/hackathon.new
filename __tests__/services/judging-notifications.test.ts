@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test"
 import { createChainableMock, resetSupabaseMocks, setMockFromImplementation, setMockRpcImplementation, mockClerkClient } from "../lib/supabase-mock"
 import { getJudgingInbox, isJudgingQuietHour, notificationLocalClock, updateJudgingNotificationPreferences, reconcileJudgingNotifications, processJudgingNotifications, queueJudgeWorkReminder } from "@/lib/services/judging-notifications"
+import { reconcileJudgingAfterMutation } from "@/lib/services/judging-notification-events"
 
 describe("judging reminders and inbox", () => {
   beforeEach(resetSupabaseMocks)
@@ -55,8 +56,9 @@ function memoryStore(now: Date) {
     judging_notification_preferences: [{ hackathon_id: "event", clerk_user_id: "user", email_enabled: true, in_app_enabled: true, daily_digest: false, quiet_start: 0, quiet_end: 0, timezone: "UTC" }],
   }
   let skipReconcile = false
+  let judgingReady = true
   let hiddenIds: string[] = []
-  setMockRpcImplementation((name) => name === "get_judging_visible_assignment_ids" ? Promise.resolve({ data: rows.judge_assignments.filter((row) => !hiddenIds.includes(String(row.id))).map((row) => row.id), error: null }) : Promise.resolve({ data: null, error: null }))
+  setMockRpcImplementation((name) => name === "get_judging_visible_assignment_ids" ? Promise.resolve({ data: rows.judge_assignments.filter((row) => !hiddenIds.includes(String(row.id))).map((row) => row.id), error: null }) : Promise.resolve({ data: name === "judging_window_is_open" ? judgingReady : null, error: null }))
   setMockFromImplementation((table) => {
     const chain = createChainableMock({ data: null, error: null })
     const filters: Array<(row: Row) => boolean> = []
@@ -69,6 +71,15 @@ function memoryStore(now: Date) {
     chain.eq.mockImplementation((...args: unknown[]) => { filters.push((row) => row[String(args[0])] === args[1]); return chain })
     chain.is.mockImplementation((...args: unknown[]) => { filters.push((row) => (row[String(args[0])] ?? null) === args[1]); return chain })
     chain.in.mockImplementation((...args: unknown[]) => { filters.push((row) => (args[1] as unknown[]).includes(row[String(args[0])]) || String(args[0]).includes(".")); return chain })
+    chain.or.mockImplementation((...args: unknown[]) => {
+      const prefix = "next_attempt_at.is.null,next_attempt_at.lte."
+      const expression = String(args[0])
+      if (expression.startsWith(prefix)) {
+        const cutoff = expression.slice(prefix.length)
+        filters.push((row) => row.next_attempt_at == null || String(row.next_attempt_at) <= cutoff)
+      }
+      return chain
+    })
     for (const method of ["lt", "lte", "gt", "gte"] as const) chain[method].mockImplementation((...args: unknown[]) => { filters.push((row) => {
       const a = row[String(args[0])] as string | number | null, b = args[1] as string | number
       if (a == null) return false
@@ -97,7 +108,7 @@ function memoryStore(now: Date) {
     }
     return chain
   })
-  return { rows, skipReconcile: () => { skipReconcile = true }, hideAssignments: (ids: string[]) => { hiddenIds = ids } }
+  return { rows, skipReconcile: () => { skipReconcile = true }, hideAssignments: (ids: string[]) => { hiddenIds = ids }, setJudgingReady: (ready: boolean) => { judgingReady = ready } }
 }
 
 function queuedNotification(now: Date, changes: Row = {}): Row {
@@ -172,8 +183,121 @@ describe("judging cadence and send-time checks", () => {
     store.rows.judge_assignments.push({ ...store.rows.judge_assignments[0], id: "b" })
     await reconcileJudgingNotifications("event", now)
     const added = store.rows.judging_notifications.find((row) => row.kind === "work_added")
-    expect(added?.scheduled_for).toBe("2026-09-05T14:15:00.000Z")
+    expect(added?.scheduled_for).toBe("2026-09-05T14:00:00.000Z")
+    expect(added?.next_attempt_at).toBe("2026-09-05T14:15:00.000Z")
     expect(store.rows.judging_notifications.find((row) => row.kind === "work_ready")?.resolved_at).not.toBeNull()
+  })
+  it("writes immediate assignment, remaining-count, and completion receipts without sending email", async () => {
+    const now = new Date(), store = memoryStore(now)
+    const eventId = "11111111-1111-4111-8111-111111111111"
+    store.rows.hackathons[0].id = eventId
+    for (const rows of Object.values(store.rows)) for (const row of rows) if (row.hackathon_id === "event") row.hackathon_id = eventId
+    store.rows.judge_assignments.push({ ...store.rows.judge_assignments[0], id: "b" }, { ...store.rows.judge_assignments[0], id: "c" })
+    await reconcileJudgingAfterMutation(eventId)
+    expect((await getJudgingInbox(eventId, "user")).items[0].body).toBe("You have 3 reviews left to finish.")
+    store.rows.judge_assignments[0].is_complete = true
+    await reconcileJudgingAfterMutation(eventId)
+    expect((await getJudgingInbox(eventId, "user")).items.find((item) => item.kind === "work_ready")?.body).toBe("You have 2 reviews left to finish.")
+    for (const assignment of store.rows.judge_assignments) assignment.is_complete = true
+    await reconcileJudgingAfterMutation(eventId)
+    await reconcileJudgingAfterMutation(eventId)
+    const complete = (await getJudgingInbox(eventId, "user")).items.filter((item) => item.kind === "all_done")
+    expect(complete).toHaveLength(1)
+    expect(complete[0].body).toBe("Thanks! All your assigned reviews are saved.")
+    expect(store.rows.judging_notifications.find((row) => row.kind === "all_done")?.email_required).toBe(false)
+    store.rows.judging_notification_preferences[0].in_app_enabled = false
+    expect((await getJudgingInbox(eventId, "user")).items).toHaveLength(0)
+    expect(sendUpdate).not.toHaveBeenCalled()
+  })
+  it("shows added work in the inbox immediately while coalescing its email for fifteen minutes", async () => {
+    const now = new Date(), store = memoryStore(now)
+    await reconcileJudgingNotifications("event", now)
+    store.rows.judge_assignments.push({ ...store.rows.judge_assignments[0], id: "b" })
+    await reconcileJudgingNotifications("event", now)
+    store.rows.judge_assignments.push({ ...store.rows.judge_assignments[0], id: "c" })
+    await reconcileJudgingNotifications("event", now)
+    const active = (await getJudgingInbox("event", "user")).items.filter((item) => item.kind === "work_added" && !item.resolved_at)
+    expect(active).toHaveLength(1)
+    expect(active[0].body).toBe("You have 3 reviews left to finish.")
+    expect((await processJudgingNotifications()).sent).toBe(0)
+    expect(sendUpdate).not.toHaveBeenCalled()
+  })
+  it("waits for authoritative readiness before announcing assigned work and checks it again before sending", async () => {
+    const now = new Date(), store = memoryStore(now)
+    store.setJudgingReady(false)
+    await reconcileJudgingNotifications("event", now)
+    expect(store.rows.judging_notifications.some((row) => row.kind === "work_ready")).toBe(false)
+    store.setJudgingReady(true)
+    await reconcileJudgingNotifications("event", now)
+    expect(store.rows.judging_notifications.some((row) => row.kind === "work_ready")).toBe(true)
+    mockClerkClient.mockResolvedValue({ users: { getUser: async () => {
+      store.setJudgingReady(false)
+      return { primaryEmailAddress: { emailAddress: "judge@example.com" } }
+    } } } as unknown)
+    expect((await processJudgingNotifications()).sent).toBe(0)
+    const notice = store.rows.judging_notifications.find((row) => row.kind === "work_ready")!
+    expect(notice.email_sent_at).toBeNull()
+    expect(notice.resolved_at).toBeNull()
+    expect(notice.fail_count).toBe(0)
+    store.setJudgingReady(true)
+    notice.next_attempt_at = new Date(now.getTime() - 60_000).toISOString()
+    mockClerkClient.mockResolvedValue({ users: { getUser: async () => ({ primaryEmailAddress: { emailAddress: "judge@example.com" } }) } } as unknown)
+    expect((await processJudgingNotifications()).sent).toBe(1)
+  })
+  it("pauses an existing work notice and restores its unread state and queued delivery when setup is ready", async () => {
+    const now = new Date(), store = memoryStore(now)
+    await reconcileJudgingNotifications("event", now)
+    const notice = store.rows.judging_notifications.find((row) => row.kind === "work_ready")!
+    notice.read_at = now.toISOString()
+    store.setJudgingReady(false)
+    await reconcileJudgingNotifications("event", now)
+    expect((await getJudgingInbox("event", "user")).items.find((item) => item.id === notice.id)?.title).toBe("Judging is on hold")
+    expect(notice.email_required).toBe(true)
+    expect(notice.resolved_at).toBeNull()
+    expect((await processJudgingNotifications()).sent).toBe(0)
+    notice.read_at = now.toISOString()
+    store.setJudgingReady(true)
+    await reconcileJudgingNotifications("event", now)
+    expect(notice.title).toBe("Your projects are ready")
+    expect(notice.read_at).toBeNull()
+    expect(store.rows.judging_notifications.filter((row) => row.kind === "work_ready")).toHaveLength(1)
+    notice.next_attempt_at = new Date(now.getTime() - 60_000).toISOString()
+    expect((await processJudgingNotifications()).sent).toBe(1)
+  })
+  it("alerts the organizer when the scheduled opening is blocked, even without matching task labels", async () => {
+    const now = new Date(), store = memoryStore(now)
+    store.setJudgingReady(false)
+    store.rows.tenants.push({ id: "tenant", clerk_user_id: "organizer" })
+    store.rows.judging_notification_preferences.push({ ...store.rows.judging_notification_preferences[0], clerk_user_id: "organizer" })
+    await reconcileJudgingNotifications("event", now)
+    await reconcileJudgingNotifications("event", now)
+    const notices = store.rows.judging_notifications.filter((row) => row.kind === "organizer_readiness")
+    expect(notices).toHaveLength(1)
+    expect(notices[0]).toMatchObject({ title: "Finish setup to open judging", body: "Check your judging setup so judges can start.", action_path: "/e/build/manage/judging" })
+    expect(store.rows.judging_notifications.some((row) => row.kind === "preparation" || row.kind === "work_ready")).toBe(false)
+    expect((await processJudgingNotifications()).sent).toBe(1)
+    expect(sendUpdate).toHaveBeenCalledWith(expect.objectContaining({ notification: expect.objectContaining({ kind: "organizer_readiness" }) }))
+    store.setJudgingReady(true)
+    await reconcileJudgingNotifications("event", now)
+    expect(notices[0].resolved_at).not.toBeNull()
+  })
+  it("suppresses a blocked-opening alert if setup is fixed or the window closes during Clerk lookup", async () => {
+    for (const change of ["ready", "closed"]) {
+      const now = new Date(), store = memoryStore(now)
+      store.setJudgingReady(false)
+      store.rows.tenants.push({ id: "tenant", clerk_user_id: "organizer" })
+      store.rows.judging_notification_preferences.push({ ...store.rows.judging_notification_preferences[0], clerk_user_id: "organizer" })
+      await reconcileJudgingNotifications("event", now)
+      mockClerkClient.mockResolvedValue({ users: { getUser: async () => {
+        if (change === "ready") store.setJudgingReady(true)
+        else store.rows.hackathons[0].judging_closes_at = new Date(Date.now() - 1).toISOString()
+        return { primaryEmailAddress: { emailAddress: "organizer@example.com" } }
+      } } } as unknown)
+      expect(await processJudgingNotifications()).toMatchObject({ sent: 0, failed: 0, skipped: 1 })
+      const notice = store.rows.judging_notifications.find((row) => row.kind === "organizer_readiness")!
+      expect(notice.resolved_at).not.toBeNull()
+      expect(notice.fail_count).toBe(0)
+    }
   })
   it("replaces old deadline reminders and completes the inbox without another email", async () => {
     const now = new Date("2026-09-05T14:00:00Z"), store = memoryStore(now)

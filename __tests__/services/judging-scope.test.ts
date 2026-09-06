@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "bun:test"
 import { createChainableMock, resetSupabaseMocks, setMockFromImplementation, setMockRpcImplementation } from "../lib/supabase-mock"
 import { getAssignmentScoringScope } from "@/lib/services/judging-scope"
-import { assertAssignmentWritable, calculateWeightedScoreResults, getAssignmentDetail, submitScores } from "@/lib/services/judging"
+import { assertAssignmentWritable, calculateWeightedScoreResults, getActiveRoundFinalistIds, getAssignmentDetail, submitScores } from "@/lib/services/judging"
 import { applyJudgingDistribution, assignJudgeToPrizeProject, filterRoomJudgingAssignments, getJudgeAssignmentOptions, saveJudgeAssignmentScope } from "@/lib/services/judging-distribution"
 
 const ownership = { hackathonId: "event", prizeId: null, submissionId: "project", assignmentKind: "unified_weighted_score" as const, scoringScope: "scoped" as const, isComplete: false, notes: null }
@@ -9,6 +9,23 @@ const scope = { prizeIds: ["allowed"], criteriaVersion: "scope-v1", scopeMode: "
 
 describe("scoped judging", () => {
   beforeEach(resetSupabaseMocks)
+
+  it.each(["judging_rounds", "round_submissions"])("does not expand the finalist pool when %s is unavailable", async (failedTable) => {
+    setMockFromImplementation((table) => createChainableMock(table === failedTable
+      ? { data: null, error: { message: "unavailable" } }
+      : { data: table === "judging_rounds" ? { id: "round" } : [], error: null }))
+    await expect(getActiveRoundFinalistIds("event")).rejects.toThrow("could not be loaded")
+  })
+
+  it("keeps the full pool when a valid first round has no chosen projects", async () => {
+    setMockFromImplementation((table) => createChainableMock({ data: table === "judging_rounds" ? { id: "round" } : [], error: null }))
+    expect(await getActiveRoundFinalistIds("event")).toBeNull()
+  })
+
+  it("returns only the chosen finalist projects", async () => {
+    setMockFromImplementation((table) => createChainableMock({ data: table === "judging_rounds" ? { id: "round" } : [{ submission_id: "finalist" }], error: null }))
+    expect(await getActiveRoundFinalistIds("event")).toEqual(["finalist"])
+  })
 
   it("uses the database scorecard version for a particular event and assignment", async () => {
     setMockRpcImplementation((name, args) => {

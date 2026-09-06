@@ -175,6 +175,7 @@ export function useJudgingReview(slug: string, targetId: string, ballot = false)
       setResponse(next.response)
       setStatus("saved")
       clearBackup()
+      window.dispatchEvent(new Event("judging-progress-changed"))
       router.refresh()
       return true
     } catch (cause) {

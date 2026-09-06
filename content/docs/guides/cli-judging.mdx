@@ -31,6 +31,8 @@ The starter adds a prize when needed and four shared questions: Original idea, D
 
 Set a judging window separate from the event dates. Include the time zone offset in each time:
 
+Scheduled judging needs a valid scorecard and at least one assigned, eligible judge for each project and prize. These checks stay active throughout the window. Removing the last eligible judge pauses scoring until coverage is restored. Falling below your preferred number of reviews only adds a warning. Previously submitted legacy reviews keep their original weights.
+
 ```bash title="Set judging dates"
 hackathon judging setup configure <event> \
   --opens-at 2026-09-12T09:00:00-04:00 \

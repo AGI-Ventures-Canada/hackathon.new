@@ -18,7 +18,7 @@ export function JudgingNavigation({ slug, children }: { slug: string; children: 
   return (
     <Tabs value={selected} activationMode="manual">
       <div className="space-y-6">
-        <nav aria-label="Judging" className="overflow-x-auto">
+      <nav aria-label="Judging" className="flex overflow-x-auto">
           <TabsList aria-label="Judging sections">
             {JUDGING_DESTINATIONS.map((destination) => (
               <TabsTrigger

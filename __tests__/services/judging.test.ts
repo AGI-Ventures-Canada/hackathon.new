@@ -2897,9 +2897,26 @@ describe("Judging Service", () => {
   })
 
   describe("isJudgingOpenForHackathon", () => {
+    it.each(["active", "judging"])("blocks an unready scheduled %s event even in a judging phase", async (status) => {
+      setMockFromImplementation(() => createChainableMock({ data: null, error: null }))
+      mockRpcCall("judging_window_is_open", mockSuccess(false))
+      expect(await isJudgingOpenForHackathon({ id: "h1", status, phase: "finals", judging_opens_at: "2026-09-05T12:00:00Z", judging_closes_at: "2026-09-08T12:00:00Z" })).toBe(false)
+    })
+
+    it("checks active round readiness when the event has no judging dates", async () => {
+      setMockFromImplementation(() => createChainableMock({ data: { id: "r1", opens_at: "2026-09-05T12:00:00Z", closes_at: "2026-09-08T12:00:00Z" }, error: null }))
+      mockRpcCall("judging_window_is_open", mockSuccess(false))
+      expect(await isJudgingOpenForHackathon({ id: "h1", status: "active", phase: "finals" })).toBe(false)
+    })
+
+    it("allows a ready declared window after the event ended", async () => {
+      setMockFromImplementation(() => createChainableMock({ data: null, error: null }))
+      mockRpcCall("judging_window_is_open", mockSuccess(true))
+      expect(await isJudgingOpenForHackathon({ id: "h1", status: "judging", judging_opens_at: "2026-09-05T12:00:00Z", judging_closes_at: "2026-09-08T12:00:00Z" })).toBe(true)
+    })
     it("opens access for the stored judging stage", async () => {
       setMockFromImplementation(() =>
-        createChainableMock({ data: null, error: { message: "offline" } }),
+        createChainableMock({ data: null, error: null }),
       )
 
       await expect(isJudgingOpenForHackathon({

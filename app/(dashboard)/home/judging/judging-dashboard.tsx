@@ -68,16 +68,11 @@ export function JudgingDashboard({ hackathons, judgeStats, showHeader = true }: 
     const past: Hackathon[] = []
 
     for (const h of hackathons) {
-      if (PAST_STATUSES.includes(h.status)) {
+      const s = statsMap.get(h.id)
+      if (PAST_STATUSES.includes(h.status) || s?.judgingClosed || (s && s.totalAssignments > 0 && s.completedAssignments === s.totalAssignments)) {
         past.push(h)
-      } else if (JUDGING_ACTIVE.includes(h.status)) {
-        const s = statsMap.get(h.id)
-        const ready = h.status === "judging" || h.phase === "preliminaries" || h.phase === "finals" || s?.hasActiveRound || s?.actionableAssignments === undefined
-        if (ready && s && (s.actionableAssignments ?? s.totalAssignments - s.completedAssignments) > 0) {
-          needsAction.push(h)
-        } else {
-          upcoming.push(h)
-        }
+      } else if (s && (s.actionableAssignments ?? (JUDGING_ACTIVE.includes(h.status) ? s.totalAssignments - s.completedAssignments : 0)) > 0) {
+        needsAction.push(h)
       } else {
         upcoming.push(h)
       }
@@ -158,7 +153,7 @@ export function JudgingDashboard({ hackathons, judgeStats, showHeader = true }: 
               <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-75" />
               <span className="relative inline-flex size-2 rounded-full bg-primary" />
             </span>
-            <h2 className="text-sm font-semibold">Pending reviews</h2>
+            <h2 className="text-sm font-semibold">Ready to review</h2>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             {needsAction.map((h) => {
@@ -193,7 +188,7 @@ export function JudgingDashboard({ hackathons, judgeStats, showHeader = true }: 
       {upcoming.length > 0 && (
         <Collapsible defaultOpen>
           <CollapsibleTrigger className="mb-3 flex w-full items-center gap-2 text-left group">
-            <h2 className="text-sm font-medium text-muted-foreground">Waiting or caught up</h2>
+            <h2 className="text-sm font-medium text-muted-foreground">Coming up</h2>
             <span className="text-xs text-muted-foreground tabular-nums">{upcoming.length}</span>
             <ChevronDown className="ml-auto size-4 text-muted-foreground transition-transform group-data-[state=closed]:-rotate-90" />
           </CollapsibleTrigger>
@@ -230,7 +225,7 @@ export function JudgingDashboard({ hackathons, judgeStats, showHeader = true }: 
       {past.length > 0 && (
         <Collapsible>
           <CollapsibleTrigger className="mb-3 flex w-full items-center gap-2 text-left group">
-            <h2 className="text-sm font-medium text-muted-foreground">Past events</h2>
+            <h2 className="text-sm font-medium text-muted-foreground">Finished</h2>
             <span className="text-xs text-muted-foreground tabular-nums">{past.length}</span>
             <ChevronDown className="ml-auto size-4 text-muted-foreground transition-transform group-data-[state=closed]:-rotate-90" />
           </CollapsibleTrigger>

@@ -46,6 +46,7 @@ export function JudgingOrganizerWorkspace({
       )
       setSetup({ source: initialSetup, value: data.setup })
       setNotice("Saved. Choose your next task below.")
+      window.dispatchEvent(new Event("judging-progress-changed"))
       router.refresh()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Couldn't refresh judging.")

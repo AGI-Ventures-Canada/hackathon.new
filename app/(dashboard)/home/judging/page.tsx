@@ -38,7 +38,7 @@ async function JudgingContent({ userId }: { userId: string }) {
 
   return (
     <div className="space-y-6">
-    {invitations.length > 0 && <section aria-label="Judging invitations" className="space-y-3"><h2 className="text-lg font-semibold">You&apos;re invited to judge</h2><div className="grid gap-4 sm:grid-cols-2">{invitations.map((invitation) => <Card key={invitation.id}><CardHeader><CardTitle>{invitation.eventName}</CardTitle></CardHeader><CardContent><div className="space-y-3"><p className="text-sm text-muted-foreground">Sent to {invitation.email}</p><Button asChild><Link href={`/judge-invite/${invitation.token}`}>Review invitation</Link></Button></div></CardContent></Card>)}</div></section>}
+    {invitations.length > 0 && <section aria-label="Judging invitations" className="space-y-3"><h2 className="text-lg font-semibold">Invitations</h2><div className="grid gap-4 sm:grid-cols-2">{invitations.map((invitation) => <Card key={invitation.id}><CardHeader><CardTitle>{invitation.eventName}</CardTitle></CardHeader><CardContent><div className="space-y-3"><p className="text-sm text-muted-foreground">Sent to {invitation.email}</p><Button asChild><Link href={`/judge-invite/${invitation.token}`}>Review invitation</Link></Button></div></CardContent></Card>)}</div></section>}
     <JudgingDashboard
       hackathons={hackathons}
       judgeStats={serializedStats}

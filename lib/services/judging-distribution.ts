@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto"
 import { resolveClerkUsers } from "@/lib/services/clerk-users"
 import { supabase } from "@/lib/db/client"
 import { canJudgePrize, planJudgingDistribution, type DistributionSnapshot, type JudgingDistributionPreview } from "@/lib/judging/distribution-planner"
+import { reconcileJudgingAfterMutation } from "@/lib/services/judging-notification-events"
 
 export type { JudgingDistributionPreview } from "@/lib/judging/distribution-planner"
 
@@ -25,12 +26,16 @@ export async function applyJudgingDistribution(hackathonId: string, input: { tar
   const client = supabase() as unknown as SupabaseClient
   const { data: receipt, error: receiptError } = await client.rpc("get_judging_distribution_receipt", { p_hackathon_id: hackathonId, p_request_key: input.requestKey, p_expected_version: input.expectedVersion, p_target: input.targetReviewsPerProject })
   if (receiptError) throw new Error(receiptError.message)
-  if (receipt) return receipt
+  if (receipt) {
+    await reconcileJudgingAfterMutation(hackathonId)
+    return receipt
+  }
   const preview = await getJudgingDistributionPreview(hackathonId, input)
   if (preview.version !== input.expectedVersion) throw new Error("Judging changed. Review the assignments again.")
   if (preview.coverage.some((pair) => pair.assigned + pair.planned === 0)) throw new JudgingCoverageError()
   const { data, error } = await client.rpc("apply_judging_distribution", { p_hackathon_id: hackathonId, p_expected_version: input.expectedVersion, p_request_key: input.requestKey, p_target: input.targetReviewsPerProject, p_assignments: preview.assignments, p_summary: { coverage: preview.coverage, warnings: preview.warnings } })
   if (error || !data) throw new Error(error?.message ?? "We couldn't assign these projects.")
+  await reconcileJudgingAfterMutation(hackathonId)
   return { ...(data as { createdAssignments: number; createdCoverage: number; version: string }), coverage: preview.coverage, warnings: preview.warnings }
 }
 
@@ -55,6 +60,7 @@ export async function distributePrizeJudges(hackathonId: string, prizeId: string
   if (!assignments.length) return { assignedCount: 0 }
   const applied = await client.rpc("apply_judging_distribution", { p_hackathon_id: hackathonId, p_expected_version: snapshot.version, p_request_key: randomUUID(), p_target: target, p_assignments: assignments, p_summary: { coverage: [], warnings: preview.warnings } })
   if (applied.error || !applied.data) throw new Error(applied.error?.message ?? "We couldn't assign these projects.")
+  await reconcileJudgingAfterMutation(hackathonId)
   return { assignedCount: Number(applied.data.createdAssignments) }
 }
 
@@ -110,6 +116,7 @@ export async function deleteJudgingAssignment(hackathonId: string, assignmentId:
   const client = supabase() as unknown as SupabaseClient
   const { data, error } = await client.from("judge_assignments").delete().eq("id", assignmentId).eq("hackathon_id", hackathonId).select("id")
   if (error) throw new Error(error.message.includes("judging_rules_locked") ? "This review has been submitted. Start a new round to change assignments." : "We couldn't remove this project.")
+  if (data?.length) await reconcileJudgingAfterMutation(hackathonId)
   return { removed: !!data?.length }
 }
 
@@ -141,6 +148,7 @@ export async function saveJudgeAssignmentScope(hackathonId: string, judgeId: str
   const client = supabase() as unknown as SupabaseClient
   const { error } = await client.rpc("save_judging_judge_scope", { p_hackathon_id: hackathonId, p_judge_id: judgeId, p_expected_version: input.expectedVersion, p_prize_scope: input.prizeScope, p_prize_ids: input.prizeIds, p_room_ids: input.roomIds })
   if (error) throw new Error(error.message)
+  await reconcileJudgingAfterMutation(hackathonId)
   return getJudgeAssignmentOptions(hackathonId, judgeId)
 }
 
@@ -155,11 +163,13 @@ export async function assignJudgeToPrizeProject(hackathonId: string, judgeId: st
   if (snapshot.closed || !judge || !project || !prize || !["gate_check", "bucket_sort"].includes(prize.style ?? "") || !canJudgePrize(judge, project, prize)) return { success: false, error: "This project isn't available for this judge and prize." }
   if (snapshot.assignments.some((assignment) => assignment.judgeId === judgeId && assignment.projectId === projectId && assignment.prizeId === prizeId)) return { success: true, alreadyAssigned: true }
   const result = await client.rpc("apply_judging_distribution", { p_hackathon_id: hackathonId, p_expected_version: snapshot.version, p_request_key: randomUUID(), p_target: 1, p_assignments: [{ judgeId, projectId, prizeId, roundId: prize.roundId, kind: "per_prize", prizeIds: [prizeId] }], p_summary: { coverage: [], warnings: [] } })
+  if (!result.error) await reconcileJudgingAfterMutation(hackathonId)
   return result.error ? { success: false, error: result.error.message } : { success: true, alreadyAssigned: false }
 }
 
 export async function unassignJudgeFromPrizeProject(hackathonId: string, judgeId: string, projectId: string, prizeId: string): Promise<{ success: boolean; removed?: boolean; error?: string }> {
   const client = supabase() as unknown as SupabaseClient
   const { data, error } = await client.from("judge_assignments").delete().eq("hackathon_id", hackathonId).eq("judge_participant_id", judgeId).eq("submission_id", projectId).eq("prize_id", prizeId).select("id")
+  if (!error && data?.length) await reconcileJudgingAfterMutation(hackathonId)
   return error ? { success: false, error: "Submitted reviews stay saved. Remove only projects that haven't been submitted." } : { success: true, removed: !!data?.length }
 }

@@ -8,6 +8,7 @@ import { consumeDeliverySlot, type DeliveryBudget } from "@/lib/services/deliver
 import { logJudgingDatabaseError } from "@/lib/services/judging-diagnostics"
 import type { HackathonStatus } from "@/lib/db/hackathon-types"
 import { getEffectiveStatusAt } from "@/lib/utils/timeline"
+import { isJudgingWindowOpen } from "@/lib/services/judging-readiness"
 
 export type JudgingNotificationKind = "preparation" | "work_ready" | "work_added" | "scores_due" | "deadline_changed" | "all_done" | "organizer_readiness" | "organizer_progress" | "daily_digest" | "manual_reminder"
 export type JudgingNotificationPreferences = {
@@ -33,6 +34,7 @@ export type JudgingNotification = {
   action_path: string
   metadata: { deadline?: string; opensAt?: string; assignmentIds?: string[]; urgency?: "normal" | "urgent" }
   scheduled_for: string
+  next_attempt_at?: string | null
   email_required: boolean
   email_sent_at: string | null
   read_at: string | null
@@ -52,6 +54,10 @@ const HOUR = 3_600_000
 const db = () => getSupabase() as unknown as SupabaseClient
 const fingerprint = (value: string) => createHash("sha256").update(value).digest("hex").slice(0, 32)
 const eventColumns = "id,name,slug,status,phase,starts_at,ends_at,tenant_id,is_test_event,results_published_at,judging_opens_at,judging_closes_at,judging_timezone,judging_reminders_enabled"
+
+function organizerReadinessDue(window: ReturnType<typeof resolveJudgingWindow>, scheduledWindowOpen: boolean | null, now: Date): boolean {
+  return (window.state === "open" && scheduledWindowOpen === false) || (window.state === "upcoming" && !!window.opensAt && Date.parse(window.opensAt) - now.getTime() <= 24 * HOUR)
+}
 
 export function notificationLocalClock(now: Date, timezone: string) {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" }).formatToParts(now)
@@ -136,7 +142,9 @@ async function loadContext(hackathonId: string, now: Date = new Date()) {
     ...rawEvent,
     status: getEffectiveStatusAt({ ...rawEvent, starts_at: rawEvent.starts_at ?? null, ends_at: rawEvent.ends_at ?? null }, now),
   } : null
-  return { event: currentEvent, judges: people, assignments: work, rounds: (rounds.data ?? []) as Round[] }
+  const configured = currentEvent && resolveJudgingWindow(currentEvent, active, now).state !== "unscheduled"
+  const scheduledWindowOpen = configured ? await isJudgingWindowOpen(hackathonId, active?.id ?? null) : null
+  return { event: currentEvent, judges: people, assignments: work, rounds: (rounds.data ?? []) as Round[], scheduledWindowOpen }
 }
 
 function reviewCount(assignments: Assignment[]): number {
@@ -168,7 +176,7 @@ async function enqueue(input: Omit<JudgingNotification, "id" | "email_sent_at" |
 }
 
 export async function reconcileJudgingNotifications(hackathonId: string, now: Date = new Date()): Promise<void> {
-  const { event, judges, assignments, rounds } = await loadContext(hackathonId, now)
+  const { event, judges, assignments, rounds, scheduledWindowOpen } = await loadContext(hackathonId, now)
   if (!event) return
   if (event.is_test_event || event.status === "draft") return
   const client = db()
@@ -189,8 +197,8 @@ export async function reconcileJudgingNotifications(hackathonId: string, now: Da
     const roundId = activeRound?.id ?? null
     const recipientPrevious = previous.filter((item) => item.clerk_user_id === judge.clerk_user_id && item.round_id === roundId)
     const base = { hackathon_id: hackathonId, clerk_user_id: judge.clerk_user_id, round_id: roundId, action_path: `/e/${event.slug}/judge`, email_required: event.judging_reminders_enabled, metadata: { deadline: window.closesAt ?? undefined }, scheduled_for: now.toISOString() }
-    const emit = (kind: JudgingNotificationKind, identity: string, title: string, body: string, extra: { metadata?: JudgingNotification["metadata"]; scheduled_for?: string; email_required?: boolean } = {}) => enqueue({ ...base, kind, identity: `${roundId ?? "event"}/${identity}`, title, body, ...extra })
-    const opened = ["active", "judging"].includes(event.status) && (window.state === "open" || (window.state === "unscheduled" && (event.status === "judging" || !!activeRound || ["preliminaries", "finals"].includes(event.phase ?? ""))))
+    const emit = (kind: JudgingNotificationKind, identity: string, title: string, body: string, extra: { metadata?: JudgingNotification["metadata"]; scheduled_for?: string; next_attempt_at?: string; email_required?: boolean } = {}) => enqueue({ ...base, kind, identity: `${roundId ?? "event"}/${identity}`, title, body, ...extra })
+    const opened = scheduledWindowOpen !== false && ["active", "judging"].includes(event.status) && (window.state === "open" || (window.state === "unscheduled" && (event.status === "judging" || !!activeRound || ["preliminaries", "finals"].includes(event.phase ?? ""))))
     if (window.opensAt && window.state === "upcoming" && Date.parse(window.opensAt) - now.getTime() <= 24 * HOUR) {
       await emit("preparation", window.opensAt, "You're judging soon", "Check your judging page before scoring opens.", { metadata: { ...base.metadata, opensAt: window.opensAt } })
     }
@@ -199,7 +207,20 @@ export async function reconcileJudgingNotifications(hackathonId: string, now: Da
       const priorReady = recipientPrevious.find((item) => item.kind === "work_ready" || item.kind === "work_added")
       const added = ids.some((id) => !priorReady?.metadata.assignmentIds?.includes(id))
       if (!priorReady || added) {
-        await emit(priorReady ? "work_added" : "work_ready", fingerprint(ids.join(",")), priorReady ? "More projects to judge" : "Your projects are ready", `You have ${reviewCount(pending)} ${reviewCount(pending) === 1 ? "review" : "reviews"} left to finish.`, { metadata: { ...base.metadata, assignmentIds: ids }, scheduled_for: new Date(now.getTime() + (priorReady ? 15 * 60_000 : 0)).toISOString() })
+        await emit(priorReady ? "work_added" : "work_ready", fingerprint(ids.join(",")), priorReady ? "More projects to judge" : "Your projects are ready", `You have ${reviewCount(pending)} ${reviewCount(pending) === 1 ? "review" : "reviews"} left to finish.`, { metadata: { ...base.metadata, assignmentIds: ids }, ...(priorReady ? { next_attempt_at: new Date(now.getTime() + 15 * 60_000).toISOString() } : {}) })
+      }
+      const body = `You have ${reviewCount(pending)} ${reviewCount(pending) === 1 ? "review" : "reviews"} left to finish.`
+      for (const notice of recipientPrevious.filter((item) => !item.resolved_at && ["work_ready", "work_added"].includes(item.kind))) {
+        const title = notice.kind === "work_ready" ? "Your projects are ready" : "More projects to judge"
+        if (notice.title !== title) {
+          const restored = await client.from("judging_notifications").update({ title, body, read_at: null }).eq("id", notice.id)
+          if (restored.error) throw new Error("Could not update your judging status.")
+        }
+      }
+      const countsToRefresh = recipientPrevious.filter((item) => !item.resolved_at && ["work_ready", "work_added", "scores_due", "daily_digest", "manual_reminder"].includes(item.kind) && item.body !== body).map((item) => item.id)
+      if (countsToRefresh.length) {
+        const refreshed = await client.from("judging_notifications").update({ body }).in("id", countsToRefresh)
+        if (refreshed.error) throw new Error("Could not update your remaining reviews.")
       }
       if (window.closesAt) {
         const remaining = Date.parse(window.closesAt) - now.getTime()
@@ -212,6 +233,13 @@ export async function reconcileJudgingNotifications(hackathonId: string, now: Da
       const clock = notificationLocalClock(now, timezone)
       if (preferences.daily_digest && clock.hour >= 9 && window.opensAt && window.closesAt && Date.parse(window.closesAt) - Date.parse(window.opensAt) > 48 * HOUR) {
         await emit("daily_digest", clock.date, "Your judging today", `You have ${reviewCount(pending)} ${reviewCount(pending) === 1 ? "review" : "reviews"} left to finish.`)
+      }
+    }
+    if (window.state === "open" && scheduledWindowOpen === false && pending.length) {
+      const pausedIds = recipientPrevious.filter((item) => !item.resolved_at && ["work_ready", "work_added"].includes(item.kind) && item.title !== "Judging is on hold").map((item) => item.id)
+      if (pausedIds.length) {
+        const paused = await client.from("judging_notifications").update({ title: "Judging is on hold", body: "Your organizer is finishing setup. We'll let you know when judging opens.", read_at: null }).in("id", pausedIds)
+        if (paused.error) throw new Error("Could not update your judging status.")
       }
     }
     const priorDeadline = recipientPrevious.find((item) => item.metadata.deadline)
@@ -237,32 +265,38 @@ export async function reconcileJudgingNotifications(hackathonId: string, now: Da
   }
   const window = resolveJudgingWindow(event, activeRound, now)
   const pendingCount = judges.filter((judge) => judge.role === "judge").reduce((sum, judge) => sum + reviewCount(assignments.filter((item) => item.judge_participant_id === judge.id)), 0)
-  const readinessDue = window.opensAt && window.state === "upcoming" && Date.parse(window.opensAt) - now.getTime() <= 24 * HOUR
+  const blockedOpening = window.state === "open" && scheduledWindowOpen === false
+  const readinessDue = organizerReadinessDue(window, scheduledWindowOpen, now)
+  const staleReadinessIds = previous.filter((item) => item.kind === "organizer_readiness" && !item.resolved_at && (!readinessDue || item.metadata.opensAt !== window.opensAt || item.metadata.deadline !== window.closesAt || (blockedOpening && item.identity.endsWith("/24h")))).map((item) => item.id)
+  if (staleReadinessIds.length) {
+    const resolved = await client.from("judging_notifications").update({ resolved_at: now.toISOString() }).in("id", staleReadinessIds)
+    if (resolved.error) throw new Error("Could not update judging setup reminders.")
+  }
   const progressDue = pendingCount > 0 && (event.status === "judging" || !!activeRound) && !["upcoming", "invalid"].includes(window.state)
   if (readinessDue || progressDue) {
     const { getOrganizerTaskBoard } = await import("@/lib/services/organizer-action-items")
     const tasks = await getOrganizerTaskBoard(hackathonId, { state: "pending", limit: 100 })
     const relevant = tasks.items.filter((item) => /judg|prize|scor|round|assign/i.test(item.label))
-    if (progressDue || relevant.length) {
+    if (blockedOpening || progressDue || relevant.length) {
       const clock = notificationLocalClock(now, event.judging_timezone ?? "UTC")
       const expired = window.state === "closed"
       for (const userId of await organizerUserIds(event, judges)) {
         const kind = readinessDue ? "organizer_readiness" as const : "organizer_progress" as const
         if (!readinessDue && !expired && clock.hour < 9) continue
-        await enqueue({ hackathon_id: hackathonId, clerk_user_id: userId, round_id: activeRound?.id ?? null, kind, identity: readinessDue ? `${window.opensAt}/24h` : expired ? `${window.closesAt}/closed` : `${clock.date}/daily`, title: readinessDue ? "Get judging ready" : expired ? "Judging closed with work left" : "Judging needs a look", body: readinessDue ? relevant.slice(0, 3).map((item) => item.label).join(". ") : `${pendingCount} ${pendingCount === 1 ? "review still needs" : "reviews still need"} scores.`, action_path: `/e/${event.slug}/manage/judging`, metadata: { deadline: window.closesAt ?? undefined, ...(readinessDue ? { opensAt: window.opensAt ?? undefined } : {}) }, scheduled_for: now.toISOString(), email_required: event.judging_reminders_enabled })
+        await enqueue({ hackathon_id: hackathonId, clerk_user_id: userId, round_id: activeRound?.id ?? null, kind, identity: readinessDue ? `${window.opensAt}/${window.closesAt}/${blockedOpening ? "blocked" : "24h"}` : expired ? `${window.closesAt}/closed` : `${clock.date}/daily`, title: blockedOpening ? "Finish setup to open judging" : readinessDue ? "Get judging ready" : expired ? "Judging closed with work left" : "Judging needs a look", body: readinessDue ? relevant.slice(0, 3).map((item) => item.label).join(". ") || "Check your judging setup so judges can start." : `${pendingCount} ${pendingCount === 1 ? "review still needs" : "reviews still need"} scores.`, action_path: `/e/${event.slug}/manage/judging`, metadata: { deadline: window.closesAt ?? undefined, ...(readinessDue ? { opensAt: window.opensAt ?? undefined } : {}) }, scheduled_for: now.toISOString(), email_required: event.judging_reminders_enabled })
       }
     }
   }
 }
 
 export async function queueJudgeWorkReminder(hackathonId: string, userId: string, preview = false): Promise<{ outcome: "ready" | "reminded" | "cooldown" | "blocked"; delivery?: "queued"; message: string }> {
-  const { event, judges, assignments, rounds } = await loadContext(hackathonId)
+  const { event, judges, assignments, rounds, scheduledWindowOpen } = await loadContext(hackathonId)
   const judge = judges.find((person) => person.clerk_user_id === userId && person.role === "judge")
   const round = rounds.find((item) => item.status === "active")
   const pending = assignments.filter((item) => item.judge_participant_id === judge?.id && !item.is_complete && (!item.round_id || item.round_id === round?.id))
   if (!event || !judge || event.is_test_event || ["draft", "completed", "archived"].includes(event.status) || event.results_published_at) return { outcome: "blocked", message: "This judge can't be reminded right now." }
   const window = resolveJudgingWindow(event, round)
-  const open = ["active", "judging"].includes(event.status) && (window.state === "open" || (window.state === "unscheduled" && (event.status === "judging" || !!round || ["preliminaries", "finals"].includes(event.phase ?? ""))))
+  const open = scheduledWindowOpen !== false && ["active", "judging"].includes(event.status) && (window.state === "open" || (window.state === "unscheduled" && (event.status === "judging" || !!round || ["preliminaries", "finals"].includes(event.phase ?? ""))))
   if (!pending.length || !open) return { outcome: "blocked", message: pending.length ? "Judging isn't open right now." : "This judge has no reviews left." }
   const preferences = await getJudgingNotificationPreferences(hackathonId, userId)
   if (!event.judging_reminders_enabled || (!preferences.email_enabled && !preferences.in_app_enabled)) return { outcome: "blocked", message: "This judge has turned off judging reminders." }
@@ -299,17 +333,19 @@ async function recheckJudgingDelivery(notification: JudgingNotification): Promis
   const window = resolveJudgingWindow(event, round, now)
   if (notification.metadata.deadline && notification.metadata.deadline !== window.closesAt) return { outcome: "suppress", resolve: true }
   const pending = assignments.filter((assignment) => !assignment.is_complete && assignment.judge_participant_id === recipient?.id && (!assignment.round_id || assignment.round_id === notification.round_id))
-  const open = ["active", "judging"].includes(event.status) && (window.state === "open" || (window.state === "unscheduled" && (event.status === "judging" || round?.status === "active" || ["preliminaries", "finals"].includes(event.phase ?? ""))))
+  const open = context.scheduledWindowOpen !== false && ["active", "judging"].includes(event.status) && (window.state === "open" || (window.state === "unscheduled" && (event.status === "judging" || round?.status === "active" || ["preliminaries", "finals"].includes(event.phase ?? ""))))
+  if (context.scheduledWindowOpen === false && window.state === "open" && pending.length && ["work_ready", "work_added", "scores_due", "daily_digest", "manual_reminder"].includes(notification.kind)) return { outcome: "defer" }
   if (["work_ready", "work_added", "scores_due", "daily_digest", "manual_reminder"].includes(notification.kind) && (!pending.length || !open)) return { outcome: "suppress", resolve: true }
   if (notification.kind === "daily_digest" && !preferences.daily_digest) return { outcome: "suppress", resolve: true }
   if (notification.kind === "deadline_changed" && (!pending.length || ["closed", "invalid"].includes(window.state))) return { outcome: "suppress", resolve: true }
   if (notification.kind === "scores_due" && notification.metadata.urgency !== "urgent" && window.closesAt && Date.parse(window.closesAt) - now.getTime() <= HOUR) return { outcome: "suppress", resolve: true }
-  if (["preparation", "organizer_readiness"].includes(notification.kind) && (window.state !== "upcoming" || !window.opensAt || notification.metadata.opensAt !== window.opensAt || Date.parse(window.opensAt) - now.getTime() > 24 * HOUR)) return { outcome: "suppress", resolve: true }
+  if (notification.kind === "preparation" && (window.state !== "upcoming" || !window.opensAt || notification.metadata.opensAt !== window.opensAt || Date.parse(window.opensAt) - now.getTime() > 24 * HOUR)) return { outcome: "suppress", resolve: true }
   if (notification.kind === "organizer_progress" && (["upcoming", "invalid"].includes(window.state) || !assignments.some((assignment) => !assignment.is_complete))) return { outcome: "suppress", resolve: true }
   if (notification.kind === "organizer_readiness") {
+    if (!organizerReadinessDue(window, context.scheduledWindowOpen, now) || notification.metadata.opensAt !== window.opensAt) return { outcome: "suppress", resolve: true }
     const { getOrganizerTaskBoard } = await import("@/lib/services/organizer-action-items")
     const tasks = await getOrganizerTaskBoard(event.id, { state: "pending", limit: 100 })
-    if (!tasks.items.some((item) => /judg|prize|scor|round|assign/i.test(item.label))) return { outcome: "suppress", resolve: true }
+    if (window.state !== "open" && !tasks.items.some((item) => /judg|prize|scor|round|assign/i.test(item.label))) return { outcome: "suppress", resolve: true }
   }
   const urgent = notification.metadata.urgency === "urgent" || (["work_ready", "work_added"].includes(notification.kind) && !!window.closesAt && Date.parse(window.closesAt) - now.getTime() <= HOUR)
   const clock = notificationLocalClock(now, preferences.timezone ?? event.judging_timezone ?? "UTC")
@@ -360,7 +396,7 @@ export async function processJudgingNotifications(budget?: DeliveryBudget): Prom
     for (const notification of (data ?? []) as JudgingNotification[]) {
       if (!consumeDeliverySlot(budget)) break
       try {
-        const { event, judges, assignments, rounds } = await loadContext(notification.hackathon_id)
+        const { event, judges, assignments, rounds, scheduledWindowOpen } = await loadContext(notification.hackathon_id)
         const preferences = await getJudgingNotificationPreferences(notification.hackathon_id, notification.clerk_user_id)
         const organizer = notification.kind.startsWith("organizer_")
         const recipient = judges.find((judge) => judge.clerk_user_id === notification.clerk_user_id && judge.role === "judge" && judge.judging_scope_ready !== false)
@@ -368,7 +404,7 @@ export async function processJudgingNotifications(budget?: DeliveryBudget): Prom
         const round = rounds.find((item) => item.id === notification.round_id)
         const window = event ? resolveJudgingWindow(event, round, now) : null
         const pending = assignments.filter((assignment) => !assignment.is_complete && assignment.judge_participant_id === recipient?.id && (!assignment.round_id || assignment.round_id === notification.round_id))
-        const judgingOpen = !!event && ["active", "judging"].includes(event.status) && (window?.state === "open" || (window?.state === "unscheduled" && (event.status === "judging" || round?.status === "active" || ["preliminaries", "finals"].includes(event.phase ?? ""))))
+        const judgingOpen = !!event && scheduledWindowOpen !== false && ["active", "judging"].includes(event.status) && (window?.state === "open" || (window?.state === "unscheduled" && (event.status === "judging" || round?.status === "active" || ["preliminaries", "finals"].includes(event.phase ?? ""))))
         let actionable = organizer || !["work_ready", "work_added", "scores_due", "daily_digest", "manual_reminder"].includes(notification.kind) || (pending.length > 0 && judgingOpen)
         if (notification.kind === "preparation") actionable = window?.state === "upcoming" && !!window.opensAt && notification.metadata.opensAt === window.opensAt && Date.parse(window.opensAt) - now.getTime() <= 24 * HOUR
         if (notification.kind === "scores_due" && notification.metadata.urgency !== "urgent" && window?.closesAt && Date.parse(window.closesAt) - now.getTime() <= HOUR) actionable = false
@@ -376,7 +412,7 @@ export async function processJudgingNotifications(budget?: DeliveryBudget): Prom
         if (notification.kind === "organizer_readiness" && event) {
           const { getOrganizerTaskBoard } = await import("@/lib/services/organizer-action-items")
           const tasks = await getOrganizerTaskBoard(event.id, { state: "pending", limit: 100 })
-          actionable = window?.state === "upcoming" && !!window.opensAt && notification.metadata.opensAt === window.opensAt && Date.parse(window.opensAt) - now.getTime() <= 24 * HOUR && tasks.items.some((item) => /judg|prize|scor|round|assign/i.test(item.label))
+          actionable = !!window && organizerReadinessDue(window, scheduledWindowOpen, now) && notification.metadata.opensAt === window.opensAt && (window.state === "open" || tasks.items.some((item) => /judg|prize|scor|round|assign/i.test(item.label)))
         }
         const validDeadline = !notification.metadata.deadline || notification.metadata.deadline === window?.closesAt
         if (notification.kind === "deadline_changed") actionable = pending.length > 0 && window?.state !== "closed"
@@ -390,6 +426,12 @@ export async function processJudgingNotifications(budget?: DeliveryBudget): Prom
           continue
         }
         const lifecycleClosed = event && (["completed", "archived"].includes(event.status) || !!event.results_published_at)
+        if (event && authorized && !lifecycleClosed && validRound && validDeadline && preferences.email_enabled && event.judging_reminders_enabled && scheduledWindowOpen === false && window?.state === "open" && pending.length && ["work_ready", "work_added", "scores_due", "daily_digest", "manual_reminder"].includes(notification.kind)) {
+          const deferred = await client.from("judging_notifications").update({ next_attempt_at: new Date(now.getTime() + 60_000).toISOString() }).eq("id", notification.id)
+          if (deferred.error) throw new Error("Could not wait for judging setup.")
+          counts.skipped++
+          continue
+        }
         if (!event || !authorized || lifecycleClosed || !actionable || !validDeadline || !preferences.email_enabled || !event.judging_reminders_enabled) {
           const { error: skippedError } = await client.from("judging_notifications").update({ email_required: false, ...(!event || lifecycleClosed || !authorized || !actionable || !validDeadline ? { resolved_at: now.toISOString() } : {}) }).eq("id", notification.id)
           if (skippedError) throw new Error("Could not record skipped reminder.")
@@ -418,7 +460,7 @@ export async function processJudgingNotifications(budget?: DeliveryBudget): Prom
         const organizerPending = organizer ? judges.filter((judge) => judge.role === "judge").reduce((sum, judge) => sum + reviewCount(assignments.filter((assignment) => assignment.judge_participant_id === judge.id)), 0) : 0
         const currentNotification = notification.kind === "organizer_progress"
           ? { ...notification, body: `${organizerPending} ${organizerPending === 1 ? "review still needs" : "reviews still need"} scores.` }
-          : ["work_ready", "work_added", "scores_due", "daily_digest", "manual_reminder"].includes(notification.kind) ? { ...notification, body: `You have ${reviewCount(pending)} ${reviewCount(pending) === 1 ? "review" : "reviews"} left to finish.` } : notification
+          : ["work_ready", "work_added", "scores_due", "daily_digest", "manual_reminder"].includes(notification.kind) ? { ...notification, title: notification.kind === "work_ready" ? "Your projects are ready" : notification.kind === "work_added" ? "More projects to judge" : notification.title, body: `You have ${reviewCount(pending)} ${reviewCount(pending) === 1 ? "review" : "reviews"} left to finish.` } : notification
         let interrupted: DeliveryGate | null = null
         const accepted = await sendJudgingUpdateEmail({ to, notification: currentNotification, eventName: event.name, timezone: preferences.timezone ?? event.judging_timezone ?? "UTC", beforeAttempt: async () => {
           const gate = await boundedDeliveryRecheck(notification, budget)

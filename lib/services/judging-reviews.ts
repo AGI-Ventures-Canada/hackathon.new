@@ -1,11 +1,12 @@
 import { supabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { getPublicHackathon } from "@/lib/services/public-hackathons"
-import { getAssignmentDetail, verifyAssignmentOwnership, assertAssignmentWritable, recalculateForAssignment, calculatePrizeResults } from "@/lib/services/judging"
+import { getAssignmentDetail, verifyAssignmentOwnership, assertAssignmentWritable, recalculateForAssignment, calculatePrizeResults, getActiveRoundFinalistIds } from "@/lib/services/judging"
 import { getAssignmentScoringScope } from "@/lib/services/judging-scope"
 import { withEventMutationLease } from "@/lib/services/event-mutation-lease"
 import { isValidUuid } from "@/lib/utils/uuid"
 import { reviewResponseSchema, validateReviewResponse, type ReviewResponse, type ReviewSnapshot, type ReviewProject } from "@/lib/utils/judging-review"
+import { reconcileJudgingAfterMutation } from "@/lib/services/judging-notification-events"
 
 export class JudgingReviewError extends Error {
   constructor(message: string, public code: string, public status = 400) { super(message) }
@@ -60,9 +61,13 @@ async function getReviewContext(slug: string, userId: string, target: ReviewTarg
     ])
     if ([prizeResult, assignmentsResult, picksResult, versionResult].some((result) => result.error)) throw new JudgingReviewError("We couldn't load your picks. Try again.", "unavailable", 503)
     if (!prizeResult.data || !assignmentsResult.data?.length) throw new JudgingReviewError("Review not found.", "not_found", 404)
+    const finalistIds = prizeResult.data.round_id ? null : await getActiveRoundFinalistIds(hackathon.id).catch(() => {
+      throw new JudgingReviewError("We couldn't load your picks. Try again.", "unavailable", 503)
+    })
+    const finalistPool = finalistIds === null ? null : new Set(finalistIds)
     const eligibleAssignments = assignmentsResult.data.filter((row) => {
       const project = Array.isArray(row.submission) ? row.submission[0] : row.submission
-      return project && (!judge.team_id || project.team_id !== judge.team_id)
+      return project && (!judge.team_id || project.team_id !== judge.team_id) && (!finalistPool || finalistPool.has(project.id))
     })
     if (!eligibleAssignments.length) throw new JudgingReviewError("No eligible projects are assigned to this review.", "not_found", 404)
     const projects: ReviewProject[] = eligibleAssignments.flatMap((row) => {
@@ -90,7 +95,7 @@ export async function saveJudgingReview(slug: string, userId: string, target: Re
   const validation = validateReviewResponse(parsed.data, snapshot, publish)
   if (validation) throw new JudgingReviewError(validation, "invalid_response")
   const client = supabase() as unknown as SupabaseClient
-  const { error } = await client.rpc("save_judging_review_atomic", {
+  const { data: savedRevision, error } = await client.rpc("save_judging_review_atomic", {
     p_hackathon_id: hackathonId, p_judge_id: snapshot.judgeId, p_clerk_user_id: userId,
     p_assignment_id: "assignmentId" in target ? target.assignmentId : null,
     p_prize_id: "prizeId" in target ? target.prizeId : null,
@@ -107,8 +112,26 @@ export async function saveJudgingReview(slug: string, userId: string, target: Re
       if ("assignmentId" in target) await recalculateForAssignment(target.assignmentId)
       else await calculatePrizeResults(hackathonId, target.prizeId)
     }).catch((error: unknown) => console.error("Review saved; results recalculation needs retry:", error))
+    await reconcileJudgingAfterMutation(hackathonId)
   }
-  return getJudgingReview(slug, userId, target)
+  const savedResponse = parsed.data
+  return {
+    ...snapshot,
+    revision: Number(savedRevision) === input.expectedRevision + 1 ? Number(savedRevision) : input.expectedRevision + 1,
+    response: savedResponse,
+    submitted: publish ? savedResponse : snapshot.submitted,
+    hasDraft: !publish,
+    draftCriteriaVersion: publish ? null : input.criteriaVersion,
+    isComplete: publish || snapshot.isComplete,
+    detail: publish && snapshot.detail ? {
+      ...snapshot.detail,
+      isComplete: true,
+      notes: savedResponse.notes,
+      criteria: savedResponse.kind === "weighted_score" ? snapshot.detail.criteria.map((criterion) => ({ ...criterion, currentScore: savedResponse.scores[criterion.id] ?? null })) : snapshot.detail.criteria,
+      existingBucketId: savedResponse.kind === "bucket_sort" ? savedResponse.bucketId : snapshot.detail.existingBucketId,
+      existingGateResponses: "gates" in savedResponse && savedResponse.gates ? Object.entries(savedResponse.gates).flatMap(([criteriaId, passed]) => typeof passed === "boolean" ? [{ criteriaId, passed }] : []) : snapshot.detail.existingGateResponses,
+    } : snapshot.detail,
+  }
 }
 
 type LegacyReviewResponse = { [Kind in ReviewResponse["kind"]]: Omit<Extract<ReviewResponse, {kind:Kind}>, "notes"> & {notes?:string} }[ReviewResponse["kind"]]

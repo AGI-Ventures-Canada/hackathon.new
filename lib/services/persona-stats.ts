@@ -2,8 +2,9 @@ import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { HackathonStatus, SponsorTier } from "@/lib/db/hackathon-types"
 import { countActionableJudgeReviews } from "@/lib/utils/judging-review-queue"
-import { canWriteJudgingWindow, type JudgingWindowEvent, type JudgingWindowRound } from "@/lib/utils/judging-window"
+import { canWriteJudgingWindow, resolveJudgingWindow, type JudgingWindowEvent, type JudgingWindowRound } from "@/lib/utils/judging-window"
 import { getEffectiveStatusAt } from "@/lib/utils/timeline"
+import { isJudgingWindowOpen } from "@/lib/services/judging-readiness"
 
 export type JudgeHackathonStats = {
   hackathonId: string
@@ -11,6 +12,7 @@ export type JudgeHackathonStats = {
   completedAssignments: number
   actionableAssignments?: number
   hasActiveRound?: boolean
+  judgingClosed?: boolean
 }
 
 export async function getBatchJudgeStats(
@@ -55,6 +57,9 @@ export async function getBatchJudgeStats(
   }]))
   const rounds = new Map((roundResult.data as StatsRound[] | null ?? []).map((round) => [round.id, round]))
   const activeRounds = new Map([...rounds.values()].filter((round) => round.status === "active").map((round) => [round.hackathon_id, round]))
+  const scheduledAccess = new Map(await Promise.all([...events.values()].filter((event) =>
+    resolveJudgingWindow(event, activeRounds.get(event.id), now).state !== "unscheduled",
+  ).map(async (event) => [event.id, await isJudgingWindowOpen(event.id, activeRounds.get(event.id)?.id ?? null)] as const)))
   const activeRoundIds = [...activeRounds.values()].map((round) => round.id)
   const { data: finalists } = activeRoundIds.length
     ? await client.from("round_submissions").select("round_id,submission_id").in("round_id", activeRoundIds)
@@ -74,6 +79,7 @@ export async function getBatchJudgeStats(
     const event = events.get(eventId)
     const activeRound = activeRounds.get(eventId)
     stats.hasActiveRound = Boolean(activeRound)
+    stats.judgingClosed = Boolean(event && (event.results_published_at || ["completed", "archived"].includes(event.status) || resolveJudgingWindow(event, activeRound, now).state === "closed"))
     const assignments = (assignmentResult.data ?? []).filter((assignment) => {
       if (assignment.hackathon_id !== eventId) return false
       if (visibleAssignmentIds.has(eventId) && !visibleAssignmentIds.get(eventId)?.has(assignment.id)) return false
@@ -89,14 +95,14 @@ export async function getBatchJudgeStats(
     stats.totalAssignments = countActionableJudgeReviews(reviews.map((review) => ({ ...review, isComplete: false })))
     stats.completedAssignments = stats.totalAssignments - countActionableJudgeReviews(reviews)
     const ready = event && !event.results_published_at && (event.status === "judging" || (event.status === "active" && (event.phase === "preliminaries" || event.phase === "finals" || activeRound || (event.judging_opens_at && event.judging_closes_at))))
-    stats.actionableAssignments = !event || !ready ? 0 : countActionableJudgeReviews(assignments.filter((assignment) => {
+    stats.actionableAssignments = !event || !ready || scheduledAccess.get(eventId) === false ? 0 : countActionableJudgeReviews(assignments.filter((assignment) => {
       const judge = participants.find((participant) => participant.id === assignment.judge_participant_id)
       if (judge?.judging_scope_ready === false) return false
       const round = assignment.round_id ? rounds.get(assignment.round_id) : undefined
       if (assignment.round_id && round?.status !== "active") return false
       const activeFinalists = activeRound ? finalistIds.get(activeRound.id) : undefined
       if (activeFinalists && !activeFinalists.has(assignment.submission_id)) return false
-      return canWriteJudgingWindow(event, round, now)
+      return canWriteJudgingWindow(event, round ?? activeRound, now)
     }).map(toReview))
   }
 

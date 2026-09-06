@@ -60,4 +60,17 @@ describe("judging inbox controls", () => {
     await screen.findByRole("button", { name: "Mark read" })
     expect(screen.getByRole("alert").textContent).toContain("Could not mark this update as read.")
   })
+
+  it("refreshes a mounted inbox immediately after judging changes and removes its listener on exit", async () => {
+    const view = render(<JudgingInbox hackathonId="event" />)
+    await screen.findByText("Your projects are ready")
+    fetchMock.mockImplementationOnce(() => Promise.resolve(json({ ...inbox, items: [{ ...inbox.items[0], title: "You're done", body: "All your reviews are saved." }] })))
+    await act(async () => { window.dispatchEvent(new Event("judging-progress-changed")) })
+    expect(screen.getByText("You're done")).toBeDefined()
+    expect(screen.queryByText("You have 2 reviews left.")).toBeNull()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    view.unmount()
+    window.dispatchEvent(new Event("judging-progress-changed"))
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
 })

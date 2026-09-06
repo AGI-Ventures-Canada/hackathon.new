@@ -30,7 +30,9 @@ export function JudgingInbox({ hackathonId }: { hackathonId: string }) {
   useEffect(() => {
     const frame = requestAnimationFrame(() => { void reload() })
     const interval = setInterval(() => { if (document.visibilityState === "visible") void reload() }, 60_000)
-    return () => { cancelAnimationFrame(frame); clearInterval(interval) }
+    const refresh = () => { void reload() }
+    window.addEventListener("judging-progress-changed", refresh)
+    return () => { cancelAnimationFrame(frame); clearInterval(interval); window.removeEventListener("judging-progress-changed", refresh) }
   }, [reload])
   const settings = useOptimisticMutation<{ next: Partial<JudgingNotificationPreferences>; previous: JudgingNotificationPreferences }, JudgingNotificationPreferences>({
     fn: ({ next }) => fetch(`${base}/notification-preferences`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(next) }).then(assertOkJson<JudgingNotificationPreferences>),

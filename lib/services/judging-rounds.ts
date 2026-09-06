@@ -1,5 +1,6 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { reconcileJudgingAfterMutation } from "@/lib/services/judging-notification-events"
 
 export type JudgingRound = {
   id: string
@@ -121,7 +122,7 @@ export async function activateRound(roundId: string, hackathonId: string): Promi
     console.error("Failed to activate round:", error)
     return false
   }
-
+  await reconcileJudgingAfterMutation(hackathonId)
   return true
 }
 

@@ -89,6 +89,31 @@ describe("judge autosave safety", () => {
     expect(requests).toEqual([{method:"PATCH",revision:0},{method:"POST",revision:1}])
     expect(result.current.snapshot?.isComplete).toBe(true)
   })
+  it("refreshes judging progress only after a successful publication", async () => {
+    const progressChanged = mock(() => {})
+    window.addEventListener("judging-progress-changed", progressChanged)
+    let failPublication = true
+    globalThis.fetch = mock((_url, init) => {
+      if (init?.method === "GET") return Promise.resolve(reply(base))
+      const body = JSON.parse(String(init?.body))
+      if (init?.method === "POST" && failPublication) return Promise.resolve(reply({ error: "Try again.", code: "save_failed" }, 503))
+      return Promise.resolve(reply({ ...base, revision: init?.method === "POST" ? 2 : 1, response: body.response, hasDraft: init?.method !== "POST", isComplete: init?.method === "POST" }))
+    }) as typeof fetch
+    try {
+      const { result } = renderHook(() => useJudgingReview("event", "project"))
+      await waitFor(() => expect(result.current.snapshot).not.toBeNull())
+      act(() => result.current.change(changeNotes("Final notes")))
+      await act(async () => { expect(await result.current.flush()).toBe(true) })
+      expect(progressChanged).not.toHaveBeenCalled()
+      await act(async () => { expect(await result.current.submit()).toBe(false) })
+      expect(progressChanged).not.toHaveBeenCalled()
+      failPublication = false
+      await act(async () => { expect(await result.current.submit()).toBe(true) })
+      expect(progressChanged).toHaveBeenCalledTimes(1)
+    } finally {
+      window.removeEventListener("judging-progress-changed", progressChanged)
+    }
+  })
   it("keeps a draft when judging closes without calling it a revision conflict", async () => {
     let open = true, writes = 0
     globalThis.fetch = mock((_url, init) => {

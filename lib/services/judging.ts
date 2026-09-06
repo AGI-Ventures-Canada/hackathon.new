@@ -1,4 +1,5 @@
 import { supabase as getSupabase } from "@/lib/db/client"
+import { reconcileJudgingAfterMutation, reconcileJudgingAfterRoundMutation } from "@/lib/services/judging-notification-events"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type {
   Prize,
@@ -8,6 +9,7 @@ import type {
   PrizeAssignmentMode,
 } from "@/lib/db/hackathon-types"
 import { canWriteJudgingWindow, resolveJudgingWindow } from "@/lib/utils/judging-window"
+import { isJudgingWindowOpen } from "@/lib/services/judging-readiness"
 import { getAssignmentScoringScope } from "@/lib/services/judging-scope"
 import { resolveClerkUsers } from "@/lib/services/clerk-users"
 
@@ -915,6 +917,7 @@ export async function updateRound(
     console.error("Failed to update round:", error)
     return false
   }
+  await reconcileJudgingAfterMutation(hackathonId)
   return true
 }
 
@@ -947,6 +950,7 @@ export async function deleteRound(
       code: "round_active",
     }
   }
+  await reconcileJudgingAfterMutation(hackathonId)
   return { success: true }
 }
 
@@ -1167,6 +1171,7 @@ export async function activateRound(roundId: string, hackathonId: string): Promi
     console.error("Failed to activate round:", error)
     return false
   }
+  await reconcileJudgingAfterMutation(hackathonId)
   return true
 }
 
@@ -1182,6 +1187,7 @@ export async function completeRound(roundId: string, hackathonId: string): Promi
     console.error("Failed to complete round:", error)
     return false
   }
+  await reconcileJudgingAfterMutation(hackathonId)
   return true
 }
 
@@ -1245,12 +1251,22 @@ export async function getActiveRoundId(hackathonId: string): Promise<string | nu
   return (data as { id: string } | null)?.id ?? null
 }
 
-// null = no scoping; caller falls back to full submitted pool.
 export async function getActiveRoundFinalistIds(hackathonId: string): Promise<string[] | null> {
-  const activeRoundId = await getActiveRoundId(hackathonId)
-  if (!activeRoundId) return null
-  const subs = await getRoundSubmissions(activeRoundId)
-  return subs.length > 0 ? subs : null
+  const client = getSupabase() as unknown as SupabaseClient
+  const { data: activeRound, error: roundError } = await client
+    .from("judging_rounds")
+    .select("id")
+    .eq("hackathon_id", hackathonId)
+    .eq("status", "active")
+    .maybeSingle()
+  if (roundError) throw new Error("The judging round could not be loaded. Try again.")
+  if (!activeRound) return null
+  const { data: projects, error: poolError } = await client
+    .from("round_submissions")
+    .select("submission_id")
+    .eq("round_id", activeRound.id)
+  if (poolError) throw new Error("The projects in this round could not be loaded. Try again.")
+  return projects?.length ? projects.map((project: { submission_id: string }) => project.submission_id) : null
 }
 
 async function getTeamIdsInRoom(client: SupabaseClient, roomId: string): Promise<string[]> {
@@ -1409,6 +1425,7 @@ export async function advanceSubmissions(
     return { advancedCount: 0 }
   }
 
+  await reconcileJudgingAfterMutation(hackathonId)
   return { advancedCount: submissionIds.length }
 }
 
@@ -1571,7 +1588,7 @@ export async function unadvanceSubmissions(
   if (error) {
     throw new Error(`Failed to unadvance submissions: ${error.message}`)
   }
-
+  if (data?.length) await reconcileJudgingAfterRoundMutation(toRoundId)
   return { removedCount: (data ?? []).length }
 }
 
@@ -1868,6 +1885,7 @@ export async function removeJudge(
     console.error("Failed to remove judge:", error)
     return { success: false }
   }
+  await reconcileJudgingAfterMutation(hackathonId)
   return { success: true, resultsStale: result.results_stale === true }
 }
 
@@ -1893,6 +1911,7 @@ export async function assignJudgeToPrize(
 
   if ((prize as { judging_style: string | null }).judging_style === "weighted_score") {
     const { error } = await client.rpc("set_judge_prize_scope_membership", { p_hackathon_id: hackathonId, p_prize_id: prizeId, p_judge_id: judgeParticipantId })
+    if (!error) await reconcileJudgingAfterMutation(hackathonId)
     return error ? { success: false, assignedCount: 0, error: error.message } : { success: true, assignedCount: 0 }
   }
 
@@ -1954,7 +1973,7 @@ export async function assignJudgeToPrize(
     console.error("[judging] Failed to create per-submission assignments:", error)
     return { success: false, assignedCount: 0, error: "Some projects are outside this judge's prizes or rooms. Use the project picker to choose eligible projects." }
   }
-
+  await reconcileJudgingAfterMutation(hackathonId)
   return { success: true, assignedCount: newAssignments.length }
 }
 
@@ -2024,23 +2043,22 @@ export type JudgingAccessHackathon = {
 export async function isJudgingOpenForHackathon(
   hackathon: JudgingAccessHackathon,
 ): Promise<boolean> {
-  if (hackathon.status === "judging") return true
-  if (hackathon.status !== "active") return false
-  if (hackathon.judging_opens_at && hackathon.judging_closes_at && canWriteJudgingWindow(hackathon)) return true
-  if (hackathon.phase === "preliminaries" || hackathon.phase === "finals") {
-    return true
-  }
+  if (!["active", "judging"].includes(hackathon.status)) return false
 
   const client = getSupabase() as unknown as SupabaseClient
   const { data, error } = await client
     .from("judging_rounds")
-    .select("id")
+    .select("id, opens_at, closes_at")
     .eq("hackathon_id", hackathon.id)
     .eq("status", "active")
     .limit(1)
     .maybeSingle()
 
-  return !error && data !== null
+  if (error) return false
+  if (hackathon.judging_opens_at || hackathon.judging_closes_at || data?.opens_at || data?.closes_at) {
+    return isJudgingWindowOpen(hackathon.id, data?.id ?? null)
+  }
+  return hackathon.status === "judging" || ["preliminaries", "finals"].includes(hackathon.phase ?? "") || data !== null
 }
 
 function toJudgeShape(value: unknown): { clerk_user_id: string; team_id: string | null } | null {
@@ -2068,10 +2086,12 @@ export async function assertAssignmentWritable(
   const client = getSupabase() as unknown as SupabaseClient
 
   if (!(await isJudgingOpenForHackathon(hackathon))) {
-    const upcoming = !["completed", "archived"].includes(hackathon.status) && resolveJudgingWindow(hackathon).state === "upcoming"
+    const { data: activeWindow } = await client.from("judging_rounds").select("opens_at,closes_at").eq("hackathon_id", hackathon.id).eq("status", "active").limit(1).maybeSingle()
+    const window = resolveJudgingWindow(hackathon, activeWindow)
+    const upcoming = !["completed", "archived"].includes(hackathon.status) && window.state === "upcoming"
     return {
       ok: false,
-      error: upcoming ? "Judging hasn't opened yet. Your assigned projects will be ready when it starts." : "Hackathon is not in judging phase",
+      error: upcoming ? "Judging hasn't opened yet. Your assigned projects will be ready when it starts." : window.state === "open" ? "Your organizer needs to finish judging setup before reviews can start." : window.state === "closed" ? "Judging is closed. Your saved work is safe." : "Hackathon is not in judging phase",
       code: "not_judging",
       status: 400,
     }
@@ -2178,6 +2198,9 @@ export async function assertAssignmentWritable(
       : state === "invalid" ? "The organizer needs to set the judging dates before you can score." : "Judging is closed. Your saved work is safe."
     return { ok: false, error, code: "judging_closed", status: 409 }
   }
+  if (resolveJudgingWindow(hackathon, roundWindow).state !== "unscheduled" && !(await isJudgingWindowOpen(hackathon.id, roundId))) {
+    return { ok: false, error: "Your organizer needs to finish judging setup before reviews can start.", code: "judging_closed", status: 409 }
+  }
 
   return {
     ok: true,
@@ -2211,7 +2234,7 @@ export async function clearAllJudgeAssignments(
     console.error("Failed to clear judge assignments:", error)
     return { success: false, removedCount: 0, resultsStale: false }
   }
-
+  await reconcileJudgingAfterMutation(hackathonId)
   return {
     success: true,
     removedCount: Number(result.removed_count ?? 0),
@@ -2237,6 +2260,7 @@ export async function removeJudgeFromPrize(
     return { removedCount: 0, error: error.message.includes("judging_rules_locked") ? "Submitted reviews keep this judge assigned to the prize." : "Could not remove this judge from the prize." }
   }
 
+  await reconcileJudgingAfterMutation(hackathonId)
   return { removedCount: Number(data ?? 0) }
 }
 
@@ -2343,6 +2367,7 @@ export async function autoAssignSubmissionToRoomJudges(input: {
     if (!eligibleRows.length) return { routed: false, reason: "no_eligible_prizes", assignedCount: 0 }
     const { error } = await client.from("judge_assignments").insert(eligibleRows)
     if (error) throw error
+    await reconcileJudgingAfterMutation(input.hackathonId)
     return { routed: true, assignedCount: eligibleRows.length }
   } catch (error) {
     console.error("Failed to route submission to room judges:", error)
@@ -2516,10 +2541,12 @@ export async function syncRoomSubmissionsToJudges(
       inserted += eligibleRows.length
     } catch (error) {
       console.error("Failed to bulk-insert room-routed judge assignments:", error)
+      if (inserted) await reconcileJudgingAfterMutation(hackathonId)
       return { submissionsProcessed: subs.length, totalAssignmentsCreated: inserted, reasonCounts }
     }
   }
 
+  if (inserted) await reconcileJudgingAfterMutation(hackathonId)
   return { submissionsProcessed: subs.length, totalAssignmentsCreated: inserted, reasonCounts }
 }
 
@@ -4246,7 +4273,7 @@ export async function assignWeightedScoreJudge(
     console.error("Failed to create unified assignments:", error)
     return { success: false, assignedCount: 0, error: error.message }
   }
-
+  await reconcileJudgingAfterMutation(hackathonId)
   return { success: true, assignedCount: newAssignments.length }
 }
 
@@ -4495,12 +4522,14 @@ export async function assignJudgeToSubmission(
 
   if (error) {
     if ((error as { code?: string }).code === "23505") {
+      await reconcileJudgingAfterMutation(hackathonId)
       return { success: true, alreadyAssigned: true }
     }
     console.error("Failed to assign judge to submission:", error)
     return { success: false, error: error.message }
   }
 
+  await reconcileJudgingAfterMutation(hackathonId)
   return { success: true, alreadyAssigned: false }
 }
 
@@ -4526,6 +4555,7 @@ export async function unassignJudgeFromSubmission(
     return { success: false, error: error.message }
   }
 
+  if (rows?.length) await reconcileJudgingAfterMutation(hackathonId)
   return { success: true, removed: (rows ?? []).length > 0 }
 }
 

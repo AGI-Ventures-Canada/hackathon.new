@@ -1,4 +1,5 @@
 import { getJudgingDistributionPreview } from "@/lib/services/judging-distribution"
+import { getConfiguredJudgingReadiness } from "@/lib/services/judging-readiness"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { supabase } from "@/lib/db/client"
 import { isValidUuid } from "@/lib/utils/uuid"
@@ -89,6 +90,7 @@ export async function getJudgingSetup(hackathonId: string): Promise<JudgingSetup
     throw new JudgingSetupError("unavailable", "We couldn't load judging settings. Try again.")
   if (!eventResult.data) throw new JudgingSetupError("not_found", "Event not found.")
   const event = eventResult.data as SetupEvent
+  const scheduledReadiness = await getConfiguredJudgingReadiness(hackathonId)
   const criteriaMap = await listPrizeCriteriaByPrizeIds(prizes.map((prize) => prize.id))
   const allCriteria = [
     ...coreCriteria.map((c) => ({
@@ -187,6 +189,17 @@ export async function getJudgingSetup(hackathonId: string): Promise<JudgingSetup
       editor: "judges",
       blocking: false,
     })
+  if (scheduledReadiness) {
+    const warnings = issues.filter((issue) => issue.blocking === false)
+    issues.splice(0, issues.length, ...scheduledReadiness.issues.map((message, index): JudgingSetupIssue => ({
+      code: `scheduled_readiness:${index}`,
+      message,
+      prizeId: prizes.find((prize) => message.endsWith(`${prize.name}.`))?.id,
+      editor: message.startsWith("Assign ") || message.startsWith("No projects") ? "assignments"
+        : message.includes("round") ? "rounds"
+        : message.startsWith("Pick how") ? "prizes" : "scorecard",
+    })), ...warnings)
+  }
   return {
     id: event.id,
     slug: event.slug,
@@ -216,7 +229,7 @@ export async function getJudgingSetup(hackathonId: string): Promise<JudgingSetup
     readiness: {
       isReady: !issues.some((issue) => issue.blocking !== false),
       issues,
-      requiresJudgeScoring: scoring.requiresJudgeScoring,
+      requiresJudgeScoring: scheduledReadiness?.requiresJudgeScoring ?? scoring.requiresJudgeScoring,
       scoringLocked:
         progress.completedAssignments > 0 ||
         !!event.results_published_at ||

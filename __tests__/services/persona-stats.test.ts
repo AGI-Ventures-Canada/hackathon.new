@@ -57,6 +57,7 @@ describe("getBatchJudgeStats", () => {
   })
 
   it("counts open judging after a live event starts without changing future or stopped events", async () => {
+    setMockRpcImplementation(() => Promise.resolve({ data: true, error: null }))
     const cases = [
       { id: "published", status: "published", starts_at: "2000-01-01T00:00:00Z", actionable: 1 },
       { id: "registration", status: "registration_open", starts_at: "2000-01-01T00:00:00Z", actionable: 1 },
@@ -74,6 +75,20 @@ describe("getBatchJudgeStats", () => {
           : [], error: null }))
     const result = await getBatchJudgeStats(cases.map(({ id }) => id), "user_1")
     for (const event of cases) expect(result.get(event.id)).toMatchObject({ totalAssignments: 1, actionableAssignments: event.actionable })
+  })
+
+  it("shows scheduled work only after the shared server readiness gate opens", async () => {
+    let isOpen = false
+    setMockRpcImplementation(() => Promise.resolve({ data: isOpen, error: null }))
+    setMockFromImplementation((table) => createChainableMock({ data: table === "hackathon_participants"
+      ? [{ id: "p1", hackathon_id: "h1" }]
+      : table === "hackathons" ? [{ id: "h1", status: "active", judging_opens_at: "2000-01-01T00:00:00Z", judging_closes_at: "2999-01-01T00:00:00Z" }]
+      : table === "judge_assignments" ? [{ id: "a1", judge_participant_id: "p1", hackathon_id: "h1", is_complete: false, submission: { status: "submitted" } }]
+      : [], error: null }))
+    expect((await getBatchJudgeStats(["h1"], "user_1")).get("h1")).toMatchObject({ totalAssignments: 1, actionableAssignments: 0, judgingClosed: false })
+    isOpen = true
+    expect((await getBatchJudgeStats(["h1"], "user_1")).get("h1")).toMatchObject({ totalAssignments: 1, actionableAssignments: 1 })
+    expect(mockRpc).toHaveBeenCalledWith("judging_window_is_open", { p_hackathon_id: "h1", p_round_id: null })
   })
 
   it("uses the direct prize relation when coverage creates another route to prizes", async () => {
@@ -182,6 +197,9 @@ describe("getBatchJudgeStats", () => {
       : table === "judge_assignments" ? eventIds.map((id) => ({ id: `a-${id}`, judge_participant_id: `p-${id}`, hackathon_id: id, is_complete: false, round_id: id === "round-event" ? "closed-round" : null, submission: { status: "submitted" } })) : [], error: null }))
     const result = await getBatchJudgeStats(eventIds, "user_1")
     for (const id of eventIds) expect(result.get(id)).toMatchObject({ totalAssignments: 1, actionableAssignments: 0 })
+    expect(result.get("closed-event")?.judgingClosed).toBe(true)
+    expect(result.get("round-event")?.judgingClosed).toBe(true)
+    expect(result.get("future-event")?.judgingClosed).toBe(false)
   })
 
   it("keeps only active-round finalists actionable and waits for invitation scope to finish", async () => {

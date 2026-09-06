@@ -21,6 +21,7 @@ const SERVICE_MOCK_PROCESS_ISOLATED_TESTS = [
   "__tests__/services/event-mutation-lease.test.ts",
   "__tests__/services/judge-invitations.test.ts",
   "__tests__/services/judging-notifications.test.ts",
+  "__tests__/services/judging-notification-events.test.ts",
   "__tests__/services/judging-invite-batch.test.ts",
   "__tests__/services/judging-reviews.test.ts",
   "__tests__/services/organization-members.test.ts",
@@ -131,6 +132,11 @@ const RADIX_ISOLATED_TESTS = [
   "__tests__/components/hackathon/judging/assignments-section.test.tsx",
 ]
 const radixSet = new Set(RADIX_ISOLATED_TESTS)
+
+const REAL_COMPONENT_PROCESS_ISOLATED_TESTS = [
+  "__tests__/components/hackathon/judging/judging-navigation.test.tsx",
+]
+const realComponentProcessIsolatedSet = new Set(REAL_COMPONENT_PROCESS_ISOLATED_TESTS)
 
 const COMPONENT_PROCESS_ISOLATED_TESTS = [
   "__tests__/components/hackathon/judging/judging-inbox.test.tsx",
@@ -340,6 +346,7 @@ const groups: Group[] = [
     exclude: new Set([
       ...radixSet,
       ...componentProcessIsolatedSet,
+      ...realComponentProcessIsolatedSet,
       ...createOrgDialogSet,
       ...authCreateFlowSet,
       ...registrationButtonSet,
@@ -358,6 +365,10 @@ const groups: Group[] = [
     args: RADIX_ISOLATED_TESTS,
     preload: "./__tests__/lib/radix-mocks.ts",
   },
+  ...REAL_COMPONENT_PROCESS_ISOLATED_TESTS.map((testPath, index) => ({
+    name: `components (real-interaction isolated ${index + 1})`,
+    args: [testPath],
+  })),
   ...COMPONENT_PROCESS_ISOLATED_TESTS.map((testPath, index) => ({
     name: `components (process-isolated ${index + 1})`,
     args: [testPath],
