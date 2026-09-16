@@ -77,6 +77,7 @@ function renderTools(overrides: Partial<React.ComponentProps<typeof EventWebMcpT
 }
 
 beforeEach(() => {
+  setSystemTime(new Date("2026-09-08T12:30:00.000Z"))
   registered = new Map()
   localStorage.clear()
   document.modelContext = {

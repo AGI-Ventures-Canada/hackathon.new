@@ -1,6 +1,6 @@
 import { Children, isValidElement, type ReactElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
-import { beforeEach, describe, expect, it, mock } from "bun:test"
+import { beforeEach, describe, expect, it, mock, afterEach, setSystemTime } from "bun:test"
 
 const mockNotFound = mock(() => {
   throw Object.assign(new Error("NOT_FOUND"), { digest: "NEXT_NOT_FOUND" })
@@ -153,6 +153,8 @@ function childFor(result: ReactElement, type: unknown): ReactElement {
 }
 
 describe("public event server page", () => {
+  afterEach(() => setSystemTime())
+
   beforeEach(() => {
     mockNotFound.mockClear()
     mockAuth.mockReset()
@@ -478,6 +480,7 @@ describe("public event server page", () => {
   })
 
   it("covers registration status, time windows, capacity, and late signup edges", () => {
+    setSystemTime(new Date("2026-09-08T12:30:00.000Z"))
     const open = {
       status: "published",
       startsAt: "2026-09-10T12:00:00.000Z",
