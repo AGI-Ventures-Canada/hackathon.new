@@ -146,6 +146,7 @@ Object.assign(globalThis, {
   Element: window.Element,
   Node: window.Node,
   NodeFilter: window.NodeFilter,
+  HTMLFormElement: window.HTMLFormElement,
   HTMLInputElement: window.HTMLInputElement,
   HTMLButtonElement: window.HTMLButtonElement,
   HTMLTextAreaElement: window.HTMLTextAreaElement,
