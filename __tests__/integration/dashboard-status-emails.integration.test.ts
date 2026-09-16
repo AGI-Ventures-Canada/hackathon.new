@@ -1,4 +1,4 @@
-import { describe, expect, it, mock, beforeEach } from "bun:test"
+import { describe, expect, it, mock, beforeEach, afterEach, setSystemTime } from "bun:test"
 import { Elysia } from "elysia"
 import { resetSupabaseMocks } from "../lib/supabase-mock"
 
@@ -254,7 +254,10 @@ const mockHackathonResponse = {
 }
 
 describe("PATCH /api/dashboard/hackathons/:id/settings - status change emails", () => {
+  afterEach(() => setSystemTime())
+
   beforeEach(() => {
+    setSystemTime(new Date("2026-09-08T12:30:00.000Z"))
     resetSupabaseMocks()
     mockResolvePrincipal.mockClear()
     mockCheckHackathonOrganizer.mockClear()
