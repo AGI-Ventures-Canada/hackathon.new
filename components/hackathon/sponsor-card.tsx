@@ -47,12 +47,16 @@ export function SponsorCard({ sponsor, size = "md" }: SponsorCardProps) {
           <img
             src={lightLogoUrl}
             alt={name}
+            loading="lazy"
+            decoding="async"
             className="relative max-h-[70%] max-w-[85%] object-contain dark:hidden"
           />
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={darkLogoUrl || lightLogoUrl}
             alt={name}
+            loading="lazy"
+            decoding="async"
             className="relative max-h-[70%] max-w-[85%] object-contain hidden dark:block"
           />
         </>

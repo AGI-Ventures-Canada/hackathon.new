@@ -1,7 +1,5 @@
 "use client"
 
-import posthog from "posthog-js"
-import { PostHogProvider as PHProvider } from "posthog-js/react"
 import { useEffect } from "react"
 import { useAuth, useUser } from "@clerk/nextjs"
 
@@ -10,13 +8,21 @@ function PostHogIdentifier() {
   const { user } = useUser()
 
   useEffect(() => {
-    if (userId && user) {
-      posthog.identify(userId, {
-        email: user.primaryEmailAddress?.emailAddress,
-        name: user.fullName,
-      })
-    } else if (!userId) {
-      posthog.reset()
+    if (!process.env.NEXT_PUBLIC_POSTHOG_KEY) return
+    let cancelled = false
+    void import("posthog-js").then(({ default: posthog }) => {
+      if (cancelled) return
+      if (userId && user) {
+        posthog.identify(userId, {
+          email: user.primaryEmailAddress?.emailAddress,
+          name: user.fullName,
+        })
+      } else if (!userId) {
+        posthog.reset()
+      }
+    })
+    return () => {
+      cancelled = true
     }
   }, [userId, user])
 
@@ -27,9 +33,9 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
   if (!process.env.NEXT_PUBLIC_POSTHOG_KEY) return <>{children}</>
 
   return (
-    <PHProvider client={posthog}>
+    <>
       <PostHogIdentifier />
       {children}
-    </PHProvider>
+    </>
   )
 }
