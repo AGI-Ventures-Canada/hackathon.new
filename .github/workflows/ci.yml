@@ -82,6 +82,9 @@ jobs:
       - name: Run TypeScript check
         run: bunx tsc --noEmit -p tsconfig.build.json
 
+      - name: Install CLI dependencies
+        run: cd packages/cli && bun install --frozen-lockfile
+
       - name: CLI type check
         run: cd packages/cli && bunx tsc --noEmit
 
