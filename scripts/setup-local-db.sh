@@ -5,6 +5,12 @@ umask 077
 
 ENV_FILE=".env.local"
 TYPES_FILE="lib/db/types.ts"
+TYPES_HASH_FILE="node_modules/.cache/hackathon-types-hash"
+
+if [ "${SKIP_DB_SETUP:-}" = "1" ]; then
+  echo "SKIP_DB_SETUP=1, skipping local DB setup (Supabase must already be running)."
+  exit 0
+fi
 
 source "$(dirname "$0")/lib/env-safety.sh"
 
@@ -248,9 +254,29 @@ fi
 echo "Using local Supabase ($API_URL)"
 echo "   Studio: http://127.0.0.1:54423"
 
-echo "Generating Supabase TypeScript types..."
-if supabase gen types typescript --local > "$TYPES_FILE" 2>/dev/null; then
-  echo "Types generated at $TYPES_FILE"
+schema_hash() {
+  {
+    find supabase/migrations -type f -print0 2>/dev/null | sort -z | xargs -0 shasum -a 256 2>/dev/null
+    shasum -a 256 supabase/seed.sql supabase/config.toml 2>/dev/null
+    find supabase/seeds -type f -print0 2>/dev/null | sort -z | xargs -0 shasum -a 256 2>/dev/null
+  } | shasum -a 256 | cut -d' ' -f1
+}
+
+SCHEMA_HASH=$(schema_hash)
+CACHED_HASH=""
+if [ -f "$TYPES_HASH_FILE" ]; then
+  CACHED_HASH=$(cat "$TYPES_HASH_FILE" 2>/dev/null || true)
+fi
+
+if [ -n "$SCHEMA_HASH" ] && [ "$SCHEMA_HASH" = "$CACHED_HASH" ] && [ -s "$TYPES_FILE" ]; then
+  echo "Schema unchanged, skipping type regeneration ($TYPES_FILE is fresh)"
 else
-  echo "Type generation skipped (run 'bun run update-types' manually if needed)"
+  echo "Generating Supabase TypeScript types..."
+  if supabase gen types typescript --local > "$TYPES_FILE" 2>/dev/null; then
+    echo "Types generated at $TYPES_FILE"
+    mkdir -p "$(dirname "$TYPES_HASH_FILE")"
+    echo "$SCHEMA_HASH" > "$TYPES_HASH_FILE"
+  else
+    echo "Type generation skipped (run 'bun run update-types' manually if needed)"
+  fi
 fi

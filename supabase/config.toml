@@ -33,7 +33,9 @@ enabled = true
 sql_paths = ["./seed.sql"]
 
 [realtime]
-enabled = true
+# Disabled to cut local RAM: no app code uses realtime channels.
+# Re-enable with `enabled = true` if you add channel subscriptions.
+enabled = false
 
 [studio]
 enabled = true
@@ -53,7 +55,8 @@ enabled = true
 file_size_limit = "500MiB"
 
 [storage.s3_protocol]
-enabled = true
+# Disabled to cut local RAM: uploads use the storage HTTP API, not S3.
+enabled = false
 
 [storage.buckets.logos]
 public = true
@@ -104,13 +107,16 @@ enable_signup = false
 enable_confirmations = false
 
 [edge_runtime]
-enabled = true
+# Disabled to cut local RAM: repo has no supabase/functions to serve.
+enabled = false
 policy = "per_worker"
 inspector_port = 8083
 deno_version = 2
 
 [analytics]
-enabled = true
+# Disabled to cut local RAM: log analytics aren't needed for local dev.
+# Use `supabase inspect db` or Studio when debugging queries.
+enabled = false
 port = 54427
 backend = "postgres"
 

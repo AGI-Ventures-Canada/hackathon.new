@@ -1,5 +1,3 @@
-import posthog from "posthog-js"
-
 const SENSITIVE_PATHS = [
   /^\/cli-auth\/?$/,
   /^\/prizes\/claim\/[^/]+/,
@@ -29,16 +27,18 @@ export function sanitizeAnalyticsUrl(value: unknown): unknown {
 }
 
 if (process.env.NEXT_PUBLIC_POSTHOG_KEY) {
-  posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY, {
-    api_host: "https://us.i.posthog.com",
-    ui_host: "https://us.posthog.com",
-    defaults: "2026-01-30",
-    before_send: (event) => {
-      if (!event) return null
-      for (const key of ["$current_url", "$referrer", "$initial_referrer"]) {
-        if (key in event.properties) event.properties[key] = sanitizeAnalyticsUrl(event.properties[key])
-      }
-      return event
-    },
+  void import("posthog-js").then(({ default: posthog }) => {
+    posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
+      api_host: "https://us.i.posthog.com",
+      ui_host: "https://us.posthog.com",
+      defaults: "2026-01-30",
+      before_send: (event) => {
+        if (!event) return null
+        for (const key of ["$current_url", "$referrer", "$initial_referrer"]) {
+          if (key in event.properties) event.properties[key] = sanitizeAnalyticsUrl(event.properties[key])
+        }
+        return event
+      },
+    })
   })
 }

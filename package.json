@@ -18,9 +18,9 @@
   },
   "scripts": {
     "predev": "./scripts/setup-local-db.sh",
-    "dev": "next dev",
+    "dev": "next dev --turbopack",
     "dev:fresh": "./scripts/setup-local-db.sh && supabase db reset && bun run dev:skip-setup",
-    "dev:skip-setup": "next dev",
+    "dev:skip-setup": "next dev --turbopack",
     "build": "bun run check:production-email-delivery && next build && bun run check:sharp-trace",
     "docs:generate": "fumadocs-mdx",
     "check:production-email-delivery": "bun run scripts/check-production-email-delivery.ts",
