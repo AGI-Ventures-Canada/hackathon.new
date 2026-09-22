@@ -6,10 +6,8 @@ import { hasAdminMetadata } from "@/lib/auth/principal"
 import { ThemeProvider } from "@/components/theme-provider"
 import { ThemedClerkProvider } from "@/components/clerk-provider"
 import { PostHogProvider } from "@/components/posthog-provider"
-import { SearchCommand } from "@/components/search-command"
 import { DevTool } from "@/components/dev-tool/dev-tool"
-import { GlobalWebMcpTools } from "@/components/global-webmcp-tools"
-import { DirectWebMcpTools } from "@/components/direct-webmcp-tools"
+import { LazyRootWidgets } from "@/components/lazy-root-widgets"
 import "./globals.css"
 
 const jetbrainsMono = JetBrains_Mono({
@@ -57,9 +55,7 @@ export default async function RootLayout({
         <ThemeProvider nonce={nonce}>
           <ThemedClerkProvider nonce={nonce}>
             <PostHogProvider>{children}</PostHogProvider>
-            <GlobalWebMcpTools />
-            <DirectWebMcpTools />
-            <SearchCommand />
+            <LazyRootWidgets />
             {showDevTool && <DevTool />}
           </ThemedClerkProvider>
         </ThemeProvider>

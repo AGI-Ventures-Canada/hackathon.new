@@ -10,7 +10,6 @@ import {
   getReplyToAddress,
   renderEmail,
 } from "./utils"
-import AgentNotificationEmail from "@/emails/agent-notification"
 import { sha256Fingerprint } from "@/lib/utils/hash"
 import { isSyntheticEmail } from "@/lib/utils/synthetic-user"
 
@@ -672,6 +671,7 @@ export async function sendAgentNotification(
     failed: `Agent "${agentName}" failed`,
   }
 
+  const { default: AgentNotificationEmail } = await import("@/emails/agent-notification")
   const { html, text } = await renderEmail(
     AgentNotificationEmail({
       agentName,

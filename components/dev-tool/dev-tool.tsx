@@ -1,10 +1,15 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback } from "react"
+import dynamic from "next/dynamic"
 import { FlaskConical } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { DevToolPanel } from "./dev-tool-panel"
 import { useEventContext } from "./use-event-context"
+
+const DevToolPanel = dynamic(
+  () => import("./dev-tool-panel").then((m) => m.DevToolPanel),
+  { ssr: false },
+)
 
 const EDGE_MARGIN = 24
 const SNAP_TRANSITION = "all 200ms cubic-bezier(0.25, 1, 0.5, 1)"
