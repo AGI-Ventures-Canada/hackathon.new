@@ -135,6 +135,7 @@ const RADIX_ISOLATED_TESTS = [
 const radixSet = new Set(RADIX_ISOLATED_TESTS)
 
 const REAL_COMPONENT_PROCESS_ISOLATED_TESTS = [
+  "__tests__/components/hackathon/create-flow/create-flow.test.tsx",
   "__tests__/components/hackathon/judging/judging-navigation.test.tsx",
 ]
 const realComponentProcessIsolatedSet = new Set(REAL_COMPONENT_PROCESS_ISOLATED_TESTS)

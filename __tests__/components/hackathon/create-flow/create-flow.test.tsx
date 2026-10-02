@@ -2,6 +2,7 @@ import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test"
 import { act, render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { resetComponentMocks, setRouter, setSearchParams, setClerkIsSignedIn, setClerkOrganization } from "../../../lib/component-mocks"
+import { clerkMock } from "../../../lib/clerk-mock"
 import {
   createDefaultHackathonDraft,
   createDraftEnvelope,
@@ -11,6 +12,8 @@ import {
 import type { WebMcpTool } from "@/lib/webmcp/types"
 import { FetchResponseError } from "@/lib/utils/fetch"
 import { acknowledgeCreatedEventNavigation } from "@/lib/created-event-navigation"
+
+mock.module("@clerk/nextjs", () => clerkMock)
 
 mock.module("@/components/sign-in-required-dialog", () => ({
   SignInRequiredDialog: ({ open, description, redirectQuery }: {
