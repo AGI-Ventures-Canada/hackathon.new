@@ -11,6 +11,9 @@ export type EventContext = {
   phase: string | null
   startsAt: string | null
   endsAt: string | null
+  judgingOpensAt: string | null
+  judgingClosesAt: string | null
+  judgingTimezone: string
   registrationOpensAt: string | null
   registrationClosesAt: string | null
   allowLateRegistration: boolean
@@ -49,6 +52,9 @@ export function useEventContext(): EventContext | null {
           phase: json.phase,
           startsAt: json.starts_at,
           endsAt: json.ends_at,
+          judgingOpensAt: json.judging_opens_at,
+          judgingClosesAt: json.judging_closes_at,
+          judgingTimezone: json.judging_timezone ?? "UTC",
           registrationOpensAt: json.registration_opens_at,
           registrationClosesAt: json.registration_closes_at,
           allowLateRegistration: json.allow_late_registration ?? true,

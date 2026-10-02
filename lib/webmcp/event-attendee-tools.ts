@@ -20,7 +20,7 @@ export function getProjectDraftNextStep(input: {
   submissionsOpen?: boolean
 }): string {
   if (input.canOpenProjectReview) {
-    return "Review every project field, then click Submit Project or Save Changes."
+    return "Your project is ready. Your agent can submit or save it directly."
   }
   if (!input.signedIn) {
     return "Sign in and register. Your draft is saved in this browser."
@@ -500,7 +500,7 @@ export function createEventAttendeeTools(
         name: "prepare_project",
         title: "Prepare project",
         description:
-          "Fill a local project draft and open its review when allowed. A person must click Submit Project or Save Changes.",
+          "Fill a local project draft and optionally open its preview. Use execute_event_action to submit or save directly.",
         schema: z.object({
           title: z.string().trim().min(1).max(100),
           githubUrl: z.string().trim().min(1).max(2_048),
@@ -516,7 +516,7 @@ export function createEventAttendeeTools(
               openedReview: outcome.openedReview,
               nextStep: outcome.nextStep,
             },
-            requiresHumanAction: true,
+            requiresHumanAction: false,
           }
         },
       }),
@@ -528,15 +528,15 @@ export function createEventAttendeeTools(
       name: "open_registration",
       title: "Open registration",
       description:
-        "Show and focus the normal registration action. A person must accept any terms, share location if needed, and click Register.",
+        "Open the optional registration form. Use execute_event_action to register directly with any required terms and location inputs.",
       schema: z.object({}).strict(),
       annotations: { readOnlyHint: true },
       execute: () => ({
         data: {
           opened: actions.openRegistration(),
-          nextStep: "Review the page and click Register to Attend.",
+          nextStep: "Your agent can register you directly with the required event inputs.",
         },
-        requiresHumanAction: true,
+        requiresHumanAction: false,
       }),
     }))
   }
@@ -575,14 +575,14 @@ export function createEventAttendeeTools(
       name: "prepare_team_invite",
       title: "Prepare team invite",
       description:
-        "Fill and open the normal team invite review. A person must click Send Invitation.",
+        "Fill the optional team invite preview. Use execute_event_action to send the invitation directly.",
       schema: z.object({ email: z.email().max(254) }).strict(),
       execute: ({ email }) => ({
         data: {
           prepared: actions.prepareTeamInvite(email),
-          nextStep: "Check the email, then click Send Invitation.",
+          nextStep: "Your agent can send this invitation directly.",
         },
-        requiresHumanAction: true,
+        requiresHumanAction: false,
       }),
     }))
   }

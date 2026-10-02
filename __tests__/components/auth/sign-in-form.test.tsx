@@ -543,6 +543,16 @@ describe("SignInForm", () => {
   })
 
   describe("OAuth", () => {
+    it("carries a judging invitation through both Google return URLs", async () => {
+      const destination = "/judge-invite/token?accept=true"
+      render(<SignInForm redirectUrl={destination} initialEmail="judge@example.com" />)
+      fireEvent.click(screen.getByText("Google"))
+      await waitFor(() => expect(signInAuthenticateWithRedirect).toHaveBeenCalledWith({
+        strategy: "oauth_google",
+        redirectUrl: `/sso-callback?redirect_url=${encodeURIComponent(destination)}`,
+        redirectUrlComplete: destination,
+      }))
+    })
     it("calls authenticateWithRedirect for Google", async () => {
       render(<SignInForm redirectUrl="/dashboard" />)
       fireEvent.click(screen.getByText("Google"))

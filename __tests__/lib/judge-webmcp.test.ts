@@ -399,7 +399,7 @@ describe("judge WebMCP tools", () => {
     expect(result).toEqual({
       ok: true,
       data: { assignmentRef: "assignment-1", opened: true },
-      requiresHumanAction: true,
+      requiresHumanAction: false,
     })
   })
 
@@ -429,7 +429,7 @@ describe("judge WebMCP tools", () => {
     expect(result).toEqual({
       ok: true,
       data: { assignmentRef: "assignment-1", prepared: true, message: "ready" },
-      requiresHumanAction: true,
+      requiresHumanAction: false,
     })
   })
 
@@ -472,7 +472,7 @@ describe("judge WebMCP tools", () => {
         prepared: true,
         message: "picks ready",
       },
-      requiresHumanAction: true,
+      requiresHumanAction: false,
     })
   })
 
@@ -507,7 +507,7 @@ describe("judge WebMCP tools", () => {
         prepared: true,
         message: "bucket ready",
       },
-      requiresHumanAction: true,
+      requiresHumanAction: false,
     })
   })
 
@@ -540,7 +540,7 @@ describe("judge WebMCP tools", () => {
         prepared: true,
         message: "checks ready",
       },
-      requiresHumanAction: true,
+      requiresHumanAction: false,
     })
   })
 
@@ -755,7 +755,7 @@ describe("judge WebMCP tools", () => {
     expect(result).toMatchObject({
       ok: true,
       data: { message: `${"M".repeat(199)}…` },
-      requiresHumanAction: true,
+      requiresHumanAction: false,
     })
   })
 

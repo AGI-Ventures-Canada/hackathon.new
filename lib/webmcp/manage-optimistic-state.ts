@@ -1,4 +1,4 @@
-import type { Prize } from "@/lib/db/hackathon-types"
+import type { Prize, HackathonSponsor } from "@/lib/db/hackathon-types"
 import type { Announcement } from "@/lib/services/announcements"
 import type { Challenge } from "@/lib/services/challenges"
 import type { ScheduleItem } from "@/lib/services/schedule-items"
@@ -10,6 +10,7 @@ type ChangeBase = {
 }
 
 export type ManageWebMcpOptimisticChange =
+  | (ChangeBase & { kind: "sponsors"; sponsorId: string; sponsor: HackathonSponsor | null })
   | (ChangeBase & {
       kind: "details"
       patch: { name?: string; description?: string | null }
@@ -44,6 +45,7 @@ type CommitBase = {
 }
 
 export type ManageWebMcpCommittedChange =
+  | (CommitBase & { kind: "sponsors"; sponsorId: string; sponsor: HackathonSponsor | null })
   | (CommitBase & {
       kind: "details"
       details: { name: string; description: string | null }
@@ -74,6 +76,7 @@ export type ManageWebMcpCommittedChange =
     })
 
 export type ManageWebMcpVisibleState = {
+  sponsors?: HackathonSponsor[]
   details: {
     name: string
     description: string | null
@@ -94,6 +97,7 @@ export type ManageWebMcpState = {
 }
 
 export type ManageWebMcpStateAction =
+  | { type: "sync_sponsors"; sponsors: HackathonSponsor[] }
   | { type: "begin"; change: ManageWebMcpOptimisticChange }
   | { type: "commit"; change: ManageWebMcpCommittedChange }
   | { type: "rollback"; mutationId: string }
@@ -135,6 +139,10 @@ function applyOptimisticChange(
   change: ManageWebMcpOptimisticChange,
 ): ManageWebMcpVisibleState {
   switch (change.kind) {
+    case "sponsors":
+      return { ...state, sponsors: change.sponsor
+        ? upsertById((state.sponsors ?? []).filter((item) => item.id !== change.sponsorId || item.id === change.sponsor?.id), change.sponsor, "end")
+        : (state.sponsors ?? []).filter((item) => item.id !== change.sponsorId) }
     case "details":
       return {
         ...state,
@@ -176,6 +184,10 @@ function applyCommittedChange(
   change: ManageWebMcpCommittedChange,
 ): ManageWebMcpVisibleState {
   switch (change.kind) {
+    case "sponsors":
+      return { ...state, sponsors: change.sponsor
+        ? upsertById((state.sponsors ?? []).filter((item) => item.id !== change.sponsorId || item.id === change.sponsor?.id), change.sponsor, "end")
+        : (state.sponsors ?? []).filter((item) => item.id !== change.sponsorId) }
     case "details":
       return { ...state, details: change.details }
     case "timeline":
@@ -239,6 +251,8 @@ export function manageWebMcpStateReducer(
   action: ManageWebMcpStateAction,
 ): ManageWebMcpState {
   switch (action.type) {
+    case "sync_sponsors":
+      return { ...state, base: { ...state.base, sponsors: action.sponsors } }
     case "begin":
       return state.pending.some(
         (change) => change.mutationId === action.change.mutationId,

@@ -42,7 +42,6 @@ export function InviteAcceptClient({
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState(false)
   const [termsAccepted, setTermsAccepted] = useState(false)
 
   const isValid = invitation.status === "pending"
@@ -74,10 +73,8 @@ export function InviteAcceptClient({
         console.warn("[terms] team-invite accept succeeded but acceptance was not recorded for hackathon", invitation.hackathonSlug)
       }
 
-      setSuccess(true)
-      setTimeout(() => {
-        router.push(`/e/${invitation.hackathonSlug}`)
-      }, 2000)
+      router.push(`/e/${invitation.hackathonSlug}`)
+      router.refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to accept invitation")
     } finally {
@@ -94,29 +91,12 @@ export function InviteAcceptClient({
         method: "POST",
       }).then(assertOk)
 
-      router.push("/")
+      router.push(`/e/${invitation.hackathonSlug}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to decline invitation")
     } finally {
       setLoading(false)
     }
-  }
-
-  if (success) {
-    return (
-      <Card className="w-full max-w-md">
-        <CardContent className="pt-6 text-center">
-          <div className="rounded-full bg-primary/10 p-4 w-fit mx-auto mb-4">
-            <Check className="size-8 text-primary" />
-          </div>
-          <h2 className="text-xl font-bold mb-2">Welcome to the Team!</h2>
-          <p className="text-muted-foreground">
-            You&apos;ve joined &quot;{invitation.teamName}&quot;. Redirecting to the hackathon
-            page...
-          </p>
-        </CardContent>
-      </Card>
-    )
   }
 
   if (!isValid) {
@@ -159,8 +139,8 @@ export function InviteAcceptClient({
           <p className="text-muted-foreground">{status.description}</p>
         </CardContent>
         <CardFooter>
-          <Button variant="outline" className="w-full" onClick={() => router.push("/")}>
-            Go Home
+          <Button variant="outline" className="w-full" onClick={() => router.push(`/e/${invitation.hackathonSlug}`)}>
+            View event
           </Button>
         </CardFooter>
       </Card>
@@ -198,7 +178,7 @@ export function InviteAcceptClient({
             <Calendar className="size-5 text-muted-foreground" />
             <div>
               <p className="text-sm text-muted-foreground">Hackathon</p>
-              <p className="font-medium">{invitation.hackathonName}</p>
+              <Link href={`/e/${invitation.hackathonSlug}`} className="font-medium underline">{invitation.hackathonName}</Link>
             </div>
           </div>
         </div>
@@ -255,6 +235,9 @@ export function InviteAcceptClient({
             </Button>
           </>
         )}
+        <Button variant="ghost" asChild>
+          <Link href={`/e/${invitation.hackathonSlug}`}>View event</Link>
+        </Button>
       </CardFooter>
     </Card>
   )

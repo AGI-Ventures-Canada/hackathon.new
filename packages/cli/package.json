@@ -30,13 +30,13 @@
     "prepublishOnly": "bun run build"
   },
   "dependencies": {
-    "@clack/prompts": "^0.10.0",
+    "@clack/prompts": "^0.10.1",
     "picocolors": "^1.1.1"
   },
   "devDependencies": {
-    "@types/node": "^20",
-    "obuild": "^0.4.38",
-    "typescript": "^5"
+    "@types/node": "^20.19.43",
+    "obuild": "^0.4.40",
+    "typescript": "^5.9.3"
   },
   "engines": {
     "node": ">=20.9.0"

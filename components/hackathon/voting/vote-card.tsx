@@ -49,6 +49,8 @@ export function VoteCard({
           <img
             src={screenshotUrl}
             alt={title}
+            loading="lazy"
+            decoding="async"
             className="w-full h-full object-cover"
           />
         </div>

@@ -6,6 +6,7 @@ import {
   formatTimeLeft,
   getReplyToAddress,
   buildMailtoUnsubscribeHeaders,
+  buildUnsubscribeHeaders,
   shortHackathonName,
 } from "./utils"
 import JudgeAddedEmail from "@/emails/judge-added"
@@ -14,6 +15,7 @@ import JudgeInvitationReminderEmail from "@/emails/judge-invitation-reminder"
 import { sha256Fingerprint } from "@/lib/utils/hash"
 
 export type SendJudgeInvitationInput = {
+  personalMessage?: string
   to: string
   hackathonName: string
   inviterName: string
@@ -130,6 +132,7 @@ export async function sendJudgeInvitationEmail(
 
   const { html, text } = await renderEmail(
     JudgeInvitationEmail({
+      personalMessage: input.personalMessage,
       inviterName: input.inviterName,
       hackathonName: input.hackathonName,
       acceptUrl,
@@ -151,7 +154,7 @@ export async function sendJudgeInvitationEmail(
     html,
     text,
     replyTo: getReplyToAddress(),
-    headers: buildMailtoUnsubscribeHeaders(),
+    headers: buildUnsubscribeHeaders(`${process.env.NEXT_PUBLIC_APP_URL}/api/public/judge-invitations/${input.inviteToken}/unsubscribe`),
     tags: [
       { name: "type", value: "judge_invitation" },
       { name: "hackathon", value: sanitizeTag(input.hackathonName) },
@@ -222,7 +225,7 @@ export async function sendJudgeInvitationReminderEmail(
     html,
     text,
     replyTo: getReplyToAddress(),
-    headers: buildMailtoUnsubscribeHeaders(),
+    headers: buildUnsubscribeHeaders(`${process.env.NEXT_PUBLIC_APP_URL}/api/public/judge-invitations/${input.inviteToken}/unsubscribe`),
     tags: [
       { name: "type", value: "judge_invitation_reminder" },
       { name: "hackathon", value: sanitizeTag(input.hackathonName) },

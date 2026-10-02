@@ -1,264 +1,98 @@
-import { describe, expect, it, mock, beforeEach } from "bun:test"
+import { beforeEach, describe, expect, it, mock } from "bun:test"
+import { createElement } from "react"
+import { renderToStaticMarkup } from "react-dom/server"
+import type { JudgeAssignmentForJudge } from "@/lib/services/judging"
 
-const mockRedirect = mock((url: string) => {
-  throw Object.assign(new Error(`REDIRECT:${url}`), { digest: `NEXT_REDIRECT;replace;${url}` })
-})
-const mockNotFound = mock(() => {
-  throw Object.assign(new Error("NOT_FOUND"), { digest: "NEXT_NOT_FOUND" })
-})
+const redirect = mock((url: string): never => { throw new Error(`REDIRECT:${url}`) })
+const notFound = mock((): never => { throw new Error("NOT_FOUND") })
+const auth = mock(() => Promise.resolve<{ userId: string | null; orgId: string | null }>({ userId: "user-1", orgId: null }))
+const event = { id: "event-1", slug: "our-event", name: "Our event", status: "judging", anonymous_judging: false, judging_timezone: "UTC" }
+const getPublicHackathon = mock(() => Promise.resolve<Record<string, unknown> | null>(event))
+const getRegistrationInfo = mock(() => Promise.resolve<{ participantRole: string | null }>({ participantRole: "judge" }))
+const getJudgeAssignments = mock(() => Promise.resolve<JudgeAssignmentForJudge[]>([]))
+const getJudgeDraftTargetIds = mock(() => Promise.resolve<string[]>([]))
+const isJudgingOpenForHackathon = mock(() => Promise.resolve(true))
+const listRounds = mock(() => Promise.resolve([]))
+let workspace: Record<string, unknown> = {}
 
-mock.module("next/navigation", () => ({
-  redirect: mockRedirect,
-  notFound: mockNotFound,
-  useRouter: () => ({
-    refresh: mock(() => {}),
-    push: mock(() => {}),
-    replace: mock(() => {}),
-    back: mock(() => {}),
-    forward: mock(() => {}),
-    prefetch: mock(() => {}),
-  }),
-}))
-
-const mockAuth = mock(() => Promise.resolve({ userId: null, orgId: null }))
-
-mock.module("@clerk/nextjs/server", () => ({
-  auth: mockAuth,
-  clerkClient: mock(() => Promise.resolve({
-    organizations: { getOrganization: mock(() => Promise.resolve({ name: "Test Org" })) },
-  })),
-}))
-
-const mockGetPublicHackathon = mock(() => Promise.resolve(null))
-
-mock.module("@/lib/services/public-hackathons", () => ({
-  getPublicHackathon: mockGetPublicHackathon,
-  getPublicHackathonById: mock(() => Promise.resolve(null)),
-  listPublicHackathons: mock(() => Promise.resolve({ hackathons: [], total: 0 })),
-  getHackathonByIdForOrganizer: mock(() => Promise.resolve(null)),
-  checkHackathonOrganizer: mock(() => Promise.resolve({ status: "not_found" })),
-  getHackathonByIdWithFullData: mock(() => Promise.resolve(null)),
-  getHackathonByIdWithAccess: mock(() => Promise.resolve(null)),
-  updateHackathonSettings: mock(() => Promise.resolve(null)),
-  PUBLISHED_STATUSES: ["published", "registration_open", "active", "judging", "completed"],
-}))
-
-const mockGetRegistrationInfo = mock(() => Promise.resolve({ participantRole: null }))
-
-mock.module("@/lib/services/hackathons", () => ({
-  registerForHackathon: mock(() => Promise.resolve({ success: true })),
-  getParticipantCount: mock(() => Promise.resolve(0)),
-  isUserRegistered: mock(() => Promise.resolve(false)),
-  getRegistrationInfo: mockGetRegistrationInfo,
-}))
-
-const mockGetJudgeAssignments = mock(() => Promise.resolve([]))
-const mockIsJudgingOpenForHackathon = mock((event: { status: string; phase?: string | null }) =>
-  Promise.resolve(
-    event.status === "judging" ||
-    (event.status === "active" &&
-      (event.phase === "preliminaries" || event.phase === "finals")),
-  ),
-)
-
-mock.module("@/lib/services/judging", () => ({
-  addJudge: mock(() => Promise.resolve({ success: true })),
-  listJudgingCriteria: mock(() => Promise.resolve([])),
-  createJudgingCriteria: mock(() => Promise.resolve(null)),
-  updateJudgingCriteria: mock(() => Promise.resolve(null)),
-  deleteJudgingCriteria: mock(() => Promise.resolve(false)),
-  listJudges: mock(() => Promise.resolve([])),
-  removeJudge: mock(() => Promise.resolve({ success: false })),
-  listJudgeAssignments: mock(() => Promise.resolve([])),
-  assignJudgeToSubmission: mock(() => Promise.resolve({ success: false })),
-  removeJudgeAssignment: mock(() => Promise.resolve(false)),
-  autoAssignJudges: mock(() => Promise.resolve({ assignedCount: 0 })),
-  getJudgingProgress: mock(() => Promise.resolve({ totalAssignments: 0, completedAssignments: 0, judges: [] })),
-  getJudgeAssignments: mockGetJudgeAssignments,
-  isJudgingOpenForHackathon: mockIsJudgingOpenForHackathon,
-  getAssignmentDetail: mock(() => Promise.resolve(null)),
-  submitScores: mock(() => Promise.resolve({ success: true })),
-  saveNotes: mock(() => Promise.resolve(true)),
-  getJudgingSetupStatus: mock(() => Promise.resolve({ hasCriteria: false, allCriteriaHaveLevels: true, judgeCount: 0, hasSubmissions: false, hasUnassignedSubmissions: false, isReady: false })),
-}))
+mock.module("next/navigation", () => ({ redirect, notFound }))
+mock.module("@clerk/nextjs/server", () => ({ auth }))
+mock.module("@/lib/services/public-hackathons", () => ({ getPublicHackathon }))
+mock.module("@/lib/services/hackathons", () => ({ getRegistrationInfo }))
+mock.module("@/lib/services/judging", () => ({ getJudgeAssignments, isJudgingOpenForHackathon, listRounds }))
+mock.module("@/lib/services/judging-reviews", () => ({ getJudgeDraftTargetIds }))
+mock.module("@/components/hackathon/judging/judge-workspace", () => ({ JudgeWorkspace: (props: Record<string, unknown>) => { workspace = props; return createElement("main", { "data-workspace": props.slug }, "Review queue") } }))
+mock.module("@/components/hackathon/judging/judging-inbox", () => ({ JudgingInbox: ({ hackathonId }: { hackathonId: string }) => createElement("aside", { "data-inbox": hackathonId }, "Judging updates") }))
+mock.module("@/components/page-header", () => ({ PageHeader: ({ title }: { title: string }) => createElement("h1", null, title) }))
+mock.module("@/components/ui/auto-refresh", () => ({ AutoRefresh: () => null }))
 
 const { default: JudgePage } = await import("@/app/(public)/e/[slug]/judge/page")
+const project: JudgeAssignmentForJudge = { id: "review-1", submissionId: "project-1", submissionTitle: "A useful demo", submissionDescription: "A project", submissionGithubUrl: null, submissionLiveAppUrl: null, submissionDemoVideoUrl: null, submissionScreenshotUrl: null, teamName: "Team name", teamMode: "in_person", teamMemberCount: 3, isComplete: false, notes: "", viewedAt: null, prizeId: null, prizeName: null, judgingStyle: "weighted_score", maxPicks: null, selfJudging: false, assignmentKind: "unified_weighted_score" }
+const callPage = (review?: string) => JudgePage({ params: Promise.resolve({ slug: "our-event" }), searchParams: Promise.resolve({ review }) })
 
-const mockHackathon = {
-  id: "h1",
-  name: "Test Hackathon",
-  slug: "test-hackathon",
-  status: "judging",
-  anonymous_judging: false,
-  organizer: {
-    id: "t1",
-    name: "Test Org",
-    slug: "test-org",
-    clerk_org_id: "org_test",
-    logo_url: null,
-  },
-}
+beforeEach(() => {
+  workspace = {}
+  auth.mockReset(); auth.mockResolvedValue({ userId: "user-1", orgId: null })
+  getPublicHackathon.mockReset(); getPublicHackathon.mockResolvedValue(event)
+  getRegistrationInfo.mockReset(); getRegistrationInfo.mockResolvedValue({ participantRole: "judge" })
+  getJudgeAssignments.mockReset(); getJudgeAssignments.mockResolvedValue([project])
+  getJudgeDraftTargetIds.mockReset(); getJudgeDraftTargetIds.mockResolvedValue([project.id])
+  isJudgingOpenForHackathon.mockReset(); isJudgingOpenForHackathon.mockResolvedValue(true)
+  listRounds.mockReset(); listRounds.mockResolvedValue([])
+})
 
-const mockAssignment = {
-  id: "a1",
-  submissionId: "s1",
-  submissionTitle: "Great Project",
-  teamName: "Team Alpha",
-  isComplete: false,
-}
-
-async function callPage(slug: string) {
-  return JudgePage({ params: Promise.resolve({ slug }) })
-}
-
-function getRedirectUrl(error: unknown): string | null {
-  if (error instanceof Error && error.message.startsWith("REDIRECT:")) {
-    return error.message.slice("REDIRECT:".length)
-  }
-  return null
-}
-
-function isNotFound(error: unknown): boolean {
-  return error instanceof Error && error.message === "NOT_FOUND"
-}
-
-describe("JudgePage", () => {
-  beforeEach(() => {
-    mockAuth.mockReset()
-    mockGetPublicHackathon.mockReset()
-    mockGetRegistrationInfo.mockReset()
-    mockGetJudgeAssignments.mockReset()
-    mockIsJudgingOpenForHackathon.mockReset()
-    mockIsJudgingOpenForHackathon.mockImplementation((event) => Promise.resolve(
-      event.status === "judging" ||
-      (event.status === "active" &&
-        (event.phase === "preliminaries" || event.phase === "finals")),
-    ))
-    mockRedirect.mockClear()
-    mockNotFound.mockClear()
-
-    mockGetJudgeAssignments.mockImplementation(() => Promise.resolve([mockAssignment]))
+describe("judge page server boundary", () => {
+  it("requires sign-in before reading an event or private judging data", async () => {
+    auth.mockResolvedValue({ userId: null, orgId: null })
+    await expect(callPage()).rejects.toThrow(`REDIRECT:/sign-in?redirect_url=${encodeURIComponent("/e/our-event/judge")}`)
+    expect(getPublicHackathon).not.toHaveBeenCalled()
+    expect(getJudgeAssignments).not.toHaveBeenCalled()
+    expect(getJudgeDraftTargetIds).not.toHaveBeenCalled()
   })
-
-  it("redirects unauthenticated users to sign-in with a return URL", async () => {
-    mockAuth.mockResolvedValue({ userId: null, orgId: null })
-
-    let caught: unknown
-    try {
-      await callPage("test-hackathon")
-    } catch (e) {
-      caught = e
-    }
-
-    expect(getRedirectUrl(caught)).toBe(
-      `/sign-in?redirect_url=${encodeURIComponent("/e/test-hackathon/judge")}`
-    )
-    expect(mockGetPublicHackathon).not.toHaveBeenCalled()
+  it("returns not found without loading judging data for a missing event", async () => {
+    getPublicHackathon.mockResolvedValue(null)
+    await expect(callPage()).rejects.toThrow("NOT_FOUND")
+    expect(getRegistrationInfo).not.toHaveBeenCalled()
+    expect(getJudgeAssignments).not.toHaveBeenCalled()
   })
-
-  it("calls notFound when hackathon does not exist", async () => {
-    mockAuth.mockResolvedValue({ userId: "user_123", orgId: null })
-    mockGetPublicHackathon.mockResolvedValue(null)
-
-    let caught: unknown
-    try {
-      await callPage("nonexistent")
-    } catch (e) {
-      caught = e
-    }
-
-    expect(isNotFound(caught)).toBe(true)
-  })
-
-  it("redirects organizers viewing their own hackathon to the event page", async () => {
-    mockAuth.mockResolvedValue({ userId: "user_123", orgId: "org_test" })
-    mockGetPublicHackathon.mockResolvedValue(mockHackathon)
-    mockGetRegistrationInfo.mockResolvedValue({ participantRole: "organizer" })
-
-    let caught: unknown
-    try {
-      await callPage("test-hackathon")
-    } catch (e) {
-      caught = e
-    }
-
-    expect(getRedirectUrl(caught)).toBe("/e/test-hackathon")
-  })
-
-  it("redirects users who are not judges to the event page", async () => {
-    mockAuth.mockResolvedValue({ userId: "user_123", orgId: null })
-    mockGetPublicHackathon.mockResolvedValue(mockHackathon)
-    mockGetRegistrationInfo.mockResolvedValue({ participantRole: "participant" })
-
-    let caught: unknown
-    try {
-      await callPage("test-hackathon")
-    } catch (e) {
-      caught = e
-    }
-
-    expect(getRedirectUrl(caught)).toBe("/e/test-hackathon")
-  })
-
-  it("redirects unregistered users to the event page", async () => {
-    mockAuth.mockResolvedValue({ userId: "user_123", orgId: null })
-    mockGetPublicHackathon.mockResolvedValue(mockHackathon)
-    mockGetRegistrationInfo.mockResolvedValue({ participantRole: null })
-
-    let caught: unknown
-    try {
-      await callPage("test-hackathon")
-    } catch (e) {
-      caught = e
-    }
-
-    expect(getRedirectUrl(caught)).toBe("/e/test-hackathon")
-  })
-
-  it("renders judging page for authenticated judges", async () => {
-    mockAuth.mockResolvedValue({ userId: "user_123", orgId: null })
-    mockGetPublicHackathon.mockResolvedValue(mockHackathon)
-    mockGetRegistrationInfo.mockResolvedValue({ participantRole: "judge" })
-    mockGetJudgeAssignments.mockResolvedValue([mockAssignment])
-
-    const result = await callPage("test-hackathon")
-
-    expect(result).toBeTruthy()
-    expect(mockGetJudgeAssignments).toHaveBeenCalledWith("h1", "user_123")
-  })
-
-  it("keeps the unpublished waiting view for an authenticated judge", async () => {
-    mockAuth.mockResolvedValue({ userId: "user_123", orgId: null })
-    mockGetPublicHackathon.mockResolvedValue({ ...mockHackathon, status: "draft" })
-    mockGetRegistrationInfo.mockResolvedValue({ participantRole: "judge" })
-
-    const result = await callPage("test-hackathon")
-
-    expect(result).toBeTruthy()
-    expect(mockGetPublicHackathon).toHaveBeenCalledWith("test-hackathon", {
-      includeUnpublished: true,
+  for (const role of ["organizer", "participant", null]) {
+    it(`redirects the ${role ?? "unregistered"} role before loading private reviews`, async () => {
+      getRegistrationInfo.mockResolvedValue({ participantRole: role })
+      await expect(callPage()).rejects.toThrow("REDIRECT:/e/our-event")
+      expect(getJudgeAssignments).not.toHaveBeenCalled()
+      expect(getJudgeDraftTargetIds).not.toHaveBeenCalled()
     })
+  }
+  it("renders the server shell and passes current, historical, and draft data to the review boundary", async () => {
+    const old = { ...project, id: "old-review", isComplete: true }
+    getJudgeAssignments.mockResolvedValueOnce([project, old]).mockResolvedValueOnce([project])
+    const html = renderToStaticMarkup(await callPage(old.id))
+    expect(html).toContain("Judge Our event")
+    expect(html).toContain("Judging updates")
+    expect(html).toContain("Review queue")
+    expect(getJudgeAssignments).toHaveBeenCalledWith(event.id, "user-1", { includeClosedRounds: true })
+    expect(getJudgeAssignments).toHaveBeenCalledWith(event.id, "user-1")
+    expect(getJudgeDraftTargetIds).toHaveBeenCalledWith(event.id, "user-1")
+    expect(workspace).toMatchObject({ assignments: [project, old], activeAssignmentIds: [project.id], draftTargetIds: [project.id], initialReview: old.id, canJudge: true })
   })
-
-  it("anonymizes team names when hackathon has anonymous_judging enabled", async () => {
-    mockAuth.mockResolvedValue({ userId: "user_123", orgId: null })
-    mockGetPublicHackathon.mockResolvedValue({ ...mockHackathon, anonymous_judging: true })
-    mockGetRegistrationInfo.mockResolvedValue({ participantRole: "judge" })
-    mockGetJudgeAssignments.mockResolvedValue([mockAssignment])
-
-    await callPage("test-hackathon")
-
-    expect(mockGetJudgeAssignments).toHaveBeenCalledWith("h1", "user_123")
+  it("retains the preparation workspace for an invited judge before go-live", async () => {
+    getPublicHackathon.mockResolvedValue({ ...event, status: "draft" })
+    isJudgingOpenForHackathon.mockResolvedValue(false)
+    const html = renderToStaticMarkup(await callPage())
+    expect(html).toContain("You&#x27;re on the judge list")
+    expect(getPublicHackathon).toHaveBeenCalledWith("our-event", { includeUnpublished: true })
+    expect(workspace).toMatchObject({ canJudge: false, activeAssignmentIds: [] })
   })
-
-  it("allows judges from a different org than the organizer", async () => {
-    mockAuth.mockResolvedValue({ userId: "user_123", orgId: "org_different" })
-    mockGetPublicHackathon.mockResolvedValue(mockHackathon)
-    mockGetRegistrationInfo.mockResolvedValue({ participantRole: "judge" })
-    mockGetJudgeAssignments.mockResolvedValue([mockAssignment])
-
-    const result = await callPage("test-hackathon")
-
-    expect(result).toBeTruthy()
+  it("removes own-team projects before anonymizing the client data", async () => {
+    getPublicHackathon.mockResolvedValue({ ...event, anonymous_judging: true })
+    getJudgeAssignments.mockResolvedValue([project, { ...project, id: "own-project", selfJudging: true }])
+    renderToStaticMarkup(await callPage())
+    expect(workspace.assignments).toEqual([{ ...project, teamName: null, teamMode: null, teamMemberCount: null }])
+    expect(workspace.activeAssignmentIds).toEqual([project.id])
+  })
+  it("uses the event's judge role regardless of the active Clerk organization", async () => {
+    auth.mockResolvedValue({ userId: "user-1", orgId: "another-org" })
+    expect(renderToStaticMarkup(await callPage())).toContain("Review queue")
+    expect(getRegistrationInfo).toHaveBeenCalledWith(event.id, "user-1")
   })
 })

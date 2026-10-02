@@ -235,7 +235,7 @@ describe("organizer role tabs", () => {
 
     expect(await screen.findByText("Agent update")).toBeDefined()
     expect(fetchMock).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole("button", { name: "Publish" }))
+    fireEvent.click(screen.getByRole("button", { name: "Publish Agent update" }))
 
     expect(await screen.findByText("Failed to update publish status")).toBeDefined()
     expect(fetchMock).toHaveBeenCalledWith(

@@ -1,5 +1,9 @@
 "use client";
 
+import { JudgingTaskSheet } from "@/components/hackathon/judging/judging-setup-editors";
+import { legacyJudgingHref, type JudgingEditor } from "@/lib/judging/setup";
+import type { HackathonSponsor } from "@/lib/db/hackathon-types";
+
 import {
   createContext,
   useContext,
@@ -71,8 +75,6 @@ import { BannerUpload } from "@/components/hackathon/banner-upload";
 import { ChallengeEditorDialog } from "./challenge-editor-dialog";
 import { ShowcaseDialog } from "./showcase-dialog";
 import { PerkEditorDialog, type SponsorOption } from "./perk-editor-dialog";
-import { AddJudgeDialog } from "@/components/hackathon/judging/add-judge-dialog";
-import { AddPrizeDialog } from "@/components/hackathon/judging/add-prize-dialog";
 import type { RoundData } from "@/components/hackathon/judging/rounds-types";
 import type { Challenge } from "@/lib/services/challenges";
 import type { Announcement } from "@/lib/services/announcements";
@@ -160,6 +162,7 @@ export function useActionItemsOptional() {
 export function buildActionTargetHref(slug: string, item: ActionItem): string | null {
   if (!item.tab) return null;
   const params = new URLSearchParams({ tab: item.tab });
+  if (item.tab === "judging") return legacyJudgingHref(slug, item.subtab);
   if (item.subtab && item.subtabKey) params.set(item.subtabKey, item.subtab);
   return `/e/${slug}/manage?${params.toString()}`;
 }
@@ -225,6 +228,7 @@ type ProviderProps = {
   teamSettingsInitialData: TeamSettingsInitialData;
   communityInitialData: { url: string | null; label: string | null };
   sponsors: SponsorOption[];
+  webMcpSponsors?: HackathonSponsor[];
   rounds: RoundData[];
   judgingSetupIssues: string[];
   requiresJudgeScoring: boolean;
@@ -349,6 +353,7 @@ export function ActionItemsProvider({
   teamSettingsInitialData,
   communityInitialData,
   sponsors,
+  webMcpSponsors,
   rounds,
   judgingSetupIssues,
   requiresJudgeScoring: serverRequiresJudgeScoring,
@@ -366,8 +371,8 @@ export function ActionItemsProvider({
   const [challengeDialogItem, setChallengeDialogItem] = useState<ActionItem | null>(null);
   const [releaseChallengeDialogItem, setReleaseChallengeDialogItem] = useState<ActionItem | null>(null);
   const [perkDialogItem, setPerkDialogItem] = useState<ActionItem | null>(null);
-  const [prizeDialogItem, setPrizeDialogItem] = useState<ActionItem | null>(null);
-  const [judgeDialogItem, setJudgeDialogItem] = useState<ActionItem | null>(null);
+  const [judgingPrizeId, setJudgingPrizeId] = useState<string | undefined>();
+  const [judgingEditor, setJudgingEditor] = useState<JudgingEditor | null>(null);
   const [locationDialogItem, setLocationDialogItem] = useState<ActionItem | null>(null);
   const [teamSettingsDialogItem, setTeamSettingsDialogItem] = useState<ActionItem | null>(null);
   const [communityDialogItem, setCommunityDialogItem] = useState<ActionItem | null>(null);
@@ -389,6 +394,7 @@ export function ActionItemsProvider({
       challenges: serverChallenges,
       prizes: serverPrizes,
       announcements: serverAnnouncements,
+      sponsors: webMcpSponsors,
     },
     createManageWebMcpState,
   );
@@ -396,6 +402,9 @@ export function ActionItemsProvider({
     () => selectManageWebMcpVisibleState(manageWebMcpState),
     [manageWebMcpState],
   );
+  useEffect(() => {
+    if (webMcpSponsors) dispatchManageWebMcpState({ type: "sync_sponsors", sponsors: webMcpSponsors });
+  }, [webMcpSponsors]);
   const scheduleItems = manageWebMcpView.scheduleItems;
   const challenges = manageWebMcpView.challenges;
 
@@ -538,6 +547,7 @@ export function ActionItemsProvider({
           pollData.registrationOpensAt ?? serverRegistrationOpensAt,
         registrationClosesAt: liveRegistrationClosesAt,
         allowLateRegistration: liveAllowLateRegistration,
+        judgingIssues: serverActionItems.filter((item) => !!item.judgingEditor).map((item) => ({code: item.id.replace(/^judging:/, ""), message: item.label, editor: item.judgingEditor!, prizeId: item.judgingPrizeId, blocking: item.severity !== "info"})),
         judgingSetupReady: !serverActionItems.some((item) => item.id === "finish-scoring-setup"),
         requiresJudgeScoring: serverRequiresJudgeScoring,
         judgingCompletionReadiness:
@@ -1144,20 +1154,9 @@ export function ActionItemsProvider({
     }
   }, [hackathonId, releaseChallengeDialogItem, routeToActionTarget]);
 
-  const handlePrizeActionDone = useCallback(() => {
-    const item = prizeDialogItem;
-    setPrizeDialogItem(null);
-    routeToActionTarget(item);
-  }, [prizeDialogItem, routeToActionTarget]);
-
-  const handleJudgeActionDone = useCallback(() => {
-    const item = judgeDialogItem;
-    setJudgeDialogItem(null);
-    routeToActionTarget(item);
-  }, [judgeDialogItem, routeToActionTarget]);
-
   const handleActionClick = useCallback(
     (item: ActionItem) => {
+      setJudgingPrizeId(item.judgingPrizeId);
       if (item.action === "confirm-promote") {
         setPromoteDialogOpen(true);
       } else if (item.action === "open-dates-dialog") {
@@ -1178,9 +1177,9 @@ export function ActionItemsProvider({
       } else if (item.action === "open-perk-dialog") {
         setPerkDialogItem(item);
       } else if (item.action === "open-prize-dialog") {
-        setPrizeDialogItem(item);
+        setJudgingEditor("prizes");
       } else if (item.action === "open-judge-dialog") {
-        setJudgeDialogItem(item);
+        setJudgingEditor("judges");
       } else if (item.action === "open-agenda-dialog") {
         setAgendaDialogOpen(true);
       } else if (item.action === "open-location-dialog") {
@@ -1198,6 +1197,8 @@ export function ActionItemsProvider({
       } else if (item.action?.startsWith("transition-to-")) {
         const targetStatus = item.action.replace("transition-to-", "");
         transitionRef.current?.openTransitionDialog(targetStatus);
+      } else if (item.tab === "judging" && item.subtab !== "results") {
+        setJudgingEditor(item.judgingEditor ?? (item.subtab === "assignments" ? "assignments" : item.subtab === "rounds" ? "rounds" : /date|deadline|schedule/.test(item.id) ? "schedule" : /invite|judge.*email|remind/.test(item.id) ? "judges" : /prize/.test(item.id) ? "prizes" : "scorecard"));
       } else {
         const tabAction = tabActionsRef.current.get(item.id);
         const opensAcrossTabs = CROSS_TAB_DIALOG_ACTIONS.has(item.id);
@@ -1524,21 +1525,7 @@ export function ActionItemsProvider({
         sponsors={sponsors}
         onSaved={handlePerkSaved}
       />
-      <AddPrizeDialog
-        hackathonId={hackathonId}
-        open={!!prizeDialogItem}
-        onOpenChange={(open) => !open && setPrizeDialogItem(null)}
-        rounds={rounds}
-        onSuccess={(created) => {
-          if (created) handlePrizeActionDone();
-        }}
-      />
-      <AddJudgeDialog
-        hackathonId={hackathonId}
-        open={!!judgeDialogItem}
-        onOpenChange={(open) => !open && setJudgeDialogItem(null)}
-        onSuccess={handleJudgeActionDone}
-      />
+      <JudgingTaskSheet hackathonId={hackathonId} editor={judgingEditor} prizeId={judgingPrizeId} onClose={() => { setJudgingEditor(null); void refreshPoll(); router.refresh(); }} />
       <Dialog open={agendaDialogOpen} onOpenChange={setAgendaDialogOpen}>
         <DialogContent className="max-h-[85svh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>

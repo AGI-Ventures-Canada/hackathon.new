@@ -1,3 +1,4 @@
+import { getJudgingScenarioSettings } from "../../lib/fixtures/judging-scenario"
 import { createClient, type SupabaseClient } from "@supabase/supabase-js"
 import * as readline from "readline"
 import { requireLocalSupabaseUrl } from "../local-supabase"
@@ -173,6 +174,7 @@ export async function createTestHackathon(opts: {
       slug: opts.slug,
       description: `Test hackathon for the **${opts.slug}** scenario.\n\n## Getting Started\n\n- Register your team\n- Check out the [rules](#rules) section\n- Start building!\n\n> _Good luck to all participants!_`,
       status: opts.status,
+      ...getJudgingScenarioSettings(opts.status),
       starts_at: opts.startsAt.toISOString(),
       ends_at: opts.endsAt.toISOString(),
       registration_opens_at: (opts.registrationOpensAt ?? new Date(Date.now() - 14 * 86400000)).toISOString(),
@@ -370,6 +372,7 @@ export async function assignJudges(
         .from("judge_assignments")
         .insert({
           hackathon_id: hackathonId,
+          scoring_scope: "legacy_unscoped",
           judge_participant_id: judgeId,
           submission_id: subId,
         })
@@ -397,6 +400,7 @@ export async function createJudgeAssignment(
     .from("judge_assignments")
     .insert({
       hackathon_id: hackathonId,
+      scoring_scope: "legacy_unscoped",
       judge_participant_id: judgeParticipantId,
       submission_id: submissionId,
     })

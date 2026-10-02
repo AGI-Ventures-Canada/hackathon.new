@@ -19,6 +19,11 @@ const mockAddJudge = mock(() =>
   Promise.resolve({ success: true, participant: { id: "j1", clerkUserId: "user_123" } })
 )
 const mockScheduleAcceptedJudgeReminders = mock(() => Promise.resolve(2))
+const mockReconcileJudgingNotifications = mock(() => Promise.resolve())
+
+mock.module("@/lib/services/judging-notifications", () => ({
+  reconcileJudgingNotifications: mockReconcileJudgingNotifications,
+}))
 
 mock.module("@/lib/services/pre-event-reminders", () => ({
   scheduleAcceptedJudgeReminders: mockScheduleAcceptedJudgeReminders,
@@ -86,6 +91,7 @@ describe("Judge Invitations Integration - acceptJudgeInvitation", () => {
     })
     mockAddJudge.mockClear()
     mockScheduleAcceptedJudgeReminders.mockClear()
+    mockReconcileJudgingNotifications.mockClear()
     mockAddJudge.mockImplementation(() =>
       Promise.resolve({ success: true, participant: { id: "j1", clerkUserId: "user_123" } })
     )
@@ -120,6 +126,7 @@ describe("Judge Invitations Integration - acceptJudgeInvitation", () => {
         recipientClerkUserId: "user_123",
       }),
     )
+    expect(mockReconcileJudgingNotifications).toHaveBeenCalledWith("h1")
   })
 
   it("claims a pending invitation when the user is already a judge", async () => {

@@ -140,6 +140,13 @@ export interface Hackathon {
   require_location_verification: boolean
   anonymous_judging: boolean
   judging_mode: JudgingMode
+  judging_opens_at?: string | null
+  judging_closes_at?: string | null
+  judging_timezone?: string
+  judging_instructions?: string
+  judging_browse_enabled?: boolean
+  judging_target_reviews?: number
+  judging_reminders_enabled?: boolean
   results_published_at: string | null
   winner_emails_sent_at: string | null
   results_announcement_sent_at: string | null
@@ -567,6 +574,14 @@ export interface HackathonResult {
 }
 
 export interface JudgeInvitation {
+  delivery_fail_count?: number
+  delivery_last_error?: string | null
+  delivery_next_attempt_at?: string | null
+  personal_message?: string | null
+  requested_prize_ids?: string[]
+  requested_room_ids?: string[]
+  scope_applied_at?: string | null
+  reminders_stopped_at?: string | null
   id: string
   hackathon_id: string
   email: string

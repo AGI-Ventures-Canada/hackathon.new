@@ -50,7 +50,7 @@ describe("hackathon draft WebMCP tools", () => {
       ok: boolean
       requiresHumanAction: boolean
     }
-    expect(opened.requiresHumanAction).toBe(true)
+    expect(opened.requiresHumanAction).toBe(false)
     expect(openReview).toHaveBeenCalledTimes(1)
   })
 
@@ -130,7 +130,7 @@ describe("hackathon draft WebMCP tools", () => {
       requiresHumanAction: boolean
     }
     expect(result.ok).toBe(true)
-    expect(result.requiresHumanAction).toBe(true)
+    expect(result.requiresHumanAction).toBe(false)
     expect(openSignIn).toHaveBeenCalledTimes(1)
   })
 
@@ -157,7 +157,7 @@ describe("hackathon draft WebMCP tools", () => {
     expect(result).toMatchObject({
       ok: true,
       data: { opened: true, stage: "judging" },
-      requiresHumanAction: true,
+      requiresHumanAction: false,
     })
     expect(openTestEvent).toHaveBeenCalledWith("judging")
   })

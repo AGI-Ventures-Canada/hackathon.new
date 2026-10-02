@@ -1,4 +1,4 @@
-import { describe, expect, it, mock, beforeEach } from "bun:test"
+import { describe, expect, it, mock, beforeEach, afterEach, setSystemTime } from "bun:test"
 import { Elysia } from "elysia"
 import { resetSupabaseMocks } from "../lib/supabase-mock"
 
@@ -119,7 +119,9 @@ mock.module("@clerk/nextjs/server", () => ({
   clerkClient: mock(() => Promise.resolve({ users: { getUser: mockGetUser } })),
 }))
 
+const realTimeline = await import("@/lib/utils/timeline")
 mock.module("@/lib/utils/timeline", () => ({
+  ...realTimeline,
   validateTimelineDates: mock(() => null),
   getEffectiveStatus: mock((h: { status: string }) => h.status),
 }))
@@ -252,7 +254,10 @@ const mockHackathonResponse = {
 }
 
 describe("PATCH /api/dashboard/hackathons/:id/settings - status change emails", () => {
+  afterEach(() => setSystemTime())
+
   beforeEach(() => {
+    setSystemTime(new Date("2026-09-08T12:30:00.000Z"))
     resetSupabaseMocks()
     mockResolvePrincipal.mockClear()
     mockCheckHackathonOrganizer.mockClear()

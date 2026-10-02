@@ -100,10 +100,19 @@ export function RegistrationButton({
       archived: "Event Archived",
     }
     return (
-      <Button disabled variant="secondary" size="lg">
-        <Lock className="size-4" />
-        {blockedMessage[status] ?? "Registration Not Available"}
-      </Button>
+      <div className="flex flex-col gap-2">
+        <Button disabled variant="secondary" size="lg">
+          <Lock className="size-4" />
+          {blockedMessage[status] ?? "Registration Not Available"}
+        </Button>
+        {!isSignedIn && status !== "draft" && (
+          <Button variant="outline" asChild>
+            <Link href={`/sign-in?redirect_url=${encodeURIComponent(pathname)}`}>
+              Already signed up? Sign in
+            </Link>
+          </Button>
+        )}
+      </div>
     )
   }
 
@@ -161,6 +170,24 @@ export function RegistrationButton({
     )
   }
 
+  if (maxParticipants && participantCount >= maxParticipants) {
+    return (
+      <div className="flex flex-col gap-2">
+        <Button disabled variant="secondary" size="lg">
+          <Users className="size-4" />
+          Event Full
+        </Button>
+        {!isSignedIn && (
+          <Button variant="outline" asChild>
+            <Link href={`/sign-in?redirect_url=${encodeURIComponent(pathname)}`}>
+              Already signed up? Sign in
+            </Link>
+          </Button>
+        )}
+      </div>
+    )
+  }
+
   if (!isSignedIn) {
     return (
       <Button asChild size="lg">
@@ -171,14 +198,6 @@ export function RegistrationButton({
     )
   }
 
-  if (maxParticipants && participantCount >= maxParticipants) {
-    return (
-      <Button disabled variant="secondary" size="lg">
-        <Users className="size-4" />
-        Event Full
-      </Button>
-    )
-  }
 
   function getErrorMessage(code: string, fallback: string): string {
     const errorMessages: Record<string, string> = {

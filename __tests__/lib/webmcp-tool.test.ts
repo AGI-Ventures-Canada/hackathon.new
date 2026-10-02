@@ -207,10 +207,24 @@ describe("defineWebMcpTool", () => {
     const tool = defineWebMcpTool({
       name: "read_union",
       description: "Read a union value.",
-      schema: z.union([z.string(), z.number()]),
+      schema: z.union([
+        z.object({ text: z.string() }),
+        z.object({ count: z.number() }),
+      ]),
       execute: (value) => ({ value }),
     })
     expect(tool.inputSchema).toHaveProperty("anyOf")
+    expect(() =>
+      defineWebMcpTool({
+        name: "read_union_budget",
+        description: "Read a union value.",
+        schema: z.union([
+          z.object({ text: z.string() }),
+          z.object({ [nestedName]: z.number() }),
+        ]),
+        execute: (value) => ({ value }),
+      }),
+    ).toThrow(`WebMCP parameter name is too long: ${nestedName}`)
   })
 
   it("turns cyclic and unexpected handler outputs into bounded structured errors", async () => {

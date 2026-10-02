@@ -1,5 +1,6 @@
+import { legacyJudgingHref } from "@/lib/judging/setup"
 import { z } from "zod"
-import type { HackathonStatus, Prize } from "@/lib/db/hackathon-types"
+import type { HackathonStatus, Prize, HackathonSponsor } from "@/lib/db/hackathon-types"
 import type { Announcement } from "@/lib/services/announcements"
 import type { Challenge } from "@/lib/services/challenges"
 import type { ScheduleItem } from "@/lib/services/schedule-items"
@@ -130,6 +131,7 @@ export type ManageHackathonWebMcpContext = {
     description: string | null
     submitterName: string
   }[]
+  sponsorRecords?: HackathonSponsor[]
   sponsors: {
     name: string
     tier: string | null
@@ -569,6 +571,8 @@ function sanitizeOrganizerData(value: unknown, depth = 0): unknown {
 }
 
 function manageHref(slug: string, params: string): string {
+  const query = new URLSearchParams(params)
+  if (query.get("tab") === "judging") return legacyJudgingHref(slug, query.get("jtab") ?? undefined)
   return `/e/${slug}/manage?${params}`
 }
 
@@ -614,7 +618,7 @@ function organizerSectionData(
       judgeCount: context.stats.judgeCount,
     }
   }
-  if (["judging", "judging_setup", "judges", "rounds", "prizes", "assignments", "results"].includes(section)) {
+  if (["judging", "judging_setup", "judging_settings", "judges", "rounds", "prizes", "assignments", "results"].includes(section)) {
     return {
       judgeCount: context.stats.judgeCount,
       prizeCount: context.prizes.length,
@@ -668,7 +672,7 @@ async function sendMutation<T>(
   options: {
     context: ManageHackathonWebMcpContext
     url: string
-    method: "POST" | "PATCH"
+    method: "POST" | "PATCH" | "DELETE"
     body: Record<string, unknown>
     signal: AbortSignal
     optimistic: ManageWebMcpOptimisticChange
@@ -762,7 +766,7 @@ function createOrganizerTaskTools(
         return {
           taskRef,
           status: opened ? "opened" : "not_available",
-          requiresHumanAction: true,
+          requiresHumanAction: false,
         }
       },
     }),
@@ -1226,7 +1230,7 @@ function createReadTools(
         return {
           review,
           status: opened ? "opened" : "not_available",
-          requiresHumanAction: true,
+          requiresHumanAction: false,
         }
       },
     }),
@@ -1595,7 +1599,7 @@ function createOrganizerWriteTools(
       name: "open_go_live_review",
       title: "Review going live",
       description:
-        "Open the event's go-live review. The organizer must check it and click the final button.",
+        "Open the optional go-live preview. Use execute_event_action to update event status directly.",
       schema: emptyInput,
       annotations: { readOnlyHint: true },
       execute: () => {
@@ -1606,7 +1610,7 @@ function createOrganizerWriteTools(
             status: "review_opened",
             eventUrl: `/e/${context.hackathon.slug}`,
           },
-          requiresHumanAction: true,
+          requiresHumanAction: false,
         }
       },
     }),
@@ -1676,7 +1680,7 @@ function createAnnouncementTool(
           },
           inspectUrl,
         },
-        requiresHumanAction: true,
+        requiresHumanAction: false,
       }
     },
   })
@@ -1689,7 +1693,7 @@ function createPublishReviewTool(
     name: "open_publish_review",
     title: "Review publishing results",
     description:
-      "Open results for review. The organizer must check winners and click the final publish button.",
+      "Open an optional results preview. Use execute_event_action to publish results directly.",
     schema: emptyInput,
     annotations: { readOnlyHint: true },
     execute: async () => {
@@ -1698,7 +1702,7 @@ function createPublishReviewTool(
       const opened = await dependencies.onNavigate(url, "results")
       return {
         data: { status: opened ? "review_opened" : "navigation_pending", url },
-        requiresHumanAction: true,
+        requiresHumanAction: false,
       }
     },
   })
@@ -1710,7 +1714,7 @@ function createSponsorPreparationTool(
   return defineWebMcpTool({
     name: "prepare_sponsor",
     title: "Prepare a sponsor",
-    description: "Open the sponsor editor and fill in a sponsor name. A person must review and add it.",
+    description: "Open the optional sponsor editor and fill a name. Use add_sponsor or execute_event_action to save directly.",
     schema: sponsorPreparationInput,
     annotations: { untrustedContentHint: true },
     execute: async ({ name }) => {
@@ -1725,7 +1729,7 @@ function createSponsorPreparationTool(
           status: opened ? "review_opened" : "navigation_pending",
           inspectUrl,
         },
-        requiresHumanAction: true,
+        requiresHumanAction: false,
       }
     },
   })
@@ -1738,7 +1742,7 @@ function createTestEventConversionTool(
     name: "open_test_event_conversion",
     title: "Make this test event real",
     description:
-      "Open a review that explains which fake data will be removed. A person must confirm the change.",
+      "Open an optional preview of test data removal. Use execute_event_action to convert the test event directly.",
     schema: emptyInput,
     annotations: { readOnlyHint: true },
     execute: () => {
@@ -1747,13 +1751,208 @@ function createTestEventConversionTool(
         data: {
           opened,
           nextStep: opened
-            ? "Review the data removal, then click Make it real."
+            ? "Your agent can convert this test event directly."
             : "Open the event manager and try again.",
         },
-        requiresHumanAction: true,
+        requiresHumanAction: false,
       }
     },
   })
+}
+
+function createOrganizerSponsorTools(
+  dependencies: ManageHackathonToolDependencies,
+): WebMcpTool[] {
+  const references = new Map<string, string>()
+  const referenceFor = (id: string) => {
+    for (const [reference, storedId] of references)
+      if (storedId === id) return reference
+    const reference = `sponsor-${crypto.randomUUID().slice(0, 8)}`
+    references.set(reference, id)
+    return reference
+  }
+  const fields = z
+    .object({
+      name: z.string().trim().min(1).max(200).optional(),
+      websiteUrl: z
+        .string()
+        .trim()
+        .max(2000)
+        .refine(
+          (value) => isSafeExternalUrl(normalizeUrl(value)),
+          "Enter a safe website link",
+        )
+        .nullable()
+        .optional(),
+      tier: z.enum(["gold", "silver", "bronze", "custom", "none"]).optional(),
+      customTierLabel: z.string().trim().max(100).nullable().optional(),
+    })
+    .strict()
+  const resolve = (reference: string, records: HackathonSponsor[]) => {
+    const record = records.find((item) => item.id === references.get(reference))
+    if (!record)
+      throw new WebMcpRequestError({
+        code: "invalid_reference",
+        message: "List sponsors again and use a current sponsor reference.",
+        retryable: false,
+      })
+    return record
+  }
+  const tools: WebMcpTool[] = [
+    defineWebMcpTool({
+      name: "get_sponsor_details",
+      description:
+        "List sponsor names, tiers, website links, and references to edit or remove a sponsor. Use these references, never an internal ID.",
+      schema: paginationInput,
+      annotations: untrustedReadAnnotations,
+      execute: (input) => {
+        const context = dependencies.getContext()
+        return pageItems(
+          (context.sponsorRecords ?? []).map((item) => ({
+            sponsorRef: referenceFor(item.id),
+            name: clip(item.name, 100),
+            tier: item.tier,
+            websiteUrl:
+              item.website_url && isSafeExternalUrl(item.website_url)
+                ? item.website_url.length <= 240
+                  ? item.website_url
+                  : null
+                : null,
+            customTierLabel: clip(item.custom_tier_label, 100),
+          })),
+          input,
+        )
+      },
+    }),
+  ]
+  if (!isWebMcpPreCompletionStatus(dependencies.getContext().hackathon.status))
+    return tools
+  const run = async (
+    operation: "add" | "update" | "remove",
+    input: z.output<typeof fields> & { sponsorRef?: string },
+    signal: AbortSignal,
+  ) => {
+    const context = getPreCompletionContext(dependencies)
+    const records = context.sponsorRecords ?? []
+    const current =
+      operation === "add" ? undefined : resolve(input.sponsorRef ?? "", records)
+    const mutationId = createMutationId("sponsors")
+    const { sponsorRef: _reference, ...patch } = input
+    const body = {
+      ...patch,
+      ...(patch.websiteUrl
+        ? { websiteUrl: normalizeUrl(patch.websiteUrl) }
+        : {}),
+    }
+    const sponsor: HackathonSponsor = {
+      id: mutationId,
+      hackathon_id: context.hackathon.id,
+      name: input.name ?? "",
+      tier: "none",
+      custom_tier_label: null,
+      website_url: null,
+      logo_url: null,
+      logo_url_dark: null,
+      sponsor_tenant_id: null,
+      tenant_sponsor_id: null,
+      use_org_assets: false,
+      display_order: records.length,
+      created_at: new Date().toISOString(),
+      ...current,
+      ...(input.name !== undefined ? { name: input.name } : {}),
+      ...(input.tier !== undefined ? { tier: input.tier } : {}),
+      ...(input.customTierLabel !== undefined
+        ? { custom_tier_label: input.customTierLabel }
+        : {}),
+      ...(input.websiteUrl !== undefined
+        ? {
+            website_url: input.websiteUrl
+              ? normalizeUrl(input.websiteUrl)
+              : null,
+          }
+        : {}),
+    }
+    if (sponsor.tier !== "custom") sponsor.custom_tier_label = null
+    const inspectUrl = `${manageHref(context.hackathon.slug, "tab=edit")}&section=sponsors`
+    const optimistic: ManageWebMcpOptimisticChange = {
+      kind: "sponsors",
+      mutationId,
+      sponsorId: sponsor.id,
+      sponsor: operation === "remove" ? null : sponsor,
+      href: inspectUrl,
+      summary: `${operation === "add" ? "Adding" : operation === "remove" ? "Removing" : "Updating"} ${sponsor.name}`,
+    }
+    const result = await sendMutation<{ id?: string }>(dependencies, {
+      context,
+      url: `/api/dashboard/hackathons/${context.hackathon.id}/sponsors${current ? `/${current.id}` : ""}`,
+      method:
+        operation === "add"
+          ? "POST"
+          : operation === "remove"
+            ? "DELETE"
+            : "PATCH",
+      body:
+        operation === "add"
+          ? { ...body, displayOrder: sponsor.display_order }
+          : body,
+      signal,
+      optimistic,
+      toCommitted: (response) => ({
+        kind: "sponsors",
+        mutationId,
+        sponsorId: sponsor.id,
+        sponsor:
+          operation === "remove"
+            ? null
+            : { ...sponsor, id: response.id ?? sponsor.id },
+      }),
+    })
+    return {
+      outcome:
+        operation === "add"
+          ? "Sponsor added"
+          : operation === "remove"
+            ? "Sponsor removed"
+            : "Sponsor updated",
+      name: clip(sponsor.name, 100),
+      ...(operation !== "remove"
+        ? { sponsorRef: referenceFor(result.id ?? sponsor.id) }
+        : {}),
+      inspectUrl,
+    }
+  }
+  tools.push(
+    defineWebMcpTool({
+      name: "add_sponsor",
+      description:
+        "Add a sponsor by name, with an optional website and tier. This updates the event page and does not send an invitation.",
+      schema: fields.extend({ name: z.string().trim().min(1).max(200) }),
+      annotations: untrustedWriteAnnotations,
+      execute: (input, { signal }) => run("add", input, signal),
+    }),
+    defineWebMcpTool({
+      name: "update_sponsor",
+      description:
+        "Edit a sponsor's name, website, or tier using a reference from get_sponsor_details. Changes appear on the event page.",
+      schema: fields
+        .extend({ sponsorRef: z.string().max(80) })
+        .refine(
+          (input) => Object.keys(input).some((key) => key !== "sponsorRef"),
+          "Include a sponsor field to change",
+        ),
+      annotations: untrustedWriteAnnotations,
+      execute: (input, { signal }) => run("update", input, signal),
+    }),
+    defineWebMcpTool({
+      name: "remove_sponsor",
+      description:
+        "Remove a sponsor from this event using its current reference. This removes its event listing and uploaded logos. Use only when the user asks to remove this sponsor.",
+      schema: z.object({ sponsorRef: z.string().max(80) }).strict(),
+      annotations: untrustedWriteAnnotations,
+      execute: (input, { signal }) => run("remove", input, signal),
+    }),
+  )
+  return tools
 }
 
 export function createManageHackathonTools(
@@ -1793,6 +1992,7 @@ export function createManageHackathonTools(
     },
   }
   const tools = createReadTools(currentDependencies)
+  tools.push(...createOrganizerSponsorTools(currentDependencies))
   if (
     WEBMCP_PRE_COMPLETION_STATUSES.some(
       (allowed) => allowed === registrationStatus,

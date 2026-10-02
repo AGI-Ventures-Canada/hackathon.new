@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import dynamic from "next/dynamic"
 import { useIsClient } from "@/hooks/use-is-client"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { useOptimisticMutation } from "@/hooks/use-optimistic-mutation"
 import { assertOk } from "@/lib/utils/fetch"
 import { EditProvider, useEdit, SECTION_ORDER } from "./edit-context"
@@ -105,6 +105,7 @@ const JudgingSetupDialog = dynamic(() =>
 interface HackathonPreviewClientProps {
   hackathon: PublicHackathon
   isEditable: boolean
+  attendeeNextStep?: string
   isRegistered?: boolean
   participantRole?: string | null
   participantCount?: number
@@ -131,6 +132,7 @@ interface HackathonPreviewClientProps {
 
 function HackathonPreviewContent({
   hackathon,
+  attendeeNextStep,
   isRegistered: initialIsRegistered = false,
   participantRole = null,
   participantCount = 0,
@@ -156,7 +158,14 @@ function HackathonPreviewContent({
 }: Omit<HackathonPreviewClientProps, "isEditable">) {
   const { isEditable, editMode, activeSection, openSection, closeDrawer } = useEdit()
   const router = useRouter()
+  const requestedSection = useSearchParams().get("section")
+  useEffect(() => {
+    if (!isEditable || !editMode) return
+    const section = SECTION_ORDER.find((candidate) => candidate === requestedSection)
+    if (section) openSection(section)
+  }, [isEditable, editMode, requestedSection, openSection])
   const actionItemsCtx = useActionItemsOptional()
+  const visibleSponsors = actionItemsCtx?.manageWebMcpView.sponsors ?? hackathon.sponsors
   const manageView = isEditable ? actionItemsCtx?.manageWebMcpView : undefined
   const visibleName = manageView?.details.name ?? hackathon.name
   const visibleDescription = manageView
@@ -393,6 +402,12 @@ function HackathonPreviewContent({
 
   const registrationStatus = isRegistered && participantRole === "participant" && (
     <div className={`space-y-2.5 ${justRegistered ? "animate-in fade-in duration-500" : ""}`}>
+      {attendeeNextStep && (
+        <div className="space-y-1" role="status">
+          <p className="text-sm font-semibold">What’s next?</p>
+          <p className="text-sm text-muted-foreground">{attendeeNextStep}</p>
+        </div>
+      )}
       <ParticipantTeamHeader
         teamInfo={teamInfo}
         hackathonId={hackathon.id}
@@ -609,7 +624,7 @@ function HackathonPreviewContent({
     <div data-edit-section="sponsors" className="scroll-mt-24">
       <SponsorsEditForm
         hackathonId={hackathon.id}
-        initialSponsors={hackathon.sponsors}
+        initialSponsors={visibleSponsors}
         onSaveAndNext={() => handleSaveAndNext("sponsors")}
         onSave={onFormSave ? (data) => onFormSave(data) : undefined}
         preparedName={preparedSponsor?.name}
@@ -619,10 +634,10 @@ function HackathonPreviewContent({
   ) : (
     <EditableSection
       section="sponsors"
-      isEmpty={hackathon.sponsors.length === 0}
+      isEmpty={visibleSponsors.length === 0}
       emptyLabel="Click to add sponsors"
     >
-      <SponsorSection sponsors={hackathon.sponsors} />
+      <SponsorSection sponsors={visibleSponsors} />
     </EditableSection>
   )
 
@@ -1022,6 +1037,8 @@ export function HackathonPreviewClient({
   hackathon,
   isEditable,
   isRegistered,
+  attendeeNextStep,
+  notificationDisposition,
   participantRole,
   participantCount,
   showActionBar = false,
@@ -1048,6 +1065,8 @@ export function HackathonPreviewClient({
       <HackathonPreviewContent
         hackathon={hackathon}
         isRegistered={isRegistered}
+        attendeeNextStep={attendeeNextStep}
+        notificationDisposition={notificationDisposition}
         participantRole={participantRole}
         participantCount={participantCount}
         showActionBar={showActionBar}

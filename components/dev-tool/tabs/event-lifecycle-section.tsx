@@ -254,6 +254,20 @@ export function EventLifecycleSection({
         </div>
       </Section>
 
+      <Section label="Judging time">
+        <div className="flex flex-wrap gap-2">
+          {[
+            { label: "Open now, due in 2 days", open: -1, close: 48 },
+            { label: "Opens in 1 day", open: 24, close: 72 },
+            { label: "Due in 30 minutes", open: -24, close: 0.5 },
+            { label: "Closed 1 hour ago", open: -48, close: -1 },
+          ].map((preset) => <Button key={preset.label} size="sm" variant="outline" disabled={isLoading || simActive} onClick={() => {
+            const now = Date.now()
+            void devAction("/timeline", "PATCH", { judgingOpensAt: new Date(now + preset.open * 3_600_000).toISOString(), judgingClosesAt: new Date(now + preset.close * 3_600_000).toISOString() })
+          }}>{preset.label}</Button>)}
+        </div>
+      </Section>
+
       <Section label="Auto-Transitions">
         <Button
           size="sm"

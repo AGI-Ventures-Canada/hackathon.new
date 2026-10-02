@@ -5,6 +5,11 @@ import {
   setMockFromImplementation,
 } from "../lib/supabase-mock"
 
+const claimReminder = mock(() => Promise.resolve({ success: true, invitation: { id: "invite_1", token: "token_1", email: "person@example.com", expires_at: "2099-09-01T00:00:00Z", reminded_at: "2026-09-05T12:00:00Z" } }))
+const releaseReminder = mock(() => Promise.resolve())
+const latestInvitation = mock(() => Promise.resolve({ status: "pending", hackathon: { name: "Build Together", slug: "build-together", status: "judging", starts_at: "2026-09-10T12:00:00.000Z", ends_at: "2026-09-11T17:00:00.000Z", judging_timezone: "America/Toronto" } }))
+mock.module("@/lib/services/judge-invitations", () => ({ remindJudgeInvitation: claimReminder, releaseJudgeInvitationReminderClaim: releaseReminder, getJudgeInvitationByToken: latestInvitation }))
+
 const mockTeamReminder = mock(() => Promise.resolve({ success: true }))
 const mockJudgeReminder = mock(() => Promise.resolve({ success: true }))
 const mockEventReminder = mock(() => Promise.resolve({ sent: 1, failed: 0 }))
@@ -66,6 +71,9 @@ const baseReminder = {
 describe("smart reminder default delivery", () => {
   beforeEach(() => {
     resetSupabaseMocks()
+    claimReminder.mockClear()
+    releaseReminder.mockClear()
+    latestInvitation.mockClear()
     mockTeamReminder.mockClear()
     mockJudgeReminder.mockClear()
     mockEventReminder.mockClear()

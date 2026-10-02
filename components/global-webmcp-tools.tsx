@@ -137,7 +137,7 @@ export function GlobalWebMcpTools() {
       }
       pending.resolve({
         openedReview: true,
-        nextStep: "Review every project field, then click Submit Project or Save Changes.",
+        nextStep: "Your project is ready. Your agent can submit or save it directly.",
       })
     })
     return () => cancelAnimationFrame(frame)

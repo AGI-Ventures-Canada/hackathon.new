@@ -55,6 +55,14 @@ describe("Crowd Voting Service", () => {
     })
   })
 
+  it("keeps both vote writes closed when the transaction-time judging gate closes", async () => {
+    const called: string[] = []
+    setMockRpcImplementation((name) => { called.push(name); return Promise.resolve({ data: "voting_closed", error: null }) })
+    expect(await castVote("h1", "p1", "s1", "user1")).toMatchObject({ success: false, code: "voting_closed" })
+    expect(await removeVote("h1", "p1", "user1")).toMatchObject({ success: false, code: "voting_closed" })
+    expect(called).toEqual(["cast_crowd_vote_atomic", "remove_crowd_vote_atomic"])
+  })
+
   describe("getVoteCounts", () => {
     it("returns vote counts per submission", async () => {
       setMockRpcImplementation(() => Promise.resolve({ data: [

@@ -522,243 +522,47 @@ describe("Judging Service", () => {
   })
 
   describe("autoAssignJudges", () => {
-    it("assigns judges to submissions for a prize", async () => {
-      let submissionsCallCount = 0
-      let assignmentsCallCount = 0
-      setMockFromImplementation((table) => {
-        if (table === "prizes") {
-          return createChainableMock({
-            data: { id: "p1", round_id: null },
-            error: null,
-          })
-        }
-        if (table === "hackathon_participants") {
-          return createChainableMock({
-            data: [{ id: "j1", team_id: null }],
-            error: null,
-          })
-        }
-        if (table === "submissions") {
-          submissionsCallCount++
-          if (submissionsCallCount === 1) {
-            return createChainableMock({
-              data: [{ id: "s1" }, { id: "s2" }],
-              error: null,
-            })
-          }
-          return createChainableMock({
-            data: [{ id: "s1", team_id: "t1" }, { id: "s2", team_id: "t2" }],
-            error: null,
-          })
-        }
-        if (table === "judge_assignments") {
-          assignmentsCallCount++
-          if (assignmentsCallCount === 1) {
-            return createChainableMock({ data: [], error: null })
-          }
-          return createChainableMock({ data: null, error: null })
-        }
-        return createChainableMock({ data: null, error: null })
+    const snapshot = {
+      version: "v1", hackathonId: "h1", closed: false, coreCategoryCount: 4,
+      judges: [{ id: "j1", name: "Judge", teamId: null }],
+      projects: [{ id: "s1", title: "First", teamId: "t1", mode: "in_person", roomId: "room-1" }, { id: "s2", title: "Second", teamId: "t2", mode: "in_person", roomId: "room-2" }],
+      prizes: [{ id: "p1", name: "Overall", style: "weighted_score", roundId: null, judgeScope: "all", judgeIds: [], projectIds: ["s1", "s2"], allowedTeamModes: null, categoryCount: 0 }], assignments: [],
+    }
+
+    it("includes weighted prizes and preserves a per-judge workload cap", async () => {
+      let assignments: { kind: string; prizeIds: string[] }[] = []
+      setMockRpcImplementation((fn, args) => {
+        if (fn === "get_judging_distribution_snapshot") return Promise.resolve({ data: snapshot, error: null })
+        expect(fn).toBe("apply_judging_distribution")
+        assignments = (args as { p_assignments: typeof assignments }).p_assignments
+        return Promise.resolve({ data: { createdAssignments: assignments.length }, error: null })
       })
-
-      const result = await autoAssignJudges("h1", "p1", 3)
-
-      expect(result.assignedCount).toBe(2)
+      expect(await autoAssignJudges("h1", "p1", 1)).toEqual({ assignedCount: 1 })
+      expect(assignments).toHaveLength(1)
+      expect(assignments[0].kind).toBe("unified_weighted_score")
+      expect(assignments[0].prizeIds).toEqual(["p1"])
     })
 
-    it("returns zero when prize not found", async () => {
-      setMockFromImplementation((table) => {
-        if (table === "prizes") {
-          return createChainableMock({ data: null, error: null })
-        }
-        return createChainableMock({ data: null, error: null })
+    it("keeps the requested room filter", async () => {
+      setMockRpcImplementation((fn, args) => {
+        if (fn === "get_judging_distribution_snapshot") return Promise.resolve({ data: snapshot, error: null })
+        expect((args as { p_assignments: { projectId: string }[] }).p_assignments.map((a) => a.projectId)).toEqual(["s2"])
+        return Promise.resolve({ data: { createdAssignments: 1 }, error: null })
       })
-
-      const result = await autoAssignJudges("h1", "p1", 3)
-
-      expect(result.assignedCount).toBe(0)
+      expect(await autoAssignJudges("h1", "p1", 3, { roomId: "room-2" })).toEqual({ assignedCount: 1 })
     })
 
-    it("returns zero when no judges exist", async () => {
-      setMockFromImplementation((table) => {
-        if (table === "prizes") {
-          return createChainableMock({
-            data: { id: "p1", round_id: null },
-            error: null,
-          })
-        }
-        if (table === "hackathon_participants") {
-          return createChainableMock({ data: [], error: null })
-        }
-        return createChainableMock({ data: null, error: null })
+    it("does not write when no project is in the room", async () => {
+      setMockRpcImplementation((fn) => {
+        expect(fn).toBe("get_judging_distribution_snapshot")
+        return Promise.resolve({ data: snapshot, error: null })
       })
-
-      const result = await autoAssignJudges("h1", "p1", 3)
-
-      expect(result.assignedCount).toBe(0)
+      expect(await autoAssignJudges("h1", "p1", 3, { roomId: "empty" })).toEqual({ assignedCount: 0 })
     })
 
-    it("skips conflict of interest assignments", async () => {
-      let submissionsCallCount = 0
-      let assignmentsCallCount = 0
-      setMockFromImplementation((table) => {
-        if (table === "prizes") {
-          return createChainableMock({
-            data: { id: "p1", round_id: null },
-            error: null,
-          })
-        }
-        if (table === "hackathon_participants") {
-          return createChainableMock({
-            data: [{ id: "j1", team_id: "t1" }],
-            error: null,
-          })
-        }
-        if (table === "submissions") {
-          submissionsCallCount++
-          if (submissionsCallCount === 1) {
-            return createChainableMock({
-              data: [{ id: "s1" }],
-              error: null,
-            })
-          }
-          return createChainableMock({
-            data: [{ id: "s1", team_id: "t1" }],
-            error: null,
-          })
-        }
-        if (table === "judge_assignments") {
-          assignmentsCallCount++
-          if (assignmentsCallCount === 1) {
-            return createChainableMock({ data: [], error: null })
-          }
-          return createChainableMock({ data: null, error: null })
-        }
-        return createChainableMock({ data: null, error: null })
-      })
-
-      const result = await autoAssignJudges("h1", "p1", 3)
-
-      expect(result.assignedCount).toBe(0)
-    })
-
-    it("returns zero when insert fails", async () => {
-      let submissionsCallCount = 0
-      let assignmentsCallCount = 0
-      setMockFromImplementation((table) => {
-        if (table === "prizes") {
-          return createChainableMock({
-            data: { id: "p1", round_id: null },
-            error: null,
-          })
-        }
-        if (table === "hackathon_participants") {
-          return createChainableMock({
-            data: [{ id: "j1", team_id: null }],
-            error: null,
-          })
-        }
-        if (table === "submissions") {
-          submissionsCallCount++
-          if (submissionsCallCount === 1) {
-            return createChainableMock({
-              data: [{ id: "s1" }],
-              error: null,
-            })
-          }
-          return createChainableMock({
-            data: [{ id: "s1", team_id: "t1" }],
-            error: null,
-          })
-        }
-        if (table === "judge_assignments") {
-          assignmentsCallCount++
-          if (assignmentsCallCount === 1) {
-            return createChainableMock({ data: [], error: null })
-          }
-          return createChainableMock({
-            data: null,
-            error: { message: "Insert failed" },
-          })
-        }
-        return createChainableMock({ data: null, error: null })
-      })
-
-      const result = await autoAssignJudges("h1", "p1", 3)
-
-      expect(result.assignedCount).toBe(0)
-    })
-
-    it("filters submissions to room teams when roomId is provided", async () => {
-      let submissionsCallCount = 0
-      let assignmentsCallCount = 0
-      let inserted: { submission_id: string }[] = []
-
-      setMockFromImplementation((table) => {
-        if (table === "prizes") {
-          return createChainableMock({ data: { id: "p1", round_id: null }, error: null })
-        }
-        if (table === "hackathon_participants") {
-          return createChainableMock({ data: [{ id: "j1", team_id: null }], error: null })
-        }
-        if (table === "room_teams") {
-          return createChainableMock({ data: [{ team_id: "t1" }], error: null })
-        }
-        if (table === "submissions") {
-          submissionsCallCount++
-          if (submissionsCallCount === 1) {
-            return createChainableMock({ data: [{ id: "s1" }, { id: "s2" }], error: null })
-          }
-          return createChainableMock({
-            data: [
-              { id: "s1", team_id: "t1", teams: null },
-              { id: "s2", team_id: "t2", teams: null },
-            ],
-            error: null,
-          })
-        }
-        if (table === "judge_assignments") {
-          assignmentsCallCount++
-          if (assignmentsCallCount === 1) {
-            return createChainableMock({ data: [], error: null })
-          }
-          const insertMock = createChainableMock({ data: null, error: null })
-          insertMock.insert = mock((rows: { submission_id: string }[]) => {
-            inserted = rows
-            return Promise.resolve({ data: null, error: null })
-          }) as typeof insertMock.insert
-          return insertMock
-        }
-        return createChainableMock({ data: null, error: null })
-      })
-
-      const result = await autoAssignJudges("h1", "p1", 3, { roomId: "room-1" })
-
-      expect(result.assignedCount).toBe(1)
-      expect(inserted).toHaveLength(1)
-      expect(inserted[0].submission_id).toBe("s1")
-    })
-
-    it("returns zero when room has no teams", async () => {
-      setMockFromImplementation((table) => {
-        if (table === "prizes") {
-          return createChainableMock({ data: { id: "p1", round_id: null }, error: null })
-        }
-        if (table === "hackathon_participants") {
-          return createChainableMock({ data: [{ id: "j1", team_id: null }], error: null })
-        }
-        if (table === "room_teams") {
-          return createChainableMock({ data: [], error: null })
-        }
-        if (table === "submissions") {
-          return createChainableMock({ data: [{ id: "s1" }], error: null })
-        }
-        return createChainableMock({ data: null, error: null })
-      })
-
-      const result = await autoAssignJudges("h1", "p1", 3, { roomId: "empty-room" })
-
-      expect(result.assignedCount).toBe(0)
+    it("reports atomic apply errors instead of claiming zero assigned", async () => {
+      setMockRpcImplementation((fn) => Promise.resolve(fn === "get_judging_distribution_snapshot" ? { data: snapshot, error: null } : { data: null, error: { message: "Judging changed" } }))
+      await expect(autoAssignJudges("h1", "p1", 3)).rejects.toThrow("Judging changed")
     })
   })
 
@@ -769,6 +573,15 @@ describe("Judging Service", () => {
     const ROOM = "rrrrrrrr-rrrr-rrrr-rrrr-rrrrrrrrrrrr"
     const JUDGE_A = "jjjjjjjj-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
     const JUDGE_B = "jjjjjjjj-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+
+    beforeEach(() => {
+      setMockRpcImplementation(() => Promise.resolve({ data: {
+        closed: false,
+        judges: [JUDGE_A, JUDGE_B].map((id) => ({ id, teamId: null, roomIds: [ROOM] })),
+        projects: [{ id: SUBMISSION_ID, teamId: TEAM, mode: "in_person", roomId: ROOM }],
+        prizes: [{ id: "overall", style: "weighted_score", roundId: null, judgeScope: "all", judgeIds: [], projectIds: [SUBMISSION_ID], allowedTeamModes: null }],
+      }, error: null }))
+    })
 
     it("no-ops when team has no room", async () => {
       setMockFromImplementation((table) => {
@@ -932,6 +745,30 @@ describe("Judging Service", () => {
       expect(inserted[0].judge_participant_id).toBe(JUDGE_B)
     })
 
+    it("routes the eligible judge when another room judge cannot review this prize", async () => {
+      let inserted: { judge_participant_id: string }[] = []
+      setMockRpcImplementation(() => Promise.resolve({ data: {
+        closed: false,
+        judges: [{ id: JUDGE_A, teamId: null, roomIds: [ROOM], prizeScope: "all" }, { id: JUDGE_B, teamId: null, roomIds: [ROOM], prizeScope: "selected", prizeIds: ["unrelated"] }],
+        projects: [{ id: SUBMISSION_ID, teamId: TEAM, mode: "in_person", roomId: ROOM }],
+        prizes: [{ id: "overall", style: "weighted_score", roundId: null, judgeScope: "all", judgeIds: [], projectIds: [SUBMISSION_ID], allowedTeamModes: null }],
+      }, error: null }))
+      setMockFromImplementation((table) => {
+        if (table === "room_teams") return createChainableMock(mockSuccess({ room_id: ROOM }))
+        if (table === "judge_room_assignments") return createChainableMock(mockSuccess([JUDGE_A, JUDGE_B].map((judge_participant_id) => ({ judge_participant_id }))))
+        if (table === "hackathon_participants") return createChainableMock(mockSuccess([JUDGE_A, JUDGE_B].map((id) => ({ id, team_id: null }))))
+        const chain = createChainableMock<unknown>(mockSuccess([]))
+        if (table === "judge_assignments") chain.insert = mock((rows: unknown) => {
+          inserted = rows as typeof inserted
+          expect(inserted.some((row) => row.judge_participant_id === JUDGE_B)).toBe(false)
+          return chain
+        }) as typeof chain.insert
+        return chain
+      })
+      expect(await autoAssignSubmissionToRoomJudges({ hackathonId: H, submissionId: SUBMISSION_ID, teamId: TEAM })).toEqual({ routed: true, assignedCount: 1 })
+      expect(inserted.map((row) => row.judge_participant_id)).toEqual([JUDGE_A])
+    })
+
     it("reports routed=true with assignedCount=0 when every judge already has a unified row", async () => {
       setMockFromImplementation((table) => {
         if (table === "room_teams") return createChainableMock(mockSuccess({ room_id: ROOM }))
@@ -992,6 +829,15 @@ describe("Judging Service", () => {
     const TEAM_X = "tttttttt-tttt-tttt-tttt-tttttttttttt"
     const SUB_X = "ssssssss-ssss-ssss-ssss-ssssssssssss"
     const JUDGE_X = "jjjjjjjj-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+
+    beforeEach(() => {
+      setMockRpcImplementation(() => Promise.resolve({ data: {
+        closed: false,
+        judges: [{ id: JUDGE_X, teamId: null, roomIds: [ROOM_X] }],
+        projects: [{ id: SUB_X, teamId: TEAM_X, mode: "in_person", roomId: ROOM_X }],
+        prizes: [{ id: "overall", style: "weighted_score", roundId: null, judgeScope: "all", judgeIds: [], projectIds: [SUB_X], allowedTeamModes: null }],
+      }, error: null }))
+    })
 
     it("returns zero when hackathon has no rooms", async () => {
       setMockFromImplementation((table) => {
@@ -2484,31 +2330,33 @@ describe("Judging Service", () => {
       expect(result.success).toBe(true)
     })
 
-    it("rejects weighted_score with zero bonus criteria when no core categories exist", async () => {
-      let prizeInsertCount = 0
-      setMockFromImplementation((table: string) => {
-        if (table === "judging_criteria") {
-          return createChainableMock({ data: [], error: null, count: 0 })
-        }
-        if (table === "prizes") {
-          prizeInsertCount++
-          return createChainableMock({ data: null, error: null })
-        }
-        return createChainableMock({ data: null, error: null })
+    it("saves a first weighted prize before the scorecard is set up, while keeping judging unready", async () => {
+      let rpcParams: Record<string, unknown> | undefined
+      setMockRpcImplementation((_name, params) => {
+        rpcParams = params as Record<string, unknown>
+        return mockSuccess({ id: "first-prize", name: "First prize", judging_style: "weighted_score" })
       })
-
       const result = await createPrize("h1", {
-        name: "Orphan Prize",
+        name: "First prize",
         judgingStyle: "weighted_score",
         criteria: [],
       })
 
-      expect(result.success).toBe(false)
-      if (!result.success) {
-        expect(result.code).toBe("validation")
-        expect(result.error).toContain("category")
-      }
-      expect(prizeInsertCount).toBe(0)
+      expect(result.success).toBe(true)
+      expect(rpcParams?.p_criteria).toEqual([])
+      expect(evaluateJudgingSetup(
+        [{ id: "first-prize", name: "First prize", judging_style: "weighted_score", max_picks: null }],
+        [],
+        [],
+      )).toMatchObject({ isReady: false, issues: ["Add score categories for First prize."] })
+    })
+
+    it("keeps submitted round restrictions when saving an unfinished prize", async () => {
+      mockRpcCall("create_prize_configuration_atomic", mockError("judging_rules_locked: Submitted scorecards must stay fixed"))
+
+      const result = await createPrize("h1", { name: "Late prize", judgingStyle: "weighted_score" })
+
+      expect(result).toMatchObject({ success: false, code: "validation" })
     })
   })
 
@@ -3049,9 +2897,26 @@ describe("Judging Service", () => {
   })
 
   describe("isJudgingOpenForHackathon", () => {
+    it.each(["active", "judging"])("blocks an unready scheduled %s event even in a judging phase", async (status) => {
+      setMockFromImplementation(() => createChainableMock({ data: null, error: null }))
+      mockRpcCall("judging_window_is_open", mockSuccess(false))
+      expect(await isJudgingOpenForHackathon({ id: "h1", status, phase: "finals", judging_opens_at: "2026-09-05T12:00:00Z", judging_closes_at: "2026-09-08T12:00:00Z" })).toBe(false)
+    })
+
+    it("checks active round readiness when the event has no judging dates", async () => {
+      setMockFromImplementation(() => createChainableMock({ data: { id: "r1", opens_at: "2026-09-05T12:00:00Z", closes_at: "2026-09-08T12:00:00Z" }, error: null }))
+      mockRpcCall("judging_window_is_open", mockSuccess(false))
+      expect(await isJudgingOpenForHackathon({ id: "h1", status: "active", phase: "finals" })).toBe(false)
+    })
+
+    it("allows a ready declared window after the event ended", async () => {
+      setMockFromImplementation(() => createChainableMock({ data: null, error: null }))
+      mockRpcCall("judging_window_is_open", mockSuccess(true))
+      expect(await isJudgingOpenForHackathon({ id: "h1", status: "judging", judging_opens_at: "2026-09-05T12:00:00Z", judging_closes_at: "2026-09-08T12:00:00Z" })).toBe(true)
+    })
     it("opens access for the stored judging stage", async () => {
       setMockFromImplementation(() =>
-        createChainableMock({ data: null, error: { message: "offline" } }),
+        createChainableMock({ data: null, error: null }),
       )
 
       await expect(isJudgingOpenForHackathon({

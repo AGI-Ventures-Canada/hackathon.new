@@ -5,6 +5,7 @@ import { JudgingTabClient } from "@/components/hackathon/judging/judging-tab-cli
 import type { ManageJtab } from "@/lib/utils/manage-tabs"
 
 export type JudgingTabContentProps = {
+  hideNavigation?: boolean
   hackathonId: string
   slug: string
   submissions: Array<{ id: string; title: string }>
@@ -16,6 +17,7 @@ export type JudgingTabContentProps = {
 }
 
 export async function JudgingTabContent({
+  hideNavigation = false,
   hackathonId,
   slug,
   submissions,
@@ -123,6 +125,7 @@ export async function JudgingTabContent({
 
   return (
     <JudgingTabClient
+      hideNavigation={hideNavigation}
       hackathonId={hackathonId}
       slug={slug}
       prizes={prizesForClient}

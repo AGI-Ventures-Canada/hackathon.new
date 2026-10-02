@@ -83,7 +83,7 @@ mock.module("@/lib/utils/hash", () => ({
 }))
 
 mock.module("next/headers", () => ({
-  headers: () => Promise.resolve(new Headers({ "x-forwarded-for": "192.0.2.1" })),
+  headers: () => Promise.resolve(new Headers({ "x-forwarded-for": "192.0.2.1", "x-oatmeal-request-origin": "https://preview.example.com" })),
 }))
 
 const { default: SignInPage } = await import(
@@ -120,6 +120,21 @@ function propsFrom(testId: string) {
 }
 
 describe("creation and auth page boundaries", () => {
+  it("keeps an absolute same-preview judging destination in the sign-in form", async () => {
+    render(await SignInPage({ searchParams: Promise.resolve({ redirect_url: "https://preview.example.com/home/judging" }) }))
+    expect(propsFrom("custom-sign-in")).toEqual({ redirectUrl: "/home/judging" })
+  })
+
+  it("keeps an absolute same-preview invitation and acceptance intent on sign-up", async () => {
+    render(await SignUpPage({ searchParams: Promise.resolve({ redirect_url: "https://preview.example.com/judge-invite/token?accept=true", email: "judge@example.com" }) }))
+    expect(propsFrom("custom-sign-up")).toEqual({ redirectUrl: "/judge-invite/token?accept=true", initialEmail: "judge@example.com" })
+  })
+
+  it("resumes an already signed-in judge at the same-preview destination", async () => {
+    mockAuth.mockImplementation(() => Promise.resolve({ userId: "judge-user", orgId: null, orgRole: null }))
+    await SignInPage({ searchParams: Promise.resolve({ redirect_url: "https://preview.example.com/home/judging" }) })
+    expect(g.__nextNavRedirect).toHaveBeenCalledWith("/home/judging")
+  })
   it("keeps a safe creation target and bounded email on sign in", async () => {
     const element = await SignInPage({
       searchParams: Promise.resolve({

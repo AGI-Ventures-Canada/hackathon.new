@@ -551,7 +551,7 @@ describe("Submissions Service", () => {
 
   describe("notifySubmissionMembers", () => {
     beforeEach(() => {
-      mockClerkClient.mockClear()
+      mockClerkClient.mockReset()
       mockSendSubmissionConfirmationEmail.mockReset()
       mockSendSubmissionConfirmationEmail.mockImplementation(() =>
         Promise.resolve({ success: true })

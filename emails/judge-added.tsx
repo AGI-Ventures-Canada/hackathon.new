@@ -47,7 +47,7 @@ export default function JudgeAddedEmail({
             lineHeight: "1.6",
           }}
         >
-          <strong>Event time:</strong> {eventSchedule}
+          <strong>Schedule:</strong> {eventSchedule}
         </Text>
       ) : (
         <EventDetailBox

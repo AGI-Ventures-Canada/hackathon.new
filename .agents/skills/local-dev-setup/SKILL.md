@@ -115,10 +115,23 @@ bun dev
 This will automatically:
 1. Start local Supabase (if not running)
 2. Configure `.env.local` with local Supabase credentials
-3. Generate TypeScript types from database
-4. Start Next.js dev server
+3. Generate TypeScript types from database (skipped when the schema is unchanged)
+4. Start Next.js dev server (Turbopack)
 
 First run may take a few minutes to download Supabase containers.
+
+To keep RAM use low, local Supabase runs a trimmed set of services: database,
+API, auth, storage, Studio, and the local mail catcher. Realtime, edge
+functions, log analytics, and the storage S3 API stay off because the app does
+not use them. If you add code that needs one, flip it back on in
+`supabase/config.toml`.
+
+When Supabase is already running and you want the fastest start, skip the
+setup script entirely:
+
+```bash
+SKIP_DB_SETUP=1 bun dev
+```
 
 ### Step 5: Verify Everything Works
 

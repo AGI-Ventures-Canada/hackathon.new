@@ -1,3 +1,5 @@
+import type { SupabaseClient } from "@supabase/supabase-js"
+import { getJudgingScenarioSettings } from "@/lib/fixtures/judging-scenario"
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { HackathonStatus, TeamStatus } from "@/lib/db/hackathon-types"
 import { getOrCreateTenant } from "@/lib/services/tenants"
@@ -68,7 +70,7 @@ async function createTestHackathon(opts: {
 }): Promise<string> {
   const db = getSupabase()
 
-  const { data, error } = await db
+  const { data, error } = await (db as unknown as SupabaseClient)
     .from("hackathons")
     .insert({
       tenant_id: opts.tenantId,
@@ -76,6 +78,7 @@ async function createTestHackathon(opts: {
       slug: opts.slug,
       description: `Test hackathon for the **${opts.slug}** scenario.`,
       status: opts.status,
+      ...getJudgingScenarioSettings(opts.status),
       starts_at: opts.startsAt.toISOString(),
       ends_at: opts.endsAt.toISOString(),
       registration_opens_at: (opts.registrationOpensAt ?? new Date(Date.now() - 14 * 86400000)).toISOString(),
@@ -443,11 +446,12 @@ const scenarioRunners: Record<string, (tenantId?: string, principalOrgId?: strin
         const judgeUserIds = [seedUsers[2], seedUsers[3], seedUsers[4]]
         for (const userId of judgeUserIds) {
           const judgePid = await registerParticipant(hackathonId, userId, "judge")
-          const { data: assignment } = await db
+          const { data: assignment } = await (db as unknown as SupabaseClient)
             .from("judge_assignments")
             .insert({
               hackathon_id: hackathonId,
-              judge_participant_id: judgePid,
+              scoring_scope: "legacy_unscoped",
+          judge_participant_id: judgePid,
               submission_id: submissionId,
             })
             .select("id")
@@ -612,8 +616,9 @@ const scenarioRunners: Record<string, (tenantId?: string, principalOrgId?: strin
       for (const subId of submissions) {
         const { data: sub } = await db.from("submissions").select("team_id").eq("id", subId).single()
         if (sub?.team_id === judgeTeamId) continue
-        await db.from("judge_assignments").insert({
+        await (db as unknown as SupabaseClient).from("judge_assignments").insert({
           hackathon_id: hackathonId,
+          scoring_scope: "legacy_unscoped",
           judge_participant_id: judgeId,
           submission_id: subId,
         })
@@ -671,24 +676,6 @@ const scenarioRunners: Record<string, (tenantId?: string, principalOrgId?: strin
       .select("id")
       .eq("hackathon_id", result.hackathonId)
 
-    if (assignments && criteria) {
-      const toScore = assignments.slice(0, Math.floor(assignments.length * 0.6))
-      for (const a of toScore) {
-        for (const c of criteria) {
-          await db.from("scores").insert({
-            judge_assignment_id: a.id,
-            criteria_id: c.id,
-            score: Math.floor(Math.random() * 8) + 3,
-          })
-        }
-        await db.from("judge_assignments").update({
-          is_complete: true,
-          completed_at: new Date().toISOString(),
-          notes: "Scored via admin scenario runner.",
-        }).eq("id", a.id)
-      }
-    }
-
     const { data: ipCriteria } = await db
       .from("judging_criteria")
       .select("id")
@@ -708,6 +695,24 @@ const scenarioRunners: Record<string, (tenantId?: string, principalOrgId?: strin
         hackathon_id: result.hackathonId,
         ...prize,
       })
+    }
+
+    if (assignments && criteria) {
+      const toScore = assignments.slice(0, Math.floor(assignments.length * 0.6))
+      for (const a of toScore) {
+        for (const c of criteria) {
+          await db.from("scores").insert({
+            judge_assignment_id: a.id,
+            criteria_id: c.id,
+            score: Math.floor(Math.random() * 8) + 3,
+          })
+        }
+        await db.from("judge_assignments").update({
+          is_complete: true,
+          completed_at: new Date().toISOString(),
+          notes: "Scored via admin scenario runner.",
+        }).eq("id", a.id)
+      }
     }
 
     return { hackathonId: result.hackathonId, slug, tenantId: result.tenantId }
@@ -730,25 +735,6 @@ const scenarioRunners: Record<string, (tenantId?: string, principalOrgId?: strin
       .select("id")
       .eq("hackathon_id", result.hackathonId)
 
-    if (assignments && criteria) {
-      for (const a of assignments) {
-        for (const c of criteria) {
-          await db.from("scores").insert({
-            judge_assignment_id: a.id,
-            criteria_id: c.id,
-            score: Math.floor(Math.random() * 8) + 3,
-          })
-        }
-        await db.from("judge_assignments").update({
-          is_complete: true,
-          completed_at: new Date().toISOString(),
-          notes: "Scored via admin scenario runner.",
-        }).eq("id", a.id)
-      }
-    }
-
-    await db.rpc("calculate_results", { p_hackathon_id: result.hackathonId })
-
     const { data: criteriaRows } = await db
       .from("judging_criteria")
       .select("id")
@@ -769,6 +755,25 @@ const scenarioRunners: Record<string, (tenantId?: string, principalOrgId?: strin
         ...prize,
       })
     }
+
+    if (assignments && criteria) {
+      for (const a of assignments) {
+        for (const c of criteria) {
+          await db.from("scores").insert({
+            judge_assignment_id: a.id,
+            criteria_id: c.id,
+            score: Math.floor(Math.random() * 8) + 3,
+          })
+        }
+        await db.from("judge_assignments").update({
+          is_complete: true,
+          completed_at: new Date().toISOString(),
+          notes: "Scored via admin scenario runner.",
+        }).eq("id", a.id)
+      }
+    }
+
+    await db.rpc("calculate_results", { p_hackathon_id: result.hackathonId })
 
     const { autoAssignPrizes } = await import("@/lib/services/prizes")
     await autoAssignPrizes(result.hackathonId)
@@ -1022,7 +1027,6 @@ const scenarioRunners: Record<string, (tenantId?: string, principalOrgId?: strin
       status: "judging",
       startsAt: new Date(now.getTime() - 10 * 86400000),
       endsAt: new Date(now.getTime() - 2 * 86400000),
-      resultsPublishedAt: new Date(now.getTime() - 3600_000).toISOString(),
     })
     const devUser = getDevUserId()
     const seed = getSeedUsers()
@@ -1039,6 +1043,16 @@ const scenarioRunners: Record<string, (tenantId?: string, principalOrgId?: strin
     }
 
     const criteriaIds = await addJudgingCriteria(hackathonId)
+    const firstCriteriaId = criteriaIds[0]
+    const prizes = [
+      { name: "Grand Prize", description: "Best overall project", value: "$10,000", type: "score" as const, rank: 1, kind: "cash", judging_style: "bucket_sort", monetary_value: 10000, currency: "USD", display_order: 0 },
+      { name: "Runner Up", description: "Second place", value: "Swag Pack", type: "score" as const, rank: 2, kind: "swag", judging_style: "bucket_sort", display_order: 1 },
+      { name: "Innovation Award", description: "Most creative solution", value: "$500 API Credits", type: "criteria" as const, criteria_id: firstCriteriaId, kind: "credit", judging_style: "judges_pick", display_order: 2 },
+    ]
+    for (const prize of prizes) {
+      await db.from("prizes").insert({ hackathon_id: hackathonId, ...prize })
+    }
+
 
     const judgeUser = seed[4]
     const judgePid = await registerParticipant(hackathonId, judgeUser, "judge")
@@ -1048,10 +1062,11 @@ const scenarioRunners: Record<string, (tenantId?: string, principalOrgId?: strin
 
     const allSubs = [devSubId, ...otherSubs]
     for (const subId of allSubs) {
-      const { data: assignment } = await db
+      const { data: assignment } = await (db as unknown as SupabaseClient)
         .from("judge_assignments")
         .insert({
           hackathon_id: hackathonId,
+          scoring_scope: "legacy_unscoped",
           judge_participant_id: judgePid,
           submission_id: subId,
         })
@@ -1079,21 +1094,12 @@ const scenarioRunners: Record<string, (tenantId?: string, principalOrgId?: strin
 
     await db.rpc("calculate_results", { p_hackathon_id: hackathonId })
 
-    const firstCriteriaId = criteriaIds[0]
-    const prizes = [
-      { name: "Grand Prize", description: "Best overall project", value: "$10,000", type: "score" as const, rank: 1, kind: "cash", judging_style: "bucket_sort", monetary_value: 10000, currency: "USD", display_order: 0 },
-      { name: "Runner Up", description: "Second place", value: "Swag Pack", type: "score" as const, rank: 2, kind: "swag", judging_style: "bucket_sort", display_order: 1 },
-      { name: "Innovation Award", description: "Most creative solution", value: "$500 API Credits", type: "criteria" as const, criteria_id: firstCriteriaId, kind: "credit", judging_style: "judges_pick", display_order: 2 },
-    ]
-    for (const prize of prizes) {
-      await db.from("prizes").insert({ hackathon_id: hackathonId, ...prize })
-    }
-
     const { autoAssignPrizes } = await import("@/lib/services/prizes")
     await autoAssignPrizes(hackathonId)
 
     const { initializeFulfillments } = await import("@/lib/services/prize-fulfillment")
     await initializeFulfillments(hackathonId)
+    await db.from("hackathons").update({ results_published_at: new Date().toISOString() }).eq("id", hackathonId)
 
     return { hackathonId, slug, tenantId }
   },

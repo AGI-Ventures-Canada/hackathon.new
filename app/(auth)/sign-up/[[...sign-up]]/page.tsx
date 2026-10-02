@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server"
 import { redirect } from "next/navigation"
-import { safeRedirectUrl } from "@/lib/utils/url"
+import { headers } from "next/headers"
+import { AUTH_REQUEST_ORIGIN_HEADER, safeAuthRedirectUrl } from "@/lib/auth/redirect"
 import { CustomSignUp } from "./custom-sign-up"
 
 export default async function SignUpPage({
@@ -13,7 +14,8 @@ export default async function SignUpPage({
 }) {
   const { userId, orgId } = await auth()
   const { redirect_url, email } = await searchParams
-  const safeRedirect = redirect_url ? safeRedirectUrl(redirect_url) : undefined
+  const requestHeaders = await headers()
+  const safeRedirect = redirect_url ? safeAuthRedirectUrl(redirect_url, requestHeaders.get(AUTH_REQUEST_ORIGIN_HEADER)) : undefined
   const emailValue = Array.isArray(email) ? email[0] : email
   const initialEmail = redirect_url ? emailValue?.slice(0, 254) : undefined
 

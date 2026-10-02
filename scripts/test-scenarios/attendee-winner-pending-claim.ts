@@ -34,7 +34,6 @@ async function run() {
     status: "judging",
     startsAt: new Date(now.getTime() - 10 * 86400000),
     endsAt: new Date(now.getTime() - 2 * 86400000),
-    resultsPublishedAt: new Date(now.getTime() - 3600_000).toISOString(),
   })
 
   const devTeamId = await createTeamWithMembers(hackathonId, DEV_USER_ID, [SEED_USERS[0]])
@@ -51,6 +50,7 @@ async function run() {
   }
 
   const criteriaIds = await addJudgingCriteria(hackathonId)
+  const prizeIds = await createPrizes(hackathonId, buildDefaultPrizes(criteriaIds))
 
   const judgeUserIds = [SEED_USERS[4]]
   const judgePids: string[] = []
@@ -89,9 +89,9 @@ async function run() {
   const { calculateCoreOnlyResults } = await import("@/lib/services/judging")
   await calculateCoreOnlyResults(hackathonId)
 
-  const prizeIds = await createPrizes(hackathonId, buildDefaultPrizes(criteriaIds))
-
   const { assigned, fulfillments } = await autoAssignAndInitFulfillments(hackathonId)
+
+  await supabase.from("hackathons").update({ results_published_at: new Date().toISOString() }).eq("id", hackathonId)
 
   console.log(`Winner's team: dev user. Results published, ${assigned} prizes assigned, ${fulfillments} fulfillment rows initialized.`)
   console.log(`Prize IDs: ${prizeIds.join(", ")}`)

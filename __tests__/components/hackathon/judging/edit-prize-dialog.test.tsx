@@ -31,6 +31,7 @@ const JUDGES_PICK_PRIZE: EditablePrize = {
 describe("EditPrizeDialog null-style picker", () => {
   beforeEach(() => {
     cleanup()
+    localStorage.clear()
     resetComponentMocks()
     fetchImpl = async () =>
       new Response(JSON.stringify({ prize: { id: "prize-1" } }), { status: 200 })
@@ -161,5 +162,26 @@ describe("EditPrizeDialog null-style picker", () => {
     expect(capturedBody?.buckets).toBeUndefined()
     expect(capturedBody?.criteria).toBeUndefined()
     expect(capturedBody?.maxPicks).toBeUndefined()
+  })
+
+  it("omits the existing scorecard when only the prize name changes", async () => {
+    let captured: Record<string, unknown> | undefined
+    fetchImpl = async (_url, init) => { captured = JSON.parse(String(init?.body)); return new Response("{}", { status: 200 }) }
+    render(<EditPrizeDialog hackathonId="event" prize={{ ...JUDGES_PICK_PRIZE, judgingStyle: "weighted_score", criteria: [{ id: "11111111-1111-1111-1111-111111111111", name: "Impact", description: null, weight: 25, minScore: 0, maxScore: 10 }] }} onClose={() => {}} />)
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "New prize name" } })
+    fireEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() => expect(captured?.name).toBe("New prize name"))
+    expect(captured?.criteria).toBeUndefined()
+    expect(captured?.judgingStyle).toBeUndefined()
+  })
+
+  it("keeps stored criterion IDs when changing an unsubmitted scorecard", async () => {
+    let captured: Record<string, unknown> | undefined
+    fetchImpl = async (_url, init) => { captured = JSON.parse(String(init?.body)); return new Response("{}", { status: 200 }) }
+    render(<EditPrizeDialog hackathonId="event" prize={{ ...JUDGES_PICK_PRIZE, judgingStyle: "weighted_score", criteria: [{ id: "11111111-1111-1111-1111-111111111111", name: "Impact", description: null, weight: 25, minScore: 0, maxScore: 10 }] }} onClose={() => {}} />)
+    fireEvent.change(screen.getByPlaceholderText("%"), { target: { value: "30" } })
+    fireEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() => expect(captured?.criteria).toBeDefined())
+    expect(captured?.criteria).toEqual([{ id: "11111111-1111-1111-1111-111111111111", name: "Impact", description: null, weight: 30, minScore: 0, maxScore: 10 }])
   })
 })

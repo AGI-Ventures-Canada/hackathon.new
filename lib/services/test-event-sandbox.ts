@@ -1,3 +1,4 @@
+import { getJudgingScenarioSettings } from "@/lib/fixtures/judging-scenario"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { createHash } from "node:crypto"
 import { supabase as getSupabase } from "@/lib/db/client"
@@ -352,14 +353,14 @@ export async function createTestEventSandbox(
       .update({
         name,
         is_test_event: true,
-        status: timeline.status,
+        status: stage === "results" ? "judging" : timeline.status,
         phase: timeline.phase,
         starts_at: timeline.startsAt,
         ends_at: timeline.endsAt,
         registration_opens_at: timeline.registrationOpensAt,
         registration_closes_at: timeline.registrationClosesAt,
         challenge_released_at: timeline.challengeReleasedAt,
-        results_published_at: timeline.resultsPublishedAt,
+        results_published_at: null,
         rules: "1. Build during the event.\n2. Use test data only.\n3. Be kind and help other teams.\n4. Submit one project per team.",
         location_type: "hybrid",
         location_name: "Launch Lab and online",
@@ -373,6 +374,7 @@ export async function createTestEventSandbox(
         require_team_approval: true,
         anonymous_judging: true,
         judging_mode: "rubric",
+        ...getJudgingScenarioSettings(stage === "results" ? "judging" : timeline.status, now, timeline.timezone),
         max_participants: 250,
       })
       .eq("id", created.id)
@@ -577,6 +579,28 @@ export async function createTestEventSandbox(
       "judge prize assignments",
     )
 
+    const rooms = requireRows<{ id: string }>(
+      await client.from("rooms").insert(
+        TEST_EVENT_ROOMS.map((room, index) => ({
+          hackathon_id: created.id,
+          name: room,
+          display_order: index,
+        })),
+      ).select("id"),
+      "rooms",
+    )
+    requireRows(
+      await client.from("room_teams").insert(
+        teams.map((team, index) => ({
+          room_id: rooms[index % rooms.length].id,
+          team_id: team.id,
+          present_order: Math.floor(index / rooms.length) + 1,
+          has_presented: stage === "results",
+        })),
+      ).select("id"),
+      "room assignments",
+    )
+
     const assignments = stagePlan.weightedAssignmentCount > 0
       ? requireRows<{ id: string; submission_id: string }>(
           await client.from("judge_assignments").insert(
@@ -747,28 +771,6 @@ export async function createTestEventSandbox(
       )
     }
 
-    const rooms = requireRows<{ id: string }>(
-      await client.from("rooms").insert(
-        TEST_EVENT_ROOMS.map((room, index) => ({
-          hackathon_id: created.id,
-          name: room,
-          display_order: index,
-        })),
-      ).select("id"),
-      "rooms",
-    )
-    requireRows(
-      await client.from("room_teams").insert(
-        teams.map((team, index) => ({
-          room_id: rooms[index % rooms.length].id,
-          team_id: team.id,
-          present_order: Math.floor(index / rooms.length) + 1,
-          has_presented: stage === "results",
-        })),
-      ).select("id"),
-      "room assignments",
-    )
-
     requireRows(
       await client.from("hackathon_perks").insert(
         TEST_EVENT_PERKS.map((perk, index) => ({
@@ -837,6 +839,8 @@ export async function createTestEventSandbox(
     const { data: ready, error: readyError } = await client
       .from("hackathons")
       .update({
+        status: timeline.status,
+        results_published_at: timeline.resultsPublishedAt,
         metadata: {
           sandboxStage: stage,
           sandboxFixture: "launch-lab-v1",

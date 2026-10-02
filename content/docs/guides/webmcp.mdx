@@ -28,15 +28,32 @@ You accept terms, share location when needed, and click the final button.
 
 ## Run an event
 
-Organizers can ask an agent to find an event, read its to-do list, and open any section from anywhere in the app. On any manage tab, it can edit basic details, add a normal schedule item, prepare a sponsor, or draft an announcement. Draft events can also get new dates, challenges, and prizes.
+Organizers can ask an agent to find an event, read its to-do list, and open any section from anywhere in the app. On any manage tab, it can edit basic details, add a normal schedule item, prepare a sponsor, or draft an announcement. Judging prizes can be added after publication while scoring rules remain editable.
 
-The agent can't go live, send an announcement, pick winners, publish results, or delete event data. It opens the normal review so an organizer can decide.
+Supported organizer actions can run directly when authorized. The server checks event state and permissions before each action. Tools return clear saved, queued, failed, or conflict outcomes.
+
+### Judging setup tools
+
+The Judging pages and Action Items provide task tools:
+
+- `inspect_judging`: Read readiness, dates, scorecards, invitations, rounds, and progress.
+- `configure_judging`: Save dates and preferences or explicitly apply the starter setup.
+- `save_judging_prize` and `save_judging_category`: Create or edit prizes and scorecards.
+- `save_judging_round`: Configure an optional round and its dates.
+- `invite_judging_panel`: Preview or send invitations, with results for each recipient.
+- `remind_judging_panel`: Check reminder eligibility or nudge judges with unfinished work.
+- `preview_judging_work` and `apply_judging_work`: Review and apply balanced assignments.
+- `inspect_judge_scope` and `save_judge_scope`: Read and set a judge's prizes and rooms.
+- `inspect_judge_projects` and `assign_judge_project`: Inspect eligible projects and adjust one assignment.
+- `open_judging_settings`: Open the matching judging page.
+
+Inspect first to get the current configuration version. Reuse a request key when retrying a save or assignment operation. Invitation previews do not send email; draft-event sends are queued. Retry only failed recipients. Tool lists are paged to keep results small.
 
 ## Judge projects
 
 A judge can list their assigned projects, open one project, and prepare the response style set by the organizer. hackathon.new supports scores, ranked picks, sort groups, and yes-or-no checks.
 
-Preparing a response doesn't save it. The judge checks the visible controls and clicks the normal save button.
+Prepared answers use the same private draft saving as the review form. They affect results only after the judge submits the review.
 
 ## Help as a mentor
 

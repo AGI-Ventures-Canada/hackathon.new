@@ -466,6 +466,35 @@ describe("Resend delivery wrapper", () => {
     expect(transport).toHaveBeenCalledTimes(1)
   })
 
+  it("rechecks a judging delivery before every provider retry and stops when it is stale", async () => {
+    let eligible = true
+    const beforeAttempt = mock(async () => {
+      if (!eligible) throw Object.assign(new Error("Judging is closed"), { name: "judging_notice_suppressed" })
+    })
+    const transport = mock(async () => {
+      eligible = false
+      return { data: null, error: { name: "internal_server_error" as const, message: "Retry later", statusCode: 500 }, headers: null }
+    })
+    const result = await sendEmailWithResult({ ...input, idempotencyKey: "judging-update/notice-1" }, { beforeAttempt, transport, wait: async () => {}, providerPacing: { wait: async () => {} } })
+    expect(result).toMatchObject({ ok: false, attempts: 2, error: { providerCode: "judging_notice_suppressed", retryable: false } })
+    expect(beforeAttempt).toHaveBeenCalledTimes(2)
+    expect(transport).toHaveBeenCalledTimes(1)
+  })
+
+  it("checks judging eligibility after the provider pacing delay", async () => {
+    let eligible = true
+    const transport = mock(async () => ({ data: { id: "first-accepted" }, error: null, headers: null }))
+    const providerPacing = { now: () => 0, wait: async () => { eligible = false } }
+    await sendEmailWithResult(input, { transport, providerPacing })
+    const beforeAttempt = mock(async () => {
+      if (!eligible) throw Object.assign(new Error("Judging closed while waiting"), { name: "judging_notice_suppressed" })
+    })
+    const result = await sendEmailWithResult({ ...input, idempotencyKey: "judging-update/after-pacing" }, { transport, providerPacing, beforeAttempt })
+    expect(result).toMatchObject({ ok: false, error: { providerCode: "judging_notice_suppressed" } })
+    expect(beforeAttempt).toHaveBeenCalledTimes(1)
+    expect(transport).toHaveBeenCalledTimes(1)
+  })
+
   it("does not retry a non-retryable provider rejection", async () => {
     const transport = mock(async () => ({
       data: null,

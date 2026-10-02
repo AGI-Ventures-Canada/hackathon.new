@@ -1,10 +1,8 @@
-import { redirect } from "next/navigation"
+import { Suspense } from "react"
+import { JudgingWorkspaceContent } from "./_workspace"
+import JudgingLoading from "./loading"
 
-type PageProps = {
-  params: Promise<{ slug: string }>
-}
-
-export default async function JudgingPage({ params }: PageProps) {
-  const { slug } = await params
-  redirect(`/e/${slug}/manage?tab=judging`)
+export default async function JudgingPage({params, searchParams}: {params: Promise<{slug: string}>; searchParams: Promise<{edit?: string}>}) {
+  const [{slug}, {edit}] = await Promise.all([params, searchParams])
+  return <Suspense fallback={<JudgingLoading />}><JudgingWorkspaceContent slug={slug} destination="overview" edit={edit} /></Suspense>
 }

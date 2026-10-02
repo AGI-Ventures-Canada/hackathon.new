@@ -1,14 +1,16 @@
 import { Elysia, t } from "elysia"
 import { resolvePrincipal, requirePrincipal } from "@/lib/auth/principal"
+import type { Principal } from "@/lib/auth/types"
 import { logAudit } from "@/lib/services/audit"
 import { resolveAdderName } from "@/lib/auth/resolve-adder-name"
 import { checkRateLimit, RateLimitError } from "@/lib/services/rate-limit"
 import { isValidUuid } from "@/lib/utils/uuid"
 import { getEffectiveStatus } from "@/lib/utils/timeline"
-import { getNotificationDisposition, getNotificationLifecycleError } from "@/lib/utils/notification-lifecycle"
+import { getJudgeNotificationDisposition } from "@/lib/utils/judging-window"
+import { getNotificationLifecycleError } from "@/lib/utils/notification-lifecycle"
 import { getQueueReason } from "@/lib/utils/notification-delivery"
 import { getRequestIdempotencyFingerprint } from "@/lib/utils/request-idempotency"
-import { getWebMcpIdempotencyKey, validateWebMcpMutationContext } from "@/lib/webmcp/mutation-context"
+import { getWebMcpIdempotencyKey, validateWebMcpMutationContext, WEBMCP_PRE_COMPLETION_STATUSES } from "@/lib/webmcp/mutation-context"
 import {
   EventMutationLeaseError,
   withEventMutationLease,
@@ -26,9 +28,26 @@ function prizeMutationLeaseFailure(
   error: unknown,
   set: { status?: number | string },
 ) {
+  if (error instanceof Error && error.message.includes("Reviews have been submitted")) {
+    set.status = 409
+    return { error: error.message, code: "judging_rules_locked" }
+  }
   if (!(error instanceof EventMutationLeaseError)) throw error
   set.status = error.code === "event_busy" ? 409 : 503
   return { error: error.message, code: error.code }
+}
+
+async function authorizeJudgingManual(principal: Principal, hackathonId: string, write: boolean) {
+  requirePrincipal(principal, ["user", "api_key"], [write ? "hackathons:write" : "hackathons:read"])
+  if (!isValidUuid(hackathonId)) return Response.json({ error: "Event not found" }, { status: 404 })
+  const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
+  const access = await checkHackathonOrganizer(hackathonId, principal.tenantId)
+  if (access.status !== "ok") return Response.json({ error: access.status === "not_found" ? "Event not found" : "Not authorized" }, { status: access.status === "not_found" ? 404 : 403 })
+  if (write) {
+    const limit = await checkRateLimit(`manual-judging:${principal.tenantId}:${hackathonId}`)
+    if (!limit.allowed) throw new RateLimitError(limit.resetAt, limit.remaining)
+  }
+  return null
 }
 
 export const dashboardJudgingRoutes = new Elysia()
@@ -36,6 +55,59 @@ export const dashboardJudgingRoutes = new Elysia()
     const principal = await resolvePrincipal(request)
     return { principal }
   })
+
+  .get("/hackathons/:id/judging/judges/:participantId/scope", async ({ principal, params }) => {
+    const denied = await authorizeJudgingManual(principal, params.id, false)
+    if (denied) return denied
+    if (!isValidUuid(params.participantId)) return Response.json({ error: "Judge not found" }, { status: 404 })
+    const { getJudgeAssignmentOptions } = await import("@/lib/services/judging-distribution")
+    try { return { options: await getJudgeAssignmentOptions(params.id, params.participantId) } }
+    catch (error) { return Response.json({ error: error instanceof Error ? error.message : "Could not load judge settings" }, { status: 409 }) }
+  }, { detail: { summary: "Read a judge's prize and room scope", description: "Returns scope, available scorecards, rooms, and whether submitted reviews lock changes." } })
+  .patch("/hackathons/:id/judging/judges/:participantId/scope", async ({ principal, params, body }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+    const denied = await authorizeJudgingManual(principal, params.id, true)
+    if (denied) return denied
+    if (!isValidUuid(params.participantId)) return Response.json({ error: "Judge not found" }, { status: 404 })
+    const { saveJudgeAssignmentScope } = await import("@/lib/services/judging-distribution")
+    try {
+      const options = await saveJudgeAssignmentScope(params.id, params.participantId, body)
+      await logAudit({ principal, action: "judge.scope_updated", resourceType: "hackathon", resourceId: params.id, metadata: { judgeParticipantId: params.participantId, prizeScope: body.prizeScope, prizeIds: body.prizeIds, roomIds: body.roomIds } })
+      return { options }
+    } catch (error) { return Response.json({ error: error instanceof Error ? error.message : "Could not save judge settings" }, { status: 409 }) }
+  }, { body: t.Object({ expectedVersion: t.String({ minLength: 1 }), prizeScope: t.Union([t.Literal("all"), t.Literal("selected")]), prizeIds: t.Array(t.String({ format: "uuid" }), { maxItems: 100 }), roomIds: t.Array(t.String({ format: "uuid" }), { maxItems: 100 }) }), detail: { summary: "Save a judge's prize and room scope", description: "Atomically saves eligible prizes and rooms. Submitted review scope remains fixed." } })
+
+  .get("/hackathons/:id/judging/assignments", async ({ principal, params }) => {
+    const denied = await authorizeJudgingManual(principal, params.id, false)
+    if (denied) return denied
+    const { listJudgingAssignmentRows } = await import("@/lib/services/judging-distribution")
+    return { assignments: await listJudgingAssignmentRows(params.id) }
+  }, { detail: { summary: "List judging project assignments", description: "Lists assigned projects and completion status without private review notes." } })
+  .post("/hackathons/:id/judging/assignments", async ({ principal, params, body }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+    const denied = await authorizeJudgingManual(principal, params.id, true)
+    if (denied) return denied
+    const { assignJudgeToSubmission } = await import("@/lib/services/judging")
+    const result = await assignJudgeToSubmission(params.id, body.judgeParticipantId, body.submissionId)
+    if (!result.success) return Response.json({ error: result.error }, { status: 409 })
+    if (!result.alreadyAssigned) await logAudit({ principal, action: "judge_assignment.created", resourceType: "hackathon", resourceId: params.id, metadata: { judgeParticipantId: body.judgeParticipantId, submissionId: body.submissionId } })
+    return result
+  }, { body: t.Object({ judgeParticipantId: t.String({ format: "uuid" }), submissionId: t.String({ format: "uuid" }) }), detail: { summary: "Assign a judge to a project", description: "Adds one eligible number scorecard to the judge's queue. Existing assignments are kept." } })
+  .delete("/hackathons/:id/judging/assignments/:assignmentId", async ({ principal, params }) => {
+    requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
+    const denied = await authorizeJudgingManual(principal, params.id, true)
+    if (denied) return denied
+    if (!isValidUuid(params.assignmentId)) return Response.json({ error: "Assignment not found" }, { status: 404 })
+    const { deleteJudgingAssignment } = await import("@/lib/services/judging-distribution")
+    try {
+      const result = await deleteJudgingAssignment(params.id, params.assignmentId)
+      if (result.removed) await logAudit({ principal, action: "judge_assignment.deleted", resourceType: "judge_assignment", resourceId: params.assignmentId })
+      return result
+    } catch (error) {
+      if (error instanceof Error) return Response.json({ error: error.message }, { status: 409 })
+      throw error
+    }
+  }, { detail: { summary: "Remove an unsubmitted judging assignment", description: "Removes one assignment. Submitted reviews remain protected." } })
 
   // ============================================================
   // Prizes (the primary judging unit)
@@ -86,7 +158,7 @@ export const dashboardJudgingRoutes = new Elysia()
           status: getEffectiveStatus(result.hackathon),
           eventVersion: result.hackathon.updated_at,
         },
-        ["draft"],
+        WEBMCP_PRE_COMPLETION_STATUSES,
       )
       if (webMcpError) {
         set.status = webMcpError.status
@@ -125,6 +197,7 @@ export const dashboardJudgingRoutes = new Elysia()
           | undefined,
         roundId: body.roundId,
         assignmentMode: body.assignmentMode as "organizer_assigned" | "self_select" | undefined,
+        judgeScope: body.judgeScope,
         maxPicks: body.maxPicks,
         displayOrder: body.displayOrder,
         criteria: body.criteria,
@@ -165,12 +238,13 @@ export const dashboardJudgingRoutes = new Elysia()
     },
     {
       body: t.Object({
-        name: t.String({ description: "Prize name" }),
+        name: t.String({ minLength: 1, maxLength: 200, description: "Prize name" }),
         description: t.Optional(t.Union([t.String(), t.Null()], { description: "Prize description" })),
         value: t.Optional(t.Union([t.String(), t.Null()], { description: "Prize value (e.g. '$5000')" })),
-        judgingStyle: t.Optional(t.String({ description: "bucket_sort | gate_check | crowd_vote | judges_pick" })),
+        judgingStyle: t.Optional(t.Union([t.Literal("bucket_sort"), t.Literal("gate_check"), t.Literal("crowd_vote"), t.Literal("judges_pick"), t.Literal("weighted_score")])),
         roundId: t.Optional(t.Nullable(t.String({ description: "Round ID this prize belongs to" }))),
-        assignmentMode: t.Optional(t.String({ description: "organizer_assigned | self_select" })),
+        assignmentMode: t.Optional(t.Union([t.Literal("organizer_assigned"), t.Literal("self_select")])),
+        judgeScope: t.Optional(t.Union([t.Literal("all"), t.Literal("selected")])),
         maxPicks: t.Optional(
           t.Integer({
             minimum: 1,
@@ -182,6 +256,7 @@ export const dashboardJudgingRoutes = new Elysia()
         criteria: t.Optional(
           t.Array(
             t.Object({
+              id: t.Optional(t.String({ format: "uuid" })),
               name: t.String(),
               description: t.Optional(t.Nullable(t.String())),
               weight: t.Optional(t.Number({ minimum: 0, maximum: 100 })),
@@ -213,7 +288,7 @@ export const dashboardJudgingRoutes = new Elysia()
       detail: {
         summary: "Create prize",
         description:
-          "Creates a new prize. Accepts judgingStyle with criteria/buckets for judging tab, or legacy type/rank/kind fields from edit drawer. WebMCP draft requests must match the event's current draft status and version.",
+          "Creates a new prize. Accepts judgingStyle with criteria/buckets for judging tab, or legacy type/rank/kind fields from edit drawer. Available before completion. Existing submitted reviews freeze scoring rules; WebMCP requests must match the current event version.",
       },
     }
   )
@@ -287,6 +362,7 @@ export const dashboardJudgingRoutes = new Elysia()
         judgingStyle: effectiveStyle,
         roundId: body.roundId,
         assignmentMode: body.assignmentMode as import("@/lib/db/hackathon-types").PrizeAssignmentMode | undefined,
+        judgeScope: body.judgeScope,
         maxPicks: body.maxPicks,
         displayOrder: body.displayOrder,
         allowedTeamModes: body.allowedTeamModes as ("in_person" | "virtual")[] | null | undefined,
@@ -323,9 +399,10 @@ export const dashboardJudgingRoutes = new Elysia()
         name: t.Optional(t.String()),
         description: t.Optional(t.Nullable(t.String())),
         value: t.Optional(t.Nullable(t.String())),
-        judgingStyle: t.Optional(t.String()),
+        judgingStyle: t.Optional(t.Union([t.Literal("bucket_sort"), t.Literal("gate_check"), t.Literal("crowd_vote"), t.Literal("judges_pick"), t.Literal("weighted_score")])),
         roundId: t.Optional(t.Nullable(t.String())),
-        assignmentMode: t.Optional(t.String()),
+        assignmentMode: t.Optional(t.Union([t.Literal("organizer_assigned"), t.Literal("self_select")])),
+        judgeScope: t.Optional(t.Union([t.Literal("all"), t.Literal("selected")])),
         maxPicks: t.Optional(t.Integer({ minimum: 1, maximum: 100 })),
         displayOrder: t.Optional(t.Number()),
         allowedTeamModes: t.Optional(t.Union([
@@ -335,6 +412,7 @@ export const dashboardJudgingRoutes = new Elysia()
         criteria: t.Optional(
           t.Array(
             t.Object({
+              id: t.Optional(t.String({ format: "uuid" })),
               name: t.String(),
               description: t.Optional(t.Nullable(t.String())),
               weight: t.Optional(t.Number({ minimum: 0, maximum: 100 })),
@@ -478,6 +556,7 @@ export const dashboardJudgingRoutes = new Elysia()
 
       const { removeJudgeFromPrize } = await import("@/lib/services/judging")
       const removed = await removeJudgeFromPrize(params.id, params.judgeParticipantId, params.prizeId)
+      if (removed.error) return Response.json({ error: removed.error }, { status: 409 })
 
       return removed
     },
@@ -613,6 +692,8 @@ export const dashboardJudgingRoutes = new Elysia()
       const { createRound } = await import("@/lib/services/judging")
       const round = await createRound(params.id, {
         name: body.name,
+        opensAt: body.opensAt,
+        closesAt: body.closesAt,
         advancement: body.advancement,
         advancementConfig: body.advancementConfig,
       })
@@ -626,6 +707,8 @@ export const dashboardJudgingRoutes = new Elysia()
     {
       body: t.Object({
         name: t.String({ description: "Round name (e.g. 'Semifinals', 'Finals')" }),
+        opensAt: t.Optional(t.Nullable(t.String({ format: "date-time" }))),
+        closesAt: t.Optional(t.Nullable(t.String({ format: "date-time" }))),
         advancement: t.Optional(
           t.Union([t.Literal("manual"), t.Literal("top_n"), t.Literal("threshold")], {
             description: "How submissions move from this round to the next",
@@ -800,6 +883,8 @@ export const dashboardJudgingRoutes = new Elysia()
     {
       body: t.Object({
         name: t.Optional(t.String()),
+        opensAt: t.Optional(t.Nullable(t.String({ format: "date-time" }))),
+        closesAt: t.Optional(t.Nullable(t.String({ format: "date-time" }))),
         status: t.Optional(t.String()),
         advancement: t.Optional(
           t.Union([t.Literal("manual"), t.Literal("top_n"), t.Literal("threshold")])
@@ -1335,7 +1420,8 @@ export const dashboardJudgingRoutes = new Elysia()
         throw new RateLimitError(inviteLimit.resetAt, inviteLimit.remaining)
       }
 
-      const notificationDisposition = getNotificationDisposition({
+      const notificationDisposition = getJudgeNotificationDisposition({
+        ...result.hackathon,
         status: result.hackathon.status,
         starts_at: result.hackathon.starts_at,
         ends_at: result.hackathon.ends_at,
@@ -1415,9 +1501,9 @@ export const dashboardJudgingRoutes = new Elysia()
                   hackathonName: hackathon.name,
                   hackathonSlug: hackathon.slug,
                   addedByName,
-                  hackathonStartsAt: hackathon.starts_at,
-                  hackathonEndsAt: hackathon.ends_at,
-                  hackathonTimezone: "UTC",
+                  hackathonStartsAt: hackathon.judging_opens_at ?? hackathon.starts_at,
+                  hackathonEndsAt: hackathon.judging_closes_at ?? hackathon.ends_at,
+                  hackathonTimezone: hackathon.judging_timezone ?? "UTC",
                 })
                 if (!notification.success) {
                   throw new Error("Judge notification email was not accepted")
@@ -1520,9 +1606,9 @@ export const dashboardJudgingRoutes = new Elysia()
                   hackathonName: hackathon.name,
                   hackathonSlug: hackathon.slug,
                   addedByName,
-                  hackathonStartsAt: hackathon.starts_at,
-                  hackathonEndsAt: hackathon.ends_at,
-                  hackathonTimezone: "UTC",
+                  hackathonStartsAt: hackathon.judging_opens_at ?? hackathon.starts_at,
+                  hackathonEndsAt: hackathon.judging_closes_at ?? hackathon.ends_at,
+                  hackathonTimezone: hackathon.judging_timezone ?? "UTC",
                 })
                 if (!notification.success) {
                   throw new Error("Judge notification email was not accepted")
@@ -1606,9 +1692,9 @@ export const dashboardJudgingRoutes = new Elysia()
             inviteToken: invitationResult.invitation.token,
             expiresAt: invitationResult.invitation.expires_at,
             hackathonSlug: hackathon.slug,
-            hackathonStartsAt: hackathon.starts_at,
-            hackathonEndsAt: hackathon.ends_at,
-            hackathonTimezone: "UTC",
+            hackathonStartsAt: hackathon.judging_opens_at ?? hackathon.starts_at,
+            hackathonEndsAt: hackathon.judging_closes_at ?? hackathon.ends_at,
+            hackathonTimezone: hackathon.judging_timezone ?? "UTC",
             deliveryId: invitationResult.invitation.id,
           }).catch((error) => {
             console.error(`Failed to send judge invitation ${invitationResult.invitation.id}:`, error)
@@ -1643,9 +1729,9 @@ export const dashboardJudgingRoutes = new Elysia()
                 inviteToken: invitationResult.invitation.token,
                 expiresAt: invitationResult.invitation.expires_at,
                 hackathonSlug: hackathon.slug,
-                hackathonStartsAt: hackathon.starts_at,
-                hackathonEndsAt: hackathon.ends_at,
-                hackathonTimezone: "UTC",
+                hackathonStartsAt: hackathon.judging_opens_at ?? hackathon.starts_at,
+                hackathonEndsAt: hackathon.judging_closes_at ?? hackathon.ends_at,
+                hackathonTimezone: hackathon.judging_timezone ?? "UTC",
               }
             ).catch((error) => {
               console.error(`Failed to schedule judge invitation ${invitationResult.invitation.id} reminder:`, error)
@@ -1832,7 +1918,8 @@ export const dashboardJudgingRoutes = new Elysia()
 
     const hackathon = result.hackathon
 
-    const lifecycleError = getNotificationLifecycleError(getNotificationDisposition({
+    const lifecycleError = getNotificationLifecycleError(getJudgeNotificationDisposition({
+      ...hackathon,
       status: hackathon.status,
       starts_at: hackathon.starts_at,
       ends_at: hackathon.ends_at,
@@ -1882,6 +1969,10 @@ export const dashboardJudgingRoutes = new Elysia()
       inviterName,
       inviteToken: remindResult.invitation.token,
       expiresAt: remindResult.invitation.expires_at,
+      hackathonSlug: hackathon.slug,
+      hackathonStartsAt: hackathon.judging_opens_at ?? hackathon.starts_at,
+      hackathonEndsAt: hackathon.judging_closes_at ?? hackathon.ends_at,
+      hackathonTimezone: hackathon.judging_timezone ?? "UTC",
       deliveryId: `${params.invitationId}/manual/${requestKey.fingerprint}`,
     }).catch((error) => {
       console.error(`Failed to send judge invitation reminder ${params.invitationId}:`, error)
@@ -1925,7 +2016,7 @@ export const dashboardJudgingRoutes = new Elysia()
   }, {
     detail: {
       summary: "Send invitation reminder",
-      description: "Sends the one allowed manual reminder for a pending judge invitation. Reuse an optional Idempotency-Key header when retrying the same request.",
+      description: "Sends a reminder for a pending judge invitation after a 24-hour cooldown. Reuse an optional Idempotency-Key header when retrying the same request.",
     },
   })
 
@@ -2141,7 +2232,7 @@ export const dashboardJudgingRoutes = new Elysia()
     detail: { summary: "Assign judge to unified scorecard", description: "Creates one unified weighted_score assignment per submission for this judge. When roomId is provided, only projects from that room are assigned." },
   })
 
-  .get("/hackathons/:id/judging/judges/:participantId/submissions", async ({ principal, params }) => {
+  .get("/hackathons/:id/judging/judges/:participantId/submissions", async ({ principal, params, query }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:read"])
 
     const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
@@ -2157,14 +2248,15 @@ export const dashboardJudgingRoutes = new Elysia()
       return new Response(JSON.stringify({ error: "Judge not found" }), { status: 404, headers: { "Content-Type": "application/json" } })
     }
 
-    const { listJudgeSubmissionAssignments } = await import("@/lib/services/judging")
-    const submissions = await listJudgeSubmissionAssignments(params.id, params.participantId)
+    const { listManualJudgeSubmissionAssignments } = await import("@/lib/services/judging-distribution")
+    const submissions = await listManualJudgeSubmissionAssignments(params.id, params.participantId, query.prizeId)
     return { submissions }
   }, {
+    query: t.Object({ prizeId: t.Optional(t.String({ format: "uuid" })) }),
     detail: { summary: "List judge submission assignments", description: "Lists every submitted project with whether this judge is currently assigned to score it." },
   })
 
-  .post("/hackathons/:id/judging/judges/:participantId/submissions/:submissionId", async ({ principal, params }) => {
+  .post("/hackathons/:id/judging/judges/:participantId/submissions/:submissionId", async ({ principal, params, query }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
 
     const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
@@ -2181,7 +2273,8 @@ export const dashboardJudgingRoutes = new Elysia()
     }
 
     const { assignJudgeToSubmission } = await import("@/lib/services/judging")
-    const out = await assignJudgeToSubmission(params.id, params.participantId, params.submissionId)
+    const { assignJudgeToPrizeProject } = await import("@/lib/services/judging-distribution")
+    const out = query.prizeId ? await assignJudgeToPrizeProject(params.id, params.participantId, params.submissionId, query.prizeId) : await assignJudgeToSubmission(params.id, params.participantId, params.submissionId)
     if (!out.success) {
       return new Response(JSON.stringify({ error: out.error }), { status: 400, headers: { "Content-Type": "application/json" } })
     }
@@ -2198,10 +2291,11 @@ export const dashboardJudgingRoutes = new Elysia()
 
     return out
   }, {
+    query: t.Object({ prizeId: t.Optional(t.String({ format: "uuid" })) }),
     detail: { summary: "Assign judge to project", description: "Creates a unified weighted_score assignment for this judge and project. Idempotent — returns alreadyAssigned:true if the assignment already exists." },
   })
 
-  .delete("/hackathons/:id/judging/judges/:participantId/submissions/:submissionId", async ({ principal, params }) => {
+  .delete("/hackathons/:id/judging/judges/:participantId/submissions/:submissionId", async ({ principal, params, query }) => {
     requirePrincipal(principal, ["user", "api_key"], ["hackathons:write"])
 
     const { checkHackathonOrganizer } = await import("@/lib/services/public-hackathons")
@@ -2218,7 +2312,8 @@ export const dashboardJudgingRoutes = new Elysia()
     }
 
     const { unassignJudgeFromSubmission } = await import("@/lib/services/judging")
-    const out = await unassignJudgeFromSubmission(params.id, params.participantId, params.submissionId)
+    const { unassignJudgeFromPrizeProject } = await import("@/lib/services/judging-distribution")
+    const out = query.prizeId ? await unassignJudgeFromPrizeProject(params.id, params.participantId, params.submissionId, query.prizeId) : await unassignJudgeFromSubmission(params.id, params.participantId, params.submissionId)
     if (!out.success) {
       return new Response(JSON.stringify({ error: out.error }), { status: 400, headers: { "Content-Type": "application/json" } })
     }
@@ -2235,5 +2330,6 @@ export const dashboardJudgingRoutes = new Elysia()
 
     return out
   }, {
+    query: t.Object({ prizeId: t.Optional(t.String({ format: "uuid" })) }),
     detail: { summary: "Unassign judge from project", description: "Removes the unified weighted_score assignment for this judge and project, if it exists." },
   })

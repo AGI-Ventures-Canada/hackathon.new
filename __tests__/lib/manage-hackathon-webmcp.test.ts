@@ -1,3 +1,4 @@
+import { DIRECT_ACTION_TOOL_NAMES } from "@/lib/webmcp/direct-action-tools"
 import { beforeEach, describe, expect, it, mock } from "bun:test"
 import {
   createManageHackathonTools,
@@ -244,6 +245,10 @@ describe("createManageHackathonTools", () => {
       "list_hackathon_announcements",
       "open_hackathon_section",
       "open_judging_review",
+      "get_sponsor_details",
+      "add_sponsor",
+      "update_sponsor",
+      "remove_sponsor",
       "update_hackathon_settings",
       "update_hackathon_details",
       "set_hackathon_timeline",
@@ -277,6 +282,10 @@ describe("createManageHackathonTools", () => {
       "list_hackathon_announcements",
       "open_hackathon_section",
       "open_judging_review",
+      "get_sponsor_details",
+      "add_sponsor",
+      "update_sponsor",
+      "remove_sponsor",
       "update_hackathon_settings",
       "update_hackathon_details",
       "add_schedule_item",
@@ -305,6 +314,7 @@ describe("createManageHackathonTools", () => {
       "list_hackathon_announcements",
       "open_hackathon_section",
       "open_judging_review",
+      "get_sponsor_details",
     ])
   })
 
@@ -387,7 +397,7 @@ describe("createManageHackathonTools", () => {
     expect(result).toEqual({
       taskRef: "finish-scoring-setup",
       status: "opened",
-      requiresHumanAction: true,
+      requiresHumanAction: false,
     })
   })
 
@@ -400,7 +410,7 @@ describe("createManageHackathonTools", () => {
     expect(result).toEqual({
       review: "assignments",
       status: "opened",
-      requiresHumanAction: true,
+      requiresHumanAction: false,
     })
   })
 
@@ -611,7 +621,7 @@ describe("createManageHackathonTools", () => {
       }),
     )
     expect(onNavigate).toHaveBeenCalledWith(
-      "/e/build-day/manage?tab=judging&jtab=results",
+      "/e/build-day/manage/judging/results",
       "results",
     )
     expect(result.opened).toBe("results")
@@ -633,7 +643,7 @@ describe("createManageHackathonTools", () => {
       title: "Rooms",
       summary: "Review room assignments and automatic room setup.",
       eventStatus: "draft",
-      webMcpTools: ["inspect_organizer_section", "open_hackathon_section"],
+      webMcpTools: [...DIRECT_ACTION_TOOL_NAMES, "inspect_organizer_section", "open_hackathon_section"],
       unavailableWebMcpTools: [],
       cliCommands: [
         "rooms auto-assign-get",
@@ -657,6 +667,10 @@ describe("createManageHackathonTools", () => {
     }))
 
     expect(result.webMcpTools).toEqual([
+      ...DIRECT_ACTION_TOOL_NAMES,
+      "inspect_judging",
+      "save_judging_prize",
+      "save_judging_category",
       "list_hackathon_prizes",
       "inspect_organizer_section",
       "open_hackathon_section",
@@ -867,7 +881,7 @@ describe("createManageHackathonTools", () => {
       ["timeline", "/e/build-day/manage?tab=overview"],
       ["schedule", "/e/build-day/manage?tab=overview"],
       ["challenge", "/e/build-day/manage?tab=challenges"],
-      ["prize", "/e/build-day/manage?tab=judging&jtab=prizes"],
+      ["prize", "/e/build-day/manage/judging/settings?edit=prizes"],
       ["announcement", "/e/build-day/manage?tab=event"],
     ])
     expect(
@@ -1164,7 +1178,7 @@ describe("createManageHackathonTools", () => {
     const result = await execute(createTools(), "open_go_live_review")
     expect(result).toMatchObject({
       ok: true,
-      requiresHumanAction: true,
+      requiresHumanAction: false,
       data: { status: "review_opened" },
     })
     expect(onOpenTransition).toHaveBeenCalledWith("published")
@@ -1187,7 +1201,7 @@ describe("createManageHackathonTools", () => {
     })
     expect(result).toMatchObject({
       ok: true,
-      requiresHumanAction: true,
+      requiresHumanAction: false,
       data: { announcement: { published: false } },
     })
     expect(fetcher.mock.calls[0][0]).toBe(
@@ -1226,14 +1240,81 @@ describe("createManageHackathonTools", () => {
       ok: true,
       data: {
         status: "review_opened",
-        url: "/e/build-day/manage?tab=judging&jtab=results",
+        url: "/e/build-day/manage/judging/results",
       },
-      requiresHumanAction: true,
+      requiresHumanAction: false,
     })
     expect(onNavigate).toHaveBeenCalledWith(
-      "/e/build-day/manage?tab=judging&jtab=results",
+      "/e/build-day/manage/judging/results",
       "results",
     )
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+})
+
+describe("organizer sponsor tools", () => {
+  const sponsor = { id: "22222222-2222-4222-8222-222222222222", hackathon_id: baseContext.hackathon.id, name: "Example", tier: "none" as const, website_url: null, custom_tier_label: null, logo_url: null, logo_url_dark: null, sponsor_tenant_id: null, tenant_sponsor_id: null, use_org_assets: false, display_order: 0, created_at: createdAt }
+  it("issues stable references and keeps internal IDs private", async () => {
+    context.sponsorRecords = [sponsor]
+    const tools = createTools()
+    const first = dataOf<{ items: { sponsorRef: string }[] }>(await execute(tools, "get_sponsor_details"))
+    const second = dataOf<{ items: { sponsorRef: string }[] }>(await execute(tools, "get_sponsor_details"))
+    expect(first.items[0].sponsorRef).toBe(second.items[0].sponsorRef)
+    expect(JSON.stringify(first)).not.toContain(sponsor.id)
+  })
+  it("adds a sponsor optimistically and normalizes its website", async () => {
+    context.sponsorRecords = []
+    fetcher = mock(async (_url, init) => {
+      expect(onOptimistic).toHaveBeenCalledTimes(1)
+      expect(JSON.parse(String(init?.body))).toEqual({ name: "Example", websiteUrl: "https://example.com", tier: "gold", displayOrder: 0 })
+      expect(new Headers(init?.headers).get("x-webmcp-event-version")).toBe(context.hackathon.eventVersion)
+      return Response.json({ id: sponsor.id })
+    })
+    const result = await execute(createTools(), "add_sponsor", { name: "Example", websiteUrl: "example.com", tier: "gold" })
+    expect(result.ok).toBe(true)
+    expect(onCommitted).toHaveBeenCalledTimes(1)
+    const optimistic = onOptimistic.mock.calls[0][0]
+    expect(optimistic.kind).toBe("sponsors")
+    if (optimistic.kind === "sponsors") expect(optimistic.sponsor?.name).toBe("Example")
+  })
+  it("edits a listed sponsor and rolls back rejected changes", async () => {
+    context.sponsorRecords = [sponsor]
+    const tools = createTools()
+    const listed = dataOf<{ items: { sponsorRef: string }[] }>(await execute(tools, "get_sponsor_details"))
+    fetcher.mockImplementation(async () => Response.json({ error: "Event changed" }, { status: 409 }))
+    const result = await execute(tools, "update_sponsor", { sponsorRef: listed.items[0].sponsorRef, name: "Changed" })
+    expect(result.ok).toBe(false)
+    expect(onReverted).toHaveBeenCalledTimes(1)
+  })
+  it("rejects a forged or disappeared sponsor reference before fetching", async () => {
+    context.sponsorRecords = [sponsor]
+    const tools = createTools()
+    expect((await execute(tools, "remove_sponsor", { sponsorRef: sponsor.id })).ok).toBe(false)
+    const listed = dataOf<{ items: { sponsorRef: string }[] }>(await execute(tools, "get_sponsor_details"))
+    context.sponsorRecords = []
+    expect((await execute(tools, "remove_sponsor", { sponsorRef: listed.items[0].sponsorRef })).ok).toBe(false)
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+  it("removes only the selected sponsor and keeps a bounded result", async () => {
+    context.sponsorRecords = [sponsor]
+    fetcher.mockImplementation(async (_url, init) => {
+      expect(init?.method).toBe("DELETE")
+      return Response.json({ success: true })
+    })
+    const tools = createTools()
+    const listed = dataOf<{ items: { sponsorRef: string }[] }>(await execute(tools, "get_sponsor_details"))
+    const result = await execute(tools, "remove_sponsor", { sponsorRef: listed.items[0].sponsorRef })
+    expect(result.ok).toBe(true)
+    const optimistic = onOptimistic.mock.calls[0][0]
+    if (optimistic.kind === "sponsors") expect(optimistic.sponsor).toBeNull()
+    expect(JSON.stringify(result)).not.toContain(sponsor.id)
+  })
+  it("rejects unsafe links, empty edits, and stale lifecycle state", async () => {
+    const tools = createTools()
+    expect((await execute(tools, "add_sponsor", { name: "Example", websiteUrl: "javascript:alert(1)" })).ok).toBe(false)
+    expect((await execute(tools, "update_sponsor", { sponsorRef: "sponsor-test" })).ok).toBe(false)
+    context.hackathon.status = "completed"
+    expect((await execute(tools, "add_sponsor", { name: "Example" })).ok).toBe(false)
     expect(fetcher).not.toHaveBeenCalled()
   })
 })

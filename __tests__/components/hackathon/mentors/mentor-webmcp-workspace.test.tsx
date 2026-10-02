@@ -121,7 +121,7 @@ describe("mounted mentor WebMCP flows", () => {
     expect(result).toMatchObject({
       ok: true,
       data: { prepared: true },
-      requiresHumanAction: true,
+      requiresHumanAction: false,
     })
     expect(fetchSpy).not.toHaveBeenCalled()
     expect((screen.getByLabelText("What do you need help with?") as HTMLInputElement).value).toBe("API")
@@ -172,7 +172,7 @@ describe("mounted mentor WebMCP flows", () => {
     })).toMatchObject({
       ok: true,
       data: { prepared: true },
-      requiresHumanAction: true,
+      requiresHumanAction: false,
     })
     expect(fetchSpy).not.toHaveBeenCalled()
 
@@ -270,7 +270,7 @@ describe("mounted mentor WebMCP flows", () => {
 
     const openClaim = await getTool("open_mentor_claim")
     const firstReview = await executeTool(openClaim, { requestRef: "request-1" })
-    expect(firstReview).toMatchObject({ requiresHumanAction: true })
+    expect(firstReview).toMatchObject({ requiresHumanAction: false })
     expect(fetchSpy).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole("button", { name: "Claim request" }))
     expect(fetchSpy).toHaveBeenCalledTimes(1)

@@ -198,6 +198,7 @@ export function SponsorLogoUpload({
 
       <button
         type="button"
+        aria-label={`${displayUrl ? "Change" : "Upload"} ${variant} sponsor logo`}
         onClick={() => inputRef.current?.click()}
         disabled={disabled}
         className={cn(

@@ -6,6 +6,8 @@ const mockUploadSponsorLogo = mock(() =>
   Promise.resolve({ url: "https://cdn.example.com/sponsor-logo.webp", path: "sponsors/h1/s1/logo.webp" })
 )
 const mockDeleteSponsorLogo = mock(() => Promise.resolve(true))
+const mockAddSponsor = mock(() => Promise.resolve({ id: "22222222-2222-4222-8222-222222222222", name: "Example", tier: "none", created_at: "2026-09-05T12:00:00Z" }))
+const mockRemoveSponsor = mock(() => Promise.resolve(true))
 const mockUpdateSponsor = mock(() => Promise.resolve(null))
 const mockListHackathonSponsors = mock(() => Promise.resolve([]))
 const mockUpdateTenantSponsorLogos = mock(() => Promise.resolve())
@@ -37,12 +39,15 @@ mock.module("@/lib/services/storage", () => ({
 }))
 
 mock.module("@/lib/services/sponsors", () => ({
+  addSponsor: mockAddSponsor,
+  removeSponsor: mockRemoveSponsor,
   updateSponsor: mockUpdateSponsor,
   listHackathonSponsors: mockListHackathonSponsors,
 }))
 
 mock.module("@/lib/services/tenant-sponsors", () => ({
   updateTenantSponsorLogos: mockUpdateTenantSponsorLogos,
+  upsertTenantSponsor: mock(() => Promise.resolve({ id: "saved-sponsor" })),
 }))
 
 mock.module("@/lib/services/tenant-profiles", () => ({
@@ -96,6 +101,11 @@ mock.module("@/lib/services/rate-limit", () => ({
       this.remaining = remaining
     }
   },
+}))
+
+mock.module("@/lib/services/event-mutation-lease", () => ({
+  withEventMutationLease: async (_id: string, operation: () => Promise<unknown>) => operation(),
+  EventMutationLeaseError: class EventMutationLeaseError extends Error {},
 }))
 
 const { Elysia } = await import("elysia")
@@ -356,10 +366,10 @@ describe("Sponsor Logo API Integration Tests", () => {
   describe("PATCH /api/dashboard/hackathons/:id/sponsors/:sponsorId", () => {
     it("updates linked sponsor asset source", async () => {
       mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
-      mockCheckHackathonOrganizer.mockResolvedValue({ status: "ok" })
+      mockCheckHackathonOrganizer.mockResolvedValue({ status: "ok", hackathon: { status: "draft", updated_at: "2026-09-05T12:00:00Z" } })
       mockUpdateSponsor.mockResolvedValue({
-        id: "s1",
-        hackathon_id: "h1",
+        id: "22222222-2222-4222-8222-222222222222",
+        hackathon_id: "11111111-1111-4111-8111-111111111111",
         sponsor_tenant_id: "org-1",
         tenant_sponsor_id: null,
         use_org_assets: true,
@@ -373,7 +383,7 @@ describe("Sponsor Logo API Integration Tests", () => {
       })
 
       const res = await app.handle(
-        new Request("http://localhost/api/dashboard/hackathons/h1/sponsors/s1", {
+        new Request("http://localhost/api/dashboard/hackathons/11111111-1111-4111-8111-111111111111/sponsors/22222222-2222-4222-8222-222222222222", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ useOrgAssets: true }),
@@ -382,11 +392,11 @@ describe("Sponsor Logo API Integration Tests", () => {
       const data = await res.json()
 
       expect(res.status).toBe(200)
-      expect(data.id).toBe("s1")
+      expect(data.id).toBe("22222222-2222-4222-8222-222222222222")
       expect(mockUpdateSponsor).toHaveBeenCalledWith(
-        "s1",
+        "22222222-2222-4222-8222-222222222222",
         { useOrgAssets: true },
-        "h1"
+        "11111111-1111-4111-8111-111111111111"
       )
       expect(mockLogAudit).toHaveBeenCalled()
     })
@@ -564,5 +574,49 @@ describe("Sponsor Logo API Integration Tests", () => {
 
       expect(res.status).toBe(422)
     })
+  })
+})
+
+
+describe("Sponsor WebMCP API", () => {
+  const eventId = "11111111-1111-4111-8111-111111111111"
+  const sponsorId = "22222222-2222-4222-8222-222222222222"
+  const version = "2026-09-05T12:00:00.000Z"
+  const headers = { "Content-Type": "application/json", "x-webmcp-request": "1", "x-webmcp-expected-status": "draft", "x-webmcp-event-version": version, "x-webmcp-idempotency-key": "33333333-3333-4333-8333-333333333333" }
+  beforeEach(() => {
+    mockResolvePrincipal.mockResolvedValue(mockUserPrincipal)
+    mockCheckHackathonOrganizer.mockResolvedValue({ status: "ok", hackathon: { status: "draft", updated_at: version } })
+    mockAddSponsor.mockClear()
+    mockRemoveSponsor.mockClear()
+    mockUpdateSponsor.mockReset()
+    mockUpdateSponsor.mockResolvedValue({ id: sponsorId })
+  })
+  it("adds an authorized sponsor with a stable retry identity", async () => {
+    const response = await app.handle(new Request(`http://localhost/api/dashboard/hackathons/${eventId}/sponsors`, { method: "POST", headers, body: JSON.stringify({ name: "Example" }) }))
+    expect(response.status).toBe(200)
+    expect(mockAddSponsor.mock.calls[0][0]).toMatchObject({ id: headers["x-webmcp-idempotency-key"], hackathonId: eventId, name: "Example" })
+  })
+  it.each(["POST", "PATCH", "DELETE"])("rejects stale %s context before mutation", async (method) => {
+    const response = await app.handle(new Request(`http://localhost/api/dashboard/hackathons/${eventId}/sponsors${method === "POST" ? "" : `/${sponsorId}`}`, { method, headers: { ...headers, "x-webmcp-event-version": "old" }, ...(method !== "DELETE" ? { body: JSON.stringify({ name: "Example" }) } : {}) }))
+    expect(response.status).toBe(409)
+    expect(mockAddSponsor).not.toHaveBeenCalled()
+    expect(mockUpdateSponsor).not.toHaveBeenCalled()
+    expect(mockRemoveSponsor).not.toHaveBeenCalled()
+  })
+  it("rejects unsafe website edits for the CLI and browser alike", async () => {
+    const response = await app.handle(new Request(`http://localhost/api/dashboard/hackathons/${eventId}/sponsors/${sponsorId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ websiteUrl: "http://localhost/private" }) }))
+    expect(response.status).toBe(400)
+    expect(mockUpdateSponsor).not.toHaveBeenCalled()
+  })
+  it("does not query a malformed sponsor ID", async () => {
+    const response = await app.handle(new Request(`http://localhost/api/dashboard/hackathons/${eventId}/sponsors/not-an-id`, { method: "DELETE", headers }))
+    expect(response.status).toBe(404)
+    expect(mockRemoveSponsor).not.toHaveBeenCalled()
+  })
+  it("rejects a sponsor change from another organizer", async () => {
+    mockCheckHackathonOrganizer.mockResolvedValue({ status: "not_authorized" })
+    const response = await app.handle(new Request(`http://localhost/api/dashboard/hackathons/${eventId}/sponsors/${sponsorId}`, { method: "DELETE", headers }))
+    expect(response.status).toBe(403)
+    expect(mockRemoveSponsor).not.toHaveBeenCalled()
   })
 })

@@ -66,6 +66,7 @@ export function SubmissionMedia({
           <img
             src={activeScreenshot}
             alt={`Screenshot of ${title}`}
+            decoding="async"
             className="max-h-[28rem] w-full object-contain"
           />
         </button>
@@ -88,6 +89,8 @@ export function SubmissionMedia({
               <img
                 src={url}
                 alt={`Screenshot ${index + 1} of ${title}`}
+                loading="lazy"
+                decoding="async"
                 className="size-full object-contain"
               />
             </button>
@@ -107,6 +110,7 @@ export function SubmissionMedia({
               <img
                 src={activeScreenshot}
                 alt={`Screenshot of ${title}`}
+                decoding="async"
                 className="max-h-[80vh] w-full object-contain"
               />
             </div>

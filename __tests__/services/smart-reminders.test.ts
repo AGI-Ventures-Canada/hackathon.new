@@ -757,3 +757,15 @@ describe("reminder delivery lifecycle", () => {
     ).rejects.toThrow("Failed to record reminder failure: write failed")
   })
 })
+
+
+describe("judge invitation reminder cadence", () => {
+  it("reminds after 48 hours and a day before expiry, not generic event milestones", async () => {
+    const { computeJudgeInvitationReminderSchedule } = await import("@/lib/services/smart-reminders")
+    const created = new Date("2026-09-05T12:00:00Z")
+    const schedule = computeJudgeInvitationReminderSchedule(created, new Date("2026-09-12T12:00:00Z"), created)
+    expect(schedule.map((item) => item.scheduledFor.toISOString())).toEqual(["2026-09-07T12:00:00.000Z", "2026-09-11T12:00:00.000Z"])
+    const short = computeJudgeInvitationReminderSchedule(created, new Date("2026-09-06T12:00:00Z"), created)
+    expect(short).toHaveLength(0)
+  })
+})

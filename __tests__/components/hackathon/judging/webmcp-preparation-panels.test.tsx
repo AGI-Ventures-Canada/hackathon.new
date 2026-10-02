@@ -240,7 +240,7 @@ describe("mounted judge WebMCP preparation", () => {
       expect(result).toEqual({
         ok: true,
         data: { assignmentRef: "assignment-1", opened: true },
-        requiresHumanAction: true,
+        requiresHumanAction: false,
       })
       expect(openedAssignmentId).toBe(assignmentId)
       expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "center" })
@@ -619,7 +619,7 @@ describe("mounted judge WebMCP preparation", () => {
     expect(result).toMatchObject({
       ok: true,
       data: { prepared: true },
-      requiresHumanAction: true,
+      requiresHumanAction: false,
     })
     expect(fetchSpy).not.toHaveBeenCalled()
     expect((screen.getByRole("spinbutton") as HTMLInputElement).value).toBe("8")
@@ -671,7 +671,7 @@ describe("mounted judge WebMCP preparation", () => {
     expect(result).toMatchObject({
       ok: true,
       data: { prepared: true },
-      requiresHumanAction: true,
+      requiresHumanAction: false,
     })
     expect(fetchSpy).not.toHaveBeenCalled()
     expect((screen.getByRole("spinbutton") as HTMLInputElement).value).toBe("9")
@@ -730,7 +730,7 @@ describe("mounted judge WebMCP preparation", () => {
     expect(result).toMatchObject({
       ok: true,
       data: { prepared: true },
-      requiresHumanAction: true,
+      requiresHumanAction: false,
     })
     expect(fetchSpy).not.toHaveBeenCalled()
     expect(screen.getByText("#1").parentElement?.textContent).toContain("Project Beta")
@@ -784,7 +784,7 @@ describe("mounted judge WebMCP preparation", () => {
     expect(result).toMatchObject({
       ok: true,
       data: { prepared: true },
-      requiresHumanAction: true,
+      requiresHumanAction: false,
     })
     expect(fetchSpy).not.toHaveBeenCalled()
     expect((screen.getByDisplayValue("Prepared bucket note") as HTMLTextAreaElement).value)
@@ -844,7 +844,7 @@ describe("mounted judge WebMCP preparation", () => {
     expect(result).toMatchObject({
       ok: true,
       data: { prepared: true },
-      requiresHumanAction: true,
+      requiresHumanAction: false,
     })
     expect(fetchSpy).not.toHaveBeenCalled()
     expect(screen.getByRole("button", { name: "Submit & next" }).hasAttribute("disabled"))
@@ -890,7 +890,7 @@ describe("mounted judge WebMCP preparation", () => {
         prepared: false,
         message: "Check Impact and use one of the listed score ranges.",
       },
-      requiresHumanAction: true,
+      requiresHumanAction: false,
     })
     expect(score.value).toBe("")
     expect(screen.queryByDisplayValue("Must not be applied")).toBeNull()
@@ -942,7 +942,7 @@ describe("mounted judge WebMCP preparation", () => {
         prepared: false,
         message: "Pick between 1 and 1 projects from this prize.",
       },
-      requiresHumanAction: true,
+      requiresHumanAction: false,
     })
     expect(screen.queryByText("#1")).toBeNull()
     expect(fetchSpy).not.toHaveBeenCalled()
@@ -989,7 +989,7 @@ describe("mounted judge WebMCP preparation", () => {
         prepared: false,
         message: "Pick one of the listed sort groups.",
       },
-      requiresHumanAction: true,
+      requiresHumanAction: false,
     })
     expect(screen.queryByDisplayValue("Must not be applied")).toBeNull()
     expect(screen.getByRole("button", { name: "Submit & next" }).hasAttribute("disabled"))
@@ -1039,7 +1039,7 @@ describe("mounted judge WebMCP preparation", () => {
         prepared: false,
         message: "Check Missing check again.",
       },
-      requiresHumanAction: true,
+      requiresHumanAction: false,
     })
     expect(screen.getByRole("button", { name: "Submit & next" }).hasAttribute("disabled"))
       .toBe(true)

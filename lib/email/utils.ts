@@ -95,11 +95,8 @@ export function formatFromAddress(displayName: string, emailLike: string): strin
 export async function renderEmail(
   element: React.ReactElement
 ): Promise<{ html: string; text: string }> {
-  const [html, text] = await Promise.all([
-    render(element),
-    render(element, { plainText: true }),
-  ])
-  return { html, text }
+  const html = await render(element)
+  return { html, text: htmlToPlainText(html) }
 }
 
 export function formatTimeLeft(expiresAt: string): string {

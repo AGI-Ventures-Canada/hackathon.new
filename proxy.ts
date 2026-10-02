@@ -10,6 +10,7 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server"
 import { NextResponse } from "next/server"
 import { createContentSecurityPolicy } from "@/lib/security-headers"
+import { AUTH_REQUEST_ORIGIN_HEADER } from "@/lib/auth/redirect"
 
 const isProtectedRoute = createRouteMatcher(["/home(.*)", "/browse(.*)", "/settings(.*)", "/keys(.*)", "/schedules(.*)", "/webhooks(.*)", "/integrations(.*)", "/jobs(.*)", "/admin(.*)"])
 
@@ -25,6 +26,7 @@ export default clerkMiddleware(
     requestHeaders.set("x-nonce", nonce)
     requestHeaders.set("Content-Security-Policy", contentSecurityPolicy)
     requestHeaders.set("x-pathname", req.nextUrl.pathname)
+    requestHeaders.set(AUTH_REQUEST_ORIGIN_HEADER, req.nextUrl.origin)
     const response = NextResponse.next({ request: { headers: requestHeaders } })
     response.headers.set("Content-Security-Policy", contentSecurityPolicy)
     return response

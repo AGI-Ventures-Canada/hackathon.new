@@ -184,6 +184,7 @@ type ResultData = {
 }
 
 interface JudgingTabClientProps {
+  hideNavigation?: boolean
   hackathonId: string
   slug: string
   prizes: PrizeData[]
@@ -240,6 +241,7 @@ const STYLE_META: Record<string, { label: string; icon: typeof Trophy; color: st
 }
 
 export function JudgingTabClient({
+  hideNavigation = false,
   hackathonId,
   slug,
   prizes: initialPrizes,
@@ -464,7 +466,7 @@ export function JudgingTabClient({
       )}
 
       <TabsUrlSync paramKey="jtab" value={activeJtab}>
-        <TabsList variant="line">
+        {!hideNavigation && <TabsList variant="line">
           <TabsTrigger value="setup">
             <ListChecks className="size-3.5" />
             Setup Guide
@@ -498,7 +500,7 @@ export function JudgingTabClient({
             <Calculator className="size-3.5" />
             Results
           </TabsTrigger>
-        </TabsList>
+        </TabsList>}
 
         <TabsContent value="setup" className="mt-4" data-webmcp-section="judging_setup">
           <JudgingSetupWizard

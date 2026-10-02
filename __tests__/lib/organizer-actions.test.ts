@@ -81,6 +81,7 @@ describe("getOrganizerActionItems", () => {
         endsAt: "2026-05-02T00:00:00Z",
         prizeCount: 2,
         judgeDisplayCount: 5,
+        judgeCount: 2,
         challengeExists: true,
         challengeReleased: true,
         locationType: "virtual",
@@ -146,14 +147,14 @@ describe("getOrganizerActionItems", () => {
       expect(items.some((item) => item.id === "no-judges")).toBe(false)
     })
 
-    it("shows pending judge invitation count in completed label", () => {
+    it("does not treat display profiles or pending invites as accepted judges", () => {
       const items = getOrganizerActionItems(makeInput({
         judgeDisplayCount: 2,
         pendingJudgeInvitationCount: 3,
       }))
       const item = items.find((i) => i.id === "no-judges")!
-      expect(isCompleted(item)).toBe(true)
-      expect(item.label).toContain("3 pending")
+      expect(isCompleted(item)).toBe(false)
+      expect(item.label).toBe("Invite judges")
     })
 
     it("marks location completed when locationType is set", () => {

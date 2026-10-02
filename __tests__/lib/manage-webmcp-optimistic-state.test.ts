@@ -385,3 +385,31 @@ describe("manage WebMCP optimistic state", () => {
     expect(selectManageWebMcpVisibleState(state)).toEqual(initialVisibleState())
   })
 })
+
+describe("sponsor optimistic changes", () => {
+  const sponsor = (id: string, name: string) => ({
+    id, name, hackathon_id: "event-1", tier: "none" as const,
+    custom_tier_label: null, website_url: null, logo_url: null, logo_url_dark: null,
+    sponsor_tenant_id: null, tenant_sponsor_id: null, use_org_assets: false,
+    display_order: 0, created_at: createdAt,
+  })
+  it("keeps another sponsor save when one overlapping change fails", () => {
+    let state = createManageWebMcpState({ ...initialVisibleState(), sponsors: [] })
+    const first = { kind: "sponsors" as const, mutationId: "first", sponsorId: "a", sponsor: sponsor("a", "First"), href: "/", summary: "Adding first" }
+    const second = { ...first, mutationId: "second", sponsorId: "b", sponsor: sponsor("b", "Second") }
+    state = manageWebMcpStateReducer(state, { type: "begin", change: first })
+    state = manageWebMcpStateReducer(state, { type: "begin", change: second })
+    expect(selectManageWebMcpVisibleState(state).sponsors?.map(item => item.name)).toEqual(["First", "Second"])
+    state = manageWebMcpStateReducer(state, { type: "commit", change: second })
+    state = manageWebMcpStateReducer(state, { type: "rollback", mutationId: "first" })
+    expect(selectManageWebMcpVisibleState(state).sponsors?.map(item => item.name)).toEqual(["Second"])
+  })
+  it("removes only the selected sponsor and restores it on failure", () => {
+    const original = [sponsor("a", "First"), sponsor("b", "Second")]
+    let state = createManageWebMcpState({ ...initialVisibleState(), sponsors: original })
+    state = manageWebMcpStateReducer(state, { type: "begin", change: { kind: "sponsors", mutationId: "remove", sponsorId: "a", sponsor: null, href: "/", summary: "Removing" } })
+    expect(selectManageWebMcpVisibleState(state).sponsors).toEqual([original[1]])
+    state = manageWebMcpStateReducer(state, { type: "rollback", mutationId: "remove" })
+    expect(selectManageWebMcpVisibleState(state).sponsors).toEqual(original)
+  })
+})

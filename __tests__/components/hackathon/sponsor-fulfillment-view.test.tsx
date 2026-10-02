@@ -149,7 +149,7 @@ describe("SponsorFulfillmentView", () => {
       })
       expect(preparation).toMatchObject({
         ok: true,
-        requiresHumanAction: true,
+        requiresHumanAction: false,
       })
       expect((screen.getByLabelText("Tracking number (optional)") as HTMLInputElement).value)
         .toBe("TRACK-1")

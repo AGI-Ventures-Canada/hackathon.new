@@ -10,7 +10,6 @@ import {
   getReplyToAddress,
   renderEmail,
 } from "./utils"
-import AgentNotificationEmail from "@/emails/agent-notification"
 import { sha256Fingerprint } from "@/lib/utils/hash"
 import { isSyntheticEmail } from "@/lib/utils/synthetic-user"
 
@@ -491,8 +490,8 @@ export async function sendEmailWithResult(
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const attemptStartedAt = Date.now()
     try {
-      await execution.beforeAttempt?.()
       await acquireProviderAttemptSlot(execution.providerPacing)
+      if (execution.beforeAttempt) await execution.beforeAttempt()
       const response = await settleWithin(
         transport(payload, requestOptions),
         timeoutMs,
@@ -672,6 +671,7 @@ export async function sendAgentNotification(
     failed: `Agent "${agentName}" failed`,
   }
 
+  const { default: AgentNotificationEmail } = await import("@/emails/agent-notification")
   const { html, text } = await renderEmail(
     AgentNotificationEmail({
       agentName,

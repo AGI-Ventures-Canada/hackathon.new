@@ -202,7 +202,7 @@ export async function schedulePreEventReminders(
 
   const { data: hackathon, error: hackathonError } = await client
     .from("hackathons")
-    .select("id, name, slug, registration_closes_at, starts_at, ends_at, created_at, status, is_test_event")
+    .select("id, name, slug, registration_closes_at, starts_at, ends_at, created_at, status, is_test_event, judging_opens_at, judging_closes_at")
     .eq("id", hackathonId)
     .single()
 
@@ -284,12 +284,12 @@ export async function schedulePreEventReminders(
     hackathonTimezone: "UTC",
     now,
   }
-  appendJudgeReminders(desired, {
+  if (!hackathon.judging_opens_at) appendJudgeReminders(desired, {
     ...judgeReminderBase,
     reminderType: "judge_event_starting",
     deadlineStr: hackathon.starts_at as string | null,
   })
-  appendJudgeReminders(desired, {
+  if (!hackathon.judging_opens_at) appendJudgeReminders(desired, {
     ...judgeReminderBase,
     reminderType: "judge_scoring_starting",
     deadlineStr: submissionDeadlineStr as string | null,
@@ -302,7 +302,7 @@ export async function schedulePreEventReminders(
     deadlineStr: hackathon.starts_at as string | null,
     now,
   })
-  appendOrganizerReminders(desired, {
+  if (!hackathon.judging_opens_at) appendOrganizerReminders(desired, {
     hackathonId,
     hackathonName: hackathon.name as string,
     hackathonSlug: hackathon.slug as string,

@@ -1,0 +1,111 @@
+import { beforeEach, describe, expect, it, mock } from "bun:test"
+import { createChainableMock, mockClerkClient, resetSupabaseMocks, setMockFromImplementation } from "../lib/supabase-mock"
+
+const create = mock(() => Promise.resolve({ success: true, invitation: { id: "invite", token: "token", created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 7 * 86_400_000).toISOString() } }))
+const pending = mock(() => Promise.resolve(false))
+const queueAdded = mock(() => Promise.resolve())
+const markSent = mock(() => Promise.resolve())
+const failure = mock(() => Promise.resolve())
+const retry = mock(() => Promise.resolve({ sent: 1, total: 1, failedEmails: [] as string[] }))
+const claim = mock(() => Promise.resolve({ success: false, error: "Wait a day before sending another reminder.", code: "reminder_cooldown" }))
+const release = mock(() => Promise.resolve())
+const send = mock(() => Promise.resolve({ success: true }))
+const add = mock(() => Promise.resolve({ success: true, participant: { id: "participant" } }))
+const validateScope = mock(() => Promise.resolve())
+const applyScope = mock(() => Promise.resolve())
+const conflict = mock(() => Promise.resolve({ conflict: false }))
+const schedule = mock(() => Promise.resolve(2))
+const remindWork = mock(() => Promise.resolve({ outcome: "reminded", delivery: "queued", message: "Reminder queued." }))
+mock.module("@/lib/services/judge-invitations", () => ({ createJudgeInvitation: create, hasPendingJudgeEntry: pending, createJudgePendingNotification: queueAdded, markJudgeInvitationEmailed: markSent, remindJudgeInvitation: claim, releaseJudgeInvitationReminderClaim: release, recordJudgeInvitationDeliveryFailure: failure, sendPendingJudgeInvitationEmails: retry }))
+mock.module("@/lib/email/judge-invitations", () => ({ sendJudgeInvitationEmail: send, sendJudgeInvitationReminderEmail: send }))
+mock.module("@/lib/services/judging", () => ({ addJudge: add }))
+mock.module("@/lib/services/judge-invitation-scope", () => ({ validateJudgeInvitationScope: validateScope, applyJudgeInvitationScope: applyScope }))
+mock.module("@/lib/services/role-conflict", () => ({ checkRoleConflict: conflict }))
+mock.module("@/lib/services/smart-reminders", () => ({ scheduleReminders: schedule, cancelUpcomingReminder: async () => {} }))
+mock.module("@/lib/services/judging-notifications", () => ({ queueJudgeWorkReminder: remindWork }))
+const { processJudgeInvitationBatch, normalizeJudgeBatchEmails } = await import("@/lib/services/judging-invite-batch")
+const event = { id: "event", name: "Build", slug: "build", status: "judging", is_test_event: false, starts_at: null, ends_at: null }
+const input = { event, emails: ["judge@example.com"], actorId: "organizer", inviterName: "Alex", preview: false }
+
+describe("judge invitation batch", () => {
+  beforeEach(() => {
+    resetSupabaseMocks()
+    for (const fn of [create, pending, queueAdded, markSent, failure, retry, claim, release, send, add, validateScope, applyScope, conflict, schedule, remindWork]) fn.mockClear()
+    pending.mockResolvedValue(false)
+    send.mockResolvedValue({ success: true })
+    applyScope.mockResolvedValue()
+    mockClerkClient.mockResolvedValue({ users: { getUserList: async () => ({ data: [] }) } } as unknown)
+  })
+  it("normalizes and deduplicates email addresses before review", () => {
+    expect(normalizeJudgeBatchEmails([" JUDGE@Example.com ", "judge@example.com", "", "other@example.com"])).toEqual(["judge@example.com", "other@example.com"])
+  })
+  it("previews each identity state without sending or changing roles", async () => {
+    const messages: string[] = []
+    for (const state of ["registered", "account", "new"]) {
+      mockClerkClient.mockResolvedValue({ users: { getUserList: async () => ({ data: state === "new" ? [] : [{ id: "user" }] }) } } as unknown)
+      setMockFromImplementation((table) => createChainableMock({ data: table === "hackathon_participants" && state === "registered" ? { id: "participant", role: "participant" } : null, error: null }))
+      const result = await processJudgeInvitationBatch({ ...input, preview: true })
+      expect(result.results[0].outcome).toBe("ready")
+      messages.push(result.results[0].message)
+    }
+    expect(new Set(messages).size).toBe(3)
+    expect(send).not.toHaveBeenCalled()
+    expect(create).not.toHaveBeenCalled()
+    expect(add).not.toHaveBeenCalled()
+  })
+  it("queues draft invitations with their message and scopes", async () => {
+    const result = await processJudgeInvitationBatch({ ...input, event: { ...event, status: "draft" }, message: "Help us choose", prizeIds: ["prize"], roomIds: ["room"] })
+    expect(result.results[0]).toMatchObject({ outcome: "invited", delivery: "queued" })
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ message: "Help us choose", prizeIds: ["prize"], roomIds: ["room"] }))
+    expect(send).not.toHaveBeenCalled()
+    expect(schedule).not.toHaveBeenCalled()
+  })
+  it("invites existing accounts who aren't registered instead of directly adding them", async () => {
+    mockClerkClient.mockResolvedValue({ users: { getUserList: async () => ({ data: [{ id: "user" }] }) } } as unknown)
+    expect((await processJudgeInvitationBatch(input)).results[0]).toMatchObject({ outcome: "invited", delivery: "sent" })
+    expect(create).toHaveBeenCalledTimes(1)
+    expect(add).not.toHaveBeenCalled()
+    expect(markSent).toHaveBeenCalledWith("invite")
+  })
+  it("holds a registered judge out of assignment until their requested scope is ready", async () => {
+    mockClerkClient.mockResolvedValue({ users: { getUserList: async () => ({ data: [{ id: "user" }] }) } } as unknown)
+    setMockFromImplementation((table) => createChainableMock({ data: table === "hackathon_participants" ? { id: "participant", role: "participant" } : null, error: null }))
+    const result = await processJudgeInvitationBatch({ ...input, prizeIds: ["prize"] })
+    expect(result.results[0]).toMatchObject({ outcome: "added", delivery: "queued" })
+    expect(add).toHaveBeenCalledWith("event", "user", { requireExistingParticipant: true, scopePending: true })
+    expect(queueAdded).toHaveBeenCalledWith("event", "participant", "judge@example.com", "Alex", undefined, expect.objectContaining({ prizeIds: ["prize"] }))
+    expect(applyScope).toHaveBeenCalledTimes(1)
+  })
+  it("saves a retryable delivery failure without claiming the email was sent", async () => {
+    send.mockResolvedValue(false as unknown as { success: boolean })
+    const result = await processJudgeInvitationBatch(input)
+    expect(result.results[0]).toMatchObject({ outcome: "invited", delivery: "failed" })
+    expect(failure).toHaveBeenCalledWith("invite")
+    expect(markSent).not.toHaveBeenCalled()
+  })
+  it("explicitly retries only the saved failed invitation", async () => {
+    setMockFromImplementation((table) => createChainableMock({ data: table === "judge_invitations" ? { id: "saved", emailed_at: null, delivery_fail_count: 5 } : null, error: null }))
+    const result = await processJudgeInvitationBatch({ ...input, retryFailed: true })
+    expect(result.results[0]).toMatchObject({ outcome: "invited", delivery: "sent" })
+    expect(retry).toHaveBeenCalledWith("event", "Build", "Alex", { onlyEmail: "judge@example.com" }, 1)
+    expect(create).not.toHaveBeenCalled()
+  })
+  it("does not resend an already-delivered invitation during failed-row retries", async () => {
+    pending.mockResolvedValue(true)
+    expect((await processJudgeInvitationBatch({ ...input, retryFailed: true })).results[0].outcome).toBe("already_invited")
+    expect(retry).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalled()
+  })
+  it("keeps invalid rows independent and blocks closed events", async () => {
+    const result = await processJudgeInvitationBatch({ ...input, emails: ["invalid", "judge@example.com"] })
+    expect(result.results.map((row) => row.outcome)).toEqual(["invalid", "invited"])
+    expect((await processJudgeInvitationBatch({ ...input, event: { ...event, status: "completed" } })).results[0].outcome).toBe("blocked")
+  })
+  it("routes accepted judges to the same durable work reminder queue", async () => {
+    mockClerkClient.mockResolvedValue({ users: { getUserList: async () => ({ data: [{ id: "user" }] }) } } as unknown)
+    const result = await processJudgeInvitationBatch({ ...input, action: "remind" })
+    expect(result.results[0]).toMatchObject({ outcome: "reminded", delivery: "queued" })
+    expect(remindWork).toHaveBeenCalledWith("event", "user", false)
+    expect(send).not.toHaveBeenCalled()
+  })
+})

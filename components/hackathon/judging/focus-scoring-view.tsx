@@ -55,7 +55,7 @@ export function FocusScoringView({
   })
 
   const total = assignments.length
-  const completed = completedIds.size
+  const completed = assignments.filter((assignment) => completedIds.has(assignment.id)).length
   const current = assignments[currentIndex]
   const allDone = completed === total
 
@@ -79,7 +79,7 @@ export function FocusScoringView({
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       const tag = (e.target as HTMLElement).tagName
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
+      if (e.defaultPrevented || tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (e.target as HTMLElement).closest?.('[role="slider"], [role="radio"], [role="radiogroup"], [role="combobox"], [contenteditable="true"]')) return
       if (e.key === "ArrowLeft") goToPrev()
       if (e.key === "ArrowRight") goToNext()
     }
@@ -186,7 +186,7 @@ export function FocusScoringView({
           onClose={goToNext}
           onScoreSubmitted={handleScoreSubmitted}
           cancelLabel="Skip"
-          prefetchedDetail={prefetchCache[current.id] ?? null}
+          prefetchedDetail={completedIds.has(current.id) ? null : prefetchCache[current.id] ?? null}
           teamSizeWarning={teamSettings && current.teamMemberCount != null
             ? (getTeamSizeWarning({
                 memberCount: current.teamMemberCount,
@@ -204,7 +204,7 @@ export function FocusScoringView({
           onClose={goToNext}
           onScoreSubmitted={handleScoreSubmitted}
           cancelLabel="Skip"
-          prefetchedDetail={prefetchCache[current.id] ?? null}
+          prefetchedDetail={completedIds.has(current.id) ? null : prefetchCache[current.id] ?? null}
           teamSizeWarning={teamSettings && current.teamMemberCount != null
             ? (getTeamSizeWarning({
                 memberCount: current.teamMemberCount,

@@ -1,7 +1,8 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { useJudgingFormDraft } from "@/hooks/use-judging-form-draft"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -21,6 +22,8 @@ import {
 } from "lucide-react"
 import type { PrizeJudgingStyle } from "@/lib/db/hackathon-types"
 import { STYLE_OPTIONS, DEFAULT_BUCKETS } from "./judging-constants"
+import { assertOkJson } from "@/lib/utils/fetch"
+import { isValidUuid } from "@/lib/utils/uuid"
 
 type CriterionDraft = { id: string; name: string; description: string }
 type WeightedCriterionDraft = {
@@ -98,59 +101,18 @@ export function EditPrizeDialog({
   coreWeightSum = 0,
 }: EditPrizeDialogProps) {
   const router = useRouter()
-  const [form, setForm] = useState({
-    name: "",
-    description: "",
-    value: "",
-    maxPicks: "3",
-    criteria: [] as CriterionDraft[],
-    weightedCriteria: [] as WeightedCriterionDraft[],
-    buckets: [] as BucketDraft[],
+  const [form,setForm,clearDraft] = useJudgingFormDraft(hackathonId,`prize:${prize?.id ?? "none"}`,{
+    name:prize?.name ?? "", description:prize?.description ?? "", value:prize?.value ?? "", maxPicks:prize?.maxPicks != null ? String(prize.maxPicks) : "3",
+    criteria:prize?.judgingStyle === "gate_check" ? (prize.criteria ?? []).map((item) => ({id:item.id,name:item.name,description:item.description ?? ""})) : [] as CriterionDraft[],
+    weightedCriteria:prize?.judgingStyle === "weighted_score" ? (prize.criteria ?? []).map((item) => ({id:item.id,name:item.name,description:item.description ?? "",weight:item.weight != null ? String(item.weight) : "",minScore:item.minScore != null ? String(item.minScore) : "1",maxScore:item.maxScore != null ? String(item.maxScore) : "10"})) : [] as WeightedCriterionDraft[],
+    buckets:prize?.judgingStyle === "bucket_sort" ? (prize.buckets ?? []).map((item) => ({id:item.id,level:item.level,label:item.label,description:item.description ?? ""})) : [] as BucketDraft[],
+    pickedStyle:null as PrizeJudgingStyle|null,
   })
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [pickedStyle, setPickedStyle] = useState<PrizeJudgingStyle | null>(null)
-  const effectiveStyle: PrizeJudgingStyle | null = pickedStyle ?? prize?.judgingStyle ?? null
-
-  useEffect(() => {
-    if (!prize) return
-    setError(null)
-    setPickedStyle(null)
-    setForm({
-      name: prize.name,
-      description: prize.description ?? "",
-      value: prize.value ?? "",
-      maxPicks: prize.maxPicks != null ? String(prize.maxPicks) : "3",
-      criteria:
-        prize.judgingStyle === "gate_check"
-          ? (prize.criteria ?? []).map((c) => ({
-              id: nextDraftId(),
-              name: c.name,
-              description: c.description ?? "",
-            }))
-          : [],
-      weightedCriteria:
-        prize.judgingStyle === "weighted_score"
-          ? (prize.criteria ?? []).map((c) => ({
-              id: nextDraftId(),
-              name: c.name,
-              description: c.description ?? "",
-              weight: c.weight != null ? String(c.weight) : "",
-              minScore: c.minScore != null ? String(c.minScore) : "1",
-              maxScore: c.maxScore != null ? String(c.maxScore) : "10",
-            }))
-          : [],
-      buckets:
-        prize.judgingStyle === "bucket_sort"
-          ? (prize.buckets ?? []).map((b) => ({
-              id: nextDraftId(),
-              level: b.level,
-              label: b.label,
-              description: b.description ?? "",
-            }))
-          : [],
-    })
-  }, [prize])
+  const [saving,setSaving] = useState(false)
+  const [error,setError] = useState<string|null>(null)
+  const pickedStyle = form.pickedStyle
+  const setPickedStyle = (pickedStyle:PrizeJudgingStyle|null) => setForm((current) => ({...current,pickedStyle}))
+  const effectiveStyle:PrizeJudgingStyle|null = pickedStyle ?? prize?.judgingStyle ?? null
 
   function updateCriterion(index: number, patch: Partial<CriterionDraft>) {
     setForm({
@@ -233,9 +195,9 @@ export function EditPrizeDialog({
     }
 
     let criteriaPayload:
-      | { name: string; description: string | null; weight?: number; minScore?: number; maxScore?: number }[]
+      | { id?: string; name: string; description: string | null; weight?: number; minScore?: number; maxScore?: number }[]
       | undefined
-    let bucketsPayload: { level: number; label: string; description: string | null }[] | undefined
+    let bucketsPayload: { id?: string; level: number; label: string; description: string | null }[] | undefined
     let maxPicksPayload: number | undefined
 
     if (!effectiveStyle) {
@@ -246,6 +208,7 @@ export function EditPrizeDialog({
     if (effectiveStyle === "weighted_score") {
       const cleaned = form.weightedCriteria
         .map((c) => ({
+          ...(isValidUuid(c.id) ? { id: c.id } : {}),
           name: c.name.trim(),
           description: c.description.trim() || null,
           weight: Number(c.weight),
@@ -273,7 +236,7 @@ export function EditPrizeDialog({
 
     if (effectiveStyle === "gate_check") {
       const cleaned = form.criteria
-        .map((c) => ({ name: c.name.trim(), description: c.description.trim() || null }))
+        .map((c) => ({ ...(isValidUuid(c.id) ? { id: c.id } : {}), name: c.name.trim(), description: c.description.trim() || null }))
         .filter((c) => c.name.length > 0)
       if (cleaned.length === 0) {
         setError("Add at least one check")
@@ -284,7 +247,7 @@ export function EditPrizeDialog({
 
     if (effectiveStyle === "bucket_sort") {
       const cleaned = form.buckets
-        .map((b) => ({ level: b.level, label: b.label.trim(), description: b.description.trim() || null }))
+        .map((b) => ({ ...(isValidUuid(b.id) ? { id: b.id } : {}), level: b.level, label: b.label.trim(), description: b.description.trim() || null }))
         .filter((b) => b.label.length > 0)
       if (cleaned.length < 2) {
         setError("Add at least two sort groups")
@@ -302,11 +265,24 @@ export function EditPrizeDialog({
       maxPicksPayload = parsed
     }
 
+    if (effectiveStyle === prize.judgingStyle) {
+      const previousCriteria = (prize.criteria ?? []).map((c) => ({
+        ...(isValidUuid(c.id) ? { id: c.id } : {}),
+        name: c.name.trim(),
+        description: c.description?.trim() || null,
+        ...(effectiveStyle === "weighted_score" ? { weight: c.weight ?? 0, minScore: c.minScore ?? 1, maxScore: c.maxScore ?? 10 } : {}),
+      }))
+      if (JSON.stringify(criteriaPayload) === JSON.stringify(previousCriteria)) criteriaPayload = undefined
+      const previousBuckets = (prize.buckets ?? []).map((b) => ({ ...(isValidUuid(b.id) ? { id: b.id } : {}), level: b.level, label: b.label.trim(), description: b.description?.trim() || null }))
+      if (JSON.stringify(bucketsPayload) === JSON.stringify(previousBuckets)) bucketsPayload = undefined
+      if (maxPicksPayload === prize.maxPicks) maxPicksPayload = undefined
+    }
+
     setSaving(true)
     setError(null)
 
     try {
-      const res = await fetch(
+      await fetch(
         `/api/dashboard/hackathons/${hackathonId}/prizes/${prize.id}`,
         {
           method: "PATCH",
@@ -315,18 +291,13 @@ export function EditPrizeDialog({
             name,
             description: form.description.trim() || null,
             value: form.value.trim() || null,
-            judgingStyle: effectiveStyle,
+            ...(effectiveStyle !== prize.judgingStyle ? { judgingStyle: effectiveStyle } : {}),
             ...(criteriaPayload ? { criteria: criteriaPayload } : {}),
             ...(bucketsPayload ? { buckets: bucketsPayload } : {}),
             ...(maxPicksPayload !== undefined ? { maxPicks: maxPicksPayload } : {}),
           }),
         }
-      )
-
-      const data = await res.json()
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to save")
-      }
+      ).then(assertOkJson)
 
       const updated: UpdatedPrize = {
         id: prize.id,
@@ -336,7 +307,7 @@ export function EditPrizeDialog({
         maxPicks: maxPicksPayload ?? prize.maxPicks,
         criteria: criteriaPayload
           ? criteriaPayload.map((c, i) => ({
-              id: `optimistic-edit-${prize.id}-criterion-${i}`,
+              id: c.id ?? `optimistic-edit-${prize.id}-criterion-${i}`,
               name: c.name,
               description: c.description,
               ...(c.weight !== undefined ? { weight: c.weight } : {}),
@@ -346,7 +317,7 @@ export function EditPrizeDialog({
           : prize.criteria,
         buckets: bucketsPayload
           ? bucketsPayload.map((b, i) => ({
-              id: `optimistic-edit-${prize.id}-bucket-${i}`,
+              id: b.id ?? `optimistic-edit-${prize.id}-bucket-${i}`,
               level: b.level,
               label: b.label,
               description: b.description,
@@ -354,6 +325,7 @@ export function EditPrizeDialog({
           : prize.buckets,
       }
 
+      clearDraft()
       onSuccess?.(updated)
       router.refresh()
       onClose()
@@ -455,32 +427,12 @@ export function EditPrizeDialog({
                       <button
                         key={option.value}
                         type="button"
-                        onClick={() => {
-                          setPickedStyle(option.value)
-                          if (option.value === "bucket_sort") {
-                            setForm({
-                              ...form,
-                              buckets: DEFAULT_BUCKETS.map((b) => ({
-                                id: nextDraftId(),
-                                level: b.level,
-                                label: b.label,
-                                description: b.description,
-                              })),
-                            })
-                          } else if (option.value === "gate_check") {
-                            setForm({
-                              ...form,
-                              criteria: [{ id: nextDraftId(), name: "", description: "" }],
-                            })
-                          } else if (option.value === "weighted_score") {
-                            setForm({
-                              ...form,
-                              weightedCriteria: [
-                                { id: nextDraftId(), name: "", description: "", weight: "", minScore: "1", maxScore: "10" },
-                              ],
-                            })
-                          }
-                        }}
+                        onClick={() => setForm((current) => ({
+                          ...current,pickedStyle:option.value,
+                          ...(option.value === "bucket_sort" ? {buckets:DEFAULT_BUCKETS.map((bucket) => ({id:nextDraftId(),level:bucket.level,label:bucket.label,description:bucket.description}))} : {}),
+                          ...(option.value === "gate_check" ? {criteria:[{id:nextDraftId(),name:"",description:""}]} : {}),
+                          ...(option.value === "weighted_score" ? {weightedCriteria:[{id:nextDraftId(),name:"",description:"",weight:"",minScore:"1",maxScore:"10"}]} : {}),
+                        }))}
                         className="w-full rounded-lg border p-4 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         <div className="flex items-start gap-3">

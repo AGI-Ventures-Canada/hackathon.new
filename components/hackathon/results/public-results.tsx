@@ -19,6 +19,8 @@ function WinnerCard({ result }: { result: PublicResultWithDetails }) {
           <img
             src={result.submissionScreenshotUrl}
             alt={result.submissionTitle}
+            loading="lazy"
+            decoding="async"
             className="w-full h-full object-cover"
           />
         </div>
@@ -100,6 +102,8 @@ function RunnerUpExpandedContent({ result }: { result: PublicResultWithDetails }
           <img
             src={result.submissionScreenshotUrl}
             alt={result.submissionTitle}
+            loading="lazy"
+            decoding="async"
             className="w-full h-full object-cover"
           />
         </div>

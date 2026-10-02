@@ -77,6 +77,7 @@ function renderTools(overrides: Partial<React.ComponentProps<typeof EventWebMcpT
 }
 
 beforeEach(() => {
+  setSystemTime(new Date("2026-09-08T12:30:00.000Z"))
   registered = new Map()
   localStorage.clear()
   document.modelContext = {
@@ -235,7 +236,7 @@ describe("EventWebMcpTools", () => {
       expect(result).toMatchObject({
         ok: true,
         data: { prepared: true },
-        requiresHumanAction: true,
+        requiresHumanAction: false,
       })
       expect(preparedEmail).toBe("friend@example.com")
     } finally {
@@ -309,7 +310,7 @@ describe("EventWebMcpTools", () => {
         expect(result).toMatchObject({
           ok: true,
           data: { prepared: true, openedReview: true },
-          requiresHumanAction: true,
+          requiresHumanAction: false,
         })
       })
 
@@ -321,7 +322,7 @@ describe("EventWebMcpTools", () => {
         description: "Ready for review.",
       })
       expect(screen.getByText("Project draft ready")).toBeDefined()
-      expect(screen.getByText("Review every project field, then click Submit Project or Save Changes.")).toBeDefined()
+      expect(screen.getByText("Your project is ready. Your agent can submit or save it directly.")).toBeDefined()
     } finally {
       window.removeEventListener(PREPARE_PROJECT_EVENT, listener)
     }

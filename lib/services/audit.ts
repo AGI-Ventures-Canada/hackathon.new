@@ -57,6 +57,7 @@ export type AuditAction =
   | "judge.added"
   | "judge.removed"
   | "judge.invited"
+  | "judge.scope_updated"
   | "judge_invitation.queued"
   | "judge_invitation.delivery_failed"
   | "judge_invitation.reminded"

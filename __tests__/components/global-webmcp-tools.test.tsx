@@ -175,7 +175,7 @@ describe("GlobalWebMcpTools", () => {
 
     expect(result).toMatchObject({
       ok: true,
-      requiresHumanAction: true,
+      requiresHumanAction: false,
       data: { openedReview: true },
     })
     expect(JSON.parse(window.localStorage.getItem(

@@ -724,7 +724,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
           {teams.length === 0
             ? "No teams yet"
             : (() => {
-                const submittedCount = teams.filter((t) => t.submission).length
+                const submittedCount = teams.filter((t) => t.submission?.status === "submitted").length
                 const pendingCount = teams.filter((t) => t.status === "pending_approval").length
                 return `${teams.length} team${teams.length === 1 ? "" : "s"} · ${submittedCount} submitted${pendingCount > 0 ? ` · ${pendingCount} waiting` : ""}`
               })()}
@@ -926,7 +926,7 @@ export function TeamsTab({ hackathonId, maxTeamSize: initialMax, minTeamSize: in
                   <TableHead>Team</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Members</TableHead>
-                  <TableHead>Submission</TableHead>
+                  <TableHead>Project</TableHead>
                   <TableHead>Room</TableHead>
                   <TableHead className="w-10 sr-only">Actions</TableHead>
                 </TableRow>

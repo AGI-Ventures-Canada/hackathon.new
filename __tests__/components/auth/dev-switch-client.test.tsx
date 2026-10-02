@@ -109,6 +109,16 @@ describe("DevSwitchClient", () => {
     expect(signInCreate).not.toHaveBeenCalled()
   })
 
+  it("continues switching when the signed-out redirect reuses the mounted page", async () => {
+    g.__clerkState.isSignedIn = true
+    const view = render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} signedOut={false} />)
+    await waitFor(() => expect(mockSignOut).toHaveBeenCalledTimes(1))
+    g.__clerkState.isSignedIn = false
+    view.rerender(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} signedOut={true} />)
+    await waitFor(() => expect(signInCreate).toHaveBeenCalledTimes(1))
+    expect(mockSignInSetActive).toHaveBeenCalledWith({ session: "session_abc", organization: null, redirectUrl: "/e/demo" })
+  })
+
   it("clears the organization when switching to a no-org persona", async () => {
     g.__clerkState.isSignedIn = true
     render(<DevSwitchClient token="ticket_xyz" redirect="/e/demo" org={null} signedOut={false} />)

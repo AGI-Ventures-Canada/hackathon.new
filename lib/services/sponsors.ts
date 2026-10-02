@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import type { HackathonSponsor, SponsorTier } from "@/lib/db/hackathon-types"
 
 export interface AddSponsorInput {
+  id?: string
   hackathonId: string
   name: string
   logoUrl?: string | null
@@ -16,27 +17,53 @@ export interface AddSponsorInput {
   displayOrder?: number
 }
 
-export async function addSponsor(input: AddSponsorInput): Promise<HackathonSponsor | null> {
+export async function addSponsor(
+  input: AddSponsorInput,
+): Promise<HackathonSponsor | null> {
   const client = getSupabase() as unknown as SupabaseClient
   if (input.sponsorTenantId || input.useOrgAssets) {
     console.error("A sponsor organization can't be linked without its approval")
     return null
   }
+  const record = {
+    ...(input.id ? { id: input.id } : {}),
+    hackathon_id: input.hackathonId,
+    name: input.name,
+    logo_url: input.logoUrl ?? null,
+    logo_url_dark: input.logoUrlDark ?? null,
+    website_url: input.websiteUrl ?? null,
+    tier: input.tier ?? "none",
+    custom_tier_label:
+      input.tier === "custom" ? (input.customTierLabel ?? null) : null,
+    sponsor_tenant_id: input.sponsorTenantId ?? null,
+    tenant_sponsor_id: input.tenantSponsorId ?? null,
+    use_org_assets: input.useOrgAssets ?? false,
+    display_order: input.displayOrder ?? 0,
+  }
+  if (input.id) {
+    const { data: existing, error: lookupError } = await client
+      .from("hackathon_sponsors")
+      .select("*")
+      .eq("id", input.id)
+      .eq("hackathon_id", input.hackathonId)
+      .maybeSingle()
+    if (lookupError)
+      throw new Error("Could not check the previous sponsor save")
+    if (existing) {
+      const sameInput = Object.entries(record).every(
+        ([key, value]) =>
+          key === "tenant_sponsor_id" || existing[key] === value,
+      )
+      if (!sameInput)
+        throw new Error(
+          "This sponsor save was already used for different details",
+        )
+      return existing as unknown as HackathonSponsor
+    }
+  }
   const { data, error } = await client
     .from("hackathon_sponsors")
-    .insert({
-      hackathon_id: input.hackathonId,
-      name: input.name,
-      logo_url: input.logoUrl ?? null,
-      logo_url_dark: input.logoUrlDark ?? null,
-      website_url: input.websiteUrl ?? null,
-      tier: input.tier ?? "none",
-      custom_tier_label: input.tier === "custom" ? (input.customTierLabel ?? null) : null,
-      sponsor_tenant_id: input.sponsorTenantId ?? null,
-      tenant_sponsor_id: input.tenantSponsorId ?? null,
-      use_org_assets: input.useOrgAssets ?? false,
-      display_order: input.displayOrder ?? 0,
-    })
+    .insert(record)
     .select()
     .single()
 
@@ -48,7 +75,10 @@ export async function addSponsor(input: AddSponsorInput): Promise<HackathonSpons
   return data as unknown as HackathonSponsor
 }
 
-export async function removeSponsor(sponsorId: string, hackathonId: string): Promise<boolean> {
+export async function removeSponsor(
+  sponsorId: string,
+  hackathonId: string,
+): Promise<boolean> {
   const client = getSupabase() as unknown as SupabaseClient
 
   const { data, error } = await client
@@ -70,14 +100,16 @@ export async function removeSponsor(sponsorId: string, hackathonId: string): Pro
     await deleteSponsorLogo(hackathonId, sponsorId, "light")
     await deleteSponsorLogo(hackathonId, sponsorId, "dark")
   } catch {
-    console.error("Sponsor removed, but its old logo files could not be cleaned up")
+    console.error(
+      "Sponsor removed, but its old logo files could not be cleaned up",
+    )
   }
 
   return true
 }
 
 export async function listHackathonSponsors(
-  hackathonId: string
+  hackathonId: string,
 ): Promise<HackathonSponsor[]> {
   const client = getSupabase() as unknown as SupabaseClient
 
@@ -99,7 +131,7 @@ export async function listHackathonSponsors(
 export async function updateSponsor(
   sponsorId: string,
   updates: Partial<Omit<AddSponsorInput, "hackathonId">>,
-  hackathonId: string
+  hackathonId: string,
 ): Promise<HackathonSponsor | null> {
   const client = getSupabase() as unknown as SupabaseClient
 
@@ -112,10 +144,13 @@ export async function updateSponsor(
       .maybeSingle()
     if (currentError || !currentSponsor) return null
     if (
-      (updates.sponsorTenantId && updates.sponsorTenantId !== currentSponsor.sponsor_tenant_id) ||
+      (updates.sponsorTenantId &&
+        updates.sponsorTenantId !== currentSponsor.sponsor_tenant_id) ||
       (updates.useOrgAssets === true && !currentSponsor.sponsor_tenant_id)
     ) {
-      console.error("A sponsor organization can't be linked without its approval")
+      console.error(
+        "A sponsor organization can't be linked without its approval",
+      )
       return null
     }
   }
@@ -123,16 +158,22 @@ export async function updateSponsor(
   const updateData: Record<string, unknown> = {}
   if (updates.name !== undefined) updateData.name = updates.name
   if (updates.logoUrl !== undefined) updateData.logo_url = updates.logoUrl
-  if (updates.logoUrlDark !== undefined) updateData.logo_url_dark = updates.logoUrlDark
-  if (updates.websiteUrl !== undefined) updateData.website_url = updates.websiteUrl
+  if (updates.logoUrlDark !== undefined)
+    updateData.logo_url_dark = updates.logoUrlDark
+  if (updates.websiteUrl !== undefined)
+    updateData.website_url = updates.websiteUrl
   if (updates.tier !== undefined) {
     updateData.tier = updates.tier
     if (updates.tier !== "custom") updateData.custom_tier_label = null
   }
-  if (updates.customTierLabel !== undefined) updateData.custom_tier_label = updates.customTierLabel
-  if (updates.sponsorTenantId !== undefined) updateData.sponsor_tenant_id = updates.sponsorTenantId
-  if (updates.useOrgAssets !== undefined) updateData.use_org_assets = updates.useOrgAssets
-  if (updates.displayOrder !== undefined) updateData.display_order = updates.displayOrder
+  if (updates.customTierLabel !== undefined)
+    updateData.custom_tier_label = updates.customTierLabel
+  if (updates.sponsorTenantId !== undefined)
+    updateData.sponsor_tenant_id = updates.sponsorTenantId
+  if (updates.useOrgAssets !== undefined)
+    updateData.use_org_assets = updates.useOrgAssets
+  if (updates.displayOrder !== undefined)
+    updateData.display_order = updates.displayOrder
 
   const { data, error } = await client
     .from("hackathon_sponsors")
@@ -152,7 +193,7 @@ export async function updateSponsor(
 
 export async function reorderSponsors(
   hackathonId: string,
-  sponsorIds: string[]
+  sponsorIds: string[],
 ): Promise<boolean> {
   const client = getSupabase() as unknown as SupabaseClient
 
@@ -176,15 +217,17 @@ export type SponsorWithTenant = HackathonSponsor & {
 }
 
 export async function listHackathonSponsorsWithTenants(
-  hackathonId: string
+  hackathonId: string,
 ): Promise<SponsorWithTenant[]> {
   const client = getSupabase() as unknown as SupabaseClient
   const { data, error } = await client
     .from("hackathon_sponsors")
-    .select(`
+    .select(
+      `
       *,
       tenant:tenants!sponsor_tenant_id(slug, name, logo_url, logo_url_dark, website_url, description)
-    `)
+    `,
+    )
     .eq("hackathon_id", hackathonId)
     .order("tier")
     .order("display_order")
