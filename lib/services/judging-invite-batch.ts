@@ -47,10 +47,12 @@ export async function processJudgeInvitationBatch(input: { event: Event; emails:
           const claim = await remindJudgeInvitation(invitation.id, input.event.id)
           if (!claim.success) return { email, outcome: claim.code === "reminder_cooldown" ? "cooldown" : "blocked", message: claim.error }
           const { sendJudgeInvitationReminderEmail } = await import("@/lib/email/judge-invitations")
-          const sent = await sendJudgeInvitationReminderEmail({ to: email, hackathonName: input.event.name, inviterName: input.inviterName, inviteToken: claim.invitation.token, expiresAt: claim.invitation.expires_at, hackathonSlug: input.event.slug, hackathonStartsAt: input.event.judging_opens_at ?? input.event.starts_at, hackathonEndsAt: input.event.judging_closes_at ?? input.event.ends_at, hackathonTimezone: input.event.judging_timezone, deliveryId: `${claim.invitation.id}/manual/${claim.invitation.reminded_at}` }).catch(() => ({ success: false }))
+          const sent = await sendJudgeInvitationReminderEmail({ hackathonId: input.event.id, to: email, hackathonName: input.event.name, inviterName: input.inviterName, inviteToken: claim.invitation.token, expiresAt: claim.invitation.expires_at, hackathonSlug: input.event.slug, hackathonStartsAt: input.event.judging_opens_at ?? input.event.starts_at, hackathonEndsAt: input.event.judging_closes_at ?? input.event.ends_at, hackathonTimezone: input.event.judging_timezone, deliveryId: `${claim.invitation.id}/manual/${claim.invitation.reminded_at}` }).catch(() => ({ success: false }))
           if (!sent.success) {
             if (claim.invitation.reminded_at) await releaseJudgeInvitationReminderClaim(claim.invitation.id, claim.invitation.reminded_at)
-            return { email, outcome: "failed", delivery: "failed", message: "The reminder couldn't be sent. Try again." }
+            return "skipped" in sent && sent.skipped
+              ? { email, outcome: "blocked", message: "Reminders are turned off or the deadline has passed." }
+              : { email, outcome: "failed", delivery: "failed", message: "The reminder couldn't be sent. Try again." }
           }
           const { cancelUpcomingReminder } = await import("@/lib/services/smart-reminders")
           await cancelUpcomingReminder("judge_invitation", invitation.id, 24 * 3_600_000)

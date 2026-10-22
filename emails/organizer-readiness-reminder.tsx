@@ -12,6 +12,7 @@ type OrganizerReadinessReminderEmailProps = {
   deadlineDate: string
   taskLabels: string[]
   ctaUrl: string
+  canReplyToStop?: boolean
 }
 
 export default function OrganizerReadinessReminderEmail({
@@ -22,12 +23,13 @@ export default function OrganizerReadinessReminderEmail({
   deadlineDate,
   taskLabels,
   ctaUrl,
+  canReplyToStop = false,
 }: OrganizerReadinessReminderEmailProps) {
   return (
     <OatmealLayout
       heading={heading}
       preview={`${heading} — ${hackathonName}`}
-      footerText={`You're receiving this because you help organize ${hackathonName}. Reply to stop these reminders.`}
+      footerText={`You're receiving this because you help organize ${hackathonName}. ${canReplyToStop ? "Reply STOP to stop these reminders for this event." : "To stop these reminders, contact the event organizer."}`}
     >
       <Text style={{ fontSize: fontSize.base, lineHeight: "1.6", marginBottom: spacing.lg }}>
         {body}

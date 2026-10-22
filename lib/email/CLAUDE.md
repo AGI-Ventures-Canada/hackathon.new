@@ -349,3 +349,64 @@ When debugging a React Email issue you haven't seen before:
 - API Reference: https://resend.com/docs/api-reference/emails/send-email
 - Retrieve Email: https://resend.com/docs/api-reference/emails/retrieve-email
 - Receiving Emails: https://resend.com/docs/dashboard/receiving/introduction
+
+## Scoped reminder replies and cutoffs
+
+Reminder sends pass a `reminder` context to `sendEmail` / `sendEmailWithResult`.
+Transactional sends omit it. Every provider attempt reloads the event and the
+recipient's event/category opt-out. Failed lookups stop dispatch. Accepted provider
+IDs are stored in `reminder_deliveries`, so queue retries can finish from a durable
+receipt. An unresolved attempt older than 23 hours stops for review before the
+provider's 24-hour idempotency window can expire.
+
+Cutoffs in `lib/utils/reminder-cutoff.ts` apply to all reminder entry points:
+
+- Event work ends at `ends_at`; a missing end falls back to `starts_at + 24h`.
+  Missing or invalid dates fail closed.
+- Judging can continue after event end only with a valid opening and deadline,
+  including an active round's explicit override. Judge reminders end at that
+  deadline; organizers get at most 24 hours for the closure notice.
+- Prize, fulfillment, and feedback nudges end 14 days after the current results
+  publication. Scheduling uses publication time, so reruns cannot extend it.
+- Draft, archived, test, completed and published-results states retain their
+  category-specific lifecycle checks. These rules do not suppress security or
+  transactional mail.
+
+`POST /api/public/webhooks/resend` verifies the raw signed Resend webhook and
+retrieves the original message with `emails.receiving.get`. It uses the provider's
+`received_for` envelope addresses, never a caller's claimed event or category.
+A signed reply address identifies one accepted original delivery. Its sender must
+match the original address or a currently verified Clerk alias on the original
+recipient's account. Plus-address and dot aliases are never guessed. Plain STOP /
+unsubscribe requests apply only to that recipient, event, and category. Ambiguous,
+forwarded, automatic, unscoped and unverifiable requests become `review_required`.
+No historical reply is automatically backfilled into an opt-out.
+
+The existing `API_KEY_SECRET` signs references; no new signing credential is
+needed. Set `RESEND_REMINDER_REPLY_TO` only to an already configured Resend
+receiving mailbox (local part up to 13 characters), or use the existing
+`RESEND_REPLY_TO_EMAIL` when its domain equals `RESEND_RECEIVING_DOMAIN`.
+`RESEND_WEBHOOK_SECRET` and an API key with receiving read access must already be
+configured, with an `email.received` webhook to the route. The route returns 503
+until its required configuration exists. Never change DNS, webhook access,
+credentials, or protection settings as a workaround for failed release acceptance.
+The automatic reply promise appears only when a receiving mailbox is configured;
+otherwise judging mail directs recipients to their reminder settings.
+
+`reminder_reply_audits` holds the provider inbound ID, delivery reference, hashed
+sender/body, outcome and reason. `record_reminder_reply` atomically records the
+receipt and exact-scope suppression; duplicate deliveries and distinct repeated
+replies cannot broaden it. Reviewers can read `review_required` rows ordered by
+`created_at` and inspect the original inbound ID in Resend. They must verify the
+original authorization, recipient, event and category before any manual opt-out.
+These tables and RPC are service-role-only with RLS and no public access.
+
+Local acceptance: `bun run scripts/accept-reminder-fix.ts` requires a local
+Supabase URL and uses only a stub email transport. It creates and removes its own
+fixtures and sends no email. Staging acceptance must verify the exact deployed
+commit, migration/RLS/RPC permissions, unsigned webhook rejection, receiving
+configuration, and the regression suite before the staging-to-main release PR.
+
+Provider references:
+- https://resend.com/docs/dashboard/receiving/introduction
+- https://resend.com/docs/webhooks/verify-webhooks-requests

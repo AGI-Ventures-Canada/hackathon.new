@@ -676,13 +676,13 @@ function requireMeta(meta: Record<string, unknown>, ...keys: string[]): void {
 }
 
 export function hasReminderDeliveryFailure(
-  delivery: { success: boolean } | { sent: number; failed: number },
+  delivery: { success: boolean; skipped?: true } | { sent: number; failed: number },
 ): boolean {
-  return "success" in delivery ? !delivery.success : delivery.failed > 0
+  return "success" in delivery ? !delivery.success && !delivery.skipped : delivery.failed > 0
 }
 
 export function reminderDeliveryWasSent(
-  delivery: { success: boolean } | { sent: number; failed: number },
+  delivery: { success: boolean; skipped?: true } | { sent: number; failed: number },
 ): boolean {
   return "success" in delivery
     ? delivery.success
@@ -705,6 +705,7 @@ async function dispatchReminderEmail(
       "@/lib/email/team-invitations"
     )
     const delivery = await sendTeamInvitationReminderEmail({
+      hackathonId: reminder.hackathon_id,
       to: meta.email as string,
       teamName: meta.teamName as string,
       hackathonName: meta.hackathonName as string,
@@ -742,6 +743,7 @@ async function dispatchReminderEmail(
     })
     if (!latest || latest.status !== "pending" || getJudgeNotificationDisposition(latest.hackathon) !== "send") return false
     const delivery = await sendJudgeInvitationReminderEmail({
+      hackathonId: reminder.hackathon_id,
       to: claim.invitation.email,
       hackathonName: latest.hackathon.name,
       inviterName: meta.inviterName as string,

@@ -11,6 +11,7 @@ interface PostEventReminderEmailProps {
   ctaUrl: string
   hackathonName: string
   eventUrl?: string
+  canReplyToStop?: boolean
 }
 
 export default function PostEventReminderEmail({
@@ -21,12 +22,13 @@ export default function PostEventReminderEmail({
   ctaUrl,
   hackathonName,
   eventUrl,
+  canReplyToStop = false,
 }: PostEventReminderEmailProps) {
   return (
     <OatmealLayout
       heading={heading}
       preview={`${heading} \u2014 ${hackathonName}`}
-      footerText={`You\u2019re getting this because you took part in ${hackathonName}. Reply to stop these reminders.`}
+      footerText={`You\u2019re getting this because you took part in ${hackathonName}. ${canReplyToStop ? "Reply STOP to stop these reminders for this event." : "To stop these reminders, contact the event organizer."}`}
       eventUrl={eventUrl}
       hackathonName={hackathonName}
     >

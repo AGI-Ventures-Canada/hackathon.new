@@ -42,7 +42,7 @@ describe("judging reminders and inbox", () => {
 })
 
 type UpdateInput = { beforeAttempt?: () => Promise<void> }
-const sendUpdate = mock(async (_input: UpdateInput) => true)
+const sendUpdate = mock(async (_input: UpdateInput): Promise<boolean | "suppressed"> => true)
 mock.module("@/lib/email/judging-updates", () => ({ sendJudgingUpdateEmail: sendUpdate }))
 mock.module("@/lib/services/organizer-action-items", () => ({ getOrganizerTaskBoard: async () => ({ items: [] }) }))
 
@@ -477,4 +477,36 @@ describe("judging cadence and send-time checks", () => {
     expect(await queueJudgeWorkReminder("event", "user", true)).toMatchObject({ outcome: "ready", message: "Remind this judge about 1 unfinished review." })
     expect(store.rows.judging_notifications).toHaveLength(0)
   })
+})
+
+describe("stale event reminder regression", () => {
+  beforeEach(() => { resetSupabaseMocks(); sendUpdate.mockClear() })
+  it("closes legacy August judging notices without a deadline and never creates another daily organizer notice", async () => {
+    const now = new Date()
+    const store = memoryStore(now)
+    Object.assign(store.rows.hackathons[0], { starts_at: "2026-08-22T18:30:00Z", ends_at: "2026-08-22T22:46:56Z", judging_opens_at: null, judging_closes_at: null })
+    store.rows.hackathon_participants.push({ id: "organizer", clerk_user_id: "owner", role: "organizer", hackathon_id: "event" })
+    store.rows.judging_notifications.push(queuedNotification(now, { kind: "organizer_progress", clerk_user_id: "owner" }))
+    await reconcileJudgingNotifications("event", now)
+    expect(store.rows.judging_notifications).toHaveLength(1)
+    expect(store.rows.judging_notifications[0].resolved_at).toBe(now.toISOString())
+    expect(store.rows.judging_notifications[0].last_error).toBe("reminder_event_cutoff")
+    expect(store.rows.judging_notifications[0].email_required).toBe(false)
+    expect((await queueJudgeWorkReminder("event", "user", true)).outcome).toBe("blocked")
+    expect((await processJudgingNotifications()).sent).toBe(0)
+    expect(sendUpdate).not.toHaveBeenCalled()
+  })
+})
+
+it("records a reply-based stop during rendering without stamping provider acceptance", async () => {
+  resetSupabaseMocks()
+  sendUpdate.mockClear()
+  sendUpdate.mockImplementation(async () => "suppressed")
+  const now = new Date()
+  const store = memoryStore(now)
+  store.skipReconcile()
+  store.rows.judging_notifications.push(queuedNotification(now))
+  expect(await processJudgingNotifications()).toEqual({ sent: 0, failed: 0, skipped: 1 })
+  expect(store.rows.judging_notifications[0].email_sent_at).toBeNull()
+  expect(store.rows.judging_notifications[0].email_required).toBe(false)
 })

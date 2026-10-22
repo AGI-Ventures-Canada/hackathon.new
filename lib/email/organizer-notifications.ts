@@ -1,3 +1,4 @@
+import { reminderReplyAddress } from "@/lib/services/reminder-delivery"
 import { formatEmailDeadline } from "./deadline"
 import { sendEmail } from "./resend"
 import {
@@ -144,6 +145,7 @@ export async function sendOrganizerReadinessReminder(params: {
   const { html, text } = await renderEmail(
     OrganizerReadinessReminderEmail({
       hackathonName: params.hackathonName,
+      canReplyToStop: !!reminderReplyAddress("0".repeat(24)),
       heading,
       body,
       deadlineLabel,
@@ -164,8 +166,10 @@ export async function sendOrganizerReadinessReminder(params: {
     }
     const email = selection.tasks[index]
     await paceBulkSend(index)
+    let stopped = false
     const result = await sendEmail({
       to: email,
+      reminder: { hackathonId: params.hackathonId, category: "organizer_event", deadline: params.deadlineDate, onStopped: () => { stopped = true } },
       subject: `${params.urgency === "high" ? "Action needed: " : ""}${heading} — ${shortHackathonName(params.hackathonName, params.urgency === "high" ? 18 : 30)}`,
       html,
       text,
@@ -177,7 +181,9 @@ export async function sendOrganizerReadinessReminder(params: {
       ],
       idempotencyKey: `organizer-readiness/${params.deliveryId}/${recipientFingerprint(email)}`,
     })
-    if (result) {
+    if (stopped) {
+      await markDeliveryTaskComplete(workKey, email)
+    } else if (result) {
       sent++
       await markDeliveryTaskComplete(workKey, email)
     } else {

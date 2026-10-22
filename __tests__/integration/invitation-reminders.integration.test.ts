@@ -256,6 +256,15 @@ describe("POST /hackathons/:id/judging/invitations/:invitationId/remind", () => 
     expect(data.code).toBe("already_reminded")
   })
 
+  it("reports a scoped opt-out without claiming email delivery", async () => {
+    mockSendJudgeInvitationReminderEmail.mockImplementationOnce(async () => ({ success: false, skipped: true }))
+    const response = await app.handle(new Request(remindUrl, { method: "POST" }))
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({ code: "reminder_stopped" })
+    expect(mockReleaseJudgeInvitationReminderClaim).toHaveBeenCalled()
+    expect(mockLogAudit).not.toHaveBeenCalled()
+  })
+
   it("sends reminder email and logs audit on success", async () => {
     const res = await app.handle(new Request(remindUrl, { method: "POST" }))
     const data = await res.json()
