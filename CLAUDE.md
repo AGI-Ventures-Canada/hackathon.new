@@ -116,6 +116,9 @@ Every directory with agent instructions must expose both `CLAUDE.md` and `AGENTS
 
 Skills in `.claude/skills/`:
 - `local-dev-setup/SKILL.md` - Developer onboarding and local environment setup
+- `hackathon-design/SKILL.md` - Design, build, polish, and review this project's real interfaces using existing components, themes, data, and app/WebMCP/CLI behavior
+
+For interface design and development, use `hackathon-design` from the canonical `.agents/skills/hackathon-design/` directory. Its project map and focused references cover app screens, public event pages, components, accessible states, mobile layouts, and verification. It is an internal project skill, exposed through the configured coding tools' skill directories; it does not change the public skills in `skills/`.
 
 #### Hackathon Skills (`skills/`)
 
