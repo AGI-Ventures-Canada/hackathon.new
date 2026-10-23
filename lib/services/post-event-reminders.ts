@@ -1,6 +1,7 @@
 import { supabase as getSupabase } from "@/lib/db/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { PostEventReminder } from "@/lib/db/hackathon-types"
+import { reminderIsCurrent } from "@/lib/utils/reminder-cutoff"
 import { createHash } from "node:crypto"
 import { withDeliveryLease } from "@/lib/services/delivery-lease"
 import {
@@ -31,7 +32,8 @@ export async function schedulePostEventReminders(hackathonId: string): Promise<n
     hackathon.status !== "completed"
   ) return 0
 
-  const now = new Date()
+  if (!reminderIsCurrent(hackathon, "prize_claim")) return 0
+  const now = new Date(hackathon.results_published_at)
   const reminders: Array<{
     hackathon_id: string
     type: string
@@ -279,7 +281,7 @@ async function validateReminderLifecycle(
     : null
   if (publicationVersion && publicationVersion !== data.results_published_at) return "stale"
 
-  return "send"
+  return reminderIsCurrent(data, "prize_claim") ? "send" : "cancel"
 }
 
 export async function markReminderSent(
@@ -312,7 +314,7 @@ async function processPendingReminder(
 ): Promise<{ sent: number; deferred: boolean }> {
   const lifecycle = await validateReminderLifecycle(reminder)
   if (lifecycle === "cancel") {
-    await markReminderCancelled(reminder.id, reminder.scheduled_for)
+    await markReminderCancelled(reminder.id, reminder.scheduled_for, { ...reminder.metadata as Record<string, unknown>, cancellationReason: "lifecycle_or_cutoff" })
     return { sent: 0, deferred: false }
   }
   if (lifecycle === "stale") {
@@ -412,7 +414,11 @@ async function processPendingReminder(
 
   if (summary.deferred) return { sent: summary.sent, deferred: true }
 
-  await markReminderSent(reminder.id, reminder.scheduled_for)
+  if (summary.sent > 0) {
+    await markReminderSent(reminder.id, reminder.scheduled_for)
+  } else {
+    await markReminderCancelled(reminder.id, reminder.scheduled_for, { ...metadata, cancellationReason: "no_eligible_recipients" })
+  }
   return { sent: summary.sent, deferred: false }
 }
 

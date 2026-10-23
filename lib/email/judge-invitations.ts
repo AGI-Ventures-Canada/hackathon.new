@@ -166,6 +166,7 @@ export async function sendJudgeInvitationEmail(
 }
 
 export type SendJudgeInvitationReminderInput = {
+  hackathonId: string
   to: string
   hackathonName: string
   inviterName: string
@@ -188,7 +189,7 @@ function judgeReminderSubject(hackathonName: string, urgency: string): string {
 
 export async function sendJudgeInvitationReminderEmail(
   input: SendJudgeInvitationReminderInput
-): Promise<{ success: boolean }> {
+): Promise<{ success: boolean; skipped?: true }> {
   if (!process.env.NEXT_PUBLIC_APP_URL) {
     console.error("NEXT_PUBLIC_APP_URL not set, cannot send reminder email")
     return { success: false }
@@ -219,8 +220,10 @@ export async function sendJudgeInvitationReminderEmail(
   const urgency = input.urgency ?? "low"
   const subject = judgeReminderSubject(input.hackathonName, urgency)
 
+  let stopped = false
   const result = await sendEmail({
     to: input.to,
+    reminder: { hackathonId: input.hackathonId, category: "judge_invitation", deadline: input.expiresAt, onStopped: () => { stopped = true } },
     subject,
     html,
     text,
@@ -233,5 +236,5 @@ export async function sendJudgeInvitationReminderEmail(
     idempotencyKey: `judge-invitation-reminder/${input.deliveryId ?? `${input.inviteToken}/${urgency}`}`,
   })
 
-  return { success: result !== null }
+  return stopped ? { success: false, skipped: true } : { success: result !== null }
 }

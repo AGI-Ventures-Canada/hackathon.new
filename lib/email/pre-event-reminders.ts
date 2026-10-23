@@ -1,3 +1,4 @@
+import { reminderReplyAddress } from "@/lib/services/reminder-delivery"
 import { formatEmailDeadline } from "./deadline"
 import { sendEmail } from "./resend"
 import {
@@ -230,6 +231,7 @@ export async function sendPreEventReminderEmail(
     const { html, text } = await renderEmail(
       PreEventReminderEmail({
         hackathonName: input.hackathonName,
+        canReplyToStop: !!reminderReplyAddress("0".repeat(24)),
         participantName: recipient.name,
         deadlineLabel: content.deadlineLabel,
         timeLeft,
@@ -244,8 +246,10 @@ export async function sendPreEventReminderEmail(
       })
     )
 
+    let stopped = false
     const result = await sendEmail({
       to: recipient.email,
+      reminder: { hackathonId: input.hackathonId, category: isJudgeReminder ? "judge_judging" : "participant_event", recipientUserId: recipient.id, deadline: input.deadlineDate, onStopped: () => { stopped = true } },
       subject,
       html,
       text,
@@ -260,7 +264,9 @@ export async function sendPreEventReminderEmail(
         : `pre-event-reminder/${deliveryId}/${recipient.id}`,
     })
 
-    if (result !== null) {
+    if (stopped) {
+      await markDeliveryTaskComplete(workKey, candidates[index].id)
+    } else if (result !== null) {
       sent++
       await markDeliveryTaskComplete(workKey, candidates[index].id)
     } else {

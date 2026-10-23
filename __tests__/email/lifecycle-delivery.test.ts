@@ -850,3 +850,11 @@ describe("lifecycle email delivery", () => {
     )
   })
 })
+
+it("completes opted-out reminder recipients without reporting a send or provider failure", async () => {
+  fromImpl = (table) => query({ data: table === "hackathons" ? { name: "Build", slug: "build", is_test_event: false } : [{ clerk_user_id: "user_1" }], error: null })
+  mockGetUserList.mockResolvedValue({ data: [{ id: "user_1", firstName: "Avery", primaryEmailAddress: { emailAddress: "a@example.com" } }] })
+  sendImpl = async (input) => { (input.reminder as { onStopped: () => void }).onStopped(); return null }
+  await expect(sendPreEventReminderEmail({ hackathonId: "hack_1", reminderType: "event_starting", hackathonName: "Build", hackathonSlug: "build", deadlineDate: "2027-01-01T00:00:00Z", urgency: "low", deliveryId: "opt-out" })).resolves.toEqual({ sent: 0, failed: 0 })
+  await expect(sendReminderEmailsWithResult("hack_1", "prize_claim", "all_participants", () => ({ hackathonName: "Build", participantName: "Avery", ctaUrl: "https://example.com", subject: "Prize", heading: "Prize", body: "Claim it", ctaLabel: "Claim" }), "opt-out-post")).resolves.toEqual({ eligible: 1, sent: 0, failed: 0 })
+})

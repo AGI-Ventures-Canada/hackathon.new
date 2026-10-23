@@ -14,6 +14,152 @@ export type Database = {
   }
   public: {
     Tables: {
+      "reminder_deliveries": {
+          Row: {
+              "accepted_at": string | null;
+              "category": string;
+              "created_at": string;
+              "hackathon_id": string;
+              "id": string;
+              "provider_message_id": string | null;
+              "recipient_email": string;
+              "recipient_key": string;
+              "recipient_user_id": string | null;
+              "stop_reason": string | null;
+              "stopped_at": string | null;
+          };
+          ComputedFields: never;
+          Insert: {
+              "accepted_at"?: string | null;
+              "category": string;
+              "created_at"?: string;
+              "hackathon_id": string;
+              "id": string;
+              "provider_message_id"?: string | null;
+              "recipient_email": string;
+              "recipient_key": string;
+              "recipient_user_id"?: string | null;
+              "stop_reason"?: string | null;
+              "stopped_at"?: string | null;
+          };
+          Update: {
+              "accepted_at"?: string | null;
+              "category"?: string;
+              "created_at"?: string;
+              "hackathon_id"?: string;
+              "id"?: string;
+              "provider_message_id"?: string | null;
+              "recipient_email"?: string;
+              "recipient_key"?: string;
+              "recipient_user_id"?: string | null;
+              "stop_reason"?: string | null;
+              "stopped_at"?: string | null;
+          };
+          Relationships: [
+              {
+                  foreignKeyName: "reminder_deliveries_hackathon_id_fkey";
+                  columns: [
+                      "hackathon_id"
+                  ];
+                  isOneToOne: false;
+                  referencedRelation: "hackathons";
+                  referencedColumns: [
+                      "id"
+                  ];
+              }
+          ];
+      };
+      "reminder_reply_audits": {
+          Row: {
+              "body_hash": string;
+              "created_at": string;
+              "delivery_id": string | null;
+              "id": string;
+              "outcome": string;
+              "reason": string;
+              "sender_hash": string;
+          };
+          ComputedFields: never;
+          Insert: {
+              "body_hash": string;
+              "created_at"?: string;
+              "delivery_id"?: string | null;
+              "id": string;
+              "outcome": string;
+              "reason": string;
+              "sender_hash": string;
+          };
+          Update: {
+              "body_hash"?: string;
+              "created_at"?: string;
+              "delivery_id"?: string | null;
+              "id"?: string;
+              "outcome"?: string;
+              "reason"?: string;
+              "sender_hash"?: string;
+          };
+          Relationships: [
+              {
+                  foreignKeyName: "reminder_reply_audits_delivery_id_fkey";
+                  columns: [
+                      "delivery_id"
+                  ];
+                  isOneToOne: false;
+                  referencedRelation: "reminder_deliveries";
+                  referencedColumns: [
+                      "id"
+                  ];
+              }
+          ];
+      };
+      "reminder_suppressions": {
+          Row: {
+              "category": string;
+              "created_at": string;
+              "hackathon_id": string;
+              "recipient_key": string;
+              "source_reply_id": string;
+          };
+          ComputedFields: never;
+          Insert: {
+              "category": string;
+              "created_at"?: string;
+              "hackathon_id": string;
+              "recipient_key": string;
+              "source_reply_id": string;
+          };
+          Update: {
+              "category"?: string;
+              "created_at"?: string;
+              "hackathon_id"?: string;
+              "recipient_key"?: string;
+              "source_reply_id"?: string;
+          };
+          Relationships: [
+              {
+                  foreignKeyName: "reminder_suppressions_hackathon_id_fkey";
+                  columns: [
+                      "hackathon_id"
+                  ];
+                  isOneToOne: false;
+                  referencedRelation: "hackathons";
+                  referencedColumns: [
+                      "id"
+                  ];
+              },
+              {
+                  foreignKeyName: "reminder_suppressions_source_reply_id_fkey";
+                  columns: [
+                      "source_reply_id"
+                  ];
+                  isOneToOne: false;
+                  referencedRelation: "reminder_reply_audits";
+                  referencedColumns: [
+                      "id"
+                  ];
+              }
+          ];
+      };
       api_keys: {
         Row: {
           created_at: string
@@ -3669,6 +3815,17 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      "record_reminder_reply": {
+          Args: {
+              "p_body_hash": string;
+              "p_delivery_id": string;
+              "p_reason": string;
+              "p_reply_id": string;
+              "p_sender_hash": string;
+              "p_verified": boolean;
+          };
+          Returns: string;
+      };
       accept_judge_invitation_atomic: {
         Args: { p_clerk_user_id: string; p_email: string; p_token: string }
         Returns: {

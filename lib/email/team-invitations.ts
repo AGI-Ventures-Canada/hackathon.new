@@ -102,6 +102,7 @@ export async function sendTeamInvitationEmail(
 }
 
 export type SendTeamInvitationReminderInput = {
+  hackathonId: string
   to: string
   teamName: string
   hackathonName: string
@@ -122,7 +123,7 @@ function teamReminderSubject(teamName: string, hackathonName: string, urgency: s
 
 export async function sendTeamInvitationReminderEmail(
   input: SendTeamInvitationReminderInput
-): Promise<{ success: boolean }> {
+): Promise<{ success: boolean; skipped?: true }> {
   if (!process.env.NEXT_PUBLIC_APP_URL) {
     console.error("NEXT_PUBLIC_APP_URL not set, cannot send reminder email")
     return { success: false }
@@ -152,8 +153,10 @@ export async function sendTeamInvitationReminderEmail(
   const urgency = input.urgency ?? "low"
   const subject = teamReminderSubject(input.teamName, input.hackathonName, urgency)
 
+  let stopped = false
   const result = await sendEmail({
     to: input.to,
+    reminder: { hackathonId: input.hackathonId, category: "team_invitation", deadline: input.expiresAt, onStopped: () => { stopped = true } },
     subject,
     html,
     text,
@@ -167,5 +170,5 @@ export async function sendTeamInvitationReminderEmail(
     idempotencyKey: `team-invitation-reminder/${input.deliveryId ?? `${input.inviteToken}/${urgency}`}`,
   })
 
-  return { success: result !== null }
+  return stopped ? { success: false, skipped: true } : { success: result !== null }
 }

@@ -1,3 +1,4 @@
+import { reminderReplyAddress } from "@/lib/services/reminder-delivery"
 import { sendEmail } from "./resend"
 import { createHash } from "node:crypto"
 import {
@@ -336,12 +337,15 @@ export async function sendReminderEmailsWithResult(
         ctaLabel: content.ctaLabel,
         ctaUrl: content.ctaUrl,
         hackathonName: hackathon.name,
+        canReplyToStop: !!reminderReplyAddress("0".repeat(24)),
         eventUrl,
       })
     )
 
+    let stopped = false
     const result = await sendEmail({
       to: email,
+      reminder: { hackathonId, category: reminderType === "feedback_followup" ? "feedback" : reminderType === "organizer_fulfillment" || reminderType === "winner_unresponsive" ? "organizer_fulfillment" : "prize_claim", recipientUserId: clerkUserId, onStopped: () => { stopped = true } },
       subject: content.subject,
       html,
       text,
@@ -354,7 +358,9 @@ export async function sendReminderEmailsWithResult(
       idempotencyKey: `${deliveryKey}/${recipientFingerprint(clerkUserId)}`,
     })
 
-    if (result) {
+    if (stopped) {
+      await markDeliveryTaskComplete(deliveryKey, clerkUserId)
+    } else if (result) {
       sent++
       await markDeliveryTaskComplete(deliveryKey, clerkUserId)
     } else {

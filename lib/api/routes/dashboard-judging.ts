@@ -1964,6 +1964,7 @@ export const dashboardJudgingRoutes = new Elysia()
 
     const { sendJudgeInvitationReminderEmail } = await import("@/lib/email/judge-invitations")
     const delivery = await sendJudgeInvitationReminderEmail({
+      hackathonId: params.id,
       to: remindResult.invitation.email,
       hackathonName: hackathon.name,
       inviterName,
@@ -1988,8 +1989,8 @@ export const dashboardJudgingRoutes = new Elysia()
         )
       }
       return new Response(
-        JSON.stringify({ error: "The reminder email could not be sent.", code: "email_delivery_failed" }),
-        { status: 502, headers: { "Content-Type": "application/json" } },
+        JSON.stringify({ error: "skipped" in delivery && delivery.skipped ? "Reminders are turned off or the deadline has passed." : "The reminder email could not be sent.", code: "skipped" in delivery && delivery.skipped ? "reminder_stopped" : "email_delivery_failed" }),
+        { status: "skipped" in delivery && delivery.skipped ? 409 : 502, headers: { "Content-Type": "application/json" } },
       )
     }
 

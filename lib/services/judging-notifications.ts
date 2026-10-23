@@ -1,3 +1,4 @@
+import { reminderIsCurrent } from "@/lib/utils/reminder-cutoff"
 import { countActionableJudgeReviews } from "@/lib/utils/judging-review-queue"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { createHash } from "node:crypto"
@@ -32,7 +33,7 @@ export type JudgingNotification = {
   title: string
   body: string
   action_path: string
-  metadata: { deadline?: string; opensAt?: string; assignmentIds?: string[]; urgency?: "normal" | "urgent" }
+  metadata: { deadline?: string; opensAt?: string; assignmentIds?: string[]; urgency?: "normal" | "urgent"; stopReason?: string }
   scheduled_for: string
   next_attempt_at?: string | null
   email_required: boolean
@@ -180,8 +181,8 @@ export async function reconcileJudgingNotifications(hackathonId: string, now: Da
   if (!event) return
   if (event.is_test_event || event.status === "draft") return
   const client = db()
-  if (["completed", "archived"].includes(event.status) || event.results_published_at) {
-    const { error } = await client.from("judging_notifications").update({ resolved_at: now.toISOString() }).eq("hackathon_id", hackathonId).is("resolved_at", null)
+  if (!reminderIsCurrent(event, "organizer_judging", now, rounds.find((round) => round.status === "active"))) {
+    const { error } = await client.from("judging_notifications").update({ resolved_at: now.toISOString(), email_required: false, last_error: "reminder_event_cutoff" }).eq("hackathon_id", hackathonId).is("resolved_at", null)
     if (error) throw new Error("Could not close judging updates.")
     return
   }
@@ -194,6 +195,7 @@ export async function reconcileJudgingNotifications(hackathonId: string, now: Da
     const own = assignments.filter((item) => item.judge_participant_id === judge.id && (!item.round_id || item.round_id === activeRound?.id))
     const pending = own.filter((item) => !item.is_complete)
     const window = resolveJudgingWindow(event, activeRound, now)
+    if (!reminderIsCurrent(event, "judge_judging", now, activeRound)) continue
     const roundId = activeRound?.id ?? null
     const recipientPrevious = previous.filter((item) => item.clerk_user_id === judge.clerk_user_id && item.round_id === roundId)
     const base = { hackathon_id: hackathonId, clerk_user_id: judge.clerk_user_id, round_id: roundId, action_path: `/e/${event.slug}/judge`, email_required: event.judging_reminders_enabled, metadata: { deadline: window.closesAt ?? undefined }, scheduled_for: now.toISOString() }
@@ -297,7 +299,7 @@ export async function queueJudgeWorkReminder(hackathonId: string, userId: string
   if (!event || !judge || event.is_test_event || ["draft", "completed", "archived"].includes(event.status) || event.results_published_at) return { outcome: "blocked", message: "This judge can't be reminded right now." }
   const window = resolveJudgingWindow(event, round)
   const open = scheduledWindowOpen !== false && ["active", "judging"].includes(event.status) && (window.state === "open" || (window.state === "unscheduled" && (event.status === "judging" || !!round || ["preliminaries", "finals"].includes(event.phase ?? ""))))
-  if (!pending.length || !open) return { outcome: "blocked", message: pending.length ? "Judging isn't open right now." : "This judge has no reviews left." }
+  if (!reminderIsCurrent(event, "judge_judging", new Date(), round) || !pending.length || !open) return { outcome: "blocked", message: pending.length ? "Judging isn't open right now." : "This judge has no reviews left." }
   const preferences = await getJudgingNotificationPreferences(hackathonId, userId)
   if (!event.judging_reminders_enabled || (!preferences.email_enabled && !preferences.in_app_enabled)) return { outcome: "blocked", message: "This judge has turned off judging reminders." }
   const now = new Date()
@@ -330,6 +332,7 @@ async function recheckJudgingDelivery(notification: JudgingNotification): Promis
   const round = rounds.find((item) => item.id === notification.round_id)
   if (notification.round_id && round?.status !== "active") return { outcome: "suppress", resolve: true }
   const now = new Date()
+  if (!reminderIsCurrent(event, organizer ? "organizer_judging" : "judge_judging", now, round)) return { outcome: "suppress", resolve: true }
   const window = resolveJudgingWindow(event, round, now)
   if (notification.metadata.deadline && notification.metadata.deadline !== window.closesAt) return { outcome: "suppress", resolve: true }
   const pending = assignments.filter((assignment) => !assignment.is_complete && assignment.judge_participant_id === recipient?.id && (!assignment.round_id || assignment.round_id === notification.round_id))
@@ -425,7 +428,7 @@ export async function processJudgingNotifications(budget?: DeliveryBudget): Prom
           counts.skipped++
           continue
         }
-        const lifecycleClosed = event && (["completed", "archived"].includes(event.status) || !!event.results_published_at)
+        const lifecycleClosed = event && !reminderIsCurrent(event, organizer ? "organizer_judging" : "judge_judging", now, round)
         if (event && authorized && !lifecycleClosed && validRound && validDeadline && preferences.email_enabled && event.judging_reminders_enabled && scheduledWindowOpen === false && window?.state === "open" && pending.length && ["work_ready", "work_added", "scores_due", "daily_digest", "manual_reminder"].includes(notification.kind)) {
           const deferred = await client.from("judging_notifications").update({ next_attempt_at: new Date(now.getTime() + 60_000).toISOString() }).eq("id", notification.id)
           if (deferred.error) throw new Error("Could not wait for judging setup.")
@@ -433,7 +436,7 @@ export async function processJudgingNotifications(budget?: DeliveryBudget): Prom
           continue
         }
         if (!event || !authorized || lifecycleClosed || !actionable || !validDeadline || !preferences.email_enabled || !event.judging_reminders_enabled) {
-          const { error: skippedError } = await client.from("judging_notifications").update({ email_required: false, ...(!event || lifecycleClosed || !authorized || !actionable || !validDeadline ? { resolved_at: now.toISOString() } : {}) }).eq("id", notification.id)
+          const { error: skippedError } = await client.from("judging_notifications").update({ email_required: false, metadata: { ...notification.metadata, stopReason: lifecycleClosed ? "event_cutoff" : "no_longer_eligible" }, ...(!event || lifecycleClosed || !authorized || !actionable || !validDeadline ? { resolved_at: now.toISOString() } : {}) }).eq("id", notification.id)
           if (skippedError) throw new Error("Could not record skipped reminder.")
           counts.skipped++
           continue
@@ -473,6 +476,12 @@ export async function processJudgingNotifications(budget?: DeliveryBudget): Prom
         if (stopped) {
           const updated = await client.from("judging_notifications").update(stopped.outcome === "defer" ? { next_attempt_at: new Date(Date.now() + 60_000).toISOString() } : { email_required: false, ...(stopped.resolve ? { resolved_at: new Date().toISOString() } : {}) }).eq("id", notification.id)
           if (updated.error) throw new Error("Could not save the reminder's current state.")
+          counts.skipped++
+          continue
+        }
+        if (accepted === "suppressed") {
+          const stopped = await client.from("judging_notifications").update({ email_required: false, resolved_at: new Date().toISOString(), metadata: { ...notification.metadata, stopReason: "recipient_opt_out_or_cutoff" } }).eq("id", notification.id)
+          if (stopped.error) throw new Error("Could not record stopped reminder.")
           counts.skipped++
           continue
         }

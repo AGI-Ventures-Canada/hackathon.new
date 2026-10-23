@@ -5,6 +5,8 @@ import {
   setMockFromImplementation,
 } from "../lib/supabase-mock"
 
+const recentPublication = new Date(Date.now() - 86_400_000).toISOString()
+
 const mockSendReminderEmailsWithResult = mock(() =>
   Promise.resolve({ eligible: 1, sent: 1, failed: 0 }),
 )
@@ -95,7 +97,7 @@ describe("Post-Event Reminders Service", () => {
           name: "Practice Event",
           slug: "practice-event",
           status: "completed",
-          results_published_at: "2026-01-01T00:00:00Z",
+          results_published_at: recentPublication,
           feedback_survey_sent_at: null,
           feedback_survey_url: "https://survey.example.com",
           is_test_event: true,
@@ -129,7 +131,7 @@ describe("Post-Event Reminders Service", () => {
               name: "Test Hack",
               slug: "test-hack",
               status: "completed",
-              results_published_at: "2026-01-01T00:00:00Z",
+              results_published_at: recentPublication,
               feedback_survey_sent_at: null,
               feedback_survey_url: null,
             },
@@ -155,7 +157,7 @@ describe("Post-Event Reminders Service", () => {
               name: "Test Hack",
               slug: "test-hack",
               status: "completed",
-              results_published_at: "2026-08-20T00:00:00.000Z",
+              results_published_at: recentPublication,
               feedback_survey_sent_at: null,
               feedback_survey_url: null,
             },
@@ -187,7 +189,7 @@ describe("Post-Event Reminders Service", () => {
           expect.objectContaining({
             cancelled_at: null,
             metadata: expect.objectContaining({
-              publicationVersion: "2026-08-20T00:00:00.000Z",
+              publicationVersion: recentPublication,
             }),
           }),
           { onConflict: "hackathon_id,type" },
@@ -209,7 +211,7 @@ describe("Post-Event Reminders Service", () => {
               name: "Test Hack",
               slug: "test-hack",
               status: "completed",
-              results_published_at: "2026-08-20T00:00:00.000Z",
+              results_published_at: recentPublication,
               feedback_survey_sent_at: null,
               feedback_survey_url: null,
             },
@@ -245,7 +247,7 @@ describe("Post-Event Reminders Service", () => {
               name: "Test Hack",
               slug: "test-hack",
               status: "completed",
-              results_published_at: "2026-01-01T00:00:00Z",
+              results_published_at: recentPublication,
               feedback_survey_sent_at: null,
               feedback_survey_url: "https://forms.google.com/test",
             },
@@ -270,8 +272,8 @@ describe("Post-Event Reminders Service", () => {
               name: "Test Hack",
               slug: "test-hack",
               status: "completed",
-              results_published_at: "2026-01-01T00:00:00Z",
-              feedback_survey_sent_at: "2026-01-01T00:00:00Z",
+              results_published_at: recentPublication,
+              feedback_survey_sent_at: recentPublication,
               feedback_survey_url: "https://forms.google.com/test",
             },
             error: null,
@@ -316,7 +318,7 @@ describe("Post-Event Reminders Service", () => {
               name: "Test Hack",
               slug: "test-hack",
               status: "completed",
-              results_published_at: "2026-01-01T00:00:00Z",
+              results_published_at: recentPublication,
               feedback_survey_sent_at: null,
               feedback_survey_url: null,
             },
@@ -454,7 +456,7 @@ describe("Post-Event Reminders Service", () => {
           id: "r1",
           hackathon_id: "h1",
           type: "prize_claim",
-          scheduled_for: "2026-04-01T00:00:00Z",
+          scheduled_for: recentPublication,
           sent_at: null,
           cancelled_at: null,
           recipient_filter: "winners",
@@ -506,7 +508,7 @@ describe("Post-Event Reminders Service", () => {
       id: "r1",
       hackathon_id: "h1",
       type: "prize_claim",
-      scheduled_for: "2026-04-01T00:00:00Z",
+      scheduled_for: recentPublication,
       sent_at: null,
       cancelled_at: null,
       recipient_filter: "winners",
@@ -531,7 +533,7 @@ describe("Post-Event Reminders Service", () => {
         }
         if (table === "hackathons") {
           return createChainableMock({
-            data: { status: "completed", results_published_at: "2026-04-01T00:00:00Z" },
+            data: { status: "completed", results_published_at: recentPublication },
             error: null,
           })
         }
@@ -563,7 +565,7 @@ describe("Post-Event Reminders Service", () => {
         }
         if (table === "hackathons") {
           return createChainableMock({
-            data: { status: "completed", results_published_at: "2026-04-01T00:00:00Z" },
+            data: { status: "completed", results_published_at: recentPublication },
             error: null,
           })
         }
@@ -593,7 +595,7 @@ describe("Post-Event Reminders Service", () => {
         }
         if (table === "hackathons") {
           return createChainableMock({
-            data: { status: "completed", results_published_at: "2026-04-01T00:00:00Z" },
+            data: { status: "completed", results_published_at: recentPublication },
             error: null,
           })
         }
@@ -653,6 +655,7 @@ describe("Post-Event Reminders Service", () => {
       await expect(processReminder(reminder as never)).resolves.toBe(0)
       expect(cancelChain?.update).toHaveBeenCalledWith({
         cancelled_at: expect.any(String),
+        metadata: { ...reminder.metadata, cancellationReason: "lifecycle_or_cutoff" },
       })
       expect(mockSendReminderEmailsWithResult).not.toHaveBeenCalled()
     })
@@ -671,7 +674,7 @@ describe("Post-Event Reminders Service", () => {
         ? createChainableMock({
             data: {
               status: "completed",
-              results_published_at: "2026-08-20T00:00:00.000Z",
+              results_published_at: recentPublication,
             },
             error: null,
           })
@@ -738,7 +741,7 @@ describe("Post-Event Reminders Service", () => {
         setMockFromImplementation((table) => {
           if (table === "hackathons") {
             return createChainableMock({
-              data: { status: "completed", results_published_at: "2026-04-01T00:00:00Z" },
+              data: { status: "completed", results_published_at: recentPublication },
               error: null,
             })
           }
@@ -777,7 +780,7 @@ describe("Post-Event Reminders Service", () => {
         ...reminder,
         metadata: {
           ...reminder.metadata,
-          publicationVersion: "2026-08-20T00:00:00.000Z",
+          publicationVersion: recentPublication,
         },
       }
       let reminderCall = 0
@@ -786,7 +789,7 @@ describe("Post-Event Reminders Service", () => {
           return createChainableMock({
             data: {
               status: "completed",
-              results_published_at: "2026-08-20T00:00:00.000Z",
+              results_published_at: recentPublication,
             },
             error: null,
           })
@@ -835,7 +838,7 @@ describe("Post-Event Reminders Service", () => {
         setMockFromImplementation((table) => {
           if (table === "hackathons") {
             return createChainableMock({
-              data: { status: "completed", results_published_at: "2026-04-01T00:00:00Z" },
+              data: { status: "completed", results_published_at: recentPublication },
               error: null,
             })
           }
@@ -873,7 +876,7 @@ describe("Post-Event Reminders Service", () => {
         }
         if (table === "hackathons") {
           return createChainableMock({
-            data: { status: "completed", results_published_at: "2026-04-01T00:00:00Z" },
+            data: { status: "completed", results_published_at: recentPublication },
             error: null,
           })
         }
@@ -895,7 +898,7 @@ describe("Post-Event Reminders Service", () => {
       ]) {
         setMockFromImplementation((table) => table === "hackathons"
           ? createChainableMock({
-              data: { status: "completed", results_published_at: "2026-04-01T00:00:00Z" },
+              data: { status: "completed", results_published_at: recentPublication },
               error: null,
             })
           : createChainableMock({ data: variant, error: null }))

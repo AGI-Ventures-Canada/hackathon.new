@@ -15,6 +15,7 @@ interface PreEventReminderEmailProps {
   heading: string
   body: string
   recipientReason?: string
+  canReplyToStop?: boolean
 }
 
 export default function PreEventReminderEmail({
@@ -28,12 +29,13 @@ export default function PreEventReminderEmail({
   heading,
   body,
   recipientReason,
+  canReplyToStop = false,
 }: PreEventReminderEmailProps) {
   return (
     <OatmealLayout
       heading={heading}
       preview={`${deadlineLabel} in ${timeLeft} \u2014 ${hackathonName}`}
-      footerText={`You\u2019re receiving this because ${recipientReason ?? `you\u2019re registered for ${hackathonName}`}. Reply to stop these reminders.`}
+      footerText={`You\u2019re receiving this because ${recipientReason ?? `you\u2019re registered for ${hackathonName}`}. ${canReplyToStop ? "Reply STOP to stop these reminders for this event." : "To stop these reminders, contact the event organizer."}`}
     >
       <Text
         style={{

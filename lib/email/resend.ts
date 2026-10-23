@@ -12,6 +12,7 @@ import {
 } from "./utils"
 import { sha256Fingerprint } from "@/lib/utils/hash"
 import { isSyntheticEmail } from "@/lib/utils/synthetic-user"
+import type { ReminderDeliveryContext, ReminderDeliveryReceipt } from "@/lib/services/reminder-delivery"
 
 let resendClient: Resend | null = null
 let resendClientApiKey: string | null = null
@@ -39,11 +40,14 @@ export type SendEmailInput = {
   headers?: Record<string, string>
   tags?: Array<{ name: string; value: string }>
   idempotencyKey?: string
+  reminder?: ReminderDeliveryContext
 }
 
 export type SendEmailFailureCode =
   | "email_content_invalid"
   | "email_recipient_suppressed"
+  | "email_reminder_stopped"
+  | "email_reminder_unverified"
   | "email_header_invalid"
   | "email_provider_not_configured"
   | "email_provider_timeout"
@@ -486,18 +490,44 @@ export async function sendEmailWithResult(
     ? { idempotencyKey }
     : undefined
   let lastError: SendEmailError | null = null
+  const reminderService = input.reminder ? await import("@/lib/services/reminder-delivery") : null
+  let reminder: ReminderDeliveryReceipt | null = null
+  if (input.reminder && reminderService) {
+    try {
+      reminder = await reminderService.prepareReminderDelivery(input.reminder, recipients.length === 1 ? recipients[0] : "", idempotencyKey ?? "")
+    } catch {
+      return failedResult(startedAt, 0, { code: "email_reminder_unverified", providerCode: null, message: "Could not verify reminder delivery context.", statusCode: null, retryable: true })
+    }
+  }
+  if (reminder?.accepted_at && reminder.provider_message_id) {
+    return { ok: true, status: "provider_accepted", id: reminder.provider_message_id, attempts: 0, durationMs: Date.now() - startedAt, error: null }
+  }
+  if (reminder && reminderService) {
+    const replyTo = reminderService.reminderReplyAddress(reminder.id)
+    if (replyTo) {
+      payload.replyTo = replyTo
+      if (!payload.headers?.["List-Unsubscribe-Post"]) {
+        payload.headers = { ...payload.headers, "List-Unsubscribe": `<mailto:${replyTo}?subject=unsubscribe>` }
+      }
+    }
+  }
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const attemptStartedAt = Date.now()
     try {
       await acquireProviderAttemptSlot(execution.providerPacing)
       if (execution.beforeAttempt) await execution.beforeAttempt()
+      if (reminder && reminderService && input.reminder && !await reminderService.checkReminderDelivery(input.reminder, reminder)) {
+        input.reminder.onStopped?.()
+        return failedResult(startedAt, attempt - 1, { code: "email_reminder_stopped", providerCode: null, message: "This reminder is no longer eligible.", statusCode: null, retryable: false })
+      }
       const response = await settleWithin(
         transport(payload, requestOptions),
         timeoutMs,
       )
 
       if (!response.error && response.data?.id) {
+        if (reminder && reminderService) await reminderService.acceptReminderDelivery(reminder.id, response.data.id)
         const result: SendEmailDeliveryResult = {
           ok: true,
           status: "provider_accepted",

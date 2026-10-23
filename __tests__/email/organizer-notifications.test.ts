@@ -344,7 +344,7 @@ describe("sendOrganizerClaimNotification", () => {
     expect(second).toEqual({ sent: 1, failed: 0 })
     expect(mockSendEmail.mock.calls.map(([mail]) => (mail as { to: string }).to)).toEqual(["a@test.com", "b@test.com"])
     expect((mockSendEmail.mock.calls[0][0] as { text: string }).text).toContain("4:00 PM UTC")
-    expect((mockSendEmail.mock.calls[0][0] as { text: string }).text).toContain("Reply to stop")
+    expect((mockSendEmail.mock.calls[0][0] as { text: string }).text).toContain("To stop these reminders, contact")
   })
   it("keeps an organizer reminder retryable when recipient resolution is empty", async () => {
     let callCount = 0
