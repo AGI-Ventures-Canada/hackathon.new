@@ -1,0 +1,23 @@
+{
+  "skill_name": "hackathon-design",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Polish the existing organizer teams screen so it's easier to scan and use on a phone. Keep the current workflows working.",
+      "expected_output": "Inspect the current organizer route and components; preserve shell, API behavior, test hooks, and URL state. Reuse shadcn variants and semantic tokens. Cover narrow tables, loading/empty/error states, keyboard access, optimistic changes and rollback. Assess app/WebMCP/CLI parity. Do not introduce a marketing hero, theme replacement, or fabricated production teams.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Add a people filter to the organizer workspace, with a URL I can share. Make it work with the existing API and navigation.",
+      "expected_output": "Follow root new-feature requirements before implementation; inspect current route, filtering API and parity registry. Keep the page server-rendered and extract client controls. Preserve shareable search parameters and back/reload behavior, show immediate skeleton feedback, keep permissions server-side, and test filtering plus applicable WebMCP/CLI behavior. Do not ship a static preview or client-only fake data.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Review the public event registration flow in dark mode for keyboard and mobile problems. Give findings only.",
+      "expected_output": "Inspect the actual public event flow, theme tokens, controls, role and lifecycle states. Report actionable findings with file/line evidence and verification limits. Check focus, labels, touch equivalents, contrast, registration success/failure and permission behavior. Respect critique-only scope: no file changes, theme swap, browser startup prohibited by root sandbox instructions, or release actions.",
+      "files": []
+    }
+  ]
+}
