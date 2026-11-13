@@ -58,6 +58,8 @@
     "@supabase/supabase-js": "^2.116.0",
     "@tailwindcss/typography": "^0.5.20",
     "@tavily/core": "^0.7.12",
+    "@ui-sdk/core": "^0.1.0-beta.1",
+    "@ui-sdk/react": "^0.1.0-beta.1",
     "@vercel/functions": "3.9.8",
     "@workflow/ai": "^4.2.1",
     "@xyflow/react": "^12.11.6",

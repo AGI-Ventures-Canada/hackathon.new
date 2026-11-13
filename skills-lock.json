@@ -50,6 +50,11 @@
       "source": "anthropics/skills",
       "sourceType": "github",
       "computedHash": "5ea13a6d9f0d4bb694405d79acd00cadec0d21bb138c4dd10fcf3c500cb835c2"
+    },
+    "ui-sdk": {
+      "source": "vercel-labs/ui",
+      "sourceType": "github",
+      "computedHash": "9d7bf65269d5cff4e9e1a63c384cda879ff7671e42a5138aebc317e53ba1a23d"
     }
   }
 }
