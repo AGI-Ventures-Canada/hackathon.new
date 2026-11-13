@@ -116,6 +116,9 @@ Every directory with agent instructions must expose both `CLAUDE.md` and `AGENTS
 
 Skills in `.claude/skills/`:
 - `local-dev-setup/SKILL.md` - Developer onboarding and local environment setup
+- `hackathon-design/SKILL.md` - Design, build, polish, and review this project's real interfaces using existing components, themes, data, and app/WebMCP/CLI behavior
+
+For interface design and development, use `hackathon-design` from the canonical `.agents/skills/hackathon-design/` directory. Its project map and focused references cover app screens, public event pages, components, accessible states, mobile layouts, and verification. It is an internal project skill, exposed through the configured coding tools' skill directories; it does not change the public skills in `skills/`.
 
 #### Hackathon Skills (`skills/`)
 
@@ -192,6 +195,14 @@ When adding a new UI surface that consumes this kind of state (panels, tabs, bad
 ### UI Components
 
 Base components are shadcn/ui. Add missing components with `bunx shadcn@latest add <component-name>`. Check existing components before creating new ones.
+
+#### ui-sdk
+
+Before using ui-sdk, follow the `ui-sdk` skill if installed and read `node_modules/@ui-sdk/react/docs/llms.txt` for the installed version. To build a new component, also search `node_modules/@ui-sdk/react/docs/core.md` by heading and read `node_modules/@ui-sdk/react/docs/rendering.md`.
+
+Import `@ui-sdk/core/web.css` once in `app/layout.tsx`, before `./globals.css`. Keep `@layer ui-sdk;` before Tailwind imports in `app/globals.css` so app styles take precedence. Import React components from their own entries, such as `@ui-sdk/react/button`.
+
+The default stylesheet shares `data-slot` names with shadcn/ui. Preserve the compatibility sizing utilities in existing components when updating either library.
 
 ### Sidebar
 

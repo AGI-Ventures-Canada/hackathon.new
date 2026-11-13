@@ -1,6 +1,12 @@
-# Workflow DevKit
+# Workflow SDK 5
 
 This directory contains durable workflows for long-running agent jobs.
+
+Read the version-matched docs in `node_modules/workflow/docs/` before changing workflows. The app uses Workflow 5 and retains `@workflow/ai` 5 for AI SDK 6 compatibility. That AI integration is deprecated; a future migration to `@ai-sdk/workflow` requires AI SDK 7 and is separate from this runtime upgrade.
+
+Workflow 5 runs steps through the combined `/.well-known/workflow/v1/flow` handler. Keep `/.well-known/workflow/` excluded from the Clerk proxy matcher, and include native Sharp files in the flow handler's output trace. Existing runs stay pinned to their original deployment; do not cancel or restart them for an SDK upgrade.
+
+The v5 defaults include linked traces, region-tagged Vercel run IDs, and a per-run event limit. Treat run IDs as opaque strings and check the current documented limits before adding large fan-outs.
 
 ## Setup
 
@@ -227,7 +233,7 @@ async function executeSleep({ durationMs }: { durationMs: number }) {
 if (response.status === 429) {
   const retryAfter = response.headers.get("Retry-After")
   throw new RetryableError(`Rate limited`, {
-    delay: parseInt(retryAfter) * 1000,
+    retryAfter: `${parseInt(retryAfter)}s`,
   })
 }
 ```
@@ -293,7 +299,7 @@ const response = await webhook  // Pauses until POST to URL
 
 ## Fetch in Workflows
 
-**CRITICAL**: Global `fetch` is unavailable in workflow/step functions. Libraries that use fetch internally will fail.
+**CRITICAL**: Global `fetch` is unavailable in workflow functions. Step functions have full Node.js access and can use native `fetch`. Libraries that use native fetch must run in a step, or receive Workflow's durable fetch when called from workflow scope.
 
 ### Using DurableAgent (Recommended)
 
@@ -343,6 +349,8 @@ npx workflow inspect runs  # CLI
 ## Documentation
 
 ### Getting Started
+- Workflow SDK 5 announcement: https://vercel.com/blog/workflow-sdk-5
+- Workflow SDK 5 application changes: https://workflow-sdk.dev/docs/whats-new
 - Next.js Setup: https://useworkflow.dev/docs/getting-started/next
 
 ### Foundations
