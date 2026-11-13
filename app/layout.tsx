@@ -8,6 +8,7 @@ import { ThemedClerkProvider } from "@/components/clerk-provider"
 import { PostHogProvider } from "@/components/posthog-provider"
 import { DevTool } from "@/components/dev-tool/dev-tool"
 import { LazyRootWidgets } from "@/components/lazy-root-widgets"
+import "@ui-sdk/core/web.css"
 import "./globals.css"
 
 const jetbrainsMono = JetBrains_Mono({

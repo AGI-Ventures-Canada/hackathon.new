@@ -44,6 +44,8 @@ Verify: Check that `node_modules` directory exists and has content.
 
 The app pins Next.js and `eslint-config-next` to the same version in `package.json`. Use `bun install` to preserve that pairing. Next.js 16.3 also writes its agent guidance block to `CLAUDE.md` when the dev server starts.
 
+`bun install` also installs `@ui-sdk/react` and `@ui-sdk/core`. ui-sdk requires React and React DOM 19 or newer, plus `@types/react` 19.2.10 or newer. Its default styles load once in `app/layout.tsx` before the app CSS, with `@layer ui-sdk;` declared before Tailwind in `app/globals.css`. Before using it, follow the installed `ui-sdk` skill and read `node_modules/@ui-sdk/react/docs/llms.txt`.
+
 ### Step 3: Environment Setup
 
 Copy the example env file:
