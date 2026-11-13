@@ -3,7 +3,7 @@ import { join } from "node:path"
 
 const traces = [
   ".next/server/app/api/[[...slugs]]/route.js.nft.json",
-  ".next/server/app/.well-known/workflow/v1/step/route.js.nft.json",
+  ".next/server/app/.well-known/workflow/v1/flow/route.js.nft.json",
 ]
 
 const { default: sharp } = await import("sharp")

@@ -43,7 +43,7 @@ const nextConfig: NextConfig = {
   ],
   outputFileTracingIncludes: {
     "/api/\\[\\[\\.\\.\\.slugs\\]\\]": sharpTraceFiles,
-    "/.well-known/workflow/v1/step": sharpTraceFiles,
+    "/.well-known/workflow/v1/flow": sharpTraceFiles,
   },
   async headers() {
     return webMcpOriginTrial
